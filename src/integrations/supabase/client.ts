@@ -9,8 +9,13 @@ function normalizeEnv(value: unknown): string {
   return value.trim().replace(/^["']+|["']+$/g, "");
 }
 
+function normalizeSupabaseKey(value: unknown): string {
+  // Keys should not contain whitespace; removing it makes the app resilient to wrapped/copy-pasted JWTs.
+  return normalizeEnv(value).replace(/\s+/g, "");
+}
+
 const SUPABASE_URL = normalizeEnv(import.meta.env.VITE_SUPABASE_URL);
-const SUPABASE_PUBLISHABLE_KEY = normalizeEnv(
+const SUPABASE_PUBLISHABLE_KEY = normalizeSupabaseKey(
   import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? import.meta.env.VITE_SUPABASE_ANON_KEY,
 );
 
