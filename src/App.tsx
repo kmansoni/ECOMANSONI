@@ -59,7 +59,7 @@ const App = () => (
             <Toaster />
             <Sonner />
             <GlobalCallOverlay />
-            <BrowserRouter>
+            <BrowserRouter basename={import.meta.env.BASE_URL}>
               <Suspense fallback={null}>
                 <CommandPalette />
               </Suspense>
