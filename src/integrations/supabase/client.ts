@@ -6,7 +6,12 @@ function normalizeEnv(value: unknown): string {
   if (typeof value !== "string") return "";
   // GitHub Secrets / .env values are sometimes pasted with surrounding quotes.
   // Supabase rejects API keys that include extra quotes/whitespace.
-  return value.trim().replace(/^["']+|["']+$/g, "");
+  return value
+    .trim()
+    .replace(/^["']+|["']+$/g, "")
+    // In some terminals/clipboards JWTs are copied with line breaks.
+    // Remove all whitespace characters to get a valid base64url token.
+    .replace(/\s+/g, "");
 }
 
 function normalizeSupabaseKey(value: unknown): string {
