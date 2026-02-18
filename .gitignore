@@ -32,3 +32,19 @@ google-services.json
 
 # Android Profiling
 *.hprof
+node_modules
+
+# Frontend build output
+dist/
+
+# Local env (secrets)
+.env
+.env.*
+!.env.example
+
+# Supabase local temp
+supabase/.temp/
+
+# Local scratch/archive
+.archive/
+.git-push-force.ps1

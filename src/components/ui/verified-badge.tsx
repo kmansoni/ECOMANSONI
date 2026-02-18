@@ -41,7 +41,7 @@ export function VerifiedBadge({ className, size = "sm" }: VerifiedBadgeProps) {
         className="w-auto px-3 py-2 text-sm font-medium"
         onClick={(e) => e.stopPropagation()}
       >
-        Владелец соцсети Maisoni
+        Владелец соцсети mansoni
       </PopoverContent>
     </Popover>
   );

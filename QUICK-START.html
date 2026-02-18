@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Быстрый старт - Временный хост</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .card {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        h1 { color: #2563eb; }
+        h2 { color: #1e40af; margin-top: 30px; }
+        code {
+            background: #f1f5f9;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            color: #dc2626;
+        }
+        pre {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 20px;
+            border-radius: 8px;
+            overflow-x: auto;
+        }
+        pre code {
+            background: none;
+            color: #10b981;
+            padding: 0;
+        }
+        .step {
+            margin: 20px 0;
+            padding-left: 30px;
+            position: relative;
+        }
+        .step::before {
+            content: "→";
+            position: absolute;
+            left: 0;
+            color: #2563eb;
+            font-weight: bold;
+            font-size: 20px;
+        }
+        .url {
+            background: #dbeafe;
+            padding: 15px;
+            border-left: 4px solid #2563eb;
+            border-radius: 4px;
+            margin: 15px 0;
+        }
+        .warning {
+            background: #fef3c7;
+            border-left: 4px solid #f59e0b;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 15px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>🚀 Запуск временного хоста</h1>
+        <p>Проект: <strong>your-ai-companion-main</strong></p>
+        <p>Supabase: <code>lfkbgnbjxskspsownvjm</code></p>
+    </div>
+
+    <div class="card">
+        <h2>📋 Вариант 1: Локальный dev-сервер (рекомендуется)</h2>
+        
+        <div class="step">
+            <strong>1. Откройте новый PowerShell</strong> (не в VS Code, чтобы избежать Git-конфликтов)
+        </div>
+        
+        <div class="step">
+            <strong>2. Установите Node.js</strong> (если ещё нет):
+            <pre><code>winget install OpenJS.NodeJS.LTS</code></pre>
+            После установки перезапустите PowerShell.
+        </div>
+        
+        <div class="step">
+            <strong>3. Перейдите в папку проекта:</strong>
+            <pre><code>cd "C:\Users\manso\Desktop\разработка\your-ai-companion-main"</code></pre>
+        </div>
+        
+        <div class="step">
+            <strong>4. Установите зависимости:</strong>
+            <pre><code>npm install</code></pre>
+        </div>
+        
+        <div class="step">
+            <strong>5. Запустите dev-сервер:</strong>
+            <pre><code>npm run dev</code></pre>
+        </div>
+        
+        <div class="url">
+            <strong>✅ Сайт будет доступен:</strong><br>
+            <a href="http://localhost:8080" target="_blank">http://localhost:8080</a>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>🌐 Вариант 2: Vercel (публичный URL)</h2>
+        
+        <div class="step">
+            <strong>1. Установите Vercel CLI:</strong>
+            <pre><code>npm install -g vercel</code></pre>
+        </div>
+        
+        <div class="step">
+            <strong>2. Деплой:</strong>
+            <pre><code>cd "C:\Users\manso\Desktop\разработка\your-ai-companion-main"
+vercel --prod</code></pre>
+            Следуйте инструкциям в терминале (логин через GitHub).
+        </div>
+        
+        <div class="url">
+            <strong>✅ Получите публичный URL вида:</strong><br>
+            <code>https://your-ai-companion-main-kmansoni.vercel.app</code>
+        </div>
+        
+        <div class="warning">
+            <strong>⚠️ Не забудьте добавить env в Vercel:</strong>
+            <ul>
+                <li><code>VITE_SUPABASE_URL</code> = https://lfkbgnbjxskspsownvjm.supabase.co</li>
+                <li><code>VITE_SUPABASE_PUBLISHABLE_KEY</code> = ваш anon key</li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>📦 Вариант 3: GitHub Pages (уже настроено)</h2>
+        
+        <div class="step">
+            <strong>1. Допушьте проект в GitHub</strong> (если ещё не запушен):
+            <pre><code>git config core.editor "notepad"
+git merge --abort
+git rebase --abort
+git push -u origin main --force</code></pre>
+        </div>
+        
+        <div class="step">
+            <strong>2. В GitHub → Settings → Pages:</strong>
+            <ul>
+                <li>Source: <strong>GitHub Actions</strong></li>
+            </ul>
+        </div>
+        
+        <div class="step">
+            <strong>3. В GitHub → Settings → Secrets → Actions:</strong>
+            <ul>
+                <li><code>VITE_SUPABASE_URL</code></li>
+                <li><code>VITE_SUPABASE_PUBLISHABLE_KEY</code></li>
+            </ul>
+        </div>
+        
+        <div class="url">
+            <strong>✅ Сайт будет доступен:</strong><br>
+            <a href="https://kmansoni.github.io/ECOMANSONI/" target="_blank">https://kmansoni.github.io/ECOMANSONI/</a>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>🔑 Supabase Anon Key</h2>
+        <p>Возьмите из Supabase Dashboard → Project Settings → API:</p>
+        <pre><code>https://supabase.com/dashboard/project/lfkbgnbjxskspsownvjm/settings/api</code></pre>
+        <p>Скопируйте <strong>anon/public key</strong> и вставьте в <code>.env</code> или Vercel/GitHub Secrets.</p>
+    </div>
+</body>
+</html>

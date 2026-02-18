@@ -7,8 +7,8 @@
 
 // E1: Restrict CORS to specific origins
 const ALLOWED_ORIGINS = [
-  "https://maisoni.ru",
-  "https://app.maisoni.ru",
+  "https://mansoni.ru",
+  "https://app.mansoni.ru",
   "http://localhost:5173",
   "http://localhost:3000",
 ];

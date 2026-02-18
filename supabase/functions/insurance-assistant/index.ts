@@ -54,7 +54,7 @@ serve(async (req) => {
       throw new Error("AI_API_KEY is not configured");
     }
 
-    const response = await fetch("https://api.maisoni.ru/v1/chat/completions", {
+    const response = await fetch("https://api.mansoni.ru/v1/chat/completions", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${AI_API_KEY}`,

@@ -237,7 +237,7 @@ export function SettingsPage() {
                 <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center mb-4 shadow-lg">
                   <span className="text-3xl text-white font-bold">M</span>
                 </div>
-                <h3 className="text-xl font-semibold text-white">Maisoni</h3>
+                <h3 className="text-xl font-semibold text-white">mansoni</h3>
                 <p className="text-sm text-white/60">Версия 1.0.0</p>
               </div>
               <div className="mx-4 bg-white/10 backdrop-blur-xl rounded-2xl border border-white/20 overflow-hidden">
