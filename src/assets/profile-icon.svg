@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="profileGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#A8C4E8"/>
+      <stop offset="100%" style="stop-color:#7BA3D4"/>
+    </linearGradient>
+  </defs>
+  
+  <!-- Head (circle) -->
+  <circle cx="32" cy="20" r="12" fill="url(#profileGradient)"/>
+  
+  <!-- Body (half ellipse/rounded shape) -->
+  <path d="M12 56 C12 40, 52 40, 52 56 L52 56 C52 56, 52 56, 52 56 L12 56 Z" 
+        fill="url(#profileGradient)"/>
+</svg>

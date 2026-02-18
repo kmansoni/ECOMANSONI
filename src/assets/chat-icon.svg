@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <style>
+      .main { fill: #5C7FB2; }
+      .wave { fill: none; stroke: #FFFFFF; stroke-width: 26; stroke-linecap: round; stroke-linejoin: round; }
+    </style>
+  </defs>
+
+  <!-- Chat bubble body -->
+  <path class="main" d="
+    M96 128
+    Q96 96 128 96
+    H384
+    Q416 96 416 128
+    V304
+    Q416 336 384 336
+    H240
+    L192 384
+    V336
+    H128
+    Q96 336 96 304
+    Z
+  "/>
+
+  <!-- Waveform -->
+  <path class="wave" d="
+    M140 216
+    H196
+    L224 176
+    L260 256
+    L296 200
+    L324 232
+    H372
+  "/>
+</svg>

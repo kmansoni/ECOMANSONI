@@ -1,0 +1,111 @@
+{
+  "version": "2.0.0",
+  "inputs": [
+    {
+      "id": "supabaseAccessToken",
+      "type": "promptString",
+      "description": "Supabase access token (sbp_...)",
+      "password": true
+    }
+  ],
+  "tasks": [
+    {
+      "label": "Supabase: CLI version",
+      "type": "shell",
+      "command": "C:\\Users\\manso\\AppData\\Local\\supabase-cli\\v2.75.0\\supabase.exe",
+      "args": ["--version"],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Supabase: Link project (lfkbgnbjxskspsownvjm)",
+      "type": "shell",
+      "command": "C:\\Users\\manso\\AppData\\Local\\supabase-cli\\v2.75.0\\supabase.exe",
+      "args": ["link", "--project-ref", "lfkbgnbjxskspsownvjm"],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "SUPABASE_ACCESS_TOKEN": "${input:supabaseAccessToken}"
+        }
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Supabase: Migration list (linked)",
+      "type": "shell",
+      "command": "C:\\Users\\manso\\AppData\\Local\\supabase-cli\\v2.75.0\\supabase.exe",
+      "args": ["migration", "list"],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "SUPABASE_ACCESS_TOKEN": "${input:supabaseAccessToken}"
+        }
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Supabase: DB push (dry-run, linked)",
+      "type": "shell",
+      "command": "C:\\Users\\manso\\AppData\\Local\\supabase-cli\\v2.75.0\\supabase.exe",
+      "args": ["db", "push", "--dry-run"],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "SUPABASE_ACCESS_TOKEN": "${input:supabaseAccessToken}"
+        }
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Supabase: DB push (linked)",
+      "type": "shell",
+      "command": "C:\\Users\\manso\\AppData\\Local\\supabase-cli\\v2.75.0\\supabase.exe",
+      "args": ["db", "push"],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "SUPABASE_ACCESS_TOKEN": "${input:supabaseAccessToken}"
+        }
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Supabase: Functions deploy (vk-webhook)",
+      "type": "shell",
+      "command": "C:\\Users\\manso\\AppData\\Local\\supabase-cli\\v2.75.0\\supabase.exe",
+      "args": ["functions", "deploy", "vk-webhook"],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "SUPABASE_ACCESS_TOKEN": "${input:supabaseAccessToken}"
+        }
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Supabase: Functions serve (vk-webhook)",
+      "type": "shell",
+      "command": "C:\\Users\\manso\\AppData\\Local\\supabase-cli\\v2.75.0\\supabase.exe",
+      "args": ["functions", "serve", "vk-webhook"],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Supabase: Functions logs (vk-webhook)",
+      "type": "shell",
+      "command": "C:\\Users\\manso\\AppData\\Local\\supabase-cli\\v2.75.0\\supabase.exe",
+      "args": ["functions", "logs", "--project-ref", "lfkbgnbjxskspsownvjm", "--function", "vk-webhook"],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "SUPABASE_ACCESS_TOKEN": "${input:supabaseAccessToken}"
+        }
+      },
+      "problemMatcher": []
+    }
+  ]
+}

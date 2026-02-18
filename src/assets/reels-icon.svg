@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="reelsGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#B8D4F0"/>
+      <stop offset="100%" style="stop-color:#6B9BD1"/>
+    </linearGradient>
+  </defs>
+  
+  <!-- Left bar with cutout for play button -->
+  <path d="
+    M16 6 
+    C16 2.7 18.7 0 22 0 
+    C25.3 0 28 2.7 28 6 
+    L28 22
+    C28 24 30 26 32 26
+    L32 38
+    C30 38 28 40 28 42
+    L28 58 
+    C28 61.3 25.3 64 22 64 
+    C18.7 64 16 61.3 16 58 
+    Z" 
+    fill="url(#reelsGradient)"/>
+  
+  <!-- Right bar -->
+  <path d="
+    M36 6 
+    C36 2.7 38.7 0 42 0 
+    C45.3 0 48 2.7 48 6 
+    L48 58 
+    C48 61.3 45.3 64 42 64 
+    C38.7 64 36 61.3 36 58 
+    Z" 
+    fill="url(#reelsGradient)"/>
+  
+  <!-- Play triangle (outline) -->
+  <path d="M26 27 L40 32 L26 37 Z" 
+        fill="none" 
+        stroke="url(#reelsGradient)" 
+        stroke-width="2.5"
+        stroke-linejoin="round"
+        stroke-linecap="round"/>
+</svg>
