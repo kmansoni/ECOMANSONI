@@ -1,0 +1,12 @@
+# Protect call / video-call critical paths from accidental changes.
+# Any changes to these files will request review from the listed owners.
+
+# Calls: client
+/src/contexts/VideoCallContext.tsx @kmansoni
+/src/hooks/useVideoCall.ts @kmansoni
+/src/lib/webrtc-config.ts @kmansoni
+/src/lib/sip-config.ts @kmansoni
+
+# Calls: Supabase Edge Functions
+/supabase/functions/turn-credentials/ @kmansoni
+/supabase/functions/sip-credentials/ @kmansoni

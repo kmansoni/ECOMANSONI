@@ -1,0 +1,57 @@
+name: Protect Calls Code
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+jobs:
+  block-calls-changes:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changes to calls-critical files
+        id: diff
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          base_ref="${{ github.event.pull_request.base.sha }}"
+          head_ref="${{ github.event.pull_request.head.sha }}"
+
+          changed_files=$(git diff --name-only "$base_ref" "$head_ref" || true)
+
+          echo "Changed files:";
+          echo "$changed_files";
+
+          # Paths considered calls-critical.
+          protected_regex='^(src/contexts/VideoCallContext\.tsx|src/hooks/useVideoCall\.ts|src/lib/webrtc-config\.ts|src/lib/sip-config\.ts|supabase/functions/(turn-credentials|sip-credentials)/)'
+
+          if echo "$changed_files" | grep -E "$protected_regex" >/dev/null; then
+            echo "calls_changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "calls_changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Fail unless explicitly allowed
+        if: steps.diff.outputs.calls_changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Allow override via PR label.
+          labels='${{ toJson(github.event.pull_request.labels) }}'
+          if echo "$labels" | grep -q '"name":"calls-change"'; then
+            echo "Protected calls files changed, but PR is labeled calls-change. Allowing."
+            exit 0
+          fi
+
+          echo "ERROR: This PR changes calls-critical files."
+          echo "If intentional, add PR label: calls-change"
+          exit 1
