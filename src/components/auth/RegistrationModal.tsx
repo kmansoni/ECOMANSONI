@@ -75,6 +75,15 @@ export function RegistrationModal({ isOpen, onClose, phone, onSuccess }: Registr
       });
 
       if (signUpError) {
+        const msg = signUpError.message || "";
+        if (msg.toLowerCase().includes("rate limit") || msg.toLowerCase().includes("email rate")) {
+          toast.error("Ошибка регистрации: email rate limit exceeded", {
+            description:
+              "Supabase ограничил отправку писем. Для телефона/пароля письма не нужны — отключите Email confirmations в Supabase Auth или подключите SMTP. Либо подождите и попробуйте позже.",
+            duration: 7000,
+          });
+          return;
+        }
         if (signUpError.message.includes("already registered")) {
           toast.error("Этот номер телефона уже зарегистрирован");
         } else {
