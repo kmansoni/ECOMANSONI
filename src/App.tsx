@@ -50,6 +50,12 @@ function PageLoader() {
   );
 }
 
+const ROUTER_BASENAME = (() => {
+  const baseUrl = import.meta.env.BASE_URL;
+  if (!baseUrl || baseUrl === "/") return "/";
+  return baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
+})();
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <AuthProvider>
@@ -59,7 +65,7 @@ const App = () => (
             <Toaster />
             <Sonner />
             <GlobalCallOverlay />
-            <BrowserRouter basename={import.meta.env.BASE_URL}>
+            <BrowserRouter basename={ROUTER_BASENAME}>
               <Suspense fallback={null}>
                 <CommandPalette />
               </Suspense>

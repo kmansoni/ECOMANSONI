@@ -93,7 +93,7 @@ export function ProfilePage() {
             Чтобы просматривать свой профиль, войдите в аккаунт
           </p>
           <button 
-            onClick={() => window.location.href = '/auth'}
+            onClick={() => navigate('/auth')}
             className="px-6 py-3 bg-white/10 backdrop-blur-xl rounded-2xl border border-white/20 text-white font-medium hover:bg-white/20 transition-colors"
           >
             Войти
