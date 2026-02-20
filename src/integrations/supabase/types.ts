@@ -380,16 +380,19 @@ export type Database = {
         Row: {
           created_at: string
           id: string
+          last_message_seq: number
           updated_at: string
         }
         Insert: {
           created_at?: string
           id?: string
+          last_message_seq?: number
           updated_at?: string
         }
         Update: {
           created_at?: string
           id?: string
+          last_message_seq?: number
           updated_at?: string
         }
         Relationships: []
@@ -1053,6 +1056,7 @@ export type Database = {
       }
       messages: {
         Row: {
+          client_msg_id: string | null
           content: string
           conversation_id: string
           created_at: string
@@ -1061,11 +1065,13 @@ export type Database = {
           is_read: boolean | null
           media_type: string | null
           media_url: string | null
+          seq: number | null
           sender_id: string
           shared_post_id: string | null
           shared_reel_id: string | null
         }
         Insert: {
+          client_msg_id?: string | null
           content: string
           conversation_id: string
           created_at?: string
@@ -1074,11 +1080,13 @@ export type Database = {
           is_read?: boolean | null
           media_type?: string | null
           media_url?: string | null
+          seq?: number | null
           sender_id: string
           shared_post_id?: string | null
           shared_reel_id?: string | null
         }
         Update: {
+          client_msg_id?: string | null
           content?: string
           conversation_id?: string
           created_at?: string
@@ -1087,6 +1095,7 @@ export type Database = {
           is_read?: boolean | null
           media_type?: string | null
           media_url?: string | null
+          seq?: number | null
           sender_id?: string
           shared_post_id?: string | null
           shared_reel_id?: string | null
@@ -1390,6 +1399,8 @@ export type Database = {
           last_name: string | null
           last_seen_at: string | null
           phone: string | null
+          status_emoji: string | null
+          status_sticker_url: string | null
           updated_at: string
           user_id: string
           verified: boolean | null
@@ -1410,6 +1421,8 @@ export type Database = {
           last_name?: string | null
           last_seen_at?: string | null
           phone?: string | null
+          status_emoji?: string | null
+          status_sticker_url?: string | null
           updated_at?: string
           user_id: string
           verified?: boolean | null
@@ -1430,6 +1443,8 @@ export type Database = {
           last_name?: string | null
           last_seen_at?: string | null
           phone?: string | null
+          status_emoji?: string | null
+          status_sticker_url?: string | null
           updated_at?: string
           user_id?: string
           verified?: boolean | null
@@ -2002,6 +2017,130 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      },
+
+      chat_folders: {
+        Row: {
+          id: string
+          user_id: string
+          name: string
+          sort_order: number
+          is_system: boolean
+          system_kind: string | null
+          is_hidden: boolean
+          passcode_hash: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          name: string
+          sort_order?: number
+          is_system?: boolean
+          system_kind?: string | null
+          is_hidden?: boolean
+          passcode_hash?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          name?: string
+          sort_order?: number
+          is_system?: boolean
+          system_kind?: string | null
+          is_hidden?: boolean
+          passcode_hash?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      },
+
+      chat_folder_items: {
+        Row: {
+          id: string
+          folder_id: string
+          item_kind: string
+          item_id: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          folder_id: string
+          item_kind: string
+          item_id: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          folder_id?: string
+          item_kind?: string
+          item_id?: string
+          created_at?: string
+        }
+        Relationships: []
+      },
+
+      user_sessions: {
+        Row: {
+          id: string
+          user_id: string
+          session_key: string
+          device_name: string | null
+          user_agent: string | null
+          ip: string | null
+          created_at: string
+          last_seen_at: string
+          revoked_at: string | null
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          session_key: string
+          device_name?: string | null
+          user_agent?: string | null
+          ip?: string | null
+          created_at?: string
+          last_seen_at?: string
+          revoked_at?: string | null
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          session_key?: string
+          device_name?: string | null
+          user_agent?: string | null
+          ip?: string | null
+          created_at?: string
+          last_seen_at?: string
+          revoked_at?: string | null
+        }
+        Relationships: []
+      },
+
+      device_accounts: {
+        Row: {
+          device_id: string
+          user_id: string
+          created_at: string
+          last_active_at: string
+        }
+        Insert: {
+          device_id: string
+          user_id: string
+          created_at?: string
+          last_active_at?: string
+        }
+        Update: {
+          device_id?: string
+          user_id?: string
+          created_at?: string
+          last_active_at?: string
+        }
+        Relationships: []
       }
     }
     Views: {

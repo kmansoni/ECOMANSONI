@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "generated_at": "2026-02-19",
+  "multi_platform_deployment": {
+    "platforms": {
+      "web": {
+        "framework": "React + Vite",
+        "host": "Vercel / GitHub Pages",
+        "build_time_sec": 45,
+        "deploy_time_sec": 30,
+        "rollback_time_sec": 60,
+        "version_strategy": "semantic versioning",
+        "canary_rollout": "5% -> 25% -> 100%"
+      },
+      "android": {
+        "language": "Kotlin/React Native (TBD)",
+        "store": "Google Play",
+        "build_time_sec": 120,
+        "deploy_time_sec": "4 hours for store review",
+        "min_sdk": 21,
+        "version_strategy": "semver with build number"
+      },
+      "ios": {
+        "language": "Swift/React Native (TBD)",
+        "store": "Apple App Store",
+        "build_time_sec": 150,
+        "deploy_time_sec": "24 hours for review",
+        "min_ios": "13.0",
+        "version_strategy": "semver"
+      },
+      "desktop": {
+        "framework": "Electron / Qt",
+        "distribution": "GitHub Releases + auto-updater",
+        "build_time_sec": 180,
+        "deploy_time_sec": 30,
+        "auto_update": true,
+        "version_strategy": "semver"
+      }
+    },
+    "backend_versions": {
+      "strategy": "API versioning via URL path (/api/v1, /api/v2)",
+      "support_window": "2 major versions at a time",
+      "deprecation_timeline": "6 months notice before removing old version"
+    },
+    "compatibility_matrix": {
+      "format": "web:4.0.0 requires backend:>=1.2.0",
+      "enforcement": "Client checks version on startup, shows upgrade prompt if incompatible"
+    }
+  }
+}

@@ -1,0 +1,75 @@
+{
+  "req_id": "REQ-0067",
+  "title": "Read Receipts (Message Status: Sent→Delivered→Read)",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "messaging",
+  "depends_on": ["REQ-0061", "REQ-0062"],
+  "status_progression": {
+    "sent": "message successfully stored on server",
+    "delivered": "message received by recipient's client (ack from device)",
+    "read": "recipient opened conversation and saw message"
+  },
+  "delivery_tracking": {
+    "mechanism": "MESSAGE_RECEIVED event from client → server stores timestamp",
+    "triggered_when": "client WebSocket connects and requests sync",
+    "database": "UPDATE messages SET delivered_at = NOW() WHERE id = msg_id",
+    "broadcast": "notify sender of delivery within <500ms"
+  },
+  "read_tracking": {
+    "trigger": "user opens conversation and viewport scrolls message into view",
+    "detection_method": "Intersection Observer API detects message visible for >1 sec",
+    "batch_size": "send read status for all visible messages in one event",
+    "frequency": "max 1 batched read event per 500ms"
+  },
+  "privacy_settings": {
+    "global_disable": {
+      "enabled": "user can disable read receipts entirely",
+      "then": "all their read statuses show as 'delivered' to others"
+    },
+    "per_user": "user_a allows read receipts from user_b only",
+    "group_option": "in groups, only show read count (not names)"
+  },
+  "data_schema": {
+    "message_status_table": {
+      "columns": [
+        "id: UUID PRIMARY KEY",
+        "message_id: UUID",
+        "recipient_id: UUID",
+        "delivered_at: TIMESTAMP",
+        "read_at: TIMESTAMP",
+        "read_receipts_enabled: BOOLEAN"
+      ],
+      "index": "INDEX(conversation_id, recipient_id, read_at)"
+    }
+  },
+  "ui_indicators": {
+    "single_recipient": {
+      "sent": "⏱ (clock icon)",
+      "delivered": "✓ (single checkmark, gray)",
+      "read": "✓✓ (double checkmark, blue)"
+    },
+    "group_chat": {
+      "show": "✓✓ 5 (5 people have read)",
+      "long_press": "show names (Alice, Bob, ...)"
+    },
+    "tooltip": "hover to see timestamps: 'Delivered 2:45pm, Read by 5 at 2:46pm'"
+  },
+  "aggregate_status": {
+    "all_delivered": "show when all recipients have received",
+    "all_read": "show when all recipients have read (high priority notifications: important)"
+  },
+  "performance": {
+    "batch_read_events": "collect all visible messages, send one event with [msg_id, msg_id, ...]",
+    "network_optimization": "send every 500ms max, not per message"
+  },
+  "testing": {
+    "scenarios": [
+      "send message, verify 'sent' within 100ms",
+      "recipient opens app, delivered within <1s",
+      "recipient scrolls message into view, read status updates within 2s",
+      "disable read receipts, verify others see 'delivered' not 'read'",
+      "group 10 recipients, read count aggregates correctly"
+    ]
+  }
+}

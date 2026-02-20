@@ -1,0 +1,160 @@
+{
+  "req_id": "REQ-0084",
+  "title": "Saved Messages (Message Bookmarks & Favorites)",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "messaging",
+  "depends_on": ["REQ-0064"],
+  "use_cases": [
+    "user taps message → 'Save' option",
+    "message moved to 'Saved' collection",
+    "search in saved messages: 'project spec'",
+    "export saved messages as PDF/JSON"
+  ],
+  "saved_messages_feature": {
+    "compose": {
+      "trigger": "long-press message → context menu appears",
+      "option": "'⭐ Save' or '📌 Bookmark'",
+      "ui_feedback": "message marked with star, toast: 'Message saved'"
+    },
+    "unsave": {
+      "action": "long-press saved message → 'Unsave'",
+      "effect": "message removed from saved collection"
+    }
+  },
+  "saved_messages_ui": {
+    "saved_tab": "dedicated tab or view in navigation",
+    "display": [
+      {
+        "message": "Preview of saved message",
+        "sender": "Alice",
+        "conversation": "Project Discussion",
+        "timestamp": "2026-02-15 at 3:45pm",
+        "star_icon": "⭐"
+      }
+    ],
+    "sort_options": [
+      "most recent first",
+      "oldest first",
+      "by conversation",
+      "by sender"
+    ]
+  },
+  "saved_messages_search": {
+    "full_text": "search within saved messages: 'budget', 'deadline'",
+    "filter": [
+      "from:alice (only Alice's saved messages)",
+      "in:project (only from this conversation)",
+      "date:this_week"
+    ]
+  },
+  "database_schema": {
+    "saved_messages_table": {
+      "columns": [
+        "saved_message_id UUID PK",
+        "user_id UUID FK",
+        "message_id UUID FK",
+        "saved_at TIMESTAMP",
+        "note TEXT (user's private note about this message)",
+        "PRIMARY KEY (user_id, message_id)",
+        "INDEX (user_id, saved_at)"
+      ]
+    }
+  },
+  "saved_message_metadata": {
+    "optional_note": "user can add personal note to saved message",
+    "example": "'saved note: follow up on this budget proposal'",
+    "storage": "saved_messages.note column"
+  },
+  "saved_messages_sync": {
+    "cross_device": "saved messages sync across devices (mobile, web, desktop)",
+    "mechanism": "when user saves on mobile, saved entry replicates to all devices"
+  },
+  "saved_collections": {
+    "future_feature": "organize saved into collections (e.g., 'Budget proposals', 'Q4 goals')",
+    "v1_no_collections": "single flat list of all saved"
+  },
+  "save_limit": {
+    "default_limit": "unlimited (future: premium tier may cap at 1000)",
+    "cloud_backup": "auto-backup saved messages to user's cloud storage (Apple iCloud, Google Drive)"
+  },
+  "saved_media_handling": {
+    "save_image": "saving media message also saves the media file",
+    "offline_access": "saved messages cached locally for offline view"
+  },
+  "sharing_saved": {
+    "share_saved_message": "user can share saved message with others (via link or forward)",
+    "forward_saved": "can forward directly from saved collection"
+  },
+  "bulk_operations": {
+    "select_multiple": "long-press to enter multi-select, select 10 saved messages",
+    "bulk_actions": [
+      "delete all (remove from saved)",
+      "export (download as JSON/PDF)",
+      "move to collection (future)"
+    ]
+  },
+  "api_endpoints": {
+    "save_message": {
+      "endpoint": "POST /v1/messages/{id}/save",
+      "payload": {
+        "note": "important budget item"
+      },
+      "response": {
+        "saved_message_id": "UUID",
+        "saved_at": "2026-02-15T15:35:00Z"
+      }
+    },
+    "unsave_message": {
+      "endpoint": "DELETE /v1/messages/{id}/save"
+    },
+    "list_saved_messages": {
+      "endpoint": "GET /v1/user/saved-messages",
+      "params": {
+        "limit": 50,
+        "offset": 0,
+        "sort": "recent|oldest|conversation",
+        "search": "budget"
+      },
+      "response": [
+        {
+          "message_id": "UUID",
+          "sender_name": "Alice",
+          "conversation_name": "Project Discussion",
+          "content": "Here's the Q4 budget proposal",
+          "saved_at": "2026-02-15T15:35:00Z",
+          "note": "important budget item"
+        }
+      ]
+    },
+    "update_save_note": {
+      "endpoint": "PATCH /v1/messages/{id}/save",
+      "payload": {
+        "note": "review this for deadline"
+      }
+    }
+  },
+  "testing": {
+    "scenarios": [
+      "save message → appears in Saved collection",
+      "unsave message → removed from Saved",
+      "search 'budget' in saved → returns saved messages with that word",
+      "save 100 messages → all synced to other devices",
+      "add note to saved message → note persists",
+      "export 50 saved messages → downloads as JSON",
+      "forward saved message → sends as normal message (not marked as saved)"
+    ]
+  },
+  "monitoring": {
+    "metrics": [
+      "saved_messages.count_per_user_avg",
+      "saved_messages.save_latency_p95_ms",
+      "saved_messages.search_latency_p95_ms",
+      "saved_messages.sync_latency_p95_ms"
+    ],
+    "alerts": [
+      "save operation fails > 2%",
+      "sync latency > 5s p95"
+    ]
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "req_id": "REQ-0023",
+  "title": "Onboarding Flow Design",
+  "version": "1.0",
+  "status": "released",
+  "stages": [
+    {
+      "id": "welcome",
+      "name": "Welcome Screen",
+      "duration_sec": 5,
+      "content": ["app title", "brief description", "CTA"]
+    },
+    {
+      "id": "signup",
+      "name": "Account Sign Up",
+      "fields": ["email", "password", "phone"],
+      "validation_rules": ["email format", "password strength (12+ chars)", "phone format"]
+    },
+    {
+      "id": "verification",
+      "name": "Email/SMS Verification",
+      "methods": ["otp", "link", "phone_call"],
+      "timeout_min": 15
+    },
+    {
+      "id": "profile",
+      "name": "Profile Setup",
+      "required": ["avatar", "display_name", "bio"],
+      "optional": ["phone", "location"]
+    },
+    {
+      "id": "permissions",
+      "name": "Request Permissions",
+      "scopes": ["contacts", "camera", "microphone", "storage"]
+    },
+    {
+      "id": "completion",
+      "name": "Welcome to App",
+      "content": ["success message", "next steps", "explore button"]
+    }
+  ],
+  "analytics_events": [
+    "onboarding.started",
+    "onboarding.step_completed",
+    "onboarding.finished",
+    "onboarding.abandoned"
+  ]
+}

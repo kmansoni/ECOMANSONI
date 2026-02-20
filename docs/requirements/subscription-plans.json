@@ -1,0 +1,1 @@
+{"req_id":"REQ-0052","title":"Subscription Plans","tiers":["free","basic","premium","enterprise"],"free_tier":{"messages_per_day":100,"groups_max":5},"premium_tier":{"messages_per_day":null,"groups_max":null,"price_usd":9.99}}

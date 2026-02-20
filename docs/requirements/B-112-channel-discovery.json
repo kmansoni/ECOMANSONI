@@ -1,0 +1,396 @@
+{
+  "id": "B-112",
+  "title": "Channel Discovery & Search Optimization",
+  "description": "Intelligent channel discovery system with ranking, category management, trending algorithm, and personalized recommendations for finding relevant public channels",
+  "status": "draft",
+  "priority": "P1",
+  "complexity": "M",
+  "domain": "discovery",
+  "technologies": ["Elasticsearch", "Redis", "Postgres", "Kafka"],
+
+  "overview": {
+    "purpose": "Help users discover relevant public channels and communities",
+    "target_scale": "1M+ channels, 100M+ monthly searches",
+    "key_requirements": [
+      "Sub-500ms search latency (p95)",
+      "Ranking by relevance, trending, language",
+      "Category taxonomy for browsing",
+      "Personalization based on joined channels + interests",
+      "Spam/bot channel filtering",
+      "Geographic/language targeting"
+    ]
+  },
+
+  "database_schema": {
+    "tables": [
+      {
+        "name": "channel_discovery_metadata",
+        "purpose": "Denormalized discovery data for Elasticsearch",
+        "columns": [
+          {"name": "channel_id", "type": "UUID PRIMARY KEY"},
+          {"name": "channel_name", "type": "VARCHAR NOT NULL"},
+          {"name": "description", "type": "TEXT"},
+          {"name": "category_id", "type": "INT", "description": "Foreign key to discovery_categories"},
+          {"name": "subcategory_id", "type": "INT"},
+          {"name": "language_code", "type": "VARCHAR(5)", "description": "ISO 639-1 (en, ru, ja, etc)"},
+          {"name": "country_code", "type": "VARCHAR(2)", "description": "ISO 3166-1 alpha-2"},
+          {"name": "member_count", "type": "INT", "description": "Denormalized"},
+          {"name": "message_volume_7d", "type": "INT", "description": "Messages last 7 days"},
+          {"name": "avg_daily_active_users", "type": "INT"},
+          {"name": "trending_score", "type": "NUMERIC", "description": "Calculated daily"},
+          {"name": "creation_date", "type": "DATE"},
+          {"name": "is_verified", "type": "BOOLEAN", "description": "Official/verified channel"},
+          {"name": "is_searchable", "type": "BOOLEAN", "default": true, "description": "Exclude from discovery if false"},
+          {"name": "quality_score", "type": "NUMERIC", "description": "0.0-1.0, based on spam filtering"},
+          {"name": "last_indexed_at", "type": "TIMESTAMP"},
+          {"name": "indexed_content_hash", "type": "VARCHAR"}
+        ],
+        "indexes": [
+          "INDEX(category_id)",
+          "INDEX(language_code)",
+          "INDEX(trending_score DESC)",
+          "INDEX(member_count DESC)"
+        ]
+      },
+      {
+        "name": "discovery_categories",
+        "purpose": "Public channel categories (taxonomy)",
+        "columns": [
+          {"name": "category_id", "type": "INT PRIMARY KEY"},
+          {"name": "category_name", "type": "VARCHAR NOT NULL"},
+          {"name": "icon_emoji", "type": "VARCHAR"},
+          {"name": "display_order", "type": "INT"},
+          {"name": "parent_category_id", "type": "INT", "description": "For subcategories"},
+          {"name": "translations", "type": "JSONB", "description": "{\"en\": \"Sports\", \"ru\": \"Спорт\"}"}
+        ]
+      },
+      {
+        "name": "user_channel_interests",
+        "purpose": "User topic/category interests for personalization",
+        "columns": [
+          {"name": "interest_id", "type": "BIGINT PRIMARY KEY"},
+          {"name": "user_id", "type": "UUID NOT NULL"},
+          {"name": "category_id", "type": "INT"},
+          {"name": "language_preference", "type": "VARCHAR(5)"},
+          {"name": "country_preference", "type": "VARCHAR(2)"},
+          {"name": "last_updated_at", "type": "TIMESTAMP"},
+          {"name": "interest_score", "type": "NUMERIC", "description": "0.0-1.0, based on joined channels"}
+        ],
+        "indexes": ["UNIQUE(user_id, category_id)"]
+      },
+      {
+        "name": "channel_spam_flags",
+        "purpose": "Track spam/bot channels",
+        "columns": [
+          {"name": "flag_id", "type": "BIGINT PRIMARY KEY"},
+          {"name": "channel_id", "type": "UUID NOT NULL"},
+          {"name": "flag_reason", "type": "VARCHAR", "enum": ["high_join_velocity", "low_engagement", "repeated_spam_reports", "malware_links", "phishing"]},
+          {"name": "confidence_score", "type": "NUMERIC", "description": "0.0-1.0"},
+          {"name": "flagged_at", "type": "TIMESTAMP NOT NULL"},
+          {"name": "manual_review_status", "type": "VARCHAR", "enum": ["pending", "approved", "rejected"]},
+          {"name": "reviewed_by_user_id", "type": "UUID"},
+          {"name": "reviewed_at", "type": "TIMESTAMP"}
+        ],
+        "indexes": ["INDEX(channel_id, flagged_at DESC)"]
+      },
+      {
+        "name": "channel_search_clicks",
+        "purpose": "Track discovery interaction (for ranking feedback)",
+        "columns": [
+          {"name": "click_id", "type": "BIGINT PRIMARY KEY"},
+          {"name": "user_id", "type": "UUID NOT NULL"},
+          {"name": "search_query", "type": "VARCHAR"},
+          {"name": "channel_id", "type": "UUID NOT NULL"},
+          {"name": "click_position", "type": "INT", "description": "Rank in search results"},
+          {"name": "clicked_at", "type": "TIMESTAMP NOT NULL"},
+          {"name": "joined_within_24h", "type": "BOOLEAN", "description": "User joined this channel after clicking"}
+        ],
+        "indexes": ["INDEX(user_id, clicked_at)"]
+      }
+    ]
+  },
+
+  "elasticsearch_schema": {
+    "index": "channels-discovery",
+    "shards": 10,
+    "replicas": 2,
+    "mappings": {
+      "properties": {
+        "channel_id": {"type": "keyword"},
+        "channel_name": {"type": "text", "analyzer": "standard", "fields": {"raw": {"type": "keyword"}}},
+        "description": {"type": "text", "analyzer": "standard"},
+        "category_id": {"type": "integer"},
+        "language_code": {"type": "keyword"},
+        "member_count": {"type": "integer"},
+        "trending_score": {"type": "float"},
+        "quality_score": {"type": "float"},
+        "is_verified": {"type": "boolean"},
+        "created_at": {"type": "date"}
+      }
+    }
+  },
+
+  "trending_algorithm": {
+    "formula": "(new_joins_7d * 0.4) + (daily_active_pct * 0.3) + (message_growth_rate * 0.2) + (is_verified * 0.1)",
+    "components": {
+      "new_joins_7d": "Joins from last 7 days, decayed exponentially (recent=higher weight)",
+      "daily_active_pct": "(DAU / member_count) * 100, capped at 50%",
+      "message_growth_rate": "(msg_vol_today - msg_vol_7d_ago) / msg_vol_7d_ago",
+      "is_verified": "1.0 if verified official channel, 0.5 if moderator-verified"
+    },
+    "refresh": "Daily 02:00 UTC batch job"
+  },
+
+  "api_specification": {
+    "endpoints": [
+      {
+        "method": "GET",
+        "path": "/v1/channels/discover",
+        "description": "Homepage discovery carousel",
+        "request": {
+          "query": {
+            "limit": 20,
+            "offset": 0,
+            "sort_by": "enum[trending, new, member_count, relevance]"
+          }
+        },
+        "response": {
+          "channels": [
+            {
+              "channel_id": "...",
+              "channel_name": "Breaking News",
+              "description": "...",
+              "category": "News",
+              "member_count": 1250000,
+              "is_verified": true,
+              "preview_description": "Latest breaking news and updates...",
+              "trending_badge": "🔥 Trending"
+            }
+          ],
+          "trending_categories": ["News", "Tech", "Entertainment"]
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/v1/channels/categories",
+        "description": "Browse channels by category",
+        "response": {
+          "categories": [
+            {
+              "category_id": 1,
+              "name": "Sports",
+              "icon": "⚽",
+              "featured_channels": 3,
+              "total_channels": 45000
+            }
+          ]
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/v1/channels/search",
+        "description": "Full-text search with filtering",
+        "request": {
+          "query": {
+            "q": "python programming",
+            "category_id": "optional",
+            "language_code": "optional",
+            "min_members": "optional",
+            "sort_by": "enum[relevance, trending, newest]",
+            "limit": 50
+          }
+        },
+        "response": {
+          "total": 342,
+          "results": [
+            {
+              "rank": 1,
+              "channel_id": "...",
+              "name": "Python Programming Tips",
+              "matched_fields": ["name", "description"],
+              "member_count": 25000,
+              "relevance_score": 9.8
+            }
+          ]
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/v1/channels/{channel_id}/discovery-click",
+        "description": "Track discovery interaction for ranking feedback",
+        "request": {
+          "search_query": "python",
+          "click_position": 1
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/v1/user/recommended-channels",
+        "description": "Personalized recommendations based on user's joined channels",
+        "request": {
+          "query": {"limit": 20}
+        },
+        "response": {
+          "channels": [
+            {
+              "channel_id": "...",
+              "name": "...",
+              "reason": "Similar to 'Python Group'",
+              "match_score": 0.85
+            }
+          ]
+        }
+      }
+    ]
+  },
+
+  "implementation_details": {
+    "elasticsearch_sync": {
+      "trigger": "Change Data Capture (CDC) on channel_discovery_metadata",
+      "pipeline": "Postgres → Kafka 'channel-discovery-events' → Elasticsearch indexing worker",
+      "latency": "p95 <5s from change to searchable",
+      "refresh_interval": "1s (near real-time)"
+    },
+    "ranking_signals": {
+      "primary": "Elasticsearch BM25 score (relevance)",
+      "secondary": {
+        "trending_score": "0.3 weight",
+        "is_verified": "0.2 weight boost",
+        "quality_score": "filter (exclude <0.5)",
+        "language_match": "0.1 weight if matches user language"
+      },
+      "personalization": "If user authenticated: boost category_id where user_channel_interests.interest_score high"
+    },
+    "spam_filtering": {
+      "auto_flags": [
+        "Join velocity >100/hour → high_join_velocity",
+        "Message volume <10 but >500 joins/week → low_engagement",
+        "URL regex match known malware domains → malware_links"
+      ],
+      "quality_score_calculation": "1.0 - (spam_flags_count * 0.2 + manual_rejection * 0.5)",
+      "minimum_quality": "0.5 to appear in discovery results"
+    },
+    "caching": {
+      "redis_keys": {
+        "discover:trending:category_id": "ttl 12h",
+        "discover:category:members": "ttl 1h",
+        "user_recs:user_id": "ttl 6h"
+      }
+    }
+  },
+
+  "monitoring": {
+    "metrics": [
+      "search_latency_p95_ms (target <500ms)",
+      "elasticsearch_sync_lag_ms",
+      "discovery_click_through_rate (CTR % of search results that get clicks)",
+      "recommended_channels_join_rate",
+      "spam_flag_precision (% of flagged channels actually spam)"
+    ],
+    "alerts": {
+      "critical": ["search_latency_p95 > 1000ms", "elasticsearch_indexing_lag > 60s"],
+      "warning": ["CTR declining >20% week-over-week"]
+    }
+  },
+
+  "testing_scenarios": [
+    {
+      "id": "T-112-1",
+      "title": "Search returns results under 500ms",
+      "steps": ["Query 'python' with 1M indexed channels", "Measure response time"],
+      "expected": "Response in <500ms p95"
+    },
+    {
+      "id": "T-112-2",
+      "title": "Trending algorithm correctly weights new joins",
+      "steps": ["Channel A: 1000 joins 7d ago, Channel B: 500 joins yesterday", "Calculate trending_score"],
+      "expected": "Channel B has higher trending_score (new joins weighted)"
+    },
+    {
+      "id": "T-112-3",
+      "title": "Spam channel excluded from results",
+      "steps": ["Channel flagged with quality_score 0.3", "Query relevant keywords"],
+      "expected": "Channel not returned in results"
+    },
+    {
+      "id": "T-112-4",
+      "title": "Category filtering works",
+      "steps": ["Search 'python' with category_id=tech", "Compare to unconstrained search"],
+      "expected": "Filtered results subset contains only tech category channels"
+    },
+    {
+      "id": "T-112-5",
+      "title": "Personalized recommendations for user",
+      "steps": ["User joined 5 programming channels", "Get recommendations"],
+      "expected": "Top recommendations are programming-related"
+    },
+    {
+      "id": "T-112-6",
+      "title": "Language filtering",
+      "steps": ["Query with language_code=ru", "Results returned"],
+      "expected": "Only Russian-language channels returned"
+    },
+    {
+      "id": "T-112-7",
+      "title": "Click tracking for ranking feedback",
+      "steps": ["User clicks channel at position 3", "Record click", "Query channel ranking improvement over time"],
+      "expected": "Click recorded, multiple clicks improve ranking"
+    },
+    {
+      "id": "T-112-8",
+      "title": "Elasticsearch sync latency <5s",
+      "steps": ["Channel created/updated", "Track time to searchable"],
+      "expected": "Indexed and discoverable within 5s"
+    },
+    {
+      "id": "T-112-9",
+      "title": "Verified badge improves ranking",
+      "steps": ["Channel A: 10k members, not verified; B: 5k members, verified", "Search relevant term"],
+      "expected": "B ranks higher due to verification boost"
+    },
+    {
+      "id": "T-112-10",
+      "title": "Suggested channels for new user onboarding",
+      "steps": ["New user, no joined channels yet", "Get recommendations"],
+      "expected": "Recommendations based on global trending, language, region"
+    },
+    {
+      "id": "T-112-11",
+      "title": "High join velocity detection",
+      "steps": ["Channel gets 150 joins/hour", "Auto-flag system runs"],
+      "expected": "Flagged with high_join_velocity, quality_score reduced"
+    },
+    {
+      "id": "T-112-12",
+      "title": "Category hierarchy (parent/child)",
+      "steps": ["Browse Sports → Football → Premier League", "Verify hierarchy"],
+      "expected": "Navigation through subcategories works correctly"
+    },
+    {
+      "id": "T-112-13",
+      "title": "Search with multiple filters together",
+      "steps": ["Query: category=tech, language=en, min_members=1000, sort=trending"],
+      "expected": "Results correctly filtered and ranked"
+    },
+    {
+      "id": "T-112-14",
+      "title": "Trending categories updated daily",
+      "steps": ["Check trending_categories in /discover endpoint", "Run tomorrow"],
+      "expected": "Categories refreshed based on new data"
+    },
+    {
+      "id": "T-112-15",
+      "title": "Malware link detection and flagging",
+      "steps": ["Channel description contains known phishing domain", "Spam filter runs"],
+      "expected": "Flagged with malware_links, excluded from discovery"
+    }
+  ],
+
+  "dependencies": ["B-092", "B-008"],
+  "future_enhancements": [
+    "ML-based query expansion (synonyms, intent detection)",
+    "Collaborative filtering for channel recommendations",
+    "A/B testing framework for ranking changes",
+    "Real-time trending visualization (trending now widget)"
+  ]
+}

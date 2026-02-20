@@ -1,0 +1,1 @@
+{"req_id":"REQ-0042","title":"Data Retention & Archival","policies":{"messages":"soft_delete_30d_hard_360d","logs":"hard_delete_365d","backups":"retain_7y"}}

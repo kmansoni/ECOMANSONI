@@ -1,0 +1,1 @@
+{"req_id":"REQ-0030","title":"Public API & SDK","endpoints":["GET /v1/messages","POST /v1/messages/send","GET /v1/groups"],"rate_limit":"1000_req_per_hour","auth":"bearer_token","sdks":["python","js","go","rust"]}

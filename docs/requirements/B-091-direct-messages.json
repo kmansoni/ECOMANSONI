@@ -1,0 +1,165 @@
+{
+  "req_id": "REQ-0091",
+  "title": "Direct Messages (DM Optimization, Blocking)",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "messaging",
+  "depends_on": ["REQ-0064"],
+  "use_cases": [
+    "user starts DM with Alice → existing DM loads, or creates new",
+    "user blocks Bob → Bob's messages don't appear, Bob cannot message",
+    "user unblocks Bob → normal messaging resumes",
+    "blocked user tries to message → error 'You have been blocked'"
+  ],
+  "dm_optimization": {
+    "dm_lookup": {
+      "mechanism": "query conversations WHERE type='dm' AND participants CONTAINS (user_id, other_user_id)",
+      "optimization": "cache DM list per user (Redis, ttl 5 min)",
+      "index": "conversations (type, user_id, updated_at DESC)"
+    },
+    "create_dm": {
+      "flow": [
+        "1. check if DM exists with this user",
+        "2. if exists, return it (don't create duplicate)",
+        "3. if not, INSERT conversations (type='dm', participants=[user_a, user_b])",
+        "4. add first message if provided (optional)"
+      ]
+    },
+    "dm_list_display": {
+      "sorting": "by last_message_at DESC (most recent first)",
+      "limit": "load 20 at a time, 'load more' for pagination"
+    }
+  },
+  "blocking_mechanism": {
+    "block_user": {
+      "trigger": "user taps user profile → 'Block'",
+      "flow": [
+        "1. INSERT INTO blocked_users (blocker_id, blocked_user_id)",
+        "2. soft-delete all messages from blocked user in user's view",
+        "3. set DM.is_hidden_for_blocker=true",
+        "4. blocked user notified? NO (silent block)"
+      ]
+    },
+    "block_effects": {
+      "blocked_user_perspective": {
+        "cannot_send_messages": "attempt to message shows 'You cannot message this user'",
+        "cannot_see_profile": "profile hidden (404 error)",
+        "cannot_see_user_messages": "past messages in groups show '[blocked user]'"
+      },
+      "blocker_perspective": {
+        "messages_hidden": "messages from blocked user not visible (soft-deleted view)",
+        "dm_hidden": "DM with blocked user doesn't appear in main list",
+        "can_access_archive": "archived view shows '[you blocked this user]'"
+      }
+    }
+  },
+  "unblocking": {
+    "flow": [
+      "1. user taps 'Blocked users' in settings",
+      "2. find user and tap 'Unblock'",
+      "3. DELETE FROM blocked_users",
+      "4. messages from user become visible again",
+      "5. can DM again"
+    ]
+  },
+  "database_schema": {
+    "blocked_users_table": {
+      "columns": [
+        "block_id UUID PK",
+        "blocker_id UUID FK (user who blocked)",
+        "blocked_user_id UUID FK (user who was blocked)",
+        "blocked_at TIMESTAMP",
+        "PRIMARY KEY (blocker_id, blocked_user_id)"
+      ]
+    },
+    "conversations_for_dm": {
+      "additions": [
+        "is_hidden_for_user_a BOOLEAN (DM hidden from user A)",
+        "is_hidden_for_user_b BOOLEAN (DM hidden from user B)"
+      ]
+    }
+  },
+  "block_list_management": {
+    "ui_location": "settings → 'Privacy' → 'Blocked users'",
+    "display": [
+      {
+        "name": "Bob",
+        "avatar": "avatar_url",
+        "blocked_at": "2026-02-15",
+        "action": "Unblock"
+      }
+    ]
+  },
+  "group_message_visibility_when_blocked": {
+    "scenario": "Bob is blocked by Alice, both in same group",
+    "alice_view": "Bob's messages show as '[blocked user]' (content hidden)",
+    "bob_view": "normal (doesn't know he's blocked)"
+  },
+  "reporting_user": {
+    "feature": "block + report flow",
+    "flow": [
+      "1. long-press message",
+      "2. tap 'Report' → reason (harassment, spam, explicit)",
+      "3. system flags message for moderation review",
+      "4. option: also block user after reporting"
+    ]
+  },
+  "dm_notification_control": {
+    "mute_dm": "user can mute notifications from specific DM (not full block)",
+    "effect": "messages arrive but no notification"
+  },
+  "api_endpoints": {
+    "create_or_get_dm": {
+      "endpoint": "POST /v1/conversations/dm",
+      "payload": {
+        "other_user_id": "UUID"
+      },
+      "response": {
+        "conversation_id": "UUID",
+        "type": "dm",
+        "last_message_id": "UUID (or null if new)"
+      }
+    },
+    "block_user": {
+      "endpoint": "POST /v1/users/{id}/block",
+      "response": {
+        "blocked_at": "2026-02-15T15:35:00Z"
+      }
+    },
+    "unblock_user": {
+      "endpoint": "DELETE /v1/users/{id}/block"
+    },
+    "list_blocked_users": {
+      "endpoint": "GET /v1/user/blocked-users",
+      "response": [
+        {
+          "user_id": "UUID",
+          "name": "Bob",
+          "blocked_at": "2026-02-15T15:35:00Z"
+        }
+      ]
+    }
+  },
+  "testing": {
+    "scenarios": [
+      "create DM with Alice → conversation with type='dm' created",
+      "block Bob → his messages hidden, DM hidden from list",
+      "blocked Bob tries to message → error 403",
+      "unblock Bob → messages visible again, can DM",
+      "Bob and Alice in group, Alice blocked Bob → Bob's messages show '[blocked user]'",
+      "report message → flagged for moderation + option to block"
+    ]
+  },
+  "monitoring": {
+    "metrics": [
+      "dm.conversations_created_per_day",
+      "blocking.active_blocks_count",
+      "blocking.block_rate_per_day",
+      "reporting.reports_per_day"
+    ],
+    "alerts": [
+      "block rate spike (spam campaign by one user?)",
+      "report spike (coordinated harassment?)"
+    ]
+  }
+}

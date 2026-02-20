@@ -1,0 +1,169 @@
+{
+  "req_id": "REQ-0069",
+  "title": "Advanced Message Filtering (Filters, Saved Searches)",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "messaging",
+  "depends_on": ["REQ-0068"],
+  "use_cases": [
+    "user saves filter 'from:Alice AND #project' → toggle on/off instantly",
+    "user creates smart folder 'all unread messages'",
+    "user filters by message type: 'has:voice' (only voice messages)",
+    "user searches hashtags: '#sprint' → all messages tagged with that"
+  ],
+  "filter_types": {
+    "text_filters": {
+      "contains": "q: 'meeting' (keyword search)",
+      "exact_phrase": "q: '\"exact phrase\"' (quoted)",
+      "excludes": "q: 'NOT(spam)' (exclusion)"
+    },
+    "user_filters": {
+      "from_user": "from: alice@example.com",
+      "to_user": "to: bob@example.com",
+      "mentioned": "@alice (user was mentioned)"
+    },
+    "date_filters": {
+      "date_range": "from_date: 2026-01-01, to_date: 2026-02-01",
+      "relative": "date: [this_week] or [this_month] or [last_month]",
+      "before_after": "before:2026-02-01, after:2026-01-01"
+    },
+    "media_filters": {
+      "has_attachment": "has:image OR has:video OR has:voice OR has:file",
+      "media_type": "type:image (image/jpeg, image/png, etc)",
+      "from_specific_type": "type:voice (only voice messages)"
+    },
+    "status_filters": {
+      "read_status": "is:read OR is:unread",
+      "edited_messages": "has:edit (message was edited)",
+      "deleted_messages": "status:deleted (soft-deleted, user can still see)"
+    },
+    "reaction_filters": {
+      "has_reaction": "has:reaction",
+      "specific_emoji": "emoji:👍 (has this reaction)",
+      "reaction_count": "reactions:>5 (more than 5 reactions)"
+    },
+    "hashtag_filters": {
+      "hashtag_search": "#project (messages with this hashtag)",
+      "multiple_tags": "#project #sprint (both tags)",
+      "exclude_tags": "NOT(#spam)"
+    }
+  },
+  "query_examples": {
+    "example_1": {
+      "description": "all messages from Alice about meeting in last month",
+      "query": "from:alice q:'meeting' after:2026-01-15"
+    },
+    "example_2": {
+      "description": "all unread image messages",
+      "query": "is:unread has:image"
+    },
+    "example_3": {
+      "description": "messages with 10+ reactions",
+      "query": "reactions:>=10"
+    },
+    "example_4": {
+      "description": "voice messages from#projects channel",
+      "query": "has:voice #project"
+    }
+  },
+  "saved_searches": {
+    "storage": "users table → saved_searches JSONB array",
+    "structure": {
+      "search_id": "UUID",
+      "name": "Project Updates",
+      "query_string": "from:alice #project",
+      "created_at": "2026-01-15T10:00:00Z",
+      "is_pinned": true
+    },
+    "api": {
+      "create_saved_search": "POST /v1/saved-searches",
+      "list_saved_searches": "GET /v1/saved-searches",
+      "apply_search": "GET /v1/search/messages?saved_search_id=UUID",
+      "delete_saved_search": "DELETE /v1/saved-searches/{id}"
+    },
+    "ui_behavior": "saved searches show in sidebar, user can toggle on/off"
+  },
+  "smart_folders": {
+    "purpose": "auto-populated folders based on conditions",
+    "examples": [
+      {
+        "name": "Unread",
+        "condition": "is:unread",
+        "auto_update": "realtime"
+      },
+      {
+        "name": "Images",
+        "condition": "has:image",
+        "auto_update": "realtime"
+      },
+      {
+        "name": "Mentions",
+        "condition": "@currentUser",
+        "auto_update": "realtime"
+      }
+    ],
+    "system_smart_folders": [
+      "All (all messages user has access to)",
+      "Unread (is:unread)",
+      "Media (has:image OR has:video OR has:voice)",
+      "Pinned (has:pin)"
+    ]
+  },
+  "hashtag_extraction": {
+    "mechanism": "server-side extraction on message create/edit",
+    "regex": "#[A-Za-z0-9_]+ (word characters after #)",
+    "storage": "message_hashtags junction table",
+    "schema": {
+      "table": "message_hashtags",
+      "columns": [
+        "message_id UUID",
+        "hashtag text",
+        "PRIMARY KEY (message_id, hashtag)"
+      ]
+    },
+    "indexing": "hashtags indexed in ES for fast retrieval"
+  },
+  "filter_performance": {
+    "query_optimization": [
+      "use ES filters (fast, cached)",
+      "push down date ranges to ES query (not in app)",
+      "parallel filter execution (date AND media type)",
+      "cache frequent filter combinations"
+    ],
+    "latency_target": "p95: 300ms for complex filter (6+ conditions)",
+    "pagination": "limit: 50 default, max: 500"
+  },
+  "filtering_ui": {
+    "dropdown_filters": {
+      "from_user": "autocomplete list of users in conversation",
+      "date_range": "date picker (from/to)",
+      "media_type": "checkbox list (image, voice, video, file)",
+      "read_status": "toggle (read/unread/both)"
+    },
+    "filter_pills": "visual display of active filters: [from:Alice] [has:image] [clear all]",
+    "search_bar_hints": "autocomplete suggestions as user types: 'from:', 'has:', 'date:', etc"
+  },
+  "testing": {
+    "scenarios": [
+      "filter 'from:alice q:meeting' → only messages from alice with word 'meeting'",
+      "save filter, toggle on/off, verify instantly applied",
+      "smart folder 'Unread' auto-updates when message marked read",
+      "hashtag #project searchable, returns all messages with that tag",
+      "filter by emoji count, verify reaction_count >= threshold",
+      "date range filter: from_date > to_date (no results)",
+      "complex filter: (from:alice OR from:bob) AND has:voice AND after:2026-01-01"
+    ]
+  },
+  "monitoring": {
+    "metrics": [
+      "filter.queries_per_sec",
+      "saved_search.utilization_rate (% of searches using saved)",
+      "hashtag.extraction_latency_ms",
+      "smart_folder.sync_lag_ms"
+    ],
+    "alerts": [
+      "filter query latency > 500ms p95",
+      "hashtag extraction fails (unable to index message)"
+    ]
+  }
+}

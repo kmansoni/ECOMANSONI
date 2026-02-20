@@ -1,6 +1,6 @@
 import { Heart, MessageCircle, Send, Bookmark, MoreHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useState, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { useNavigate } from "react-router-dom";
 import { CommentsSheet } from "./CommentsSheet";
@@ -54,6 +54,7 @@ export function PostCard({
   const { isSaved, toggleSave } = useSavedPosts();
   const [liked, setLiked] = useState(isLiked);
   const [likeCount, setLikeCount] = useState(likes);
+  const [likePending, setLikePending] = useState(false);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [expanded, setExpanded] = useState(false);
   const [showComments, setShowComments] = useState(false);
@@ -67,6 +68,17 @@ export function PostCard({
   
   
   const saved = id ? isSaved(id) : false;
+
+  // Keep local UI state synced with upstream props (refetch/realtime), but avoid clobbering mid-request.
+  useEffect(() => {
+    if (likePending) return;
+    setLiked(isLiked);
+  }, [id, isLiked, likePending]);
+
+  useEffect(() => {
+    if (likePending) return;
+    setLikeCount(likes);
+  }, [id, likes, likePending]);
   
   const handleSave = async () => {
     if (!id) return;
@@ -107,28 +119,36 @@ export function PostCard({
   };
 
   const handleLike = async () => {
+    if (!id || likePending) return;
+
+    const prevLiked = liked;
+    const prevCount = likeCount;
+
     if (!liked) {
       setLikeAnimation(true);
       setTimeout(() => setLikeAnimation(false), 300);
     }
     
-    const newLiked = !liked;
-    setLiked(newLiked);
-    setLikeCount(liked ? likeCount - 1 : likeCount + 1);
-    
-    if (id) {
-      const { error } = await toggleLike(id, liked);
+    const nextLiked = !prevLiked;
+    setLiked(nextLiked);
+    setLikeCount(prevLiked ? Math.max(0, prevCount - 1) : prevCount + 1);
+
+    setLikePending(true);
+    try {
+      const { error } = await toggleLike(id, prevLiked);
       if (error) {
-        // Revert on error
-        setLiked(!newLiked);
-        setLikeCount(newLiked ? likeCount - 1 : likeCount + 1);
+        setLiked(prevLiked);
+        setLikeCount(prevCount);
       } else {
-        onLikeChange?.(id, newLiked);
+        onLikeChange?.(id, nextLiked);
       }
+    } finally {
+      setLikePending(false);
     }
   };
 
   const handleDoubleTap = (e: React.MouseEvent) => {
+    if (!id) return;
     if (!liked) {
       const rect = e.currentTarget.getBoundingClientRect();
       const x = e.clientX - rect.left;
@@ -140,11 +160,12 @@ export function PostCard({
       setTimeout(() => {
         setFloatingHearts(prev => prev.filter(h => h.id !== newHeart.id));
       }, 1000);
-      
-      setLiked(true);
-      setLikeCount(likeCount + 1);
+
       setLikeAnimation(true);
       setTimeout(() => setLikeAnimation(false), 300);
+
+      // Persist like in DB (single source of truth).
+      void handleLike();
     }
   };
 

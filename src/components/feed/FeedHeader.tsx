@@ -76,14 +76,14 @@ export function FeedHeader() {
 
       return { scale, x, y, opacity, zIndex, nameOpacity, isInStack };
     });
-  }, [usersWithStories.length, collapseProgress]);
+  }, [usersWithStories, collapseProgress]);
 
   // Container height
   const containerHeight = HEADER_HEIGHT + EXPANDED_ROW_HEIGHT * (1 - collapseProgress);
 
   return (
     <div 
-      className="sticky top-0 z-30 bg-white/50 dark:bg-card backdrop-blur-md overflow-hidden will-change-auto"
+      className="sticky top-0 z-30 bg-card/70 backdrop-blur-md overflow-hidden will-change-auto border-b border-border/40"
       style={{ height: `${containerHeight}px` }}
     >
       {/* Header row with menu */}

@@ -1,0 +1,135 @@
+{
+  "req_id": "REQ-0061",
+  "title": "Message Queuing System (MQS)",
+  "version": "2.0",
+  "status": "in-design",
+  "domain": "messaging",
+  "priority": "P0",
+  "complexity": "H",
+  "architecture": {
+    "queue_type": "message_broker",
+    "backend_options": ["kafka", "rabbitmq", "aws_sqs"],
+    "selected": "kafka",
+    "justification": "Высоконагруженные сценарии, полная гарантия FIFO per conversation, replay capability для отсутствующих клиентов"
+  },
+  "queue_topics": [
+    {
+      "name": "messages.send_request",
+      "partition_by": "conversation_id",
+      "retention_ms": 604800000,
+      "replication_factor": 3,
+      "min_insync_replicas": 2,
+      "schema": {
+        "message_id": "UUID",
+        "client_message_id": "UUID (idempotency key)",
+        "conversation_id": "UUID",
+        "sender_id": "UUID",
+        "content": "string",
+        "attachments": ["url"],
+        "timestamp_client": "ISO8601 (when client created)",
+        "timestamp_server": "ISO8601 (when received by broker)"
+      },
+      "compaction": false,
+      "sla": "p95_latency_ms: 50"
+    },
+    {
+      "name": "messages.delivery_status",
+      "partition_by": "message_id",
+      "retention_ms": 2592000000,
+      "schema": {
+        "message_id": "UUID",
+        "status": "sent|delivered|read",
+        "recipient_id": "UUID",
+        "timestamp": "ISO8601"
+      }
+    },
+    {
+      "name": "messages.fanout",
+      "partition_by": "conversation_id",
+      "comment": "Для group/channel распределения сообщения всем участникам"
+    }
+  ],
+  "consumer_groups": [
+    {
+      "name": "realtime-notifier",
+      "consume_from": "messages.send_request",
+      "purpose": "Отправка WebSocket уведомлений подписанным клиентам",
+      "parallelism": "per_partition",
+      "error_handling": "dead_letter_topic: messages.send_request.dlq"
+    },
+    {
+      "name": "database-persister",
+      "consume_from": "messages.send_request",
+      "purpose": "Простой INSERT в PostgreSQL с дедупликацией по client_message_id",
+      "parallelism": "per_partition",
+      "offset_management": "explicit_commit_after_db_write"
+    },
+    {
+      "name": "search-indexer",
+      "consume_from": "messages.send_request",
+      "purpose": "Индексирование в Elasticsearch для полнотекстового поиска",
+      "lag_tolerance_sec": 3600,
+      "batch_size": 1000
+    },
+    {
+      "name": "analytics-aggregator",
+      "consume_from": "messages.send_request",
+      "purpose": "Подсчет метрик: msg/sec, msg/user, реактивность",
+      "sampling": 0.1,
+      "windowing": "tumbling_window_60s"
+    }
+  ],
+  "deduplication": {
+    "mechanism": "client_message_id",
+    "dedup_store": "redis",
+    "ttl_seconds": 86400,
+    "conflict_resolution": "keep_first_occurrence"
+  },
+  "ordering_guarantees": {
+    "per_conversation": "FIFO",
+    "per_user": "no_guarantee",
+    "global": "no_guarantee",
+    "implementation": "Kafka single partition per conversation_id"
+  },
+  "failure_handling": {
+    "broker_down": {
+      "client_behavior": "queue_locally_sqlite_mobile",
+      "server_recovery": "replay_from_kafka_on_reconnect",
+      "max_local_queue_size_mb": 50
+    },
+    "consumer_lag": {
+      "max_acceptable_lag_sec": 5,
+      "alerting_threshold_sec": 10,
+      "escalation": "trigger_database_persister_catch_up"
+    },
+    "poison_pill": {
+      "handling": "send_to_dlq",
+      "max_retries": 3,
+      "dlq_retention_days": 7,
+      "alert": "team_slack_#incidents"
+    }
+  },
+  "scaling": {
+    "expected_throughput_msg_per_sec": 50000,
+    "peak_throughput_msg_per_sec": 250000,
+    "partition_count": 400,
+    "brokers": 5,
+    "rebalancing_time_sec": 30
+  },
+  "monitoring": {
+    "metrics": [
+      "kafka.messages.received_total",
+      "kafka.consumer_lag_bytes (per group)",
+      "kafka.produce_latency_p95_ms",
+      "messages.queue.dlq_size",
+      "deduplication.cache_hit_rate"
+    ],
+    "dashboards": ["Messaging Pipeline Health"]
+  },
+  "migration_plan": {
+    "phase_1": "Deploy Kafka cluster in staging, replicate prod messages",
+    "phase_2": "Canary: 1% of new messages→Kafka, rest→old system",
+    "phase_3": "Ramp up to 100% over 2 weeks",
+    "phase_4": "Keep old system as read-only backup for 1 month"
+  }
+}

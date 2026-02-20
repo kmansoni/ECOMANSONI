@@ -1,0 +1,187 @@
+{
+  "req_id": "REQ-0072",
+  "title": "Message Pinning (Pin Important Messages)",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "messaging",
+  "depends_on": ["REQ-0064"],
+  "use_cases": [
+    "conversation admin pins update message to top of chat",
+    "pinned message shows badge '[📌 pinned]' at top of conversation",
+    "user taps pinned message badge → sees list of 5 pinned messages",
+    "unpinning removes message from pinned list",
+    "members notified when message pinned in group conversation"
+  ],
+  "pin_permissions": {
+    "dm_conversations": "both message sender can pin own message OR recipient can pin",
+    "group_conversations": "only group admin/moderators can pin (configurable per group)",
+    "enforcement": "api validates user role before allowing pin/unpin"
+  },
+  "pin_data_model": {
+    "pinned_messages_table": {
+      "schema": {
+        "pinned_message_id": "UUID PK",
+        "message_id": "UUID FK to messages",
+        "conversation_id": "UUID FK to conversations",
+        "pinned_by_user_id": "UUID (who pinned)",
+        "pinned_at": "timestamp",
+        "pin_position": "integer (order in pinned list, 1-based)",
+        "PRIMARY KEY": "pinned_message_id",
+        "UNIQUE": "(message_id, conversation_id) - one pin per message per conversation"
+      }
+    }
+  },
+  "pin_lifecycle": {
+    "pin_action": {
+      "trigger": "long-press message → tap 'pin' or use context menu",
+      "validation": "check user has permission, message exists, not already pinned",
+      "insert": "INSERT INTO pinned_messages",
+      "broadcast": "publish PIN_MESSAGE event to Kafka",
+      "ui_update": "message shows [📌] badge"
+    },
+    "unpin_action": {
+      "trigger": "long-press message → tap 'unpin' or tap [📌] badge",
+      "delete": "DELETE FROM pinned_messages WHERE message_id",
+      "broadcast": "publish UNPIN_MESSAGE event to Kafka",
+      "ui_update": "[📌] badge removed"
+    }
+  },
+  "pinned_message_display": {
+    "in_conversation": {
+      "location": "sticky header at top of chat window",
+      "content": "preview of first pinned message (first 100 chars)",
+      "indicator": "[📌 pinned]",
+      "tap_action": "shows pinned messages list modal"
+    },
+    "pinned_list_modal": {
+      "trigger": "user taps pinned message header or taps '[📌 5 pinned]' badge",
+      "modal_content": [
+        {
+          "position": "1",
+          "sender": "Alice",
+          "content_preview": "Meeting notes: project kickoff...",
+          "timestamp": "2026-02-15 at 3:45pm"
+        },
+        {
+          "position": "2",
+          "sender": "Bob",
+          "content_preview": "Here's the updated spec...",
+          "timestamp": "2026-02-15 at 4:20pm"
+        }
+      ],
+      "modal_actions": [
+        "tap message to navigate to it in conversation",
+        "swipe-left to unpin",
+        "long-press to reorder (drag up/down)"
+      ]
+    }
+  },
+  "pinned_message_ordering": {
+    "default_order": "newest pinned at top (pin_position desc)",
+    "manual_reordering": [
+      "user can drag/drop in pinned list modal",
+      "reordering updates pin_position column",
+      "persisted in database (not just UI)"
+    ]
+  },
+  "pinned_message_limit": {
+    "max_pins_per_conversation": 10,
+    "enforcement": "if user tries to pin 11th, error message '10 message limit reached, unpin one first'",
+    "rationale": "UI clarity, performance (don't load 100 pinned messages)"
+  },
+  "pin_notifications": {
+    "group_conversations": {
+      "trigger": "admin pins message → notify all members",
+      "notification_text": "'Alice pinned a message: Meeting notes...'",
+      "action_on_tap": "navigate to pinned message + show pinned list"
+    },
+    "dm_conversations": {
+      "trigger": "user pins message",
+      "other_user_notification": "none (no notification, can see [📌] badge in conversation)"
+    }
+  },
+  "api_endpoints": {
+    "pin_message": {
+      "endpoint": "POST /v1/messages/{id}/pin",
+      "params": {
+        "conversation_id": "UUID"
+      },
+      "response": {
+        "pinned_message_id": "UUID",
+        "pin_position": 5,
+        "pinned_at": "2026-02-15T15:35:00Z"
+      }
+    },
+    "unpin_message": {
+      "endpoint": "DELETE /v1/messages/{id}/pin",
+      "response": {
+        "success": true
+      }
+    },
+    "list_pinned_messages": {
+      "endpoint": "GET /v1/conversations/{id}/pinned",
+      "response": [
+        {
+          "message_id": "UUID",
+          "pin_position": 1,
+          "sender_name": "Alice",
+          "content": "full message content",
+          "timestamp": "2026-02-15T15:35:00Z"
+        }
+      ]
+    },
+    "reorder_pinned": {
+      "endpoint": "PATCH /v1/conversations/{id}/pinned/reorder",
+      "payload": {
+        "pin_order": ["msg_uuid_1", "msg_uuid_5", "msg_uuid_3"]
+      },
+      "response": {
+        "success": true
+      }
+    }
+  },
+  "pin_search_integration": {
+    "feature": "pinned messages searchable + filter",
+    "example_query": "has:pin (returns only pinned messages)",
+    "use_case": "user searches 'spec' → finds pinned spec document"
+  },
+  "deleting_pinned_messages": {
+    "cascade": "if pinned message is deleted (soft-delete), it remains in pinned list but shows '[deleted]'",
+    "hard_delete": "after 30 days, message removed from pinned_messages table automatically"
+  },
+  "export_pinned": {
+    "feature": "user can export/download all pinned messages as PDF",
+    "use_case": "download project notes before leaving group"
+  },
+  "performance": {
+    "query_optimization": [
+      "INDEX(conversation_id, pin_position) for fast pinned list fetch",
+      "default limit=10 pinned messages (no pagination)"
+    ],
+    "latency": "list pinned messages: p95 <100ms"
+  },
+  "testing": {
+    "scenarios": [
+      "pin message: verify it appears in pinned list + shows [📌] badge",
+      "unpin message: [📌] badge removed, message removed from pinned list",
+      "pin 11th message: API error 'limit reached'",
+      "reorder pinned messages: drag message 5 to position 1, verify order updates",
+      "group admin pins message: all members notified",
+      "dm recipient pins message: doesn't notify sender",
+      "search 'has:pin': returns all pinned in this conversation",
+      "delete pinned message: soft-delete shows '[deleted]', hard-delete removes from pinned"
+    ]
+  },
+  "monitoring": {
+    "metrics": [
+      "pin.requests_per_hour",
+      "pinned_messages.avg_per_conversation",
+      "pin.latency_p95_ms",
+      "pin.error_rate"
+    ],
+    "alerts": [
+      "pin fails > 5% (permission denied, message not found)",
+      "pinned list fetch > 200ms p95"
+    ]
+  }
+}

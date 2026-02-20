@@ -1,0 +1,138 @@
+{
+  "req_id": "REQ-0109",
+  "title": "Content Recommendations (ML-Based Message Suggestions)",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "messaging",
+  "depends_on": ["REQ-0068"],
+  "use_cases": [
+    "user opens app → recommendation carousel: 'Popular in your groups' (trending messages)",
+    "user reads message → similar messages suggested below",
+    "user idle in feed → 'You might have missed...' (messages from groups they're in)"
+  ],
+  "recommendation_types": [
+    {
+      "name": "trending_in_groups",
+      "signal": "messages with high engagement (reactions, replies) in user's groups",
+      "display": "carousel at top of main feed"
+    },
+    {
+      "name": "similar_to_reading",
+      "signal": "ML embedding similarity (if user reading about 'golang', suggest other golang messages)",
+      "display": "below current message"
+    },
+    {
+      "name": "missed_messages",
+      "signal": "messages from user's groups during user's offline time, high engagement",
+      "display": "'While you were away' section in feed"
+    },
+    {
+      "name": "group_discovery",
+      "signal": "suggest public channels based on user's group memberships (topic overlap)",
+      "display": "discovery section in Explore tab"
+    }
+  ],
+  "ml_model": {
+    "approach": "collaborative filtering + content-based filtering",
+    "input": "user reading history, reaction history, group membership, time spent per conversation",
+    "output": "ranking of recommended messages (top 20)"
+  },
+  "content_embeddings": {
+    "mechanism": "encode message content into 768-dim vector (using DistilBERT or similar)",
+    "storage": "message_embeddings table (message_id, embedding VECTOR(768))",
+    "similarity": "compute cosine similarity between embeddings"
+  },
+  "freshness": {
+    "decay": "older messages score lower (exponential decay, 7-day window)",
+    "recency": "messages from last 3 days weighted higher"
+  },
+  "filtering": {
+    "exclude": [
+      "messages user already read",
+      "messages from users user blocked",
+      "messages from muted conversations",
+      "messages user explicitly dismissed"
+    ]
+  },
+  "personalization": {
+    "user_preferences": "learn if user prefers technical content, memes, announcements, etc."
+  },
+  "database_schema": {
+    "message_embeddings_table": {
+      "columns": [
+        "embedding_id UUID PK",
+        "message_id UUID FK",
+        "embedding VECTOR(768)",
+        "created_at TIMESTAMP"
+      ]
+    },
+    "recommendation_feedback_table": {
+      "columns": [
+        "feedback_id UUID PK",
+        "user_id UUID FK",
+        "recommended_message_id UUID FK",
+        "action VARCHAR(clicked, dismissed, reacted)",
+        "created_at TIMESTAMP"
+      ]
+    }
+  },
+  "api_endpoints": {
+    "get_trending_messages": {
+      "endpoint": "GET /v1/recommendations/trending",
+      "query": "?limit=10",
+      "response": {
+        "messages": [
+          {
+            "message_id": "UUID",
+            "content": "Check out this Go tutorial!",
+            "sender_name": "Alice",
+            "conversation_name": "#golang",
+            "engagement_score": 0.92,
+            "reason": "Trending in your groups"
+          }
+        ]
+      }
+    },
+    "get_similar_messages": {
+      "endpoint": "GET /v1/recommendations/similar/{message_id}",
+      "response": [
+        {
+          "message_id": "UUID",
+          "similarity_score": 0.87,
+          "reason": "Similar topic"
+        }
+      ]
+    },
+    "dismiss_recommendation": {
+      "endpoint": "POST /v1/recommendations/{message_id}/dismiss",
+      "effect": "record feedback, de-rank similar messages"
+    }
+  },
+  "monitoring": {
+    "metrics": [
+      "recommendations.ctr (click-through rate)",
+      "recommendations.avg_similarity_score",
+      "recommendations.feedback_submission_rate",
+      "recommendations.model_diversity (are we recommending diverse topics?)"
+    ],
+    "alerts": [
+      "recommendations.ctr < 5% (model not effective, retrain)",
+      "recommendations.diversity < 0.5 (over-recommending same topic)"
+    ]
+  },
+  "testing": {
+    "scenarios": [
+      "user in golang group, active in discussions -> recommend other golang messages",
+      "user reads message about Rust -> suggest similar Rust messages",
+      "offline for 12h -> return 'You missed...' with 5-10 trending messages from groups",
+      "dismiss recommendation -> similar messages scored lower",
+      "new user, no history -> recommend trending across all groups they're in"
+    ]
+  },
+  "privacy": {
+    "consideration": "reading history used only for user's own recommendations (not shared)"
+  },
+  "model_updates": {
+    "frequency": "daily (retrain on yesterday's feedback)"
+  }
+}

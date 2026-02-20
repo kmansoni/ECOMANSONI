@@ -1,4 +1,4 @@
-import { Settings, Grid3X3, Bookmark, Play, Plus, AtSign, Share2, Eye, User, Loader2, Edit3, QrCode } from "lucide-react";
+﻿import { Settings, Grid3X3, Bookmark, Play, Plus, AtSign, Share2, Eye, User, Loader2, Edit3, QrCode } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -12,11 +12,11 @@ import { useSavedPosts } from "@/hooks/useSavedPosts";
 import { useAuth } from "@/hooks/useAuth";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { VerifiedBadge } from "@/components/ui/verified-badge";
-import { BrandBackground } from "@/components/ui/brand-background";
+import { HighlightsManager } from "@/components/profile/HighlightsManager";
 
 const tabs = [
   { id: "posts", icon: Grid3X3, label: "Публикации" },
-  { id: "saved", icon: Bookmark, label: "Сохранённое" },
+  { id: "saved", icon: Bookmark, label: "Сохраненное" },
   { id: "reels", icon: Play, label: "Reels" },
   { id: "tagged", icon: AtSign, label: "Отметки" },
 ];
@@ -71,10 +71,9 @@ export function ProfilePage() {
 
   if (profileLoading) {
     return (
-      <div className="min-h-screen relative overflow-hidden">
-        <BrandBackground />
+      <div className="min-h-screen bg-background relative overflow-hidden">
         <div className="relative z-10 min-h-screen flex items-center justify-center">
-          <Loader2 className="w-8 h-8 animate-spin text-white/60" />
+          <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
         </div>
       </div>
     );
@@ -82,19 +81,18 @@ export function ProfilePage() {
 
   if (!user || !profile) {
     return (
-      <div className="min-h-screen relative overflow-hidden">
-        <BrandBackground />
+      <div className="min-h-screen bg-background relative overflow-hidden">
         <div className="relative z-10 min-h-screen flex flex-col items-center justify-center p-4">
-          <div className="w-20 h-20 rounded-full bg-white/10 backdrop-blur-xl border border-white/20 flex items-center justify-center mb-4">
-            <User className="w-10 h-10 text-white/60" />
+          <div className="w-20 h-20 rounded-full bg-card/80 backdrop-blur-xl border border-border flex items-center justify-center mb-4">
+            <User className="w-10 h-10 text-muted-foreground" />
           </div>
-          <h2 className="text-lg font-semibold text-white mb-2">Войдите в аккаунт</h2>
-          <p className="text-white/60 text-center mb-4">
+          <h2 className="text-lg font-semibold text-foreground mb-2">Войдите в аккаунт</h2>
+          <p className="text-muted-foreground text-center mb-4">
             Чтобы просматривать свой профиль, войдите в аккаунт
           </p>
           <button 
             onClick={() => navigate('/auth')}
-            className="px-6 py-3 bg-white/10 backdrop-blur-xl rounded-2xl border border-white/20 text-white font-medium hover:bg-white/20 transition-colors"
+            className="px-6 py-3 bg-card/80 backdrop-blur-xl rounded-2xl border border-border text-white font-medium hover:bg-white/20 transition-colors"
           >
             Войти
           </button>
@@ -104,23 +102,21 @@ export function ProfilePage() {
   }
 
   return (
-    <div className="min-h-screen relative overflow-hidden">
-      <BrandBackground />
-
+    <div className="min-h-screen bg-background relative overflow-hidden">
       {/* Content */}
       <div className="relative z-10 min-h-screen pb-24">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 pt-safe">
           <div className="w-10" />
           <div className="flex items-center gap-1.5">
-            <h1 className="font-semibold text-lg text-white">{profile.display_name || 'Профиль'}</h1>
+            <h1 className="font-semibold text-lg text-foreground">{profile.display_name || 'Профиль'}{(profile as any).status_emoji ? ` ${(profile as any).status_emoji}` : ""}</h1>
             {profile.verified && <VerifiedBadge size="md" />}
           </div>
           <button 
             onClick={() => navigate('/settings')}
-            className="w-10 h-10 rounded-full bg-white/10 backdrop-blur-xl border border-white/20 flex items-center justify-center hover:bg-white/20 transition-colors"
+            className="w-10 h-10 rounded-full bg-card/80 backdrop-blur-xl border border-border flex items-center justify-center hover:bg-muted/50 transition-colors"
           >
-            <Settings className="w-5 h-5 text-white" />
+            <Settings className="w-5 h-5 text-foreground" />
           </button>
         </div>
 
@@ -133,14 +129,22 @@ export function ProfilePage() {
               onClick={() => setShowCreateMenu(true)}
             >
               <div className="absolute -inset-1 rounded-full bg-gradient-to-br from-white/20 via-white/5 to-white/10 backdrop-blur-xl" />
-              <Avatar className="w-20 h-20 border-2 border-white/30 relative">
+              <Avatar className="w-20 h-20 border-2 border-border relative">
                 <AvatarImage src={profile.avatar_url || undefined} alt={profile.display_name || 'Profile'} />
                 <AvatarFallback className="bg-violet-500/80 backdrop-blur-xl text-white text-2xl font-medium">
                   {profile.display_name?.charAt(0)?.toUpperCase() || <User className="w-8 h-8" />}
                 </AvatarFallback>
               </Avatar>
+
+              {(profile as any).status_sticker_url ? (
+                <img
+                  src={(profile as any).status_sticker_url}
+                  alt="status sticker"
+                  className="absolute -bottom-2 -left-2 w-10 h-10 rounded-xl object-cover bg-card/80 border border-border"
+                />
+              ) : null}
               {/* Add story button */}
-              <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-primary border-2 border-white/30 flex items-center justify-center">
+              <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-primary border-2 border-border flex items-center justify-center">
                 <Plus className="w-4 h-4 text-primary-foreground" />
               </div>
             </button>
@@ -148,27 +152,30 @@ export function ProfilePage() {
             {/* Stats */}
             <div className="flex-1">
               <div className="flex items-center gap-1.5 mb-2">
-                <h1 className="text-lg font-semibold text-white">{profile.display_name || 'Пользователь'}</h1>
+                <h1 className="text-lg font-semibold text-foreground">{profile.display_name || 'Пользователь'}</h1>
+                {(profile as any).status_emoji ? (
+                  <span className="text-lg leading-none">{(profile as any).status_emoji}</span>
+                ) : null}
                 {profile.verified && <VerifiedBadge size="md" />}
               </div>
               <div className="flex items-center gap-6">
                 <div className="text-center">
-                  <p className="font-bold text-white">{profile.stats.postsCount}</p>
-                  <p className="text-xs text-white/60">публикации</p>
+                  <p className="font-bold text-foreground">{profile.stats.postsCount}</p>
+                  <p className="text-xs text-muted-foreground">публикации</p>
                 </div>
                 <button 
                   className="text-center"
                   onClick={() => setShowFollowers(true)}
                 >
-                  <p className="font-bold text-white">{formatNumber(profile.stats.followersCount)}</p>
-                  <p className="text-xs text-white/60">подписчики</p>
+                  <p className="font-bold text-foreground">{formatNumber(profile.stats.followersCount)}</p>
+                  <p className="text-xs text-muted-foreground">подписчики</p>
                 </button>
                 <button 
                   className="text-center"
                   onClick={() => setShowFollowing(true)}
                 >
-                  <p className="font-bold text-white">{formatNumber(profile.stats.followingCount)}</p>
-                  <p className="text-xs text-white/60">подписки</p>
+                  <p className="font-bold text-foreground">{formatNumber(profile.stats.followingCount)}</p>
+                  <p className="text-xs text-muted-foreground">подписки</p>
                 </button>
               </div>
             </div>
@@ -177,7 +184,7 @@ export function ProfilePage() {
           {/* Bio */}
           <div className="mt-3">
             {profile.bio && (
-              <p className="text-sm text-white/80">{profile.bio}</p>
+              <p className="text-sm text-foreground">{profile.bio}</p>
             )}
             {profile.website && (
               <a href={profile.website.startsWith('http') ? profile.website : `https://${profile.website}`} 
@@ -193,19 +200,24 @@ export function ProfilePage() {
           <div className="flex items-center gap-2 mt-4">
             <button 
               onClick={() => navigate('/profile/edit')}
-              className="px-4 py-2 bg-white/10 backdrop-blur-xl rounded-xl border border-white/20 text-sm font-semibold text-white hover:bg-white/20 transition-colors"
+              className="px-4 py-2 bg-card/80 backdrop-blur-xl rounded-xl border border-border text-sm font-semibold text-foreground hover:bg-muted/50 transition-colors"
             >
               Редактировать профиль
             </button>
-            <button className="px-4 py-2 bg-white/10 backdrop-blur-xl rounded-xl border border-white/20 text-sm font-semibold text-white hover:bg-white/20 transition-colors">
+            <button className="px-4 py-2 bg-card/80 backdrop-blur-xl rounded-xl border border-border text-sm font-semibold text-foreground hover:bg-muted/50 transition-colors">
               Поделиться профилем
             </button>
           </div>
         </div>
 
+        {/* Highlights Section */}
+        <div className="px-4 py-4 border-t border-border mt-4">
+          <HighlightsManager userId={user?.id || ''} isOwnProfile={true} />
+        </div>
+
         {/* Content Tabs */}
         <div className="px-4 mb-3">
-          <div className="bg-white/10 backdrop-blur-xl rounded-2xl border border-white/20 p-1 flex">
+          <div className="bg-card/80 backdrop-blur-xl rounded-2xl border border-border p-1 flex">
             {tabs.map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
@@ -216,8 +228,8 @@ export function ProfilePage() {
                   className={cn(
                     "flex-1 flex items-center justify-center py-2.5 rounded-xl transition-all",
                     isActive
-                      ? "bg-white/20 text-white"
-                      : "text-white/50 hover:text-white/70"
+                      ? "bg-muted text-foreground"
+                      : "text-muted-foreground hover:text-foreground"
                   )}
                 >
                   <Icon className={cn("w-5 h-5", tab.id === "reels" && "fill-current")} />
@@ -233,7 +245,7 @@ export function ProfilePage() {
             <>
               {postsLoading ? (
                 <div className="p-12 flex justify-center">
-                  <Loader2 className="w-8 h-8 animate-spin text-white/60" />
+                  <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
                 </div>
               ) : posts.length > 0 ? (
                 <div className="grid grid-cols-3 gap-1 rounded-2xl overflow-hidden">
@@ -270,11 +282,11 @@ export function ProfilePage() {
                 </div>
               ) : (
                 <div className="py-12 text-center">
-                  <div className="w-16 h-16 rounded-full bg-white/10 backdrop-blur-xl border border-white/20 flex items-center justify-center mx-auto mb-3">
-                    <Grid3X3 className="w-8 h-8 text-white/60" />
+                  <div className="w-16 h-16 rounded-full bg-card/80 backdrop-blur-xl border border-border flex items-center justify-center mx-auto mb-3">
+                    <Grid3X3 className="w-8 h-8 text-muted-foreground" />
                   </div>
-                  <h3 className="font-semibold text-white mb-1">Нет публикаций</h3>
-                  <p className="text-sm text-white/60">Создайте свой первый пост</p>
+                  <h3 className="font-semibold text-foreground mb-1">Нет публикаций</h3>
+                  <p className="text-sm text-muted-foreground">Создайте свой первый пост</p>
                 </div>
               )}
             </>
@@ -284,7 +296,7 @@ export function ProfilePage() {
             <>
               {savedLoading ? (
                 <div className="p-12 flex justify-center">
-                  <Loader2 className="w-8 h-8 animate-spin text-white/60" />
+                  <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
                 </div>
               ) : savedPosts.length > 0 ? (
                 <div className="grid grid-cols-3 gap-1 rounded-2xl overflow-hidden">
@@ -309,11 +321,11 @@ export function ProfilePage() {
                 </div>
               ) : (
                 <div className="py-12 text-center">
-                  <div className="w-16 h-16 rounded-full bg-white/10 backdrop-blur-xl border border-white/20 flex items-center justify-center mx-auto mb-3">
-                    <Bookmark className="w-8 h-8 text-white/60" />
+                  <div className="w-16 h-16 rounded-full bg-card/80 backdrop-blur-xl border border-border flex items-center justify-center mx-auto mb-3">
+                    <Bookmark className="w-8 h-8 text-muted-foreground" />
                   </div>
-                  <h3 className="font-semibold text-white mb-1">Сохранённое</h3>
-                  <p className="text-sm text-white/60">Сохраняйте понравившиеся публикации</p>
+                  <h3 className="font-semibold text-foreground mb-1">Сохраненное</h3>
+                  <p className="text-sm text-muted-foreground">Сохраняйте понравившиеся публикации</p>
                 </div>
               )}
             </>
@@ -321,21 +333,21 @@ export function ProfilePage() {
 
           {activeTab === "reels" && (
             <div className="py-12 text-center">
-              <div className="w-16 h-16 rounded-full bg-white/10 backdrop-blur-xl border border-white/20 flex items-center justify-center mx-auto mb-3">
-                <Play className="w-8 h-8 text-white/60" />
+              <div className="w-16 h-16 rounded-full bg-card/80 backdrop-blur-xl border border-border flex items-center justify-center mx-auto mb-3">
+                <Play className="w-8 h-8 text-muted-foreground" />
               </div>
-              <h3 className="font-semibold text-white mb-1">Reels</h3>
-              <p className="text-sm text-white/60">Ваши видео Reels</p>
+              <h3 className="font-semibold text-foreground mb-1">Reels</h3>
+              <p className="text-sm text-muted-foreground">Ваши видео Reels</p>
             </div>
           )}
 
           {activeTab === "tagged" && (
             <div className="py-12 text-center">
-              <div className="w-16 h-16 rounded-full bg-white/10 backdrop-blur-xl border border-white/20 flex items-center justify-center mx-auto mb-3">
-                <AtSign className="w-8 h-8 text-white/60" />
+              <div className="w-16 h-16 rounded-full bg-card/80 backdrop-blur-xl border border-border flex items-center justify-center mx-auto mb-3">
+                <AtSign className="w-8 h-8 text-muted-foreground" />
               </div>
-              <h3 className="font-semibold text-white mb-1">Отметки</h3>
-              <p className="text-sm text-white/60">Публикации с вашими отметками</p>
+              <h3 className="font-semibold text-foreground mb-1">Отметки</h3>
+              <p className="text-sm text-muted-foreground">Публикации с вашими отметками</p>
             </div>
           )}
         </div>
@@ -383,3 +395,4 @@ export function ProfilePage() {
     </div>
   );
 }
+

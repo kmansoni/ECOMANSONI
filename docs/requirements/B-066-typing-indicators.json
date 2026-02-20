@@ -1,0 +1,50 @@
+{
+  "req_id": "REQ-0066",
+  "title": "Typing Indicators (Who's Typing)",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "messaging",
+  "depends_on": ["REQ-0062"],
+  "overview": "Показать в реальном времени, кто сейчас печатает сообщение. Минимизировать сетевой трафик, чтобы не отправлять событие для каждого символа.",
+  "typing_event": {
+    "trigger": "user starts typing (focus on input field)",
+    "fields": {
+      "conversation_id": "UUID",
+      "user_id": "UUID",
+      "is_typing": "boolean"
+    },
+    "debounce": "100ms (aggregate rapid key events)"
+  },
+  "server_logic": {
+    "receives_typing_start": "user_a typing in conv_123",
+    "broadcasts": "all users in conv_123 see 'Alice is typing...'",
+    "timeout": "if no update for 5 sec, assume user stopped",
+    "aggregation": "show max 3 typists, overflow with '+2 more'"
+  },
+  "network_optimization": {
+    "debounce_client_ms": 100,
+    "batching": "send typing event max every 100ms even if user types fast",
+    "idle_timeout_server_sec": 5,
+    "redis_set": "SADD typing:{conv_id} user_a, expire 5"
+  },
+  "ui_behavior": {
+    "single_typer": "animating dots or 'Alice is typing...'",
+    "multiple": "Alice and Bob are typing...",
+    "three_plus": "Alice, Bob, and +2 more are typing..."
+  },
+  "edge_cases": {
+    "typing_then_send": "typing events stop, message appears",
+    "typing_then_clear": "user deletes all text, still shows typing",
+    "typing_offline": "no typing event sent when offline (will appear on reconnect)"
+  },
+  "sla": {
+    "latency_show_typing_p95_ms": 200,
+    "latency_hide_typing_p95_ms": 100
+  },
+  "monitoring": {
+    "metrics": [
+      "typing_indicators.events_per_sec",
+      "typing_indicators.timeout_accuracy"
+    ]
+  }
+}

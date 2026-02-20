@@ -2,6 +2,19 @@ import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "./useAuth";
 import type { RealtimeChannel } from "@supabase/supabase-js";
+import { checkChannelCapabilityViaRpc } from "@/lib/channel-capabilities";
+
+function isSchemaMissingError(error: unknown): boolean {
+  const msg = String((error as any)?.message ?? error).toLowerCase();
+  const code = String((error as any)?.code ?? "");
+  return (
+    code === "42P01" ||
+    code === "42883" ||
+    msg.includes("does not exist") ||
+    msg.includes("function") ||
+    msg.includes("relation")
+  );
+}
 
 export interface Channel {
   id: string;
@@ -37,6 +50,27 @@ export function useChannels() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const mapWithConcurrency = useCallback(async <T, R>(
+    items: T[],
+    concurrency: number,
+    mapper: (item: T) => Promise<R>
+  ): Promise<R[]> => {
+    if (items.length === 0) return [];
+    const results: R[] = new Array(items.length);
+    let nextIndex = 0;
+
+    const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+      while (true) {
+        const currentIndex = nextIndex++;
+        if (currentIndex >= items.length) return;
+        results[currentIndex] = await mapper(items[currentIndex]);
+      }
+    });
+
+    await Promise.all(workers);
+    return results;
+  }, []);
+
   const fetchChannels = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -62,21 +96,22 @@ export function useChannels() {
         memberChannelIds = (memberData || []).map(m => m.channel_id);
       }
 
-      // Fetch last messages for channels
-      const channelIds = (channelsData || []).map(c => c.id);
-      const { data: messagesData } = await supabase
-        .from("channel_messages")
-        .select("*")
-        .in("channel_id", channelIds)
-        .order("created_at", { ascending: false })
-        .limit(100);
-
+      // Fetch last message per channel (correctness > one global limit)
+      const channelIds = (channelsData || []).map((c: any) => c.id).filter(Boolean) as string[];
       const lastMessages: Record<string, ChannelMessage> = {};
-      (messagesData || []).forEach(msg => {
-        if (!lastMessages[msg.channel_id]) {
-          lastMessages[msg.channel_id] = msg;
-        }
+      const rows = await mapWithConcurrency(channelIds, 6, async (channelId) => {
+        const { data, error: msgError } = await supabase
+          .from("channel_messages")
+          .select("*")
+          .eq("channel_id", channelId)
+          .order("created_at", { ascending: false })
+          .limit(1);
+        if (msgError) throw msgError;
+        return { channelId, msg: (data && data[0]) as ChannelMessage | undefined };
       });
+      for (const row of rows) {
+        if (row.msg) lastMessages[row.channelId] = row.msg;
+      }
 
       const channelsWithMembership = (channelsData || []).map(channel => ({
         ...channel,
@@ -91,7 +126,7 @@ export function useChannels() {
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [user, mapWithConcurrency]);
 
   useEffect(() => {
     fetchChannels();
@@ -220,6 +255,16 @@ export function useChannelMessages(channelId: string | null) {
     if (!channelId || !user || !content.trim()) return;
 
     try {
+      let canPost = true;
+      try {
+        canPost = await checkChannelCapabilityViaRpc(channelId, user.id, "channel.posts.create");
+      } catch (err) {
+        if (!isSchemaMissingError(err)) throw err;
+      }
+      if (!canPost) {
+        throw new Error("No permission to publish in this channel");
+      }
+
       const { error } = await supabase.from("channel_messages").insert({
         channel_id: channelId,
         sender_id: user.id,

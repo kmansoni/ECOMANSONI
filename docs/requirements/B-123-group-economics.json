@@ -1,0 +1,388 @@
+{
+  "id": "B-123",
+  "section": "B",
+  "title": "Group Economics & Monetization Model",
+  "description": "Group membership, sponsorships, group subscriptions, and revenue sharing system",
+  "priority": "P1",
+  "complexity": "M",
+  "database": {
+    "tables": [
+      {
+        "name": "group_memberships",
+        "columns": [
+          {"name": "id", "type": "uuid", "pk": true},
+          {"name": "group_id", "type": "uuid", "required": true, "fk": "conversations"},
+          {"name": "user_id", "type": "uuid", "required": true, "fk": "users"},
+          {"name": "membership_type", "type": "enum(free,premium,vip,founder)", "default": "free"},
+          {"name": "joined_at", "type": "timestamp", "default": "now()"},
+          {"name": "left_at", "type": "timestamp"},
+          {"name": "is_active", "type": "bool", "default": true},
+          {"name": "role", "type": "varchar(50)"},
+          {"name": "contribution_score", "type": "int", "default": 0}
+        ],
+        "indexes": [
+          "group_id, is_active",
+          "user_id, is_active",
+          "membership_type"
+        ]
+      },
+      {
+        "name": "group_subscriptions",
+        "columns": [
+          {"name": "id", "type": "uuid", "pk": true},
+          {"name": "group_id", "type": "uuid", "required": true, "fk": "conversations"},
+          {"name": "tier_id", "type": "uuid", "required": true, "fk": "group_subscription_tiers"},
+          {"name": "user_id", "type": "uuid", "required": true, "fk": "users"},
+          {"name": "subscription_status", "type": "enum(active,paused,cancelled)", "default": "active"},
+          {"name": "stripe_subscription_id", "type": "varchar(255)"},
+          {"name": "started_at", "type": "timestamp", "default": "now()"},
+          {"name": "auto_renews", "type": "bool", "default": true},
+          {"name": "renews_at", "type": "timestamp"},
+          {"name": "cancelled_at", "type": "timestamp"}
+        ],
+        "indexes": [
+          "group_id, subscription_status",
+          "user_id, subscription_status",
+          "renews_at (auto-renew job)"
+        ]
+      },
+      {
+        "name": "group_subscription_tiers",
+        "columns": [
+          {"name": "id", "type": "uuid", "pk": true},
+          {"name": "group_id", "type": "uuid", "required": true, "fk": "conversations"},
+          {"name": "tier_name", "type": "varchar(255)", "required": true},
+          {"name": "price_cents", "type": "int", "required": true},
+          {"name": "billing_period", "type": "enum(monthly,annual)", "required": true},
+          {"name": "description", "type": "text"},
+          {"name": "benefits", "type": "jsonb", "default": "{}"},
+          {"name": "max_members", "type": "int"},
+          {"name": "created_at", "type": "timestamp", "default": "now()"}
+        ],
+        "indexes": [
+          "group_id",
+          "created_at"
+        ]
+      },
+      {
+        "name": "group_sponsorships",
+        "columns": [
+          {"name": "id", "type": "uuid", "pk": true},
+          {"name": "group_id", "type": "uuid", "required": true, "fk": "conversations"},
+          {"name": "sponsor_id", "type": "uuid", "required": true, "fk": "users"},
+          {"name": "amount_cents", "type": "int", "required": true},
+          {"name": "message", "type": "varchar(500)"},
+          {"name": "display_level", "type": "enum(public,private,anonymous)", "required": true},
+          {"name": "created_at", "type": "timestamp", "default": "now()"}
+        ],
+        "indexes": [
+          "group_id, created_at (leaderboard)",
+          "sponsor_id"
+        ]
+      },
+      {
+        "name": "group_revenue",
+        "columns": [
+          {"name": "id", "type": "uuid", "pk": true},
+          {"name": "group_id", "type": "uuid", "required": true, "fk": "conversations"},
+          {"name": "revenue_type", "type": "enum(subscription,sponsorship,tips,commission)", "required": true},
+          {"name": "amount_cents", "type": "int", "required": true},
+          {"name": "platform_fee_cents", "type": "int"},
+          {"name": "group_revenue_cents", "type": "int (calculated)"},
+          {"name": "transaction_id", "type": "varchar(255)"},
+          {"name": "created_at", "type": "timestamp", "default": "now()"}
+        ],
+        "indexes": [
+          "group_id, created_at",
+          "revenue_type, created_at"
+        ]
+      },
+      {
+        "name": "group_payouts",
+        "columns": [
+          {"name": "id", "type": "uuid", "pk": true},
+          {"name": "group_id", "type": "uuid", "required": true, "fk": "conversations"},
+          {"name": "amount_cents", "type": "int", "required": true},
+          {"name": "payout_method", "type": "enum(stripe_transfer,paypal,bank_transfer)", "required": true},
+          {"name": "destination_account", "type": "varchar(255)"},
+          {"name": "status", "type": "enum(pending,processing,completed,failed)", "default": "pending"},
+          {"name": "requested_at", "type": "timestamp", "default": "now()"},
+          {"name": "completed_at", "type": "timestamp"}
+        ],
+        "indexes": [
+          "group_id, status",
+          "status, requested_at (payout queue)"
+        ]
+      }
+    ],
+    "retention": {
+      "group_memberships": "indefinite",
+      "group_subscriptions": "indefinite (payment history)",
+      "group_subscription_tiers": "indefinite",
+      "group_sponsorships": "indefinite",
+      "group_revenue": "indefinite (accounting)",
+      "group_payouts": "3 years (tax)"
+    }
+  },
+  "api": {
+    "endpoints": [
+      {
+        "path": "GET /v1/groups/{group_id}/subscriptions/tiers",
+        "description": "List group subscription tiers",
+        "auth": "optional",
+        "returns": [
+          {
+            "tier_id": "uuid",
+            "tier_name": "string",
+            "price_cents": "int",
+            "billing_period": "monthly|annual",
+            "benefits": "object",
+            "member_count": "int",
+            "max_members": "int (null=unlimited)"
+          }
+        ]
+      },
+      {
+        "path": "POST /v1/groups/{group_id}/subscriptions",
+        "description": "Subscribe to group (creates Stripe subscription)",
+        "auth": "required",
+        "body": {
+          "tier_id": "uuid",
+          "payment_method_id": "string (Stripe)",
+          "billing_period": "monthly|annual"
+        },
+        "returns": {
+          "subscription_id": "uuid",
+          "status": "active",
+          "stripe_url": "string (for 3D Secure if needed)"
+        }
+      },
+      {
+        "path": "PUT /v1/groups/{group_id}/subscriptions/{subscription_id}",
+        "description": "Manage subscription (pause, resume, cancel)",
+        "auth": "required",
+        "body": {"action": "pause|resume|cancel"},
+        "returns": {"subscription_id": "uuid", "status": "new_status"}
+      },
+      {
+        "path": "POST /v1/groups/{group_id}/sponsor",
+        "description": "Send sponsorship/tip to group (one-time payment)",
+        "auth": "required",
+        "body": {
+          "amount_cents": "int (minimum 100)",
+          "message": "string (optional)",
+          "display_level": "public|private|anonymous",
+          "payment_method_id": "string"
+        },
+        "returns": {"sponsorship_id": "uuid", "acknowledged": true}
+      },
+      {
+        "path": "GET /v1/groups/{group_id}/sponsorship-leaderboard",
+        "description": "Get top sponsors for this month",
+        "auth": "optional",
+        "query": {"period": "daily|monthly|alltime", "limit": 10},
+        "returns": [
+          {
+            "rank": "int",
+            "sponsor_name": "string (if not anonymous)",
+            "amount_total_cents": "int",
+            "message": "string",
+            "tier": "string (gold/silver/bronze)"
+          }
+        ]
+      },
+      {
+        "path": "GET /v1/groups/{group_id}/revenue/analytics",
+        "description": "Group owner revenue dashboard",
+        "auth": "required (owner only)",
+        "query": {"period": "day|week|month", "days": 30},
+        "returns": {
+          "total_revenue_cents": "int",
+          "by_type": {"subscription": 5000, "sponsorship": 2000},
+          "platform_fee_cents": 1000,
+          "net_revenue_cents": 6000,
+          "subscriber_count": "int",
+          "mrr": "int (monthly recurring)",
+          "arpu": "float (average revenue per user)"
+        }
+      },
+      {
+        "path": "POST /v1/groups/{group_id}/request-payout",
+        "description": "Request payout of accumulated revenue",
+        "auth": "required (owner only)",
+        "body": {
+          "amount_cents": "int",
+          "payout_method": "stripe_transfer|paypal|bank_transfer",
+          "destination": "object"
+        },
+        "returns": {"payout_id": "uuid", "status": "pending", "estimated_arrival": "2-3 business days"}
+      },
+      {
+        "path": "GET /v1/user/group-memberships",
+        "description": "List all groups user is member of",
+        "auth": "required",
+        "query": {"status": "active|all"},
+        "returns": [
+          {
+            "group_id": "uuid",
+            "group_name": "string",
+            "membership_type": "free|premium|vip",
+            "joined_at": "timestamp",
+            "subscription_renews_at": "timestamp (if subscribed)"
+          }
+        ]
+      }
+    ]
+  },
+  "features": {
+    "membership_tiers": {
+      "free": {
+        "price": 0,
+        "features": ["view messages", "post in group", "limited history (30 days)"]
+      },
+      "premium": {
+        "price": 499,
+        "billing": "monthly",
+        "features": ["unlimited history", "HD media", "custom emojis", "priority support"]
+      },
+      "vip": {
+        "price": 1499,
+        "billing": "monthly",
+        "features": ["all premium", "badge on profile", "group exclusive content", "1-on-1 with owner"]
+      },
+      "founder": {
+        "price": null,
+        "features": ["all VIP", "revenue share (10%)"]
+      }
+    },
+    "sponsorship_system": {
+      "minimum_amount": 100,
+      "platform_fee": "5% to platform, 95% to group",
+      "leaderboard_tiers": {
+        "bronze": "100-499",
+        "silver": "500-1999",
+        "gold": "2000+"
+      },
+      "display_options": ["public (visible to all)", "private (visible to group owner)", "anonymous (no name shown)"]
+    },
+    "revenue_sharing": {
+      "subscription_revenue": "group keeps 85%, platform 15%",
+      "sponsorship_revenue": "group keeps 95%, platform 5%",
+      "founder_tier": "founder keeps 10% of all revenue, rest follows normal split",
+      "minimum_payout": 1000
+    },
+    "payout_methods": {
+      "stripe_transfer": "instant, fees included",
+      "paypal": "1-3 days, PayPal fees apply",
+      "bank_transfer": "3-5 days, fixed $2 fee"
+    }
+  },
+  "monitoring": {
+    "metrics": [
+      {
+        "name": "subscription_churn_rate",
+        "target": "<10% monthly",
+        "alert": ">15% churn (investigate)"
+      },
+      {
+        "name": "mrr_growth",
+        "target": ">10% monthly",
+        "alert": "<0% (declining revenue)"
+      },
+      {
+        "name": "sponsor_count",
+        "target": ">5% of active members",
+        "alert": "<2% (low engagement)"
+      },
+      {
+        "name": "payout_processing_time",
+        "target": "p95 <2 min",
+        "alert": ">10 min (queue issue)"
+      },
+      {
+        "name": "payment_failure_rate",
+        "target": "<2%",
+        "alert": ">5% (investigate payment provider)"
+      }
+    ]
+  },
+  "testing": {
+    "test_scenarios": [
+      {
+        "name": "Create subscription tier",
+        "steps": ["Owner creates premium tier", "$4.99/mo", "Add benefits"],
+        "expected": "Tier created, appears on group page"
+      },
+      {
+        "name": "User subscribes to group",
+        "steps": ["User selects premium tier", "Adds payment method", "Subscribes"],
+        "expected": "Subscription active, Stripe charge processed, renew date set"
+      },
+      {
+        "name": "Auto-renewal flow",
+        "steps": ["Subscription in system", "Renew date approaches", "Charge automatically"],
+        "expected": "Charge succeeds, renewal extended, user notified"
+      },
+      {
+        "name": "Failed payment retry",
+        "steps": ["Payment fails on renewal", "System retries 3x over 3 days"],
+        "expected": "Retry succeeds (or send warning email)"
+      },
+      {
+        "name": "Cancel subscription",
+        "steps": ["User cancels subscription"],
+        "expected": "Access revokes at end of billing period, Stripe updated"
+      },
+      {
+        "name": "Sponsorship/tip system",
+        "steps": ["User sends $5 sponsorship to group"],
+        "expected": "payment processed, group revenue +$5, sponsor on leaderboard"
+      },
+      {
+        "name": "Anonymous sponsorship",
+        "steps": ["User tips $20 anonymously"],
+        "expected": "No name visible to group, but contributes to sponsor count"
+      },
+      {
+        "name": "Revenue dashboard accuracy",
+        "steps": ["Owner views revenue widget"],
+        "expected": "Shows MRR, total revenue, breakdown by source, current month accurate"
+      },
+      {
+        "name": "Payout request and processing",
+        "steps": ["Owner requests $100 payout", "System processes"],
+        "expected": "Funds transferred within 1-3 days, status tracked"
+      },
+      {
+        "name": "Founder revenue share",
+        "steps": ["Founder in group", "$1000 total revenue", "Founder receives $100 (10%)"],
+        "expected": "Payment auto-calculated and split correctly"
+      },
+      {
+        "name": "Multiple tiers available",
+        "steps": ["Group has free/premium/vip tiers", "Users subscribe to different tiers"],
+        "expected": "Each user sees appropriate features, no tier mixing"
+      },
+      {
+        "name": "Subscription tier pricing update",
+        "steps": ["Owner updates premium from $4.99 to $5.99"],
+        "expected": "New subscribers pay $5.99, existing $4.99 until renewal"
+      },
+      {
+        "name": "Sponsorship leaderboard monthly reset",
+        "steps": ["Month changes", "Leaderboard resets to 'monthly' view"],
+        "expected": "New sponsors ranked from 1, old month archived"
+      },
+      {
+        "name": "Payment fraud detection",
+        "steps": ["Unusual charge pattern", "Same card used for 10 groups in 5 min"],
+        "expected": "Flagged for manual review, not processed immediately"
+      },
+      {
+        "name": "Tax calculation for payout",
+        "steps": ["Group in UK, $1000 payout", "Platform calculates VAT"],
+        "expected": "Correct amount after tax sent to owner"
+      }
+    ]
+  }
+}

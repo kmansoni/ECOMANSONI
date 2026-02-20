@@ -4,8 +4,11 @@ import { BottomNav } from "./BottomNav";
 import { ScrollContainerProvider } from "@/contexts/ScrollContainerContext";
 import { useChatOpen } from "@/contexts/ChatOpenContext";
 import { cn } from "@/lib/utils";
+import { usePresence } from "@/hooks/usePresence";
 
 export function AppLayout() {
+  usePresence();
+
   const mainRef = useRef<HTMLElement>(null);
   const location = useLocation();
   const { shouldHideBottomNav } = useChatOpen();
@@ -14,8 +17,7 @@ export function AppLayout() {
   return (
     <div 
       className={cn(
-        "h-full flex flex-col safe-area-top safe-area-left safe-area-right relative",
-        isReelsPage ? "bg-black" : "bg-background"
+        "h-full flex flex-col safe-area-top safe-area-left safe-area-right relative bg-transparent"
       )}
       style={{ 
         position: 'relative',

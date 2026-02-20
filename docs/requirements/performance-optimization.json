@@ -1,0 +1,1 @@
+{"req_id":"REQ-0033","title":"Performance Optimization","areas":["bundle_splitting","lazy_loading","image_optimization","code_caching"],"targets":{"fcp_ms":1500,"lcp_ms":2500,"cls":0.1}}

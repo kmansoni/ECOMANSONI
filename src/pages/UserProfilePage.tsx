@@ -12,6 +12,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { FollowersSheet } from "@/components/profile/FollowersSheet";
 import { StoryViewer } from "@/components/feed/StoryViewer";
 import { VerifiedBadge } from "@/components/ui/verified-badge";
+import { HighlightsManager } from "@/components/profile/HighlightsManager";
 import type { Story, UserWithStories } from "@/hooks/useStories";
 
 const tabs = [
@@ -357,6 +358,14 @@ export function UserProfilePage() {
             </Button>
           </div>
         )}
+      </div>
+
+      {/* Highlights Section */}
+      <div className="px-4 py-4 border-t border-border">
+        <HighlightsManager 
+          userId={profile.user_id} 
+          isOwnProfile={Boolean(currentUser && currentUser.id === profile.user_id)} 
+        />
       </div>
 
       {/* Content Tabs */}

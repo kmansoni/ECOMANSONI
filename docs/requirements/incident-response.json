@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "generated_at": "2026-02-19",
+  "incident_response_playbook": {
+    "severity_levels": {
+      "SEV1": "Critical: service unavailable, major data loss potential, >100k users affected",
+      "SEV2": "Major: significant functionality broken, <100k users affected",
+      "SEV3": "Minor: degraded performance, non-critical feature broken",
+      "SEV4": "Informational: monitoring alert, no user impact"
+    },
+    "escalation_policy": {
+      "on_call": "pagerduty schedule",
+      "ack_time_sev1_min": 5,
+      "ack_time_sev2_min": 15,
+      "ack_time_sev3_min": 60
+    },
+    "detection_triggers": [
+      {
+        "metric": "message_delivery_success_rate",
+        "threshold": "< 99%",
+        "window": "5min",
+        "severity": "SEV1"
+      },
+      {
+        "metric": "api_error_rate",
+        "threshold": "> 5%",
+        "window": "5min",
+        "severity": "SEV2"
+      },
+      {
+        "metric": "p95_sync_latency",
+        "threshold": "> 10s",
+        "window": "10min",
+        "severity": "SEV2"
+      },
+      {
+        "metric": "database_connection_pool_exhausted",
+        "threshold": "true",
+        "severity": "SEV1"
+      }
+    ],
+    "triage_phase": {
+      "duration_max_min": 5,
+      "actions": [
+        "Confirm incident via alert (check multiple sources)",
+        "Assign severity level",
+        "Page on-call engineer",
+        "Create incident channel (Slack #incident-{date}-{seq})",
+        "Gather: baseline metrics before incident"
+      ]
+    },
+    "mitigation_phase": {
+      "duration_target_min": 15,
+      "actions": [
+        "Check status page, update users",
+        "Identify root cause (logs, metrics, recent deployments)",
+        "Apply quick mitigation: kill-switch, rollback, or scaling",
+        "Monitor SLI during mitigation"
+      ]
+    },
+    "resolution_phase": {
+      "actions": [
+        "Confirm SLIs back to normal",
+        "Transition to on-call -> secondary",
+        "Begin postmortem prep (capture timeline, decisions)"
+      ]
+    },
+    "postmortem_template": {
+      "title": "Postmortem: {incident_name}",
+      "timeline": "Minute-by-minute actions and decisions",
+      "root_cause_analysis": "RCA using 5-whys",
+      "action_items": ["fix", "test", "document", "monitor"],
+      "deadline_days": 5,
+      "max_drift_from_incident_days": 2
+    }
+  }
+}

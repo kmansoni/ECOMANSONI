@@ -1,11 +1,21 @@
-import { useState, useRef, useEffect } from "react";
-import { ArrowLeft, Eye, Share2, Search, Volume2, VolumeX, ChevronDown, MoreVertical } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { useChannelMessages, useJoinChannel, Channel } from "@/hooks/useChannels";
-import { useAuth } from "@/hooks/useAuth";
-import { useChatOpen } from "@/contexts/ChatOpenContext";
+import { useEffect, useRef, useState } from "react";
+import { ArrowLeft, ChevronDown, Eye, Link, MoreVertical, Search, Send, Share2, Volume2 } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { useAuth } from "@/hooks/useAuth";
+import type { Channel } from "@/hooks/useChannels";
+import { useChannelMessages, useJoinChannel } from "@/hooks/useChannels";
+import { useChannelCapabilities } from "@/hooks/useChannelCapabilities";
+import { useCommunityGlobalSettings, useCommunityInvites } from "@/hooks/useCommunityControls";
+import { useChatOpen } from "@/contexts/ChatOpenContext";
 
 interface ChannelConversationProps {
   channel: Channel;
@@ -13,46 +23,50 @@ interface ChannelConversationProps {
   onLeave?: () => void;
 }
 
-// Format subscriber count like "4 119 170 подписчиков"
-const formatSubscribers = (count: number): string => {
-  return count.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ") + " подписчиков";
-};
+const formatSubscribers = (count: number): string =>
+  `${count.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ")} подписчиков`;
 
-// Format view count like "168,6K"
 const formatViews = (count: number): string => {
-  if (count >= 1000000) {
-    return (count / 1000000).toFixed(1).replace(".", ",") + "M";
-  }
-  if (count >= 1000) {
-    return (count / 1000).toFixed(1).replace(".", ",") + "K";
-  }
-  return count.toString();
+  if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1).replace(".", ",")}M`;
+  if (count >= 1_000) return `${(count / 1_000).toFixed(1).replace(".", ",")}K`;
+  return String(count);
 };
 
-// Sample reactions for demo
-const sampleReactions = [
-  { emoji: "❤️", count: 914 },
-  { emoji: "🤡", count: 328 },
-  { emoji: "🤯", count: 113 },
-  { emoji: "🔥", count: 66 },
-  { emoji: "👍", count: 45 },
-  { emoji: "🎉", count: 42 },
-  { emoji: "👍", count: 40 },
-  { emoji: "😂", count: 19 },
-];
+const stableHash32 = (input: string): number => {
+  // FNV-1a 32-bit
+  let h = 0x811c9dc5;
+  for (let i = 0; i < input.length; i++) {
+    h ^= input.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return h >>> 0;
+};
+
+const stableIntInRange = (seed: string, minInclusive: number, maxInclusive: number): number => {
+  const min = Math.min(minInclusive, maxInclusive);
+  const max = Math.max(minInclusive, maxInclusive);
+  const span = max - min + 1;
+  if (span <= 1) return min;
+  return min + (stableHash32(seed) % span);
+};
 
 export function ChannelConversation({ channel, onBack, onLeave }: ChannelConversationProps) {
   const { user } = useAuth();
   const { setIsChatOpen } = useChatOpen();
-  const { messages, loading } = useChannelMessages(channel.id);
+  const { messages, loading, sendMessage } = useChannelMessages(channel.id);
   const { joinChannel, leaveChannel } = useJoinChannel();
+  const { can, canRpc, role } = useChannelCapabilities(channel);
+  const { settings, update: updateGlobalSettings } = useCommunityGlobalSettings();
+  const { createChannelInvite } = useCommunityInvites();
   const [isMember, setIsMember] = useState(channel.is_member);
-  const [isMuted, setIsMuted] = useState(false);
+  const [draftPost, setDraftPost] = useState("");
+  const [sendingPost, setSendingPost] = useState(false);
+  const [showScrollDown, setShowScrollDown] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const [showScrollDown, setShowScrollDown] = useState(false);
+  const canCreatePosts = isMember && can("channel.posts.create");
+  const canInvite = isMember && can("channel.members.invite") && (settings?.allow_channel_invites ?? true);
 
-  // Mark chat as open/closed for hiding bottom nav
   useEffect(() => {
     setIsChatOpen(true);
     return () => setIsChatOpen(false);
@@ -68,9 +82,7 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
     setShowScrollDown(scrollHeight - scrollTop - clientHeight > 200);
   };
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
+  const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
 
   const handleJoin = async () => {
     const success = await joinChannel(channel.id);
@@ -93,6 +105,45 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
     }
   };
 
+  const handlePublishPost = async () => {
+    const text = draftPost.trim();
+    if (!text || !user) return;
+
+    try {
+      setSendingPost(true);
+      const allowedByRpc = await canRpc("channel.posts.create");
+      if (!allowedByRpc) {
+        toast.error("Недостаточно прав для публикации");
+        return;
+      }
+
+      await sendMessage(text);
+      setDraftPost("");
+      toast.success("Пост опубликован");
+    } catch (err) {
+      console.error("Failed to publish post:", err);
+      toast.error("Не удалось опубликовать пост");
+    } finally {
+      setSendingPost(false);
+    }
+  };
+
+  const handleCreateInvite = async () => {
+    try {
+      if (!canInvite) {
+        toast.error("Приглашения отключены настройками или правами");
+        return;
+      }
+      const token = await createChannelInvite(channel.id);
+      const url = `${window.location.origin}/chats?channel_invite=${token}`;
+      await navigator.clipboard.writeText(url);
+      toast.success("Ссылка-приглашение скопирована");
+    } catch (err) {
+      console.error("Failed to create channel invite:", err);
+      toast.error("Не удалось создать приглашение");
+    }
+  };
+
   const formatTime = (dateStr: string) => {
     try {
       return format(new Date(dateStr), "HH:mm");
@@ -103,103 +154,68 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
 
   return (
     <div className="h-full flex flex-col relative">
-      {/* Brand background - fixed to cover full screen */}
-      <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none">
-        <div className="absolute inset-0 bg-gradient-to-br from-[#0a1628] via-[#0d2035] to-[#071420]" />
-        <div 
-          className="absolute top-0 left-1/4 w-[500px] h-[500px] rounded-full blur-[120px] opacity-60"
-          style={{
-            background: 'radial-gradient(circle, #0066CC 0%, transparent 70%)',
-            animation: 'float-orb-1 15s ease-in-out infinite',
-          }}
-        />
-        <div 
-          className="absolute bottom-20 right-0 w-[450px] h-[450px] rounded-full blur-[100px] opacity-50"
-          style={{
-            background: 'radial-gradient(circle, #00A3B4 0%, transparent 70%)',
-            animation: 'float-orb-2 18s ease-in-out infinite',
-            animationDelay: '-5s',
-          }}
-        />
-        <div 
-          className="absolute top-1/3 -right-20 w-[400px] h-[400px] rounded-full blur-[90px] opacity-55"
-          style={{
-            background: 'radial-gradient(circle, #00C896 0%, transparent 70%)',
-            animation: 'float-orb-3 20s ease-in-out infinite',
-            animationDelay: '-10s',
-          }}
-        />
-        <div 
-          className="absolute bottom-1/3 -left-10 w-[350px] h-[350px] rounded-full blur-[80px] opacity-45"
-          style={{
-            background: 'radial-gradient(circle, #4FD080 0%, transparent 70%)',
-            animation: 'float-orb-4 22s ease-in-out infinite',
-            animationDelay: '-3s',
-          }}
-        />
-      </div>
-      {/* Header - Telegram style */}
       <div className="flex-shrink-0 flex items-center gap-2 px-2 py-2 bg-card border-b border-border relative z-10">
-        {/* Back button with unread count */}
-        <button 
-          onClick={onBack} 
-          className="flex items-center gap-1 text-primary"
-        >
+        <button onClick={onBack} className="flex items-center gap-1 text-primary">
           <ArrowLeft className="w-5 h-5" />
-          <span className="text-sm font-medium">
-            {Math.floor(Math.random() * 100) + 10}
-          </span>
+          <span className="text-sm font-medium">{stableIntInRange(`channel:${channel.id}:header`, 10, 109)}</span>
         </button>
-        
-        {/* Channel avatar */}
+
         <img
           src={channel.avatar_url || `https://api.dicebear.com/7.x/shapes/svg?seed=${channel.id}`}
           alt={channel.name}
           className="w-9 h-9 rounded-full object-cover bg-muted"
         />
 
-        {/* Channel info */}
         <div className="flex-1 min-w-0">
           <h2 className="font-semibold text-foreground text-sm truncate">{channel.name}</h2>
-          <p className="text-[11px] text-muted-foreground">
-            {formatSubscribers(channel.member_count || 0)}
-          </p>
+          <p className="text-[11px] text-muted-foreground">{formatSubscribers(channel.member_count || 0)}</p>
         </div>
 
-        {/* Actions */}
         <button className="p-2 text-muted-foreground hover:text-foreground">
           <Search className="w-5 h-5" />
         </button>
-        <button className="p-2 text-muted-foreground hover:text-foreground">
-          <MoreVertical className="w-5 h-5" />
-        </button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button className="p-2 text-muted-foreground hover:text-foreground">
+              <MoreVertical className="w-5 h-5" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={isMember ? handleLeave : handleJoin}>
+              {isMember ? "Отписаться от канала" : "Подписаться на канал"}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={handleCreateInvite} disabled={!canInvite}>
+              <Link className="w-4 h-4 mr-2" />
+              Пригласить в канал
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
-      {/* Pinned message bar */}
       <div className="flex-shrink-0 bg-card border-b border-border relative z-10">
         <div className="flex items-center justify-between px-3 py-2">
           <div className="flex items-center gap-2 flex-1 min-w-0">
             <div className="w-0.5 h-8 bg-primary rounded-full flex-shrink-0" />
             <div className="min-w-0">
-              <p className="text-xs text-foreground truncate">Закреплённое сообщение</p>
-              <p className="text-xs text-muted-foreground truncate">Увидели что-то важное и интересное...</p>
+              <p className="text-xs text-foreground truncate">Закрепленное сообщение</p>
+              <p className="text-xs text-muted-foreground truncate">Канал подключен к capability engine</p>
             </div>
           </div>
-          <Button 
-            onClick={handleJoin}
-            size="sm" 
+          <Button
+            onClick={isMember ? handlePublishPost : handleJoin}
+            size="sm"
             className="rounded-full px-4 h-8 text-xs font-medium"
+            disabled={isMember && (!canCreatePosts || sendingPost || !draftPost.trim())}
           >
-            Прислать новость
+            {!isMember ? "Подписаться" : canCreatePosts ? "Опубликовать" : "Только чтение"}
           </Button>
         </div>
       </div>
 
-      {/* Messages as posts */}
-      <div 
+      <div
         ref={scrollContainerRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto px-2 py-3 space-y-3 relative z-10"
+        className="flex-1 overflow-y-auto overflow-x-hidden px-2 py-3 space-y-3 relative z-10"
       >
         {loading && (
           <div className="flex items-center justify-center py-8">
@@ -213,15 +229,17 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
           </div>
         )}
 
-        {messages.map((msg, index) => {
-          // Generate random view count for demo
-          const viewCount = Math.floor(Math.random() * 200000) + 1000;
-          // Get random subset of reactions
-          const postReactions = sampleReactions.slice(0, Math.floor(Math.random() * 5) + 4);
-          
+        {messages.map((msg) => {
+          const viewCount = Number.isFinite((msg as any)?.views_count) ? Number((msg as any).views_count) : 0;
+          const postReactions: Array<{ emoji: string; count: number }> = Array.isArray((msg as any)?.reactions)
+            ? ((msg as any).reactions as any[])
+                .filter((r) => r && typeof r.emoji === "string" && Number.isFinite(r.count))
+                .map((r) => ({ emoji: String(r.emoji), count: Number(r.count) }))
+            : [];
+
           return (
-            <div key={msg.id} className="bg-card rounded-2xl overflow-hidden shadow-sm">
-              {/* Post header with channel info */}
+            <div key={msg.id} className="flex flex-col gap-1">
+              <div className="bg-card rounded-2xl overflow-hidden shadow-sm border border-border/50 dark:bg-[rgba(35,35,42,0.45)] dark:backdrop-blur-xl dark:border-white/10 dark:shadow-[0_0_0_1px_rgba(15,69,255,0.10)_inset,0_0_24px_rgba(15,69,255,0.10),0_0_24px_rgba(106,54,255,0.08)]">
               <div className="flex items-center gap-2 px-3 pt-3 pb-2">
                 <img
                   src={channel.avatar_url || `https://api.dicebear.com/7.x/shapes/svg?seed=${channel.id}`}
@@ -233,15 +251,9 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
                 </div>
               </div>
 
-              {/* Post image if exists */}
               {msg.media_url && (
                 <div className="relative">
-                  <img 
-                    src={msg.media_url} 
-                    alt="" 
-                    className="w-full max-h-80 object-cover"
-                  />
-                  {/* Video overlay indicator */}
+                  <img src={msg.media_url} alt="" className="w-full max-h-80 object-cover" />
                   <div className="absolute top-2 left-2 bg-black/60 rounded px-1.5 py-0.5 text-white text-xs flex items-center gap-1">
                     <span>00:32</span>
                     <Volume2 className="w-3 h-3" />
@@ -249,44 +261,38 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
                 </div>
               )}
 
-              {/* Post content */}
               <div className="px-3 py-2">
-                <p className="text-foreground text-[15px] leading-relaxed whitespace-pre-wrap">
-                  {msg.content}
-                </p>
+                <p className="text-foreground text-[15px] leading-relaxed whitespace-pre-wrap break-words">{msg.content}</p>
               </div>
 
-              {/* Subscribe link */}
-              <div className="px-3 pb-2">
-                <button className="text-primary text-sm hover:underline flex items-center gap-1">
-                  <span>👉</span>
-                  <span>{channel.name}. Подписаться</span>
-                </button>
-              </div>
+              {postReactions.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 px-3 py-2">
+                  {postReactions.map((reaction, i) => (
+                    <button
+                      key={`${msg.id}-${i}`}
+                      className="flex items-center gap-1 px-2 py-1 rounded-full bg-muted/60 hover:bg-muted transition-colors"
+                    >
+                      <span className="text-sm">{reaction.emoji}</span>
+                      <span className="text-xs text-foreground/80">{formatViews(reaction.count)}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
 
-              {/* Reactions row */}
-              <div className="flex flex-wrap gap-1.5 px-3 py-2">
-                {postReactions.map((reaction, i) => (
-                  <button 
-                    key={i}
-                    className="flex items-center gap-1 px-2 py-1 rounded-full bg-muted/60 hover:bg-muted transition-colors"
-                  >
-                    <span className="text-sm">{reaction.emoji}</span>
-                    <span className="text-xs text-foreground/80">{formatViews(reaction.count)}</span>
-                  </button>
-                ))}
-              </div>
-
-              {/* Post footer - views and time */}
               <div className="flex items-center justify-between px-3 pb-3">
                 <div className="flex items-center gap-1.5 text-muted-foreground">
                   <Eye className="w-4 h-4" />
                   <span className="text-xs">{formatViews(viewCount)}</span>
-                  <span className="text-xs ml-1">{formatTime(msg.created_at)}</span>
                 </div>
                 <button className="text-muted-foreground hover:text-foreground transition-colors">
                   <Share2 className="w-4 h-4" />
                 </button>
+              </div>
+              </div>
+
+              {/* Time (outside card) */}
+              <div className="px-1 text-xs text-muted-foreground dark:text-white/50">
+                {formatTime(msg.created_at)}
               </div>
             </div>
           );
@@ -294,7 +300,6 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Scroll to bottom button */}
       {showScrollDown && (
         <button
           onClick={scrollToBottom}
@@ -304,6 +309,48 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
         </button>
       )}
 
+      {isMember && (
+        <div className="flex-shrink-0 px-3 py-3 relative z-10 backdrop-blur-xl bg-black/20 border-t border-white/10 safe-area-bottom">
+          <div className="flex items-center gap-2 text-[11px] text-muted-foreground dark:text-white/50 mb-2">
+            <span>Роль: {role}</span>
+            {!canCreatePosts && <span>• публикация отключена</span>}
+          </div>
+          <div className="flex items-center justify-between rounded-lg border border-white/10 bg-white/5 px-3 py-2 mb-2">
+            <span className="text-xs text-white/70">Глобально: приглашения в каналы</span>
+            <Switch
+              checked={settings?.allow_channel_invites ?? true}
+              onCheckedChange={(checked) =>
+                void updateGlobalSettings({ allow_channel_invites: checked }).catch(() =>
+                  toast.error("Не удалось обновить глобальные настройки"),
+                )
+              }
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={draftPost}
+              onChange={(e) => setDraftPost(e.target.value)}
+              placeholder={canCreatePosts ? "Новый пост в канал..." : "Для публикации нужны права"}
+              disabled={!canCreatePosts || sendingPost}
+              className="flex-1 h-11 px-5 rounded-full text-white placeholder:text-white/50 outline-none bg-black/40 border-0 transition-all focus:ring-1 focus:ring-[#6ab3f3]/30 disabled:opacity-60"
+            />
+            <button
+              onClick={handlePublishPost}
+              disabled={!canCreatePosts || sendingPost || !draftPost.trim()}
+              className="w-12 h-12 rounded-full flex items-center justify-center shrink-0 disabled:opacity-50"
+              style={{
+                background: 'linear-gradient(135deg, #00A3B4 0%, #0066CC 50%, #00C896 100%)',
+                boxShadow: '0 0 25px rgba(0,163,180,0.5), 0 4px 20px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.2)'
+              }}
+              aria-label="Опубликовать"
+              type="button"
+            >
+              <Send className="w-5 h-5 text-white" />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,0 +1,1 @@
+{"req_id":"REQ-0059","title":"Content Encryption","algorithm":"AES-256-GCM","key_rotation_days":90,"tls_version":"1.3"}

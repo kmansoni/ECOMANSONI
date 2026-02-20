@@ -1,0 +1,1 @@
+{"req_id":"REQ-0031","title":"Admin Management Panel","sections":["users","groups","content","reports","settings"],"permissions":["view","edit","delete","ban_user","moderate_content"],"audit_log":{"enabled":true,"retention_days":365}}

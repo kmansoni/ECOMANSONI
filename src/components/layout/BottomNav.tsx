@@ -9,6 +9,7 @@ import {
   DrawerHeader,
   DrawerTitle,
 } from "@/components/ui/drawer";
+import { useMultiAccount } from "@/contexts/MultiAccountContext";
 
 interface NavItem {
   to: string;
@@ -20,30 +21,6 @@ interface NavItem {
   isCenter?: boolean;
 }
 
-interface Account {
-  id: string;
-  username: string;
-  displayName: string;
-  avatar: string;
-  isActive: boolean;
-}
-
-const mockAccounts: Account[] = [
-  {
-    id: "1",
-    username: "alex_ivanov",
-    displayName: "Александр Иванов",
-    avatar: "https://i.pravatar.cc/150?img=32",
-    isActive: true,
-  },
-  {
-    id: "2",
-    username: "work_account",
-    displayName: "Рабочий аккаунт",
-    avatar: "https://i.pravatar.cc/150?img=12",
-    isActive: false,
-  },
-];
 
 // Default nav items: Лента → Reels → Чаты → Профиль | AR (отдельная кнопка)
 const defaultNavItems: NavItem[] = [
@@ -77,9 +54,9 @@ export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function Bottom
   const location = useLocation();
   const navigate = useNavigate();
   const { unreadCount } = useUnreadChats();
+  const { accounts: maAccounts, activeAccountId, switchAccount } = useMultiAccount();
   const [keyboardOpen, setKeyboardOpen] = useState(false);
   const [accountSwitcherOpen, setAccountSwitcherOpen] = useState(false);
-  const [accounts, setAccounts] = useState(mockAccounts);
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
   const isLongPressRef = useRef(false);
   
@@ -118,19 +95,18 @@ export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function Bottom
 
   const isReelsPage = location.pathname === "/reels";
 
-  const handleSwitchAccount = (accountId: string) => {
-    setAccounts(prev =>
-      prev.map(acc => ({
-        ...acc,
-        isActive: acc.id === accountId,
-      }))
-    );
-    setAccountSwitcherOpen(false);
+  const handleSwitchAccount = async (accountId: string) => {
+    try {
+      await switchAccount(accountId);
+      setAccountSwitcherOpen(false);
+    } catch {
+      // handled by provider
+    }
   };
 
   const handleAddAccount = () => {
     setAccountSwitcherOpen(false);
-    navigate("/auth");
+    navigate("/auth?addAccount=1");
   };
 
   const handleTouchStart = useCallback((item: NavItem) => {
@@ -223,6 +199,11 @@ export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function Bottom
                     style={{ 
                       WebkitTapHighlightColor: 'transparent',
                       touchAction: 'manipulation',
+                    }}
+                    onClick={() => {
+                      if (location.pathname.startsWith("/realestate")) {
+                        navigate(`/realestate${item.to}`);
+                      }
                     }}
                   >
                     <div className="relative flex items-center justify-center">
@@ -367,31 +348,37 @@ export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function Bottom
           </DrawerHeader>
           
           <div className="p-4 space-y-2">
-            {accounts.map((account) => (
+            {maAccounts.map((account) => {
+              const displayName = account.profile?.displayName ?? "Аккаунт";
+              const username = account.profile?.username ?? "user";
+              const avatar = account.profile?.avatarUrl ?? "https://i.pravatar.cc/150?img=32";
+              const isActive = activeAccountId === account.accountId;
+              return (
               <button
-                key={account.id}
-                onClick={() => handleSwitchAccount(account.id)}
+                key={account.accountId}
+                onClick={() => handleSwitchAccount(account.accountId)}
                 className={cn(
                   "w-full flex items-center gap-3 p-3 rounded-xl transition-colors",
-                  account.isActive 
+                  isActive 
                     ? "bg-primary/10" 
                     : "hover:bg-muted"
                 )}
               >
                 <img
-                  src={account.avatar}
-                  alt={account.displayName}
+                  src={avatar}
+                  alt={displayName}
                   className="w-12 h-12 rounded-full object-cover"
                 />
                 <div className="flex-1 text-left">
-                  <p className="font-medium text-foreground">{account.username}</p>
-                  <p className="text-sm text-muted-foreground">{account.displayName}</p>
+                  <p className="font-medium text-foreground">{username}</p>
+                  <p className="text-sm text-muted-foreground">{displayName}</p>
                 </div>
-                {account.isActive && (
+                {isActive && (
                   <Check className="w-5 h-5 text-primary" />
                 )}
               </button>
-            ))}
+              );
+            })}
             
             {/* Add Account Button */}
             <button

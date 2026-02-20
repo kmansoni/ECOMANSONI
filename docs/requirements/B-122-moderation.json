@@ -1,0 +1,399 @@
+{
+  "id": "B-122",
+  "section": "B",
+  "title": "Content Moderation at Scale",
+  "description": "Distributed moderation system with automated detection, escalation workflows, and moderator management",
+  "priority": "P1",
+  "complexity": "M",
+  "database": {
+    "tables": [
+      {
+        "name": "moderation_actions",
+        "columns": [
+          {"name": "id", "type": "uuid", "pk": true},
+          {"name": "content_type", "type": "enum(message,post,profile,image,video,story)", "required": true},
+          {"name": "content_id", "type": "uuid", "required": true},
+          {"name": "conversation_id", "type": "uuid"},
+          {"name": "reported_by", "type": "uuid", "fk": "users"},
+          {"name": "report_reason", "type": "varchar(255)", "required": true},
+          {"name": "report_details", "type": "text"},
+          {"name": "violation_type", "type": "enum(spam,harassment,hate_speech,misinformation,explicit_content,copyright,other)", "required": true},
+          {"name": "severity", "type": "enum(low,medium,high,critical)", "default": "medium"},
+          {"name": "status", "type": "enum(reported,reviewing,escalated,actioned,rejected,appealed)", "default": "reported"},
+          {"name": "auto_flagged", "type": "bool", "default": false},
+          {"name": "confidence_score", "type": "float (0-1)"},
+          {"name": "created_at", "type": "timestamp", "default": "now()"}
+        ],
+        "indexes": [
+          "content_id, content_type",
+          "status, severity, created_at",
+          "reported_by (user reports)",
+          "conversation_id (conversation moderation)"
+        ]
+      },
+      {
+        "name": "moderation_decisions",
+        "columns": [
+          {"name": "id", "type": "uuid", "pk": true},
+          {"name": "action_id", "type": "uuid", "required": true, "fk": "moderation_actions"},
+          {"name": "decided_by", "type": "uuid", "required": true, "fk": "users (moderator)"},
+          {"name": "decision", "type": "enum(approved,rejected,content_removed,user_warned,user_suspended,user_banned,quarantined)", "required": true},
+          {"name": "reasoning", "type": "text"},
+          {"name": "appeal_allowed", "type": "bool", "default": true},
+          {"name": "decided_at", "type": "timestamp", "default": "now()"},
+          {"name": "effective_at", "type": "timestamp"}
+        ],
+        "indexes": [
+          "action_id",
+          "decided_by",
+          "decision, decided_at"
+        ]
+      },
+      {
+        "name": "moderation_queue",
+        "columns": [
+          {"name": "id", "type": "uuid", "pk": true},
+          {"name": "action_id", "type": "uuid", "required": true, "fk": "moderation_actions"},
+          {"name": "assigned_to", "type": "uuid", "fk": "users (moderator)"},
+          {"name": "priority", "type": "int (1-5)", "default": 3},
+          {"name": "queue_time", "type": "int (minutes)"},
+          {"name": "sla_expires_at", "type": "timestamp"},
+          {"name": "escalated_at", "type": "timestamp"},
+          {"name": "escalated_to", "type": "uuid", "fk": "users (admin)"},
+          {"name": "status", "type": "enum(unassigned,assigned,escalated,resolved)", "default": "unassigned"}
+        ],
+        "indexes": [
+          "assigned_to, priority",
+          "priority, sla_expires_at (queue ordering)",
+          "escalated_at (escalation tracking)"
+        ]
+      },
+      {
+        "name": "moderation_incidents",
+        "columns": [
+          {"name": "id", "type": "uuid", "pk": true},
+          {"name": "user_id", "type": "uuid", "required": true, "fk": "users"},
+          {"name": "incident_type", "type": "enum(warning,suspension,ban)", "required": true},
+          {"name": "duration_days", "type": "int"},
+          {"name": "reason", "type": "text", "required": true},
+          {"name": "issued_by", "type": "uuid", "required": true, "fk": "users (admin)"},
+          {"name": "issued_at", "type": "timestamp", "default": "now()"},
+          {"name": "expires_at", "type": "timestamp"},
+          {"name": "status", "type": "enum(active,expired,appealed,lifted)", "default": "active"}
+        ],
+        "indexes": [
+          "user_id, status",
+          "expires_at (auto-lift expired)",
+          "incident_type, issued_at"
+        ]
+      },
+      {
+        "name": "auto_moderation_filters",
+        "columns": [
+          {"name": "id", "type": "uuid", "pk": true},
+          {"name": "filter_type", "type": "enum(keyword,regex,ml_model,heuristic)", "required": true},
+          {"name": "pattern", "type": "text"},
+          {"name": "action", "type": "enum(flag,quarantine,auto_remove,verify_by_human)", "required": true},
+          {"name": "confidence_threshold", "type": "float (0-1)", "default": 0.8},
+          {"name": "enabled", "type": "bool", "default": true},
+          {"name": "created_at", "type": "timestamp", "default": "now()"},
+          {"name": "last_updated_at", "type": "timestamp"}
+        ],
+        "indexes": [
+          "filter_type, enabled",
+          "created_at (audit)"
+        ]
+      },
+      {
+        "name": "moderator_stats",
+        "columns": [
+          {"name": "id", "type": "uuid", "pk": true},
+          {"name": "moderator_id", "type": "uuid", "required": true, "fk": "users"},
+          {"name": "total_decisions", "type": "int", "default": 0},
+          {"name": "avg_decision_time_minutes", "type": "float", "default": 0},
+          {"name": "accuracy_score", "type": "float (0-1)", "default": 0},
+          {"name": "appeal_overturn_rate", "type": "float (0-1)", "default": 0},
+          {"name": "last_7_days_decisions", "type": "int", "default": 0},
+          {"name": "active_warnings", "type": "int", "default": 0},
+          {"name": "updated_at", "type": "timestamp", "default": "now()"}
+        ],
+        "indexes": ["moderator_id"]
+      }
+    ],
+    "retention": {
+      "moderation_actions": "indefinite (audit)",
+      "moderation_decisions": "indefinite (appeals)",
+      "moderation_queue": "until resolved (90d archive)",
+      "moderation_incidents": "duration + 1 year (legal)",
+      "auto_moderation_filters": "indefinite",
+      "moderator_stats": "rolling 1 year"
+    }
+  },
+  "api": {
+    "endpoints": [
+      {
+        "path": "POST /v1/reports",
+        "description": "Report content violation",
+        "auth": "required",
+        "rateLimit": "20/hour per user",
+        "body": {
+          "content_type": "message|post|profile|image|video|story",
+          "content_id": "uuid",
+          "violation_type": "spam|harassment|hate_speech|misinformation|explicit_content|copyright|other",
+          "reason": "string",
+          "details": "string (optional)"
+        },
+        "returns": {"report_id": "uuid", "status": "reported", "estimated_review_time": "24 hours"}
+      },
+      {
+        "path": "GET /v1/moderation/queue",
+        "description": "Get assigned moderation queue for moderator",
+        "auth": "required (moderator only)",
+        "query": {"priority": "int", "status": "enum", "limit": 50},
+        "returns": [
+          {
+            "action_id": "uuid",
+            "content_type": "string",
+            "violation_type": "string",
+            "severity": "string",
+            "auto_flagged": "bool",
+            "confidence_score": "float",
+            "queue_position": "int",
+            "sla_expires_at": "timestamp"
+          }
+        ]
+      },
+      {
+        "path": "GET /v1/moderation/queue/analytics",
+        "description": "Get queue metrics (wait time, volume, by violation type)",
+        "auth": "required (moderator+)",
+        "returns": {
+          "total_pending": "int",
+          "avg_wait_time": "int (minutes)",
+          "by_violation_type": {"spam": 45, "harassment": 23, "hate_speech": 12},
+          "by_severity": {"low": 20, "medium": 50, "high": 10, "critical": 2},
+          "escalation_rate": "float"
+        }
+      },
+      {
+        "path": "POST /v1/moderation/{action_id}/decide",
+        "description": "Moderator makes decision on flagged content",
+        "auth": "required (moderator only)",
+        "body": {
+          "decision": "approved|rejected|content_removed|user_warned|user_suspended|user_banned|quarantined",
+          "reasoning": "string",
+          "appeal_allowed": "bool",
+          "incident_duration_days": "int (if suspension)"
+        },
+        "returns": {"decision_id": "uuid", "status": "actioned"}
+      },
+      {
+        "path": "POST /v1/moderation/{action_id}/escalate",
+        "description": "Escalate to higher priority/admin review",
+        "auth": "required (moderator only)",
+        "body": {"reason": "string", "new_priority": "int (1-5)"},
+        "returns": {"escalated_to": "admin", "escalated_at": "timestamp"}
+      },
+      {
+        "path": "GET /v1/moderation/stats",
+        "description": "Moderator performance dashboard",
+        "auth": "required (self or admin)",
+        "query": {"moderator_id": "uuid (optional - admin only)", "days": 7},
+        "returns": {
+          "total_decisions": "int",
+          "avg_decision_time": "float (minutes)",
+          "accuracy_score": "float",
+          "appeal_overturn_rate": "float",
+          "by_violation_type": {"spam": 45, "harassment": 23}
+        }
+      },
+      {
+        "path": "POST /v1/moderation/filters",
+        "description": "Create/update auto-moderation filter",
+        "auth": "required (admin only)",
+        "body": {
+          "filter_type": "keyword|regex|ml_model|heuristic",
+          "pattern": "string",
+          "action": "flag|quarantine|auto_remove|verify_by_human",
+          "confidence_threshold": "float"
+        },
+        "returns": {"filter_id": "uuid", "enabled": true}
+      },
+      {
+        "path": "GET /v1/incidents",
+        "description": "List user incidents (warnings, bans) for moderation view",
+        "auth": "required (moderator+)",
+        "query": {"user_id": "uuid", "include_expired": false},
+        "returns": [
+          {
+            "id": "uuid",
+            "incident_type": "warning|suspension|ban",
+            "reason": "string",
+            "issued_at": "timestamp",
+            "expires_at": "timestamp",
+            "status": "active|expired|appealed"
+          }
+        ]
+      }
+    ]
+  },
+  "features": {
+    "auto_detection_system": {
+      "models": [
+        {
+          "name": "spam_detection",
+          "type": "ML classifier",
+          "accuracy": ">95%",
+          "latency": "<100ms",
+          "retraining": "daily"
+        },
+        {
+          "name": "hate_speech_detection",
+          "type": "NLP + keyword + community labels",
+          "accuracy": ">88%",
+          "latency": "<500ms",
+          "multilingual": true
+        },
+        {
+          "name": "explicit_content_detection",
+          "type": "Image/video classifier",
+          "accuracy": ">90%",
+          "latency": "<2s (async)"
+        }
+      ],
+      "confidence_scoring": "0-1 scale, flag at >0.85, auto-remove at >0.95",
+      "feedback_loop": "Appeals inform model retraining, <0.5 accuracy filters removed"
+    },
+    "escalation_rules": {
+      "critical_severity": "escalate immediately to admin",
+      "high_severity_backlog": "escalate if >4 hours in queue",
+      "high_appeal_overturn_rate": "escalate moderator decisions >50% overturned",
+      "coordinated_abuse": "detect via pattern (10+ reports same content in 10min)"
+    },
+    "sla_management": {
+      "critical": "2 hour response",
+      "high": "4 hour response",
+      "medium": "8 hour response",
+      "low": "24 hour response",
+      "escalation_after_breach": "bump to next priority level"
+    },
+    "user_sanctions": {
+      "warning": "notified, no action",
+      "suspension": "1-30 days, cannot send messages",
+      "ban": "indefinite, account soft-deleted"
+    }
+  },
+  "monitoring": {
+    "metrics": [
+      {
+        "name": "moderation_queue_size",
+        "target": "<100 items",
+        "alert": ">500 items or >70% queue utilization"
+      },
+      {
+        "name": "avg_decision_time",
+        "target": "<10 minutes (medium severity)",
+        "alert": ">30 minutes"
+      },
+      {
+        "name": "sla_compliance",
+        "target": ">95%",
+        "alert": "<90% compliance"
+      },
+      {
+        "name": "auto_detection_accuracy",
+        "target": ">88%",
+        "alert": "<85% (retrain model)"
+      },
+      {
+        "name": "appeal_overturn_rate",
+        "target": "<15% system-wide",
+        "alert": ">20% (audit quality)"
+      },
+      {
+        "name": "false_positive_rate",
+        "target": "<5%",
+        "alert": ">10% (adjust confidence threshold)"
+      }
+    ]
+  },
+  "testing": {
+    "test_scenarios": [
+      {
+        "name": "Report spam message",
+        "steps": ["Report message", "Auto-flagged via spam detector", "Route to moderator queue"],
+        "expected": "Report in queue within 30s, assigned based on priority"
+      },
+      {
+        "name": "Moderator reviews and removes",
+        "steps": ["Moderator takes action", "Selects 'content_removed'", "Reason added"],
+        "expected": "Content hidden, user notified, decision logged"
+      },
+      {
+        "name": "User appeals decision",
+        "steps": ["User submits appeal", "Appeal routed to different moderator"],
+        "expected": "Appeal reviewed within 24h, reversal possible"
+      },
+      {
+        "name": "SLA escalation",
+        "steps": ["Critical severity report enters queue", "Waits 2+ hours"],
+        "expected": "Auto-escalated to admin, notification sent"
+      },
+      {
+        "name": "Auto-moderation filter",
+        "steps": ["Admin creates spam keyword filter", "User posts with keyword"],
+        "expected": "Post auto-flagged, routed to moderator (not auto-removed)"
+      },
+      {
+        "name": "Coordinated abuse detection",
+        "steps": ["10+ reports same content in 5 minutes"],
+        "expected": "Pattern detected, escalated to critical, auto-quarantine"
+      },
+      {
+        "name": "Moderator accuracy tracking",
+        "steps": ["Moderator makes 100 decisions", "System tracks appeal overturn rate"],
+        "expected": "Stats updated, <15% overturn rate"
+      },
+      {
+        "name": "User suspension workflow",
+        "steps": ["3rd violation triggers ban", "Account soft-deleted", "User can't login"],
+        "expected": "Suspension expires after duration, auto-reactivate"
+      },
+      {
+        "name": "Queue analytics",
+        "steps": ["Admin views queue dashboard"],
+        "expected": "Show total pending, avg wait, by violation type, escalation rate"
+      },
+      {
+        "name": "Hate speech multi-language detection",
+        "steps": ["Post hate speech in Russian, Arabic, Mandarin"],
+        "expected": "All detected with >88% accuracy, flagged"
+      },
+      {
+        "name": "False positive handling",
+        "steps": ["Auto-detector flags legitimate content", "Moderator rejects report"],
+        "expected": "Appeal counts as accuracy feedback, model retrains nightly"
+      },
+      {
+        "name": "Explicit content video detection",
+        "steps": ["Upload video with explicit content"],
+        "expected": "Async processing, flagged within 30s, quarantined"
+      },
+      {
+        "name": "Moderator escalation",
+        "steps": ["Moderator uncertain on decision", "Click escalate"],
+        "expected": "Routed to admin with context, elevated priority"
+      },
+      {
+        "name": "Audit trail completeness",
+        "steps": ["Content flagged, reviewed, appealed"],
+        "expected": "All steps audited with timestamps, moderator IDs"
+      },
+      {
+        "name": "Handle concurrent reports",
+        "steps": ["50 reports arrive simultaneously"],
+        "expected": "All distributed to queue, no data loss, consistent ordering"
+      }
+    ]
+  }
+}

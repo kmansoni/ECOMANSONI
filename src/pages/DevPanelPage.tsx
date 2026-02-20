@@ -63,20 +63,32 @@ export default function DevPanelPage() {
 
   // Check existing token on mount
   useEffect(() => {
-    const token = localStorage.getItem(DEV_TOKEN_KEY);
-    if (token) {
+    void (async () => {
+      const token = localStorage.getItem(DEV_TOKEN_KEY);
+      if (!token) {
+        setAuthChecking(false);
+        return;
+      }
+
       try {
-        const decoded = JSON.parse(atob(token));
-        if (decoded.exp > Date.now()) {
+        const { data, error } = await supabase.functions.invoke("dev-panel-auth", {
+          body: { token },
+        });
+
+        if (error) throw error;
+        if (data?.success) {
           setIsAuthenticated(true);
         } else {
           localStorage.removeItem(DEV_TOKEN_KEY);
+          setIsAuthenticated(false);
         }
       } catch {
         localStorage.removeItem(DEV_TOKEN_KEY);
+        setIsAuthenticated(false);
+      } finally {
+        setAuthChecking(false);
       }
-    }
-    setAuthChecking(false);
+    })();
   }, []);
 
   // Load data when authenticated

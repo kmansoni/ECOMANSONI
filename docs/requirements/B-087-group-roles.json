@@ -1,0 +1,234 @@
+{
+  "req_id": "REQ-0087",
+  "title": "Group Permissions & Roles (Admin, Moderator, Member)",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "messaging",
+  "depends_on": ["REQ-0086"],
+  "use_cases": [
+    "group admin assigns moderator role to Alice",
+    "Alice can now delete inappropriate messages (mod power)",
+    "member sends message, moderator deletes it with reason",
+    "Admin can promote/demote members or transfer ownership"
+  ],
+  "role_hierarchy": {
+    "admin": {
+      "level": 3,
+      "can_manage": ["members (edit roles, remove)", "settings (name, avatar, etc)"],
+      "can_moderate": ["delete any message", "pin/unpin messages"],
+      "can_send": ["messages", "files", "voice"],
+      "special_powers": ["transfer group ownership", "delete entire group"]
+    },
+    "moderator": {
+      "level": 2,
+      "can_manage": ["nothing (no member management)"],
+      "can_moderate": ["delete messages", "mute members temporarily"],
+      "can_send": ["messages", "files", "voice"],
+      "special_powers": ["temporary member mute (30min default)"]
+    },
+    "member": {
+      "level": 1,
+      "can_manage": [],
+      "can_moderate": [],
+      "can_send": ["messages", "files", "voice"],
+      "special_powers": ["leave group"]
+    }
+  },
+  "permission_matrix": {
+    "header": "Who can do what in groups",
+    "actions": {
+      "send_message": {
+        "admin": true,
+        "moderator": true,
+        "member": true,
+        "others": false
+      },
+      "invite_member": {
+        "admin": true,
+        "moderator": false,
+        "member": false
+      },
+      "remove_member": {
+        "admin": true,
+        "moderator": "mute_only",
+        "member": false
+      },
+      "edit_group_settings": {
+        "admin": true,
+        "moderator": false,
+        "member": false
+      },
+      "delete_message": {
+        "admin": "any_message",
+        "moderator": "inappropriate_only",
+        "member": "own_only (within 15 min)"
+      },
+      "pin_message": {
+        "admin": true,
+        "moderator": true,
+        "member": false
+      },
+      "edit_member_role": {
+        "admin": true,
+        "moderator": false,
+        "member": false
+      }
+    }
+  },
+  "role_assignment": {
+    "assign_role": {
+      "trigger": "admin taps member → 'Edit role' → select new role",
+      "flow": [
+        "1. admin clicks member",
+        "2. dropdown: admin, moderator, member",
+        "3. select new role",
+        "4. UPDATE group_members SET role=...",
+        "5. broadcast MEMBER_ROLE_CHANGED event"
+      ],
+      "notification": "role-updated user notified 'You are now a moderator'"
+    },
+    "owner_transfer": {
+      "action": "admin taps themselves → 'Transfer ownership'",
+      "confirmation": "are you sure? (transferring removes you as admin)",
+      "result": "other user becomes admin, original admin becomes member"
+    }
+  },
+  "moderation_actions": {
+    "delete_message_as_moderator": {
+      "trigger": "mod long-presses message → 'Delete'",
+      "flow": [
+        "1. mod taps delete",
+        "2. optional reason: 'Off-topic', 'Spam', 'Inappropriate'",
+        "3. soft-delete message (is_visible=false)",
+        "4. author notified: 'Your message was removed by moderator: Off-topic'",
+        "5. log in moderation_actions table"
+      ]
+    },
+    "mute_member_temporarily": {
+      "trigger": "mod long-presses member in list → 'Mute'",
+      "duration": "30 min, 1 hour, 8 hours",
+      "effect": "user cannot send messages during mute period (UI shows 'muted until X')",
+      "notification": "user notified 'You have been muted until 5pm'"
+    },
+    "moderation_audit_log": {
+      "table": "moderation_actions",
+      "columns": [
+        "action_id UUID",
+        "conversation_id UUID",
+        "moderator_id UUID",
+        "target_user_id UUID (user being moderated)",
+        "action ENUM (delete_message, mute_member, warn, etc)",
+        "reason TEXT (moderator's explanation)",
+        "duration_minutes INTEGER (for mute)",
+        "created_at TIMESTAMP",
+        "appealed BOOLEAN"
+      ]
+    }
+  },
+  "member_muting": {
+    "mute_duration": {
+      "options": [
+        "30 minutes",
+        "1 hour",
+        "8 hours",
+        "24 hours",
+        "7 days",
+        "permanent"
+      ]
+    },
+    "mute_behavior": {
+      "during_mute": "user cannot send messages (attempt shows 'You are muted until X')",
+      "expiry": "auto-unmute after duration expires",
+      "early_unmute": "only admin can unmute before expiry"
+    }
+  },
+  "permission_inheritance": {
+    "rule": "when user gets new role, highest permission wins",
+    "example": "if admin says 'member can send' but member is muted, mute wins (cannot send)"
+  },
+  "admin_transfer_implications": {
+    "old_admin": "becomes regular member (loses admin role)",
+    "new_admin": "gets all admin powers",
+    "notification": "group notified 'Alice is now the admin'"
+  },
+  "database_schema_extensions": {
+    "group_members_additions": {
+      "role": "ENUM (admin, moderator, member)",
+      "muted_until": "TIMESTAMP (null if not muted)",
+      "mute_reason": "TEXT (why they were muted)"
+    },
+    "moderation_actions_table": {
+      "full_schema": {
+        "action_id": "UUID PK",
+        "conversation_id": "UUID FK",
+        "moderator_id": "UUID FK",
+        "target_user_id": "UUID FK",
+        "action": "ENUM (delete_message, mute_member, warn, promote, demote)",
+        "reason": "TEXT",
+        "duration_minutes": "INTEGER (for mute)",
+        "created_at": "TIMESTAMP",
+        "appealed": "BOOLEAN",
+        "appeal_reason": "TEXT (if appealed)",
+        "appeal_resolved": "BOOLEAN",
+        "PRIMARY KEY (action_id)",
+        "INDEX (conversation_id, created_at)"
+      }
+    }
+  },
+  "api_endpoints": {
+    "assign_role": {
+      "endpoint": "PATCH /v1/conversations/{id}/members/{user_id}/role",
+      "payload": {
+        "role": "moderator"
+      },
+      "response": {
+        "user_id": "UUID",
+        "role": "moderator"
+      }
+    },
+    "mute_member": {
+      "endpoint": "POST /v1/conversations/{id}/members/{user_id}/mute",
+      "payload": {
+        "duration_minutes": 60,
+        "reason": "Off-topic behavior"
+      },
+      "response": {
+        "muted_until": "2026-02-15T16:35:00Z"
+      }
+    },
+    "unmute_member": {
+      "endpoint": "DELETE /v1/conversations/{id}/members/{user_id}/mute"
+    },
+    "delete_message_as_mod": {
+      "endpoint": "DELETE /v1/messages/{id}?reason=off-topic",
+      "response": {
+        "message_id": "UUID",
+        "deleted_by": "moderator"
+      }
+    }
+  },
+  "testing": {
+    "scenarios": [
+      "assign moderator to Alice → she can delete messages",
+      "Alice deletes message → author notified + logged in audit",
+      "mute Bob for 1 hour → Bob cannot send messages",
+      "1 hour passes → Bob auto-unmuted, can send again",
+      "admin transfers ownership → new admin gets powers, old admin loses them",
+      "moderator attempts to delete another message → succeeds",
+      "member attempts to delete others' message → API error 403"
+    ]
+  },
+  "monitoring": {
+    "metrics": [
+      "moderation_actions.deleted_messages_per_day",
+      "moderation_actions.mutes_per_day",
+      "moderation_actions.role_changes_per_day",
+      "muted_members.count_active",
+      "moderation_actions.appeal_rate"
+    ],
+    "alerts": [
+      "moderator deletes > 100 messages/day (trigger audit)",
+      "mute appeals > 50% (policy too strict?)"
+    ]
+  }
+}

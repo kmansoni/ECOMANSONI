@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "generated_at": "2026-02-19",
+  "load_testing": {
+    "tools": ["Apache JMeter", "Locust", "k6"],
+    "baseline_load": "1000 concurrent users",
+    "ramp_up_time_sec": 300,
+    "test_duration_min": 30,
+    "expected_metrics": {
+      "p95_latency_ms": 500,
+      "error_rate_percent": 0.1,
+      "throughput_rps": 5000
+    },
+    "failure_criteria": {
+      "avg_latency_exceeds_ms": 1000,
+      "error_rate_exceeds_percent": 1.0,
+      "any_endpoint_unavailable": true
+    }
+  }
+}

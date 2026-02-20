@@ -5,7 +5,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { supabase } from "@/integrations/supabase/client";
 import { useVideoCallContext } from "@/contexts/VideoCallContext";
 import { MediaGallerySheet } from "@/components/chat/MediaGallerySheet";
-import { BrandBackground } from "@/components/ui/brand-background";
+import { useUserPresenceStatus } from "@/hooks/useUserPresenceStatus";
 
 interface ContactProfile {
   display_name: string | null;
@@ -13,6 +13,8 @@ interface ContactProfile {
   bio: string | null;
   verified: boolean | null;
   last_seen_at: string | null;
+  status_emoji: string | null;
+  status_sticker_url: string | null;
 }
 
 interface MediaStats {
@@ -54,6 +56,8 @@ export function ContactProfilePage() {
         bio: null,
         verified: null,
         last_seen_at: null,
+        status_emoji: null,
+        status_sticker_url: null,
       });
     }
   }, [state]);
@@ -67,7 +71,7 @@ export function ContactProfilePage() {
       try {
         const { data } = await supabase
           .from('profiles')
-          .select('display_name, avatar_url, bio, verified, last_seen_at')
+          .select('display_name, avatar_url, bio, verified, last_seen_at, status_emoji, status_sticker_url')
           .eq('user_id', userId)
           .limit(1)
           .maybeSingle();
@@ -91,7 +95,6 @@ export function ContactProfilePage() {
       setMediaStats({ photos: 0, files: 0, links: 0, voiceMessages: 0, commonGroups: 0 });
       return;
     }
-
     const fetchMediaStats = async () => {
       try {
         // Fetch all messages with media
@@ -146,19 +149,7 @@ export function ContactProfilePage() {
     checkBlocked();
   }, [userId]);
 
-  const getOnlineStatus = () => {
-    if (!profile?.last_seen_at) return 'был(а) недавно';
-    
-    const lastSeen = new Date(profile.last_seen_at);
-    const now = new Date();
-    const diffMs = now.getTime() - lastSeen.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    
-    if (diffMins < 2) return 'онлайн';
-    if (diffMins < 60) return `был(а) ${diffMins} мин. назад`;
-    if (diffMins < 1440) return `был(а) ${Math.floor(diffMins / 60)} ч. назад`;
-    return 'был(а) недавно';
-  };
+  const { isOnline: isContactOnline, statusText: contactStatusText } = useUserPresenceStatus(userId);
 
   const handleCall = async () => {
     if (userId && state?.conversationId) {
@@ -174,7 +165,7 @@ export function ContactProfilePage() {
 
   if (loading && !profile) {
     return (
-      <div className="min-h-screen bg-[#17212b] flex items-center justify-center">
+      <div className="min-h-screen bg-background flex items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-white/60" />
       </div>
     );
@@ -182,8 +173,6 @@ export function ContactProfilePage() {
 
   return (
     <div className="min-h-screen relative overflow-hidden">
-      <BrandBackground />
-
       {/* Content */}
       <div className="relative z-10 min-h-screen">
         {/* Header with close button */}
@@ -221,11 +210,19 @@ export function ContactProfilePage() {
                 {profile?.display_name?.charAt(0)?.toUpperCase() || <User className="w-10 h-10" />}
               </AvatarFallback>
             </Avatar>
+
+            {profile?.status_sticker_url ? (
+              <img
+                src={profile.status_sticker_url}
+                alt="status sticker"
+                className="absolute -bottom-2 -left-2 w-12 h-12 rounded-2xl object-cover bg-white/10 border border-white/20"
+              />
+            ) : null}
           </div>
 
           {/* Name & Status */}
-          <h1 className="text-xl font-semibold text-white mb-1">{profile?.display_name || 'Пользователь'}</h1>
-          <p className="text-sm text-white/60 mb-6">{getOnlineStatus()}</p>
+          <h1 className="text-xl font-semibold text-white mb-1">{profile?.display_name || 'Пользователь'}{profile?.status_emoji ? ` ${profile.status_emoji}` : ""}</h1>
+          <p className={`text-sm mb-6 ${isContactOnline ? 'text-emerald-300' : 'text-white/60'}`}>{contactStatusText}</p>
 
           {/* Action Buttons */}
           <div className="flex items-center gap-3 mb-8">

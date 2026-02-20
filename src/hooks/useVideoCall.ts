@@ -28,7 +28,8 @@ interface UseVideoCallOptions {
 const CALL_TIMEOUT_MS = 60000; // 60 seconds
 const ICE_RESTART_DELAY_MS = 3000;
 const MAX_ICE_RESTARTS = 3;
-const SIGNAL_POLL_INTERVAL_MS = 500; // Faster polling for reliability
+// DB fallback signaling: Realtime INSERT is primary; polling is only a safety net.
+const SIGNAL_POLL_INTERVAL_MS = 1500;
 
 export function useVideoCall(options: UseVideoCallOptions = {}) {
   const { user } = useAuth();
@@ -45,6 +46,7 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
 
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const broadcastChannelRef = useRef<RealtimeChannel | null>(null);
+  const signalsChannelRef = useRef<RealtimeChannel | null>(null);
   const callTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const signalPollRef = useRef<NodeJS.Timeout | null>(null);
   const iceRestartCountRef = useRef(0);
@@ -113,6 +115,11 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
     if (broadcastChannelRef.current) {
       await supabase.removeChannel(broadcastChannelRef.current);
       broadcastChannelRef.current = null;
+    }
+
+    if (signalsChannelRef.current) {
+      await supabase.removeChannel(signalsChannelRef.current);
+      signalsChannelRef.current = null;
     }
 
     if (peerConnectionRef.current) {
@@ -233,7 +240,7 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
 
     try {
       switch (signalType) {
-        case "offer":
+        case "offer": {
           // If we receive a new offer while already having a PC, the other side may have restarted
           // (e.g., relay retry). We need to handle this gracefully:
           // 1. If PC is in "failed" or "closed" state, recreate it
@@ -333,6 +340,7 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
             await sendSignal(currentCall.id, "answer", answer);
           }
           break;
+        }
 
         case "answer":
           if (!peerConnectionRef.current) {
@@ -381,11 +389,56 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
     }
   }, [user, currentCall, sendSignal, cleanup, log, warn, options]);
 
-  // Poll DB for signals (fallback)
+  // Listen for DB fallback signals via Realtime (primary) + polling (safety net)
   const startSignalPolling = useCallback((callId: string) => {
     if (signalPollRef.current) {
       clearInterval(signalPollRef.current);
     }
+
+    // Realtime subscription for INSERTs into video_call_signals
+    if (signalsChannelRef.current) {
+      supabase.removeChannel(signalsChannelRef.current);
+      signalsChannelRef.current = null;
+    }
+
+    const channel = supabase
+      .channel(`video-call-signals:${callId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "video_call_signals",
+          filter: `call_id=eq.${callId}`,
+        },
+        async (payload) => {
+          if (!user) return;
+          const signal = payload.new as any;
+          if (!signal) return;
+          if (signal.sender_id === user.id) return;
+          // processed can be NULL; treat NULL as not processed
+          if (signal.processed === true) return;
+
+          try {
+            await handleSignal(signal.signal_type, signal.signal_data, signal.sender_id);
+          } finally {
+            // Best-effort mark as processed to prevent re-processing (poll fallback will also respect this)
+            try {
+              await supabase
+                .from("video_call_signals")
+                .update({ processed: true })
+                .eq("id", signal.id);
+            } catch {
+              // ignore
+            }
+          }
+        }
+      )
+      .subscribe((subStatus) => {
+        log("Signals realtime subscription:", subStatus);
+      });
+
+    signalsChannelRef.current = channel;
 
     signalPollRef.current = setInterval(async () => {
       if (!user) return;
@@ -415,7 +468,7 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
         }
       }
     }, SIGNAL_POLL_INTERVAL_MS);
-  }, [user, handleSignal]);
+  }, [user, handleSignal, log]);
 
   // Setup broadcast channel
   const setupBroadcastChannel = useCallback((callId: string) => {
@@ -448,14 +501,15 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
     isInitiator: boolean,
     forceRelay: boolean = false
   ) => {
-    // ALWAYS force relay on iOS/Safari in Telegram to avoid ICE failures
-    const isTelegramIOS = /iPhone|iPad/i.test(navigator.userAgent) && 
-                          ((window as any).Telegram?.WebApp || /Telegram/i.test(navigator.userAgent));
-    const shouldForceRelay = forceRelay || isTelegramIOS;
-    
-    log("Creating peer connection, initiator:", isInitiator, "forceRelay:", shouldForceRelay, "isTelegramIOS:", isTelegramIOS);
+    // Important: do NOT force TURN-only by default.
+    // Some Telegram/WebView networks block certain public TURNs; if we force `relay`, ICE may never connect.
+    // We start with `all` and only switch to `relay` on actual failure (see retry logic).
+    const isTelegramIOS = /iPhone|iPad/i.test(navigator.userAgent) &&
+      ((window as any).Telegram?.WebApp || /Telegram/i.test(navigator.userAgent));
 
-    const config = await getIceServers(shouldForceRelay);
+    log("Creating peer connection, initiator:", isInitiator, "forceRelay:", forceRelay, "isTelegramIOS:", isTelegramIOS);
+
+    const config = await getIceServers(forceRelay);
     const pc = new RTCPeerConnection(config);
 
     // Add local tracks
@@ -632,9 +686,8 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
 
       // Create peer connection and offer
       log("Creating peer connection...");
-      // For video calls we force relay by default to maximize reliability across restrictive networks.
-      // Audio tends to work more often P2P, but video can fail more frequently due to NAT/firewall.
-      await createPeerConnection(stream, call.id, true, callType === "video");
+      // Start with iceTransportPolicy=all; if ICE fails we automatically retry with relay.
+      await createPeerConnection(stream, call.id, true, false);
       log("Peer connection created and offer sent");
 
       // Start timeout
@@ -787,8 +840,8 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
 
       // Create peer connection (not initiator - will process offer)
       log("Creating peer connection for answer...");
-      // Match caller behavior: for video calls force relay to reduce connection failures.
-      await createPeerConnection(stream, call.id, false, call.call_type === "video");
+      // Start with iceTransportPolicy=all; if ICE fails we automatically retry with relay.
+      await createPeerConnection(stream, call.id, false, false);
       log("Peer connection created for answer");
       void debugEvent(call.id, "answer_pc_created");
 

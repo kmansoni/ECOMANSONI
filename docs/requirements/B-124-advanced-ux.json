@@ -1,0 +1,308 @@
+{
+  "id": "B-124",
+  "section": "B",
+  "title": "Advanced UX Patterns & Interactions",
+  "description": "Message animations, gesture recognition, swipe actions, context menus, and interactive elements",
+  "priority": "P1",
+  "complexity": "M",
+  "features": {
+    "message_animations": {
+      "send_animation": {
+        "description": "Message slides in from bottom with fade-in",
+        "duration_ms": 300,
+        "easing": "cubic-bezier(0.4, 0, 0.2, 1)",
+        "properties": ["translateY", "opacity"]
+      },
+      "delivery_indicator": {
+        "description": "Checkmark morphs from single to double (on receive), double bounces on read",
+        "duration_ms": 200,
+        "bounce_count": 3
+      },
+      "message_reaction_pop": {
+        "description": "Emoji pops out from message, falls back to reaction indicator",
+        "duration_ms": 400,
+        "scale_from": 0.8,
+        "scale_to": 1.2
+      },
+      "unread_wiggle": {
+        "description": "New unread message indicator wiggles left-right",
+        "duration_ms": 500,
+        "amplitude_px": 4,
+        "repeat": 2
+      }
+    },
+    "gesture_recognition": {
+      "swipe_left": {
+        "trigger": "swipe left on message",
+        "action": "show actions menu (reply, react, share, delete)",
+        "min_distance_px": 50,
+        "max_duration_ms": 500
+      },
+      "swipe_right": {
+        "trigger": "swipe right on message",
+        "action": "quick reply",
+        "shows": "quick reply input (sheet slides up)"
+      },
+      "long_press": {
+        "trigger": "press message 500ms",
+        "action": "show context menu + selection mode",
+        "haptic": "medium feedback"
+      },
+      "double_tap": {
+        "trigger": "double tap on message",
+        "action": "toggle favorite / quick react with emoji",
+        "emoji": "hearts (user configurable)"
+      },
+      "pinch_zoom": {
+        "trigger": "pinch on image/video",
+        "action": "zoom into full screen",
+        "min_pinch_distance": 20,
+        "max_zoom": 3.0
+      },
+      "pull_down_refresh": {
+        "trigger": "pull down on message list",
+        "action": "refresh messages (shows spinner)",
+        "resistance": "0.5 (half resistance while dragging)"
+      }
+    },
+    "swipe_actions": {
+      "leading_swipe": [
+        {
+          "label": "reply",
+          "icon": "reply_arrow",
+          "color": "blue",
+          "action": "open reply input focused"
+        },
+        {
+          "label": "bookmark",
+          "icon": "bookmark",
+          "color": "amber",
+          "action": "save to saved messages"
+        }
+      ],
+      "trailing_swipe": [
+        {
+          "label": "more",
+          "icon": "more_vert",
+          "color": "gray",
+          "action": "show context menu"
+        },
+        {
+          "label": "delete",
+          "icon": "trash",
+          "color": "red",
+          "action": "delete message with confirmation"
+        }
+      ]
+    },
+    "context_menu": {
+      "structure": "floating menu with rounded corners, shadow, blur background",
+      "items": [
+        {"label": "Edit", "icon": "edit", "enabled_if": "is_own_recent_message"},
+        {"label": "Reply", "icon": "reply", "enabled_if": "always"},
+        {"label": "React", "icon": "smiley_face", "submenu": "emoji picker"},
+        {"label": "Share", "icon": "share", "action": "share message link"},
+        {"label": "Bookmark", "icon": "bookmark", "action": "save to library"},
+        {"label": "Report", "icon": "flag", "enabled_if": "not_own"},
+        {"label": "Copy Text", "icon": "copy", "enabled_if": "has_text"},
+        {"label": "Delete", "icon": "trash", "enabled_if": "is_own"},
+        {"label": "Pin Message", "icon": "pin", "enabled_if": "is_admin"}
+      ],
+      "animation": "fade in + scale from 0.8 to 1.0 in 150ms"
+    },
+    "interactive_elements": {
+      "message_replies": {
+        "display": "collapsed to 1-line preview, tap to expand thread",
+        "max_preview_length": 64,
+        "unread_badge": "shows count of unread replies"
+      },
+      "emoji_picker": {
+        "layout": "4 columns, scrollable, searchable",
+        "categories": ["recent", "emotions", "people", "objects", "places", "symbols"],
+        "search": "instant filter as user types, debounce 100ms"
+      },
+      "user_mentions": {
+        "trigger": "@username in input",
+        "autocomplete": "show online status + avatar, sorted by recent contacts",
+        "notification": "user notified, can mute reply threads"
+      },
+      "link_preview": {
+        "display": "thumbnail + title + domain",
+        "lazy_load": "load preview after 500ms delay",
+        "cache": "24h TTL in IndexedDB"
+      },
+      "media_carousel": {
+        "swipe": "swipe left/right to navigate",
+        "double_tap_zoom": "zoom on image in carousel",
+        "pinch_zoom": "also supported",
+        "share_button": "quick share current image"
+      }
+    }
+  },
+  "api": {
+    "endpoints": [
+      {
+        "path": "GET /v1/messages/{message_id}/reactions",
+        "description": "Get all reactions on message",
+        "returns": [
+          {
+            "emoji": "emoji_string",
+            "count": "int",
+            "reactors": ["user_id1", "user_id2"] (first 5),
+            "user_reacted": "bool"
+          }
+        ]
+      },
+      {
+        "path": "POST /v1/messages/{message_id}/react",
+        "description": "Add or remove emoji reaction",
+        "body": {"emoji": "string", "action": "add|remove"},
+        "returns": {"success": true}
+      },
+      {
+        "path": "POST /v1/messages/{message_id}/bookmark",
+        "description": "Save message to bookmarks",
+        "returns": {"bookmarked": true}
+      },
+      {
+        "path": "GET /v1/user/bookmarks",
+        "description": "Get user's bookmarked messages",
+        "query": {"limit": 50, "offset": 0},
+        "returns": [{"message_id": "uuid", "content": "string", "saved_at": "timestamp"}]
+      },
+      {
+        "path": "POST /v1/messages/{message_id}/reply",
+        "description": "Reply to specific message (thread)",
+        "body": {"content": "string"},
+        "returns": {"reply_id": "uuid", "thread_id": "uuid"}
+      },
+      {
+        "path": "GET /v1/messages/{message_id}/replies",
+        "description": "Get all replies to message (thread)",
+        "query": {"limit": 50, "offset": 0},
+        "returns": [{"message_id": "uuid", "content": "string", "author": "object"}]
+      },
+      {
+        "path": "POST /v1/messages/{message_id}/pin",
+        "description": "Pin message to group header",
+        "auth": "required (moderator+)",
+        "returns": {"pinned": true}
+      },
+      {
+        "path": "GET /v1/conversations/{conversation_id}/pinned",
+        "description": "Get pinned messages",
+        "returns": [{"message_id": "uuid", "content": "string", "pinned_by": "user_id"}]
+      }
+    ]
+  },
+  "performance_constraints": {
+    "animation_60fps": "all animations use GPU acceleration (transform, opacity)",
+    "gesture_latency": "p99 <100ms (input to action start)",
+    "emoji_picker_load": "p95 <500ms including network",
+    "context_menu_render": "p95 <50ms (pre-render on long press start)"
+  },
+  "accessibility": {
+    "screen_readers": "all interactive elements have aria-labels",
+    "keyboard": "full navigation via arrow keys, Enter/Escape for confirm/cancel",
+    "high_contrast": "context menu has WCAG AAA contrast ratio",
+    "haptic_feedback": "option to disable, system respects motion preferences"
+  },
+  "monitoring": {
+    "metrics": [
+      {
+        "name": "swipe_action_usage",
+        "target": ">40% of message interactions",
+        "alert": "<20% (low adoption)"
+      },
+      {
+        "name": "context_menu_latency",
+        "target": "p95 <100ms",
+        "alert": ">150ms (performance issue)"
+      },
+      {
+        "name": "gesture_recognition_accuracy",
+        "target": ">95%",
+        "alert": "<90% (adjust threshold)"
+      }
+    ]
+  },
+  "testing": {
+    "test_scenarios": [
+      {
+        "name": "Message send animation",
+        "steps": ["Send message", "Watch animation"],
+        "expected": "Smooth slide-in + fade (300ms), then scales to normal size"
+      },
+      {
+        "name": "Delivery indicator morphing",
+        "steps": ["Send message", "Wait for server delivery", "Wait for read"],
+        "expected": "✓ (sent) → ✓✓ (delivered) → ✓✓ (blue, read), smooth morphing"
+      },
+      {
+        "name": "Swipe right to reply",
+        "steps": ["Swipe right on message"],
+        "expected": "Reply input sheet slides up, focused, quote appears"
+      },
+      {
+        "name": "Swipe left for actions",
+        "steps": ["Swipe left on message"],
+        "expected": "Actions reveal (reply, react, more, delete), clickable"
+      },
+      {
+        "name": "Long press context menu",
+        "steps": ["Press message 500ms"],
+        "expected": "Context menu appears with options, selection mode activated"
+      },
+      {
+        "name": "Double tap favorite",
+        "steps": ["Double tap on message"],
+        "expected": "Heart emoji pops, message marked as favorite"
+      },
+      {
+        "name": "Emoji reaction flow",
+        "steps": ["Tap smiley icon", "Pick emoji", "Confirm"],
+        "expected": "Emoji appears on message, count updates real-time, animation pops"
+      },
+      {
+        "name": "Message thread/reply",
+        "steps": ["Click 'Reply to this message'", "Reply in thread", "View thread"],
+        "expected": "Reply linked, collapsed view shows '3 replies', click to expand"
+      },
+      {
+        "name": "Bookmark message",
+        "steps": ["Long press, select 'Bookmark'", "View bookmarks"],
+        "expected": "Message saved, appears in /bookmarks with timestamp"
+      },
+      {
+        "name": "Pull down refresh",
+        "steps": ["Pull down on message list"],
+        "expected": "Spinner appears, messages refresh, spinner disappears"
+      },
+      {
+        "name": "Link preview rendering",
+        "steps": ["Send message with URL"],
+        "expected": "Preview appears (delayed 500ms), shows thumbnail + title + domain"
+      },
+      {
+        "name": "User mention autocomplete",
+        "steps": ["Type '@joh'", "See matches", "Pick '@john'"],
+        "expected": "John mentioned, notification sent to John, reply notification shown"
+      },
+      {
+        "name": "Media carousel swipe",
+        "steps": ["Send 3 images", "Swipe through images"],
+        "expected": "Smooth swipe animation, counter shows '1/3', '2/3', etc."
+      },
+      {
+        "name": "Pinch zoom image",
+        "steps": ["Pinch on image in conversation"],
+        "expected": "Image zooms smoothly, max 3x, double-tap to reset"
+      },
+      {
+        "name": "Context menu accessibility",
+        "steps": ["Screen reader on", "Long press context menu", "Navigate with arrow keys"],
+        "expected": "All items readable, Enter/Escape works, action executes"
+      }
+    ]
+  }
+}

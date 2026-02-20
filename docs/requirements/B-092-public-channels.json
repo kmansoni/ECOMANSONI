@@ -1,0 +1,276 @@
+{
+  "req_id": "REQ-0092",
+  "title": "Public Channels (Discovery, Discoverability, Subscribe)",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "messaging",
+  "depends_on": ["REQ-0086"],
+  "use_cases": [
+    "user browses 'Explore Channels' → sees trending channels (tech, sports, news)",
+    "user searches 'golang' → finds channels about Go programming",
+    "user subscribes to #golang-news → messages appear in main conversation list",
+    "user unsubscribes → channel disappears from main list"
+  ],
+  "channel_types": {
+    "public": {
+      "description": "discoverable by anyone, anyone can join",
+      "join_flow": "browse/search → tap 'Subscribe' → appear in main list"
+    },
+    "restricted": {
+      "description": "admin approval required to join",
+      "join_flow": "request → admin approves → added to members"
+    },
+    "private": {
+      "description": "same as groups, invite-only"
+    }
+  },
+  "channel_discovery": {
+    "explore_tab": {
+      "location": "main navigation, between Chats & Reels",
+      "sections": [
+        {
+          "title": "Trending Channels",
+          "metric": "members_joined_last_7d DESC",
+          "limit": 10,
+          "refresh": "every 1 hour"
+        },
+        {
+          "title": "Recommended For You",
+          "metric": "based on conversations user is in (similar topics)",
+          "limit": 10,
+          "algorithm": "tag overlap + member count"
+        },
+        {
+          "title": "Categories",
+          "tags": [
+            "tech",
+            "sports",
+            "news",
+            "entertainment",
+            "gaming",
+            "education"
+          ]
+        }
+      ]
+    },
+    "search": {
+      "query": "search by #channel_name or keyword in description",
+      "index": "Elasticsearch (full-text on name, description, tags)"
+    }
+  },
+  "channel_metadata": {
+    "schema": {
+      "conversation_id": "UUID",
+      "channel_name": "unique, 3-50 chars",
+      "description": "2000 chars, markdown",
+      "tags": [
+        "tech",
+        "golang"
+      ],
+      "avatar": "400x400 jpg, S3",
+      "is_public": "BOOLEAN",
+      "join_type": "public | restricted",
+      "rules": "markdown, shown on join",
+      "member_count": "denormalized",
+      "message_count": "denormalized",
+      "created_at": "TIMESTAMP",
+      "last_message_at": "TIMESTAMP"
+    }
+  },
+  "subscribe_mechanism": {
+    "flow": [
+      "1. user taps 'Subscribe' on channel",
+      "2. INSERT conversations_members (user_id, conversation_id, role='member')",
+      "3. update conversation.member_count += 1",
+      "4. for restricted channels: create pending join_request instead",
+      "5. channel appears in main Chats list"
+    ],
+    "unsubscribe": [
+      "1. user swipes DM → 'Unsubscribe'",
+      "2. DELETE conversations_members",
+      "3. update conversation.member_count -= 1",
+      "4. channel disappears from Chats list"
+    ]
+  },
+  "member_list_in_public_channels": {
+    "display": "show first 10 members with online status, '+N more' count",
+    "full_list": "tap '+N more' → paginated member browser"
+  },
+  "message_permissions_in_channels": {
+    "public_channel": {
+      "anyone_can_message": true,
+      "moderation": "admin can delete spam, mute users"
+    },
+    "restricted_channel": {
+      "approved_members_only": true
+    },
+    "broadcast_channel": {
+      "admins_post": true,
+      "members_can_react": true,
+      "members_can_reply": "optional per channel"
+    }
+  },
+  "channel_admin_controls": {
+    "location": "channel settings (gear icon)",
+    "controls": [
+      {
+        "name": "Edit Channel Name",
+        "permission": "admin"
+      },
+      {
+        "name": "Edit Description",
+        "permission": "admin"
+      },
+      {
+        "name": "Change Avatar",
+        "permission": "admin"
+      },
+      {
+        "name": "Change Join Type",
+        "permission": "admin",
+        "note": "public → restricted requires approval of existing members?"
+      },
+      {
+        "name": "Approve Join Requests",
+        "permission": "admin",
+        "for": "restricted channels"
+      },
+      {
+        "name": "Mute Member",
+        "permission": "admin"
+      },
+      {
+        "name": "Remove Member",
+        "permission": "admin"
+      },
+      {
+        "name": "Delete Channel",
+        "permission": "owner",
+        "flow": "soft-delete, hard after 30d"
+      }
+    ]
+  },
+  "join_requests_for_restricted": {
+    "flow": [
+      "1. user browses restricted channel",
+      "2. tap 'Request to Join'",
+      "3. INSERT join_requests (user_id, conversation_id, status='pending')",
+      "4. admin notification: 'Alice requested to join #golang'",
+      "5. admin approves → INSERT conversations_members, DELETE join_request",
+      "6. user notified: 'You were approved to join #golang'"
+    ],
+    "schema": {
+      "join_request_id": "UUID",
+      "user_id": "UUID",
+      "conversation_id": "UUID (restricted channel)",
+      "requested_at": "TIMESTAMP",
+      "status": "pending | approved | rejected",
+      "reviewed_by": "UUID (admin who reviewed)",
+      "reviewed_at": "TIMESTAMP"
+    }
+  },
+  "channel_notifications": {
+    "default_level": "all (for public channels user subscribes to)",
+    "user_control": "same as groups (all/mentions/muted)",
+    "mute_channel": "still appears in list, shows count badge"
+  },
+  "channel_trending_algorithm": {
+    "signal_1": "new members in last 7 days (weight 50%)",
+    "signal_2": "daily active members percentage (weight 30%)",
+    "signal_3": "message volume last 7 days (weight 20%)",
+    "recalculated": "hourly",
+    "storage": "trending_channels table with updated_at"
+  },
+  "api_endpoints": {
+    "list_explore_channels": {
+      "endpoint": "GET /v1/channels/explore",
+      "response": {
+        "trending": [
+          {
+            "channel_id": "UUID",
+            "name": "#golang-tips",
+            "description": "Share Go programming tips",
+            "member_count": 15000,
+            "tags": ["tech", "golang"]
+          }
+        ],
+        "recommended": [
+          {}
+        ],
+        "categories": ["tech", "sports"]
+      }
+    },
+    "search_channels": {
+      "endpoint": "GET /v1/channels/search?q=golang",
+      "response": [
+        {
+          "channel_id": "UUID",
+          "name": "#golang-news",
+          "description": "Latest Go language news"
+        }
+      ]
+    },
+    "subscribe_channel": {
+      "endpoint": "POST /v1/channels/{id}/subscribe",
+      "response": {
+        "subscribed_at": "2026-02-15T15:35:00Z"
+      }
+    },
+    "unsubscribe_channel": {
+      "endpoint": "DELETE /v1/channels/{id}/subscribe"
+    },
+    "request_join_restricted": {
+      "endpoint": "POST /v1/channels/{id}/request-join",
+      "response": {
+        "request_id": "UUID",
+        "status": "pending"
+      }
+    },
+    "approve_join_request": {
+      "endpoint": "POST /v1/join-requests/{id}/approve"
+    },
+    "list_pending_requests": {
+      "endpoint": "GET /v1/channels/{id}/pending-requests",
+      "permission": "admin only"
+    }
+  },
+  "notification_for_admins": {
+    "join_request_received": "Alice requested to join #golang",
+    "new_member_joined": "Bob joined #golang (only if milestone: 100, 1000, 10000)",
+    "high_member_count_milestone": "notified when reaching 10k, 100k members"
+  },
+  "testing": {
+    "scenarios": [
+      "browse Explore Channels → trending list displays (>10 channels)",
+      "search 'golang' → returns channels matching tag or name",
+      "subscribe to #golang-tips → appears in main Chats list",
+      "unsubscribe → channel disappears",
+      "restricted channel: request to join → admin sees pending request",
+      "admin approves join request → user added to member_count, can message",
+      "admin rejects request → user gets notification, still can see channel",
+      "mute #golang-tips → still in list, no notifications (but can unmute)",
+      "channel with 100k members → shows sample members + '+99,990 more'",
+      "trending algorithm: new channel with 100 joins in 24h → appears in trending"
+    ]
+  },
+  "monitoring": {
+    "metrics": [
+      "channels.total_public_count",
+      "channels.total_members_subscribed",
+      "channels.trending_churn_rate (channels in/out of top 10)",
+      "join_requests.pending_count_per_channel",
+      "join_requests.approval_rate"
+    ],
+    "alerts": [
+      "channel member count drops >50% in 24h (mass unsubscribe?)",
+      "join request approval time >48h (admin backlog?)"
+    ]
+  },
+  "moderation_at_scale": {
+    "broadcast_channel": {
+      "description": "admins post announcements, members can react & reply",
+      "use_case": "#announcements (company-wide news)"
+    },
+    "anti_spam": "limit: 1 message per 5s per user in public channel (burst 3)"
+  }
+}

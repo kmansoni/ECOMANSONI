@@ -1,0 +1,1 @@
+{"req_id":"REQ-0024","title":"Notifications Strategy","channels":["push","sms","email","in_app"],"priority_rules":{"critical":{"delay_sec":0},"high":{"delay_sec":5},"medium":{"delay_sec":30},"low":{"delay_sec":300}},"do_not_disturb":{"enabled":true,"default_start":"22:00","default_end":"08:00"},"grouping":{"enabled":true,"window_sec":60,"max_count":5}}

@@ -24,11 +24,13 @@ function getErrorMessage(err: unknown): string {
 
 export interface ChatMessage {
   id: string;
+  client_msg_id?: string | null;
   conversation_id: string;
   sender_id: string;
   content: string;
   is_read: boolean;
   created_at: string;
+  seq?: number | null;
   media_url?: string | null;
   media_type?: string | null; // 'voice', 'video_circle', 'image'
   duration_seconds?: number | null;
@@ -57,7 +59,28 @@ export function useConversations() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const withTimeout = async <T,>(label: string, p: PromiseLike<T>, ms = 12000): Promise<T> => {
+  const mapWithConcurrency = useCallback(async <T, R>(
+    items: T[],
+    concurrency: number,
+    mapper: (item: T) => Promise<R>
+  ): Promise<R[]> => {
+    if (items.length === 0) return [];
+    const results: R[] = new Array(items.length);
+    let nextIndex = 0;
+
+    const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+      while (true) {
+        const currentIndex = nextIndex++;
+        if (currentIndex >= items.length) return;
+        results[currentIndex] = await mapper(items[currentIndex]);
+      }
+    });
+
+    await Promise.all(workers);
+    return results;
+  }, []);
+
+  const withTimeout = async <T,>(label: string, p: PromiseLike<T>, ms = 20000): Promise<T> => {
     let t: number | undefined;
     const timeout = new Promise<never>((_, reject) => {
       t = window.setTimeout(() => reject(new Error(`Timeout at step: ${label}`)), ms);
@@ -88,7 +111,8 @@ export function useConversations() {
         supabase
           .from("conversation_participants")
           .select("conversation_id")
-          .eq("user_id", user.id)
+          .eq("user_id", user.id),
+        20000
       );
 
       if (partError) throw partError;
@@ -99,12 +123,10 @@ export function useConversations() {
         return;
       }
 
-      // Step 2: fetch conversations + participants + recent messages + unread in parallel
-      const [convRes, allPartRes, msgRes, unreadRes] = await withTimeout<[
+      // Step 2: fetch conversations + participants
+      const [convRes, allPartRes] = await withTimeout<[
         { data: any[] | null; error: any },
-        { data: { conversation_id: string; user_id: string }[] | null; error: any },
-        { data: any[] | null; error: any },
-        { data: { conversation_id: string }[] | null; error: any }
+        { data: { conversation_id: string; user_id: string }[] | null; error: any }
       ]>(
         "batch",
         Promise.all([
@@ -117,32 +139,14 @@ export function useConversations() {
             .from("conversation_participants")
             .select("conversation_id, user_id")
             .in("conversation_id", conversationIds),
-          // NOTE: limit to keep this fast; we only need latest messages for list
-          supabase
-            .from("messages")
-            .select("*")
-            .in("conversation_id", conversationIds)
-            .order("created_at", { ascending: false })
-            .limit(200),
-          supabase
-            .from("messages")
-            .select("conversation_id")
-            .in("conversation_id", conversationIds)
-            .neq("sender_id", user.id)
-            .eq("is_read", false)
-            .limit(1000),
         ])
       );
 
       if (convRes.error) throw convRes.error;
       if (allPartRes.error) throw allPartRes.error;
-      if (msgRes.error) throw msgRes.error;
-      if (unreadRes.error) throw unreadRes.error;
 
       const convData = convRes.data || [];
       const allParticipants = allPartRes.data || [];
-      const messages = msgRes.data || [];
-      const unreadData = unreadRes.data || [];
 
       // Step 3: profiles for participants (can be empty for fresh mocks)
       const userIds = [...new Set(allParticipants.map((p) => p.user_id))];
@@ -160,10 +164,47 @@ export function useConversations() {
       if (profilesRes.error) throw profilesRes.error;
       const profiles = profilesRes.data || [];
 
-      const unreadCounts: Record<string, number> = {};
-      unreadData?.forEach((msg) => {
-        unreadCounts[msg.conversation_id] = (unreadCounts[msg.conversation_id] || 0) + 1;
-      });
+      // Step 4: fetch last message per conversation (correctness > single global limit)
+      const lastMessageByConversationId: Record<string, ChatMessage | undefined> = {};
+      const lastMessageRows = await withTimeout(
+        "last_messages",
+        mapWithConcurrency(conversationIds, 6, async (conversationId) => {
+          const { data, error } = await supabase
+            .from("messages")
+            .select("*")
+            .eq("conversation_id", conversationId)
+            .order("created_at", { ascending: false })
+            .limit(1);
+          if (error) throw error;
+          return { conversationId, message: (data && data[0]) as ChatMessage | undefined };
+        }),
+        20000
+      );
+
+      for (const row of lastMessageRows) {
+        if (row.message) lastMessageByConversationId[row.conversationId] = row.message;
+      }
+
+      // Step 5: exact unread counts without a hard limit
+      const unreadCountByConversationId: Record<string, number> = {};
+      const unreadCounts = await withTimeout(
+        "unread_counts",
+        mapWithConcurrency(conversationIds, 6, async (conversationId) => {
+          const { count, error } = await supabase
+            .from("messages")
+            .select("id", { count: "exact", head: true })
+            .eq("conversation_id", conversationId)
+            .neq("sender_id", user.id)
+            .eq("is_read", false);
+          if (error) throw error;
+          return { conversationId, count: count || 0 };
+        }),
+        20000
+      );
+
+      for (const row of unreadCounts) {
+        unreadCountByConversationId[row.conversationId] = row.count;
+      }
 
       // Build conversation objects
       const convs: Conversation[] = (convData || []).map((conv) => {
@@ -174,7 +215,7 @@ export function useConversations() {
             profile: profiles?.find((pr) => pr.user_id === p.user_id),
           }));
 
-        const lastMessage = messages?.find((m) => m.conversation_id === conv.id);
+        const lastMessage = lastMessageByConversationId[conv.id];
 
         return {
           id: conv.id,
@@ -182,7 +223,7 @@ export function useConversations() {
           updated_at: conv.updated_at,
           participants,
           last_message: lastMessage,
-          unread_count: unreadCounts[conv.id] || 0,
+          unread_count: unreadCountByConversationId[conv.id] || 0,
         };
       });
 
@@ -203,7 +244,8 @@ export function useConversations() {
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [user, mapWithConcurrency]);
+
 
   useEffect(() => {
     fetchConversations();
@@ -240,6 +282,17 @@ export function useMessages(conversationId: string | null) {
   const { user } = useAuth();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const isIdempotencySchemaMissing = (err: unknown) => {
+    const msg = getErrorMessage(err).toLowerCase();
+    return (
+      msg.includes("client_msg_id") ||
+      msg.includes("on conflict") ||
+      msg.includes("no unique") ||
+      msg.includes("no unique or exclusion constraint") ||
+      msg.includes("could not find the")
+    );
+  };
 
   const fetchMessages = useCallback(async () => {
     if (!conversationId || !user) {
@@ -296,6 +349,24 @@ export function useMessages(conversationId: string | null) {
             });
           }
         )
+        // DELETE payload may not include conversation_id (replica identity), so filtering by conversation_id
+        // can drop delete events. Subscribe without filter and remove only if the id exists in local list.
+        .on(
+          "postgres_changes",
+          {
+            event: "DELETE",
+            schema: "public",
+            table: "messages",
+          },
+          (payload) => {
+            const deleted = payload.old as Partial<ChatMessage>;
+            if (!deleted?.id) return;
+            setMessages((prev) => {
+              if (!prev.some((m) => m.id === deleted.id)) return prev;
+              return prev.filter((m) => m.id !== deleted.id);
+            });
+          }
+        )
         .subscribe();
     };
 
@@ -317,25 +388,43 @@ export function useMessages(conversationId: string | null) {
     }
 
     try {
-      console.log("[sendMessage] inserting message...");
-      const { data, error } = await supabase.from("messages").insert({
-        conversation_id: conversationId,
-        sender_id: user.id,
-        content: content.trim(),
-      }).select();
+      const clientMsgId = crypto.randomUUID();
+      console.log("[sendMessage] upserting message...", { clientMsgId });
+
+      const { data, error } = await supabase
+        .from("messages")
+        .upsert(
+          {
+            conversation_id: conversationId,
+            sender_id: user.id,
+            content: content.trim(),
+            client_msg_id: clientMsgId,
+          },
+          {
+            onConflict: "conversation_id,sender_id,client_msg_id",
+            ignoreDuplicates: true,
+          }
+        )
+        .select();
 
       if (error) {
-        console.error("[sendMessage] insert error:", error);
+        // If migrations weren't applied yet, fall back to a plain insert so chat isn't bricked.
+        if (isIdempotencySchemaMissing(error)) {
+          console.warn("[sendMessage] idempotency schema missing; falling back to insert", error);
+          const { error: fallbackError } = await supabase.from("messages").insert({
+            conversation_id: conversationId,
+            sender_id: user.id,
+            content: content.trim(),
+          });
+          if (fallbackError) throw fallbackError;
+          return;
+        }
+
+        console.error("[sendMessage] upsert error:", error);
         throw error;
       }
-      
-      console.log("[sendMessage] success:", data);
 
-      // Update conversation updated_at
-      await supabase
-        .from("conversations")
-        .update({ updated_at: new Date().toISOString() })
-        .eq("id", conversationId);
+      console.log("[sendMessage] success:", data);
     } catch (error) {
       console.error("[sendMessage] error:", error);
       throw error; // Re-throw to let caller handle
@@ -361,25 +450,48 @@ export function useMessages(conversationId: string | null) {
         .from('chat-media')
         .getPublicUrl(fileName);
 
-      // Insert message with media
-      const { error: msgError } = await supabase.from("messages").insert({
+      // Insert message with media (idempotent retries via client_msg_id)
+      const clientMsgId = crypto.randomUUID();
+      const payload = {
         conversation_id: conversationId,
         sender_id: user.id,
-        content: mediaType === 'voice' ? '🎤 Голосовое сообщение' : 
-                 mediaType === 'video_circle' ? '🎬 Видео-кружок' : 
-                 mediaType === 'video' ? '🎥 Видео' : '📷 Изображение',
+        content:
+          mediaType === 'voice'
+            ? '🎤 Голосовое сообщение'
+            : mediaType === 'video_circle'
+              ? '🎬 Видео-кружок'
+              : mediaType === 'video'
+                ? '🎥 Видео'
+                : '📷 Изображение',
         media_url: publicUrl,
         media_type: mediaType,
-        duration_seconds: durationSeconds || null
-      });
+        duration_seconds: durationSeconds || null,
+        client_msg_id: clientMsgId,
+      };
 
-      if (msgError) throw msgError;
+      const { error: msgError } = await supabase
+        .from("messages")
+        .upsert(payload, {
+          onConflict: "conversation_id,sender_id,client_msg_id",
+          ignoreDuplicates: true,
+        });
 
-      // Update conversation updated_at
-      await supabase
-        .from("conversations")
-        .update({ updated_at: new Date().toISOString() })
-        .eq("id", conversationId);
+      if (msgError) {
+        if (isIdempotencySchemaMissing(msgError)) {
+          console.warn("[sendMediaMessage] idempotency schema missing; falling back to insert", msgError);
+          const { error: fallbackError } = await supabase.from("messages").insert({
+            conversation_id: conversationId,
+            sender_id: user.id,
+            content: payload.content,
+            media_url: publicUrl,
+            media_type: mediaType,
+            duration_seconds: durationSeconds || null,
+          });
+          if (fallbackError) throw fallbackError;
+        } else {
+          throw msgError;
+        }
+      }
 
       return { error: null };
     } catch (error) {
@@ -420,6 +532,51 @@ export function useCreateConversation() {
     if (!user) return null;
 
     try {
+      // Best-effort: reuse an existing DM between these two users.
+      const [myParts, otherParts] = await Promise.all([
+        supabase.from("conversation_participants").select("conversation_id").eq("user_id", user.id),
+        supabase.from("conversation_participants").select("conversation_id").eq("user_id", otherUserId),
+      ]);
+
+      if (myParts.error) throw myParts.error;
+      if (otherParts.error) throw otherParts.error;
+
+      const myIds = new Set((myParts.data || []).map((r: any) => r.conversation_id));
+      const candidateIds = (otherParts.data || [])
+        .map((r: any) => r.conversation_id)
+        .filter((id: any) => myIds.has(id));
+
+      if (candidateIds.length) {
+        const { data: allParts, error: allPartsError } = await supabase
+          .from("conversation_participants")
+          .select("conversation_id, user_id")
+          .in("conversation_id", candidateIds);
+        if (allPartsError) throw allPartsError;
+
+        const counts: Record<string, number> = {};
+        const hasMe: Record<string, boolean> = {};
+        const hasOther: Record<string, boolean> = {};
+        for (const row of allParts || []) {
+          counts[row.conversation_id] = (counts[row.conversation_id] || 0) + 1;
+          if (row.user_id === user.id) hasMe[row.conversation_id] = true;
+          if (row.user_id === otherUserId) hasOther[row.conversation_id] = true;
+        }
+
+        const dmIds = candidateIds.filter((id) => counts[id] === 2 && hasMe[id] && hasOther[id]);
+        if (dmIds.length) {
+          const { data: convRow, error: convErr } = await supabase
+            .from("conversations")
+            .select("id")
+            .in("id", dmIds)
+            .order("updated_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (convErr) throw convErr;
+          if (convRow?.id) return convRow.id;
+          return dmIds[0];
+        }
+      }
+
       // Create conversation
       const { data: conv, error: convError } = await supabase
         .from("conversations")
@@ -435,7 +592,20 @@ export function useCreateConversation() {
         { conversation_id: conv.id, user_id: otherUserId },
       ]);
 
-      if (partError) throw partError;
+      if (partError) {
+        // Compensating cleanup to avoid orphan conversations without participants.
+        try {
+          await supabase.from("conversation_participants").delete().eq("conversation_id", conv.id);
+        } catch {
+          // ignore
+        }
+        try {
+          await supabase.from("conversations").delete().eq("id", conv.id);
+        } catch {
+          // ignore
+        }
+        throw partError;
+      }
 
       return conv.id;
     } catch (error) {

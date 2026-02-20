@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "generated_at": "2026-02-19",
+  "localization_standard": {
+    "supported_languages": ["Russian", "English", "Spanish", "French", "German", "Chinese", "Japanese"],
+    "default_language": "English",
+    "translation_format": "i18next JSON",
+    "plural_forms": "supported for all languages",
+    "rtl_support": "Arabic, Hebrew, Urdu",
+    "date_time_format": "CLDR locale-specific",
+    "translation_memory": "TM support via Crowdin",
+    "review_process": {
+      "native_speaker": "required",
+      "qa_checks": "terminology consistency",
+      "context_notes": "provided for translators"
+    }
+  }
+}

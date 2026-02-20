@@ -7,10 +7,15 @@
     "dev": "vite",
     "build": "vite build",
     "build:dev": "vite build --mode development",
-    "lint": "eslint .",
+    "lint": "eslint src",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "check:backend": "node ./scripts/check-backend-safety.mjs",
+    "req:init": "node ./scripts/requirements/init-telegram-500.mjs",
+    "req:derive": "node ./scripts/requirements/derive-scenarios.mjs",
+    "req:dashboard": "node ./scripts/requirements/dashboard.mjs",
+    "req:check": "node ./scripts/requirements/check.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.0.1",

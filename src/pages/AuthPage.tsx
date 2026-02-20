@@ -3,20 +3,72 @@ import { useNavigate } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PhoneInput } from "@/components/ui/phone-input";
-import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import logo from "@/assets/logo.png";
 import { RegistrationModal } from "@/components/auth/RegistrationModal";
+import { supabase, SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/supabase";
+import { RecommendedUsersModal } from "@/components/profile/RecommendedUsersModal";
+import { setGuestMode } from "@/lib/demo/demoMode";
+
+const DEMO_GUEST_PHONE = "+70000000000";
 
 type AuthMode = "select" | "login" | "register";
 
+const PHONE_AUTH_TIMEOUT_MS = 12_000;
+
+function buildPhoneAuthUrl(): string {
+  // Prefer env-configured project URL to avoid hardcoding projectRef.
+  const base = (SUPABASE_URL || "").replace(/\/+$/, "");
+  if (!base) return "";
+  return `${base}/functions/v1/phone-auth`;
+}
+
+async function fetchJsonWithTimeout(
+  input: RequestInfo | URL,
+  init: RequestInit,
+  timeoutMs: number,
+  label: string,
+): Promise<{ response: Response; data: any | null }> {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(input, { ...init, signal: controller.signal });
+    const text = await response.text();
+    let data: any | null = null;
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch {
+      data = null;
+    }
+    return { response, data };
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new Error(`timeout:${label}`);
+    }
+    throw err;
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: number | null = null;
+  const timeout = new Promise<T>((_resolve, reject) => {
+    timer = window.setTimeout(() => reject(new Error(`timeout:${label}`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timer != null) window.clearTimeout(timer);
+  });
+}
+
 export function AuthPage() {
   const navigate = useNavigate();
-  const { signIn } = useAuth();
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState<AuthMode>("select");
   const [phone, setPhone] = useState("");
   const [showRegistrationModal, setShowRegistrationModal] = useState(false);
+  const [showRecommendations, setShowRecommendations] = useState(false);
+
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -30,22 +82,183 @@ export function AuthPage() {
     setLoading(true);
 
     try {
-      // Try to sign in with phone-based email
-      const email = `user.${digits}@phoneauth.app`;
-      const password = `ph_${digits}_secure`;
+      // Any explicit login disables guest mode
+      setGuestMode(false);
+      console.log("🔵 [AuthPage] Starting login with phone:", phone);
       
-      const result = await signIn(email, password);
+      // Use phone-auth function via supabase.functions.invoke
+      console.log("🔵 [AuthPage] Invoking phone-auth function...");
+      const invokeStartTime = Date.now();
       
-      if (result.error) {
-        toast.error("Аккаунт не найден. Зарегистрируйтесь.");
-        setMode("select");
+      // Manually create the request to debug
+      const functionUrl = buildPhoneAuthUrl();
+      if (!functionUrl) {
+        toast.error("Не настроен Supabase URL");
+        return;
+      }
+      
+      console.log("🔵 [AuthPage] Manual fetch request to:", functionUrl);
+      console.log("🔵 [AuthPage] Headers:", { 
+        'Content-Type': 'application/json',
+        'apikey': SUPABASE_ANON_KEY ? `${SUPABASE_ANON_KEY.substring(0, 10)}...` : 'MISSING',
+        'x-client-info': 'supabase-js/2'
+      });
+      
+      const body = {
+        action: "register-or-login",
+        phone: `+${digits}`,
+        display_name: "User",
+        email: `user${digits}@placeholder.local`,
+      };
+      
+      console.log("🔵 [AuthPage] Request body:", body);
+      
+      // Try manual fetch with detailed logging
+      const { response, data } = await fetchJsonWithTimeout(
+        functionUrl,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+            apikey: SUPABASE_ANON_KEY,
+            "x-client-info": "supabase-js/2",
+          },
+          body: JSON.stringify(body),
+        },
+        PHONE_AUTH_TIMEOUT_MS,
+        "phone-auth",
+      );
+      
+      console.log(`🔵 [AuthPage] Response received after ${Date.now() - invokeStartTime}ms:`, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: Object.fromEntries(response.headers.entries()),
+      });
+      
+      console.log("🔵 [AuthPage] Response body:", data);
+
+      if (!response.ok || !data?.ok) {
+        console.error("🔴 [AuthPage] Function returned error or not ok:", { 
+          status: response.status, 
+          data 
+        });
+        toast.error("Не удалось выполнить вход", { 
+          description: data?.error || `HTTP ${response.status}` 
+        });
+        return;
+      }
+
+      console.log("🔵 [AuthPage] Got tokens, setting session...", { 
+        hasAccessToken: !!data.accessToken,
+        hasRefreshToken: !!data.refreshToken,
+        userId: data.userId,
+        isNewUser: data.isNewUser
+      });
+
+      // Sign in with the access token and refresh token
+      const { error: signInError } = await withTimeout(
+        supabase.auth.setSession({
+          access_token: data.accessToken,
+          refresh_token: data.refreshToken,
+        }),
+        8000,
+        "setSession",
+      );
+
+      if (signInError) {
+        console.error("🔴 [AuthPage] Sign-in error:", signInError);
+        toast.error("Ошибка входа");
+        return;
+      }
+
+      console.log("🟢 [AuthPage] Session set successfully!");
+      
+      // Handle new vs existing users
+      if (data.isNewUser) {
+        console.log("🔵 [AuthPage] New user detected - showing registration modal");
+        toast.success("Аккаунт создан, заполните профиль!");
+        setShowRegistrationModal(true);
       } else {
+        console.log("🟢 [AuthPage] Existing user - navigating to home");
         toast.success("Добро пожаловать!");
         navigate("/");
       }
+
     } catch (error) {
-      console.error("Login error:", error);
-      toast.error("Ошибка входа");
+      console.error("🔴 [AuthPage] Login error:", error);
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      console.error("🔴 [AuthPage] Error details:", { 
+        type: error?.constructor?.name,
+        message: errorMsg 
+      });
+      toast.error("Ошибка входа", {
+        description: errorMsg,
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGuestAccess = async () => {
+    setLoading(true);
+    try {
+      console.log("🔵 [AuthPage] Guest access: starting");
+
+      const functionUrl = buildPhoneAuthUrl() || "";
+      if (!functionUrl) {
+        toast.error("Не настроен Supabase URL");
+        return;
+      }
+      const body = {
+        action: "register-or-login",
+        phone: DEMO_GUEST_PHONE,
+        display_name: "Гость",
+        email: "guest@placeholder.local",
+      };
+
+      const { response, data } = await fetchJsonWithTimeout(
+        functionUrl,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+            apikey: SUPABASE_ANON_KEY,
+            "x-client-info": "supabase-js/2",
+          },
+          body: JSON.stringify(body),
+        },
+        PHONE_AUTH_TIMEOUT_MS,
+        "guest-phone-auth",
+      );
+      if (!response.ok || !data?.ok) {
+        toast.error("Не удалось войти как гость", { description: data?.error || `HTTP ${response.status}` });
+        return;
+      }
+
+      const { error: signInError } = await withTimeout(
+        supabase.auth.setSession({
+          access_token: data.accessToken,
+          refresh_token: data.refreshToken,
+        }),
+        8000,
+        "guestSetSession",
+      );
+      if (signInError) {
+        console.error("🔴 [AuthPage] Guest sign-in error:", signInError);
+        toast.error("Не удалось войти как гость");
+        return;
+      }
+
+      setGuestMode(true);
+      toast.success("Вход без регистрации");
+      navigate("/");
+    } catch (err) {
+      console.error("🔴 [AuthPage] Guest access error:", err);
+      toast.error("Не удалось войти как гость", {
+        description: err instanceof Error ? err.message : String(err),
+      });
     } finally {
       setLoading(false);
     }
@@ -63,6 +276,10 @@ export function AuthPage() {
     setShowRegistrationModal(true);
   };
 
+  const handleDevGuestMode = () => {
+    void handleGuestAccess();
+  };
+
   const handleBack = () => {
     if (mode === "select") {
       navigate(-1);
@@ -74,7 +291,12 @@ export function AuthPage() {
 
   const handleRegistrationSuccess = () => {
     setShowRegistrationModal(false);
-    toast.success("Аккаунт создан! Добро пожаловать!");
+    toast.success("Аккаунт создан!");
+    setShowRecommendations(true);
+  };
+
+  const handleRecommendationsClose = () => {
+    setShowRecommendations(false);
     navigate("/");
   };
 
@@ -297,6 +519,16 @@ export function AuthPage() {
                       "Войти"
                     )}
                   </Button>
+
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="w-full h-12 rounded-2xl text-sm font-medium text-white/60 hover:text-white/80 hover:bg-white/5"
+                    onClick={handleDevGuestMode}
+                    disabled={loading}
+                  >
+                    Продолжить без регистрации
+                  </Button>
                 </form>
               </div>
 
@@ -311,6 +543,8 @@ export function AuthPage() {
               </p>
             </>
           )}
+
+          {/* OTP verify section removed - using phone-auth now */}
 
           {/* Register form - just phone, then modal */}
           {mode === "register" && (
@@ -365,6 +599,12 @@ export function AuthPage() {
         onClose={() => setShowRegistrationModal(false)}
         phone={phone}
         onSuccess={handleRegistrationSuccess}
+      />
+
+      {/* Recommended Users Modal */}
+      <RecommendedUsersModal
+        isOpen={showRecommendations}
+        onClose={handleRecommendationsClose}
       />
     </div>
   );

@@ -147,14 +147,85 @@ export function usePosts(filter: FeedFilter = 'all') {
   useEffect(() => {
     let channel: RealtimeChannel;
 
+    let insertDebounceTimer: number | undefined;
+    const scheduleInsertSync = (handler: () => void, ms = 250) => {
+      if (insertDebounceTimer) window.clearTimeout(insertDebounceTimer);
+      insertDebounceTimer = window.setTimeout(handler, ms);
+    };
+
     const setupSubscription = () => {
       channel = supabase
         .channel('posts-realtime')
         .on(
           'postgres_changes',
           { event: 'INSERT', schema: 'public', table: 'posts' },
-          () => {
-            fetchPosts();
+          (payload) => {
+            const inserted = payload.new as any;
+            scheduleInsertSync(() => {
+              void (async () => {
+                try {
+                  if (!inserted?.id) return;
+                  if (inserted.is_published === false) return;
+
+                  // For the 'following' feed, avoid doing extra lookups on every insert.
+                  // Debounced full refresh is simpler and still prevents per-insert thrash.
+                  if (filter === 'following') {
+                    await fetchPosts();
+                    return;
+                  }
+
+                  const { data: postRow, error: postError } = await supabase
+                    .from('posts')
+                    .select(`
+                      *,
+                      post_media (
+                        id,
+                        media_url,
+                        media_type,
+                        sort_order
+                      )
+                    `)
+                    .eq('id', inserted.id)
+                    .maybeSingle();
+
+                  if (postError || !postRow) return;
+
+                  // Add author profile
+                  const { data: profile } = await supabase
+                    .from('profiles')
+                    .select('user_id, display_name, avatar_url')
+                    .eq('user_id', postRow.author_id)
+                    .maybeSingle();
+
+                  let isLiked = false;
+                  if (user) {
+                    const { data: likeRow } = await supabase
+                      .from('post_likes')
+                      .select('post_id')
+                      .eq('user_id', user.id)
+                      .eq('post_id', postRow.id)
+                      .maybeSingle();
+                    isLiked = !!likeRow;
+                  }
+
+                  const hydrated: Post = {
+                    ...postRow,
+                    author: profile
+                      ? { id: profile.user_id, display_name: profile.display_name, avatar_url: profile.avatar_url }
+                      : undefined,
+                    media: (postRow.post_media || []).sort((a: any, b: any) => a.sort_order - b.sort_order),
+                    is_liked: isLiked,
+                  };
+
+                  setPosts((prev) => {
+                    if (prev.some((p) => p.id === hydrated.id)) return prev;
+                    return [hydrated, ...prev].slice(0, 50);
+                  });
+                } catch {
+                  // Best-effort; fallback is UPDATE handler + manual refetch.
+                }
+              })();
+            });
           }
         )
         .on(
@@ -197,11 +268,12 @@ export function usePosts(filter: FeedFilter = 'all') {
     setupSubscription();
 
     return () => {
+      if (insertDebounceTimer) window.clearTimeout(insertDebounceTimer);
       if (channel) {
         supabase.removeChannel(channel);
       }
     };
-  }, [fetchPosts]);
+  }, [fetchPosts, filter, user]);
 
   return { posts, loading, error, refetch: fetchPosts, setPosts };
 }
@@ -241,15 +313,17 @@ export function usePostActions() {
 
     try {
       if (isCurrentlyLiked) {
-        await supabase
+        const { error } = await supabase
           .from('post_likes')
           .delete()
           .eq('post_id', postId)
           .eq('user_id', user.id);
+        if (error) throw error;
       } else {
-        await supabase
+        const { error } = await supabase
           .from('post_likes')
           .insert({ post_id: postId, user_id: user.id });
+        if (error) throw error;
       }
       return { error: null };
     } catch (err) {

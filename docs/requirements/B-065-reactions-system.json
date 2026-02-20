@@ -1,0 +1,204 @@
+{
+  "req_id": "REQ-0065",
+  "title": "Message Reactions System (Emoji)",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "messaging",
+  "depends_on": ["REQ-0063"],
+  "overview": "Пользователи могут реагировать на сообщения эмодзи (👍 ❤️ 😂 😮 😢 🙏). Все реакции видны мгновенно. Система должна выдерживать spike при популярных сообщениях.",
+  "feature_scope": {
+    "allowed_reactions": [
+      "👍", "❤️", "😂", "😮", "😢", "🙏", "🔥", "💯"
+    ],
+    "max_reactions_per_msg": "unlimited",
+    "max_unique_reactions_per_msg": 8,
+    "max_people_per_reaction": "unlimited"
+  },
+  "data_model": {
+    "message_reactions_table": {
+      "columns": [
+        "id: UUID PRIMARY KEY",
+        "message_id: UUID FOREIGN KEY",
+        "reactor_id: UUID FOREIGN KEY",
+        "emoji: CHAR(1-4) (UTF-8 emoji)",
+        "created_at: TIMESTAMP",
+        "reaction_strength: INT DEFAULT 1 (for future: emoji + skin tone variations)"
+      ],
+      "unique_constraint": "UNIQUE(message_id, reactor_id, emoji)",
+      "indexes": [
+        "INDEX(message_id, emoji) for aggregation",
+        "INDEX(reactor_id, created_at) for user timeline"
+      ]
+    },
+    "reaction_aggregates_table": {
+      "purpose": "cache layer to avoid GROUP BY on every query",
+      "columns": [
+        "id: UUID PRIMARY KEY",
+        "message_id: UUID UNIQUE",
+        "emoji_counts: JSONB {\"👍\": 42, \"❤️\": 15, ...}",
+        "last_updated_at: TIMESTAMP",
+        "version: INT (for optimistic locking)"
+      ],
+      "invalidation": "updated async, <5s latency"
+    }
+  },
+  "api_endpoints": {
+    "add_reaction": {
+      "method": "POST",
+      "path": "/v1/messages/{message_id}/reactions",
+      "body": {
+        "emoji": "👍"
+      },
+      "response": {
+        "message_id": "UUID",
+        "emoji": "👍",
+        "total_count": 43,
+        "my_reaction": true
+      },
+      "sla": "p95_latency: 100ms",
+      "idempotency": "add same emoji twice = no change (first wins)"
+    },
+    "remove_reaction": {
+      "method": "DELETE",
+      "path": "/v1/messages/{message_id}/reactions/{emoji}",
+      "sla": "p95_latency: 50ms"
+    },
+    "list_reactions": {
+      "method": "GET",
+      "path": "/v1/messages/{message_id}/reactions",
+      "query": ["limit=50", "offset=0"],
+      "response": [
+        {
+          "emoji": "👍",
+          "count": 42,
+          "reactors": [
+            {
+              "user_id": "UUID",
+              "avatar_url": "...",
+              "name": "Alice"
+            }
+          ]
+        }
+      ],
+      "pagination": "cursor-based (emoji, user_id)"
+    }
+  },
+  "real_time_sync": {
+    "add_event": {
+      "type": "REACTION_ADDED",
+      "fields": {
+        "message_id": "UUID",
+        "emoji": "👍",
+        "reactor_id": "UUID",
+        "total_count": 43
+      },
+      "broadcast": "all users viewing conversation"
+    },
+    "remove_event": {
+      "type": "REACTION_REMOVED",
+      "fields": {
+        "message_id": "UUID",
+        "emoji": "👍",
+        "reactor_id": "UUID",
+        "total_count": 41
+      }
+    }
+  },
+  "performance_optimization": {
+    "problem": "viral message in group: 10k people react, 100k reactions/sec",
+    "solution_1_denormalization": {
+      "store_counts_on_message": "SELECT emoji_counts FROM reaction_aggregates WHERE message_id = ...",
+      "update_frequency": "async batch, max 5s stale",
+      "cost": "one row update instead of GROUP BY 10k rows"
+    },
+    "solution_2_write_sharding": {
+      "problem": "single row becomes hot → contention",
+      "solution": "partition reactions by emoji + modulo (hash(reactor_id) % 10)",
+      "formula": "reaction_shard_key = hash(message_id, emoji, reactor_id) % 256",
+      "result": "256 different rows, each with lower contention"
+    },
+    "solution_3_cache_layer": {
+      "layer": "Redis HSET message:{id}:reactions emoji_👍 42",
+      "ttl": "5 min (conservative)",
+      "invalidation": "explicit invalidate on add/remove (in-band)"
+    }
+  },
+  "conflict_resolution": {
+    "scenario_1": "Two clients add same reaction to same message simultaneously",
+    "database_handling": "UNIQUE constraint allows only one row, second INSERT fails",
+    "client_handling": "ignore duplicate add (idempotent)", 
+    "result": "user sees their reaction immediately (optimistic + confirmed)"
+  },
+  "ui_patterns": {
+    "desktop": {
+      "display": "emoji row beneath message, hover shows reactor list popup",
+      "interaction": "click emoji to toggle, + button to add new"
+    },
+    "mobile": {
+      "display": "emoji row with counts, tap to see list, swipe to quick-react",
+      "interaction": "long-press message for quick reaction picker"
+    },
+    "group_chat": {
+      "performance": "lazy load reactions (first 20 reactors), 'view more...' expands list"
+    }
+  },
+  "edge_cases": {
+    "emoji_variation_selectors": {
+      "problem": "👍 can be sent as U+1F44D or U+1F44D + U+FE0F (variant selector)",
+      "solution": "normalize to NFC form before storing",
+      "code": "normalized_emoji = emoji.normalize('NFC')"
+    },
+    "skin_tone_modifiers": {
+      "problem": "👋🏻 (waving hand, light skin) vs 👋🏿 (dark skin)",
+      "solution": "treat as separate reactions or unify?",
+      "decision": "for MVP, treat as same emoji (strip modifiers), store count only"
+    },
+    "reaction_removed_message_deleted": {
+      "scenario": "user adds reaction, then message deleted 1s later",
+      "handling": "on delete, CASCADE delete all reactions",
+      "client": "sees reaction appear then disappear (UI flicker, acceptable)"
+    },
+    "max_reactions_per_user": {
+      "limit": "none explicitly, but rate-limit add_reaction to 10/sec per user",
+      "spam_detection": "flags if user adds 50+ reactions in 1min"
+    }
+  },
+  "database_operations": {
+    "add_reaction_query": {
+      "postgres": "INSERT INTO message_reactions (message_id, reactor_id, emoji, created_at) VALUES ($1, $2, $3, NOW()) ON CONFLICT (message_id, reactor_id, emoji) DO NOTHING RETURNING *",
+      "latency": "~30ms"
+    },
+    "get_reaction_counts": {
+      "option_1_direct": "SELECT emoji, COUNT(*) FROM message_reactions WHERE message_id = $1 GROUP BY emoji (slow for 10k reactions)",
+      "option_2_cache": "SELECT emoji_counts FROM reaction_aggregates WHERE message_id = $1 (fast, cached)"
+    },
+    "get_reactors_list": {
+      "query": "SELECT reactor_id FROM message_reactions WHERE message_id = $1 AND emoji = $2 LIMIT 20",
+      "join_with_users": "JOIN users ON reactor_id = users.id to get avatar, name"
+    }
+  },
+  "monitoring": {
+    "metrics": [
+      "reactions.add_latency_p95_ms",
+      "reactions.per_message_peak_count",
+      "reaction_aggregates.staleness_sec",
+      "cache_hit_rate (Redis)",
+      "database_lock_waits_on_reactions_table"
+    ],
+    "alerts": [
+      "add_latency > 200ms p95",
+      "reaction_aggregates cache miss rate > 10%",
+      "single message with >50k reactions (anomaly detection)"
+    ]
+  },
+  "testing": {
+    "scenarios": [
+      "user adds emoji, all viewers see it <100ms",
+      "10 users add same emoji <1s → count updates to 10",
+      "user adds, then removes emoji → count goes back to 9",
+      "remove non-existent emoji → no error, silent no-op",
+      "load test: 1000 concurrent reactions on 1 message → final count correct",
+      "emoji normalization: U+1F44D and U+1F44D+FE0F treated as same"
+    ]
+  }
+}

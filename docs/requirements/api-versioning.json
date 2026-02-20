@@ -1,0 +1,1 @@
+{"req_id":"REQ-0040","title":"API Versioning","versions":["v1","v2"],"deprecation_policy":"6_months_notice","backwards_compatibility":true}

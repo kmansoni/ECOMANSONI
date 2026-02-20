@@ -1,11 +1,29 @@
 <!doctype html>
 <html lang="en">
   <head>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script>
       // Polyfill for Node.js 'global' used by simple-peer
       if (typeof global === 'undefined') {
         window.global = window;
       }
+    </script>
+    <script>
+      // GitHub Pages SPA fallback:
+      // If the user hits a deep link, Pages serves /404.html which redirects to /?/<path>.
+      // This script restores the original path so React Router can handle it.
+      (function () {
+        var l = window.location;
+        if (l.search && l.search.startsWith('?/')) {
+          var query = l.search.slice(2);
+          var parts = query.split('&');
+          var path = parts.shift() || '';
+          var remaining = parts.length ? ('?' + parts.join('&')) : '';
+          var base = l.pathname;
+          if (!base.endsWith('/')) base = base + '/';
+          window.history.replaceState(null, '', base + path + remaining + l.hash);
+        }
+      })();
     </script>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />

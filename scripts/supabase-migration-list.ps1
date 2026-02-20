@@ -1,0 +1,55 @@
+param(
+  [string]$SupabaseExePath = "C:\\Users\\manso\\AppData\\Local\\supabase-cli\\v2.75.0\\supabase.exe"
+)
+
+$ErrorActionPreference = 'Stop'
+
+if (-not (Test-Path -LiteralPath $SupabaseExePath)) {
+  throw "Supabase CLI not found at: $SupabaseExePath"
+}
+
+$previousToken = $env:SUPABASE_ACCESS_TOKEN
+$tokenWasSet = [string]::IsNullOrWhiteSpace($previousToken) -eq $false
+
+try {
+  if (-not $tokenWasSet) {
+    $secure = Read-Host "Supabase access token (sbp_...)" -AsSecureString
+    $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
+    try {
+      $token = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
+    } finally {
+      [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+    }
+
+    if ([string]::IsNullOrWhiteSpace($token)) {
+      throw "Access token is empty."
+    }
+
+    $env:SUPABASE_ACCESS_TOKEN = $token
+  }
+
+  $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+  $logPath = Join-Path $repoRoot 'supabase\.temp\migration-list.txt'
+
+  Write-Host "Running: supabase migration list" -ForegroundColor Cyan
+  $output = & $SupabaseExePath migration list 2>&1
+  $exitCode = $LASTEXITCODE
+
+  $stamp = (Get-Date).ToString('s')
+  $header = "[$stamp] supabase migration list (exit=$exitCode)"
+  $toWrite = @($header) + ($output | ForEach-Object { "$($_)" })
+  $toWrite | Set-Content -LiteralPath $logPath -Encoding UTF8
+
+  if ($exitCode -ne 0) {
+    $output | ForEach-Object { Write-Host $_ }
+  }
+
+  exit $exitCode
+}
+finally {
+  if (-not $tokenWasSet) {
+    Remove-Item Env:SUPABASE_ACCESS_TOKEN -ErrorAction SilentlyContinue
+  } else {
+    $env:SUPABASE_ACCESS_TOKEN = $previousToken
+  }
+}

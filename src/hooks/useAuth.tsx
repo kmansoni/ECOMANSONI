@@ -39,32 +39,52 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
-    // Set up auth state listener FIRST
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
-        setLoading(false);
-        
-        // Ensure profile exists
-        if (session?.user) {
-          ensureProfile(session.user);
-        }
-      }
-    );
+    let cancelled = false;
 
-    // THEN check for existing session
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    // Set up auth state listener FIRST
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (cancelled) return;
       setSession(session);
       setUser(session?.user ?? null);
       setLoading(false);
-      
+
+      // IMPORTANT: do not await here.
+      // GoTrueClient awaits auth subscribers during setSession(), so awaiting network
+      // work here can block sign-in flows and leave the UI "stuck".
       if (session?.user) {
-        ensureProfile(session.user);
+        void ensureProfile(session.user);
       }
     });
 
-    return () => subscription.unsubscribe();
+    // THEN check for existing session
+    void (async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (cancelled) return;
+        setSession(session);
+        setUser(session?.user ?? null);
+        if (session?.user) void ensureProfile(session.user);
+      } catch (e) {
+        console.error("[AuthProvider] getSession failed:", e);
+        if (cancelled) return;
+        setSession(null);
+        setUser(null);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    const safetyTimer = window.setTimeout(() => {
+      if (!cancelled) {
+        setLoading(false);
+      }
+    }, 20000);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(safetyTimer);
+      subscription.unsubscribe();
+    };
   }, []);
 
   const signIn = async (email: string, password: string) => {

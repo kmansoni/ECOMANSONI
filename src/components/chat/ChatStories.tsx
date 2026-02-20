@@ -87,7 +87,7 @@ export function ChatStories({ expandProgress, onStackClick, mode }: ChatStoriesP
 
       return { scale, x, opacity, zIndex, nameOpacity, isInStack };
     });
-  }, [usersWithStories.length, expandProgress, mode]);
+  }, [usersWithStories, expandProgress, mode]);
 
   if (loading && usersWithStories.length === 0) {
     return (

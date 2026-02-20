@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "generated_at": "2026-02-19",
+  "offline_first_architecture": {
+    "principles": [
+      "Assume network is unreliable",
+      "Optimistically write to local storage first",
+      "Queue operations and sync when back online",
+      "Handle conflicts with deterministic resolution"
+    ],
+    "local_storage": {
+      "backend": "SQLite (mobile) or IndexedDB (web)",
+      "schema": "mirror of server schema + sync metadata",
+      "sync_watermark": "last_sync_seq per table/conversation",
+      "queue_table": "pending_operations with retry_count, error_msg"
+    },
+    "send_message_offline_flow": [
+      "1. Validate input locally",
+      "2. Assign client_msg_id (UUID)",
+      "3. Write to local messages table with status='pending'",
+      "4. Add to pending_operations queue",
+      "5. Render optimistically in UI",
+      "6. Start sync attempt (exponential backoff)",
+      "7. On success: update message status to 'delivered'",
+      "8. On failure: show retry UI"
+    ],
+    "conflict_resolution": {
+      "strategy": "Last-Write-Wins (LWW) + server authority",
+      "scenario": "User edits message offline, someone else deletes it",
+      "resolution": "Server delete_at timestamp wins, local edit discarded with notification"
+    },
+    "sync_strategy": {
+      "delta_sync": "Fetch messages since last_seq per conversation",
+      "gap_detection": "If seq jumps, full resync required",
+      "compression": "Only send changed fields in delta (not full messages)",
+      "batching": "800ms debounce for write coalescing"
+    }
+  }
+}

@@ -1,0 +1,281 @@
+{
+  "id": "B-125",
+  "section": "B",
+  "title": "Accessibility & Inclusive Design (WCAG 2.1 AA)",
+  "description": "Screen reader support, keyboard navigation, color contrast, motion accessibility, and inclusive UX patterns",
+  "priority": "P1",
+  "complexity": "M",
+  "standards": {
+    "wcag_level": "AA",
+    "mobile_compliance": "iOS VoiceOver, Android TalkBack",
+    "web_compliance": "WCAG 2.1 AA, ARIA 1.2",
+    "testing_frequency": "automated daily + manual quarterly"
+  },
+  "features": {
+    "screen_reader_support": {
+      "semantic_html": {
+        "rules": [
+          "Use proper heading hierarchy (h1-h6, no skipping)",
+          "Use <button> for buttons, <a> for links",
+          "Use <form>, <label>, <fieldset> for forms",
+          "Use <nav>, <main>, <aside> for landmarks"
+        ],
+        "aria_live_regions": "announcements at top of app (role='status')",
+        "aria_labels": "all icon buttons, complex inputs, images have alt text",
+        "aria_describedby": "long descriptions for complex charts/diagrams"
+      },
+      "message_accessibility": {
+        "message_author": "announced first (e.g., 'John: Hello world')",
+        "metadata": "time, read status, reactions announced on demand (not auto)",
+        "media": "alt text for images ('photo of sunset on beach'), description for videos"
+      },
+      "test_with": ["NVDA (Windows)", "JAWS (Windows)", "VoiceOver (Mac/iOS)", "TalkBack (Android)"]
+    },
+    "keyboard_navigation": {
+      "tab_order": {
+        "visible_order": "tab order matches visual left-to-right, top-to-bottom",
+        "skip_links": "skip to main content, skip to chat input",
+        "focus_trap": "modals trap focus, restore on close"
+      },
+      "keyboard_shortcuts": {
+        "alt+shift+a": "focus search",
+        "alt+shift+m": "focus message input",
+        "alt+shift+g": "open groups list",
+        "alt+shift+?": "show help (accessibility shortcuts)",
+        "escape": "close modals, dismiss menus",
+        "enter": "confirm action, send message (configurable)",
+        "shift+enter": "new line in message (if enter sends)",
+        "arrow_keys": "navigate lists, channels, messages"
+      },
+      "focus_indicators": {
+        "visible": "focus ring 3px, high contrast color (not just color)",
+        "color": "WCAG AAA contrast (min 7:1 from background)",
+        "skip_links": "visible on focus (not hidden)"
+      }
+    },
+    "visual_accessibility": {
+      "color_contrast": {
+        "normal_text": "4.5:1 (WCAG AA for <18pt)",
+        "large_text": "3:1 (WCAG AA for >18pt)",
+        "ui_components": "3:1 (borders, focus indicators)",
+        "tools": "use WCAG Contrast Checker, axe DevTools for testing"
+      },
+      "color_independence": {
+        "rule": "don't use color alone to convey information",
+        "errors": "combine red + icon (✗, !) or text label",
+        "status": "success not just green, use checkmark + text",
+        "links": "not just blue, underline or other indicator"
+      },
+      "readable_fonts": {
+        "size": "default 16px minimum (body text)",
+        "line_height": "1.5 (body), 1.2 (headings)",
+        "max_line_width": "80 characters (readability)",
+        "fonts": "sans-serif preferred (clearer), avoid decorative fonts"
+      },
+      "zoom_support": {
+        "page_zoom": "support up to 200% (no horizontal scroll)",
+        "reflow": "content reflows, not fixed width",
+        "fixed_headers": "sticky headers remain accessible when zoomed"
+      }
+    },
+    "motion_accessibility": {
+      "prefers_reduced_motion": {
+        "rule": "respect @media (prefers-reduced-motion: reduce)",
+        "apply_to": "animations, transitions, auto-scrolling",
+        "fallback": "instant appearance (no animation)"
+      },
+      "autoplay_disabled": "videos don't autoplay, must be user-initiated",
+      "scroll_behavior": "smooth scroll can be disabled via settings"
+    },
+    "cognitive_accessibility": {
+      "clear_language": {
+        "rule": "use simple, clear language",
+        "avoid": "jargon, abbreviations without explanation, long sentences",
+        "example": "instead of 'ephemeral content', say 'message disappears after reading'"
+      },
+      "consistent_navigation": "main navigation in same place, consistent labels",
+      "error_messages": {
+        "specific": "explain what went wrong (not just 'Error')",
+        "suggestions": "suggest how to fix (e.g., 'Message too long. Max 4000 characters')",
+        "recovery": "easy way to recover from error"
+      },
+      "form_help": "labels visible, hints/examples below inputs, validation errors clear"
+    },
+    "mobile_accessibility": {
+      "touch_targets": {
+        "minimum_size": "44x44 px (iOS), 48x48 dp (Android)",
+        "spacing": "min 8px between touch targets",
+        "avoid": "tiny buttons or links in dense UI"
+      },
+      "text_zoom": "text can be zoomed independently, layout adapts",
+      "native_controls": "use native inputs (date, time, select) when available"
+    }
+  },
+  "api": {
+    "endpoints": [
+      {
+        "path": "GET /v1/accessibility/settings",
+        "description": "Fetch user accessibility preferences",
+        "returns": {
+          "reduce_motion": "bool",
+          "high_contrast": "bool",
+          "font_size": "enum (small|normal|large|extra_large)",
+          "screen_reader_mode": "bool",
+          "keyboard_shortcuts_enabled": "bool"
+        }
+      },
+      {
+        "path": "PUT /v1/accessibility/settings",
+        "description": "Update accessibility preferences",
+        "body": {
+          "reduce_motion": "bool",
+          "high_contrast": "bool",
+          "font_size": "enum",
+          "keyboard_shortcuts_enabled": "bool"
+        },
+        "returns": "settings updated"
+      }
+    ]
+  },
+  "implementation_checklist": {
+    "html_structure": [
+      "☐ Semantic HTML5 (nav, main, aside, section, article)",
+      "☐ Proper heading hierarchy (h1-h6, no skipping)",
+      "☐ Form labels associated with inputs (<label for=\"id\">)",
+      "☐ List markup (<ul>, <ol>, <li>) for lists"
+    ],
+    "aria": [
+      "☐ All non-semantic interactive elements have roles (button, tab, checkbox)",
+      "☐ Icon buttons have aria-label",
+      "☐ Images have alt text (or role='presentation' if decorative)",
+      "☐ Live regions (aria-live='polite') for dynamic content",
+      "☐ aria-describedby for complex content",
+      "☐ aria-expanded for collapsible sections"
+    ],
+    "keyboard": [
+      "☐ All features keyboard accessible (no mouse-only interactions)",
+      "☐ Focus order visible and logical",
+      "☐ Focus not lost on action",
+      "☐ Keyboard shortcuts documented"
+    ],
+    "visual": [
+      "☐ 4.5:1 contrast for normal text",
+      "☐ 3:1 contrast for UI components",
+      "☐ Color not sole method of conveying info",
+      "☐ Focus indicator visible (3px+ high contrast)"
+    ],
+    "motion": [
+      "☐ Animations respect prefers-reduced-motion",
+      "☐ No auto-scrolling or auto-playing video",
+      "☐ No flashing content (>3 Hz)"
+    ],
+    "testing": [
+      "☐ Automated: axe DevTools, WAVE",
+      "☐ Manual: screen reader (NVDA, VoiceOver)",
+      "☐ Testing with real users with disabilities"
+    ]
+  },
+  "monitoring": {
+    "metrics": [
+      {
+        "name": "wcag_violations",
+        "target": "0 (critical), <5 (total)",
+        "alert": ">10 violations (audit required)"
+      },
+      {
+        "name": "accessibility_audit_coverage",
+        "target": "100% of pages",
+        "alert": "<80% covered"
+      },
+      {
+        "name": "screen_reader_test_pass_rate",
+        "target": ">95%",
+        "alert": "<90% (regression)"
+      },
+      {
+        "name": "keyboard_navigation_score",
+        "target": "100% features kb accessible",
+        "alert": "<95%"
+      }
+    ]
+  },
+  "testing": {
+    "test_scenarios": [
+      {
+        "name": "NVDA screen reader - message list",
+        "steps": ["Enable NVDA", "Navigate to conversation", "Arrow through messages"],
+        "expected": "Each message announces: author, content, time, unread badge, reactions"
+      },
+      {
+        "name": "Keyboard navigation - tab through UI",
+        "steps": ["Start at top", "Tab through interface"],
+        "expected": "Focus ring visible, logical order, all controls reachable"
+      },
+      {
+        "name": "Text color contrast",
+        "steps": ["Use WAVE tool", "Check all text elements"],
+        "expected": "All text 4.5:1 (or 3:1 for large), pass WCAG AA"
+      },
+      {
+        "name": "Reduce motion preference",
+        "steps": ["Set system 'reduce motion'", "Use app"],
+        "expected": "Animations disabled, instant transitions, no smooth scroll"
+      },
+      {
+        "name": "Font size increase (200%)",
+        "steps": ["Pin text to 200%", "Use app"],
+        "expected": "Layout reflows, no horizontal scroll, readable"
+      },
+      {
+        "name": "High contrast mode",
+        "steps": ["Enable high contrast", "Send/receive messages"],
+        "expected": "7:1 contrast, focus ring obvious, UI clear"
+      },
+      {
+        "name": "Touch target size",
+        "steps": ["Inspect buttons with inspector"],
+        "expected": "All buttons 44x44 px minimum, 8px spacing"
+      },
+      {
+        "name": "Button without mouse",
+        "steps": ["Focus button with keyboard", "Press Enter/Space"],
+        "expected": "Action executes, same result as mouse click"
+      },
+      {
+        "name": "Form error message clarity",
+        "steps": ["Submit form with error", "Read error message"],
+        "expected": "Error specific (not 'Error'), suggests fix, easy to recover"
+      },
+      {
+        "name": "Icon button accessibility",
+        "steps": ["Find icon buttons (no text)", "Check aria-label"],
+        "expected": "All aria-labeled, screen reader reads purpose"
+      },
+      {
+        "name": "Image alt text",
+        "steps": ["Use screen reader", "Encounter images"],
+        "expected": "Alt text describes image (not 'Image 1'), missing marked as decorative"
+      },
+      {
+        "name": "Skip to main content link",
+        "steps": ["Tab at start of page", "First focus should be skip link"],
+        "expected": "Skip link visible, jumps to main content when activated"
+      },
+      {
+        "name": "Modal focus trap",
+        "steps": ["Open modal", "Tab through all controls"],
+        "expected": "Focus loops within modal, doesn't escape to background"
+      },
+      {
+        "name": "Mobile VoiceOver with message",
+        "steps": ["Enable VoiceOver on iOS", "Navigate conversation"],
+        "expected": "Voice announces messages naturally, swipe navigation works"
+      },
+      {
+        "name": "Native form inputs",
+        "steps": ["Date/time input on mobile"],
+        "expected": "Native picker opens (not web dropdown), accessible defaults"
+      }
+    ]
+  }
+}

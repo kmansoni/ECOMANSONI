@@ -1,0 +1,396 @@
+{
+  "version": 1,
+  "model": {
+    "hierarchy": ["Domains", "Capabilities", "Features", "Scenarios", "Constraints"],
+    "ids": {
+      "domain_id": "string (unique)",
+      "capability_key": "string (unique, versioned)",
+      "feature_key": "string (unique)",
+      "scenario_id": "string (derived, stable)",
+      "req_id": "string (REQ-XXXX, immutable)"
+    },
+    "function_spec": {
+      "intent": "string",
+      "preconditions": "string[]",
+      "postconditions": "string[]",
+      "side_effects": "string[]",
+      "telemetry": "string[] (evt.domain.action.result)",
+      "security": "string[]",
+      "constraints": "string[]"
+    }
+  },
+  "domains": [
+    {
+      "domain_id": "messaging",
+      "name": "Messaging & DM",
+      "capabilities": [
+        {
+          "capability_id": "CAP-001",
+          "capability_key": "messaging.chat",
+          "name": "Direct Messaging",
+          "owner": "@backend",
+          "version": "1.0",
+          "status": "active",
+          "deprecated": false,
+          "features": [
+            {
+              "feature_key": "chat.send_message",
+              "feature_flag": "chat_send_message",
+              "intent": "Send a message reliably with idempotency.",
+              "preconditions": ["User authenticated", "Conversation exists"],
+              "postconditions": ["Message persisted", "UI shows exactly-once effect"],
+              "side_effects": ["Updates conversation.updated_at", "Triggers realtime"],
+              "telemetry": ["evt.messaging.send.result"],
+              "security": ["RLS authz", "rate limit", "idempotency key"],
+              "constraints": ["offline-first", "backoff+jitter", "server sequencing"],
+              "scenarios": []
+            },
+            {
+              "feature_key": "chat.forward",
+              "feature_flag": "chat_forward",
+              "intent": "Forward message with optional attribution.",
+              "preconditions": ["User authenticated"],
+              "postconditions": ["Forwarded message delivered"],
+              "side_effects": ["May create conversation"],
+              "telemetry": ["evt.messaging.forward.result"],
+              "security": ["policy: allow forward?"],
+              "constraints": ["with/without signature"],
+              "scenarios": []
+            }
+          ]
+        },
+        {
+          "capability_id": "CAP-002",
+          "capability_key": "messaging.sync",
+          "name": "Message Sync & State",
+          "owner": "@backend",
+          "version": "1.0",
+          "status": "active",
+          "deprecated": false,
+          "features": [
+            {
+              "feature_key": "sync.delta",
+              "feature_flag": "sync_delta",
+              "intent": "Sync only changed messages since last ack.",
+              "preconditions": ["Last sync timestamp available"],
+              "postconditions": ["Client state consistent"],
+              "side_effects": ["Updates sync watermark"],
+              "telemetry": ["evt.messaging.sync.result"],
+              "security": ["RLS per conversation"],
+              "constraints": ["gap-safe", "retry-idempotent"],
+              "scenarios": []
+            }
+          ]
+        },
+        {
+          "capability_id": "CAP-003",
+          "capability_key": "messaging.read_receipts",
+          "name": "Read Status Tracking",
+          "owner": "@backend",
+          "version": "1.0",
+          "status": "active",
+          "deprecated": false,
+          "features": []
+        }
+      ]
+    },
+    {
+      "domain_id": "groups",
+      "name": "Groups & Communities",
+      "capabilities": [
+        {
+          "capability_id": "CAP-004",
+          "capability_key": "groups.lifecycle",
+          "name": "Group CRUD & Permissions",
+          "owner": "@backend",
+          "version": "1.0",
+          "status": "active",
+          "deprecated": false,
+          "features": []
+        },
+        {
+          "capability_id": "CAP-005",
+          "capability_key": "groups.moderation",
+          "name": "Moderation & Content Review",
+          "owner": "@safety",
+          "version": "1.0",
+          "status": "active",
+          "deprecated": false,
+          "features": []
+        }
+      ]
+    },
+    {
+      "domain_id": "channels",
+      "name": "Channels & Broadcasts",
+      "capabilities": [
+        {
+          "capability_id": "CAP-006",
+          "capability_key": "channels.broadcast",
+          "name": "Broadcast Messaging",
+          "owner": "@backend",
+          "version": "1.0",
+          "status": "active",
+          "deprecated": false,
+          "features": []
+        }
+      ]
+    },
+    {
+      "domain_id": "calls",
+      "name": "Voice & Video Calls",
+      "capabilities": [
+        {
+          "capability_id": "CAP-007",
+          "capability_key": "calls.voip",
+          "name": "VoIP Infrastructure",
+          "owner": "@backend",
+          "version": "1.0",
+          "status": "active",
+          "deprecated": false,
+          "features": []
+        }
+      ]
+    },
+    {
+      "domain_id": "auth",
+      "name": "Authentication & Sessions",
+      "capabilities": [
+        {
+          "capability_id": "CAP-008",
+          "capability_key": "auth.login",
+          "name": "User Login Flow",
+          "owner": "@security",
+          "version": "1.0",
+          "status": "active",
+          "deprecated": false,
+          "features": []
+        }
+      ]
+    },
+    {
+      "domain_id": "privacy",
+      "name": "Privacy Rules & Controls",
+      "capabilities": [
+        {
+          "capability_id": "CAP-009",
+          "capability_key": "privacy.visibility",
+          "name": "Visibility Settings",
+          "owner": "@security",
+          "version": "1.0",
+          "status": "active",
+          "deprecated": false,
+          "features": []
+        }
+      ]
+    },
+    {
+      "domain_id": "security",
+      "name": "Encryption & Key Management",
+      "capabilities": [
+        {
+          "capability_id": "CAP-010",
+          "capability_key": "security.e2e",
+          "name": "End-to-End Encryption",
+          "owner": "@security",
+          "version": "1.0",
+          "status": "active",
+          "deprecated": false,
+          "features": []
+        }
+      ]
+    },
+    {
+      "domain_id": "abuse",
+      "name": "Abuse & Safety Systems",
+      "capabilities": [
+        {
+          "capability_id": "CAP-011",
+          "capability_key": "abuse.detection",
+          "name": "Spam & Abuse Detection",
+          "owner": "@safety",
+          "version": "1.0",
+          "status": "active",
+          "deprecated": false,
+          "features": []
+        }
+      ]
+    },
+    {
+      "domain_id": "sync",
+      "name": "Sync Layer",
+      "capabilities": [
+        {
+          "capability_id": "CAP-012",
+          "capability_key": "sync.protocol",
+          "name": "Sync Protocol & Conflict Resolution",
+          "owner": "@backend",
+          "version": "1.0",
+          "status": "active",
+          "deprecated": false,
+          "features": []
+        }
+      ]
+    },
+    {
+      "domain_id": "storage",
+      "name": "Local Storage & DB",
+      "capabilities": [
+        {
+          "capability_id": "CAP-013",
+          "capability_key": "storage.sqlite",
+          "name": "SQLite Storage Layer",
+          "owner": "@client",
+          "version": "1.0",
+          "status": "active",
+          "deprecated": false,
+          "features": []
+        }
+      ]
+    },
+    {
+      "domain_id": "media",
+      "name": "Media Transfer & Processing",
+      "capabilities": [
+        {
+          "capability_id": "CAP-014",
+          "capability_key": "media.upload",
+          "name": "Media Upload Pipeline",
+          "owner": "@cdn",
+          "version": "1.0",
+          "status": "active",
+          "deprecated": false,
+          "features": []
+        }
+      ]
+    },
+    {
+      "domain_id": "search",
+      "name": "Search & Indexing",
+      "capabilities": [
+        {
+          "capability_id": "CAP-015",
+          "capability_key": "search.fulltext",
+          "name": "Full-Text Search",
+          "owner": "@search",
+          "version": "1.0",
+          "status": "active",
+          "deprecated": false,
+          "features": []
+        }
+      ]
+    },
+    {
+      "domain_id": "notifications",
+      "name": "Push Notifications",
+      "capabilities": [
+        {
+          "capability_id": "CAP-016",
+          "capability_key": "notifications.push",
+          "name": "Push Notification Delivery",
+          "owner": "@notifications",
+          "version": "1.0",
+          "status": "active",
+          "deprecated": false,
+          "features": []
+        }
+      ]
+    },
+    {
+      "domain_id": "analytics",
+      "name": "Analytics & Events",
+      "capabilities": [
+        {
+          "capability_id": "CAP-017",
+          "capability_key": "analytics.events",
+          "name": "Event Tracking Pipeline",
+          "owner": "@analytics",
+          "version": "1.0",
+          "status": "active",
+          "deprecated": false,
+          "features": []
+        }
+      ]
+    },
+    {
+      "domain_id": "observability",
+      "name": "Logging & Tracing",
+      "capabilities": [
+        {
+          "capability_id": "CAP-018",
+          "capability_key": "observability.logging",
+          "name": "Structured Logging",
+          "owner": "@sre",
+          "version": "1.0",
+          "status": "active",
+          "deprecated": false,
+          "features": []
+        }
+      ]
+    },
+    {
+      "domain_id": "perf",
+      "name": "Performance Optimization",
+      "capabilities": [
+        {
+          "capability_id": "CAP-019",
+          "capability_key": "perf.rendering",
+          "name": "Rendering Optimization",
+          "owner": "@perf",
+          "version": "1.0",
+          "status": "active",
+          "deprecated": false,
+          "features": []
+        }
+      ]
+    },
+    {
+      "domain_id": "accessibility",
+      "name": "Accessibility (A11y)",
+      "capabilities": [
+        {
+          "capability_id": "CAP-020",
+          "capability_key": "a11y.wcag",
+          "name": "WCAG 2.1 AA Compliance",
+          "owner": "@design",
+          "version": "1.0",
+          "status": "active",
+          "deprecated": false,
+          "features": []
+        }
+      ]
+    },
+    {
+      "domain_id": "i18n",
+      "name": "Internationalization",
+      "capabilities": [
+        {
+          "capability_id": "CAP-021",
+          "capability_key": "i18n.localization",
+          "name": "Language & Locale Support",
+          "owner": "@design",
+          "version": "1.0",
+          "status": "active",
+          "deprecated": false,
+          "features": []
+        }
+      ]
+    },
+    {
+      "domain_id": "design_system",
+      "name": "Design System",
+      "capabilities": [
+        {
+          "capability_id": "CAP-022",
+          "capability_key": "ds.components",
+          "name": "Component Library",
+          "owner": "@design",
+          "version": "1.0",
+          "status": "active",
+          "deprecated": false,
+          "features": []
+        }
+      ]
+    }
+  ]
+}

@@ -172,15 +172,17 @@ export function useReelComments(reelId: string) {
 
     try {
       if (comment.liked_by_user) {
-        await supabase
+        const { error } = await supabase
           .from("reel_comment_likes")
           .delete()
           .eq("comment_id", commentId)
           .eq("user_id", user.id);
+        if (error) throw error;
       } else {
-        await supabase
+        const { error } = await supabase
           .from("reel_comment_likes")
           .insert({ comment_id: commentId, user_id: user.id });
+        if (error) throw error;
       }
 
       // Optimistic update

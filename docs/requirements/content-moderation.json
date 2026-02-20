@@ -1,0 +1,1 @@
+{"req_id":"REQ-0026","title":"Content Moderation Rules","rules":[{"id":"spam","triggers":["bot_detected","duplicate_messages","url_spam"],"action":"flag_for_review","severity":"medium"},{"id":"harassment","keywords":5000,"action":"remove_immediately","severity":"high"},{"id":"nsfw","enabled":true,"ml_model":"nsfw_v2","confidence_threshold":0.85}]}

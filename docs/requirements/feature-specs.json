@@ -1,0 +1,408 @@
+{
+  "version": 1,
+  "generated_at": "2026-02-19",
+  "features": [
+    {
+      "feature_id": "F-001",
+      "feature_key": "chat.send_message",
+      "capability_id": "CAP-001",
+      "domain_id": "messaging",
+      "name": "Send Direct Message",
+      "owner": "@backend",
+      "status": "active",
+      "spec": {
+        "intent": "Send a text/media message reliably with exactly-once semantics.",
+        "preconditions": [
+          "User authenticated",
+          "Conversation exists",
+          "User has write permission",
+          "Rate limit not exceeded"
+        ],
+        "postconditions": [
+          "Message persisted in database",
+          "Message delivered to all recipients",
+          "Sender sees exactly one copy in UI",
+          "conversation.updated_at bumped"
+        ],
+        "side_effects": [
+          "Triggers realtime subscriptions",
+          "Increments message counter",
+          "Updates sync watermark",
+          "May create read receipt"
+        ],
+        "telemetry": [
+          "evt.messaging.send.success",
+          "evt.messaging.send.latency_ms",
+          "evt.messaging.send.error"
+        ],
+        "security": [
+          "RLS enforcement (only own messages)",
+          "Rate limiting: 100 msg/hour per user",
+          "Content moderation check",
+          "Metadata encryption if e2e"
+        ],
+        "constraints": [
+          "max message length: 10000 chars",
+          "idempotency via client_msg_id (24h TTL)",
+          "offline support with local queue",
+          "sync lag p95 < 2s"
+        ]
+      }
+    },
+    {
+      "feature_id": "F-002",
+      "feature_key": "chat.forward_message",
+      "capability_id": "CAP-001",
+      "domain_id": "messaging",
+      "name": "Forward Message",
+      "owner": "@backend",
+      "status": "active",
+      "spec": {
+        "intent": "Forward a message to another conversation with optional attribution.",
+        "preconditions": [
+          "Source message exists",
+          "User has read access to source",
+          "Destination conversation exists",
+          "User has write access to destination"
+        ],
+        "postconditions": [
+          "New message created in destination",
+          "Optional sender attribution added",
+          "Media copied if applicable"
+        ],
+        "side_effects": [
+          "May trigger new conversation creation",
+          "Increments forward counter",
+          "Analytics event logged"
+        ],
+        "telemetry": [
+          "evt.messaging.forward.success",
+          "evt.messaging.forward.with_signature"
+        ],
+        "security": [
+          "RLS on source and destination",
+          "Cannot forward deleted messages",
+          "Cannot forward private content to public"
+        ],
+        "constraints": [
+          "signature format: '↪ Переслано от {sender_name}'",
+          "media forwarding allowed",
+          "one-to-one or group destination"
+        ]
+      }
+    },
+    {
+      "feature_id": "F-003",
+      "feature_key": "chat.delete_message",
+      "capability_id": "CAP-001",
+      "domain_id": "messaging",
+      "name": "Delete Message",
+      "owner": "@backend",
+      "status": "active",
+      "spec": {
+        "intent": "Remove message from conversation (soft delete).",
+        "preconditions": [
+          "Message exists",
+          "User is sender or conversation admin",
+          "Message is not already deleted"
+        ],
+        "postconditions": [
+          "Message marked as deleted",
+          "Content replaced with placeholder",
+          "Visible to all participants"
+        ],
+        "side_effects": [
+          "Updates message.deleted_at timestamp",
+          "Syncs to all clients",
+          "Analytics logged"
+        ],
+        "telemetry": [
+          "evt.messaging.delete.success"
+        ],
+        "security": [
+          "Only sender or admin can delete",
+          "Hard deletion only by moderators",
+          "Audit log entry created"
+        ],
+        "constraints": [
+          "soft delete: 15min window",
+          "hard delete: 30 day retention"
+        ]
+      }
+    },
+    {
+      "feature_id": "F-004",
+      "feature_key": "chat.read_receipt",
+      "capability_id": "CAP-003",
+      "domain_id": "messaging",
+      "name": "Message Read Status",
+      "owner": "@backend",
+      "status": "active",
+      "spec": {
+        "intent": "Track and broadcast message read status.",
+        "preconditions": [
+          "Message delivered",
+          "User has message in view"
+        ],
+        "postconditions": [
+          "Read receipt created",
+          "Read status broadcast to all participants"
+        ],
+        "side_effects": [
+          "Updates conversation.last_read_at",
+          "Triggers realtime update",
+          "Updates badge counts"
+        ],
+        "telemetry": [
+          "evt.messaging.mark_read.success",
+          "evt.messaging.read_latency_ms"
+        ],
+        "security": [
+          "Privacy setting: hide read status (configurable)",
+          "Only sender and recipient exchange"
+        ],
+        "constraints": [
+          "batch mode: 500ms debounce",
+          "update on visibility change"
+        ]
+      }
+    },
+    {
+      "feature_id": "F-005",
+      "feature_key": "sync.message_delta",
+      "capability_id": "CAP-002",
+      "domain_id": "messaging",
+      "name": "Delta Sync Protocol",
+      "owner": "@backend",
+      "status": "active",
+      "spec": {
+        "intent": "Efficiently sync only changed messages since last client ack.",
+        "preconditions": [
+          "Last sync timestamp available",
+          "Conversation accessible"
+        ],
+        "postconditions": [
+          "Client has all new/changed messages",
+          "Conflict-free state"
+        ],
+        "side_effects": [
+          "Updates client sync watermark",
+          "May trigger local storage cleanup",
+          "Increments sync counter"
+        ],
+        "telemetry": [
+          "evt.messaging.sync.latency_ms",
+          "evt.messaging.sync.messages_count"
+        ],
+        "security": [
+          "RLS per conversation",
+          "Cannot see messages from excluded conversations"
+        ],
+        "constraints": [
+          "max delta: 1000 messages per sync",
+          "p95 latency < 2s",
+          "gap-safe: no message loss"
+        ]
+      }
+    },
+    {
+      "feature_id": "F-006",
+      "feature_key": "group.create",
+      "capability_id": "CAP-004",
+      "domain_id": "groups",
+      "name": "Create Group Chat",
+      "owner": "@backend",
+      "status": "active",
+      "spec": {
+        "intent": "Create a new group conversation with initial members.",
+        "preconditions": [
+          "User authenticated",
+          "At least 2 members specified"
+        ],
+        "postconditions": [
+          "Group created with unique ID",
+          "Initial members added",
+          "Creator is owner"
+        ],
+        "side_effects": [
+          "Sends 'group_created' event",
+          "Notifies members",
+          "Creates group_chats record"
+        ],
+        "telemetry": [
+          "evt.groups.create.success",
+          "evt.groups.initial_size"
+        ],
+        "security": [
+          "RLS: only creator initially",
+          "Can only add contacts or public users",
+          "Max members: 10000"
+        ],
+        "constraints": [
+          "name: 1–100 chars",
+          "avatar: optional, must be image",
+          "initial batch size: max 500"
+        ]
+      }
+    },
+    {
+      "feature_id": "F-007",
+      "feature_key": "group.invite_member",
+      "capability_id": "CAP-004",
+      "domain_id": "groups",
+      "name": "Invite Member to Group",
+      "owner": "@backend",
+      "status": "active",
+      "spec": {
+        "intent": "Add a user to an existing group.",
+        "preconditions": [
+          "Group exists",
+          "User is admin or owner",
+          "Target user not already member"
+        ],
+        "postconditions": [
+          "Member added to group",
+          "Member sees group in chat list",
+          "Historic messages available per settings"
+        ],
+        "side_effects": [
+          "Notifies new member",
+          "Updates group.member_count",
+          "Logs audit event"
+        ],
+        "telemetry": [
+          "evt.groups.invite.success"
+        ],
+        "security": [
+          "Admin-only operation",
+          "Respects user's 'allow group invites' setting",
+          "Cannot invite banned users"
+        ],
+        "constraints": [
+          "rate limit: 10 invites/min/group",
+          "batch invite: up to 100 per request"
+        ]
+      }
+    },
+    {
+      "feature_id": "F-008",
+      "feature_key": "channel.create",
+      "capability_id": "CAP-006",
+      "domain_id": "channels",
+      "name": "Create Channel",
+      "owner": "@backend",
+      "status": "active",
+      "spec": {
+        "intent": "Create a broadcast channel (one-way messaging).",
+        "preconditions": [
+          "User authenticated",
+          "User has channel creation privilege"
+        ],
+        "postconditions": [
+          "Channel created with unique ID",
+          "Creator is owner",
+          "Channel is in private/public mode"
+        ],
+        "side_effects": [
+          "Creates channel record",
+          "Sets up permission matrix",
+          "Initializes member list"
+        ],
+        "telemetry": [
+          "evt.channels.create.success",
+          "evt.channels.create.is_public"
+        ],
+        "security": [
+          "Owner has all permissions",
+          "Members can view if subscribed",
+          "Non-members: read-only if public"
+        ],
+        "constraints": [
+          "max channels per user: 100",
+          "name: 1–100 chars",
+          "description: max 500 chars"
+        ]
+      }
+    },
+    {
+      "feature_id": "F-009",
+      "feature_key": "auth.login_password",
+      "capability_id": "CAP-008",
+      "domain_id": "auth",
+      "name": "Login with Password",
+      "owner": "@security",
+      "status": "active",
+      "spec": {
+        "intent": "Authenticate user with email/phone and password.",
+        "preconditions": [
+          "Credentials provided",
+          "Account not locked",
+          "MFA not required (or separate step)"
+        ],
+        "postconditions": [
+          "Session created",
+          "Auth token returned",
+          "User logged in"
+        ],
+        "side_effects": [
+          "Logs login event",
+          "Updates last_login timestamp",
+          "May trigger MFA check"
+        ],
+        "telemetry": [
+          "evt.auth.login.success",
+          "evt.auth.login.error",
+          "evt.auth.login.latency_ms"
+        ],
+        "security": [
+          "Password hashing: bcrypt + salt",
+          "Rate limit: 5 attempts/5min",
+          "Account lockout after 3 failures",
+          "MFA enforcement check"
+        ],
+        "constraints": [
+          "session TTL: 30 days",
+          "password min length: 8",
+          "password complexity: mixed case + digit"
+        ]
+      }
+    },
+    {
+      "feature_id": "F-010",
+      "feature_key": "privacy.last_seen_visibility",
+      "capability_id": "CAP-009",
+      "domain_id": "privacy",
+      "name": "Last Seen Visibility Control",
+      "owner": "@security",
+      "status": "active",
+      "spec": {
+        "intent": "Allow users to control who sees their online/offline status.",
+        "preconditions": [
+          "User authenticated",
+          "Privacy settings accessible"
+        ],
+        "postconditions": [
+          "User.privacy_settings updated",
+          "Setting takes effect immediately"
+        ],
+        "side_effects": [
+          "Updates last_seen_visibility field",
+          "Broadcasts privacy change to active sessions",
+          "May hide last_seen from other users"
+        ],
+        "telemetry": [
+          "evt.privacy.last_seen_setting_changed"
+        ],
+        "security": [
+          "User-only setting (not admin-controlled)",
+          "Options: everyone, contacts, nobody"
+        ],
+        "constraints": [
+          "Default: everyone",
+          "Delay: 30s before reflecting",
+          "Does not affect admins in groups"
+        ]
+      }
+    }
+  ]
+}

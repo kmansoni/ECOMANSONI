@@ -1,7 +1,6 @@
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { Suspense, lazy } from "react";
 import { AuthProvider } from "@/hooks/useAuth";
@@ -10,15 +9,16 @@ import { VideoCallProvider } from "@/contexts/VideoCallContext";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { GlobalCallOverlay } from "@/components/chat/GlobalCallOverlay";
-import { createQueryClient } from "@/lib/queryClient";
 import { initErrorTracking } from "@/lib/sentry";
 import { Loader2 } from "lucide-react";
+import { UserSettingsProvider } from "@/contexts/UserSettingsContext";
+import { MultiAccountProvider } from "@/contexts/MultiAccountContext";
+import { AdminProtectedRoute } from "@/components/admin/AdminProtectedRoute";
 
 // Initialize error tracking
 initErrorTracking();
 
-// Create query client with circuit breaker
-const queryClient = createQueryClient();
+// QueryClient is created per active account inside MultiAccountProvider.
 
 // F4: Lazy load heavy pages
 const HomePage = lazy(() => import("@/pages/HomePage").then(m => ({ default: m.HomePage })));
@@ -40,6 +40,16 @@ const NotFound = lazy(() => import("@/pages/NotFound"));
 const DevPanelPage = lazy(() => import("@/pages/DevPanelPage"));
 const SettingsPage = lazy(() => import("@/pages/SettingsPage").then(m => ({ default: m.SettingsPage })));
 const CommandPalette = lazy(() => import("@/components/CommandPalette").then(m => ({ default: m.CommandPalette })));
+const ARPage = lazy(() => import("@/pages/ARPage").then(m => ({ default: m.ARPage })));
+
+// Admin Console (lazy)
+const AdminLoginPage = lazy(() => import("@/pages/admin/AdminLoginPage").then(m => ({ default: m.AdminLoginPage })));
+const AdminHomePage = lazy(() => import("@/pages/admin/AdminHomePage").then(m => ({ default: m.AdminHomePage })));
+const AdminUsersPage = lazy(() => import("@/pages/admin/AdminUsersPage").then(m => ({ default: m.AdminUsersPage })));
+const AdminAuditPage = lazy(() => import("@/pages/admin/AdminAuditPage").then(m => ({ default: m.AdminAuditPage })));
+const AdminApprovalsPage = lazy(() => import("@/pages/admin/AdminApprovalsPage").then(m => ({ default: m.AdminApprovalsPage })));
+const OwnerConsolePage = lazy(() => import("@/pages/admin/OwnerConsolePage").then(m => ({ default: m.OwnerConsolePage })));
+const SecurityAdminJitPage = lazy(() => import("@/pages/admin/SecurityAdminJitPage").then(m => ({ default: m.SecurityAdminJitPage })));
 
 // Loading fallback component
 function PageLoader() {
@@ -57,25 +67,65 @@ const ROUTER_BASENAME = (() => {
 })();
 
 const App = () => (
-  <QueryClientProvider client={queryClient}>
+  <MultiAccountProvider>
     <AuthProvider>
-      <VideoCallProvider>
-        <ChatOpenProvider>
-          <TooltipProvider>
-            <Toaster />
-            <Sonner />
-            <GlobalCallOverlay />
-            <BrowserRouter basename={ROUTER_BASENAME}>
-              <Suspense fallback={null}>
-                <CommandPalette />
-              </Suspense>
-              <Routes>
+      <UserSettingsProvider>
+        <VideoCallProvider>
+          <ChatOpenProvider>
+            <TooltipProvider>
+              <Toaster />
+              <Sonner />
+              <GlobalCallOverlay />
+              <BrowserRouter basename={ROUTER_BASENAME}>
+                <Suspense fallback={null}>
+                  <CommandPalette />
+                </Suspense>
+                <Routes>
                 {/* Public route - Auth page */}
                 <Route path="/auth" element={
                   <Suspense fallback={<PageLoader />}>
                     <AuthPage />
                   </Suspense>
                 } />
+
+                {/* Admin Console - login is public, everything else requires admin */}
+                <Route path="/admin/login" element={
+                  <Suspense fallback={<PageLoader />}>
+                    <AdminLoginPage />
+                  </Suspense>
+                } />
+                <Route element={<AdminProtectedRoute />}>
+                  <Route path="/admin" element={
+                    <Suspense fallback={<PageLoader />}>
+                      <AdminHomePage />
+                    </Suspense>
+                  } />
+                  <Route path="/admin/admins" element={
+                    <Suspense fallback={<PageLoader />}>
+                      <AdminUsersPage />
+                    </Suspense>
+                  } />
+                  <Route path="/admin/audit" element={
+                    <Suspense fallback={<PageLoader />}>
+                      <AdminAuditPage />
+                    </Suspense>
+                  } />
+                  <Route path="/admin/approvals" element={
+                    <Suspense fallback={<PageLoader />}>
+                      <AdminApprovalsPage />
+                    </Suspense>
+                  } />
+                  <Route path="/admin/owner" element={
+                    <Suspense fallback={<PageLoader />}>
+                      <OwnerConsolePage />
+                    </Suspense>
+                  } />
+                  <Route path="/admin/jit" element={
+                    <Suspense fallback={<PageLoader />}>
+                      <SecurityAdminJitPage />
+                    </Suspense>
+                  } />
+                </Route>
                 
                 {/* Protected routes - require authentication */}
                 <Route element={<ProtectedRoute />}>
@@ -118,6 +168,12 @@ const App = () => (
                     <Route path="/settings" element={
                       <Suspense fallback={<PageLoader />}>
                         <SettingsPage />
+                      </Suspense>
+                    } />
+
+                    <Route path="/ar" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <ARPage />
                       </Suspense>
                     } />
                     <Route path="/user/:username" element={
@@ -171,13 +227,14 @@ const App = () => (
                     <NotFound />
                   </Suspense>
                 } />
-              </Routes>
-            </BrowserRouter>
-          </TooltipProvider>
-        </ChatOpenProvider>
-      </VideoCallProvider>
+                </Routes>
+              </BrowserRouter>
+            </TooltipProvider>
+          </ChatOpenProvider>
+        </VideoCallProvider>
+      </UserSettingsProvider>
     </AuthProvider>
-  </QueryClientProvider>
+  </MultiAccountProvider>
 );
 
 export default App;

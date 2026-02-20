@@ -1,0 +1,120 @@
+{
+  "req_id": "REQ-0102",
+  "title": "Pinboard / Gallery View (Curated Messages, Media Gallery)",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "messaging",
+  "depends_on": ["REQ-0073"],
+  "use_cases": [
+    "admin pins top 10 messages from #announcements to 'Pinboard' (curated wall)",
+    "user taps 'Pinboard' tab in group → sees gallery of pinned messages",
+    "pinned message shows as full media (image, in grid), pinning timestamp"
+  ],
+  "pinning_mechanism": {
+    "pin_message": {
+      "flow": [
+        "1. long-press message",
+        "2. tap 'Pin to Board'",
+        "3. message added to group_pinned_messages table",
+        "4. appears in Pinboard grid"
+      ]
+    },
+    "unpin": "tap pinned message → 'Unpin' option"
+  },
+  "pinboard_display": {
+    "ui": "grid layout (3-4 columns on mobile, 5-6 on desktop)",
+    "media_focus": "if message has image, show large thumbnail; if text-only, show text preview",
+    "pinning_date": "show small label 'Pinned Feb 15' on top-right"
+  },
+  "permissions": {
+    "who_can_pin": "admin and moderator (configurable)",
+    "max_pins": "20 messages per group (enforced, oldest unpinned if exceed)"
+  },
+  "metadata": {
+    "pinned_at": "TIMESTAMP when pinned",
+    "pinned_by": "user_id who pinned",
+    "order": "custom (admin can reorder via drag-drop)"
+  },
+  "database_schema": {
+    "group_pinned_messages_table": {
+      "columns": [
+        "pin_id UUID PK",
+        "conversation_id UUID FK",
+        "message_id UUID FK (denormalized message content snapshot)",
+        "pinned_by_user_id UUID FK",
+        "pinned_at TIMESTAMP",
+        "order_index INTEGER (for custom ordering)",
+        "UNIQUE(conversation_id, message_id)"
+      ]
+    }
+  },
+  "pinboard_categories": {
+    "feature_v2": "organize pinned messages into categories (e.g., 'Announcements', 'Resources')",
+    "not_v1": "v1 is flat list only"
+  },
+  "clipping_from_pinboard": {
+    "feature": "user can long-press pinned message → 'Save', 'Forward', 'Copy Link'",
+    "share": "generate short link to pinned message (msgid-hash)"
+  },
+  "pinboard_search": {
+    "search": "search within pinned messages (title, content, sender)",
+    "index": "Elasticsearch index: pinned_messages with group_id"
+  },
+  "api_endpoints": {
+    "pin_message": {
+      "endpoint": "POST /v1/messages/{message_id}/pin",
+      "permission": "admin or moderator"
+    },
+    "unpin_message": {
+      "endpoint": "DELETE /v1/messages/{message_id}/pin"
+    },
+    "get_pinboard": {
+      "endpoint": "GET /v1/conversations/{conversation_id}/pinboard",
+      "response": {
+        "pinned_messages": [
+          {
+            "pin_id": "UUID",
+            "message_id": "UUID",
+            "content": "Announcement text",
+            "media_url": "S3 image URL",
+            "sender_name": "Admin",
+            "pinned_at": "2026-02-15T15:35:00Z",
+            "order_index": 0
+          }
+        ]
+      }
+    },
+    "reorder_pinboard": {
+      "endpoint": "PATCH /v1/conversations/{conversation_id}/pinboard",
+      "payload": {
+        "order": [
+          {
+            "pin_id": "UUID1",
+            "order_index": 0
+          },
+          {
+            "pin_id": "UUID2",
+            "order_index": 1
+          }
+        ]
+      }
+    }
+  },
+  "monitoring": {
+    "metrics": [
+      "pinboard.avg_pins_per_group",
+      "pinboard.views_per_day",
+      "pinboard.reorder_frequency"
+    ]
+  },
+  "testing": {
+    "scenarios": [
+      "admin pins message → appears in Pinboard",
+      "pinboard shows grid with 20 pinned messages",
+      "unpin message → removes from Pinboard",
+      "reorder pinned messages → change order_index",
+      "search 'announcement' in pinboard → returns matching pinned message",
+      "pinboard with 100% image messages → grid shows thumbnails"
+    ]
+  }
+}

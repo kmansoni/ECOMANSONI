@@ -1,0 +1,140 @@
+{
+  "req_id": "REQ-0082",
+  "title": "Message History & Archiving (Archive Conversations)",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "messaging",
+  "depends_on": ["REQ-0064"],
+  "use_cases": [
+    "user archives completed project conversation → moves to archive",
+    "archive hidden from main list, searchable separately",
+    "unarchive anytime → returns to main list",
+    "bulk archive: select 10 conversations, archive all"
+  ],
+  "archive_mechanics": {
+    "compose": {
+      "trigger": "long-press conversation → 'Archive' option",
+      "confirmation": "'Archive {name}? You can unarchive anytime'",
+      "action": "UPDATE conversations SET archived_at=now()"
+    },
+    "archive_display": {
+      "main_list": "archived conversations hidden by default",
+      "archive_tab": "'Archived' tab shows all archived conversations",
+      "search_includes_archive": "search can find archived conversations"
+    },
+    "unarchive": {
+      "action": "swipe-right archived conversation → 'Unarchive'",
+      "effect": "UPDATE conversations SET archived_at=null"
+    }
+  },
+  "archive_database_schema": {
+    "conversations_table_additions": {
+      "archived_at": "timestamp (null if not archived, timestamp if archived)",
+      "muted_until": "timestamp (mute archive notifications)"
+    }
+  },
+  "conversation_history_retention": {
+    "default_retention": "all messages kept indefinitely",
+    "user_option": "delete all messages before date (e.g., 'keep last 1 month')",
+    "implementation": [
+      "1. user taps 'Clear history' in conversation settings",
+      "2. choose: 'delete all' or 'delete before {date}'",
+      "3. soft-delete messages before date (is_visible=false)",
+      "4. hard-delete after 30 days (GDPR)"
+    ]
+  },
+  "bulk_archive": {
+    "ui_flow": [
+      "1. main conversation list → 'Select' mode",
+      "2. tap 10 conversations to select them",
+      "3. tap 'Archive {count}' button",
+      "4. batch update: UPDATE conversations SET archived_at=now() WHERE id IN (...)"
+    ]
+  },
+  "archive_notifications": {
+    "behavior": "archived conversations muted by default (no new message notifications)",
+    "setting": "per-archive: notify if mention, notify always, notify never"
+  },
+  "archive_restore": {
+    "restore_all": "user can restore all archived (e.g., starting fresh)",
+    "restore_single": "swipe-right archived → unarchive"
+  },
+  "message_purge_policy": {
+    "user_request": [
+      "1. user taps 'Clear history' in conversation",
+      "2. options: 'delete all', 'keep 1 month', 'keep 3 months'",
+      "3. soft-delete older messages (is_visible=false)",
+      "4. hard-delete after 30 days"
+    ],
+    "admin_action": "conversation admin can purge all messages (permanent delete)"
+  },
+  "backup_before_purge": {
+    "optional": "offer 'Download backup' before clearing history",
+    "format": "JSON export of conversation messages (same as B-075 export)"
+  },
+  "message_access_after_archive": {
+    "archived_messages": "fully searchable and readable (archive is not deletion)",
+    "search_archived": "search includes both active and archived conversations",
+    "filter_by_archive_status": "filter: 'archived:true' (future enhancement)"
+  },
+  "performance_optimization": {
+    "archive_index": "INDEX(archived_at) for fast archive filtering",
+    "lazy_load": "only load archived conversations on demand (tab switch)"
+  },
+  "api_endpoints": {
+    "archive_conversation": {
+      "endpoint": "POST /v1/conversations/{id}/archive",
+      "response": {
+        "archived_at": "2026-02-15T15:35:00Z"
+      }
+    },
+    "unarchive_conversation": {
+      "endpoint": "DELETE /v1/conversations/{id}/archive",
+      "response": {
+        "archived_at": null
+      }
+    },
+    "list_archived": {
+      "endpoint": "GET /v1/conversations?archived=true",
+      "response": [
+        {
+          "conversation_id": "UUID",
+          "name": \"Project Q4\",
+          "archived_at": "2026-02-15T15:35:00Z",
+          "last_message_at": "2026-02-10T10:00:00Z"
+        }
+      ]
+    },
+    "clear_history": {
+      "endpoint": "POST /v1/conversations/{id}/clear-history",
+      "payload": {
+        "keep_until": "2026-01-15T00:00:00Z"
+      },
+      "response": {
+        "deleted_count": 1234
+      }
+    }
+  },
+  "testing": {
+    "scenarios": [
+      "archive conversation → disappears from main list, appears in Archive tab",
+      "unarchive → returns to main list",
+      "search 'project' → finds archived conversation with that name",
+      "clear history, keep 1 month → messages older than 1m soft-deleted",
+      "bulk archive 10 conversations → all archived in one action",
+      "archived conversations muted by default (no notifications)"
+    ]
+  },
+  "monitoring": {
+    "metrics": [
+      "conversations.archived_count",
+      "archive.archive_latency_p95_ms",
+      "history.clear_latency_p95_ms",
+      "history.records_purged_per_day"
+    ],
+    "alerts": [
+      "archive operation fails > 2%",
+      "clear_history latency > 5s (large conversation?)"
+    ]
+  }
+}

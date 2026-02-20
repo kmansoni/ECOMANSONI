@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
 
 export function useUnreadChats() {
   const { user } = useAuth();
   const [unreadCount, setUnreadCount] = useState(0);
+  const participantConversationIdsRef = useRef<Set<string>>(new Set());
 
   const fetchUnreadCount = useCallback(async () => {
     if (!user) {
@@ -20,9 +21,12 @@ export function useUnreadChats() {
         .eq("user_id", user.id);
 
       if (!participants || participants.length === 0) {
+        participantConversationIdsRef.current = new Set();
         setUnreadCount(0);
         return;
       }
+
+      participantConversationIdsRef.current = new Set(participants.map((p) => p.conversation_id));
 
       let totalUnread = 0;
 
@@ -62,6 +66,9 @@ export function useUnreadChats() {
         },
         (payload) => {
           const message = payload.new as any;
+          if (!message?.conversation_id) return;
+          // IMPORTANT: Do not increment for conversations where the current user isn't a participant.
+          if (!participantConversationIdsRef.current.has(message.conversation_id)) return;
           if (message.sender_id !== user.id) {
             setUnreadCount((prev) => prev + 1);
           }

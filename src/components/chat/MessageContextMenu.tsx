@@ -12,11 +12,13 @@ interface MessageContextMenuProps {
   onDelete?: (messageId: string) => void;
   onPin?: (messageId: string) => void;
   onReaction?: (messageId: string, emoji: string) => void;
+  quickReactions?: string[];
   onReply?: (messageId: string) => void;
   onForward?: (messageId: string) => void;
+  onSelect?: (messageId: string) => void;
 }
 
-const QUICK_REACTIONS = ["❤️", "🔥", "👍", "😂", "😮", "🎉"];
+const QUICK_REACTIONS_FALLBACK = ["❤️", "🔥", "👍", "😂", "😮", "🎉"];
 
 export function MessageContextMenu({
   isOpen,
@@ -28,10 +30,13 @@ export function MessageContextMenu({
   onDelete,
   onPin,
   onReaction,
+  quickReactions,
   onReply,
   onForward,
+  onSelect,
 }: MessageContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
+  const reactions = quickReactions?.length ? quickReactions : QUICK_REACTIONS_FALLBACK;
 
   const handleReaction = (emoji: string) => {
     onReaction?.(messageId, emoji);
@@ -67,7 +72,11 @@ export function MessageContextMenu({
     onClose();
   };
 
-  // Prevent scroll when menu is open
+  const handleSelect = () => {
+    onSelect?.(messageId);
+    onClose();
+  };
+
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = "hidden";
@@ -79,42 +88,35 @@ export function MessageContextMenu({
     };
   }, [isOpen]);
 
-  // Calculate optimal position for the menu
   const getMenuStyle = (): React.CSSProperties => {
     if (!position) {
       return {
-        top: '50%',
-        left: '50%',
-        transform: 'translate(-50%, -50%)'
+        top: "50%",
+        left: "50%",
+        transform: "translate(-50%, -50%)",
       };
     }
 
     const windowHeight = window.innerHeight;
-    const windowWidth = window.innerWidth;
-    const menuHeight = 320; // Approximate menu height
+    const menuHeight = 320;
     const reactionsHeight = 48;
-    const messageHeight = 60; // Approximate message preview height
-    const totalHeight = reactionsHeight + messageHeight + menuHeight + 24; // gaps
-    
-    // Calculate where to position the menu container
+    const messageHeight = 60;
+    const totalHeight = reactionsHeight + messageHeight + menuHeight + 24;
+
     let top = position.top;
-    
-    // If message is in lower half, position menu so message appears at bottom of visible area
     if (position.top > windowHeight / 2) {
       top = Math.max(16, position.top - totalHeight + messageHeight + 60);
     } else {
-      // Message is in upper half, position below it
       top = Math.max(16, position.top - reactionsHeight - 8);
     }
-    
-    // Ensure menu doesn't go off screen
+
     top = Math.min(top, windowHeight - totalHeight - 16);
     top = Math.max(16, top);
 
     return {
       top,
-      left: isOwn ? 'auto' : 16,
-      right: isOwn ? 16 : 'auto',
+      left: isOwn ? "auto" : 16,
+      right: isOwn ? 16 : "auto",
     };
   };
 
@@ -129,10 +131,8 @@ export function MessageContextMenu({
           className="fixed inset-0 z-[300]"
           onClick={onClose}
         >
-          {/* Dark backdrop with blur */}
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
 
-          {/* Menu container */}
           <motion.div
             ref={menuRef}
             initial={{ scale: 0.95, opacity: 0 }}
@@ -143,14 +143,13 @@ export function MessageContextMenu({
             style={getMenuStyle()}
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Quick reactions bar */}
             <motion.div
               initial={{ y: -8, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               transition={{ delay: 0.03 }}
-              className={`flex items-center gap-0.5 bg-[#1e2c3a] rounded-full px-1.5 py-1 shadow-xl w-fit ${isOwn ? 'self-end' : 'self-start'}`}
+              className={`flex items-center gap-0.5 bg-[#1e2c3a] rounded-full px-1.5 py-1 shadow-xl w-fit ${isOwn ? "self-end" : "self-start"}`}
             >
-              {QUICK_REACTIONS.map((emoji) => (
+              {reactions.map((emoji) => (
                 <button
                   key={emoji}
                   onClick={() => handleReaction(emoji)}
@@ -161,7 +160,6 @@ export function MessageContextMenu({
               ))}
             </motion.div>
 
-            {/* Message preview - styled like actual message */}
             <motion.div
               initial={{ scale: 0.98, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
@@ -170,9 +168,7 @@ export function MessageContextMenu({
             >
               <div
                 className={`max-w-[280px] rounded-2xl px-3 py-2 shadow-lg ${
-                  isOwn
-                    ? "bg-[#2b5278] text-white rounded-br-sm"
-                    : "bg-[#182533] text-white rounded-bl-sm"
+                  isOwn ? "bg-[#2b5278] text-white rounded-br-sm" : "bg-[#182533] text-white rounded-bl-sm"
                 }`}
               >
                 <p className="text-[15px] leading-[1.4] whitespace-pre-wrap line-clamp-4">
@@ -181,7 +177,6 @@ export function MessageContextMenu({
               </div>
             </motion.div>
 
-            {/* Action menu */}
             <motion.div
               initial={{ y: 8, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
@@ -192,10 +187,8 @@ export function MessageContextMenu({
               <MenuItem icon={Copy} label="Скопировать" onClick={handleCopy} />
               <MenuItem icon={Pin} label="Закрепить" onClick={handlePin} />
               <MenuItem icon={Forward} label="Переслать" onClick={handleForward} />
-              {isOwn && (
-                <MenuItem icon={Trash2} label="Удалить" onClick={handleDelete} isDestructive />
-              )}
-              <MenuItem icon={CheckSquare} label="Выбрать" onClick={onClose} isLast />
+              <MenuItem icon={Trash2} label="Удалить" onClick={handleDelete} isDestructive />
+              <MenuItem icon={CheckSquare} label="Выбрать" onClick={handleSelect} isLast />
             </motion.div>
           </motion.div>
         </motion.div>
@@ -227,3 +220,4 @@ function MenuItem({ icon: Icon, label, onClick, isDestructive, isLast }: MenuIte
     </button>
   );
 }
+

@@ -1,132 +1,134 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback, useMemo } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './useAuth';
 
 export function useSavedPosts() {
   const { user } = useAuth();
-  const [savedPostIds, setSavedPostIds] = useState<Set<string>>(new Set());
-  const [savedPosts, setSavedPosts] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
 
-  // Fetch all saved post IDs for quick lookup
-  const fetchSavedPostIds = useCallback(async () => {
-    if (!user) {
-      setSavedPostIds(new Set());
-      setLoading(false);
-      return;
-    }
+  const savedIdsQueryKey = useMemo(() => ["saved_posts_ids", user?.id ?? null] as const, [user?.id]);
 
-    try {
+  const savedIdsQuery = useQuery({
+    queryKey: savedIdsQueryKey,
+    enabled: !!user?.id,
+    queryFn: async () => {
       const { data, error } = await (supabase as any)
-        .from('saved_posts')
-        .select('post_id')
-        .eq('user_id', user.id);
-
+        .from("saved_posts")
+        .select("post_id")
+        .eq("user_id", user!.id);
       if (error) throw error;
+      return (data || []).map((s: any) => String(s.post_id));
+    },
+    staleTime: 30_000,
+  });
 
-      setSavedPostIds(new Set(data?.map((s: any) => s.post_id) || []));
-    } catch (err) {
-      console.error('Failed to fetch saved posts:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, [user]);
+  const savedPostIds = useMemo(() => {
+    const ids = savedIdsQuery.data || [];
+    return new Set(ids);
+  }, [savedIdsQuery.data]);
 
-  // Fetch full saved posts with details
-  const fetchSavedPosts = useCallback(async () => {
-    if (!user) {
-      setSavedPosts([]);
-      return;
-    }
+  const savedPostsQueryKey = useMemo(() => ["saved_posts_full", user?.id ?? null] as const, [user?.id]);
 
-    try {
-      // First get saved post IDs
+  const savedPostsQuery = useQuery({
+    queryKey: savedPostsQueryKey,
+    enabled: false,
+    queryFn: async () => {
+      if (!user?.id) return [];
+
       const { data: savedData, error: savedError } = await (supabase as any)
-        .from('saved_posts')
-        .select('post_id, created_at')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
+        .from("saved_posts")
+        .select("post_id, created_at")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false });
 
       if (savedError) throw savedError;
 
       if (!savedData || savedData.length === 0) {
-        setSavedPosts([]);
-        return;
+        return [];
       }
 
       const postIds = savedData.map((s: any) => s.post_id);
 
-      // Then fetch the actual posts
       const { data: postsData, error: postsError } = await supabase
-        .from('posts')
+        .from("posts")
         .select(`
           *,
           post_media (*)
         `)
-        .in('id', postIds);
+        .in("id", postIds);
 
       if (postsError) throw postsError;
 
-      // Map saved_at timestamps to posts
       const savedMap = new Map(savedData.map((s: any) => [s.post_id, s.created_at]));
-      const posts = postsData?.map(p => ({
-        ...p,
-        saved_at: savedMap.get(p.id),
-      })).filter(Boolean) || [];
+      const posts = (postsData || [])
+        .map((p: any) => ({
+          ...p,
+          saved_at: savedMap.get(p.id),
+        }))
+        .filter(Boolean);
 
-      setSavedPosts(posts);
-    } catch (err) {
-      console.error('Failed to fetch saved posts details:', err);
-    }
-  }, [user]);
+      return posts;
+    },
+    staleTime: 10_000,
+  });
 
-  useEffect(() => {
-    fetchSavedPostIds();
-  }, [fetchSavedPostIds]);
+  const loading = savedIdsQuery.isLoading || savedPostsQuery.isFetching;
+
+  const savedPosts = savedPostsQuery.data || [];
+
+  // Fetch full saved posts with details (used on Saved page)
+  const fetchSavedPosts = useCallback(async () => {
+    await savedPostsQuery.refetch();
+  }, [savedPostsQuery.refetch]);
 
   const isSaved = useCallback((postId: string) => {
     return savedPostIds.has(postId);
   }, [savedPostIds]);
 
-  const savePost = useCallback(async (postId: string) => {
-    if (!user) return;
-
-    try {
+  const saveMutation = useMutation({
+    mutationFn: async (postId: string) => {
+      if (!user?.id) throw new Error("Not authenticated");
       const { error } = await (supabase as any)
-        .from('saved_posts')
+        .from("saved_posts")
         .insert({ user_id: user.id, post_id: postId });
-
       if (error) throw error;
+      return postId;
+    },
+    onSuccess: (postId) => {
+      queryClient.setQueryData<string[]>(savedIdsQueryKey, (prev) => {
+        const list = prev || [];
+        if (list.includes(postId)) return list;
+        return [...list, postId];
+      });
+      void queryClient.invalidateQueries({ queryKey: savedPostsQueryKey });
+    },
+  });
 
-      setSavedPostIds(prev => new Set([...prev, postId]));
-    } catch (err) {
-      console.error('Failed to save post:', err);
-      throw err;
-    }
-  }, [user]);
+  const unsaveMutation = useMutation({
+    mutationFn: async (postId: string) => {
+      if (!user?.id) throw new Error("Not authenticated");
+      const { error } = await (supabase as any)
+        .from("saved_posts")
+        .delete()
+        .eq("user_id", user.id)
+        .eq("post_id", postId);
+      if (error) throw error;
+      return postId;
+    },
+    onSuccess: (postId) => {
+      queryClient.setQueryData<string[]>(savedIdsQueryKey, (prev) => (prev || []).filter((id) => id !== postId));
+      void queryClient.invalidateQueries({ queryKey: savedPostsQueryKey });
+    },
+  });
+
+  const savePost = useCallback(async (postId: string) => {
+    await saveMutation.mutateAsync(postId);
+  }, [saveMutation]);
 
   const unsavePost = useCallback(async (postId: string) => {
-    if (!user) return;
-
-    try {
-      const { error } = await (supabase as any)
-        .from('saved_posts')
-        .delete()
-        .eq('user_id', user.id)
-        .eq('post_id', postId);
-
-      if (error) throw error;
-
-      setSavedPostIds(prev => {
-        const next = new Set(prev);
-        next.delete(postId);
-        return next;
-      });
-    } catch (err) {
-      console.error('Failed to unsave post:', err);
-      throw err;
-    }
-  }, [user]);
+    await unsaveMutation.mutateAsync(postId);
+  }, [unsaveMutation]);
 
   const toggleSave = useCallback(async (postId: string) => {
     if (isSaved(postId)) {
@@ -145,6 +147,8 @@ export function useSavedPosts() {
     unsavePost,
     toggleSave,
     fetchSavedPosts,
-    refetch: fetchSavedPostIds,
+    refetch: async () => {
+      await savedIdsQuery.refetch();
+    },
   };
 }

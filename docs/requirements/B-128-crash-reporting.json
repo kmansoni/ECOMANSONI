@@ -1,0 +1,307 @@
+{
+  "id": "B-128",
+  "section": "B",
+  "title": "Crash Reporting & Error Telemetry System",
+  "description": "Client error collection, session replay, source map management, issue grouping, and alerting",
+  "priority": "P1",
+  "complexity": "M",
+  "architecture": {
+    "error_pipeline": "Client SDK → Sentry/Rollbar → Processing → Grouping → Storage → Alerts",
+    "storage": "S3 (raw logs) + PostgreSQL (processed), TimescaleDB (metrics)",
+    "retention": "30 days detailed, 1 year aggregated"
+  },
+  "features": {
+    "error_collection": {
+      "sources": [
+        "JavaScript uncaught exceptions",
+        "Promise rejections",
+        "React error boundaries",
+        "Network errors (XHR, fetch)",
+        "Custom errors (SDK.captureException())"
+      ],
+      "client_sdk": {
+        "name": "@sentry/react or Rollbar",
+        "init": "Sentry.init({dsn, environment, tracesSampleRate: 0.1})",
+        "setup": "captures all errors automatically, no extra code needed"
+      },
+      "metadata_captured": {
+        "timestamp": "exact time of error",
+        "user_id": "who encountered error",
+        "session_id": "session trace for replay",
+        "url": "page where error occurred",
+        "user_agent": "browser/OS info",
+        "breadcrumbs": "last 50 user actions before error"
+      }
+    },
+    "session_replay": {
+      "recording": {
+        "method": "pixel-based + event-based hybrid (rrweb library)",
+        "data_captured": "DOM mutations, user interactions, console logs",
+        "privacy": "redact inputs, password fields, sensitive text",
+        "size": "~50KB per hour (compressed)"
+      },
+      "triggering": [
+        "Always record (sample 10% of sessions to save bandwidth)",
+        "On error: automatically save full replay if error occurs",
+        "On user report: user can submit error + replay together"
+      ],
+      "playback": "WebAssembly player, 1x/2x/4x speed controls"
+    },
+    "source_maps": {
+      "upload": "upload source maps to Sentry during CI/CD",
+      "advantages": "stack traces show original TS/React code (not minified)",
+      "cleanup": "delete old source maps after 30 days",
+      "verification": "verify source map matches production build"
+    },
+    "issue_grouping": {
+      "algorithm": "fingerprinting based on:",
+      [
+        "error message (exact match)",
+        "stack trace (top 3 frames)",
+        "error type (TypeError, ReferenceError)",
+        "URL regex pattern (ignore IDs)"
+      ],
+      "manual_grouping": "can merge similar issues or split issue"
+    },
+    "error_severity": {
+      "critical": {
+        "definition": ">100 errors/minute OR affects >1% users",
+        "alert": "page, Slack, PagerDuty immediate"
+      },
+      "high": {
+        "definition": ">10 errors/minute OR increases >50% from baseline",
+        "alert": "Slack, email within 5 min"
+      },
+      "medium": {
+        "definition": "new error pattern, <10/min",
+        "alert": "daily digest"
+      },
+      "low": {
+        "definition": "recurring error, <1/min",
+        "alert": "weekly digest"
+      }
+    },
+    "affected_users": {
+      "calculation": "count unique user_ids affected by error in last 24h",
+      "impact": "shown in issue dashboard (e.g., 'Affects 234 users')",
+      "correlation": "show other errors same users experienced"
+    }
+  },
+  "database": {
+    "tables": [
+      {
+        "name": "error_events",
+        "columns": [
+          {"name": "id", "type": "uuid", "pk": true},
+          {"name": "group_id", "type": "uuid", "fk": "error_groups"},
+          {"name": "user_id", "type": "uuid", "fk": "users"},
+          {"name": "session_id", "type": "uuid"},
+          {"name": "error_message", "type": "text"},
+          {"name": "stack_trace", "type": "text"},
+          {"name": "url", "type": "varchar(2048)"},
+          {"name": "user_agent", "type": "varchar(500)"},
+          {"name": "breadcrumbs", "type": "jsonb (last 50 actions)"},
+          {"name": "timestamp", "type": "timestamp", "indexed": true},
+          {"name": "environment", "type": "enum(production,staging,development)"}
+        ],
+        "indexes": [
+          "group_id, timestamp (for issue view)",
+          "user_id, timestamp (for user errors)",
+          "timestamp (time-based queries)"
+        ]
+      },
+      {
+        "name": "error_groups",
+        "columns": [
+          {"name": "id", "type": "uuid", "pk": true},
+          {"name": "fingerprint", "type": "varchar(255)", "unique": true},
+          {"name": "error_message", "type": "text"},
+          {"name": "first_seen", "type": "timestamp"},
+          {"name": "last_seen", "type": "timestamp"},
+          {"name": "event_count", "type": "int"},
+          {"name": "affected_users", "type": "int"},
+          {"name": "status", "type": "enum(unresolved,resolved,ignored)", "default": "unresolved"},
+          {"name": "assigned_to", "type": "uuid (developer)"},
+          {"name": "severity", "type": "enum(critical,high,medium,low)"}
+        ]
+      },
+      {
+        "name": "session_replays",
+        "columns": [
+          {"name": "id", "type": "uuid", "pk": true},
+          {"name": "session_id", "type": "uuid", "fk": "error_events"},
+          {"name": "user_id", "type": "uuid"},
+          {"name": "replay_url", "type": "varchar(2048) (S3 path)"},
+          {"name": "duration_seconds", "type": "int"},
+          {"name": "error_occurred", "type": "bool"},
+          {"name": "created_at", "type": "timestamp"}
+        ]
+      }
+    ],
+    "retention": {
+      "error_events": "30 days detailed, 1 year aggregated",
+      "session_replays": "30 days (storage intensive)",
+      "error_groups": "indefinite (issue history)"
+    }
+  },
+  "api": {
+    "endpoints": [
+      {
+        "path": "POST /v1/errors/report",
+        "description": "Report error from client SDK (automatic, not manual)",
+        "auth": "none (uses DSN key)",
+        "body": {
+          "error_message": "string",
+          "stack_trace": "string",
+          "user_id": "uuid",
+          "session_id": "uuid",
+          "breadcrumbs": [{"action": "click", "target": "button"}],
+          "url": "string"
+        }
+      },
+      {
+        "path": "GET /v1/errors/groups",
+        "description": "List error groups with stats (admin only)",
+        "auth": "admin",
+        "query": {"status": "unresolved", "severity": "critical|high", "limit": 50},
+        "returns": [
+          {
+            "group_id": "uuid",
+            "error_message": "string",
+            "first_seen": "timestamp",
+            "last_seen": "timestamp",
+            "event_count": "int",
+            "affected_users": "int",
+            "severity": "critical|high|medium|low"
+          }
+        ]
+      },
+      {
+        "path": "GET /v1/errors/groups/{group_id}",
+        "description": "Get details of error group",
+        "returns": {
+          "group_id": "uuid",
+          "error_message": "string",
+          "stack_trace": "string",
+          "affected_urls": ["string"],
+          "events": [{"timestamp": "timestamp", "user_id": "uuid"}],
+          "replay_url": "string (if available)"
+        }
+      },
+      {
+        "path": "POST /v1/errors/groups/{group_id}/resolve",
+        "description": "Mark error group as resolved",
+        "body": {"version_fixed": "string (e.g., v1.2.0)"},
+        "returns": {"status": "resolved"}
+      },
+      {
+        "path": "GET /v1/dashboard/errors",
+        "description": "Real-time error dashboard",
+        "returns": {
+          "errors_last_hour": "int",
+          "affected_users_last_hour": "int",
+          "top_errors": [{"error": "string", "count": "int"}],
+          "trend": [{"hour": "timestamp", "count": "int"}]
+        }
+      }
+    ]
+  },
+  "monitoring": {
+    "alerts": [
+      {
+        "name": "error_rate_spike",
+        "trigger": "errors/min > 100 OR > 50% increase from baseline",
+        "action": "page on-call engineer"
+      },
+      {
+        "name": "affected_users_critical",
+        "trigger": ">1% of users affected by single error",
+        "action": "Slack + PagerDuty"
+      },
+      {
+        "name": "new_error_pattern",
+        "trigger": "new fingerprint never seen before",
+        "action": "email team"
+      }
+    ]
+  },
+  "testing": {
+    "test_scenarios": [
+      {
+        "name": "Uncaught error capture",
+        "steps": ["Throw error in dev", "Wait 10s"],
+        "expected": "Error appears in Sentry/dashboard within 10s"
+      },
+      {
+        "name": "Session replay on error",
+        "steps": ["Trigger error", "Check error group"],
+        "expected": "Replay link present, can watch what user did before error"
+      },
+      {
+        "name": "Source map integration",
+        "steps": ["Deploy minified code + source maps", "Trigger error"],
+        "expected": "Stack trace shows original TS file:line, not minified"
+      },
+      {
+        "name": "Error grouping accuracy",
+        "steps": ["Throw same error 10 times from different users"],
+        "expected": "All 10 events in same group (one-click to see all)"
+      },
+      {
+        "name": "Severity escalation",
+        "steps": ["Error occurs >100/min for 1 minute"],
+        "expected": "Marked critical, alert triggered immediately"
+      },
+      {
+        "name": "User impact calculation",
+        "steps": ["Error affects 5 unique users"],
+        "expected": "Dashboard shows 'Affects 5 users'"
+      },
+      {
+        "name": "Breadcrumb trail",
+        "steps": ["Click button → type text → error", "Check error details"],
+        "expected": "Breadcrumbs show: 'click dashboard-button' → 'input #message' → 'SendMessage error'"
+      },
+      {
+        "name": "Resolve error group",
+        "steps": ["Mark error as resolved", "Deploy new version"],
+        "expected": "Group status changes, tracking continues to verify fix"
+      },
+      {
+        "name": "Ignore error",
+        "steps": ["Ignore known 3rd-party error"],
+        "expected": "Errors no longer trigger alerts, filtered from dashboard"
+      },
+      {
+        "name": "Network error detection",
+        "steps": ["XHR request fails (timeout)"],
+        "expected": "Error captured with request details, retry count shown"
+      },
+      {
+        "name": "React error boundary",
+        "steps": ["React component throws error (render)"],
+        "expected": "Error boundary catches, error logged, UI fallback shown"
+      },
+      {
+        "name": "Promise rejection handling",
+        "steps": ["Unhandled promise rejection"],
+        "expected": "Error captured automatically, not hidden in console"
+      },
+      {
+        "name": "Custom error capture",
+        "steps": ["Manually call SDK.captureException()", "Custom message"],
+        "expected": "Error appears in dashboard with custom message"
+      },
+      {
+        "name": "Real-time dashboard update",
+        "steps": ["Watch dashboard", "Trigger 5 errors simultaneously"],
+        "expected": "Dashboard updates within 5s, count increases"
+      },
+      {
+        "name": "Privacy redaction",
+        "steps": ["Error in form with password field", "Check replay"],
+        "expected": "Password input redacted (shows ****), not visible in replay"
+      }
+    ]
+  }
+}

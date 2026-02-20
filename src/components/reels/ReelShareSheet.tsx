@@ -123,17 +123,34 @@ export function ReelShareSheet({
         if (type === "dm") {
           // Send to DM conversation with shared reel
           const sendDm = async () => {
-            const { error } = await supabase.from("messages").insert({
-              conversation_id: id,
-              sender_id: user.id,
-              content: "🎬 Поделился Reels",
-              shared_reel_id: reelId,
-            });
+            const clientMsgId = crypto.randomUUID();
+            const { error } = await supabase
+              .from("messages")
+              .upsert(
+                {
+                  conversation_id: id,
+                  sender_id: user.id,
+                  content: "🎬 Поделился Reels",
+                  shared_reel_id: reelId,
+                  client_msg_id: clientMsgId,
+                },
+                {
+                  onConflict: "conversation_id,sender_id,client_msg_id",
+                  ignoreDuplicates: true,
+                }
+              );
             if (error) throw error;
-            await supabase
-              .from("conversations")
-              .update({ updated_at: new Date().toISOString() })
-              .eq("id", id);
+
+            try {
+              await (supabase as any).from("reel_shares").insert({
+                reel_id: reelId,
+                user_id: user.id,
+                target_type: "dm",
+                target_id: id,
+              });
+            } catch {
+              // ignore share analytics errors
+            }
           };
           promises.push(sendDm());
         } else if (type === "group") {
@@ -150,6 +167,17 @@ export function ReelShareSheet({
               .from("group_chats")
               .update({ updated_at: new Date().toISOString() })
               .eq("id", id);
+
+            try {
+              await (supabase as any).from("reel_shares").insert({
+                reel_id: reelId,
+                user_id: user.id,
+                target_type: "group",
+                target_id: id,
+              });
+            } catch {
+              // ignore share analytics errors
+            }
           };
           promises.push(sendGroup());
         } else if (type === "channel") {
@@ -166,6 +194,17 @@ export function ReelShareSheet({
               .from("channels")
               .update({ updated_at: new Date().toISOString() })
               .eq("id", id);
+
+            try {
+              await (supabase as any).from("reel_shares").insert({
+                reel_id: reelId,
+                user_id: user.id,
+                target_type: "channel",
+                target_id: id,
+              });
+            } catch {
+              // ignore share analytics errors
+            }
           };
           promises.push(sendChannel());
         }

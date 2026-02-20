@@ -1,0 +1,278 @@
+{
+  "id": "B-130",
+  "section": "B",
+  "title": "Database Sharding Strategy & Cross-Shard Queries",
+  "description": "Consistent hashing sharding, shard rebalancing, cross-shard transactions, and query routing",
+  "priority": "P1",
+  "complexity": "M",
+  "architecture": {
+    "sharding_strategy": "consistent hashing on conversation_id (range: 0-4095, 4096 possible shards)",
+    "shard_count": "16 production shards (expandable to 64)",
+    "replication_per_shard": "3x (primary + 2 replicas)",
+    "total_instances": "48 Postgres instances (16 shards × 3 replicas)"
+  },
+  "features": {
+    "shard_key_selection": {
+      "primary": "conversation_id (messages, reactions, presense)",
+      "rationale": "most queries filtered by conversation (WHERE conversation_id = X)",
+      "distribution": "conversations evenly distributed via consistent hashing",
+      "hash_formula": "shard_id = crc32(conversation_id) % 4096, then map to bucket 1-16"
+    },
+    "consistent_hashing": {
+      "algorithm": "ketama algorithm",
+      "benefits": [
+        "adding new shard requires rebalancing ~1/16 data",
+        "not 100% data movement (vs modulo which requires full rebalance)"
+      ],
+      "implementation": "libketama (C library) or consistent_hash (Go package)",
+      "ring_size": 160 (10 virtual nodes per shard × 16 shards)"
+    },
+    "data_distribution": {
+      "sharded_tables": [
+        "messages (by conversation_id)",
+        "reactions (by conversation_id)",
+        "presence (by conversation_id)",
+        "message_attachments (by conversation_id)"
+      ],
+      "non_sharded_tables": [
+        "users (replicated all nodes)",
+        "conversations (metadata, replicated)",
+        "groups (metadata, replicated)"
+      ]
+    },
+    "query_routing": {
+      "single_shard_queries": {
+        "example": "SELECT * FROM messages WHERE conversation_id = X AND timestamp > T",
+        "routing": "hash(X) → shard_id → query primary, fallback to replica",
+        "latency": "p99 <100ms"
+      },
+      "multi_shard_queries": {
+        "example": "SELECT * FROM messages WHERE conversation_id IN (A, B, C)",
+        "routing": "parallel query to 3 shards, merge results",
+        "latency": "p99 <500ms (parallel wait)",
+        "batching": "max 10 shards per query (prevent fan-out explosion)"
+      },
+      "global_queries": {
+        "example": "SELECT COUNT(*) FROM messages (all conversation)",
+        "routing": "query each shard, sum results",
+        "latency": "p99 <5s (slow, use denormalized counter instead)"
+      }
+    },
+    "shard_rebalancing": {
+      "trigger": [
+        "shard exceeds 100GB (storage limit)",
+        "shard receives >50% more queries than median",
+        "operator manually initiates"
+      ],
+      "process": {
+        "step1": "add new shard to ring (ketama rebalances)",
+        "step2": "identify affected conversations (hash % 4096 → new bucket)",
+        "step3": "copy data async (background job, shadow reads)",
+        "step4": "validate, then switch routing",
+        "step5": "delete old copy"
+      },
+      "downtime": "zero (shadow reads validate, then atomic switch)"
+    },
+    "cross_shard_transactions": {
+      "type": "distributed 2-phase commit (complex)",
+      "avoidance": "design to minimize (group messages by shard when possible)",
+      "example": "move user from one group to another (conversation_id changes)",
+      "solution": "use tlog (transaction log) with at-least-once semantics"
+    },
+    "failover": {
+      "per_shard": "if primary fails, replica promoted (Patroni handles)",
+      "shard_election": "7-shard tolerance (split-brain prevention with etcd)",
+      "time_to_repair": "30-60s (auto-detect + promote + verify)"
+    }
+  },
+  "database": {
+    "sharding_metadata": {
+      "table": "shard_ring (non-sharded, replicated all nodes)",
+      "columns": [
+        "shard_id (1-16)",
+        "hash_range (0-255)",
+        "primary_host (hostname:port)",
+        "replica_hosts (array)",
+        "status (active, rebalancing, down)",
+        "data_size_bytes",
+        "qps"
+      ]
+    },
+    "shard_assignment": {
+      "consistent_hash_ring": [
+        {"shard": 1, "nodes": ["pg-shard-1-primary", "pg-shard-1-replica-a", "pg-shard-1-replica-b"]},
+        {"shard": 2, "nodes": ["pg-shard-2-primary", "pg-shard-2-replica-a", "pg-shard-2-replica-b"]},
+        "... (16 total)"
+      ]
+    }
+  },
+  "api": {
+    "endpoints": [
+      {
+        "path": "GET /v1/sharding/shard-for-id",
+        "description": "Get which shard a conversation_id maps to (for debugging)",
+        "query": {"conversation_id": "uuid"},
+        "returns": {"shard_id": 5, "primary_host": "pg-shard-5-primary:5432"}
+      },
+      {
+        "path": "GET /v1/sharding/status",
+        "description": "Admin: view shard ring status and load",
+        "auth": "admin",
+        "returns": [
+          {
+            "shard_id": 1,
+            "status": "active",
+            "qps": 10000,
+            "data_size_gb": 45,
+            "replica_lag": "100ms"
+          }
+        ]
+      },
+      {
+        "path": "POST /v1/sharding/rebalance",
+        "description": "Initiate shard rebalancing",
+        "auth": "admin",
+        "body": {"source_shard": 5, "target_shard": 17},
+        "returns": {"rebalance_job_id": "uuid", "eta_minutes": 45}
+      }
+    ]
+  },
+  "implementation": {
+    "shard_routing_layer": {
+      "location": "between app + Postgres",
+      "options": [
+        {
+          "option": "PgBouncer + custom routing middleware",
+          "pros": "lightweight, language agnostic",
+          "cons": "routing logic duplicated per language"
+        },
+        {
+          "option": "Citus (Postgres extension)",
+          "pros": "native sharding, SQL transparent",
+          "cons": "vendor lock-in, complexity"
+        },
+        {
+          "option": "vitess (from YouTube/MySQL)",
+          "pros": "proven at scale, transparent routing",
+          "cons": "mysql-only, operational complexity"
+        }
+      ],
+      "recommendation": "PgBouncer + app-layer routing (max flexibility)"
+    },
+    "query_routing_pattern": {
+      "pseudocode": "
+        function route_query(conversation_id, query_sql):
+            shard = hash(conversation_id) % 16 + 1
+            primary = shard_ring[shard].primary_host
+            try:
+                return query(primary, query_sql)
+            catch connection_error:
+                replica = shard_ring[shard].retry
+                return query(replica, query_sql)
+      "
+    }
+  },
+  "monitoring": {
+    "metrics": [
+      {
+        "name": "shard_load_imbalance",
+        "target": "std dev < 10% (all shards within 10% QPS)",
+        "alert": ">20% (rebalance needed)"
+      },
+      {
+        "name": "shard_storage_balance",
+        "target": "all shards 40-100GB",
+        "alert": ">100GB (rebalance) or <20GB (consolidate)"
+      },
+      {
+        "name": "routing_latency",
+        "target": "p99 <100ms (single shard), <500ms (multi-shard)",
+        "alert": ">1s (network issue, stale ring)"
+      },
+      {
+        "name": "shard_availability",
+        "target": "100%",
+        "alert": "any shard down (failover should restore <1min)"
+      }
+    ]
+  },
+  "testing": {
+    "test_scenarios": [
+      {
+        "name": "Shard routing correctness",
+        "steps": ["Create conversation ABC", "Send 10 messages", "Verify all in same shard"],
+        "expected": "All messages route to same physical shard (based on consistent hash)"
+      },
+      {
+        "name": "Multi-shard query",
+        "steps": ["Search across 3 conversations (different shards)"],
+        "expected": "Results merged, sorted by timestamp, complete"
+      },
+      {
+        "name": "Shard failover",
+        "steps": ["Shard 5 primary down", "Replica promoted", "Verify routing updates"],
+        "expected": "Automatic failover <30s, queries succeed with replica"
+      },
+      {
+        "name": "Shard rebalancing zero-downtime",
+        "steps": ["Initiate rebalance shard 5→17", "Send queries during rebalance"],
+        "expected": "Queries succeed, shadow reads validate, switch atomic"
+      },
+      {
+        "name": "Load distribution",
+        "steps": ["100k conversations distributed"],
+        "expected": "Each shard gets ~6.25k conversations, QPS within 10% of peer shards"
+      },
+      {
+        "name": "Shard key edge case",
+        "steps": ["conversation_id at hash ring boundaries"],
+        "expected": "Consistent hash routed correctly, no double-writes"
+      },
+      {
+        "name": "Cross-shard consistency",
+        "steps": ["Query same data from different shards"],
+        "expected": "Results match (replication consistency)"
+      },
+      {
+        "name": "Shard metadata ring update",
+        "steps": ["New shard added to ring", "Old routing code checks new ring"],
+        "expected": "All clients see updated ring within 1s (TTL refresh)"
+      },
+      {
+        "name": "Global query performance",
+        "steps": ["COUNT(*) across all messages"],
+        "expected": "p99 <5s (queries all 16 shards in parallel)"
+      },
+      {
+        "name": "Replica lag monitoring",
+        "steps": ["Write to primary", "Check replica lag", "Query replica"],
+        "expected": "Lag <100ms, queries see recent writes"
+      },
+      {
+        "name": "Shard storage growth simulation",
+        "steps": ["Add 50M messages to one shard", "Monitor size"],
+        "expected": "Shard reaches 100GB threshold, alert triggers"
+      },
+      {
+        "name": "Virt ual node distribution",
+        "steps": ["Check ketama virtual nodes in ring"],
+        "expected": "Each shard evenly distributed, ~10 vnodes per shard"
+      },
+      {
+        "name": "Shard capacity planning",
+        "steps": ["Project growth 1000% over 5 years"],
+        "expected": "Sharding strategy remains viable (16→64 shards feasible)"
+      },
+      {
+        "name": "Shard rebalance with hot shard",
+        "steps": ["Rebalance heavily-loaded shard"],
+        "expected": "Load balanced post-rebalance, no query storms"
+      },
+      {
+        "name": "Missing shard recovery",
+        "steps": ["Shard node disappears", "New replica bootstrapped"],
+        "expected": "Data restored from other replicas, back online <5min"
+      }
+    ]
+  }
+}

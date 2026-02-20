@@ -1,0 +1,408 @@
+{
+  "id": "B-118",
+  "title": "Appeal & Dispute Resolution System",
+  "description": "Comprehensive system for users to appeal moderation decisions, admins to manage disputes, mediation workflows, and transparent audit logs for all decisions",
+  "status": "draft",
+  "priority": "P1",
+  "complexity": "M",
+  "domain": "moderation",
+  "technologies": ["Postgres", "Redis", "Workflow engine", "Email notifications"],
+
+  "overview": {
+    "purpose": "Enable fair and transparent resolution of moderation disputes and appeals",
+    "target_scale": "1M+ users, 10k+ appeals/month",
+    "key_requirements": [
+      "Appeal workflow with escalation levels",
+      "Mediation between users and moderators",
+      "Transparent decision documentation",
+      "SLA-driven case management (resolve within 7 days)",
+      "Moderation appeals (moderator disputes admin decision)",
+      "Compliance with GDPR/DSA right-to-explanation",
+      "Multiple appeal reasons (unjust, wrongly identified, etc)"
+    ]
+  },
+
+  "database_schema": {
+    "tables": [
+      {
+        "name": "moderation_appeals",
+        "purpose": "User appeals to moderation decisions",
+        "columns": [
+          {"name": "appeal_id", "type": "UUID PRIMARY KEY"},
+          {"name": "moderation_action_id", "type": "BIGINT NOT NULL", "description": "Reference to original mod action"},
+          {"name": "user_id", "type": "UUID NOT NULL", "description": "Who is appealing"},
+          {"name": "appeal_reason", "type": "VARCHAR", "enum": ["unjustly_actioned", "wrongly_identified", "context_missing", "technical_error", "other"]},
+          {"name": "appeal_message", "type": "TEXT", "description": "User's explanation"},
+          {"name": "original_action_type", "type": "VARCHAR", "enum": ["message_hide", "warn", "mute", "suspend", "ban"]},
+          {"name": "status", "type": "VARCHAR", "enum": ["submitted", "under_review", "mediation", "approved", "rejected", "partial_overturn"]},
+          {"name": "priority", "type": "VARCHAR", "enum": ["low", "normal", "high"], "default": "normal"},
+          {"name": "assigned_to_moderator_id", "type": "UUID"},
+          {"name": "submitted_at", "type": "TIMESTAMP NOT NULL"},
+          {"name": "due_at", "type": "TIMESTAMP", "description": "SLA deadline (7 days)"},
+          {"name": "resolved_at", "type": "TIMESTAMP"}
+        ],
+        "indexes": ["INDEX(user_id, submitted_at DESC)", "INDEX(status)", "INDEX(due_at)"]
+      },
+      {
+        "name": "appeal_evidence",
+        "purpose": "Supporting evidence for appeals",
+        "columns": [
+          {"name": "evidence_id", "type": "BIGINT PRIMARY KEY"},
+          {"name": "appeal_id", "type": "UUID NOT NULL"},
+          {"name": "evidence_type", "type": "VARCHAR", "enum": ["text", "image", "document", "screenshot"]},
+          {"name": "content_url", "type": "VARCHAR", "description": "S3 URL for files"},
+          {"name": "description", "type": "TEXT"},
+          {"name": "uploaded_by_user_id", "type": "UUID"},
+          {"name": "uploaded_at", "type": "TIMESTAMP NOT NULL"}
+        ]
+      },
+      {
+        "name": "appeal_decisions",
+        "purpose": "Final decision record",
+        "columns": [
+          {"name": "decision_id", "type": "BIGINT PRIMARY KEY"},
+          {"name": "appeal_id", "type": "UUID NOT NULL UNIQUE"},
+          {"name": "decided_by_moderator_id", "type": "UUID NOT NULL"},
+          {"name": "decision", "type": "VARCHAR", "enum": ["approve", "reject", "partial_overturn"]},
+          {"name": "decision_reason", "type": "TEXT", "description": "Detailed explanation"},
+          {"name": "action_taken", "type": "VARCHAR", "description": "If approved: reverse_action, reduce_penalty, etc"},
+          {"name": "decided_at", "type": "TIMESTAMP NOT NULL"},
+          {"name": "is_appealable", "type": "BOOLEAN", "default": false, "description": "Can user appeal this decision too?"}
+        ]
+      },
+      {
+        "name": "appeal_messages",
+        "purpose": "Messages in appeal conversation",
+        "columns": [
+          {"name": "message_id", "type": "BIGINT PRIMARY KEY"},
+          {"name": "appeal_id", "type": "UUID NOT NULL"},
+          {"name": "from_user_id", "type": "UUID NOT NULL"},
+          {"name": "from_type", "type": "VARCHAR", "enum": ["user", "moderator", "system"]},
+          {"name": "message_text", "type": "TEXT"},
+          {"name": "sent_at", "type": "TIMESTAMP NOT NULL"}
+        ],
+        "indexes": ["INDEX(appeal_id, sent_at)"]
+      },
+      {
+        "name": "moderator_appeals",
+        "purpose": "Moderators appeal admin decisions",
+        "columns": [
+          {"name": "mod_appeal_id", "type": "UUID PRIMARY KEY"},
+          {"name": "admin_action_id", "type": "BIGINT", "description": "Admin revoked mod role, banned, etc"},
+          {"name": "moderator_user_id", "type": "UUID NOT NULL"},
+          {"name": "appeal_reason", "type": "VARCHAR"},
+          {"name": "status", "type": "VARCHAR", "enum": ["submitted", "under_review", "approved", "rejected"]},
+          {"name": "assigned_to_admin_id", "type": "UUID"},
+          {"name": "submitted_at", "type": "TIMESTAMP NOT NULL"},
+          {"name": "resolved_at", "type": "TIMESTAMP"}
+        ]
+      },
+      {
+        "name": "appeal_audit_log",
+        "purpose": "Compliance audit trail",
+        "columns": [
+          {"name": "log_id", "type": "BIGINT PRIMARY KEY"},
+          {"name": "appeal_id", "type": "UUID"},
+          {"name": "action", "type": "VARCHAR", "enum": ["submitted", "assigned", "status_changed", "evidence_added", "decided", "overturned"]},
+          {"name": "actor_id", "type": "UUID", "description": "Who made the change"},
+          {"name": "actor_type", "type": "VARCHAR", "enum": ["user", "moderator", "admin", "system"]},
+          {"name": "details", "type": "JSONB"},
+          {"name": "occurred_at", "type": "TIMESTAMP NOT NULL"}
+        ]
+      },
+      {
+        "name": "appeal_sla_breaches",
+        "purpose": "Track SLA violations",
+        "columns": [
+          {"name": "breach_id", "type": "BIGINT PRIMARY KEY"},
+          {"name": "appeal_id", "type": "UUID NOT NULL"},
+          {"name": "due_at", "type": "TIMESTAMP"},
+          {"name": "actual_resolution_at", "type": "TIMESTAMP"},
+          {"name": "days_overdue", "type": "INT"},
+          {"name": "escalation_sent_at", "type": "TIMESTAMP", "description": "Reminder sent to assigned moderator"}
+        ]
+      }
+    ]
+  },
+
+  "appeal_workflow": {
+    "user_appeal_flow": {
+      "step1": "User receives action (e.g., message hidden, 1-day mute)",
+      "step2": "User submits appeal within 30 days with reason + evidence",
+      "step3": "Auto-assigned to moderator (role: appeal_reviewer)",
+      "step4": "Moderator reviews (timeline: 5 business days)",
+      "step5": "Decision: approve (overturn), reject, or partial_overturn (reduce penalty)",
+      "step6": "Decision communicated to user with explanation",
+      "step7": "User can appeal decision (if allowed) within 7 days"
+    },
+    "moderator_appeal_flow": {
+      "step1": "Admin takes action (remove mod role, temp ban, etc)",
+      "step2": "Moderator can appeal within 14 days",
+      "step3": "Different admin (not original actor) reviews",
+      "step4": "Decision: uphold, overturn, or modify",
+      "step5": "Communication back to moderator"
+    },
+    "escalation": {
+      "rule1": "If no response within 3 days, escalate to supervisor",
+      "rule2": "If appeal denied but user resubmits with new info, escalate to different mod",
+      "rule3": "Pattern: >5 successful appeals per mod in 30d → audit mod decisions"
+    }
+  },
+
+  "api_specification": {
+    "endpoints": [
+      {
+        "method": "POST",
+        "path": "/v1/moderation-actions/{action_id}/appeal",
+        "description": "Submit appeal for a moderation action",
+        "auth": "user",
+        "request": {
+          "appeal_reason": "unjustly_actioned",
+          "appeal_message": "I was just having a conversation, didn't violate any rules",
+          "evidence_urls": ["s3://...", "s3://..."]
+        },
+        "response": {
+          "appeal_id": "...",
+          "status": "submitted",
+          "due_at": "2026-02-26T14:30:00Z"
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/v1/appeals/{appeal_id}",
+        "description": "Get appeal details",
+        "response": {
+          "appeal_id": "...",
+          "original_action": {"type": "mute", "duration_hours": 24},
+          "appeal_reason": "unjustly_actioned",
+          "status": "under_review",
+          "assigned_to": {"user_id": "...", "display_name": "ModBot"},
+          "messages": [
+            {"from_type": "user", "message": "...", "sent_at": "..."},
+            {"from_type": "moderator", "message": "...", "sent_at": "..."}
+          ],
+          "decision": null
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/v1/appeals/{appeal_id}/messages",
+        "description": "Send message in appeal (user or mod)",
+        "request": {"message": "I have additional context..."},
+        "auth": "user/moderator"
+      },
+      {
+        "method": "POST",
+        "path": "/v1/appeals/{appeal_id}/decide",
+        "description": "Render decision on appeal",
+        "auth": "moderator",
+        "request": {
+          "decision": "approve",
+          "decision_reason": "Original action was too harsh for first offense",
+          "action_taken": "lift_mute"
+        },
+        "response": {"decision_id": "...", "status": "approved"}
+      },
+      {
+        "method": "GET",
+        "path": "/v1/user/appeals",
+        "description": "Get user's appeals",
+        "response": [
+          {"appeal_id": "...", "original_action_type": "mute", "status": "approved", "resolved_at": "..."}
+        ]
+      },
+      {
+        "method": "GET",
+        "path": "/v1/moderator/appeals (admin)",
+        "description": "Get appeals to review (for assigned moderator)",
+        "response": [
+          {
+            "appeal_id": "...",
+            "user_id": "...",
+            "reason": "unjustly_actioned",
+            "submitted_at": "...",
+            "priority": "normal",
+            "days_pending": 3
+          }
+        ]
+      },
+      {
+        "method": "GET",
+        "path": "/v1/moderator/appeal-stats (admin)",
+        "description": "Moderator performance metrics",
+        "response": {
+          "appeals_resolved": 42,
+          "avg_resolution_time_days": 3.2,
+          "appeal_approval_rate": 0.23,
+          "sla_compliance": 0.98
+        }
+      }
+    ]
+  },
+
+  "decision_types": {
+    "approve": {
+      "meaning": "Appeal granted, original action reversed",
+      "example": "Mute lifted completely",
+      "user_notified": true
+    },
+    "reject": {
+      "meaning": "Appeal denied, action upheld",
+      "example": "Mute remains in effect",
+      "user_notified": true
+    },
+    "partial_overturn": {
+      "meaning": "Action partially reversed",
+      "example": "Mute reduced from 24h to 1h",
+      "user_notified": true
+    }
+  },
+
+  "compliance_features": {
+    "gdpr_right_to_explanation": "All decisions include detailed reasoning",
+    "dsa_transparency": "Appeal process and criteria publicly documented",
+    "audit_trail": "All changes logged with actor, timestamp, details (immutable)",
+    "data_retention": "Appeals kept for 3 years for compliance"
+  },
+
+  "implementation_details": {
+    "sla_management": {
+      "initial_due": "now + 7 days (target 5 business days)",
+      "escalation_3day": "If status still 'submitted' after 3 days, escalate + notify supervisor",
+      "escalation_due": "If not resolved by due_at, mark as SLA breach, reassign"
+    },
+    "auto_assignment": {
+      "strategy": "Round-robin among 'appeal_reviewer' role moderators, weighted by current_load",
+      "exclusion": "Don't assign original moderator (conflict of interest)"
+    },
+    "decision_enforcement": {
+      "trigger": "On decision approved",
+      "action_mapping": {
+        "lift_mute": "Delete mute_until from users_muted_in_conversation",
+        "reverse_suspension": "Set suspension_ended_at=NOW()",
+        "lift_ban": "Delete ban record"
+      }
+    },
+    "notification_flow": {
+      "submitted": "User receives confirmation email",
+      "assigned": "Moderator notified (in-app + email)",
+      "decided": "User notified of decision + reasoning"
+    }
+  },
+
+  "monitoring": {
+    "metrics": [
+      "appeals_per_month",
+      "avg_resolution_time_days",
+      "appeal_approval_rate",
+      "sla_compliance_rate (% resolved on time)",
+      "moderator_appeal_approval_distribution (check for bias)"
+    ],
+    "alerts": [
+      "sla_compliance < 95%",
+      "appeal_approval_rate for single moderator >50% (leniency?)",
+      "avg_resolution_time > 7 days"
+    ]
+  },
+
+  "testing_scenarios": [
+    {
+      "id": "T-118-1",
+      "title": "Submit appeal for message hide",
+      "steps": ["User receives action (message hidden)", "Submits appeal within 30 days"],
+      "expected": "Appeal created with status=submitted, auto-assigned to moderator"
+    },
+    {
+      "id": "T-118-2",
+      "title": "Moderator reviews appeal and approves",
+      "steps": ["Moderator reviews evidence", "Decides to approve", "Action reversed"],
+      "expected": "Decision.status=approved, original message unhidden, user notified"
+    },
+    {
+      "id": "T-118-3",
+      "title": "SLA escalation after 3 days no response",
+      "steps": ["Appeal submitted", "3 days pass without assignment", "Auto-escalation runs"],
+      "expected": "Supervisor notified, escalation_sent_at recorded"
+    },
+    {
+      "id": "T-118-4",
+      "title": "Partial overturn: reduce mute duration",
+      "steps": ["1-day mute appealed", "Moderator decides 1-hour mute is fair"],
+      "expected": "Mute duration reduced, user notified"
+    },
+    {
+      "id": "T-118-5",
+      "title": "Appeal conversation between user and moderator",
+      "steps": ["Moderator asks clarifying question", "User responds", "Back and forth"],
+      "expected": "All messages visible in appeal thread"
+    },
+    {
+      "id": "T-118-6",
+      "title": "Double appeal (user appeals decision)",
+      "steps": ["First appeal denied", "User submits second appeal with new evidence"],
+      "expected": "Second appeal created, assigned to different moderator"
+    },
+    {
+      "id": "T-118-7",
+      "title": "Moderator appeal (moderator appeals admin action)",
+      "steps": ["Moderator role removed by admin", "Moderator submits appeal"],
+      "expected": "Appeal created in moderator_appeals table, assigned to senior admin"
+    },
+    {
+      "id": "T-118-8",
+      "title": "Appeal audit log shows all changes",
+      "steps": ["Appeal moves through statuses", "Query audit log"],
+      "expected": "All state changes recorded with actor, timestamp, details"
+    },
+    {
+      "id": "T-118-9",
+      "title": "Appeal expires if not submitted within 30 days",
+      "steps": ["User receives action", "30+ days pass", "Tries to appeal"],
+      "expected": "API rejects (appeal window closed)"
+    },
+    {
+      "id": "T-118-10",
+      "title": "Evidence upload in appeal",
+      "steps": ["User uploads screenshot, document into appeal"],
+      "expected": "Files stored S3, referenced in appeal_evidence"
+    },
+    {
+      "id": "T-118-11",
+      "title": "Decision reasoning transparency",
+      "steps": ["Appeal decided", "User views decision reason"],
+      "expected": "Detailed, comprehensible reasoning provided (GDPR compliance)"
+    },
+    {
+      "id": "T-118-12",
+      "title": "Moderator performance metrics",
+      "steps": ["Admin queries moderator appeal stats"],
+      "expected": "Shows approval_rate, sla_compliance, avg_resolution_time"
+    },
+    {
+      "id": "T-118-13",
+      "title": "Pattern detection: mod with >50% approval rate",
+      "steps": ["Moderator approves 15 of 25 appeals (60%)", "System detects tension"],
+      "expected": "Flagged for review (possible leniency bias)"
+    },
+    {
+      "id": "T-118-14",
+      "title": "Appeal status lifecycle",
+      "steps": ["Track appeal from submitted → under_review → decided → resolved"],
+      "expected": "Status transitions correct, timestamps match"
+    },
+    {
+      "id": "T-118-15",
+      "title": "Conflict of interest: original moderator not assigned",
+      "steps": ["User appeals decision by Mod A", "Check assignment"],
+      "expected": "Appeal assigned to different moderator (not Mod A)"
+    }
+  ],
+
+  "dependencies": ["B-096", "B-087"],
+  "future_enhancements": [
+    "Arbitration board (multiple reviewers for high-stakes appeals)",
+    "Public appeal decision library (anonymized examples)",
+    "AI-assisted appeal categorization",
+    "Appeal prediction (surface high-likelihood appeals early)"
+  ]
+}

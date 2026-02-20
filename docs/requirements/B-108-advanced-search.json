@@ -1,0 +1,143 @@
+{
+  "req_id": "REQ-0108",
+  "title": "Advanced Message Search (Filtering, Date Range, Language)",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "messaging",
+  "depends_on": ["REQ-0068"],
+  "use_cases": [
+    "user searches: 'from:alice after:2026-02-01 before:2026-02-15' → returns Alice's messages in date range",
+    "user searches: 'has:image in:#general' → images posted in announcements",
+    "user searches: 'lang:es' → Spanish messages (for translation)"
+  ],
+  "search_filters": {
+    "from_filter": {
+      "query": "from:alice or from:@alice",
+      "effect": "only messages by Alice"
+    },
+    "in_filter": {
+      "query": "in:#general or in:@alice (DM)",
+      "effect": "only messages in specific conversation"
+    },
+    "date_range": {
+      "query": "after:2026-02-01 before:2026-02-15 or on:2026-02-10",
+      "effect": "messages in date range"
+    },
+    "has_filter": {
+      "query": "has:image, has:video, has:link, has:file, has:emoji, has:mention",
+      "effect": "messages with specific media/content type"
+    },
+    "language_filter": {
+      "query": "lang:es, lang:en, lang:fr",
+      "effect": "messages in specific language (via language detection)"
+    },
+    "reaction_filter": {
+      "query": "reaction:😍, reaction:👍",
+      "effect": "messages with specific reaction"
+    },
+    "type_filter": {
+      "query": "type:image, type:video, type:sticker, type:poll",
+      "effect": "specific message types"
+    }
+  },
+  "search_query_parsing": {
+    "grammar": "q='from:alice in:#general after:2026-02-01 budget' → extract filters + core text",
+    "core_text": "search core text ('budget') in message content"
+  },
+  "elasticsearch_configuration": {
+    "fields_indexed": [
+      "message.sender_id (for from: filter)",
+      "message.conversation_id (for in: filter)",
+      "message.created_at (for date range)",
+      "message.content (full-text)",
+      "message.type (for type: filter)",
+      "message.language (for lang: filter)",
+      "message.media_type (for has: filter)"
+    ]
+  },
+  "search_results_display": {
+    "grouping": "group by conversation + date",
+    "snippet": "show message preview with query terms highlighted",
+    "relevance": "sort by relevance (BM25 scoring) or by date DESC"
+  },
+  "database_schema": {
+    "extended_message_attributes": [
+      "message.language VARCHAR(2, detected via language model)",
+      "message.has_image BOOLEAN (denormalized)",
+      "message.has_video BOOLEAN",
+      "message.has_link BOOLEAN",
+      "message.has_mention BOOLEAN"
+    ]
+  },
+  "search_performance": {
+    "indexing": "async index updates (Kafka → Elasticsearch, latency <5s)",
+    "query_latency": "p95 <500ms for typical search"
+  },
+  "saved_searches": {
+    "feature": "user can save search query for reuse",
+    "storage": "saved_searches table (user_id, query_string, created_at)",
+    "example": "user saves 'from:alice after:2026-02-01', can reuse anytime"
+  },
+  "api_endpoints": {
+    "search_messages": {
+      "endpoint": "GET /v1/search/messages",
+      "query": "?q=from:alice in:#general after:2026-02-01 budget&limit=20&offset=0",
+      "response": {
+        "total": 35,
+        "results": [
+          {
+            "message_id": "UUID",
+            "content": "The project budget is $10k...",
+            "sender_name": "Alice",
+            "conversation_name": "#general",
+            "created_at": "2026-02-10T15:35:00Z",
+            "snippet": "...the project <b>budget</b> is..."
+          }
+        ]
+      }
+    },
+    "save_search": {
+      "endpoint": "POST /v1/search/saved",
+      "payload": {
+        "query": "from:alice after:2026-02-01",
+        "name": "Alice Recent" (optional)
+      },
+      "response": {
+        "search_id": "UUID"
+      }
+    },
+    "list_saved_searches": {
+      "endpoint": "GET /v1/search/saved",
+      "response": [
+        {
+          "search_id": "UUID",
+          "query": "from:alice after:2026-02-01",
+          "saved_at": "2026-02-15T15:35:00Z"
+        }
+      ]
+    }
+  },
+  "monitoring": {
+    "metrics": [
+      "search.queries_per_day",
+      "search.avg_query_latency_ms",
+      "search.popular_filters (which filters used most?)",
+      "search.zero_result_rate"
+    ]
+  },
+  "testing": {
+    "scenarios": [
+      "search 'from:alice' → only Alice's messages",
+      "search 'in:#general after:2026-02-01' → messages in #general from Feb 1 onwards",
+      "search 'has:image' → only messages with images",
+      "search 'reaction:👍' → messages with 👍 react",
+      "search 'lang:es budget' → Spanish messages mentioning 'budget'",
+      "save search → reapply anytime",
+      "zero results → show helpful message 'No messages found, try different filters'"
+    ]
+  },
+  "edge_cases": {
+    "malformed_query": "if user types 'from:alice from:bob', use last filter (bob)",
+    "invalid_date": "if user types 'after:invalid', ignore that filter"
+  }
+}

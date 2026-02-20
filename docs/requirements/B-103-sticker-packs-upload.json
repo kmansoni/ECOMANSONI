@@ -1,0 +1,174 @@
+{
+  "req_id": "REQ-0103",
+  "title": "User-Generated Sticker Packs (Sticker Upload and Distribution)",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "messaging",
+  "depends_on": ["REQ-0099"],
+  "use_cases": [
+    "artist creates sticker pack 'Cute Animals' (10 stickers)",
+    "uploads pack to platform (moderation review)",
+    "other users can search and install pack",
+    "pack appears in user's sticker picker"
+  ],
+  "pack_creation": {
+    "flow": [
+      "1. user taps '+' in sticker picker",
+      "2. selects 'Create Pack'",
+      "3. enters pack name (50 chars), description",
+      "4. uploads 10-100 PNG/WEBP images (512×512 max)",
+      "5. system generates pack_id",
+      "6. submitted for moderation (content review)"
+    ]
+  },
+  "sticker_upload": {
+    "image_requirements": {
+      "format": "PNG or WEBP (no JPEG)",
+      "size": "512×512 px optimal",
+      "max_file_size": "2MB per image",
+      "transparency": "PNG with alpha channel recommended"
+    },
+    "moderation": "scan images for inappropriate content (NSFW, IP violations)",
+    "rejection_reason": "if rejected, user notified with reason"
+  },
+  "pack_distribution": {
+    "mechanism": "gallery of user packs (separate from official packs)",
+    "trending": "sort by downloads, ratings, freshness",
+    "search": "search by pack name, creator name, tags"
+  },
+  "pack_installation": {
+    "flow": [
+      "1. user browses user-created packs",
+      "2. taps pack → preview (first 5 stickers)",
+      "3. tap 'Install' → added to user's sticker library",
+      "4. pack appears in sticker picker UI"
+    ]
+  },
+  "pack_ratings": {
+    "feature": "users can rate pack (1-5 stars)",
+    "stars": "average rating displayed on pack gallery",
+    "comment": "optional text review (100 chars max)"
+  },
+  "creator_revenue": {
+    "future_v2": "creator receives share of user tips/purchases (not v1)",
+    "v1": "free sharing only"
+  },
+  "database_schema": {
+    "user_sticker_packs_table": {
+      "columns": [
+        "pack_id UUID PK",
+        "creator_user_id UUID FK",
+        "pack_name VARCHAR(100)",
+        "description TEXT (500 chars)",
+        "tags TEXT[] (e.g., 'cute', 'animals', 'funny')",
+        "thumbnail_sticker_id UUID FK (first sticker as icon)",
+        "status VARCHAR(pending, approved, rejected, published)",
+        "rejection_reason TEXT (if rejected)",
+        "published_at TIMESTAMP",
+        "download_count INTEGER (denormalized)",
+        "avg_rating FLOAT (1-5)",
+        "rating_count INTEGER"
+      ]
+    },
+    "user_stickers_in_pack_table": {
+      "columns": [
+        "sticker_id UUID PK",
+        "pack_id UUID FK",
+        "sticker_url TEXT (S3 URL)",
+        "order_index INTEGER"
+      ]
+    },
+    "pack_ratings_table": {
+      "columns": [
+        "rating_id UUID PK",
+        "pack_id UUID FK",
+        "user_id UUID FK",
+        "stars INTEGER (1-5)",
+        "review_text TEXT (100 chars max)",
+        "created_at TIMESTAMP"
+      ]
+    },
+    "user_installed_packs_table": {
+      "columns": [
+        "install_id UUID PK",
+        "user_id UUID FK",
+        "pack_id UUID FK",
+        "installed_at TIMESTAMP",
+        "UNIQUE(user_id, pack_id)"
+      ]
+    }
+  },
+  "api_endpoints": {
+    "create_pack": {
+      "endpoint": "POST /v1/stickers/packs",
+      "payload": {
+        "pack_name": "Cute Animals",
+        "description": "Adorable animal stickers",
+        "tags": ["cute", "animals"],
+        "stickers": [
+          {
+            "image_data": "base64 or multipart upload",
+            "order": 0
+          }
+        ]
+      },
+      "response": {
+        "pack_id": "UUID",
+        "status": "pending (awaiting moderation)"
+      }
+    },
+    "list_user_packs": {
+      "endpoint": "GET /v1/stickers/packs?type=trending&limit=20"
+    },
+    "search_packs": {
+      "endpoint": "GET /v1/stickers/packs/search?q=cute",
+      "response": [
+        {
+          "pack_id": "UUID",
+          "pack_name": "Cute Animals",
+          "creator_name": "Alice",
+          "download_count": 1500,
+          "avg_rating": 4.8,
+          "thumbnail_url": "S3 URL"
+        }
+      ]
+    },
+    "install_pack": {
+      "endpoint": "POST /v1/stickers/packs/{pack_id}/install"
+    },
+    "uninstall_pack": {
+      "endpoint": "DELETE /v1/stickers/packs/{pack_id}/install"
+    },
+    "rate_pack": {
+      "endpoint": "POST /v1/stickers/packs/{pack_id}/rate",
+      "payload": {
+        "stars": 5,
+        "review": "Amazing stickers!"
+      }
+    }
+  },
+  "moderation_for_packs": {
+    "auto_check": "NSFW detection on uploaded images",
+    "manual_review": "moderator reviews rejected packs, can approve or suggest changes",
+    "copyright": "scan images against known copyright database (future)"
+  },
+  "monitoring": {
+    "metrics": [
+      "packs.total_created_per_day",
+      "packs.approved_rate",
+      "packs.avg_download_count",
+      "packs.avg_rating_distribution"
+    ]
+  },
+  "testing": {
+    "scenarios": [
+      "create pack with 20 valid PNGs → status=pending",
+      "moderator reviews pack → approves or rejects",
+      "approved pack appears in user packs gallery",
+      "user installs pack → appears in sticker picker",
+      "user rates pack 5 stars → rating count increments",
+      "pack with 0 ratings → doesn't show rating yet",
+      "user reports copyright infringement → pack flagged for review"
+    ]
+  }
+}

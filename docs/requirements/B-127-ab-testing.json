@@ -1,0 +1,279 @@
+{
+  "id": "B-127",
+  "section": "B",
+  "title": "A/B Testing & Feature Flagging Framework",
+  "description": "Feature flags, experimental groups, traffic splitting, and metrics collection for A/B testing",
+  "priority": "P1",
+  "complexity": "M",
+  "architecture": {
+    "system": "feature flags + experiment management + metrics collection",
+    "storage": "Redis (flags + assignments) + PostgreSQL (experiment metadata, results)",
+    "evaluation_latency": "p99 <5ms (redis cache, local fallback)"
+  },
+  "features": {
+    "feature_flags": {
+      "types": {
+        "release_flag": "gradually roll out feature (0→100%)",
+        "permission_flag": "gate feature by user/group/segment",
+        "kill_switch": "emergency disable feature"
+      },
+      "syntax": {
+        "simple": "flagName: true/false",
+        "percentage": "rollout: 10 (10% of users)",
+        "segment": "segment: 'vip_users' (applies to segment)",
+        "complex": "AND/OR logic (segment=vip AND country=us)"
+      }
+    },
+    "experiment_framework": {
+      "structure": {
+        "name": "new_message_ui_v2",
+        "hypothesis": "collapsing thread preview reduces scroll, increases replies",
+        "control": "existing UI",
+        "treatment": "new UI variant",
+        "split": "50/50 randomly assigned"
+      },
+      "assignment": {
+        "sticky_assignment": "user always sees same variant (based on user_id hash)",
+        "group_consistency": "all group members same variant (based on group_id hash)",
+        "holdout_group": "5% always control (for bias detection)"
+      },
+      "duration": "minimum 1 week (or until 1000 samples per variant)",
+      "sample_size_calculation": "Bayesian or frequentist (configurable)"
+    },
+    "metrics_tracking": {
+      "event_types": [
+        {
+          "name": "feature_used",
+          "properties": ["experiment_id", "variant", "feature_name", "timestamp"]
+        },
+        {
+          "name": "user_action",
+          "properties": ["action_type", "metadata", "session_id"]
+        },
+        {
+          "name": "performance_metric",
+          "properties": ["latency_ms", "error_rate", "resource_usage"]
+        }
+      ],
+      "aggregation": "hourly + daily rollups (stored in TimescaleDB)"
+    },
+    "statistical_analysis": {
+      "methods": {
+        "t_test": "continuous metrics (latency, retention %)",
+        "chi_square": "categorical metrics (click rate, conversion)",
+        "bayesian": "sequential testing, early stopping"
+      },
+      "significance": "p < 0.05, or 95% posterior probability for Bayesian",
+      "mde": "minimum detectable effect (e.g., 5% improvement)"
+    }
+  },
+  "database": {
+    "tables": [
+      {
+        "name": "feature_flags",
+        "columns": [
+          {"name": "id", "type": "uuid", "pk": true},
+          {"name": "flag_name", "type": "varchar(255)", "unique": true},
+          {"name": "description", "type": "text"},
+          {"name": "flag_type", "type": "enum(release,permission,kill_switch)"},
+          {"name": "enabled", "type": "bool"},
+          {"name": "rollout_percentage", "type": "int (0-100)"},
+          {"name": "rules", "type": "jsonb (segment rules)"},
+          {"name": "created_at", "type": "timestamp"},
+          {"name": "updated_at", "type": "timestamp"}
+        ]
+      },
+      {
+        "name": "experiments",
+        "columns": [
+          {"name": "id", "type": "uuid", "pk": true},
+          {"name": "experiment_name", "type": "varchar(255)", "unique": true},
+          {"name": "hypothesis", "type": "text"},
+          {"name": "control_variant", "type": "varchar(255)"},
+          {"name": "treatment_variant", "type": "varchar(255)"},
+          {"name": "status", "type": "enum(planning,running,completed,archived)"},
+          {"name": "start_date", "type": "timestamp"},
+          {"name": "end_date", "type": "timestamp"},
+          {"name": "sample_size_required", "type": "int"},
+          {"name": "winner", "type": "varchar(255)"},
+          {"name": "created_by", "type": "uuid"}
+        ]
+      },
+      {
+        "name": "experiment_events",
+        "columns": [
+          {"name": "id", "type": "uuid", "pk": true},
+          {"name": "experiment_id", "type": "uuid", "fk": "experiments"},
+          {"name": "user_id", "type": "uuid"},
+          {"name": "variant_assigned", "type": "varchar(255)"},
+          {"name": "event_type", "type": "varchar(255)"},
+          {"name": "event_value", "type": "float (for metrics)"},
+          {"name": "timestamp", "type": "timestamp"}
+        ],
+        "indexes": [
+          "experiment_id, variant_assigned",
+          "experiment_id, event_type, timestamp"
+        ]
+      },
+      {
+        "name": "experiment_results",
+        "columns": [
+          {"name": "id", "type": "uuid", "pk": true},
+          {"name": "experiment_id", "type": "uuid", "fk": "experiments"},
+          {"name": "metric_name", "type": "varchar(255)"},
+          {"name": "control_mean", "type": "float"},
+          {"name": "treatment_mean", "type": "float"},
+          {"name": "p_value", "type": "float"},
+          {"name": "confidence_interval", "type": "jsonb"},
+          {"name": "calculated_at", "type": "timestamp"}
+        ]
+      }
+    ]
+  },
+  "api": {
+    "endpoints": [
+      {
+        "path": "GET /v1/feature-flags/{flag_name}",
+        "description": "Check if feature flag enabled for user",
+        "query": {"user_id": "uuid (optional)"},
+        "returns": {"flag_name": "string", "enabled": "bool", "rollout_percentage": "int"}
+      },
+      {
+        "path": "POST /v1/experiments/{experiment_id}/track",
+        "description": "Track event for A/B test",
+        "body": {
+          "event_type": "string",
+          "event_value": "float (optional)",
+          "properties": "object (optional)"
+        },
+        "returns": {"tracked": true}
+      },
+      {
+        "path": "GET /v1/experiments/{experiment_id}/results",
+        "description": "Get A/B test results (requires admin)",
+        "auth": "admin",
+        "returns": {
+          "experiment_name": "string",
+          "status": "running|completed",
+          "control": {"mean": "float", "n": "int", "std": "float"},
+          "treatment": {"mean": "float", "n": "int", "std": "float"},
+          "p_value": "float",
+          "winner": "string (if significant)"
+        }
+      },
+      {
+        "path": "POST /v1/feature-flags",
+        "description": "Create feature flag (admin only)",
+        "body": {
+          "flag_name": "string",
+          "rollout_percentage": "int",
+          "rules": "object"
+        },
+        "returns": {"flag_id": "uuid"}
+      },
+      {
+        "path": "GET /v1/experiments/{experiment_id}/assignment",
+        "description": "Get user's variant assignment",
+        "returns": {"variant": "control|treatment"}
+      }
+    ]
+  },
+  "monitoring": {
+    "metrics": [
+      {
+        "name": "flag_evaluation_latency",
+        "target": "p99 <5ms",
+        "alert": ">10ms (redis issue)"
+      },
+      {
+        "name": "experiment_sample_imbalance",
+        "target": "control/treatment ratio 48-52%",
+        "alert": ">60% imbalance (assignment issue)"
+      },
+      {
+        "name": "statistical_power",
+        "target": ">80%",
+        "alert": "<70% (increase sample size)"
+      }
+    ]
+  },
+  "testing": {
+    "test_scenarios": [
+      {
+        "name": "Feature flag rollout",
+        "steps": ["Create flag at 10%", "Check 100 users", "See ~10 enabled"],
+        "expected": "Flag enabled for ~10% consistently (deterministic by user_id hash)"
+      },
+      {
+        "name": "A/B test assignment",
+        "steps": ["Start experiment (50/50)", "Same user visits twice"],
+        "expected": "User always gets same variant (sticky assignment)"
+      },
+      {
+        "name": "Experiment metric tracking",
+        "steps": ["Track 'message_sent' events", "Variant A: 100, Variant B: 120"],
+        "expected": "Metrics aggregated correctly, results show B > A"
+      },
+      {
+        "name": "Statistical significance",
+        "steps": ["Run experiment 1 week", "1000 samples per variant"],
+        "expected": "p-value calculated, result significant (p<0.05)"
+      },
+      {
+        "name": "Holdout group detection",
+        "steps": ["5% always in control", "Check for bias"],
+        "expected": "Holdout metrics baseline matches full control (no drift)"
+      },
+      {
+        "name": "Kill switch enable/disable",
+        "steps": ["Feature causes errors", "Enable kill switch"],
+        "expected": "Feature disabled immediately for all users (no latency)"
+      },
+      {
+        "name": "Experiment early stopping",
+        "steps": ["Experiment running", "Variant A shows >95% superiority"],
+        "expected": "Can manually stop early, declare winner"
+      },
+      {
+        "name": "Segment-based flag",
+        "steps": ["Flag: segment=vip_users", "VIP user checks flag"],
+        "expected": "Flag enabled for VIP, disabled for regular users"
+      },
+      {
+        "name": "Flag caching (local)",
+        "steps": ["Flag fetched once", "Check again immediately"],
+        "expected": "Cached locally, no second API call"
+      },
+      {
+        "name": "Group consistency in experiment",
+        "steps": ["Group of 5 users in experiment"],
+        "expected": "All 5 get same variant (group_id consistent hash)"
+      },
+      {
+        "name": "Metric confidence interval",
+        "steps": ["Check experiment results"],
+        "expected": "95% confidence interval shown for each metric"
+      },
+      {
+        "name": "Rollback experiment winner",
+        "steps": ["Winner declared", "Deploy variant", "Rollback to control"],
+        "expected": "Feature flag switches back, users back to control"
+      },
+      {
+        "name": "Multiple active experiments",
+        "steps": ["3 experiments running simultaneously"],
+        "expected": "No conflicts, each user assigned independently"
+      },
+      {
+        "name": "Flag interaction test",
+        "steps": ["Flag A enables, needs Flag B enabled to work"],
+        "expected": "Flag B dependency works, both checked before feature access"
+      },
+      {
+        "name": "Bayesian sequential analysis",
+        "steps": ["Track metrics continuously"],
+        "expected": "Engine allows early stopping with posterior probability >95%"
+      }
+    ]
+  }
+}

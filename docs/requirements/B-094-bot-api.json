@@ -1,0 +1,263 @@
+{
+  "req_id": "REQ-0094",
+  "title": "Bot API (Bot Creation, Messaging, Commands)",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "messaging",
+  "depends_on": ["REQ-0093"],
+  "use_cases": [
+    "developer creates bot 'weatherbot' via API",
+    "weatherbot receives messages via long-polling or webhooks",
+    "bot sends message to conversation: 'Weather in London: 15°C, Sunny'",
+    "user types '/weather London' in group → bot processes command and replies"
+  ],
+  "bot_types": {
+    "polling_bot": {
+      "description": "bot long-polls for new messages (webhook alternative for centralized deployment)",
+      "implementation": "bot calls GET /v1/bots/updates (blocking)"
+    },
+    "webhook_bot": {
+      "description": "bot receives webhooks via HTTP POST",
+      "implementation": "server registers webhook, bot handles incoming POST"
+    }
+  },
+  "bot_creation_flow": {
+    "steps": [
+      "1. developer calls POST /v1/bots (registers bot)",
+      "2. provide bot name, description, webhook URL (optional)",
+      "3. system generates bot_token (API key for auth)",
+      "4. bot can now join conversations"
+    ]
+  },
+  "bot_lifecycle": {
+    "registration": "bot created via API, assigned unique bot_id",
+    "joining_conversations": "admin invites bot to group/channel (or bot requests)? (permission model TBD)",
+    "messaging": "bot sends/receives messages like any other user",
+    "deletion": "admin removes bot from group or bot is disabled"
+  },
+  "bot_token_authentication": {
+    "mechanism": "Bearer bot_token in Authorization header",
+    "example": "Authorization: Bearer bot_abc123xyz"
+  },
+  "commands": {
+    "definition": "bot registers commands it can handle",
+    "example": {
+      "command": "/weather",
+      "description": "Get weather forecast",
+      "parameters": [
+        {
+          "name": "city",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    "user_flow": "type '/weather London' → system intercepts, routes to bot"
+  },
+  "incoming_message_routing": {
+    "polling_mechanism": [
+      "1. bot calls GET /v1/bots/updates?timeout=30s",
+      "2. server blocks for up to 30s until message arrives",
+      "3. returns array of updates (messages mentioning bot, commands, etc)",
+      "4. bot processes and calls POST /v1/bots/send-message"
+    ],
+    "webhook_mechanism": [
+      "1. bot registers webhook URL at creation",
+      "2. on new message mentioning bot, POST to webhook",
+      "3. bot processes synchronously, calls POST /v1/bots/send-message"
+    ]
+  },
+  "message_handling": {
+    "trigger_conditions": [
+      "message contains /command (registered with bot)",
+      "message mentions bot via @bot_name",
+      "message in group where bot is admin (sees all messages if enabled)"
+    ],
+    "bot_permissions": {
+      "can_see_all_messages": "optional, requires admin approval",
+      "can_delete_messages": "optional, requires admin approval",
+      "can_mute_users": "no (limited permissions)"
+    }
+  },
+  "message_sending": {
+    "api_call": {
+      "endpoint": "POST /v1/bots/send-message",
+      "payload": {
+        "conversation_id": "UUID",
+        "content": "Hello, I'm a bot!",
+        "reply_to_message_id": "UUID (optional, for threaded replies)"
+      },
+      "response": {
+        "message_id": "UUID",
+        "sent_at": "2026-02-15T15:35:00Z"
+      }
+    }
+  },
+  "rich_message_support": {
+    "text": "plain text, markdown (bold, italic, links)",
+    "media": "bot can send images (via S3 URL linking)",
+    "buttons": {
+      "feature": "inline action buttons (future, maybe v2)",
+      "example": [
+        {
+          "label": "Yes",
+          "action": "bot receives callback"
+        },
+        {
+          "label": "No",
+          "action": "bot receives callback"
+        }
+      ]
+    }
+  },
+  "bot_context": {
+    "storage": "minimal state (per-user or per-conversation, optional Redis)",
+    "note": "bots should be stateless when possible (call external APIs for state)"
+  },
+  "error_handling": {
+    "invalid_message": "bot sends invalid JSON → returns 400 error",
+    "timeout": "bot doesn't respond to update within 30s → marked as seen, timed out",
+    "rate_limiting": "bot sends >10 messages/sec → 429 error"
+  },
+  "database_schema": {
+    "bots_table": {
+      "columns": [
+        "bot_id UUID PK",
+        "bot_name VARCHAR(50) UNIQUE",
+        "description TEXT",
+        "owner_user_id UUID FK",
+        "bot_token TEXT (hashed)",
+        "webhook_url TEXT (optional)",
+        "is_active BOOLEAN",
+        "created_at TIMESTAMP",
+        "last_message_at TIMESTAMP"
+      ]
+    },
+    "bot_commands_table": {
+      "columns": [
+        "command_id UUID PK",
+        "bot_id UUID FK",
+        "command_name VARCHAR(50)",
+        "description TEXT",
+        "parameters JSONB (array of {name, type, required})"
+      ]
+    }
+  },
+  "api_endpoints": {
+    "register_bot": {
+      "endpoint": "POST /v1/bots",
+      "payload": {
+        "name": "weatherbot",
+        "description": "Provides weather forecasts",
+        "webhook_url": "https://example.com/webhook (optional)"
+      },
+      "response": {
+        "bot_id": "UUID",
+        "bot_token": "secret_bottoken_xyz"
+      }
+    },
+    "register_command": {
+      "endpoint": "POST /v1/bots/{bot_id}/commands",
+      "payload": {
+        "command": "/weather",
+        "description": "Get weather",
+        "parameters": [
+          {
+            "name": "city",
+            "type": "string",
+            "required": true
+          }
+        ]
+      }
+    },
+    "get_updates": {
+      "endpoint": "GET /v1/bots/updates?timeout=30",
+      "headers": {
+        "Authorization": "Bearer bot_token"
+      },
+      "response": [
+        {
+          "update_id": "UUID",
+          "type": "message",
+          "message": {
+            "message_id": "UUID",
+            "sender_id": "UUID",
+            "sender_name": "Alice",
+            "content": "/weather London",
+            "conversation_id": "UUID"
+          }
+        }
+      ]
+    },
+    "send_message": {
+      "endpoint": "POST /v1/bots/send-message",
+      "headers": {
+        "Authorization": "Bearer bot_token"
+      },
+      "payload": {
+        "conversation_id": "UUID",
+        "content": "Weather in London: 15°C, Sunny"
+      }
+    },
+    "get_bot_info": {
+      "endpoint": "GET /v1/bots/{bot_id}",
+      "response": {
+        "bot_id": "UUID",
+        "name": "weatherbot",
+        "is_active": true
+      }
+    },
+    "delete_bot": {
+      "endpoint": "DELETE /v1/bots/{bot_id}",
+      "permission": "owner or admin"
+    }
+  },
+  "rate_limiting": {
+    "per_bot": "1000 messages/day (adjustable)",
+    "per_hour": "100 messages/hour",
+    "burst": "max 10 messages/sec"
+  },
+  "example_bot_implementation": {
+    "flow": [
+      "1. bot calls GET /v1/bots/updates (long-poll)",
+      "2. receives update: {message_id: 'msg123', content: '/weather London'}",
+      "3. bot calls external weather API: GET https://api.weather.com?query=London",
+      "4. receives {temp: 15, condition: 'Sunny'}",
+      "5. calls POST /v1/bots/send-message with response",
+      "6. message appears in conversation as from 'weatherbot'"
+    ]
+  },
+  "testing": {
+    "scenarios": [
+      "register bot → bot_token returned",
+      "bot registers /weather command",
+      "user types '/weather London' → bot receives update via polling",
+      "bot sends response 'Weather: 15°C' → message appears in conversation",
+      "bot calls send-message 100 times/hour → 101st call returns 429 rate limit",
+      "bot webhook timeout (no response in 30s) → marked as timeout, user sees no response",
+      "multiple bots in same group → both receive message, both can respond independently",
+      "admin removes bot from group → bot no longer receives updates from that group"
+    ]
+  },
+  "monitoring": {
+    "metrics": [
+      "bots.count_active",
+      "bots.message_volume_per_day",
+      "bots.avg_response_latency_ms",
+      "bot_errors.command_not_found",
+      "bot_errors.rate_limit_exceeded"
+    ],
+    "alerts": [
+      "bot error rate >10% (potential bot implementation issue)",
+      "bot response latency p95 >5s (bot slow, possible external API timeout)"
+    ]
+  },
+  "future_enhancements": {
+    "v2": [
+      "interactive buttons (inline quizzes, forms)",
+      "persistence layer (bot state in database)",
+      "scheduled messages from bot",
+      "bot marketplace (discover, share bots)"
+    ]
+  }
+}

@@ -1,0 +1,1 @@
+{"req_id":"REQ-0056","title":"Data Export (GDPR)","formats":["json","csv","pdf"],"delivery":"email_link","retention_days":30}

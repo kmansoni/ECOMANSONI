@@ -8,9 +8,9 @@ import { useAuth } from "@/hooks/useAuth";
 import { useMarkConversationRead } from "@/hooks/useMarkConversationRead";
 import { useVideoCallContext } from "@/contexts/VideoCallContext";
 import { useChatOpen } from "@/contexts/ChatOpenContext";
+import { useUserSettings } from "@/contexts/UserSettingsContext";
 import { format } from "date-fns";
 import { toast } from "sonner";
-import { BrandBackground } from "@/components/ui/brand-background";
 import { VideoCircleRecorder } from "./VideoCircleRecorder";
 import { VideoCircleMessage } from "./VideoCircleMessage";
 import { AttachmentSheet } from "./AttachmentSheet";
@@ -20,8 +20,24 @@ import { SharedPostCard } from "./SharedPostCard";
 import { SharedReelCard } from "./SharedReelCard";
 import { EmojiStickerPicker } from "./EmojiStickerPicker";
 import { MessageContextMenu } from "./MessageContextMenu";
+import { ForwardMessageSheet } from "./ForwardMessageSheet";
 import { supabase } from "@/integrations/supabase/client";
-import { formatLastSeen } from "@/hooks/usePresence";
+import { useUserPresenceStatus } from "@/hooks/useUserPresenceStatus";
+import { cn } from "@/lib/utils";
+import {
+  getOrCreateUserQuickReaction,
+  listQuickReactionCatalog,
+} from "@/lib/stickers-reactions";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface ChatConversationProps {
   conversationId: string;
@@ -39,6 +55,7 @@ interface ChatConversationProps {
 export function ChatConversation({ conversationId, chatName, chatAvatar, otherUserId, onBack, participantCount, isGroup, totalUnreadCount, onRefetch }: ChatConversationProps) {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { settings } = useUserSettings();
   const { messages, loading, sendMessage, sendMediaMessage, deleteMessage } = useMessages(conversationId);
   const { markConversationRead } = useMarkConversationRead();
   const { startCall } = useVideoCallContext();
@@ -47,6 +64,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
   const [inputText, setInputText] = useState("");
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
+  const recordingTimeRef = useRef(0);
   const [playingVoice, setPlayingVoice] = useState<string | null>(null);
   const [showVideoRecorder, setShowVideoRecorder] = useState(false);
   const [showAttachmentSheet, setShowAttachmentSheet] = useState(false);
@@ -54,7 +72,49 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
   const [viewingImage, setViewingImage] = useState<string | null>(null);
   const [viewingVideo, setViewingVideo] = useState<string | null>(null);
   const [recordMode, setRecordMode] = useState<'voice' | 'video'>('voice');
-  const [lastSeenStatus, setLastSeenStatus] = useState<string>("был(а) недавно");
+  const [manualMediaLoaded, setManualMediaLoaded] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    recordingTimeRef.current = recordingTime;
+  }, [recordingTime]);
+
+  const autoDownloadEnabled = settings?.media_auto_download_enabled ?? true;
+  const autoDownloadPhotos = autoDownloadEnabled && (settings?.media_auto_download_photos ?? true);
+  const autoDownloadVideos = autoDownloadEnabled && (settings?.media_auto_download_videos ?? true);
+
+  const {
+    isOnline: isOtherOnline,
+    statusText: otherPresenceText,
+    statusEmoji: otherStatusEmoji,
+    statusStickerUrl: otherStatusStickerUrl,
+  } = useUserPresenceStatus(
+    !isGroup ? otherUserId : null,
+  );
+
+  const [isOtherTyping, setIsOtherTyping] = useState(false);
+  const typingChannelRef = useRef<any>(null);
+  const typingStopTimerRef = useRef<number | null>(null);
+  const lastTypingSentAtRef = useRef<number>(0);
+  const otherTypingTimerRef = useRef<number | null>(null);
+
+  const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  const [replyTo, setReplyTo] = useState<{ id: string; preview: string } | null>(null);
+  const [pinnedMessageId, setPinnedMessageId] = useState<string | null>(null);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; messageId: string | null }>(
+    { open: false, messageId: null }
+  );
+
+  const [forwardOpen, setForwardOpen] = useState(false);
+  const [forwardMessage, setForwardMessage] = useState<import("@/hooks/useChat").ChatMessage | null>(null);
+
+  const hiddenKey = user && conversationId ? `chat.hiddenMessages.v1.${user.id}.${conversationId}` : null;
+  const pinnedKey = user && conversationId ? `chat.pinnedMessage.v1.${user.id}.${conversationId}` : null;
+
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
   
   // Context menu state
   const [contextMenuMessage, setContextMenuMessage] = useState<{
@@ -64,6 +124,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
     position: { top: number; left: number; width: number };
   } | null>(null);
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const [quickReactions, setQuickReactions] = useState<string[]>(["❤️", "🔥", "👍", "😂", "😮", "🎉"]);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -81,27 +142,167 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
     return () => setIsChatOpen(false);
   }, [setIsChatOpen]);
 
-  // Fetch other user's last_seen_at for presence status
   useEffect(() => {
-    if (isGroup || !otherUserId) return;
-    
-    const fetchPresence = async () => {
-      const { data } = await supabase
-        .from("profiles")
-        .select("last_seen_at")
-        .eq("user_id", otherUserId)
-        .single();
-      
-      if (data?.last_seen_at) {
-        setLastSeenStatus(formatLastSeen(data.last_seen_at));
+    if (!hiddenKey) return;
+    try {
+      const raw = localStorage.getItem(hiddenKey);
+      if (!raw) {
+        setHiddenIds(new Set());
+        return;
       }
-    };
+      const parsed = JSON.parse(raw) as unknown;
+      if (!Array.isArray(parsed)) return;
+      setHiddenIds(new Set(parsed.filter((x) => typeof x === "string")));
+    } catch {
+      setHiddenIds(new Set());
+    }
+  }, [hiddenKey]);
 
-    fetchPresence();
-    // Refresh every 30 seconds
-    const interval = setInterval(fetchPresence, 30000);
-    return () => clearInterval(interval);
-  }, [otherUserId, isGroup]);
+  useEffect(() => {
+    if (!pinnedKey) return;
+    try {
+      const raw = localStorage.getItem(pinnedKey);
+      setPinnedMessageId(raw || null);
+    } catch {
+      setPinnedMessageId(null);
+    }
+  }, [pinnedKey]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const [saved, catalog] = await Promise.all([
+          getOrCreateUserQuickReaction(user.id),
+          listQuickReactionCatalog(),
+        ]);
+        if (cancelled) return;
+        const next = [saved.emoji, ...catalog.filter((item) => item !== saved.emoji)].slice(0, 8);
+        setQuickReactions(next);
+      } catch {
+        // keep defaults
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
+
+  const persistHiddenIds = useCallback(
+    (next: Set<string>) => {
+      if (!hiddenKey) return;
+      try {
+        localStorage.setItem(hiddenKey, JSON.stringify([...next]));
+      } catch {
+        // ignore
+      }
+    },
+    [hiddenKey]
+  );
+
+  const hideMessageForMe = useCallback(
+    (messageId: string) => {
+      setHiddenIds((prev) => {
+        const next = new Set(prev);
+        next.add(messageId);
+        persistHiddenIds(next);
+        return next;
+      });
+    },
+    [persistHiddenIds]
+  );
+
+  const scrollToMessage = useCallback((messageId: string) => {
+    const el = messageRefs.current[messageId];
+    el?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, []);
+
+  const visibleMessages = useMemo(() => {
+    if (!hiddenIds.size) return messages;
+    return messages.filter((m) => !hiddenIds.has(m.id));
+  }, [messages, hiddenIds]);
+
+  // Realtime typing status (1:1)
+  useEffect(() => {
+    if (isGroup) return;
+    if (!conversationId || !otherUserId || !user?.id) return;
+
+    const channel = supabase
+      .channel(`typing:${conversationId}`, {
+        config: {
+          broadcast: { self: true },
+        },
+      })
+      .on(
+        "broadcast" as any,
+        { event: "typing" },
+        (payload: any) => {
+          const p = payload?.payload;
+          if (!p || p.user_id !== otherUserId) return;
+
+          const isTyping = !!p.is_typing;
+          setIsOtherTyping(isTyping);
+
+          if (otherTypingTimerRef.current) window.clearTimeout(otherTypingTimerRef.current);
+          if (isTyping) {
+            otherTypingTimerRef.current = window.setTimeout(() => setIsOtherTyping(false), 3500);
+          }
+        },
+      )
+      .subscribe();
+
+    typingChannelRef.current = channel;
+
+    return () => {
+      typingChannelRef.current = null;
+      if (typingStopTimerRef.current) window.clearTimeout(typingStopTimerRef.current);
+      if (otherTypingTimerRef.current) window.clearTimeout(otherTypingTimerRef.current);
+      void supabase.removeChannel(channel);
+    };
+  }, [conversationId, otherUserId, user?.id, isGroup]);
+
+  const sendTyping = useCallback(
+    (isTyping: boolean) => {
+      if (isGroup) return;
+      if (!typingChannelRef.current) return;
+      if (!user?.id) return;
+
+      typingChannelRef.current.send({
+        type: "broadcast",
+        event: "typing",
+        payload: { user_id: user.id, is_typing: isTyping },
+      });
+    },
+    [user?.id, isGroup],
+  );
+
+  const handleInputChange = useCallback(
+    (value: string) => {
+      setInputText(value);
+      if (isGroup) return;
+
+      const now = Date.now();
+      if (now - lastTypingSentAtRef.current > 700) {
+        sendTyping(value.trim().length > 0);
+        lastTypingSentAtRef.current = now;
+      }
+
+      if (typingStopTimerRef.current) window.clearTimeout(typingStopTimerRef.current);
+      typingStopTimerRef.current = window.setTimeout(() => {
+        sendTyping(false);
+      }, 2000);
+    },
+    [sendTyping, isGroup],
+  );
+
+  const headerStatusText = useMemo(() => {
+    if (isGroup) {
+      return `${participantCount || 0} участник${participantCount === 1 ? "" : participantCount && participantCount < 5 ? "а" : "ов"}`;
+    }
+    if (isOtherTyping) return "печатает…";
+    return otherPresenceText;
+  }, [isGroup, participantCount, isOtherTyping, otherPresenceText]);
 
   // Mark incoming messages as read when chat is opened / receives new messages.
   useEffect(() => {
@@ -154,11 +355,16 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
     console.log("[handleSendMessage] inputText:", inputText);
     if (!inputText.trim()) {
       console.log("[handleSendMessage] empty input, skipping");
+      sendTyping(false);
       return;
     }
     try {
-      await sendMessage(inputText);
+      const trimmed = inputText.trim();
+      const withReply = replyTo ? `↩️ Ответ на сообщение:\n${replyTo.preview}\n\n${trimmed}` : trimmed;
+      await sendMessage(withReply);
       setInputText("");
+      sendTyping(false);
+      setReplyTo(null);
       // Keep focus on input to prevent keyboard closing on mobile
       requestAnimationFrame(() => {
         inputRef.current?.focus();
@@ -203,10 +409,10 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
     }
   };
 
-  const stopRecording = async () => {
+  const stopRecording = useCallback(async () => {
     if (!mediaRecorderRef.current || !isRecording) return;
 
-    const duration = recordingTime;
+    const duration = recordingTimeRef.current;
     
     return new Promise<void>((resolve) => {
       mediaRecorderRef.current!.onstop = async () => {
@@ -227,7 +433,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
       mediaRecorderRef.current!.stop();
       setIsRecording(false);
     });
-  };
+  }, [isRecording, sendMediaMessage]);
 
   const cancelRecording = () => {
     if (mediaRecorderRef.current) {
@@ -345,7 +551,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
       setRecordMode(prev => prev === 'voice' ? 'video' : 'voice');
     }
     isHoldingRef.current = false;
-  }, [recordMode, isRecording]);
+  }, [recordMode, isRecording, stopRecording]);
 
   // Cancel hold timer when mouse leaves (but don't switch mode)
   const handleRecordButtonLeave = useCallback(() => {
@@ -388,34 +594,136 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
   }, []);
 
   const handleMessageDelete = async (messageId: string) => {
-    const result = await deleteMessage(messageId);
-    if (result.error) {
-      toast.error("Не удалось удалить сообщение");
-    }
+    setDeleteDialog({ open: true, messageId });
   };
 
   const handleMessagePin = async (messageId: string) => {
-    // TODO: Implement pin functionality
-    toast.success("Сообщение закреплено");
+    if (!pinnedKey) return;
+    try {
+      const next = pinnedMessageId === messageId ? "" : messageId;
+      if (next) {
+        localStorage.setItem(pinnedKey, next);
+        setPinnedMessageId(next);
+        toast.success("Сообщение закреплено");
+      } else {
+        localStorage.removeItem(pinnedKey);
+        setPinnedMessageId(null);
+        toast.success("Закрепление снято");
+      }
+    } catch {
+      toast.error("Не удалось закрепить сообщение");
+    }
   };
 
   const handleMessageReaction = async (messageId: string, emoji: string) => {
-    // TODO: Implement reaction functionality
-    toast.success(`Реакция ${emoji} добавлена`);
+    // Not implemented yet — avoid misleading success.
+    toast.info("Реакции пока не поддерживаются", { description: "Функция в разработке." });
   };
 
   const handleMessageReply = (messageId: string) => {
-    // TODO: Implement reply functionality
-    toast.info("Функция ответа в разработке");
+    const msg = messages.find((m) => m.id === messageId);
+    if (!msg) return;
+    const preview = (msg.content || "").trim().slice(0, 140);
+    setReplyTo({ id: msg.id, preview });
+    requestAnimationFrame(() => inputRef.current?.focus());
   };
 
   const handleMessageForward = (messageId: string) => {
-    // TODO: Implement forward functionality
-    toast.info("Функция пересылки в разработке");
+    const msg = messages.find((m) => m.id === messageId);
+    if (!msg) return;
+    setForwardMessage(msg);
+    setForwardOpen(true);
+  };
+
+  const handleMessageSelect = (messageId: string) => {
+    setSelectionMode(true);
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.add(messageId);
+      return next;
+    });
+  };
+
+  const toggleSelected = (messageId: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(messageId)) next.delete(messageId);
+      else next.add(messageId);
+      if (next.size === 0) setSelectionMode(false);
+      return next;
+    });
+  };
+
+  const clearSelection = () => {
+    setSelectionMode(false);
+    setSelectedIds(new Set());
+  };
+
+  const deleteSelectedForMe = () => {
+    selectedIds.forEach((id) => hideMessageForMe(id));
+    toast.success("Удалено у вас");
+    clearSelection();
+  };
+
+  const copySelected = async () => {
+    const parts = visibleMessages
+      .filter((m) => selectedIds.has(m.id))
+      .map((m) => m.content)
+      .filter(Boolean);
+    try {
+      await navigator.clipboard.writeText(parts.join("\n\n"));
+      toast.success("Скопировано");
+    } catch {
+      toast.error("Не удалось скопировать");
+    }
   };
 
   return (
     <div className="fixed inset-0 flex flex-col bg-background z-[200]">
+      <AlertDialog
+        open={deleteDialog.open}
+        onOpenChange={(open) => setDeleteDialog((prev) => ({ ...prev, open }))}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Удалить сообщение?</AlertDialogTitle>
+            <AlertDialogDescription>Выберите вариант удаления.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (deleteDialog.messageId) {
+                  hideMessageForMe(deleteDialog.messageId);
+                  toast.success("Удалено у вас");
+                }
+              }}
+            >
+              У меня
+            </AlertDialogAction>
+            <AlertDialogAction
+              onClick={async () => {
+                const id = deleteDialog.messageId;
+                if (!id) return;
+                const msg = messages.find((m) => m.id === id);
+                if (!msg || msg.sender_id !== user?.id) {
+                  toast.error("Можно удалить у всех только свои сообщения");
+                  return;
+                }
+                const result = await deleteMessage(id);
+                if (result.error) {
+                  toast.error("Не удалось удалить сообщение");
+                } else {
+                  toast.success("Удалено у всех");
+                }
+              }}
+            >
+              У всех
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* Header - transparent with glass effect */}
       <div className="flex-shrink-0 safe-area-top relative z-10 backdrop-blur-xl bg-black/20 border-b border-white/10">
         <div className="flex items-center px-2 py-2">
@@ -435,18 +743,42 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
             onClick={() => navigate(`/contact/${otherUserId}`, { state: { name: chatName, avatar: chatAvatar, conversationId } })}
             className="flex items-center gap-3 flex-1 min-w-0 hover:bg-white/5 rounded-lg px-2 py-1 transition-colors"
           >
-            <img
-              src={chatAvatar}
-              alt={chatName}
-              className="w-10 h-10 rounded-full object-cover bg-[#6ab3f3] flex-shrink-0"
-            />
+            <div className="relative flex-shrink-0">
+              <img
+                src={chatAvatar}
+                alt={chatName}
+                className="w-10 h-10 rounded-full object-cover bg-[#6ab3f3]"
+              />
+              {otherStatusStickerUrl ? (
+                <img
+                  src={otherStatusStickerUrl}
+                  alt="status sticker"
+                  className="absolute -bottom-2 -left-2 w-9 h-9 rounded-xl object-cover bg-white/10 border border-white/20"
+                />
+              ) : null}
+            </div>
             <div className="flex flex-col items-start min-w-0">
-              <h2 className="font-semibold text-white text-base truncate max-w-[180px]">{chatName}</h2>
-              <p className={`text-xs ${lastSeenStatus === 'онлайн' ? 'text-emerald-400' : 'text-[#6ab3f3]'}`}>
-                {isGroup 
-                  ? `${participantCount || 0} участник${participantCount === 1 ? '' : participantCount && participantCount < 5 ? 'а' : 'ов'}`
-                  : lastSeenStatus
-                }
+              <h2 className="font-semibold text-white text-base truncate max-w-[180px]">{chatName}{otherStatusEmoji ? ` ${otherStatusEmoji}` : ""}</h2>
+              <p
+                className={`text-xs flex items-center gap-1.5 ${
+                  isGroup
+                    ? "text-[#6ab3f3]"
+                    : isOtherTyping
+                      ? "text-[#6ab3f3]"
+                      : isOtherOnline
+                        ? "text-emerald-400"
+                        : "text-[#6ab3f3]"
+                }`}
+              >
+                {!isGroup ? (
+                  <span
+                    className={`inline-block w-2 h-2 rounded-full ${
+                      isOtherTyping ? "bg-[#6ab3f3]" : isOtherOnline ? "bg-emerald-400" : "bg-white/40"
+                    }`}
+                    aria-hidden="true"
+                  />
+                ) : null}
+                <span className="truncate">{headerStatusText}</span>
               </p>
             </div>
           </button>
@@ -488,46 +820,42 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
         )}
       </div>
 
-      {/* Messages - scrollable with animated brand background */}
-      <div className="flex-1 overflow-y-auto native-scroll flex flex-col relative">
-        {/* Brand background - fixed to cover full screen */}
-        <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none">
-          <div className="absolute inset-0 bg-gradient-to-br from-[#0a1628] via-[#0d2035] to-[#071420]" />
-          <div 
-            className="absolute top-0 left-1/4 w-[500px] h-[500px] rounded-full blur-[120px] opacity-60"
-            style={{
-              background: 'radial-gradient(circle, #0066CC 0%, transparent 70%)',
-              animation: 'float-orb-1 15s ease-in-out infinite',
-            }}
-          />
-          <div 
-            className="absolute bottom-20 right-0 w-[450px] h-[450px] rounded-full blur-[100px] opacity-50"
-            style={{
-              background: 'radial-gradient(circle, #00A3B4 0%, transparent 70%)',
-              animation: 'float-orb-2 18s ease-in-out infinite',
-              animationDelay: '-5s',
-            }}
-          />
-          <div 
-            className="absolute top-1/3 -right-20 w-[400px] h-[400px] rounded-full blur-[90px] opacity-55"
-            style={{
-              background: 'radial-gradient(circle, #00C896 0%, transparent 70%)',
-              animation: 'float-orb-3 20s ease-in-out infinite',
-              animationDelay: '-10s',
-            }}
-          />
-          <div 
-            className="absolute bottom-1/3 -left-10 w-[350px] h-[350px] rounded-full blur-[80px] opacity-45"
-            style={{
-              background: 'radial-gradient(circle, #4FD080 0%, transparent 70%)',
-              animation: 'float-orb-4 22s ease-in-out infinite',
-              animationDelay: '-3s',
-            }}
-          />
+      {pinnedMessageId && (
+        <div className="flex-shrink-0 px-3 py-2 bg-black/25 backdrop-blur-xl border-b border-white/10">
+          <button
+            className="w-full flex items-center justify-between gap-3 rounded-xl px-3 py-2 hover:bg-white/5 active:bg-white/10 transition-colors"
+            onClick={() => scrollToMessage(pinnedMessageId)}
+          >
+            <div className="min-w-0 text-left">
+              <p className="text-xs text-white/60">Закреплённое сообщение</p>
+              <p className="text-sm text-white truncate">
+                {(messages.find((m) => m.id === pinnedMessageId)?.content || "").trim() || "Сообщение"}
+              </p>
+            </div>
+            <button
+              className="shrink-0 p-1 rounded-md hover:bg-white/10"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (!pinnedKey) return;
+                try {
+                  localStorage.removeItem(pinnedKey);
+                } catch {
+                  // ignore
+                }
+                setPinnedMessageId(null);
+              }}
+              aria-label="Снять закрепление"
+            >
+              <X className="w-4 h-4 text-white/60" />
+            </button>
+          </button>
         </div>
-        
+      )}
+
+      {/* Messages - scrollable with animated brand background */}
+      <div className="flex-1 overflow-y-auto overflow-x-hidden native-scroll flex flex-col relative">
         {/* Content layer */}
-        <div className="relative z-10 flex-1 flex flex-col p-4">
+        <div className="relative z-10 flex-1 flex flex-col p-4 overflow-x-hidden min-w-0">
         {/* Spacer to push messages to bottom */}
         <div className="flex-1" />
         
@@ -537,15 +865,15 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
           </div>
         )}
 
-        {!loading && messages.length === 0 && (
+        {!loading && visibleMessages.length === 0 && (
           <div className="flex items-center justify-center py-8 text-center">
             <p className="text-muted-foreground">Начните переписку!</p>
           </div>
         )}
         
-        <div className="space-y-1">
+        <div className="space-y-1 min-w-0">
 
-        {messages.map((message, index) => {
+        {visibleMessages.map((message, index) => {
           const isOwn = message.sender_id === user?.id;
           const isVoice = message.media_type === 'voice';
           const isVideoCircle = message.media_type === 'video_circle';
@@ -556,17 +884,26 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
           const isRead = message.is_read;
 
           // Group messages - show avatar only for first in sequence
-          const prevMessage = index > 0 ? messages[index - 1] : null;
+          const prevMessage = index > 0 ? visibleMessages[index - 1] : null;
           const showAvatar = !isOwn && (!prevMessage || prevMessage.sender_id !== message.sender_id);
           const showSenderName = isGroup && !isOwn && showAvatar;
 
           // Hide message if it's currently shown in context menu
           const isInContextMenu = contextMenuMessage?.id === message.id;
 
+          const requiresManualLoad =
+            (isImage && !!message.media_url && !autoDownloadPhotos) ||
+            ((isVideo || isVideoCircle) && !!message.media_url && !autoDownloadVideos);
+
+          const isManuallyLoaded = manualMediaLoaded.has(message.id);
+
           return (
             <div
               key={message.id}
-              className={`flex items-end gap-2 ${isOwn ? "justify-end" : "justify-start"} ${isInContextMenu ? "opacity-0" : ""}`}
+              ref={(el) => {
+                messageRefs.current[message.id] = el;
+              }}
+              className={`flex items-end gap-2 min-w-0 ${isOwn ? "justify-end" : "justify-start"} ${isInContextMenu ? "opacity-0" : ""}`}
             >
               {/* Avatar for incoming messages */}
               {!isOwn && (
@@ -595,7 +932,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
                     }}
                   />
                   <div className={`flex items-center gap-1 ${isOwn ? "justify-end" : "justify-start"}`}>
-                    <span className="text-[11px] text-white/50">{formatMessageTime(message.created_at)}</span>
+                    <span className="text-[11px] text-muted-foreground dark:text-white/50">{formatMessageTime(message.created_at)}</span>
                     {isOwn && (
                       <CheckCheck className={`w-4 h-4 ${isRead ? 'text-[#6ab3f3]' : 'text-white/40'}`} />
                     )}
@@ -615,83 +952,187 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
                     }}
                   />
                   <div className={`flex items-center gap-1 ${isOwn ? "justify-end" : "justify-start"}`}>
-                    <span className="text-[11px] text-white/50">{formatMessageTime(message.created_at)}</span>
+                    <span className="text-[11px] text-muted-foreground dark:text-white/50">{formatMessageTime(message.created_at)}</span>
                     {isOwn && (
                       <CheckCheck className={`w-4 h-4 ${isRead ? 'text-[#6ab3f3]' : 'text-white/40'}`} />
                     )}
                   </div>
                 </div>
               ) : isVideoCircle && message.media_url ? (
-                <div className="flex flex-col items-center gap-1">
-                  <VideoCircleMessage
-                    videoUrl={message.media_url}
-                    duration={String(message.duration_seconds || 0)}
-                    isOwn={isOwn}
-                  />
-                  <span className="text-[10px] text-white/50">{formatMessageTime(message.created_at)}</span>
-                </div>
-              ) : isImage && message.media_url ? (
-                <div 
-                  className={`max-w-[75%] rounded-2xl overflow-hidden cursor-pointer backdrop-blur-xl ${
-                    isOwn 
-                      ? "rounded-br-md bg-white/10 border border-white/10" 
-                      : "rounded-bl-md bg-white/5 border border-white/10"
-                  }`}
-                  style={{
-                    boxShadow: isOwn 
-                      ? 'inset 0 1px 0 rgba(255,255,255,0.15), 0 4px 20px rgba(0,0,0,0.25)'
-                      : 'inset 0 1px 0 rgba(255,255,255,0.1), 0 4px 20px rgba(0,0,0,0.2)'
-                  }}
-                  onClick={() => setViewingImage(message.media_url!)}
-                >
-                  <img 
-                    src={message.media_url} 
-                    alt="Изображение" 
-                    className="max-w-full h-auto"
-                  />
-                  <div className="px-3 py-1.5 flex items-center justify-end gap-1">
-                    <span className="text-[11px] text-white/50">{formatMessageTime(message.created_at)}</span>
+                <div className={`flex flex-col gap-1 ${isOwn ? "items-end" : "items-start"}`}>
+                  {requiresManualLoad && !isManuallyLoaded ? (
+                    <div
+                      className={cn(
+                        "max-w-[75%] rounded-2xl px-4 py-3 backdrop-blur-xl border border-white/10",
+                        isOwn ? "bg-white/10 text-white rounded-br-md" : "bg-white/5 text-white rounded-bl-md",
+                      )}
+                    >
+                      <p className="text-sm text-white/80">Видео</p>
+                      <Button
+                        variant="secondary"
+                        className="mt-2"
+                        onClick={() =>
+                          setManualMediaLoaded((prev) => {
+                            const next = new Set(prev);
+                            next.add(message.id);
+                            return next;
+                          })
+                        }
+                      >
+                        Загрузить
+                      </Button>
+                    </div>
+                  ) : (
+                    <VideoCircleMessage
+                      videoUrl={message.media_url}
+                      duration={String(message.duration_seconds || 0)}
+                      isOwn={isOwn}
+                    />
+                  )}
+                  <div className={`mt-0.5 flex items-center gap-1 px-1 ${isOwn ? "self-end" : "self-start"}`}>
+                    <span className="text-[10px] text-muted-foreground dark:text-white/50">{formatMessageTime(message.created_at)}</span>
                     {isOwn && (
                       <CheckCheck className={`w-4 h-4 ${isRead ? 'text-[#6ab3f3]' : 'text-white/40'}`} />
                     )}
                   </div>
                 </div>
+              ) : isImage && message.media_url ? (
+                requiresManualLoad && !isManuallyLoaded ? (
+                  <div className={`flex flex-col gap-1 ${isOwn ? "items-end" : "items-start"}`}>
+                    <div
+                      className={cn(
+                        "max-w-[75%] rounded-2xl px-4 py-3 backdrop-blur-xl border border-white/10",
+                        isOwn ? "rounded-br-md bg-white/10" : "rounded-bl-md bg-white/5",
+                      )}
+                      style={{
+                        boxShadow: isOwn
+                          ? 'inset 0 1px 0 rgba(255,255,255,0.15), 0 4px 20px rgba(0,0,0,0.25)'
+                          : 'inset 0 1px 0 rgba(255,255,255,0.1), 0 4px 20px rgba(0,0,0,0.2)'
+                      }}
+                    >
+                      <p className="text-sm text-white/80">Фото</p>
+                      <Button
+                        variant="secondary"
+                        className="mt-2"
+                        onClick={() =>
+                          setManualMediaLoaded((prev) => {
+                            const next = new Set(prev);
+                            next.add(message.id);
+                            return next;
+                          })
+                        }
+                      >
+                        Загрузить
+                      </Button>
+                    </div>
+                    <div className={`mt-0.5 flex items-center gap-1 px-1 ${isOwn ? "self-end" : "self-start"}`}>
+                      <span className="text-[11px] text-muted-foreground dark:text-white/50">{formatMessageTime(message.created_at)}</span>
+                      {isOwn && (
+                        <CheckCheck className={`w-4 h-4 ${isRead ? 'text-[#6ab3f3]' : 'text-white/40'}`} />
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className={`flex flex-col gap-1 ${isOwn ? "items-end" : "items-start"}`}>
+                    <div 
+                      className={`max-w-[75%] rounded-2xl overflow-hidden cursor-pointer backdrop-blur-xl ${
+                        isOwn 
+                          ? "rounded-br-md bg-white/10 border border-white/10" 
+                          : "rounded-bl-md bg-white/5 border border-white/10"
+                      }`}
+                      style={{
+                        boxShadow: isOwn 
+                          ? 'inset 0 1px 0 rgba(255,255,255,0.15), 0 4px 20px rgba(0,0,0,0.25)'
+                          : 'inset 0 1px 0 rgba(255,255,255,0.1), 0 4px 20px rgba(0,0,0,0.2)'
+                      }}
+                      onClick={() => setViewingImage(message.media_url!)}
+                    >
+                      <img 
+                        src={message.media_url} 
+                        alt="Изображение" 
+                        className="max-w-full h-auto"
+                      />
+                    </div>
+                    <div className={`mt-0.5 flex items-center gap-1 px-1 ${isOwn ? "self-end" : "self-start"}`}>
+                      <span className="text-[11px] text-muted-foreground dark:text-white/50">{formatMessageTime(message.created_at)}</span>
+                      {isOwn && (
+                        <CheckCheck className={`w-4 h-4 ${isRead ? 'text-[#6ab3f3]' : 'text-white/40'}`} />
+                      )}
+                    </div>
+                  </div>
+                )
               ) : isVideo && message.media_url ? (
                 <div className="flex flex-col gap-1">
-                  <VideoPlayer
-                    src={message.media_url}
-                    isOwn={isOwn}
-                    onFullscreen={() => setViewingVideo(message.media_url!)}
-                  />
-                  <div className={`flex items-center gap-1 ${isOwn ? "justify-end" : "justify-start"}`}>
-                    <span className="text-[11px] text-white/50">{formatMessageTime(message.created_at)}</span>
+                  {requiresManualLoad && !isManuallyLoaded ? (
+                    <div
+                      className={cn(
+                        "max-w-[75%] rounded-2xl px-4 py-3 backdrop-blur-xl border border-white/10",
+                        isOwn ? "rounded-br-md bg-white/10" : "rounded-bl-md bg-white/5",
+                      )}
+                    >
+                      <p className="text-sm text-white/80">Видео</p>
+                      <Button
+                        variant="secondary"
+                        className="mt-2"
+                        onClick={() =>
+                          setManualMediaLoaded((prev) => {
+                            const next = new Set(prev);
+                            next.add(message.id);
+                            return next;
+                          })
+                        }
+                      >
+                        Загрузить
+                      </Button>
+                    </div>
+                  ) : (
+                    <VideoPlayer
+                      src={message.media_url}
+                      isOwn={isOwn}
+                      onFullscreen={() => setViewingVideo(message.media_url!)}
+                    />
+                  )}
+                  <div className={`mt-0.5 flex items-center gap-1 px-1 ${isOwn ? "self-end" : "self-start"}`}>
+                    <span className="text-[11px] text-muted-foreground dark:text-white/50">{formatMessageTime(message.created_at)}</span>
                     {isOwn && (
                       <CheckCheck className={`w-4 h-4 ${isRead ? 'text-[#6ab3f3]' : 'text-white/40'}`} />
                     )}
                   </div>
                 </div>
               ) : (
-                <div
-                  className={`max-w-[75%] rounded-2xl px-3 py-2 select-none backdrop-blur-xl border border-white/10 ${
-                    isOwn
-                      ? "bg-white/10 text-white rounded-br-sm"
-                      : "bg-white/5 text-white rounded-bl-sm"
-                  }`}
-                  style={{
-                    boxShadow: isOwn 
-                      ? 'inset 0 1px 0 rgba(255,255,255,0.15), 0 4px 20px rgba(0,0,0,0.25)'
-                      : 'inset 0 1px 0 rgba(255,255,255,0.1), 0 4px 20px rgba(0,0,0,0.2)'
-                  }}
-                  onMouseDown={(e) => handleMessageLongPressStart(message.id, message.content, isOwn, e)}
-                  onMouseUp={handleMessageLongPressEnd}
-                  onMouseLeave={handleMessageLongPressEnd}
-                  onTouchStart={(e) => handleMessageLongPressStart(message.id, message.content, isOwn, e)}
-                  onTouchEnd={handleMessageLongPressEnd}
-                >
-                  {/* Sender name for group chats */}
-                  {showSenderName && (
-                    <p className="text-[13px] font-medium text-[#6ab3f3] mb-0.5">Эдгар</p>
-                  )}
+                <div className={`flex flex-col min-w-0 ${isOwn ? "items-end" : "items-start"}`}>
+                  <div
+                    className={`max-w-[75%] rounded-2xl px-3 py-2 select-none backdrop-blur-xl border border-white/10 ${
+                      isOwn
+                        ? "bg-white/10 text-white rounded-br-sm"
+                        : "bg-white/5 text-white rounded-bl-sm"
+                    } ${selectionMode && selectedIds.has(message.id) ? "ring-2 ring-white/30" : ""}`}
+                    style={{
+                      boxShadow: isOwn 
+                        ? 'inset 0 1px 0 rgba(255,255,255,0.15), 0 4px 20px rgba(0,0,0,0.25)'
+                        : 'inset 0 1px 0 rgba(255,255,255,0.1), 0 4px 20px rgba(0,0,0,0.2)'
+                    }}
+                    onClick={() => {
+                      if (selectionMode) {
+                        toggleSelected(message.id);
+                      }
+                    }}
+                    onMouseDown={(e) => {
+                      if (selectionMode) return;
+                      handleMessageLongPressStart(message.id, message.content, isOwn, e);
+                    }}
+                    onMouseUp={handleMessageLongPressEnd}
+                    onMouseLeave={handleMessageLongPressEnd}
+                    onTouchStart={(e) => {
+                      if (selectionMode) return;
+                      handleMessageLongPressStart(message.id, message.content, isOwn, e);
+                    }}
+                    onTouchEnd={handleMessageLongPressEnd}
+                  >
+                    {/* Sender name for group chats */}
+                    {showSenderName && (
+                      <p className="text-[13px] font-medium text-[#6ab3f3] mb-0.5">Эдгар</p>
+                    )}
                   
                   {isVoice ? (
                     <div className="flex items-center gap-3 min-w-[180px]">
@@ -724,12 +1165,14 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
                       </span>
                     </div>
                   ) : (
-                    <p className="text-[15px] leading-[1.4] whitespace-pre-wrap">{message.content}</p>
+                    <p className="text-[15px] leading-[1.4] whitespace-pre-wrap break-words">{message.content}</p>
                   )}
                   
-                  {/* Time and read status */}
-                  <div className="flex items-center justify-end gap-1 mt-1">
-                    <span className="text-[11px] text-white/40">{formatMessageTime(message.created_at)}</span>
+                  </div>
+
+                  {/* Time and read status (outside bubble) */}
+                  <div className={`mt-0.5 flex items-center gap-1 px-1 ${isOwn ? "self-end" : "self-start"}`}>
+                    <span className="text-[11px] text-muted-foreground dark:text-white/50">{formatMessageTime(message.created_at)}</span>
                     {isOwn && (
                       <CheckCheck className={`w-4 h-4 ${isRead ? 'text-[#6ab3f3]' : 'text-white/40'}`} />
                     )}
@@ -749,6 +1192,26 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
         
         {/* Input controls */}
         <div className="px-3 py-3">
+          {replyTo && (
+            <div className="mb-2 rounded-2xl bg-black/35 backdrop-blur-xl border border-white/10 px-3 py-2 flex items-start justify-between gap-2">
+              <button
+                className="min-w-0 text-left"
+                onClick={() => scrollToMessage(replyTo.id)}
+                type="button"
+              >
+                <p className="text-xs text-white/60">Ответ</p>
+                <p className="text-sm text-white/90 truncate">{replyTo.preview}</p>
+              </button>
+              <button
+                type="button"
+                onClick={() => setReplyTo(null)}
+                className="shrink-0 p-1 rounded-md hover:bg-white/10"
+                aria-label="Отменить ответ"
+              >
+                <X className="w-4 h-4 text-white/60" />
+              </button>
+            </div>
+          )}
           {isRecording ? (
             <div className="flex items-center gap-3">
               <button 
@@ -795,7 +1258,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
                   type="text"
                   placeholder="Сообщение"
                   value={inputText}
-                  onChange={(e) => setInputText(e.target.value)}
+                  onChange={(e) => handleInputChange(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleSendMessage()}
                   onFocus={() => setShowEmojiPicker(false)}
                   className="w-full h-11 px-5 pr-20 rounded-full text-white placeholder:text-white/50 outline-none bg-black/40 border-0 transition-all"
@@ -902,6 +1365,42 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
         />
       )}
 
+      <ForwardMessageSheet
+        open={forwardOpen}
+        onOpenChange={setForwardOpen}
+        message={forwardMessage}
+      />
+
+      {/* Selection actions */}
+      {selectionMode && (
+        <div className="fixed bottom-[84px] left-0 right-0 z-[250] px-4">
+          <div className="mx-auto max-w-[520px] rounded-2xl bg-black/40 backdrop-blur-xl border border-white/10 px-3 py-2 flex items-center justify-between gap-2">
+            <div className="text-sm text-white/80">Выбрано: {selectedIds.size}</div>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                className="bg-white/10 border-white/20 text-white hover:bg-white/20"
+                onClick={copySelected}
+              >
+                Скопировать
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="bg-white/10 border-white/20 text-white hover:bg-white/20"
+                onClick={deleteSelectedForMe}
+              >
+                Удалить у меня
+              </Button>
+              <Button size="sm" variant="ghost" className="text-white/70 hover:bg-white/10" onClick={clearSelection}>
+                Отмена
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Message Context Menu */}
       {contextMenuMessage && (
         <MessageContextMenu
@@ -914,8 +1413,10 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
           onDelete={handleMessageDelete}
           onPin={handleMessagePin}
           onReaction={handleMessageReaction}
+          quickReactions={quickReactions}
           onReply={handleMessageReply}
           onForward={handleMessageForward}
+          onSelect={handleMessageSelect}
         />
       )}
 

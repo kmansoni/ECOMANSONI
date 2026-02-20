@@ -342,7 +342,7 @@ export function SettingsDrawer({ isOpen, onClose }: SettingsDrawerProps) {
             <div className="flex-1 overflow-y-auto native-scroll">
               <div className="p-8 flex flex-col items-center border-b border-border">
                 <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary to-accent flex items-center justify-center mb-4">
-                  <span className="text-3xl text-white font-bold">B</span>
+                  <span className="text-3xl text-primary-foreground font-bold">B</span>
                 </div>
                 <h3 className="text-xl font-semibold">bitforge</h3>
                 <p className="text-sm text-muted-foreground">Версия 1.0.0</p>

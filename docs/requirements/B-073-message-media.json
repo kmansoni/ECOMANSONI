@@ -1,0 +1,207 @@
+{
+  "req_id": "REQ-0073",
+  "title": "Message Media Support (Upload, Resize, Transcode)",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "messaging",
+  "depends_on": ["REQ-0061", "REQ-0064"],
+  "use_cases": [
+    "user selects image from camera roll → uploads (auto-resize to 600×600 on mobile)",
+    "user taps camera → takes photo → sends directly in message",
+    "user selects video → auto-transcodes to 480p H.264 (max 100MB)",
+    "user taps microphone → records voice message (max 5 minutes)"
+  ],
+  "media_types": {
+    "image": {
+      "formats_supported": ["image/jpeg", "image/png", "image/webp"],
+      "max_size": "50MB raw",
+      "mobile_resize": {
+        "target_size": "600×600 max",
+        "quality": "85% JPEG quality"
+      },
+      "web_resize": {
+        "target_size": "1280×800 max",
+        "quality": "90% JPEG quality"
+      },
+      "thumbnail": {
+        "size": "150×150",
+        "stored_in": "S3 separate key /thumbs/"
+      }
+    },
+    "video": {
+      "formats_supported": ["video/mp4 (H.264)", "video/quicktime (.mov)"],
+      "max_size": "500MB raw",
+      "transcode_target": {
+        "codec": "H.264 + AAC audio",
+        "resolution": "480p (854×480 or 640×480)",
+        "bitrate": "1500kbps video + 128kbps audio",
+        "frame_rate": "24fps"
+      },
+      "transcoding_time": "async, ~2-5 min for 5min video",
+      "fallback": "if transcode fails, send original (user warned)"
+    },
+    "voice": {
+      "format": "audio/m4a or audio/ogg",
+      "max_duration": "5 minutes (300 seconds)",
+      "max_size": "5MB (typical for 5min audio)",
+      "codec": "AAC (mobile friendly)",
+      "bitrate": "32kbps (low bandwidth)"
+    },
+    "document": {
+      "formats_supported": ["application/pdf", "application/msword", ".xlsx"],
+      "max_size": "100MB",
+      "preview": "generate PDF preview for documents"
+    }
+  },
+  "upload_flow": {
+    "step_1_select": {
+      "user_action": "taps '+' → 'Photo' or 'Video' or 'Voice' or 'File'",
+      "flow": "native file picker opens"
+    },
+    "step_2_process": {
+      "mobile_image": [
+        "1. compress to 600×600 (JPEG 85%)",
+        "2. generate 150×150 thumbnail",
+        "3. return to composer (show preview)",
+        "latency": "< 200ms on device"
+      ],
+      "mobile_video": [
+        "1. begin transcode (async background job)",
+        "2. return to composer with 'transcoding...' badge",
+        "3. transcode completes in 2-5 min (background)",
+        "4. badge changes to 'ready'"
+      ],
+      "voice": [
+        "1. record directly in app",
+        "2. on stop, compress M4A",
+        "3. preview plays back before send"
+      ]
+    },
+    "step_3_send": {
+      "user_action": "taps send",
+      "upload_target": "S3 bucket (messages-media/)",
+      "s3_key_format": "/messages-media/{conversation_id}/{message_id}/{file_uuid}.{ext}",
+      "parallel_upload": "while S3 upload in progress, send message to Kafka (with s3_key placeholder)",
+      "callback": "S3 upload completes → update message.media_url"
+    }
+  },
+  "storage_architecture": {
+    "s3_bucket": "app-messages-media",
+    "folder_structure": {
+      "images": "messages-media/images/conv_{id}/msg_{id}/{uuid}.jpg",
+      "videos": "messages-media/videos/conv_{id}/msg_{id}/{uuid}.mp4",
+      "voice": "messages-media/voice/conv_{id}/msg_{id}/{uuid}.m4a",
+      "documents": "messages-media/documents/conv_{id}/msg_{id}/{uuid}.pdf"
+    },
+    "access_control": "private (not public-read), HTTP link requires signed URL"
+  },
+  "database_schema": {
+    "messages_table_additions": {
+      "media_type": "enum ('image', 'video', 'voice', 'document', null)",
+      "media_s3_key": "text (null if no media)",
+      "media_thumbnail_s3_key": "text (null if not image)",
+      "media_size_bytes": "integer",
+      "media_width": "integer (images/videos only)",
+      "media_height": "integer (images/videos only)",
+      "media_duration_seconds": "integer (voice/video only)",
+      "transcoding_status": "enum ('pending', 'completed', 'failed')"
+    }
+  },
+  "download_flow": {
+    "receiving_message_with_media": "message arrives with media_s3_key",
+    "ui_display": "thumbnail preview (150×150) shown immediately",
+    "download_on_tap": "tapping preview starts download",
+    "progressive_load": "load full-res image/video only on demand (bandwidth optimization)"
+  },
+  "signed_url_mechanism": {
+    "purpose": "prevent unauthorized S3 access",
+    "implementation": [
+      "1. message.media_s3_key stored in DB",
+      "2. API generates signed URL on-demand (valid 1 hour)",
+      "3. client downloads via signed URL",
+      "4. URL expires after 1 hour"
+    ],
+    "permission_check": "verify user is member of conversation before issuing signed URL"
+  },
+  "transcoding_pipeline": {
+    "trigger": "video message uploaded",
+    "processor": "AWS Lambda (FFmpeg inside container) OR on-prem service",
+    "input": "original video from S3",
+    "output": "transcoded MP4 to S3 at final key location",
+    "monitoring": [
+      "track transcode latency (p95)",
+      "alert if transcode fails (manual retry needed)"
+    ]
+  },
+  "bandwidth_optimization": {
+    "on_mobile": [
+      "image: send 600×600 only (skip full-res)",
+      "video: 480p + low bitrate (1500kbps)",
+      "voice: 32kbps low-latency codec"
+    ],
+    "on_wifi": [
+      "image: send 1280×800 + thumbnail",
+      "video: 720p option if available"
+    ],
+    "throttling": "if user on slow network, delay upload until better signal"
+  },
+  "upload_retry": {
+    "mechanism": "S3 upload fails → queue for retry",
+    "max_retries": "3",
+    "backoff": "exponential (1s, 2s, 5s)",
+    "ui_display": "message shows '📤 uploading... retry 1/3' or '❌ upload failed' with retry button"
+  },
+  "media_deletion": {
+    "soft_delete_message": "media_s3_key stays in DB (S3 file persists)",
+    "hard_delete_message": "S3 file deleted (after 30 days)",
+    "user_export": "GDPR export includes all media (zipped)"
+  },
+  "api_endpoints": {
+    "upload_media": {
+      "endpoint": "POST /v1/messages/{id}/media",
+      "content_type": "multipart/form-data",
+      "payload": {
+        "file": "binary file",
+        "media_type": "image | video | voice | document"
+      },
+      "response": {
+        "media_url": "signed S3 URL",
+        "media_s3_key": "/messages-media/images/...",
+        "transcoding_status": "pending | completed"
+      }
+    },
+    "transcode_status": {
+      "endpoint": "GET /v1/messages/{id}/media/transcode-status",
+      "response": {
+        "status": "pending | completed | failed",
+        "progress_percent": 45
+      }
+    }
+  },
+  "testing": {
+    "scenarios": [
+      "upload JPEG 5MB → auto-resize to 600×600, thumbnail generated",
+      "upload MP4 video → starts transcode (shows 'transcoding...')",
+      "wait for transcode to complete → 'ready' badge, can send",
+      "send video message → after send, media_s3_key set, S3 file exists",
+      "download image from another user → signed URL valid, downloads successfully",
+      "transcode fails (corrupted video) → falls back to original (limited support)",
+      "delete image message → soft-delete in DB, S3 file remains",
+      "hard-delete image → S3 file deleted after 30 days"
+    ]
+  },
+  "monitoring": {
+    "metrics": [
+      "media.upload_latency_p95_ms",
+      "media.transcode_latency_p95_seconds",
+      "media.transcode_failure_rate",
+      "media.s3_storage_usage_gb",
+      "media.bandwidth_usage_gb_per_day"
+    ],
+    "alerts": [
+      "transcode fails > 5% (faulty FFmpeg?)",
+      "upload latency > 5s p95",
+      "S3 storage growth > 10GB/day (anomaly)"
+    ]
+  }
+}

@@ -42,6 +42,20 @@ export function CreateReelSheet({ open, onOpenChange }: CreateReelSheetProps) {
       return;
     }
 
+    // Keep this aligned with the `reels-media` bucket allowed_mime_types.
+    const allowedMimeTypes = new Set([
+      "video/mp4",
+      "video/webm",
+      "video/quicktime",
+      "video/x-msvideo",
+    ]);
+    const allowedExtensions = new Set(["mp4", "webm", "mov", "avi", "m4v"]);
+    const ext = (file.name.split(".").pop() || "").toLowerCase();
+    if (!allowedMimeTypes.has(file.type) && !allowedExtensions.has(ext)) {
+      toast.error("Неподдерживаемый формат. Используйте MP4, WebM, MOV или AVI");
+      return;
+    }
+
     if (file.size > 100 * 1024 * 1024) {
       toast.error("Максимальный размер видео: 100MB");
       return;

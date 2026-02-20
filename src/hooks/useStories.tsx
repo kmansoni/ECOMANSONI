@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import { isGuestMode } from '@/lib/demo/demoMode';
+import { getDemoBotsUsersWithStories, isDemoId } from '@/lib/demo/demoBots';
 
 export interface Story {
   id: string;
@@ -173,6 +175,15 @@ export function useStories() {
         return 0;
       });
 
+      // Guest-mode demo bots (no DB writes/reads)
+      if (isGuestMode()) {
+        const demoUsers = getDemoBotsUsersWithStories() as any as UserWithStories[];
+        // Keep own user first; demo users after.
+        const withoutDemo = users.filter((u) => !u.user_id.startsWith('demo_'));
+        setUsersWithStories([...withoutDemo, ...demoUsers]);
+        return;
+      }
+
       setUsersWithStories(users);
     } catch (err) {
       console.error('Error fetching stories:', err);
@@ -206,6 +217,17 @@ export function useStories() {
 
   const markAsViewed = useCallback(async (storyId: string) => {
     if (!user) return;
+
+    // Demo story: mark locally only
+    if (isDemoId(storyId)) {
+      setUsersWithStories((prev) =>
+        prev.map((u) => {
+          if (!u.stories?.some((s) => s.id === storyId)) return u;
+          return { ...u, hasNew: false };
+        }),
+      );
+      return;
+    }
 
     try {
       await (supabase

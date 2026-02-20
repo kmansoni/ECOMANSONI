@@ -145,18 +145,20 @@ export function useSearch() {
 
     try {
       if (targetUser.isFollowing) {
-        await (supabase as any)
+        const { error } = await (supabase as any)
           .from("followers")
           .delete()
           .eq("follower_id", user.id)
           .eq("following_id", targetUserId);
+        if (error) throw error;
       } else {
-        await (supabase as any)
+        const { error } = await (supabase as any)
           .from("followers")
           .insert({
             follower_id: user.id,
             following_id: targetUserId,
           });
+        if (error) throw error;
       }
 
       setUsers((prev) =>

@@ -1,0 +1,162 @@
+{
+  "req_id": "REQ-0079",
+  "title": "Message Mentions & @Tags (Mention Users in Messages)",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "messaging",
+  "depends_on": ["REQ-0064"],
+  "use_cases": [
+    "user types @ in composer → autocomplete list appears",
+    "select 'Alice' → inserts @Alice",
+    "message shows '@Alice check this out' with Alice highlighted/linked",
+    "Alice notified with mention badge '1 mention'"
+  ],
+  "mention_mechanics": {
+    "compose": {
+      "trigger": "user types '@' in message",
+      "autocomplete": [
+        "1. show list of people in conversation",
+        "2. filter as user types (fuzzy search)",
+        "3. show avatar + name + handle"
+      ],
+      "insert": "tap person → '@alice_name' inserted at cursor"
+    },
+    "formatting": {
+      "storage": "message.content stores raw '@alice_id' (UUID reference)",
+      "display": "UI renders as highlighted link: @alice_name (in blue, clickable)"
+    }
+  },
+  "mention_database_schema": {
+    "mention_references_table": {
+      "columns": [
+        "mention_id UUID PK",
+        "message_id UUID FK",
+        "mentioned_user_id UUID",
+        "mention_position INTEGER (position in content)",
+        "created_at TIMESTAMP",
+        "PRIMARY KEY (message_id, mentioned_user_id)",
+        "INDEX (mentioned_user_id, created_at)"
+      ]
+    },
+    "message_content_storage": {
+      "raw_content": "text with @{user_id} placeholders",
+      "display_content": "rendered with @{username} and link data"
+    }
+  },
+  "mention_extraction": {
+    "mechanism": "server-side regex on message save",
+    "regex": "@([A-Za-z0-9_]+)|@\\{([a-f0-9-]+)\\}",
+    "resolution": [
+      "1. extract @alice_name from content",
+      "2. look up user by display_name (case-insensitive)",
+      "3. if found, create mention_references entry",
+      "4. if not found, treat as plain text (not a valid mention)"
+    ],
+    "note": "mentions only work for users in same conversation"
+  },
+  "mention_notifications": {
+    "trigger": "message with mention sent → recipient notified",
+    "notification_text": "'Alice mentioned you: check this out'",
+    "action_on_tap": "navigate to message + highlight the mentioned part",
+    "mention_badge": "unread mention count appears on conversation"
+  },
+  "mention_scope": {
+    "dm_conversations": "@alice works if Alice is the other participant",
+    "group_conversations": "can mention any active group member",
+    "blocked_mentions": "cannot mention users who have blocked you (error: 'user not found')"
+  },
+  "special_mentions": {
+    "at_everyone": "@everyone (admin feature, mentions all group members)",
+    "at_admin": "@admin (mentions all admins in group)",
+    "implementation": "expands to individual mentions at send time"
+  },
+  "mention_deep_links": {
+    "format": "app://user/{user_id}",
+    "ui": "tap mention → shows user profile card"
+  },
+  "mention_search_integration": {
+    "feature": "search for messages with mentions: '@alice' OR 'mentions:alice'",
+    "implementation": "mention_references table indexed for fast lookup"
+  },
+  "mention_history": {
+    "feature": "user can see all messages where they were mentioned",
+    "ui_location": "'Mentions' tab in notifications or separate view"
+  },
+  "mention_thread_context": {
+    "behavior": "mention in reply threads is scoped to that thread",
+    "notification": "mentioned user gets notification but can expand to full thread context"
+  },
+  "api_endpoints": {
+    "autocomplete_mentions": {
+      "endpoint": "GET /v1/conversations/{id}/members/autocomplete",
+      "params": {
+        "q": "ali",
+        "limit": 10
+      },
+      "response": [
+        {
+          "user_id": "UUID",
+          "display_name": "Alice",
+          "avatar_url": "https://...",
+          "status": "online|offline"
+        }
+      ]
+    },
+    "send_message_with_mentions": {
+      "endpoint": "POST /v1/conversations/{id}/messages",
+      "payload": {
+        "content": "@{user_id_1} check out @{user_id_2} message",
+        "mentions": ["user_id_1", "user_id_2"]
+      },
+      "response": {
+        "message_id": "UUID",
+        "mentions": [
+          {
+            "user_id": "user_id_1",
+            "display_name": "Alice"
+          }
+        ]
+      }
+    },
+    "get_mentions": {
+      "endpoint": "GET /v1/user/mentions",
+      "params": {
+        "limit": 50,
+        "offset": 0
+      },
+      "response": [
+        {
+          "message_id": "UUID",
+          "conversation_name": "Project Discussion",
+          "sender": "Bob",
+          "preview": "Alice, check out this spec",
+          "timestamp": "2026-02-15T15:35:00Z"
+        }
+      ]
+    }
+  },
+  "testing": {
+    "scenarios": [
+      "type '@' → autocomplete shows group members",
+      "select member → '@member_name' inserted",
+      "mention non-existent user '@notauser' → treated as plain text (no mention)",
+      "send message with 3 mentions → all 3 users notified",
+      "mention user not in conversation → error or not resolved",
+      "search '@alice' → returns all messages mentioning Alice",
+      "view 'Mentions' list → shows all messages where current user was mentioned",
+      "@everyone in group → all members notified"
+    ]
+  },
+  "monitoring": {
+    "metrics": [
+      "mentions.sent_per_hour",
+      "mentions.discovery_rate (/@mentions vs total messages)",
+      "autocomplete.response_latency_p95_ms",
+      "mention_notification.read_rate"
+    ],
+    "alerts": [
+      "mention extraction fails > 2%",
+      "autocomplete latency > 200ms p95"
+    ]
+  }
+}

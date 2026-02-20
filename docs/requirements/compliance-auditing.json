@@ -1,0 +1,1 @@
+{"req_id":"REQ-0032","title":"Compliance Auditing","standards":["GDPR","SOC2","HIPAA"],"audit_frequency_months":3,"checks":["data_retention","user_rights","encryption","access_logs"]}

@@ -1,0 +1,185 @@
+{
+  "req_id": "REQ-0098",
+  "title": "Threads (Nested Replies, Conversation Trees)",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "messaging",
+  "depends_on": ["REQ-0071"],
+  "note": "Extension of message.replies (B-071), adding full thread UI and nested structure",
+  "use_cases": [
+    "Alice posts message in #general",
+    "Bob replies to Alice's message → reply appears as threaded response",
+    "Charlie replies to Bob's reply → nested in same thread",
+    "user can expand/collapse threads (show first reply summary, expand to see all)"
+  ],
+  "data_model": {
+    "table_extension": "messages table already has reply_to_message_id",
+    "threading_depth": "unlimited (any message can reply to any message)",
+    "thread_root": "message with reply_to_message_id IS NULL is thread start"
+  },
+  "ui_display": {
+    "main_feed": [
+      "Alice: 'How do we deploy today?' [15 replies →]",
+      "{expand arrow to show thread}"
+    ],
+    "expanded_thread_view": [
+      "Alice: 'How do we deploy today?'",
+      "  └─ Bob: 'Run `make deploy`'",
+      "     └─ Charlie: 'But we need to update version first'",
+      "        └─ David: 'Done, updated to v2.1'",
+      "  └─ Eve: 'I can handle the testing'",
+      "     └─ Frank: '+1'"
+    ]
+  },
+  "thread_badge_display": {
+    "in_main_feed": "message shows '[15 replies]' in blue",
+    "tap_behavior": "expand inline or deep-link to thread view",
+    "unread_badge": "if thread has new replies, show '[15 replies • 3 NEW]'"
+  },
+  "thread_view": {
+    "layout": "full screen or bottom sheet (iOS) / modal (Android)",
+    "content": [
+      "root message at top (highlighted)",
+      "all replies chronologically, indented by depth",
+      "reply input box at bottom"
+    ],
+    "reply_in_thread": "typing in thread input box creates reply to root (or last message in thread?)"
+  },
+  "notifications_for_threads": {
+    "root_author": "Alice notified of any reply to her root message",
+    "reply_author": "Bob notified if someone replies to Bob's reply",
+    "@mention": "if Charlie @mentions Bob in thread reply, Bob notified"
+  },
+  "thread_depth_limit": {
+    "visual": "indent up to 3 levels deep visually (4+ level replies shift to same as level 3 parent)",
+    "storage": "no depth limit in DB"
+  },
+  "quoted_replies_in_threads": {
+    "scenario": "Bob replies to Alice, quotes Alice's message",
+    "display": [
+      "Bob: 'I disagree with this:'",
+      "  ─────",
+      "  Alice: 'We should deploy now'",
+      "  ─────",
+      "  Actually, we should test first."
+    ]
+  },
+  "thread_notifications": {
+    "unread_count": "thread counts as 'unread' if user hasn't seen latest reply",
+    "badge": "main feed shows thread with unread badge"
+  },
+  "thread_muting": {
+    "feature": "user can mute notifications for specific thread (without leaving group)",
+    "implementation": "threads_muted table (user_id, message_id, muted_at)"
+  },
+  "database_schema": {
+    "messages_table_extension": {
+      "new_columns": [
+        "reply_to_message_id UUID FK (null if root message)",
+        "thread_root_message_id UUID FK (denormalized for fast thread lookup)"
+      ]
+    },
+    "thread_stats_table": {
+      "columns": [
+        "thread_stats_id UUID PK",
+        "root_message_id UUID FK UNIQUE",
+        "reply_count INTEGER (denormalized)",
+        "participant_count INTEGER (distinct users in thread)",
+        "last_reply_at TIMESTAMP",
+        "updated_at TIMESTAMP"
+      ]
+    },
+    "threads_muted_table": {
+      "columns": [
+        "mute_id UUID PK",
+        "user_id UUID FK",
+        "root_message_id UUID FK",
+        "muted_at TIMESTAMP"
+      ]
+    }
+  },
+  "api_endpoints": {
+    "get_thread": {
+      "endpoint": "GET /v1/messages/{message_id}/thread",
+      "response": {
+        "root_message": {
+          "message_id": "UUID",
+          "content": "How do we deploy today?",
+          "sender": "Alice"
+        },
+        "replies": [
+          {
+            "message_id": "UUID",
+            "content": "Run `make deploy`",
+            "sender": "Bob",
+            "reply_to_message_id": "root_message_id",
+            "created_at": "2026-02-15T15:35:00Z"
+          },
+          {
+            "message_id": "UUID",
+            "content": "But we need to update version first",
+            "sender": "Charlie",
+            "reply_to_message_id": "bob_reply_id",
+            "created_at": "2026-02-15T15:36:00Z"
+          }
+        ],
+        "reply_count": 15,
+        "last_updated": "2026-02-15T15:50:00Z"
+      }
+    },
+    "reply_in_thread": {
+      "endpoint": "POST /v1/messages/{message_id}/reply",
+      "payload": {
+        "content": "I agree with Charlie",
+        "reply_to_message_id": "charlie_reply_id (optional, defaults to root)"
+      },
+      "response": {
+        "message_id": "new_UUID",
+        "created_at": "2026-02-15T15:51:00Z"
+      }
+    },
+    "mute_thread": {
+      "endpoint": "POST /v1/messages/{message_id}/thread/mute",
+      "response": {
+        "muted_at": "2026-02-15T15:52:00Z"
+      }
+    }
+  },
+  "performance_optimization": {
+    "thread_pagination": "load thread in chunks (first 10, load more)",
+    "caching": "cache thread structure (root + first 10 replies) for fast load",
+    "denormalization": "thread_root_message_id on all replies for fast group-by"
+  },
+  "comparison_with_b071": {
+    "b071_message_replies": "basic reply structure (inline quotes, flat thread view)",
+    "b098_threads": "full threading UI (nested display, expand/collapse, thread notifications)"
+  },
+  "monitoring": {
+    "metrics": [
+      "threads.total_active_threads",
+      "threads.avg_depth",
+      "threads.avg_replies_per_thread",
+      "threads.thread_view_load_time_ms"
+    ],
+    "alerts": [
+      "thread_view_load_time_p95 >2s (query slow, cache miss?)"
+    ]
+  },
+  "testing": {
+    "scenarios": [
+      "create root message → thread with 0 replies displayed",
+      "add reply to root → thread badge shows '[1 reply]'",
+      "add nested reply (reply to reply) → shows indented view",
+      "user expands thread → all replies loaded, nested display",
+      "thread with 100+ replies → paginated (load first 20, 'load more' button)",
+      "root author receives notification of reply",
+      "user mutes thread → no more notifications from that thread",
+      "user edits reply in thread → all subscribers see updated text"
+    ]
+  },
+  "edge_cases": {
+    "circular_reply": "user tries to reply to own message (allowed technically, but UX should prevent)",
+    "deep_nesting": "reply to reply to reply ... (UI shows flattened at depth 3+)",
+    "root_message_deleted": "all replies in thread become orphans (soft-delete only, show 'deleted')"
+  }
+}

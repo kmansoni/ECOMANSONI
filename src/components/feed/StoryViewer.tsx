@@ -15,6 +15,8 @@ interface StoryViewerProps {
   onClose: () => void;
 }
 
+const EMPTY_STORIES: any[] = [];
+
 export function StoryViewer({ usersWithStories, initialUserIndex, isOpen, onClose }: StoryViewerProps) {
   const { markAsViewed } = useStories();
   const { setIsStoryOpen } = useChatOpen();
@@ -46,7 +48,7 @@ export function StoryViewer({ usersWithStories, initialUserIndex, isOpen, onClos
     [usersWithStories]
   );
   const currentUser = activeUsers[currentUserIndex];
-  const currentUserStories = currentUser?.stories || [];
+  const currentUserStories = currentUser?.stories ?? EMPTY_STORIES;
   const totalStoriesForUser = currentUserStories.length;
 
   // Reset only when opening (not on every render)

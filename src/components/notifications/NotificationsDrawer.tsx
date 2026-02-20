@@ -57,11 +57,12 @@ export function NotificationsDrawer({ open, onOpenChange }: NotificationsDrawerP
     markAsRead(notification.id);
 
     if (notification.type === "follow") {
-      // Navigate to the actor's profile
-      // Would need to look up username by actor_id
+      if (notification.actor_id) {
+        navigate(`/contact/${notification.actor_id}`);
+      }
       onOpenChange(false);
     } else if (notification.post_id) {
-      // Navigate to post (if we had a post detail page)
+      navigate(`/post/${notification.post_id}`);
       onOpenChange(false);
     }
   };
@@ -110,7 +111,7 @@ export function NotificationsDrawer({ open, onOpenChange }: NotificationsDrawerP
                   <div
                     key={notification.id}
                     className={cn(
-                      "flex items-start gap-3 p-4 cursor-pointer transition-colors hover:bg-muted/50",
+                      "group flex items-start gap-3 p-4 cursor-pointer transition-colors hover:bg-muted/50",
                       !notification.is_read && "bg-primary/5"
                     )}
                     onClick={() => handleNotificationClick(notification)}

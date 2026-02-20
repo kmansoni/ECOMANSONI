@@ -46,47 +46,44 @@ All colors MUST be HSL.
 
 @layer base {
   :root {
-    /* Clean white light theme */
-    --background: 0 0% 100%;
-    --foreground: 222 47% 11%;
+    /* Brand-glass light mode (matches auth/welcome screen style) */
+    --background: 211 56% 11%;
+    --foreground: 0 0% 96%;
 
-    /* Frosted glass cards */
-    --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
+    /* Frosted glass cards over dark brand background */
+    --card: 208 29% 29%;
+    --card-foreground: 0 0% 96%;
 
-    --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
+    --popover: 208 31% 20%;
+    --popover-foreground: 0 0% 96%;
 
-    /* Vibrant blue primary */
-    --primary: 217 91% 55%;
+    /* Auth screen brand accents */
+    --primary: 198 100% 45%;
     --primary-foreground: 0 0% 100%;
 
-    /* Soft secondary with slight blue tint */
-    --secondary: 220 20% 94%;
-    --secondary-foreground: 222 47% 11%;
+    --secondary: 206 33% 31%;
+    --secondary-foreground: 0 0% 96%;
 
-    /* Muted with glass effect */
-    --muted: 220 20% 94%;
-    --muted-foreground: 220 12% 50%;
+    --muted: 206 28% 25%;
+    --muted-foreground: 0 0% 78%;
 
-    /* Accent matching primary */
-    --accent: 217 91% 55%;
+    --accent: 161 100% 39%;
     --accent-foreground: 0 0% 100%;
 
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
 
-    /* Softer borders for glass effect */
-    --border: 220 20% 88%;
-    --input: 220 20% 90%;
-    --ring: 217 91% 55%;
+    /* Glass borders/inputs tuned for dark-brand light mode */
+    --border: 0 0% 100% / 0.22;
+    --input: 0 0% 100% / 0.20;
+    --ring: 198 100% 45%;
 
     --radius: 0.75rem;
 
     /* Glass effect tokens */
-    --glass-bg: 0 0% 100% / 0.7;
-    --glass-border: 0 0% 100% / 0.5;
-    --glass-shadow: 220 60% 50% / 0.08;
+    --glass-bg: 0 0% 100% / 0.10;
+    --glass-border: 0 0% 100% / 0.25;
+    --glass-shadow: 187 100% 45% / 0.20;
 
     /* Custom tokens for app */
     --success: 142 76% 36%;
@@ -105,14 +102,14 @@ All colors MUST be HSL.
     --module-yellow: 45 93% 47%;
     --module-blue: 217 91% 60%;
 
-    --sidebar-background: 0 0% 98%;
-    --sidebar-foreground: 240 5.3% 26.1%;
-    --sidebar-primary: 240 5.9% 10%;
-    --sidebar-primary-foreground: 0 0% 98%;
-    --sidebar-accent: 240 4.8% 95.9%;
-    --sidebar-accent-foreground: 240 5.9% 10%;
-    --sidebar-border: 220 13% 91%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --sidebar-background: 211 56% 11%;
+    --sidebar-foreground: 0 0% 92%;
+    --sidebar-primary: 198 100% 45%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 206 33% 20%;
+    --sidebar-accent-foreground: 0 0% 92%;
+    --sidebar-border: 0 0% 100% / 0.20;
+    --sidebar-ring: 198 100% 45%;
   }
 
   .dark {
@@ -182,14 +179,113 @@ All colors MUST be HSL.
     overflow-x: hidden;
   }
 
+  /*
+    Backgrounds MUST NOT mix.
+    We define exactly two backgrounds, selected only by the presence of html.dark.
+  */
+  html:not(.dark),
+  html:not(.dark) body {
+    background:
+      radial-gradient(circle at 25% 8%, rgba(0,102,204,0.46) 0%, rgba(0,102,204,0) 40%),
+      radial-gradient(circle at 94% 58%, rgba(0,163,180,0.40) 0%, rgba(0,163,180,0) 42%),
+      radial-gradient(circle at 88% 82%, rgba(0,200,150,0.34) 0%, rgba(0,200,150,0) 45%),
+      radial-gradient(circle at 8% 78%, rgba(79,208,128,0.26) 0%, rgba(79,208,128,0) 44%),
+      radial-gradient(at 30% 20%, hsla(200,100%,40%,0.25) 0px, transparent 50%),
+      radial-gradient(at 70% 10%, hsla(175,80%,45%,0.2) 0px, transparent 50%),
+      radial-gradient(at 10% 60%, hsla(160,70%,50%,0.2) 0px, transparent 50%),
+      radial-gradient(at 90% 70%, hsla(140,60%,50%,0.15) 0px, transparent 50%),
+      radial-gradient(at 50% 90%, hsla(185,90%,40%,0.2) 0px, transparent 50%),
+      linear-gradient(135deg, #0a1628 0%, #0d2035 52%, #071420 100%);
+    background-size: auto, auto, auto, auto, 200% 200%, 200% 200%, 200% 200%, 200% 200%, 200% 200%, auto;
+    animation: shimmer-gradient 14s ease-in-out infinite;
+    background-attachment: fixed;
+  }
+
+  html.dark,
+  html.dark body {
+    background:
+      radial-gradient(circle at 50% 30%, rgba(15,69,255,0.08) 0%, rgba(106,54,255,0.06) 18%, transparent 40%),
+      radial-gradient(circle at 50% 85%, rgba(15,69,255,0.28) 0%, rgba(106,54,255,0.22) 22%, transparent 60%),
+      linear-gradient(180deg, #05050A 0%, #0C0C14 100%);
+    background-attachment: fixed;
+  }
+
+  /* Glossy reflective bar near bottom (dark mode only) */
+  html.dark body::before {
+    content: "";
+    position: fixed;
+    left: 50%;
+    bottom: calc(env(safe-area-inset-bottom) + 14px);
+    transform: translateX(-50%);
+    width: min(560px, calc(100vw - 32px));
+    height: 70px;
+    border-radius: 9999px;
+    pointer-events: none;
+    opacity: 0.35;
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0) 0%,
+      rgba(255, 255, 255, 0.16) 22%,
+      rgba(255, 255, 255, 0.22) 50%,
+      rgba(255, 255, 255, 0.16) 78%,
+      rgba(255, 255, 255, 0) 100%
+    );
+    filter: blur(0.2px);
+    z-index: 0;
+  }
+
+  /* Keep light mode's brand-glass background visible behind wrappers using bg-background */
+  html:not(.dark) .min-h-screen.bg-background,
+  html:not(.dark) .h-full.bg-background,
+  html:not(.dark) .fixed.inset-0.bg-background {
+    background:
+      radial-gradient(circle at 25% 8%, rgba(0,102,204,0.46) 0%, rgba(0,102,204,0) 40%),
+      radial-gradient(circle at 94% 58%, rgba(0,163,180,0.40) 0%, rgba(0,163,180,0) 42%),
+      radial-gradient(circle at 88% 82%, rgba(0,200,150,0.34) 0%, rgba(0,200,150,0) 45%),
+      radial-gradient(circle at 8% 78%, rgba(79,208,128,0.26) 0%, rgba(79,208,128,0) 44%),
+      linear-gradient(135deg, #0a1628 0%, #0d2035 52%, #071420 100%) !important;
+  }
+
   #root {
     overflow-x: hidden;
+    position: relative;
+    z-index: 1;
   }
 
   /* Allow text selection in inputs */
   input, textarea {
     -webkit-user-select: text;
     user-select: text;
+  }
+}
+
+@layer utilities {
+  /* Ensure full-screen wrappers don't flatten the global dark background */
+  html.dark .min-h-screen.bg-background,
+  html.dark .h-full.bg-background,
+  html.dark .fixed.inset-0.bg-background {
+    background:
+      radial-gradient(circle at 50% 30%, rgba(15,69,255,0.08) 0%, rgba(106,54,255,0.06) 18%, transparent 40%),
+      radial-gradient(circle at 50% 85%, rgba(15,69,255,0.28) 0%, rgba(106,54,255,0.22) 22%, transparent 60%),
+      linear-gradient(180deg, #05050A 0%, #0C0C14 100%) !important;
+  }
+
+  /* Remove conflicts: some screens hard-code bg-black for full-screen roots */
+  html.dark .fixed.inset-0.bg-black,
+  html.dark .min-h-screen.bg-black,
+  html.dark .h-full.bg-black {
+    background:
+      radial-gradient(circle at 50% 30%, rgba(15,69,255,0.08) 0%, rgba(106,54,255,0.06) 18%, transparent 40%),
+      radial-gradient(circle at 50% 85%, rgba(15,69,255,0.28) 0%, rgba(106,54,255,0.22) 22%, transparent 60%),
+      linear-gradient(180deg, #05050A 0%, #0C0C14 100%) !important;
+  }
+
+  /* Remove conflicts: legacy hard-coded background class used by some sheets */
+  html.dark .bg-\[\#17212b\] {
+    background:
+      radial-gradient(circle at 50% 30%, rgba(15,69,255,0.08) 0%, rgba(106,54,255,0.06) 18%, transparent 40%),
+      radial-gradient(circle at 50% 85%, rgba(15,69,255,0.28) 0%, rgba(106,54,255,0.22) 22%, transparent 60%),
+      linear-gradient(180deg, #05050A 0%, #0C0C14 100%) !important;
   }
 }
 

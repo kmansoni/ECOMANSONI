@@ -1,0 +1,155 @@
+{
+  "req_id": "REQ-0085",
+  "title": "Message Status Indicators (Sent, Delivered, Read, Error)",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "messaging",
+  "depends_on": ["REQ-0067"],
+  "use_cases": [
+    "user sends message: shows ⏱ (pending)",
+    "server receives: shows ✓ (sent)",
+    "recipient acks: shows ✓✓ (delivered)",
+    "recipient reads: shows ✓✓ checkmark filled (read)",
+    "send fails: shows ❌ with retry button"
+  ],
+  "message_states": {
+    "composing": {
+      "state": "composing (text in input box, not sent)",
+      "indicator": "none (message not yet sent)"
+    },
+    "pending": {
+      "state": "sent to server but not yet persisted",
+      "trigger": "user taps send",
+      "indicator": "⏱ (hourglass)",
+      "latency_max": "2s (if > 2s, assume sent)"
+    },
+    "sent": {
+      "state": "persisted to server database",
+      "trigger": "server ACK received",
+      "indicator": "✓ (single checkmark)",
+      "latency_from_user_tap": "< 500ms p95"
+    },
+    "delivered": {
+      "state": "recipient client received message (MESSAGE_RECEIVED event)",
+      "trigger": "recipient's client confirms receipt",
+      "indicator": "✓✓ (double checkmark, hollow)",
+      "latency": "< 1s p95 from sent"
+    },
+    "read": {
+      "state": "message visible in recipient's viewport >1s (Intersection Observer)",
+      "trigger": "recipient scrolls to message, visible >1s",
+      "indicator": "✓✓ (double checkmark, filled/blue)",
+      "latency": "< 2s p95 from when visible"
+    },
+    "error": {
+      "state": "send failed (network error, validation error, etc)",
+      "trigger": "server returns 4xx/5xx or client network error",
+      "indicator": "❌ (red X)",
+      "ui_button": "retry button available"
+    }
+  },
+  "status_display_rules": {
+    "single_recipient_dm": {
+      "show": "all statuses: ⏱ → ✓ → ✓✓ → ✓✓ filled",
+      "privacy": "if read receipts disabled globally, show ✓✓ (hollow) only"
+    },
+    "group_conversation": {
+      "show": "aggregate status: ✓ (sent), ✓✓ (all delivered), ✓✓ blue (all read)",
+      "aggregate_rules": [
+        "if any recipient not delivered yet: show ✓",
+        "if all delivered but none read: show ✓✓ (hollow)",
+        "if all read: show ✓✓ (filled)",
+        "if some not delivered: show partial (25%, 50%, 75%) indicator"
+      ]
+    },
+    "hover_detail": "hover message status → shows 'Delivered to Alice, Bob + 3 more'"
+  },
+  "status_transitions": {
+    "normal_flow": [
+      "composing (text in input)",
+      "pending (send pressed, awaiting server)",
+      "sent (server stored)",
+      "delivered (recipient acked)",
+      "read (recipient saw)"
+    ],
+    "error_flow": [
+      "pending → error (network failed)",
+      "user taps retry → back to pending",
+      "pending → sent (retry successful)"
+    ]
+  },
+  "database_schema": {
+    "message_status_tracking": {
+      "messages_table_columns": [
+        "status ENUM (pending, sent, delivered, read, error)",
+        "sent_at TIMESTAMP (when ✓ received)",
+        "delivery_at TIMESTAMP (when first ✓✓ received)",
+        "read_at TIMESTAMP (when ✓✓ filled received)"
+      ],
+      "message_delivery_status_table": {
+        "per_recipient_tracking": [
+          "message_id UUID",
+          "recipient_id UUID",
+          "delivered_at TIMESTAMP",
+          "read_at TIMESTAMP",
+          "PRIMARY KEY (message_id, recipient_id)"
+        ]
+      }
+    }
+  },
+  "offline_message_handling": {
+    "pending_unsent": "if offline, message stays pending (doesn't transition to sent)",
+    "ui_indication": "pending badge + notice 'waiting for connection'",
+    "auto_send_on_reconnect": "when online, auto-retry pending messages"
+  },
+  "status_retry_mechanism": {
+    "failed_send": {
+      "ui": "❌ (red X) + 'Failed to send' + 'Retry' button",
+      "retry_action": "user taps retry → re-send message",
+      "backoff": "exponential: 1s, 2s, 5s, 10s before giving up"
+    }
+  },
+  "status_notifications": {
+    "delivery_confirmation": "silent (no notification for ✓✓)",
+    "read_confirmation": "silent (no notification for ✓✓ filled)"
+  },
+  "status_api": {
+    "message_ack": {
+      "endpoint": "POST /v1/messages/{id}/ack",
+      "payload": {
+        "ack_type": "delivered|read",
+        "timestamp": "2026-02-15T15:35:00Z"
+      },
+      "response": {
+        "success": true
+      }
+    }
+  },
+  "testing": {
+    "scenarios": [
+      "send message → shows ⏱ initially",
+      "server acks → shows ✓",
+      "recipient acks delivery → shows ✓✓",
+      "recipient reads → shows ✓✓ filled",
+      "network error → shows ❌, tap retry → re-send",
+      "group: one person read, others not → shows partial ✓✓ (25%)",
+      "disable read receipts globally → shows ✓✓ (hollow) always",
+      "offline message → pending badge, auto-sends on reconnect"
+    ]
+  },
+  "monitoring": {
+    "metrics": [
+      "message_status.pending_to_sent_latency_p95_ms",
+      "message_status.sent_to_delivered_latency_p95_ms",
+      "message_status.delivery_to_read_latency_p95_ms",
+      "message_status.error_rate",
+      "message_status.retry_success_rate"
+    ],
+    "alerts": [
+      "sent latency > 1s p95",
+      "delivered latency > 5s p95",
+      "error rate > 2%",
+      "retry success < 90%"
+    ]
+  }
+}

@@ -2,6 +2,12 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './useAuth';
 
+export interface Verification {
+  type: "owner" | "verified" | "professional" | "business";
+  is_active: boolean;
+  verified_at?: string;
+}
+
 export interface Profile {
   id: string;
   user_id: string;
@@ -11,6 +17,9 @@ export interface Profile {
   website: string | null;
   phone: string | null;
   verified: boolean;
+  verifications?: Verification[];
+  status_emoji?: string | null;
+  status_sticker_url?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -53,6 +62,19 @@ export function useProfile(userId?: string) {
         .single();
 
       if (profileError) throw profileError;
+
+      // Fetch verifications
+      const { data: verificationsData } = await (supabase as any)
+        .from('user_verifications')
+        .select('verification_type, is_active, verified_at')
+        .eq('user_id', targetUserId)
+        .order('verified_at', { ascending: false });
+
+      const verifications = (verificationsData || []).map((v: any) => ({
+        type: v.verification_type,
+        is_active: v.is_active,
+        verified_at: v.verified_at,
+      }));
 
       // Fetch posts count
       const { count: postsCount } = await supabase
@@ -97,6 +119,9 @@ export function useProfile(userId?: string) {
         website: extendedProfile.website ?? null,
         phone: extendedProfile.phone,
         verified: extendedProfile.verified ?? false,
+        verifications: verifications.length > 0 ? verifications : undefined,
+        status_emoji: extendedProfile.status_emoji ?? null,
+        status_sticker_url: extendedProfile.status_sticker_url ?? null,
         created_at: extendedProfile.created_at,
         updated_at: extendedProfile.updated_at,
         stats: {

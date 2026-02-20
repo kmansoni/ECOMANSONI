@@ -1,0 +1,125 @@
+{
+  "req_id": "REQ-0105",
+  "title": "Conversation Pinning (DM and Group Pinning to Top)",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "messaging",
+  "depends_on": ["REQ-0086"],
+  "use_cases": [
+    "user pins DM with Alice → appears at top of Chats list (even if no recent messages)",
+    "user pins #announcements group → always in top 3 conversations",
+    "user can unpin anytime"
+  ],
+  "pinning_mechanism": {
+    "flow": [
+      "1. swipe conversation left (or long-press)",
+      "2. tap 'Pin' → conversation moves to top",
+      "3. pinned conversations always appear first, ordered by pin_order"
+    ]
+  },
+  "pinning_rules": {
+    "max_pins": "max 5 pinned conversations (user can have more, but only top 5 pinned)",
+    "reorder": "user can drag-drop to reorder pinned conversations"
+  },
+  "ui_design": {
+    "pinned_section": [
+      "=== PINNED (3) ===",
+      "📌 Alice (DM)",
+      "📌 #announcements",
+      "📌 #general",
+      "---",
+      "=== ALL CONVERSATIONS ===",
+      "Bob (DM)",
+      "#random"
+    ]
+  },
+  "visual_indicator": {
+    "icon": "📌 pin icon next to conversation name",
+    "sorting": "pinned conversations always at top, sorted by pin_order"
+  },
+  "database_schema": {
+    "conversations_table_extension": {
+      "new_columns": [
+        "is_pinned BOOLEAN (for user context)",
+        "pin_order INTEGER (NULL if not pinned)"
+      ]
+    },
+    "user_pinned_conversations_table": {
+      "columns": [
+        "pin_id UUID PK",
+        "user_id UUID FK",
+        "conversation_id UUID FK",
+        "pin_order INTEGER (0=topmost)",
+        "pinned_at TIMESTAMP",
+        "UNIQUE(user_id, conversation_id)"
+      ]
+    }
+  },
+  "unpinning": {
+    "flow": "swipe conversation → tap 'Unpin' → removed from pinned, goes to normal list"
+  },
+  "notification_badge_with_pins": {
+    "behavior": "pinned conversation can still show unread badge (blue dot) if new messages"
+  },
+  "syncing_across_devices": {
+    "multi_device": "if user pins on mobile, also pinned on web/desktop (sync via user_pinned_conversations)",
+    "trust_score": "assume user_id uniqueness (not device-based)"
+  },
+  "api_endpoints": {
+    "pin_conversation": {
+      "endpoint": "POST /v1/conversations/{conversation_id}/pin",
+      "payload": {
+        "pin_order": 0
+      },
+      "response": {
+        "pinned_at": "2026-02-15T15:35:00Z"
+      }
+    },
+    "unpin_conversation": {
+      "endpoint": "DELETE /v1/conversations/{conversation_id}/pin"
+    },
+    "reorder_pins": {
+      "endpoint": "PATCH /v1/user/pins",
+      "payload": {
+        "order": [
+          {
+            "conversation_id": "UUID1",
+            "pin_order": 0
+          },
+          {
+            "conversation_id": "UUID2",
+            "pin_order": 1
+          }
+        ]
+      }
+    },
+    "get_pinned_conversations": {
+      "endpoint": "GET /v1/user/conversations/pinned",
+      "response": [
+        {
+          "conversation_id": "UUID",
+          "type": "dm",
+          "name": "Alice",
+          "pin_order": 0,
+          "last_message": "See you tomorrow",
+          "unread_count": 2
+        }
+      ]
+    }
+  },
+  "monitoring": {
+    "metrics": [
+      "conversations.avg_pins_per_user",
+      "conversations.reorder_frequency"
+    ]
+  },
+  "testing": {
+    "scenarios": [
+      "pin conversation → appears at top with 📌 icon",
+      "reorder pins → drag-drop changes pin_order",
+      "unpin conversation → no longer at top",
+      "pin 6th conversation → 5th pinned conversation remains, 6th not pinned",
+      "sync across devices → pin on mobile, refresh web, should be pinned there too"
+    ]
+  }
+}

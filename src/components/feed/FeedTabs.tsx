@@ -13,7 +13,7 @@ export function FeedTabs() {
   return (
     <div className="flex items-center justify-between px-4 py-3">
       <ServicesMenu />
-      <div className="flex bg-white/60 dark:bg-muted backdrop-blur-sm rounded-full p-1 shadow-sm dark:shadow-none border border-white/50 dark:border-transparent">
+      <div className="flex bg-card/70 backdrop-blur-sm rounded-full p-1 shadow-sm border border-border/60">
         {tabs.map((tab) => (
           <button
             key={tab.id}

@@ -1,0 +1,159 @@
+{
+  "req_id": "REQ-0104",
+  "title": "Message Polls and Surveys (Quick Voting)",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "messaging",
+  "depends_on": ["REQ-0061"],
+  "use_cases": [
+    "user creates poll: 'What time for meeting? [9 AM] [10 AM] [2 PM]'",
+    "poll appears in conversation, users tap option to vote",
+    "poll shows live results (real-time vote count)",
+    "owner can close poll after voting deadline"
+  ],
+  "poll_creation": {
+    "flow": [
+      "1. tap '+' in message input → 'Create Poll'",
+      "2. enter question (200 chars max)",
+      "3. add 2-10 options",
+      "4. optional: set deadline (never, 1h, 24h, 7d)",
+      "5. tap 'Post' → poll appears in conversation"
+    ]
+  },
+  "poll_display": {
+    "format": [
+      "Poll: What time for meeting?",
+      "[9 AM] 5 votes (45%)",
+      "[10 AM] 4 votes (36%)",
+      "[2 PM] 2 votes (18%)",
+      "---",
+      "Closes in: 12 minutes"
+    ],
+    "real_time": "update %percentage and vote count as votes come in"
+  },
+  "voting_mechanism": {
+    "one_vote_per_user": "user can only vote once per poll (unless allow_multiple=true)",
+    "change_vote": "user can tap their option again to change vote (if poll still open)",
+    "anonymous_vs_public": "show who voted (public) or hide voters (anonymous)"
+  },
+  "poll_closure": {
+    "automatic": "if deadline set, poll closes automatically",
+    "manual": "poll creator can tap 'Close Poll' anytime",
+    "effect": "closed poll disables further voting, shows final results"
+  },
+  "database_schema": {
+    "polls_table": {
+      "columns": [
+        "poll_id UUID PK",
+        "message_id UUID FK (poll sent as message, type='poll')",
+        "conversation_id UUID FK",
+        "creator_user_id UUID FK",
+        "question TEXT (200 chars max)",
+        "status VARCHAR(open, closed)",
+        "allow_multiple_votes BOOLEAN",
+        "is_anonymous BOOLEAN",
+        "created_at TIMESTAMP",
+        "closes_at TIMESTAMP",
+        "closed_at TIMESTAMP (when manually closed)"
+      ]
+    },
+    "poll_options_table": {
+      "columns": [
+        "option_id UUID PK",
+        "poll_id UUID FK",
+        "option_text VARCHAR(100)",
+        "option_index INTEGER",
+        "vote_count INTEGER (denormalized)"
+      ]
+    },
+    "poll_votes_table": {
+      "columns": [
+        "vote_id UUID PK",
+        "poll_id UUID FK",
+        "user_id UUID FK",
+        "option_id UUID FK",
+        "voted_at TIMESTAMP",
+        "UNIQUE(poll_id, user_id) if allow_multiple=false"
+      ]
+    }
+  },
+  "poll_notifications": {
+    "closing_soon": "notify voters 5 minutes before closing (if poll will close)",
+    "poll_closed": "notify participants when poll closes"
+  },
+  "api_endpoints": {
+    "create_poll": {
+      "endpoint": "POST /v1/conversations/{conversation_id}/messages",
+      "payload": {
+        "type": "poll",
+        "question": "What time for meeting?",
+        "options": ["9 AM", "10 AM", "2 PM"],
+        "closes_at": "2026-02-15T17:35:00Z (optional)",
+        "is_anonymous": false
+      },
+      "response": {
+        "message_id": "UUID",
+        "poll_id": "UUID"
+      }
+    },
+    "vote_poll": {
+      "endpoint": "POST /v1/polls/{poll_id}/vote",
+      "payload": {
+        "option_id": "UUID"
+      },
+      "response": {
+        "vote_id": "UUID",
+        "option_votes": 6,
+        "option_percentage": 0.545
+      }
+    },
+    "get_poll_results": {
+      "endpoint": "GET /v1/polls/{poll_id}",
+      "response": {
+        "question": "What time for meeting?",
+        "status": "open",
+        "options": [
+          {
+            "option_id": "UUID",
+            "text": "9 AM",
+            "votes": 5,
+            "percentage": 0.45
+          }
+        ],
+        "user_voted": true,
+        "user_vote_option_id": "UUID (if voted)",
+        "total_voters": 11,
+        "closes_at": "2026-02-15T17:35:00Z"
+      }
+    },
+    "close_poll": {
+      "endpoint": "POST /v1/polls/{poll_id}/close",
+      "permission": "creator or admin"
+    }
+  },
+  "monitoring": {
+    "metrics": [
+      "polls.total_created_per_day",
+      "polls.avg_options_per_poll",
+      "polls.avg_votes_per_poll",
+      "polls.participation_rate (voters / conversation_members)"
+    ]
+  },
+  "testing": {
+    "scenarios": [
+      "create poll with 3 options → poll_id returned",
+      "vote on option → vote count increments, results update",
+      "change vote → old vote removed, new vote added",
+      "poll with deadline set → automatic close after deadline",
+      "multiple users vote simultaneously → eventual consistency, all see latest count",
+      "closed poll → no more votes allowed, shows final results",
+      "anonymous poll → results show counts but not who voted"
+    ]
+  },
+  "constraints": {
+    "min_options": 2,
+    "max_options": 10,
+    "max_option_text": 100,
+    "max_question": 200
+  }
+}

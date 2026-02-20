@@ -44,10 +44,12 @@ export function useNotifications() {
 
       // Fetch actor profiles
       const actorIds = [...new Set((data || []).map((n: any) => n.actor_id))] as string[];
-      const { data: profiles } = await supabase
-        .from("profiles")
-        .select("user_id, display_name, avatar_url")
-        .in("user_id", actorIds);
+      const { data: profiles } = actorIds.length
+        ? await supabase
+            .from("profiles")
+            .select("user_id, display_name, avatar_url")
+            .in("user_id", actorIds)
+        : { data: [] as any };
 
       const profileMap = new Map(
         (profiles || []).map((p) => [p.user_id, p])
@@ -73,12 +75,17 @@ export function useNotifications() {
   const markAsRead = useCallback(async (notificationId: string) => {
     if (!user) return;
 
+    const current = notifications.find((n) => n.id === notificationId);
+    if (!current || current.is_read) return;
+
     try {
-      await (supabase as any)
+      const { error } = await (supabase as any)
         .from("notifications")
         .update({ is_read: true })
         .eq("id", notificationId)
         .eq("user_id", user.id);
+
+      if (error) throw error;
 
       setNotifications((prev) =>
         prev.map((n) =>
@@ -89,17 +96,19 @@ export function useNotifications() {
     } catch (error) {
       console.error("Error marking notification as read:", error);
     }
-  }, [user]);
+  }, [user, notifications]);
 
   const markAllAsRead = useCallback(async () => {
     if (!user) return;
 
     try {
-      await (supabase as any)
+      const { error } = await (supabase as any)
         .from("notifications")
         .update({ is_read: true })
         .eq("user_id", user.id)
         .eq("is_read", false);
+
+      if (error) throw error;
 
       setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
       setUnreadCount(0);
@@ -111,18 +120,25 @@ export function useNotifications() {
   const deleteNotification = useCallback(async (notificationId: string) => {
     if (!user) return;
 
+    const current = notifications.find((n) => n.id === notificationId);
+
     try {
-      await (supabase as any)
+      const { error } = await (supabase as any)
         .from("notifications")
         .delete()
         .eq("id", notificationId)
         .eq("user_id", user.id);
 
+      if (error) throw error;
+
       setNotifications((prev) => prev.filter((n) => n.id !== notificationId));
+      if (current && !current.is_read) {
+        setUnreadCount((prev) => Math.max(0, prev - 1));
+      }
     } catch (error) {
       console.error("Error deleting notification:", error);
     }
-  }, [user]);
+  }, [user, notifications]);
 
   useEffect(() => {
     fetchNotifications();
@@ -150,15 +166,20 @@ export function useNotifications() {
             .from("profiles")
             .select("user_id, display_name, avatar_url")
             .eq("user_id", newNotification.actor_id)
-            .single();
+            .maybeSingle();
 
           const notificationWithActor = {
             ...newNotification,
             actor: profile || { display_name: "Пользователь", avatar_url: null },
           };
 
-          setNotifications((prev) => [notificationWithActor, ...prev]);
-          setUnreadCount((prev) => prev + 1);
+          setNotifications((prev) => {
+            if (prev.some((n) => n.id === notificationWithActor.id)) return prev;
+            return [notificationWithActor, ...prev];
+          });
+          if (!notificationWithActor.is_read) {
+            setUnreadCount((prev) => prev + 1);
+          }
         }
       )
       .subscribe();

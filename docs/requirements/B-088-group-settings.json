@@ -1,0 +1,199 @@
+{
+  "req_id": "REQ-0088",
+  "title": "Group Settings & Metadata (Name, Avatar, Description, Rules)",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "messaging",
+  "depends_on": ["REQ-0086"],
+  "use_cases": [
+    "admin edits group name from 'Team' to 'Q4 Planning Team'",
+    "admin uploads group avatar (auto-resize, cache in CDN)",
+    "admin sets group description/rules (markdown)",
+    "all members see updated metadata"
+  ],
+  "group_metadata": {
+    "name": {
+      "field": "conversations.name",
+      "max_length": 255,
+      "allowed_chars": "alphanumeric, emoji, spaces, hyphens",
+      "editing": "admin only",
+      "changes_broadcast": "all members notified 'Group renamed to X'"
+    },
+    "description": {
+      "field": "conversations.description",
+      "max_length": 1000,
+      "format": "markdown (bold, italic, links)",
+      "optional": true,
+      "visible": "in group settings modal",
+      "editing": "admin only"
+    },
+    "avatar": {
+      "field": "conversations.avatar_url",
+      "source": "upload image or select from emoji",
+      "image_processing": {
+        "resize": "400×400px JPEG",
+        "quality": 85,
+        "storage": "S3 /group-avatars/{group_id}.jpg"
+      },
+      "default_fallback": "group initials (e.g., 'QPT' for 'Q4 Planning Team')"
+    },
+    "rules": {
+      "field": "conversations.rules",
+      "max_length": 2000,
+      "format": "markdown",
+      "optional": true,
+      "display": "shown to new members on join",
+      "editing": "admin only"
+    }
+  },
+  "group_settings_ui": {
+    "location": "group name → tap → settings modal",
+    "sections": [
+      "Basic (name, avatar, description)",
+      "Notifications (default notification level)",
+      "Permissions (message approval, encryption, etc)",
+      "Members (member list, invite link)",
+      "Danger (delete group, leave)"
+    ]
+  },
+  "notification_defaults": {
+    "admin_setting": "default notification level for new members",
+    "options": [
+      "all (default, notify every message)",
+      "mentions (mention + @everyone)",
+      "muted (no notifications)"
+    ],
+    "applies_to": "members added after setting change"
+  },
+  "group_deletion": {
+    "trigger": "admin taps 'Delete group' in settings",
+    "confirmation": [
+      "Warning: 'Delete {name}? This cannot be undone. All messages deleted.'",
+      "type group name to confirm"
+    ],
+    "action": [
+      "1. soft-delete all messages (is_visible=false)",
+      "2. set conversations.deleted_at = now()",
+      "3. notify all members 'Group was deleted by admin'",
+      "4. hard-delete after 30 days (GDPR grace period)"
+    ]
+  },
+  "group_metadata_versions": {
+    "track_changes": "conversations_history table logs name/description changes",
+    "schema": {
+      "columns": [
+        "change_id UUID",
+        "conversation_id UUID",
+        "changed_by_id UUID (admin who made change)",
+        "field_name ENUM (name, description, avatar, rules)",
+        "old_value TEXT",
+        "new_value TEXT",
+        "changed_at TIMESTAMP"
+      ]
+    },
+    "use_case": "audit trail for large organizations"
+  },
+  "group_publicity": {
+    "private_by_default": "group only visible to members",
+    "future_public": "option to list in directory (future feature)",
+    "discovery": "public groups can be searched by name/description"
+  },
+  "group_admins_count": {
+    "minimum": "1 admin (cannot have 0)",
+    "enforcement": "if last admin tries to remove themselves, error 'Must have at least 1 admin'"
+  },
+  "group_icon_upload": {
+    "trigger": "admin taps 'Change avatar'",
+    "options": [
+      "Upload image from device",
+      "Select emoji (24×24, no resize)",
+      "Clear avatar (use initials)"
+    ],
+    "processing": [
+      "1. receive image",
+      "2. validate size < 5MB",
+      "3. resize to 400×400",
+      "4. upload to S3",
+      "5. update conversations.avatar_url",
+      "6. clear old S3 file"
+    ]
+  },
+  "group_description_markdown": {
+    "allowed_formats": [
+      "**bold**",
+      "*italic*",
+      "[link text](https://example.com)",
+      "code blocks (```)"
+    ],
+    "sanitization": "strip <script>, javascript: URLs, dangerous HTML"
+  },
+  "api_endpoints": {
+    "update_group": {
+      "endpoint": "PATCH /v1/conversations/{id}",
+      "payload": {
+        "name": "New Group Name",
+        "description": "**New rules**: No off-topic messages",
+        "rules": "Please follow community guidelines"
+      },
+      "response": {
+        "conversation_id": "UUID",
+        "name": "New Group Name",
+        "updated_at": "2026-02-15T15:35:00Z"
+      }
+    },
+    "upload_avatar": {
+      "endpoint": "POST /v1/conversations/{id}/avatar",
+      "content_type": "multipart/form-data",
+      "payload": {
+        "file": "binary image"
+      },
+      "response": {
+        "avatar_url": "https://cdn.app.com/group-avatars/..."
+      }
+    },
+    "delete_group": {
+      "endpoint": "DELETE /v1/conversations/{id}",
+      "payload": {
+        "confirmation_text": "Exact group name"
+      },
+      "response": {
+        "deleted_at": "2026-02-15T15:35:00Z"
+      }
+    },
+    "get_group_settings": {
+      "endpoint": "GET /v1/conversations/{id}/settings",
+      "response": {
+        "name": "Q4 Planning",
+        "description": "Team planning discussions",
+        "avatar_url": "https://...",
+        "rules": "No off-topic",
+        "member_count": 42,
+        "notification_default": "all"
+      }
+    }
+  },
+  "testing": {
+    "scenarios": [
+      "edit group name → all members see updated name immediately",
+      "upload avatar (5MB image) → resized to 400×400, cached in CDN",
+      "set rules markdown → rendered correctly with bold/italic",
+      "delete group → soft-deleted, members notified, hard-delete after 30d",
+      "attempt delete as non-admin → error 403",
+      "change avatar twice → old file cleaned up from S3",
+      "last admin tries to remove themselves → error (need 1+ admin)"
+    ]
+  },
+  "monitoring": {
+    "metrics": [
+      "group_metadata.updates_per_day",
+      "avatar_upload.latency_p95_ms",
+      "avatar_upload.failure_rate",
+      "group_deletion.requests_per_day",
+      "group_name_changes.avg_per_group"
+    ],
+    "alerts": [
+      "avatar upload latency > 2s p95",
+      "group deletion fails > 5%"
+    ]
+  }
+}

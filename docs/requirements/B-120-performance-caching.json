@@ -1,0 +1,396 @@
+{
+  "id": "B-120",
+  "title": "Performance Optimization & Caching Strategy",
+  "description": "Comprehensive caching strategy, batch APIs, edge caching with CDN, query optimization, and latency targets (p95 <200ms for core operations)",
+  "status": "draft",
+  "priority": "P1",
+  "complexity": "M",
+  "domain": "performance",
+  "technologies": ["Redis", "Varnish/CloudFlare", "Elasticsearch", "Query optimization"],
+
+  "overview": {
+    "purpose": "Achieve sub-200ms latency (p95) for all user-facing operations",
+    "target_scale": "10M+ concurrent users, billions of messages",
+    "key_requirements": [
+      "Multi-layer caching (Redis, CDN, browser)",
+      "Batch APIs for bulk operations",
+      "Query optimization (indexes, query plans)",
+      "CDN edge caching for static content",
+      "Lazy loading with pagination",
+      "Connection pooling & reuse"
+    ]
+  },
+
+  "caching_layers": {
+    "layer1_browser": {
+      "mechanism": "HTTP Cache-Control headers + IndexedDB (offline)",
+      "ttl": {
+        "static_assets": "1 year (immutable)",
+        "api_responses": "5-60 seconds depending on endpoint"
+      },
+      "cache_key": "URL + query string",
+      "headers": "ETag, Last-Modified for conditional requests"
+    },
+    "layer2_cdn_edge": {
+      "provider": "Cloudflare, Fastly, or similar",
+      "cacheable": "GET endpoints, /v1/conversations/{id}/messages, /v1/users/{id}/profile",
+      "ttl": {
+        "conversations_list": "30 seconds",
+        "message_content": "60 seconds",
+        "user_profile": "5 minutes",
+        "static_assets": "1 year"
+      },
+      "purging": "On write (POST/PATCH/DELETE), invalidate immediately",
+      "geo_replication": "Cache in 10+ edge locations globally"
+    },
+    "layer3_redis_application": {
+      "deployment": "3-node Redis cluster, 64GB per node",
+      "partitioning": "Consistent hashing by key prefix",
+      "keys": {
+        "user:user_id:profile": "15min TTL",
+        "user:user_id:subscription": "1h TTL",
+        "conversation:conv_id:members": "5min TTL",
+        "conversation:conv_id:last_messages": "1min TTL, updated on each new message",
+        "reactions:message_id": "10min TTL",
+        "search:query_hash": "1h TTL (search results)",
+        "leaderboard:global": "12h TTL"
+      }
+    },
+    "layer4_database_query_cache": {
+      "mechanism": "Postgres query result caching (expensive JOINs)",
+      "ttl": "5-30min depending on volatility",
+      "invalidation": "On write to affected tables"
+    }
+  },
+
+  "batch_apis": {
+    "endpoints": [
+      {
+        "method": "POST",
+        "path": "/v1/messages/batch-send",
+        "description": "Send multiple messages in one request",
+        "max_batch": 100,
+        "request": {
+          "messages": [
+            {"conversation_id": "...", "content": "...", "attachments": []},
+            {"conversation_id": "...", "content": "..."}
+          ]
+        },
+        "response": {
+          "created": [{"local_id": 0, "server_id": "..."}, ...],
+          "failed": ["index 2: too_long"]
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/v1/users/batch-fetch",
+        "description": "Fetch multiple user profiles",
+        "max_batch": 100,
+        "request": {"user_ids": ["...", "...", "..."]},
+        "response": [{"user_id": "...", "display_name": "...", ...}]
+      },
+      {
+        "method": "POST",
+        "path": "/v1/reactions/batch-update",
+        "description": "Add/remove multiple reactions",
+        "max_batch": 100,
+        "request": {
+          "reactions": [
+            {"message_id": "...", "emoji": "👍", "action": "add"},
+            {"message_id": "...", "emoji": "❤️", "action": "remove"}
+          ]
+        }
+      },
+      {
+        "method": "GET",
+        "path": "/v1/conversations/batch-get",
+        "description": "Fetch multiple conversations metadata",
+        "request": {"query": {"ids": "conv_1,conv_2,conv_3"}},
+        "response": [...]
+      }
+    ]
+  },
+
+  "query_optimization": {
+    "database": {
+      "indexes": [
+        {"table": "messages", "columns": ["conversation_id", "created_at DESC"], "note": "For message list pagination"},
+        {"table": "messages", "columns": ["user_id", "created_at']", "note": "For user's messages"},
+        {"table": "group_members", "columns": ["conversation_id", "user_id"]},
+        {"table": "message_reactions", "columns": ["message_id", "emoji"]},
+        {"table": "conversations", "columns": ["created_at DESC"], "note": "Trending"},
+        {"table": "users", "columns": ["display_name"], "note": "Full-text search"}
+      ],
+      "optimization": [
+        "EXPLAIN ANALYZE on all critical queries",
+        "Set work_mem = 256MB for large sorts",
+        "Enable parallel query (max_parallel_workers_per_gather = 4)",
+        "Vacuum + analyze weekly"
+      ]
+    },
+    "elasticsearch": {
+      "sharding": "10 shards for message search",
+      "refresh_interval": "1s (near-real-time)",
+      "queries": [
+        {"type": "search", "p95_target": "100ms", "current": "80ms"},
+        {"type": "aggregation", "p95_target": "200ms", "current": "150ms"}
+      ]
+    }
+  },
+
+  "latency_targets": {
+    "critical_paths": [
+      {
+        "operation": "Send message",
+        "path": "POST /v1/conversations/{id}/messages",
+        "target_p95_ms": 100,
+        "components": {
+          "network": "10ms",
+          "server_processing": "30ms",
+          "database_write": "20ms",
+          "kafka_publish": "20ms",
+          "websocket_broadcast": "20ms"
+        }
+      },
+      {
+        "operation": "Get last 50 messages",
+        "path": "GET /v1/conversations/{id}/messages",
+        "target_p95_ms": 150,
+        "components": {
+          "network": "10ms",
+          "redis_cache_hit": "5ms",
+          "database_query_miss": "80ms",
+          "json_serialization": "30ms",
+          "cdn_time": "25ms"
+        }
+      },
+      {
+        "operation": "Get user profile",
+        "path": "GET /v1/users/{id}",
+        "target_p95_ms": 50,
+        "components": {
+          "network": "10ms",
+          "redis_read": "5ms",
+          "db_fallback": "20ms",
+          "json_serialization": "10ms",
+          "cdn": "5ms"
+        }
+      },
+      {
+        "operation": "Search (full-text)",
+        "path": "GET /v1/search",
+        "target_p95_ms": 200,
+        "components": {
+          "network": "10ms",
+          "elasticsearch_query": "150ms",
+          "json_serialization": "20ms",
+          "cache_bypass": "20ms"
+        }
+      }
+    ]
+  },
+
+  "implementation_details": {
+    "connection_pooling": {
+      "postgres": {
+        "strategy": "PgBouncer with 200 connections (10 per app node)",
+        "pool_mode": "transaction (checkout after each query)",
+        "idle_timeout": "300s"
+      },
+      "redis": {
+        "strategy": "Hiredis (C library) with 10 connections per app node",
+        "pipeline": "Group commands into pipelines (reduce round-trips)"
+      }
+    },
+    "cdn_configuration": {
+      "provider": "CloudFlare",
+      "rules": [
+        {
+          "path": "/v1/conversations/*/messages",
+          "method": "GET",
+          "ttl": "60s",
+          "cache_key": "url + user_id (vary user permission)"
+        },
+        {
+          "path": "/api/static/**",
+          "ttl": "1year",
+          "immutable": true
+        }
+      ]
+    },
+    "lazy_loading": {
+      "conversations_list": "First 20, load more on scroll",
+      "message_thread": "First 50, older messages on scroll up, newer on scroll down",
+      "member_list": "First 100, pagination for large groups"
+    },
+    "batch_limits": {
+      "max_messages_batch": 100,
+      "max_users_batch": 100,
+      "max_reactions_batch": 100
+    }
+  },
+
+  "monitoring": {
+    "metrics": [
+      "api_latency_p95_ms overall target <200ms",
+      "cache_hit_rate_redis (target >85%)",
+      "cache_hit_rate_cdn (target >70%)",
+      "database_query_latency_p95",
+      "elasticsearch_query_latency_p95",
+      "throughput_req_per_sec"
+    ],
+    "per_endpoint": [
+      "message_send_latency_p95",
+      "message_fetch_latency_p95",
+      "user_profile_fetch_latency_p95",
+      "search_latency_p95"
+    ],
+    "alerts": [
+      "api_latency_p95 > 300ms (2x target)",
+      "cache_hit_rate_redis < 75%",
+      "elasticsearch_query > 300ms",
+      "database_connection_pool_exhaustion"
+    ]
+  },
+
+  "database_schema": {
+    "tables": [
+      {
+        "name": "query_performance_log",
+        "purpose": "Track slow queries for optimization",
+        "columns": [
+          {"name": "query_id", "type": "BIGINT PRIMARY KEY"},
+          {"name": "query_text", "type": "TEXT"},
+          {"name": "duration_ms", "type": "INT"},
+          {"name": "rows_scanned", "type": "INT"},
+          {"name": "rows_returned", "type": "INT"},
+          {"name": "execution_plan", "type": "JSONB"},
+          {"name": "occurred_at", "type": "TIMESTAMP"}
+        ]
+      },
+      {
+        "name": "cache_statistics",
+        "purpose": "Monitor cache effectiveness",
+        "columns": [
+          {"name": "stat_id", "type": "BIGINT PRIMARY KEY"},
+          {"name": "cache_layer", "type": "VARCHAR", "enum": ["redis", "cdn", "browser"]},
+          {"name": "hits", "type": "INT"},
+          {"name": "misses", "type": "INT"},
+          {"name": "evictions", "type": "INT"},
+          {"name": "period_start", "type": "TIMESTAMP"},
+          {"name": "period_end", "type": "TIMESTAMP"}
+        ]
+      }
+    ]
+  },
+
+  "testing_scenarios": [
+    {
+      "id": "T-120-1",
+      "title": "Cache hit on repeated request",
+      "steps": ["GET /v1/users/alice", "Same request 1s later"],
+      "expected": "Second request hits Redis cache, latency <10ms"
+    },
+    {
+      "id": "T-120-2",
+      "title": "Cache invalidation on user profile update",
+      "steps": ["User updates bio", "Cache key invalidated", "Next read from DB"],
+      "expected": "Fresh data returned"
+    },
+    {
+      "id": "T-120-3",
+      "title": "Batch API: send 50 messages",
+      "steps": ["POST /v1/messages/batch-send with 50 msgs"],
+      "expected": "All created in single request, latency <200ms"
+    },
+    {
+      "id": "T-120-4",
+      "title": "Batch API latency vs individual requests",
+      "steps": ["Batch 100 users vs 100 individual GET /users/{id}"],
+      "expected": "Batch 10x faster (1 request + processing vs 100 round-trips)"
+    },
+    {
+      "id": "T-120-5",
+      "title": "Message list pagination (lazy load)",
+      "steps": ["GET /conversations/{id}/messages?limit=50", "Scroll for more"],
+      "expected": "First page <150ms, additional pages <200ms"
+    },
+    {
+      "id": "T-120-6",
+      "title": "Query index utilization",
+      "steps": ["EXPLAIN ANALYZE message list query"],
+      "expected": "Uses (conversation_id, created_at DESC) index, seq scan = 0"
+    },
+    {
+      "id": "T-120-7",
+      "title": "CDN cache hit for user profile",
+      "steps": ["GET /v1/users/{id} from mobile + web", "Check CloudFlare cache"],
+      "expected": "Served from CDN edge, <50ms latency + cache header"
+    },
+    {
+      "id": "T-120-8",
+      "title": "Cache hit rate monitoring",
+      "steps": ["Run traffic for 1h", "Query cache_statistics"],
+      "expected": "Redis hit rate >85%, CDN hit rate >70%"
+    },
+    {
+      "id": "T-120-9",
+      "title": "Elasticsearch search <200ms p95",
+      "steps": ["5000 concurrent searches for 'python'"],
+      "expected": "p95 latency <200ms"
+    },
+    {
+      "id": "T-120-10",
+      "title": "Connection pool exhaustion recovery",
+      "steps": ["Spike traffic → pool exhausted", "Queuing behavior"],
+      "expected": "Requests queued, served as connections available (no errors)"
+    },
+    {
+      "id": "T-120-11",
+      "title": "Batch API with mixed success/failure",
+      "steps": ["Batch 100 messages, 2 validation fails"],
+      "expected": "Response includes 98 created + 2 failed with reason"
+    },
+    {
+      "id": "T-120-12",
+      "title": "Message send latency breakdown",
+      "steps": ["Trace POST /messages", "Measure each component"],
+      "expected": "Total <100ms: network 10ms, proc 30ms, db 20ms, kafka 20ms, broadcast 20ms"
+    },
+    {
+      "id": "T-120-13",
+      "title": "Slow query detection + logging",
+      "steps": ["Query logs queries >100ms"],
+      "expected": "Logged to query_performance_log, alert triggered"
+    },
+    {
+      "id": "T-120-14",
+      "title": "Redis pipeline optimization",
+      "steps": ["Batch 10 Redis GET commands into pipeline"],
+      "expected": "Single round-trip vs 10"
+    },
+    {
+      "id": "T-120-15",
+      "title": "Lazy loading with infinite scroll",
+      "steps": ["Scroll 1000 messages in conversation"],
+      "expected": "Only 50 at a time loaded, constant memory usage + fast scrolling"
+    }
+  ],
+
+  "slo_targets": {
+    "availability": "99.9%",
+    "latency_p50": "<50ms",
+    "latency_p95": "<200ms",
+    "latency_p99": "<500ms",
+    "error_rate": "<0.1%"
+  },
+
+  "dependencies": ["B-061", "B-068", "B-108"],
+  "future_enhancements": [
+    "GraphQL batching (single query for multiple resources)",
+    "Server-side rendering caching",
+    "Machine learning-based prefetching",
+    "Micro-caching (1s shared cache for all users)",
+    "Database sharding by conversation_id for sub-ms latency"
+  ]
+}

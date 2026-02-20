@@ -1,0 +1,152 @@
+{
+  "req_id": "REQ-0097",
+  "title": "Message Translation (Real-time, Optional)",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "messaging",
+  "depends_on": ["REQ-0061"],
+  "use_cases": [
+    "Alice (English) receives message from Bob (Spanish) → 'See translation'",
+    "Alice taps → shows translated message side-by-side",
+    "translation cached per message (don't re-translate same message 1000x)"
+  ],
+  "translation_triggers": {
+    "automatic": "if sender's language != user's language, show 'View translation' button",
+    "manual": "user can translate any message via long-press → 'Translate'"
+  },
+  "language_detection": {
+    "mechanism": "detect sender's language from message (Google Detect Language API or local model)",
+    "cost": "free API or local offline model (privacy)",
+    "edge_case": "mixed languages in message → detect predominant language"
+  },
+  "translation_service": {
+    "options": [
+      "Google Translate API (cloud, cost per API call)",
+      "Microsoft Translator (cloud)",
+      "OpenAI GPT (cloud, more context-aware)",
+      "MLT Community (open-source, local, less accurate)"
+    ],
+    "recommended": "Google Translate as default (95% accuracy, cheap), with local fallback on error"
+  },
+  "caching": {
+    "mechanism": "store translated_messages (message_id, language_pair, translated_text, cached_at)",
+    "ttl": "no ttl (translate once, reuse forever)",
+    "index": "by message_id, target_language"
+  },
+  "database_schema": {
+    "translated_messages_table": {
+      "columns": [
+        "translation_id UUID PK",
+        "message_id UUID FK",
+        "source_language VARCHAR(10) (en, es, fr, etc)",
+        "target_language VARCHAR(10)",
+        "translated_text TEXT",
+        "translated_at TIMESTAMP"
+      ],
+      "index": "UNIQUE(message_id, source_language, target_language)"
+    }
+  },
+  "ui_design": {
+    "on_new_message": {
+      "layout": [
+        "Message text (in original language)",
+        "Optional: 'a few seconds ago' → 'See translation' link (if auto-detect triggered)"
+      ]
+    },
+    "after_tapping_translation": {
+      "layout": [
+        "Original text",
+        "---",
+        "Translated text",
+        "??? 'Spanish → English' (language pair shown)"
+      ]
+    }
+  },
+  "translation_accuracy_disclaimer": {
+    "display": "small note: 'Translation may be inaccurate. Always verify with original.'",
+    "reason": "GDPR/user protection (not liable for bad translation)"
+  },
+  "performance": {
+    "first_translation_latency": "1-2s (API call)",
+    "cached_translation_latency": "<100ms (db lookup)"
+  },
+  "blocking_translation": {
+    "mechanism": "admin can disable translation for sensitive channels (e.g., legal)",
+    "note": "translation_disabled = true on conversations table"
+  },
+  "api_endpoints": {
+    "translate_message": {
+      "endpoint": "POST /v1/messages/{id}/translate",
+      "payload": {
+        "target_language": "es"
+      },
+      "response": {
+        "source_language": "en",
+        "target_language": "es",
+        "original_text": "Hello world",
+        "translated_text": "Hola mundo"
+      }
+    },
+    "detect_language": {
+      "endpoint": "POST /v1/translate/detect",
+      "payload": {
+        "text": "Hola mundo"
+      },
+      "response": {
+        "language": "es",
+        "confidence": 0.99
+      }
+    }
+  },
+  "cost_optimization": {
+    "billing": "per API call to translation service (~$15 per 1M chars for Google Translate)",
+    "optimization_1": "cache all translations (lookup before API call)",
+    "optimization_2": "batch translations (accumulate 10 messages, translate in batch for 10% discount)",
+    "optimization_3": "limit usage (only translate if source_lang != user_lang, not for all messages)",
+    "estimated_cost": "at 1M messages/month with 20% cross-language, ~$3000/month"
+  },
+  "privacy": {
+    "data_retention": "translated text stored locally (not sent back to external service)",
+    "api_logging": "Google/Microsoft logs API calls, includes message content (review TOS for compliance)"
+  },
+  "multi_language_groups": {
+    "scenario": "Group with Alice (en), Bob (es), Charlie (fr)",
+    "behavior": "each person sees other's messages in their own language when they tap 'Translate'",
+    "implementation": "on-demand translation per user (no pre-compute for all language pairs)"
+  },
+  "testing": {
+    "scenarios": [
+      "English user receives Spanish message → 'See translation' button appears",
+      "tap button → message translates to English within 2s",
+      "receive same Spanish message again from different sender → instant translation (cached)",
+      "user manually translates French message to English",
+      "translate to unsupported language (e.g., Klingon) → error 'Language not supported'",
+      "translation service times out → show error 'Translation failed, try again'",
+      "mixed language message (Spanish + English) → system detects Spanish as primary"
+    ]
+  },
+  "edge_cases": {
+    "slang_translation": "local slang may not translate accurately (e.g., 'wtf' → 'what the f***?')",
+    "emoji_only": "message with only emoji (😂🎉) → no need to translate",
+    "code_snippets": "if message contains code, preserve verbatim, don't translate"
+  },
+  "monitoring": {
+    "metrics": [
+      "translation.requests_per_day",
+      "translation.cache_hit_rate",
+      "translation.api_latency_p95_ms",
+      "translation.error_rate"
+    ],
+    "alerts": [
+      "translation.error_rate >5% (API service issues)",
+      "translation.api_latency_p95 >3000ms (service slow, show error to users)"
+    ]
+  },
+  "future_versions": {
+    "v2": [
+      "voice message transcription auto-translates (e.g., Spanish voice → English text)",
+      "auto-reply with translated message (user can reply in their language)",
+      "translation quality feedback (user can vote on translation accuracy for model improvement)"
+    ]
+  }
+}

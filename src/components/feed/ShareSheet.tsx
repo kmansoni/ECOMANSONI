@@ -127,17 +127,23 @@ export function ShareSheet({
         if (type === "dm") {
           // Send to DM conversation with shared post
           const sendDm = async () => {
-            const { error } = await supabase.from("messages").insert({
-              conversation_id: id,
-              sender_id: user.id,
-              content: "📤 Поделился публикацией",
-              shared_post_id: postId,
-            });
+            const clientMsgId = crypto.randomUUID();
+            const { error } = await supabase
+              .from("messages")
+              .upsert(
+                {
+                  conversation_id: id,
+                  sender_id: user.id,
+                  content: "📤 Поделился публикацией",
+                  shared_post_id: postId,
+                  client_msg_id: clientMsgId,
+                },
+                {
+                  onConflict: "conversation_id,sender_id,client_msg_id",
+                  ignoreDuplicates: true,
+                }
+              );
             if (error) throw error;
-            await supabase
-              .from("conversations")
-              .update({ updated_at: new Date().toISOString() })
-              .eq("id", id);
           };
           promises.push(sendDm());
         } else if (type === "group") {

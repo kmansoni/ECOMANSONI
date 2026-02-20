@@ -6,9 +6,53 @@
       "type": "promptString",
       "description": "Supabase access token (sbp_...)",
       "password": true
+    },
+    {
+      "id": "viteSupabaseUrl",
+      "type": "promptString",
+      "description": "VITE_SUPABASE_URL (e.g. https://lfkbgnbjxskspsownvjm.supabase.co)",
+      "password": false
+    },
+    {
+      "id": "viteSupabaseAnonKey",
+      "type": "promptString",
+      "description": "VITE_SUPABASE_PUBLISHABLE_KEY (Supabase anon key)",
+      "password": true
     }
   ],
   "tasks": [
+    {
+      "label": "Frontend: Dev server (8080)",
+      "type": "shell",
+      "command": "npm",
+      "args": ["run", "dev", "--", "--host", "--port", "8080", "--strictPort"],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "VITE_SUPABASE_URL": "${input:viteSupabaseUrl}",
+          "VITE_SUPABASE_PUBLISHABLE_KEY": "${input:viteSupabaseAnonKey}",
+          "VITE_SUPABASE_ANON_KEY": "${input:viteSupabaseAnonKey}"
+        }
+      },
+      "isBackground": true,
+      "problemMatcher": [
+        {
+          "owner": "vite",
+          "pattern": {
+            "regexp": "^(a^)(b^)(c^)(d^)$",
+            "file": 1,
+            "line": 2,
+            "column": 3,
+            "message": 4
+          },
+          "background": {
+            "activeOnStart": true,
+            "beginsPattern": "VITE v",
+            "endsPattern": "ready in"
+          }
+        }
+      ]
+    },
     {
       "label": "Supabase: CLI version",
       "type": "shell",
@@ -33,6 +77,24 @@
       "problemMatcher": []
     },
     {
+      "label": "Supabase: Link project (lfkbgnbjxskspsownvjm, secure prompt)",
+      "type": "shell",
+      "command": "pwsh",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}\\scripts\\supabase-link.ps1",
+        "-ProjectRef",
+        "lfkbgnbjxskspsownvjm"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
       "label": "Supabase: Migration list (linked)",
       "type": "shell",
       "command": "C:\\Users\\manso\\AppData\\Local\\supabase-cli\\v2.75.0\\supabase.exe",
@@ -42,6 +104,22 @@
         "env": {
           "SUPABASE_ACCESS_TOKEN": "${input:supabaseAccessToken}"
         }
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Supabase: Migration list (linked, secure prompt)",
+      "type": "shell",
+      "command": "pwsh",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}\\scripts\\supabase-migration-list.ps1"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
       },
       "problemMatcher": []
     },
@@ -68,6 +146,57 @@
         "env": {
           "SUPABASE_ACCESS_TOKEN": "${input:supabaseAccessToken}"
         }
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Supabase: DB push (linked, secure prompt)",
+      "type": "shell",
+      "command": "pwsh",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}\\scripts\\supabase-db-push.ps1"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Supabase: DB push (linked, secure prompt, yes + db password)",
+      "type": "shell",
+      "command": "pwsh",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}\\scripts\\supabase-db-push.ps1",
+        "-Yes",
+        "-PromptDbPassword"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Supabase: DB push (dry-run, linked, secure prompt)",
+      "type": "shell",
+      "command": "pwsh",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}\\scripts\\supabase-db-push.ps1",
+        "-DryRun"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
       },
       "problemMatcher": []
     },

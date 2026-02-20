@@ -1,0 +1,1 @@
+{"req_id":"REQ-0057","title":"Right to be Forgotten","mechanism":"hard_delete","grace_period_days":30,"verification":"user_identity_check"}

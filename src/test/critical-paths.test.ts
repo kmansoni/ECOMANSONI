@@ -9,6 +9,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // Mock Supabase client
 vi.mock('@/integrations/supabase/client', () => ({
   supabase: {
+    rpc: vi.fn(() => Promise.resolve({ data: [], error: null })),
     from: vi.fn(() => ({
       select: vi.fn(() => ({
         eq: vi.fn(() => ({

@@ -1,0 +1,11 @@
+{
+  "platforms": ["iOS", "Android", "Web", "Desktop"],
+  "networks": ["Wi-Fi", "LTE/5G", "3G", "2G", "IPv6-only", "CGNAT"],
+  "devices": ["low-end", "mid", "high"],
+  "authModes": ["phone", "email", "QR", "2FA"],
+  "privacy": ["everyone", "contacts", "nobody"],
+  "chatStates": ["creating", "syncing", "online", "offline", "degraded"],
+  "messageStates": ["draft", "queued", "sent", "delivered", "read", "failed", "retried"],
+  "callStates": ["idle", "ringing", "connecting", "connected", "reconnecting", "ended", "failed"],
+  "minPerFeature": 15
+}

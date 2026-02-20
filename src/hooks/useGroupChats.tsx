@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "./useAuth";
 import type { RealtimeChannel } from "@supabase/supabase-js";
+import { getErrorMessage } from "@/lib/utils";
 
 export interface GroupChat {
   id: string;
@@ -34,6 +35,27 @@ export function useGroupChats() {
   const [groups, setGroups] = useState<GroupChat[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const mapWithConcurrency = useCallback(async <T, R>(
+    items: T[],
+    concurrency: number,
+    mapper: (item: T) => Promise<R>
+  ): Promise<R[]> => {
+    if (items.length === 0) return [];
+    const results: R[] = new Array(items.length);
+    let nextIndex = 0;
+
+    const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+      while (true) {
+        const currentIndex = nextIndex++;
+        if (currentIndex >= items.length) return;
+        results[currentIndex] = await mapper(items[currentIndex]);
+      }
+    });
+
+    await Promise.all(workers);
+    return results;
+  }, []);
 
   const fetchGroups = useCallback(async () => {
     if (!user) {
@@ -71,20 +93,21 @@ export function useGroupChats() {
 
       if (groupsError) throw groupsError;
 
-      // Получаем последние сообщения
-      const { data: messagesData } = await supabase
-        .from("group_chat_messages")
-        .select("*")
-        .in("group_id", groupIds)
-        .order("created_at", { ascending: false })
-        .limit(100);
-
+      // Получаем последнее сообщение по каждой группе (correctness > one global limit)
       const lastMessages: Record<string, GroupMessage> = {};
-      (messagesData || []).forEach(msg => {
-        if (!lastMessages[msg.group_id]) {
-          lastMessages[msg.group_id] = msg;
-        }
+      const rows = await mapWithConcurrency(groupIds, 6, async (groupId) => {
+        const { data, error: msgError } = await supabase
+          .from("group_chat_messages")
+          .select("*")
+          .eq("group_id", groupId)
+          .order("created_at", { ascending: false })
+          .limit(1);
+        if (msgError) throw msgError;
+        return { groupId, msg: (data && data[0]) as GroupMessage | undefined };
       });
+      for (const row of rows) {
+        if (row.msg) lastMessages[row.groupId] = row.msg;
+      }
 
       const groupsWithMessages = (groupsData || []).map(group => ({
         ...group,
@@ -93,12 +116,13 @@ export function useGroupChats() {
 
       setGroups(groupsWithMessages);
     } catch (err) {
-      console.error("Error fetching groups:", err);
-      setError(err instanceof Error ? err.message : "Failed to fetch groups");
+      const msg = getErrorMessage(err);
+      console.error("Error fetching groups:", msg, err);
+      setError(msg || "Failed to fetch groups");
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [user, mapWithConcurrency]);
 
   useEffect(() => {
     fetchGroups();

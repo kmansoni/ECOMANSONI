@@ -30,6 +30,15 @@ jobs:
       - name: Install
         run: npm ci
 
+      - name: Lint
+        run: npm run lint
+
+      - name: Backend safety (migrations)
+        run: npm run check:backend
+
+      - name: Test
+        run: npm test
+
       - name: Build
         run: npm run build
         env:

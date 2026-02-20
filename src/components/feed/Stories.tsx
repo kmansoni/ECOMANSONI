@@ -72,7 +72,7 @@ export function Stories({ onOpenStory }: StoriesProps) {
 
   if (loading && usersWithStories.length === 0) {
     return (
-      <div className="sticky top-0 z-30 bg-white/40 dark:bg-background backdrop-blur-xl py-4 flex items-center justify-center">
+      <div className="sticky top-0 z-30 bg-card/65 backdrop-blur-xl py-4 flex items-center justify-center border-b border-border/40">
         <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
       </div>
     );
@@ -89,7 +89,7 @@ export function Stories({ onOpenStory }: StoriesProps) {
       />
       
       <div 
-        className="sticky top-0 z-30 bg-white/40 dark:bg-background backdrop-blur-xl transition-all duration-150"
+        className="sticky top-0 z-30 bg-card/65 backdrop-blur-xl transition-all duration-150 border-b border-border/40"
         style={{ 
           paddingTop: `${12 - collapseProgress * 4}px`,
           paddingBottom: `${12 - collapseProgress * 8}px`,

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Redirecting…</title>
+    <script>
+      // GitHub Pages serves this file for unknown routes.
+      // Redirect to the SPA entry with the original path encoded as `?/<path>`.
+      (function () {
+        var l = window.location;
+
+        // /<repo>/<path...>
+        var segments = l.pathname.split('/').filter(Boolean);
+        var repo = segments.length ? segments[0] : '';
+        var base = repo ? '/' + repo + '/' : '/';
+        var rest = repo ? segments.slice(1).join('/') : segments.join('/');
+
+        var newUrl = base + '?/' + rest;
+        if (l.search) newUrl += '&' + l.search.slice(1);
+        if (l.hash) newUrl += l.hash;
+
+        l.replace(newUrl);
+      })();
+    </script>
+  </head>
+  <body></body>
+</html>

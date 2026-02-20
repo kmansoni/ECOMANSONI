@@ -1,0 +1,136 @@
+{
+  "req_id": "REQ-0063",
+  "title": "Message Ordering Guarantees",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "messaging",
+  "depends_on": ["REQ-0061", "REQ-0062"],
+  "problem": "В 1-to-1 чатах порядок сообщений критичен. А если клиент отправляет 2 сообщения быстро, они могут приехать на сервер в другом порядке?",
+  "ordering_model": {
+    "scope": "per_conversation",
+    "guarantee": "FIFO (First-In-First-Out)",
+    "implementation": "Monotonic sequence numbers (seq) assigned by server"
+  },
+  "sequence_assignment": {
+    "mechanism": "server_atomic_counter",
+    "table": "conversation_sequences",
+    "schema": {
+      "conversation_id": "UUID PRIMARY KEY",
+      "next_seq": "BIGINT (atomic increment)"
+    },
+    "operation": "INSERT INTO conversation_sequences (conv_id, seq) VALUES (...) RETURNING seq",
+    "performance": "~100µs per assignment (in-memory Postgres)",
+    "failover": "sequence gap < 10 messages if server crashes (acceptable)"
+  },
+  "client_perspective": {
+    "scenario_1": {
+      "name": "Single client, fast sends",
+      "steps": [
+        "Client sends msg1 at 10:00:00.000",
+        "Client sends msg2 at 10:00:00.001",
+        "msg2 arrives at server first (network timing)",
+        "Server assigns seq=1 to msg2, seq=2 to msg1",
+        "Clients see: seq=1 (msg2), seq=2 (msg1) → WRONG ORDER"
+      ],
+      "solution": "Client assigns client_seq (1, 2). Server uses client_seq as tie-breaker within same sender"
+    }
+  },
+  "tiebreaker_logic": {
+    "scenario": "Both msg1 and msg2 from user_a in conv_123 arrive within 10ms",
+    "database_logic": "INSERT ... ORDER BY sender_id, client_seq_from_client",
+    "pseudocode": "SELECT seq FROM messages WHERE conversation_id = conv_123 AND sender_id = user_a ORDER BY client_seq LIMIT 1",
+    "guarantee": "messages from same sender in same convo are ordered by client_seq"
+  },
+  "edge_cases": {
+    "case_1_concurrent_senders": {
+      "scenario": "user_a sends msg1, user_b sends msg2 simultaneously",
+      "ordering": "server seq determines absolute order (happens-before)",
+      "timestamp_secondary": "tie-breaker only if server_seq == server_seq (impossible)",
+      "result": "depends on Kafka partition processing order (server is source of truth)"
+    },
+    "case_2_late_arrival": {
+      "scenario": "msg1 with client_seq=1 arrives 5min late after msg2 with client_seq=2",
+      "handling": "server already assigned seq to msg2. msg1 gets later seq.",
+      "client_fix": "client UI sorts by seq, not arrival order, so msg1 still appears in correct position",
+      "persistence": "INSERT IGNORE duplicate by (conversation_id, sender_id, client_message_id)"
+    },
+    "case_3_edit_delete": {
+      "scenario": "msg1 edited to msg1_v2. msg2 sent after. msg2 seq < msg1's?",
+      "handling": "edit doesn't change seq. delete marks soft-delete with tombstone.",
+      "seq_immutable": "once assigned, seq never changes"
+    }
+  },
+  "implementation": {
+    "database_schema": {
+      "messages": {
+        "columns": [
+          "id: UUID PRIMARY KEY",
+          "conversation_id: UUID (indexed)",
+          "sender_id: UUID",
+          "client_message_id: UUID (tie-breaker for idempotency)",
+          "content: TEXT",
+          "seq: BIGINT (unique per conversation, assigned by server)",
+          "timestamp_client: TIMESTAMP (when client created)",
+          "timestamp_server: TIMESTAMP (when server received)",
+          "status: ENUM(sent, delivered, read)",
+          "created_at: TIMESTAMP"
+        ],
+        "unique_constraints": [
+          "UNIQUE(conversation_id, sender_id, client_message_id)",
+          "UNIQUE(conversation_id, seq)"
+        ],
+        "indexes": [
+          "INDEX(conversation_id, seq) for range queries",
+          "INDEX(sender_id, timestamp_server) for user timeline"
+        ]
+      }
+    },
+    "write_procedure": {
+      "step_1": "Client generates client_message_id (UUID), client_seq (integer)",
+      "step_2": "Client sends {conversation_id, client_message_id, client_seq, content}",
+      "step_3": "Server: START TRANSACTION",
+      "step_4": "Server: SELECT seq FROM conversation_sequences WHERE id = conv_id FOR UPDATE (lock row)",
+      "step_5": "Server: INCR next_seq to new_seq",
+      "step_6": "Server: INSERT messages (..., seq=new_seq, ...)",
+      "step_7": "Server: COMMIT",
+      "step_8": "Server: return {message_id, seq} to client",
+      "latency_p95": "50ms (network + db)"
+    }
+  },
+  "gap_detection": {
+    "mechanism": "client tracks highest_seq_seen per conversation",
+    "detection": "receive seq=100, but last was seq=98 → gap detected",
+    "action": "client requests SYNC_SNAPSHOT from server to fill gaps",
+    "alert": "backend alert if gap > 5 in prod"
+  },
+  "testing": {
+    "unit_tests": [
+      "test_two_msgs_same_sender_ordered_by_client_seq",
+      "test_concurrent_senders_ordered_by_server_seq",
+      "test_late_arrival_gets_correct_position",
+      "test_gap_detection_triggers_resync"
+    ],
+    "load_tests": [
+      "1000 users in same group, each send 10 msg rapid-fire → verify no seq dupes",
+      "5 groups, each 100 users, verify ordering within each group independent"
+    ],
+    "chaos_tests": [
+      "server seq counter reset (simulate crash recovery)",
+      "database transaction interrupted mid-write",
+      "network reorder (msg2 arrives before msg1)"
+    ]
+  },
+  "monitoring": {
+    "metrics": [
+      "messages.seq.gaps_detected_per_day",
+      "messages.seq.late_arrivals_per_hour",
+      "conversation_sequences.write_latency_p95_ms",
+      "messages.ordering_violations (should be 0)"
+    ],
+    "alerts": [
+      "gap_detected in any conversation for >1s",
+      "seq_assignment_latency > 200ms p95",
+      "ordering_violation: seq out of order in UI (impossible, log as critical)"
+    ]
+  }
+}

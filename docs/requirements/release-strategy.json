@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "generated_at": "2026-02-19",
+  "release_strategy": {
+    "versioning": {
+      "scheme": "semantic versioning (MAJOR.MINOR.PATCH)",
+      "examples": {
+        "major": "4.0.0 - Breaking API change",
+        "minor": "3.5.0 - New feature, backward compatible",
+        "patch": "3.4.1 - Bug fix"
+      }
+    },
+    "release_cadence": {
+      "major": "every 6 months",
+      "minor": "every 2 weeks",
+      "patch": "on-demand (any day)"
+    },
+    "branch_strategy": {
+      "main": "production-ready code, must pass all tests",
+      "develop": "integration branch, daily builds",
+      "feature/*": "individual feature branches, reviewed before merge",
+      "hotfix/*": "critical bug fixes, merged to main immediately"
+    },
+    "release_process": {
+      "day_1_prep": [
+        "Freeze develop branch for 24h before release",
+        "Create release/version branch from develop",
+        "Update CHANGELOG.md with all changes",
+        "Update version in package.json, android/ios config"
+      ],
+      "day_2_testing": [
+        "Run full test suite (unit, integration, e2e)",
+        "Smoke test on staging environment",
+        "QA sign-off from release engineer",
+        "Security scan for vulnerabilities",
+        "Performance benchmarks"
+      ],
+      "day_3_deploy": [
+        "Tag commit with vX.Y.Z on GitHub",
+        "Web: auto-deploy to Vercel (production)",
+        "Android: submit to Google Play Console",
+        "iOS: submit to App Store Connect",
+        "Desktop: publish to GitHub Releases",
+        "Notify users via in-app banner"
+      ]
+    },
+    "rollback_plan": {
+      "web": "Instant (revert Vercel deployment)",
+      "mobile": "24–48 hours (app store review)",
+      "desktop": "Instant (users get old version from releases)"
+    },
+    "monitoring_post_release": {
+      "first_4_hours": "Stay on-call, watch error rates",
+      "first_24_hours": "Monitor SLIs (delivery latency, error rate)",
+      "first_week": "Check for regressions, user complaints"
+    }
+  }
+}

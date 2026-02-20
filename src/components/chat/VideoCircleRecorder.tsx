@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { ArrowUp, Pause, Play, Camera, Zap, ZapOff } from "lucide-react";
 
 interface VideoCircleRecorderProps {
@@ -20,6 +20,7 @@ export function VideoCircleRecorder({ onRecord, onCancel, autoRecord = true }: V
   const [facingMode, setFacingMode] = useState<"user" | "environment">("user");
   const [flashEnabled, setFlashEnabled] = useState(false);
   const recordingInterval = useRef<NodeJS.Timeout | null>(null);
+  const recordingTimeRef = useRef(0);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -29,14 +30,110 @@ export function VideoCircleRecorder({ onRecord, onCancel, autoRecord = true }: V
   };
 
   useEffect(() => {
-    startCamera();
+    recordingTimeRef.current = recordingTime;
+  }, [recordingTime]);
+
+  const stopCamera = useCallback(() => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+  }, []);
+
+  const startCamera = useCallback(async () => {
+    try {
+      // Stop existing stream first
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: facingMode,
+          width: { ideal: 480 },
+          height: { ideal: 480 },
+        },
+        audio: true,
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+      setHasPermission(true);
+
+      // Apply flash/torch if enabled and available
+      if (flashEnabled && facingMode === "environment") {
+        const videoTrack = stream.getVideoTracks()[0];
+        try {
+          await (videoTrack as any).applyConstraints({
+            advanced: [{ torch: true }],
+          });
+        } catch {
+          console.log("Torch not supported");
+        }
+      }
+    } catch (err) {
+      console.error("Error accessing camera:", err);
+      setHasPermission(false);
+    }
+  }, [facingMode, flashEnabled]);
+
+  const startRecording = useCallback(() => {
+    if (!streamRef.current) return;
+
+    chunksRef.current = [];
+    const mediaRecorder = new MediaRecorder(streamRef.current, {
+      mimeType: MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
+        ? "video/webm;codecs=vp9"
+        : "video/webm",
+    });
+
+    mediaRecorder.ondataavailable = (e) => {
+      if (e.data.size > 0) {
+        chunksRef.current.push(e.data);
+      }
+    };
+
+    mediaRecorder.onstop = () => {
+      const blob = new Blob(chunksRef.current, { type: "video/webm" });
+      onRecord(blob, recordingTimeRef.current);
+    };
+
+    mediaRecorderRef.current = mediaRecorder;
+    mediaRecorder.start();
+    setIsRecording(true);
+    setRecordingTime(0);
+  }, [onRecord]);
+
+  const stopRecording = useCallback(() => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      mediaRecorderRef.current.stop();
+    }
+    setIsRecording(false);
+    setIsPaused(false);
+    stopCamera();
+  }, [stopCamera]);
+
+  const handleCancel = useCallback(() => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      // Don't call onstop handler
+      mediaRecorderRef.current.ondataavailable = null;
+      mediaRecorderRef.current.onstop = null;
+      mediaRecorderRef.current.stop();
+    }
+    stopCamera();
+    onCancel();
+  }, [onCancel, stopCamera]);
+
+  useEffect(() => {
+    void startCamera();
     return () => {
       stopCamera();
       if (recordingInterval.current) {
         clearInterval(recordingInterval.current);
       }
     };
-  }, [facingMode]);
+  }, [startCamera, stopCamera, facingMode]);
 
   useEffect(() => {
     if (isRecording && !isPaused) {
@@ -59,88 +156,7 @@ export function VideoCircleRecorder({ onRecord, onCancel, autoRecord = true }: V
         clearInterval(recordingInterval.current);
       }
     };
-  }, [isRecording, isPaused]);
-
-  const startCamera = async () => {
-    try {
-      // Stop existing stream first
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((track) => track.stop());
-      }
-
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { 
-          facingMode: facingMode, 
-          width: { ideal: 480 }, 
-          height: { ideal: 480 } 
-        },
-        audio: true,
-      });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-      }
-      setHasPermission(true);
-
-      // Apply flash/torch if enabled and available
-      if (flashEnabled && facingMode === "environment") {
-        const videoTrack = stream.getVideoTracks()[0];
-        try {
-          await (videoTrack as any).applyConstraints({
-            advanced: [{ torch: true }]
-          });
-        } catch (e) {
-          console.log("Torch not supported");
-        }
-      }
-    } catch (err) {
-      console.error("Error accessing camera:", err);
-      setHasPermission(false);
-    }
-  };
-
-  const stopCamera = () => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop());
-      streamRef.current = null;
-    }
-  };
-
-  const startRecording = () => {
-    if (!streamRef.current) return;
-
-    chunksRef.current = [];
-    const mediaRecorder = new MediaRecorder(streamRef.current, {
-      mimeType: MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
-        ? "video/webm;codecs=vp9"
-        : "video/webm",
-    });
-
-    mediaRecorder.ondataavailable = (e) => {
-      if (e.data.size > 0) {
-        chunksRef.current.push(e.data);
-      }
-    };
-
-    mediaRecorder.onstop = () => {
-      const blob = new Blob(chunksRef.current, { type: "video/webm" });
-      onRecord(blob, recordingTime);
-    };
-
-    mediaRecorderRef.current = mediaRecorder;
-    mediaRecorder.start();
-    setIsRecording(true);
-    setRecordingTime(0);
-  };
-
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
-      mediaRecorderRef.current.stop();
-    }
-    setIsRecording(false);
-    setIsPaused(false);
-    stopCamera();
-  };
+  }, [isRecording, isPaused, stopRecording]);
 
   const togglePause = () => {
     if (!mediaRecorderRef.current) return;
@@ -152,17 +168,6 @@ export function VideoCircleRecorder({ onRecord, onCancel, autoRecord = true }: V
       mediaRecorderRef.current.pause();
       setIsPaused(true);
     }
-  };
-
-  const handleCancel = () => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
-      // Don't call onstop handler
-      mediaRecorderRef.current.ondataavailable = null;
-      mediaRecorderRef.current.onstop = null;
-      mediaRecorderRef.current.stop();
-    }
-    stopCamera();
-    onCancel();
   };
 
   const switchCamera = () => {
@@ -189,7 +194,7 @@ export function VideoCircleRecorder({ onRecord, onCancel, autoRecord = true }: V
     if (hasPermission && !isRecording) {
       startRecording();
     }
-  }, [hasPermission]);
+  }, [hasPermission, isRecording, startRecording]);
 
   // Auto-send on release (hold-to-record mode)
   useEffect(() => {
@@ -216,7 +221,7 @@ export function VideoCircleRecorder({ onRecord, onCancel, autoRecord = true }: V
       window.removeEventListener('touchend', handleGlobalRelease);
       window.removeEventListener('mouseup', handleGlobalRelease);
     };
-  }, [autoRecord, isRecording, recordingTime]);
+  }, [autoRecord, isRecording, recordingTime, handleCancel, stopRecording]);
 
   return (
     <div className="fixed inset-0 z-[300] flex flex-col bg-gradient-to-br from-purple-900/90 via-slate-900/95 to-blue-900/90 backdrop-blur-xl">

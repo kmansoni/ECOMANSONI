@@ -5,6 +5,7 @@ import {
   MessageCircle,
   Send,
   Bookmark,
+  Repeat2,
   Music2,
   Play,
   User,
@@ -32,30 +33,97 @@ function formatNumber(num: number): string {
   return num.toString();
 }
 
+function isProbablyVideoUrl(url: string): boolean {
+  const lower = (url || "").toLowerCase();
+  // Covers public storage URLs and direct file URLs.
+  if (/\.(mp4|webm|mov|avi|m4v)(\?|#|$)/.test(lower)) return true;
+  // Heuristic fallback: some URLs don't contain an extension.
+  if (lower.includes("video/")) return true;
+  return false;
+}
+
 export function ReelsPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { reels, loading, toggleLike, recordView, refetch } = useReels();
+  const {
+    reels,
+    loading,
+    toggleLike,
+    toggleSave,
+    toggleRepost,
+    recordView,
+    recordImpression,
+    setReelFeedback,
+    refetch,
+  } = useReels();
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true);
   const [showCreateSheet, setShowCreateSheet] = useState(false);
   const [commentsReelId, setCommentsReelId] = useState<string | null>(null);
   const [shareReelId, setShareReelId] = useState<string | null>(null);
+  const [failedVideoIds, setFailedVideoIds] = useState<Set<string>>(() => new Set());
   
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRefs = useRef<Map<number, HTMLVideoElement>>(new Map());
-  const viewedReels = useRef<Set<string>>(new Set());
+  const viewRecordedForReel = useRef<Set<string>>(new Set());
+  const impressionRecordedForReel = useRef<Set<string>>(new Set());
+  const reelWatchStartMs = useRef<Map<string, number>>(new Map());
+  const reelTotalWatchedMs = useRef<Map<string, number>>(new Map());
   const isScrolling = useRef(false);
+  const errorToastShown = useRef<Set<string>>(new Set());
 
   const currentReel = reels[currentIndex];
 
-  // Record view when reel changes
+  // Cold-start signal: record impression when a reel becomes active/visible
   useEffect(() => {
-    if (currentReel && !viewedReels.current.has(currentReel.id)) {
-      viewedReels.current.add(currentReel.id);
-      recordView(currentReel.id);
-    }
-  }, [currentReel, recordView]);
+    if (!currentReel) return;
+    if (impressionRecordedForReel.current.has(currentReel.id)) return;
+
+    impressionRecordedForReel.current.add(currentReel.id);
+    recordImpression(currentReel.id, { position: currentIndex, source: "reels_feed" });
+  }, [currentReel, currentIndex, recordImpression]);
+
+  // Track watch time: start timer when reel becomes active
+  useEffect(() => {
+    if (!currentReel) return;
+    const reelId = currentReel.id;
+    reelWatchStartMs.current.set(reelId, Date.now());
+
+    return () => {
+      const start = reelWatchStartMs.current.get(reelId);
+      if (start) {
+        const elapsed = Date.now() - start;
+        const prev = reelTotalWatchedMs.current.get(reelId) ?? 0;
+        reelTotalWatchedMs.current.set(reelId, prev + elapsed);
+      }
+      reelWatchStartMs.current.delete(reelId);
+    };
+  }, [currentReel]);
+
+  // Record view on video play (first view) or after 10s of watch time (repeat view)
+  const handleVideoPlay = useCallback(
+    (reelId: string, authorId: string) => {
+      // Do not count self-views
+      if (user && authorId === user.id) return;
+
+      const alreadyRecorded = viewRecordedForReel.current.has(reelId);
+      if (!alreadyRecorded) {
+        // First view: record immediately on play
+        viewRecordedForReel.current.add(reelId);
+        recordView(reelId);
+        return;
+      }
+
+      // Repeat view: must have watched ≥10 seconds total
+      const totalWatched = reelTotalWatchedMs.current.get(reelId) ?? 0;
+      if (totalWatched >= 10_000) {
+        // Reset counter and record new view
+        reelTotalWatchedMs.current.set(reelId, 0);
+        recordView(reelId);
+      }
+    },
+    [user, recordView],
+  );
 
   // Handle video play/pause based on current index
   useEffect(() => {
@@ -92,9 +160,57 @@ export function ReelsPage() {
     toggleLike(reelId);
   }, [user, toggleLike, navigate]);
 
+  const handleSave = useCallback((reelId: string) => {
+    if (!user) {
+      toast.error("Войдите, чтобы сохранить");
+      navigate("/auth");
+      return;
+    }
+    toggleSave(reelId);
+  }, [user, toggleSave, navigate]);
+
+  const handleRepost = useCallback((reelId: string) => {
+    if (!user) {
+      toast.error("Войдите, чтобы сделать репост");
+      navigate("/auth");
+      return;
+    }
+    toggleRepost(reelId);
+  }, [user, toggleRepost, navigate]);
+
+  const handleFeedback = useCallback(
+    async (reelId: string, feedback: "interested" | "not_interested") => {
+      try {
+        await setReelFeedback(reelId, feedback);
+        toast.success(feedback === "interested" ? "Учтём ваши интересы" : "Покажем меньше такого");
+        if (feedback === "not_interested") {
+          // Best-effort: refresh feed so the item disappears sooner.
+          refetch();
+        }
+      } catch {
+        toast.error("Не удалось отправить обратную связь");
+      }
+    },
+    [setReelFeedback, refetch],
+  );
+
   const togglePlay = () => {
     setIsPlaying(!isPlaying);
   };
+
+  const handleVideoError = useCallback((reelId: string) => {
+    setFailedVideoIds((prev) => {
+      if (prev.has(reelId)) return prev;
+      const next = new Set(prev);
+      next.add(reelId);
+      return next;
+    });
+
+    if (!errorToastShown.current.has(reelId)) {
+      errorToastShown.current.add(reelId);
+      toast.error("Видео недоступно");
+    }
+  }, []);
 
   // Double tap to like
   const lastTap = useRef<number>(0);
@@ -116,7 +232,7 @@ export function ReelsPage() {
 
   if (loading) {
     return (
-      <div className="min-h-[calc(100vh-4rem)] bg-black flex items-center justify-center">
+      <div className="min-h-[calc(100vh-4rem)] bg-transparent flex items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-white" />
       </div>
     );
@@ -124,7 +240,7 @@ export function ReelsPage() {
 
   if (reels.length === 0) {
     return (
-      <div className="min-h-[calc(100vh-4rem)] bg-black flex flex-col items-center justify-center text-white">
+      <div className="min-h-[calc(100vh-4rem)] bg-transparent flex flex-col items-center justify-center text-white">
         <Play className="w-16 h-16 mb-4 opacity-40" />
         <h2 className="text-lg font-semibold mb-2">Нет Reels</h2>
         <p className="text-white/60 text-center px-8 mb-6">
@@ -147,7 +263,7 @@ export function ReelsPage() {
   return (
     <div
       ref={containerRef}
-      className="h-[calc(100vh-4rem)] bg-black overflow-y-scroll overflow-x-hidden"
+      className="h-[calc(100vh-4rem)] bg-transparent overflow-y-auto overflow-x-hidden scrollbar-hide"
       onScroll={handleScroll}
       style={{
         scrollSnapType: 'y mandatory',
@@ -167,24 +283,31 @@ export function ReelsPage() {
         >
           {/* Video/Image Background */}
           <div className="absolute inset-0 overflow-hidden">
-            {reel.video_url.includes(".mp4") || reel.video_url.includes("video") ? (
+            {isProbablyVideoUrl(reel.video_url) && !failedVideoIds.has(reel.id) ? (
               <video
                 ref={(el) => {
                   if (el) videoRefs.current.set(index, el);
                 }}
                 src={reel.video_url}
+                poster={reel.thumbnail_url || undefined}
                 className="w-full h-full object-cover"
                 loop
                 muted
                 playsInline
                 preload="auto"
+                onError={() => handleVideoError(reel.id)}
+                onPlay={() => handleVideoPlay(reel.id, reel.author_id)}
               />
-            ) : (
+            ) : reel.thumbnail_url ? (
               <img
-                src={reel.video_url}
+                src={reel.thumbnail_url}
                 alt=""
                 className="w-full h-full object-cover"
               />
+            ) : (
+              <div className="w-full h-full bg-black flex items-center justify-center">
+                <Play className="w-12 h-12 text-white/60" />
+              </div>
             )}
 
             {/* Play/Pause indicator */}
@@ -215,6 +338,51 @@ export function ReelsPage() {
 
           {/* Right sidebar actions */}
           <div className="absolute right-3 bottom-8 flex flex-col items-center gap-4 z-10">
+            {/* Feedback */}
+            <button
+              className="flex flex-col items-center gap-1"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleFeedback(reel.id, "interested");
+              }}
+              title="Интересно"
+            >
+              <div className="w-12 h-12 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center">
+                <span className="text-white text-lg">👍</span>
+              </div>
+              <span className="text-white text-xs font-medium">Интересно</span>
+            </button>
+
+            <button
+              className="flex flex-col items-center gap-1"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleFeedback(reel.id, "not_interested");
+              }}
+              title="Не интересно"
+            >
+              <div className="w-12 h-12 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center">
+                <span className="text-white text-lg">👎</span>
+              </div>
+              <span className="text-white text-xs font-medium">Не интересно</span>
+            </button>
+
+            {/* Create */}
+            {user && (
+              <button
+                className="flex flex-col items-center gap-1"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowCreateSheet(true);
+                }}
+              >
+                <div className="w-12 h-12 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center">
+                  <Plus className="w-7 h-7 text-white" />
+                </div>
+                <span className="text-white text-xs font-medium">Создать</span>
+              </button>
+            )}
+
             {/* Like */}
             <button 
               className="flex flex-col items-center gap-1" 
@@ -273,11 +441,56 @@ export function ReelsPage() {
               <span className="text-white text-xs font-medium">Отправить</span>
             </button>
 
-            {/* Save */}
-            <button className="flex flex-col items-center gap-1" onClick={(e) => e.stopPropagation()}>
-              <div className="w-12 h-12 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center">
-                <Bookmark className="w-6 h-6 text-white" />
+            {/* Repost */}
+            <button
+              className="flex flex-col items-center gap-1"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleRepost(reel.id);
+              }}
+            >
+              <div
+                className={cn(
+                  "w-12 h-12 rounded-full flex items-center justify-center transition-all duration-200",
+                  reel.isReposted ? "bg-white/20 scale-110" : "bg-white/10 backdrop-blur-sm",
+                )}
+              >
+                <Repeat2
+                  className={cn(
+                    "w-6 h-6 transition-all duration-200",
+                    reel.isReposted ? "text-white scale-110" : "text-white",
+                  )}
+                />
               </div>
+              <span className="text-white text-xs font-medium">
+                {(reel.reposts_count || 0) > 0 ? formatNumber(reel.reposts_count || 0) : ""}
+              </span>
+            </button>
+
+            {/* Save */}
+            <button
+              className="flex flex-col items-center gap-1"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleSave(reel.id);
+              }}
+            >
+              <div
+                className={cn(
+                  "w-12 h-12 rounded-full flex items-center justify-center transition-all duration-200",
+                  reel.isSaved ? "bg-white/20 scale-110" : "bg-white/10 backdrop-blur-sm",
+                )}
+              >
+                <Bookmark
+                  className={cn(
+                    "w-6 h-6 transition-all duration-200",
+                    reel.isSaved ? "text-white fill-white scale-110" : "text-white",
+                  )}
+                />
+              </div>
+              <span className="text-white text-xs font-medium">
+                {(reel.saves_count || 0) > 0 ? formatNumber(reel.saves_count || 0) : ""}
+              </span>
             </button>
 
             {/* Author avatar */}
@@ -308,7 +521,7 @@ export function ReelsPage() {
               <span className="text-white font-semibold">
                 @{reel.author?.display_name || "user"}
               </span>
-              {reel.author?.verified && <VerifiedBadge size="sm" className="text-white fill-white stroke-white/80" />}
+              {reel.author?.verified && <VerifiedBadge size="sm" />}
             </div>
             {reel.description && (
               <p className="text-white/90 text-sm line-clamp-2 mb-3">

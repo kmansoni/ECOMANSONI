@@ -1,0 +1,219 @@
+{
+  "req_id": "REQ-0099",
+  "title": "Stickers and GIF Search",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "messaging",
+  "depends_on": ["REQ-0073"],
+  "use_cases": [
+    "user taps emoji button → 'Stickers' tab",
+    "user scrolls trending sticker packs (Free Hugs, Angry Cats)",
+    "user taps sticker → sends as message",
+    "user searches 'celebration' → shows GIFs matching that tag"
+  ],
+  "sticker_packs": {
+    "definition": "collection of ~10-100 stickers on similar theme (e.g., Angry Cats)",
+    "creation": "third-party creators (or official platform stickers)",
+    "storage": "each sticker = single PNG/WEBP image (512x512), stored on S3"
+  },
+  "sticker_featuring": {
+    "mechanisms": [
+      {
+        "name": "trending",
+        "metric": "number of sends in last 7 days",
+        "refresh": "daily"
+      },
+      {
+        "name": "new",
+        "metric": "created_at DESC",
+        "limit": "sticker packs created in last 7 days"
+      },
+      {
+        "name": "curated",
+        "mechanism": "admin manually selects 'Featured' packs"
+      }
+    ]
+  },
+  "gif_integration": {
+    "data_source": "GIPHY API or Tenor API (licensed GIF library)",
+    "search": "user types 'celebration' → API returns matching trending GIFs",
+    "results": "top 10 GIFs by relevance + view count",
+    "cache": "popular searches cached locally (24h ttl)"
+  },
+  "ui_design": {
+    "sticker_picker": [
+      "Tabs: [Stickers] [GIFs] [Emoji]",
+      "Stickers tab:",
+      "  - Recents at top (last 10 used)",
+      "  - Trending packs section (carousel)",
+      "  - All packs (scrollable grid)",
+      "  - Search stickers field",
+      "GIFs tab:",
+      "  - Search field",
+      "  - Trending GIFs (carousel)",
+      "  - Search results (infinite scroll grid)"
+    ]
+  },
+  "database_schema": {
+    "sticker_packs_table": {
+      "columns": [
+        "pack_id UUID PK",
+        "pack_name VARCHAR(100)",
+        "description TEXT",
+        "creator_user_id UUID FK (or null for official)",
+        "thumbnail_url TEXT (S3 URL)",
+        "is_official BOOLEAN",
+        "created_at TIMESTAMP"
+      ]
+    },
+    "stickers_table": {
+      "columns": [
+        "sticker_id UUID PK",
+        "sticker_pack_id UUID FK",
+        "sticker_url TEXT (S3 URL, 512x512)",
+        "tags TEXT[] (emoji labels: happy, sad, party, etc)",
+        "sent_count INTEGER (denormalized counter)",
+        "created_at TIMESTAMP"
+      ]
+    },
+    "recent_stickers_table": {
+      "columns": [
+        "recent_id UUID PK",
+        "user_id UUID FK",
+        "sticker_id UUID FK",
+        "last_used_at TIMESTAMP (updated on each send)"
+      ]
+    },
+    "gif_cache_table": {
+      "columns": [
+        "gif_cache_id UUID PK",
+        "search_query VARCHAR(200)",
+        "gif_url TEXT",
+        "gif_title TEXT",
+        "source VARCHAR(giphy, tenor)",
+        "cached_at TIMESTAMP"
+      ]
+    }
+  },
+  "sending_stickers": {
+    "mechanism": "sticker is sent as message with type='sticker'",
+    "payload": {
+      "message_id": "UUID",
+      "type": "sticker",
+      "sticker_id": "UUID",
+      "sticker_url": "S3 URL",
+      "sender_id": "UUID",
+      "created_at": "2026-02-15T15:35:00Z"
+    }
+  },
+  "sending_gifs": {
+    "mechanism": "GIF sent as message with type='gif'",
+    "payload": {
+      "message_id": "UUID",
+      "type": "gif",
+      "gif_url": "GIPHY URL",
+      "gif_title": "Celebration Dance",
+      "sender_id": "UUID",
+      "created_at": "2026-02-15T15:35:00Z"
+    }
+  },
+  "sticker_pack_creation": {
+    "not_in_scope_v1": "user-generated sticker pack uploads (future feature)",
+    "v1_scope": "official packs only, created by admin"
+  },
+  "cost_optimization": {
+    "gif_api_cost": "$180-300/month for GIPHY/Tenor (for search volume ~10k/day)",
+    "caching": "cache popular search results locally to reduce API calls",
+    "cdn": "GIF URLs hosted on GIPHY CDN (free), no need to cache images"
+  },
+  "api_endpoints": {
+    "list_sticker_packs": {
+      "endpoint": "GET /v1/stickers/packs",
+      "query": "?type=trending&limit=20",
+      "response": [
+        {
+          "pack_id": "UUID",
+          "pack_name": "Angry Cats",
+          "thumbnail_url": "S3 URL",
+          "sticker_count": 24
+        }
+      ]
+    },
+    "get_sticker_pack": {
+      "endpoint": "GET /v1/stickers/packs/{pack_id}",
+      "response": {
+        "pack_id": "UUID",
+        "pack_name": "Angry Cats",
+        "stickers": [
+          {
+            "sticker_id": "UUID",
+            "sticker_url": "S3_URL",
+            "tags": ["angry", "cat", "grumpy"]
+          }
+        ]
+      }
+    },
+    "search_stickers": {
+      "endpoint": "GET /v1/stickers/search?q=happy",
+      "response": [
+        {
+          "sticker_id": "UUID",
+          "sticker_url": "S3_URL",
+          "pack_name": "Emoji Packs"
+        }
+      ]
+    },
+    "search_gifs": {
+      "endpoint": "GET /v1/gifs/search?q=celebration",
+      "response": [
+        {
+          "gif_url": "GIPHY URL",
+          "gif_title": "Party Celebration"
+        }
+      ]
+    },
+    "send_sticker": {
+      "endpoint": "POST /v1/conversations/{conversation_id}/messages",
+      "payload": {
+        "type": "sticker",
+        "sticker_id": "UUID"
+      }
+    },
+    "recent_stickers": {
+      "endpoint": "GET /v1/stickers/recent",
+      "limit": 10,
+      "response": [
+        {
+          "sticker_id": "UUID",
+          "sticker_url": "S3_URL",
+          "last_used_at": "2026-02-14T15:00:00Z"
+        }
+      ]
+    }
+  },
+  "monitoring": {
+    "metrics": [
+      "stickers.unique_packs_sent",
+      "stickers.sends_per_day",
+      "gifs.search_queries_per_day",
+      "gifs.api_latency_p95_ms",
+      "gifs.cache_hit_rate"
+    ]
+  },
+  "testing": {
+    "scenarios": [
+      "browse sticker packs → trending packs displayed",
+      "send sticker → appears in conversation",
+      "search stickers 'happy' → matching stickers returned",
+      "search GIFs 'celebration' → top 10 GIFs from GIPHY",
+      "tap recent sticker (used yesterday) → appears at top",
+      "sticker pack has 100 stickers → paginated (load 20 at a time)",
+      "offline mode → recently used stickers available, GIF search fails gracefully"
+    ]
+  },
+  "edge_cases": {
+    "gif_api_down": "show 'GIF search temporarily unavailable' message, fallback to cached results",
+    "sticker_image_404": "if S3 URL broken, show placeholder",
+    "unicode_emoji_vs_sticker": "allow both (emoji picker separate from sticker picker)"
+  }
+}

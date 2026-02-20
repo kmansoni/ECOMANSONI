@@ -1,0 +1,1 @@
+{"req_id":"REQ-0025","title":"Deep Linking Architecture","url_scheme":"app://","routes":[{"path":"/chat/:conversationId","params":["conversationId"],"handler":"openChat"},{"path":"/user/:userId","params":["userId"],"handler":"openProfile"},{"path":"/group/:groupId","params":["groupId"],"handler":"openGroup"}],"fallback_web":"https://app.com/redirect"}

@@ -1,0 +1,269 @@
+{
+  "id": "B-129",
+  "section": "B",
+  "title": "Rate Limiting & DDoS Protection",
+  "description": "Distributed rate limiting, adaptive throttling, IP blocking, and DDoS detection/mitigation",
+  "priority": "P1",
+  "complexity": "M",
+  "architecture": {
+    "strategy": "Token bucket algorithm + leaky bucket + sliding window (Redis)",
+    "layers": [
+      "API Gateway (Cloudflare) - IP reputation, rule-based blocking",
+      "Load Balancer - connection limiting",
+      "Application - per-user/per-group rate limiting"
+    ]
+  },
+  "features": {
+    "rate_limiting_rules": {
+      "per_user": {
+        "send_message": "100/minute (normal), 10/minute (new account)",
+        "create_group": "1/hour",
+        "api_calls": "10000/day",
+        "search": "30/minute",
+        "file_upload": "10/minute, 100MB/hour"
+      },
+      "per_ip": {
+        "login_attempts": "10/5min (then 30min lockout)",
+        "signup": "5/hour",
+        "api_calls": "1000/minute (from same IP)",
+        "connection_limit": "10 concurrent connections"
+      },
+      "per_group": {
+        "message_rate": "1000/minute (total, all members)",
+        "join_rate": "100/hour (prevent spam invites)"
+      }
+    },
+    "token_bucket_algorithm": {
+      "implementation": "Redis INCR + EXPIRE for simplicity",
+      "formula": "allowed = min(capacity, tokens_in_bucket)",
+      "refill_rate": "100 tokens per minute (for 100/min limit)",
+      "capacity": "allows bursts up to 10 additional tokens",
+      "cost_per_action": {
+        "send_message": 1,
+        "search": 5,
+        "file_upload": 10,
+        "api_call": 1
+      }
+    },
+    "adaptive_throttling": {
+      "detection": "if >80% rate limit being hit → classify as suspicious",
+      "response": [
+        "slow_down: add 1ms delay per request (backpressure)",
+        "queue: put request in queue instead of immediate rejection",
+        "gradual_deny: start returning 429 at 10%, increasing to 100% by 15% over-limit"
+      ],
+      "recovery": "once usage drops <50%, stop throttling"
+    },
+    "ddos_detection": {
+      "signals": [
+        "same IP makes 1000+ requests/second",
+        "sudden spike in incomplete connections (SYN flood)",
+        "requests with no valid user_id (auth header missing)",
+        "requests with identical headers/payloads (bot attack)"
+      ],
+      "response": {
+        "soft_block": "CAPTCHA challenge (JavaScript not loaded)",
+        "hard_block": "IP blacklist for 1 hour (Cloudflare rule)"
+      }
+    },
+    "ip_reputation": {
+      "sources": ["Cloudflare Threat Intelligence", "custom blacklist/whitelist"],
+      "scoring": "0-100 (higher = more suspicious)",
+      "handling": {
+        "score_80+": "CAPTCHA required",
+        "score_90+": "rate limit to 10 req/min",
+        "score_95+": "block entirely"
+      }
+    },
+    "captcha_challenge": {
+      "type": "hCaptcha or reCAPTCHA v3 (invisible)",
+      "trigger": [
+        "suspicious IP (reputation score >80)",
+        "too many failed logins",
+        "unusual traffic pattern"
+      ],
+      "user_experience": "minimal (invisible reCAPTCHA)"
+    }
+  },
+  "database": {
+    "tables": [
+      {
+        "name": "rate_limit_buckets",
+        "storage": "Redis (TTL-based, no persistence needed)",
+        "structure": {
+          "key": "rl:user:{user_id}:send_message",
+          "value": "tokens_remaining (int)",
+          "expire": "60 seconds (auto-reset)"
+        }
+      },
+      {
+        "name": "ip_blacklist",
+        "columns": [
+          {"name": "ip_address", "type": "inet", "pk": true},
+          {"name": "blocked_reason", "type": "enum(ddos,abuse,spam)"},
+          {"name": "blocked_at", "type": "timestamp"},
+          {"name": "expires_at", "type": "timestamp"},
+          {"name": "permanent", "type": "bool", "default": false}
+        ]
+      },
+      {
+        "name": "rate_limit_violations",
+        "columns": [
+          {"name": "id", "type": "uuid", "pk": true},
+          {"name": "user_id", "type": "uuid"},
+          {"name": "ip_address", "type": "inet"},
+          {"name": "limit_type", "type": "varchar(50)"},
+          {"name": "violation_count", "type": "int"},
+          {"name": "timestamp", "type": "timestamp"}
+        ],
+        "indexes": [
+          "ip_address, timestamp (DDoS detection)",
+          "user_id, timestamp (user abuse)"
+        ]
+      },
+      {
+        "name": "ddos_events",
+        "columns": [
+          {"name": "id", "type": "uuid", "pk": true},
+          {"name": "start_time", "type": "timestamp"},
+          {"name": "end_time", "type": "timestamp"},
+          {"name": "attack_type", "type": "enum(volumetric,protocol,application)"},
+          {"name": "source_ips", "type": "int (count)"},
+          {"name": "requests_blocked", "type": "int"},
+          {"name": "mitigation_action", "type": "varchar(255)"}
+        ]
+      }
+    ]
+  },
+  "api": {
+    "endpoints": [
+      {
+        "path": "GET /v1/rate-limit/status",
+        "description": "Check current rate limit status for user",
+        "returns": {
+          "limit": 100,
+          "remaining": 47,
+          "reset_at": "timestamp (when bucket refills)",
+          "retry_after": "int (seconds, if over limit)"
+        }
+      },
+      {
+        "path": "POST /v1/captcha/verify",
+        "description": "Verify captcha token",
+        "body": {"captcha_token": "string (from hCaptcha/reCAPTCHA)"},
+        "returns": {"success": true, "score": "float (0-1 for reCAPTCHA)"}
+      }
+    ]
+  },
+  "response_headers": {
+    "429_too_many_requests": {
+      "rate_limit_limit": "100",
+      "rate_limit_remaining": "0",
+      "rate_limit_reset": "timestamp",
+      "retry_after": "5 (seconds)"
+    }
+  },
+  "monitoring": {
+    "metrics": [
+      {
+        "name": "rate_limit_hits",
+        "target": "<0.1% of requests",
+        "alert": ">1% (aggressive limit or attack)"
+      },
+      {
+        "name": "ddos_detection_accuracy",
+        "target": ">95%",
+        "alert": "<90% (tune detection rules)"
+      },
+      {
+        "name": "false_positive_rate",
+        "target": "<0.5%",
+        "alert": ">2% (too aggressive captcha)"
+      },
+      {
+        "name": "captcha_solve_rate",
+        "target": ">95%",
+        "alert": "<90% (service issue)"
+      }
+    ]
+  },
+  "testing": {
+    "test_scenarios": [
+      {
+        "name": "Per-user rate limit",
+        "steps": ["Send 100 messages in 1 minute", "Try 101st"],
+        "expected": "101st request returns 429, with retry_after header"
+      },
+      {
+        "name": "Rate limit reset",
+        "steps": ["Hit limit (0 tokens)", "Wait 60 seconds"],
+        "expected": "Bucket refills, new request succeeds"
+      },
+      {
+        "name": "Burst allowance",
+        "steps": ["Have 100 tokens", "Use 110 tokens in 1s"],
+        "expected": "Allowed (burst capacity = 10), then rate limited"
+      },
+      {
+        "name": "Per-IP login limit",
+        "steps": ["Attempt failed login 10 times from same IP"],
+        "expected": "Locked out 30 minutes, CAPTCHA required on next attempt"
+      },
+      {
+        "name": "DDoS detection trigger",
+        "steps": ["Send 1000 requests/sec from same IP"],
+        "expected": "IP reputation detected, CAPTCHA or block applied"
+      },
+      {
+        "name": "CAPTCHA challenge flow",
+        "steps": ["Suspicious IP", "Server returns CAPTCHA", "Solve CAPTCHA", "Verify token"],
+        "expected": "After verification, rate limit relax (or whitelist IP 1 hour)"
+      },
+      {
+        "name": "IP blacklist enforcement",
+        "steps": ["IP added to blacklist", "Request from IP arrives"],
+        "expected": "Request rejected at edge (Cloudflare), 403 response"
+      },
+      {
+        "name": "Different limits per endpoint",
+        "steps": ["Hit send_message limit (100/min)", "Try search (30/min limit)"],
+        "expected": "Search still works (independent bucket), different remaining"
+      },
+      {
+        "name": "Adaptive throttling backpressure",
+        "steps": ["User at 90% of limit (90/100 tokens)", "Send 5 messages rapidly"],
+        "expected": "Messages succeed but with 1-5ms added latency (backpressure)"
+      },
+      {
+        "name": "Per-group message limit",
+        "steps": ["Group total: 1000 msg/min", "All 500 members send 2 msgs/min"],
+        "expected": "Group limit reached, some requests 429"
+      },
+      {
+        "name": "Rate limit header accuracy",
+        "steps": ["Send request", "Check response headers"],
+        "expected": "rate_limit_limit: 100, rate_limit_remaining: XX, rate_limit_reset correct"
+      },
+      {
+        "name": "File upload rate limit",
+        "steps": ["Upload 10 files/min (allowed)", "Try 11th"],
+        "expected": "11th rejected, 429 with retry_after"
+      },
+      {
+        "name": "DDoS event logging",
+        "steps": ["DDoS attack detected", "Check admin dashboard"],
+        "expected": "Event logged, attack_type, duration, mitigation shown"
+      },
+      {
+        "name": "Whitelist exception",
+        "steps": ["Whitelist IP 1.2.3.4", "Send requests from that IP"],
+        "expected": "No rate limiting applied (bypass)"
+      },
+      {
+        "name": "Distributed rate limit (multi-server)",
+        "steps": ["Request to Server A (50 tokens)", "Request to Server B"],
+        "expected": "Server B sees 50 remaining (shared Redis state)"
+      }
+    ]
+  }
+}

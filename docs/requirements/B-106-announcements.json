@@ -1,0 +1,112 @@
+{
+  "req_id": "REQ-0106",
+  "title": "Scheduled Group Announcements (System Messages, Broadcasts)",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "messaging",
+  "depends_on": ["REQ-0077"],
+  "use_cases": [
+    "admin schedules announcement for #announcements: 'Meeting at 3 PM!'",
+    "sends to all members at scheduled time",
+    "only admins can send announcements (special message type)"
+  ],
+  "announcement_creation": {
+    "flow": [
+      "1. admin taps '+' in group",
+      "2. selects 'Send Announcement'",
+      "3. enters title (100 chars) and body (2000 chars, markdown)",
+      "4. optional: schedule for later (date + time)",
+      "5. optional: add media (1 image)",
+      "6. tap 'Schedule' or 'Send Now'"
+    ]
+  },
+  "announcement_type": {
+    "storage": "separate announcement_messages table (not regular messages)",
+    "display": "appears in main feed as special 'Announcement' message with styling",
+    "styling": "highlighted background (light yellow/blue), bold header 'ANNOUNCEMENT'",
+    "no_replies": "announcements are broadcast-only, users cannot reply (can react)"
+  },
+  "scheduling": {
+    "mechanism": "similar to B-077 (scheduled_messages)",
+    "timezone": "admin's timezone (PBKDF2 converted)",
+    "batch_send": "Postgres job every 1 minute sends due announcements"
+  },
+  "targeting": {
+    "all_members": "sends to all current members",
+    "future_joins": "new members joining group will see announcement in history",
+    "language_specific": "future: target specific language groups"
+  },
+  "announcement_edits": {
+    "before_send": "admin can edit scheduled announcement anytime before send",
+    "after_send": "cannot edit (immutable broadcast), can only delete/archive"
+  },
+  "database_schema": {
+    "announcements_table": {
+      "columns": [
+        "announcement_id UUID PK",
+        "conversation_id UUID FK",
+        "admin_user_id UUID FK",
+        "title VARCHAR(100)",
+        "body TEXT (2000 chars)",
+        "media_url TEXT (S3 URL, optional)",
+        "scheduled_for TIMESTAMP",
+        "sent_at TIMESTAMP (null if scheduled)",
+        "status VARCHAR(scheduled, sent, cancelled)",
+        "created_at TIMESTAMP"
+      ]
+    }
+  },
+  "notifications": {
+    "push_notification": "send FCM/APNs push: 'Announcement from [group]: [title]'",
+    "in_app": "in-app banner showing announcement",
+    "mute_override": "announcements bypass user's mute setting (if override_announcements=true per group)"
+  },
+  "api_endpoints": {
+    "create_announcement": {
+      "endpoint": "POST /v1/conversations/{conversation_id}/announcements",
+      "payload": {
+        "title": "Meeting Alert",
+        "body": "Meeting is at 3 PM in Conference Room A",
+        "scheduled_for": "2026-02-15T15:30:00Z (null for immediate)",
+        "media_url": "S3 URL (optional)"
+      },
+      "response": {
+        "announcement_id": "UUID",
+        "status": "scheduled"
+      }
+    },
+    "list_announcements": {
+      "endpoint": "GET /v1/conversations/{conversation_id}/announcements",
+      "response": [
+        {
+          "announcement_id": "UUID",
+          "title": "Meeting Alert",
+          "status": "sent",
+          "sent_at": "2026-02-15T15:30:00Z"
+        }
+      ]
+    },
+    "cancel_announcement": {
+      "endpoint": "DELETE /v1/announcements/{announcement_id}",
+      "permission": "creator or admin",
+      "note": "only if not yet sent"
+    }
+  },
+  "monitoring": {
+    "metrics": [
+      "announcements.total_per_day",
+      "announcements.avg_members_notified",
+      "announcements.notification_delivery_rate"
+    ]
+  },
+  "testing": {
+    "scenarios": [
+      "create announcement → status=scheduled",
+      "send time arrives → status=sent, all members notified",
+      "edit scheduled announcement → changes reflected on send",
+      "cancel before send → status=cancelled, not sent to members",
+      "announcement sent at 2 AM (user in different TZ) → convert to admin's TZ correctly",
+      "group with 10k members → all receive notification within 5 minutes"
+    ]
+  }
+}
