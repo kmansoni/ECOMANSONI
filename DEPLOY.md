@@ -32,6 +32,47 @@ Notes:
 ./scripts/supabase-deploy.ps1 -SkipDbPush
 ```
 
+### Calls / TURN (production)
+
+If you want reliable audio/video calls across mobile networks, CGNAT, and corporate Wi‑Fi, you need a working TURN setup.
+
+**A) Edge Function: `turn-credentials`**
+
+Deploy the function:
+
+```powershell
+$sb = "$env:LOCALAPPDATA\supabase-cli\v2.75.0\supabase.exe"
+& $sb functions deploy turn-credentials
+```
+
+Set secrets (Supabase Dashboard → Project Settings → Secrets, or CLI):
+
+- `TURN_URLS` (comma/space separated), examples:
+   - `turn:turn.your-domain.com:3478?transport=udp`
+   - `turn:turn.your-domain.com:3478?transport=tcp`
+   - `turns:turn.your-domain.com:5349?transport=tcp` (TLS)
+- Choose ONE auth mode:
+   - Shared secret (recommended): `TURN_SHARED_SECRET`
+   - Static creds: `TURN_USERNAME` + `TURN_CREDENTIAL`
+- TTL control:
+   - `TURN_TTL_SECONDS` (default 3600). Client caches TURN for <= ~50 minutes and refreshes before expiry.
+
+**B) coturn / TURN server**
+
+- `static-auth-secret` must match `TURN_SHARED_SECRET` when using shared-secret mode.
+- For production behind NAT you typically need `external-ip=<PUBLIC_IP>`.
+- Open ports:
+   - `3478/udp`, `3478/tcp`
+   - relay range `49160-49200/udp` (match your coturn config)
+   - `5349/tcp` if using TLS (`turns:`)
+
+**C) Verify**
+
+- From browser console during a call you should see logs like:
+   - `[WebRTC Config] Got N ICE servers`
+   - and returned servers must contain at least one `turn:`/`turns:` URL.
+- If TURN is unavailable, the client automatically downgrades `forceRelay` to `iceTransportPolicy=all` (otherwise the call would fail).
+
 ### vk-webhook secrets
 
 `vk-webhook` requires these secrets in Supabase (Project → Edge Functions → Secrets, or CLI):

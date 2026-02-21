@@ -75,7 +75,7 @@ serve(async (req) => {
           ...splitIceServersByUrl({ urls: turnUrls, username: authUser, credential: authPass }),
         ];
 
-        return new Response(JSON.stringify({ iceServers }), {
+        return new Response(JSON.stringify({ iceServers, ttlSeconds }), {
           status: 200,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
@@ -87,7 +87,7 @@ serve(async (req) => {
           ...splitIceServersByUrl({ urls: turnUrls, username: turnUsername, credential: turnCredential }),
         ];
 
-        return new Response(JSON.stringify({ iceServers }), {
+        return new Response(JSON.stringify({ iceServers, ttlSeconds }), {
           status: 200,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
@@ -97,6 +97,7 @@ serve(async (req) => {
       return new Response(
         JSON.stringify({
           error: "TURN_URLS is set but credentials are missing",
+          ttlSeconds,
           iceServers: [
             { urls: "stun:stun.l.google.com:19302" },
             { urls: "stun:stun1.l.google.com:19302" },
@@ -116,6 +117,7 @@ serve(async (req) => {
       return new Response(
         JSON.stringify({
           error: "TURN credentials not configured",
+          ttlSeconds,
           iceServers: [
             { urls: "stun:stun.l.google.com:19302" },
             { urls: "stun:stun1.l.google.com:19302" },
@@ -134,6 +136,7 @@ serve(async (req) => {
     
     console.log("[TURN] Request URL:", url);
 
+    const ttlRequested = Math.min(86400, ttlSeconds);
     const response = await fetch(url, {
       method: "POST",
       headers: {
@@ -141,7 +144,7 @@ serve(async (req) => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ 
-        ttl: 86400 // 24 hours
+        ttl: ttlRequested,
       }),
     });
 
@@ -156,6 +159,7 @@ serve(async (req) => {
         JSON.stringify({ 
           error: `Cloudflare TURN error: ${response.status}`,
           errorDetails: errorText,
+          ttlSeconds: ttlRequested,
           iceServers: [
             { urls: "stun:stun.l.google.com:19302" },
             { urls: "stun:stun1.l.google.com:19302" },
@@ -198,7 +202,7 @@ serve(async (req) => {
     });
 
     return new Response(
-      JSON.stringify({ iceServers }),
+      JSON.stringify({ iceServers, ttlSeconds: ttlRequested }),
       { 
         status: 200, 
         headers: { ...corsHeaders, "Content-Type": "application/json" } 
@@ -212,6 +216,7 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({ 
         error: errorMessage,
+        ttlSeconds,
         iceServers: [
           { urls: "stun:stun.l.google.com:19302" },
           { urls: "stun:stun1.l.google.com:19302" },
