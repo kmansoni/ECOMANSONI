@@ -671,6 +671,16 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
           logDebug(`onAuthStateChange: profile applied to account index`);
         })();
       } else if (!session) {
+        // IMPORTANT:
+        // Supabase can emit INITIAL_SESSION with a null session (eg. before it restores from storage,
+        // or in some webviews). Treating that as a real sign-out would incorrectly clear vault tokens
+        // and force the user back to /auth.
+        const isRealSignOut = _evt === "SIGNED_OUT" || _evt === "USER_DELETED";
+        if (!isRealSignOut) {
+          logDebug(`onAuthStateChange: ignoring null session for event=${_evt}`);
+          return;
+        }
+
         logDebug(`onAuthStateChange: session cleared`);
         setGuestMode(false);
         const prev = getActiveAccountId();
