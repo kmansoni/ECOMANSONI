@@ -38,9 +38,9 @@ export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABL
   },
   auth: {
     storage: localStorage,
-    // Multi-account: persistence is handled by our Account Vault.
-    // Active session is restored deterministically on app start.
-    persistSession: false,
+    // Persist the *active* session on this device until explicit sign-out.
+    // Multi-account still uses the Vault for additional accounts.
+    persistSession: true,
     autoRefreshToken: true,
   }
 });

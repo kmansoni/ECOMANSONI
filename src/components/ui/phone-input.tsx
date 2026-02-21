@@ -129,6 +129,30 @@ interface PhoneInputProps {
   className?: string;
 }
 
+function guessDeviceCountryCode(): string | null {
+  try {
+    const locale = (navigator.languages?.[0] || navigator.language || "").trim();
+    if (!locale) return null;
+
+    // Examples: "ru-RU", "en-US", "pt-BR"
+    const parts = locale.replace("_", "-").split("-");
+    const region = parts.length >= 2 ? parts[1]?.toUpperCase() : "";
+    if (!region) return null;
+    return region;
+  } catch {
+    return null;
+  }
+}
+
+function guessDefaultCountry(): Country {
+  const region = guessDeviceCountryCode();
+  if (region) {
+    const byRegion = countries.find((c) => c.code === region);
+    if (byRegion) return byRegion;
+  }
+  return countries.find((c) => c.code === "RU") ?? countries[0]!;
+}
+
 export function PhoneInput({ value, onChange, placeholder, required, className }: PhoneInputProps) {
   const [displayValue, setDisplayValue] = useState('+');
   const [detectedCountry, setDetectedCountry] = useState<Country | null>(null);
@@ -166,8 +190,16 @@ export function PhoneInput({ value, onChange, placeholder, required, className }
       const digits = value.replace(/\D/g, '');
       setDisplayValue(formatPhoneNumber(digits));
       setDetectedCountry(detectCountry(digits));
+      return;
     }
-  }, []);
+
+    // Device-based default: prefill with dial code (so user doesn't have to type it).
+    const fallback = guessDefaultCountry();
+    const digits = fallback.dialCode;
+    setDetectedCountry(fallback);
+    setDisplayValue('+' + digits);
+    onChange('+' + digits);
+  }, [value, onChange]);
 
   return (
     <div className={cn("relative", className)}>
