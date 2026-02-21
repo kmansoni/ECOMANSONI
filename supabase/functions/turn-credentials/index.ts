@@ -52,8 +52,7 @@ serve(async (req) => {
   try {
     // Provider priority:
     // 1) Self-host / any TURN provider via TURN_URLS + (TURN_SHARED_SECRET or TURN_USERNAME+TURN_CREDENTIAL)
-    // 2) Cloudflare Calls TURN via CLOUDFLARE_TURN_* (legacy)
-    // 3) STUN-only fallback
+    // 2) STUN-only fallback
 
     const ttlSeconds = Math.max(60, Number(Deno.env.get("TURN_TTL_SECONDS") ?? "3600"));
     const turnUrls = parseUrls(Deno.env.get("TURN_URLS"));
@@ -107,106 +106,19 @@ serve(async (req) => {
       );
     }
 
-    const turnKeyId = Deno.env.get("CLOUDFLARE_TURN_KEY_ID");
-    const turnApiToken = Deno.env.get("CLOUDFLARE_TURN_API_TOKEN");
-
-    if (!turnKeyId || !turnApiToken) {
-      console.error(
-        "[TURN] Missing TURN config. Set TURN_URLS + TURN_SHARED_SECRET (or TURN_USERNAME/TURN_CREDENTIAL), or CLOUDFLARE_TURN_KEY_ID + CLOUDFLARE_TURN_API_TOKEN"
-      );
-      return new Response(
-        JSON.stringify({
-          error: "TURN credentials not configured",
-          ttlSeconds,
-          iceServers: [
-            { urls: "stun:stun.l.google.com:19302" },
-            { urls: "stun:stun1.l.google.com:19302" },
-          ],
-        }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    console.log("[TURN] Fetching credentials from Cloudflare...");
-    console.log("[TURN] Key ID:", turnKeyId.substring(0, 8) + "...");
-
-    // CORRECT endpoint for Cloudflare TURN
-    // Documentation: https://developers.cloudflare.com/calls/turn/generate-credentials/
-    const url = `https://rtc.live.cloudflare.com/v1/turn/keys/${turnKeyId}/credentials/generate`;
-    
-    console.log("[TURN] Request URL:", url);
-
-    const ttlRequested = Math.min(86400, ttlSeconds);
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${turnApiToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ 
-        ttl: ttlRequested,
-      }),
-    });
-
-    console.log("[TURN] Response status:", response.status);
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("[TURN] Cloudflare error:", response.status, errorText);
-      
-      // Return fallback STUN servers on error
-      return new Response(
-        JSON.stringify({ 
-          error: `Cloudflare TURN error: ${response.status}`,
-          errorDetails: errorText,
-          ttlSeconds: ttlRequested,
-          iceServers: [
-            { urls: "stun:stun.l.google.com:19302" },
-            { urls: "stun:stun1.l.google.com:19302" },
-          ]
-        }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    const data = await response.json();
-    
-    // Log full response for debugging
-    console.log("[TURN] Full Cloudflare response:", JSON.stringify(data, null, 2));
-
-    // Cloudflare response format:
-    // { iceServers: { urls: [...], username: "...", credential: "..." } }
-    // 
-    // IMPORTANT: Safari/iOS WebRTC requires SEPARATE ICE server objects per URL
-    const iceServers: Array<{ urls: string; username?: string; credential?: string }> = [];
-    
-    if (data.iceServers) {
-      const servers = Array.isArray(data.iceServers) ? data.iceServers : [data.iceServers];
-      for (const s of servers) {
-        if (!s?.urls) continue;
-        iceServers.push(...splitIceServersByUrl({ urls: s.urls, username: s.username, credential: s.credential }));
-      }
-    }
-
-    // Ensure we have a STUN server (add Google STUN as backup if needed)
-    const hasStun = iceServers.some(s => s.urls.startsWith('stun:'));
-    if (!hasStun) {
-      console.log("[TURN] No STUN in response, adding Google STUN");
-      iceServers.unshift({ urls: "stun:stun.l.google.com:19302" });
-    }
-
-    // Log what we're returning
-    console.log("[TURN] Returning", iceServers.length, "ICE servers (split by URL):");
-    iceServers.forEach((s, i) => {
-      console.log(`[TURN] Server ${i}: ${s.urls}${s.username ? ' (with auth)' : ''}`);
-    });
-
+    console.error(
+      "[TURN] Missing TURN config. Set TURN_URLS + TURN_SHARED_SECRET (or TURN_USERNAME/TURN_CREDENTIAL)."
+    );
     return new Response(
-      JSON.stringify({ iceServers, ttlSeconds: ttlRequested }),
-      { 
-        status: 200, 
-        headers: { ...corsHeaders, "Content-Type": "application/json" } 
-      }
+      JSON.stringify({
+        error: "TURN credentials not configured",
+        ttlSeconds,
+        iceServers: [
+          { urls: "stun:stun.l.google.com:19302" },
+          { urls: "stun:stun1.l.google.com:19302" },
+        ],
+      }),
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error: unknown) {
     console.error("[TURN] Exception:", error);
