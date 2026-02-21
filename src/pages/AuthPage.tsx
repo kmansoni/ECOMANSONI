@@ -301,7 +301,7 @@ export function AuthPage() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col relative overflow-hidden">
+    <div className="min-h-[100dvh] flex flex-col relative overflow-hidden">
       {/* Brand gradient background - logo colors */}
       <div className="absolute inset-0 bg-gradient-to-br from-[#0a1628] via-[#0d2035] to-[#071420]" />
       
@@ -368,7 +368,10 @@ export function AuthPage() {
 
       {/* Content */}
       <div className="relative z-10 flex-1 flex flex-col justify-center p-6 safe-area-top safe-area-bottom">
-        <div className="max-w-sm mx-auto w-full space-y-8">
+        <div
+          className="max-w-sm mx-auto w-full space-y-8"
+          style={{ animation: "auth-enter 420ms cubic-bezier(0.2, 0.7, 0.2, 1) both" }}
+        >
           
           {/* Glossy bubble avatar - mirror glass effect */}
           <div className="flex justify-center">
@@ -450,7 +453,7 @@ export function AuthPage() {
               {mode === "login" && "Вход"}
               {mode === "register" && "Регистрация"}
             </h1>
-            <p className="text-white/70 text-base">
+            <p className="text-white/80 text-base">
               {mode === "select" && "Выберите действие для продолжения"}
               {mode === "login" && "Введите номер телефона"}
               {mode === "register" && "Введите номер телефона для регистрации"}
@@ -462,22 +465,28 @@ export function AuthPage() {
             <div className="space-y-4">
               <div className="relative">
                 <div className="absolute -inset-1 bg-white/10 rounded-3xl blur-xl" />
-                <div className="relative bg-white/10 backdrop-blur-2xl rounded-3xl p-6 space-y-4 border border-white/20 shadow-2xl">
+                <div
+                  className="relative bg-white/10 backdrop-blur-2xl rounded-3xl p-6 space-y-4 border border-white/20 shadow-2xl"
+                  style={{
+                    boxShadow:
+                      "0 20px 60px rgba(0,0,0,0.35), inset 0 0 0 1px rgba(255,255,255,0.08)",
+                  }}
+                >
                   <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/50 to-transparent" />
                   
                   <Button 
-                    onClick={() => setMode("login")}
+                    onClick={() => setMode("register")}
                     className="w-full h-14 rounded-2xl text-base font-semibold bg-white/90 hover:bg-white text-slate-800 shadow-xl shadow-black/20 transition-all hover:shadow-2xl hover:scale-[1.02] active:scale-[0.98]"
                   >
-                    Вход
+                    Регистрация
                   </Button>
                   
                   <Button 
-                    onClick={() => setMode("register")}
+                    onClick={() => setMode("login")}
                     variant="outline"
                     className="w-full h-14 rounded-2xl text-base font-semibold bg-transparent border-white/30 text-white hover:bg-white/10 hover:text-white transition-all hover:scale-[1.02] active:scale-[0.98]"
                   >
-                    Регистрация
+                    Вход
                   </Button>
                 </div>
               </div>
