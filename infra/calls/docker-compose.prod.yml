@@ -1,0 +1,14 @@
+services:
+  coturn:
+    image: coturn/coturn:4.6.3
+    restart: unless-stopped
+    ports:
+      - "3478:3478/udp"
+      - "3478:3478/tcp"
+      - "5349:5349/tcp"
+      - "49160-49200:49160-49200/udp"
+    volumes:
+      - ./coturn/turnserver.prod.conf:/etc/coturn/turnserver.conf:ro
+      # Mount host Let's Encrypt certs into the container (read-only)
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    command: ["-c", "/etc/coturn/turnserver.conf", "-n", "--log-file=stdout"]
