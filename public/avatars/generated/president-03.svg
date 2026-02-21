@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" fill="none">
+  <defs>
+    <radialGradient id="bg" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(280 760) rotate(-35) scale(980)">
+      <stop stop-color="#22C55E" stop-opacity="0.22"/>
+      <stop offset="0.55" stop-color="#0B3B64" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#050A12"/>
+    </radialGradient>
+    <linearGradient id="suit" x1="380" y1="560" x2="660" y2="940" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#111827"/>
+      <stop offset="1" stop-color="#0B1220"/>
+    </linearGradient>
+    <linearGradient id="skin" x1="420" y1="300" x2="610" y2="560" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F3D2BD"/>
+      <stop offset="1" stop-color="#E3B195"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+
+  <!-- shoulders -->
+  <path d="M248 940c32-170 152-260 264-260h0c112 0 232 90 264 260H248z" fill="url(#suit)"/>
+
+  <!-- shirt -->
+  <path d="M452 708c18 30 36 44 60 44s42-14 60-44l-60-36-60 36z" fill="#E5E7EB" opacity="0.95"/>
+
+  <!-- neck -->
+  <path d="M466 640c12 72 32 102 46 102s34-30 46-102c-30 18-62 18-92 0z" fill="url(#skin)"/>
+
+  <!-- head -->
+  <path d="M512 270c-92 0-166 74-166 172 0 122 88 222 166 222s166-100 166-222c0-98-74-172-166-172z" fill="url(#skin)"/>
+
+  <!-- hair (grey) -->
+  <path d="M352 422c16-110 98-168 160-168 74 0 148 50 164 140-40-26-94-42-164-42-76 0-130 18-160 70z" fill="#CBD5E1"/>
+  <path d="M362 450c42-40 92-58 150-58 60 0 112 18 156 54-12 72-56 122-84 144-18-10-44-16-72-16-30 0-58 6-78 18-32-26-62-78-72-142z" fill="#94A3B8" opacity="0.65"/>
+
+  <!-- glasses -->
+  <path d="M392 492c30-16 62-16 92 0" stroke="#0F172A" stroke-opacity="0.35" stroke-width="14" stroke-linecap="round"/>
+  <path d="M540 492c30-16 62-16 92 0" stroke="#0F172A" stroke-opacity="0.35" stroke-width="14" stroke-linecap="round"/>
+  <path d="M484 492c10 8 46 8 56 0" stroke="#0F172A" stroke-opacity="0.22" stroke-width="10" stroke-linecap="round"/>
+
+  <!-- mouth -->
+  <path d="M452 586c40 28 80 28 120 0" stroke="#0F172A" stroke-opacity="0.18" stroke-width="16" stroke-linecap="round"/>
+
+  <circle cx="512" cy="512" r="420" stroke="#FFFFFF" stroke-opacity="0.08" stroke-width="18"/>
+</svg>

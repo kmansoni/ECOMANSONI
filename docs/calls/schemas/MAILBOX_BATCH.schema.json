@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mansoni.com/schemas/ws/MAILBOX_BATCH.schema.json",
+  "title": "MAILBOX_BATCH",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["deviceId", "nextStreamId", "messages"],
+  "properties": {
+    "deviceId": { "$ref": "https://mansoni.com/schemas/ws/types.schema.json#/properties/deviceId" },
+    "nextStreamId": { "type": "string", "maxLength": 64 },
+    "messages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["streamId", "frame"],
+        "properties": {
+          "streamId": { "type": "string", "maxLength": 64 },
+          "frame": { "type": "object" }
+        }
+      }
+    }
+  }
+}

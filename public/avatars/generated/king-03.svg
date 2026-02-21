@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" fill="none">
+  <defs>
+    <radialGradient id="bg" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(260 820) rotate(-30) scale(980)">
+      <stop stop-color="#F59E0B" stop-opacity="0.18"/>
+      <stop offset="0.55" stop-color="#0B3B64" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#050A12"/>
+    </radialGradient>
+    <linearGradient id="robe" x1="300" y1="560" x2="740" y2="980" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0B1220"/>
+      <stop offset="1" stop-color="#071426"/>
+    </linearGradient>
+    <linearGradient id="skin" x1="420" y1="300" x2="610" y2="560" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F3D2BD"/>
+      <stop offset="1" stop-color="#E3B195"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+
+  <path d="M220 960c42-230 186-320 292-320h0c106 0 250 90 292 320H220z" fill="url(#robe)"/>
+
+  <path d="M466 640c12 72 32 102 46 102s34-30 46-102c-30 18-62 18-92 0z" fill="url(#skin)"/>
+  <path d="M512 270c-92 0-166 74-166 172 0 122 88 222 166 222s166-100 166-222c0-98-74-172-166-172z" fill="url(#skin)"/>
+
+  <!-- simple crown + white beard -->
+  <path d="M394 338l38 52 80-60 80 60 38-52v74c0 28-22 50-50 50H444c-28 0-50-22-50-50v-74z" fill="#FBBF24" opacity="0.9"/>
+  <path d="M360 432c16-110 96-174 152-174 70 0 140 50 160 138-44-26-94-40-160-40-78 0-126 18-152 76z" fill="#CBD5E1"/>
+  <path d="M384 586c34 78 78 112 128 112s94-34 128-112c-38 22-82 34-128 34s-90-12-128-34z" fill="#E2E8F0" opacity="0.95"/>
+
+  <path d="M452 586c40 28 80 28 120 0" stroke="#0F172A" stroke-opacity="0.14" stroke-width="16" stroke-linecap="round"/>
+  <circle cx="512" cy="512" r="420" stroke="#FFFFFF" stroke-opacity="0.08" stroke-width="18"/>
+</svg>

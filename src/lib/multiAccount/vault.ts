@@ -49,6 +49,17 @@ function safeParseJson<T>(raw: string | null): T | null {
   }
 }
 
+function isUuidLike(value: string): boolean {
+  // Supabase user_id is UUID by default.
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+}
+
+function hasValidStoredTokens(accountId: AccountId): boolean {
+  const parsed = safeParseJson<StoredSessionTokens>(localStorage.getItem(keyTokens(accountId)));
+  if (!parsed) return false;
+  return typeof parsed.accessToken === "string" && typeof parsed.refreshToken === "string";
+}
+
 function nowIso(): string {
   return new Date().toISOString();
 }
@@ -79,6 +90,36 @@ export function listAccountsIndex(): AccountIndexEntry[] {
       requiresReauth: !!e.requiresReauth,
       profile: e.profile ?? null,
     }));
+}
+
+// Removes entries that cannot possibly work:
+// - invalid accountId format
+// - duplicates
+// - missing or malformed stored tokens
+// Returns the sanitized index and persists it if changes are needed.
+export function pruneAccountsIndex(): AccountIndexEntry[] {
+  const existing = listAccountsIndex();
+  const seen = new Set<AccountId>();
+
+  const next = existing.filter((e) => {
+    if (!e?.accountId) return false;
+    if (!isUuidLike(e.accountId)) return false;
+    if (seen.has(e.accountId)) return false;
+    seen.add(e.accountId);
+    if (!hasValidStoredTokens(e.accountId)) return false;
+    return true;
+  });
+
+  const changed = next.length !== existing.length;
+  if (changed) {
+    writeAccountsIndex(next);
+    const active = getActiveAccountId();
+    if (active && !next.some((x) => x.accountId === active)) {
+      setActiveAccountId(null);
+    }
+  }
+
+  return next;
 }
 
 export function writeAccountsIndex(next: AccountIndexEntry[]): void {

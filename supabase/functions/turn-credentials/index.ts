@@ -5,6 +5,44 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+function parseUrls(raw: string | undefined | null): string[] {
+  if (!raw) return [];
+  return raw
+    .split(/[\s,]+/g)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function base64FromArrayBuffer(buf: ArrayBuffer): string {
+  const bytes = new Uint8Array(buf);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary);
+}
+
+async function hmacSha1Base64(secret: string, message: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-1" },
+    false,
+    ["sign"]
+  );
+  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(message));
+  return base64FromArrayBuffer(sig);
+}
+
+function splitIceServersByUrl(server: { urls: string | string[]; username?: string; credential?: string }) {
+  const urls = Array.isArray(server.urls) ? server.urls : [server.urls];
+  const out: Array<{ urls: string; username?: string; credential?: string }> = [];
+  for (const u of urls) {
+    if (typeof u !== "string" || !u) continue;
+    if (u.startsWith("stun:")) out.push({ urls: u });
+    else out.push({ urls: u, username: server.username, credential: server.credential });
+  }
+  return out;
+}
+
 serve(async (req) => {
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
@@ -12,18 +50,76 @@ serve(async (req) => {
   }
 
   try {
+    // Provider priority:
+    // 1) Self-host / any TURN provider via TURN_URLS + (TURN_SHARED_SECRET or TURN_USERNAME+TURN_CREDENTIAL)
+    // 2) Cloudflare Calls TURN via CLOUDFLARE_TURN_* (legacy)
+    // 3) STUN-only fallback
+
+    const ttlSeconds = Math.max(60, Number(Deno.env.get("TURN_TTL_SECONDS") ?? "3600"));
+    const turnUrls = parseUrls(Deno.env.get("TURN_URLS"));
+    const turnSharedSecret = Deno.env.get("TURN_SHARED_SECRET");
+    const turnUsername = Deno.env.get("TURN_USERNAME");
+    const turnCredential = Deno.env.get("TURN_CREDENTIAL");
+
+    if (turnUrls.length > 0) {
+      console.log("[TURN] Using TURN_URLS from secrets (provider-agnostic)");
+
+      if (turnSharedSecret) {
+        // coturn REST auth: username is expiry timestamp
+        const expiry = Math.floor(Date.now() / 1000) + ttlSeconds;
+        const authUser = `${expiry}`;
+        const authPass = await hmacSha1Base64(turnSharedSecret, authUser);
+
+        const iceServers = [
+          { urls: "stun:stun.l.google.com:19302" },
+          ...splitIceServersByUrl({ urls: turnUrls, username: authUser, credential: authPass }),
+        ];
+
+        return new Response(JSON.stringify({ iceServers }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      if (turnUsername && turnCredential) {
+        const iceServers = [
+          { urls: "stun:stun.l.google.com:19302" },
+          ...splitIceServersByUrl({ urls: turnUrls, username: turnUsername, credential: turnCredential }),
+        ];
+
+        return new Response(JSON.stringify({ iceServers }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      console.warn("[TURN] TURN_URLS set but missing TURN_SHARED_SECRET or TURN_USERNAME/TURN_CREDENTIAL");
+      return new Response(
+        JSON.stringify({
+          error: "TURN_URLS is set but credentials are missing",
+          iceServers: [
+            { urls: "stun:stun.l.google.com:19302" },
+            { urls: "stun:stun1.l.google.com:19302" },
+          ],
+        }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     const turnKeyId = Deno.env.get("CLOUDFLARE_TURN_KEY_ID");
     const turnApiToken = Deno.env.get("CLOUDFLARE_TURN_API_TOKEN");
 
     if (!turnKeyId || !turnApiToken) {
-      console.error("[TURN] Missing credentials - CLOUDFLARE_TURN_KEY_ID or CLOUDFLARE_TURN_API_TOKEN not set");
+      console.error(
+        "[TURN] Missing TURN config. Set TURN_URLS + TURN_SHARED_SECRET (or TURN_USERNAME/TURN_CREDENTIAL), or CLOUDFLARE_TURN_KEY_ID + CLOUDFLARE_TURN_API_TOKEN"
+      );
       return new Response(
-        JSON.stringify({ 
+        JSON.stringify({
           error: "TURN credentials not configured",
           iceServers: [
             { urls: "stun:stun.l.google.com:19302" },
             { urls: "stun:stun1.l.google.com:19302" },
-          ]
+          ],
         }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
@@ -78,39 +174,13 @@ serve(async (req) => {
     // { iceServers: { urls: [...], username: "...", credential: "..." } }
     // 
     // IMPORTANT: Safari/iOS WebRTC requires SEPARATE ICE server objects per URL
-    // We must split the urls array into individual server entries
-    
     const iceServers: Array<{ urls: string; username?: string; credential?: string }> = [];
     
-    const processServer = (server: any) => {
-      const urls = Array.isArray(server.urls) ? server.urls : [server.urls];
-      const username = server.username;
-      const credential = server.credential;
-      
-      for (const singleUrl of urls) {
-        if (typeof singleUrl === 'string') {
-          // STUN servers don't need auth, TURN servers do
-          if (singleUrl.startsWith('stun:')) {
-            iceServers.push({ urls: singleUrl });
-          } else {
-            // TURN/TURNS - include credentials
-            iceServers.push({
-              urls: singleUrl,
-              username,
-              credential,
-            });
-          }
-        }
-      }
-    };
-    
     if (data.iceServers) {
-      if (Array.isArray(data.iceServers)) {
-        for (const server of data.iceServers) {
-          processServer(server);
-        }
-      } else if (typeof data.iceServers === 'object') {
-        processServer(data.iceServers);
+      const servers = Array.isArray(data.iceServers) ? data.iceServers : [data.iceServers];
+      for (const s of servers) {
+        if (!s?.urls) continue;
+        iceServers.push(...splitIceServersByUrl({ urls: s.urls, username: s.username, credential: s.credential }));
       }
     }
 

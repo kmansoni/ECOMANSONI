@@ -22,6 +22,18 @@ function getErrorMessage(err: unknown): string {
   return String(err);
 }
 
+function normalizeBrokenVerticalText(text: string): string {
+  const lines = text.split(/\r\n|\r|\n|\u2028|\u2029/);
+  const nonEmpty = lines.map((line) => line.trim()).filter(Boolean);
+  const isSingleGlyph = (s: string) => Array.from(s).length === 1;
+  // If payload became "one symbol per line", stitch it back.
+  // Use 2+ to also fix short cases like "О\nК".
+  if (nonEmpty.length >= 2 && nonEmpty.length <= 64 && nonEmpty.every(isSingleGlyph)) {
+    return nonEmpty.join("");
+  }
+  return text;
+}
+
 export interface ChatMessage {
   id: string;
   client_msg_id?: string | null;
@@ -381,9 +393,11 @@ export function useMessages(conversationId: string | null) {
 
   const sendMessage = async (content: string) => {
     console.log("[sendMessage] called with:", { conversationId, userId: user?.id, content });
-    
-    if (!conversationId || !user || !content.trim()) {
-      console.log("[sendMessage] validation failed:", { conversationId, hasUser: !!user, trimmedContent: content.trim() });
+
+    const normalizedContent = normalizeBrokenVerticalText(content).trim();
+
+    if (!conversationId || !user || !normalizedContent) {
+      console.log("[sendMessage] validation failed:", { conversationId, hasUser: !!user, trimmedContent: normalizedContent });
       return;
     }
 
@@ -397,7 +411,7 @@ export function useMessages(conversationId: string | null) {
           {
             conversation_id: conversationId,
             sender_id: user.id,
-            content: content.trim(),
+            content: normalizedContent,
             client_msg_id: clientMsgId,
           },
           {
@@ -414,7 +428,7 @@ export function useMessages(conversationId: string | null) {
           const { error: fallbackError } = await supabase.from("messages").insert({
             conversation_id: conversationId,
             sender_id: user.id,
-            content: content.trim(),
+            content: normalizedContent,
           });
           if (fallbackError) throw fallbackError;
           return;

@@ -16,6 +16,16 @@ concurrency:
 jobs:
   frontend:
     runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -46,6 +56,13 @@ jobs:
 
       - name: Requirements dashboard
         run: npm run req:dashboard
+
+      - name: Validate Calls WS contracts
+        run: npm run calls:validate
+        env:
+          REDIS_URL: redis://localhost:6379
+          CALLS_REDIS_REQUIRED: "1"
+          CALLS_ALLOW_INMEM_FALLBACK: "0"
 
       - name: Test
         run: npm test

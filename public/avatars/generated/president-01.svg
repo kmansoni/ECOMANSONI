@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" fill="none">
+  <defs>
+    <radialGradient id="bg" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(320 240) rotate(55) scale(980)">
+      <stop stop-color="#0EA5E9" stop-opacity="0.35"/>
+      <stop offset="0.45" stop-color="#0B3B64" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#050A12"/>
+    </radialGradient>
+    <linearGradient id="suit" x1="380" y1="560" x2="660" y2="920" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0B1E33"/>
+      <stop offset="1" stop-color="#071426"/>
+    </linearGradient>
+    <linearGradient id="skin" x1="420" y1="300" x2="610" y2="560" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F4D2B8"/>
+      <stop offset="1" stop-color="#E8B79A"/>
+    </linearGradient>
+    <filter id="soft" x="-40" y="-40" width="1104" height="1104" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="14" result="blur"/>
+      <feColorMatrix in="blur" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 0.55 0"/>
+      <feBlend in="SourceGraphic" mode="normal"/>
+    </filter>
+  </defs>
+
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+
+  <!-- subtle bokeh -->
+  <g opacity="0.22" filter="url(#soft)">
+    <circle cx="208" cy="208" r="92" fill="#38BDF8"/>
+    <circle cx="820" cy="320" r="120" fill="#22C55E"/>
+    <circle cx="760" cy="820" r="140" fill="#60A5FA"/>
+  </g>
+
+  <!-- shoulders -->
+  <path d="M250 920c34-160 152-250 262-250h0c110 0 228 90 262 250H250z" fill="url(#suit)"/>
+
+  <!-- shirt + tie -->
+  <path d="M460 705c18 32 32 46 52 46s34-14 52-46l-52-34-52 34z" fill="#E5E7EB" opacity="0.95"/>
+  <path d="M512 690l28 34-28 148-28-148 28-34z" fill="#2563EB" opacity="0.9"/>
+
+  <!-- neck -->
+  <path d="M462 640c10 64 36 92 50 92s40-28 50-92c-34 18-66 18-100 0z" fill="url(#skin)"/>
+
+  <!-- head -->
+  <path d="M512 270c-92 0-164 72-164 170 0 118 86 216 164 216s164-98 164-216c0-98-72-170-164-170z" fill="url(#skin)"/>
+
+  <!-- hair -->
+  <path d="M350 420c14-104 92-162 162-162 78 0 150 52 164 148-34-34-88-56-164-56-72 0-126 22-162 70z" fill="#0B1220"/>
+
+  <!-- facial features (minimal) -->
+  <path d="M438 470c30-22 62-22 92 0" stroke="#1F2937" stroke-opacity="0.35" stroke-width="14" stroke-linecap="round"/>
+  <path d="M494 520c10 10 26 10 36 0" stroke="#1F2937" stroke-opacity="0.35" stroke-width="12" stroke-linecap="round"/>
+  <path d="M450 570c40 34 84 34 124 0" stroke="#0F172A" stroke-opacity="0.22" stroke-width="16" stroke-linecap="round"/>
+
+  <!-- highlight ring -->
+  <circle cx="512" cy="512" r="420" stroke="#FFFFFF" stroke-opacity="0.08" stroke-width="18"/>
+</svg>

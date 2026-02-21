@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mansoni.com/schemas/ws/CONSUMER_ADDED.schema.json",
+  "title": "CONSUMER_ADDED",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["roomId", "consumerId", "producerId", "kind"],
+  "properties": {
+    "roomId": { "$ref": "https://mansoni.com/schemas/ws/types.schema.json#/properties/roomId" },
+    "consumerId": { "type": "string", "minLength": 3, "maxLength": 128 },
+    "producerId": { "type": "string", "minLength": 3, "maxLength": 128 },
+    "kind": { "type": "string", "enum": ["audio", "video", "screen"] },
+    "rtpParameters": { "type": "object" }
+  }
+}

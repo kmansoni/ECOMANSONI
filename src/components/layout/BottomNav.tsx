@@ -1,5 +1,5 @@
 import { useState, useEffect, forwardRef, useRef, useCallback } from "react";
-import { Home, Search, Heart, FileText, LucideIcon, Plus, Check, ChevronDown, Camera, MessageCircle, User, PlaySquare } from "lucide-react";
+import { Home, Search, Heart, FileText, LucideIcon, Plus, Check, ChevronDown, Camera, MessageCircle, User, PlaySquare, AlertCircle } from "lucide-react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { useUnreadChats } from "@/hooks/useUnreadChats";
@@ -348,20 +348,38 @@ export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function Bottom
           </DrawerHeader>
           
           <div className="p-4 space-y-2">
-            {maAccounts.map((account) => {
-              const displayName = account.profile?.displayName ?? "Аккаунт";
-              const username = account.profile?.username ?? "user";
-              const avatar = account.profile?.avatarUrl ?? "https://i.pravatar.cc/150?img=32";
+            {(() => {
+              // IRON RULE 3.1: Active account always first in drawer
+              const active = maAccounts.find(a => a.accountId === activeAccountId);
+              const others = maAccounts.filter(a => a.accountId !== activeAccountId);
+              const sorted = active ? [active, ...others] : others;
+              return sorted.map((account) => {
+              const displayName = account.profile?.displayName ?? "(profile not loaded)";
+              const username = account.profile?.username ?? "(unknown)";
+              // FIX (P1): Deterministic avatar per account (hash of accountId) instead of fixed img=32
+              const getAvatarUrl = () => {
+                if (account.profile?.avatarUrl) return account.profile.avatarUrl;
+                const hash = Array.from(account.accountId).reduce((h, c) => ((h << 5) - h) + c.charCodeAt(0), 0);
+                const imgId = Math.abs(hash) % 70;
+                return `https://i.pravatar.cc/150?img=${imgId}`;
+              };
+              const avatar = getAvatarUrl();
               const isActive = activeAccountId === account.accountId;
+              const needsReauth = account.requiresReauth === true;
+              
               return (
               <button
                 key={account.accountId}
-                onClick={() => handleSwitchAccount(account.accountId)}
+                onClick={() => !needsReauth && handleSwitchAccount(account.accountId)}
+                disabled={needsReauth}
+                title={needsReauth ? "Требуется переаутентификация" : undefined}
                 className={cn(
                   "w-full flex items-center gap-3 p-3 rounded-xl transition-colors",
-                  isActive 
-                    ? "bg-primary/10" 
-                    : "hover:bg-muted"
+                  needsReauth 
+                    ? "opacity-50 cursor-not-allowed bg-red-50 dark:bg-red-950/20" 
+                    : (isActive 
+                        ? "bg-primary/10" 
+                        : "hover:bg-muted")
                 )}
               >
                 <img
@@ -373,12 +391,16 @@ export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function Bottom
                   <p className="font-medium text-foreground">{username}</p>
                   <p className="text-sm text-muted-foreground">{displayName}</p>
                 </div>
-                {isActive && (
+                {isActive && !needsReauth && (
                   <Check className="w-5 h-5 text-primary" />
+                )}
+                {needsReauth && (
+                  <AlertCircle className="w-5 h-5 text-red-500" title="Требуется переаутентификация" />
                 )}
               </button>
               );
-            })}
+            });
+            })()}
             
             {/* Add Account Button */}
             <button

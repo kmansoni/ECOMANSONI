@@ -31,17 +31,17 @@ const FALLBACK_ICE_SERVERS: RTCIceServer[] = [
   },
 ];
 
-// Cache for Cloudflare TURN credentials
+// Cache for dynamic TURN credentials
 let cachedIceServers: RTCIceServer[] | null = null;
 let cacheExpiry: number = 0;
 const CACHE_TTL_MS = 20 * 60 * 60 * 1000; // 20 hours (credentials valid for 24h)
 
 /**
- * Fetch dynamic Cloudflare TURN credentials
+ * Fetch dynamic TURN credentials
  */
-async function fetchCloudflareCredentials(): Promise<RTCIceServer[] | null> {
+async function fetchTurnCredentials(): Promise<RTCIceServer[] | null> {
   try {
-    console.log("[WebRTC Config] Fetching Cloudflare TURN credentials...");
+    console.log("[WebRTC Config] Fetching TURN credentials...");
     
     const { data, error } = await supabase.functions.invoke("turn-credentials");
     
@@ -51,13 +51,11 @@ async function fetchCloudflareCredentials(): Promise<RTCIceServer[] | null> {
     }
     
     if (data?.iceServers && Array.isArray(data.iceServers)) {
-      console.log("[WebRTC Config] Got", data.iceServers.length, "ICE servers from Cloudflare");
+      console.log("[WebRTC Config] Got", data.iceServers.length, "ICE servers");
       return data.iceServers;
     }
     
-    if (data?.error) {
-      console.warn("[WebRTC Config] Cloudflare error:", data.error);
-    }
+    if (data?.error) console.warn("[WebRTC Config] TURN error:", data.error);
     
     return null;
   } catch (err) {
@@ -67,7 +65,7 @@ async function fetchCloudflareCredentials(): Promise<RTCIceServer[] | null> {
 }
 
 /**
- * Get ICE servers with Cloudflare TURN (cached) or fallbacks
+ * Get ICE servers with dynamic TURN (cached) or fallbacks
  */
 export async function getIceServers(forceRelay = false): Promise<IceServerConfig> {
   const now = Date.now();
@@ -83,11 +81,11 @@ export async function getIceServers(forceRelay = false): Promise<IceServerConfig
   }
   
   // Fetch fresh credentials
-  const cloudflareServers = await fetchCloudflareCredentials();
+  const turnServers = await fetchTurnCredentials();
   
-  if (cloudflareServers && cloudflareServers.length > 0) {
-    // Merge Cloudflare servers with fallbacks
-    cachedIceServers = [...cloudflareServers, ...FALLBACK_ICE_SERVERS];
+  if (turnServers && turnServers.length > 0) {
+    // Merge dynamic TURN servers with fallbacks
+    cachedIceServers = [...turnServers, ...FALLBACK_ICE_SERVERS];
     cacheExpiry = now + CACHE_TTL_MS;
     
     console.log("[WebRTC Config] Cached", cachedIceServers.length, "ICE servers");

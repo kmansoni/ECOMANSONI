@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mansoni.com/schemas/ws/ROOM_PEERS.schema.json",
+  "title": "ROOM_PEERS",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["roomId", "peers"],
+  "properties": {
+    "roomId": { "$ref": "https://mansoni.com/schemas/ws/types.schema.json#/properties/roomId" },
+    "peers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["userId", "deviceId"],
+        "properties": {
+          "userId": { "$ref": "https://mansoni.com/schemas/ws/types.schema.json#/properties/userId" },
+          "deviceId": { "$ref": "https://mansoni.com/schemas/ws/types.schema.json#/properties/deviceId" },
+          "role": { "type": "string", "enum": ["member", "moderator"] },
+          "e2eeReady": { "type": "boolean" }
+        }
+      }
+    }
+  }
+}

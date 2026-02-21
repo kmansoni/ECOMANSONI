@@ -65,6 +65,7 @@ type Screen =
   | "chat_folders"
   | "chat_folder_edit"
   | "profile_status"
+  | "language"
   | "accessibility"
   | "statistics"
   | "stats_recommendations"
@@ -1412,7 +1413,7 @@ export function SettingsPage() {
       case "privacy":
         return (
           <>
-            {renderHeader("������������������")}
+            {renderHeader("Конфиденциальность")}
             <div className="flex-1 overflow-y-auto native-scroll pb-8">
               <PrivacySecurityCenter mode="privacy" isDark={isDark} onOpenBlocked={() => setCurrentScreen("privacy_blocked")} />
             </div>
@@ -1432,7 +1433,7 @@ export function SettingsPage() {
       case "security":
         return (
           <>
-            {renderHeader("������������")}
+            {renderHeader("Безопасность")}
             <div className="flex-1 overflow-y-auto native-scroll">
               <div className={cn(
                 "mx-4 backdrop-blur-xl rounded-2xl border overflow-hidden",
@@ -1440,22 +1441,22 @@ export function SettingsPage() {
               )}>
                 {renderMenuItem(
                   <Key className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />,
-                  "���-������",
+                  "Код-пароль",
                   () => setCurrentScreen("security_passcode"),
                 )}
                 {renderMenuItem(
                   <Shield className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />,
-                  "�������� ������",
+                  "Облачный пароль",
                   () => setCurrentScreen("security_cloud_password"),
                 )}
                 {renderMenuItem(
                   <Shield className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />,
-                  "������ ��������",
+                  "Защита аккаунта",
                   () => setCurrentScreen("security_account_protection"),
                 )}
                 {renderMenuItem(
                   <Shield className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />,
-                  "������������� ��������������",
+                  "Двухэтапная аутентификация",
                   () => setCurrentScreen("security_2fa"),
                 )}
               </div>
@@ -1465,16 +1466,16 @@ export function SettingsPage() {
               )}>
                 {renderMenuItem(
                   <Smartphone className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />,
-                  "�������� ������",
+                  "Активные сеансы",
                   () => setCurrentScreen("security_sessions"),
                 )}
                 {renderMenuItem(
                   <Globe className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />,
-                  "�����",
+                  "Сайты",
                   () => setCurrentScreen("security_sites"),
                 )}
-                {renderMenuItem(<Mail className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />, "������ �� ���")}
-                {renderMenuItem(<Database className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />, "������ ��������")}
+                {renderMenuItem(<Mail className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />, "Письма от нас")}
+                {renderMenuItem(<Database className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />, "Данные аккаунта")}
               </div>
             </div>
           </>
@@ -1483,7 +1484,7 @@ export function SettingsPage() {
       case "security_sites":
         return (
           <>
-            {renderHeader("�����")}
+            {renderHeader("Сайты")}
             <div className="flex-1 overflow-y-auto native-scroll pb-8">
               <PrivacySecurityCenter mode="sites" isDark={isDark} />
             </div>
@@ -1493,7 +1494,7 @@ export function SettingsPage() {
       case "security_passcode":
         return (
           <>
-            {renderHeader("���-������")}
+            {renderHeader("Код-пароль")}
             <div className="flex-1 overflow-y-auto native-scroll pb-8">
               <PrivacySecurityCenter mode="passcode" isDark={isDark} />
             </div>
@@ -1503,7 +1504,7 @@ export function SettingsPage() {
       case "security_cloud_password":
         return (
           <>
-            {renderHeader("�������� ������")}
+            {renderHeader("Облачный пароль")}
             <div className="flex-1 overflow-y-auto native-scroll pb-8">
               <PrivacySecurityCenter mode="cloud_password" isDark={isDark} />
             </div>
@@ -1513,7 +1514,7 @@ export function SettingsPage() {
       case "security_account_protection":
         return (
           <>
-            {renderHeader("������ ������ ��������")}
+            {renderHeader("Защита аккаунта")}
             <div className="flex-1 overflow-y-auto native-scroll pb-8">
               <PrivacySecurityCenter mode="account_protection" isDark={isDark} />
             </div>
@@ -2074,7 +2075,7 @@ export function SettingsPage() {
       case "appearance":
         return (
           <>
-            {renderHeader("����������")}
+            {renderHeader("Оформление")}
             <div className="flex-1 overflow-y-auto native-scroll pb-8">
               <AppearanceAndEnergyCenter
                 mode="appearance"
@@ -2089,7 +2090,7 @@ export function SettingsPage() {
       case "energy_saver":
         return (
           <>
-            {renderHeader("����������������")}
+            {renderHeader("Энергосбережение")}
             <div className="flex-1 overflow-y-auto native-scroll pb-8">
               <AppearanceAndEnergyCenter
                 mode="energy"
@@ -2439,6 +2440,36 @@ export function SettingsPage() {
                     if (!isAuthed) return;
                     await updateSettings({ high_contrast: val });
                   },
+                )}
+              </div>
+            </div>
+          </>
+        );
+
+      case "language":
+        return (
+          <>
+            {renderHeader("Язык")}
+            <div className="flex-1 overflow-y-auto native-scroll pb-8">
+              <div
+                className={cn(
+                  "mx-4 backdrop-blur-xl rounded-2xl border overflow-hidden",
+                  isDark ? "settings-dark-card" : "bg-card/80 border-white/20",
+                )}
+              >
+                {[
+                  { code: "ru", label: "Русский" },
+                  { code: "en", label: "English" },
+                ].map((item) =>
+                  renderMenuItem(
+                    <Globe className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />,
+                    item.label,
+                    async () => {
+                      if (!isAuthed) return;
+                      await updateSettings({ language_code: item.code });
+                    },
+                    settings?.language_code === item.code ? "✓" : undefined,
+                  ),
                 )}
               </div>
             </div>
@@ -3398,10 +3429,10 @@ export function SettingsPage() {
                     myProfile?.status_emoji ?? undefined,
                   )}
                   {renderMenuItem(<Shield className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />, "Безопасность", () => setCurrentScreen("security"))}
-                  {renderMenuItem(<Moon className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />, "Общие настройки", () => setCurrentScreen("appearance"))}
+                  {renderMenuItem(<Moon className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />, "Оформление", () => setCurrentScreen("appearance"))}
                   {renderMenuItem(<Archive className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />, "Папки с чатами", () => setCurrentScreen("chat_folders"))}
                   {renderMenuItem(<Smartphone className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />, "Устройства", () => setCurrentScreen("security_sessions"))}
-                  {renderMenuItem(<Globe className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />, "Язык", () => setCurrentScreen("appearance"), settings?.language_code ?? "ru")}
+                  {renderMenuItem(<Globe className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />, "Язык", () => setCurrentScreen("language"), settings?.language_code ?? "ru")}
                   {renderMenuItem(<Accessibility className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />, "Доступность", () => setCurrentScreen("accessibility"))}
                   {renderMenuItem(<BarChart3 className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />, "Статистика", () => setCurrentScreen("statistics"))}
                   {renderMenuItem(<BadgeCheck className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />, "Брендированный контент", () => setCurrentScreen("branded_content"))}

@@ -1,6 +1,7 @@
 import { Phone, PhoneOff, Video } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { VideoCall } from "@/contexts/VideoCallContext";
+import { GradientAvatar } from "@/components/ui/gradient-avatar";
 
 interface IncomingVideoCallSheetProps {
   call: VideoCall;
@@ -34,19 +35,13 @@ export function IncomingVideoCallSheet({ call, onAccept, onDecline }: IncomingVi
           <div className="absolute inset-0 bg-white/30 rounded-full animate-ping" />
           <div className="absolute inset-[-8px] bg-white/20 rounded-full animate-pulse" />
           <div className="w-32 h-32 rounded-full overflow-hidden border-4 border-white/50 relative z-10">
-            {callerAvatar ? (
-              <img
-                src={callerAvatar}
-                alt={callerName}
-                className="w-full h-full object-cover"
-              />
-            ) : (
-              <div className="w-full h-full bg-white/30 flex items-center justify-center">
-                <span className="text-4xl text-white font-bold">
-                  {callerName.charAt(0).toUpperCase()}
-                </span>
-              </div>
-            )}
+            <GradientAvatar
+              name={callerName}
+              seed={call.caller_id}
+              avatarUrl={callerAvatar}
+              size="lg"
+              className="w-full h-full text-4xl border-0"
+            />
           </div>
         </div>
 

@@ -4,6 +4,7 @@ import { Plus, Loader2 } from "lucide-react";
 import { useStories, type UserWithStories } from "@/hooks/useStories";
 import { StoryViewer } from "@/components/feed/StoryViewer";
 import { cn } from "@/lib/utils";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 // Animation constants
 const EXPANDED_AVATAR_SIZE = 64;
 const COLLAPSED_AVATAR_SIZE = 32;
@@ -14,6 +15,16 @@ const PADDING_LEFT = 16;
 
 // Precomputed values
 const SIZE_DIFF = EXPANDED_AVATAR_SIZE - COLLAPSED_AVATAR_SIZE;
+
+function getInitials(name: string | null | undefined): string {
+  const value = (name || "").trim();
+  if (!value) return "?";
+  const words = value.split(/\s+/).filter(Boolean);
+  if (words.length >= 2) {
+    return `${words[0][0]}${words[1][0]}`.toUpperCase();
+  }
+  return value.slice(0, 2).toUpperCase();
+}
 
 interface ChatStoriesProps {
   expandProgress: number; // 0 = collapsed, 1 = expanded
@@ -146,12 +157,17 @@ export function ChatStories({ expandProgress, onStackClick, mode }: ChatStoriesP
                           <Plus className="w-3 h-3 text-primary" />
                         </div>
                       ) : (
-                        <img
-                          src={user.avatar_url || `https://i.pravatar.cc/150?u=${user.user_id}`}
-                          alt={user.display_name || ''}
-                          className="w-full h-full object-cover rounded-full"
-                          loading="lazy"
-                        />
+                        <Avatar className="w-full h-full rounded-full">
+                          <AvatarImage
+                            src={user.avatar_url || undefined}
+                            alt={user.display_name || ""}
+                            className="w-full h-full object-cover rounded-full"
+                            loading="lazy"
+                          />
+                          <AvatarFallback className="w-full h-full rounded-full bg-muted text-[10px] font-semibold text-muted-foreground">
+                            {getInitials(user.display_name)}
+                          </AvatarFallback>
+                        </Avatar>
                       )}
                     </div>
                   </div>
@@ -240,12 +256,17 @@ export function ChatStories({ expandProgress, onStackClick, mode }: ChatStoriesP
                         <Plus className="w-6 h-6 text-primary" />
                       </div>
                     ) : (
-                      <img
-                        src={user.avatar_url || `https://i.pravatar.cc/150?u=${user.user_id}`}
-                        alt={user.display_name || ''}
-                        className="w-full h-full object-cover rounded-full"
-                        loading="lazy"
-                      />
+                      <Avatar className="w-full h-full rounded-full">
+                        <AvatarImage
+                          src={user.avatar_url || undefined}
+                          alt={user.display_name || ""}
+                          className="w-full h-full object-cover rounded-full"
+                          loading="lazy"
+                        />
+                        <AvatarFallback className="w-full h-full rounded-full bg-muted text-sm font-semibold text-muted-foreground">
+                          {getInitials(user.display_name)}
+                        </AvatarFallback>
+                      </Avatar>
                     )}
                   </div>
                 </div>

@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mansoni.com/schemas/ws/KEY_PACKAGE.schema.json",
+  "title": "KEY_PACKAGE",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "roomId",
+    "epoch",
+    "fromDeviceId",
+    "toDeviceId",
+    "senderKeyId",
+    "keyPackageType",
+    "ciphertext",
+    "sig"
+  ],
+  "properties": {
+    "roomId": { "$ref": "https://mansoni.com/schemas/ws/types.schema.json#/properties/roomId" },
+    "epoch": { "type": "integer", "minimum": 0 },
+    "fromDeviceId": { "$ref": "https://mansoni.com/schemas/ws/types.schema.json#/properties/deviceId" },
+    "toDeviceId": { "$ref": "https://mansoni.com/schemas/ws/types.schema.json#/properties/deviceId" },
+    "senderKeyId": { "type": "string", "minLength": 8, "maxLength": 128 },
+    "keyPackageType": {
+      "type": "string",
+      "enum": ["SENDER_KEY", "RATCHET_STEP", "DEVICE_IDENTITY", "EPOCH_STATE"]
+    },
+    "ciphertext": { "type": "string", "contentEncoding": "base64", "minLength": 16, "maxLength": 65536 },
+    "sig": { "type": "string", "contentEncoding": "base64", "minLength": 16, "maxLength": 2048 },
+    "protocolVersion": { "type": "integer", "minimum": 1 }
+  }
+}

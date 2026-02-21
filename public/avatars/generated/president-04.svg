@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" fill="none">
+  <defs>
+    <radialGradient id="bg" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(820 820) rotate(-135) scale(980)">
+      <stop stop-color="#A78BFA" stop-opacity="0.26"/>
+      <stop offset="0.55" stop-color="#0B3B64" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#060812"/>
+    </radialGradient>
+    <linearGradient id="suit" x1="360" y1="560" x2="700" y2="940" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0B1220"/>
+      <stop offset="1" stop-color="#050A12"/>
+    </linearGradient>
+    <linearGradient id="skin" x1="420" y1="300" x2="610" y2="560" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F5D1BA"/>
+      <stop offset="1" stop-color="#E7B094"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+
+  <path d="M240 940c34-176 162-270 272-270h0c110 0 238 94 272 270H240z" fill="url(#suit)"/>
+
+  <path d="M446 710c18 30 40 46 66 46s48-16 66-46l-66-38-66 38z" fill="#F3F4F6" opacity="0.96"/>
+  <path d="M512 692l26 34-26 146-26-146 26-34z" fill="#38BDF8" opacity="0.85"/>
+
+  <path d="M468 640c10 70 30 96 44 96s34-26 44-96c-28 18-60 18-88 0z" fill="url(#skin)"/>
+
+  <path d="M512 270c-90 0-162 72-162 168 0 122 86 224 162 224s162-102 162-224c0-96-72-168-162-168z" fill="url(#skin)"/>
+
+  <!-- hair -->
+  <path d="M352 420c20-106 96-166 160-166 74 0 148 50 164 138-44-28-96-44-164-44-80 0-132 20-160 72z" fill="#0B1220"/>
+
+  <!-- facial features -->
+  <path d="M438 472c30-20 62-20 92 0" stroke="#0F172A" stroke-opacity="0.25" stroke-width="14" stroke-linecap="round"/>
+  <path d="M494 522c10 10 26 10 36 0" stroke="#0F172A" stroke-opacity="0.25" stroke-width="12" stroke-linecap="round"/>
+  <path d="M454 582c38 26 78 26 116 0" stroke="#0F172A" stroke-opacity="0.18" stroke-width="16" stroke-linecap="round"/>
+
+  <circle cx="512" cy="512" r="420" stroke="#FFFFFF" stroke-opacity="0.08" stroke-width="18"/>
+</svg>

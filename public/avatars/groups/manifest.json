@@ -1,0 +1,34 @@
+{
+  "groups": [
+    {
+      "id": "animals",
+      "title": "Животные",
+      "static": "/avatars/groups/animals.svg",
+      "animated": "/avatars/groups/animals-animated.svg"
+    },
+    {
+      "id": "soldiers",
+      "title": "Солдаты",
+      "static": "/avatars/groups/soldiers.svg",
+      "animated": "/avatars/groups/soldiers-animated.svg"
+    },
+    {
+      "id": "rulers",
+      "title": "Правители стран",
+      "static": "/avatars/groups/rulers.svg",
+      "animated": "/avatars/groups/rulers-animated.svg"
+    },
+    {
+      "id": "kings",
+      "title": "Короли",
+      "static": "/avatars/groups/kings.svg",
+      "animated": "/avatars/groups/kings-animated.svg"
+    },
+    {
+      "id": "sultans",
+      "title": "Султаны",
+      "static": "/avatars/groups/sultans.svg",
+      "animated": "/avatars/groups/sultans-animated.svg"
+    }
+  ]
+}

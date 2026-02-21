@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mansoni.com/schemas/ws/SYNC_MAILBOX.schema.json",
+  "title": "SYNC_MAILBOX",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["deviceId"],
+  "properties": {
+    "deviceId": { "$ref": "https://mansoni.com/schemas/ws/types.schema.json#/properties/deviceId" },
+    "lastStreamId": { "type": "string", "maxLength": 64, "default": "0-0" },
+    "limit": { "type": "integer", "minimum": 1, "maximum": 200, "default": 50 }
+  }
+}

@@ -105,15 +105,22 @@ export async function getOrCreateAppearanceSettings(userId: string): Promise<Use
 }
 
 export async function updateAppearanceSettings(
-  userId: string,
+  _userId: string,
   patch: Partial<Omit<UserAppearanceSettings, "user_id" | "updated_at" | "created_at">>,
 ): Promise<UserAppearanceSettings> {
-  const { data, error } = await supabaseAny
-    .from("user_appearance_settings")
-    .update(patch)
-    .eq("user_id", userId)
-    .select("*")
-    .single();
+  const { data, error } = await supabaseAny.rpc("update_my_appearance_settings", {
+    p_chat_theme_id: patch.chat_theme_id ?? null,
+    p_chat_wallpaper_id: patch.chat_wallpaper_id ?? null,
+    p_personal_color_primary: patch.personal_color_primary ?? null,
+    p_personal_color_secondary: patch.personal_color_secondary ?? null,
+    p_dark_mode_enabled: patch.dark_mode_enabled ?? null,
+    p_dark_theme: patch.dark_theme ?? null,
+    p_font_scale: patch.font_scale ?? null,
+    p_message_corner_radius: patch.message_corner_radius ?? null,
+    p_ui_animations_enabled: patch.ui_animations_enabled ?? null,
+    p_stickers_emoji_animations_enabled: patch.stickers_emoji_animations_enabled ?? null,
+    p_media_tap_navigation_enabled: patch.media_tap_navigation_enabled ?? null,
+  });
   if (error) throw error;
   return withAppearanceDefaults(data as any);
 }
@@ -147,10 +154,10 @@ export async function getOrCreateUserAppIconSelection(userId: string): Promise<s
 }
 
 export async function setUserAppIconSelection(userId: string, iconId: string): Promise<void> {
-  const { error } = await supabaseAny.from("user_app_icon_selection").upsert(
-    { user_id: userId, icon_id: iconId },
-    { onConflict: "user_id" },
-  );
+  void userId;
+  const { error } = await supabaseAny.rpc("set_my_app_icon_selection", {
+    p_icon_id: iconId,
+  });
   if (error) throw error;
 }
 
@@ -173,16 +180,20 @@ export async function getOrCreateEnergySaverSettings(userId: string): Promise<Us
 }
 
 export async function updateEnergySaverSettings(
-  userId: string,
+  _userId: string,
   patch: Partial<Omit<UserEnergySaverSettings, "user_id" | "updated_at" | "created_at">>,
 ): Promise<UserEnergySaverSettings> {
-  const { data, error } = await supabaseAny
-    .from("user_energy_saver_settings")
-    .update(patch)
-    .eq("user_id", userId)
-    .select("*")
-    .single();
+  const { data, error } = await supabaseAny.rpc("update_my_energy_saver_settings", {
+    p_mode: patch.mode ?? null,
+    p_battery_threshold_percent: patch.battery_threshold_percent ?? null,
+    p_autoplay_video: patch.autoplay_video ?? null,
+    p_autoplay_gif: patch.autoplay_gif ?? null,
+    p_animated_stickers: patch.animated_stickers ?? null,
+    p_animated_emoji: patch.animated_emoji ?? null,
+    p_interface_animations: patch.interface_animations ?? null,
+    p_media_preload: patch.media_preload ?? null,
+    p_background_updates: patch.background_updates ?? null,
+  });
   if (error) throw error;
   return withEnergyDefaults(data as any);
 }
-

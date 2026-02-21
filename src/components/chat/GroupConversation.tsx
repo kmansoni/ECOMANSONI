@@ -16,6 +16,7 @@ import { useGroupMembers, useGroupMessages } from "@/hooks/useGroupChats";
 import { useCommunityGlobalSettings, useCommunityInvites } from "@/hooks/useCommunityControls";
 import { useChatOpen } from "@/contexts/ChatOpenContext";
 import { supabase } from "@/lib/supabase";
+import { GradientAvatar } from "@/components/ui/gradient-avatar";
 
 interface GroupConversationProps {
   group: GroupChat;
@@ -176,10 +177,12 @@ export function GroupConversation({ group, onBack, onLeave }: GroupConversationP
                 {!isOwn && (
                   <div className="w-8 shrink-0">
                     {showAvatar && (
-                      <img
-                        src={message.sender?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${message.sender_id}`}
-                        alt=""
-                        className="w-8 h-8 rounded-full object-cover"
+                      <GradientAvatar
+                        name={message.sender?.display_name || "Аноним"}
+                        seed={message.sender_id}
+                        avatarUrl={message.sender?.avatar_url}
+                        size="sm"
+                        className="w-8 h-8 text-xs border-white/15"
                       />
                     )}
                   </div>

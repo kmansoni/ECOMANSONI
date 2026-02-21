@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 // Beautiful gradient combinations
 const GRADIENTS = [
@@ -31,6 +31,12 @@ export function GradientAvatar({
   size = "md",
   className = "" 
 }: GradientAvatarProps) {
+  const [imageFailed, setImageFailed] = useState(false);
+
+  useEffect(() => {
+    setImageFailed(false);
+  }, [avatarUrl]);
+
   const sizeClasses = {
     sm: "w-10 h-10 text-sm",
     md: "w-14 h-14 text-lg",
@@ -55,11 +61,12 @@ export function GradientAvatar({
     return name.slice(0, 2).toUpperCase();
   }, [name]);
 
-  if (avatarUrl) {
+  if (avatarUrl && !imageFailed) {
     return (
       <img
         src={avatarUrl}
         alt={name}
+        onError={() => setImageFailed(true)}
         className={`${sizeClasses[size]} rounded-full object-cover border-2 border-white/20 ${className}`}
       />
     );

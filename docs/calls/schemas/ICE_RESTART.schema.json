@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mansoni.com/schemas/ws/ICE_RESTART.schema.json",
+  "title": "ICE_RESTART",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["roomId", "transportId", "reason", "policy"],
+  "properties": {
+    "roomId": { "$ref": "https://mansoni.com/schemas/ws/types.schema.json#/properties/roomId" },
+    "transportId": { "type": "string", "minLength": 3, "maxLength": 128 },
+    "reason": { "type": "string", "enum": ["CONN_TIMEOUT", "FAILED", "MIGRATE", "MANUAL"] },
+    "policy": { "type": "string", "enum": ["all", "relay"] }
+  }
+}

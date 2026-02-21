@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mansoni.com/schemas/ws/ACK.schema.json",
+  "title": "ACK",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {}
+}

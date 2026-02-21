@@ -4,6 +4,7 @@ import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { useScrollCollapse } from "@/hooks/useScrollCollapse";
 import { useStories, type UserWithStories } from "@/hooks/useStories";
 import { StoryViewer } from "./StoryViewer";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 interface StoriesProps {
   onOpenStory?: (userIndex: number) => void;
@@ -15,6 +16,13 @@ export function Stories({ onOpenStory }: StoriesProps) {
   const [viewerOpen, setViewerOpen] = useState(false);
   const [selectedUserIndex, setSelectedUserIndex] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const getInitials = (name: string | null | undefined) => {
+    const value = (name || "").trim();
+    if (!value) return "?";
+    const words = value.split(/\s+/).filter(Boolean);
+    if (words.length >= 2) return `${words[0][0]}${words[1][0]}`.toUpperCase();
+    return value.slice(0, 2).toUpperCase();
+  };
 
   // Telegram-style: stack to the left
   const maxVisibleInStack = 4;
@@ -150,11 +158,16 @@ export function Stories({ onOpenStory }: StoriesProps) {
                       </div>
                     ) : (
                       <div className="w-full h-full rounded-full bg-card p-0.5">
-                        <img
-                          src={user.avatar_url || `https://i.pravatar.cc/150?u=${user.user_id}`}
-                          alt={user.display_name || ''}
-                          className="w-full h-full rounded-full object-cover"
-                        />
+                        <Avatar className="w-full h-full rounded-full">
+                          <AvatarImage
+                            src={user.avatar_url || undefined}
+                            alt={user.display_name || ""}
+                            className="w-full h-full rounded-full object-cover"
+                          />
+                          <AvatarFallback className="w-full h-full rounded-full bg-muted text-sm font-semibold text-muted-foreground">
+                            {getInitials(user.display_name)}
+                          </AvatarFallback>
+                        </Avatar>
                       </div>
                     )}
                     {user.hasNew && (

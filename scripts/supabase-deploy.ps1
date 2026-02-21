@@ -3,7 +3,7 @@ param(
   [switch]$DryRun,
   [switch]$SkipDbPush,
   [switch]$SkipFunctions,
-  [string[]]$Functions = @("vk-webhook")
+  [string[]]$Functions = @("vk-webhook", "turn-credentials")
 )
 
 $ErrorActionPreference = "Stop"

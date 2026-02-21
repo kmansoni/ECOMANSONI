@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mansoni.com/schemas/ws/call.hangup.schema.json",
+  "title": "call.hangup",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["call_id", "from", "device_id"],
+  "properties": {
+    "call_id": { "$ref": "https://mansoni.com/schemas/ws/types.schema.json#/properties/callId" },
+    "from": { "$ref": "https://mansoni.com/schemas/ws/types.schema.json#/properties/userId" },
+    "device_id": { "$ref": "https://mansoni.com/schemas/ws/types.schema.json#/properties/deviceId" }
+  }
+}

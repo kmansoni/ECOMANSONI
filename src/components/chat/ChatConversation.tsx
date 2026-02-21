@@ -24,6 +24,8 @@ import { ForwardMessageSheet } from "./ForwardMessageSheet";
 import { supabase } from "@/integrations/supabase/client";
 import { useUserPresenceStatus } from "@/hooks/useUserPresenceStatus";
 import { cn } from "@/lib/utils";
+import { GradientAvatar } from "@/components/ui/gradient-avatar";
+import { useAppearanceRuntime } from "@/contexts/AppearanceRuntimeContext";
 import {
   getOrCreateUserQuickReaction,
   listQuickReactionCatalog,
@@ -42,7 +44,7 @@ import {
 interface ChatConversationProps {
   conversationId: string;
   chatName: string;
-  chatAvatar: string;
+  chatAvatar: string | null;
   otherUserId: string;
   onBack: () => void;
   participantCount?: number;
@@ -56,6 +58,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
   const navigate = useNavigate();
   const { user } = useAuth();
   const { settings } = useUserSettings();
+  const { appearance, energy } = useAppearanceRuntime();
   const { messages, loading, sendMessage, sendMediaMessage, deleteMessage } = useMessages(conversationId);
   const { markConversationRead } = useMarkConversationRead();
   const { startCall } = useVideoCallContext();
@@ -79,8 +82,19 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
   }, [recordingTime]);
 
   const autoDownloadEnabled = settings?.media_auto_download_enabled ?? true;
-  const autoDownloadPhotos = autoDownloadEnabled && (settings?.media_auto_download_photos ?? true);
-  const autoDownloadVideos = autoDownloadEnabled && (settings?.media_auto_download_videos ?? true);
+  const energyMediaPreload = energy?.media_preload ?? true;
+  const energyVideoAutoplay = energy?.autoplay_video ?? true;
+  const mediaTapEnabled = appearance?.media_tap_navigation_enabled ?? true;
+  const messageCornerRadius = appearance?.message_corner_radius ?? 18;
+  const autoDownloadPhotos =
+    autoDownloadEnabled &&
+    (settings?.media_auto_download_photos ?? true) &&
+    energyMediaPreload;
+  const autoDownloadVideos =
+    autoDownloadEnabled &&
+    (settings?.media_auto_download_videos ?? true) &&
+    energyVideoAutoplay &&
+    energyMediaPreload;
 
   const {
     isOnline: isOtherOnline,
@@ -125,6 +139,9 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
   } | null>(null);
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [quickReactions, setQuickReactions] = useState<string[]>(["❤️", "🔥", "👍", "😂", "😮", "🎉"]);
+  const [senderProfiles, setSenderProfiles] = useState<
+    Record<string, { display_name: string | null; avatar_url: string | null }>
+  >({});
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -222,6 +239,43 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
     if (!hiddenIds.size) return messages;
     return messages.filter((m) => !hiddenIds.has(m.id));
   }, [messages, hiddenIds]);
+
+  useEffect(() => {
+    if (!isGroup) {
+      setSenderProfiles({});
+      return;
+    }
+    const senderIds = [...new Set(visibleMessages.map((m) => m.sender_id).filter(Boolean))];
+    if (!senderIds.length) {
+      setSenderProfiles({});
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { data, error } = await supabase
+          .from("profiles")
+          .select("user_id, display_name, avatar_url")
+          .in("user_id", senderIds);
+        if (error) throw error;
+        if (cancelled) return;
+        const next: Record<string, { display_name: string | null; avatar_url: string | null }> = {};
+        for (const row of data ?? []) {
+          const userId = (row as any).user_id as string;
+          next[userId] = {
+            display_name: ((row as any).display_name ?? null) as string | null,
+            avatar_url: ((row as any).avatar_url ?? null) as string | null,
+          };
+        }
+        setSenderProfiles(next);
+      } catch {
+        if (!cancelled) setSenderProfiles({});
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isGroup, visibleMessages]);
 
   // Realtime typing status (1:1)
   useEffect(() => {
@@ -350,6 +404,18 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
       return "";
     }
   };
+
+  const normalizeBrokenVerticalText = useCallback((text: string) => {
+    const lines = text.split(/\r\n|\r|\n|\u2028|\u2029/);
+    const nonEmpty = lines.map((line) => line.trim()).filter(Boolean);
+    const isSingleGlyph = (s: string) => Array.from(s).length === 1;
+    // Fix mojibake-style payloads where each symbol was saved as a separate line.
+    // Use 2+ to also fix short cases like "О\nК".
+    if (nonEmpty.length >= 2 && nonEmpty.length <= 64 && nonEmpty.every(isSingleGlyph)) {
+      return nonEmpty.join("");
+    }
+    return text;
+  }, []);
 
   const handleSendMessage = async () => {
     console.log("[handleSendMessage] inputText:", inputText);
@@ -744,10 +810,11 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
             className="flex items-center gap-3 flex-1 min-w-0 hover:bg-white/5 rounded-lg px-2 py-1 transition-colors"
           >
             <div className="relative flex-shrink-0">
-              <img
-                src={chatAvatar}
-                alt={chatName}
-                className="w-10 h-10 rounded-full object-cover bg-[#6ab3f3]"
+              <GradientAvatar
+                name={chatName}
+                seed={conversationId}
+                avatarUrl={chatAvatar}
+                size="sm"
               />
               {otherStatusStickerUrl ? (
                 <img
@@ -875,6 +942,9 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
 
         {visibleMessages.map((message, index) => {
           const isOwn = message.sender_id === user?.id;
+          const senderProfile = senderProfiles[message.sender_id];
+          const senderName = senderProfile?.display_name?.trim() || "Пользователь";
+          const senderAvatar = senderProfile?.avatar_url || chatAvatar;
           const isVoice = message.media_type === 'voice';
           const isVideoCircle = message.media_type === 'video_circle';
           const isImage = message.media_type === 'image';
@@ -909,17 +979,19 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
               {!isOwn && (
                 <div className="w-8 shrink-0">
                   {showAvatar && (
-                    <img 
-                      src={chatAvatar} 
-                      alt="" 
-                      className="w-8 h-8 rounded-full object-cover"
+                    <GradientAvatar
+                      name={senderName}
+                      seed={message.sender_id}
+                      avatarUrl={senderAvatar}
+                      size="sm"
+                      className="w-8 h-8 text-xs border-white/15"
                     />
                   )}
                 </div>
               )}
 
               {isSharedReel && message.shared_reel_id ? (
-                <div className="flex flex-col gap-1">
+                <div className="flex flex-col gap-1 flex-1 min-w-0">
                   <SharedReelCard 
                     reelId={message.shared_reel_id} 
                     isOwn={isOwn} 
@@ -939,7 +1011,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
                   </div>
                 </div>
               ) : isSharedPost && message.shared_post_id ? (
-                <div className="flex flex-col gap-1">
+                <div className="flex flex-col gap-1 flex-1 min-w-0">
                   <SharedPostCard 
                     postId={message.shared_post_id} 
                     isOwn={isOwn} 
@@ -959,13 +1031,14 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
                   </div>
                 </div>
               ) : isVideoCircle && message.media_url ? (
-                <div className={`flex flex-col gap-1 ${isOwn ? "items-end" : "items-start"}`}>
+                <div className={`flex flex-col gap-1 flex-1 min-w-0 ${isOwn ? "items-end" : "items-start"}`}>
                   {requiresManualLoad && !isManuallyLoaded ? (
                     <div
                       className={cn(
-                        "max-w-[75%] rounded-2xl px-4 py-3 backdrop-blur-xl border border-white/10",
+                        "chat-bubble inline-block max-w-[min(75%,560px)] rounded-2xl px-4 py-3 backdrop-blur-xl border border-white/10",
                         isOwn ? "bg-white/10 text-white rounded-br-md" : "bg-white/5 text-white rounded-bl-md",
                       )}
+                      style={{ borderRadius: `${messageCornerRadius}px` }}
                     >
                       <p className="text-sm text-white/80">Видео</p>
                       <Button
@@ -998,13 +1071,14 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
                 </div>
               ) : isImage && message.media_url ? (
                 requiresManualLoad && !isManuallyLoaded ? (
-                  <div className={`flex flex-col gap-1 ${isOwn ? "items-end" : "items-start"}`}>
+                  <div className={`flex flex-col gap-1 flex-1 min-w-0 ${isOwn ? "items-end" : "items-start"}`}>
                     <div
                       className={cn(
-                        "max-w-[75%] rounded-2xl px-4 py-3 backdrop-blur-xl border border-white/10",
+                        "chat-bubble inline-block max-w-[min(75%,560px)] rounded-2xl px-4 py-3 backdrop-blur-xl border border-white/10",
                         isOwn ? "rounded-br-md bg-white/10" : "rounded-bl-md bg-white/5",
                       )}
                       style={{
+                        borderRadius: `${messageCornerRadius}px`,
                         boxShadow: isOwn
                           ? 'inset 0 1px 0 rgba(255,255,255,0.15), 0 4px 20px rgba(0,0,0,0.25)'
                           : 'inset 0 1px 0 rgba(255,255,255,0.1), 0 4px 20px rgba(0,0,0,0.2)'
@@ -1033,19 +1107,22 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
                     </div>
                   </div>
                 ) : (
-                  <div className={`flex flex-col gap-1 ${isOwn ? "items-end" : "items-start"}`}>
+                  <div className={`flex flex-col gap-1 flex-1 min-w-0 ${isOwn ? "items-end" : "items-start"}`}>
                     <div 
-                      className={`max-w-[75%] rounded-2xl overflow-hidden cursor-pointer backdrop-blur-xl ${
+                      className={`chat-bubble inline-block max-w-[min(75%,560px)] rounded-2xl overflow-hidden ${mediaTapEnabled ? "cursor-pointer" : ""} backdrop-blur-xl ${
                         isOwn 
                           ? "rounded-br-md bg-white/10 border border-white/10" 
                           : "rounded-bl-md bg-white/5 border border-white/10"
                       }`}
                       style={{
+                        borderRadius: `${messageCornerRadius}px`,
                         boxShadow: isOwn 
                           ? 'inset 0 1px 0 rgba(255,255,255,0.15), 0 4px 20px rgba(0,0,0,0.25)'
                           : 'inset 0 1px 0 rgba(255,255,255,0.1), 0 4px 20px rgba(0,0,0,0.2)'
                       }}
-                      onClick={() => setViewingImage(message.media_url!)}
+                      onClick={() => {
+                        if (mediaTapEnabled) setViewingImage(message.media_url!);
+                      }}
                     >
                       <img 
                         src={message.media_url} 
@@ -1062,13 +1139,14 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
                   </div>
                 )
               ) : isVideo && message.media_url ? (
-                <div className="flex flex-col gap-1">
+                <div className="flex flex-col gap-1 flex-1 min-w-0">
                   {requiresManualLoad && !isManuallyLoaded ? (
                     <div
                       className={cn(
-                        "max-w-[75%] rounded-2xl px-4 py-3 backdrop-blur-xl border border-white/10",
+                        "chat-bubble inline-block max-w-[min(75%,560px)] rounded-2xl px-4 py-3 backdrop-blur-xl border border-white/10",
                         isOwn ? "rounded-br-md bg-white/10" : "rounded-bl-md bg-white/5",
                       )}
+                      style={{ borderRadius: `${messageCornerRadius}px` }}
                     >
                       <p className="text-sm text-white/80">Видео</p>
                       <Button
@@ -1100,14 +1178,15 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
                   </div>
                 </div>
               ) : (
-                <div className={`flex flex-col min-w-0 ${isOwn ? "items-end" : "items-start"}`}>
+                <div className={`flex flex-col flex-1 min-w-0 ${isOwn ? "items-end" : "items-start"}`}>
                   <div
-                    className={`max-w-[75%] rounded-2xl px-3 py-2 select-none backdrop-blur-xl border border-white/10 ${
+                    className={`chat-bubble inline-block max-w-[min(75%,560px)] rounded-2xl px-3 py-2 select-none backdrop-blur-xl border border-white/10 ${
                       isOwn
                         ? "bg-white/10 text-white rounded-br-sm"
                         : "bg-white/5 text-white rounded-bl-sm"
                     } ${selectionMode && selectedIds.has(message.id) ? "ring-2 ring-white/30" : ""}`}
                     style={{
+                      borderRadius: `${messageCornerRadius}px`,
                       boxShadow: isOwn 
                         ? 'inset 0 1px 0 rgba(255,255,255,0.15), 0 4px 20px rgba(0,0,0,0.25)'
                         : 'inset 0 1px 0 rgba(255,255,255,0.1), 0 4px 20px rgba(0,0,0,0.2)'
@@ -1131,7 +1210,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
                   >
                     {/* Sender name for group chats */}
                     {showSenderName && (
-                      <p className="text-[13px] font-medium text-[#6ab3f3] mb-0.5">Эдгар</p>
+                      <p className="text-[13px] font-medium text-[#6ab3f3] mb-0.5">{senderName}</p>
                     )}
                   
                   {isVoice ? (
@@ -1165,7 +1244,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
                       </span>
                     </div>
                   ) : (
-                    <p className="text-[15px] leading-[1.4] whitespace-pre-wrap break-words">{message.content}</p>
+                    <p className="text-[15px] leading-[1.4] whitespace-pre-wrap break-words max-h-[60vh] overflow-auto">{normalizeBrokenVerticalText(message.content)}</p>
                   )}
                   
                   </div>

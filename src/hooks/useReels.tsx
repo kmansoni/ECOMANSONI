@@ -11,6 +11,7 @@ export interface Reel {
   thumbnail_url?: string;
   description?: string;
   music_title?: string;
+  duration_seconds?: number;
   likes_count: number;
   comments_count: number;
   views_count: number;
@@ -26,6 +27,11 @@ export interface Reel {
   isLiked?: boolean;
   isSaved?: boolean;
   isReposted?: boolean;
+  // Professional impression tracking metadata
+  request_id?: string;
+  feed_position?: number;
+  algorithm_version?: string;
+  final_score?: number;
 }
 
 export type ReelsFeedMode = "reels" | "friends";
@@ -63,6 +69,10 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
       let error: any = null;
 
       if (feedMode === "reels") {
+        // One request_id per fetch batch: used to correlate impressions and enable conflict-safe dedupe.
+        // Server may also provide a request_id, but we generate one client-side to keep this robust.
+        const fetchRequestId = crypto.randomUUID();
+
         let anonSessionId: string | null = null;
         if (!user) {
           anonSessionId = sessionStorage.getItem("reels_anon_session_id");
@@ -77,10 +87,23 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
           p_limit: 50,
           p_offset: 0,
           p_session_id: sessionId,
-          p_algorithm_version: "v2",
         });
 
-        data = rpc.data;
+        // Normalize payload:
+        // - legacy RPC returns `id`
+        // - newer/experimental variants may return `reel_id`
+        // Also enrich with request_id/feed_position for impression correlation.
+        data = (rpc.data || []).map((row: any, index: number) => {
+          const id = row?.id ?? row?.reel_id;
+          return {
+            ...row,
+            id,
+            request_id: row?.request_id ?? fetchRequestId,
+            feed_position: row?.feed_position ?? index,
+            algorithm_version: row?.algorithm_version,
+            final_score: row?.final_score ?? row?.score,
+          };
+        });
         error = rpc.error;
       } else {
         let query = (supabase as any)
@@ -155,17 +178,21 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
         }
       }
 
-      const reelsWithAuthors = (data || []).map((r: any) => ({
-        ...r,
-        author: profileMap.get(r.author_id) || {
-          display_name: "Пользователь",
-          avatar_url: null,
-          verified: false,
-        },
-        isLiked: userLikedReels.includes(r.id),
-        isSaved: user ? userSavedReels.includes(r.id) : false,
-        isReposted: user ? userRepostedReels.includes(r.id) : false,
-      }));
+      const reelsWithAuthors = (data || []).map((r: any) => {
+        const id = r?.id ?? r?.reel_id;
+        return {
+          ...r,
+          id,
+          author: profileMap.get(r.author_id) || {
+            display_name: "Пользователь",
+            avatar_url: null,
+            verified: false,
+          },
+          isLiked: userLikedReels.includes(id),
+          isSaved: user ? userSavedReels.includes(id) : false,
+          isReposted: user ? userRepostedReels.includes(id) : false,
+        };
+      });
 
       if (isGuestMode()) {
         const demo = getDemoBotsReels() as any as Reel[];
@@ -433,7 +460,16 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
   }, [user]);
 
   const recordImpression = useCallback(
-    async (reelId: string, params?: { position?: number; source?: string }) => {
+    async (
+      reelId: string,
+      params?: {
+        position?: number;
+        source?: string;
+        request_id?: string;
+        algorithm_version?: string;
+        score?: number;
+      }
+    ) => {
       if (isDemoId(reelId)) return;
       try {
         let anonSessionId: string | null = null;
@@ -446,14 +482,99 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
         }
 
         const sessionId = !user ? `anon-${anonSessionId}` : null;
-        await (supabase as any).rpc("record_reel_impression", {
+        await (supabase as any).rpc("record_reel_impression_v2", {
           p_reel_id: reelId,
           p_session_id: sessionId,
+          p_request_id: params?.request_id ?? null,
           p_position: params?.position ?? null,
           p_source: params?.source ?? "reels",
+          p_algorithm_version: params?.algorithm_version ?? null,
+          p_score: params?.score ?? null,
         });
       } catch (error) {
         console.error("Error recording impression:", error);
+      }
+    },
+    [user],
+  );
+
+  // Progressive Disclosure Layer 1: VIEWED (user started watching >2sec)
+  const recordViewed = useCallback(
+    async (reelId: string) => {
+      if (isDemoId(reelId)) return;
+      try {
+        let anonSessionId: string | null = null;
+        if (!user) {
+          anonSessionId = sessionStorage.getItem("reels_anon_session_id");
+          if (!anonSessionId) {
+            anonSessionId = crypto.randomUUID();
+            sessionStorage.setItem("reels_anon_session_id", anonSessionId);
+          }
+        }
+
+        const sessionId = !user ? `anon-${anonSessionId}` : null;
+        await (supabase as any).rpc("record_reel_viewed", {
+          p_reel_id: reelId,
+          p_session_id: sessionId,
+        });
+      } catch (error) {
+        console.error("Error recording viewed:", error);
+      }
+    },
+    [user],
+  );
+
+  // Progressive Disclosure Layer 2: WATCHED (user completed >50%)
+  const recordWatched = useCallback(
+    async (reelId: string, watchDurationSeconds: number, reelDurationSeconds: number) => {
+      if (isDemoId(reelId)) return;
+      try {
+        let anonSessionId: string | null = null;
+        if (!user) {
+          anonSessionId = sessionStorage.getItem("reels_anon_session_id");
+          if (!anonSessionId) {
+            anonSessionId = crypto.randomUUID();
+            sessionStorage.setItem("reels_anon_session_id", anonSessionId);
+          }
+        }
+
+        const sessionId = !user ? `anon-${anonSessionId}` : null;
+        await (supabase as any).rpc("record_reel_watched", {
+          p_reel_id: reelId,
+          p_watch_duration_seconds: watchDurationSeconds,
+          p_reel_duration_seconds: reelDurationSeconds,
+          p_session_id: sessionId,
+        });
+      } catch (error) {
+        console.error("Error recording watched:", error);
+      }
+    },
+    [user],
+  );
+
+  // Negative Signal: SKIP (user skipped, especially <2sec = quick skip)
+  const recordSkip = useCallback(
+    async (reelId: string, skippedAtSecond: number, reelDurationSeconds: number) => {
+      if (isDemoId(reelId)) return;
+      try {
+        let anonSessionId: string | null = null;
+        if (!user) {
+          anonSessionId = sessionStorage.getItem("reels_anon_session_id");
+          if (!anonSessionId) {
+            anonSessionId = crypto.randomUUID();
+            sessionStorage.setItem("reels_anon_session_id", anonSessionId);
+          }
+        }
+
+        const sessionId = !user ? `anon-${anonSessionId}` : null;
+        await (supabase as any).rpc("record_reel_skip", {
+          p_reel_id: reelId,
+          p_skipped_at_second: skippedAtSecond,
+          p_reel_duration_seconds: reelDurationSeconds,
+          p_session_id: sessionId,
+        });
+      } catch (error) {
+        console.error("Error recording skip:", error);
       }
     },
     [user],
@@ -531,6 +652,9 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
     recordShare,
     recordView,
     recordImpression,
+    recordViewed,
+    recordWatched,
+    recordSkip,
     setReelFeedback,
     createReel,
     refetch: fetchReels,

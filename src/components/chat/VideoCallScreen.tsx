@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import type { VideoCall, VideoCallStatus } from "@/contexts/VideoCallContext";
 import { useAuth } from "@/hooks/useAuth";
+import { GradientAvatar } from "@/components/ui/gradient-avatar";
 
 function CallBackground() {
   return (
@@ -140,14 +141,6 @@ export function VideoCallScreen({
     return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   };
 
-  const getInitials = (name: string) => {
-    const parts = name.trim().split(" ");
-    if (parts.length >= 2) {
-      return parts[0].charAt(0).toUpperCase() + parts[1].charAt(0).toUpperCase();
-    }
-    return name.charAt(0).toUpperCase();
-  };
-
   const getStatusText = (): string => {
     if (connectionState === "failed") {
       return "Ошибка соединения";
@@ -237,11 +230,13 @@ export function VideoCallScreen({
                     border: '1px solid rgba(255,255,255,0.2)'
                   }}
                 >
-                  {otherAvatar ? (
-                    <img src={otherAvatar} alt={otherName} className="w-full h-full object-cover" />
-                  ) : (
-                    <span className="text-4xl text-white/90 font-light">{getInitials(otherName)}</span>
-                  )}
+                  <GradientAvatar
+                    name={otherName}
+                    seed={call?.id ?? otherName}
+                    avatarUrl={otherAvatar}
+                    size="lg"
+                    className="w-full h-full text-4xl border-0"
+                  />
                 </div>
               </div>
 
@@ -365,11 +360,13 @@ export function VideoCallScreen({
                 border: '1px solid rgba(255,255,255,0.15)'
               }}
             >
-              {otherAvatar ? (
-                <img src={otherAvatar} alt={otherName} className="w-full h-full object-cover" />
-              ) : (
-                <span className="text-6xl text-white/80 font-light tracking-wider">{getInitials(otherName)}</span>
-              )}
+              <GradientAvatar
+                name={otherName}
+                seed={call?.id ?? otherName}
+                avatarUrl={otherAvatar}
+                size="lg"
+                className="w-full h-full text-6xl border-0"
+              />
             </div>
           </div>
 

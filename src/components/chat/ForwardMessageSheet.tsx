@@ -10,6 +10,7 @@ import { useGroupChats } from "@/hooks/useGroupChats";
 import { useChannels } from "@/hooks/useChannels";
 import { useSearch, type SearchUser } from "@/hooks/useSearch";
 import { supabase } from "@/lib/supabase";
+import { GradientAvatar } from "@/components/ui/gradient-avatar";
 
 interface ForwardMessageSheetProps {
   open: boolean;
@@ -330,10 +331,12 @@ export function ForwardMessageSheet({ open, onOpenChange, message }: ForwardMess
                     className="w-full flex items-center gap-3 py-3 hover:bg-white/10 transition-colors rounded-lg px-2 -mx-2"
                     onClick={() => forwardAndClose(() => handleForwardToUser(u))}
                   >
-                    <img
-                      src={u.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${u.user_id}`}
-                      alt={u.display_name}
-                      className="w-10 h-10 rounded-full object-cover bg-white/10"
+                    <GradientAvatar
+                      name={u.display_name}
+                      seed={u.user_id}
+                      avatarUrl={u.avatar_url}
+                      size="sm"
+                      className="w-10 h-10 text-sm bg-white/10 border-white/15"
                     />
                     <div className="flex-1 min-w-0 text-left">
                       <div className="font-medium text-white truncate">{u.display_name}</div>

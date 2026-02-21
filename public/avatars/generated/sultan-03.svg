@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" fill="none">
+  <defs>
+    <radialGradient id="bg" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(260 820) rotate(-35) scale(980)">
+      <stop stop-color="#22C55E" stop-opacity="0.14"/>
+      <stop offset="0.55" stop-color="#0B3B64" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#050A12"/>
+    </radialGradient>
+    <linearGradient id="robe" x1="300" y1="560" x2="740" y2="980" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0B1220"/>
+      <stop offset="1" stop-color="#071426"/>
+    </linearGradient>
+    <linearGradient id="skin" x1="420" y1="300" x2="610" y2="560" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F3D2BD"/>
+      <stop offset="1" stop-color="#E3B195"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+
+  <path d="M220 960c42-230 186-320 292-320h0c106 0 250 90 292 320H220z" fill="url(#robe)"/>
+
+  <path d="M466 640c12 72 32 102 46 102s34-30 46-102c-30 18-62 18-92 0z" fill="url(#skin)"/>
+  <path d="M512 270c-92 0-166 74-166 172 0 122 88 222 166 222s166-100 166-222c0-98-74-172-166-172z" fill="url(#skin)"/>
+
+  <!-- turban + wise look -->
+  <path d="M352 420c14-104 92-162 160-162 78 0 150 52 164 148-38-24-90-38-164-38-74 0-126 14-160 52z" fill="#94A3B8" opacity="0.35"/>
+  <path d="M368 412c24-72 88-116 144-116 64 0 128 44 144 116-40-18-86-26-144-26-58 0-104 8-144 26z" fill="#0B1220" opacity="0.75"/>
+
+  <path d="M392 590c32 56 74 82 120 82s88-26 120-82c-28 12-68 22-120 22s-92-10-120-22z" fill="#0B1220" opacity="0.78"/>
+  <path d="M452 582c40 28 80 28 120 0" stroke="#0F172A" stroke-opacity="0.16" stroke-width="16" stroke-linecap="round"/>
+
+  <circle cx="512" cy="512" r="420" stroke="#FFFFFF" stroke-opacity="0.08" stroke-width="18"/>
+</svg>

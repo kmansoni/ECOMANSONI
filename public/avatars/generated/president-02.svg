@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" fill="none">
+  <defs>
+    <radialGradient id="bg" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(740 240) rotate(135) scale(980)">
+      <stop stop-color="#60A5FA" stop-opacity="0.28"/>
+      <stop offset="0.55" stop-color="#0B3B64" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#060812"/>
+    </radialGradient>
+    <linearGradient id="blazer" x1="360" y1="560" x2="700" y2="940" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#111827"/>
+      <stop offset="1" stop-color="#0B1220"/>
+    </linearGradient>
+    <linearGradient id="skin" x1="420" y1="310" x2="610" y2="560" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F7D7C2"/>
+      <stop offset="1" stop-color="#EAB99E"/>
+    </linearGradient>
+    <filter id="soft" x="-40" y="-40" width="1104" height="1104" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="16" result="blur"/>
+      <feColorMatrix in="blur" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 0.55 0"/>
+      <feBlend in="SourceGraphic" mode="normal"/>
+    </filter>
+  </defs>
+
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+
+  <g opacity="0.22" filter="url(#soft)">
+    <circle cx="240" cy="320" r="110" fill="#38BDF8"/>
+    <circle cx="820" cy="380" r="95" fill="#A78BFA"/>
+    <circle cx="760" cy="820" r="150" fill="#22C55E"/>
+  </g>
+
+  <!-- blazer -->
+  <path d="M260 940c26-182 156-280 252-280h0c96 0 226 98 252 280H260z" fill="url(#blazer)"/>
+
+  <!-- blouse -->
+  <path d="M438 705c20 34 40 50 74 50s54-16 74-50l-74-42-74 42z" fill="#F3F4F6" opacity="0.95"/>
+
+  <!-- neck -->
+  <path d="M468 640c12 70 34 98 44 98s32-28 44-98c-28 20-60 20-88 0z" fill="url(#skin)"/>
+
+  <!-- head -->
+  <path d="M512 270c-90 0-160 72-160 168 0 120 84 220 160 220s160-100 160-220c0-96-70-168-160-168z" fill="url(#skin)"/>
+
+  <!-- hair (bob) -->
+  <path d="M348 432c0-112 88-178 164-178s164 66 164 178c0 22-4 42-10 60-10-62-78-92-154-92s-144 30-154 92c-6-18-10-38-10-60z" fill="#0B1220"/>
+  <path d="M360 500c26 82 86 140 152 140s126-58 152-140c-32 22-86 40-152 40s-120-18-152-40z" fill="#0B1220" opacity="0.55"/>
+
+  <!-- facial features -->
+  <path d="M440 472c28-20 58-20 86 0" stroke="#111827" stroke-opacity="0.28" stroke-width="14" stroke-linecap="round"/>
+  <path d="M500 522c10 10 24 10 34 0" stroke="#111827" stroke-opacity="0.28" stroke-width="12" stroke-linecap="round"/>
+  <path d="M448 576c42 32 86 32 128 0" stroke="#0F172A" stroke-opacity="0.20" stroke-width="16" stroke-linecap="round"/>
+
+  <circle cx="512" cy="512" r="420" stroke="#FFFFFF" stroke-opacity="0.08" stroke-width="18"/>
+</svg>

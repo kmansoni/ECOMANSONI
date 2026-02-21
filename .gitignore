@@ -48,3 +48,10 @@ supabase/.temp/
 # Local scratch/archive
 .archive/
 .git-push-force.ps1
+
+# Test artifacts
+test-results/
+playwright-report/
+
+# Local vendor leftovers (should not be committed)
+vendor/lovable-agent-playwright-config/

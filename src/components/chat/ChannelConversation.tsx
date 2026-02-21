@@ -16,6 +16,7 @@ import { useChannelMessages, useJoinChannel } from "@/hooks/useChannels";
 import { useChannelCapabilities } from "@/hooks/useChannelCapabilities";
 import { useCommunityGlobalSettings, useCommunityInvites } from "@/hooks/useCommunityControls";
 import { useChatOpen } from "@/contexts/ChatOpenContext";
+import { GradientAvatar } from "@/components/ui/gradient-avatar";
 
 interface ChannelConversationProps {
   channel: Channel;
@@ -160,10 +161,12 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
           <span className="text-sm font-medium">{stableIntInRange(`channel:${channel.id}:header`, 10, 109)}</span>
         </button>
 
-        <img
-          src={channel.avatar_url || `https://api.dicebear.com/7.x/shapes/svg?seed=${channel.id}`}
-          alt={channel.name}
-          className="w-9 h-9 rounded-full object-cover bg-muted"
+        <GradientAvatar
+          name={channel.name}
+          seed={channel.id}
+          avatarUrl={channel.avatar_url}
+          size="sm"
+          className="w-9 h-9 text-xs border-border/60"
         />
 
         <div className="flex-1 min-w-0">
@@ -241,10 +244,12 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
             <div key={msg.id} className="flex flex-col gap-1">
               <div className="bg-card rounded-2xl overflow-hidden shadow-sm border border-border/50 dark:bg-[rgba(35,35,42,0.45)] dark:backdrop-blur-xl dark:border-white/10 dark:shadow-[0_0_0_1px_rgba(15,69,255,0.10)_inset,0_0_24px_rgba(15,69,255,0.10),0_0_24px_rgba(106,54,255,0.08)]">
               <div className="flex items-center gap-2 px-3 pt-3 pb-2">
-                <img
-                  src={channel.avatar_url || `https://api.dicebear.com/7.x/shapes/svg?seed=${channel.id}`}
-                  alt=""
-                  className="w-8 h-8 rounded-full object-cover bg-muted"
+                <GradientAvatar
+                  name={channel.name}
+                  seed={channel.id}
+                  avatarUrl={channel.avatar_url}
+                  size="sm"
+                  className="w-8 h-8 text-xs border-border/60"
                 />
                 <div className="flex-1 min-w-0">
                   <span className="text-primary font-medium text-sm">{channel.name}</span>

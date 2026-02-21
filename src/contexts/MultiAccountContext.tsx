@@ -12,6 +12,7 @@ import {
   getActiveAccountId,
   getOrCreateDeviceId,
   listAccountsIndex,
+  pruneAccountsIndex,
   readTokens,
   setActiveAccountId,
   upsertAccountIndex,
@@ -19,6 +20,7 @@ import {
   type AccountId,
   type AccountIndexEntry,
   type AccountProfileSnapshot,
+  type StoredSessionTokens,
 } from "@/lib/multiAccount/vault";
 import { setGuestMode } from "@/lib/demo/demoMode";
 
@@ -44,6 +46,14 @@ type MultiAccountContextValue = {
 
 const MultiAccountContext = React.createContext<MultiAccountContextValue | null>(null);
 
+// IRON RULE 4.1: Debug logging gated by FLAG_DEBUG
+const FLAG_DEBUG = import.meta.env.VITE_DEBUG_MULTI_ACCOUNT === 'true';
+const logDebug = (label: string, ...args: any[]) => {
+  if (FLAG_DEBUG) {
+    console.log(`[MultiAccount] ${label}`, ...args);
+  }
+};
+
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   let timer: number | null = null;
   const timeout = new Promise<T>((_resolve, reject) => {
@@ -56,27 +66,49 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 
 function snapshotFromProfileRow(accountId: AccountId, row: any): AccountProfileSnapshot {
   const displayName = (row?.display_name ?? null) as string | null;
+  const username = (row?.username ?? null) as string | null;
+  const avatarUrl = (row?.avatar_url ?? null) as string | null;
+
+  // IRON RULE 1.2: No fallback for identification fields
+  // Throw early if profile is incomplete — don't silently degrade to "user"
+  if (!username) {
+    throw new Error(`INCOMPLETE_PROFILE: username is missing for ${accountId}`);
+  }
+
   return {
     accountId,
     displayName,
-    username: deriveUsernameFromDisplayName(displayName),
-    avatarUrl: (row?.avatar_url ?? null) as string | null,
+    username, // Now guaranteed to be non-null
+    avatarUrl,
     updatedAt: new Date().toISOString(),
   };
 }
 
-async function fetchMyProfileSnapshot(accountId: AccountId): Promise<AccountProfileSnapshot | null> {
+async function fetchMyProfileSnapshot(
+  accountId: AccountId,
+  signal?: AbortSignal,
+  retryAttempt = 0
+): Promise<AccountProfileSnapshot | null> {
   try {
-    console.log("🔵 [fetchMyProfileSnapshot] Fetching profile for", accountId);
+    // GUARD: if abort requested, fail fast
+    if (signal?.aborted) {
+      throw new Error('aborted');
+    }
+
+    const label = retryAttempt === 0 ? "fetchMyProfileSnapshot" : `fetchMyProfileSnapshot[retry-${retryAttempt}]`;
+    if (retryAttempt === 0) {
+      logDebug(`${label}: fetching profile for ${accountId}`);
+    }
     const startTime = Date.now();
     
-    const timeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error('timeout')), 5000)
-    );
+    const timeoutPromise = new Promise((_, reject) => {
+      const timer = setTimeout(() => reject(new Error('timeout')), 5000);
+      signal?.addEventListener('abort', () => clearTimeout(timer), { once: true });
+    });
     
     const fetchPromise = supabase
       .from("profiles")
-      .select("user_id, display_name, avatar_url, updated_at")
+      .select("user_id, display_name, avatar_url, username, updated_at")
       .eq("user_id", accountId)
       .maybeSingle();
     
@@ -85,33 +117,143 @@ async function fetchMyProfileSnapshot(accountId: AccountId): Promise<AccountProf
     const duration = Date.now() - startTime;
     
     if (error || !data) {
-      console.log(`⏭️ [fetchMyProfileSnapshot] No profile yet (${duration}ms) - will retry later`);
+      // Network/DB error or no profile yet → retry with backoff
+      if (retryAttempt < 3) {
+        const backoffMs = retryAttempt === 0 ? 1000 : (retryAttempt === 1 ? 2000 : 4000);
+        logDebug(`${label}: no profile, retry in ${backoffMs}ms (${retryAttempt + 1}/3)`);
+        await new Promise((resolve, reject) => {
+          const timer = setTimeout(resolve, backoffMs);
+          signal?.addEventListener('abort', () => {
+            clearTimeout(timer);
+            reject(new Error('aborted'));
+          }, { once: true });
+        });
+        return fetchMyProfileSnapshot(accountId, signal, retryAttempt + 1);
+      }
+      
+      logDebug(`${label}: no profile after 3 retries (${duration}ms)`);
       return null;
     }
     
-    console.log(`✅ [fetchMyProfileSnapshot] Loaded (${duration}ms)`);
-    return snapshotFromProfileRow(accountId, data);
+    // IRON RULE 1.2: snapshotFromProfileRow will throw if username/avatar missing
+    const profile = snapshotFromProfileRow(accountId, data);
+    logDebug(`${label}: loaded (${duration}ms) username=${profile.username}`);
+    return profile;
   } catch (err) {
-    console.log(`⏭️ [fetchMyProfileSnapshot] Skipping (${err instanceof Error ? err.message : 'error'})`);
+    // Abort is not an error condition — just stop and return null
+    if (err instanceof Error && err.message === 'aborted') {
+      logDebug(`fetchMyProfileSnapshot: aborted`);
+      return null;
+    }
+
+    const isIncompleteProfile = err instanceof Error && err.message.startsWith('INCOMPLETE_PROFILE');
+    const isTimeout = err instanceof Error && err.message === 'timeout';
+    
+    if (isTimeout && retryAttempt < 3) {
+      // Timeout → retry
+      const backoffMs = retryAttempt === 0 ? 1000 : (retryAttempt === 1 ? 2000 : 4000);
+      logDebug(`fetchMyProfileSnapshot: timeout, retry in ${backoffMs}ms (${retryAttempt + 1}/3)`);
+      await new Promise((resolve, reject) => {
+        const timer = setTimeout(resolve, backoffMs);
+        signal?.addEventListener('abort', () => {
+          clearTimeout(timer);
+          reject(new Error('aborted'));
+        }, { once: true });
+      });
+      return fetchMyProfileSnapshot(accountId, signal, retryAttempt + 1);
+    }
+    
+    if (isIncompleteProfile && retryAttempt < 2) {
+      // Incomplete profile (e.g., username not set yet) → retry a few times
+      const backoffMs = 2000;
+      logDebug(`fetchMyProfileSnapshot: incomplete profile, retry in ${backoffMs}ms (${retryAttempt + 1}/2)`);
+      await new Promise((resolve, reject) => {
+        const timer = setTimeout(resolve, backoffMs);
+        signal?.addEventListener('abort', () => {
+          clearTimeout(timer);
+          reject(new Error('aborted'));
+        }, { once: true });
+      });
+      return fetchMyProfileSnapshot(accountId, signal, retryAttempt + 1);
+    }
+    
+    logDebug(`fetchMyProfileSnapshot: error: ${err instanceof Error ? err.message : String(err)}`);
     return null;
+  }
+}
+
+async function fetchMyProfileSnapshotWithTokens(
+  accountId: AccountId,
+  tokens: StoredSessionTokens,
+  signal?: AbortSignal,
+): Promise<{ profile: AccountProfileSnapshot | null; requiresReauth: boolean }> {
+  try {
+    if (signal?.aborted) return null;
+
+    const client = createEphemeralSupabaseClient();
+    const { error: sessionError } = await client.auth.setSession({
+      access_token: tokens.accessToken,
+      refresh_token: tokens.refreshToken,
+    });
+    if (sessionError) {
+      logDebug(`fetchMyProfileSnapshotWithTokens: setSession failed for ${accountId}: ${sessionError.message}`);
+      return { profile: null, requiresReauth: true };
+    }
+
+    if (signal?.aborted) return null;
+
+    const { data, error } = await (client as any)
+      .from("profiles")
+      .select("user_id, display_name, avatar_url, username, updated_at")
+      .eq("user_id", accountId)
+      .maybeSingle();
+
+    if (signal?.aborted) return null;
+    if (error || !data) {
+      logDebug(`fetchMyProfileSnapshotWithTokens: no profile for ${accountId}: ${error?.message ?? 'no_data'}`);
+      return { profile: null, requiresReauth: false };
+    }
+
+    return { profile: snapshotFromProfileRow(accountId, data), requiresReauth: false };
+  } catch (err) {
+    if (signal?.aborted) return null;
+    logDebug(`fetchMyProfileSnapshotWithTokens: error for ${accountId}: ${err instanceof Error ? err.message : String(err)}`);
+    return { profile: null, requiresReauth: false };
   }
 }
 
 async function upsertDeviceAccountLink(userId: string) {
   try {
     const deviceId = getOrCreateDeviceId();
-    await (supabase as any)
-      .from("device_accounts")
-      .upsert(
-        {
-          device_id: deviceId,
-          user_id: userId,
-          last_active_at: new Date().toISOString(),
-        },
-        { onConflict: "device_id,user_id" },
-      );
+    // Prefer RPC (SECURITY DEFINER) to avoid RLS edge-cases and centralize logic.
+    await (supabase as any).rpc("upsert_device_account", {
+      p_device_id: deviceId,
+      p_label: null,
+    });
   } catch {
     // best effort
+  }
+}
+
+async function fetchDeviceAccountsFromDb(deviceId: string): Promise<Array<{
+  user_id: string;
+  display_name: string | null;
+  username: string | null;
+  avatar_url: string | null;
+  last_active_at: string | null;
+}> | null> {
+  try {
+    const { data, error } = await (supabase as any).rpc("list_device_accounts_for_device", {
+      p_device_id: deviceId,
+    });
+    if (error) {
+      logDebug(`fetchDeviceAccountsFromDb: rpc error: ${error.message}`);
+      return null;
+    }
+    return Array.isArray(data) ? data : [];
+  } catch (e) {
+    logDebug(`fetchDeviceAccountsFromDb: error: ${e instanceof Error ? e.message : String(e)}`);
+    return null;
   }
 }
 
@@ -120,6 +262,38 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
   const [accounts, setAccounts] = React.useState<AccountIndexEntry[]>(() => listAccountsIndex());
   const [activeAccountId, setActiveAccountState] = React.useState<AccountId | null>(() => getActiveAccountId());
   const switchMutexRef = React.useRef<Promise<void> | null>(null);
+
+  // Multi-tab sync (Telegram-like): keep active account consistent across tabs.
+  const instanceIdRef = React.useRef<string>(
+    (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function")
+      ? crypto.randomUUID()
+      : `inst_${Math.random().toString(16).slice(2)}_${Date.now().toString(16)}`,
+  );
+  const activeAccountIdRef = React.useRef<AccountId | null>(activeAccountId);
+  const switchAccountRef = React.useRef<((id: AccountId) => Promise<void>) | null>(null);
+  const externalSwitchRef = React.useRef<((id: AccountId) => Promise<void>) | null>(null);
+
+  React.useEffect(() => {
+    activeAccountIdRef.current = activeAccountId;
+  }, [activeAccountId]);
+
+  // RACE CONDITION FIX: per-account AbortController + per-account seq guard
+  const profileLoadRef = React.useRef<Record<AccountId, { seq: number; controller: AbortController }>>({});
+
+  const beginProfileLoad = React.useCallback((accountId: AccountId) => {
+    const prev = profileLoadRef.current[accountId];
+    if (prev?.controller) {
+      prev.controller.abort();
+    }
+    const seq = (prev?.seq ?? 0) + 1;
+    const controller = new AbortController();
+    profileLoadRef.current[accountId] = { seq, controller };
+    return { seq, signal: controller.signal };
+  }, []);
+
+  const isCurrentProfileLoad = React.useCallback((accountId: AccountId, seq: number) => {
+    return profileLoadRef.current[accountId]?.seq === seq;
+  }, []);
 
   const [queryClient, setQueryClient] = React.useState<QueryClient>(() => createQueryClient());
 
@@ -146,6 +320,22 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
     setActiveAccountId(accountId);
     setActiveAccountState(accountId);
     setAccounts(upsertAccountIndex({ accountId, touchActive: true }));
+
+    // Broadcast active-account change to other tabs (best effort).
+    try {
+      if (typeof BroadcastChannel !== "undefined") {
+        const bc = new BroadcastChannel("multi-account:v1");
+        bc.postMessage({
+          type: "active_changed",
+          accountId,
+          source: instanceIdRef.current,
+          ts: Date.now(),
+        });
+        bc.close();
+      }
+    } catch {
+      // ignore
+    }
 
     try {
       (supabase as any).removeAllChannels?.();
@@ -191,11 +381,197 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
     await switchMutexRef.current;
   }, [activeAccountId, activateSessionForAccount]);
 
+  // External (multi-tab) switch: keep active selection even if activation fails.
+  // Rationale: another tab may have switched; this tab must reflect the selection,
+  // but may need re-auth if tokens are missing/expired.
+  const switchAccountFromExternalSignal = React.useCallback(async (accountId: AccountId) => {
+    if (!accountId) return;
+    if (switchMutexRef.current) {
+      await switchMutexRef.current;
+    }
+
+    const run = (async () => {
+      // Always reflect selection.
+      setActiveAccountId(accountId);
+      setActiveAccountState(accountId);
+
+      try {
+        await withTimeout(activateSessionForAccount(accountId), 5000, "externalSwitchActivate");
+      } catch {
+        // Do not revert: keep selection, but mark as requiring reauth.
+        setAccounts(upsertAccountIndex({ accountId, requiresReauth: true, touchActive: true }));
+      }
+    })();
+
+    switchMutexRef.current = run.finally(() => {
+      switchMutexRef.current = null;
+    });
+    await switchMutexRef.current;
+  }, [activateSessionForAccount]);
+
+  React.useEffect(() => {
+    switchAccountRef.current = switchAccount;
+  }, [switchAccount]);
+
+  React.useEffect(() => {
+    externalSwitchRef.current = switchAccountFromExternalSignal;
+  }, [switchAccountFromExternalSignal]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+
+    const handleActiveChanged = async (nextAccountId: AccountId) => {
+      if (cancelled) return;
+      if (!nextAccountId) return;
+      if (activeAccountIdRef.current === nextAccountId) return;
+
+      // Switch locally using the external-safe path (never reverts selection).
+      await externalSwitchRef.current?.(nextAccountId);
+    };
+
+    // BroadcastChannel path.
+    let bc: BroadcastChannel | null = null;
+    try {
+      if (typeof BroadcastChannel !== "undefined") {
+        bc = new BroadcastChannel("multi-account:v1");
+        bc.onmessage = (ev) => {
+          const msg = ev?.data as any;
+          if (!msg || typeof msg !== "object") return;
+          if (msg.source && msg.source === instanceIdRef.current) return;
+
+          if (msg.type === "active_changed" && typeof msg.accountId === "string") {
+            void handleActiveChanged(msg.accountId as AccountId);
+          }
+
+          if (msg.type === "signed_out" && typeof msg.accountId === "string") {
+            const signedOutId = msg.accountId as AccountId;
+            setAccounts(upsertAccountIndex({ accountId: signedOutId, requiresReauth: true }));
+            if (activeAccountIdRef.current === signedOutId) {
+              setActiveAccountId(null);
+              setActiveAccountState(null);
+            }
+          }
+        };
+      }
+    } catch {
+      bc = null;
+    }
+
+    // Storage-event fallback (fires across tabs).
+    const onStorage = (e: StorageEvent) => {
+      if (!e.key) return;
+      if (!e.key.endsWith(":activeAccountId")) return;
+      const next = (e.newValue && e.newValue.trim()) ? (e.newValue as AccountId) : null;
+      if (!next) return;
+      void handleActiveChanged(next);
+    };
+
+    window.addEventListener("storage", onStorage);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener("storage", onStorage);
+      try {
+        bc?.close();
+      } catch {
+        // ignore
+      }
+    };
+  }, []);
+
+  React.useEffect(() => {
+    // Best-effort background refresh for cached accounts: load missing profile snapshots
+    // using per-account tokens without switching the global Supabase session.
+    let cancelled = false;
+    const localIndex = pruneAccountsIndex();
+
+    void (async () => {
+      for (const entry of localIndex) {
+        if (cancelled) return;
+        if (entry.profile) continue;
+
+        const tokens = readTokens(entry.accountId);
+        if (!tokens) continue;
+        if (entry.requiresReauth) continue;
+
+        const { seq, signal } = beginProfileLoad(entry.accountId);
+        const result = await fetchMyProfileSnapshotWithTokens(entry.accountId, tokens, signal);
+        if (cancelled) return;
+        if (result?.requiresReauth) {
+          setAccounts(upsertAccountIndex({
+            accountId: entry.accountId,
+            requiresReauth: true,
+          }));
+          continue;
+        }
+
+        const profile = result?.profile ?? null;
+        if (!profile) continue;
+        if (!isCurrentProfileLoad(entry.accountId, seq)) continue;
+
+        setAccounts(upsertAccountIndex({
+          accountId: entry.accountId,
+          requiresReauth: false,
+          profile,
+        }));
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [beginProfileLoad, isCurrentProfileLoad]);
+
+  React.useEffect(() => {
+    // DB-backed source of truth for "accounts on this device".
+    // Vault remains a cache for tokens and offline identity.
+    let cancelled = false;
+    const deviceId = getOrCreateDeviceId();
+
+    void (async () => {
+      const rows = await fetchDeviceAccountsFromDb(deviceId);
+      if (cancelled) return;
+      if (!rows) return;
+
+      for (const row of rows) {
+        const accountId = row.user_id as AccountId;
+
+        // If we have profile fields from DB, store them as snapshot (preferred).
+        if (row.username) {
+          const profile: AccountProfileSnapshot = {
+            accountId,
+            displayName: row.display_name ?? null,
+            username: row.username,
+            avatarUrl: row.avatar_url ?? null,
+            updatedAt: new Date().toISOString(),
+          };
+
+          setAccounts(upsertAccountIndex({
+            accountId,
+            profile,
+            requiresReauth: false,
+          }));
+        } else {
+          // No username means DB contract not applied yet or data is incomplete.
+          // Keep the account but mark requiresReauth to avoid false "healthy" state.
+          setAccounts(upsertAccountIndex({
+            accountId,
+            requiresReauth: true,
+          }));
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   React.useEffect(() => {
     let cancelled = false;
     const run = async () => {
       try {
-        const localIndex = listAccountsIndex();
+        const localIndex = pruneAccountsIndex();
         if (!cancelled) setAccounts(localIndex);
 
         const storedActive = getActiveAccountId();
@@ -226,10 +602,10 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
   React.useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_evt, session) => {
       const accountId = session?.user?.id ?? null;
-      console.log("🔵 [MultiAccountContext] onAuthStateChange:", { event: _evt, hasSession: !!session, accountId });
+      logDebug(`onAuthStateChange: event=${_evt}, hasSession=${!!session}, accountId=${accountId}`);
       
       if (session && accountId) {
-        console.log("🔵 [MultiAccountContext] Session active, setting up account...");
+        logDebug(`onAuthStateChange: session active, setting up account...`);
         
         void upsertDeviceAccountLink(accountId);
         writeTokens(accountId, {
@@ -252,10 +628,38 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
           }),
         );
 
+        // Best-effort: refresh device-backed list after linking.
         void (async () => {
-          console.log("🔵 [MultiAccountContext] Loading profile async...");
-          const profile = await fetchMyProfileSnapshot(accountId);
+          const deviceId = getOrCreateDeviceId();
+          const rows = await fetchDeviceAccountsFromDb(deviceId);
+          if (!rows) return;
+          for (const row of rows) {
+            const id = row.user_id as AccountId;
+            if (!row.username) continue;
+            const profile: AccountProfileSnapshot = {
+              accountId: id,
+              displayName: row.display_name ?? null,
+              username: row.username,
+              avatarUrl: row.avatar_url ?? null,
+              updatedAt: new Date().toISOString(),
+            };
+            setAccounts(upsertAccountIndex({ accountId: id, profile }));
+          }
+        })();
+
+        void (async () => {
+          logDebug(`onAuthStateChange: loading profile async...`);
+
+          const { seq, signal } = beginProfileLoad(accountId);
+          const profile = await fetchMyProfileSnapshot(accountId, signal);
           if (!profile) return;
+
+          // GUARD: only commit if this is still the latest load for this account
+          if (!isCurrentProfileLoad(accountId, seq)) {
+            logDebug(`onAuthStateChange: ignoring stale profile response (account=${accountId}, seq=${seq})`);
+            return;
+          }
+
           setAccounts(
             upsertAccountIndex({
               accountId,
@@ -264,15 +668,31 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
               touchActive: true,
             }),
           );
-          console.log("🟢 [MultiAccountContext] Profile applied to account index");
+          logDebug(`onAuthStateChange: profile applied to account index`);
         })();
       } else if (!session) {
-        console.log("🔵 [MultiAccountContext] Session cleared");
+        logDebug(`onAuthStateChange: session cleared`);
         setGuestMode(false);
         const prev = getActiveAccountId();
         if (prev) {
           clearTokens(prev);
           setAccounts(upsertAccountIndex({ accountId: prev, requiresReauth: true }));
+
+          // Broadcast sign-out so other tabs can mark this account as requiring reauth.
+          try {
+            if (typeof BroadcastChannel !== "undefined") {
+              const bc = new BroadcastChannel("multi-account:v1");
+              bc.postMessage({
+                type: "signed_out",
+                accountId: prev,
+                source: instanceIdRef.current,
+                ts: Date.now(),
+              });
+              bc.close();
+            }
+          } catch {
+            // ignore
+          }
         }
       }
     });
@@ -297,13 +717,16 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
       setAccounts(upsertAccountIndex({ accountId, requiresReauth: false, touchActive: true }));
 
       await activateSessionForAccount(accountId);
-      const profile = await fetchMyProfileSnapshot(accountId);
-      if (profile) setAccounts(upsertAccountIndex({ accountId, profile }));
+      const { seq, signal } = beginProfileLoad(accountId);
+      const profile = await fetchMyProfileSnapshot(accountId, signal);
+      if (profile && isCurrentProfileLoad(accountId, seq)) {
+        setAccounts(upsertAccountIndex({ accountId, profile }));
+      }
       return { error: null };
     } catch (e) {
       return { error: e as Error };
     }
-  }, [activateSessionForAccount]);
+  }, [activateSessionForAccount, beginProfileLoad, isCurrentProfileLoad]);
 
   const startAddAccountPhoneOtp = React.useCallback(async (phone: string) => {
     try {
@@ -332,13 +755,16 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
       setAccounts(upsertAccountIndex({ accountId, requiresReauth: false, touchActive: true }));
 
       await activateSessionForAccount(accountId);
-      const profile = await fetchMyProfileSnapshot(accountId);
-      if (profile) setAccounts(upsertAccountIndex({ accountId, profile }));
+      const { seq, signal } = beginProfileLoad(accountId);
+      const profile = await fetchMyProfileSnapshot(accountId, signal);
+      if (profile && isCurrentProfileLoad(accountId, seq)) {
+        setAccounts(upsertAccountIndex({ accountId, profile }));
+      }
       return { error: null };
     } catch (e) {
       return { error: e as Error };
     }
-  }, [activateSessionForAccount]);
+  }, [activateSessionForAccount, beginProfileLoad, isCurrentProfileLoad]);
 
   const registerPhoneAccount = React.useCallback(async (input: {
     phoneDigits: string;
@@ -410,13 +836,16 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
       });
       setAccounts(upsertAccountIndex({ accountId, requiresReauth: false, touchActive: true }));
       await activateSessionForAccount(accountId);
-      const profile = await fetchMyProfileSnapshot(accountId);
-      if (profile) setAccounts(upsertAccountIndex({ accountId, profile }));
+      const { seq, signal } = beginProfileLoad(accountId);
+      const profile = await fetchMyProfileSnapshot(accountId, signal);
+      if (profile && isCurrentProfileLoad(accountId, seq)) {
+        setAccounts(upsertAccountIndex({ accountId, profile }));
+      }
       return { error: null };
     } catch (e) {
       return { error: e as Error };
     }
-  }, [activateSessionForAccount]);
+  }, [activateSessionForAccount, beginProfileLoad, isCurrentProfileLoad]);
 
   const value = React.useMemo<MultiAccountContextValue>(() => ({
     loading,

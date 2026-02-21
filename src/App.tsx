@@ -14,6 +14,7 @@ import { Loader2 } from "lucide-react";
 import { UserSettingsProvider } from "@/contexts/UserSettingsContext";
 import { MultiAccountProvider } from "@/contexts/MultiAccountContext";
 import { AdminProtectedRoute } from "@/components/admin/AdminProtectedRoute";
+import { AppearanceRuntimeProvider } from "@/contexts/AppearanceRuntimeContext";
 
 // Initialize error tracking
 initErrorTracking();
@@ -70,13 +71,14 @@ const App = () => (
   <MultiAccountProvider>
     <AuthProvider>
       <UserSettingsProvider>
-        <VideoCallProvider>
-          <ChatOpenProvider>
-            <TooltipProvider>
-              <Toaster />
-              <Sonner />
-              <GlobalCallOverlay />
-              <BrowserRouter basename={ROUTER_BASENAME}>
+        <AppearanceRuntimeProvider>
+          <VideoCallProvider>
+            <ChatOpenProvider>
+              <TooltipProvider>
+                <Toaster />
+                <Sonner />
+                <GlobalCallOverlay />
+                <BrowserRouter basename={ROUTER_BASENAME}>
                 <Suspense fallback={null}>
                   <CommandPalette />
                 </Suspense>
@@ -228,10 +230,11 @@ const App = () => (
                   </Suspense>
                 } />
                 </Routes>
-              </BrowserRouter>
-            </TooltipProvider>
-          </ChatOpenProvider>
-        </VideoCallProvider>
+                </BrowserRouter>
+              </TooltipProvider>
+            </ChatOpenProvider>
+          </VideoCallProvider>
+        </AppearanceRuntimeProvider>
       </UserSettingsProvider>
     </AuthProvider>
   </MultiAccountProvider>

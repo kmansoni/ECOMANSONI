@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mansoni.com/schemas/ws/E2EE_CAPS.schema.json",
+  "title": "E2EE_CAPS",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["deviceId", "platform", "caps"],
+  "properties": {
+    "deviceId": { "$ref": "https://mansoni.com/schemas/ws/types.schema.json#/properties/deviceId" },
+    "platform": { "type": "string", "enum": ["web", "android", "ios"] },
+    "caps": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["supportsE2ee", "mode", "protocolVersion"],
+      "properties": {
+        "supportsE2ee": { "type": "boolean" },
+        "mode": {
+          "type": "string",
+          "enum": ["web_insertable_streams", "native_sframe_style", "none"]
+        },
+        "protocolVersion": { "type": "integer", "minimum": 1 },
+        "ciphers": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["AES_256_GCM", "CHACHA20_POLY1305"] },
+          "minItems": 1
+        },
+        "signatures": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["ED25519"] },
+          "minItems": 1
+        }
+      }
+    }
+  }
+}

@@ -507,7 +507,7 @@ export function ChatsPage() {
       <ChatConversation
         conversationId={selectedConversation.id}
         chatName={other.display_name || "Пользователь"}
-        chatAvatar={other.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${selectedConversation.id}`}
+        chatAvatar={other.avatar_url ?? null}
         otherUserId={other.user_id}
         totalUnreadCount={totalUnreadCount}
         onRefetch={refetch}

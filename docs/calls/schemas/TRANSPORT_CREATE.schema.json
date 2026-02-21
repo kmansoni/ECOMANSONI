@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mansoni.com/schemas/ws/TRANSPORT_CREATE.schema.json",
+  "title": "TRANSPORT_CREATE",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["roomId", "direction"],
+  "properties": {
+    "roomId": { "$ref": "https://mansoni.com/schemas/ws/types.schema.json#/properties/roomId" },
+    "direction": { "type": "string", "enum": ["send", "recv"] },
+    "forceTcp": { "type": "boolean" }
+  }
+}

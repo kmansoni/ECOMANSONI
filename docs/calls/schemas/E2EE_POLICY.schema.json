@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mansoni.com/schemas/ws/E2EE_POLICY.schema.json",
+  "title": "E2EE_POLICY",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["roomId", "e2eeRequired", "reasonIfDenied"],
+  "properties": {
+    "roomId": { "$ref": "https://mansoni.com/schemas/ws/types.schema.json#/properties/roomId" },
+    "e2eeRequired": { "type": "boolean" },
+    "reasonIfDenied": {
+      "type": "string",
+      "enum": ["", "E2EE_REQUIRED_UNSUPPORTED", "POLICY_BLOCK_WEB_IOS"]
+    }
+  }
+}

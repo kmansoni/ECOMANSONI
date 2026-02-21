@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" fill="none">
+  <defs>
+    <radialGradient id="bg" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(320 260) rotate(60) scale(980)">
+      <stop stop-color="#F59E0B" stop-opacity="0.20"/>
+      <stop offset="0.55" stop-color="#0B3B64" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#050A12"/>
+    </radialGradient>
+    <linearGradient id="robe" x1="300" y1="560" x2="740" y2="980" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0B1220"/>
+      <stop offset="1" stop-color="#071426"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="360" y1="720" x2="680" y2="960" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FBBF24" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="#FDE68A" stop-opacity="0.35"/>
+    </linearGradient>
+    <linearGradient id="skin" x1="420" y1="300" x2="610" y2="560" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F4D2B8"/>
+      <stop offset="1" stop-color="#E7B094"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+
+  <path d="M220 960c42-230 186-320 292-320h0c106 0 250 90 292 320H220z" fill="url(#robe)"/>
+  <path d="M320 960c30-150 116-216 192-216h0c76 0 162 66 192 216H320z" fill="url(#gold)" opacity="0.25"/>
+
+  <path d="M466 640c12 72 32 102 46 102s34-30 46-102c-30 18-62 18-92 0z" fill="url(#skin)"/>
+  <path d="M512 270c-92 0-166 74-166 172 0 122 88 222 166 222s166-100 166-222c0-98-74-172-166-172z" fill="url(#skin)"/>
+
+  <!-- turban (generic) -->
+  <path d="M350 420c0-98 72-160 162-160s162 62 162 160c0 10-2 20-4 30-34-30-84-46-158-46s-124 16-158 46c-2-10-4-20-4-30z" fill="#FBBF24" opacity="0.35"/>
+  <path d="M360 410c18-86 84-136 152-136s134 50 152 136c-40-18-88-28-152-28s-112 10-152 28z" fill="#111827" opacity="0.75"/>
+  <circle cx="618" cy="374" r="16" fill="#A78BFA" opacity="0.9"/>
+
+  <!-- beard -->
+  <path d="M392 590c32 56 74 82 120 82s88-26 120-82c-28 12-68 22-120 22s-92-10-120-22z" fill="#0B1220" opacity="0.78"/>
+
+  <path d="M452 582c38 26 78 26 116 0" stroke="#0F172A" stroke-opacity="0.18" stroke-width="16" stroke-linecap="round"/>
+  <circle cx="512" cy="512" r="420" stroke="#FFFFFF" stroke-opacity="0.08" stroke-width="18"/>
+</svg>

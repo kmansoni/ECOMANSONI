@@ -1,6 +1,6 @@
-﻿import { Settings, Grid3X3, Bookmark, Play, Plus, AtSign, Share2, Eye, User, Loader2, Edit3, QrCode } from "lucide-react";
+﻿import { Settings, Grid3X3, Bookmark, Play, Plus, Share2, Eye, User, Loader2, Edit3, QrCode } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { CreateMenu } from "@/components/feed/CreateMenu";
@@ -13,13 +13,21 @@ import { useAuth } from "@/hooks/useAuth";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { VerifiedBadge } from "@/components/ui/verified-badge";
 import { HighlightsManager } from "@/components/profile/HighlightsManager";
+import { supabase } from "@/integrations/supabase/client";
 
 const tabs = [
   { id: "posts", icon: Grid3X3, label: "Публикации" },
   { id: "saved", icon: Bookmark, label: "Сохраненное" },
   { id: "reels", icon: Play, label: "Reels" },
-  { id: "tagged", icon: AtSign, label: "Отметки" },
 ];
+
+type UserReelRow = {
+  id: string;
+  author_id: string;
+  video_url: string;
+  thumbnail_url: string | null;
+  created_at: string;
+};
 
 function formatNumber(num: number): string {
   if (num >= 1000000) {
@@ -46,6 +54,41 @@ export function ProfilePage() {
   const [showFollowers, setShowFollowers] = useState(false);
   const [showFollowing, setShowFollowing] = useState(false);
 
+  const [myReels, setMyReels] = useState<UserReelRow[]>([]);
+  const [myReelsLoading, setMyReelsLoading] = useState(false);
+  const [myReelsError, setMyReelsError] = useState<string | null>(null);
+  const [myReelsHasMore, setMyReelsHasMore] = useState(true);
+
+  const loadMyReels = async (opts?: { reset?: boolean }) => {
+    if (!user) return;
+    const reset = Boolean(opts?.reset);
+
+    if (myReelsLoading) return;
+    if (!reset && !myReelsHasMore) return;
+
+    setMyReelsLoading(true);
+    setMyReelsError(null);
+    try {
+      const limit = 30;
+      const offset = reset ? 0 : myReels.length;
+      const { data, error } = await (supabase as any).rpc("get_user_reels_v1", {
+        p_author_id: user.id,
+        p_limit: limit,
+        p_offset: offset,
+      });
+      if (error) throw error;
+
+      const rows = (data || []) as UserReelRow[];
+      setMyReels((prev) => (reset ? rows : [...prev, ...rows]));
+      setMyReelsHasMore(rows.length >= limit);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setMyReelsError(msg);
+    } finally {
+      setMyReelsLoading(false);
+    }
+  };
+
   const handleCreateSelect = (type: string) => {
     if (type === "post") {
       setShowPostEditor(true);
@@ -59,7 +102,18 @@ export function ProfilePage() {
     if (tabId === "saved") {
       fetchSavedPosts();
     }
+    if (tabId === "reels") {
+      // Fetch on-demand when the user opens the Reels tab.
+      void loadMyReels({ reset: true });
+    }
   };
+
+  useEffect(() => {
+    // If the user changes (sign out/in), reset cached reels.
+    setMyReels([]);
+    setMyReelsHasMore(true);
+    setMyReelsError(null);
+  }, [user?.id]);
 
   // Get first media URL for a post
   const getPostImage = (post: any): string | null => {
@@ -332,13 +386,72 @@ export function ProfilePage() {
           )}
 
           {activeTab === "reels" && (
-            <div className="py-12 text-center">
-              <div className="w-16 h-16 rounded-full bg-card/80 backdrop-blur-xl border border-border flex items-center justify-center mx-auto mb-3">
-                <Play className="w-8 h-8 text-muted-foreground" />
-              </div>
-              <h3 className="font-semibold text-foreground mb-1">Reels</h3>
-              <p className="text-sm text-muted-foreground">Ваши видео Reels</p>
-            </div>
+            <>
+              {myReelsLoading && myReels.length === 0 ? (
+                <div className="py-12 flex items-center justify-center">
+                  <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : myReelsError ? (
+                <div className="py-12 text-center">
+                  <div className="w-16 h-16 rounded-full bg-card/80 backdrop-blur-xl border border-border flex items-center justify-center mx-auto mb-3">
+                    <Play className="w-8 h-8 text-muted-foreground" />
+                  </div>
+                  <h3 className="font-semibold text-foreground mb-1">Reels</h3>
+                  <p className="text-sm text-muted-foreground">Не удалось загрузить ваши Reels</p>
+                  <div className="mt-4">
+                    <Button variant="outline" onClick={() => void loadMyReels({ reset: true })}>
+                      Повторить
+                    </Button>
+                  </div>
+                </div>
+              ) : myReels.length > 0 ? (
+                <div className="grid grid-cols-3 gap-1 rounded-2xl overflow-hidden">
+                  {myReels.map((reel) => (
+                    <div key={reel.id} className="aspect-square relative overflow-hidden bg-card/40">
+                      {reel.thumbnail_url ? (
+                        <img
+                          src={reel.thumbnail_url}
+                          alt=""
+                          className="w-full h-full object-cover"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center">
+                          <Play className="w-6 h-6 text-muted-foreground" />
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="py-12 text-center">
+                  <div className="w-16 h-16 rounded-full bg-card/80 backdrop-blur-xl border border-border flex items-center justify-center mx-auto mb-3">
+                    <Play className="w-8 h-8 text-muted-foreground" />
+                  </div>
+                  <h3 className="font-semibold text-foreground mb-1">Reels</h3>
+                  <p className="text-sm text-muted-foreground">У вас пока нет Reels</p>
+                </div>
+              )}
+
+              {myReels.length > 0 && myReelsHasMore && (
+                <div className="pt-4 flex justify-center">
+                  <Button
+                    variant="outline"
+                    disabled={myReelsLoading}
+                    onClick={() => void loadMyReels()}
+                  >
+                    {myReelsLoading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Загрузка...
+                      </>
+                    ) : (
+                      "Загрузить ещё"
+                    )}
+                  </Button>
+                </div>
+              )}
+            </>
           )}
 
           {activeTab === "tagged" && (

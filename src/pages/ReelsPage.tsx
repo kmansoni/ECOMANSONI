@@ -53,6 +53,9 @@ export function ReelsPage() {
     toggleRepost,
     recordView,
     recordImpression,
+    recordViewed,
+    recordWatched,
+    recordSkip,
     setReelFeedback,
     refetch,
   } = useReels();
@@ -65,28 +68,82 @@ export function ReelsPage() {
   
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRefs = useRef<Map<number, HTMLVideoElement>>(new Map());
+  const reelElementRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const viewRecordedForReel = useRef<Set<string>>(new Set());
-  const impressionRecordedForReel = useRef<Set<string>>(new Set());
+  // Progressive tracking state (per reel, per session)
+  const impressionRecordedForReel = useRef<Map<string, boolean>>(new Map());
+  const viewedRecordedForReel = useRef<Map<string, boolean>>(new Map());
+  const watchedRecordedForReel = useRef<Map<string, boolean>>(new Map());
   const reelWatchStartMs = useRef<Map<string, number>>(new Map());
   const reelTotalWatchedMs = useRef<Map<string, number>>(new Map());
+  const visibilityTimers = useRef<Map<string, NodeJS.Timeout>>(new Map());
   const isScrolling = useRef(false);
   const errorToastShown = useRef<Set<string>>(new Set());
 
   const currentReel = reels[currentIndex];
 
-  // Cold-start signal: record impression when a reel becomes active/visible
+  // IntersectionObserver: viewport tracking (50%+ visibility, 1+ sec)
   useEffect(() => {
-    if (!currentReel) return;
-    if (impressionRecordedForReel.current.has(currentReel.id)) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          const reelId = entry.target.getAttribute('data-reel-id');
+          const reelIndex = parseInt(entry.target.getAttribute('data-reel-index') || '0', 10);
+          const reel = reels[reelIndex];
+          if (!reelId || !reel) return;
 
-    impressionRecordedForReel.current.add(currentReel.id);
-    recordImpression(currentReel.id, { position: currentIndex, source: "reels_feed" });
-  }, [currentReel, currentIndex, recordImpression]);
+          if (entry.isIntersecting && entry.intersectionRatio >= 0.5) {
+            // Reel is 50%+ visible: start timer for impression (1+ sec)
+            if (!visibilityTimers.current.has(reelId)) {
+              const timer = setTimeout(() => {
+                // After 1 sec visibility: record impression
+                if (!impressionRecordedForReel.current.get(reelId)) {
+                  impressionRecordedForReel.current.set(reelId, true);
+                  recordImpression(reelId, {
+                    position: reel.feed_position ?? reelIndex,
+                    source: 'reels_feed',
+                    request_id: reel.request_id,
+                    algorithm_version: reel.algorithm_version,
+                    score: reel.final_score,
+                  });
+                }
+              }, 1000);
+              visibilityTimers.current.set(reelId, timer);
+            }
+          } else {
+            // Reel is <50% visible: clear timer
+            const timer = visibilityTimers.current.get(reelId);
+            if (timer) {
+              clearTimeout(timer);
+              visibilityTimers.current.delete(reelId);
+            }
+          }
+        });
+      },
+      {
+        root: containerRef.current,
+        threshold: [0, 0.5, 1.0],
+      }
+    );
+
+    // Observe all reel elements
+    reelElementRefs.current.forEach((element) => {
+      if (element) observer.observe(element);
+    });
+
+    return () => {
+      observer.disconnect();
+      // Clear all visibility timers
+      visibilityTimers.current.forEach((timer) => clearTimeout(timer));
+      visibilityTimers.current.clear();
+    };
+  }, [reels, recordImpression]);
 
   // Track watch time: start timer when reel becomes active
   useEffect(() => {
     if (!currentReel) return;
     const reelId = currentReel.id;
+    const reelDuration = currentReel.duration_seconds ?? 30; // fallback to 30s
     reelWatchStartMs.current.set(reelId, Date.now());
 
     return () => {
@@ -94,11 +151,32 @@ export function ReelsPage() {
       if (start) {
         const elapsed = Date.now() - start;
         const prev = reelTotalWatchedMs.current.get(reelId) ?? 0;
-        reelTotalWatchedMs.current.set(reelId, prev + elapsed);
+        const totalWatched = prev + elapsed;
+        reelTotalWatchedMs.current.set(reelId, totalWatched);
+
+        const watchedSeconds = Math.floor(totalWatched / 1000);
+
+        // Progressive Disclosure Layer 1: VIEWED (>2 sec)
+        if (watchedSeconds >= 2 && !viewedRecordedForReel.current.get(reelId)) {
+          viewedRecordedForReel.current.set(reelId, true);
+          recordViewed(reelId);
+        }
+
+        // Progressive Disclosure Layer 2: WATCHED (>50% completion)
+        const completionRate = (watchedSeconds / reelDuration) * 100;
+        if (completionRate >= 50 && !watchedRecordedForReel.current.get(reelId)) {
+          watchedRecordedForReel.current.set(reelId, true);
+          recordWatched(reelId, watchedSeconds, reelDuration);
+        }
+
+        // Negative Signal: SKIP (<2 sec when switching away)
+        if (watchedSeconds < 2 && !viewedRecordedForReel.current.get(reelId)) {
+          recordSkip(reelId, watchedSeconds, reelDuration);
+        }
       }
       reelWatchStartMs.current.delete(reelId);
     };
-  }, [currentReel]);
+  }, [currentReel, recordViewed, recordWatched, recordSkip]);
 
   // Record view on video play (first view) or after 10s of watch time (repeat view)
   const handleVideoPlay = useCallback(
@@ -274,6 +352,11 @@ export function ReelsPage() {
       {reels.map((reel, index) => (
         <div
           key={reel.id}
+          ref={(el) => {
+            if (el) reelElementRefs.current.set(index, el);
+          }}
+          data-reel-id={reel.id}
+          data-reel-index={index}
           className="relative w-full h-[calc(100vh-4rem)] flex-shrink-0"
           style={{
             scrollSnapAlign: 'start',

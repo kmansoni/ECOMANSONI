@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useSearch, SearchUser } from "@/hooks/useSearch";
 import glassBackground from "@/assets/glass-background.png";
+import { GradientAvatar } from "@/components/ui/gradient-avatar";
 
 interface ChatSearchSheetProps {
   open: boolean;
@@ -119,10 +120,12 @@ export function ChatSearchSheet({
                 onClick={() => handleOpenProfile(u)}
                 className="flex items-center gap-3 py-3 hover:bg-white/10 transition-colors cursor-pointer rounded-lg px-2 -mx-2"
               >
-                <img
-                  src={u.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${u.user_id}`}
-                  alt={u.display_name}
-                  className="w-12 h-12 rounded-full object-cover bg-white/10"
+                <GradientAvatar
+                  name={u.display_name}
+                  seed={u.user_id}
+                  avatarUrl={u.avatar_url}
+                  size="sm"
+                  className="w-12 h-12 text-base bg-white/10 border-white/15"
                 />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5">

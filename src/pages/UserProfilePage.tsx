@@ -47,8 +47,42 @@ export function UserProfilePage() {
 
   const { profile, loading: profileLoading, error, follow, unfollow } = useProfileByUsername(username);
   const { posts, loading: postsLoading } = useUserPosts(profile?.user_id);
+  const [userReels, setUserReels] = useState<any[]>([]);
+  const [userReelsLoading, setUserReelsLoading] = useState(false);
+  const [userReelsError, setUserReelsError] = useState<string | null>(null);
+  const [userReelsHasMore, setUserReelsHasMore] = useState(true);
   const [hasUnviewedStories, setHasUnviewedStories] = useState(false);
   const [hasAnyStories, setHasAnyStories] = useState(false);
+
+  const loadUserReels = async (opts?: { reset?: boolean }) => {
+    if (!profile?.user_id) return;
+    const reset = Boolean(opts?.reset);
+
+    if (userReelsLoading) return;
+    if (!reset && !userReelsHasMore) return;
+
+    setUserReelsLoading(true);
+    setUserReelsError(null);
+    try {
+      const limit = 30;
+      const offset = reset ? 0 : userReels.length;
+      const { data, error: reelsError } = await (supabase as any).rpc("get_user_reels_v1", {
+        p_author_id: profile.user_id,
+        p_limit: limit,
+        p_offset: offset,
+      });
+      if (reelsError) throw reelsError;
+
+      const rows = (data || []) as any[];
+      setUserReels((prev) => (reset ? rows : [...prev, ...rows]));
+      setUserReelsHasMore(rows.length >= limit);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setUserReelsError(msg);
+    } finally {
+      setUserReelsLoading(false);
+    }
+  };
 
   const openProfileStories = async () => {
     if (!profile?.user_id) return;
@@ -143,6 +177,14 @@ export function UserProfilePage() {
 
     checkUserStories();
   }, [profile?.user_id, currentUser]);
+
+  useEffect(() => {
+    setUserReels([]);
+    setUserReelsHasMore(true);
+    setUserReelsError(null);
+    // Only fetch when the profile is resolved AND the tab is actually opened.
+    // (We keep the fetch on tab switch below.)
+  }, [profile?.user_id]);
 
   const handleFollowToggle = async () => {
     if (!currentUser) {
@@ -377,7 +419,12 @@ export function UserProfilePage() {
             return (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => {
+                  setActiveTab(tab.id);
+                  if (tab.id === "reels") {
+                    void loadUserReels({ reset: true });
+                  }
+                }}
                 className={cn(
                   "flex-1 flex items-center justify-center py-3 transition-all border-b-2",
                   isActive
@@ -446,12 +493,73 @@ export function UserProfilePage() {
         )}
 
         {activeTab === "reels" && (
-          <div className="p-12 text-center">
-            <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-3">
-              <Play className="w-8 h-8 text-muted-foreground" />
-            </div>
-            <h3 className="font-semibold text-foreground mb-1">Reels</h3>
-            <p className="text-sm text-muted-foreground">Видео Reels пользователя</p>
+          <div className="px-4 py-4">
+            {userReelsLoading && userReels.length === 0 ? (
+              <div className="py-12 flex items-center justify-center">
+                <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : userReelsError ? (
+              <div className="py-12 text-center">
+                <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-3">
+                  <Play className="w-8 h-8 text-muted-foreground" />
+                </div>
+                <h3 className="font-semibold text-foreground mb-1">Reels</h3>
+                <p className="text-sm text-muted-foreground">Не удалось загрузить Reels</p>
+                <div className="mt-4">
+                  <Button variant="outline" onClick={() => void loadUserReels({ reset: true })}>
+                    Повторить
+                  </Button>
+                </div>
+              </div>
+            ) : userReels.length > 0 ? (
+              <>
+                <div className="grid grid-cols-3 gap-1 rounded-2xl overflow-hidden">
+                  {userReels.map((reel) => (
+                    <div key={reel.id} className="aspect-square relative overflow-hidden bg-muted/40">
+                      {reel.thumbnail_url ? (
+                        <img
+                          src={reel.thumbnail_url}
+                          alt=""
+                          className="w-full h-full object-cover"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center">
+                          <Play className="w-6 h-6 text-muted-foreground" />
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {userReelsHasMore && (
+                  <div className="pt-4 flex justify-center">
+                    <Button
+                      variant="outline"
+                      disabled={userReelsLoading}
+                      onClick={() => void loadUserReels()}
+                    >
+                      {userReelsLoading ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Загрузка...
+                        </>
+                      ) : (
+                        "Загрузить ещё"
+                      )}
+                    </Button>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="py-12 text-center">
+                <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-3">
+                  <Play className="w-8 h-8 text-muted-foreground" />
+                </div>
+                <h3 className="font-semibold text-foreground mb-1">Reels</h3>
+                <p className="text-sm text-muted-foreground">Пользователь ещё не опубликовал Reels</p>
+              </div>
+            )}
           </div>
         )}
 

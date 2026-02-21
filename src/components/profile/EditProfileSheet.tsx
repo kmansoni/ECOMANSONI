@@ -8,6 +8,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Camera, Loader2, User } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import { AvatarPresetPicker } from '@/components/profile/AvatarPresetPicker';
 import { toast } from 'sonner';
 import type { Profile } from '@/hooks/useProfile';
 
@@ -134,6 +135,25 @@ export function EditProfileSheet({ isOpen, onClose, profile, onSave }: EditProfi
                 onChange={handleFileChange}
               />
             </div>
+          </div>
+
+          <div className="space-y-3 rounded-2xl border border-border p-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold">Каталог аватаров</h3>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setAvatarUrl('')}
+                disabled={uploading || saving}
+              >
+                Сбросить
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Мужские и женские наборы, включая анимированные варианты.
+            </p>
+            <AvatarPresetPicker selectedUrl={avatarUrl} onSelect={setAvatarUrl} />
           </div>
 
           {/* Display Name */}

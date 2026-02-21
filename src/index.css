@@ -110,6 +110,12 @@ All colors MUST be HSL.
     --sidebar-accent-foreground: 0 0% 92%;
     --sidebar-border: 0 0% 100% / 0.20;
     --sidebar-ring: 198 100% 45%;
+
+    /* Runtime appearance tokens */
+    --app-font-scale: 100%;
+    --message-corner-radius: 18px;
+    --accent-primary: #4f8cff;
+    --accent-secondary: #8b5cf6;
   }
 
   .dark {
@@ -169,6 +175,7 @@ All colors MUST be HSL.
 
   html, body {
     @apply bg-background text-foreground;
+    font-size: var(--app-font-scale);
     /* Mobile native app optimizations */
     -webkit-tap-highlight-color: transparent;
     -webkit-touch-callout: none;
@@ -319,6 +326,23 @@ All colors MUST be HSL.
 .native-scroll {
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-y: contain;
+}
+
+/* Runtime appearance flags */
+html.appearance-no-ui-anim *,
+html.appearance-no-ui-anim *::before,
+html.appearance-no-ui-anim *::after {
+  animation: none !important;
+  transition: none !important;
+}
+
+html.appearance-no-sticker-anim .emoji-picker-ios .EmojiPickerReact .epr-emoji img {
+  transition: none !important;
+  transform: none !important;
+}
+
+.chat-bubble {
+  border-radius: var(--message-corner-radius) !important;
 }
 
 /* Fixed positioning fix for iOS Safari & Android WebView */

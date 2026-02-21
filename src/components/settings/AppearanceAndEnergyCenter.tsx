@@ -7,6 +7,7 @@ import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
+import { useUserSettings } from "@/contexts/UserSettingsContext";
 import {
   getOrCreateAppearanceSettings,
   updateAppearanceSettings,
@@ -33,9 +34,9 @@ function cardClass(isDark: boolean): string {
 
 const THEMES = [
   { id: "night", label: "Ночной режим", bubble: "from-indigo-500 to-violet-500" },
-  { id: "duck", label: "Duck", bubble: "from-lime-500 to-emerald-500" },
-  { id: "snow", label: "Snow", bubble: "from-sky-500 to-cyan-400" },
-  { id: "diamond", label: "Diamond", bubble: "from-fuchsia-500 to-purple-400" },
+  { id: "duck", label: "Утка", bubble: "from-lime-500 to-emerald-500" },
+  { id: "snow", label: "Снег", bubble: "from-sky-500 to-cyan-400" },
+  { id: "diamond", label: "Алмаз", bubble: "from-fuchsia-500 to-purple-400" },
 ];
 
 const WALLPAPERS = [
@@ -47,6 +48,7 @@ const WALLPAPERS = [
 
 export function AppearanceAndEnergyCenter({ userId, isDark, mode, onOpenEnergy }: Props) {
   const { setTheme } = useTheme();
+  const { update: updateUserSettings } = useUserSettings();
   const [appearance, setAppearance] = useState<UserAppearanceSettings | null>(null);
   const [energy, setEnergy] = useState<UserEnergySaverSettings | null>(null);
   const [icons, setIcons] = useState<AppIconCatalogItem[]>([]);
@@ -97,12 +99,14 @@ export function AppearanceAndEnergyCenter({ userId, isDark, mode, onOpenEnergy }
     const next = await updateAppearanceSettings(userId, patch);
     setAppearance(next);
     if (patch.dark_theme) applyThemeMode(patch.dark_theme);
+    window.dispatchEvent(new Event("appearance-runtime-refresh"));
   };
 
   const updateEnergy = async (patch: Partial<Omit<UserEnergySaverSettings, "user_id" | "updated_at" | "created_at">>) => {
     if (!userId || !energy) return;
     const next = await updateEnergySaverSettings(userId, patch);
     setEnergy(next);
+    window.dispatchEvent(new Event("appearance-runtime-refresh"));
   };
 
   const energyRows = useMemo(
@@ -254,7 +258,18 @@ export function AppearanceAndEnergyCenter({ userId, isDark, mode, onOpenEnergy }
             <Moon className={cn("w-4 h-4", isDark ? "text-white/60" : "text-muted-foreground")} />
             <span className="font-medium">Ночной режим</span>
           </div>
-          <Switch checked={appearance.dark_mode_enabled} onCheckedChange={(val) => void updateAppearance({ dark_mode_enabled: val })} />
+          <Switch
+            checked={appearance.dark_mode_enabled}
+            onCheckedChange={(val) =>
+              void (async () => {
+                await updateAppearance({
+                  dark_mode_enabled: val,
+                  dark_theme: val ? "dark" : "light",
+                });
+                await updateUserSettings({ theme: val ? "dark" : "light" });
+              })()
+            }
+          />
         </div>
         <div className="px-5 py-4">
           <p className={cn("text-sm mb-2", isDark ? "text-white/60" : "text-white/70")}>Ночная тема</p>
@@ -264,7 +279,19 @@ export function AppearanceAndEnergyCenter({ userId, isDark, mode, onOpenEnergy }
               ["dark", "Темная"],
               ["light", "Светлая"],
             ].map(([modeValue, label]) => (
-              <Button key={modeValue} variant={appearance.dark_theme === modeValue ? "default" : "secondary"} onClick={() => void updateAppearance({ dark_theme: modeValue as any })}>
+              <Button
+                key={modeValue}
+                variant={appearance.dark_theme === modeValue ? "default" : "secondary"}
+                onClick={() =>
+                  void (async () => {
+                    await updateAppearance({
+                      dark_theme: modeValue as any,
+                      dark_mode_enabled: modeValue !== "light",
+                    });
+                    await updateUserSettings({ theme: modeValue as "system" | "dark" | "light" });
+                  })()
+                }
+              >
                 {label}
               </Button>
             ))}
@@ -322,6 +349,10 @@ export function AppearanceAndEnergyCenter({ userId, isDark, mode, onOpenEnergy }
                   if (!userId) return;
                   await setUserAppIconSelection(userId, icon.id);
                   setSelectedIconId(icon.id);
+                  toast({
+                    title: "Иконка приложения",
+                    description: "Иконка сохранена. Может потребоваться перезапуск приложения.",
+                  });
                 }}
                 className={cn(
                   "rounded-xl border px-3 py-2 text-left text-sm",
@@ -349,4 +380,3 @@ export function AppearanceAndEnergyCenter({ userId, isDark, mode, onOpenEnergy }
     </div>
   );
 }
-

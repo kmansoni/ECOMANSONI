@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mansoni.com/schemas/ws/ROOM_SNAPSHOT.schema.json",
+  "title": "ROOM_SNAPSHOT",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "roomId",
+    "callId",
+    "region",
+    "nodeId",
+    "roomVersion",
+    "epoch",
+    "memberSetVersion",
+    "serverTime",
+    "peers",
+    "producers",
+    "e2ee"
+  ],
+  "properties": {
+    "roomId": { "$ref": "https://mansoni.com/schemas/ws/types.schema.json#/properties/roomId" },
+    "callId": { "$ref": "https://mansoni.com/schemas/ws/types.schema.json#/properties/callId" },
+    "region": { "$ref": "https://mansoni.com/schemas/ws/types.schema.json#/properties/region" },
+    "nodeId": { "$ref": "https://mansoni.com/schemas/ws/types.schema.json#/properties/nodeId" },
+    "roomVersion": { "type": "integer", "minimum": 0 },
+    "epoch": { "type": "integer", "minimum": 0 },
+    "memberSetVersion": { "type": "integer", "minimum": 0 },
+    "serverTime": { "type": "integer", "minimum": 0 },
+    "peers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["userId", "deviceId", "role", "state"],
+        "properties": {
+          "userId": { "$ref": "https://mansoni.com/schemas/ws/types.schema.json#/properties/userId" },
+          "deviceId": { "$ref": "https://mansoni.com/schemas/ws/types.schema.json#/properties/deviceId" },
+          "role": { "type": "string", "enum": ["member", "moderator"] },
+          "state": { "type": "string", "enum": ["joined", "left", "rejoining"] },
+          "e2eeReady": { "type": "boolean" }
+        }
+      }
+    },
+    "producers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["producerId", "kind", "deviceId"],
+        "properties": {
+          "producerId": { "type": "string", "minLength": 3, "maxLength": 128 },
+          "deviceId": { "$ref": "https://mansoni.com/schemas/ws/types.schema.json#/properties/deviceId" },
+          "kind": { "type": "string", "enum": ["audio", "video", "screen"] }
+        }
+      }
+    },
+    "e2ee": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required", "epoch", "leaderDeviceId", "expectedSenderDevices"],
+      "properties": {
+        "required": { "type": "boolean" },
+        "epoch": { "type": "integer", "minimum": 0 },
+        "leaderDeviceId": { "$ref": "https://mansoni.com/schemas/ws/types.schema.json#/properties/deviceId" },
+        "expectedSenderDevices": {
+          "type": "array",
+          "items": { "$ref": "https://mansoni.com/schemas/ws/types.schema.json#/properties/deviceId" }
+        },
+        "missingSenderKeys": {
+          "type": "array",
+          "description": "Optional hints for resync",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["fromDeviceId"],
+            "properties": {
+              "fromDeviceId": { "$ref": "https://mansoni.com/schemas/ws/types.schema.json#/properties/deviceId" },
+              "senderKeyIds": {
+                "type": "array",
+                "items": { "type": "string" }
+              }
+            }
+          }
+        },
+        "protocolVersion": { "type": "integer", "minimum": 1 }
+      }
+    }
+  }
+}

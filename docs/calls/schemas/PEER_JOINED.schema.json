@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mansoni.com/schemas/ws/PEER_JOINED.schema.json",
+  "title": "PEER_JOINED",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["roomId", "userId", "deviceId", "memberSetVersion"],
+  "properties": {
+    "roomId": { "$ref": "https://mansoni.com/schemas/ws/types.schema.json#/properties/roomId" },
+    "userId": { "$ref": "https://mansoni.com/schemas/ws/types.schema.json#/properties/userId" },
+    "deviceId": { "$ref": "https://mansoni.com/schemas/ws/types.schema.json#/properties/deviceId" },
+    "memberSetVersion": { "type": "integer", "minimum": 0 }
+  }
+}
