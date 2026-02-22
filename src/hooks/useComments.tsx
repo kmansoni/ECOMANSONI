@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { checkHashtagsAllowedForText } from "@/lib/hashtagModeration";
 
 export interface Comment {
   id: string;
@@ -156,6 +157,11 @@ export function useComments(postId: string) {
     }
 
     try {
+      const hashtagVerdict = await checkHashtagsAllowedForText(String(content || "").trim());
+      if (!hashtagVerdict.ok) {
+        return { error: `HASHTAG_BLOCKED:${hashtagVerdict.blockedTags.join(", ")}` };
+      }
+
       const { data, error } = await (supabase
         .from("comments" as any)
         .insert({

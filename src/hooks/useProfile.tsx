@@ -204,6 +204,24 @@ export function useProfile(userId?: string) {
 
       if (error) throw error;
 
+      // Keep Supabase Auth metadata in sync (Dashboard -> Authentication -> Users).
+      // Best-effort: profile is canonical; metadata sync failure shouldn't block saving.
+      const metaPatch: Record<string, unknown> = {};
+      if (Object.prototype.hasOwnProperty.call(updates, 'display_name')) {
+        const name = typeof updates.display_name === 'string' ? updates.display_name.trim() : '';
+        metaPatch.full_name = name || null;
+      }
+      if (Object.prototype.hasOwnProperty.call(updates, 'avatar_url')) {
+        const url = typeof updates.avatar_url === 'string' ? updates.avatar_url.trim() : '';
+        metaPatch.avatar_url = url || null;
+      }
+      if (Object.keys(metaPatch).length > 0) {
+        const { error: metaError } = await supabase.auth.updateUser({ data: metaPatch });
+        if (metaError) {
+          console.warn('[useProfile] auth.updateUser metadata sync failed:', metaError);
+        }
+      }
+
       setProfile(prev => prev ? { ...prev, ...updates } : null);
     } catch (err) {
       console.error('Failed to update profile:', err);

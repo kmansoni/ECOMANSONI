@@ -38,10 +38,20 @@ type ActionRequest = {
     | "approvals.list"
     | "approvals.request"
     | "approvals.decide"
+    | "staff_profiles.list"
+    | "staff_profiles.upsert"
+    | "owner.primary.get"
+    | "owner.primary.set"
+    | "verifications.list"
+    | "verifications.grant"
+    | "verifications.revoke"
     | "jit.request"
     | "jit.active"
     | "jit.approve"
-    | "jit.revoke";
+    | "jit.revoke"
+    | "hashtags.list"
+    | "hashtags.status.set"
+    | "hashtags.status.bulk_set";
   params?: Record<string, Json>;
 };
 
@@ -203,6 +213,42 @@ serve(async (req: Request) => {
     return scopes.includes(required);
   }
 
+  async function hasActiveOwnerRole(adminId: string): Promise<boolean> {
+    const { data: ownerRole } = await (supabaseService as any)
+      .from("admin_roles")
+      .select("id")
+      .eq("name", "owner")
+      .maybeSingle();
+    if (!ownerRole?.id) return false;
+
+    const { data } = await (supabaseService as any)
+      .from("admin_user_roles")
+      .select("id")
+      .eq("admin_user_id", adminId)
+      .eq("role_id", ownerRole.id)
+      .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
+      .maybeSingle();
+
+    return Boolean(data?.id);
+  }
+
+  async function countActiveOwnerHolders(): Promise<number> {
+    const { data: ownerRole } = await (supabaseService as any)
+      .from("admin_roles")
+      .select("id")
+      .eq("name", "owner")
+      .maybeSingle();
+    if (!ownerRole?.id) return 0;
+
+    const { count, error } = await (supabaseService as any)
+      .from("admin_user_roles")
+      .select("id", { count: "exact", head: true })
+      .eq("role_id", ownerRole.id)
+      .or(`expires_at.is.null,expires_at.gt.${nowIso}`);
+    if (error) throw error;
+    return count ?? 0;
+  }
+
   const roleNames = roles.map((r: any) => r.name);
   const isActorOwner = roleNames.includes("owner");
 
@@ -232,16 +278,60 @@ serve(async (req: Request) => {
     }
   }
 
-  async function assertApprovedApproval(approvalId: string): Promise<void> {
+  async function assertApprovedApproval(
+    approvalId: string,
+    opts?: {
+      expectedOperationType?: string;
+      expectedPayload?: Record<string, unknown>;
+      requireUnconsumed?: boolean;
+    },
+  ): Promise<void> {
     const { data: approval, error } = await (supabaseService as any)
       .from("approvals")
-      .select("id,status")
+      .select("id,status,expires_at,executed_at,operation_type,operation_payload")
       .eq("id", approvalId)
       .maybeSingle();
     if (error) throw error;
     if (!approval || approval.status !== "approved") {
       throw new Error("Approval is not approved");
     }
+    if (approval.expires_at && new Date(approval.expires_at) <= new Date()) {
+      throw new Error("Approval is expired");
+    }
+    if (opts?.requireUnconsumed && approval.executed_at) {
+      throw new Error("Approval already consumed");
+    }
+    if (opts?.expectedOperationType && approval.operation_type !== opts.expectedOperationType) {
+      throw new Error("Approval operation_type mismatch");
+    }
+    if (opts?.expectedPayload) {
+      const payload = (approval.operation_payload ?? {}) as Record<string, unknown>;
+      for (const [k, v] of Object.entries(opts.expectedPayload)) {
+        if (payload[k] !== v) {
+          throw new Error(`Approval payload mismatch for key '${k}'`);
+        }
+      }
+    }
+  }
+
+  async function consumeApproval(
+    approvalId: string,
+    actorId: string,
+    executionResult: Record<string, unknown>,
+  ): Promise<void> {
+    const { error } = await (supabaseService as any)
+      .from("approvals")
+      .update({
+        status: "executed",
+        executed_at: new Date().toISOString(),
+        executed_by: actorId,
+        execution_result: executionResult,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", approvalId)
+      .eq("status", "approved")
+      .is("executed_at", null);
+    if (error) throw error;
   }
 
   async function audit(params: {
@@ -417,7 +507,14 @@ serve(async (req: Request) => {
         const needsApproval = Boolean(role.requires_approval) || role.category === "owner" || role.category === "security";
         if (needsApproval) {
           if (!approvalId) return errorResponse("approval_id required", 400, origin);
-          await assertApprovedApproval(approvalId);
+          await assertApprovedApproval(approvalId, {
+            expectedOperationType: "iam.role.assign",
+            expectedPayload: {
+              admin_user_id: targetAdminUserId,
+              role_name: roleName,
+            },
+            requireUnconsumed: true,
+          });
         }
 
         const { data, error } = await (supabaseService as any)
@@ -433,6 +530,14 @@ serve(async (req: Request) => {
           .select("id,admin_user_id,role_id,assigned_at,expires_at")
           .single();
         if (error) throw error;
+
+        if (needsApproval && approvalId) {
+          await consumeApproval(approvalId, adminUserId, {
+            operation: "iam.role.assign",
+            admin_user_id: targetAdminUserId,
+            role_name: roleName,
+          });
+        }
 
         await audit({
           action: "iam.role.assign",
@@ -495,7 +600,14 @@ serve(async (req: Request) => {
         const needsApproval = Boolean(role.requires_approval) || role.category === "owner" || role.category === "security";
         if (needsApproval) {
           if (!approvalId) return errorResponse("approval_id required", 400, origin);
-          await assertApprovedApproval(approvalId);
+          await assertApprovedApproval(approvalId, {
+            expectedOperationType: "iam.role.revoke",
+            expectedPayload: {
+              admin_user_id: targetAdminUserId,
+              role_name: roleName,
+            },
+            requireUnconsumed: true,
+          });
         }
 
         const { data: before } = await (supabaseService as any)
@@ -505,12 +617,36 @@ serve(async (req: Request) => {
           .eq("role_id", role.id)
           .maybeSingle();
 
+        if (role.name === "owner" && before) {
+          const activeOwners = await countActiveOwnerHolders();
+          if (activeOwners <= 1) {
+            await audit({
+              action: "iam.role.revoke",
+              resource_type: "admin_user_role",
+              resource_id: `${targetAdminUserId}:${roleName}`,
+              severity: "SEV0",
+              status: "denied",
+              reason_code: "LAST_OWNER_GUARD",
+              reason_description: "Cannot revoke owner role from the last active owner",
+            });
+            return errorResponse("Cannot revoke the last active owner", 409, origin);
+          }
+        }
+
         const { error } = await (supabaseService as any)
           .from("admin_user_roles")
           .delete()
           .eq("admin_user_id", targetAdminUserId)
           .eq("role_id", role.id);
         if (error) throw error;
+
+        if (needsApproval && approvalId) {
+          await consumeApproval(approvalId, adminUserId, {
+            operation: "iam.role.revoke",
+            admin_user_id: targetAdminUserId,
+            role_name: roleName,
+          });
+        }
 
         await audit({
           action: "iam.role.revoke",
@@ -596,6 +732,22 @@ serve(async (req: Request) => {
           .select("id,email,display_name,status")
           .eq("id", targetId)
           .maybeSingle();
+
+        if (await hasActiveOwnerRole(targetId)) {
+          const activeOwners = await countActiveOwnerHolders();
+          if (activeOwners <= 1) {
+            await audit({
+              action: "iam.admin.deactivate",
+              resource_type: "admin_user",
+              resource_id: targetId,
+              severity: "SEV0",
+              status: "denied",
+              reason_code: "LAST_OWNER_GUARD",
+              reason_description: "Cannot deactivate the last active owner",
+            });
+            return errorResponse("Cannot deactivate the last active owner", 409, origin);
+          }
+        }
 
         const { data, error } = await (supabaseService as any)
           .from("admin_users")
@@ -801,7 +953,7 @@ serve(async (req: Request) => {
         // Load approval
         const { data: approval, error: approvalErr } = await (supabaseService as any)
           .from("approvals")
-          .select("id,requested_by,required_approvers,status")
+          .select("id,requested_by,required_approvers,status,approver_roles,expires_at")
           .eq("id", approvalId)
           .single();
 
@@ -812,6 +964,28 @@ serve(async (req: Request) => {
         }
         if (approval.status !== "pending") {
           return errorResponse("Approval not pending", 409, origin);
+        }
+        if (approval.expires_at && new Date(approval.expires_at) <= new Date()) {
+          await (supabaseService as any)
+            .from("approvals")
+            .update({ status: "expired", updated_at: new Date().toISOString() })
+            .eq("id", approvalId);
+          return errorResponse("Approval expired", 409, origin);
+        }
+        if (Array.isArray(approval.approver_roles) && approval.approver_roles.length > 0) {
+          const allowed = new Set((approval.approver_roles as string[]).map((x) => String(x)));
+          const actorHasAllowedRole = roles.some((r: any) => allowed.has(String(r.name)));
+          if (!actorHasAllowedRole) {
+            await audit({
+              action: "approvals.decide",
+              resource_type: "approval",
+              resource_id: approvalId,
+              severity: "SEV1",
+              status: "denied",
+              reason_code: "APPROVER_ROLE_MISMATCH",
+            });
+            return errorResponse("Forbidden: approver role mismatch", 403, origin);
+          }
         }
 
         // Insert step
@@ -863,6 +1037,449 @@ serve(async (req: Request) => {
         });
 
         return jsonResponse({ ok: true }, 200, origin);
+      }
+
+      case "staff_profiles.list": {
+        if (!hasScope("staff.profile.read")) {
+          await audit({
+            action: "staff.profile.read",
+            resource_type: "staff_profile",
+            severity: "SEV2",
+            status: "denied",
+            reason_code: "MISSING_SCOPE",
+          });
+          return errorResponse("Forbidden", 403, origin);
+        }
+
+        const limit = Number(actionReq.params?.limit ?? 100);
+        const safeLimit = Number.isFinite(limit) ? Math.min(Math.max(limit, 1), 200) : 100;
+        const staffKind = typeof actionReq.params?.staff_kind === "string" ? String(actionReq.params.staff_kind) : null;
+
+        let q = (supabaseService as any)
+          .from("admin_staff_profiles")
+          .select("admin_user_id,staff_kind,messenger_panel_access,can_assign_roles,can_manage_verifications,can_review_reports,timezone,notes,updated_at,admin:admin_user_id(id,email,display_name,status)")
+          .order("updated_at", { ascending: false })
+          .limit(safeLimit);
+        if (staffKind) q = q.eq("staff_kind", staffKind);
+
+        const { data, error } = await q;
+        if (error) throw error;
+
+        await audit({
+          action: "staff.profile.read",
+          resource_type: "staff_profile",
+          severity: "SEV3",
+          status: "success",
+          metadata: { limit: safeLimit, staff_kind: staffKind },
+        });
+
+        return jsonResponse({ ok: true, data: data ?? [] }, 200, origin);
+      }
+
+      case "staff_profiles.upsert": {
+        if (!hasScope("staff.profile.write") || !isActorOwner) {
+          await audit({
+            action: "staff.profile.write",
+            resource_type: "staff_profile",
+            severity: "SEV1",
+            status: "denied",
+            reason_code: "OWNER_ONLY",
+          });
+          return errorResponse("Forbidden", 403, origin);
+        }
+
+        const required = requireParams(actionReq.params, ["admin_user_id"]);
+        if (!required.ok) return errorResponse(`Missing param: ${required.missing}`, 400, origin);
+
+        const targetAdminUserId = String(required.value.admin_user_id);
+        const allowedStaffKinds = new Set(["moderator", "administrator", "owner"]);
+        const staffKind =
+          typeof actionReq.params?.staff_kind === "string" ? String(actionReq.params.staff_kind) : undefined;
+        if (staffKind && !allowedStaffKinds.has(staffKind)) {
+          return errorResponse("Invalid staff_kind", 400, origin);
+        }
+
+        const patch: Record<string, unknown> = {
+          admin_user_id: targetAdminUserId,
+          updated_at: nowIso,
+          updated_by: adminUserId,
+        };
+
+        if (staffKind) patch.staff_kind = staffKind;
+        if (typeof actionReq.params?.messenger_panel_access === "boolean") {
+          patch.messenger_panel_access = Boolean(actionReq.params.messenger_panel_access);
+        }
+        if (typeof actionReq.params?.can_assign_roles === "boolean") {
+          patch.can_assign_roles = Boolean(actionReq.params.can_assign_roles);
+        }
+        if (typeof actionReq.params?.can_manage_verifications === "boolean") {
+          patch.can_manage_verifications = Boolean(actionReq.params.can_manage_verifications);
+        }
+        if (typeof actionReq.params?.can_review_reports === "boolean") {
+          patch.can_review_reports = Boolean(actionReq.params.can_review_reports);
+        }
+        if (typeof actionReq.params?.timezone === "string") {
+          patch.timezone = String(actionReq.params.timezone);
+        }
+        if (typeof actionReq.params?.notes === "string") {
+          patch.notes = String(actionReq.params.notes);
+        }
+
+        const { data, error } = await (supabaseService as any)
+          .from("admin_staff_profiles")
+          .upsert(patch, { onConflict: "admin_user_id" })
+          .select("admin_user_id,staff_kind,messenger_panel_access,can_assign_roles,can_manage_verifications,can_review_reports,timezone,notes,updated_at")
+          .single();
+        if (error) throw error;
+
+        await audit({
+          action: "staff.profile.write",
+          resource_type: "staff_profile",
+          resource_id: targetAdminUserId,
+          severity: "SEV1",
+          status: "success",
+          after_state: data,
+        });
+
+        return jsonResponse({ ok: true, data }, 200, origin);
+      }
+
+      case "owner.primary.get": {
+        if (!hasScope("owner.primary.read")) {
+          await audit({
+            action: "owner.primary.read",
+            resource_type: "owner",
+            severity: "SEV2",
+            status: "denied",
+            reason_code: "MISSING_SCOPE",
+          });
+          return errorResponse("Forbidden", 403, origin);
+        }
+
+        const { data, error } = await (supabaseService as any)
+          .from("owners")
+          .select("id,admin_user_id,is_primary,created_at,admin:admin_user_id(id,email,display_name,status)")
+          .eq("is_primary", true)
+          .is("transferred_at", null)
+          .maybeSingle();
+        if (error) throw error;
+
+        await audit({
+          action: "owner.primary.read",
+          resource_type: "owner",
+          severity: "SEV3",
+          status: "success",
+        });
+
+        return jsonResponse({ ok: true, data: data ?? null }, 200, origin);
+      }
+
+      case "owner.primary.set": {
+        if (!hasScope("owner.primary.set") || !isActorOwner) {
+          await audit({
+            action: "owner.primary.set",
+            resource_type: "owner",
+            severity: "SEV0",
+            status: "denied",
+            reason_code: "OWNER_ONLY",
+          });
+          return errorResponse("Forbidden", 403, origin);
+        }
+
+        const required = requireParams(actionReq.params, ["admin_user_id", "reason"]);
+        if (!required.ok) return errorResponse(`Missing param: ${required.missing}`, 400, origin);
+
+        const targetAdminUserId = String(required.value.admin_user_id);
+        const reason = String(required.value.reason);
+
+        const { data: targetAdmin } = await (supabaseService as any)
+          .from("admin_users")
+          .select("id,email,display_name,status")
+          .eq("id", targetAdminUserId)
+          .maybeSingle();
+        if (!targetAdmin) return errorResponse("Admin user not found", 404, origin);
+        if (targetAdmin.status !== "active") return errorResponse("Target admin must be active", 409, origin);
+
+        const hasOwnerRole = await hasActiveOwnerRole(targetAdminUserId);
+        if (!hasOwnerRole) {
+          return errorResponse("Target admin does not have active owner role", 409, origin);
+        }
+
+        await (supabaseService as any)
+          .from("owners")
+          .upsert(
+            {
+              admin_user_id: targetAdminUserId,
+              is_primary: false,
+            },
+            { onConflict: "admin_user_id" },
+          );
+
+        await (supabaseService as any)
+          .from("owners")
+          .update({ is_primary: false })
+          .is("transferred_at", null)
+          .eq("is_primary", true);
+
+        const { data, error } = await (supabaseService as any)
+          .from("owners")
+          .update({ is_primary: true })
+          .eq("admin_user_id", targetAdminUserId)
+          .is("transferred_at", null)
+          .select("id,admin_user_id,is_primary,created_at")
+          .single();
+        if (error) throw error;
+
+        await audit({
+          action: "owner.primary.set",
+          resource_type: "owner",
+          resource_id: targetAdminUserId,
+          severity: "SEV0",
+          status: "success",
+          reason_code: "PRIMARY_OWNER_SET",
+          reason_description: reason,
+          after_state: data,
+        });
+
+        return jsonResponse({ ok: true, data }, 200, origin);
+      }
+
+      case "verifications.list": {
+        if (!hasScope("verification.read")) {
+          await audit({
+            action: "verification.read",
+            resource_type: "verification",
+            severity: "SEV2",
+            status: "denied",
+            reason_code: "MISSING_SCOPE",
+          });
+          return errorResponse("Forbidden", 403, origin);
+        }
+
+        const limit = Number(actionReq.params?.limit ?? 100);
+        const safeLimit = Number.isFinite(limit) ? Math.min(Math.max(limit, 1), 200) : 100;
+        const userId = typeof actionReq.params?.user_id === "string" ? String(actionReq.params.user_id) : null;
+        const verificationType =
+          typeof actionReq.params?.verification_type === "string"
+            ? String(actionReq.params.verification_type)
+            : null;
+        const isActive =
+          typeof actionReq.params?.is_active === "boolean"
+            ? Boolean(actionReq.params.is_active)
+            : null;
+
+        let q = (supabaseService as any)
+          .from("user_verifications")
+          .select("id,user_id,verification_type,is_active,verified_at,verified_by_admin_id,revoked_at,revoked_by_admin_id,reason,ticket_id,created_at,updated_at")
+          .order("verified_at", { ascending: false })
+          .limit(safeLimit);
+
+        if (userId) q = q.eq("user_id", userId);
+        if (verificationType) q = q.eq("verification_type", verificationType);
+        if (isActive !== null) q = q.eq("is_active", isActive);
+
+        const { data, error } = await q;
+        if (error) throw error;
+
+        await audit({
+          action: "verification.read",
+          resource_type: "verification",
+          severity: "SEV3",
+          status: "success",
+          metadata: { limit: safeLimit, user_id: userId, verification_type: verificationType, is_active: isActive },
+        });
+
+        return jsonResponse({ ok: true, data: data ?? [] }, 200, origin);
+      }
+
+      case "verifications.grant": {
+        if (!hasScope("verification.grant")) {
+          await audit({
+            action: "verification.grant",
+            resource_type: "verification",
+            severity: "SEV1",
+            status: "denied",
+            reason_code: "MISSING_SCOPE",
+          });
+          return errorResponse("Forbidden", 403, origin);
+        }
+        const required = requireParams(actionReq.params, ["user_id", "verification_type", "reason"]);
+        if (!required.ok) return errorResponse(`Missing param: ${required.missing}`, 400, origin);
+
+        const targetUserId = String(required.value.user_id);
+        const verificationType = String(required.value.verification_type);
+        const reason = String(required.value.reason);
+        const ticketId = typeof actionReq.params?.ticket_id === "string" ? String(actionReq.params.ticket_id) : null;
+        const approvalId = typeof actionReq.params?.approval_id === "string" ? String(actionReq.params.approval_id) : null;
+        const allowedTypes = new Set(["owner", "verified", "professional", "business"]);
+        if (!allowedTypes.has(verificationType)) {
+          return errorResponse("Invalid verification_type", 400, origin);
+        }
+
+        // owner badge can only be granted by owner role.
+        if (verificationType === "owner" && !isActorOwner) {
+          return errorResponse("Only owner can grant owner verification", 403, origin);
+        }
+        if (verificationType === "owner") {
+          if (!approvalId) return errorResponse("approval_id required for owner verification", 400, origin);
+          await assertApprovedApproval(approvalId, {
+            expectedOperationType: "verification.grant",
+            expectedPayload: { user_id: targetUserId, verification_type: verificationType },
+            requireUnconsumed: true,
+          });
+        }
+
+        const now = new Date().toISOString();
+        const { data, error } = await (supabaseService as any)
+          .from("user_verifications")
+          .upsert(
+            {
+              user_id: targetUserId,
+              verification_type: verificationType,
+              is_active: true,
+              verified_at: now,
+              verified_by_admin_id: adminUserId,
+              revoked_at: null,
+              revoked_by_admin_id: null,
+              reason,
+              ticket_id: ticketId,
+              updated_at: now,
+            },
+            { onConflict: "user_id,verification_type" },
+          )
+          .select("id,user_id,verification_type,is_active,verified_at,verified_by_admin_id,reason,ticket_id")
+          .single();
+        if (error) throw error;
+
+        if (verificationType === "verified") {
+          await (supabaseService as any)
+            .from("profiles")
+            .update({ verified: true })
+            .eq("user_id", targetUserId);
+        }
+
+        await audit({
+          action: "verification.grant",
+          resource_type: "verification",
+          resource_id: `${targetUserId}:${verificationType}`,
+          severity: verificationType === "owner" ? "SEV0" : "SEV1",
+          status: "success",
+          ticket_id: ticketId,
+          reason_description: reason,
+          after_state: {
+            user_id: targetUserId,
+            verification_type: verificationType,
+            is_active: true,
+          },
+        });
+
+        if (verificationType === "owner" && approvalId) {
+          await consumeApproval(approvalId, adminUserId, {
+            operation: "verification.grant",
+            user_id: targetUserId,
+            verification_type: verificationType,
+          });
+        }
+
+        return jsonResponse({ ok: true, data }, 200, origin);
+      }
+
+      case "verifications.revoke": {
+        if (!hasScope("verification.revoke")) {
+          await audit({
+            action: "verification.revoke",
+            resource_type: "verification",
+            severity: "SEV1",
+            status: "denied",
+            reason_code: "MISSING_SCOPE",
+          });
+          return errorResponse("Forbidden", 403, origin);
+        }
+        const required = requireParams(actionReq.params, ["user_id", "verification_type", "reason"]);
+        if (!required.ok) return errorResponse(`Missing param: ${required.missing}`, 400, origin);
+
+        const targetUserId = String(required.value.user_id);
+        const verificationType = String(required.value.verification_type);
+        const reason = String(required.value.reason);
+        const ticketId = typeof actionReq.params?.ticket_id === "string" ? String(actionReq.params.ticket_id) : null;
+        const approvalId = typeof actionReq.params?.approval_id === "string" ? String(actionReq.params.approval_id) : null;
+        const allowedTypes = new Set(["owner", "verified", "professional", "business"]);
+        if (!allowedTypes.has(verificationType)) {
+          return errorResponse("Invalid verification_type", 400, origin);
+        }
+
+        // owner badge can only be revoked by owner role.
+        if (verificationType === "owner" && !isActorOwner) {
+          return errorResponse("Only owner can revoke owner verification", 403, origin);
+        }
+        if (verificationType === "owner") {
+          if (!approvalId) return errorResponse("approval_id required for owner verification", 400, origin);
+          await assertApprovedApproval(approvalId, {
+            expectedOperationType: "verification.revoke",
+            expectedPayload: { user_id: targetUserId, verification_type: verificationType },
+            requireUnconsumed: true,
+          });
+        }
+
+        const now = new Date().toISOString();
+        const { data: before } = await (supabaseService as any)
+          .from("user_verifications")
+          .select("id,user_id,verification_type,is_active")
+          .eq("user_id", targetUserId)
+          .eq("verification_type", verificationType)
+          .maybeSingle();
+        if (!before) {
+          return errorResponse("Verification not found", 404, origin);
+        }
+
+        const { data, error } = await (supabaseService as any)
+          .from("user_verifications")
+          .update({
+            is_active: false,
+            revoked_at: now,
+            revoked_by_admin_id: adminUserId,
+            reason,
+            ticket_id: ticketId,
+            updated_at: now,
+          })
+          .eq("user_id", targetUserId)
+          .eq("verification_type", verificationType)
+          .select("id,user_id,verification_type,is_active,revoked_at,revoked_by_admin_id,reason,ticket_id")
+          .single();
+        if (error) throw error;
+
+        if (verificationType === "verified") {
+          await (supabaseService as any)
+            .from("profiles")
+            .update({ verified: false })
+            .eq("user_id", targetUserId);
+        }
+
+        await audit({
+          action: "verification.revoke",
+          resource_type: "verification",
+          resource_id: `${targetUserId}:${verificationType}`,
+          severity: verificationType === "owner" ? "SEV0" : "SEV1",
+          status: "success",
+          ticket_id: ticketId,
+          reason_description: reason,
+          before_state: before,
+          after_state: {
+            user_id: targetUserId,
+            verification_type: verificationType,
+            is_active: false,
+          },
+        });
+
+        if (verificationType === "owner" && approvalId) {
+          await consumeApproval(approvalId, adminUserId, {
+            operation: "verification.revoke",
+            user_id: targetUserId,
+            verification_type: verificationType,
+          });
+        }
+
+        return jsonResponse({ ok: true, data }, 200, origin);
       }
 
       case "killswitch.list": {
@@ -959,12 +1576,17 @@ serve(async (req: Request) => {
         // Verify role exists
         const { data: roleData, error: roleErr } = await (supabaseService as any)
           .from("admin_roles")
-          .select("id,name")
+          .select("id,name,category")
           .eq("id", roleId)
           .maybeSingle();
         if (roleErr || !roleData) {
           return errorResponse("Role not found", 404, origin);
         }
+        if (roleData.category !== "security") {
+          return errorResponse("JIT is allowed only for security roles", 400, origin);
+        }
+
+        const safeDurationMinutes = Math.min(Math.max(Math.trunc(durationMinutes || 30), 1), 240);
 
         // Create JIT request
         const { data: jitData, error: jitErr } = await (supabaseService as any)
@@ -975,7 +1597,8 @@ serve(async (req: Request) => {
             reason,
             ticket_id: ticketId,
             requested_at: nowIso,
-            duration_minutes: durationMinutes,
+            duration_minutes: safeDurationMinutes,
+            status: "pending",
           })
           .select("id")
           .single();
@@ -990,34 +1613,37 @@ serve(async (req: Request) => {
           status: "success",
           reason_description: reason,
           ticket_id: ticketId,
-          metadata: { role_id: roleId, duration_minutes: durationMinutes },
+          metadata: { role_id: roleId, duration_minutes: safeDurationMinutes },
         });
 
         return jsonResponse({ ok: true, jit_request_id: jitData.id }, 200, origin);
       }
 
       case "jit.active": {
-        // Anyone can read
-        if (!hasScope("security.jit.read")) {
+        const canReadAll = hasScope("security.jit.read");
+        const canReadOwn = hasScope("security.jit.request");
+        if (!canReadAll && !canReadOwn) {
           return errorResponse("Forbidden", 403, origin);
         }
 
-        const { data: rows, error: err } = await (supabaseService as any)
+        let q = (supabaseService as any)
           .from("owner_escalation_requests")
           .select("id, requested_by, approver_id, role_id, requested_at, approved_at, expires_at, revoked_at, reason, ticket_id, duration_minutes, requester:requested_by(email,display_name), role:role_id(name,display_name)")
-          .not("approved_at", "is", null)
-          .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
           .order("requested_at", { ascending: false });
+        if (!canReadAll) {
+          q = q.eq("requested_by", adminUserId);
+        }
+        const { data: rows, error: err } = await q;
 
         if (err) throw err;
 
         const data = (rows ?? []).map((r: any) => ({
           id: r.id,
           requested_by: r.requested_by,
-          requester: r.requester,
+          requester: r.requester ?? { email: "", display_name: "" },
           approver_id: r.approver_id,
           role_id: r.role_id,
-          role: r.role,
+          role: r.role ?? { name: "unknown", display_name: "Unknown role" },
           reason: r.reason,
           ticket_id: r.ticket_id,
           requested_at: r.requested_at,
@@ -1025,7 +1651,13 @@ serve(async (req: Request) => {
           expires_at: r.expires_at,
           revoked_at: r.revoked_at,
           duration_minutes: r.duration_minutes,
-          status: r.revoked_at ? "revoked" : r.expires_at && new Date(r.expires_at) < new Date() ? "expired" : "active",
+          status: r.revoked_at
+            ? "revoked"
+            : !r.approved_at
+              ? "pending"
+              : r.expires_at && new Date(r.expires_at) < new Date()
+                ? "expired"
+                : "active",
         }));
 
         await audit({
@@ -1059,7 +1691,7 @@ serve(async (req: Request) => {
         // Get JIT request
         const { data: jitRow, error: jitErr } = await (supabaseService as any)
           .from("owner_escalation_requests")
-          .select("id, requested_by, role_id, duration_minutes, reason, ticket_id, approved_at")
+          .select("id, requested_by, role_id, duration_minutes, reason, ticket_id, approved_at, revoked_at")
           .eq("id", jitRequestId)
           .maybeSingle();
 
@@ -1069,6 +1701,23 @@ serve(async (req: Request) => {
 
         if (jitRow.approved_at) {
           return errorResponse("JIT request already approved", 409, origin);
+        }
+        if (jitRow.revoked_at) {
+          return errorResponse("JIT request already revoked", 409, origin);
+        }
+        if (!jitRow.requested_by || !jitRow.role_id) {
+          return errorResponse("JIT request is malformed", 409, origin);
+        }
+
+        const { data: existingRole } = await (supabaseService as any)
+          .from("admin_user_roles")
+          .select("id, expires_at")
+          .eq("admin_user_id", jitRow.requested_by)
+          .eq("role_id", jitRow.role_id)
+          .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
+          .maybeSingle();
+        if (existingRole) {
+          return errorResponse("Role is already active for requester", 409, origin);
         }
 
         // Calculate expires_at
@@ -1082,6 +1731,7 @@ serve(async (req: Request) => {
             approved_at: nowIso,
             approver_id: adminUserId,
             expires_at: expiresAt.toISOString(),
+            status: "approved",
           })
           .eq("id", jitRequestId);
 
@@ -1093,8 +1743,10 @@ serve(async (req: Request) => {
             role_id: jitRow.role_id,
             assigned_at: nowIso,
             expires_at: expiresAt.toISOString(),
-            reason: `JIT break-glass approval (ticket: ${jitRow.ticket_id})`,
-            approved_by_id: adminUserId,
+            assigned_by: adminUserId,
+            assignment_reason: `JIT break-glass approval (${jitRow.reason})`,
+            ticket_id: jitRow.ticket_id,
+            jit_request_id: jitRequestId,
           })
           .select("id")
           .single();
@@ -1128,7 +1780,7 @@ serve(async (req: Request) => {
 
         const { data: jitRow, error: jitErr } = await (supabaseService as any)
           .from("owner_escalation_requests")
-          .select("id, requested_by, approved_at, revoked_at, expires_at")
+          .select("id, requested_by, role_id, approved_at, revoked_at, expires_at")
           .eq("id", jitRequestId)
           .maybeSingle();
 
@@ -1157,24 +1809,14 @@ serve(async (req: Request) => {
         // Mark JIT request as revoked
         await (supabaseService as any)
           .from("owner_escalation_requests")
-          .update({ revoked_at: nowIso })
+          .update({ revoked_at: nowIso, status: "revoked" })
           .eq("id", jitRequestId);
 
-        // Find and revoke the temporary role
-        const { data: assignedRole, error: findErr } = await (supabaseService as any)
+        // Revoke only role assignment explicitly linked to this JIT request.
+        await (supabaseService as any)
           .from("admin_user_roles")
-          .select("id")
-          .eq("admin_user_id", jitRow.requested_by)
-          .order("assigned_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        if (!findErr && assignedRole) {
-          await (supabaseService as any)
-            .from("admin_user_roles")
-            .delete()
-            .eq("id", assignedRole.id);
-        }
+          .delete()
+          .eq("jit_request_id", jitRequestId);
 
         await audit({
           action: "security.jit.revoke",
@@ -1186,6 +1828,180 @@ serve(async (req: Request) => {
         });
 
         return jsonResponse({ ok: true, jit_request_id: jitRequestId }, 200, origin);
+      }
+
+      case "hashtags.list": {
+        await assertNotKilled("admin_reads");
+
+        if (!hasScope("hashtag.status.write")) {
+          await audit({
+            action: "hashtag.status.read",
+            resource_type: "hashtag",
+            severity: "SEV2",
+            status: "denied",
+            reason_code: "MISSING_SCOPE",
+          });
+          return errorResponse("Forbidden", 403, origin);
+        }
+
+        const limit = Math.min(Number(actionReq.params?.limit ?? 500), 1000);
+        const status = actionReq.params?.status as string | undefined;
+
+        let query = (supabaseService as any)
+          .from("hashtags")
+          .select("hashtag, status, status_updated_at, created_at, usage_count");
+
+        if (status && status !== "all") {
+          query = query.eq("status", status);
+        }
+
+        const { data, error } = await query.order("usage_count", { ascending: false }).limit(limit);
+
+        if (error) {
+          await audit({
+            action: "hashtag.status.read",
+            resource_type: "hashtag",
+            severity: "SEV1",
+            status: "error",
+            error_code: "QUERY_FAILED",
+            error_message: error.message,
+          });
+          throw error;
+        }
+
+        return jsonResponse({ ok: true, data: data ?? [] }, 200, origin);
+      }
+
+      case "hashtags.status.set": {
+        await assertNotKilled("admin_writes");
+
+        if (!hasScope("hashtag.status.write")) {
+          await audit({
+            action: "hashtag.status.write",
+            resource_type: "hashtag",
+            severity: "SEV1",
+            status: "denied",
+            reason_code: "MISSING_SCOPE",
+          });
+          return errorResponse("Forbidden", 403, origin);
+        }
+
+        const required = requireParams(actionReq.params, ["hashtag", "to_status"]);
+        if (!required.ok) return errorResponse(`Missing param: ${required.missing}`, 400, origin);
+
+        const hashtag = String(required.value.hashtag);
+        const toStatus = String(required.value.to_status);
+        const reasonCodesRaw = actionReq.params?.reason_codes;
+        const reasonCodes = Array.isArray(reasonCodesRaw)
+          ? (reasonCodesRaw as any[]).map((x) => String(x)).filter((x) => x.trim().length > 0).slice(0, 16)
+          : [];
+
+        const surfacePolicy = (actionReq.params?.surface_policy ?? {}) as any;
+        const notes = typeof actionReq.params?.notes === "string" ? String(actionReq.params.notes).slice(0, 500) : null;
+
+        const { data, error } = await (supabaseService as any).rpc("set_hashtag_status_v1", {
+          p_hashtag: hashtag,
+          p_to_status: toStatus,
+          p_reason_codes: reasonCodes,
+          p_surface_policy: surfacePolicy,
+          p_notes: notes,
+          p_actor_admin_user_id: adminUserId,
+        });
+
+        if (error) {
+          await audit({
+            action: "hashtag.status.write",
+            resource_type: "hashtag",
+            resource_id: hashtag,
+            severity: "SEV1",
+            status: "error",
+            error_code: "RPC_FAILED",
+            error_message: error.message,
+            metadata: { to_status: toStatus },
+          });
+          throw error;
+        }
+
+        const row = Array.isArray(data) ? data[0] : data;
+
+        await audit({
+          action: "hashtag.status.write",
+          resource_type: "hashtag",
+          resource_id: String(row?.normalized_tag ?? hashtag),
+          severity: "SEV3",
+          status: "success",
+          before_state: { status: row?.from_status ?? null },
+          after_state: { status: row?.to_status ?? null },
+          metadata: { reason_codes: reasonCodes },
+        });
+
+        return jsonResponse({ ok: true, data: row ?? null }, 200, origin);
+      }
+
+      case "hashtags.status.bulk_set": {
+        await assertNotKilled("admin_writes");
+
+        if (!hasScope("hashtag.status.write")) {
+          await audit({
+            action: "hashtag.status.write.bulk",
+            resource_type: "hashtag",
+            severity: "SEV1",
+            status: "denied",
+            reason_code: "MISSING_SCOPE",
+          });
+          return errorResponse("Forbidden", 403, origin);
+        }
+
+        const required = requireParams(actionReq.params, ["hashtags", "to_status"]);
+        if (!required.ok) return errorResponse(`Missing param: ${required.missing}`, 400, origin);
+
+        const hashtagsRaw = required.value.hashtags as any;
+        const hashtags = Array.isArray(hashtagsRaw)
+          ? (hashtagsRaw as any[]).map((x) => String(x)).filter((x) => x.trim().length > 0).slice(0, 500)
+          : [];
+        if (hashtags.length === 0) return errorResponse("Missing param: hashtags", 400, origin);
+
+        const toStatus = String(required.value.to_status);
+
+        const reasonCodesRaw = actionReq.params?.reason_codes;
+        const reasonCodes = Array.isArray(reasonCodesRaw)
+          ? (reasonCodesRaw as any[]).map((x) => String(x)).filter((x) => x.trim().length > 0).slice(0, 16)
+          : [];
+
+        const surfacePolicy = (actionReq.params?.surface_policy ?? {}) as any;
+        const notes = typeof actionReq.params?.notes === "string" ? String(actionReq.params.notes).slice(0, 500) : null;
+
+        const { data, error } = await (supabaseService as any).rpc("set_hashtag_status_bulk_v1", {
+          p_hashtags: hashtags,
+          p_to_status: toStatus,
+          p_reason_codes: reasonCodes,
+          p_surface_policy: surfacePolicy,
+          p_notes: notes,
+          p_actor_admin_user_id: adminUserId,
+        });
+
+        if (error) {
+          await audit({
+            action: "hashtag.status.write.bulk",
+            resource_type: "hashtag",
+            severity: "SEV1",
+            status: "error",
+            error_code: "RPC_FAILED",
+            error_message: error.message,
+            metadata: { to_status: toStatus, count: hashtags.length },
+          });
+          throw error;
+        }
+
+        await audit({
+          action: "hashtag.status.write.bulk",
+          resource_type: "hashtag",
+          severity: "SEV2",
+          status: "success",
+          metadata: { to_status: toStatus, count: hashtags.length, reason_codes: reasonCodes },
+        });
+
+        return jsonResponse({ ok: true, data: data ?? [] }, 200, origin);
       }
 
       default:

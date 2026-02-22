@@ -1,0 +1,24 @@
+{
+  "file": "B-131-delivery-outbox-worker-contract.json",
+  "id": "B-131",
+  "title": "Durable Delivery Outbox Worker Contract",
+  "description": "Defines outbox lifecycle, claim/ack/retry semantics, and dead-letter policy for guaranteed signal delivery.",
+  "priority": "P0",
+  "complexity": "M",
+  "must_have": [
+    "SKIP LOCKED batch claim",
+    "Exponential backoff with jitter",
+    "Dead-letter state",
+    "Idempotent mark_done/mark_fail"
+  ],
+  "rpc": [
+    "delivery_claim_batch_v1",
+    "delivery_mark_done_v1",
+    "delivery_mark_fail_v1"
+  ],
+  "acceptance": [
+    "No duplicate processing under concurrent workers",
+    "Failed events retry and eventually move to dead",
+    "Publish write path does not block on push delivery"
+  ]
+}

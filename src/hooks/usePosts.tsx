@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import type { RealtimeChannel } from '@supabase/supabase-js';
+import { checkHashtagsAllowedForText } from '@/lib/hashtagModeration';
 
 export interface Post {
   id: string;
@@ -337,6 +338,11 @@ export function usePostActions() {
     }
 
     try {
+      const hashtagVerdict = await checkHashtagsAllowedForText(String(content || '').trim());
+      if (!hashtagVerdict.ok) {
+        return { error: `HASHTAG_BLOCKED:${hashtagVerdict.blockedTags.join(', ')}`, post: null };
+      }
+
       const { data: post, error: postError } = await supabase
         .from('posts')
         .insert({ author_id: user.id, content })

@@ -1,0 +1,24 @@
+{
+  "ok": true,
+  "created": true,
+  "conversation_id": "f062c1a2-7c07-4550-9ec9-51322505ef93",
+  "owner": {
+    "user_id": "c8e6756f-a17c-48b0-abf1-77d8f942bfc8",
+    "display_name": "Джехангир Мансуров",
+    "phone": "79333222922",
+    "email": "khan@mansoni.ru"
+  },
+  "target_email": "user.525254245242@example.com",
+  "target": {
+    "id": "dd60db0b-d3a0-4a77-8862-1fa815ab1cb7",
+    "email": "user.525254245242@example.com",
+    "phone": "",
+    "user_metadata": {
+      "email": "user.525254245242@example.com",
+      "email_verified": true,
+      "full_name": "Test User",
+      "phone_verified": false,
+      "sub": "dd60db0b-d3a0-4a77-8862-1fa815ab1cb7"
+    }
+  }
+}

@@ -3,6 +3,7 @@ import { supabase } from "@/lib/supabase";
 import { useAuth } from "./useAuth";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { getErrorMessage } from "@/lib/utils";
+import { checkHashtagsAllowedForText } from "@/lib/hashtagModeration";
 
 export interface GroupChat {
   id: string;
@@ -251,6 +252,11 @@ export function useGroupMessages(groupId: string | null) {
     if (!groupId || !user || !content.trim()) return;
 
     try {
+      const hashtagVerdict = await checkHashtagsAllowedForText(String(content || "").trim());
+      if (!hashtagVerdict.ok) {
+        throw new Error(`HASHTAG_BLOCKED:${hashtagVerdict.blockedTags.join(", ")}`);
+      }
+
       const { error } = await supabase.from("group_chat_messages").insert({
         group_id: groupId,
         sender_id: user.id,

@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mansoni://contracts/explore-page.v1",
+  "title": "Explore Page v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["generated_at", "sections"],
+  "properties": {
+    "generated_at": { "type": "string", "format": "date-time" },
+    "sections": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type", "items"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["trending_now", "hashtags", "fresh_creators", "categories", "recommended_reels"]
+          },
+          "title": { "type": ["string", "null"], "maxLength": 80 },
+          "items": {
+            "type": "array",
+            "minItems": 0,
+            "items": { "type": "object", "additionalProperties": true }
+          }
+        },
+        "allOf": [
+          {
+            "if": { "properties": { "type": { "const": "trending_now" } } },
+            "then": {
+              "properties": {
+                "items": {
+                  "items": { "$ref": "trend-item.v1.schema.json" }
+                }
+              }
+            }
+          },
+          {
+            "if": { "properties": { "type": { "const": "hashtags" } } },
+            "then": {
+              "properties": {
+                "items": { "items": { "$ref": "#/$defs/hashtag_ref" } }
+              }
+            }
+          },
+          {
+            "if": { "properties": { "type": { "const": "fresh_creators" } } },
+            "then": {
+              "properties": {
+                "items": { "items": { "$ref": "#/$defs/creator_ref" } }
+              }
+            }
+          },
+          {
+            "if": { "properties": { "type": { "const": "categories" } } },
+            "then": {
+              "properties": {
+                "items": { "items": { "$ref": "#/$defs/category_ref" } }
+              }
+            }
+          },
+          {
+            "if": { "properties": { "type": { "const": "recommended_reels" } } },
+            "then": {
+              "properties": {
+                "items": { "items": { "$ref": "#/$defs/reel_ref" } }
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "$defs": {
+    "reel_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reel_id", "author_id", "created_at"],
+      "properties": {
+        "reel_id": { "type": "string", "minLength": 1 },
+        "author_id": { "type": "string", "minLength": 1 },
+        "thumbnail_url": { "type": ["string", "null"] },
+        "created_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "hashtag_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["hashtag"],
+      "properties": {
+        "hashtag": { "type": "string", "minLength": 2, "maxLength": 32 },
+        "status": { "type": "string", "enum": ["normal", "restricted", "hidden"], "default": "normal" },
+        "post_count_approx": { "type": ["integer", "null"], "minimum": 0 }
+      }
+    },
+    "creator_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["user_id"],
+      "properties": {
+        "user_id": { "type": "string", "minLength": 1 },
+        "display_name": { "type": ["string", "null"], "maxLength": 60 },
+        "avatar_url": { "type": ["string", "null"] }
+      }
+    },
+    "category_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["category_id", "title"],
+      "properties": {
+        "category_id": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 60 }
+      }
+    }
+  }
+}

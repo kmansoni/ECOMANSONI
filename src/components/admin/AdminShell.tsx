@@ -1,4 +1,4 @@
-import { ReactNode } from "react";
+﻿import { ReactNode } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -17,6 +17,9 @@ export function AdminShell({ children }: { children: ReactNode }) {
   const links: NavLink[] = [
     { to: "/admin", label: "Dashboard" },
     { to: "/admin/admins", label: "Админы" },
+    { to: "/admin/staff-profiles", label: "Staff Profiles", requireScope: "staff.profile.read" },
+    { to: "/admin/verifications", label: "Verifications", requireScope: "verification.read" },
+    { to: "/admin/hashtags", label: "Hashtags", requireScope: "hashtag.status.write" },
     { to: "/admin/audit", label: "Аудит" },
     { to: "/admin/approvals", label: "Approvals" },
     { to: "/admin/jit", label: "JIT", requireScope: "security.jit.request" },
@@ -35,7 +38,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
           <div className="min-w-0">
             <div className="font-semibold truncate">Admin Console</div>
             <div className="text-xs text-muted-foreground truncate">
-              {me?.display_name} · {me?.email}
+              {me?.display_name} В· {me?.email}
             </div>
           </div>
           <Button variant="outline" onClick={handleSignOut}>
@@ -73,3 +76,4 @@ export function AdminShell({ children }: { children: ReactNode }) {
     </div>
   );
 }
+

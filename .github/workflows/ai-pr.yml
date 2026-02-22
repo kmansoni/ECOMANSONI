@@ -1,0 +1,94 @@
+name: AI: Auto PR
+
+on:
+  workflow_dispatch:
+    inputs:
+      task:
+        description: "What to change (natural language)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: ai-pr
+  cancel-in-progress: false
+
+jobs:
+  ai_pr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Configure git
+        run: |
+          git config user.name "ai-bot"
+          git config user.email "ai-bot@users.noreply.github.com"
+
+      - name: Create branch
+        run: |
+          BRANCH="ai/${{ github.run_id }}"
+          echo "AI_BRANCH=$BRANCH" >> $GITHUB_ENV
+          git checkout -b "$BRANCH"
+
+      - name: Generate & apply patch
+        env:
+          AI_PROVIDER: ${{ secrets.AI_PROVIDER }}
+          AI_API_KEY: ${{ secrets.AI_API_KEY }}
+          AI_BASE_URL: ${{ secrets.AI_BASE_URL }}
+          AI_MODEL: ${{ secrets.AI_MODEL }}
+          AI_TASK: ${{ inputs.task }}
+        run: node scripts/ai/ai-pr.mjs
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Commit changes
+        run: |
+          if git diff --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git add -A
+          git commit -m "AI: ${{ inputs.task }}"
+
+      - name: Push branch
+        run: |
+          if git rev-parse --verify HEAD >/dev/null 2>&1; then
+            git push --set-upstream origin "$AI_BRANCH"
+          fi
+
+      - name: Create PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if git diff --quiet HEAD~1..HEAD; then
+            echo "Skipping PR (no commit created)"
+            exit 0
+          fi
+
+          gh pr create \
+            --base main \
+            --head "$AI_BRANCH" \
+            --title "AI: ${{ inputs.task }}" \
+            --body "Created by AI workflow.\n\nTask:\n${{ inputs.task }}\n"

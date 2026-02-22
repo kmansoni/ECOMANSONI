@@ -8,10 +8,10 @@ interface CreateMenuProps {
 }
 
 const menuItems = [
+  { id: "reels", label: "Видео Reels", icon: Film },
   { id: "post", label: "Публикация", icon: Image },
   { id: "story", label: "История", icon: Camera },
-  { id: "reels", label: "Reels", icon: Film },
-  { id: "live", label: "Прямой эфир", icon: Radio },
+  { id: "live", label: "Эфир", icon: Radio },
 ];
 
 export function CreateMenu({ isOpen, onClose, onSelect }: CreateMenuProps) {

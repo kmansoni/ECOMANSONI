@@ -1,0 +1,36 @@
+{
+  "hashtag": "cars",
+  "generated_at": "2026-02-22T10:25:00Z",
+  "status": "normal",
+  "sections": [
+    {
+      "type": "top",
+      "items": [
+        {
+          "reel_id": "reel_top_001",
+          "author_id": "user_456",
+          "thumbnail_url": "https://cdn.example.com/top1.jpg",
+          "created_at": "2026-02-20T12:00:00Z"
+        }
+      ]
+    },
+    {
+      "type": "recent",
+      "items": [
+        {
+          "reel_id": "reel_recent_001",
+          "author_id": "user_999",
+          "thumbnail_url": null,
+          "created_at": "2026-02-22T09:55:00Z"
+        }
+      ]
+    },
+    {
+      "type": "related_tags",
+      "items": [
+        { "hashtag": "autolife", "status": "normal", "post_count_approx": 42000 },
+        { "hashtag": "racing", "status": "restricted", "post_count_approx": 8000 }
+      ]
+    }
+  ]
+}

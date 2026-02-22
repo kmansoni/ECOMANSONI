@@ -15,6 +15,7 @@ import { UserSettingsProvider } from "@/contexts/UserSettingsContext";
 import { MultiAccountProvider } from "@/contexts/MultiAccountContext";
 import { AdminProtectedRoute } from "@/components/admin/AdminProtectedRoute";
 import { AppearanceRuntimeProvider } from "@/contexts/AppearanceRuntimeContext";
+const HashtagPage = lazy(() => import("@/pages/HashtagPage").then(m => ({ default: m.HashtagPage })));
 
 // Initialize error tracking
 initErrorTracking();
@@ -30,6 +31,7 @@ const EditProfilePage = lazy(() => import("@/pages/EditProfilePage").then(m => (
 const UserProfilePage = lazy(() => import("@/pages/UserProfilePage").then(m => ({ default: m.UserProfilePage })));
 const ContactProfilePage = lazy(() => import("@/pages/ContactProfilePage").then(m => ({ default: m.ContactProfilePage })));
 const ReelsPage = lazy(() => import("@/pages/ReelsPage").then(m => ({ default: m.ReelsPage })));
+const CreateCenterPage = lazy(() => import("@/pages/CreateCenterPage").then(m => ({ default: m.CreateCenterPage })));
 const RealEstatePage = lazy(() => import("@/pages/RealEstatePage").then(m => ({ default: m.RealEstatePage })));
 const PropertyDetailPage = lazy(() => import("@/pages/PropertyDetailPage").then(m => ({ default: m.PropertyDetailPage })));
 const InsurancePage = lazy(() => import("@/pages/InsurancePage").then(m => ({ default: m.InsurancePage })));
@@ -42,6 +44,7 @@ const DevPanelPage = lazy(() => import("@/pages/DevPanelPage"));
 const SettingsPage = lazy(() => import("@/pages/SettingsPage").then(m => ({ default: m.SettingsPage })));
 const CommandPalette = lazy(() => import("@/components/CommandPalette").then(m => ({ default: m.CommandPalette })));
 const ARPage = lazy(() => import("@/pages/ARPage").then(m => ({ default: m.ARPage })));
+const AiCompanionPage = lazy(() => import("@/pages/AiCompanionPage").then(m => ({ default: m.AiCompanionPage })));
 
 // Admin Console (lazy)
 const AdminLoginPage = lazy(() => import("@/pages/admin/AdminLoginPage").then(m => ({ default: m.AdminLoginPage })));
@@ -51,6 +54,9 @@ const AdminAuditPage = lazy(() => import("@/pages/admin/AdminAuditPage").then(m 
 const AdminApprovalsPage = lazy(() => import("@/pages/admin/AdminApprovalsPage").then(m => ({ default: m.AdminApprovalsPage })));
 const OwnerConsolePage = lazy(() => import("@/pages/admin/OwnerConsolePage").then(m => ({ default: m.OwnerConsolePage })));
 const SecurityAdminJitPage = lazy(() => import("@/pages/admin/SecurityAdminJitPage").then(m => ({ default: m.SecurityAdminJitPage })));
+const AdminVerificationsPage = lazy(() => import("@/pages/admin/AdminVerificationsPage").then(m => ({ default: m.AdminVerificationsPage })));
+const AdminStaffProfilesPage = lazy(() => import("@/pages/admin/AdminStaffProfilesPage").then(m => ({ default: m.AdminStaffProfilesPage })));
+const AdminHashtagModerationPage = lazy(() => import("@/pages/admin/AdminHashtagModerationPage").then(m => ({ default: m.AdminHashtagModerationPage })));
 
 // Loading fallback component
 function PageLoader() {
@@ -122,6 +128,21 @@ const App = () => (
                       <OwnerConsolePage />
                     </Suspense>
                   } />
+                  <Route path="/admin/verifications" element={
+                    <Suspense fallback={<PageLoader />}>
+                      <AdminVerificationsPage />
+                    </Suspense>
+                  } />
+                  <Route path="/admin/staff-profiles" element={
+                    <Suspense fallback={<PageLoader />}>
+                      <AdminStaffProfilesPage />
+                    </Suspense>
+                  } />
+                  <Route path="/admin/hashtags" element={
+                    <Suspense fallback={<PageLoader />}>
+                      <AdminHashtagModerationPage />
+                    </Suspense>
+                  } />
                   <Route path="/admin/jit" element={
                     <Suspense fallback={<PageLoader />}>
                       <SecurityAdminJitPage />
@@ -142,6 +163,12 @@ const App = () => (
                         <SearchPage />
                       </Suspense>
                     } />
+
+                    <Route path="/hashtag/:tag" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <HashtagPage />
+                      </Suspense>
+                    } />
                     <Route path="/explore/:postIndex" element={
                       <Suspense fallback={<PageLoader />}>
                         <ExploreFeedPage />
@@ -155,6 +182,11 @@ const App = () => (
                     <Route path="/chats" element={
                       <Suspense fallback={<PageLoader />}>
                         <ChatsPage />
+                      </Suspense>
+                    } />
+                    <Route path="/assistant" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <AiCompanionPage />
                       </Suspense>
                     } />
                     <Route path="/profile" element={
@@ -211,6 +243,12 @@ const App = () => (
                     <Route path="/reels" element={
                       <Suspense fallback={<PageLoader />}>
                         <ReelsPage />
+                      </Suspense>
+                    } />
+
+                    <Route path="/create" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <CreateCenterPage />
                       </Suspense>
                     } />
                   </Route>

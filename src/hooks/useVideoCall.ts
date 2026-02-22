@@ -31,6 +31,15 @@ const MAX_ICE_RESTARTS = 3;
 // DB fallback signaling: Realtime INSERT is primary; polling is only a safety net.
 const SIGNAL_POLL_INTERVAL_MS = 1500;
 
+function getStableDeviceId(): string {
+  const key = "mansoni_device_id";
+  const existing = window.localStorage.getItem(key);
+  if (existing) return existing;
+  const created = globalThis.crypto?.randomUUID?.() ?? `dev_${Date.now()}`;
+  window.localStorage.setItem(key, created);
+  return created;
+}
+
 export function useVideoCall(options: UseVideoCallOptions = {}) {
   const { user } = useAuth();
   const [status, setStatus] = useState<VideoCallStatus>("idle");
@@ -683,6 +692,13 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
       log("Setting up broadcast channel...");
       setupBroadcastChannel(call.id);
       startSignalPolling(call.id);
+      await sendSignal(call.id, "call.invite", {
+        call_id: call.id,
+        from: user.id,
+        to: calleeId,
+        device_id: getStableDeviceId(),
+        call_type: callType,
+      });
 
       // Create peer connection and offer
       log("Creating peer connection...");
@@ -811,6 +827,11 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
         })
         .eq("id", call.id);
       void debugEvent(call.id, "answer_update_call_status_success");
+      await sendSignal(call.id, "call.accept", {
+        call_id: call.id,
+        from: user.id,
+        device_id: getStableDeviceId(),
+      });
 
       // Check if there's already an offer in the DB BEFORE setting up polling
       // This prevents race conditions where polling marks the offer as processed
@@ -910,13 +931,19 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
       })
       .eq("id", currentCall.id);
 
-    // Send hangup signal via broadcast/polling as backup
+    // Send explicit lifecycle signal + generic hangup as backup.
+    await sendSignal(currentCall.id, reason === "declined" ? "call.decline" : "call.hangup", {
+      call_id: currentCall.id,
+      from: user?.id ?? null,
+      device_id: getStableDeviceId(),
+      reason,
+    });
     await sendSignal(currentCall.id, "hangup", { reason });
 
     // Cleanup local state
     options.onCallEnded?.(currentCall);
     await cleanup(`end_call_${reason}`);
-  }, [currentCall, sendSignal, cleanup, log, options]);
+  }, [currentCall, sendSignal, cleanup, log, options, user]);
 
   // Toggle mute
   const toggleMute = useCallback(() => {

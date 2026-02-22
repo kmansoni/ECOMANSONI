@@ -1,0 +1,20 @@
+{
+  "decision_id": "ard_20260222_001",
+  "version_id": "rank_v2_20260222_01",
+  "stage": "rollout.stage_10pct",
+  "baseline_version_id": "rank_v1_20260210_01",
+  "decided_at": "2026-02-22T10:12:00Z",
+  "action": "rollback",
+  "reason_codes": ["rank.guardrail_triggered", "rollout.rollback_triggered"],
+  "guardrail_snapshot": {
+    "p95_feed_latency_ms": 410,
+    "crash_free_sessions": 0.991,
+    "complaint_rate": 0.0018
+  },
+  "thresholds": {
+    "p95_feed_latency_ms": 300,
+    "crash_free_sessions": 0.995,
+    "complaint_rate": 0.001
+  },
+  "notes": "Auto rollback: latency + complaint rate regression beyond guardrails."
+}

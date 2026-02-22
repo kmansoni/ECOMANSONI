@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Search, Loader2, Send, Users, Radio } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import { useChannels } from "@/hooks/useChannels";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
+import { sendDmMessage } from "@/lib/chat/sendDmMessage";
 import {
   Drawer,
   DrawerContent,
@@ -43,14 +44,24 @@ export function ReelShareSheet({
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedTargets, setSelectedTargets] = useState<Set<string>>(new Set());
   const [sending, setSending] = useState(false);
+  const dmClientMsgIdsRef = useRef<Map<string, string>>(new Map());
 
   // Reset selection when sheet opens/closes
   useEffect(() => {
     if (!isOpen) {
       setSelectedTargets(new Set());
       setSearchQuery("");
+      dmClientMsgIdsRef.current.clear();
     }
   }, [isOpen]);
+
+  const getDmClientMsgId = (conversationId: string) => {
+    const existing = dmClientMsgIdsRef.current.get(conversationId);
+    if (existing) return existing;
+    const next = crypto.randomUUID();
+    dmClientMsgIdsRef.current.set(conversationId, next);
+    return next;
+  };
 
   const loading = dmsLoading || groupsLoading || channelsLoading;
 
@@ -123,23 +134,13 @@ export function ReelShareSheet({
         if (type === "dm") {
           // Send to DM conversation with shared reel
           const sendDm = async () => {
-            const clientMsgId = crypto.randomUUID();
-            const { error } = await supabase
-              .from("messages")
-              .upsert(
-                {
-                  conversation_id: id,
-                  sender_id: user.id,
-                  content: "🎬 Поделился Reels",
-                  shared_reel_id: reelId,
-                  client_msg_id: clientMsgId,
-                },
-                {
-                  onConflict: "conversation_id,sender_id,client_msg_id",
-                  ignoreDuplicates: true,
-                }
-              );
-            if (error) throw error;
+            await sendDmMessage({
+              conversationId: id,
+              senderId: user.id,
+              content: "🎬 Поделился Reels",
+              shared_reel_id: reelId,
+              clientMsgId: getDmClientMsgId(id),
+            });
 
             try {
               await (supabase as any).from("reel_shares").insert({

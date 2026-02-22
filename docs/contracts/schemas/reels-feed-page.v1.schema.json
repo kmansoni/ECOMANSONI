@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mansoni://contracts/reels-feed-page.v1",
+  "title": "Reels Feed Page v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["page", "items"],
+  "properties": {
+    "page": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["request_id", "algorithm_version", "mode", "generated_at"],
+      "properties": {
+        "request_id": { "type": "string", "minLength": 1 },
+        "algorithm_version": { "type": "string", "minLength": 1 },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "feed.page_ok",
+            "feed.fallback_recency",
+            "feed.fallback_no_freqcap"
+          ]
+        },
+        "generated_at": { "type": "string", "format": "date-time" },
+        "next_cursor": { "type": ["string", "null"] },
+        "cursor_expired": { "type": "boolean", "default": false }
+      }
+    },
+    "items": {
+      "type": "array",
+      "minItems": 0,
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["id", "author_id", "video_url", "created_at"],
+        "properties": {
+          "id": { "type": "string" },
+          "author_id": { "type": "string" },
+          "video_url": { "type": "string" },
+          "thumbnail_url": { "type": ["string", "null"] },
+          "created_at": { "type": "string", "format": "date-time" },
+          "final_score": { "type": ["number", "null"] },
+          "recommendation_reason": { "type": ["string", "null"] },
+          "feed_position": { "type": ["integer", "null"], "minimum": 0 }
+        }
+      }
+    }
+  }
+}

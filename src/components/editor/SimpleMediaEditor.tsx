@@ -227,14 +227,19 @@ export function SimpleMediaEditor({
     }
   };
 
-  const handleClose = () => {
+  const handleDialogOpenChange = (nextOpen: boolean) => {
+    if (nextOpen) {
+      onOpenChange(true);
+      return;
+    }
+
     handleReset();
     onCancel();
     onOpenChange(false);
   };
 
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
+    <Dialog open={open} onOpenChange={handleDialogOpenChange}>
       <DialogContent 
         className={cn(
           "max-w-full h-[100dvh] p-0 gap-0 bg-background border-0 rounded-none",
@@ -243,7 +248,7 @@ export function SimpleMediaEditor({
       >
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-          <Button variant="ghost" size="icon" onClick={handleClose}>
+          <Button variant="ghost" size="icon" onClick={() => handleDialogOpenChange(false)}>
             <X className="w-5 h-5" />
           </Button>
           

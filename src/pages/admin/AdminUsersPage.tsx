@@ -6,8 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { toast } from "sonner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { toast } from "sonner";
 
 type AdminUserRow = {
   id: string;
@@ -25,7 +25,13 @@ type AdminRoleRow = {
   display_name: string;
   category: string;
   requires_approval: boolean;
-  auto_expire_hours: number | null;
+};
+
+type RevokeDraft = {
+  admin_user_id: string;
+  role_name: string;
+  role_display_name: string;
+  role_category: string;
 };
 
 export function AdminUsersPage() {
@@ -37,27 +43,40 @@ export function AdminUsersPage() {
   const [displayName, setDisplayName] = useState("");
   const [creating, setCreating] = useState(false);
 
-  const [targetAdminId, setTargetAdminId] = useState<string>("");
-  const [roleName, setRoleName] = useState<string>("");
-  const [reason, setReason] = useState<string>("");
-  const [ticketId, setTicketId] = useState<string>("");
-  const [approvalId, setApprovalId] = useState<string>("");
+  const [targetAdminId, setTargetAdminId] = useState("");
+  const [roleName, setRoleName] = useState("");
+  const [reason, setReason] = useState("");
+  const [ticketId, setTicketId] = useState("");
+  const [approvalId, setApprovalId] = useState("");
   const [assigning, setAssigning] = useState(false);
 
-  const targetAdmin = useMemo(() => rows.find((r) => r.id === targetAdminId) ?? null, [rows, targetAdminId]);
+  const [deactivateTargetId, setDeactivateTargetId] = useState("");
+  const [deactivateReason, setDeactivateReason] = useState("");
+  const [deactivating, setDeactivating] = useState(false);
+
+  const [revokeDraft, setRevokeDraft] = useState<RevokeDraft | null>(null);
+  const [revokeReason, setRevokeReason] = useState("");
+  const [revokeTicketId, setRevokeTicketId] = useState("");
+  const [revokeApprovalId, setRevokeApprovalId] = useState("");
+  const [revoking, setRevoking] = useState(false);
+
   const selectedRole = useMemo(() => roles.find((r) => r.name === roleName) ?? null, [roles, roleName]);
+  const assignNeedsApproval = Boolean(selectedRole?.requires_approval) || selectedRole?.category === "owner" || selectedRole?.category === "security";
+  const revokeNeedsApproval = revokeDraft?.role_category === "owner" || revokeDraft?.role_category === "security";
 
   const load = async () => {
     setLoading(true);
     try {
-      const data = await adminApi<AdminUserRow[]>("admin_users.list", { limit: 100 });
-      setRows(data);
-      const roleData = await adminApi<AdminRoleRow[]>("admin_roles.list");
-      setRoles(roleData);
-      if (!targetAdminId && data.length > 0) setTargetAdminId(data[0].id);
-      if (!roleName && roleData.length > 0) setRoleName(roleData[0].name);
+      const [admins, roleData] = await Promise.all([
+        adminApi<AdminUserRow[]>("admin_users.list", { limit: 100 }),
+        adminApi<AdminRoleRow[]>("admin_roles.list"),
+      ]);
+      setRows(admins ?? []);
+      setRoles(roleData ?? []);
+      if (!targetAdminId && admins?.length) setTargetAdminId(admins[0].id);
+      if (!roleName && roleData?.length) setRoleName(roleData[0].name);
     } catch (e) {
-      toast.error("Не удалось загрузить админов", { description: e instanceof Error ? e.message : String(e) });
+      toast.error("Failed to load admins", { description: e instanceof Error ? e.message : String(e) });
     } finally {
       setLoading(false);
     }
@@ -67,84 +86,152 @@ export function AdminUsersPage() {
     void load();
   }, []);
 
-  const handleCreate = async (e: React.FormEvent) => {
+  const createAdmin = async (e: React.FormEvent) => {
     e.preventDefault();
     setCreating(true);
     try {
       await adminApi("admin_users.create", {
-        email,
-        display_name: displayName,
+        email: email.trim(),
+        display_name: displayName.trim(),
       });
-      toast.success("Админ создан");
+      toast.success("Admin created");
       setEmail("");
       setDisplayName("");
       await load();
-    } catch (err) {
-      toast.error("Ошибка", { description: err instanceof Error ? err.message : String(err) });
+    } catch (e) {
+      toast.error("Create failed", { description: e instanceof Error ? e.message : String(e) });
     } finally {
       setCreating(false);
     }
   };
 
-  const handleDeactivate = async (adminUserId: string) => {
-    const reason = prompt("Причина деактивации?");
-    if (!reason) return;
-
+  const requestAssignApproval = async () => {
+    if (!targetAdminId || !roleName || !reason.trim()) {
+      toast.error("Fill admin, role and reason");
+      return;
+    }
     try {
-      await adminApi("admin_users.deactivate", { admin_user_id: adminUserId, reason });
-      toast.success("Админ деактивирован");
-      await load();
-    } catch (err) {
-      toast.error("Ошибка", { description: err instanceof Error ? err.message : String(err) });
+      const data = await adminApi<{ id: string }>("approvals.request", {
+        operation_type: "iam.role.assign",
+        operation_description: `Assign role ${roleName} to ${targetAdminId}`,
+        operation_payload: { admin_user_id: targetAdminId, role_name: roleName },
+        request_reason: reason.trim(),
+        ticket_id: ticketId.trim() || undefined,
+        required_approvers: 1,
+        approver_roles: ["owner"],
+      });
+      setApprovalId(data.id);
+      toast.success("Approval requested", { description: data.id });
+    } catch (e) {
+      toast.error("Approval request failed", { description: e instanceof Error ? e.message : String(e) });
     }
   };
 
-  const handleAssignRole = async () => {
+  const assignRole = async () => {
     if (!targetAdminId || !roleName || !reason.trim()) {
-      toast.error("Заполните admin/role/reason");
+      toast.error("Fill admin, role and reason");
       return;
     }
-
+    if (assignNeedsApproval && !approvalId.trim()) {
+      toast.error("approval_id required for this role");
+      return;
+    }
     setAssigning(true);
     try {
       await adminApi("admin_user_roles.assign", {
         admin_user_id: targetAdminId,
         role_name: roleName,
-        reason,
-        ticket_id: ticketId || undefined,
-        approval_id: approvalId || undefined,
+        reason: reason.trim(),
+        ticket_id: ticketId.trim() || undefined,
+        approval_id: approvalId.trim() || undefined,
       });
-      toast.success("Роль назначена");
+      toast.success("Role assigned");
       setReason("");
       setTicketId("");
       setApprovalId("");
       await load();
     } catch (e) {
-      toast.error("Ошибка", { description: e instanceof Error ? e.message : String(e) });
+      toast.error("Assign failed", { description: e instanceof Error ? e.message : String(e) });
     } finally {
       setAssigning(false);
     }
   };
 
-  const handleRevokeRole = async (adminUserId: string, roleToRevoke: string) => {
-    const revokeReason = prompt("Причина снятия роли?");
-    if (!revokeReason) return;
+  const requestRevokeApproval = async () => {
+    if (!revokeDraft || !revokeReason.trim()) {
+      toast.error("Fill revoke reason");
+      return;
+    }
+    try {
+      const data = await adminApi<{ id: string }>("approvals.request", {
+        operation_type: "iam.role.revoke",
+        operation_description: `Revoke role ${revokeDraft.role_name} from ${revokeDraft.admin_user_id}`,
+        operation_payload: {
+          admin_user_id: revokeDraft.admin_user_id,
+          role_name: revokeDraft.role_name,
+        },
+        request_reason: revokeReason.trim(),
+        ticket_id: revokeTicketId.trim() || undefined,
+        required_approvers: 1,
+        approver_roles: ["owner"],
+      });
+      setRevokeApprovalId(data.id);
+      toast.success("Approval requested", { description: data.id });
+    } catch (e) {
+      toast.error("Approval request failed", { description: e instanceof Error ? e.message : String(e) });
+    }
+  };
 
-    const localTicket = prompt("ticket_id (опционально)") || undefined;
-    const localApproval = prompt("approval_id (нужно для owner/security)") || undefined;
-
+  const revokeRole = async () => {
+    if (!revokeDraft || !revokeReason.trim()) {
+      toast.error("Fill revoke reason");
+      return;
+    }
+    if (revokeNeedsApproval && !revokeApprovalId.trim()) {
+      toast.error("approval_id required for this role");
+      return;
+    }
+    setRevoking(true);
     try {
       await adminApi("admin_user_roles.revoke", {
-        admin_user_id: adminUserId,
-        role_name: roleToRevoke,
-        reason: revokeReason,
-        ticket_id: localTicket,
-        approval_id: localApproval,
+        admin_user_id: revokeDraft.admin_user_id,
+        role_name: revokeDraft.role_name,
+        reason: revokeReason.trim(),
+        ticket_id: revokeTicketId.trim() || undefined,
+        approval_id: revokeApprovalId.trim() || undefined,
       });
-      toast.success("Роль снята");
+      toast.success("Role revoked");
+      setRevokeDraft(null);
+      setRevokeReason("");
+      setRevokeTicketId("");
+      setRevokeApprovalId("");
       await load();
     } catch (e) {
-      toast.error("Ошибка", { description: e instanceof Error ? e.message : String(e) });
+      toast.error("Revoke failed", { description: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setRevoking(false);
+    }
+  };
+
+  const deactivateAdmin = async () => {
+    if (!deactivateTargetId || !deactivateReason.trim()) {
+      toast.error("Select admin and reason");
+      return;
+    }
+    setDeactivating(true);
+    try {
+      await adminApi("admin_users.deactivate", {
+        admin_user_id: deactivateTargetId,
+        reason: deactivateReason.trim(),
+      });
+      toast.success("Admin deactivated");
+      setDeactivateTargetId("");
+      setDeactivateReason("");
+      await load();
+    } catch (e) {
+      toast.error("Deactivate failed", { description: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setDeactivating(false);
     }
   };
 
@@ -152,11 +239,9 @@ export function AdminUsersPage() {
     <AdminShell>
       <div className="grid gap-4">
         <Card>
-          <CardHeader>
-            <CardTitle>Создать админа</CardTitle>
-          </CardHeader>
+          <CardHeader><CardTitle>Create Admin</CardTitle></CardHeader>
           <CardContent>
-            <form className="grid gap-3 md:grid-cols-3" onSubmit={handleCreate}>
+            <form className="grid gap-3 md:grid-cols-3" onSubmit={createAdmin}>
               <div className="space-y-2">
                 <Label>Email</Label>
                 <Input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="admin@company.com" />
@@ -166,98 +251,70 @@ export function AdminUsersPage() {
                 <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Admin" />
               </div>
               <div className="flex items-end">
-                <Button type="submit" disabled={creating} className="w-full">
-                  Создать
-                </Button>
+                <Button type="submit" disabled={creating} className="w-full">Create</Button>
               </div>
             </form>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader>
-            <CardTitle>Назначить роль</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-3 md:grid-cols-5">
-              <div className="space-y-2">
-                <Label>Admin</Label>
-                <Select value={targetAdminId} onValueChange={setTargetAdminId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Admin" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {rows.map((r) => (
-                      <SelectItem key={r.id} value={r.id}>
-                        {r.email}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Role</Label>
-                <Select value={roleName} onValueChange={setRoleName}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Role" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {roles.map((r) => (
-                      <SelectItem key={r.id} value={r.name}>
-                        {r.display_name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Reason</Label>
-                <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="why" />
-              </div>
-
-              <div className="space-y-2">
-                <Label>ticket_id</Label>
-                <Input value={ticketId} onChange={(e) => setTicketId(e.target.value)} placeholder="SUP-123" />
-              </div>
-
-              <div className="space-y-2">
-                <Label>approval_id</Label>
-                <Input
-                  value={approvalId}
-                  onChange={(e) => setApprovalId(e.target.value)}
-                  placeholder={selectedRole?.category === "security" || selectedRole?.category === "owner" ? "required" : "optional"}
-                />
-              </div>
-
-              <div className="md:col-span-5 flex items-center justify-between gap-3">
-                <div className="text-xs text-muted-foreground">
-                  {targetAdmin ? `Target: ${targetAdmin.email}` : ""}
-                </div>
-                <Button onClick={handleAssignRole} disabled={assigning}>
-                  Назначить
+          <CardHeader><CardTitle>Assign Role</CardTitle></CardHeader>
+          <CardContent className="grid gap-3 md:grid-cols-5">
+            <div className="space-y-2">
+              <Label>Admin</Label>
+              <Select value={targetAdminId} onValueChange={setTargetAdminId}>
+                <SelectTrigger><SelectValue placeholder="Admin" /></SelectTrigger>
+                <SelectContent>{rows.map((r) => <SelectItem key={r.id} value={r.id}>{r.email}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Role</Label>
+              <Select value={roleName} onValueChange={setRoleName}>
+                <SelectTrigger><SelectValue placeholder="Role" /></SelectTrigger>
+                <SelectContent>{roles.map((r) => <SelectItem key={r.id} value={r.name}>{r.display_name}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Reason</Label>
+              <Input
+                data-testid="assign-reason-input"
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>ticket_id</Label>
+              <Input value={ticketId} onChange={(e) => setTicketId(e.target.value)} placeholder="SUP-123" />
+            </div>
+            <div className="space-y-2">
+              <Label>approval_id</Label>
+              <Input value={approvalId} onChange={(e) => setApprovalId(e.target.value)} placeholder={assignNeedsApproval ? "required" : "optional"} />
+            </div>
+            <div className="md:col-span-5 flex justify-end gap-2">
+              {assignNeedsApproval ? (
+                <Button data-testid="request-assign-approval" variant="outline" onClick={requestAssignApproval}>
+                  Request approval
                 </Button>
-              </div>
+              ) : null}
+              <Button onClick={assignRole} disabled={assigning}>Assign</Button>
             </div>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader>
-            <CardTitle>Admin Directory</CardTitle>
-          </CardHeader>
+          <CardHeader><CardTitle>Admin Directory</CardTitle></CardHeader>
           <CardContent>
             {loading ? (
-              <div className="text-sm text-muted-foreground">Загрузка...</div>
+              <div className="text-sm text-muted-foreground">Loading...</div>
             ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Email</TableHead>
-                    <TableHead>Имя</TableHead>
-                    <TableHead>Статус</TableHead>
-                    <TableHead>Создан</TableHead>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Roles</TableHead>
+                    <TableHead>Created</TableHead>
                     <TableHead>Last login</TableHead>
                     <TableHead />
                   </TableRow>
@@ -265,33 +322,34 @@ export function AdminUsersPage() {
                 <TableBody>
                   {rows.map((r) => (
                     <TableRow key={r.id}>
-                      <TableCell className="font-medium">{r.email}</TableCell>
+                      <TableCell>{r.email}</TableCell>
                       <TableCell>{r.display_name}</TableCell>
                       <TableCell>{r.status}</TableCell>
-                      <TableCell className="max-w-[260px]">
+                      <TableCell className="max-w-[320px]">
                         <div className="flex flex-wrap gap-1">
-                          {(r.admin_user_roles ?? [])
-                            .map((x) => x.role)
-                            .filter(Boolean)
-                            .map((role) => (
-                              <Button
-                                key={(role as any).name}
-                                variant="secondary"
-                                size="sm"
-                                onClick={() => handleRevokeRole(r.id, (role as any).name)}
-                                title="Нажмите, чтобы снять роль"
-                              >
-                                {(role as any).display_name}
-                              </Button>
-                            ))}
+                          {(r.admin_user_roles ?? []).map((x) => x.role).filter(Boolean).map((role) => (
+                            <Button
+                              key={(role as any).name}
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => setRevokeDraft({
+                                admin_user_id: r.id,
+                                role_name: (role as any).name,
+                                role_display_name: (role as any).display_name,
+                                role_category: (role as any).category,
+                              })}
+                            >
+                              {(role as any).display_name}
+                            </Button>
+                          ))}
                         </div>
                       </TableCell>
                       <TableCell>{new Date(r.created_at).toLocaleString()}</TableCell>
-                      <TableCell>{r.last_login_at ? new Date(r.last_login_at).toLocaleString() : "—"}</TableCell>
+                      <TableCell>{r.last_login_at ? new Date(r.last_login_at).toLocaleString() : "-"}</TableCell>
                       <TableCell className="text-right">
                         {r.status === "active" ? (
-                          <Button variant="outline" size="sm" onClick={() => handleDeactivate(r.id)}>
-                            Deactivate
+                          <Button size="sm" variant="outline" onClick={() => setDeactivateTargetId(r.id)}>
+                            Prepare deactivate
                           </Button>
                         ) : null}
                       </TableCell>
@@ -302,6 +360,68 @@ export function AdminUsersPage() {
             )}
           </CardContent>
         </Card>
+
+        <Card>
+          <CardHeader><CardTitle>Deactivate Admin</CardTitle></CardHeader>
+          <CardContent className="grid gap-3 md:grid-cols-3">
+            <div className="space-y-2">
+              <Label>Admin</Label>
+              <Select value={deactivateTargetId} onValueChange={setDeactivateTargetId}>
+                <SelectTrigger><SelectValue placeholder="Select admin" /></SelectTrigger>
+                <SelectContent>
+                  {rows.filter((r) => r.status === "active").map((r) => (
+                    <SelectItem key={r.id} value={r.id}>{r.email}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Reason</Label>
+              <Input value={deactivateReason} onChange={(e) => setDeactivateReason(e.target.value)} />
+            </div>
+            <div className="flex items-end">
+              <Button variant="destructive" className="w-full" onClick={deactivateAdmin} disabled={deactivating}>Deactivate</Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        {revokeDraft ? (
+          <Card>
+            <CardHeader><CardTitle>Revoke Role</CardTitle></CardHeader>
+            <CardContent className="space-y-3">
+              <div className="text-sm text-muted-foreground">
+                Target: {revokeDraft.admin_user_id} / {revokeDraft.role_display_name}
+              </div>
+              <div className="grid gap-3 md:grid-cols-3">
+                <div className="space-y-2">
+                  <Label>Reason</Label>
+                  <Input
+                    data-testid="revoke-role-reason-input"
+                    value={revokeReason}
+                    onChange={(e) => setRevokeReason(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>ticket_id</Label>
+                  <Input value={revokeTicketId} onChange={(e) => setRevokeTicketId(e.target.value)} placeholder="SUP-123" />
+                </div>
+                <div className="space-y-2">
+                  <Label>approval_id</Label>
+                  <Input value={revokeApprovalId} onChange={(e) => setRevokeApprovalId(e.target.value)} placeholder={revokeNeedsApproval ? "required" : "optional"} />
+                </div>
+              </div>
+              <div className="flex justify-end gap-2">
+                {revokeNeedsApproval ? (
+                  <Button data-testid="request-revoke-approval" variant="outline" onClick={requestRevokeApproval}>
+                    Request approval
+                  </Button>
+                ) : null}
+                <Button variant="outline" onClick={() => setRevokeDraft(null)}>Cancel</Button>
+                <Button variant="destructive" onClick={revokeRole} disabled={revoking}>Revoke role</Button>
+              </div>
+            </CardContent>
+          </Card>
+        ) : null}
       </div>
     </AdminShell>
   );

@@ -9,8 +9,8 @@
     "build:dev": "vite build --mode development",
     "lint": "eslint src",
     "preview": "vite preview",
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "test": "node --no-deprecation ./node_modules/vitest/vitest.mjs run",
+    "test:watch": "node --no-deprecation ./node_modules/vitest/vitest.mjs",
     "check:backend": "node ./scripts/check-backend-safety.mjs",
     "req:init": "node ./scripts/requirements/init-telegram-500.mjs",
     "req:derive": "node ./scripts/requirements/derive-scenarios.mjs",
@@ -19,8 +19,11 @@
     "calls:validate": "node ./scripts/calls/validate-ws-contracts.mjs",
     "calls:ws:dev": "node ./server/calls-ws/index.mjs",
     "calls:sfu:dev": "node ./server/sfu/index.mjs",
+    "notif:router:dev": "npm --prefix ./services/notification-router run dev",
+    "notif:router:typecheck": "npm --prefix ./services/notification-router run typecheck",
     "reels:arbiter:dev": "node ./server/reels-arbiter/index.mjs",
-    "reels:control-plane:smoke": "node ./scripts/reels/control-plane-smoke.mjs"
+    "reels:control-plane:smoke": "node ./scripts/reels/control-plane-smoke.mjs",
+    "req:phase": "node ./scripts/requirements/phase-plan.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.0.1",
@@ -85,8 +88,7 @@
     "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7",
     "vaul": "^0.9.9",
-    "zod": "^3.25.76"
-    ,
+    "zod": "^3.25.76",
     "ioredis": "^5.6.0",
     "ws": "^8.18.3"
   },

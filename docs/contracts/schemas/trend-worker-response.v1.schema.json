@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TrendWorkerResponseV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["ok", "worker_id", "claimed", "processed", "results"],
+  "properties": {
+    "ok": { "type": "boolean" },
+    "worker_id": { "type": "string" },
+    "claimed": { "type": "integer", "minimum": 0 },
+    "processed": { "type": "integer", "minimum": 0 },
+    "results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["run_id", "ok"],
+        "properties": {
+          "run_id": { "type": "string" },
+          "ok": { "type": "boolean" },
+          "status": { "type": "string" },
+          "error": {}
+        }
+      }
+    }
+  }
+}

@@ -31,12 +31,42 @@ export interface ExplorePost {
   }[];
 }
 
+export interface TrendingHashtag {
+  hashtag: string;
+  normalized_tag: string;
+  reels_count: number;
+  usage_last_24h: number;
+  velocity_score: number;
+  status: "normal" | "restricted" | "hidden" | string;
+}
+
+export type ExplorePageSectionType =
+  | "trending_now"
+  | "hashtags"
+  | "fresh_creators"
+  | "categories"
+  | "recommended_reels"
+  | string;
+
+export interface ExplorePagePayload {
+  generated_at: string;
+  sections: Array<{
+    type: ExplorePageSectionType;
+    title: string | null;
+    items: any[];
+  }>;
+}
+
 export function useSearch() {
   const { user } = useAuth();
   const [users, setUsers] = useState<SearchUser[]>([]);
   const [explorePosts, setExplorePosts] = useState<ExplorePost[]>([]);
+  const [trendingHashtags, setTrendingHashtags] = useState<TrendingHashtag[]>([]);
+  const [explorePage, setExplorePage] = useState<ExplorePagePayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [exploring, setExploring] = useState(false);
+  const [trendingLoading, setTrendingLoading] = useState(false);
+  const [explorePageLoading, setExplorePageLoading] = useState(false);
 
   const searchUsers = useCallback(async (query: string) => {
     if (!query.trim()) {
@@ -137,6 +167,42 @@ export function useSearch() {
     }
   }, []);
 
+  const fetchTrendingHashtags = useCallback(async () => {
+    setTrendingLoading(true);
+    try {
+      const { data, error } = await (supabase as any).rpc("get_trending_hashtags_v1", {
+        p_limit: 12,
+      });
+      if (error) throw error;
+      setTrendingHashtags((data || []) as TrendingHashtag[]);
+    } catch (error) {
+      console.error("Error fetching trending hashtags:", error);
+      setTrendingHashtags([]);
+    } finally {
+      setTrendingLoading(false);
+    }
+  }, []);
+
+  const fetchExplorePage = useCallback(async () => {
+    setExplorePageLoading(true);
+    try {
+      const { data, error } = await (supabase as any).rpc("get_explore_page_v1", {
+        p_segment_id: "seg_default",
+        p_locale: navigator.language || "ru-RU",
+        p_country: null,
+        p_allow_stale: true,
+        p_force_refresh: false,
+      });
+      if (error) throw error;
+      setExplorePage((data || null) as ExplorePagePayload | null);
+    } catch (error) {
+      console.error("Error fetching explore page:", error);
+      setExplorePage(null);
+    } finally {
+      setExplorePageLoading(false);
+    }
+  }, []);
+
   const toggleFollow = useCallback(async (targetUserId: string) => {
     if (!user) return;
 
@@ -176,10 +242,16 @@ export function useSearch() {
   return {
     users,
     explorePosts,
+    trendingHashtags,
+    explorePage,
     loading,
     exploring,
+    trendingLoading,
+    explorePageLoading,
     searchUsers,
     fetchExplorePosts,
+    fetchTrendingHashtags,
+    fetchExplorePage,
     toggleFollow,
   };
 }

@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AdminApiActionRequestV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["action"],
+  "properties": {
+    "action": {
+      "type": "string",
+      "enum": [
+        "hashtags.list",
+        "hashtags.status.set",
+        "hashtags.status.bulk_set"
+      ],
+      "description": "Admin action to execute."
+    },
+    "params": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Action-specific parameters."
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "action": { "const": "hashtags.list" } } },
+      "then": {
+        "properties": {
+          "params": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "limit": { "type": "integer", "minimum": 1, "maximum": 1000, "default": 500 },
+              "status": {
+                "type": "string",
+                "enum": ["all", "normal", "restricted", "hidden"],
+                "default": "all"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "action": { "const": "hashtags.status.set" } } },
+      "then": {
+        "properties": {
+          "params": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["hashtag", "to_status"],
+            "properties": {
+              "hashtag": { "type": "string", "minLength": 1 },
+              "to_status": { "type": "string", "enum": ["normal", "restricted", "hidden"] },
+              "reason_codes": {
+                "type": "array",
+                "items": { "type": "string" },
+                "maxItems": 16
+              },
+              "surface_policy": { "type": "object", "additionalProperties": true },
+              "notes": { "type": "string", "maxLength": 500 }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "action": { "const": "hashtags.status.bulk_set" } } },
+      "then": {
+        "properties": {
+          "params": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["hashtags", "to_status"],
+            "properties": {
+              "hashtags": {
+                "type": "array",
+                "items": { "type": "string" },
+                "minItems": 1,
+                "maxItems": 500
+              },
+              "to_status": { "type": "string", "enum": ["normal", "restricted", "hidden"] },
+              "reason_codes": {
+                "type": "array",
+                "items": { "type": "string" },
+                "maxItems": 16
+              },
+              "surface_policy": { "type": "object", "additionalProperties": true },
+              "notes": { "type": "string", "maxLength": 500 }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

@@ -9,6 +9,7 @@
 const ALLOWED_ORIGINS = [
   "https://mansoni.ru",
   "https://app.mansoni.ru",
+  "https://kmansoni.github.io",
   "http://localhost:5173",
   "http://localhost:3000",
 ];

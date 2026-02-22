@@ -24,19 +24,23 @@ type ApprovalRow = {
 export function AdminApprovalsPage() {
   const [rows, setRows] = useState<ApprovalRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
 
-  const [operationType, setOperationType] = useState("user.ban");
-  const [description, setDescription] = useState("Dangerous operation");
+  const [operationType, setOperationType] = useState("iam.role.assign");
+  const [description, setDescription] = useState("High-risk operation approval");
+  const [payloadJson, setPayloadJson] = useState('{"admin_user_id":"","role_name":""}');
   const [reason, setReason] = useState("");
   const [ticketId, setTicketId] = useState("");
+  const [approverRoles, setApproverRoles] = useState("owner");
+  const [decisionReason, setDecisionReason] = useState("");
 
   const load = async () => {
     setLoading(true);
     try {
       const data = await adminApi<ApprovalRow[]>("approvals.list", { limit: 100 });
-      setRows(data);
+      setRows(data ?? []);
     } catch (e) {
-      toast.error("Не удалось загрузить approvals", { description: e instanceof Error ? e.message : String(e) });
+      toast.error("Failed to load approvals", { description: e instanceof Error ? e.message : String(e) });
     } finally {
       setLoading(false);
     }
@@ -48,36 +52,54 @@ export function AdminApprovalsPage() {
 
   const requestApproval = async () => {
     if (!reason.trim()) {
-      toast.error("Укажите reason");
+      toast.error("Reason is required");
       return;
     }
 
+    let payload: Record<string, unknown>;
+    try {
+      payload = JSON.parse(payloadJson) as Record<string, unknown>;
+    } catch {
+      toast.error("operation_payload must be valid JSON");
+      return;
+    }
+
+    setSubmitting(true);
     try {
       await adminApi("approvals.request", {
-        operation_type: operationType,
-        operation_description: description,
-        operation_payload: { example: true },
-        request_reason: reason,
-        ticket_id: ticketId || undefined,
+        operation_type: operationType.trim(),
+        operation_description: description.trim(),
+        operation_payload: payload,
+        request_reason: reason.trim(),
+        ticket_id: ticketId.trim() || undefined,
         required_approvers: 1,
+        approver_roles: approverRoles
+          .split(",")
+          .map((x) => x.trim())
+          .filter(Boolean),
       });
-      toast.success("Запрос создан");
+      toast.success("Approval request created");
       setReason("");
       setTicketId("");
       await load();
     } catch (e) {
-      toast.error("Ошибка", { description: e instanceof Error ? e.message : String(e) });
+      toast.error("Request failed", { description: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setSubmitting(false);
     }
   };
 
   const decide = async (approvalId: string, decision: "approved" | "denied") => {
-    const r = prompt("Причина решения (опционально)") || undefined;
     try {
-      await adminApi("approvals.decide", { approval_id: approvalId, decision, reason: r });
-      toast.success("Готово");
+      await adminApi("approvals.decide", {
+        approval_id: approvalId,
+        decision,
+        reason: decisionReason.trim() || undefined,
+      });
+      toast.success("Decision saved");
       await load();
     } catch (e) {
-      toast.error("Ошибка", { description: e instanceof Error ? e.message : String(e) });
+      toast.error("Decision failed", { description: e instanceof Error ? e.message : String(e) });
     }
   };
 
@@ -86,9 +108,9 @@ export function AdminApprovalsPage() {
       <div className="grid gap-4">
         <Card>
           <CardHeader>
-            <CardTitle>Request approval</CardTitle>
+            <CardTitle>Request Approval</CardTitle>
           </CardHeader>
-          <CardContent className="grid gap-3 md:grid-cols-4">
+          <CardContent className="grid gap-3 md:grid-cols-2">
             <div className="space-y-2">
               <Label>operation_type</Label>
               <Input value={operationType} onChange={(e) => setOperationType(e.target.value)} />
@@ -98,15 +120,23 @@ export function AdminApprovalsPage() {
               <Input value={description} onChange={(e) => setDescription(e.target.value)} />
             </div>
             <div className="space-y-2">
+              <Label>operation_payload (JSON)</Label>
+              <Input value={payloadJson} onChange={(e) => setPayloadJson(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>approver_roles (comma-separated)</Label>
+              <Input value={approverRoles} onChange={(e) => setApproverRoles(e.target.value)} placeholder="owner,security_admin" />
+            </div>
+            <div className="space-y-2">
               <Label>reason</Label>
-              <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="why" />
+              <Input value={reason} onChange={(e) => setReason(e.target.value)} />
             </div>
             <div className="space-y-2">
               <Label>ticket_id</Label>
               <Input value={ticketId} onChange={(e) => setTicketId(e.target.value)} placeholder="SUP-123" />
             </div>
-            <div className="md:col-span-4">
-              <Button onClick={requestApproval}>Создать запрос</Button>
+            <div className="md:col-span-2">
+              <Button onClick={requestApproval} disabled={submitting}>Create Request</Button>
             </div>
           </CardContent>
         </Card>
@@ -115,9 +145,17 @@ export function AdminApprovalsPage() {
           <CardHeader>
             <CardTitle>Approval Queue</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-3">
+            <div className="space-y-2">
+              <Label>Decision reason (optional)</Label>
+              <Input
+                value={decisionReason}
+                onChange={(e) => setDecisionReason(e.target.value)}
+                placeholder="Applied policy / ticket evidence"
+              />
+            </div>
             {loading ? (
-              <div className="text-sm text-muted-foreground">Загрузка...</div>
+              <div className="text-sm text-muted-foreground">Loading...</div>
             ) : (
               <Table>
                 <TableHeader>
@@ -142,12 +180,8 @@ export function AdminApprovalsPage() {
                       <TableCell className="text-right">
                         {r.status === "pending" ? (
                           <div className="inline-flex gap-2">
-                            <Button size="sm" onClick={() => decide(r.id, "approved")}>
-                              Approve
-                            </Button>
-                            <Button size="sm" variant="outline" onClick={() => decide(r.id, "denied")}>
-                              Deny
-                            </Button>
+                            <Button size="sm" onClick={() => decide(r.id, "approved")}>Approve</Button>
+                            <Button size="sm" variant="outline" onClick={() => decide(r.id, "denied")}>Deny</Button>
                           </div>
                         ) : null}
                       </TableCell>
@@ -162,3 +196,4 @@ export function AdminApprovalsPage() {
     </AdminShell>
   );
 }
+

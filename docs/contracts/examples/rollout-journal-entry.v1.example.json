@@ -1,0 +1,14 @@
+{
+  "version_id": "rank_v2_20260222_01",
+  "stage": "rollout.stage_10pct",
+  "baseline_version_id": "rank_v1_20260210_01",
+  "started_at": "2026-02-22T10:00:00Z",
+  "ended_at": null,
+  "status": "continued",
+  "guardrail_snapshot": {
+    "p95_feed_latency_ms": 220,
+    "crash_free_sessions": 0.995,
+    "ctr": 0.041,
+    "complaint_rate": 0.0007
+  }
+}

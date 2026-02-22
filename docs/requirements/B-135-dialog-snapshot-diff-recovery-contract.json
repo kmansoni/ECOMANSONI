@@ -1,0 +1,18 @@
+{
+  "file": "B-135-dialog-snapshot-diff-recovery-contract.json",
+  "id": "B-135",
+  "title": "Dialog Snapshot Diff Recovery Contract",
+  "description": "Defines diff sync, min_seq snapshot fallback and client recovery path after cursor drift.",
+  "priority": "P0",
+  "complexity": "M",
+  "must_have": [
+    "dialog_get_updates_v2 need_snapshot flag",
+    "dialog_get_snapshot_v1 contract",
+    "min_msg_seq_available maintenance"
+  ],
+  "acceptance": [
+    "Client recovers from stale cursor without data loss",
+    "No full-history fetch required",
+    "Diff stream remains monotonic"
+  ]
+}

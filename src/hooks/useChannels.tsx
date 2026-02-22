@@ -3,6 +3,7 @@ import { supabase } from "@/lib/supabase";
 import { useAuth } from "./useAuth";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { checkChannelCapabilityViaRpc } from "@/lib/channel-capabilities";
+import { checkHashtagsAllowedForText } from "@/lib/hashtagModeration";
 
 function isSchemaMissingError(error: unknown): boolean {
   const msg = String((error as any)?.message ?? error).toLowerCase();
@@ -27,6 +28,8 @@ export interface Channel {
   created_at: string;
   updated_at: string;
   is_member?: boolean;
+  member_role?: string | null;
+  auto_delete_seconds?: number | null;
   last_message?: ChannelMessage;
 }
 
@@ -87,13 +90,18 @@ export function useChannels() {
 
       // If user is logged in, check which channels they're a member of
       let memberChannelIds: string[] = [];
+      const memberRoleByChannelId: Record<string, string> = {};
       if (user) {
         const { data: memberData } = await supabase
           .from("channel_members")
-          .select("channel_id")
+          .select("channel_id, role")
           .eq("user_id", user.id);
-        
-        memberChannelIds = (memberData || []).map(m => m.channel_id);
+
+        memberChannelIds = (memberData || []).map((m: any) => m.channel_id);
+        (memberData || []).forEach((m: any) => {
+          if (!m?.channel_id) return;
+          memberRoleByChannelId[String(m.channel_id)] = String(m?.role ?? "member");
+        });
       }
 
       // Fetch last message per channel (correctness > one global limit)
@@ -116,6 +124,7 @@ export function useChannels() {
       const channelsWithMembership = (channelsData || []).map(channel => ({
         ...channel,
         is_member: memberChannelIds.includes(channel.id),
+        member_role: memberRoleByChannelId[String(channel.id)] ?? null,
         last_message: lastMessages[channel.id]
       }));
 
@@ -255,6 +264,11 @@ export function useChannelMessages(channelId: string | null) {
     if (!channelId || !user || !content.trim()) return;
 
     try {
+      const hashtagVerdict = await checkHashtagsAllowedForText(String(content || "").trim());
+      if (!hashtagVerdict.ok) {
+        throw new Error(`HASHTAG_BLOCKED:${hashtagVerdict.blockedTags.join(", ")}`);
+      }
+
       let canPost = true;
       try {
         canPost = await checkChannelCapabilityViaRpc(channelId, user.id, "channel.posts.create");

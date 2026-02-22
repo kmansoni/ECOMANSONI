@@ -8,6 +8,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { SimpleMediaEditor } from "@/components/editor";
 import { useChatOpen } from "@/contexts/ChatOpenContext";
+import { checkHashtagsAllowedForText } from "@/lib/hashtagModeration";
 
 interface CreatePostSheetProps {
   isOpen: boolean;
@@ -152,6 +153,14 @@ export function CreatePostSheet({ isOpen, onClose }: CreatePostSheetProps) {
     setIsUploading(true);
 
     try {
+      const hashtagVerdict = await checkHashtagsAllowedForText(text.trim());
+      if (!hashtagVerdict.ok) {
+        toast.error("Некоторые хештеги недоступны", {
+          description: hashtagVerdict.blockedTags.join(", "),
+        });
+        return;
+      }
+
       // Upload images first
       const mediaUrls = await uploadImages();
 

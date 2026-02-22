@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mansoni://contracts/explore-request.v1",
+  "title": "Explore Request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["request_id", "requested_at", "auth_scope", "segment_id", "locale"],
+  "properties": {
+    "request_id": { "type": "string", "minLength": 1 },
+    "requested_at": { "type": "string", "format": "date-time" },
+    "auth_scope": { "type": "string", "enum": ["public", "authenticated"] },
+    "viewer_id": { "type": ["string", "null"], "minLength": 1 },
+    "segment_id": { "type": "string", "minLength": 1 },
+    "locale": { "type": "string", "pattern": "^[a-z]{2}(-[A-Z]{2})?$" },
+    "country": { "type": ["string", "null"], "pattern": "^[A-Z]{2}$" },
+    "device": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["platform"],
+      "properties": {
+        "platform": { "type": "string", "enum": ["web", "ios", "android"] },
+        "app_version": { "type": ["string", "null"], "maxLength": 40 }
+      }
+    },
+    "ab_buckets": {
+      "type": ["object", "null"],
+      "description": "Deterministic assignment for rollouts/experiments.",
+      "additionalProperties": { "type": ["string", "number", "integer", "boolean", "null"] }
+    },
+    "cache": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "allow_stale": { "type": "boolean", "default": true },
+        "force_refresh": { "type": "boolean", "default": false }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "auth_scope": { "const": "public" } } },
+      "then": { "properties": { "viewer_id": { "const": null } } }
+    },
+    {
+      "if": { "properties": { "auth_scope": { "const": "authenticated" } } },
+      "then": { "required": ["viewer_id"] }
+    }
+  ]
+}

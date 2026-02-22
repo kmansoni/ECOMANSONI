@@ -17,10 +17,8 @@ import { useReels } from "@/hooks/useReels";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
-import { CreateReelSheet } from "@/components/reels/CreateReelSheet";
 import { ReelCommentsSheet } from "@/components/reels/ReelCommentsSheet";
 import { ReelShareSheet } from "@/components/reels/ReelShareSheet";
-import { Button } from "@/components/ui/button";
 import { VerifiedBadge } from "@/components/ui/verified-badge";
 
 function formatNumber(num: number): string {
@@ -61,7 +59,6 @@ export function ReelsPage() {
   } = useReels();
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true);
-  const [showCreateSheet, setShowCreateSheet] = useState(false);
   const [commentsReelId, setCommentsReelId] = useState<string | null>(null);
   const [shareReelId, setShareReelId] = useState<string | null>(null);
   const [failedVideoIds, setFailedVideoIds] = useState<Set<string>>(() => new Set());
@@ -316,39 +313,57 @@ export function ReelsPage() {
     );
   }
 
+  const header = (
+    <header className="sticky top-0 z-30 safe-area-top backdrop-blur-xl bg-black/20 border-b border-white/10">
+      <div className="h-12 px-3 flex items-center justify-end">
+        {user && (
+          <button
+            type="button"
+            onClick={() => navigate("/create?tab=reels&auto=1")}
+            className="w-10 h-10 rounded-full bg-white/10 backdrop-blur-xl border border-white/20 flex items-center justify-center hover:bg-white/15 active:bg-white/20 transition-colors"
+            aria-label="Создать Reel"
+            title="Создать"
+          >
+            <Plus className="w-6 h-6 text-white" />
+          </button>
+        )}
+      </div>
+    </header>
+  );
+
   if (reels.length === 0) {
     return (
-      <div className="min-h-[calc(100vh-4rem)] bg-transparent flex flex-col items-center justify-center text-white">
-        <Play className="w-16 h-16 mb-4 opacity-40" />
-        <h2 className="text-lg font-semibold mb-2">Нет Reels</h2>
-        <p className="text-white/60 text-center px-8 mb-6">
-          Пока нет видео для просмотра. Будьте первым!
-        </p>
-        {user && (
-          <Button
-            onClick={() => setShowCreateSheet(true)}
-            className="gap-2"
-          >
-            <Plus className="w-4 h-4" />
-            Создать Reel
-          </Button>
-        )}
-        <CreateReelSheet open={showCreateSheet} onOpenChange={setShowCreateSheet} />
+      <div className="min-h-[calc(100vh-4rem)] bg-transparent text-white">
+        {header}
+        <div className="flex flex-col items-center justify-center text-white px-4" style={{ minHeight: "calc(100vh - 4rem - 3rem)" }}>
+          <Play className="w-16 h-16 mb-4 opacity-40" />
+          <h2 className="text-lg font-semibold mb-2">Нет Reels</h2>
+          <p className="text-white/60 text-center px-8 mb-6">
+            Пока нет видео для просмотра. Будьте первым!
+          </p>
+          {user ? (
+            <p className="text-white/60 text-center px-8">Нажмите + вверху, чтобы создать Reel</p>
+          ) : (
+            <p className="text-white/60 text-center px-8">Войдите, чтобы создавать Reels</p>
+          )}
+        </div>
       </div>
     );
   }
 
   return (
-    <div
-      ref={containerRef}
-      className="h-[calc(100vh-4rem)] bg-transparent overflow-y-auto overflow-x-hidden scrollbar-hide"
-      onScroll={handleScroll}
-      style={{
-        scrollSnapType: 'y mandatory',
-        WebkitOverflowScrolling: 'touch',
-        scrollBehavior: 'smooth',
-      }}
-    >
+    <div className="h-[calc(100vh-4rem)] bg-transparent">
+      {header}
+      <div
+        ref={containerRef}
+        className="h-[calc(100vh-4rem-3rem)] overflow-y-auto overflow-x-hidden scrollbar-hide"
+        onScroll={handleScroll}
+        style={{
+          scrollSnapType: 'y mandatory',
+          WebkitOverflowScrolling: 'touch',
+          scrollBehavior: 'smooth',
+        }}
+      >
       {reels.map((reel, index) => (
         <div
           key={reel.id}
@@ -357,7 +372,7 @@ export function ReelsPage() {
           }}
           data-reel-id={reel.id}
           data-reel-index={index}
-          className="relative w-full h-[calc(100vh-4rem)] flex-shrink-0"
+          className="relative w-full h-[calc(100vh-4rem-3rem)] flex-shrink-0"
           style={{
             scrollSnapAlign: 'start',
             scrollSnapStop: 'always',
@@ -449,22 +464,6 @@ export function ReelsPage() {
               </div>
               <span className="text-white text-xs font-medium">Не интересно</span>
             </button>
-
-            {/* Create */}
-            {user && (
-              <button
-                className="flex flex-col items-center gap-1"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setShowCreateSheet(true);
-                }}
-              >
-                <div className="w-12 h-12 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center">
-                  <Plus className="w-7 h-7 text-white" />
-                </div>
-                <span className="text-white text-xs font-medium">Создать</span>
-              </button>
-            )}
 
             {/* Like */}
             <button 
@@ -638,7 +637,8 @@ export function ReelsPage() {
         ))}
       </div>
 
-      <CreateReelSheet open={showCreateSheet} onOpenChange={setShowCreateSheet} />
+      </div>
+
       
       {/* Share Sheet */}
       <ReelShareSheet

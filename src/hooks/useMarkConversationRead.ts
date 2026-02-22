@@ -1,6 +1,11 @@
 import { useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "./useAuth";
+import {
+  getOrCreateChatDeviceId,
+  isChatProtocolV11EnabledForUser,
+  nextClientWriteSeq,
+} from "@/lib/chat/protocolV11";
 
 /**
  * Marks incoming messages in a DM conversation as read and advances user's last_read_at.
@@ -17,6 +22,36 @@ export function useMarkConversationRead() {
 
       inFlightRef.current = true;
       try {
+        if (isChatProtocolV11EnabledForUser(user.id)) {
+          const deviceId = getOrCreateChatDeviceId();
+          const clientWriteSeq = nextClientWriteSeq(user.id);
+          const { data: convRow, error: convErr } = await supabase
+            .from("conversations")
+            .select("last_message_seq")
+            .eq("id", conversationId)
+            .maybeSingle();
+          if (convErr) {
+            // eslint-disable-next-line no-console
+            console.error("[markConversationRead] conversation load error", convErr);
+            return;
+          }
+
+          const targetSeq = Number((convRow as any)?.last_message_seq || 0);
+          const { error: rpcErr } = await (supabase as any).rpc("chat_mark_read_v11", {
+            p_dialog_id: conversationId,
+            p_device_id: deviceId,
+            p_client_write_seq: clientWriteSeq,
+            p_client_op_id: crypto.randomUUID(),
+            p_last_read_seq: targetSeq,
+            p_client_sent_at: new Date().toISOString(),
+          });
+          if (rpcErr) {
+            // eslint-disable-next-line no-console
+            console.error("[markConversationRead] v11 rpc error", rpcErr);
+          }
+          return;
+        }
+
         const nowIso = new Date().toISOString();
 
         // Run both updates in parallel.

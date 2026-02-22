@@ -10,6 +10,7 @@ import { formatDistanceToNow } from "date-fns";
 import { ru } from "date-fns/locale";
 import { toast } from "@/hooks/use-toast";
 import { VerifiedBadge } from "@/components/ui/verified-badge";
+import { getHashtagBlockedToastPayload } from "@/lib/hashtagModeration";
 import {
   Drawer,
   DrawerContent,
@@ -85,11 +86,20 @@ export function CommentsSheet({
     const result = await addComment(newComment.trim(), replyingTo?.commentId);
     setSubmitting(false);
     if (result.error) {
-      toast({
-        title: "Ошибка",
-        description: result.error,
-        variant: "destructive",
-      });
+      const payload = getHashtagBlockedToastPayload(result.error);
+      if (payload) {
+        toast({
+          title: payload.title,
+          description: payload.description,
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Ошибка",
+          description: result.error,
+          variant: "destructive",
+        });
+      }
     } else {
       setNewComment("");
       setReplyingTo(null);

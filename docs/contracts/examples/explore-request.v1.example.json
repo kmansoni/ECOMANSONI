@@ -1,0 +1,12 @@
+{
+  "request_id": "explore_req_20260222_001",
+  "requested_at": "2026-02-22T11:10:00Z",
+  "auth_scope": "public",
+  "viewer_id": null,
+  "segment_id": "seg_default",
+  "locale": "ru-RU",
+  "country": "RU",
+  "device": { "platform": "web", "app_version": null },
+  "ab_buckets": { "rank_experiment": "control" },
+  "cache": { "allow_stale": true, "force_refresh": false }
+}

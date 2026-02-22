@@ -176,8 +176,8 @@ export function ContactProfilePage() {
       {/* Content */}
       <div className="relative z-10 min-h-screen">
         {/* Header with close button */}
-        <div className="flex items-center justify-end px-4 py-3 pt-safe">
-          <button 
+        <div className="flex items-center justify-end px-4 py-3 safe-area-top">
+          <button
             onClick={() => {
               // Navigate back to conversation if we have conversationId, otherwise go back
               if (state?.conversationId) {

@@ -214,6 +214,100 @@
       "problemMatcher": []
     },
     {
+      "label": "Supabase: Functions deploy (ai-companion)",
+      "type": "shell",
+      "command": "C:\\Users\\manso\\AppData\\Local\\supabase-cli\\v2.75.0\\supabase.exe",
+      "args": ["functions", "deploy", "ai-companion"],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "SUPABASE_ACCESS_TOKEN": "${input:supabaseAccessToken}"
+        }
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Supabase: Functions deploy (ensure-ai-assistant)",
+      "type": "shell",
+      "command": "C:\\Users\\manso\\AppData\\Local\\supabase-cli\\v2.75.0\\supabase.exe",
+      "args": ["functions", "deploy", "ensure-ai-assistant"],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "SUPABASE_ACCESS_TOKEN": "${input:supabaseAccessToken}"
+        }
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Supabase: Functions deploy (ai-chat-reply)",
+      "type": "shell",
+      "command": "C:\\Users\\manso\\AppData\\Local\\supabase-cli\\v2.75.0\\supabase.exe",
+      "args": ["functions", "deploy", "ai-chat-reply"],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "SUPABASE_ACCESS_TOKEN": "${input:supabaseAccessToken}"
+        }
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Supabase: Functions deploy (ai-send-message)",
+      "type": "shell",
+      "command": "C:\\Users\\manso\\AppData\\Local\\supabase-cli\\v2.75.0\\supabase.exe",
+      "args": ["functions", "deploy", "ai-send-message"],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "SUPABASE_ACCESS_TOKEN": "${input:supabaseAccessToken}"
+        }
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Supabase: Functions deploy (ai-dispatch-pr)",
+      "type": "shell",
+      "command": "C:\\Users\\manso\\AppData\\Local\\supabase-cli\\v2.75.0\\supabase.exe",
+      "args": ["functions", "deploy", "ai-dispatch-pr"],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "SUPABASE_ACCESS_TOKEN": "${input:supabaseAccessToken}"
+        }
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Supabase: Functions deploy (AI stack)",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "Supabase: Link project (lfkbgnbjxskspsownvjm)",
+        "Supabase: Functions deploy (ai-companion)",
+        "Supabase: Functions deploy (ensure-ai-assistant)",
+        "Supabase: Functions deploy (ai-chat-reply)",
+        "Supabase: Functions deploy (ai-send-message)",
+        "Supabase: Functions deploy (ai-dispatch-pr)"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "Supabase: Functions deploy (AI stack, secure prompt)",
+      "type": "shell",
+      "command": "pwsh",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}\\scripts\\supabase-functions-deploy-ai-stack.ps1"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
       "label": "Supabase: Functions serve (vk-webhook)",
       "type": "shell",
       "command": "C:\\Users\\manso\\AppData\\Local\\supabase-cli\\v2.75.0\\supabase.exe",

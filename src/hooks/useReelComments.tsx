@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "./useAuth";
+import { checkHashtagsAllowedForText } from "@/lib/hashtagModeration";
 
 export interface ReelComment {
   id: string;
@@ -137,28 +138,35 @@ export function useReelComments(reelId: string) {
     fetchComments();
   }, [fetchComments]);
 
-  const addComment = async (content: string, parentId?: string) => {
-    if (!user || !reelId || !content.trim()) return null;
+  const addComment = async (
+    content: string,
+    parentId?: string
+  ): Promise<{ ok: true } | { ok: false; error: unknown }> => {
+    if (!user || !reelId || !content.trim()) return { ok: false, error: new Error("Invalid input") };
 
     try {
-      const { data, error } = await supabase
+      const trimmed = content.trim();
+      const hashtagVerdict = await checkHashtagsAllowedForText(trimmed);
+      if (!hashtagVerdict.ok) {
+        return { ok: false, error: new Error(`HASHTAG_BLOCKED:${hashtagVerdict.blockedTags.join(", ")}`) };
+      }
+
+      const { error } = await supabase
         .from("reel_comments")
         .insert({
           reel_id: reelId,
           author_id: user.id,
           parent_id: parentId || null,
-          content: content.trim(),
-        })
-        .select()
-        .single();
+          content: trimmed,
+        });
 
       if (error) throw error;
 
       await fetchComments();
-      return data;
+      return { ok: true };
     } catch (error) {
       console.error("Error adding reel comment:", error);
-      return null;
+      return { ok: false, error };
     }
   };
 

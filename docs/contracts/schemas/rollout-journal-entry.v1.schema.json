@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mansoni://contracts/rollout-journal-entry.v1",
+  "title": "Rollout Journal Entry v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version_id", "stage", "baseline_version_id", "started_at", "status"],
+  "properties": {
+    "version_id": { "type": "string" },
+    "stage": { "type": "string", "enum": ["rollout.stage_1pct", "rollout.stage_10pct", "rollout.stage_50pct", "rollout.stage_100pct"] },
+    "baseline_version_id": { "type": "string" },
+    "started_at": { "type": "string", "format": "date-time" },
+    "ended_at": { "type": ["string", "null"], "format": "date-time" },
+    "status": { "type": "string", "enum": ["continued", "rolled_back"] },
+    "guardrail_snapshot": { "type": "object", "additionalProperties": true }
+  }
+}

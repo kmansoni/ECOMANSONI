@@ -1,0 +1,19 @@
+{
+  "file": "B-134-push-routing-token-hygiene.json",
+  "id": "B-134",
+  "title": "Push Routing and Token Hygiene",
+  "description": "Defines user/device token ownership, invalid token cleanup, and notification routing policy.",
+  "priority": "P0",
+  "complexity": "M",
+  "must_have": [
+    "push_tokens.user_id indexed",
+    "is_active lifecycle",
+    "provider error feedback handling",
+    "signal-only push payload"
+  ],
+  "acceptance": [
+    "Logout disables token",
+    "Invalid provider token auto-deactivated",
+    "Push routing query scales by user_id index"
+  ]
+}

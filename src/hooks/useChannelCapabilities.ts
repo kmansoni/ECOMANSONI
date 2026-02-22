@@ -18,6 +18,8 @@ import {
 function resolveUserRoleInChannel(channel: Channel, userId?: string): ChannelRole {
   if (!userId) return "guest";
   if (channel.owner_id === userId) return "owner";
+  const memberRole = String((channel as any)?.member_role ?? "").toLowerCase();
+  if (memberRole === "admin") return "admin";
   if (channel.is_member) return "member";
   return "guest";
 }

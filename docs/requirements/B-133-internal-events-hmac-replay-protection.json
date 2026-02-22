@@ -1,0 +1,19 @@
+{
+  "file": "B-133-internal-events-hmac-replay-protection.json",
+  "id": "B-133",
+  "title": "Internal Event HMAC and Replay Protection",
+  "description": "Secures worker->gateway internal event channel with signed payloads, TTL and event dedup.",
+  "priority": "P0",
+  "complexity": "S",
+  "must_have": [
+    "HMAC-SHA256 signature",
+    "kid rotation support",
+    "issued_at/expires_at validation",
+    "event_id dedup cache"
+  ],
+  "acceptance": [
+    "Unsigned request rejected",
+    "Replayed event_id ignored",
+    "Expired event rejected even with valid signature"
+  ]
+}

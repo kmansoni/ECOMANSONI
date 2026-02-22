@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mansoni://contracts/enforcement-action.v1",
+  "title": "Enforcement Action v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["user_id", "level", "reason_code", "set_by", "set_at"],
+  "properties": {
+    "user_id": { "type": "string", "minLength": 1 },
+    "level": { "type": "string", "enum": ["E0", "E1", "E2", "E3", "E4", "E5"] },
+    "reason_code": { "type": "string", "pattern": "^abuse\\.[a-z0-9_]+$" },
+    "set_by": { "type": "string", "minLength": 1 },
+    "set_at": { "type": "string", "format": "date-time" },
+    "expires_at": { "type": ["string", "null"], "format": "date-time" }
+  }
+}

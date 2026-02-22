@@ -3,6 +3,7 @@ import { useVideoCall, type VideoCall, type VideoCallStatus } from "@/hooks/useV
 import { useIncomingCalls } from "@/hooks/useIncomingCalls";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
+import { onNativeCallAction } from "@/lib/native/callBridge";
 
 interface VideoCallContextType {
   // State
@@ -194,6 +195,29 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     toggleVideo,
     retryConnection,
   };
+
+  useEffect(() => {
+    return onNativeCallAction(async (action) => {
+      const actionType = action.type;
+      const incomingLike = pendingIncomingCall ?? incomingCall;
+      const matchesIncoming = incomingLike?.id === action.callId;
+      const matchesCurrent = currentCall?.id === action.callId;
+
+      if ((actionType === "accept" || actionType === "answer") && incomingLike && matchesIncoming) {
+        await answerCall(incomingLike);
+        return;
+      }
+
+      if ((actionType === "decline" || actionType === "reject") && matchesIncoming) {
+        await declineCall();
+        return;
+      }
+
+      if ((actionType === "end" || actionType === "disconnect") && matchesCurrent) {
+        await endCall();
+      }
+    });
+  }, [pendingIncomingCall, incomingCall, currentCall, answerCall, declineCall, endCall]);
 
   return (
     <VideoCallContext.Provider value={value}>

@@ -1,0 +1,17 @@
+{
+  "change_id": "htsc_20260222_001",
+  "hashtag": "cars",
+  "from_status": "normal",
+  "to_status": "restricted",
+  "decided_at": "2026-02-22T11:00:00Z",
+  "actor": { "type": "system", "id": null },
+  "reason_codes": ["mod.restrict", "mod.mass_report_burst_detected"],
+  "surface_policy": {
+    "search": "allow_with_warning",
+    "explore": "suppress",
+    "trends": "suppress",
+    "hashtag_page": "allow_with_warning"
+  },
+  "review": { "required": true, "queue": "mod.queue_escalated_reports" },
+  "notes": "Temporary restriction due to suspected hijack/mass-report burst; awaiting human review."
+}

@@ -14,10 +14,20 @@ export type AdminApiAction =
   | "approvals.list"
   | "approvals.request"
   | "approvals.decide"
+  | "staff_profiles.list"
+  | "staff_profiles.upsert"
+  | "owner.primary.get"
+  | "owner.primary.set"
+  | "verifications.list"
+  | "verifications.grant"
+  | "verifications.revoke"
   | "jit.request"
   | "jit.active"
   | "jit.approve"
-  | "jit.revoke";
+  | "jit.revoke"
+  | "hashtags.list"
+  | "hashtags.status.set"
+  | "hashtags.status.bulk_set";
 
 export type KillSwitchRow = {
   key: string;
@@ -49,6 +59,37 @@ export type AdminRole = {
   name: string;
   display_name: string;
   category: string;
+};
+
+export type StaffProfile = {
+  admin_user_id: string;
+  staff_kind: "moderator" | "administrator" | "owner";
+  messenger_panel_access: boolean;
+  can_assign_roles: boolean;
+  can_manage_verifications: boolean;
+  can_review_reports: boolean;
+  timezone: string | null;
+  notes: string | null;
+  updated_at: string;
+  admin?: {
+    id: string;
+    email: string;
+    display_name: string;
+    status: string;
+  } | null;
+};
+
+export type PrimaryOwner = {
+  id: string;
+  admin_user_id: string;
+  is_primary: boolean;
+  created_at: string;
+  admin?: {
+    id: string;
+    email: string;
+    display_name: string;
+    status: string;
+  } | null;
 };
 
 export type AdminMe = {

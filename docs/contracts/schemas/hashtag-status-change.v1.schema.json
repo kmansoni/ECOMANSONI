@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mansoni://contracts/hashtag-status-change.v1",
+  "title": "Hashtag Status Change v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "change_id",
+    "hashtag",
+    "from_status",
+    "to_status",
+    "decided_at",
+    "actor",
+    "reason_codes",
+    "surface_policy"
+  ],
+  "properties": {
+    "change_id": { "type": "string", "minLength": 1 },
+    "hashtag": { "type": "string", "minLength": 2, "maxLength": 32 },
+    "from_status": { "type": "string", "enum": ["normal", "restricted", "hidden"] },
+    "to_status": { "type": "string", "enum": ["normal", "restricted", "hidden"] },
+    "decided_at": { "type": "string", "format": "date-time" },
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": { "type": "string", "enum": ["system", "moderator"] },
+        "id": { "type": ["string", "null"] }
+      }
+    },
+    "reason_codes": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "pattern": "^(mod|abuse|rollout)\\.[a-z0-9_]+$" }
+    },
+    "surface_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["search", "explore", "trends", "hashtag_page"],
+      "properties": {
+        "search": { "$ref": "#/$defs/surface_mode" },
+        "explore": { "$ref": "#/$defs/surface_mode" },
+        "trends": { "$ref": "#/$defs/surface_mode" },
+        "hashtag_page": { "$ref": "#/$defs/surface_mode" }
+      }
+    },
+    "review": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["required"],
+      "properties": {
+        "required": { "type": "boolean" },
+        "queue": { "type": ["string", "null"], "enum": [null, "mod.queue_escalated_reports", "mod.queue_escalated_low_trust", "mod.queue_escalated_velocity"] }
+      }
+    },
+    "notes": { "type": ["string", "null"], "maxLength": 500 }
+  },
+  "$defs": {
+    "surface_mode": {
+      "type": "string",
+      "enum": ["allow", "allow_with_warning", "suppress"]
+    }
+  }
+}

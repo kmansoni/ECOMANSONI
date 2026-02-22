@@ -11,6 +11,7 @@ import { useChatOpen } from "@/contexts/ChatOpenContext";
 import { useUserSettings } from "@/contexts/UserSettingsContext";
 import { format } from "date-fns";
 import { toast } from "sonner";
+import { getHashtagBlockedToastPayload } from "@/lib/hashtagModeration";
 import { VideoCircleRecorder } from "./VideoCircleRecorder";
 import { VideoCircleMessage } from "./VideoCircleMessage";
 import { AttachmentSheet } from "./AttachmentSheet";
@@ -65,6 +66,10 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
   const { setIsChatOpen } = useChatOpen();
   
   const [inputText, setInputText] = useState("");
+  const [isSending, setIsSending] = useState(false);
+  const sendInFlightRef = useRef(false);
+  const draftClientMsgIdRef = useRef<string>(crypto.randomUUID());
+  const lastDraftTrimmedRef = useRef<string>("");
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const recordingTimeRef = useRef(0);
@@ -76,6 +81,9 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
   const [viewingVideo, setViewingVideo] = useState<string | null>(null);
   const [recordMode, setRecordMode] = useState<'voice' | 'video'>('voice');
   const [manualMediaLoaded, setManualMediaLoaded] = useState<Set<string>>(new Set());
+
+  const [aiStreamText, setAiStreamText] = useState<string | null>(null);
+  const aiStreamStartedAtRef = useRef<number | null>(null);
 
   useEffect(() => {
     recordingTimeRef.current = recordingTime;
@@ -334,6 +342,13 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
   const handleInputChange = useCallback(
     (value: string) => {
       setInputText(value);
+
+      const trimmed = value.trim();
+      if (trimmed !== lastDraftTrimmedRef.current) {
+        lastDraftTrimmedRef.current = trimmed;
+        draftClientMsgIdRef.current = crypto.randomUUID();
+      }
+
       if (isGroup) return;
 
       const now = Date.now();
@@ -371,7 +386,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, aiStreamText]);
 
   useEffect(() => {
     if (isRecording) {
@@ -417,27 +432,180 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
     return text;
   }, []);
 
+  const aiReplyInFlightRef = useRef(false);
+  const aiAssistantUserId = useMemo(() => {
+    try {
+      return (
+        localStorage.getItem("ai_assistant_user_id") ||
+        ((import.meta.env.VITE_AI_ASSISTANT_USER_ID as string | undefined) ?? null)
+      );
+    } catch {
+      return ((import.meta.env.VITE_AI_ASSISTANT_USER_ID as string | undefined) ?? null);
+    }
+  }, []);
+
+  const isAiAssistantChat = !!(otherUserId && aiAssistantUserId && otherUserId === aiAssistantUserId);
+
+  const renderMessages = useMemo(() => {
+    if (!isAiAssistantChat || !aiStreamText) return visibleMessages;
+    // Show an ephemeral assistant message while streaming.
+    const ephemeral: any = {
+      id: "__ai_stream__",
+      conversation_id: conversationId,
+      sender_id: otherUserId,
+      content: aiStreamText.length ? aiStreamText : "…",
+      is_read: false,
+      created_at: new Date().toISOString(),
+      seq: null,
+    };
+    return [...visibleMessages, ephemeral];
+  }, [aiStreamText, conversationId, isAiAssistantChat, otherUserId, visibleMessages]);
+
+  useEffect(() => {
+    if (!isAiAssistantChat || !aiAssistantUserId) return;
+    const startedAt = aiStreamStartedAtRef.current;
+    if (!startedAt || !aiStreamText) return;
+
+    const found = [...messages]
+      .slice(-8)
+      .some((m) => m?.sender_id === aiAssistantUserId && new Date(m.created_at).getTime() >= startedAt);
+
+    if (found) {
+      setAiStreamText(null);
+      aiStreamStartedAtRef.current = null;
+    }
+  }, [aiAssistantUserId, aiStreamText, isAiAssistantChat, messages]);
+
   const handleSendMessage = async () => {
     console.log("[handleSendMessage] inputText:", inputText);
-    if (!inputText.trim()) {
+    if (sendInFlightRef.current) {
+      console.log("[handleSendMessage] send in-flight, skipping");
+      return;
+    }
+
+    const trimmed = inputText.trim();
+    if (!trimmed) {
       console.log("[handleSendMessage] empty input, skipping");
       sendTyping(false);
       return;
     }
+
+    const reply = replyTo;
+    const withReply = reply ? `↩️ Ответ на сообщение:\n${reply.preview}\n\n${trimmed}` : trimmed;
+    const clientMsgId = draftClientMsgIdRef.current;
+
+    // Lock as early as possible to prevent any double-dispatch.
+    sendInFlightRef.current = true;
+    setIsSending(true);
+
+    // Clear immediately to avoid perceived delay.
+    setInputText("");
+    setReplyTo(null);
+    sendTyping(false);
+
+    // Prepare next draft id right away for the next message.
+    draftClientMsgIdRef.current = crypto.randomUUID();
+    lastDraftTrimmedRef.current = "";
+
     try {
-      const trimmed = inputText.trim();
-      const withReply = replyTo ? `↩️ Ответ на сообщение:\n${replyTo.preview}\n\n${trimmed}` : trimmed;
-      await sendMessage(withReply);
-      setInputText("");
-      sendTyping(false);
-      setReplyTo(null);
+      await sendMessage(withReply, { clientMsgId });
+
+      if (isAiAssistantChat && conversationId) {
+        void (async () => {
+          if (aiReplyInFlightRef.current) return;
+          aiReplyInFlightRef.current = true;
+          aiStreamStartedAtRef.current = Date.now();
+          setAiStreamText("");
+          try {
+            const sessionRes = await supabase.auth.getSession();
+            const accessToken = sessionRes.data.session?.access_token;
+            const anonKey = (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? import.meta.env.VITE_SUPABASE_ANON_KEY) as string;
+            const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-chat-reply`;
+
+            const resp = await fetch(url, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                apikey: anonKey,
+                Authorization: accessToken ? `Bearer ${accessToken}` : `Bearer ${anonKey}`,
+              },
+              body: JSON.stringify({ conversation_id: conversationId, stream: true }),
+            });
+
+            if (!resp.ok) {
+              const err = await resp.json().catch(() => ({}));
+              throw new Error(err?.error || "AI stream failed");
+            }
+            if (!resp.body) throw new Error("AI: no stream");
+
+            const reader = resp.body.getReader();
+            const decoder = new TextDecoder();
+            let textBuffer = "";
+            let assistantContent = "";
+
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+
+              textBuffer += decoder.decode(value, { stream: true });
+              let newlineIndex: number;
+              while ((newlineIndex = textBuffer.indexOf("\n")) !== -1) {
+                let line = textBuffer.slice(0, newlineIndex);
+                textBuffer = textBuffer.slice(newlineIndex + 1);
+
+                if (line.endsWith("\r")) line = line.slice(0, -1);
+                if (line.startsWith(":" ) || line.trim() === "") continue;
+                if (!line.startsWith("data: ")) continue;
+                const jsonStr = line.slice(6).trim();
+                if (jsonStr === "[DONE]") break;
+
+                try {
+                  const parsed: any = JSON.parse(jsonStr);
+                  const delta = parsed?.choices?.[0]?.delta?.content;
+                  if (delta) {
+                    assistantContent += String(delta);
+                    setAiStreamText(assistantContent);
+                  }
+                } catch {
+                  // ignore incomplete frames
+                }
+              }
+            }
+
+            // Keep the ephemeral message until the DB insert arrives; fallback clear.
+            window.setTimeout(() => {
+              setAiStreamText((prev) => (prev === assistantContent ? null : prev));
+            }, 6000);
+          } catch (e) {
+            console.warn("AI reply failed:", e);
+            setAiStreamText(null);
+            aiStreamStartedAtRef.current = null;
+            toast.error("AI: не удалось получить ответ");
+          } finally {
+            aiReplyInFlightRef.current = false;
+          }
+        })();
+      }
+
       // Keep focus on input to prevent keyboard closing on mobile
       requestAnimationFrame(() => {
         inputRef.current?.focus();
       });
     } catch (error) {
       console.error("[handleSendMessage] error:", error);
-      toast.error("Не удалось отправить сообщение");
+      setInputText(trimmed);
+      setReplyTo(reply);
+
+      // Keep the same id for a retry so we don't create a true duplicate if the first send actually succeeded.
+      draftClientMsgIdRef.current = clientMsgId;
+      lastDraftTrimmedRef.current = trimmed;
+
+      const payload = getHashtagBlockedToastPayload(error);
+      if (payload) toast.error(payload.title, { description: payload.description });
+      else toast.error("Не удалось отправить сообщение");
+    } finally {
+      sendInFlightRef.current = false;
+      setIsSending(false);
     }
   };
 
@@ -932,7 +1100,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
           </div>
         )}
 
-        {!loading && visibleMessages.length === 0 && (
+        {!loading && renderMessages.length === 0 && (
           <div className="flex items-center justify-center py-8 text-center">
             <p className="text-muted-foreground">Начните переписку!</p>
           </div>
@@ -940,7 +1108,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
         
         <div className="space-y-1 min-w-0">
 
-        {visibleMessages.map((message, index) => {
+        {renderMessages.map((message, index) => {
           const isOwn = message.sender_id === user?.id;
           const senderProfile = senderProfiles[message.sender_id];
           const senderName = senderProfile?.display_name?.trim() || "Пользователь";
@@ -954,7 +1122,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
           const isRead = message.is_read;
 
           // Group messages - show avatar only for first in sequence
-          const prevMessage = index > 0 ? visibleMessages[index - 1] : null;
+          const prevMessage = index > 0 ? renderMessages[index - 1] : null;
           const showAvatar = !isOwn && (!prevMessage || prevMessage.sender_id !== message.sender_id);
           const showSenderName = isGroup && !isOwn && showAvatar;
 
@@ -1338,7 +1506,13 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
                   placeholder="Сообщение"
                   value={inputText}
                   onChange={(e) => handleInputChange(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleSendMessage()}
+                  onKeyDown={(e) => {
+                    if (e.key !== "Enter") return;
+                    e.preventDefault();
+                    if (e.repeat) return;
+                    if (isSending) return;
+                    void handleSendMessage();
+                  }}
                   onFocus={() => setShowEmojiPicker(false)}
                   className="w-full h-11 px-5 pr-20 rounded-full text-white placeholder:text-white/50 outline-none bg-black/40 border-0 transition-all"
                 />
@@ -1364,6 +1538,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
                 <button
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={handleSendMessage}
+                  disabled={isSending}
                   className="w-12 h-12 rounded-full flex items-center justify-center shrink-0 transition-all"
                   style={{
                     background: 'linear-gradient(135deg, #00A3B4 0%, #0066CC 50%, #00C896 100%)',

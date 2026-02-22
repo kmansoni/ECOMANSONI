@@ -13,6 +13,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { VerifiedBadge } from "@/components/ui/verified-badge";
+import { getHashtagBlockedToastPayload } from "@/lib/hashtagModeration";
 
 interface ReelCommentsSheetProps {
   isOpen: boolean;
@@ -54,11 +55,13 @@ export function ReelCommentsSheet({
     const result = await addComment(newComment, replyTo?.id);
     setSubmitting(false);
 
-    if (result) {
+    if (result.ok) {
       setNewComment("");
       setReplyTo(null);
     } else {
-      toast.error("Не удалось добавить комментарий");
+      const payload = getHashtagBlockedToastPayload(result.error);
+      if (payload) toast.error(payload.title, { description: payload.description });
+      else toast.error("Не удалось добавить комментарий");
     }
   };
 

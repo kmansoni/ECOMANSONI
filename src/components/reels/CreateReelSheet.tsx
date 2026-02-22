@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Sheet,
   SheetContent,
@@ -15,13 +15,15 @@ import { useAuth } from "@/hooks/useAuth";
 import { useReels } from "@/hooks/useReels";
 import { toast } from "sonner";
 import { SimpleMediaEditor } from "@/components/editor";
+import { checkHashtagsAllowedForText } from "@/lib/hashtagModeration";
 
 interface CreateReelSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  initialVideoFile?: File | null;
 }
 
-export function CreateReelSheet({ open, onOpenChange }: CreateReelSheetProps) {
+export function CreateReelSheet({ open, onOpenChange, initialVideoFile }: CreateReelSheetProps) {
   const { user } = useAuth();
   const { createReel } = useReels();
   const [videoFile, setVideoFile] = useState<File | null>(null);
@@ -32,9 +34,31 @@ export function CreateReelSheet({ open, onOpenChange }: CreateReelSheetProps) {
   const [showEditor, setShowEditor] = useState(false);
   const [isEdited, setIsEdited] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const seededOnceRef = useRef(false);
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const effectiveVideoFile: File | null =
+    videoFile ?? fileInputRef.current?.files?.[0] ?? null;
+
+  const inferVideoContentType = (extOrType: string) => {
+    const v = (extOrType || "").toLowerCase();
+    if (v.startsWith("video/")) return v;
+    const ext = v.replace(/^\./, "");
+    switch (ext) {
+      case "mp4":
+      case "m4v":
+        return "video/mp4";
+      case "webm":
+        return "video/webm";
+      case "mov":
+        return "video/quicktime";
+      case "avi":
+        return "video/x-msvideo";
+      default:
+        return "video/mp4";
+    }
+  };
+
+  const selectVideoFile = (file: File) => {
     if (!file) return;
 
     if (!file.type.startsWith("video/")) {
@@ -61,10 +85,57 @@ export function CreateReelSheet({ open, onOpenChange }: CreateReelSheetProps) {
       return;
     }
 
-    setVideoFile(file);
-    const url = URL.createObjectURL(file);
-    setVideoPreview(url);
+    const getDurationSeconds = (f: File) =>
+      new Promise<number | null>((resolve) => {
+        const url = URL.createObjectURL(f);
+        const video = document.createElement("video");
+        video.preload = "metadata";
+        video.muted = true;
+        const cleanup = () => {
+          URL.revokeObjectURL(url);
+        };
+        video.onloadedmetadata = () => {
+          const d = Number(video.duration);
+          cleanup();
+          resolve(Number.isFinite(d) ? d : null);
+        };
+        video.onerror = () => {
+          cleanup();
+          resolve(null);
+        };
+        video.src = url;
+      });
+
+    void (async () => {
+      const duration = await getDurationSeconds(file);
+      if (duration != null && duration > 90) {
+        toast.error("Выберите видео короче 90 секунд.");
+        if (fileInputRef.current) fileInputRef.current.value = "";
+        return;
+      }
+
+      setVideoFile(file);
+      const url = URL.createObjectURL(file);
+      setVideoPreview(url);
+    })();
   };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    selectVideoFile(file);
+  };
+
+  useEffect(() => {
+    if (!open) {
+      seededOnceRef.current = false;
+      return;
+    }
+    if (seededOnceRef.current) return;
+    if (!initialVideoFile) return;
+    seededOnceRef.current = true;
+    selectVideoFile(initialVideoFile);
+  }, [open, initialVideoFile]);
 
   const handleRemoveVideo = () => {
     if (videoPreview) {
@@ -95,19 +166,38 @@ export function CreateReelSheet({ open, onOpenChange }: CreateReelSheetProps) {
   };
 
   const handleSubmit = async () => {
-    if (!user || !videoFile) return;
+    if (!user) {
+      toast.error("Войдите в аккаунт, чтобы опубликовать Reel");
+      return;
+    }
+    const fileToUpload = effectiveVideoFile;
+    if (!fileToUpload) {
+      toast.error("Сначала выберите видео");
+      return;
+    }
+
+    const descriptionTrimmed = description.trim();
+    const hashtagVerdict = await checkHashtagsAllowedForText(descriptionTrimmed);
+    if (!hashtagVerdict.ok) {
+      toast.error("Некоторые хештеги недоступны", {
+        description: hashtagVerdict.blockedTags.join(", "),
+      });
+      return;
+    }
 
     setIsUploading(true);
 
     try {
       // Upload video to storage
-      const fileExt = videoFile.name.split(".").pop();
+      const fileExt = (fileToUpload.name.split(".").pop() || "mp4").toLowerCase();
       const fileName = `${user.id}/${Date.now()}.${fileExt}`;
+      const contentType = inferVideoContentType(fileToUpload.type || fileExt);
 
       const { error: uploadError } = await supabase.storage
         .from("reels-media")
-        .upload(fileName, videoFile, {
+        .upload(fileName, fileToUpload, {
           cacheControl: "3600",
+          contentType,
           upsert: false,
         });
 
@@ -129,7 +219,7 @@ export function CreateReelSheet({ open, onOpenChange }: CreateReelSheetProps) {
       const result = await createReel(
         urlData.publicUrl,
         undefined, // thumbnail - could generate later
-        description.trim() || undefined,
+        descriptionTrimmed || undefined,
         musicTitle.trim() || undefined
       );
 
@@ -150,17 +240,21 @@ export function CreateReelSheet({ open, onOpenChange }: CreateReelSheetProps) {
     }
   };
 
-  const handleClose = () => {
-    if (!isUploading) {
-      handleRemoveVideo();
-      setDescription("");
-      setMusicTitle("");
-      onOpenChange(false);
+  const handleSheetOpenChange = (nextOpen: boolean) => {
+    if (nextOpen) {
+      onOpenChange(true);
+      return;
     }
+
+    if (isUploading) return;
+    handleRemoveVideo();
+    setDescription("");
+    setMusicTitle("");
+    onOpenChange(false);
   };
 
   return (
-    <Sheet open={open} onOpenChange={handleClose}>
+    <Sheet open={open} onOpenChange={handleSheetOpenChange}>
       <SheetContent side="bottom" className="h-[90vh] bg-background">
         <SheetHeader>
           <SheetTitle>Новый Reel</SheetTitle>
@@ -266,7 +360,7 @@ export function CreateReelSheet({ open, onOpenChange }: CreateReelSheetProps) {
           {/* Submit Button */}
           <Button
             onClick={handleSubmit}
-            disabled={!videoFile || isUploading}
+            disabled={!effectiveVideoFile || isUploading}
             className="w-full mt-auto"
             size="lg"
           >
@@ -286,7 +380,7 @@ export function CreateReelSheet({ open, onOpenChange }: CreateReelSheetProps) {
       <SimpleMediaEditor
         open={showEditor}
         onOpenChange={setShowEditor}
-        mediaFile={videoFile}
+        mediaFile={effectiveVideoFile}
         contentType="reel"
         onSave={handleEditorSave}
         onCancel={() => setShowEditor(false)}

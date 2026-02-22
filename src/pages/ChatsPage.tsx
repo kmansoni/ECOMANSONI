@@ -53,10 +53,120 @@ export function ChatsPage() {
   const { channels, loading: channelsLoading, refetch: refetchChannels } = useChannels();
   const { groups, loading: groupsLoading, refetch: refetchGroups } = useGroupChats();
   const { createConversation } = useCreateConversation();
-  const { folders, itemsByFolderId } = useChatFolders();
+  const { folders, itemsByFolderId, refetch: refetchFolders } = useChatFolders();
   const { settings } = useUserSettings();
   const { calls, missedCalls, profilesById, loading: callsLoading } = useCallHistory();
   const { startCall } = useVideoCallContext();
+
+  // AI chat: ensure there is a dedicated "AI" chat folder containing the AI assistant DM.
+  const aiBootstrapOnceRef = useRef(false);
+  useEffect(() => {
+    if (!user?.id) return;
+    if (aiBootstrapOnceRef.current) return;
+    aiBootstrapOnceRef.current = true;
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke("ensure-ai-assistant", { body: {} });
+        if (error) throw error;
+        if (!data?.ok || !data?.ai_user_id) throw new Error(data?.error || "AI assistant bootstrap failed");
+
+        const aiUserId = String(data.ai_user_id);
+        try {
+          localStorage.setItem("ai_assistant_user_id", aiUserId);
+        } catch {
+          // ignore
+        }
+
+        const convId = await createConversation(aiUserId);
+        if (!convId) throw new Error("Failed to create AI conversation");
+
+        // One-time greeting from the assistant (per device) so you can see it immediately.
+        const greetedKey = `ai_greeted:${convId}`;
+        let alreadyGreeted = false;
+        try {
+          alreadyGreeted = localStorage.getItem(greetedKey) === "1";
+        } catch {
+          alreadyGreeted = false;
+        }
+        if (!alreadyGreeted) {
+          try {
+            const greeting = "Привет! Я тут в чате. Напиши, что нужно изменить в коде — сделаем.";
+            const greetRes = await supabase.functions.invoke("ai-send-message", {
+              body: { conversation_id: convId, content: greeting },
+            });
+            if (!greetRes.error && greetRes.data?.ok) {
+              try {
+                localStorage.setItem(greetedKey, "1");
+              } catch {
+                // ignore
+              }
+            }
+          } catch {
+            // ignore greeting failures
+          }
+        }
+
+        // Ensure chat folder "AI" exists for this user.
+        let folderId: string | null = null;
+        const { data: existingFolder, error: folderErr } = await supabase
+          .from("chat_folders")
+          .select("id, sort_order, is_hidden")
+          .eq("user_id", user.id)
+          .eq("name", "AI")
+          .maybeSingle();
+        if (folderErr) throw folderErr;
+        if (existingFolder?.id) folderId = existingFolder.id;
+
+        // Keep AI folder visible and near the system tabs.
+        const desiredSortOrder = -396; // after channels (-397)
+        if (folderId && ((existingFolder as any)?.is_hidden || (existingFolder as any)?.sort_order !== desiredSortOrder)) {
+          await supabase
+            .from("chat_folders")
+            .update({ is_hidden: false, sort_order: desiredSortOrder })
+            .eq("id", folderId)
+            .eq("user_id", user.id);
+        }
+
+        if (!folderId) {
+          const { data: createdFolder, error: createFolderErr } = await supabase
+            .from("chat_folders")
+            .insert({ user_id: user.id, name: "AI", sort_order: desiredSortOrder, is_hidden: false })
+            .select("id")
+            .single();
+          if (createFolderErr) throw createFolderErr;
+          folderId = createdFolder?.id ?? null;
+        }
+
+        if (!folderId) throw new Error("Failed to ensure AI folder");
+
+        // Ensure the AI DM is inside the folder.
+        const { error: itemErr } = await supabase
+          .from("chat_folder_items")
+          .upsert(
+            { folder_id: folderId, item_kind: "dm", item_id: convId },
+            { onConflict: "folder_id,item_kind,item_id" },
+          );
+        if (itemErr) throw itemErr;
+
+        if (!cancelled) {
+          await refetchFolders();
+          await refetch();
+          setActiveTabId(folderId);
+          toast.success("AI-чат добавлен");
+        }
+      } catch (e) {
+        console.warn("AI chat bootstrap failed:", e);
+        const msg = e instanceof Error ? e.message : "Не удалось создать AI-чат";
+        toast.error(`AI: ${msg}`);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [createConversation, refetch, refetchFolders, user?.id]);
 
   const [seeding, setSeeding] = useState(false);
   

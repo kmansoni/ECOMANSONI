@@ -9,6 +9,9 @@ import { useChatOpen } from "@/contexts/ChatOpenContext";
 interface PostEditorFlowProps {
   isOpen: boolean;
   onClose: () => void;
+  initialFiles?: File[];
+  initialUrls?: string[];
+  initialStep?: "gallery" | "editor" | "details";
 }
 
 // Mock gallery images (fallback when no device images)
@@ -41,7 +44,13 @@ const suggestedTracks = [
 type Step = "gallery" | "editor" | "details";
 type ContentType = "post" | "story" | "video";
 
-export function PostEditorFlow({ isOpen, onClose }: PostEditorFlowProps) {
+export function PostEditorFlow({
+  isOpen,
+  onClose,
+  initialFiles,
+  initialUrls,
+  initialStep,
+}: PostEditorFlowProps) {
   const { setIsCreatingContent } = useChatOpen();
   const [step, setStep] = useState<Step>("gallery");
   const [contentType, setContentType] = useState<ContentType>("post");
@@ -50,12 +59,51 @@ export function PostEditorFlow({ isOpen, onClose }: PostEditorFlowProps) {
   const [aiLabel, setAiLabel] = useState(false);
   const [deviceImages, setDeviceImages] = useState<{ id: string; src: string }[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const initialAppliedRef = useRef(false);
 
   // Hide bottom nav when creating content
   useEffect(() => {
     setIsCreatingContent(isOpen);
     return () => setIsCreatingContent(false);
   }, [isOpen, setIsCreatingContent]);
+
+  // Optional: pre-seed selection from /create.
+  useEffect(() => {
+    if (!isOpen) {
+      initialAppliedRef.current = false;
+      return;
+    }
+    if (initialAppliedRef.current) return;
+
+    const files = initialFiles ?? [];
+    const urls = initialUrls ?? [];
+    if (files.length === 0 && urls.length === 0 && !initialStep) return;
+    initialAppliedRef.current = true;
+
+    const seededFromFiles = files.map((file, index) => ({
+      id: `seed-${Date.now()}-${index}`,
+      src: URL.createObjectURL(file),
+    }));
+
+    const seededFromUrls = urls.map((src, index) => ({
+      id: `seed-url-${Date.now()}-${index}`,
+      src,
+    }));
+
+    const seededDeviceImages = [...seededFromFiles, ...seededFromUrls];
+
+    if (seededDeviceImages.length > 0) {
+      setDeviceImages(seededDeviceImages);
+    }
+
+    if (seededDeviceImages.length > 0) {
+      setSelectedImages(seededDeviceImages.map((i) => i.src));
+    }
+
+    if (initialStep) {
+      setStep(initialStep as Step);
+    }
+  }, [isOpen, initialFiles, initialUrls, initialStep]);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
@@ -107,7 +155,15 @@ export function PostEditorFlow({ isOpen, onClose }: PostEditorFlowProps) {
     setSelectedImages([]);
     setCaption("");
     // Clean up object URLs
-    deviceImages.forEach(img => URL.revokeObjectURL(img.src));
+    deviceImages.forEach((img) => {
+      if (img?.src && img.src.startsWith("blob:")) {
+        try {
+          URL.revokeObjectURL(img.src);
+        } catch {
+          // ignore
+        }
+      }
+    });
     setDeviceImages([]);
     onClose();
   };

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Search, Loader2, Send, Users, Radio } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import { useChannels } from "@/hooks/useChannels";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
+import { sendDmMessage } from "@/lib/chat/sendDmMessage";
 import {
   Drawer,
   DrawerContent,
@@ -47,14 +48,24 @@ export function ShareSheet({
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedTargets, setSelectedTargets] = useState<Set<string>>(new Set());
   const [sending, setSending] = useState(false);
+  const dmClientMsgIdsRef = useRef<Map<string, string>>(new Map());
 
   // Reset selection when sheet opens/closes
   useEffect(() => {
     if (!isOpen) {
       setSelectedTargets(new Set());
       setSearchQuery("");
+      dmClientMsgIdsRef.current.clear();
     }
   }, [isOpen]);
+
+  const getDmClientMsgId = (conversationId: string) => {
+    const existing = dmClientMsgIdsRef.current.get(conversationId);
+    if (existing) return existing;
+    const next = crypto.randomUUID();
+    dmClientMsgIdsRef.current.set(conversationId, next);
+    return next;
+  };
 
   const loading = dmsLoading || groupsLoading || channelsLoading;
 
@@ -127,23 +138,13 @@ export function ShareSheet({
         if (type === "dm") {
           // Send to DM conversation with shared post
           const sendDm = async () => {
-            const clientMsgId = crypto.randomUUID();
-            const { error } = await supabase
-              .from("messages")
-              .upsert(
-                {
-                  conversation_id: id,
-                  sender_id: user.id,
-                  content: "📤 Поделился публикацией",
-                  shared_post_id: postId,
-                  client_msg_id: clientMsgId,
-                },
-                {
-                  onConflict: "conversation_id,sender_id,client_msg_id",
-                  ignoreDuplicates: true,
-                }
-              );
-            if (error) throw error;
+            await sendDmMessage({
+              conversationId: id,
+              senderId: user.id,
+              content: "📤 Поделился публикацией",
+              shared_post_id: postId,
+              clientMsgId: getDmClientMsgId(id),
+            });
           };
           promises.push(sendDm());
         } else if (type === "group") {

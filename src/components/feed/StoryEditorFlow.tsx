@@ -11,6 +11,8 @@ import { useChatOpen } from "@/contexts/ChatOpenContext";
 interface StoryEditorFlowProps {
   isOpen: boolean;
   onClose: () => void;
+  initialFile?: File | null;
+  initialUrl?: string | null;
 }
 
 // Mock gallery images (fallback when no device images)
@@ -27,7 +29,7 @@ const mockGalleryImages = [
 
 type Step = "gallery" | "editor";
 
-export function StoryEditorFlow({ isOpen, onClose }: StoryEditorFlowProps) {
+export function StoryEditorFlow({ isOpen, onClose, initialFile, initialUrl }: StoryEditorFlowProps) {
   const { user } = useAuth();
   const { setIsCreatingContent } = useChatOpen();
   const [step, setStep] = useState<Step>("gallery");
@@ -38,12 +40,48 @@ export function StoryEditorFlow({ isOpen, onClose }: StoryEditorFlowProps) {
   const [isPublishing, setIsPublishing] = useState(false);
   const [showAdvancedEditor, setShowAdvancedEditor] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const seededOnceRef = useRef(false);
+  const seededObjectUrlRef = useRef<string | null>(null);
 
   // Hide bottom nav when creating content
   useEffect(() => {
     setIsCreatingContent(isOpen);
     return () => setIsCreatingContent(false);
   }, [isOpen, setIsCreatingContent]);
+
+  // Optional: open directly in editor with preselected media.
+  useEffect(() => {
+    if (!isOpen) {
+      seededOnceRef.current = false;
+      return;
+    }
+    if (seededOnceRef.current) return;
+    if (!initialFile && !initialUrl) return;
+    seededOnceRef.current = true;
+
+    // Cleanup previous seeded url if any.
+    if (seededObjectUrlRef.current) {
+      URL.revokeObjectURL(seededObjectUrlRef.current);
+      seededObjectUrlRef.current = null;
+    }
+
+    if (initialFile) {
+      const url = URL.createObjectURL(initialFile);
+      seededObjectUrlRef.current = url;
+      setSelectedImage(url);
+      setSelectedFile(initialFile);
+      setEditedBlob(null);
+      setStep("editor");
+      return;
+    }
+
+    if (initialUrl) {
+      setSelectedImage(initialUrl);
+      setSelectedFile(null);
+      setEditedBlob(null);
+      setStep("editor");
+    }
+  }, [isOpen, initialFile, initialUrl]);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
@@ -166,6 +204,10 @@ export function StoryEditorFlow({ isOpen, onClose }: StoryEditorFlowProps) {
     setShowAdvancedEditor(false);
   };
   const handleClose = () => {
+    if (seededObjectUrlRef.current) {
+      URL.revokeObjectURL(seededObjectUrlRef.current);
+      seededObjectUrlRef.current = null;
+    }
     setStep("gallery");
     setSelectedImage(null);
     setSelectedFile(null);

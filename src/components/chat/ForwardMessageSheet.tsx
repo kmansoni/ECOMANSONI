@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Search, X, MessageCircle, Users, Megaphone } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";
@@ -10,6 +10,7 @@ import { useGroupChats } from "@/hooks/useGroupChats";
 import { useChannels } from "@/hooks/useChannels";
 import { useSearch, type SearchUser } from "@/hooks/useSearch";
 import { supabase } from "@/lib/supabase";
+import { sendDmMessage } from "@/lib/chat/sendDmMessage";
 import { GradientAvatar } from "@/components/ui/gradient-avatar";
 
 interface ForwardMessageSheetProps {
@@ -75,13 +76,28 @@ export function ForwardMessageSheet({ open, onOpenChange, message }: ForwardMess
   const [query, setQuery] = useState("");
   const [withSignature, setWithSignature] = useState(true);
   const [senderName, setSenderName] = useState("");
+  const dmClientMsgIdsRef = useRef<Map<string, string>>(new Map());
 
   useEffect(() => {
     if (!open) {
       setQuery("");
       setWithSignature(true);
+      dmClientMsgIdsRef.current.clear();
     }
   }, [open]);
+
+  useEffect(() => {
+    // New source message => new idempotency ids.
+    dmClientMsgIdsRef.current.clear();
+  }, [message?.id]);
+
+  const getDmClientMsgId = (conversationId: string) => {
+    const existing = dmClientMsgIdsRef.current.get(conversationId);
+    if (existing) return existing;
+    const next = crypto.randomUUID();
+    dmClientMsgIdsRef.current.set(conversationId, next);
+    return next;
+  };
 
   useEffect(() => {
     if (!open || !user) return;
@@ -141,8 +157,6 @@ export function ForwardMessageSheet({ open, onOpenChange, message }: ForwardMess
   const sendToConversation = async (conversationId: string) => {
     if (!user || !message) return;
 
-    const clientMsgId = crypto.randomUUID();
-
     const baseContent = (message.content || "").trim() || messagePreview(message);
     const content = withOptionalSignature(baseContent, senderName, withSignature);
 
@@ -150,7 +164,7 @@ export function ForwardMessageSheet({ open, onOpenChange, message }: ForwardMess
       conversation_id: conversationId,
       sender_id: user.id,
       content,
-      client_msg_id: clientMsgId,
+      client_msg_id: getDmClientMsgId(conversationId),
     };
 
     if (message.media_url) payload.media_url = message.media_url;
@@ -159,30 +173,17 @@ export function ForwardMessageSheet({ open, onOpenChange, message }: ForwardMess
     if (message.shared_post_id) payload.shared_post_id = message.shared_post_id;
     if (message.shared_reel_id) payload.shared_reel_id = message.shared_reel_id;
 
-    const { error } = await supabase
-      .from("messages")
-      .upsert(payload, {
-        onConflict: "conversation_id,sender_id,client_msg_id",
-        ignoreDuplicates: true,
-      });
-
-    if (error) {
-      if (isIdempotencySchemaMissing(error)) {
-        const { error: fallbackError } = await supabase.from("messages").insert({
-          conversation_id: conversationId,
-          sender_id: user.id,
-          content: payload.content,
-          media_url: payload.media_url ?? null,
-          media_type: payload.media_type ?? null,
-          duration_seconds: payload.duration_seconds ?? null,
-          shared_post_id: payload.shared_post_id ?? null,
-          shared_reel_id: payload.shared_reel_id ?? null,
-        });
-        if (fallbackError) throw fallbackError;
-        return;
-      }
-      throw error;
-    }
+    await sendDmMessage({
+      conversationId,
+      senderId: user.id,
+      content: payload.content,
+      clientMsgId: payload.client_msg_id,
+      media_url: payload.media_url ?? null,
+      media_type: payload.media_type ?? null,
+      duration_seconds: payload.duration_seconds ?? null,
+      shared_post_id: payload.shared_post_id ?? null,
+      shared_reel_id: payload.shared_reel_id ?? null,
+    });
   };
 
   const sendToGroup = async (groupId: string) => {

@@ -1,21 +1,11 @@
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { CreateMenu } from "./CreateMenu";
-import { PostEditorFlow } from "./PostEditorFlow";
-import { StoryEditorFlow } from "./StoryEditorFlow";
+import { useNavigate } from "react-router-dom";
 
 export function CreatePost() {
+  const navigate = useNavigate();
   const [showMenu, setShowMenu] = useState(false);
-  const [showPostEditor, setShowPostEditor] = useState(false);
-  const [showStoryEditor, setShowStoryEditor] = useState(false);
-
-  const handleSelectType = (type: string) => {
-    if (type === "post") {
-      setShowPostEditor(true);
-    } else if (type === "story") {
-      setShowStoryEditor(true);
-    }
-  };
 
   return (
     <>
@@ -43,17 +33,9 @@ export function CreatePost() {
       <CreateMenu
         isOpen={showMenu}
         onClose={() => setShowMenu(false)}
-        onSelect={handleSelectType}
-      />
-
-      <PostEditorFlow
-        isOpen={showPostEditor}
-        onClose={() => setShowPostEditor(false)}
-      />
-
-      <StoryEditorFlow
-        isOpen={showStoryEditor}
-        onClose={() => setShowStoryEditor(false)}
+        onSelect={(type) => {
+          navigate(`/create?tab=${encodeURIComponent(type)}&auto=1`);
+        }}
       />
     </>
   );

@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TrendWorkerRequestV1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "max_runs": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 50,
+      "description": "Max runs to claim and process in this invocation."
+    },
+    "lease_seconds": {
+      "type": "integer",
+      "minimum": 10,
+      "maximum": 600,
+      "description": "Lease duration for claimed runs (seconds)."
+    },
+    "worker_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80,
+      "description": "Worker identifier for observability and leasing."
+    },
+    "dry_run": {
+      "type": "boolean",
+      "description": "If true, claims runs and returns would-process results without executing."
+    }
+  }
+}

@@ -21,6 +21,9 @@
           var remaining = parts.length ? ('?' + parts.join('&')) : '';
           var base = l.pathname;
           if (!base.endsWith('/')) base = base + '/';
+          
+          // Use replaceState to update browser history before React Router initializes
+          // This ensures the router sees the original path, not the ?/ encoded version
           window.history.replaceState(null, '', base + path + remaining + l.hash);
         }
       })();
