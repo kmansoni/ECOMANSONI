@@ -6,21 +6,13 @@
     <title>Redirecting…</title>
     <script>
       // GitHub Pages serves this file for unknown routes.
-      // Redirect to the SPA entry with the original path encoded as `?/<path>`.
+      // Save the original path in sessionStorage and redirect to the SPA root.
       (function () {
         var l = window.location;
-
-        // /<repo>/<path...>
+        sessionStorage.setItem("__spa_path__", l.pathname + l.search + l.hash);
         var segments = l.pathname.split('/').filter(Boolean);
-        var repo = segments.length ? segments[0] : '';
-        var base = repo ? '/' + repo + '/' : '/';
-        var rest = repo ? segments.slice(1).join('/') : segments.join('/');
-
-        var newUrl = base + '?/' + rest;
-        if (l.search) newUrl += '&' + l.search.slice(1);
-        if (l.hash) newUrl += l.hash;
-
-        l.replace(newUrl);
+        var base = segments.length ? '/' + segments[0] + '/' : '/';
+        l.replace(base);
       })();
     </script>
   </head>
