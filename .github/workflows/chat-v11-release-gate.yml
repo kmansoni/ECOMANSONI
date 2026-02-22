@@ -1,0 +1,130 @@
+﻿name: Chat v1.1 Release Gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_stage:
+        description: "Target stage"
+        required: true
+        type: choice
+        options:
+          - canary_1
+          - canary_10
+          - canary_50
+          - full
+      ack_without_receipt_10s_rate:
+        description: "ACK without receipt >10s rate"
+        required: true
+        default: "0"
+      timeline_duplicate_detected_rate:
+        description: "Timeline duplicate detected rate"
+        required: true
+        default: "0"
+      read_rollback_detected_rate:
+        description: "Read rollback detected rate"
+        required: true
+        default: "0"
+      write_receipt_p95_ms:
+        description: "write.receipt p95 (ms)"
+        required: true
+        default: "2000"
+      forced_resync_rate:
+        description: "forced resync rate (percent of sessions/day)"
+        required: true
+        default: "0.05"
+      gate_p0_ok:
+        description: "Value from chat_get_v11_release_gates()"
+        required: true
+        type: choice
+        options: ["true", "false"]
+      gate_p1_ok:
+        description: "Value from chat_get_v11_release_gates()"
+        required: true
+        type: choice
+        options: ["true", "false"]
+      rollout_decision:
+        description: "Value from chat_get_v11_release_gates()"
+        required: true
+        type: choice
+        options: ["PROCEED", "HOLD_P1", "ROLLBACK_P0"]
+      runbook_ack:
+        description: "On-call confirmed runbooks/checklist reviewed"
+        required: true
+        type: choice
+        options: ["yes", "no"]
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate gate
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          target_stage="${{ github.event.inputs.target_stage }}"
+          ack_rate="${{ github.event.inputs.ack_without_receipt_10s_rate }}"
+          dup_rate="${{ github.event.inputs.timeline_duplicate_detected_rate }}"
+          rollback_rate="${{ github.event.inputs.read_rollback_detected_rate }}"
+          receipt_p95="${{ github.event.inputs.write_receipt_p95_ms }}"
+          forced_resync="${{ github.event.inputs.forced_resync_rate }}"
+          gate_p0_ok="${{ github.event.inputs.gate_p0_ok }}"
+          gate_p1_ok="${{ github.event.inputs.gate_p1_ok }}"
+          rollout_decision="${{ github.event.inputs.rollout_decision }}"
+          runbook_ack="${{ github.event.inputs.runbook_ack }}"
+
+          fail=0
+
+          if [[ "$runbook_ack" != "yes" ]]; then
+            echo "runbook_ack must be yes"
+            fail=1
+          fi
+
+          if [[ "$gate_p0_ok" != "true" ]]; then
+            echo "gate_p0_ok must be true"
+            fail=1
+          fi
+
+          if [[ "$gate_p1_ok" != "true" ]]; then
+            echo "gate_p1_ok must be true"
+            fail=1
+          fi
+
+          if [[ "$rollout_decision" != "PROCEED" ]]; then
+            echo "rollout_decision must be PROCEED"
+            fail=1
+          fi
+
+          awk -v v="$ack_rate" 'BEGIN { exit !(v==0) }' || { echo "ack_without_receipt_10s_rate must be 0"; fail=1; }
+          awk -v v="$dup_rate" 'BEGIN { exit !(v==0) }' || { echo "timeline_duplicate_detected_rate must be 0"; fail=1; }
+          awk -v v="$rollback_rate" 'BEGIN { exit !(v==0) }' || { echo "read_rollback_detected_rate must be 0"; fail=1; }
+          awk -v v="$receipt_p95" 'BEGIN { exit !(v<=2000) }' || { echo "write_receipt_p95_ms must be <= 2000"; fail=1; }
+          awk -v v="$forced_resync" 'BEGIN { exit !(v<=0.1) }' || { echo "forced_resync_rate must be <= 0.1"; fail=1; }
+
+          {
+            echo "## Chat v1.1 Release Gate"
+            echo ""
+            echo "- target_stage: $target_stage"
+            echo "- ack_without_receipt_10s_rate: $ack_rate"
+            echo "- timeline_duplicate_detected_rate: $dup_rate"
+            echo "- read_rollback_detected_rate: $rollback_rate"
+            echo "- write_receipt_p95_ms: $receipt_p95"
+            echo "- forced_resync_rate: $forced_resync"
+            echo "- gate_p0_ok: $gate_p0_ok"
+            echo "- gate_p1_ok: $gate_p1_ok"
+            echo "- rollout_decision: $rollout_decision"
+            echo "- runbook_ack: $runbook_ack"
+            echo ""
+            if [[ "$fail" -eq 0 ]]; then
+              echo "✅ Gate status: PASS"
+            else
+              echo "❌ Gate status: FAIL"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [[ "$fail" -ne 0 ]]; then
+            exit 1
+          fi
