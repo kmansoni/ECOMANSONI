@@ -6,7 +6,7 @@ import { getHashtagBlockedToastPayload } from "@/lib/hashtagModeration";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
-import { Sheet, SheetClose, SheetContent } from "@/components/ui/sheet";
+import { Drawer, DrawerClose, DrawerContent } from "@/components/ui/drawer";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -731,23 +731,17 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
         </DropdownMenu>
       </div>
 
-      <Sheet
+      <Drawer
         open={infoOpen}
         onOpenChange={(open) => {
           if (!open) closeInfo();
           else setInfoOpen(true);
         }}
       >
-        <SheetContent
-          side="bottom"
-          className="h-[92dvh] max-h-[92dvh] rounded-t-3xl p-0 overflow-hidden"
-          hideCloseButton
+        <DrawerContent
+          className="h-[92dvh] max-h-[92dvh] rounded-t-3xl p-0 overflow-hidden mt-0"
         >
-          <div className="flex justify-center pt-3 pb-2">
-            <div className="w-10 h-1 bg-muted-foreground/30 rounded-full" />
-          </div>
-
-          <div className="px-4 pb-6 flex flex-col h-[calc(92dvh-20px)]">
+          <div className="px-4 pb-6 flex flex-col h-full">
             <div className="flex items-center justify-between pb-2">
               <button
                 type="button"
@@ -783,11 +777,11 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
                 </div>
               )}
 
-              <SheetClose asChild>
+              <DrawerClose asChild>
                 <button type="button" className="p-2 text-muted-foreground hover:text-foreground" aria-label="Закрыть">
                   <X className="w-5 h-5" />
                 </button>
-              </SheetClose>
+              </DrawerClose>
             </div>
 
             {infoView === "main" ? (
@@ -1274,8 +1268,8 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
               </div>
             ) : null}
           </div>
-        </SheetContent>
-      </Sheet>
+        </DrawerContent>
+      </Drawer>
 
       {searchOpen ? (
         <div className="flex-shrink-0 px-3 py-2 bg-background/95 backdrop-blur-sm border-b border-border relative z-10">

@@ -21,8 +21,13 @@ export function useChannelUserSettings(channelId: string | null) {
   const { user } = useAuth();
   const [settings, setSettings] = useState<ChannelUserSettings | null>(null);
   const [loading, setLoading] = useState(false);
+  const [tick, setTick] = useState(0);
 
-  const muted = useMemo(() => isMutedNow(settings?.muted_until ?? null) || settings?.notifications_enabled === false, [settings]);
+  const muted = useMemo(
+    () => isMutedNow(settings?.muted_until ?? null) || settings?.notifications_enabled === false,
+    // tick forces recompute when mute-until expires
+    [settings, tick],
+  );
 
   const load = useCallback(async () => {
     if (!channelId || !user?.id) {
@@ -31,7 +36,7 @@ export function useChannelUserSettings(channelId: string | null) {
     }
     setLoading(true);
     try {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from("channel_user_settings")
         .select("channel_id,user_id,notifications_enabled,muted_until")
         .eq("channel_id", channelId)
@@ -51,6 +56,28 @@ export function useChannelUserSettings(channelId: string | null) {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    const mutedUntil = settings?.muted_until ?? null;
+    if (!mutedUntil) return;
+    if (mutedUntil === "infinity") return;
+
+    const untilMs = Date.parse(mutedUntil);
+    if (!Number.isFinite(untilMs)) return;
+
+    const now = Date.now();
+    if (untilMs <= now) return;
+
+    const delayMs = Math.min(2147483000, Math.max(0, untilMs - now + 250));
+    const t = window.setTimeout(() => {
+      // Update derived 'muted' without forcing a network call.
+      setTick((x) => x + 1);
+    }, delayMs);
+
+    return () => {
+      window.clearTimeout(t);
+    };
+  }, [settings?.muted_until]);
+
   const upsert = useCallback(
     async (patch: Partial<Pick<ChannelUserSettings, "notifications_enabled" | "muted_until">>) => {
       if (!channelId || !user?.id) return;
@@ -68,7 +95,7 @@ export function useChannelUserSettings(channelId: string | null) {
             : (settings?.muted_until ?? null),
       };
 
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from("channel_user_settings")
         .upsert(payload, { onConflict: "channel_id,user_id" });
       if (error) throw error;
