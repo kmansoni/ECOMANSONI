@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState, useEffect } from "react";
+﻿import { useCallback, useMemo, useRef, useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Search, Check, CheckCheck, LogIn, MessageCircle, Plus, Megaphone, Users, Phone } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -92,7 +92,7 @@ export function ChatsPage() {
         }
         if (!alreadyGreeted) {
           try {
-            const greeting = "Привет! Я тут в чате. Напиши, что нужно изменить в коде — сделаем.";
+            const greeting = "РџСЂРёРІРµС‚! РЇ С‚СѓС‚ РІ С‡Р°С‚Рµ. РќР°РїРёС€Рё, С‡С‚Рѕ РЅСѓР¶РЅРѕ РёР·РјРµРЅРёС‚СЊ РІ РєРѕРґРµ вЂ” СЃРґРµР»Р°РµРј.";
             const greetRes = await supabase.functions.invoke("ai-send-message", {
               body: { conversation_id: convId, content: greeting },
             });
@@ -154,12 +154,12 @@ export function ChatsPage() {
           await refetchFolders();
           await refetch();
           setActiveTabId(folderId);
-          toast.success("AI-чат добавлен");
+          toast.success("AI-С‡Р°С‚ РґРѕР±Р°РІР»РµРЅ");
         }
       } catch (e) {
         console.warn("AI chat bootstrap failed:", e);
-        const msg = e instanceof Error ? e.message : "Не удалось создать AI-чат";
-        toast.error(`AI: ${msg}`);
+        const msg = e instanceof Error ? e.message : "РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕР·РґР°С‚СЊ AI-С‡Р°С‚";
+        console.info(`AI bootstrap skipped: ${msg}`);
       }
     })();
 
@@ -190,16 +190,16 @@ export function ChatsPage() {
       try {
         if (channelInvite) {
           await joinChannelByInviteToken(channelInvite);
-          if (!cancelled) toast.success("Вы присоединились к каналу по приглашению");
+          if (!cancelled) toast.success("Р’С‹ РїСЂРёСЃРѕРµРґРёРЅРёР»РёСЃСЊ Рє РєР°РЅР°Р»Сѓ РїРѕ РїСЂРёРіР»Р°С€РµРЅРёСЋ");
           await refetchChannels();
         }
         if (groupInvite) {
           await joinGroupByInviteToken(groupInvite);
-          if (!cancelled) toast.success("Вы присоединились к группе по приглашению");
+          if (!cancelled) toast.success("Р’С‹ РїСЂРёСЃРѕРµРґРёРЅРёР»РёСЃСЊ Рє РіСЂСѓРїРїРµ РїРѕ РїСЂРёРіР»Р°С€РµРЅРёСЋ");
           await refetchGroups();
         }
       } catch (err) {
-        if (!cancelled) toast.error("Приглашение недействительно или истекло");
+        if (!cancelled) toast.error("РџСЂРёРіР»Р°С€РµРЅРёРµ РЅРµРґРµР№СЃС‚РІРёС‚РµР»СЊРЅРѕ РёР»Рё РёСЃС‚РµРєР»Рѕ");
       } finally {
         if (!cancelled) {
           const clean = new URL(window.location.href);
@@ -448,7 +448,7 @@ export function ChatsPage() {
     const other = conv.participants.find((p) => p.user_id !== user?.id);
     return {
       user_id: other?.user_id || "",
-      ...(other?.profile || { display_name: "Пользователь", avatar_url: null })
+      ...(other?.profile || { display_name: "РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ", avatar_url: null })
     };
   };
 
@@ -460,7 +460,7 @@ export function ChatsPage() {
         ? [{
             user_id: locationState.otherUserId,
             profile: {
-              display_name: locationState.otherDisplayName || "Пользователь",
+              display_name: locationState.otherDisplayName || "РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ",
               avatar_url: locationState.otherAvatarUrl || null
             }
           }]
@@ -560,7 +560,7 @@ export function ChatsPage() {
     try {
       const seedToken = import.meta.env.VITE_SEED_TEST_CHATS_TOKEN as string | undefined;
       if (!seedToken) {
-        throw new Error("VITE_SEED_TEST_CHATS_TOKEN не задан (нужен для сидов ботов)");
+        throw new Error("VITE_SEED_TEST_CHATS_TOKEN РЅРµ Р·Р°РґР°РЅ (РЅСѓР¶РµРЅ РґР»СЏ СЃРёРґРѕРІ Р±РѕС‚РѕРІ)");
       }
 
       const { data, error } = await supabase.functions.invoke("seed-test-chats", {
@@ -576,10 +576,10 @@ export function ChatsPage() {
       }
 
       await Promise.all([refetch(), refetchChannels(), refetchGroups()]);
-      toast.success(`Создано: ботов ${data.bots_created}, каналов ${data.channels_created}, диалогов ${data.dms_created}`);
+      toast.success(`РЎРѕР·РґР°РЅРѕ: Р±РѕС‚РѕРІ ${data.bots_created}, РєР°РЅР°Р»РѕРІ ${data.channels_created}, РґРёР°Р»РѕРіРѕРІ ${data.dms_created}`);
     } catch (e) {
       console.error("seedTestChats error:", e);
-      toast.error(e instanceof Error ? e.message : "Не удалось создать тестовые чаты");
+      toast.error(e instanceof Error ? e.message : "РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕР·РґР°С‚СЊ С‚РµСЃС‚РѕРІС‹Рµ С‡Р°С‚С‹");
     } finally {
       setSeeding(false);
     }
@@ -592,16 +592,16 @@ export function ChatsPage() {
         <div className="w-20 h-20 rounded-full bg-background/70 dark:bg-white/10 backdrop-blur-xl border border-border/60 dark:border-white/20 flex items-center justify-center mb-4 relative z-10">
           <MessageCircle className="w-10 h-10 text-muted-foreground dark:text-white/60" />
         </div>
-        <h2 className="text-xl font-semibold mb-2 text-foreground dark:text-white relative z-10">Войдите для доступа к чатам</h2>
+        <h2 className="text-xl font-semibold mb-2 text-foreground dark:text-white relative z-10">Р’РѕР№РґРёС‚Рµ РґР»СЏ РґРѕСЃС‚СѓРїР° Рє С‡Р°С‚Р°Рј</h2>
         <p className="text-muted-foreground dark:text-white/60 mb-6 relative z-10">
-          Чтобы переписываться и сохранять историю сообщений, необходимо войти в аккаунт
+          Р§С‚РѕР±С‹ РїРµСЂРµРїРёСЃС‹РІР°С‚СЊСЃСЏ Рё СЃРѕС…СЂР°РЅСЏС‚СЊ РёСЃС‚РѕСЂРёСЋ СЃРѕРѕР±С‰РµРЅРёР№, РЅРµРѕР±С…РѕРґРёРјРѕ РІРѕР№С‚Рё РІ Р°РєРєР°СѓРЅС‚
         </p>
         <Button
           onClick={() => navigate("/auth")}
           className="gap-2 bg-background/70 border-border text-foreground hover:bg-muted relative z-10 dark:bg-white/10 dark:border-white/20 dark:text-white dark:hover:bg-white/20"
         >
           <LogIn className="w-4 h-4" />
-          Войти
+          Р’РѕР№С‚Рё
         </Button>
       </div>
     );
@@ -616,7 +616,7 @@ export function ChatsPage() {
     return (
       <ChatConversation
         conversationId={selectedConversation.id}
-        chatName={other.display_name || "Пользователь"}
+        chatName={other.display_name || "РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ"}
         chatAvatar={other.avatar_url ?? null}
         otherUserId={other.user_id}
         totalUnreadCount={totalUnreadCount}
@@ -701,7 +701,7 @@ export function ChatsPage() {
                 transition: 'transform 0.25s cubic-bezier(0.25, 0.1, 0.25, 1)',
               }}
             >
-              {primaryTab === "calls" ? "Звонки" : "Чаты"}
+              {primaryTab === "calls" ? "Р—РІРѕРЅРєРё" : "Р§Р°С‚С‹"}
             </h1>
             
             {/* Actions: Search + Create */}
@@ -734,7 +734,7 @@ export function ChatsPage() {
                     : "text-muted-foreground hover:text-foreground dark:text-white/50 dark:hover:text-white/80",
                 )}
               >
-                Чаты
+                Р§Р°С‚С‹
               </button>
               <button
                 onClick={() => setPrimaryTab("calls")}
@@ -745,7 +745,7 @@ export function ChatsPage() {
                     : "text-muted-foreground hover:text-foreground dark:text-white/50 dark:hover:text-white/80",
                 )}
               >
-                Звонки
+                Р—РІРѕРЅРєРё
               </button>
             </div>
           )}
@@ -775,12 +775,12 @@ export function ChatsPage() {
                         }
 
                         if (t.passcode_hash && !unlockedTabs.has(t.id)) {
-                          const code = window.prompt("Введите пароль папки");
+                          const code = window.prompt("Р’РІРµРґРёС‚Рµ РїР°СЂРѕР»СЊ РїР°РїРєРё");
                           if (!code) return;
                           try {
                             const hash = await sha256Hex(code);
                             if (hash !== t.passcode_hash) {
-                              toast.error("Неверный пароль");
+                              toast.error("РќРµРІРµСЂРЅС‹Р№ РїР°СЂРѕР»СЊ");
                               return;
                             }
                             setUnlockedTabs((prev) => {
@@ -789,7 +789,7 @@ export function ChatsPage() {
                               return next;
                             });
                           } catch {
-                            toast.error("Не удалось проверить пароль");
+                            toast.error("РќРµ СѓРґР°Р»РѕСЃСЊ РїСЂРѕРІРµСЂРёС‚СЊ РїР°СЂРѕР»СЊ");
                             return;
                           }
                         }
@@ -854,7 +854,7 @@ export function ChatsPage() {
                       : "text-muted-foreground hover:text-foreground dark:text-white/50 dark:hover:text-white/80",
                   )}
                 >
-                  Все
+                  Р’СЃРµ
                 </button>
                 <button
                   onClick={() => setCallsFilter("missed")}
@@ -865,7 +865,7 @@ export function ChatsPage() {
                       : "text-muted-foreground hover:text-foreground dark:text-white/50 dark:hover:text-white/80",
                   )}
                 >
-                  Пропущенные
+                  РџСЂРѕРїСѓС‰РµРЅРЅС‹Рµ
                 </button>
               </div>
 
@@ -881,10 +881,10 @@ export function ChatsPage() {
                     <Phone className="w-8 h-8 text-muted-foreground dark:text-white/60" />
                   </div>
                   <h3 className="font-semibold mb-1 text-foreground dark:text-white">
-                    {callsFilter === "missed" ? "Нет пропущенных" : "Нет звонков"}
+                    {callsFilter === "missed" ? "РќРµС‚ РїСЂРѕРїСѓС‰РµРЅРЅС‹С…" : "РќРµС‚ Р·РІРѕРЅРєРѕРІ"}
                   </h3>
                   <p className="text-sm text-muted-foreground dark:text-white/60">
-                    История звонков появится после первого вызова
+                    РСЃС‚РѕСЂРёСЏ Р·РІРѕРЅРєРѕРІ РїРѕСЏРІРёС‚СЃСЏ РїРѕСЃР»Рµ РїРµСЂРІРѕРіРѕ РІС‹Р·РѕРІР°
                   </p>
                 </div>
               )}
@@ -893,13 +893,13 @@ export function ChatsPage() {
                 {activeCalls.map((call) => {
                   const otherId = call.caller_id === user?.id ? call.callee_id : call.caller_id;
                   const profile = otherId ? profilesById[otherId] : null;
-                  const name = profile?.display_name || "Пользователь";
+                  const name = profile?.display_name || "РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ";
                   const isIncoming = call.callee_id === user?.id;
                   const isMissed = call.status === "missed" || call.status === "declined";
                   const callType = call.call_type === "audio" ? "audio" : "video";
                   const statusLabel = isMissed
-                    ? "Пропущенный"
-                    : callType === "video" ? "Видео" : "Аудио";
+                    ? "РџСЂРѕРїСѓС‰РµРЅРЅС‹Р№"
+                    : callType === "video" ? "Р’РёРґРµРѕ" : "РђСѓРґРёРѕ";
 
                   return (
                     <div
@@ -931,7 +931,7 @@ export function ChatsPage() {
                             "text-sm truncate flex-1",
                             isMissed ? "text-destructive/80 dark:text-red-200/80" : "text-muted-foreground dark:text-white/50",
                           )}>
-                            {isIncoming ? "Входящий" : "Исходящий"} · {statusLabel}
+                            {isIncoming ? "Р’С…РѕРґСЏС‰РёР№" : "РСЃС…РѕРґСЏС‰РёР№"} В· {statusLabel}
                           </p>
                         </div>
                       </div>
@@ -962,7 +962,7 @@ export function ChatsPage() {
               {!chatsLoading && chatsError && (
                 <div className="py-3">
                   <div className="rounded-2xl bg-background/70 dark:bg-white/10 backdrop-blur-xl border border-border/60 dark:border-white/20 p-4">
-                    <p className="font-semibold text-foreground dark:text-white">Не удалось загрузить чаты</p>
+                    <p className="font-semibold text-foreground dark:text-white">РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ С‡Р°С‚С‹</p>
                     <p className="mt-1 text-sm text-muted-foreground dark:text-white/60 break-words">{chatsError}</p>
                     <div className="mt-3">
                       <Button
@@ -971,7 +971,7 @@ export function ChatsPage() {
                         onClick={() => refetch()}
                         className="bg-background/70 border-border text-foreground hover:bg-muted dark:bg-white/10 dark:border-white/20 dark:text-white dark:hover:bg-white/20"
                       >
-                        Повторить
+                        РџРѕРІС‚РѕСЂРёС‚СЊ
                       </Button>
                     </div>
                   </div>
@@ -985,9 +985,9 @@ export function ChatsPage() {
                   <div className="w-16 h-16 rounded-full bg-background/70 dark:bg-white/10 backdrop-blur-xl border border-border/60 dark:border-white/20 flex items-center justify-center mb-4">
                     <MessageCircle className="w-8 h-8 text-muted-foreground dark:text-white/60" />
                   </div>
-                  <h3 className="font-semibold mb-1 text-foreground dark:text-white">Нет чатов</h3>
+                  <h3 className="font-semibold mb-1 text-foreground dark:text-white">РќРµС‚ С‡Р°С‚РѕРІ</h3>
                   <p className="text-sm text-muted-foreground dark:text-white/60">
-                    Найдите пользователей через поиск или создайте группу/канал
+                    РќР°Р№РґРёС‚Рµ РїРѕР»СЊР·РѕРІР°С‚РµР»РµР№ С‡РµСЂРµР· РїРѕРёСЃРє РёР»Рё СЃРѕР·РґР°Р№С‚Рµ РіСЂСѓРїРїСѓ/РєР°РЅР°Р»
                   </p>
 
                   {import.meta.env.DEV && user && (
@@ -997,10 +997,10 @@ export function ChatsPage() {
                         disabled={seeding}
                         className="bg-background/70 border-border text-foreground hover:bg-muted dark:bg-white/10 dark:border-white/20 dark:text-white dark:hover:bg-white/20"
                       >
-                        {seeding ? "Создаю тестовые чаты…" : "Создать тестовые чаты"}
+                        {seeding ? "РЎРѕР·РґР°СЋ С‚РµСЃС‚РѕРІС‹Рµ С‡Р°С‚С‹вЂ¦" : "РЎРѕР·РґР°С‚СЊ С‚РµСЃС‚РѕРІС‹Рµ С‡Р°С‚С‹"}
                       </Button>
                       <p className="mt-2 text-xs text-muted-foreground/70 dark:text-white/40">
-                        Только для разработки (DEV)
+                        РўРѕР»СЊРєРѕ РґР»СЏ СЂР°Р·СЂР°Р±РѕС‚РєРё (DEV)
                       </p>
                     </div>
                   )}
@@ -1044,7 +1044,7 @@ export function ChatsPage() {
                         </div>
                         <div className="flex items-center justify-between">
                           <p className="text-sm text-muted-foreground dark:text-white/50 truncate flex-1">
-                            {channel.last_message?.content || channel.description || `${channel.member_count} подписчиков`}
+                            {channel.last_message?.content || channel.description || `${channel.member_count} РїРѕРґРїРёСЃС‡РёРєРѕРІ`}
                           </p>
                           <div className="flex items-center gap-1 text-xs text-muted-foreground/70 dark:text-white/40 ml-2">
                             <Users className="w-3 h-3" />
@@ -1086,7 +1086,7 @@ export function ChatsPage() {
                         </div>
                         <div className="flex items-center justify-between">
                           <p className="text-sm text-muted-foreground dark:text-white/50 truncate flex-1">
-                            {group.last_message?.content || `${group.member_count} участников`}
+                            {group.last_message?.content || `${group.member_count} СѓС‡Р°СЃС‚РЅРёРєРѕРІ`}
                           </p>
                         </div>
                       </div>
@@ -1117,7 +1117,7 @@ export function ChatsPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between mb-0.5">
                         <span className="font-medium text-foreground dark:text-white truncate">
-                          {other.display_name || "Пользователь"}
+                          {other.display_name || "РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ"}
                         </span>
                         <span className="text-xs text-muted-foreground/70 dark:text-white/40 flex-shrink-0 ml-2">
                           {formatTime(lastMessage?.created_at || conv.updated_at)}
@@ -1133,12 +1133,12 @@ export function ChatsPage() {
                           )}
                           <p className="text-sm text-muted-foreground dark:text-white/50 truncate">
                             {lastMessage?.media_type === 'video_circle' 
-                              ? '🎥 Видеосообщение'
+                              ? 'рџЋҐ Р’РёРґРµРѕСЃРѕРѕР±С‰РµРЅРёРµ'
                               : lastMessage?.media_type === 'voice'
-                              ? '🎤 Голосовое сообщение'
+                              ? 'рџЋ¤ Р“РѕР»РѕСЃРѕРІРѕРµ СЃРѕРѕР±С‰РµРЅРёРµ'
                               : lastMessage?.media_url
-                              ? '📷 Фото'
-                              : lastMessage?.content || "Нет сообщений"}
+                              ? 'рџ“· Р¤РѕС‚Рѕ'
+                              : lastMessage?.content || "РќРµС‚ СЃРѕРѕР±С‰РµРЅРёР№"}
                           </p>
                         </div>
 
@@ -1177,3 +1177,4 @@ export function ChatsPage() {
     </ScrollContainerProvider>
   );
 }
+
