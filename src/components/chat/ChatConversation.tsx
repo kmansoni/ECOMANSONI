@@ -27,6 +27,7 @@ import { useUserPresenceStatus } from "@/hooks/useUserPresenceStatus";
 import { cn } from "@/lib/utils";
 import { GradientAvatar } from "@/components/ui/gradient-avatar";
 import { useAppearanceRuntime } from "@/contexts/AppearanceRuntimeContext";
+import { sendDmMessage } from "@/lib/chat/sendDmMessage";
 import {
   getOrCreateUserQuickReaction,
   listQuickReactionCatalog,
@@ -123,6 +124,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
 
   const [replyTo, setReplyTo] = useState<{ id: string; preview: string } | null>(null);
   const [pinnedMessageId, setPinnedMessageId] = useState<string | null>(null);
+  const [pinnedLoaded, setPinnedLoaded] = useState(false);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
@@ -134,7 +136,6 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
   const [forwardMessage, setForwardMessage] = useState<import("@/hooks/useChat").ChatMessage | null>(null);
 
   const hiddenKey = user && conversationId ? `chat.hiddenMessages.v1.${user.id}.${conversationId}` : null;
-  const pinnedKey = user && conversationId ? `chat.pinnedMessage.v1.${user.id}.${conversationId}` : null;
 
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
   
@@ -184,14 +185,59 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
   }, [hiddenKey]);
 
   useEffect(() => {
-    if (!pinnedKey) return;
-    try {
-      const raw = localStorage.getItem(pinnedKey);
-      setPinnedMessageId(raw || null);
-    } catch {
+    if (!conversationId || !user?.id) {
       setPinnedMessageId(null);
+      setPinnedLoaded(true);
+      return;
     }
-  }, [pinnedKey]);
+
+    let cancelled = false;
+    const loadPinned = async () => {
+      try {
+        const { data, error } = await (supabase as any)
+          .from("conversation_pins")
+          .select("message_id")
+          .eq("conversation_id", conversationId)
+          .maybeSingle();
+        if (error) throw error;
+        if (cancelled) return;
+        setPinnedMessageId(data?.message_id ? String(data.message_id) : null);
+      } catch {
+        if (cancelled) return;
+        setPinnedMessageId(null);
+      } finally {
+        if (!cancelled) setPinnedLoaded(true);
+      }
+    };
+
+    void loadPinned();
+
+    const pinChannel = supabase
+      .channel(`conversation-pins:${conversationId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "conversation_pins",
+          filter: `conversation_id=eq.${conversationId}`,
+        },
+        (payload) => {
+          if (payload.eventType === "DELETE") {
+            setPinnedMessageId(null);
+            return;
+          }
+          const next = (payload.new as any)?.message_id;
+          setPinnedMessageId(next ? String(next) : null);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      cancelled = true;
+      void supabase.removeChannel(pinChannel);
+    };
+  }, [conversationId, user?.id]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -593,16 +639,39 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
       });
     } catch (error) {
       console.error("[handleSendMessage] error:", error);
-      setInputText(trimmed);
-      setReplyTo(reply);
-
-      // Keep the same id for a retry so we don't create a true duplicate if the first send actually succeeded.
-      draftClientMsgIdRef.current = clientMsgId;
-      lastDraftTrimmedRef.current = trimmed;
-
       const payload = getHashtagBlockedToastPayload(error);
-      if (payload) toast.error(payload.title, { description: payload.description });
-      else toast.error("Не удалось отправить сообщение");
+      if (payload) {
+        setInputText(trimmed);
+        setReplyTo(reply);
+        draftClientMsgIdRef.current = clientMsgId;
+        lastDraftTrimmedRef.current = trimmed;
+        toast.error(payload.title, { description: payload.description });
+      } else {
+        // Internal fallback path: write DM directly to messages table.
+        // Keeps chat functional when v11/rpc path is temporarily unavailable.
+        try {
+          if (!isGroup && user?.id) {
+            await sendDmMessage({
+              conversationId,
+              senderId: user.id,
+              content: withReply,
+              clientMsgId,
+            });
+            requestAnimationFrame(() => {
+              inputRef.current?.focus();
+            });
+            return;
+          }
+        } catch (fallbackErr) {
+          console.error("[handleSendMessage] fallback sendDmMessage error:", fallbackErr);
+        }
+
+        setInputText(trimmed);
+        setReplyTo(reply);
+        draftClientMsgIdRef.current = clientMsgId;
+        lastDraftTrimmedRef.current = trimmed;
+        toast.error("Не удалось отправить сообщение");
+      }
     } finally {
       sendInFlightRef.current = false;
       setIsSending(false);
@@ -832,17 +901,31 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
   };
 
   const handleMessagePin = async (messageId: string) => {
-    if (!pinnedKey) return;
+    if (!conversationId || !user?.id) return;
     try {
-      const next = pinnedMessageId === messageId ? "" : messageId;
-      if (next) {
-        localStorage.setItem(pinnedKey, next);
-        setPinnedMessageId(next);
-        toast.success("Сообщение закреплено");
-      } else {
-        localStorage.removeItem(pinnedKey);
+      if (pinnedMessageId === messageId) {
+        const { error } = await (supabase as any)
+          .from("conversation_pins")
+          .delete()
+          .eq("conversation_id", conversationId);
+        if (error) throw error;
         setPinnedMessageId(null);
         toast.success("Закрепление снято");
+      } else {
+        const { error } = await (supabase as any)
+          .from("conversation_pins")
+          .upsert(
+            {
+              conversation_id: conversationId,
+              message_id: messageId,
+              pinned_by: user.id,
+              pinned_at: new Date().toISOString(),
+            },
+            { onConflict: "conversation_id" },
+          );
+        if (error) throw error;
+        setPinnedMessageId(messageId);
+        toast.success("Сообщение закреплено");
       }
     } catch {
       toast.error("Не удалось закрепить сообщение");
@@ -1055,7 +1138,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
         )}
       </div>
 
-      {pinnedMessageId && (
+      {pinnedLoaded && pinnedMessageId && (
         <div className="flex-shrink-0 px-3 py-2 bg-black/25 backdrop-blur-xl border-b border-white/10">
           <button
             className="w-full flex items-center justify-between gap-3 rounded-xl px-3 py-2 hover:bg-white/5 active:bg-white/10 transition-colors"
@@ -1069,15 +1152,20 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
             </div>
             <button
               className="shrink-0 p-1 rounded-md hover:bg-white/10"
-              onClick={(e) => {
+              onClick={async (e) => {
                 e.stopPropagation();
-                if (!pinnedKey) return;
+                if (!conversationId) return;
                 try {
-                  localStorage.removeItem(pinnedKey);
+                  const { error } = await (supabase as any)
+                    .from("conversation_pins")
+                    .delete()
+                    .eq("conversation_id", conversationId);
+                  if (error) throw error;
+                  setPinnedMessageId(null);
+                  toast.success("Закрепление снято");
                 } catch {
-                  // ignore
+                  toast.error("Не удалось снять закрепление");
                 }
-                setPinnedMessageId(null);
               }}
               aria-label="Снять закрепление"
             >

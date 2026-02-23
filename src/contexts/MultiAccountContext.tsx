@@ -45,6 +45,7 @@ type MultiAccountContextValue = {
 };
 
 const MultiAccountContext = React.createContext<MultiAccountContextValue | null>(null);
+const USE_SUPABASE_PHONE_OTP = import.meta.env.VITE_USE_SUPABASE_PHONE_OTP === "true";
 
 // IRON RULE 4.1: Debug logging gated by FLAG_DEBUG
 const FLAG_DEBUG = import.meta.env.VITE_DEBUG_MULTI_ACCOUNT === 'true';
@@ -740,8 +741,52 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
 
   const startAddAccountPhoneOtp = React.useCallback(async (phone: string) => {
     try {
+      if (!USE_SUPABASE_PHONE_OTP) {
+        const digits = phone.replace(/\D/g, "");
+        const { data, error } = await supabase.functions.invoke("phone-auth", {
+          body: {
+            action: "register-or-login",
+            phone: `+${digits}`,
+            display_name: "User",
+            email: `user${digits}@placeholder.local`,
+          },
+        });
+        if (error) return { error: error as any };
+        if (!data?.ok || !data?.accessToken || !data?.refreshToken) {
+          return { error: new Error(data?.error || "phone-auth fallback failed") };
+        }
+        const { error: sessionError } = await supabase.auth.setSession({
+          access_token: data.accessToken,
+          refresh_token: data.refreshToken,
+        });
+        return { error: (sessionError as any) ?? null };
+      }
+
       const client = createEphemeralSupabaseClient();
       const { error } = await client.auth.signInWithOtp({ phone });
+      const code = String((error as any)?.code || "").toLowerCase();
+      const message = String((error as any)?.message || "").toLowerCase();
+      const providerDisabled = code === "phone_provider_disabled" || message.includes("unsupported phone provider");
+      if (providerDisabled) {
+        const digits = phone.replace(/\D/g, "");
+        const { data, error: fallbackError } = await supabase.functions.invoke("phone-auth", {
+          body: {
+            action: "register-or-login",
+            phone: `+${digits}`,
+            display_name: "User",
+            email: `user${digits}@placeholder.local`,
+          },
+        });
+        if (fallbackError) return { error: fallbackError as any };
+        if (!data?.ok || !data?.accessToken || !data?.refreshToken) {
+          return { error: new Error(data?.error || "phone-auth fallback failed") };
+        }
+        const { error: sessionError } = await supabase.auth.setSession({
+          access_token: data.accessToken,
+          refresh_token: data.refreshToken,
+        });
+        return { error: (sessionError as any) ?? null };
+      }
       return { error: (error as any) ?? null };
     } catch (e) {
       return { error: e as Error };
@@ -750,10 +795,79 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
 
   const verifyAddAccountPhoneOtp = React.useCallback(async (phone: string, token: string) => {
     try {
+      if (!USE_SUPABASE_PHONE_OTP) {
+        const digits = phone.replace(/\D/g, "");
+        const { data: fallbackData, error: fallbackError } = await supabase.functions.invoke("phone-auth", {
+          body: {
+            action: "register-or-login",
+            phone: `+${digits}`,
+            display_name: "User",
+            email: `user${digits}@placeholder.local`,
+          },
+        });
+        if (fallbackError) return { error: fallbackError as any };
+        if (!fallbackData?.ok || !fallbackData?.accessToken || !fallbackData?.refreshToken) {
+          return { error: new Error(fallbackData?.error || "phone-auth fallback failed") };
+        }
+
+        const client = createEphemeralSupabaseClient();
+        const { error: setSessionError } = await client.auth.setSession({
+          access_token: fallbackData.accessToken,
+          refresh_token: fallbackData.refreshToken,
+        });
+        if (setSessionError) return { error: setSessionError as any };
+        const { data: sessionData } = await client.auth.getSession();
+        const directSession = sessionData.session;
+        if (!directSession || !directSession.user) return { error: new Error("no_session") };
+
+        const accountId = directSession.user.id as AccountId;
+        writeTokens(accountId, {
+          accessToken: directSession.access_token,
+          refreshToken: directSession.refresh_token,
+          expiresAt: typeof directSession.expires_at === "number" ? directSession.expires_at : null,
+        });
+        setAccounts(upsertAccountIndex({ accountId, requiresReauth: false, touchActive: true }));
+
+        await activateSessionForAccount(accountId);
+        const { seq, signal } = beginProfileLoad(accountId);
+        const profile = await fetchMyProfileSnapshot(accountId, signal);
+        if (profile && isCurrentProfileLoad(accountId, seq)) {
+          setAccounts(upsertAccountIndex({ accountId, profile }));
+        }
+        return { error: null };
+      }
+
       const client = createEphemeralSupabaseClient();
       const { data, error } = await client.auth.verifyOtp({ phone, token, type: "sms" });
-      if (error) return { error: error as any };
-      const session = data.session;
+      let session = data.session;
+      if (error) {
+        const code = String((error as any)?.code || "").toLowerCase();
+        const message = String((error as any)?.message || "").toLowerCase();
+        const providerDisabled = code === "phone_provider_disabled" || message.includes("unsupported phone provider");
+        if (!providerDisabled) return { error: error as any };
+
+        const digits = phone.replace(/\D/g, "");
+        const { data: fallbackData, error: fallbackError } = await supabase.functions.invoke("phone-auth", {
+          body: {
+            action: "register-or-login",
+            phone: `+${digits}`,
+            display_name: "User",
+            email: `user${digits}@placeholder.local`,
+          },
+        });
+        if (fallbackError) return { error: fallbackError as any };
+        if (!fallbackData?.ok || !fallbackData?.accessToken || !fallbackData?.refreshToken) {
+          return { error: new Error(fallbackData?.error || "phone-auth fallback failed") };
+        }
+
+        const { error: setSessionError } = await client.auth.setSession({
+          access_token: fallbackData.accessToken,
+          refresh_token: fallbackData.refreshToken,
+        });
+        if (setSessionError) return { error: setSessionError as any };
+        const { data: sessionData } = await client.auth.getSession();
+        session = sessionData.session;
+      }
       if (!session || !session.user) return { error: new Error("no_session") };
 
       const accountId = session.user.id as AccountId;

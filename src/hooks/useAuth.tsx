@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, createContext, useContext, ReactNode } from "react";
 import { User, Session } from "@supabase/supabase-js";
-import { supabase } from "@/lib/supabase";
+import { supabase, SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/supabase";
 import { startAutoPushTokenRegistration } from "@/lib/push/autoRegister";
 
 interface AuthContextType {
@@ -9,12 +9,90 @@ interface AuthContextType {
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signUp: (email: string, password: string, displayName?: string) => Promise<{ error: Error | null }>;
-  signInWithPhone: (phone: string) => Promise<{ error: Error | null }>;
-  verifyOtp: (phone: string, token: string) => Promise<{ error: Error | null }>;
+  signInWithPhone: (phone: string) => Promise<{ error: any | null }>;
+  verifyOtp: (phone: string, token: string) => Promise<{ error: any | null }>;
   signOut: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const USE_SUPABASE_PHONE_OTP = import.meta.env.VITE_USE_SUPABASE_PHONE_OTP === "true";
+
+function buildPhoneAuthUrl(): string {
+  const base = (SUPABASE_URL || "").replace(/\/+$/, "");
+  return base ? `${base}/functions/v1/phone-auth` : "";
+}
+
+function isPhoneProviderDisabled(err: any): boolean {
+  const code = String(err?.code || "").toLowerCase();
+  const message = String(err?.message || "").toLowerCase();
+  return code === "phone_provider_disabled" || message.includes("unsupported phone provider");
+}
+
+async function signInWithPhoneAuthFallback(phone: string): Promise<{ error: any | null }> {
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length < 10) {
+    return { error: new Error("Invalid phone number") };
+  }
+
+  const functionUrl = buildPhoneAuthUrl();
+  if (!functionUrl) {
+    return { error: new Error("Supabase URL is not configured") };
+  }
+  if (!SUPABASE_ANON_KEY) {
+    return { error: new Error("Supabase anon key is not configured") };
+  }
+
+  const body = {
+    action: "register-or-login",
+    phone: `+${digits}`,
+    display_name: "User",
+    email: `user${digits}@placeholder.local`,
+  };
+
+  try {
+    const response = await fetch(functionUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        apikey: SUPABASE_ANON_KEY,
+        "x-client-info": "supabase-js/2",
+      },
+      body: JSON.stringify(body),
+    });
+
+    const text = await response.text();
+    let data: any = null;
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch {
+      data = null;
+    }
+
+    if (!response.ok || !data?.ok) {
+      return {
+        error: {
+          message: data?.error || `HTTP ${response.status}`,
+          status: response.status,
+          code: data?.code || "phone_auth_failed",
+        },
+      };
+    }
+
+    if (!data.accessToken || !data.refreshToken) {
+      return { error: new Error("phone-auth did not return session tokens") };
+    }
+
+    const { error: sessionError } = await supabase.auth.setSession({
+      access_token: data.accessToken,
+      refresh_token: data.refreshToken,
+    });
+
+    return { error: (sessionError as any) ?? null };
+  } catch (err) {
+    return { error: err as any };
+  }
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -167,19 +245,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signInWithPhone = async (phone: string) => {
-    const { error } = await supabase.auth.signInWithOtp({
-      phone,
-    });
-    return { error: error as Error | null };
+    if (!USE_SUPABASE_PHONE_OTP) {
+      return await signInWithPhoneAuthFallback(phone);
+    }
+
+    const { error } = await supabase.auth.signInWithOtp({ phone });
+    if (error) {
+      console.error("[Auth] signInWithOtp(phone) failed", {
+        message: (error as any)?.message,
+        code: (error as any)?.code,
+        status: (error as any)?.status,
+        name: (error as any)?.name,
+      });
+      if (isPhoneProviderDisabled(error)) {
+        console.warn("[Auth] Falling back to phone-auth flow because phone provider is disabled");
+        return await signInWithPhoneAuthFallback(phone);
+      }
+    }
+    return { error: (error as any) ?? null };
   };
 
   const verifyOtp = async (phone: string, token: string) => {
-    const { error } = await supabase.auth.verifyOtp({
-      phone,
-      token,
-      type: 'sms',
-    });
-    return { error: error as Error | null };
+    if (!USE_SUPABASE_PHONE_OTP) {
+      return await signInWithPhoneAuthFallback(phone);
+    }
+
+    const { error } = await supabase.auth.verifyOtp({ phone, token, type: 'sms' });
+    if (error) {
+      console.error("[Auth] verifyOtp(phone,sms) failed", {
+        message: (error as any)?.message,
+        code: (error as any)?.code,
+        status: (error as any)?.status,
+        name: (error as any)?.name,
+      });
+      if (isPhoneProviderDisabled(error)) {
+        console.warn("[Auth] Falling back to phone-auth flow in verifyOtp because phone provider is disabled");
+        return await signInWithPhoneAuthFallback(phone);
+      }
+    }
+    return { error: (error as any) ?? null };
   };
 
   const signOut = async () => {
