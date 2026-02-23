@@ -43,7 +43,6 @@ describe("reels-arbiter journal contract (P1)", () => {
 
   afterEach(() => {
     vi.useRealTimers();
-    // @ts-expect-error Date.now is readonly in TS lib types; restore after fake timers.
     Date.now = realNow;
   });
 

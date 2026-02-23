@@ -1,12 +1,44 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ChevronDown, Eye, Link, MoreVertical, Search, Send, Share2, Volume2, Trash2, CheckCircle2, X, Radio, Users, Settings2, ChevronRight } from "lucide-react";
+import {
+  ArrowLeft,
+  Bell,
+  BellOff,
+  ChevronDown,
+  Eye,
+  FileText,
+  Link,
+  Mic,
+  MoreVertical,
+  Pin,
+  Search,
+  Send,
+  Share2,
+  Smile,
+  Video,
+  Volume2 as Volume2Icon,
+  Trash2,
+  CheckCircle2,
+  X,
+  Radio,
+  Users,
+  Settings2,
+  ChevronRight,
+} from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
 import { getHashtagBlockedToastPayload } from "@/lib/hashtagModeration";
+import { getChatSendErrorToast } from "@/lib/chat/sendError";
+import { diagnoseChannelSendReadiness } from "@/lib/chat/readiness";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { Drawer, DrawerClose, DrawerContent } from "@/components/ui/drawer";
+import { AttachmentIcon } from "@/components/chat/AttachmentIcon";
+import { AttachmentSheet } from "@/components/chat/AttachmentSheet";
+import { EmojiStickerPicker } from "@/components/chat/EmojiStickerPicker";
+import { ImageViewer } from "@/components/chat/ImageViewer";
+import { VideoCircleRecorder } from "@/components/chat/VideoCircleRecorder";
+import { VideoCircleMessage } from "@/components/chat/VideoCircleMessage";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -74,10 +106,10 @@ const stableIntInRange = (seed: string, minInclusive: number, maxInclusive: numb
 export function ChannelConversation({ channel, onBack, onLeave }: ChannelConversationProps) {
   const { user } = useAuth();
   const { setIsChatOpen } = useChatOpen();
-  const { messages, loading, sendMessage } = useChannelMessages(channel.id);
+  const { messages, loading, sendMessage, sendMediaMessage } = useChannelMessages(channel.id);
   const { joinChannel, leaveChannel } = useJoinChannel();
   const { can, canRpc, role } = useChannelCapabilities(channel);
-  const { settings, update: updateGlobalSettings } = useCommunityGlobalSettings();
+  const { settings } = useCommunityGlobalSettings();
   const { createChannelInvite } = useCommunityInvites();
   const {
     muted,
@@ -91,6 +123,29 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
   const [isMember, setIsMember] = useState(channel.is_member);
   const [draftPost, setDraftPost] = useState("");
   const [sendingPost, setSendingPost] = useState(false);
+  const [showAttachmentSheet, setShowAttachmentSheet] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [viewingImage, setViewingImage] = useState<string | null>(null);
+  const [notifySubscribers, setNotifySubscribers] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(`channel.notify.${channel.id}`) !== "0";
+    } catch {
+      return true;
+    }
+  });
+  const [showStickerPicker, setShowStickerPicker] = useState(false);
+  const [recordMode, setRecordMode] = useState<"voice" | "video">("voice");
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const recordingTimeRef = useRef(0);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const recordingIntervalRef = useRef<number | null>(null);
+  const holdTimerRef = useRef<number | null>(null);
+  const holdStartedRef = useRef(false);
+  const isHoldingRef = useRef(false);
+  const recordingMimeTypeRef = useRef<string | null>(null);
+  const [showVideoRecorder, setShowVideoRecorder] = useState(false);
   const [showScrollDown, setShowScrollDown] = useState(false);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -116,6 +171,8 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
     return Number.isFinite(v) ? v : null;
   });
   const [autoDeleteLoading, setAutoDeleteLoading] = useState(false);
+  const [pinnedMessageId, setPinnedMessageId] = useState<string | null>(null);
+  const [pinnedLoaded, setPinnedLoaded] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const canCreatePosts = isMember && can("channel.posts.create");
@@ -123,6 +180,225 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
   const canDeletePostsAny = isMember && (can("channel.posts.delete") || role === "owner" || role === "admin");
   const canUpdateSettings = isMember && (can("channel.settings.update") || role === "owner" || role === "admin");
   const canManageMembers = isMember && (can("channel.members.manage") || role === "owner" || role === "admin");
+  const canPinPosts = canUpdateSettings;
+
+  useEffect(() => {
+    recordingTimeRef.current = recordingTime;
+  }, [recordingTime]);
+
+  useEffect(() => {
+    if (!channel.id) {
+      setPinnedMessageId(null);
+      setPinnedLoaded(true);
+      return;
+    }
+
+    let cancelled = false;
+    const loadPinned = async () => {
+      try {
+        const { data, error } = await (supabase as any)
+          .from("channel_pins")
+          .select("message_id")
+          .eq("channel_id", channel.id)
+          .maybeSingle();
+        if (error) throw error;
+        if (cancelled) return;
+        setPinnedMessageId(data?.message_id ? String(data.message_id) : null);
+      } catch {
+        if (cancelled) return;
+        setPinnedMessageId(null);
+      } finally {
+        if (!cancelled) setPinnedLoaded(true);
+      }
+    };
+
+    void loadPinned();
+
+    const channelPins = supabase
+      .channel(`channel-pins:${channel.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "channel_pins",
+          filter: `channel_id=eq.${channel.id}`,
+        },
+        (payload) => {
+          if (payload.eventType === "DELETE") {
+            setPinnedMessageId(null);
+            return;
+          }
+          const next = (payload.new as any)?.message_id;
+          setPinnedMessageId(next ? String(next) : null);
+        },
+      )
+      .subscribe();
+
+    return () => {
+      cancelled = true;
+      void supabase.removeChannel(channelPins);
+    };
+  }, [channel.id]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(`channel.notify.${channel.id}`, notifySubscribers ? "1" : "0");
+    } catch {
+      // ignore
+    }
+  }, [channel.id, notifySubscribers]);
+
+  const silentPublish = !notifySubscribers;
+
+  const formatDuration = (seconds: number) => {
+    const s = Math.max(0, Math.floor(Number(seconds) || 0));
+    const m = Math.floor(s / 60);
+    const r = s % 60;
+    return `${m}:${String(r).padStart(2, "0")}`;
+  };
+
+  const startVoiceRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      const preferredTypes = [
+        "audio/mp4",
+        "audio/webm;codecs=opus",
+        "audio/webm",
+        "audio/ogg;codecs=opus",
+      ];
+      const mimeType = preferredTypes.find((t) => MediaRecorder.isTypeSupported(t)) || "";
+      recordingMimeTypeRef.current = mimeType || null;
+
+      const mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+      setRecordingTime(0);
+      if (recordingIntervalRef.current) window.clearInterval(recordingIntervalRef.current);
+      recordingIntervalRef.current = window.setInterval(() => {
+        setRecordingTime((prev) => prev + 1);
+      }, 1000);
+    } catch (err) {
+      console.error("Failed to start voice recording:", err);
+      toast.error("Не удалось начать запись");
+    }
+  };
+
+  const cancelVoiceRecording = () => {
+    if (recordingIntervalRef.current) {
+      window.clearInterval(recordingIntervalRef.current);
+      recordingIntervalRef.current = null;
+    }
+    if (mediaRecorderRef.current) {
+      mediaRecorderRef.current.stream.getTracks().forEach((t) => t.stop());
+      mediaRecorderRef.current = null;
+    }
+    audioChunksRef.current = [];
+    setIsRecording(false);
+    setRecordingTime(0);
+  };
+
+  const stopVoiceRecordingAndSend = async () => {
+    if (!mediaRecorderRef.current || !isRecording) return;
+    const duration = recordingTimeRef.current;
+
+    const mr = mediaRecorderRef.current;
+    return new Promise<void>((resolve) => {
+      mr.onstop = async () => {
+        try {
+          const mimeType = recordingMimeTypeRef.current || mr.mimeType || "audio/webm";
+          const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
+          const ext = mimeType.includes("mp4") ? "m4a" : mimeType.includes("ogg") ? "ogg" : "webm";
+          const file = new File([audioBlob], `voice_${Date.now()}.${ext}`, { type: mimeType });
+
+          if (duration >= 1) {
+            await sendMediaMessage(file, "voice", { durationSeconds: duration, silent: silentPublish });
+          }
+        } catch (e) {
+          console.error("Failed to send voice:", e);
+          toast.error("Не удалось отправить голосовое");
+        } finally {
+          if (recordingIntervalRef.current) {
+            window.clearInterval(recordingIntervalRef.current);
+            recordingIntervalRef.current = null;
+          }
+          mr.stream.getTracks().forEach((t) => t.stop());
+          mediaRecorderRef.current = null;
+          audioChunksRef.current = [];
+          setIsRecording(false);
+          setRecordingTime(0);
+          resolve();
+        }
+      };
+
+      mr.stop();
+    });
+  };
+
+  const handleVideoRecord = async (videoBlob: Blob, duration: number) => {
+    try {
+      const file = new File([videoBlob], `video_circle_${Date.now()}.webm`, { type: "video/webm" });
+      await sendMediaMessage(file, "video_circle", { durationSeconds: duration, silent: silentPublish });
+    } catch (e) {
+      console.error("Failed to send video circle:", e);
+      toast.error("Не удалось отправить видео-кружок");
+    } finally {
+      setShowVideoRecorder(false);
+    }
+  };
+
+  const handleRecordButtonDown = (e: React.TouchEvent | React.MouseEvent) => {
+    e.preventDefault();
+    if (!canCreatePosts || sendingPost) return;
+
+    isHoldingRef.current = false;
+    holdStartedRef.current = true;
+
+    if (holdTimerRef.current) window.clearTimeout(holdTimerRef.current);
+    holdTimerRef.current = window.setTimeout(() => {
+      isHoldingRef.current = true;
+      if (recordMode === "voice") {
+        void startVoiceRecording();
+      } else {
+        setShowVideoRecorder(true);
+      }
+    }, 200);
+  };
+
+  const handleRecordButtonUp = () => {
+    if (!holdStartedRef.current) return;
+    holdStartedRef.current = false;
+
+    if (holdTimerRef.current) {
+      window.clearTimeout(holdTimerRef.current);
+      holdTimerRef.current = null;
+    }
+
+    if (isHoldingRef.current) {
+      if (recordMode === "voice" && isRecording) {
+        void stopVoiceRecordingAndSend();
+      }
+    } else {
+      setRecordMode((prev) => (prev === "voice" ? "video" : "voice"));
+    }
+
+    isHoldingRef.current = false;
+  };
+
+  const handleRecordButtonLeave = () => {
+    if (holdTimerRef.current) {
+      window.clearTimeout(holdTimerRef.current);
+      holdTimerRef.current = null;
+    }
+  };
 
   const notificationsEnabled = channelUserSettings?.notifications_enabled ?? true;
   const mutedUntil = channelUserSettings?.muted_until ?? null;
@@ -311,6 +587,10 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
     }
     return m;
   }, [messages]);
+  const pinnedMessage = useMemo(
+    () => (pinnedMessageId ? (messages as any[]).find((m: any) => String(m?.id) === pinnedMessageId) ?? null : null),
+    [messages, pinnedMessageId],
+  );
 
   const canDeleteSelected = useMemo(() => {
     if (!isMember) return false;
@@ -365,6 +645,58 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
   };
 
   const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  const scrollToChannelMessage = (messageId: string) => {
+    const el = document.getElementById(`channel-msg-${messageId}`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+  };
+
+  const unpinChannelMessage = async () => {
+    if (!canPinPosts) return;
+    try {
+      const { error } = await (supabase as any)
+        .from("channel_pins")
+        .delete()
+        .eq("channel_id", channel.id);
+      if (error) throw error;
+      setPinnedMessageId(null);
+      toast.success("Закрепление снято");
+    } catch (e) {
+      console.error("Failed to unpin message:", e);
+      toast.error("Не удалось снять закрепление");
+    }
+  };
+
+  const pinChannelMessage = async (messageId: string) => {
+    if (!canPinPosts || !user?.id) {
+      toast.error("Недостаточно прав для закрепления");
+      return;
+    }
+    try {
+      if (pinnedMessageId === messageId) {
+        await unpinChannelMessage();
+        return;
+      }
+
+      const { error } = await (supabase as any)
+        .from("channel_pins")
+        .upsert(
+          {
+            channel_id: channel.id,
+            message_id: messageId,
+            pinned_by: user.id,
+            pinned_at: new Date().toISOString(),
+          },
+          { onConflict: "channel_id" },
+        );
+      if (error) throw error;
+      setPinnedMessageId(messageId);
+      toast.success("Сообщение закреплено");
+    } catch (e) {
+      console.error("Failed to pin message:", e);
+      toast.error("Не удалось закрепить сообщение");
+    }
+  };
 
   const handleJoin = async () => {
     const success = await joinChannel(channel.id);
@@ -399,14 +731,74 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
         return;
       }
 
-      await sendMessage(text);
+      await sendMessage(text, { silent: silentPublish });
       setDraftPost("");
       toast.success("Пост опубликован");
     } catch (err) {
       console.error("Failed to publish post:", err);
       const payload = getHashtagBlockedToastPayload(err);
       if (payload) toast.error(payload.title, { description: payload.description });
-      else toast.error("Не удалось опубликовать пост");
+      else {
+        const sendPayload = getChatSendErrorToast(err);
+        if (sendPayload) toast.error(sendPayload.title, { description: sendPayload.description });
+        else {
+          const diagnostic = await diagnoseChannelSendReadiness({
+            supabase,
+            userId: user?.id,
+            channelId: channel?.id,
+          });
+          toast.error("Не удалось опубликовать пост", { description: diagnostic ?? undefined });
+        }
+      }
+    } finally {
+      setSendingPost(false);
+    }
+  };
+
+  const handleAttachment = async (file: File, type: "image" | "video" | "document") => {
+    if (!user) return;
+    if (!canCreatePosts) {
+      toast.error("Для публикации нужны права");
+      return;
+    }
+
+    try {
+      setSendingPost(true);
+      const allowedByRpc = await canRpc("channel.posts.create");
+      if (!allowedByRpc) {
+        toast.error("Недостаточно прав для публикации");
+        return;
+      }
+
+      await sendMediaMessage(file, type, { silent: silentPublish });
+      toast.success(type === "document" ? "Документ отправлен" : "Медиа опубликовано");
+    } catch (e) {
+      console.error("Failed to send channel media:", e);
+      toast.error("Не удалось отправить вложение");
+    } finally {
+      setSendingPost(false);
+    }
+  };
+
+  const QUICK_STICKERS = useMemo(
+    () => ["😄", "😍", "😂", "🔥", "👍", "❤️", "🥳", "😮", "😢", "😡", "🤝", "🙏", "💯", "✨", "🎉", "🤩", "🫶", "😴", "🤯", "😎"],
+    [],
+  );
+
+  const sendSticker = async (sticker: string) => {
+    if (!canCreatePosts || sendingPost) return;
+    try {
+      setSendingPost(true);
+      const allowedByRpc = await canRpc("channel.posts.create");
+      if (!allowedByRpc) {
+        toast.error("Недостаточно прав для публикации");
+        return;
+      }
+      await sendMessage(sticker, { silent: silentPublish });
+      setShowStickerPicker(false);
+    } catch (e) {
+      console.error("Failed to send sticker:", e);
+      toast.error("Не удалось отправить стикер");
     } finally {
       setSendingPost(false);
     }
@@ -592,7 +984,7 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
   };
 
   return (
-    <div className="h-full flex flex-col bg-background relative">
+    <div className="fixed inset-0 z-[200] flex flex-col bg-background">
       <div className="flex-shrink-0 flex items-center gap-2 px-2 py-2 bg-background/95 backdrop-blur-sm border-b border-border relative z-10 safe-area-top">
         <button onClick={onBack} className="flex items-center gap-1 text-primary">
           <ArrowLeft className="w-5 h-5" />
@@ -840,7 +1232,7 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
                           isMember ? "" : "opacity-60"
                         }`}
                       >
-                        <Volume2 className={`w-5 h-5 ${muted ? "text-muted-foreground" : "text-primary"}`} />
+                        <Volume2Icon className={`w-5 h-5 ${muted ? "text-muted-foreground" : "text-primary"}`} />
                         <span className="text-xs text-muted-foreground">звук</span>
                       </button>
                     </DropdownMenuTrigger>
@@ -1295,26 +1687,35 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
           </div>
         </div>
       ) : null}
-
-      <div className="flex-shrink-0 bg-background/95 backdrop-blur-sm border-b border-border relative z-10">
-        <div className="flex items-center justify-between px-3 py-2">
-          <div className="flex items-center gap-2 flex-1 min-w-0">
-            <div className="w-0.5 h-8 bg-primary rounded-full flex-shrink-0" />
-            <div className="min-w-0">
-              <p className="text-xs text-foreground truncate">Закрепленное сообщение</p>
-              <p className="text-xs text-muted-foreground truncate">Канал подключен к capability engine</p>
-            </div>
+      {pinnedLoaded && pinnedMessageId ? (
+        <div className="flex-shrink-0 bg-background/95 backdrop-blur-sm border-b border-border relative z-10">
+          <div className="flex items-center justify-between px-3 py-2">
+            <button
+              type="button"
+              className="flex items-center gap-2 flex-1 min-w-0 text-left hover:bg-muted/40 rounded-lg px-1.5 py-1"
+              onClick={() => scrollToChannelMessage(pinnedMessageId)}
+            >
+              <div className="w-0.5 h-8 bg-primary rounded-full flex-shrink-0" />
+              <div className="min-w-0">
+                <p className="text-xs text-foreground truncate">Закрепленное сообщение</p>
+                <p className="text-xs text-muted-foreground truncate">
+                  {(String((pinnedMessage as any)?.content || "").trim() || "Сообщение недоступно")}
+                </p>
+              </div>
+            </button>
+            {canPinPosts ? (
+              <button
+                type="button"
+                onClick={() => void unpinChannelMessage()}
+                className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/40"
+                aria-label="Снять закрепление"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            ) : null}
           </div>
-          <Button
-            onClick={isMember ? handlePublishPost : handleJoin}
-            size="sm"
-            className="rounded-full px-4 h-8 text-xs font-medium"
-            disabled={isMember && (!canCreatePosts || sendingPost || !draftPost.trim())}
-          >
-            {!isMember ? "Подписаться" : canCreatePosts ? "Опубликовать" : "Только чтение"}
-          </Button>
         </div>
-      </div>
+      ) : null}
 
       {selectMode ? (
         <div className="flex-shrink-0 px-3 py-2 border-b border-border bg-background/95 backdrop-blur-sm flex items-center justify-between">
@@ -1365,7 +1766,7 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
             : [];
 
           return (
-            <div key={msg.id} className="flex flex-col gap-1">
+            <div key={msg.id} id={`channel-msg-${msg.id}`} className="flex flex-col gap-1">
               <div
                 className={`bg-card rounded-2xl overflow-hidden border ${
                   selectMode && selectedIds.has(msg.id) ? "border-primary" : "border-border/60"
@@ -1390,15 +1791,52 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
                 </div>
               </div>
 
-              {msg.media_url && (
+              {msg.media_url ? (
                 <div className="relative">
-                  <img src={msg.media_url} alt="" className="w-full max-h-80 object-cover" />
-                  <div className="absolute top-2 left-2 bg-black/60 rounded px-1.5 py-0.5 text-white text-xs flex items-center gap-1">
-                    <span>00:32</span>
-                    <Volume2 className="w-3 h-3" />
-                  </div>
+                  {String((msg as any)?.media_type || "image") === "video_circle" ? (
+                    <div className="px-3 pb-3">
+                      <VideoCircleMessage
+                        videoUrl={msg.media_url}
+                        duration={String((msg as any)?.duration_seconds || 0)}
+                        isOwn={String((msg as any)?.sender_id) === String(user?.id)}
+                      />
+                    </div>
+                  ) : String((msg as any)?.media_type || "image") === "voice" ? (
+                    <div className="px-3 pb-3">
+                      <audio controls src={msg.media_url} className="w-full" />
+                      <div className="mt-1 text-[11px] text-muted-foreground">
+                        {Number((msg as any)?.duration_seconds) ? formatDuration(Number((msg as any).duration_seconds)) : ""}
+                      </div>
+                    </div>
+                  ) : String((msg as any)?.media_type || "image") === "video" ? (
+                    <video
+                      src={msg.media_url}
+                      controls
+                      className="w-full max-h-80 object-cover"
+                      playsInline
+                    />
+                  ) : String((msg as any)?.media_type || "image") === "document" ? (
+                    <a
+                      href={msg.media_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="w-full px-3 py-3 flex items-center gap-2 hover:bg-muted/40"
+                    >
+                      <FileText className="w-4 h-4 text-muted-foreground" />
+                      <span className="text-sm text-foreground">Открыть документ</span>
+                    </a>
+                  ) : (
+                    <button
+                      type="button"
+                      className="w-full"
+                      onClick={() => setViewingImage(msg.media_url || null)}
+                      aria-label="Открыть изображение"
+                    >
+                      <img src={msg.media_url} alt="" className="w-full max-h-80 object-cover" />
+                    </button>
+                  )}
                 </div>
-              )}
+              ) : null}
 
               <div className="px-3 py-2">
                 <p className="text-foreground text-[15px] leading-relaxed whitespace-pre-wrap break-words">
@@ -1425,9 +1863,25 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
                   <Eye className="w-4 h-4" />
                   <span className="text-xs">{formatViews(viewCount)}</span>
                 </div>
-                <button className="text-muted-foreground hover:text-foreground transition-colors">
-                  <Share2 className="w-4 h-4" />
-                </button>
+                <div className="flex items-center gap-2">
+                  {canPinPosts ? (
+                    <button
+                      type="button"
+                      onClick={() => void pinChannelMessage(msg.id)}
+                      className={`transition-colors ${
+                        pinnedMessageId === String(msg.id)
+                          ? "text-primary"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                      aria-label={pinnedMessageId === String(msg.id) ? "Снять закрепление" : "Закрепить сообщение"}
+                    >
+                      <Pin className="w-4 h-4" />
+                    </button>
+                  ) : null}
+                  <button className="text-muted-foreground hover:text-foreground transition-colors">
+                    <Share2 className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
               </div>
 
@@ -1460,38 +1914,147 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
             <span>Роль: {role}</span>
             {!canCreatePosts && <span>• публикация отключена</span>}
           </div>
-          <div className="flex items-center justify-between rounded-lg border border-border bg-card px-3 py-2 mb-2">
-            <span className="text-xs text-muted-foreground">Глобально: приглашения в каналы</span>
-            <Switch
-              checked={settings?.allow_channel_invites ?? true}
-              onCheckedChange={(checked) =>
-                void updateGlobalSettings({ allow_channel_invites: checked }).catch(() =>
-                  toast.error("Не удалось обновить глобальные настройки"),
-                )
-              }
-            />
-          </div>
           <div className="flex items-center gap-2">
-            <Input
-              value={draftPost}
-              onChange={(e) => setDraftPost(e.target.value)}
-              placeholder={canCreatePosts ? "Новый пост в канал..." : "Для публикации нужны права"}
-              disabled={!canCreatePosts || sendingPost}
-              className="flex-1 h-11 rounded-full"
-            />
-            <Button
-              onClick={handlePublishPost}
-              disabled={!canCreatePosts || sendingPost || !draftPost.trim()}
-              size="icon"
-              className="w-11 h-11 rounded-full shrink-0"
-              aria-label="Опубликовать"
-              type="button"
-            >
-              <Send className="w-5 h-5 text-primary-foreground" />
-            </Button>
+            <div className="flex-1 relative">
+              <Input
+                value={draftPost}
+                onChange={(e) => setDraftPost(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter") return;
+                  e.preventDefault();
+                  if (e.repeat) return;
+                  if (sendingPost) return;
+                  void handlePublishPost();
+                }}
+                onFocus={() => setShowEmojiPicker(false)}
+                placeholder={canCreatePosts ? "Сообщение" : "Для публикации нужны права"}
+                disabled={!canCreatePosts || sendingPost}
+                className="flex-1 h-11 rounded-full pr-20"
+              />
+
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setNotifySubscribers((v) => !v)}
+                  disabled={!canCreatePosts || sendingPost}
+                  className="text-muted-foreground hover:text-foreground disabled:opacity-50"
+                  aria-label={notifySubscribers ? "Публикация с уведомлением" : "Публикация без уведомления"}
+                  title={notifySubscribers ? "С уведомлением" : "Без уведомления"}
+                >
+                  {notifySubscribers ? <Bell className="w-5 h-5" /> : <BellOff className="w-5 h-5" />}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowEmojiPicker((v) => !v)}
+                  disabled={!canCreatePosts || sendingPost}
+                  className="text-muted-foreground hover:text-foreground disabled:opacity-50"
+                  aria-label="Эмодзи"
+                >
+                  <Smile className="w-5 h-5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowStickerPicker(true)}
+                  disabled={!canCreatePosts || sendingPost}
+                  className="text-muted-foreground hover:text-foreground disabled:opacity-50"
+                  aria-label="Стикеры"
+                >
+                  <span className="text-[15px]">🧩</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowAttachmentSheet(true)}
+                  disabled={!canCreatePosts || sendingPost}
+                  className="text-muted-foreground hover:text-foreground disabled:opacity-50"
+                  aria-label="Вложение"
+                >
+                  <AttachmentIcon className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+            {draftPost.trim() ? (
+              <Button
+                onClick={handlePublishPost}
+                disabled={!canCreatePosts || sendingPost || !draftPost.trim()}
+                size="icon"
+                className="w-11 h-11 rounded-full shrink-0"
+                aria-label="Опубликовать"
+                type="button"
+              >
+                <Send className="w-5 h-5 text-primary-foreground" />
+              </Button>
+            ) : (
+              <button
+                onTouchStart={handleRecordButtonDown}
+                onTouchEnd={handleRecordButtonUp}
+                onMouseDown={handleRecordButtonDown}
+                onMouseUp={handleRecordButtonUp}
+                onMouseLeave={handleRecordButtonLeave}
+                onContextMenu={(e) => e.preventDefault()}
+                disabled={!canCreatePosts || sendingPost}
+                className="w-11 h-11 rounded-full shrink-0 flex items-center justify-center border border-border bg-card disabled:opacity-50"
+                aria-label={recordMode === "voice" ? "Голосовое (удерживайте)" : "Видео-кружок (удерживайте)"}
+                title={recordMode === "voice" ? "Тап: видео • Удержание: запись" : "Тап: голос • Удержание: запись"}
+                type="button"
+              >
+                {recordMode === "voice" ? <Mic className="w-5 h-5" /> : <Video className="w-5 h-5" />}
+              </button>
+            )}
           </div>
+
+          {isRecording ? (
+            <div className="mt-2 flex items-center justify-between rounded-xl border border-border bg-card px-3 py-2">
+              <div className="text-xs text-muted-foreground">Запись… {formatDuration(recordingTime)}</div>
+              <div className="flex items-center gap-2">
+                <Button variant="ghost" size="sm" onClick={cancelVoiceRecording}>
+                  Отмена
+                </Button>
+                <Button size="sm" onClick={() => void stopVoiceRecordingAndSend()}>
+                  Отправить
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
+          <EmojiStickerPicker
+            open={showEmojiPicker}
+            onOpenChange={setShowEmojiPicker}
+            onEmojiSelect={(emoji) => setDraftPost((prev) => prev + emoji)}
+          />
+
+          <Drawer open={showStickerPicker} onOpenChange={setShowStickerPicker}>
+            <DrawerContent className="mx-4 mb-4 rounded-2xl border-0 bg-card">
+              <div className="px-4 py-3 text-sm font-medium">Стикеры</div>
+              <div className="px-4 pb-4 grid grid-cols-5 gap-2">
+                {QUICK_STICKERS.map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    className="h-12 rounded-xl border border-border bg-background/50 text-[26px] flex items-center justify-center"
+                    onClick={() => void sendSticker(s)}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </DrawerContent>
+          </Drawer>
+
+          <AttachmentSheet
+            open={showAttachmentSheet}
+            onOpenChange={setShowAttachmentSheet}
+            onSelectFile={handleAttachment}
+            onSelectLocation={() => toast.message("Геопозиция пока не поддерживается")}
+          />
+
+          {viewingImage ? <ImageViewer src={viewingImage} onClose={() => setViewingImage(null)} /> : null}
+
+          {showVideoRecorder ? (
+            <VideoCircleRecorder onRecord={handleVideoRecord} onCancel={() => setShowVideoRecorder(false)} />
+          ) : null}
         </div>
       )}
     </div>
   );
 }
+

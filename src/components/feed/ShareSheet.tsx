@@ -10,7 +10,7 @@ import { useChannels } from "@/hooks/useChannels";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
-import { sendDmMessage } from "@/lib/chat/sendDmMessage";
+import { buildChatBodyEnvelope, sendMessageV1 } from "@/lib/chat/sendMessageV1";
 import {
   Drawer,
   DrawerContent,
@@ -138,12 +138,15 @@ export function ShareSheet({
         if (type === "dm") {
           // Send to DM conversation with shared post
           const sendDm = async () => {
-            await sendDmMessage({
-              conversationId: id,
-              senderId: user.id,
-              content: "📤 Поделился публикацией",
+            const body = buildChatBodyEnvelope({
+              kind: "share_post",
+              text: "📤 Поделился публикацией",
               shared_post_id: postId,
+            });
+            await sendMessageV1({
+              conversationId: id,
               clientMsgId: getDmClientMsgId(id),
+              body,
             });
           };
           promises.push(sendDm());

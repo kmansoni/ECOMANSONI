@@ -1,4 +1,4 @@
-﻿import type { NotificationEvent } from "../contracts/events";
+import type { NotificationEvent } from "../contracts/events";
 
 export function computeDedupKey(event: NotificationEvent, deviceId: string): string {
   if (event.dedupKey) return `${event.dedupKey}:${deviceId}`;

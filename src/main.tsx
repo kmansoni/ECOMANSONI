@@ -3,8 +3,10 @@ import { ThemeProvider } from "next-themes";
 import App from "./App.tsx";
 import "./index.css";
 import { initTelegramMiniApp } from "@/lib/telegramWebApp";
+import { initIceCacheAutoInvalidation } from "@/lib/webrtc-config";
 
 initTelegramMiniApp();
+initIceCacheAutoInvalidation();
 
 createRoot(document.getElementById("root")!).render(
   <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>

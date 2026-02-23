@@ -22,9 +22,10 @@ const FALLBACK_ICE_SERVERS: RTCIceServer[] = STUN_FALLBACK_ICE_SERVERS;
 // Cache for dynamic TURN credentials
 let cachedIceServers: RTCIceServer[] | null = null;
 let cacheExpiry = 0;
+let cacheAutoInvalidationInitialized = false;
 
 // Default cache aims to stay comfortably below typical 1h shared-secret TTLs.
-const DEFAULT_CACHE_TTL_MS = 50 * 60 * 1000; // 50 minutes
+const DEFAULT_CACHE_TTL_MS = 25 * 60 * 1000; // 25 minutes
 const FALLBACK_CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutes
 const MIN_CACHE_TTL_MS = 2 * 60 * 1000;
 
@@ -61,12 +62,14 @@ async function fetchTurnCredentials(): Promise<{ iceServers: RTCIceServer[] | nu
       ? Math.max(0, parsed.ttlSeconds) * 1000
       : 0;
 
-    // Refresh ahead of expiry by 5 minutes when we have a server-provided TTL.
+    // Keep cache below half of server TTL and still refresh a bit ahead of expiry.
     const ttlMs = Math.max(
       MIN_CACHE_TTL_MS,
       Math.min(
         DEFAULT_CACHE_TTL_MS,
-        ttlFromServerMs > 0 ? Math.max(0, ttlFromServerMs - 5 * 60 * 1000) : DEFAULT_CACHE_TTL_MS,
+        ttlFromServerMs > 0
+          ? Math.max(0, Math.min(ttlFromServerMs / 2, ttlFromServerMs - 60 * 1000))
+          : DEFAULT_CACHE_TTL_MS,
       ),
     );
 
@@ -89,6 +92,7 @@ async function fetchTurnCredentials(): Promise<{ iceServers: RTCIceServer[] | nu
  * or the peer connection will fail to gather viable candidates.
  */
 export async function getIceServers(forceRelay = false): Promise<IceServerConfig> {
+  initIceCacheAutoInvalidation();
   const now = Date.now();
 
   if (cachedIceServers && cacheExpiry > now) {
@@ -134,6 +138,17 @@ export function clearIceServerCache(): void {
   cachedIceServers = null;
   cacheExpiry = 0;
   console.log("[WebRTC Config] ICE server cache cleared");
+}
+export function initIceCacheAutoInvalidation(): void {
+  if (cacheAutoInvalidationInitialized || typeof window === "undefined") return;
+  cacheAutoInvalidationInitialized = true;
+
+  const clear = () => clearIceServerCache();
+  window.addEventListener("online", clear);
+  window.addEventListener("offline", clear);
+
+  const nav = navigator as Navigator & { connection?: { addEventListener?: (type: string, listener: () => void) => void } };
+  nav.connection?.addEventListener?.("change", clear);
 }
 
 export function getMediaConstraints(callType: "video" | "audio"): MediaStreamConstraints {

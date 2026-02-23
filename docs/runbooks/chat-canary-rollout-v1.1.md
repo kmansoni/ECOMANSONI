@@ -1,4 +1,4 @@
-﻿# Chat Canary Rollout Runbook v1.1
+# Chat Canary Rollout Runbook v1.1
 
 ## 1. Purpose
 - Безопасно раскатить chat v1.1 по стадиям: `canary_1 -> canary_10 -> canary_50 -> full`.

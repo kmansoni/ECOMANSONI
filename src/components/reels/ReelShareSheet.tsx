@@ -10,7 +10,7 @@ import { useChannels } from "@/hooks/useChannels";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
-import { sendDmMessage } from "@/lib/chat/sendDmMessage";
+import { buildChatBodyEnvelope, sendMessageV1 } from "@/lib/chat/sendMessageV1";
 import {
   Drawer,
   DrawerContent,
@@ -134,12 +134,15 @@ export function ReelShareSheet({
         if (type === "dm") {
           // Send to DM conversation with shared reel
           const sendDm = async () => {
-            await sendDmMessage({
-              conversationId: id,
-              senderId: user.id,
-              content: "🎬 Поделился Reels",
+            const body = buildChatBodyEnvelope({
+              kind: "share_reel",
+              text: "🎬 Поделился Reels",
               shared_reel_id: reelId,
+            });
+            await sendMessageV1({
+              conversationId: id,
               clientMsgId: getDmClientMsgId(id),
+              body,
             });
 
             try {

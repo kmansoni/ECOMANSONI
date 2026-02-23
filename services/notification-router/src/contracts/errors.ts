@@ -1,4 +1,4 @@
-﻿export class NonRetryableProviderError extends Error {
+export class NonRetryableProviderError extends Error {
   code: string;
 
   constructor(code: string, message: string) {

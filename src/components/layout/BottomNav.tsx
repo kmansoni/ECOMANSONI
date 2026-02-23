@@ -395,7 +395,7 @@ export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function Bottom
                   <Check className="w-5 h-5 text-primary" />
                 )}
                 {needsReauth && (
-                  <AlertCircle className="w-5 h-5 text-red-500" title="Требуется переаутентификация" />
+                  <AlertCircle className="w-5 h-5 text-red-500" aria-label="Требуется переаутентификация" />
                 )}
               </button>
               );

@@ -1,4 +1,4 @@
-﻿# Chat v1.1 Implementation Graph (Backend + DB)
+# Chat v1.1 Implementation Graph (Backend + DB)
 
 ## Жесткая критика текущего состояния
 1. Основная проблема была в data-path: N+1 inbox, неканоничный unread, разрозненные write-path.

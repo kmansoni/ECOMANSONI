@@ -1,4 +1,4 @@
-﻿# Chat Incident Playbook v1.1
+# Chat Incident Playbook v1.1
 
 ## 1. Scope
 - Контур: `send/receipt/recovery/resync/full_state/rollout control`.

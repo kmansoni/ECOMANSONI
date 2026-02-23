@@ -1,4 +1,4 @@
-﻿import type { CallLifecycleEvent } from "./call-lifecycle";
+import type { CallLifecycleEvent } from "./call-lifecycle";
 import type { PushPayload } from "./notification";
 
 export interface EventEnvelope<TType extends string, TPayload> {

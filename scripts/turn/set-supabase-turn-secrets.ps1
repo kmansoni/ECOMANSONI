@@ -28,9 +28,9 @@ $turnUrls = @(
 Write-Host "Setting Supabase TURN secrets..." -ForegroundColor Cyan
 Write-Host "TURN_URLS=$turnUrls" -ForegroundColor DarkGray
 
-& $sb secrets set \
-  TURN_URLS="$turnUrls" \
-  TURN_SHARED_SECRET="$TurnSharedSecret" \
+& $sb secrets set `
+  TURN_URLS="$turnUrls" `
+  TURN_SHARED_SECRET="$TurnSharedSecret" `
   TURN_TTL_SECONDS="$TurnTtlSeconds"
 
 Write-Host "Done." -ForegroundColor Green

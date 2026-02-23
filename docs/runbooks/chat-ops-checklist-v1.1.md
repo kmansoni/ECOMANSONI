@@ -1,4 +1,4 @@
-﻿# Chat Ops Checklist v1.1
+# Chat Ops Checklist v1.1
 
 ## 1. Shift Start (first 10 minutes)
 1. Подтверди роли на смену: `IC`, `Backend`, `SRE`, `Frontend`.

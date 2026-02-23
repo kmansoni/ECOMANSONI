@@ -288,7 +288,7 @@ BEGIN
       ) AS final_score,
       'Exploration' AS recommendation_reason
     FROM scored s
-    WHERE s.id NOT IN (SELECT id FROM exploitation)
+    WHERE s.id NOT IN (SELECT e.id FROM exploitation e)
       AND (s.tiktok_quality_score + s.trend_boost_score) >= 20.0
     ORDER BY random()
     LIMIT v_exploration_limit
@@ -578,7 +578,7 @@ BEGIN
         ) AS final_score,
         'Exploration' AS recommendation_reason
       FROM scored s
-      WHERE s.id NOT IN (SELECT id FROM exploitation)
+      WHERE s.id NOT IN (SELECT e.id FROM exploitation e)
         AND (s.tiktok_quality_score + s.trend_boost_score) >= 20.0
       ORDER BY random()
       LIMIT v_exploration_limit
@@ -653,3 +653,4 @@ GRANT EXECUTE ON FUNCTION public.get_reels_feed_v2(INTEGER, INTEGER, TEXT, NUMER
 
 COMMENT ON FUNCTION public.get_reels_feed_v2(INTEGER, INTEGER, TEXT, NUMERIC, INTEGER, INTEGER, TEXT) IS
   'Main Reels feed ranking RPC (v2): back-compat signature + moderation/channel visibility + telemetry metadata + no-empty fallback (first page).';
+

@@ -10,7 +10,7 @@ import { useGroupChats } from "@/hooks/useGroupChats";
 import { useChannels } from "@/hooks/useChannels";
 import { useSearch, type SearchUser } from "@/hooks/useSearch";
 import { supabase } from "@/lib/supabase";
-import { sendDmMessage } from "@/lib/chat/sendDmMessage";
+import { buildChatBodyEnvelope, sendMessageV1 } from "@/lib/chat/sendMessageV1";
 import { GradientAvatar } from "@/components/ui/gradient-avatar";
 
 interface ForwardMessageSheetProps {
@@ -36,16 +36,6 @@ function messagePreview(message: ChatMessage) {
 function getOtherParticipantTitle(conversation: any, currentUserId: string) {
   const other = (conversation.participants || []).find((p: any) => p.user_id !== currentUserId);
   return other?.profile?.display_name || "Пользователь";
-}
-
-function isIdempotencySchemaMissing(error: unknown) {
-  const msg = String((error as any)?.message ?? error).toLowerCase();
-  return (
-    msg.includes("client_msg_id") ||
-    msg.includes("on conflict") ||
-    msg.includes("no unique") ||
-    msg.includes("no unique or exclusion constraint")
-  );
 }
 
 function guessMyName(user: { email?: string | null; user_metadata?: any } | null): string {
@@ -160,29 +150,28 @@ export function ForwardMessageSheet({ open, onOpenChange, message }: ForwardMess
     const baseContent = (message.content || "").trim() || messagePreview(message);
     const content = withOptionalSignature(baseContent, senderName, withSignature);
 
-    const payload: any = {
-      conversation_id: conversationId,
-      sender_id: user.id,
-      content,
-      client_msg_id: getDmClientMsgId(conversationId),
-    };
+    const kind = message.shared_post_id
+      ? "share_post"
+      : message.shared_reel_id
+        ? "share_reel"
+        : message.media_url || message.media_type
+          ? "media"
+          : "text";
 
-    if (message.media_url) payload.media_url = message.media_url;
-    if (message.media_type) payload.media_type = message.media_type;
-    if (message.duration_seconds != null) payload.duration_seconds = message.duration_seconds;
-    if (message.shared_post_id) payload.shared_post_id = message.shared_post_id;
-    if (message.shared_reel_id) payload.shared_reel_id = message.shared_reel_id;
+    const body = buildChatBodyEnvelope({
+      kind,
+      text: content,
+      media_url: message.media_url ?? null,
+      media_type: message.media_type ?? null,
+      duration_seconds: message.duration_seconds ?? null,
+      shared_post_id: message.shared_post_id ?? null,
+      shared_reel_id: message.shared_reel_id ?? null,
+    });
 
-    await sendDmMessage({
+    await sendMessageV1({
       conversationId,
-      senderId: user.id,
-      content: payload.content,
-      clientMsgId: payload.client_msg_id,
-      media_url: payload.media_url ?? null,
-      media_type: payload.media_type ?? null,
-      duration_seconds: payload.duration_seconds ?? null,
-      shared_post_id: payload.shared_post_id ?? null,
-      shared_reel_id: payload.shared_reel_id ?? null,
+      clientMsgId: getDmClientMsgId(conversationId),
+      body,
     });
   };
 

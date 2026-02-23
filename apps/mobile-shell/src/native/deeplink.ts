@@ -1,4 +1,4 @@
-﻿export type DeepLinkEvent = {
+export type DeepLinkEvent = {
   path: string;
   params?: Record<string, string>;
 };

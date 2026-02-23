@@ -52,31 +52,66 @@ export function useMarkConversationRead() {
           return;
         }
 
-        const nowIso = new Date().toISOString();
-
-        // Run both updates in parallel.
-        const [msgRes, partRes] = await Promise.all([
-          supabase
-            .from("messages")
-            .update({ is_read: true })
-            .eq("conversation_id", conversationId)
-            .neq("sender_id", user.id)
-            .eq("is_read", false),
-          supabase
-            .from("conversation_participants")
-            .update({ last_read_at: nowIso })
-            .eq("conversation_id", conversationId)
-            .eq("user_id", user.id),
-        ]);
-
-        // Prefer surfacing errors to console to help debug RLS.
-        if (msgRes.error) {
+        // Seq-only read receipt: advance read cursor up to current server seq.
+        const { data: convRow, error: convErr } = await supabase
+          .from("conversations")
+          .select("server_seq, last_message_seq")
+          .eq("id", conversationId)
+          .maybeSingle();
+        if (convErr) {
           // eslint-disable-next-line no-console
-          console.error("[markConversationRead] messages update error", msgRes.error);
+          console.error("[markConversationRead] conversation load error", convErr);
+          return;
         }
-        if (partRes.error) {
+
+        const targetSeq = Number((convRow as any)?.server_seq || (convRow as any)?.last_message_seq || 0);
+        if (!Number.isFinite(targetSeq) || targetSeq <= 0) return;
+
+        // Keep server invariants: read_up_to_seq must never exceed delivered_up_to_seq.
+        // Force delivered cursor first to avoid transient read_gt_delivered on fast UI paths.
+        const { data: deliveredRows, error: deliveredErr } = await (supabase as any).rpc("ack_delivered_v1", {
+          p_conversation_id: conversationId,
+          p_up_to_seq: targetSeq,
+        });
+        if (deliveredErr) {
           // eslint-disable-next-line no-console
-          console.error("[markConversationRead] participants update error", partRes.error);
+          console.error("[markConversationRead] ack_delivered_v1 rpc error", deliveredErr);
+          return;
+        }
+
+        const deliveredRow = Array.isArray(deliveredRows) ? deliveredRows[0] : deliveredRows;
+        const deliveredSeq = Number((deliveredRow as any)?.delivered_up_to_seq || targetSeq);
+        const readUpToSeq = Number.isFinite(deliveredSeq) && deliveredSeq > 0 ? Math.min(targetSeq, deliveredSeq) : targetSeq;
+
+        const { error: rpcErr } = await (supabase as any).rpc("ack_read_v1", {
+          p_conversation_id: conversationId,
+          p_up_to_seq: readUpToSeq,
+        });
+        if (rpcErr) {
+          // If delivered cursor moved concurrently, retry once with the latest delivered value.
+          const isReadGtDelivered = String((rpcErr as any)?.message || "").includes("read_gt_delivered");
+          if (isReadGtDelivered) {
+            const { data: deliveredRetryRows, error: deliveredRetryErr } = await (supabase as any).rpc("ack_delivered_v1", {
+              p_conversation_id: conversationId,
+              p_up_to_seq: targetSeq,
+            });
+            if (!deliveredRetryErr) {
+              const deliveredRetryRow = Array.isArray(deliveredRetryRows) ? deliveredRetryRows[0] : deliveredRetryRows;
+              const deliveredRetrySeq = Number((deliveredRetryRow as any)?.delivered_up_to_seq || 0);
+              if (Number.isFinite(deliveredRetrySeq) && deliveredRetrySeq > 0) {
+                const { error: readRetryErr } = await (supabase as any).rpc("ack_read_v1", {
+                  p_conversation_id: conversationId,
+                  p_up_to_seq: Math.min(targetSeq, deliveredRetrySeq),
+                });
+                if (!readRetryErr) return;
+                // eslint-disable-next-line no-console
+                console.error("[markConversationRead] ack_read_v1 retry rpc error", readRetryErr);
+                return;
+              }
+            }
+          }
+          // eslint-disable-next-line no-console
+          console.error("[markConversationRead] ack_read_v1 rpc error", rpcErr);
         }
       } finally {
         inFlightRef.current = false;

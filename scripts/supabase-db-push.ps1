@@ -2,7 +2,6 @@ param(
   [switch]$DryRun,
   [switch]$Yes,
   [switch]$PromptDbPassword,
-  [string]$DbPassword,
   [string]$SupabaseExePath = "C:\\Users\\manso\\AppData\\Local\\supabase-cli\\v2.75.0\\supabase.exe"
 )
 
@@ -15,7 +14,8 @@ if (-not (Test-Path -LiteralPath $SupabaseExePath)) {
 $previousToken = $env:SUPABASE_ACCESS_TOKEN
 $tokenWasSet = [string]::IsNullOrWhiteSpace($previousToken) -eq $false
 
-$dbPasswordWasSet = -not [string]::IsNullOrWhiteSpace($DbPassword)
+$DbPasswordSecure = $null
+$dbPasswordWasSet = $false
 
 try {
   if (-not $tokenWasSet) {
@@ -34,37 +34,64 @@ try {
     $env:SUPABASE_ACCESS_TOKEN = $token
   }
 
-  if (-not $dbPasswordWasSet -and $PromptDbPassword) {
-    $securePw = Read-Host "Remote Postgres database password" -AsSecureString
-    $bstrPw = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePw)
+  if ($PromptDbPassword) {
+    $DbPasswordSecure = Read-Host "Remote Postgres database password" -AsSecureString
+    if ($null -eq $DbPasswordSecure) {
+      throw "Database password is empty."
+    }
+    $dbPasswordWasSet = $true
+  }
+
+  $dbPasswordPlain = $null
+  if ($null -ne $DbPasswordSecure) {
+    $bstrPw = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($DbPasswordSecure)
     try {
-      $DbPassword = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstrPw)
+      $dbPasswordPlain = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstrPw)
     } finally {
       [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstrPw)
     }
-
-    if ([string]::IsNullOrWhiteSpace($DbPassword)) {
+    if ([string]::IsNullOrWhiteSpace($dbPasswordPlain)) {
       throw "Database password is empty."
     }
   }
 
   $pushArgs = @('db', 'push')
-  if ($DryRun) { $pushArgs += '--dry-run' }
-  if ($Yes -or -not $PSBoundParameters.ContainsKey('Yes')) { $pushArgs += '--yes' }
-  if (-not [string]::IsNullOrWhiteSpace($DbPassword)) {
-    $pushArgs += @('-p', $DbPassword)
+  $pushArgsForLog = @('db', 'push')
+  if ($DryRun) {
+    $pushArgs += '--dry-run'
+    $pushArgsForLog += '--dry-run'
+  }
+  if ($Yes -or -not $PSBoundParameters.ContainsKey('Yes')) {
+    $pushArgs += '--yes'
+    $pushArgsForLog += '--yes'
+  }
+  if (-not [string]::IsNullOrWhiteSpace($dbPasswordPlain)) {
+    $pushArgs += @('-p', $dbPasswordPlain)
+    $pushArgsForLog += @('-p', '<redacted>')
   }
 
   $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
   $logPath = Join-Path $repoRoot 'supabase\.temp\db-push.txt'
 
-  Write-Host "Running: supabase $($pushArgs -join ' ')" -ForegroundColor Cyan
+  Write-Host "Running: supabase $($pushArgsForLog -join ' ')" -ForegroundColor Cyan
   $output = & $SupabaseExePath @pushArgs 2>&1
   $exitCode = $LASTEXITCODE
 
   $stamp = (Get-Date).ToString('s')
-  $header = "[$stamp] supabase $($pushArgs -join ' ') (exit=$exitCode)"
-  $toWrite = @($header) + ($output | ForEach-Object { "$($_)" })
+  $header = "[$stamp] supabase $($pushArgsForLog -join ' ') (exit=$exitCode)"
+
+  function Sanitize-Line([string]$line) {
+    if ($null -eq $line) { return $line }
+
+    $s = [string]$line
+    # Redact Supabase access tokens if they appear in any output.
+    $s = [System.Text.RegularExpressions.Regex]::Replace($s, 'sbp_[A-Za-z0-9]+', 'sbp_<redacted>')
+    # Redact any accidental "-p <password>" fragments that might slip into output.
+    $s = [System.Text.RegularExpressions.Regex]::Replace($s, '(-p\s+)([^\s]+)', '$1<redacted>')
+    return $s
+  }
+
+  $toWrite = @($header) + ($output | ForEach-Object { Sanitize-Line "$($_)" })
   $toWrite | Set-Content -LiteralPath $logPath -Encoding UTF8
 
   if ($exitCode -ne 0) {
@@ -81,5 +108,6 @@ finally {
   }
 
   # Best-effort: clear password variable
-  $DbPassword = $null
+  $DbPasswordSecure = $null
+  $dbPasswordPlain = $null
 }

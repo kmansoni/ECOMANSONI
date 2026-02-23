@@ -1,4 +1,4 @@
-﻿export interface MessagePushPayload {
+export interface MessagePushPayload {
   v: 1;
   kind: "message";
   messageId: string;

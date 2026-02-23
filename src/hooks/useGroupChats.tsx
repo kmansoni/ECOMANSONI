@@ -249,12 +249,16 @@ export function useGroupMessages(groupId: string | null) {
   }, [groupId]);
 
   const sendMessage = async (content: string) => {
-    if (!groupId || !user || !content.trim()) return;
+    if (!groupId || !user || !content.trim()) {
+      if (!user) throw new Error("GROUP_NOT_AUTHENTICATED");
+      if (!groupId) throw new Error("GROUP_NOT_SELECTED");
+      throw new Error("GROUP_EMPTY_MESSAGE");
+    }
 
     try {
       const hashtagVerdict = await checkHashtagsAllowedForText(String(content || "").trim());
       if (!hashtagVerdict.ok) {
-        throw new Error(`HASHTAG_BLOCKED:${hashtagVerdict.blockedTags.join(", ")}`);
+        throw new Error(`HASHTAG_BLOCKED:${("blockedTags" in hashtagVerdict ? hashtagVerdict.blockedTags : []).join(", ")}`);
       }
 
       const { error } = await supabase.from("group_chat_messages").insert({

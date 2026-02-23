@@ -11,6 +11,8 @@ import {
   User,
   Loader2,
   Plus,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useReels } from "@/hooks/useReels";
@@ -20,6 +22,9 @@ import { toast } from "sonner";
 import { ReelCommentsSheet } from "@/components/reels/ReelCommentsSheet";
 import { ReelShareSheet } from "@/components/reels/ReelShareSheet";
 import { VerifiedBadge } from "@/components/ui/verified-badge";
+
+const REELS_NAV_COOLDOWN_MS = 350;
+const REELS_WHEEL_THRESHOLD_PX = 18;
 
 function formatNumber(num: number): string {
   if (num >= 1000000) {
@@ -33,10 +38,22 @@ function formatNumber(num: number): string {
 
 function isProbablyVideoUrl(url: string): boolean {
   const lower = (url || "").toLowerCase();
+  
   // Covers public storage URLs and direct file URLs.
-  if (/\.(mp4|webm|mov|avi|m4v)(\?|#|$)/.test(lower)) return true;
+  if (/\.(mp4|webm|mov|avi|m4v)(\?|#|$)/.test(lower)) {
+    return true;
+  }
+  
   // Heuristic fallback: some URLs don't contain an extension.
-  if (lower.includes("video/")) return true;
+  if (lower.includes("video/")) {
+    return true;
+  }
+  
+  // Supabase storage paths
+  if (lower.includes("/reels-media/") || lower.includes("/storage/v1/object/public/reels-media/")) {
+    return true;
+  }
+  
   return false;
 }
 
@@ -46,6 +63,9 @@ export function ReelsPage() {
   const {
     reels,
     loading,
+    loadMore,
+    hasMore,
+    loadingMore,
     toggleLike,
     toggleSave,
     toggleRepost,
@@ -59,6 +79,7 @@ export function ReelsPage() {
   } = useReels();
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true);
+  const [isMuted, setIsMuted] = useState(true);
   const [commentsReelId, setCommentsReelId] = useState<string | null>(null);
   const [shareReelId, setShareReelId] = useState<string | null>(null);
   const [failedVideoIds, setFailedVideoIds] = useState<Set<string>>(() => new Set());
@@ -66,6 +87,9 @@ export function ReelsPage() {
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRefs = useRef<Map<number, HTMLVideoElement>>(new Map());
   const reelElementRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+  const touchStartY = useRef<number | null>(null);
+  const touchStartAt = useRef<number | null>(null);
+  const lastNavAt = useRef<number>(0);
   const viewRecordedForReel = useRef<Set<string>>(new Set());
   // Progressive tracking state (per reel, per session)
   const impressionRecordedForReel = useRef<Map<string, boolean>>(new Map());
@@ -78,6 +102,46 @@ export function ReelsPage() {
   const errorToastShown = useRef<Set<string>>(new Set());
 
   const currentReel = reels[currentIndex];
+
+  const scrollToIndex = useCallback(
+    (nextIndex: number) => {
+      if (nextIndex < 0 || nextIndex >= reels.length) {
+        return;
+      }
+      const el = reelElementRefs.current.get(nextIndex);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+      } else if (containerRef.current) {
+        const itemHeight = containerRef.current.clientHeight;
+        containerRef.current.scrollTo({ top: nextIndex * itemHeight, behavior: "smooth" });
+      }
+      setCurrentIndex(nextIndex);
+      setIsPlaying(true);
+    },
+    [reels.length],
+  );
+
+  const navigateRelative = useCallback(
+    (delta: number) => {
+      if (reels.length === 0) return;
+      if (commentsReelId || shareReelId) return;
+      const nextIndex = currentIndex + delta;
+      scrollToIndex(nextIndex);
+    },
+    [commentsReelId, currentIndex, reels.length, scrollToIndex, shareReelId],
+  );
+
+  // Auto-load next page when approaching the end.
+  useEffect(() => {
+    if (loading) return;
+    if (loadingMore) return;
+    if (!hasMore) return;
+    if (reels.length === 0) return;
+
+    if (currentIndex >= reels.length - 3) {
+      loadMore();
+    }
+  }, [currentIndex, hasMore, loadMore, loading, loadingMore, reels.length]);
 
   // IntersectionObserver: viewport tracking (50%+ visibility, 1+ sec)
   useEffect(() => {
@@ -200,16 +264,59 @@ export function ReelsPage() {
     [user, recordView],
   );
 
+  const tryPlayVideo = useCallback((index: number) => {
+    const video = videoRefs.current.get(index);
+    if (!video) return;
+    
+    video.muted = isMuted;
+    video.playsInline = true;
+    
+    const playPromise = video.play();
+    if (playPromise !== undefined) {
+      playPromise
+        .then(() => undefined)
+        .catch((err) => {
+          console.warn("[Reels] Play failed:", err.name);
+          // If unmuted play fails (browser policy), try muted
+          if (!video.muted) {
+            video.muted = true;
+            setIsMuted(true);
+            void video.play().catch((retryErr) => {
+              console.error("[Reels] Muted play also failed:", retryErr);
+            });
+          }
+        });
+    }
+  }, [isMuted]);
+
   // Handle video play/pause based on current index
   useEffect(() => {
     videoRefs.current.forEach((video, index) => {
       if (index === currentIndex && isPlaying) {
-        video.play().catch(() => {});
+        // Only play if not already playing
+        if (video.paused) {
+          video.muted = isMuted;
+          tryPlayVideo(index);
+        } else {
+          // Just sync muted state if already playing
+          video.muted = isMuted;
+        }
       } else {
-        video.pause();
+        // Pause non-current videos
+        if (!video.paused) {
+          video.pause();
+        }
       }
     });
   }, [currentIndex, isPlaying]);
+
+  // Sync muted state separately (don't retrigger play)
+  useEffect(() => {
+    const currentVideo = videoRefs.current.get(currentIndex);
+    if (currentVideo) {
+      currentVideo.muted = isMuted;
+    }
+  }, [isMuted, currentIndex]);
 
   // Native scroll handler - detect which reel is visible
   const handleScroll = useCallback(() => {
@@ -219,12 +326,78 @@ export function ReelsPage() {
     const scrollTop = container.scrollTop;
     const itemHeight = container.clientHeight;
     const newIndex = Math.round(scrollTop / itemHeight);
-    
+
     if (newIndex !== currentIndex && newIndex >= 0 && newIndex < reels.length) {
       setCurrentIndex(newIndex);
       setIsPlaying(true);
     }
   }, [currentIndex, reels.length]);
+
+  const handleWheel = useCallback(
+    (e: React.WheelEvent) => {
+      // Desktop convenience: wheel/trackpad scrolls one reel at a time.
+      // Keep native touch scroll-snap for mobile.
+      if (commentsReelId || shareReelId) return;
+      if (!reels.length) return;
+
+      const dy = e.deltaY;
+      if (Math.abs(dy) < REELS_WHEEL_THRESHOLD_PX) return;
+
+      const now = Date.now();
+      if (now - lastNavAt.current < REELS_NAV_COOLDOWN_MS) return;
+      lastNavAt.current = now;
+
+      e.preventDefault();
+      navigateRelative(dy > 0 ? 1 : -1);
+    },
+    [commentsReelId, navigateRelative, reels.length, shareReelId],
+  );
+
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length !== 1) return;
+    touchStartY.current = e.touches[0].clientY;
+    touchStartAt.current = Date.now();
+  }, []);
+
+  const handleTouchEnd = useCallback(
+    (e: React.TouchEvent) => {
+      const startY = touchStartY.current;
+      const startAt = touchStartAt.current;
+      touchStartY.current = null;
+      touchStartAt.current = null;
+
+      if (startY == null || startAt == null) return;
+      const endY = e.changedTouches[0]?.clientY;
+      if (typeof endY !== "number") return;
+
+      const dy = endY - startY;
+      const dt = Date.now() - startAt;
+
+      // Debounce nav: avoid double-trigger on some devices.
+      const now = Date.now();
+      if (now - lastNavAt.current < REELS_NAV_COOLDOWN_MS) return;
+
+      // Fallback swipe navigation: helpful on devices where nested scroll + snap is flaky.
+      // Only trigger on a reasonably fast, deliberate swipe.
+      if (dt > 800) {
+        return;
+      }
+      if (Math.abs(dy) < 60) {
+        return;
+      }
+
+      lastNavAt.current = now;
+
+      if (dy < 0) {
+        // swipe up -> next
+        navigateRelative(1);
+      } else {
+        // swipe down -> prev
+        navigateRelative(-1);
+      }
+    },
+    [navigateRelative],
+  );
 
   const handleLike = useCallback((reelId: string) => {
     if (!user) {
@@ -272,6 +445,10 @@ export function ReelsPage() {
   const togglePlay = () => {
     setIsPlaying(!isPlaying);
   };
+
+  const toggleMute = useCallback(() => {
+    setIsMuted(!isMuted);
+  }, [isMuted]);
 
   const handleVideoError = useCallback((reelId: string) => {
     setFailedVideoIds((prev) => {
@@ -358,10 +535,14 @@ export function ReelsPage() {
         ref={containerRef}
         className="h-[calc(100vh-4rem-3rem)] overflow-y-auto overflow-x-hidden scrollbar-hide"
         onScroll={handleScroll}
+        onWheel={handleWheel}
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
         style={{
           scrollSnapType: 'y mandatory',
           WebkitOverflowScrolling: 'touch',
           scrollBehavior: 'smooth',
+          touchAction: 'pan-y',
         }}
       >
       {reels.map((reel, index) => (
@@ -380,21 +561,72 @@ export function ReelsPage() {
           onClick={() => handleDoubleTap(reel.id, reel.isLiked || false)}
         >
           {/* Video/Image Background */}
-          <div className="absolute inset-0 overflow-hidden">
+          <div className="absolute inset-0 overflow-hidden" style={{ zIndex: 0 }}>
             {isProbablyVideoUrl(reel.video_url) && !failedVideoIds.has(reel.id) ? (
               <video
                 ref={(el) => {
-                  if (el) videoRefs.current.set(index, el);
+                  if (el) {
+                    videoRefs.current.set(index, el);
+                    // Playback attributes (some mobile webviews are picky)
+                    el.setAttribute('webkit-playsinline', 'true');
+                    el.setAttribute('x5-playsinline', 'true');
+                  }
                 }}
                 src={reel.video_url}
-                poster={reel.thumbnail_url || undefined}
-                className="w-full h-full object-cover"
+                className="w-full h-full"
+                style={{
+                  backgroundColor: '#000',
+                  objectFit: 'contain',
+                  zIndex: 1,
+                  display: 'block',
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  height: '100%',
+                }}
                 loop
-                muted
+                muted={isMuted}
                 playsInline
+                autoPlay={index === currentIndex && isPlaying}
                 preload="auto"
-                onError={() => handleVideoError(reel.id)}
-                onPlay={() => handleVideoPlay(reel.id, reel.author_id)}
+                onError={(e) => {
+                  console.error("[Reels] Video ERROR:", reel.id, e);
+                  handleVideoError(reel.id);
+                }}
+                onLoadedMetadata={(e) => {
+                  const vid = e.currentTarget;
+                  console.log("[Reels] ✓ Metadata loaded:", {
+                    id: reel.id.slice(0,8),
+                    videoSize: `${vid.videoWidth}x${vid.videoHeight}`,
+                    displaySize: `${vid.clientWidth}x${vid.clientHeight}`,
+                    duration: vid.duration.toFixed(1),
+                  });
+                }}
+                onLoadedData={() => {
+                  if (index === currentIndex && isPlaying) tryPlayVideo(index);
+                }}
+                onPlay={(e) => {
+                  const vid = e.currentTarget;
+                  console.log("[Reels] ▶ Video PLAY:", {
+                    paused: vid.paused,
+                    currentTime: vid.currentTime,
+                    width: vid.offsetWidth,
+                    height: vid.offsetHeight,
+                    visible: vid.offsetParent !== null,
+                    display: getComputedStyle(vid).display,
+                  });
+                  handleVideoPlay(reel.id, reel.author_id);
+                }}
+                onPlaying={() => {
+                  // Video is actually playing now
+                }}
+                onPause={() => {
+                  // Video paused
+                }}
+                onTimeUpdate={() => {
+                  // Video playing
+                }}
               />
             ) : reel.thumbnail_url ? (
               <img
@@ -431,8 +663,26 @@ export function ReelsPage() {
           </div>
 
           {/* Gradient overlays */}
-          <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-black/60 to-transparent pointer-events-none" />
-          <div className="absolute inset-x-0 bottom-0 h-48 bg-gradient-to-t from-black/80 to-transparent pointer-events-none" />
+          <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-black/60 to-transparent pointer-events-none" style={{ zIndex: 2 }} />
+          <div className="absolute inset-x-0 bottom-0 h-48 bg-gradient-to-t from-black/80 to-transparent pointer-events-none" style={{ zIndex: 2 }} />
+
+          {/* Sound control button (top left) */}
+          {index === currentIndex && isProbablyVideoUrl(reel.video_url) && (
+            <button
+              className="absolute top-4 left-4 z-20 w-10 h-10 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center transition-all duration-200 hover:bg-black/60 active:scale-95"
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleMute();
+              }}
+              aria-label={isMuted ? "Включить звук" : "Выключить звук"}
+            >
+              {isMuted ? (
+                <VolumeX className="w-5 h-5 text-white" />
+              ) : (
+                <Volume2 className="w-5 h-5 text-white" />
+              )}
+            </button>
+          )}
 
           {/* Right sidebar actions */}
           <div className="absolute right-3 bottom-8 flex flex-col items-center gap-4 z-10">

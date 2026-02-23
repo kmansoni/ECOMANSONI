@@ -1,4 +1,4 @@
-﻿export type ConnectionServiceAction =
+export type ConnectionServiceAction =
   | { type: "incoming"; callId: string; callerName: string; hasVideo: boolean }
   | { type: "answer"; callId: string }
   | { type: "reject"; callId: string }

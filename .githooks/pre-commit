@@ -1,0 +1,5 @@
+#!/usr/bin/env sh
+set -eu
+
+echo "[pre-commit] BOM guard"
+node ./scripts/encoding/check-bom.mjs

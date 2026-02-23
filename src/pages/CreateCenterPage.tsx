@@ -636,7 +636,7 @@ export function CreateCenterPage() {
                 <div className="flex items-center justify-between">
                   <div className="text-sm font-medium">Недавние</div>
                   <div className="flex items-center gap-2">
-                    {selectedItems.length > 0 && activeTab !== "live" && (
+                    {selectedItems.length > 0 && (
                       <button
                         type="button"
                         onClick={() => setSelectedItems([])}

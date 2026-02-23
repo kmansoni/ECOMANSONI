@@ -6,6 +6,8 @@ import WebSocket, { WebSocketServer } from "ws";
 import { createStoreFromEnv } from "./store/index.mjs";
 
 const PORT = Number(process.env.CALLS_WS_PORT ?? "8787");
+const CALLS_DEV_INSECURE_AUTH = process.env.CALLS_DEV_INSECURE_AUTH === "1";
+const CALLS_JOIN_TOKEN_TTL_SEC = Math.max(30, Number(process.env.CALLS_JOIN_TOKEN_TTL_SEC ?? "600"));
 const { store, degraded } = await createStoreFromEnv();
 
 const GW_HELLO_PAYLOAD = {
@@ -76,10 +78,105 @@ const rooms = new Map(); // roomId -> { callId, region, nodeId, epoch, memberSet
 
 const deviceSockets = new Map(); // deviceId -> ws
 
-function getTurnIceServers() {
-  const urlsRaw = process.env.CALLS_TURN_URLS;
-  const urls = (urlsRaw ? urlsRaw.split(",") : ["stun:stun.l.google.com:19302"]).map((s) => s.trim()).filter(Boolean);
-  return urls.map((u) => ({ urls: u }));
+function getTurnIceServersPublic() {
+  const urls = String(process.env.CALLS_TURN_URLS ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  // IMPORTANT: WS is signaling/control-plane only.
+  // It must NEVER emit TURN username/credential (those are issued by edge function).
+  // WS only advertises TURN URLs (if any).
+  return urls.length ? [{ urls }] : [];
+}
+
+function getJoinTokenSecret() {
+  return process.env.CALLS_JOIN_TOKEN_SECRET ?? process.env.SUPABASE_JWT_SECRET ?? "dev-only-join-token-secret";
+}
+
+function encodeBase64Url(raw) {
+  return Buffer.from(raw)
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+}
+
+function decodeBase64Url(raw) {
+  const normalized = raw.replace(/-/g, "+").replace(/_/g, "/");
+  const padLen = (4 - (normalized.length % 4)) % 4;
+  const padded = normalized + "=".repeat(padLen);
+  return Buffer.from(padded, "base64").toString("utf8");
+}
+
+function issueJoinToken({ roomId, callId, userId }) {
+  const payload = {
+    roomId,
+    callId,
+    userId,
+    exp: Math.floor(Date.now() / 1000) + CALLS_JOIN_TOKEN_TTL_SEC,
+  };
+  const encodedPayload = encodeBase64Url(JSON.stringify(payload));
+  const sig = crypto
+    .createHmac("sha256", getJoinTokenSecret())
+    .update(encodedPayload)
+    .digest("base64url");
+  return `${encodedPayload}.${sig}`;
+}
+
+function verifyJoinToken(joinToken) {
+  if (typeof joinToken !== "string") return null;
+  const [encodedPayload, sig] = joinToken.split(".");
+  if (!encodedPayload || !sig) return null;
+
+  const expectedSig = crypto
+    .createHmac("sha256", getJoinTokenSecret())
+    .update(encodedPayload)
+    .digest("base64url");
+  if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expectedSig))) return null;
+
+  try {
+    const payload = JSON.parse(decodeBase64Url(encodedPayload));
+    const expMs = Number(payload?.exp ?? 0) * 1000;
+    if (!expMs || expMs <= Date.now()) return null;
+    if (typeof payload?.roomId !== "string" || typeof payload?.callId !== "string" || typeof payload?.userId !== "string") {
+      return null;
+    }
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+async function validateSupabaseAccessToken(accessToken) {
+  if (CALLS_DEV_INSECURE_AUTH) {
+    return { ok: true, userId: `dev_${String(accessToken).slice(0, 8)}` };
+  }
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return { ok: false, userId: null, reason: "missing_supabase_env" };
+  }
+  try {
+    const res = await fetch(`${supabaseUrl}/auth/v1/user`, {
+      method: "GET",
+      headers: {
+        apikey: supabaseAnonKey,
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+    if (!res.ok) {
+      return { ok: false, userId: null, reason: `auth_api_status_${res.status}` };
+    }
+    const data = await res.json().catch(() => null);
+    const userId = typeof data?.id === "string" ? data.id : null;
+    if (!userId) {
+      return { ok: false, userId: null, reason: "auth_api_no_user_id" };
+    }
+    return { ok: true, userId };
+  } catch (error) {
+    return { ok: false, userId: null, reason: error instanceof Error ? error.message : "auth_api_error" };
+  }
 }
 
 function sendGwHello(ws, seq) {
@@ -144,7 +241,7 @@ wss.on("connection", (ws) => {
     deviceId: null,
     expectedSeq: 1,
     seenMsgIds: new Map(),
-    resumeToken: uuid()
+    resumeToken: uuid(),
   };
 
   ws.on("message", async (data) => {
@@ -198,14 +295,18 @@ wss.on("connection", (ws) => {
       }
 
       case "AUTH": {
-        // DEV ONLY: accept any token-like string.
         const accessToken = frame.payload?.accessToken;
         if (typeof accessToken !== "string" || accessToken.length < 20) {
           ack(ws, frame.msgId, false, wsError("UNAUTHENTICATED", "Missing accessToken", {}, false));
           return;
         }
+        const authResult = await validateSupabaseAccessToken(accessToken);
+        if (!authResult.ok || !authResult.userId) {
+          ack(ws, frame.msgId, false, wsError("UNAUTHENTICATED", "Invalid accessToken", { reason: authResult.reason ?? "invalid" }, false));
+          return;
+        }
         conn.authenticated = true;
-        conn.userId = `dev_${accessToken.slice(0, 8)}`;
+        conn.userId = authResult.userId;
         if (conn.deviceId) deviceSockets.set(conn.deviceId, ws);
         send(ws, {
           v: 1,
@@ -306,6 +407,8 @@ wss.on("connection", (ws) => {
           callId,
           region,
           nodeId,
+          ownerUserId: conn.userId,
+          joinToken: issueJoinToken({ roomId, callId, userId: conn.userId }),
           epoch: 0,
           memberSetVersion: 0,
           peers: new Map(),
@@ -324,6 +427,15 @@ wss.on("connection", (ws) => {
           payload: { roomId, callId, region, nodeId, epoch: 0, memberSetVersion: 0 }
         });
 
+        send(ws, {
+          v: 1,
+          type: "ROOM_JOIN_SECRET",
+          msgId: uuid(),
+          ts: nowMs(),
+          seq: conn.expectedSeq++,
+          payload: { roomId, joinToken: rooms.get(roomId).joinToken }
+        });
+
         return ack(ws, frame.msgId, true);
       }
 
@@ -339,6 +451,16 @@ wss.on("connection", (ws) => {
         }
 
         const room = rooms.get(roomId);
+        const providedJoinToken = frame.payload?.joinToken;
+        const joinPayload = verifyJoinToken(providedJoinToken);
+        if (!joinPayload) {
+          ack(ws, frame.msgId, false, wsError("UNAUTHORIZED", "Invalid join token", { roomId }, false));
+          return;
+        }
+        if (joinPayload.roomId !== roomId || joinPayload.callId !== room.callId || joinPayload.userId !== conn.userId) {
+          ack(ws, frame.msgId, false, wsError("UNAUTHORIZED", "Invalid join token", { roomId }, false));
+          return;
+        }
         const deviceId = frame.payload?.deviceId ?? conn.deviceId ?? `dev_${uuid().slice(0, 6)}`;
         conn.deviceId = deviceId;
         deviceSockets.set(deviceId, ws);
@@ -353,6 +475,10 @@ wss.on("connection", (ws) => {
           e2eeReady: false
         });
 
+        const iceServers = getTurnIceServersPublic();
+        const turnUrls = iceServers.length ? iceServers[0].urls : [];
+        const turnAvailable = Array.isArray(turnUrls) && turnUrls.some((u) => typeof u === "string" && /^turns?:/i.test(u));
+
         send(ws, {
           v: 1,
           type: "ROOM_JOIN_OK",
@@ -366,15 +492,17 @@ wss.on("connection", (ws) => {
             nodeId: room.nodeId,
             epoch: room.epoch,
             memberSetVersion: room.memberSetVersion,
-            joinToken: `dev_join_${uuid()}`,
             mediasoup: {
               routerRtpCapabilities: {},
               sendTransportOptions: {},
               recvTransportOptions: {}
             },
             turn: {
-              iceServers: getTurnIceServers(),
-              forceRelayAfterMs: 4000
+              turnAvailable,
+              turnUrls,
+              iceServers, // urls only; never includes username/credential
+              credsVia: "edge_function",
+              forceRelayAfterMs: turnAvailable ? 4000 : 0,
             }
           }
         });

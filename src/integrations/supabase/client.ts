@@ -25,6 +25,37 @@ const SUPABASE_PUBLISHABLE_KEY = normalizeSupabaseKey(
   import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? import.meta.env.VITE_SUPABASE_ANON_KEY,
 );
 
+function extractProjectRefFromUrl(url: string): string | null {
+  const m = String(url || "").trim().match(/^https?:\/\/([a-z0-9-]+)\.supabase\.co\/?/i);
+  return m?.[1] ? String(m[1]) : null;
+}
+
+function enforceExpectedProjectRef() {
+  // Build-time env lock: prevents shipping a bundle that points to a different Supabase project.
+  // This is intentionally strict in production builds.
+  const expected = normalizeEnv((import.meta as any)?.env?.VITE_EXPECTED_SUPABASE_PROJECT_REF);
+  if (!expected) return;
+
+  const actual = extractProjectRefFromUrl(SUPABASE_URL);
+  if (actual && expected && actual !== expected) {
+    throw new Error(`SUPABASE_PROJECT_MISMATCH expected=${expected} actual=${actual}`);
+  }
+}
+
+if (!import.meta.env.DEV) {
+  enforceExpectedProjectRef();
+}
+
+if (import.meta.env.DEV) {
+  const projectRef = extractProjectRefFromUrl(SUPABASE_URL);
+  const anonPrefix = SUPABASE_PUBLISHABLE_KEY ? SUPABASE_PUBLISHABLE_KEY.slice(0, 8) : "";
+  console.info("[Env] Supabase", {
+    VITE_SUPABASE_URL: SUPABASE_URL,
+    projectRef,
+    anonKeyPrefix: anonPrefix,
+  });
+}
+
 if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
   console.error("[Supabase] Missing VITE_SUPABASE_URL or VITE_SUPABASE_PUBLISHABLE_KEY");
 }

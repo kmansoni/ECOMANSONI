@@ -156,7 +156,7 @@ export function CreatePostSheet({ isOpen, onClose }: CreatePostSheetProps) {
       const hashtagVerdict = await checkHashtagsAllowedForText(text.trim());
       if (!hashtagVerdict.ok) {
         toast.error("Некоторые хештеги недоступны", {
-          description: hashtagVerdict.blockedTags.join(", "),
+          description: ("blockedTags" in hashtagVerdict ? hashtagVerdict.blockedTags : []).join(", "),
         });
         return;
       }

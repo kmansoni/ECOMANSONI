@@ -67,7 +67,6 @@ describe("multiAccount/vault", () => {
       { accountId: "u1" },
       // @ts-expect-error - intentionally malformed (invalid accountId)
       { accountId: "" },
-      // @ts-expect-error - intentionally malformed (null entry)
       null,
     ]);
     const list = listAccountsIndex();

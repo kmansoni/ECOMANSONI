@@ -2,6 +2,9 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "./useAuth";
 import type { RealtimeChannel } from "@supabase/supabase-js";
+import { toast } from "sonner";
+import { getLastChatSchemaProbe } from "@/lib/chat/schemaProbe";
+import { buildChatBodyEnvelope, sendMessageV1 } from "@/lib/chat/sendMessageV1";
 import {
   bumpChatMetric,
   getOrCreateChatDeviceId,
@@ -229,130 +232,54 @@ export function useConversations() {
         return;
       }
 
-      // Step 1: conversation IDs for current user
-      const { data: participantData, error: partError } = await withTimeout(
-        "participants",
-        supabase
-          .from("conversation_participants")
-          .select("conversation_id")
-          .eq("user_id", user.id),
-        20000
-      );
-
-      if (partError) throw partError;
-
-      const conversationIds = (participantData || []).map((p) => p.conversation_id);
-      if (conversationIds.length === 0) {
-        setConversations([]);
-        return;
-      }
-
-      // Step 2: fetch conversations + participants
-      const [convRes, allPartRes] = await withTimeout<[
-        { data: any[] | null; error: any },
-        { data: { conversation_id: string; user_id: string }[] | null; error: any }
-      ]>(
-        "batch",
-        Promise.all([
-          supabase
-            .from("conversations")
-            .select("*")
-            .in("id", conversationIds)
-            .order("updated_at", { ascending: false }),
-          supabase
-            .from("conversation_participants")
-            .select("conversation_id, user_id")
-            .in("conversation_id", conversationIds),
-        ])
-      );
-
-      if (convRes.error) throw convRes.error;
-      if (allPartRes.error) throw allPartRes.error;
-
-      const convData = convRes.data || [];
-      const allParticipants = allPartRes.data || [];
-
-      // Step 3: profiles for participants (can be empty for fresh mocks)
-      const userIds = [...new Set(allParticipants.map((p) => p.user_id))];
-      const profilesRes: { data: { user_id: string; display_name: string | null; avatar_url: string | null }[] | null; error: any } =
-        userIds.length
-          ? await withTimeout(
-              "profiles",
-              supabase
-                .from("profiles")
-                .select("user_id, display_name, avatar_url")
-                .in("user_id", userIds)
-            )
-          : { data: [], error: null };
-
-      if (profilesRes.error) throw profilesRes.error;
-      const profiles = profilesRes.data || [];
-
-      // Step 4: fetch last message per conversation (correctness > single global limit)
-      const lastMessageByConversationId: Record<string, ChatMessage | undefined> = {};
-      const lastMessageRows = await withTimeout(
-        "last_messages",
-        mapWithConcurrency(conversationIds, 6, async (conversationId) => {
-          const { data, error } = await supabase
-            .from("messages")
-            .select("*")
-            .eq("conversation_id", conversationId)
-            .order("created_at", { ascending: false })
-            .limit(1);
-          if (error) throw error;
-          return { conversationId, message: (data && data[0]) as ChatMessage | undefined };
+      // Inbox is server-first and avoids N+1: one RPC returns rollup + unread + participants.
+      const inboxRes = (await withTimeout(
+        "chat_get_inbox_v2",
+        (supabase as any).rpc("chat_get_inbox_v2", {
+          p_limit: 200,
+          p_cursor_seq: null,
         }),
         20000
-      );
+      )) as { data: any[] | null; error: any };
 
-      for (const row of lastMessageRows) {
-        if (row.message) lastMessageByConversationId[row.conversationId] = row.message;
-      }
+      if (inboxRes.error) throw inboxRes.error;
 
-      // Step 5: exact unread counts without a hard limit
-      const unreadCountByConversationId: Record<string, number> = {};
-      const unreadCounts = await withTimeout(
-        "unread_counts",
-        mapWithConcurrency(conversationIds, 6, async (conversationId) => {
-          const { count, error } = await supabase
-            .from("messages")
-            .select("id", { count: "exact", head: true })
-            .eq("conversation_id", conversationId)
-            .neq("sender_id", user.id)
-            .eq("is_read", false);
-          if (error) throw error;
-          return { conversationId, count: count || 0 };
-        }),
-        20000
-      );
+      const rows = Array.isArray(inboxRes.data) ? inboxRes.data : [];
+      const convs: Conversation[] = rows.map((r: any) => {
+        const participantsRaw = Array.isArray(r?.participants) ? r.participants : [];
+        const participants = participantsRaw.map((p: any) => ({
+          user_id: String(p?.user_id || ""),
+          profile: {
+            display_name: (p?.profile?.display_name ?? null) as string | null,
+            avatar_url: (p?.profile?.avatar_url ?? null) as string | null,
+          },
+        }));
 
-      for (const row of unreadCounts) {
-        unreadCountByConversationId[row.conversationId] = row.count;
-      }
-
-      // Build conversation objects
-      const convs: Conversation[] = (convData || []).map((conv) => {
-        const participants = (allParticipants || [])
-          .filter((p) => p.conversation_id === conv.id)
-          .map((p) => ({
-            user_id: p.user_id,
-            profile: profiles?.find((pr) => pr.user_id === p.user_id),
-          }));
-
-        const lastMessage = lastMessageByConversationId[conv.id];
+        const lastMessageId = r?.last_message_id ? String(r.last_message_id) : "";
+        const lastMessage: ChatMessage | undefined = lastMessageId
+          ? {
+              id: lastMessageId,
+              conversation_id: String(r.conversation_id),
+              sender_id: String(r.last_sender_id || ""),
+              content: String(r.last_preview_text || ""),
+              is_read: true,
+              created_at: String(r.last_created_at || r.updated_at || new Date().toISOString()),
+              seq: typeof r.last_seq === "number" ? r.last_seq : Number(r.last_seq || 0) || 0,
+            }
+          : undefined;
 
         return {
-          id: conv.id,
-          created_at: conv.created_at,
-          updated_at: conv.updated_at,
+          id: String(r.conversation_id),
+          created_at: String(r.updated_at || new Date().toISOString()),
+          updated_at: String(r.updated_at || new Date().toISOString()),
           participants,
           last_message: lastMessage,
-          unread_count: unreadCountByConversationId[conv.id] || 0,
+          unread_count: Number(r.unread_count || 0),
         };
       });
 
       setConversations(convs);
-      console.log("[useConversations] done", { count: convs.length });
+      console.log("[useConversations] done v2", { count: convs.length });
     } catch (error) {
       console.error("Error fetching conversations:", error);
       const msg = getErrorMessage(error);
@@ -428,6 +355,36 @@ export function useMessages(conversationId: string | null) {
   const pendingLocalByClientIdRef = useRef<Map<string, ChatMessage>>(new Map());
   const recentSendRef = useRef<Map<string, number>>(new Map());
   const inFlightFingerprintRef = useRef<Set<string>>(new Set());
+
+  const deliveredMaxSeqRef = useRef<number>(0);
+  const deliveredAckTimerRef = useRef<number | null>(null);
+
+  const scheduleDeliveredAck = useCallback(
+    (seq: number) => {
+      if (!user || !conversationId) return;
+      if (!Number.isFinite(seq) || seq <= 0) return;
+      if (isChatProtocolV11EnabledForUser(user.id)) return;
+
+      deliveredMaxSeqRef.current = Math.max(deliveredMaxSeqRef.current, seq);
+
+      if (deliveredAckTimerRef.current != null) return;
+      deliveredAckTimerRef.current = window.setTimeout(() => {
+        const upTo = deliveredMaxSeqRef.current;
+        deliveredAckTimerRef.current = null;
+        void (async () => {
+          try {
+            await (supabase as any).rpc("ack_delivered_v1", {
+              p_conversation_id: conversationId,
+              p_up_to_seq: upTo,
+            });
+          } catch {
+            // best-effort
+          }
+        })();
+      }, 600);
+    },
+    [conversationId, user]
+  );
   const recoveryServiceRef = useRef<ChatV11RecoveryService | null>(null);
   const recoveryPolicyMetricSentRef = useRef(false);
 
@@ -468,7 +425,7 @@ export function useMessages(conversationId: string | null) {
         .from("messages")
         .select("*")
         .eq("conversation_id", conversationId)
-        .order("created_at", { ascending: true });
+        .order("seq", { ascending: true });
 
       if (error) throw error;
 
@@ -698,6 +655,14 @@ export function useMessages(conversationId: string | null) {
               pendingLocalByClientIdRef.current.delete(newMessage.client_msg_id);
             }
 
+            // Delivered ACK (user-level): confirm receipt up to seq for incoming messages.
+            if (user?.id && newMessage?.sender_id && newMessage.sender_id !== user.id) {
+              const s = typeof newMessage.seq === "number" ? newMessage.seq : Number(newMessage.seq || 0);
+              if (Number.isFinite(s) && s > 0) {
+                scheduleDeliveredAck(s);
+              }
+            }
+
             // Prevent duplicates by checking if message already exists
             setMessages((prev) => {
               const clientMsgId = newMessage?.client_msg_id ?? null;
@@ -865,69 +830,39 @@ export function useMessages(conversationId: string | null) {
   }, [user]);
 
   const sendMessage = async (content: string, opts?: { clientMsgId?: string }) => {
-    console.log("[sendMessage] called with:", { conversationId, userId: user?.id, content });
-
     const normalizedContent = normalizeBrokenVerticalText(content).trim();
 
     if (!conversationId || !user || !normalizedContent) {
-      console.log("[sendMessage] validation failed:", { conversationId, hasUser: !!user, trimmedContent: normalizedContent });
-      return;
+      if (!user) throw new Error("CHAT_NOT_AUTHENTICATED");
+      if (!conversationId) throw new Error("CHAT_CONVERSATION_NOT_SELECTED");
+      throw new Error("CHAT_EMPTY_MESSAGE");
     }
 
-    let clientMsgId: string | null = null;
-    let fingerprint: string | null = null;
+    const probe = getLastChatSchemaProbe();
+    if (probe && probe.ok === false) {
+      throw new Error("CHAT_MAINTENANCE_MODE");
+    }
+
+    const clientMsgId = opts?.clientMsgId || crypto.randomUUID();
+    const fingerprint = `${conversationId}:${user.id}:${normalizedContent}`;
+
+    if (inFlightFingerprintRef.current.has(fingerprint)) return;
+    inFlightFingerprintRef.current.add(fingerprint);
+
     let v11ClientWriteSeq: number | null = null;
 
     try {
-      const normalizedFingerprint = `${conversationId}:${user.id}:${normalizedContent}`;
-      fingerprint = normalizedFingerprint;
-
-      if (inFlightFingerprintRef.current.has(normalizedFingerprint)) {
-        console.log("[sendMessage] in-flight duplicate blocked");
-        return;
-      }
-      inFlightFingerprintRef.current.add(normalizedFingerprint);
-
       const now = Date.now();
-      const lastAt = recentSendRef.current.get(normalizedFingerprint);
-      if (typeof lastAt === "number" && now - lastAt < 8_000) {
-        console.log("[sendMessage] recent duplicate blocked");
-        return;
-      }
-
-      clientMsgId = opts?.clientMsgId || crypto.randomUUID();
-      console.log("[sendMessage] upserting message...", { clientMsgId });
+      const lastAt = recentSendRef.current.get(fingerprint);
+      if (typeof lastAt === "number" && now - lastAt < 8_000) return;
 
       const hashtagVerdict = await checkHashtagsAllowedForText(normalizedContent);
       if (!hashtagVerdict.ok) {
-        throw new Error(`HASHTAG_BLOCKED:${hashtagVerdict.blockedTags.join(", ")}`);
+        throw new Error(`HASHTAG_BLOCKED:${("blockedTags" in hashtagVerdict ? hashtagVerdict.blockedTags : []).join(", ")}`);
       }
 
-      // Prevent accidental double-send: if the same content is already pending for this conversation, ignore.
-      // Mark as sent immediately to block rapid re-sends even if the optimistic gets reconciled quickly.
-      recentSendRef.current.set(normalizedFingerprint, now);
+      recentSendRef.current.set(fingerprint, now);
 
-      // Keep the map bounded.
-      if (recentSendRef.current.size > 200) {
-        const min = now - 60_000;
-        for (const [k, ts] of recentSendRef.current.entries()) {
-          if (ts < min) recentSendRef.current.delete(k);
-        }
-      }
-
-      const now2 = Date.now();
-      for (const pending of pendingLocalByClientIdRef.current.values()) {
-        if (pending.conversation_id !== conversationId) continue;
-        if (pending.sender_id !== user.id) continue;
-        if ((pending.content || "").trim() !== normalizedContent) continue;
-        const t = Date.parse(pending.created_at);
-        if (!Number.isNaN(t) && now2 - t < 1500) {
-          console.log("[sendMessage] duplicate pending send blocked");
-          return;
-        }
-      }
-
-      // Optimistic add: makes message appear instantly (no 3s polling delay).
       const optimistic: ChatMessage = {
         id: `local:${clientMsgId}`,
         client_msg_id: clientMsgId,
@@ -938,7 +873,6 @@ export function useMessages(conversationId: string | null) {
         created_at: new Date().toISOString(),
         seq: null,
       };
-
       pendingLocalByClientIdRef.current.set(clientMsgId, optimistic);
       setMessages((prev) => sortMessages([...prev.filter((m) => m.client_msg_id !== clientMsgId), optimistic]));
 
@@ -949,7 +883,7 @@ export function useMessages(conversationId: string | null) {
         v11ClientWriteSeq = clientWriteSeq;
         recoveryServiceRef.current?.arm({
           clientWriteSeq,
-          clientMsgId: clientMsgId!,
+          clientMsgId,
           deviceId,
         });
 
@@ -965,112 +899,49 @@ export function useMessages(conversationId: string | null) {
 
         const ack = (Array.isArray(ackRows) ? ackRows[0] : null) as any;
         const ackStatus = String(ack?.ack_status || "");
-        if (ackStatus !== "accepted" && ackStatus !== "duplicate") {
-          clearPendingReceiptWatch(clientWriteSeq);
-          throw new Error(String(ack?.error_code || "ERR_WRITE_REJECTED"));
-        }
 
-        const ackMsgId = ack?.msg_id ? String(ack.msg_id) : null;
-        if (ackMsgId) {
-          const { data: msgRow, error: msgErr } = await supabase.from("messages").select("*").eq("id", ackMsgId).maybeSingle();
-          if (!msgErr && msgRow) {
-            const returned = msgRow as unknown as ChatMessage;
-            pendingLocalByClientIdRef.current.delete(clientMsgId);
-            clearPendingReceiptWatch(clientWriteSeq);
-            setMessages((prev) => {
-              const withoutLocal = prev.filter((m) => !(m.id.startsWith("local:") && m.client_msg_id === clientMsgId));
-              if (withoutLocal.some((m) => m.id === returned.id)) return withoutLocal;
-              return sortMessages([...withoutLocal, returned]);
-            });
-            return;
-          }
-        }
-        return;
-      }
-
-      const { data, error } = await supabase
-        .from("messages")
-        .upsert(
-          {
-            conversation_id: conversationId,
-            sender_id: user.id,
-            content: normalizedContent,
-            client_msg_id: clientMsgId,
-          },
-          {
-            onConflict: "conversation_id,sender_id,client_msg_id",
-            ignoreDuplicates: true,
-          }
-        )
-        .select();
-
-      if (error) {
-        // If migrations weren't applied yet, fall back to a plain insert so chat isn't bricked.
-        if (isIdempotencySchemaMissing(error)) {
-          console.warn("[sendMessage] idempotency schema missing; falling back to insert", error);
-
-          // Best-effort server-side dedupe (no unique constraint available).
-          // If an identical message was already inserted very recently, skip creating a duplicate row.
-          try {
-            const { data: recentRows, error: recentErr } = await supabase
-              .from("messages")
-              .select("id,created_at,content,sender_id")
-              .eq("conversation_id", conversationId)
-              .eq("sender_id", user.id)
-              .order("created_at", { ascending: false })
-              .limit(5);
-
-            if (!recentErr && Array.isArray(recentRows) && recentRows.length > 0) {
-              const nowMs = Date.now();
-              const hasDuplicate = recentRows.some((r: any) => {
-                if ((r?.content || "").trim() !== normalizedContent) return false;
-                const t = Date.parse(String(r?.created_at || ""));
-                if (Number.isNaN(t)) return false;
-                return nowMs - t < 10_000;
+        if (ackStatus === "accepted" || ackStatus === "duplicate") {
+          const ackMsgId = ack?.msg_id ? String(ack.msg_id) : null;
+          if (ackMsgId) {
+            const { data: msgRow, error: msgErr } = await supabase.from("messages").select("*").eq("id", ackMsgId).maybeSingle();
+            if (msgErr) throw msgErr;
+            if (msgRow) {
+              const returned = msgRow as unknown as ChatMessage;
+              pendingLocalByClientIdRef.current.delete(clientMsgId);
+              clearPendingReceiptWatch(clientWriteSeq);
+              setMessages((prev) => {
+                const withoutLocal = prev.filter((m) => !(m.id.startsWith("local:") && m.client_msg_id === clientMsgId));
+                if (withoutLocal.some((m) => m.id === returned.id)) return withoutLocal;
+                return sortMessages([...withoutLocal, returned]);
               });
-
-              if (hasDuplicate) {
-                pendingLocalByClientIdRef.current.delete(clientMsgId);
-                void fetchMessages();
-                return;
-              }
             }
-          } catch {
-            // ignore; proceed to insert
           }
 
-          const { error: fallbackError } = await supabase.from("messages").insert({
-            conversation_id: conversationId,
-            sender_id: user.id,
-            content: normalizedContent,
-          });
-          if (fallbackError) throw fallbackError;
-
-          // We can't reliably reconcile without client_msg_id on the server row.
-          pendingLocalByClientIdRef.current.delete(clientMsgId);
-          void fetchMessages();
+          // If msg_id is missing, keep optimistic row; recovery/Realtime will reconcile it.
           return;
         }
 
-        console.error("[sendMessage] upsert error:", error);
-        throw error;
+        throw new Error(`CHAT_V11_SEND_REJECTED:${ack?.error_code || ackStatus || "unknown"}`);
       }
 
-      const returned = (Array.isArray(data) ? (data[0] as ChatMessage | undefined) : undefined) ?? undefined;
-      if (returned?.id) {
-        pendingLocalByClientIdRef.current.delete(clientMsgId);
-        setMessages((prev) => {
-          const withoutLocal = prev.filter((m) => !(m.id.startsWith("local:") && m.client_msg_id === clientMsgId));
-          if (withoutLocal.some((m) => m.id === returned.id)) return withoutLocal;
-          return sortMessages([...withoutLocal, returned]);
-        });
-      }
+      const { messageId } = await sendMessageV1({
+        conversationId,
+        clientMsgId,
+        body: normalizedContent,
+      });
 
-      console.log("[sendMessage] success:", data);
+      const { data: msgRow, error: msgErr } = await supabase.from("messages").select("*").eq("id", messageId).maybeSingle();
+      if (msgErr) throw msgErr;
+      if (!msgRow) throw new Error("SEND_MESSAGE_V1_FETCH_FAILED");
+
+      const returned = msgRow as unknown as ChatMessage;
+      pendingLocalByClientIdRef.current.delete(clientMsgId);
+      setMessages((prev) => {
+        const withoutLocal = prev.filter((m) => !(m.id.startsWith("local:") && m.client_msg_id === clientMsgId));
+        if (withoutLocal.some((m) => m.id === returned.id)) return withoutLocal;
+        return sortMessages([...withoutLocal, returned]);
+      });
     } catch (error) {
-      console.error("[sendMessage] error:", error);
-
-      // Roll back optimistic message on failure.
       if (clientMsgId) {
         pendingLocalByClientIdRef.current.delete(clientMsgId);
         setMessages((prev) => prev.filter((m) => !(m.id.startsWith("local:") && m.client_msg_id === clientMsgId)));
@@ -1078,16 +949,19 @@ export function useMessages(conversationId: string | null) {
       if (v11ClientWriteSeq != null) {
         clearPendingReceiptWatch(v11ClientWriteSeq);
       }
-      throw error; // Re-throw to let caller handle
+      throw error;
     } finally {
-      if (fingerprint) {
-        inFlightFingerprintRef.current.delete(fingerprint);
-      }
+      inFlightFingerprintRef.current.delete(fingerprint);
     }
   };
 
   const sendMediaMessage = async (file: File, mediaType: 'voice' | 'video_circle' | 'image' | 'video', durationSeconds?: number) => {
     if (!conversationId || !user) return { error: 'Not authenticated' };
+
+    const probe = getLastChatSchemaProbe();
+    if (probe && probe.ok === false) {
+      return { error: 'Chat service misconfigured' };
+    }
 
     try {
       // Upload to storage
@@ -1105,47 +979,38 @@ export function useMessages(conversationId: string | null) {
         .from('chat-media')
         .getPublicUrl(fileName);
 
-      // Insert message with media (idempotent retries via client_msg_id)
       const clientMsgId = crypto.randomUUID();
-      const payload = {
-        conversation_id: conversationId,
-        sender_id: user.id,
-        content:
-          mediaType === 'voice'
-            ? '🎤 Голосовое сообщение'
-            : mediaType === 'video_circle'
-              ? '🎬 Видео-кружок'
-              : mediaType === 'video'
-                ? '🎥 Видео'
-                : '📷 Изображение',
-        media_url: publicUrl,
+      const content =
+        mediaType === 'voice'
+          ? '🎤 Голосовое сообщение'
+          : mediaType === 'video_circle'
+            ? '🎬 Видео-кружок'
+            : mediaType === 'video'
+              ? '🎥 Видео'
+              : '📷 Изображение';
+
+      const envelope = buildChatBodyEnvelope({
+        kind: 'media',
+        text: content,
         media_type: mediaType,
-        duration_seconds: durationSeconds || null,
-        client_msg_id: clientMsgId,
-      };
+        media_url: publicUrl,
+        duration_seconds: durationSeconds ?? null,
+      });
 
-      const { error: msgError } = await supabase
-        .from("messages")
-        .upsert(payload, {
-          onConflict: "conversation_id,sender_id,client_msg_id",
-          ignoreDuplicates: true,
+      const { messageId } = await sendMessageV1({
+        conversationId,
+        clientMsgId,
+        body: envelope,
+      });
+
+      const { data: msgRow, error: msgErr } = await supabase.from("messages").select("*").eq("id", messageId).maybeSingle();
+      if (msgErr) throw msgErr;
+      if (msgRow) {
+        const returned = msgRow as unknown as ChatMessage;
+        setMessages((prev) => {
+          if (prev.some((m) => m.id === returned.id)) return prev;
+          return sortMessages([...prev, returned]);
         });
-
-      if (msgError) {
-        if (isIdempotencySchemaMissing(msgError)) {
-          console.warn("[sendMediaMessage] idempotency schema missing; falling back to insert", msgError);
-          const { error: fallbackError } = await supabase.from("messages").insert({
-            conversation_id: conversationId,
-            sender_id: user.id,
-            content: payload.content,
-            media_url: publicUrl,
-            media_type: mediaType,
-            duration_seconds: durationSeconds || null,
-          });
-          if (fallbackError) throw fallbackError;
-        } else {
-          throw msgError;
-        }
       }
 
       return { error: null };
@@ -1186,85 +1051,36 @@ export function useCreateConversation() {
   const createConversation = async (otherUserId: string) => {
     if (!user) return null;
 
+    const probe = getLastChatSchemaProbe();
+    if (probe && probe.ok === false) {
+      toast.error("Chat service misconfigured: DM creation unavailable.");
+      return null;
+    }
+
     try {
-      // Best-effort: reuse an existing DM between these two users.
-      const [myParts, otherParts] = await Promise.all([
-        supabase.from("conversation_participants").select("conversation_id").eq("user_id", user.id),
-        supabase.from("conversation_participants").select("conversation_id").eq("user_id", otherUserId),
-      ]);
-
-      if (myParts.error) throw myParts.error;
-      if (otherParts.error) throw otherParts.error;
-
-      const myIds = new Set((myParts.data || []).map((r: any) => r.conversation_id));
-      const candidateIds = (otherParts.data || [])
-        .map((r: any) => r.conversation_id)
-        .filter((id: any) => myIds.has(id));
-
-      if (candidateIds.length) {
-        const { data: allParts, error: allPartsError } = await supabase
-          .from("conversation_participants")
-          .select("conversation_id, user_id")
-          .in("conversation_id", candidateIds);
-        if (allPartsError) throw allPartsError;
-
-        const counts: Record<string, number> = {};
-        const hasMe: Record<string, boolean> = {};
-        const hasOther: Record<string, boolean> = {};
-        for (const row of allParts || []) {
-          counts[row.conversation_id] = (counts[row.conversation_id] || 0) + 1;
-          if (row.user_id === user.id) hasMe[row.conversation_id] = true;
-          if (row.user_id === otherUserId) hasOther[row.conversation_id] = true;
-        }
-
-        const dmIds = candidateIds.filter((id) => counts[id] === 2 && hasMe[id] && hasOther[id]);
-        if (dmIds.length) {
-          const { data: convRow, error: convErr } = await supabase
-            .from("conversations")
-            .select("id")
-            .in("id", dmIds)
-            .order("updated_at", { ascending: false })
-            .limit(1)
-            .maybeSingle();
-          if (convErr) throw convErr;
-          if (convRow?.id) return convRow.id;
-          return dmIds[0];
-        }
+      // Contract-only path: SECURITY DEFINER RPC is the ONLY supported way.
+      // Client must never try to INSERT other participants directly (RLS is self-only).
+      const rpcRes = await (supabase as any).rpc("get_or_create_dm", {
+        target_user: otherUserId,
+      });
+      const rpcError = (rpcRes as any)?.error;
+      const rpcData = (rpcRes as any)?.data;
+      if (!rpcError && rpcData) {
+        const id = Array.isArray(rpcData) ? rpcData[0] : rpcData;
+        if (id) return String(id);
       }
 
-      // Create conversation
-      const { data: conv, error: convError } = await supabase
-        .from("conversations")
-        .insert({})
-        .select()
-        .single();
-
-      if (convError) throw convError;
-
-      // Add both participants
-      const { error: partError } = await supabase.from("conversation_participants").insert([
-        { conversation_id: conv.id, user_id: user.id },
-        { conversation_id: conv.id, user_id: otherUserId },
-      ]);
-
-      if (partError) {
-        // Compensating cleanup to avoid orphan conversations without participants.
-        try {
-          await supabase.from("conversation_participants").delete().eq("conversation_id", conv.id);
-        } catch {
-          // ignore
-        }
-        try {
-          await supabase.from("conversations").delete().eq("id", conv.id);
-        } catch {
-          // ignore
-        }
-        throw partError;
-      }
-
-      return conv.id;
+      console.error("[Chat] get_or_create_dm unavailable or returned empty result", {
+        error: rpcError,
+        dataType: Array.isArray(rpcData) ? "array" : typeof rpcData,
+      });
+      toast.error("Chat service misconfigured: DM creation unavailable.");
+      return null;
     } catch (error) {
       console.error("Error creating conversation:", error);
+
+      // Deterministic failure: do not attempt any legacy inserts.
+      toast.error("Chat service misconfigured: DM creation unavailable.");
       return null;
     }
   };

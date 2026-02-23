@@ -340,7 +340,7 @@ export function usePostActions() {
     try {
       const hashtagVerdict = await checkHashtagsAllowedForText(String(content || '').trim());
       if (!hashtagVerdict.ok) {
-        return { error: `HASHTAG_BLOCKED:${hashtagVerdict.blockedTags.join(', ')}`, post: null };
+        return { error: `HASHTAG_BLOCKED:${("blockedTags" in hashtagVerdict ? hashtagVerdict.blockedTags : []).join(', ')}`, post: null };
       }
 
       const { data: post, error: postError } = await supabase

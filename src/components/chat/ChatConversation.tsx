@@ -12,6 +12,7 @@ import { useUserSettings } from "@/contexts/UserSettingsContext";
 import { format } from "date-fns";
 import { toast } from "sonner";
 import { getHashtagBlockedToastPayload } from "@/lib/hashtagModeration";
+import { getChatSendErrorToast } from "@/lib/chat/sendError";
 import { VideoCircleRecorder } from "./VideoCircleRecorder";
 import { VideoCircleMessage } from "./VideoCircleMessage";
 import { AttachmentSheet } from "./AttachmentSheet";
@@ -27,7 +28,7 @@ import { useUserPresenceStatus } from "@/hooks/useUserPresenceStatus";
 import { cn } from "@/lib/utils";
 import { GradientAvatar } from "@/components/ui/gradient-avatar";
 import { useAppearanceRuntime } from "@/contexts/AppearanceRuntimeContext";
-import { sendDmMessage } from "@/lib/chat/sendDmMessage";
+import { diagnoseDmSendReadiness } from "@/lib/chat/readiness";
 import {
   getOrCreateUserQuickReaction,
   listQuickReactionCatalog,
@@ -478,49 +479,9 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
     return text;
   }, []);
 
-  const aiReplyInFlightRef = useRef(false);
-  const aiAssistantUserId = useMemo(() => {
-    try {
-      return (
-        localStorage.getItem("ai_assistant_user_id") ||
-        ((import.meta.env.VITE_AI_ASSISTANT_USER_ID as string | undefined) ?? null)
-      );
-    } catch {
-      return ((import.meta.env.VITE_AI_ASSISTANT_USER_ID as string | undefined) ?? null);
-    }
-  }, []);
-
-  const isAiAssistantChat = !!(otherUserId && aiAssistantUserId && otherUserId === aiAssistantUserId);
-
   const renderMessages = useMemo(() => {
-    if (!isAiAssistantChat || !aiStreamText) return visibleMessages;
-    // Show an ephemeral assistant message while streaming.
-    const ephemeral: any = {
-      id: "__ai_stream__",
-      conversation_id: conversationId,
-      sender_id: otherUserId,
-      content: aiStreamText.length ? aiStreamText : "…",
-      is_read: false,
-      created_at: new Date().toISOString(),
-      seq: null,
-    };
-    return [...visibleMessages, ephemeral];
-  }, [aiStreamText, conversationId, isAiAssistantChat, otherUserId, visibleMessages]);
-
-  useEffect(() => {
-    if (!isAiAssistantChat || !aiAssistantUserId) return;
-    const startedAt = aiStreamStartedAtRef.current;
-    if (!startedAt || !aiStreamText) return;
-
-    const found = [...messages]
-      .slice(-8)
-      .some((m) => m?.sender_id === aiAssistantUserId && new Date(m.created_at).getTime() >= startedAt);
-
-    if (found) {
-      setAiStreamText(null);
-      aiStreamStartedAtRef.current = null;
-    }
-  }, [aiAssistantUserId, aiStreamText, isAiAssistantChat, messages]);
+    return visibleMessages;
+  }, [visibleMessages]);
 
   const handleSendMessage = async () => {
     console.log("[handleSendMessage] inputText:", inputText);
@@ -556,83 +517,6 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
     try {
       await sendMessage(withReply, { clientMsgId });
 
-      if (isAiAssistantChat && conversationId) {
-        void (async () => {
-          if (aiReplyInFlightRef.current) return;
-          aiReplyInFlightRef.current = true;
-          aiStreamStartedAtRef.current = Date.now();
-          setAiStreamText("");
-          try {
-            const sessionRes = await supabase.auth.getSession();
-            const accessToken = sessionRes.data.session?.access_token;
-            const anonKey = (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? import.meta.env.VITE_SUPABASE_ANON_KEY) as string;
-            const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-chat-reply`;
-
-            const resp = await fetch(url, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                apikey: anonKey,
-                Authorization: accessToken ? `Bearer ${accessToken}` : `Bearer ${anonKey}`,
-              },
-              body: JSON.stringify({ conversation_id: conversationId, stream: true }),
-            });
-
-            if (!resp.ok) {
-              const err = await resp.json().catch(() => ({}));
-              throw new Error(err?.error || "AI stream failed");
-            }
-            if (!resp.body) throw new Error("AI: no stream");
-
-            const reader = resp.body.getReader();
-            const decoder = new TextDecoder();
-            let textBuffer = "";
-            let assistantContent = "";
-
-            while (true) {
-              const { done, value } = await reader.read();
-              if (done) break;
-
-              textBuffer += decoder.decode(value, { stream: true });
-              let newlineIndex: number;
-              while ((newlineIndex = textBuffer.indexOf("\n")) !== -1) {
-                let line = textBuffer.slice(0, newlineIndex);
-                textBuffer = textBuffer.slice(newlineIndex + 1);
-
-                if (line.endsWith("\r")) line = line.slice(0, -1);
-                if (line.startsWith(":" ) || line.trim() === "") continue;
-                if (!line.startsWith("data: ")) continue;
-                const jsonStr = line.slice(6).trim();
-                if (jsonStr === "[DONE]") break;
-
-                try {
-                  const parsed: any = JSON.parse(jsonStr);
-                  const delta = parsed?.choices?.[0]?.delta?.content;
-                  if (delta) {
-                    assistantContent += String(delta);
-                    setAiStreamText(assistantContent);
-                  }
-                } catch {
-                  // ignore incomplete frames
-                }
-              }
-            }
-
-            // Keep the ephemeral message until the DB insert arrives; fallback clear.
-            window.setTimeout(() => {
-              setAiStreamText((prev) => (prev === assistantContent ? null : prev));
-            }, 6000);
-          } catch (e) {
-            console.warn("AI reply failed:", e);
-            setAiStreamText(null);
-            aiStreamStartedAtRef.current = null;
-            toast.error("AI: не удалось получить ответ");
-          } finally {
-            aiReplyInFlightRef.current = false;
-          }
-        })();
-      }
-
       // Keep focus on input to prevent keyboard closing on mobile
       requestAnimationFrame(() => {
         inputRef.current?.focus();
@@ -647,30 +531,28 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
         lastDraftTrimmedRef.current = trimmed;
         toast.error(payload.title, { description: payload.description });
       } else {
-        // Internal fallback path: write DM directly to messages table.
-        // Keeps chat functional when v11/rpc path is temporarily unavailable.
-        try {
-          if (!isGroup && user?.id) {
-            await sendDmMessage({
-              conversationId,
-              senderId: user.id,
-              content: withReply,
-              clientMsgId,
-            });
-            requestAnimationFrame(() => {
-              inputRef.current?.focus();
-            });
-            return;
-          }
-        } catch (fallbackErr) {
-          console.error("[handleSendMessage] fallback sendDmMessage error:", fallbackErr);
+        const sendPayload = getChatSendErrorToast(error);
+        if (sendPayload) {
+          setInputText(trimmed);
+          setReplyTo(reply);
+          draftClientMsgIdRef.current = clientMsgId;
+          lastDraftTrimmedRef.current = trimmed;
+          toast.error(sendPayload.title, { description: sendPayload.description });
+          return;
         }
 
         setInputText(trimmed);
         setReplyTo(reply);
         draftClientMsgIdRef.current = clientMsgId;
         lastDraftTrimmedRef.current = trimmed;
-        toast.error("Не удалось отправить сообщение");
+        const diagnostic = await diagnoseDmSendReadiness({
+          supabase,
+          userId: user?.id,
+          conversationId,
+        });
+        toast.error("Не удалось отправить сообщение", {
+          description: diagnostic ?? undefined,
+        });
       }
     } finally {
       sendInFlightRef.current = false;
@@ -1126,6 +1008,14 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
             )}
           </div>
         </div>
+
+        {import.meta.env.DEV ? (
+          <div className="px-3 py-1 text-[11px] text-white/60 border-t border-white/5">
+            <span className="mr-3">conv: {String(conversationId).slice(0, 8)}</span>
+            <span className="mr-3">participants: {typeof participantCount === "number" ? participantCount : "?"}</span>
+            <span>last: {messages.length ? String(messages[messages.length - 1]?.id || "-").slice(0, 8) : "-"}</span>
+          </div>
+        ) : null}
         
         {/* Add participants banner for groups */}
         {isGroup && (

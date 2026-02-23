@@ -71,8 +71,18 @@ serve(async (req) => {
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
 
     // Store OTP in database
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    if (!supabaseUrl || !supabaseServiceKey) {
+      console.error("Missing SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY env", {
+        hasUrl: !!supabaseUrl,
+        hasServiceRoleKey: !!supabaseServiceKey,
+      });
+      return new Response(
+        JSON.stringify({ error: "Server not configured" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     // Delete any existing OTPs for this phone
@@ -113,13 +123,28 @@ serve(async (req) => {
     const smsUrl = `https://sms.ru/sms/send?api_id=${smsruApiId}&to=${normalizedPhone}&msg=${encodeURIComponent(smsMessage)}&json=1`;
 
     const smsResponse = await fetch(smsUrl);
-    const smsResult = await smsResponse.json();
 
-    console.log("SMS.ru response:", JSON.stringify(smsResult));
+    let smsResult: any = null;
+    try {
+      smsResult = await smsResponse.json();
+    } catch (e) {
+      const text = await smsResponse.text().catch(() => "");
+      console.error("SMS.ru non-JSON response", { status: smsResponse.status, text });
+      // Cleanup OTP so user can request again cleanly.
+      await supabase.from("phone_otps").delete().eq("phone", normalizedPhone);
+      return new Response(
+        JSON.stringify({ error: "SMS provider error" }),
+        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    console.log("SMS.ru response:", JSON.stringify({ status: smsResult?.status, status_code: smsResult?.status_code }));
 
     // Check if SMS was sent successfully - need to check both global status and per-phone status
-    if (smsResult.status !== "OK") {
-      console.error("SMS.ru global error:", smsResult);
+    if (!smsResponse.ok || smsResult.status !== "OK") {
+      console.error("SMS.ru global error:", { httpStatus: smsResponse.status, smsResult });
+      // Cleanup OTP so user can request again cleanly.
+      await supabase.from("phone_otps").delete().eq("phone", normalizedPhone);
       return new Response(
         JSON.stringify({ error: "Failed to send SMS. Please try again." }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -131,6 +156,8 @@ serve(async (req) => {
     if (phoneStatus?.status === "ERROR") {
       console.error("SMS.ru per-phone error:", phoneStatus);
       const errorText = phoneStatus.status_text || "SMS delivery failed";
+      // Cleanup OTP so user can request again cleanly.
+      await supabase.from("phone_otps").delete().eq("phone", normalizedPhone);
       return new Response(
         JSON.stringify({ error: `SMS error: ${errorText}` }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }

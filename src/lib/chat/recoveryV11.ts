@@ -110,7 +110,10 @@ export class ChatV11RecoveryService {
     this.deps.onAckTimeout(watch);
     try {
       const stepResult = await this.deps.runStep(watch);
-      const deferredMs = stepResult?.deferredMs;
+      const deferredMs =
+        stepResult && typeof stepResult === "object" && "deferredMs" in stepResult
+          ? stepResult.deferredMs
+          : undefined;
       if (typeof deferredMs === "number" && deferredMs > 0) {
         const nextDelayMs = this.computeRetryDelayMs(watch, deferredMs);
         watch.timeoutId = window.setTimeout(() => {

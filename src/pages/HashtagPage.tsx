@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Hash, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
+import { normalizeReelMediaUrl } from "@/hooks/useReels";
 
 type HashtagPagePayload = {
   hashtag: string;
@@ -123,7 +124,11 @@ export function HashtagPage() {
                     className="aspect-square relative overflow-hidden bg-muted"
                   >
                     {it?.thumbnail_url ? (
-                      <img src={it.thumbnail_url} alt="" className="w-full h-full object-cover" />
+                      <img
+                        src={normalizeReelMediaUrl(it.thumbnail_url, "reels-media") || it.thumbnail_url}
+                        alt=""
+                        className="w-full h-full object-cover"
+                      />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center text-xs text-muted-foreground">
                         Reel

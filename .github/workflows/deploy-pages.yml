@@ -30,6 +30,9 @@ jobs:
       - name: Install
         run: npm ci
 
+      - name: TURN WS gate (no creds in WS)
+        run: npm run turn:ws:guard
+
       - name: Lint
         run: npm run lint
 
@@ -47,9 +50,14 @@ jobs:
         run: npm run build
         env:
           VITE_BASE: /${{ github.event.repository.name }}/
+          SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          REQUIRE_CHAT_SCHEMA_PROBE: "1"
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          VITE_EXPECTED_SUPABASE_PROJECT_REF: ${{ secrets.VITE_EXPECTED_SUPABASE_PROJECT_REF }}
+          CHAT_SCHEMA_EXPECTED_VERSION: "2"
 
       - name: Setup Pages
         uses: actions/configure-pages@v5

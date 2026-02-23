@@ -1,4 +1,4 @@
-﻿import { Settings, Grid3X3, Bookmark, Play, Plus, Share2, Eye, User, Loader2, Edit3, QrCode } from "lucide-react";
+import { Settings, Grid3X3, Bookmark, Play, Plus, Share2, Eye, User, Loader2, Edit3, QrCode, AtSign } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -8,6 +8,7 @@ import { FollowersSheet } from "@/components/profile/FollowersSheet";
 import { useProfile, useUserPosts } from "@/hooks/useProfile";
 import { useSavedPosts } from "@/hooks/useSavedPosts";
 import { useAuth } from "@/hooks/useAuth";
+import { normalizeReelMediaUrl } from "@/hooks/useReels";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { VerifiedBadge } from "@/components/ui/verified-badge";
 import { HighlightsManager } from "@/components/profile/HighlightsManager";
@@ -75,7 +76,12 @@ export function ProfilePage() {
       if (error) throw error;
 
       const rows = (data || []) as UserReelRow[];
-      setMyReels((prev) => (reset ? rows : [...prev, ...rows]));
+      const normalized = rows.map((r: any) => ({
+        ...r,
+        video_url: normalizeReelMediaUrl(r?.video_url, "reels-media"),
+        thumbnail_url: normalizeReelMediaUrl(r?.thumbnail_url, "reels-media") || r?.thumbnail_url,
+      }));
+      setMyReels((prev) => (reset ? normalized : [...prev, ...normalized]));
       setMyReelsHasMore(rows.length >= limit);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);

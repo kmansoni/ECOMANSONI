@@ -148,7 +148,7 @@ export function useReelComments(reelId: string) {
       const trimmed = content.trim();
       const hashtagVerdict = await checkHashtagsAllowedForText(trimmed);
       if (!hashtagVerdict.ok) {
-        return { ok: false, error: new Error(`HASHTAG_BLOCKED:${hashtagVerdict.blockedTags.join(", ")}`) };
+        return { ok: false, error: new Error(`HASHTAG_BLOCKED:${("blockedTags" in hashtagVerdict ? hashtagVerdict.blockedTags : []).join(", ")}`) };
       }
 
       const { error } = await supabase

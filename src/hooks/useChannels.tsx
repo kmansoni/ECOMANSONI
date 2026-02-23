@@ -17,6 +17,15 @@ function isSchemaMissingError(error: unknown): boolean {
   );
 }
 
+function isMissingSilentColumnError(error: unknown): boolean {
+  const msg = String((error as any)?.message ?? error).toLowerCase();
+  const code = String((error as any)?.code ?? "");
+  return (
+    code === "42703" &&
+    (msg.includes("silent") || msg.includes("column"))
+  );
+}
+
 export interface Channel {
   id: string;
   name: string;
@@ -40,6 +49,8 @@ export interface ChannelMessage {
   content: string;
   media_url?: string | null;
   media_type?: string | null;
+  duration_seconds?: number | null;
+  silent?: boolean | null;
   created_at: string;
   sender?: {
     display_name: string | null;
@@ -168,7 +179,17 @@ export function useChannels() {
   return { channels, loading, error, refetch: fetchChannels };
 }
 
-export function useChannelMessages(channelId: string | null) {
+export function useChannelMessages(channelId: string | null): {
+  messages: ChannelMessage[];
+  loading: boolean;
+  sendMessage: (content: string, options?: { silent?: boolean }) => Promise<void>;
+  sendMediaMessage: (
+    file: File,
+    mediaType: "image" | "video" | "document" | "voice" | "video_circle",
+    options?: { silent?: boolean; durationSeconds?: number },
+  ) => Promise<void>;
+  refetch: () => Promise<void>;
+} {
   const { user } = useAuth();
   const [messages, setMessages] = useState<ChannelMessage[]>([]);
   const [loading, setLoading] = useState(true);
@@ -260,13 +281,17 @@ export function useChannelMessages(channelId: string | null) {
     };
   }, [channelId]);
 
-  const sendMessage = async (content: string) => {
-    if (!channelId || !user || !content.trim()) return;
+  const sendMessage = async (content: string, options?: { silent?: boolean }) => {
+    if (!channelId || !user || !content.trim()) {
+      if (!user) throw new Error("CHANNEL_NOT_AUTHENTICATED");
+      if (!channelId) throw new Error("CHANNEL_NOT_SELECTED");
+      throw new Error("CHANNEL_EMPTY_MESSAGE");
+    }
 
     try {
       const hashtagVerdict = await checkHashtagsAllowedForText(String(content || "").trim());
       if (!hashtagVerdict.ok) {
-        throw new Error(`HASHTAG_BLOCKED:${hashtagVerdict.blockedTags.join(", ")}`);
+        throw new Error(`HASHTAG_BLOCKED:${("blockedTags" in hashtagVerdict ? hashtagVerdict.blockedTags : []).join(", ")}`);
       }
 
       let canPost = true;
@@ -279,11 +304,22 @@ export function useChannelMessages(channelId: string | null) {
         throw new Error("No permission to publish in this channel");
       }
 
-      const { error } = await supabase.from("channel_messages").insert({
+      const basePayload = {
         channel_id: channelId,
         sender_id: user.id,
         content: content.trim(),
+      };
+
+      let { error } = await supabase.from("channel_messages").insert({
+        ...basePayload,
+        silent: Boolean(options?.silent),
       });
+
+      // Backward compatibility: environments without `silent` column.
+      if (error && isMissingSilentColumnError(error)) {
+        const retry = await supabase.from("channel_messages").insert(basePayload);
+        error = retry.error;
+      }
 
       if (error) throw error;
 
@@ -298,7 +334,89 @@ export function useChannelMessages(channelId: string | null) {
     }
   };
 
-  return { messages, loading, sendMessage, refetch: fetchMessages };
+  const sendMediaMessage = async (
+    file: File,
+    mediaType: "image" | "video" | "document" | "voice" | "video_circle",
+    options?: { silent?: boolean; durationSeconds?: number },
+  ) => {
+    if (!channelId || !user) return;
+
+    try {
+      let canPost = true;
+      try {
+        canPost = await checkChannelCapabilityViaRpc(channelId, user.id, "channel.posts.create");
+      } catch (err) {
+        if (!isSchemaMissingError(err)) throw err;
+      }
+      if (!canPost) {
+        throw new Error("No permission to publish in this channel");
+      }
+
+      const mime = String(file.type || "").toLowerCase();
+      const fileExt =
+        file.name.split(".").pop() ||
+        (mediaType === "image"
+          ? "jpg"
+          : mediaType === "video" || mediaType === "video_circle"
+            ? "webm"
+            : mediaType === "voice"
+              ? (mime.includes("mp4") ? "m4a" : mime.includes("ogg") ? "ogg" : "webm")
+              : "bin");
+      const fileName = `${user.id}/channels/${channelId}/${Date.now()}.${fileExt}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("chat-media")
+        .upload(fileName, file);
+      if (uploadError) throw uploadError;
+
+      const { data: urlData } = supabase.storage.from("chat-media").getPublicUrl(fileName);
+      const publicUrl = urlData?.publicUrl;
+      if (!publicUrl) throw new Error("Failed to get public URL");
+
+      const contentLabel =
+        mediaType === "image"
+          ? "📷 Изображение"
+          : mediaType === "video"
+            ? "🎥 Видео"
+            : mediaType === "video_circle"
+              ? "🎬 Видео-кружок"
+              : mediaType === "voice"
+                ? "🎤 Голосовое сообщение"
+                : "📎 Документ";
+
+      const basePayload = {
+        channel_id: channelId,
+        sender_id: user.id,
+        content: contentLabel,
+        media_url: publicUrl,
+        media_type: mediaType,
+        duration_seconds: options?.durationSeconds ?? null,
+      };
+
+      let { error } = await supabase.from("channel_messages").insert({
+        ...basePayload,
+        silent: Boolean(options?.silent),
+      });
+
+      // Backward compatibility: environments without `silent` column.
+      if (error && isMissingSilentColumnError(error)) {
+        const retry = await supabase.from("channel_messages").insert(basePayload);
+        error = retry.error;
+      }
+
+      if (error) throw error;
+
+      await supabase
+        .from("channels")
+        .update({ updated_at: new Date().toISOString() })
+        .eq("id", channelId);
+    } catch (error) {
+      console.error("Error sending channel media message:", error);
+      throw error;
+    }
+  };
+
+  return { messages, loading, sendMessage, sendMediaMessage, refetch: fetchMessages };
 }
 
 export function useCreateChannel() {

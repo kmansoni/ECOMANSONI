@@ -22,7 +22,8 @@ npm run calls:ws:dev
 - `CALLS_WS_PORT` (default `8787`)
 - `REDIS_URL` (default `redis://127.0.0.1:6379`) — required for Streams mailbox
 - `CALLS_TURN_URLS` (optional, comma-separated): e.g. `turn:127.0.0.1:3478,turn:127.0.0.1:3478?transport=tcp`
-- `CALLS_TURN_USERNAME` / `CALLS_TURN_CREDENTIAL` (optional; static creds for dev)
+
+NOTE: `calls-ws` never issues TURN credentials. It only advertises TURN URLs; credentials are issued by the `turn-credentials` edge function.
 - `CALLS_DEDUP_TTL_SEC` (default `600`)
 - `CALLS_KEY_TTL_MS` (default `120000`)
 

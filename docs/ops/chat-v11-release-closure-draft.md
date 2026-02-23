@@ -1,4 +1,4 @@
-﻿# Chat v1.1 Release Closure (Draft)
+# Chat v1.1 Release Closure (Draft)
 
 ## Status
 - Release gate workflow implemented and active: `.github/workflows/chat-v11-release-gate.yml`.

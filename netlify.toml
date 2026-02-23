@@ -1,5 +1,5 @@
 [build]
-  command = "npm ci && npm run build"
+  command = "node scripts/chat/schema-probe-ci.mjs && npm run build"
   publish = "dist"
 
 # SPA fallback for React Router

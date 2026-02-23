@@ -1,4 +1,4 @@
-﻿import type { NotificationEvent } from "../contracts/events";
+import type { NotificationEvent } from "../contracts/events";
 
 export function computeCollapseKey(event: NotificationEvent): string | undefined {
   if (event.collapseKey) return event.collapseKey;

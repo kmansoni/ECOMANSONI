@@ -1,4 +1,4 @@
-﻿import type { DeviceToken, NotificationEvent } from "../contracts/events";
+import type { DeviceToken, NotificationEvent } from "../contracts/events";
 
 export function selectAudience(event: NotificationEvent, devices: DeviceToken[]): DeviceToken[] {
   const enabled = devices.filter((d) => d.isValid && d.pushEnabled);

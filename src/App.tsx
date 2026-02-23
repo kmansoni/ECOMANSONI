@@ -3,6 +3,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { Suspense, lazy } from "react";
+import { useEffect } from "react";
 import { AuthProvider } from "@/hooks/useAuth";
 import { ChatOpenProvider } from "@/contexts/ChatOpenContext";
 import { VideoCallProvider } from "@/contexts/VideoCallContext";
@@ -15,6 +16,8 @@ import { UserSettingsProvider } from "@/contexts/UserSettingsContext";
 import { MultiAccountProvider } from "@/contexts/MultiAccountContext";
 import { AdminProtectedRoute } from "@/components/admin/AdminProtectedRoute";
 import { AppearanceRuntimeProvider } from "@/contexts/AppearanceRuntimeContext";
+import { runChatSchemaProbeOnce } from "@/lib/chat/schemaProbe";
+import { toast } from "sonner";
 const HashtagPage = lazy(() => import("@/pages/HashtagPage").then(m => ({ default: m.HashtagPage })));
 
 // Initialize error tracking
@@ -44,7 +47,6 @@ const DevPanelPage = lazy(() => import("@/pages/DevPanelPage"));
 const SettingsPage = lazy(() => import("@/pages/SettingsPage").then(m => ({ default: m.SettingsPage })));
 const CommandPalette = lazy(() => import("@/components/CommandPalette").then(m => ({ default: m.CommandPalette })));
 const ARPage = lazy(() => import("@/pages/ARPage").then(m => ({ default: m.ARPage })));
-const AiCompanionPage = lazy(() => import("@/pages/AiCompanionPage").then(m => ({ default: m.AiCompanionPage })));
 
 // Admin Console (lazy)
 const AdminLoginPage = lazy(() => import("@/pages/admin/AdminLoginPage").then(m => ({ default: m.AdminLoginPage })));
@@ -73,22 +75,34 @@ const ROUTER_BASENAME = (() => {
   return baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
 })();
 
-const App = () => (
-  <MultiAccountProvider>
-    <AuthProvider>
-      <UserSettingsProvider>
-        <AppearanceRuntimeProvider>
-          <VideoCallProvider>
-            <ChatOpenProvider>
-              <TooltipProvider>
-                <Toaster />
-                <Sonner />
-                <GlobalCallOverlay />
-                <BrowserRouter basename={ROUTER_BASENAME}>
-                <Suspense fallback={null}>
-                  <CommandPalette />
-                </Suspense>
-                <Routes>
+const App = () => {
+  useEffect(() => {
+    void (async () => {
+      const probe = await runChatSchemaProbeOnce();
+      if (probe && probe.ok === false) {
+        toast.error("Chat service misconfigured (schema probe failed).", {
+          description: "Missing chat RPCs/migrations. Chats are disabled until fixed.",
+        });
+      }
+    })();
+  }, []);
+
+  return (
+    <MultiAccountProvider>
+      <AuthProvider>
+        <UserSettingsProvider>
+          <AppearanceRuntimeProvider>
+            <VideoCallProvider>
+              <ChatOpenProvider>
+                <TooltipProvider>
+                  <Toaster />
+                  <Sonner />
+                  <GlobalCallOverlay />
+                  <BrowserRouter basename={ROUTER_BASENAME}>
+                  <Suspense fallback={null}>
+                    <CommandPalette />
+                  </Suspense>
+                  <Routes>
                 {/* Public route - Auth page */}
                 <Route path="/auth" element={
                   <Suspense fallback={<PageLoader />}>
@@ -184,11 +198,6 @@ const App = () => (
                         <ChatsPage />
                       </Suspense>
                     } />
-                    <Route path="/assistant" element={
-                      <Suspense fallback={<PageLoader />}>
-                        <AiCompanionPage />
-                      </Suspense>
-                    } />
                     <Route path="/profile" element={
                       <Suspense fallback={<PageLoader />}>
                         <ProfilePage />
@@ -267,15 +276,16 @@ const App = () => (
                     <NotFound />
                   </Suspense>
                 } />
-                </Routes>
-                </BrowserRouter>
-              </TooltipProvider>
-            </ChatOpenProvider>
-          </VideoCallProvider>
-        </AppearanceRuntimeProvider>
-      </UserSettingsProvider>
-    </AuthProvider>
-  </MultiAccountProvider>
-);
+                  </Routes>
+                  </BrowserRouter>
+                </TooltipProvider>
+              </ChatOpenProvider>
+            </VideoCallProvider>
+          </AppearanceRuntimeProvider>
+        </UserSettingsProvider>
+      </AuthProvider>
+    </MultiAccountProvider>
+  );
+};
 
 export default App;

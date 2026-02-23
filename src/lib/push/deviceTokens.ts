@@ -12,7 +12,21 @@ export interface UpsertDeviceTokenInput {
 }
 
 export async function upsertDeviceToken(input: UpsertDeviceTokenInput): Promise<void> {
-  const { error } = await supabase.rpc("upsert_device_token", {
+  const rpc = supabase.rpc as unknown as (
+    fn: "upsert_device_token",
+    args: {
+      p_device_id: string;
+      p_platform: "ios" | "android" | "web";
+      p_provider: "apns" | "fcm";
+      p_token: string;
+      p_app_build: number | null;
+      p_app_version: string | null;
+      p_locale: string | null;
+      p_timezone: string | null;
+    }
+  ) => Promise<{ error: { message: string } | null }>;
+
+  const { error } = await rpc("upsert_device_token", {
     p_device_id: input.deviceId,
     p_platform: input.platform,
     p_provider: input.provider,

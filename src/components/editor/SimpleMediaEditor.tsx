@@ -431,7 +431,7 @@ export function SimpleMediaEditor({
 
         {/* Footer */}
         <div className="flex items-center justify-between px-4 py-3 border-t border-border safe-area-bottom">
-          <Button variant="outline" onClick={handleClose}>
+          <Button variant="outline" onClick={() => handleDialogOpenChange(false)}>
             Отмена
           </Button>
           <Button onClick={handleExport} disabled={isLoading || isExporting}>

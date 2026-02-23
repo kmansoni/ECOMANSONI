@@ -1,4 +1,4 @@
-﻿# Migration Review Note: 20260224000100_fix_compute_user_spam_score_v1_override_nulls
+# Migration Review Note: 20260224000100_fix_compute_user_spam_score_v1_override_nulls
 
 ## Summary
 Migration updates `public.compute_user_spam_score_v1` to prevent trust weight override from becoming NULL when no active override row exists.

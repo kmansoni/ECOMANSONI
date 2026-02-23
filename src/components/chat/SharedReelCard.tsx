@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { Play, Trash2, Film } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { normalizeReelMediaUrl } from "@/hooks/useReels";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -64,6 +65,10 @@ export function SharedReelCard({ reelId, isOwn, messageId, onDelete }: SharedRee
 
         setReel({
           ...reelData,
+          video_url: normalizeReelMediaUrl((reelData as any)?.video_url, "reels-media"),
+          thumbnail_url:
+            normalizeReelMediaUrl((reelData as any)?.thumbnail_url, "reels-media") ||
+            ((reelData as any)?.thumbnail_url ?? null),
           author: profile || undefined,
         });
       } catch (error) {

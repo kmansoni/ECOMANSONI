@@ -71,7 +71,7 @@ serve(async (req) => {
     const bots: Array<{ user_id: string; email: string; display_name: string }> = [];
     for (let i = 1; i <= botCount; i++) {
       const email = `bot${i}.${ownerUserId.slice(0, 8)}@example.dev`;
-      const displayName = `Бот #${i}`;
+      const displayName = `Bot #${i}`;
 
       const { data: created, error: createErr } = await admin.auth.admin.createUser({
         email,
@@ -110,14 +110,14 @@ serve(async (req) => {
       .from("channels")
       .insert([
         {
-          name: "Новости Mansoni (боты)",
-          description: "Тестовый канал, сообщения пишут боты",
+          name: "Mansoni News (bots)",
+          description: "Test channel - bots post messages",
           owner_id: ownerUserId,
           is_public: true,
         },
         {
-          name: "Общий чат (тест)",
-          description: "Канал для проверки списка, подписки и сообщений",
+          name: "General chat (test)",
+          description: "Channel to test lists, subscriptions, and messages",
           owner_id: ownerUserId,
           is_public: true,
         },
@@ -143,19 +143,19 @@ serve(async (req) => {
           {
             channel_id: channelId,
             sender_id: bots[idx % bots.length].user_id,
-            content: "Привет! Я бот. Это тестовое сообщение в канале 🤖",
+            content: "Hello! I'm a bot. This is a test message in the channel 🤖",
             created_at: new Date(now - (idx + 1) * 120_000).toISOString(),
           },
           {
             channel_id: channelId,
             sender_id: ownerUserId,
-            content: "Ок, проверяю канал ✅",
+            content: "Ok, checking the channel ✅",
             created_at: new Date(now - (idx + 1) * 90_000).toISOString(),
           },
           {
             channel_id: channelId,
             sender_id: bots[(idx + 1) % bots.length].user_id,
-            content: "Если видишь это — всё работает.",
+            content: "If you see this - everything works.",
             created_at: new Date(now - (idx + 1) * 60_000).toISOString(),
           },
         ]),
@@ -166,8 +166,8 @@ serve(async (req) => {
     const { data: group, error: groupErr } = await admin
       .from("group_chats")
       .insert({
-        name: "Тестовая группа (боты)",
-        description: "Групповой чат для проверки сообщений от ботов",
+        name: "Test group (bots)",
+        description: "Group chat to test bot messages",
         owner_id: ownerUserId,
       })
       .select("id")
@@ -190,19 +190,19 @@ serve(async (req) => {
         {
           group_id: groupId,
           sender_id: bots[0].user_id,
-          content: "Добро пожаловать в тестовую группу! 🤖",
+          content: "Welcome to the test group! 🤖",
           created_at: new Date(now - 140_000).toISOString(),
         },
         {
           group_id: groupId,
           sender_id: ownerUserId,
-          content: "Проверяю групповой чат ✅",
+          content: "Testing group chat ✅",
           created_at: new Date(now - 110_000).toISOString(),
         },
         {
           group_id: groupId,
           sender_id: bots[1 % bots.length].user_id,
-          content: "Я тоже здесь. Проверка уведомлений и сортировки.",
+          content: "I'm here too. Testing notifications and sorting.",
           created_at: new Date(now - 80_000).toISOString(),
         },
       ],
@@ -232,19 +232,19 @@ serve(async (req) => {
         {
           conversation_id: convId,
           sender_id: bot.user_id,
-          content: "Привет! Я тестовый бот. Чем помочь?",
+          content: "Hi! I'm a test bot. How can I help?",
           is_read: false,
         },
         {
           conversation_id: convId,
           sender_id: ownerUserId,
-          content: "Проверяю диалог с ботом ✅",
+          content: "Testing bot conversation ✅",
           is_read: true,
         },
         {
           conversation_id: convId,
           sender_id: bot.user_id,
-          content: "Отлично. Диалог отображается в списке чатов.",
+          content: "Perfect. The conversation appears in the chat list.",
           is_read: false,
         },
       ]);

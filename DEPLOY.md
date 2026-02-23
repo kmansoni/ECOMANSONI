@@ -14,6 +14,18 @@ $env:SUPABASE_ACCESS_TOKEN = "sbp_..."
 ./scripts/supabase-deploy.ps1
 ```
 
+Sync guard is enabled by default in deploy script:
+- Validates critical chat files/migrations are present.
+- Checks local/remote migration drift (`supabase migration list`).
+- Optionally checks mirror repo drift (if you keep a second copy).
+
+Optional mirror check:
+
+```powershell
+$env:SYNC_GUARD_MIRROR_PATH = "C:\Users\manso\Desktop\Новая папка\your-ai-companion-main"
+./scripts/supabase-deploy.ps1
+```
+
 Alternative (VS Code tasks):
 - Run Task → `Supabase: Link project (lfkbgnbjxskspsownvjm)`
 - Run Task → `Supabase: DB push (dry-run, linked)` → `Supabase: DB push (linked)`
@@ -30,6 +42,12 @@ Notes:
 
 ```powershell
 ./scripts/supabase-deploy.ps1 -SkipDbPush
+```
+
+- Skip sync guard (not recommended):
+
+```powershell
+./scripts/supabase-deploy.ps1 -SkipSyncGuard
 ```
 
 ### Calls / TURN (production)

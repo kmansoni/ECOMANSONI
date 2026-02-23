@@ -1,8 +1,78 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
 import { isGuestMode } from "@/lib/demo/demoMode";
 import { getDemoBotsReels, isDemoId } from "@/lib/demo/demoBots";
+
+function safeRandomUUID(): string {
+  try {
+    if (typeof crypto !== "undefined" && typeof (crypto as any).randomUUID === "function") {
+      return (crypto as any).randomUUID();
+    }
+  } catch {
+    // ignore
+  }
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function normalizeUrlish(value: unknown): string {
+  if (typeof value !== "string") return "";
+  return value
+    .trim()
+    .replace(/^['"]+|['"]+$/g, "")
+    .trim();
+}
+
+function normalizeSupabaseBaseUrl(): string {
+  const raw = normalizeUrlish((import.meta as any)?.env?.VITE_SUPABASE_URL);
+  return raw.replace(/\/+$/, "");
+}
+
+function buildPublicStorageUrl(bucket: string, objectPath: string): string {
+  const base = normalizeSupabaseBaseUrl();
+  const cleanPath = normalizeUrlish(objectPath).replace(/^\/+/, "");
+  if (!base || !cleanPath) return "";
+  // NOTE: do not encode '/' so Supabase storage can resolve nested folders.
+  const encoded = cleanPath
+    .split("/")
+    .map((seg) => encodeURIComponent(seg))
+    .join("/");
+  return `${base}/storage/v1/object/public/${encodeURIComponent(bucket)}/${encoded}`;
+}
+
+export function normalizeReelMediaUrl(urlOrPath: unknown, bucket = "reels-media"): string {
+  const v = normalizeUrlish(urlOrPath);
+  if (!v) return "";
+
+  // Absolute URLs.
+  if (/^https?:\/\//i.test(v)) return v;
+
+  // Supabase storage path variants.
+  // - /storage/v1/object/public/...
+  // - storage/v1/object/public/...
+  if (v.startsWith("/storage/")) {
+    const base = normalizeSupabaseBaseUrl();
+    return base ? `${base}${v}` : v;
+  }
+  if (v.startsWith("storage/")) {
+    const base = normalizeSupabaseBaseUrl();
+    return base ? `${base}/${v}` : v;
+  }
+
+  // Common case when DB stores object path only (e.g. userId/file.mp4).
+  return buildPublicStorageUrl(bucket, v);
+}
+
+function normalizeReelRow(row: any): any {
+  if (!row) return row;
+  const videoUrlRaw = row.video_url ?? row.reel_video_url ?? row.videoUrl ?? row.reelVideoUrl;
+  const thumbUrlRaw = row.thumbnail_url ?? row.reel_thumbnail_url ?? row.thumbnailUrl ?? row.reelThumbnailUrl;
+  return {
+    ...row,
+    video_url: normalizeReelMediaUrl(videoUrlRaw, "reels-media"),
+    thumbnail_url: normalizeReelMediaUrl(thumbUrlRaw, "reels-media") || normalizeUrlish(thumbUrlRaw),
+  };
+}
 
 export interface Reel {
   id: string;
@@ -36,177 +106,325 @@ export interface Reel {
 
 export type ReelsFeedMode = "reels" | "friends";
 
+function isMissingColumnError(error: unknown, columnName: string): boolean {
+  const code = String((error as any)?.code ?? "");
+  const message = String((error as any)?.message ?? "").toLowerCase();
+  return code === "42703" && message.includes(String(columnName).toLowerCase());
+}
+
 export function useReels(feedMode: ReelsFeedMode = "reels") {
   const { user } = useAuth();
   const [reels, setReels] = useState<Reel[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const [likedReels, setLikedReels] = useState<Set<string>>(new Set());
   const [savedReels, setSavedReels] = useState<Set<string>>(new Set());
   const [repostedReels, setRepostedReels] = useState<Set<string>>(new Set());
+  const storageSyncOnceRef = useRef(false);
 
-  const fetchReels = useCallback(async () => {
-    setLoading(true);
-    try {
-      // Demo/guest mode: keep existing behavior (demo bots + latest reels)
-      let followedAuthorIds: string[] | null = null;
-      if (feedMode === "friends") {
-        if (!user) {
-          setReels([]);
-          setLoading(false);
-          return;
+  const PAGE_SIZE = 50;
+
+  const getFollowedAuthorIdsIfNeeded = useCallback(async (): Promise<string[] | null> => {
+    if (feedMode !== "friends") return null;
+    if (!user) return [];
+    const { data: followed, error: followedError } = await supabase
+      .from("followers")
+      .select("following_id")
+      .eq("follower_id", user.id);
+    if (followedError) throw followedError;
+    let followedAuthorIds = (followed || []).map((f: any) => f.following_id) as string[];
+    // Include own reels as well
+    followedAuthorIds = Array.from(new Set([...(followedAuthorIds || []), user.id]));
+    return followedAuthorIds;
+  }, [feedMode, user]);
+
+  const fetchRawBatch = useCallback(
+    async ({ offset, limit, followedAuthorIds }: { offset: number; limit: number; followedAuthorIds: string[] | null }) => {
+      const fetchReelsViaEdgeFallback = async () => {
+        try {
+          const { data, error } = await supabase.functions.invoke("reels-feed", {
+            body: {
+              limit,
+              offset,
+              author_ids: feedMode === "friends" ? (followedAuthorIds ?? []) : null,
+            },
+          });
+
+          if (error) {
+            console.warn("reels-feed edge fallback failed:", error);
+            return [] as any[];
+          }
+          if (!data || (data as any).ok !== true) {
+            console.warn("reels-feed edge fallback returned not-ok:", data);
+            return [] as any[];
+          }
+          const rawRows = ((data as any).data ?? []) as any[];
+          return rawRows;
+        } catch (e) {
+          console.warn("reels-feed edge fallback exception:", e);
+          return [] as any[];
         }
-        const { data: followed, error: followedError } = await supabase
-          .from("followers")
-          .select("following_id")
-          .eq("follower_id", user.id);
-        if (followedError) throw followedError;
-        followedAuthorIds = (followed || []).map((f: any) => f.following_id);
-        // Include own reels as well
-        followedAuthorIds = Array.from(new Set([...(followedAuthorIds || []), user.id]));
-      }
+      };
 
-      let data: any[] | null = null;
-      let error: any = null;
+      const fetchReelsFallback = async () => {
+        const buildQuery = (withModerationFilter: boolean) => {
+          let query = (supabase as any)
+            .from("reels")
+            .select("*")
+            .order("created_at", { ascending: false })
+            .range(offset, offset + limit - 1);
+
+          if (withModerationFilter) {
+            query = query.neq("moderation_status", "blocked");
+          }
+
+          if (feedMode === "friends") {
+            if (!followedAuthorIds || followedAuthorIds.length === 0) return null;
+            query = query.in("author_id", followedAuthorIds);
+          }
+
+          return query;
+        };
+
+        const queryWithModeration = buildQuery(true);
+        if (!queryWithModeration) return [] as any[];
+
+        let res = await queryWithModeration;
+        if (res.error && isMissingColumnError(res.error, "moderation_status")) {
+          const queryWithoutModeration = buildQuery(false);
+          if (!queryWithoutModeration) return [] as any[];
+          res = await queryWithoutModeration;
+        }
+        if (res.error) throw res.error;
+        return (res.data || []) as any[];
+      };
 
       if (feedMode === "reels") {
-        // One request_id per fetch batch: used to correlate impressions and enable conflict-safe dedupe.
-        // Server may also provide a request_id, but we generate one client-side to keep this robust.
-        const fetchRequestId = crypto.randomUUID();
+        const fetchRequestId = safeRandomUUID();
 
         let anonSessionId: string | null = null;
         if (!user) {
           anonSessionId = sessionStorage.getItem("reels_anon_session_id");
           if (!anonSessionId) {
-            anonSessionId = crypto.randomUUID();
+            anonSessionId = safeRandomUUID();
             sessionStorage.setItem("reels_anon_session_id", anonSessionId);
           }
         }
 
         const sessionId = !user ? `anon-${anonSessionId}` : null;
-        const rpc = await (supabase as any).rpc("get_reels_feed_v2", {
-          p_limit: 50,
-          p_offset: 0,
+        let rpc = await (supabase as any).rpc("get_reels_feed_v2", {
+          p_limit: limit,
+          p_offset: offset,
           p_session_id: sessionId,
+          p_exploration_ratio: 0.2,
+          p_recency_days: 30,
+          p_freq_cap_hours: 6,
+          p_algorithm_version: "v2",
         });
 
-        // Normalize payload:
-        // - legacy RPC returns `id`
-        // - newer/experimental variants may return `reel_id`
-        // Also enrich with request_id/feed_position for impression correlation.
-        data = (rpc.data || []).map((row: any, index: number) => {
+        if (rpc.error) {
+          rpc = await (supabase as any).rpc("get_reels_feed_v2", {
+            p_limit: limit,
+            p_offset: offset,
+            p_session_id: sessionId,
+          });
+        }
+
+        if (rpc.error) {
+          console.warn("get_reels_feed_v2 failed, using fallback:", rpc.error);
+          let data = await fetchReelsFallback();
+          if ((data?.length || 0) === 0) data = await fetchReelsViaEdgeFallback();
+          return data;
+        }
+
+        return (rpc.data || []).map((row: any, index: number) => {
           const id = row?.id ?? row?.reel_id;
           return {
             ...row,
             id,
             request_id: row?.request_id ?? fetchRequestId,
-            feed_position: row?.feed_position ?? index,
+            feed_position: row?.feed_position ?? (offset + index),
             algorithm_version: row?.algorithm_version,
             final_score: row?.final_score ?? row?.score,
           };
         });
-        error = rpc.error;
-      } else {
-        let query = (supabase as any)
-          .from("reels")
-          .select("*")
-          .neq("moderation_status", "blocked")
-          .order("created_at", { ascending: false })
-          .limit(50);
-
-        if (followedAuthorIds) {
-          if (followedAuthorIds.length === 0) {
-            setReels([]);
-            setLoading(false);
-            return;
-          }
-          query = query.in("author_id", followedAuthorIds);
-        }
-
-        const res = await query;
-        data = res.data;
-        error = res.error;
       }
 
-      if (error) throw error;
+      // friends mode
+      let data = await fetchReelsFallback();
+      if ((data?.length || 0) === 0) data = await fetchReelsViaEdgeFallback();
+      return data;
+    },
+    [feedMode, user],
+  );
 
-      const feedReelIds = (data || []).map((r: any) => r.id) as string[];
+  const enrichRows = useCallback(
+    async (rows: any[]) => {
+      const normalizedRows = (rows || []).map((r: any) => {
+        const normalized = normalizeReelRow(r);
+        const id = normalized?.id ?? normalized?.reel_id;
+        return { ...normalized, id };
+      });
 
-      // Fetch author profiles
-      const authorIds = [...new Set((data || []).map((r: any) => r.author_id))] as string[];
-      const { data: profiles } = await supabase
-        .from("profiles")
-        .select("user_id, display_name, avatar_url, verified")
-        .in("user_id", authorIds);
+      const feedReelIds = normalizedRows.map((r: any) => r.id) as string[];
+      const authorIds = [...new Set(normalizedRows.map((r: any) => r.author_id))] as string[];
 
-      const profileMap = new Map(
-        (profiles || []).map((p) => [p.user_id, p])
-      );
+      let profiles: any[] = [];
+      if (authorIds.length) {
+        const profilesResWithVerified = await supabase
+          .from("profiles")
+          .select("user_id, display_name, avatar_url, verified")
+          .in("user_id", authorIds);
 
-      // Fetch user's liked reels
+        if (profilesResWithVerified.error && isMissingColumnError(profilesResWithVerified.error, "verified")) {
+          const profilesResWithoutVerified = await supabase
+            .from("profiles")
+            .select("user_id, display_name, avatar_url")
+            .in("user_id", authorIds);
+          if (profilesResWithoutVerified.error) throw profilesResWithoutVerified.error;
+          profiles = profilesResWithoutVerified.data || [];
+        } else {
+          if (profilesResWithVerified.error) throw profilesResWithVerified.error;
+          profiles = profilesResWithVerified.data || [];
+        }
+      }
+
+      const profileMap = new Map((profiles || []).map((p) => [p.user_id, p]));
+
       let userLikedReels: string[] = [];
       let userSavedReels: string[] = [];
       let userRepostedReels: string[] = [];
-      if (user) {
-        if (feedReelIds.length === 0) {
-          setLikedReels(new Set());
-          setSavedReels(new Set());
-          setRepostedReels(new Set());
-        } else {
-          const { data: likes } = await (supabase as any)
-            .from("reel_likes")
-            .select("reel_id")
-            .eq("user_id", user.id)
-            .in("reel_id", feedReelIds);
-        userLikedReels = (likes || []).map((l: any) => l.reel_id);
-        setLikedReels(new Set(userLikedReels));
-
-          const { data: saves } = await (supabase as any)
-            .from("reel_saves")
-            .select("reel_id")
-            .eq("user_id", user.id)
-            .in("reel_id", feedReelIds);
-        userSavedReels = (saves || []).map((s: any) => s.reel_id);
-        setSavedReels(new Set(userSavedReels));
-
-          const { data: reposts } = await (supabase as any)
-            .from("reel_reposts")
-            .select("reel_id")
-            .eq("user_id", user.id)
-            .in("reel_id", feedReelIds);
-        userRepostedReels = (reposts || []).map((r: any) => r.reel_id);
-        setRepostedReels(new Set(userRepostedReels));
-        }
+      if (user && feedReelIds.length) {
+        const [likesRes, savesRes, repostsRes] = await Promise.all([
+          (supabase as any).from("reel_likes").select("reel_id").eq("user_id", user.id).in("reel_id", feedReelIds),
+          (supabase as any).from("reel_saves").select("reel_id").eq("user_id", user.id).in("reel_id", feedReelIds),
+          (supabase as any).from("reel_reposts").select("reel_id").eq("user_id", user.id).in("reel_id", feedReelIds),
+        ]);
+        userLikedReels = (likesRes.data || []).map((l: any) => l.reel_id);
+        userSavedReels = (savesRes.data || []).map((s: any) => s.reel_id);
+        userRepostedReels = (repostsRes.data || []).map((r: any) => r.reel_id);
       }
 
-      const reelsWithAuthors = (data || []).map((r: any) => {
-        const id = r?.id ?? r?.reel_id;
+      const reelsWithAuthors: Reel[] = normalizedRows.map((r: any) => {
         return {
           ...r,
-          id,
           author: profileMap.get(r.author_id) || {
             display_name: "Пользователь",
             avatar_url: null,
             verified: false,
           },
-          isLiked: userLikedReels.includes(id),
-          isSaved: user ? userSavedReels.includes(id) : false,
-          isReposted: user ? userRepostedReels.includes(id) : false,
+          isLiked: userLikedReels.includes(r.id),
+          isSaved: user ? userSavedReels.includes(r.id) : false,
+          isReposted: user ? userRepostedReels.includes(r.id) : false,
         };
       });
 
+      return {
+        reels: reelsWithAuthors,
+        likedIds: userLikedReels,
+        savedIds: userSavedReels,
+        repostedIds: userRepostedReels,
+      };
+    },
+    [user],
+  );
+
+  const fetchReels = useCallback(async () => {
+    setLoading(true);
+    try {
+      console.log("[useReels] fetchReels started", { feedMode, isGuest: isGuestMode() });
+      
+      // Best-effort: sync storage-only uploads into public.reels so they appear in the feed.
+      // This must run even when RPC works (otherwise Edge fallback never runs and storage-only files stay invisible).
+      if (!storageSyncOnceRef.current && !isGuestMode() && feedMode === "reels") {
+        storageSyncOnceRef.current = true;
+        console.log("[useReels] ✓ Starting storage sync...");
+        try {
+          const syncResult = await supabase.functions.invoke("reels-feed", { body: { limit: PAGE_SIZE, offset: 0 } });
+          console.log("[useReels] ✓ Sync completed:", { syncError: syncResult.error, syncDataLength: (syncResult.data?.data || [])?.length });
+        } catch (e) {
+          console.warn("[useReels] ✗ Sync exception:", e);
+          // ignore (network/env may not allow functions)
+        }
+      } else {
+        console.log("[useReels] Skipping sync:", { alreadySync: storageSyncOnceRef.current, isGuest: isGuestMode(), feedMode });
+      }
+
+      if (feedMode === "friends" && !user) {
+        console.log("[useReels] Friends mode without user, returning empty");
+        setReels([]);
+        setHasMore(false);
+        setLoading(false);
+        return;
+      }
+
+      const followedAuthorIds = await getFollowedAuthorIdsIfNeeded();
+      const raw = await fetchRawBatch({ offset: 0, limit: PAGE_SIZE, followedAuthorIds });
+      console.log("[useReels] fetchRawBatch returned:", { count: raw?.length, rawLength: raw?.length });
+      
+      const enriched = await enrichRows(raw);
+      console.log("[useReels] After enrichRows:", { count: enriched.reels?.length });
+
+      setLikedReels(new Set(enriched.likedIds));
+      setSavedReels(new Set(enriched.savedIds));
+      setRepostedReels(new Set(enriched.repostedIds));
+      setHasMore((raw?.length || 0) >= PAGE_SIZE);
+
       if (isGuestMode()) {
         const demo = getDemoBotsReels() as any as Reel[];
-        const withoutDemo = reelsWithAuthors.filter((r) => !String(r.id).startsWith('demo_'));
+        const withoutDemo = enriched.reels.filter((r) => !String(r.id).startsWith("demo_"));
+        console.log("[useReels] Guest mode - combining demo + real:", { demoCount: demo.length, reelCount: withoutDemo.length });
         setReels([...demo, ...withoutDemo]);
+        setHasMore(false);
       } else {
-        setReels(reelsWithAuthors);
+        console.log("[useReels] ✓ Setting reels:", { count: enriched.reels?.length });
+        setReels(enriched.reels);
       }
     } catch (error) {
       console.error("Error fetching reels:", error);
     } finally {
       setLoading(false);
     }
-  }, [user, feedMode]);
+  }, [user, feedMode, PAGE_SIZE, enrichRows, fetchRawBatch, getFollowedAuthorIdsIfNeeded]);
+
+  const loadMore = useCallback(async () => {
+    if (loadingMore || loading) return;
+    if (!hasMore) return;
+    if (isGuestMode()) return;
+
+    try {
+      setLoadingMore(true);
+      const followedAuthorIds = await getFollowedAuthorIdsIfNeeded();
+      const nextOffset = reels.length;
+      const raw = await fetchRawBatch({ offset: nextOffset, limit: PAGE_SIZE, followedAuthorIds });
+
+      if ((raw?.length || 0) === 0) {
+        setHasMore(false);
+        return;
+      }
+
+      const enriched = await enrichRows(raw);
+
+      setLikedReels((prev) => new Set([...prev, ...enriched.likedIds]));
+      setSavedReels((prev) => new Set([...prev, ...enriched.savedIds]));
+      setRepostedReels((prev) => new Set([...prev, ...enriched.repostedIds]));
+
+      setReels((prev) => {
+        const seen = new Set(prev.map((r) => r.id));
+        const appended = enriched.reels.filter((r) => !seen.has(r.id));
+        return [...prev, ...appended];
+      });
+
+      if ((raw?.length || 0) < PAGE_SIZE) {
+        setHasMore(false);
+      }
+    } catch (e) {
+      console.error("Error loading more reels:", e);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [PAGE_SIZE, enrichRows, fetchRawBatch, getFollowedAuthorIdsIfNeeded, hasMore, loading, loadingMore, reels.length]);
 
   const toggleLike = useCallback(async (reelId: string) => {
     if (!user) return;
@@ -643,6 +861,9 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
   return {
     reels,
     loading,
+    loadingMore,
+    hasMore,
+    loadMore,
     likedReels,
     savedReels,
     repostedReels,

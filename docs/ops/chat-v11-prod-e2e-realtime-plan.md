@@ -1,4 +1,4 @@
-﻿# Chat v1.1 Prod E2E Plan (Supabase Realtime)
+# Chat v1.1 Prod E2E Plan (Supabase Realtime)
 
 ## Goal
 Подтвердить сквозной production-like путь: `send -> ACK -> write.receipt -> realtime delivery -> reconnect -> gap/resync -> convergence`.

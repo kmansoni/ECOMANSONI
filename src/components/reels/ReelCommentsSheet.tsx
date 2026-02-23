@@ -59,7 +59,7 @@ export function ReelCommentsSheet({
       setNewComment("");
       setReplyTo(null);
     } else {
-      const payload = getHashtagBlockedToastPayload(result.error);
+      const payload = getHashtagBlockedToastPayload("error" in result ? result.error : undefined);
       if (payload) toast.error(payload.title, { description: payload.description });
       else toast.error("Не удалось добавить комментарий");
     }

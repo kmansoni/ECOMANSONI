@@ -1,4 +1,4 @@
-﻿# Chat v1.1 Go/No-Go Template
+# Chat v1.1 Go/No-Go Template
 
 ## 1. Context
 - Date (UTC):

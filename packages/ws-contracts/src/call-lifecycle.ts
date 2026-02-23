@@ -1,4 +1,4 @@
-﻿export type DevicePlatform = "ios" | "android" | "web";
+export type DevicePlatform = "ios" | "android" | "web";
 
 export type CallState =
   | "incoming"

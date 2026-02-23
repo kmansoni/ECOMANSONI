@@ -272,7 +272,7 @@ BEGIN
       ) AS final_score,
       'Exploration' AS recommendation_reason
     FROM scored s
-    WHERE s.id NOT IN (SELECT id FROM exploitation)
+    WHERE s.id NOT IN (SELECT e.id FROM exploitation e)
       AND (s.tiktok_quality_score + s.trend_boost_score + s.cold_start_boost) >= 20.0
     ORDER BY random()
     LIMIT v_exploration_limit
@@ -322,3 +322,4 @@ $$;
 
 REVOKE ALL ON FUNCTION public.get_reels_feed_v2(INTEGER, INTEGER, TEXT, NUMERIC, INTEGER, INTEGER, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_reels_feed_v2(INTEGER, INTEGER, TEXT, NUMERIC, INTEGER, INTEGER, TEXT) TO authenticated, anon;
+

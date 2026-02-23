@@ -39,6 +39,22 @@ jobs:
       - name: Install
         run: npm ci
 
+      - name: Encoding guard (no BOM)
+        run: npm run encoding:check-bom
+
+      - name: Chat schema probe (must be deployed)
+        run: npm run chat:schema-probe
+        env:
+          REQUIRE_CHAT_SCHEMA_PROBE: "1"
+          SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          VITE_EXPECTED_SUPABASE_PROJECT_REF: ${{ secrets.VITE_EXPECTED_SUPABASE_PROJECT_REF }}
+          CHAT_SCHEMA_EXPECTED_VERSION: "2"
+
+      - name: SQL lint (RPC aliases)
+        run: npm run sql:lint
+
       - name: Lint
         run: npm run lint
 
@@ -78,3 +94,38 @@ jobs:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+
+  turn_release_gate:
+    name: TURN Release Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # Secrets are not available for pull_request events from forks.
+    # Skip in that case so CI remains usable for external contributors.
+    if: >-
+      ${
+        github.event_name != 'pull_request' ||
+        github.event.pull_request.head.repo.full_name == github.repository
+      }
+
+    env:
+      REQUIRE_TURN_SMOKE: "1"
+      VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+      VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: TURN gate (verify + smoke)
+        run: npm run turn:verify

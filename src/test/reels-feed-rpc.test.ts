@@ -17,6 +17,7 @@ vi.mock("@/integrations/supabase/client", () => {
       neq: vi.fn(() => builder),
       order: vi.fn(() => builder),
       limit: vi.fn(() => builder),
+      range: vi.fn(() => builder),
       in: vi.fn(() => builder),
       then: (onFulfilled: any, onRejected: any) => Promise.resolve(response).then(onFulfilled, onRejected),
     };
@@ -25,6 +26,9 @@ vi.mock("@/integrations/supabase/client", () => {
 
   const supabase = {
     rpc: vi.fn(() => Promise.resolve({ data: [], error: null })),
+    functions: {
+      invoke: vi.fn(() => Promise.resolve({ data: { ok: true, data: [] }, error: null })),
+    },
     from: vi.fn((table: string) => {
       if (table === "followers") {
         return makeQuery({ data: [{ following_id: "someone" }], error: null });

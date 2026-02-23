@@ -1,4 +1,4 @@
-﻿# Chat v1.1 Go/No-Go Record
+# Chat v1.1 Go/No-Go Record
 
 ## 1. Context
 - Date (UTC): 2026-02-22

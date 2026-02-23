@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
+import { normalizeReelMediaUrl } from "@/hooks/useReels";
 import { toast } from "sonner";
 import { useProfileByUsername, useUserPosts } from "@/hooks/useProfile";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -74,7 +75,12 @@ export function UserProfilePage() {
       if (reelsError) throw reelsError;
 
       const rows = (data || []) as any[];
-      setUserReels((prev) => (reset ? rows : [...prev, ...rows]));
+      const normalized = rows.map((r: any) => ({
+        ...r,
+        video_url: normalizeReelMediaUrl(r?.video_url, "reels-media"),
+        thumbnail_url: normalizeReelMediaUrl(r?.thumbnail_url, "reels-media") || r?.thumbnail_url,
+      }));
+      setUserReels((prev) => (reset ? normalized : [...prev, ...normalized]));
       setUserReelsHasMore(rows.length >= limit);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);

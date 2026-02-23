@@ -10,9 +10,15 @@ import { describe, it, expect, beforeEach } from 'vitest';
  */
 
 // Mock deferred for controlled async test sequencing
+type Deferred<T> = {
+  promise: Promise<T>;
+  resolve: (v: T) => void;
+  reject: (e: unknown) => void;
+};
+
 function deferred<T>() {
   let resolve!: (v: T) => void;
-  let reject!: (e: any) => void;
+  let reject!: (e: unknown) => void;
   const promise = new Promise<T>((res, rej) => {
     resolve = res;
     reject = rej;
@@ -218,7 +224,7 @@ describe('MultiAccountContext: Race Condition Protection', () => {
   });
 
   it('concurrent switches to different accounts: seq isolation', async () => {
-    const profiles: Record<string, deferred<mockProfile>> = {
+    const profiles: Record<string, Deferred<mockProfile>> = {
       A: deferred<mockProfile>(),
       B: deferred<mockProfile>(),
       C: deferred<mockProfile>(),

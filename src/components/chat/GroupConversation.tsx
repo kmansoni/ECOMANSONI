@@ -3,6 +3,8 @@ import { ArrowLeft, CheckCheck, Link, LogOut, MoreVertical, Send, UserPlus, User
 import { format } from "date-fns";
 import { toast } from "sonner";
 import { getHashtagBlockedToastPayload } from "@/lib/hashtagModeration";
+import { getChatSendErrorToast } from "@/lib/chat/sendError";
+import { diagnoseGroupSendReadiness } from "@/lib/chat/readiness";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
@@ -66,7 +68,18 @@ export function GroupConversation({ group, onBack, onLeave }: GroupConversationP
     } catch (error) {
       const payload = getHashtagBlockedToastPayload(error);
       if (payload) toast.error(payload.title, { description: payload.description });
-      else toast.error("Не удалось отправить сообщение");
+      else {
+        const sendPayload = getChatSendErrorToast(error);
+        if (sendPayload) toast.error(sendPayload.title, { description: sendPayload.description });
+        else {
+          const diagnostic = await diagnoseGroupSendReadiness({
+            supabase,
+            userId: user?.id,
+            groupId: group.id,
+          });
+          toast.error("Не удалось отправить сообщение", { description: diagnostic ?? undefined });
+        }
+      }
     } finally {
       setSending(false);
     }

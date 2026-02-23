@@ -14,7 +14,15 @@ $bundlePath = $scriptMatch.Groups[1].Value
 $bundleUrl = 'https://kmansoni.github.io' + $bundlePath
 $js = (Invoke-WebRequest -UseBasicParsing $bundleUrl).Content
 
-$projectHost = 'lfkbgnbjxskspsownvjm.supabase.co'
+# Try to detect any Supabase project host from bundle to avoid hardcoded project refs.
+$hostMatch = [regex]::Match($js, '([a-z0-9-]+\.supabase\.co)')
+if (-not $hostMatch.Success) {
+  Write-Output "bundle=$bundlePath"
+  Write-Output 'supabaseHostNotFound=true'
+  exit 0
+}
+
+$projectHost = $hostMatch.Groups[1].Value
 $idx = $js.IndexOf($projectHost)
 if ($idx -lt 0) {
   Write-Output "bundle=$bundlePath"

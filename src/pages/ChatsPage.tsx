@@ -1,4 +1,4 @@
-﻿import { useCallback, useMemo, useRef, useState, useEffect } from "react";
+import { useCallback, useMemo, useRef, useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Search, Check, CheckCheck, LogIn, MessageCircle, Plus, Megaphone, Users, Phone } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -58,116 +58,6 @@ export function ChatsPage() {
   const { calls, missedCalls, profilesById, loading: callsLoading } = useCallHistory();
   const { startCall } = useVideoCallContext();
 
-  // AI chat: ensure there is a dedicated "AI" chat folder containing the AI assistant DM.
-  const aiBootstrapOnceRef = useRef(false);
-  useEffect(() => {
-    if (!user?.id) return;
-    if (aiBootstrapOnceRef.current) return;
-    aiBootstrapOnceRef.current = true;
-
-    let cancelled = false;
-    void (async () => {
-      try {
-        const { data, error } = await supabase.functions.invoke("ensure-ai-assistant", { body: {} });
-        if (error) throw error;
-        if (!data?.ok || !data?.ai_user_id) throw new Error(data?.error || "AI assistant bootstrap failed");
-
-        const aiUserId = String(data.ai_user_id);
-        try {
-          localStorage.setItem("ai_assistant_user_id", aiUserId);
-        } catch {
-          // ignore
-        }
-
-        const convId = await createConversation(aiUserId);
-        if (!convId) throw new Error("Failed to create AI conversation");
-
-        // One-time greeting from the assistant (per device) so you can see it immediately.
-        const greetedKey = `ai_greeted:${convId}`;
-        let alreadyGreeted = false;
-        try {
-          alreadyGreeted = localStorage.getItem(greetedKey) === "1";
-        } catch {
-          alreadyGreeted = false;
-        }
-        if (!alreadyGreeted) {
-          try {
-            const greeting = "РџСЂРёРІРµС‚! РЇ С‚СѓС‚ РІ С‡Р°С‚Рµ. РќР°РїРёС€Рё, С‡С‚Рѕ РЅСѓР¶РЅРѕ РёР·РјРµРЅРёС‚СЊ РІ РєРѕРґРµ вЂ” СЃРґРµР»Р°РµРј.";
-            const greetRes = await supabase.functions.invoke("ai-send-message", {
-              body: { conversation_id: convId, content: greeting },
-            });
-            if (!greetRes.error && greetRes.data?.ok) {
-              try {
-                localStorage.setItem(greetedKey, "1");
-              } catch {
-                // ignore
-              }
-            }
-          } catch {
-            // ignore greeting failures
-          }
-        }
-
-        // Ensure chat folder "AI" exists for this user.
-        let folderId: string | null = null;
-        const { data: existingFolder, error: folderErr } = await supabase
-          .from("chat_folders")
-          .select("id, sort_order, is_hidden")
-          .eq("user_id", user.id)
-          .eq("name", "AI")
-          .maybeSingle();
-        if (folderErr) throw folderErr;
-        if (existingFolder?.id) folderId = existingFolder.id;
-
-        // Keep AI folder visible and near the system tabs.
-        const desiredSortOrder = -396; // after channels (-397)
-        if (folderId && ((existingFolder as any)?.is_hidden || (existingFolder as any)?.sort_order !== desiredSortOrder)) {
-          await supabase
-            .from("chat_folders")
-            .update({ is_hidden: false, sort_order: desiredSortOrder })
-            .eq("id", folderId)
-            .eq("user_id", user.id);
-        }
-
-        if (!folderId) {
-          const { data: createdFolder, error: createFolderErr } = await supabase
-            .from("chat_folders")
-            .insert({ user_id: user.id, name: "AI", sort_order: desiredSortOrder, is_hidden: false })
-            .select("id")
-            .single();
-          if (createFolderErr) throw createFolderErr;
-          folderId = createdFolder?.id ?? null;
-        }
-
-        if (!folderId) throw new Error("Failed to ensure AI folder");
-
-        // Ensure the AI DM is inside the folder.
-        const { error: itemErr } = await supabase
-          .from("chat_folder_items")
-          .upsert(
-            { folder_id: folderId, item_kind: "dm", item_id: convId },
-            { onConflict: "folder_id,item_kind,item_id" },
-          );
-        if (itemErr) throw itemErr;
-
-        if (!cancelled) {
-          await refetchFolders();
-          await refetch();
-          setActiveTabId(folderId);
-          toast.success("AI-С‡Р°С‚ РґРѕР±Р°РІР»РµРЅ");
-        }
-      } catch (e) {
-        console.warn("AI chat bootstrap failed:", e);
-        const msg = e instanceof Error ? e.message : "РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕР·РґР°С‚СЊ AI-С‡Р°С‚";
-        console.info(`AI bootstrap skipped: ${msg}`);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [createConversation, refetch, refetchFolders, user?.id]);
-
   const [seeding, setSeeding] = useState(false);
   
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
@@ -190,16 +80,16 @@ export function ChatsPage() {
       try {
         if (channelInvite) {
           await joinChannelByInviteToken(channelInvite);
-          if (!cancelled) toast.success("Р’С‹ РїСЂРёСЃРѕРµРґРёРЅРёР»РёСЃСЊ Рє РєР°РЅР°Р»Сѓ РїРѕ РїСЂРёРіР»Р°С€РµРЅРёСЋ");
+          if (!cancelled) toast.success("Вы присоединились к каналу по приглашению");
           await refetchChannels();
         }
         if (groupInvite) {
           await joinGroupByInviteToken(groupInvite);
-          if (!cancelled) toast.success("Р’С‹ РїСЂРёСЃРѕРµРґРёРЅРёР»РёСЃСЊ Рє РіСЂСѓРїРїРµ РїРѕ РїСЂРёРіР»Р°С€РµРЅРёСЋ");
+          if (!cancelled) toast.success("Вы присоединились к группе по приглашению");
           await refetchGroups();
         }
       } catch (err) {
-        if (!cancelled) toast.error("РџСЂРёРіР»Р°С€РµРЅРёРµ РЅРµРґРµР№СЃС‚РІРёС‚РµР»СЊРЅРѕ РёР»Рё РёСЃС‚РµРєР»Рѕ");
+        if (!cancelled) toast.error("Приглашение недействительно или истекло");
       } finally {
         if (!cancelled) {
           const clean = new URL(window.location.href);
@@ -448,7 +338,7 @@ export function ChatsPage() {
     const other = conv.participants.find((p) => p.user_id !== user?.id);
     return {
       user_id: other?.user_id || "",
-      ...(other?.profile || { display_name: "РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ", avatar_url: null })
+      ...(other?.profile || { display_name: "Пользователь", avatar_url: null })
     };
   };
 
@@ -460,7 +350,7 @@ export function ChatsPage() {
         ? [{
             user_id: locationState.otherUserId,
             profile: {
-              display_name: locationState.otherDisplayName || "РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ",
+              display_name: locationState.otherDisplayName || "Пользователь",
               avatar_url: locationState.otherAvatarUrl || null
             }
           }]
@@ -560,7 +450,7 @@ export function ChatsPage() {
     try {
       const seedToken = import.meta.env.VITE_SEED_TEST_CHATS_TOKEN as string | undefined;
       if (!seedToken) {
-        throw new Error("VITE_SEED_TEST_CHATS_TOKEN РЅРµ Р·Р°РґР°РЅ (РЅСѓР¶РµРЅ РґР»СЏ СЃРёРґРѕРІ Р±РѕС‚РѕРІ)");
+        throw new Error("VITE_SEED_TEST_CHATS_TOKEN не задан (нужен для сидов ботов)");
       }
 
       const { data, error } = await supabase.functions.invoke("seed-test-chats", {
@@ -576,10 +466,10 @@ export function ChatsPage() {
       }
 
       await Promise.all([refetch(), refetchChannels(), refetchGroups()]);
-      toast.success(`РЎРѕР·РґР°РЅРѕ: Р±РѕС‚РѕРІ ${data.bots_created}, РєР°РЅР°Р»РѕРІ ${data.channels_created}, РґРёР°Р»РѕРіРѕРІ ${data.dms_created}`);
+      toast.success(`Создано: ботов ${data.bots_created}, каналов ${data.channels_created}, диалогов ${data.dms_created}`);
     } catch (e) {
       console.error("seedTestChats error:", e);
-      toast.error(e instanceof Error ? e.message : "РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕР·РґР°С‚СЊ С‚РµСЃС‚РѕРІС‹Рµ С‡Р°С‚С‹");
+      toast.error(e instanceof Error ? e.message : "Не удалось создать тестовые чаты");
     } finally {
       setSeeding(false);
     }
@@ -592,16 +482,16 @@ export function ChatsPage() {
         <div className="w-20 h-20 rounded-full bg-background/70 dark:bg-white/10 backdrop-blur-xl border border-border/60 dark:border-white/20 flex items-center justify-center mb-4 relative z-10">
           <MessageCircle className="w-10 h-10 text-muted-foreground dark:text-white/60" />
         </div>
-        <h2 className="text-xl font-semibold mb-2 text-foreground dark:text-white relative z-10">Р’РѕР№РґРёС‚Рµ РґР»СЏ РґРѕСЃС‚СѓРїР° Рє С‡Р°С‚Р°Рј</h2>
+        <h2 className="text-xl font-semibold mb-2 text-foreground dark:text-white relative z-10">Войдите для доступа к чатам</h2>
         <p className="text-muted-foreground dark:text-white/60 mb-6 relative z-10">
-          Р§С‚РѕР±С‹ РїРµСЂРµРїРёСЃС‹РІР°С‚СЊСЃСЏ Рё СЃРѕС…СЂР°РЅСЏС‚СЊ РёСЃС‚РѕСЂРёСЋ СЃРѕРѕР±С‰РµРЅРёР№, РЅРµРѕР±С…РѕРґРёРјРѕ РІРѕР№С‚Рё РІ Р°РєРєР°СѓРЅС‚
+          Чтобы переписываться и сохранять историю сообщений, необходимо войти в аккаунт
         </p>
         <Button
           onClick={() => navigate("/auth")}
           className="gap-2 bg-background/70 border-border text-foreground hover:bg-muted relative z-10 dark:bg-white/10 dark:border-white/20 dark:text-white dark:hover:bg-white/20"
         >
           <LogIn className="w-4 h-4" />
-          Р’РѕР№С‚Рё
+          Войти
         </Button>
       </div>
     );
@@ -616,7 +506,7 @@ export function ChatsPage() {
     return (
       <ChatConversation
         conversationId={selectedConversation.id}
-        chatName={other.display_name || "РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ"}
+        chatName={other.display_name || "Пользователь"}
         chatAvatar={other.avatar_url ?? null}
         otherUserId={other.user_id}
         totalUnreadCount={totalUnreadCount}
@@ -701,7 +591,7 @@ export function ChatsPage() {
                 transition: 'transform 0.25s cubic-bezier(0.25, 0.1, 0.25, 1)',
               }}
             >
-              {primaryTab === "calls" ? "Р—РІРѕРЅРєРё" : "Р§Р°С‚С‹"}
+              {primaryTab === "calls" ? "Звонки" : "Чаты"}
             </h1>
             
             {/* Actions: Search + Create */}
@@ -734,7 +624,7 @@ export function ChatsPage() {
                     : "text-muted-foreground hover:text-foreground dark:text-white/50 dark:hover:text-white/80",
                 )}
               >
-                Р§Р°С‚С‹
+                Чаты
               </button>
               <button
                 onClick={() => setPrimaryTab("calls")}
@@ -745,7 +635,7 @@ export function ChatsPage() {
                     : "text-muted-foreground hover:text-foreground dark:text-white/50 dark:hover:text-white/80",
                 )}
               >
-                Р—РІРѕРЅРєРё
+                Звонки
               </button>
             </div>
           )}
@@ -775,12 +665,12 @@ export function ChatsPage() {
                         }
 
                         if (t.passcode_hash && !unlockedTabs.has(t.id)) {
-                          const code = window.prompt("Р’РІРµРґРёС‚Рµ РїР°СЂРѕР»СЊ РїР°РїРєРё");
+                          const code = window.prompt("Введите пароль папки");
                           if (!code) return;
                           try {
                             const hash = await sha256Hex(code);
                             if (hash !== t.passcode_hash) {
-                              toast.error("РќРµРІРµСЂРЅС‹Р№ РїР°СЂРѕР»СЊ");
+                              toast.error("Неверный пароль");
                               return;
                             }
                             setUnlockedTabs((prev) => {
@@ -789,7 +679,7 @@ export function ChatsPage() {
                               return next;
                             });
                           } catch {
-                            toast.error("РќРµ СѓРґР°Р»РѕСЃСЊ РїСЂРѕРІРµСЂРёС‚СЊ РїР°СЂРѕР»СЊ");
+                            toast.error("Не удалось проверить пароль");
                             return;
                           }
                         }
@@ -854,7 +744,7 @@ export function ChatsPage() {
                       : "text-muted-foreground hover:text-foreground dark:text-white/50 dark:hover:text-white/80",
                   )}
                 >
-                  Р’СЃРµ
+                  Все
                 </button>
                 <button
                   onClick={() => setCallsFilter("missed")}
@@ -865,7 +755,7 @@ export function ChatsPage() {
                       : "text-muted-foreground hover:text-foreground dark:text-white/50 dark:hover:text-white/80",
                   )}
                 >
-                  РџСЂРѕРїСѓС‰РµРЅРЅС‹Рµ
+                  Пропущенные
                 </button>
               </div>
 
@@ -881,10 +771,10 @@ export function ChatsPage() {
                     <Phone className="w-8 h-8 text-muted-foreground dark:text-white/60" />
                   </div>
                   <h3 className="font-semibold mb-1 text-foreground dark:text-white">
-                    {callsFilter === "missed" ? "РќРµС‚ РїСЂРѕРїСѓС‰РµРЅРЅС‹С…" : "РќРµС‚ Р·РІРѕРЅРєРѕРІ"}
+                    {callsFilter === "missed" ? "Нет пропущенных" : "Нет звонков"}
                   </h3>
                   <p className="text-sm text-muted-foreground dark:text-white/60">
-                    РСЃС‚РѕСЂРёСЏ Р·РІРѕРЅРєРѕРІ РїРѕСЏРІРёС‚СЃСЏ РїРѕСЃР»Рµ РїРµСЂРІРѕРіРѕ РІС‹Р·РѕРІР°
+                    История звонков появится после первого вызова
                   </p>
                 </div>
               )}
@@ -893,13 +783,13 @@ export function ChatsPage() {
                 {activeCalls.map((call) => {
                   const otherId = call.caller_id === user?.id ? call.callee_id : call.caller_id;
                   const profile = otherId ? profilesById[otherId] : null;
-                  const name = profile?.display_name || "РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ";
+                  const name = profile?.display_name || "Пользователь";
                   const isIncoming = call.callee_id === user?.id;
                   const isMissed = call.status === "missed" || call.status === "declined";
                   const callType = call.call_type === "audio" ? "audio" : "video";
                   const statusLabel = isMissed
-                    ? "РџСЂРѕРїСѓС‰РµРЅРЅС‹Р№"
-                    : callType === "video" ? "Р’РёРґРµРѕ" : "РђСѓРґРёРѕ";
+                    ? "Пропущенный"
+                    : callType === "video" ? "Видео" : "Аудио";
 
                   return (
                     <div
@@ -931,7 +821,7 @@ export function ChatsPage() {
                             "text-sm truncate flex-1",
                             isMissed ? "text-destructive/80 dark:text-red-200/80" : "text-muted-foreground dark:text-white/50",
                           )}>
-                            {isIncoming ? "Р’С…РѕРґСЏС‰РёР№" : "РСЃС…РѕРґСЏС‰РёР№"} В· {statusLabel}
+                            {isIncoming ? "Входящий" : "Исходящий"} · {statusLabel}
                           </p>
                         </div>
                       </div>
@@ -962,7 +852,7 @@ export function ChatsPage() {
               {!chatsLoading && chatsError && (
                 <div className="py-3">
                   <div className="rounded-2xl bg-background/70 dark:bg-white/10 backdrop-blur-xl border border-border/60 dark:border-white/20 p-4">
-                    <p className="font-semibold text-foreground dark:text-white">РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ С‡Р°С‚С‹</p>
+                    <p className="font-semibold text-foreground dark:text-white">Не удалось загрузить чаты</p>
                     <p className="mt-1 text-sm text-muted-foreground dark:text-white/60 break-words">{chatsError}</p>
                     <div className="mt-3">
                       <Button
@@ -971,7 +861,7 @@ export function ChatsPage() {
                         onClick={() => refetch()}
                         className="bg-background/70 border-border text-foreground hover:bg-muted dark:bg-white/10 dark:border-white/20 dark:text-white dark:hover:bg-white/20"
                       >
-                        РџРѕРІС‚РѕСЂРёС‚СЊ
+                        Повторить
                       </Button>
                     </div>
                   </div>
@@ -985,9 +875,9 @@ export function ChatsPage() {
                   <div className="w-16 h-16 rounded-full bg-background/70 dark:bg-white/10 backdrop-blur-xl border border-border/60 dark:border-white/20 flex items-center justify-center mb-4">
                     <MessageCircle className="w-8 h-8 text-muted-foreground dark:text-white/60" />
                   </div>
-                  <h3 className="font-semibold mb-1 text-foreground dark:text-white">РќРµС‚ С‡Р°С‚РѕРІ</h3>
+                  <h3 className="font-semibold mb-1 text-foreground dark:text-white">Нет чатов</h3>
                   <p className="text-sm text-muted-foreground dark:text-white/60">
-                    РќР°Р№РґРёС‚Рµ РїРѕР»СЊР·РѕРІР°С‚РµР»РµР№ С‡РµСЂРµР· РїРѕРёСЃРє РёР»Рё СЃРѕР·РґР°Р№С‚Рµ РіСЂСѓРїРїСѓ/РєР°РЅР°Р»
+                    Найдите пользователей через поиск или создайте группу/канал
                   </p>
 
                   {import.meta.env.DEV && user && (
@@ -997,10 +887,10 @@ export function ChatsPage() {
                         disabled={seeding}
                         className="bg-background/70 border-border text-foreground hover:bg-muted dark:bg-white/10 dark:border-white/20 dark:text-white dark:hover:bg-white/20"
                       >
-                        {seeding ? "РЎРѕР·РґР°СЋ С‚РµСЃС‚РѕРІС‹Рµ С‡Р°С‚С‹вЂ¦" : "РЎРѕР·РґР°С‚СЊ С‚РµСЃС‚РѕРІС‹Рµ С‡Р°С‚С‹"}
+                        {seeding ? "Создаю тестовые чаты…" : "Создать тестовые чаты"}
                       </Button>
                       <p className="mt-2 text-xs text-muted-foreground/70 dark:text-white/40">
-                        РўРѕР»СЊРєРѕ РґР»СЏ СЂР°Р·СЂР°Р±РѕС‚РєРё (DEV)
+                        Только для разработки (DEV)
                       </p>
                     </div>
                   )}
@@ -1044,7 +934,7 @@ export function ChatsPage() {
                         </div>
                         <div className="flex items-center justify-between">
                           <p className="text-sm text-muted-foreground dark:text-white/50 truncate flex-1">
-                            {channel.last_message?.content || channel.description || `${channel.member_count} РїРѕРґРїРёСЃС‡РёРєРѕРІ`}
+                            {channel.last_message?.content || channel.description || `${channel.member_count} подписчиков`}
                           </p>
                           <div className="flex items-center gap-1 text-xs text-muted-foreground/70 dark:text-white/40 ml-2">
                             <Users className="w-3 h-3" />
@@ -1086,7 +976,7 @@ export function ChatsPage() {
                         </div>
                         <div className="flex items-center justify-between">
                           <p className="text-sm text-muted-foreground dark:text-white/50 truncate flex-1">
-                            {group.last_message?.content || `${group.member_count} СѓС‡Р°СЃС‚РЅРёРєРѕРІ`}
+                            {group.last_message?.content || `${group.member_count} участников`}
                           </p>
                         </div>
                       </div>
@@ -1117,7 +1007,7 @@ export function ChatsPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between mb-0.5">
                         <span className="font-medium text-foreground dark:text-white truncate">
-                          {other.display_name || "РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ"}
+                          {other.display_name || "Пользователь"}
                         </span>
                         <span className="text-xs text-muted-foreground/70 dark:text-white/40 flex-shrink-0 ml-2">
                           {formatTime(lastMessage?.created_at || conv.updated_at)}
@@ -1133,12 +1023,12 @@ export function ChatsPage() {
                           )}
                           <p className="text-sm text-muted-foreground dark:text-white/50 truncate">
                             {lastMessage?.media_type === 'video_circle' 
-                              ? 'рџЋҐ Р’РёРґРµРѕСЃРѕРѕР±С‰РµРЅРёРµ'
+                              ? '🎥 Видеосообщение'
                               : lastMessage?.media_type === 'voice'
-                              ? 'рџЋ¤ Р“РѕР»РѕСЃРѕРІРѕРµ СЃРѕРѕР±С‰РµРЅРёРµ'
+                              ? '🎤 Голосовое сообщение'
                               : lastMessage?.media_url
-                              ? 'рџ“· Р¤РѕС‚Рѕ'
-                              : lastMessage?.content || "РќРµС‚ СЃРѕРѕР±С‰РµРЅРёР№"}
+                              ? '📷 Фото'
+                              : lastMessage?.content || "Нет сообщений"}
                           </p>
                         </div>
 

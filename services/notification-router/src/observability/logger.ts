@@ -1,4 +1,4 @@
-﻿export function logInfo(message: string, extra?: Record<string, unknown>): void {
+export function logInfo(message: string, extra?: Record<string, unknown>): void {
   console.log(JSON.stringify({ level: "info", message, ...extra }));
 }
 

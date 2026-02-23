@@ -159,7 +159,7 @@ export function useComments(postId: string) {
     try {
       const hashtagVerdict = await checkHashtagsAllowedForText(String(content || "").trim());
       if (!hashtagVerdict.ok) {
-        return { error: `HASHTAG_BLOCKED:${hashtagVerdict.blockedTags.join(", ")}` };
+        return { error: `HASHTAG_BLOCKED:${("blockedTags" in hashtagVerdict ? hashtagVerdict.blockedTags : []).join(", ")}` };
       }
 
       const { data, error } = await (supabase

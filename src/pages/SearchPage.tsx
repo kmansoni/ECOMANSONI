@@ -4,6 +4,7 @@ import { Search, Play, Hash, User, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
+import { normalizeReelMediaUrl } from "@/hooks/useReels";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useSearch } from "@/hooks/useSearch";
 import { VerifiedBadge } from "@/components/ui/verified-badge";
@@ -247,7 +248,10 @@ export function SearchPage() {
                       >
                         {r?.thumbnail_url ? (
                           <img
-                            src={String(r.thumbnail_url)}
+                            src={
+                              normalizeReelMediaUrl(r.thumbnail_url, "reels-media") ||
+                              String(r.thumbnail_url)
+                            }
                             alt=""
                             className="w-full h-full object-cover"
                             loading="lazy"

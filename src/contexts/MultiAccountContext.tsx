@@ -676,7 +676,7 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
         // Supabase can emit INITIAL_SESSION with a null session (eg. before it restores from storage,
         // or in some webviews). Treating that as a real sign-out would incorrectly clear vault tokens
         // and force the user back to /auth.
-        const isRealSignOut = _evt === "SIGNED_OUT" || _evt === "USER_DELETED";
+        const isRealSignOut = _evt === "SIGNED_OUT";
         if (!isRealSignOut) {
           logDebug(`onAuthStateChange: ignoring null session for event=${_evt}`);
           return;

@@ -1,0 +1,358 @@
+{
+  "version": "2.8-final-rev2",
+  "lastUpdated": "2026-02-25T00:00:00Z",
+  "checksumAlgorithm": "sha256-jcs",
+  "checksum": "17be3b6bc6b52656098185f7d10a00cc60437f8b5bc94f26a79b7edc70857dec",
+  "requiresApproval": true,
+  "codeOwners": [
+    "core-architecture",
+    "security"
+  ],
+  "enums": {
+    "ScopeType": {
+      "DM": "dm",
+      "GROUP": "group",
+      "CHANNEL": "channel",
+      "SERVICE": "service"
+    },
+    "JoinMode": {
+      "OPEN": "open",
+      "APPROVAL": "approval",
+      "INVITE_ONLY": "invite_only"
+    },
+    "VisibilityLevel": {
+      "PUBLIC": "public",
+      "PRIVATE": "private",
+      "UNLISTED": "unlisted"
+    },
+    "DeliveryStrategy": {
+      "FANOUT_ON_WRITE": "fanout_on_write",
+      "FANOUT_ON_READ": "fanout_on_read"
+    },
+    "DataClassification": {
+      "NORMAL": "normal",
+      "SENSITIVE": "sensitive",
+      "REGULATED": "regulated"
+    },
+    "CommandType": {
+      "CREATE_SCOPE": "create_scope",
+      "SEND_MESSAGE": "send_message",
+      "SEND_MESSAGE_REPLY": "send_message_reply",
+      "EDIT_MESSAGE": "edit_message",
+      "DELETE_MESSAGE": "delete_message",
+      "UPDATE_SCOPE_POLICY": "update_scope_policy",
+      "ACCEPT_INVITE": "accept_invite",
+      "REJECT_INVITE": "reject_invite",
+      "INVITE_USER": "invite_user",
+      "REMOVE_MEMBER": "remove_member",
+      "UPDATE_MEMBERSHIP": "update_membership",
+      "RECORD_RECEIPT": "record_receipt",
+      "UPDATE_PROJECTION_WATERMARK": "update_projection_watermark"
+    },
+    "AdminReasonCode": {
+      "ABUSE_SPAM": "abuse_spam",
+      "ABUSE_HARASSMENT": "abuse_harassment",
+      "LEGAL_REQUEST": "legal_request",
+      "USER_REQUEST": "user_request",
+      "SECURITY_INCIDENT": "security_incident",
+      "MODERATION_POLICY": "moderation_policy",
+      "OTHER": "other"
+    },
+    "MaintenanceMode": {
+      "NORMAL": "normal",
+      "MAINTENANCE_WRITE_FREEZE": "maintenance_write_freeze",
+      "READ_ONLY_SAFE": "read_only_safe",
+      "MAINTENANCE_FULL": "maintenance_full"
+    },
+    "ProjectionMode": {
+      "NORMAL": "normal",
+      "REBUILDING": "rebuilding",
+      "READ_ONLY": "read_only"
+    }
+  },
+  "constants": {
+    "CLASSIFICATION_RETENTION_DAYS": {
+      "normal": 365,
+      "sensitive": 180,
+      "regulated": 730
+    },
+    "MAX_CLOCK_SKEW_MS": 300000,
+    "TIMELINE_HARD_CAP_LIMIT": 200,
+    "TIMELINE_LOOKBACK_DAYS": 30,
+    "OUTCOME_SLO_HOT_P95_MS": 50,
+    "OUTCOME_SLO_ARCHIVE_P95_MS": 500,
+    "IDEMPOTENCY_HOT_RETENTION_DAYS": 730,
+    "IDEMPOTENCY_ARCHIVE_RETENTION": "indefinite",
+    "SERVICE_KEY_ROTATION_AFTER_DAYS": 30,
+    "SERVICE_KEY_ENFORCEMENT_MAX_AGE_DAYS": 35,
+    "LARGE_CHANNEL_MIN_MEMBER_COUNT": 50000,
+    "INVITE_TTL_DEFAULT_HOURS": 168,
+    "INVITE_TTL_MAX_HOURS": 8760
+  },
+  "config": {
+    "policyAffectingFields": [
+      "visibility",
+      "join_mode",
+      "delivery_strategy",
+      "approval_roles",
+      "approval_quorum",
+      "self_join_enabled",
+      "invite_ttl",
+      "data_classification_defaults"
+    ],
+    "maintenance": {
+      "allowedTransitions": {
+        "normal": [
+          "maintenance_write_freeze"
+        ],
+        "maintenance_write_freeze": [
+          "read_only_safe",
+          "maintenance_full"
+        ],
+        "read_only_safe": [
+          "maintenance_write_freeze"
+        ],
+        "maintenance_full": [
+          "maintenance_write_freeze"
+        ]
+      },
+      "forbiddenTransitions": [
+        [
+          "normal",
+          "read_only_safe"
+        ],
+        [
+          "normal",
+          "maintenance_full"
+        ],
+        [
+          "read_only_safe",
+          "maintenance_full"
+        ]
+      ]
+    },
+    "rateLimiting": {
+      "timeline_per_scope": 100,
+      "timeline_per_actor_global": 500,
+      "timeline_per_device": 150,
+      "timeline_per_service": 1000,
+      "cmd_per_actor": 200,
+      "cmd_per_device": 100,
+      "cmd_per_service": 2000,
+      "maintenance_per_hour": 3
+    },
+    "rpcFunctions": {
+      "create_scope": {
+        "signature": "create_scope(scope_type, visibility, join_mode, policy_version, policy_hash)",
+        "allowed_actors": [
+          "authenticated",
+          "service"
+        ],
+        "mutable": true,
+        "command_type": "create_scope"
+      },
+      "send_command": {
+        "signature": "send_command(scope_id, command_type, payload, idempotency_key_norm, trace_id, device_id)",
+        "allowed_actors": [
+          "authenticated",
+          "service"
+        ],
+        "mutable": true,
+        "command_type": "send_message"
+      },
+      "accept_invite": {
+        "signature": "accept_invite(invite_id, device_id, trace_id)",
+        "allowed_actors": [
+          "authenticated"
+        ],
+        "mutable": true,
+        "command_type": "accept_invite"
+      },
+      "update_membership": {
+        "signature": "update_membership(scope_id, user_id, role, device_id, trace_id)",
+        "allowed_actors": [
+          "authenticated",
+          "service"
+        ],
+        "mutable": true,
+        "command_type": "update_membership"
+      },
+      "record_receipt": {
+        "signature": "record_receipt(scope_id, last_read_seq, last_delivered_seq, device_id, trace_id)",
+        "allowed_actors": [
+          "authenticated"
+        ],
+        "mutable": true,
+        "command_type": "record_receipt"
+      },
+      "update_policy": {
+        "signature": "update_policy(scope_id, policy_json, policy_hash, reason_code, reason_text, device_id, trace_id)",
+        "allowed_actors": [
+          "service"
+        ],
+        "mutable": true,
+        "command_type": "update_scope_policy"
+      },
+      "maintenance_control": {
+        "signature": "maintenance_control(new_mode, reason_code, reason_text, require_dual_approval)",
+        "allowed_actors": [
+          "service"
+        ],
+        "mutable": true,
+        "command_type": null
+      }
+    },
+    "queryEndpoints": {
+      "timeline": {
+        "signature": "GET /q/timeline?scope_id=&limit=&lookback_days=",
+        "rate_limit_keys": [
+          "actor_id",
+          "scope_id",
+          "device_id",
+          "service_id"
+        ]
+      },
+      "cmd_status": {
+        "signature": "GET /cmd/status?actor_id=&scope_id=&command_type=&idempotency_key=",
+        "rate_limit_keys": [
+          "actor_id",
+          "device_id",
+          "service_id"
+        ],
+        "privacy_requirement": "requester actor_id must match outcome actor_id"
+      }
+    }
+  },
+  "guards": {
+    "G_IDEMP_01": {
+      "name": "idempotency identity enforcement",
+      "invariant": "INV-IDEMP-01",
+      "check": "identity = (actor_id, scope_id, command_type, idempotency_key_norm)"
+    },
+    "G_IDEMP_02": {
+      "name": "payload hash mismatch guard",
+      "invariant": "INV-IDEMP-01",
+      "check": "payload_hash matches stored outcome"
+    },
+    "G_POL_01": {
+      "name": "policy visibility/join enforcement",
+      "invariant": "INV-POL-01",
+      "check": "visibility + join_mode allowed combination"
+    },
+    "G_SEQ_01": {
+      "name": "gap realism validation",
+      "invariant": "INV-SEQ-01",
+      "check": "missing_ranges within TIMELINE_LOOKBACK_DAYS"
+    },
+    "G_QRY_01": {
+      "name": "timeline caps",
+      "invariant": "INV-QRY-01",
+      "check": "limit <= TIMELINE_HARD_CAP_LIMIT, lookback <= TIMELINE_LOOKBACK_DAYS"
+    },
+    "G_MAINT_01": {
+      "name": "maintenance freeze gate",
+      "invariant": "INV-MAINT-01",
+      "check": "writes rejected if system_mode != normal"
+    },
+    "G_INV_01": {
+      "name": "invite policy/version check",
+      "invariant": "INV-INV-01",
+      "check": "policy_version/hash at issue matches current"
+    },
+    "G_DEL_01": {
+      "name": "delivery_strategy enforcement",
+      "invariant": "INV-DEL-01",
+      "check": "large channels use fanout_on_read"
+    },
+    "G_CLK_01": {
+      "name": "clock skew guard",
+      "invariant": "INV-CLK-01",
+      "check": "client_ts within MAX_CLOCK_SKEW_MS of server"
+    },
+    "G_ADM_01": {
+      "name": "admin reason allowlist + PII screen",
+      "invariant": "INV-GOV-01",
+      "check": "reason_code in allowed enum, no PII in reason_text"
+    },
+    "G_BATCH_01": {
+      "name": "batch forbidden guard",
+      "invariant": "INV-BATCH-01",
+      "check": "/cmd/batch returns not_supported"
+    },
+    "G_PROJ_01": {
+      "name": "watermark monotonic enforcement",
+      "invariant": "INV-PROJ-01",
+      "check": "dialogs_watermark_seq, unread_watermark_seq only increase"
+    },
+    "G_ARC_01": {
+      "name": "archive circuit breaker",
+      "invariant": "INV-SLO-01",
+      "check": "on archive_unavailable, circuit breaks for 30s"
+    }
+  },
+  "tests": {
+    "DM": [
+      "T-DM-01",
+      "T-DM-02",
+      "T-DM-SELF-01",
+      "T-DM-SELF-02"
+    ],
+    "IDEMPOTENCY": [
+      "T-IDEMP-02",
+      "T-IDEMP-03",
+      "T-IDEMP-04",
+      "T-IDEMP-PAYLOAD"
+    ],
+    "POLICY": [
+      "T-POL-01",
+      "T-POL-HASH-01",
+      "T-POL-HASH-02"
+    ],
+    "QUERY": [
+      "T-QRY-01",
+      "T-QRY-THR-01",
+      "T-QRY-THR-02"
+    ],
+    "SEQUENCE": [
+      "T-SEQ-01",
+      "T-SEQ-02",
+      "T-SEQ-03",
+      "T-SEQ-04"
+    ],
+    "AUDIT": [
+      "T-AUD-01",
+      "T-AUD-RET-01",
+      "T-AUD-RET-02"
+    ],
+    "INVITES": [
+      "T-INV-01",
+      "T-INV-02",
+      "T-INV-03",
+      "T-INV-04",
+      "T-INV-REJOIN-01"
+    ],
+    "DELIVERY": [
+      "T-DEL-01"
+    ],
+    "MIGRATION": [
+      "T-MIG-READ-01",
+      "T-MIG-READ-02",
+      "T-MIG-READ-03",
+      "T-MIG-RESUME-01",
+      "T-MIG-RESUME-02"
+    ],
+    "PROJECTION": [
+      "T-PROJ-01",
+      "T-PROJ-02"
+    ],
+    "GOVERNANCE": [
+      "T-GOV-01"
+    ],
+    "BATCH": [
+      "T-BATCH-01"
+    ],
+    "CHAOS": [
+      "T-CHAOS-01"
+    ]
+  }
+}

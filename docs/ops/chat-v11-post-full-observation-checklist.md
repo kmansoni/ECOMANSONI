@@ -1,4 +1,4 @@
-﻿# Chat v1.1 Post-Full Observation Checklist
+# Chat v1.1 Post-Full Observation Checklist
 
 ## Window
 - Start (UTC):

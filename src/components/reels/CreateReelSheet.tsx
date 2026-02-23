@@ -180,7 +180,7 @@ export function CreateReelSheet({ open, onOpenChange, initialVideoFile }: Create
     const hashtagVerdict = await checkHashtagsAllowedForText(descriptionTrimmed);
     if (!hashtagVerdict.ok) {
       toast.error("Некоторые хештеги недоступны", {
-        description: hashtagVerdict.blockedTags.join(", "),
+        description: ("blockedTags" in hashtagVerdict ? hashtagVerdict.blockedTags : []).join(", "),
       });
       return;
     }

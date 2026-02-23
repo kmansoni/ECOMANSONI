@@ -1,4 +1,4 @@
-﻿# Notification Router
+# Notification Router
 
 Production skeleton for push routing:
 - APNs direct for iOS

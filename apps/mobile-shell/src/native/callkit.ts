@@ -1,4 +1,4 @@
-﻿export type CallKitAction =
+export type CallKitAction =
   | { type: "incoming"; callId: string; callerName: string; hasVideo: boolean }
   | { type: "accept"; callId: string }
   | { type: "decline"; callId: string }
