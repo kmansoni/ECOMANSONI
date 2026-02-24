@@ -60,6 +60,7 @@ const SecurityAdminJitPage = lazy(() => import("@/pages/admin/SecurityAdminJitPa
 const AdminVerificationsPage = lazy(() => import("@/pages/admin/AdminVerificationsPage").then(m => ({ default: m.AdminVerificationsPage })));
 const AdminStaffProfilesPage = lazy(() => import("@/pages/admin/AdminStaffProfilesPage").then(m => ({ default: m.AdminStaffProfilesPage })));
 const AdminHashtagModerationPage = lazy(() => import("@/pages/admin/AdminHashtagModerationPage").then(m => ({ default: m.AdminHashtagModerationPage })));
+const KpiDashboardPage = lazy(() => import("@/pages/admin/KpiDashboardPage").then(m => ({ default: m.KpiDashboardPage })));
 
 // Loading fallback component
 function PageLoader() {
@@ -99,7 +100,10 @@ const App = () => {
                   <Toaster />
                   <Sonner />
                   <GlobalCallOverlay />
-                  <BrowserRouter basename={ROUTER_BASENAME}>
+                  <BrowserRouter
+                    basename={ROUTER_BASENAME}
+                    future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+                  >
                   <Suspense fallback={null}>
                     <CommandPalette />
                   </Suspense>
@@ -161,6 +165,11 @@ const App = () => {
                   <Route path="/admin/jit" element={
                     <Suspense fallback={<PageLoader />}>
                       <SecurityAdminJitPage />
+                    </Suspense>
+                  } />
+                  <Route path="/admin/kpi-dashboard" element={
+                    <Suspense fallback={<PageLoader />}>
+                      <KpiDashboardPage />
                     </Suspense>
                   } />
                 </Route>

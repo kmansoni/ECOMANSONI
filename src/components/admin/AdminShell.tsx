@@ -23,6 +23,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
     { to: "/admin/audit", label: "Аудит" },
     { to: "/admin/approvals", label: "Approvals" },
     { to: "/admin/jit", label: "JIT", requireScope: "security.jit.request" },
+    { to: "/admin/kpi-dashboard", label: "KPI Monitor" },
     { to: "/admin/owner", label: "Owner", ownerOnly: true },
   ];
 
