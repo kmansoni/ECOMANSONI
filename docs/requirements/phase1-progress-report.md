@@ -3,7 +3,7 @@
 **Date:** 2026-02-24  
 **Phase:** Phase 1 - PMF (Product-Market Fit)  
 **Goal:** Reels/UGC discovery, retention, creator loop  
-**Status:** EPIC G Complete ✅, EPIC H/L/M/I Deployed ✅
+**Status:** EPIC K Complete ✅, EPIC H/L/M/I/G/J Deployed ✅
 
 ---
 
@@ -12,10 +12,10 @@
 | Metric | Value |
 |--------|-------|
 | **EPICs Planned** | 8 (G, H, I, J, K, L, M, N) |
-| **EPICs Deployed** | 6 (L, M, I, H, G, J) |
+| **EPICs Deployed** | 7 (L, M, I, H, G, J, K) |
 | **EPICs In Progress** | 0 |
-| **EPICs Remaining** | 2 (K, N) |
-| **Completion** | 75% (6/8) |
+| **EPICs Remaining** | 1 (N) |
+| **Completion** | 87.5% (7/8) |
 
 ---
 
@@ -259,28 +259,55 @@
 - `improvement_conversion` (Goal: > 20% of creators upload new reel after seeing insight)
 - `dashboard_return_rate` (Goal: > 60% open dashboard 2+ times in 7d)
 
+**Git Commit:** `4eb6405`
+
+---
+
+### ✅ EPIC K — Moderation v1 (Queues + SLA + Appeals)
+**Status:** 100% Complete (Deployed 2026-02-24)  
+**Migrations:** 2 migrations (20260224200000 → 201000)  
+**Goal:** Growth without toxicity, fair appeals  
+**Dependencies:** EPIC L (anti-abuse) ✅
+
+**Key Components:**
+
+**1. Decisions + distribution classes**
+- Decisions: `allow`, `restrict`, `needs_review`, `block`
+- Distribution classes: `green`, `borderline`, `red`
+- Mapping enforced server-side (borderline/red excluded from recommendations)
+
+**2. Queues + mass-report guard**
+- `moderation_queue_items`: priority + burst flags
+- `content_reports_v1`: trust-weighted reports (trust_profiles + reporter quality)
+- Burst detection (10-minute window)
+- Auto escalation to `needs_review` (never auto-block)
+
+**3. Appeals lifecycle**
+- `moderation_appeals` + `appeal_rate_limits`
+- RPC: `submit_appeal_v1`, `review_appeal_v1`, `get_pending_appeals_v1`, `get_my_appeals_v1`
+- SLA metrics: `calculate_appeal_sla_v1`
+
+**4. Enforcement (critical)**
+- `get_reels_feed_v2`: moderation/visibility gating restored + borderline excluded
+- `get_hashtag_feed_v1`: gated by `is_reel_discoverable_v1`
+- Explore helpers (`get_explore_fresh_creators_v1`, `get_explore_categories_v1`) gated by `is_reel_discoverable_v1`
+
+**Deployment:**
+- Database schema: ✅ Deployed (2 migrations)
+- RPC functions: ✅ Deployed
+- Documentation: [docs/ops/PHASE1_EPIC_K_DEPLOYMENT.md](docs/ops/PHASE1_EPIC_K_DEPLOYMENT.md)
+
+**Metrics to Track:**
+- `moderation_queue_lag_minutes`
+- `appeal_turnaround_hours`
+- `borderline_leak_rate` (Goal: ~0)
+- `mass_report_attack_flag_rate`
+
 **Git Commit:** (pending)
 
 ---
 
 ## ⬜ Remaining EPICs (Priority Order)
-
----
-
-### EPIC K — Moderation v1 (Queues + SLA + Appeals)
-**Status:** Not Started  
-**Goal:** Growth without toxicity, fair appeals  
-**Dependencies:** EPIC L (anti-abuse)  
-**Priority:** MEDIUM
-
-**Tasks:**
-- K1. Queue model + SLA (categories, priorities)
-- K2. Appeals flow (basic rules, statuses, audit)
-- K3. Borderline distribution policy (what to limit in recommendations)
-
-**Metrics:**
-- `moderation_queue_lag_minutes`
-- `appeal_turnaround_hours`
 
 ---
 
@@ -356,11 +383,7 @@
    - Search autocomplete
 
 ### Long-term (3-4 Weeks):
-7. **Implement EPIC K (Moderation v1)** (MEDIUM):
-   - Moderation queue system
-   - Appeals flow
-
-8. **Evaluate EPIC N (Live beta)** (LOW):
+7. **Evaluate EPIC N (Live beta)** (LOW):
    - Only if Phase 1 KPI green
    - Trust-lite + Moderation stable
 
@@ -403,13 +426,13 @@ Phase 1 is complete when:
 - ✅ Hashtags + trends (EPIC H) working without cheap manipulation
 - ✅ Explore/Discovery surface (EPIC G) available (backend complete, frontend pending)
 - ✅ Creator analytics (EPIC J) backend deployed (frontend + background workers pending)
-- ⬜ Moderation v1 (EPIC K) meeting SLA with appeals
+- ✅ Moderation v1 (EPIC K) deployed (queues + appeals + borderline enforcement)
 - ⬜ All UI changes comply with D0.000
 - ⬜ KPI growth (retention, session duration, completion rate) with stable guardrails
 
-**Current Progress:** 6/7 core EPICs complete (L, M, I, H, G, J)  
-**Remaining EPICs:** K (N is conditional)  
-**Estimated Time to Complete:** 1-2 weeks (based on phase1-pmf-execution-plan.md estimate of 10-16 weeks total)
+**Current Progress:** 7/7 core EPICs complete (L, M, I, H, G, J, K)  
+**Remaining EPICs:** None (N is conditional)  
+**Estimated Time to Complete:** 1-3 weeks (frontend + background workers + KPI validation)
 
 ---
 
@@ -430,9 +453,11 @@ Phase 1 is complete when:
 | 20260224190000 | J | Creator Analytics Schema |
 | 20260224191000 | J | Aggregation Functions |
 | 20260224192000 | J | Insights Functions |
+| 20260224200000 | K | Moderation Queues + Borderline Enforcement |
+| 20260224201000 | K | Appeals Lifecycle |
 
-**Total Migrations Deployed:** 21  
-**Total Migrations Remaining:** ~3-6 (estimated for EPIC K)
+**Total Migrations Deployed:** 23  
+**Total Migrations Remaining:** ~1-3 (estimated for EPIC N)
 
 ---
 
@@ -445,4 +470,5 @@ Phase 1 is complete when:
 - [EPIC H Deployment](ops/PHASE1_EPIC_H_DEPLOYMENT.md)
 - [EPIC G Deployment](ops/PHASE1_EPIC_G_DEPLOYMENT.md)
 - [EPIC J Deployment](ops/PHASE1_EPIC_J_DEPLOYMENT.md)
+- [EPIC K Deployment](ops/PHASE1_EPIC_K_DEPLOYMENT.md)
 - [Phase 0 Complete (140/140)](requirements/phase-execution-report.md)
