@@ -4,36 +4,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { supabase } from "@/lib/supabase";
+import { Tables } from "@/integrations/supabase/types";
 import { toast } from "sonner";
 import { TrendingUp, TrendingDown, AlertTriangle, CheckCircle2, Clock } from "lucide-react";
 
-interface KpiSnapshot {
-  snapshot_date: string;
-  dau: number;
-  wau: number;
-  mau: number;
-  retention_7d: number;
-  retention_30d: number;
-  avg_session_duration_seconds: number;
-  session_count: number;
-  content_completion_rate: number;
-  report_rate_per_1k: number;
-  moderation_queue_age_hours: number;
-  creator_return_rate_7d: number;
-  new_creators_count: number;
-  active_creators_count: number;
-}
-
-interface GuardrailAlert {
-  id: number;
-  metric_name: string;
-  current_value: number;
-  threshold: number;
-  severity: "info" | "warning" | "critical";
-  status: "active" | "resolved" | "ignored";
-  affected_feature: string;
-  created_at: string;
-}
+type KpiSnapshot = Tables<"kpi_daily_snapshots">;
+type GuardrailAlert = Tables<"guardrail_alerts">;
 
 export function KpiDashboardPage() {
   const [kpiData, setKpiData] = useState<KpiSnapshot | null>(null);
@@ -48,37 +24,27 @@ export function KpiDashboardPage() {
 
   async function loadDashboardData() {
     try {
-      // Use RPC to get latest KPI snapshot (bypasses TypeScript table definitions)
-      const { data: kpiSnapshot, error: kpiError } = await supabase
-        .rpc("get_kpi_dashboard_v1" as any)
-        .single();
+      // Load latest KPI snapshot from table
+      const { data: snapshots, error: snapshotError } = await supabase
+        .from("kpi_daily_snapshots")
+        .select("*")
+        .order("snapshot_date", { ascending: false })
+        .limit(1);
 
-      if (kpiError) {
-        console.error("KPI RPC error:", kpiError);
-        // Fall back to direct table access with type assertion
-        const { data: snapshots, error: snapshotError } = await (supabase as any)
-          .from("kpi_daily_snapshots")
-          .select("*")
-          .order("snapshot_date", { ascending: false })
-          .limit(1);
-
-        if (snapshotError) throw snapshotError;
-        if (snapshots && snapshots.length > 0) {
-          setKpiData(snapshots[0] as KpiSnapshot);
-        }
-      } else {
-        setKpiData(kpiSnapshot as KpiSnapshot);
+      if (snapshotError) throw snapshotError;
+      if (snapshots && snapshots.length > 0) {
+        setKpiData(snapshots[0]);
       }
 
-      // Load active guardrail alerts (with type assertion)
-      const { data: alertData, error: alertError } = await (supabase as any)
+      // Load active guardrail alerts
+      const { data: alertData, error: alertError } = await supabase
         .from("guardrail_alerts")
         .select("*")
         .eq("status", "active")
         .order("created_at", { ascending: false });
 
       if (alertError) throw alertError;
-      setAlerts((alertData || []) as GuardrailAlert[]);
+      setAlerts(alertData || []);
     } catch (error) {
       console.error("Failed to load KPI data:", error);
       toast.error("Failed to load dashboard data");
