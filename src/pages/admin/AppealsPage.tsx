@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { CheckCircle2, XCircle, Clock, AlertTriangle } from "lucide-react";
+import { useAdminMe } from "@/hooks/useAdminMe";
 import { supabase } from "@/lib/supabase";
 import { Tables } from "@/integrations/supabase/types";
 
@@ -44,6 +45,7 @@ const CONTENT_TYPE_LABELS: Record<string, string> = {
 };
 
 export function AppealsPage() {
+  const { me: adminMe } = useAdminMe();
   const [appeals, setAppeals] = useState<AppealWithDetails[]>([]);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -89,17 +91,57 @@ export function AppealsPage() {
         (data || []).map(async (appeal) => {
           let preview = "";
 
-          // Get content preview
-          if (appeal.content_type === "reel") {
-            const { data: reel } = await supabase
-              .from("reels")
-              .select("description")
-              .eq("id", appeal.content_id)
-              .single();
-
-            if (reel) {
-              preview = reel.description || "";
+          // Get content preview based on type
+          try {
+            if (appeal.content_type === "reel") {
+              const { data: reel } = await supabase
+                .from("reels")
+                .select("description")
+                .eq("id", appeal.content_id)
+                .single();
+              if (reel) {
+                preview = (reel.description || "").substring(0, 150);
+              }
+            } else if (appeal.content_type === "comment") {
+              const { data: comment } = await supabase
+                .from("comments")
+                .select("content")
+                .eq("id", appeal.content_id)
+                .single();
+              if (comment) {
+                preview = (comment.content || "").substring(0, 150);
+              }
+            } else if (appeal.content_type === "message") {
+              const { data: message } = await supabase
+                .from("direct_messages")
+                .select("content")
+                .eq("id", appeal.content_id)
+                .single();
+              if (message) {
+                preview = (message.content || "").substring(0, 150);
+              }
+            } else if (appeal.content_type === "profile") {
+              const { data: profile } = await supabase
+                .from("profiles")
+                .select("display_name, bio")
+                .eq("id", appeal.content_id)
+                .single();
+              if (profile) {
+                preview = `${profile.display_name || ""}${profile.bio ? " - " + profile.bio : ""}`.substring(0, 150);
+              }
+            } else if (appeal.content_type === "hashtag") {
+              const { data: hashtag } = await supabase
+                .from("hashtags")
+                .select("canonical_form")
+                .eq("id", appeal.content_id)
+                .single();
+              if (hashtag) {
+                preview = `#${hashtag.canonical_form || ""}`;
+              }
             }
+          } catch (previewError) {
+            // Silently fail on preview fetch, show empty preview
+            preview = "[Content not found]";
           }
 
           return {
@@ -134,7 +176,7 @@ export function AppealsPage() {
       // Call RPC function to review appeal
       const { data, error } = await supabase.rpc("review_appeal_v1", {
         p_appeal_id: selectedAppeal.id,
-        p_moderator_admin_id: null, // TODO: Get current admin user ID
+        p_moderator_admin_id: adminMe?.admin_user_id || null,
         p_decision: reviewDecision,
         p_new_moderation_decision: reviewDecision === "accept" ? newDecision : null,
         p_notes: notes || null,

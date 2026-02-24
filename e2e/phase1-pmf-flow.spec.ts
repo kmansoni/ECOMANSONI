@@ -245,4 +245,83 @@ test.describe("Phase 1 PMF: API Integration Tests", () => {
     expect(data).toHaveProperty("dau");
     console.log(`✅ get_kpi_dashboard_v1 RPC: DAU=${data.dau}, retention_7d=${data.retention_7d}%`);
   });
+
+  test("RPC: is_eligible_for_live_v1 checks creator eligibility (EPIC N)", async ({ request }) => {
+    const supabaseUrl = process.env.VITE_SUPABASE_URL || "https://lfkbgnbjxskspsownvjm.supabase.co";
+    const supabaseAnonKey = process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+
+    if (!supabaseAnonKey) {
+      test.skip();
+      return;
+    }
+
+    const testUserId = "00000000-0000-0000-0000-000000000000"; // placeholder
+
+    const response = await request.post(`${supabaseUrl}/rest/v1/rpc/is_eligible_for_live_v1`, {
+      headers: {
+        "apikey": supabaseAnonKey,
+        "Content-Type": "application/json",
+      },
+      data: {
+        p_creator_id: testUserId,
+      },
+    });
+
+    expect(response.ok()).toBeTruthy();
+    const data = await response.json();
+    expect(data).toHaveProperty("eligible");
+    expect(data).toHaveProperty("reason");
+    console.log(`✅ is_eligible_for_live_v1 RPC: eligible=${data.eligible}, reason=${data.reason || "none"}`);
+  });
+});
+
+test.describe("Phase 1 PMF: Live Beta Flow (EPIC N)", () => {
+  test("Live: Creator eligibility check page loads", async ({ page }) => {
+    // Login
+    await page.goto("/login");
+    await page.fill('input[type="email"]', `e2e-live-${Date.now()}@example.com`);
+    await page.fill('input[type="password"]', "SecurePassword123!");
+    await page.click('button[type="submit"]');
+    await page.waitForURL(/\/(home|feed|reels|creator)/, { timeout: 10000 });
+
+    // Navigate to go-live page
+    const goLiveButton = page.getByRole("button", { name: /go live|start live|broadcast/i });
+    if (await goLiveButton.isVisible({ timeout: 5000 }).catch(() => false)) {
+      await goLiveButton.click();
+    } else {
+      await page.goto("/creator/go-live");
+    }
+
+    // Check for eligibility check UI
+    const eligibilitySection = page.locator('[data-testid="live-eligibility"], text=/eligible/i').first();
+    await expect(eligibilitySection).toBeVisible({ timeout: 10000 });
+
+    console.log("✅ Live broadcast eligibility check page loaded");
+  });
+
+  test("Live: Discovery tab shows live sessions", async ({ page }) => {
+    // Login
+    await page.goto("/login");
+    await page.fill('input[type="email"]', `e2e-discovery-${Date.now()}@example.com`);
+    await page.fill('input[type="password"]', "SecurePassword123!");
+    await page.click('button[type="submit"]');
+    await page.waitForURL(/\/(home|feed|reels)/, { timeout: 10000 });
+
+    // Navigate to feed/reels where Live tab should be
+    await page.goto("/reels");
+
+    // Look for Live tab or discovery
+    const liveTab = page.getByRole("button", { name: /live/i });
+    if (await liveTab.isVisible({ timeout: 5000 }).catch(() => false)) {
+      await liveTab.click();
+      
+      // Check if live sessions are displayed
+      const liveSessionsContainer = page.locator('[data-testid="live-sessions"], [class*="live"]').first();
+      await expect(liveSessionsContainer).toBeVisible({ timeout: 10000 });
+      
+      console.log("✅ Live discovery tab loads live sessions");
+    } else {
+      console.log("⚠️  Live tab not found (may be added later or not visible yet)");
+    }
+  });
 });

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { AdminShell } from "@/components/admin/AdminShell";
+import { useAdminMe } from "@/hooks/useAdminMe";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -57,6 +58,7 @@ const REASON_CODES = [
 ];
 
 export function ModerationQueuePage() {
+  const { me: adminMe } = useAdminMe();
   const [queueItems, setQueueItems] = useState<QueueItemWithContent[]>([]);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -105,17 +107,61 @@ export function ModerationQueuePage() {
           let authorId = "";
 
           // Get content preview based on type
-          if (item.content_type === "reel") {
-            const { data: reel } = await supabase
-              .from("reels")
-              .select("description, author_id")
-              .eq("id", item.content_id)
-              .single();
+          try {
+            if (item.content_type === "reel") {
+              const { data: reel } = await supabase
+                .from("reels")
+                .select("description, author_id")
+                .eq("id", item.content_id)
+                .single();
 
-            if (reel) {
-              preview = reel.description || "";
-              authorId = reel.author_id;
+              if (reel) {
+                preview = (reel.description || "").substring(0, 150);
+                authorId = reel.author_id;
+              }
+            } else if (item.content_type === "comment") {
+              const { data: comment } = await supabase
+                .from("comments")
+                .select("content, author_id")
+                .eq("id", item.content_id)
+                .single();
+              if (comment) {
+                preview = (comment.content || "").substring(0, 150);
+                authorId = comment.author_id;
+              }
+            } else if (item.content_type === "message") {
+              const { data: message } = await supabase
+                .from("direct_messages")
+                .select("content, from_id")
+                .eq("id", item.content_id)
+                .single();
+              if (message) {
+                preview = (message.content || "").substring(0, 150);
+                authorId = message.from_id;
+              }
+            } else if (item.content_type === "profile") {
+              const { data: profile } = await supabase
+                .from("profiles")
+                .select("display_name, bio, id")
+                .eq("id", item.content_id)
+                .single();
+              if (profile) {
+                preview = `${profile.display_name || ""}${profile.bio ? " - " + profile.bio : ""}`.substring(0, 150);
+                authorId = profile.id;
+              }
+            } else if (item.content_type === "hashtag") {
+              const { data: hashtag } = await supabase
+                .from("hashtags")
+                .select("canonical_form")
+                .eq("id", item.content_id)
+                .single();
+              if (hashtag) {
+                preview = `#${hashtag.canonical_form || ""}`;
+              }
             }
+          } catch (previewError) {
+            // Silently fail on preview fetch, show empty preview
+            preview = "[Content not found]";
           }
 
           // Get report count
@@ -162,7 +208,7 @@ export function ModerationQueuePage() {
         p_new_decision: decision,
         p_reason_code: reasonCode || null,
         p_actor_type: "human",
-        p_actor_id: null, // TODO: Get current admin user ID
+        p_actor_id: adminMe?.admin_user_id || null,
         p_notes: notes || null,
       });
 

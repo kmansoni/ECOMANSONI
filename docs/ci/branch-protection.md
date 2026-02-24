@@ -1,4 +1,4 @@
-﻿# Branch Protection Contract (Stage-aware)
+# Branch Protection Contract (Stage-aware)
 
 ValidationMode: Portable
 
