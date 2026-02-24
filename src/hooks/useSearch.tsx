@@ -186,7 +186,7 @@ export function useSearch() {
   const fetchExplorePage = useCallback(async () => {
     setExplorePageLoading(true);
     try {
-      const { data, error } = await (supabase as any).rpc("get_explore_page_v1", {
+      const { data, error } = await (supabase as any).rpc("get_explore_page_v2", {
         p_segment_id: "seg_default",
         p_locale: navigator.language || "ru-RU",
         p_country: null,

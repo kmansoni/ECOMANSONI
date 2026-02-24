@@ -30,7 +30,7 @@ describe("useSearch explore page", () => {
     authState.user = null;
   });
 
-  it("calls get_explore_page_v1 RPC and stores payload", async () => {
+  it("calls get_explore_page_v2 RPC and stores payload", async () => {
     const { supabase } = await import("@/integrations/supabase/client");
     (supabase as any).rpc.mockResolvedValueOnce({
       data: {
@@ -50,7 +50,7 @@ describe("useSearch explore page", () => {
     });
 
     expect((supabase as any).rpc).toHaveBeenCalledWith(
-      "get_explore_page_v1",
+      "get_explore_page_v2",
       expect.objectContaining({
         p_segment_id: "seg_default",
         p_allow_stale: true,

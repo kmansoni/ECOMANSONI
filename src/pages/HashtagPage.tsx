@@ -31,7 +31,7 @@ export function HashtagPage() {
       if (!tag) return;
       setLoading(true);
       try {
-        const { data: payload, error } = await (supabase as any).rpc("get_hashtag_page_v1", {
+        const { data: payload, error } = await (supabase as any).rpc("get_hashtag_page_v2", {
           p_hashtag: tag,
           p_section: "top",
           p_limit: 30,
