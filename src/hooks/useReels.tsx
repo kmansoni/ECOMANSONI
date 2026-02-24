@@ -825,25 +825,24 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
   );
 
   const createReel = useCallback(async (
-    videoUrl: string,
-    thumbnailUrl?: string,
-    description?: string,
-    musicTitle?: string
+    videoPath: string,
+    thumbnailUrl: string | undefined,
+    description: string | undefined,
+    musicTitle: string | undefined,
+    clientPublishId: string,
   ) => {
     if (!user) return { error: "Not authenticated" };
 
     try {
-      const { data, error } = await (supabase as any)
-        .from("reels")
-        .insert({
-          author_id: user.id,
-          video_url: videoUrl,
-          thumbnail_url: thumbnailUrl,
-          description,
-          music_title: musicTitle,
-        })
-        .select()
-        .single();
+      if (!clientPublishId) return { data: null, error: "Missing client_publish_id" };
+
+      const { data, error } = await (supabase as any).rpc("create_reel_v1", {
+        p_client_publish_id: clientPublishId,
+        p_video_url: videoPath,
+        p_thumbnail_url: thumbnailUrl ?? null,
+        p_description: description ?? null,
+        p_music_title: musicTitle ?? null,
+      });
 
       if (error) throw error;
 

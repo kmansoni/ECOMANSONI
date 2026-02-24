@@ -1,0 +1,75 @@
+{
+  "schemaVersion": "1.1.2",
+  "generatedAt": "2026-02-24T06:00:00Z",
+  "weighting": {
+    "mode": "active_only",
+    "tolerance": 0.001
+  },
+  "flows": [
+    {
+      "flowId": "auth_login",
+      "name": "Auth: Login",
+      "stageMin": "S0",
+      "weight": 0.4,
+      "e2eTestId": "e2e-auth-login",
+      "selectors": [
+        "[data-testid=\"login-submit\"]",
+        "[data-testid=\"home-shell\"]"
+      ],
+      "legacySignals": {
+        "importPatterns": [
+          "from \"@/components/ui/button\"",
+          "from \"src/components/ui/button\""
+        ],
+        "routePatterns": [
+          "/login",
+          "/auth/*"
+        ]
+      },
+      "metrics": {
+        "successMetric": "auth_login_pass_rate",
+        "latencyP95Metric": "auth_login_p95_ms",
+        "errorRateMetric": "auth_login_error_rate"
+      },
+      "owners": [
+        "@owner-auth"
+      ],
+      "enabled": true
+    },
+    {
+      "flowId": "chat_send_message",
+      "name": "Chat: Send message",
+      "stageMin": "S0",
+      "weight": 0.6,
+      "e2eTestId": "e2e-chat-send-message",
+      "selectors": [
+        "[data-testid=\"chat-input\"]",
+        "[data-testid=\"send-message\"]"
+      ],
+      "legacySignals": {
+        "importPatterns": [
+          "from \"@/components/ui/button\"",
+          "from \"src/components/ui/button\""
+        ],
+        "routePatterns": [
+          "/chat/*"
+        ]
+      },
+      "metrics": {
+        "successMetric": "chat_send_pass_rate",
+        "latencyP95Metric": "chat_send_p95_ms",
+        "errorRateMetric": "chat_send_error_rate"
+      },
+      "owners": [
+        "@owner-chat"
+      ],
+      "enabled": true
+    }
+  ],
+  "attestation": {
+    "changedViaPr": true,
+    "changeType": "edit",
+    "prNumber": 0,
+    "reason": "Initial S0 baseline"
+  }
+}

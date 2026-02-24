@@ -36,12 +36,17 @@
     "registry:verify": "npx ts-node src/lib/registry/validate.ts",
     "registry:watch": "npx tsx watch src/lib/registry/compile.ts",
     "ci:gates": "npx ts-node src/lib/ci/gates.ts",
+    "governance:analyze": "node ./scripts/governance/analyze-baseline.mjs",
+    "project:implementation1:list": "node ./scripts/governance/project-to-implementation-1-list.mjs",
     "test:acceptance": "node --no-deprecation ./node_modules/vitest/vitest.mjs run src/test/acceptance.test.ts",
     "test:acceptance:watch": "node --no-deprecation ./node_modules/vitest/vitest.mjs src/test/acceptance.test.ts",
     "test:chaos": "node --no-deprecation ./node_modules/vitest/vitest.mjs run src/test/chaos.test.ts",
     "test:chaos:watch": "node --no-deprecation ./node_modules/vitest/vitest.mjs src/test/chaos.test.ts",
     "test:core": "npm run test:acceptance && npm run test:chaos",
-    "test:core:report": "npm run test:core -- --reporter=verbose --reporter=json"
+    "test:core:report": "npm run test:core -- --reporter=verbose --reporter=json",
+    "phase1:verify-drift": "node scripts/phase1/verify-no-drift.mjs",
+    "phase1:update-types": "supabase gen types typescript --schema public > src/lib/supabase/phase1-types.ts",
+    "phase1:update-snapshot": "node scripts/phase1/verify-no-drift.mjs --update-snapshot"
   },
   "dependencies": {
     "@capacitor/android": "^8.0.1",

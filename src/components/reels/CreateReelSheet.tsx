@@ -31,10 +31,12 @@ export function CreateReelSheet({ open, onOpenChange, initialVideoFile }: Create
   const [description, setDescription] = useState("");
   const [musicTitle, setMusicTitle] = useState("");
   const [isUploading, setIsUploading] = useState(false);
+  const [clientPublishId, setClientPublishId] = useState<string | null>(null);
   const [showEditor, setShowEditor] = useState(false);
   const [isEdited, setIsEdited] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const seededOnceRef = useRef(false);
+  const inFlightRef = useRef(false);
 
   const effectiveVideoFile: File | null =
     videoFile ?? fileInputRef.current?.files?.[0] ?? null;
@@ -144,6 +146,14 @@ export function CreateReelSheet({ open, onOpenChange, initialVideoFile }: Create
     setVideoFile(null);
     setVideoPreview(null);
     setIsEdited(false);
+    setClientPublishId(null);
+    if (user) {
+      try {
+        sessionStorage.removeItem(`reels_client_publish_id:${user.id}`);
+      } catch {
+        // ignore
+      }
+    }
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -170,27 +180,52 @@ export function CreateReelSheet({ open, onOpenChange, initialVideoFile }: Create
       toast.error("Войдите в аккаунт, чтобы опубликовать Reel");
       return;
     }
+
+    // Ref-based guard to prevent double-tap publishes before state updates.
+    if (inFlightRef.current) return;
+
     const fileToUpload = effectiveVideoFile;
     if (!fileToUpload) {
       toast.error("Сначала выберите видео");
       return;
     }
 
-    const descriptionTrimmed = description.trim();
-    const hashtagVerdict = await checkHashtagsAllowedForText(descriptionTrimmed);
-    if (!hashtagVerdict.ok) {
-      toast.error("Некоторые хештеги недоступны", {
-        description: ("blockedTags" in hashtagVerdict ? hashtagVerdict.blockedTags : []).join(", "),
-      });
-      return;
-    }
-
+    // Block immediately (before any awaits) to avoid double-tap races.
+    inFlightRef.current = true;
     setIsUploading(true);
 
     try {
+      const descriptionTrimmed = description.trim();
+      const hashtagVerdict = await checkHashtagsAllowedForText(descriptionTrimmed);
+      if (!hashtagVerdict.ok) {
+        toast.error("Некоторые хештеги недоступны", {
+          description: ("blockedTags" in hashtagVerdict ? hashtagVerdict.blockedTags : []).join(", "),
+        });
+        return;
+      }
+
+      // Stable idempotency key for this publish intent (survives retries).
+      let publishId = clientPublishId;
+      if (!publishId) {
+        try {
+          publishId = sessionStorage.getItem(`reels_client_publish_id:${user.id}`);
+        } catch {
+          publishId = null;
+        }
+      }
+      if (!publishId) {
+        publishId = crypto.randomUUID();
+        try {
+          sessionStorage.setItem(`reels_client_publish_id:${user.id}`, publishId);
+        } catch {
+          // ignore
+        }
+      }
+      setClientPublishId(publishId);
+
       // Upload video to storage
       const fileExt = (fileToUpload.name.split(".").pop() || "mp4").toLowerCase();
-      const fileName = `${user.id}/${Date.now()}.${fileExt}`;
+      const fileName = `${user.id}/reels/${publishId}/original.${fileExt}`;
       const contentType = inferVideoContentType(fileToUpload.type || fileExt);
 
       const { error: uploadError } = await supabase.storage
@@ -202,25 +237,28 @@ export function CreateReelSheet({ open, onOpenChange, initialVideoFile }: Create
         });
 
       if (uploadError) {
+        const msg = String((uploadError as any)?.message || "");
+        const status = Number((uploadError as any)?.statusCode || (uploadError as any)?.status || 0);
+
+        // Idempotency: treat object already existing as success for the same publish intent.
+        const objectExists = status === 409 || msg.toLowerCase().includes("already exists") || msg.toLowerCase().includes("resource already exists");
+        if (!objectExists) {
         // If bucket doesn't exist, create it first
         if (uploadError.message.includes("not found")) {
           toast.error("Хранилище не настроено. Обратитесь к администратору.");
           return;
         }
         throw uploadError;
+        }
       }
-
-      // Get public URL
-      const { data: urlData } = supabase.storage
-        .from("reels-media")
-        .getPublicUrl(fileName);
 
       // Create reel record
       const result = await createReel(
-        urlData.publicUrl,
+        fileName,
         undefined, // thumbnail - could generate later
         descriptionTrimmed || undefined,
-        musicTitle.trim() || undefined
+        musicTitle.trim() || undefined,
+        publishId
       );
 
       if (result.error) {
@@ -237,6 +275,7 @@ export function CreateReelSheet({ open, onOpenChange, initialVideoFile }: Create
       toast.error("Ошибка при публикации: " + error.message);
     } finally {
       setIsUploading(false);
+      inFlightRef.current = false;
     }
   };
 

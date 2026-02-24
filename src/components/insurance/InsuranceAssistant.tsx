@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { maybeToastRateLimit } from "@/lib/anti-abuse/rateLimitToast";
 
 interface Message {
   role: "user" | "assistant";
@@ -56,6 +57,10 @@ export function InsuranceAssistant() {
       });
 
       if (!resp.ok) {
+        if (await maybeToastRateLimit(resp.clone())) {
+          setMessages(prev => prev.filter(m => m.content !== ""));
+          return;
+        }
         const errorData = await resp.json().catch(() => ({}));
         throw new Error(errorData.error || "Ошибка");
       }

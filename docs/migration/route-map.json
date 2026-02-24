@@ -1,0 +1,48 @@
+{
+  "schemaVersion": "1.0.1",
+  "generatedAt": "2026-02-24T06:00:00Z",
+  "routerType": "react-router",
+  "routerTypeHint": "standard",
+  "basePaths": [],
+  "canonicalRoutes": [
+    "/login",
+    "/chat/:param1"
+  ],
+  "aliases": [
+    {
+      "from": "/c/:id",
+      "to": "/chat/:param1",
+      "mode": "template",
+      "enabled": true
+    }
+  ],
+  "fileRouteMap": [],
+  "strictnessOrder": "warn_only < no_match < fail_closed",
+  "normalization": {
+    "stripQueryAndHash": true,
+    "stripTrailingSlash": true,
+    "lowercasePath": true,
+    "collapseSlashes": true,
+    "paramStyle": "colon",
+    "paramNameStrategy": "normalize",
+    "allowedParamTokenPatterns": [
+      ":id",
+      ":chatId",
+      ":param1"
+    ],
+    "matchMode": "template_exact",
+    "unknownRoutePolicy": "no_match",
+    "aliasResolution": "reject_overlaps",
+    "stagePolicy": {
+      "S0": {
+        "unknownRoutePolicy": "no_match"
+      },
+      "S1": {
+        "unknownRoutePolicy": "fail_closed"
+      },
+      "S2": {
+        "unknownRoutePolicy": "fail_closed"
+      }
+    }
+  }
+}

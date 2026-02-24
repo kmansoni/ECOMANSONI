@@ -9,6 +9,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ## [Unreleased]
 
 ### Added
+- **Phase 1 EPIC L: Trust & Rate Limiting**
+  - Database-backed fixed-window rate limiting (no Redis required for MVP)
+  - `rate_limit_audits` table for audit trail and compliance
+  - Tier-specific rate limits (Tiers A-D × 6 actions: `send_message`, `media_upload`, `create_post`, `follow`, `search`, `api_call`)
+  - Edge Function enforcement in `dm-send-delegated` and `media-upload-authorize` (429 + Retry-After headers)
+  - Frontend 429 handling: `RateLimitNotice` component, `rateLimitToast` sonner integration
+  - Canary rollout system: `feature_flags` table with hash-based % rollout (0% → 100%)
+  - SQL smoke test (`scripts/phase1/test-canary-rollout.sql`) and E2E test (`scripts/phase1/test-rate-limits.mjs`)
+  - Operational guide: `docs/ops/CANARY_ROLLOUT_GUIDE.md` for safe production deployment
 - Comprehensive `README.md` with features, tech stack, setup instructions, and usage examples
 - `ARCHITECTURE.md` documenting frontend–backend integration, infrastructure services, and deployment strategies
 - `CONTRIBUTING.md` with branching strategy, commit conventions, and PR process

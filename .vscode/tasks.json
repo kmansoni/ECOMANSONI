@@ -388,6 +388,25 @@
                   }
                   ,
                   {
+                      "label":  "Phase 1: Deploy issue-delegation-token (secure prompt)",
+                      "type":  "shell",
+                      "command":  "pwsh",
+                      "args":  [
+                                   "-NoProfile",
+                                   "-ExecutionPolicy",
+                                   "Bypass",
+                                   "-File",
+                                   "${workspaceFolder}\\scripts\\phase1\\deploy-issue-delegation-token.ps1"
+                               ],
+                      "options":  {
+                                      "cwd":  "${workspaceFolder}"
+                                  },
+                      "problemMatcher":  [
+
+                                         ]
+                  }
+                  ,
+                  {
                       "label":  "GitHub: Secret set (SUPABASE_SERVICE_ROLE_KEY, secure prompt)",
                       "type":  "shell",
                       "command":  "pwsh",

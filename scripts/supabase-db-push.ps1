@@ -19,22 +19,18 @@ $dbPasswordWasSet = $false
 
 try {
   if (-not $tokenWasSet) {
-    $secure = Read-Host "Supabase access token (sbp_...)" -AsSecureString
-    $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
-    try {
-      $token = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
-    } finally {
-      [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
-    }
-
-    if ([string]::IsNullOrWhiteSpace($token)) {
-      throw "Access token is empty."
-    }
-
-    $env:SUPABASE_ACCESS_TOKEN = $token
+    Write-Host "WARN: SUPABASE_ACCESS_TOKEN is not set. Attempting to use Supabase CLI cached login." -ForegroundColor Yellow
+    Write-Host "      If this fails, set SUPABASE_ACCESS_TOKEN in this session and retry." -ForegroundColor Yellow
   }
 
-  if ($PromptDbPassword) {
+  $dbPasswordPlain = $null
+  if (-not [string]::IsNullOrWhiteSpace($env:SUPABASE_DB_PASSWORD)) {
+    $dbPasswordPlain = $env:SUPABASE_DB_PASSWORD
+  } elseif (-not [string]::IsNullOrWhiteSpace($env:PGPASSWORD)) {
+    $dbPasswordPlain = $env:PGPASSWORD
+  }
+
+  if ($PromptDbPassword -and [string]::IsNullOrWhiteSpace($dbPasswordPlain)) {
     $DbPasswordSecure = Read-Host "Remote Postgres database password" -AsSecureString
     if ($null -eq $DbPasswordSecure) {
       throw "Database password is empty."
@@ -42,8 +38,7 @@ try {
     $dbPasswordWasSet = $true
   }
 
-  $dbPasswordPlain = $null
-  if ($null -ne $DbPasswordSecure) {
+  if ([string]::IsNullOrWhiteSpace($dbPasswordPlain) -and $null -ne $DbPasswordSecure) {
     $bstrPw = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($DbPasswordSecure)
     try {
       $dbPasswordPlain = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstrPw)

@@ -1,0 +1,331 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mansoni://contracts/creative-graph.v1.0.1",
+  "title": "Creative Graph v1.0.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "graph_id",
+    "mode",
+    "timebase_hz",
+    "nodes",
+    "edges",
+    "bounds"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0.1" },
+    "graph_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{12,64}$"
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["POST", "STORY", "REELS", "LIVE"]
+    },
+    "timebase_hz": {
+      "type": "integer",
+      "enum": [1000, 90000]
+    },
+    "nodes": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 400,
+      "items": { "$ref": "#/$defs/node" }
+    },
+    "edges": {
+      "type": "array",
+      "maxItems": 2000,
+      "items": { "$ref": "#/$defs/edge" }
+    },
+    "bounds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_nodes",
+        "max_layers",
+        "max_effect_instances",
+        "max_keyframes_per_channel",
+        "max_duration_ticks",
+        "gpu_budget_class"
+      ],
+      "properties": {
+        "max_nodes": { "type": "integer", "minimum": 1, "maximum": 400 },
+        "max_layers": { "type": "integer", "minimum": 1, "maximum": 16 },
+        "max_effect_instances": { "type": "integer", "minimum": 0, "maximum": 64 },
+        "max_keyframes_per_channel": { "type": "integer", "minimum": 1, "maximum": 2000 },
+        "max_duration_ticks": { "type": "integer", "minimum": 1, "maximum": 10800000 },
+        "gpu_budget_class": { "type": "string", "enum": ["S", "M", "L"] }
+      }
+    }
+  },
+  "$defs": {
+    "port": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "kind"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "kind": { "type": "string", "enum": ["video", "audio", "mask", "meta"] }
+      }
+    },
+    "keyframePointFloat": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tick", "value", "interp"],
+      "properties": {
+        "tick": { "type": "integer", "minimum": 0 },
+        "value": { "type": "number" },
+        "interp": { "type": "string", "enum": ["step", "linear", "bezier"] },
+        "cp1": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": { "type": "number" }
+        },
+        "cp2": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": { "type": "number" }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "interp": { "const": "bezier" } }, "required": ["interp"] },
+          "then": { "required": ["cp1", "cp2"] }
+        }
+      ]
+    },
+    "channelFloat": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["param", "param_type", "points"],
+      "properties": {
+        "param": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "param_type": { "const": "float" },
+        "points": {
+          "type": "array",
+          "maxItems": 2000,
+          "items": { "$ref": "#/$defs/keyframePointFloat" }
+        }
+      }
+    },
+    "channels": {
+      "type": "array",
+      "maxItems": 200,
+      "items": { "$ref": "#/$defs/channelFloat" }
+    },
+    "nodeBase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "start_tick", "end_tick", "inputs", "outputs"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9_\\-]{3,80}$" },
+        "type": { "type": "string", "enum": ["Source", "Transform", "Composite", "Effect", "Audio", "Export"] },
+        "subtype": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "start_tick": { "type": "integer", "minimum": 0 },
+        "end_tick": { "type": "integer", "minimum": 1 },
+        "z_index": { "type": "integer", "minimum": 0, "maximum": 64 },
+        "inputs": {
+          "type": "array",
+          "maxItems": 8,
+          "items": { "$ref": "#/$defs/port" }
+        },
+        "outputs": {
+          "type": "array",
+          "maxItems": 8,
+          "items": { "$ref": "#/$defs/port" }
+        },
+        "channels": { "$ref": "#/$defs/channels" }
+      }
+    },
+    "sourceNode": {
+      "allOf": [
+        { "$ref": "#/$defs/nodeBase" },
+        {
+          "type": "object",
+          "required": ["type", "subtype", "params"],
+          "properties": {
+            "type": { "const": "Source" },
+            "subtype": { "enum": ["clip", "image", "liveTrack", "audioTrack"] },
+            "params": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["source_kind", "asset_ref", "track"],
+              "properties": {
+                "source_kind": { "type": "string", "enum": ["video", "image", "audio", "live"] },
+                "asset_ref": { "type": "string", "minLength": 1, "maxLength": 120 },
+                "track": { "type": "string", "enum": ["video", "audio"] }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "transformNode": {
+      "allOf": [
+        { "$ref": "#/$defs/nodeBase" },
+        {
+          "type": "object",
+          "required": ["type", "subtype", "params"],
+          "properties": {
+            "type": { "const": "Transform" },
+            "subtype": { "enum": ["trim", "crop", "speed", "stabilize"] },
+            "params": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["in_start_tick", "in_end_tick"],
+                  "properties": {
+                    "in_start_tick": { "type": "integer", "minimum": 0 },
+                    "in_end_tick": { "type": "integer", "minimum": 1 }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["x", "y", "w", "h"],
+                  "properties": {
+                    "x": { "type": "number", "minimum": 0, "maximum": 1 },
+                    "y": { "type": "number", "minimum": 0, "maximum": 1 },
+                    "w": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+                    "h": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["rate"],
+                  "properties": {
+                    "rate": { "type": "number", "exclusiveMinimum": 0, "maximum": 8 }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["strength"],
+                  "properties": {
+                    "strength": { "type": "number", "minimum": 0, "maximum": 1 }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "compositeNode": {
+      "allOf": [
+        { "$ref": "#/$defs/nodeBase" },
+        {
+          "type": "object",
+          "required": ["type", "subtype", "params"],
+          "properties": {
+            "type": { "const": "Composite" },
+            "subtype": { "enum": ["layer", "mask"] },
+            "params": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["blend_mode", "opacity"],
+              "properties": {
+                "blend_mode": { "type": "string", "enum": ["normal", "screen", "multiply", "overlay"] },
+                "opacity": { "type": "number", "minimum": 0, "maximum": 1 }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "effectNode": {
+      "allOf": [
+        { "$ref": "#/$defs/nodeBase" },
+        {
+          "type": "object",
+          "required": ["type", "subtype", "params"],
+          "properties": {
+            "type": { "const": "Effect" },
+            "subtype": { "const": "plugin" },
+            "params": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["plugin_ref", "preset_ref"],
+              "properties": {
+                "plugin_ref": { "type": "string", "pattern": "^[a-z0-9_.-]+@[0-9]+\\.[0-9]+\\.[0-9]+$" },
+                "preset_ref": { "type": "string", "minLength": 1, "maxLength": 120 },
+                "seed": { "type": "integer", "minimum": 0, "maximum": 2147483647 }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "audioNode": {
+      "allOf": [
+        { "$ref": "#/$defs/nodeBase" },
+        {
+          "type": "object",
+          "required": ["type", "subtype", "params"],
+          "properties": {
+            "type": { "const": "Audio" },
+            "subtype": { "enum": ["gain", "ducking", "lufs"] },
+            "params": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind", "amount", "target_lufs"],
+              "properties": {
+                "kind": { "type": "string", "enum": ["gain", "ducking", "normalize"] },
+                "amount": { "type": "number", "minimum": 0, "maximum": 4 },
+                "target_lufs": { "type": "number", "minimum": -24, "maximum": -8 }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "exportNode": {
+      "allOf": [
+        { "$ref": "#/$defs/nodeBase" },
+        {
+          "type": "object",
+          "required": ["type", "subtype", "params"],
+          "properties": {
+            "type": { "const": "Export" },
+            "subtype": { "enum": ["preview", "publish", "transcode", "replay"] },
+            "params": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["target", "profile_id"],
+              "properties": {
+                "target": { "type": "string", "enum": ["preview", "publish", "transcode", "replay"] },
+                "profile_id": { "type": "string", "minLength": 1, "maxLength": 80 }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "node": {
+      "oneOf": [
+        { "$ref": "#/$defs/sourceNode" },
+        { "$ref": "#/$defs/transformNode" },
+        { "$ref": "#/$defs/compositeNode" },
+        { "$ref": "#/$defs/effectNode" },
+        { "$ref": "#/$defs/audioNode" },
+        { "$ref": "#/$defs/exportNode" }
+      ]
+    },
+    "edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "from_port", "to", "to_port"],
+      "properties": {
+        "from": { "type": "string", "pattern": "^[a-z0-9_\\-]{3,80}$" },
+        "from_port": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "to": { "type": "string", "pattern": "^[a-z0-9_\\-]{3,80}$" },
+        "to_port": { "type": "string", "minLength": 1, "maxLength": 64 }
+      }
+    }
+  }
+}
