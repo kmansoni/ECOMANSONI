@@ -99,7 +99,7 @@
 - Database schema: ✅ Deployed (4 migrations)
 - Feed RPC integration: ✅ Deployed (`get_reels_feed_v2` updated)
 - Background workers: ✅ Scheduled via pg_cron (20260224202000)
-- Frontend components: ⏳ Pending (ranking explanation UI, diversity indicator)
+- Frontend components: ✅ Deployed (RankingExplanation component in ReelsPage, displays algorithm_version, ranking_reason, final_score, source_pool)
 - Documentation: [docs/ops/PHASE1_EPIC_I_DEPLOYMENT.md](docs/ops/PHASE1_EPIC_I_DEPLOYMENT.md)
 
 **Metrics to Track:**
@@ -140,9 +140,9 @@
 
 **Deployment:**
 - Database schema: ✅ Deployed (2 migrations)
-- RPC functions: ✅ Deployed (get_hashtag_feed_v1, search_hashtags_v1, get_trending_hashtags_v1)
+- RPC functions: ✅ Deployed (get_hashtag_page_v2, search_hashtags_v1, get_trending_hashtags_v1)
 - Background workers: ✅ Scheduled via pg_cron (20260224202000)
-- Frontend components: ⏳ Pending (hashtag page UI, trending widget, search autocomplete)
+- Frontend components: ✅ Deployed (HashtagPage using get_hashtag_page_v2)
 - Documentation: [docs/ops/PHASE1_EPIC_H_DEPLOYMENT.md](docs/ops/PHASE1_EPIC_H_DEPLOYMENT.md)
 
 **Metrics to Track:**
@@ -196,7 +196,7 @@
 - Database schema: ✅ Deployed (2 migrations)
 - RPC functions: ✅ Deployed (get_explore_page_v2, get_explore_categories_v1, get_explore_fresh_creators_v1, session/click tracking)
 - Analytics tracking: ✅ Deployed (sessions, clicks, watches, metrics calculation)
-- Frontend components: ⏳ Pending (ExplorePage, section components, tracking integration)
+- Frontend components: ✅ Deployed (SearchPage using get_explore_page_v2, useSearch hook updated)
 - Documentation: [docs/ops/PHASE1_EPIC_G_DEPLOYMENT.md](docs/ops/PHASE1_EPIC_G_DEPLOYMENT.md)
 
 **Metrics to Track:**
@@ -251,6 +251,7 @@
 - Database schema: ✅ Deployed (3 migrations)
 - RPC functions: ✅ Deployed (8 functions)
 - Background workers: ✅ Scheduled via pg_cron (20260224202000)
+- Frontend components: ✅ Deployed (CreatorAnalyticsDashboard page at /analytics route, integrated with ProfilePage analytics button)
 - Documentation: [docs/ops/PHASE1_EPIC_J_DEPLOYMENT.md](docs/ops/PHASE1_EPIC_J_DEPLOYMENT.md)
 
 **Metrics to Track:**
@@ -337,45 +338,47 @@
 ## Next Actions (Priority Order)
 
 ### Immediate (This Week):
-1. **Deploy EPIC J background workers** (CRITICAL):
-   - EPIC J: `batch_calculate_reel_metrics_v1(100, 72)` (pg_cron every 15-30 min)
-   - EPIC J: `batch_calculate_creator_metrics_v1(100)` (pg_cron every 1 hour)
-   - EPIC J: `batch_create_reel_snapshots_v1(CURRENT_DATE, 1000)` (pg_cron daily 00:30 UTC)
-   - EPIC J: `batch_create_creator_snapshots_v1(CURRENT_DATE, 1000)` (pg_cron daily 01:00 UTC)
+1. **All background workers deployed** ✅ (EPIC H/I/J via pg_cron migration 20260224202000)
+   - ✅ EPIC J: Metrics aggregation & snapshots
+   - ✅ EPIC H: Trending hashtags & attack detection
+   - ✅ EPIC I: Controversial check & diversity analysis
 
-2. **Deploy EPIC H + G background workers** (HIGH):
-   - EPIC H: `batch_update_trending_hashtags_v1` (pg_cron every 15-30 min)
-   - EPIC H: Coordinated attack detection (pg_cron every 1 hour)
-   - EPIC H: `cleanup_trending_hashtags_v1` (pg_cron daily)
+2. **All frontend components deployed** ✅
+   - ✅ EPIC G: SearchPage using get_explore_page_v2
+   - ✅ EPIC H: HashtagPage using get_hashtag_page_v2
+   - ✅ EPIC I: RankingExplanation in ReelsPage
+   - ✅ EPIC J: CreatorAnalyticsDashboard at /analytics route
+   - ✅ Build verified without errors
 
-3. **Deploy EPIC I background workers** (HIGH):
-   - Set up `batch_check_controversial_v1` (pg_cron every 1 hour)
-   - Set up `batch_analyze_diversity_v1` (pg_cron every 6 hours)
-   - Set up cleanup jobs (expired flags, old explanations)
-
-4. **Seed hashtag-category mappings** (HIGH):
+3. **Seed hashtag-category mappings** (HIGH):
    - Map popular hashtags to categories (Entertainment, Music, Dance, etc.)
    - Target: Each category has >= 20 hashtags
    - Tools: Manual admin UI or SQL script
 
-5. **Monitor EPIC H + G + J metrics** (HIGH):
+4. **Monitor Phase 1 metrics** (HIGH):
    - EPIC H: trending_hashtags_count, coordinated_attack_detection_rate
    - EPIC G: explore_open_rate, explore_to_watch_rate, explore_session_length
    - EPIC I: controversial_items_detected_per_day, echo_chamber_users_count
    - EPIC J: creator_dashboard_open_rate, insights_click_through_rate
-   - Alert on anomalies
+   - EPIC K: moderation_queue_age, appeal_response_time
+   - Alert on anomalies, trigger guardrails
 
 ### Short-term (Next 2 Weeks):
-6. **Implement EPIC J frontend** (HIGH):
-   - Creator Dashboard page (/creator/analytics)
-   - Components: MetricsOverview, GrowthChart, TopOpportunities
-   - Reel Insights page (/reel/:id/insights)
-   - Components: ReelMetrics, ReelInsights, DistributionBreakdown
+5. **Complete KPI validation** (CRITICAL):
+   - Retention v0 (7d DAU): Target > 35%
+   - Session duration: Target > 8 minutes
+   - Content completion rate: Target > 65%
+   - Creator return rate (via dashboard): Target > 40%
+   - Verify guardrails respond to violations
 
-7. **Implement EPIC G frontend** (HIGH):
-   - ExplorePage.tsx with 5 sections
-   - Session tracking (start/end session, track clicks/watches)
-   - Section components: TrendingNow, Hashtags, FreshCreators, Categories, RecommendedReels
+6. **EPIC N decision (conditional)** (HIGH):
+   - If Phase 1 KPIs green → prepare EPIC N (Live beta)
+   - If KPIs yellow/red → focus on guardrail tuning, organic growth
+
+7. **Integrate tracking & telemetry** (MEDIUM):
+   - Segment events: explore_click, reel_impression, ranking_explanation_view
+   - Session tracking: start/end timestamps, duration, section navigation
+   - RPC event logging: Who called what, response time, errors
 
 6. **Implement EPIC H frontend** (MEDIUM):
    - HashtagPage with Top/Recent/Trending tabs
