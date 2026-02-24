@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef, useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { Search, Check, CheckCheck, LogIn, MessageCircle, Plus, Megaphone, Users, Phone } from "lucide-react";
+import { Search, Check, CheckCheck, LogIn, MessageCircle, Megaphone, Users, Phone } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { GradientAvatar } from "@/components/ui/gradient-avatar";
@@ -58,8 +58,6 @@ export function ChatsPage() {
   const { calls, missedCalls, profilesById, loading: callsLoading } = useCallHistory();
   const { startCall } = useVideoCallContext();
 
-  const [seeding, setSeeding] = useState(false);
-  
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [selectedChannel, setSelectedChannel] = useState<Channel | null>(null);
   const [selectedGroup, setSelectedGroup] = useState<GroupChat | null>(null);
@@ -443,38 +441,6 @@ export function ChatsPage() {
     refetchGroups();
   };
 
-  const seedTestChats = async () => {
-    if (!user || seeding) return;
-    setSeeding(true);
-
-    try {
-      const seedToken = import.meta.env.VITE_SEED_TEST_CHATS_TOKEN as string | undefined;
-      if (!seedToken) {
-        throw new Error("VITE_SEED_TEST_CHATS_TOKEN не задан (нужен для сидов ботов)");
-      }
-
-      const { data, error } = await supabase.functions.invoke("seed-test-chats", {
-        body: { bots: 3 },
-        headers: {
-          "x-seed-token": seedToken,
-        },
-      });
-
-      if (error) throw error;
-      if (!data?.ok) {
-        throw new Error(data?.error || "Seed failed");
-      }
-
-      await Promise.all([refetch(), refetchChannels(), refetchGroups()]);
-      toast.success(`Создано: ботов ${data.bots_created}, каналов ${data.channels_created}, диалогов ${data.dms_created}`);
-    } catch (e) {
-      console.error("seedTestChats error:", e);
-      toast.error(e instanceof Error ? e.message : "Не удалось создать тестовые чаты");
-    } finally {
-      setSeeding(false);
-    }
-  };
-
   // Show auth prompt if not logged in
   if (!authLoading && !user) {
     return (
@@ -594,7 +560,7 @@ export function ChatsPage() {
               {primaryTab === "calls" ? "Звонки" : "Чаты"}
             </h1>
             
-            {/* Actions: Search + Create */}
+            {/* Actions: Search */}
             {primaryTab === "chats" && (
               <div className="flex items-center gap-1">
                 <button 
@@ -602,12 +568,6 @@ export function ChatsPage() {
                   className="w-9 h-9 flex items-center justify-center rounded-full bg-black/5 dark:bg-white/10 backdrop-blur-xl border border-border/50 dark:border-white/20 hover:bg-black/10 dark:hover:bg-white/20 transition-colors"
                 >
                   <Search className="w-5 h-5 text-foreground dark:text-white" />
-                </button>
-                <button 
-                  onClick={() => setCreateOpen(true)}
-                  className="w-9 h-9 flex items-center justify-center rounded-full bg-black/5 dark:bg-white/10 backdrop-blur-xl border border-border/50 dark:border-white/20 hover:bg-black/10 dark:hover:bg-white/20 transition-colors"
-                >
-                  <Plus className="w-5 h-5 text-foreground dark:text-white" />
                 </button>
               </div>
             )}
@@ -880,20 +840,6 @@ export function ChatsPage() {
                     Найдите пользователей через поиск или создайте группу/канал
                   </p>
 
-                  {import.meta.env.DEV && user && (
-                    <div className="mt-5">
-                      <Button
-                        onClick={seedTestChats}
-                        disabled={seeding}
-                        className="bg-background/70 border-border text-foreground hover:bg-muted dark:bg-white/10 dark:border-white/20 dark:text-white dark:hover:bg-white/20"
-                      >
-                        {seeding ? "Создаю тестовые чаты…" : "Создать тестовые чаты"}
-                      </Button>
-                      <p className="mt-2 text-xs text-muted-foreground/70 dark:text-white/40">
-                        Только для разработки (DEV)
-                      </p>
-                    </div>
-                  )}
                 </div>
               )}
 

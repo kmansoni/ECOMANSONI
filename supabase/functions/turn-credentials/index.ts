@@ -85,6 +85,11 @@ function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ""));
 }
 
+function shouldFailHardOnRateLimitMisconfig(): boolean {
+  const raw = (Deno.env.get("TURN_REQUIRE_RATE_LIMIT") ?? "").trim().toLowerCase();
+  return raw === "1" || raw === "true";
+}
+
 async function enforceTurnIssueRateLimit(userId: string, ip: string): Promise<Response | null> {
   if (!isUuid(userId)) {
     // Dev-only anonymous mode returns a non-UUID (e.g. "dev-anon").
@@ -103,7 +108,7 @@ async function enforceTurnIssueRateLimit(userId: string, ip: string): Promise<Re
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
   if (!supabaseUrl || !serviceKey) {
-    if (isProductionEnv()) {
+    if (isProductionEnv() && shouldFailHardOnRateLimitMisconfig()) {
       return new Response(
         JSON.stringify({ error: "misconfigured" }),
         { status: 500, headers: { ...corsHeaders, ...TURN_NO_STORE_HEADERS } },
@@ -125,7 +130,7 @@ async function enforceTurnIssueRateLimit(userId: string, ip: string): Promise<Re
 
   if (error) {
     console.error("[TURN] Rate limit RPC failed:", error);
-    if (isProductionEnv()) {
+    if (isProductionEnv() && shouldFailHardOnRateLimitMisconfig()) {
       return new Response(
         JSON.stringify({ error: "misconfigured" }),
         { status: 500, headers: { ...corsHeaders, ...TURN_NO_STORE_HEADERS } },

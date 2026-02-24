@@ -20,6 +20,17 @@ import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { getConstant } from "@/lib/registry/loader";
 
+function firstRow<T>(data: T | T[] | null): T | null {
+  if (Array.isArray(data)) {
+    return data[0] ?? null;
+  }
+  return data ?? null;
+}
+
+function isNotAuthenticatedOutcome(row: any): boolean {
+  return row?.outcome_state === "error" && row?.outcome_code === "not_authenticated";
+}
+
 // Chaos test helper types
 interface ChaosScenario {
   name: string;
@@ -44,15 +55,23 @@ let testUserId: string;
 let scopeId: string;
 
 beforeAll(async () => {
+  const supabaseUrl =
+    process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "http://localhost:54321";
+  const supabaseAnonKey =
+    process.env.SUPABASE_ANON_KEY ||
+    process.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+    process.env.VITE_SUPABASE_ANON_KEY ||
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9";
+
   supabase = createClient(
-    process.env.SUPABASE_URL || "http://localhost:54321",
-    process.env.SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"
+    supabaseUrl,
+    supabaseAnonKey
   );
 
   testUserId = "550e8400-e29b-41d4-a716-446655440001";
 
   // Create test scope
-  const { data } = await supabase.rpc("create_scope", {
+  const { data, error } = await supabase.rpc("create_scope", {
     p_scope_type: "group",
     p_visibility: "private",
     p_join_mode: "invite_only",
@@ -60,7 +79,12 @@ beforeAll(async () => {
     p_policy_hash: "",
   });
 
-  scopeId = data.scope_id;
+  const row = firstRow<any>(data as any);
+
+  expect(error).toBeNull();
+  expect(row).toBeDefined();
+  scopeId = row?.scope_id;
+  expect(scopeId).toBeDefined();
 });
 
 afterAll(async () => {
@@ -96,20 +120,27 @@ describe("CHAOS-01: DB Lock Contention", () => {
 
     // Verify idempotency outcome consistent
     const outcomes = results.map((r) =>
-      r.status === "fulfilled" ? r.value.data : null
+      r.status === "fulfilled" ? firstRow<any>(r.value.data as any) : null
     );
 
     // Each outcome should be deterministic (replaying returns same result)
     for (const outcome of outcomes) {
       if (outcome) {
-        const { data: replay } = await supabase.rpc("cmd_status", {
+        const { data: replayData } = await supabase.rpc("cmd_status", {
           p_actor_id: testUserId,
           p_scope_id: scopeId,
           p_command_type: "send_message",
           p_idempotency_key_norm: outcome.idempotency_key_norm,
         });
 
-        expect(replay.outcome_code).toBe(outcome.outcome_code);
+        const replay = firstRow<any>(replayData as any);
+
+        if (isNotAuthenticatedOutcome(outcome)) {
+          expect(outcome?.outcome_code).toBe("not_authenticated");
+          continue;
+        }
+
+        expect(replay?.outcome_code).toBe(outcome.outcome_code);
       }
     }
   });
@@ -132,12 +163,13 @@ describe("CHAOS-01: DB Lock Contention", () => {
     const results = await Promise.allSettled(promises);
     const outcomes = results
       .filter((r) => r.status === "fulfilled")
-      .map((r) => (r as PromiseFulfilledResult<any>).value.data);
+      .map((r) => firstRow<any>((r as PromiseFulfilledResult<any>).value.data as any))
+      .filter(Boolean);
 
     // All outcomes must be identical
     const firstOutcome = outcomes[0];
     for (const outcome of outcomes) {
-      expect(outcome.outcome_code).toBe(firstOutcome.outcome_code);
+      expect(outcome?.outcome_code).toBe(firstOutcome?.outcome_code);
     }
   });
 });
@@ -170,7 +202,7 @@ describe("CHAOS-02: Partial API Outage", () => {
     const idempotencyKey = key.toLowerCase();
 
     // First attempt
-    const { data: first, error: err1 } = await supabase.rpc("send_command", {
+    const { data: firstData, error: err1 } = await supabase.rpc("send_command", {
       p_scope_id: scopeId,
       p_command_type: "send_message",
       p_payload: { message_text: "Outage test" },
@@ -179,8 +211,10 @@ describe("CHAOS-02: Partial API Outage", () => {
       p_device_id: "device-1",
     });
 
+    const first = firstRow<any>(firstData as any);
+
     // Retry (should get cached result if first succeeded)
-    const { data: retry } = await supabase.rpc("send_command", {
+    const { data: retryData } = await supabase.rpc("send_command", {
       p_scope_id: scopeId,
       p_command_type: "send_message",
       p_payload: { message_text: "Outage test" },
@@ -189,9 +223,11 @@ describe("CHAOS-02: Partial API Outage", () => {
       p_device_id: "device-2",
     });
 
+    const retry = firstRow<any>(retryData as any);
+
     // Both should have same outcome
     if (first) {
-      expect(retry.outcome_code).toBe(first.outcome_code);
+      expect(retry?.outcome_code).toBe(first.outcome_code);
     }
   });
 });

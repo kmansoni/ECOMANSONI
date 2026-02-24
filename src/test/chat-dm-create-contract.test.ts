@@ -45,7 +45,7 @@ describe("DM creation contract (Project B)", () => {
 
     expect(convId).toBe("conv-1");
     expect((supabase as any).rpc).toHaveBeenCalledWith("get_or_create_dm", {
-      target_user: "u2",
+      target_user_id: "u2",
     });
     expect((supabase as any).from).not.toHaveBeenCalled();
   });

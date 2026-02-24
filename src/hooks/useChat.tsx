@@ -1088,7 +1088,7 @@ export function useCreateConversation() {
       // Contract-only path: SECURITY DEFINER RPC is the ONLY supported way.
       // Client must never try to INSERT other participants directly (RLS is self-only).
       const rpcRes = await (supabase as any).rpc("get_or_create_dm", {
-        target_user: otherUserId,
+        target_user_id: otherUserId,
       });
       const rpcError = (rpcRes as any)?.error;
       const rpcData = (rpcRes as any)?.data;

@@ -72,8 +72,12 @@ function loadRegistry(): CompiledRegistry {
   }
 
   try {
-    // In Node.js, read from file
-    if (typeof window === "undefined") {
+    // In Node.js (including Vitest jsdom), read from file
+    const isNodeRuntime =
+      typeof process !== "undefined" &&
+      !!(process as any).versions?.node;
+
+    if (isNodeRuntime) {
       const registryPath = path.join(process.cwd(), "supabase", "registry.json");
       const content = fs.readFileSync(registryPath, "utf-8");
       cachedRegistry = JSON.parse(content);

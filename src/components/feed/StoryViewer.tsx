@@ -211,7 +211,7 @@ export function StoryViewer({ usersWithStories, initialUserIndex, isOpen, onClos
     <div className="fixed inset-0 z-50 bg-black flex items-center justify-center">
       {/* Story content */}
       <div
-        className="relative w-full h-full max-w-md mx-auto overflow-hidden"
+        className="relative w-full h-full overflow-hidden"
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
