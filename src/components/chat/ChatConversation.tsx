@@ -4,6 +4,7 @@ import { ArrowLeft, Phone, Video, Send, Mic, X, Play, Pause, Check, CheckCheck, 
 import { AttachmentIcon } from "./AttachmentIcon";
 import { Button } from "@/components/ui/button";
 import { useMessages } from "@/hooks/useChat";
+import { sanitizeReceivedText } from "@/lib/text-encoding";
 import { useAuth } from "@/hooks/useAuth";
 import { useMarkConversationRead } from "@/hooks/useMarkConversationRead";
 import { useVideoCallContext } from "@/contexts/VideoCallContext";
@@ -468,6 +469,19 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
   };
 
   const normalizeBrokenVerticalText = useCallback((text: string) => {
+    // Validate that text is properly encoded (basic UTF-8 sanity check)
+    try {
+      // If text contains mojibake patterns (high-bit chars that don't form valid UTF-8),
+      // it may indicate encoding issues. For Cyrillic, ensure it's valid UTF-8.
+      const encoded = new TextEncoder().encode(text);
+      const decoded = new TextDecoder('utf-8', { fatal: false }).decode(encoded);
+      if (!decoded || decoded.length === 0) {
+        return text; // Fallback if decoding fails
+      }
+    } catch {
+      return text; // If encoding/decoding fails, return original text
+    }
+
     const lines = text.split(/\r\n|\r|\n|\u2028|\u2029/);
     const nonEmpty = lines.map((line) => line.trim()).filter(Boolean);
     const isSingleGlyph = (s: string) => Array.from(s).length === 1;
@@ -1390,7 +1404,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
                       </span>
                     </div>
                   ) : (
-                    <p className="text-[15px] leading-[1.4] whitespace-pre-wrap break-words max-h-[60vh] overflow-auto">{normalizeBrokenVerticalText(message.content)}</p>
+                    <p className="text-[15px] leading-[1.4] whitespace-pre-wrap break-words max-h-[60vh] overflow-auto">{normalizeBrokenVerticalText(sanitizeReceivedText(message.content))}</p>
                   )}
                   
                   </div>

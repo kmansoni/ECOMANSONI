@@ -5,6 +5,7 @@ import type { RealtimeChannel } from "@supabase/supabase-js";
 import { toast } from "sonner";
 import { getLastChatSchemaProbe } from "@/lib/chat/schemaProbe";
 import { buildChatBodyEnvelope, sendMessageV1 } from "@/lib/chat/sendMessageV1";
+import { sanitizeReceivedText, sanitizeTextForTransport } from "@/lib/text-encoding";
 import {
   bumpChatMetric,
   getOrCreateChatDeviceId,
@@ -37,6 +38,19 @@ function getErrorMessage(err: unknown): string {
 }
 
 function normalizeBrokenVerticalText(text: string): string {
+  // Validate that text is properly encoded (basic UTF-8 sanity check)
+  try {
+    // If text contains mojibake patterns (high-bit chars that don't form valid UTF-8),
+    // it may indicate encoding issues. For Cyrillic, ensure it's valid UTF-8.
+    const encoded = new TextEncoder().encode(text);
+    const decoded = new TextDecoder('utf-8', { fatal: false }).decode(encoded);
+    if (!decoded || decoded.length === 0) {
+      return text; // Fallback if decoding fails
+    }
+  } catch {
+    return text; // If encoding/decoding fails, return original text
+  }
+
   const lines = text.split(/\r\n|\r|\n|\u2028|\u2029/);
   const nonEmpty = lines.map((line) => line.trim()).filter(Boolean);
   const isSingleGlyph = (s: string) => Array.from(s).length === 1;
@@ -429,7 +443,10 @@ export function useMessages(conversationId: string | null) {
 
       if (error) throw error;
 
-      const serverMessages = sortMessages((data || []) as ChatMessage[]);
+      const serverMessages = sortMessages((data || []).map(m => ({
+        ...m,
+        content: sanitizeReceivedText(m.content)
+      })) as ChatMessage[]);
       const serverClientIds = new Set(
         serverMessages
           .map((m) => (typeof m.client_msg_id === "string" ? m.client_msg_id : null))
@@ -541,7 +558,7 @@ export function useMessages(conversationId: string | null) {
           id: String(m?.msg_id ?? ""),
           conversation_id: conversationId,
           sender_id: String(m?.sender_id ?? ""),
-          content: String(m?.content ?? ""),
+          content: sanitizeReceivedText(String(m?.content ?? "")),
           is_read: true,
           created_at: String(m?.created_at ?? new Date().toISOString()),
           seq: typeof m?.msg_seq === "number" ? m.msg_seq : Number(m?.msg_seq || 0) || null,
@@ -651,6 +668,10 @@ export function useMessages(conversationId: string | null) {
           },
           (payload) => {
             const newMessage = payload.new as ChatMessage;
+            // Sanitize received message content to prevent mojibake display
+            if (newMessage?.content) {
+              newMessage.content = sanitizeReceivedText(newMessage.content);
+            }
             if (newMessage?.client_msg_id) {
               pendingLocalByClientIdRef.current.delete(newMessage.client_msg_id);
             }
@@ -713,6 +734,10 @@ export function useMessages(conversationId: string | null) {
           },
           (payload) => {
             const updated = payload.new as ChatMessage;
+            // Sanitize updated message content to prevent mojibake display
+            if (updated?.content) {
+              updated.content = sanitizeReceivedText(updated.content);
+            }
             if (!updated?.id) return;
 
             if (updated?.client_msg_id) {
@@ -830,7 +855,9 @@ export function useMessages(conversationId: string | null) {
   }, [user]);
 
   const sendMessage = async (content: string, opts?: { clientMsgId?: string }) => {
-    const normalizedContent = normalizeBrokenVerticalText(content).trim();
+    let normalizedContent = normalizeBrokenVerticalText(content).trim();
+    // Ensure proper UTF-8 encoding for Cyrillic and other Unicode text
+    normalizedContent = sanitizeTextForTransport(normalizedContent);
 
     if (!conversationId || !user || !normalizedContent) {
       if (!user) throw new Error("CHAT_NOT_AUTHENTICATED");

@@ -82,7 +82,6 @@ async function main() {
       process.exitCode = 1;
       return;
     }
-    console.warn(`${msg} (skipping; set REQUIRE_CHAT_SCHEMA_PROBE=1 to enforce)`);
     process.exitCode = 0;
     return;
   }

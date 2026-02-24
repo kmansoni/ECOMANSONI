@@ -111,7 +111,6 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       
       // We don't use the hook's endCall since we haven't answered yet
       // Just update the DB directly
-      const { supabase } = await import("@/integrations/supabase/client");
       await supabase
         .from("video_calls")
         .update({
@@ -154,7 +153,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         // Show permission error toast
         toast.error(
           callType === "video" 
-            ? "Нет доступа к камере или микрофону" 
+            ? "Нет доступа к камере или микрофону"
             : "Нет доступа к микрофону",
           {
             description: "Разрешите доступ в настройках браузера",
@@ -167,7 +166,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       console.error("[VideoCallContext] startCall error:", err);
       setIsCallUiActive(false); // Release UI-lock on error
       toast.error("Ошибка при начале звонка", {
-        description: "Попробуйте ещё раз",
+        description: "Попробуйте еще раз",
         duration: 4000,
       });
       return null;
