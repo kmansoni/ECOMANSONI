@@ -34,7 +34,7 @@ describe("AdminVerificationsPage owner approval flow", () => {
             user_id: "u-owner",
             verification_type: "owner",
             is_active: true,
-            verified_at: "2026-02-22T10:00:00.000Z",
+            verified_at: "2026-02-24T10:00:00.000Z",
             verified_by_admin_id: "a-1",
             revoked_at: null,
             revoked_by_admin_id: null,
@@ -44,7 +44,7 @@ describe("AdminVerificationsPage owner approval flow", () => {
         ];
       }
       if (action === "approvals.request") {
-        return { id: "appr-1", status: "pending", requested_at: "2026-02-22T10:01:00.000Z" };
+        return { id: "appr-1", status: "pending", requested_at: "2026-02-24T10:01:00.000Z" };
       }
       return {};
     });

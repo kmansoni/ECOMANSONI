@@ -1,8 +1,8 @@
 {
-  "version_id": "rank_v2_20260222_01",
+  "version_id": "rank_v2_20260224_01",
   "stage": "rollout.stage_10pct",
   "baseline_version_id": "rank_v1_20260210_01",
-  "started_at": "2026-02-22T10:00:00Z",
+  "started_at": "2026-02-24T10:00:00Z",
   "ended_at": null,
   "status": "continued",
   "guardrail_snapshot": {

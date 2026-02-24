@@ -34,7 +34,7 @@ describe("AdminUsersPage approval flows", () => {
             email: "security@example.com",
             display_name: "Security Admin",
             status: "active",
-            created_at: "2026-02-22T10:00:00.000Z",
+            created_at: "2026-02-24T10:00:00.000Z",
             last_login_at: null,
             admin_user_roles: [
               {

@@ -104,7 +104,7 @@ describe("AdminHashtagModerationPage hashtag status update", () => {
       {
         hashtag: "example",
         status: "normal",
-        status_updated_at: "2026-02-22T10:00:00Z",
+        status_updated_at: "2026-02-24T10:00:00Z",
         created_at: "2026-01-01T00:00:00Z",
         usage_count: 1000,
       },
@@ -135,7 +135,7 @@ describe("AdminHashtagModerationPage hashtag status update", () => {
       {
         hashtag: "trending",
         status: "normal",
-        status_updated_at: "2026-02-22T10:00:00Z",
+        status_updated_at: "2026-02-24T10:00:00Z",
         created_at: "2026-01-01T00:00:00Z",
         usage_count: 5000,
       },
@@ -199,7 +199,7 @@ describe("AdminHashtagModerationPage hashtag status update", () => {
           {
             hashtag: "trending",
             status: "normal",
-            status_updated_at: "2026-02-22T10:00:00Z",
+            status_updated_at: "2026-02-24T10:00:00Z",
             created_at: "2026-01-01T00:00:00Z",
             usage_count: 5000,
           },
