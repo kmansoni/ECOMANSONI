@@ -48,27 +48,37 @@ export function KpiDashboardPage() {
 
   async function loadDashboardData() {
     try {
-      // Load latest KPI snapshot
-      const { data: snapshots, error: snapshotError } = await supabase
-        .from("kpi_daily_snapshots")
-        .select("*")
-        .order("snapshot_date", { ascending: false })
-        .limit(1);
+      // Use RPC to get latest KPI snapshot (bypasses TypeScript table definitions)
+      const { data: kpiSnapshot, error: kpiError } = await supabase
+        .rpc("get_kpi_dashboard_v1" as any)
+        .single();
 
-      if (snapshotError) throw snapshotError;
-      if (snapshots && snapshots.length > 0) {
-        setKpiData(snapshots[0]);
+      if (kpiError) {
+        console.error("KPI RPC error:", kpiError);
+        // Fall back to direct table access with type assertion
+        const { data: snapshots, error: snapshotError } = await (supabase as any)
+          .from("kpi_daily_snapshots")
+          .select("*")
+          .order("snapshot_date", { ascending: false })
+          .limit(1);
+
+        if (snapshotError) throw snapshotError;
+        if (snapshots && snapshots.length > 0) {
+          setKpiData(snapshots[0] as KpiSnapshot);
+        }
+      } else {
+        setKpiData(kpiSnapshot as KpiSnapshot);
       }
 
-      // Load active guardrail alerts
-      const { data: alertData, error: alertError } = await supabase
+      // Load active guardrail alerts (with type assertion)
+      const { data: alertData, error: alertError } = await (supabase as any)
         .from("guardrail_alerts")
         .select("*")
         .eq("status", "active")
         .order("created_at", { ascending: false });
 
       if (alertError) throw alertError;
-      setAlerts(alertData || []);
+      setAlerts((alertData || []) as GuardrailAlert[]);
     } catch (error) {
       console.error("Failed to load KPI data:", error);
       toast.error("Failed to load dashboard data");
