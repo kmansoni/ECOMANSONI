@@ -16,6 +16,14 @@ import { Loader2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 
+// Type definitions
+interface SessionCreateResult {
+  session_id: number;
+  error: string | null;
+}
+import { supabase } from "@/lib/supabase";
+import { toast } from "sonner";
+
 const CATEGORIES = ["music", "gaming", "chat", "performance", "other"];
 
 /**
@@ -41,13 +49,13 @@ export function LiveSetupSheet() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Not authenticated");
 
-      const { data, error } = await supabase.rpc("broadcast_create_session_v1", {
+      const { data, error } = await (supabase.rpc("broadcast_create_session_v1", {
         p_creator_id: user.id,
         p_title: title,
-        p_description: description || null,
+        p_description: description,
         p_category: category,
         p_thumbnail_url: null,
-      });
+      }) as any);
 
       if (error) throw error;
 

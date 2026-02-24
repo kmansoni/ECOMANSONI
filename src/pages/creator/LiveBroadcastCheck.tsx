@@ -8,6 +8,12 @@ import { Loader2, AlertTriangle, CheckCircle2, Clock } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 
+// Type definitions (Supabase gen types will include these)
+interface EligibilityResult {
+  eligible: boolean;
+  reason: string | null;
+}
+
 /**
  * LiveBroadcastCheck
  * Step 1: Check creator eligibility and session limits
@@ -33,25 +39,23 @@ export function LiveBroadcastCheck() {
       }
 
       // Call eligibility RPC
-      const { data, error } = await supabase.rpc("is_eligible_for_live_v1", {
+      const { data, error } = await (supabase.rpc("is_eligible_for_live_v1", {
         p_creator_id: user.id,
-      });
+      }) as any);
 
       if (error) throw error;
 
-      if (data && data.length > 0) {
-        const result = data[0];
-        setEligible(result.eligible);
-        setReason(result.reason);
-      }
+      const result = data as EligibilityResult;
+      setEligible(result.eligible);
+      setReason(result.reason);
 
       // Get today's session count
-      const { data: sessions } = await supabase
-        .from("live_sessions")
+      const { data: sessions } = await (supabase
+        .from("live_sessions" as any)
         .select("id")
         .eq("creator_id", user.id)
         .gte("started_at", new Date(new Date().setHours(0, 0, 0, 0)).toISOString())
-        .in("status", ["live", "ended", "preparing"]);
+        .in("status", ["live", "ended", "preparing"]) as any);
 
       setSessionsToday(sessions?.length || 0);
     } catch (error: any) {

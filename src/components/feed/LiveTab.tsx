@@ -34,12 +34,12 @@ export function LiveTab() {
 
   async function loadLiveSessions() {
     try {
-      const { data, error } = await supabase.rpc("get_active_live_sessions_v1", {
+      const { data, error } = await (supabase.rpc("get_active_live_sessions_v1", {
         p_limit: 20,
-      });
+      }) as any);
 
       if (error) throw error;
-      setSessions(data || []);
+      setSessions(data as LiveSession[] || []);
     } catch (error) {
       console.error("Failed to load live sessions:", error);
     } finally {

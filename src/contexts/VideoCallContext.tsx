@@ -4,6 +4,7 @@ import { useIncomingCalls } from "@/hooks/useIncomingCalls";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { onNativeCallAction } from "@/lib/native/callBridge";
+import { supabase } from "@/integrations/supabase/client";
 
 interface VideoCallContextType {
   // State

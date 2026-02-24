@@ -8,6 +8,13 @@ import { Loader2, Send, Flag, Users, UserPlus } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 
+interface LiveSession {
+  id: number;
+  creator_id: string;
+  title: string;
+  viewer_count_current: number;
+}
+
 interface ChatMessage {
   id: number;
   content: string;

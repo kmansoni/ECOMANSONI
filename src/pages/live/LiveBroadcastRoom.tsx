@@ -75,7 +75,7 @@ const navigate = useNavigate();
         .single();
 
       if (error) throw error;
-      setSession(data);
+      setSession(data as LiveSession);
       setViewerCount(data.viewer_count_current || 0);
 
       const startTime = new Date(data.started_at).getTime();
