@@ -1,4 +1,4 @@
-import { Settings, Grid3X3, Bookmark, Play, Plus, Share2, Eye, User, Loader2, Edit3, QrCode, AtSign } from "lucide-react";
+import { Settings, Grid3X3, Bookmark, Play, Plus, Share2, Eye, User, Loader2, Edit3, QrCode, AtSign, TrendingUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -171,12 +171,21 @@ export function ProfilePage() {
             <h1 className="font-semibold text-lg text-foreground">{profile.display_name || 'Профиль'}{(profile as any).status_emoji ? ` ${(profile as any).status_emoji}` : ""}</h1>
             {profile.verified && <VerifiedBadge size="md" />}
           </div>
-          <button 
-            onClick={() => navigate('/settings')}
-            className="w-10 h-10 rounded-full bg-card/80 backdrop-blur-xl border border-border flex items-center justify-center hover:bg-muted/50 transition-colors"
-          >
-            <Settings className="w-5 h-5 text-foreground" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={() => navigate('/analytics')}
+              className="w-10 h-10 rounded-full bg-card/80 backdrop-blur-xl border border-border flex items-center justify-center hover:bg-muted/50 transition-colors"
+              aria-label="Аналитика"
+            >
+              <TrendingUp className="w-5 h-5 text-foreground" />
+            </button>
+            <button 
+              onClick={() => navigate('/settings')}
+              className="w-10 h-10 rounded-full bg-card/80 backdrop-blur-xl border border-border flex items-center justify-center hover:bg-muted/50 transition-colors"
+            >
+              <Settings className="w-5 h-5 text-foreground" />
+            </button>
+          </div>
         </div>
 
         {/* Profile Info Row */}

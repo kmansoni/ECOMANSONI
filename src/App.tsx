@@ -31,6 +31,7 @@ const SearchPage = lazy(() => import("@/pages/SearchPage").then(m => ({ default:
 const ChatsPage = lazy(() => import("@/pages/ChatsPage").then(m => ({ default: m.ChatsPage })));
 const ProfilePage = lazy(() => import("@/pages/ProfilePage").then(m => ({ default: m.ProfilePage })));
 const EditProfilePage = lazy(() => import("@/pages/EditProfilePage").then(m => ({ default: m.EditProfilePage })));
+const CreatorAnalyticsDashboard = lazy(() => import("@/pages/CreatorAnalyticsDashboard").then(m => ({ default: m.default })));
 const UserProfilePage = lazy(() => import("@/pages/UserProfilePage").then(m => ({ default: m.UserProfilePage })));
 const ContactProfilePage = lazy(() => import("@/pages/ContactProfilePage").then(m => ({ default: m.ContactProfilePage })));
 const ReelsPage = lazy(() => import("@/pages/ReelsPage").then(m => ({ default: m.ReelsPage })));
@@ -206,6 +207,11 @@ const App = () => {
                     <Route path="/profile/edit" element={
                       <Suspense fallback={<PageLoader />}>
                         <EditProfilePage />
+                      </Suspense>
+                    } />
+                    <Route path="/analytics" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <CreatorAnalyticsDashboard />
                       </Suspense>
                     } />
                     <Route path="/settings" element={
