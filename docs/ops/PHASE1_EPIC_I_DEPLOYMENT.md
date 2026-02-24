@@ -1,8 +1,11 @@
 # Phase 1 EPIC I: Ranking v2 Implementation Summary
 
-## Status: ✅ **COMPLETE**
+## Status: ✅ **COMPLETE (Including Feed Integration)**
 
-All Phase 1 EPIC I (Ranking v2) database components have been deployed.
+All Phase 1 EPIC I (Ranking v2) database components + feed integration have been deployed.
+
+**Latest Migration**: `20260224164000_phase1_i_feed_integration.sql`  
+**Algorithm Version**: `v2.epic-i`
 
 ---
 
@@ -131,36 +134,65 @@ All Phase 1 EPIC I (Ranking v2) database components have been deployed.
 
 ### Feed RPC (`get_reels_feed_v2`) Integration
 
-**Expected Changes**:
+**Status**: ✅ **INTEGRATED** (Migration `20260224164000`)
+
+**Changes Implemented**:
 
 1. **Controversial Penalty** (in scoring):
    ```sql
-   controversial_penalty := get_controversial_penalty_v1(reel_id);
-   final_score := base_score - controversial_penalty;
+   -- Added in candidates CTE
+   COALESCE(public.get_controversial_penalty_v1(r.id), 0.0) AS controversial_penalty
+   
+   -- Applied in exploitation/exploration scoring
+   final_score := base_score - controversial_penalty
    ```
 
 2. **Diversity Config** (before candidate selection):
    ```sql
-   diversity_config := get_diversity_config_v1(user_id);
-   exploration_ratio := diversity_config.exploration_ratio; -- 0.20 or 0.40
+   -- Added at function start
+   SELECT * INTO v_diversity_config
+   FROM public.get_diversity_config_v1(v_user_id);
+   
+   IF v_diversity_config.is_echo_chamber THEN
+     v_effective_exploration_ratio := GREATEST(v_effective_exploration_ratio, v_diversity_config.exploration_ratio);
+     v_echo_chamber_detected := TRUE;
+   END IF;
    ```
 
 3. **Author Fatigue Penalty** (in scoring loop):
    ```sql
-   author_penalty := get_author_fatigue_penalty_v1(user_id, author_id);
-   final_score := base_score - author_penalty;
+   -- Added in candidates CTE
+   CASE
+     WHEN v_user_id IS NOT NULL THEN COALESCE(public.get_author_fatigue_penalty_v1(v_user_id, r.author_id, 168), 0.0)
+     ELSE 0.0
+   END AS author_fatigue_penalty
+   
+   -- Applied in exploitation/exploration scoring
+   final_score := base_score - author_fatigue_penalty
    ```
 
 4. **Ranking Explanation** (after ranking):
    ```sql
-   PERFORM record_ranking_explanation_v1(
-     user_id, session_id, request_id, reel_id, position,
-     source_pool, final_score, base_score,
-     boosts := '[{"name": "freshness", "value": 15.5}]'::jsonb,
-     penalties := '[{"name": "author_fatigue", "value": 20.0}]'::jsonb,
+   -- Added after final SELECT (async, best effort)
+   PERFORM public.record_ranking_explanation_v1(
+     p_request_id := v_request_id,
+     p_user_id := v_user_id,
+     p_reel_id := c.id,
+     p_source_pool := c.source_pool,
+     p_final_score := c.final_score,
+     p_base_score := c.tiktok_quality_score,
+     p_boosts := jsonb_build_object(...),
+     p_penalties := jsonb_build_object(...),
+     p_diversity_constraints := jsonb_build_object(...),
      ...
-   );
+   )
+   FROM combined c;
    ```
+
+**New Feed Return Fields**:
+- `request_id` (UUID) - Links to `ranking_explanations` table
+- `feed_position` (INTEGER) - Position in feed (1-based)
+- `algorithm_version` (TEXT) - Now returns `'v2.epic-i'`
 
 ---
 
@@ -248,21 +280,30 @@ All Phase 1 EPIC I (Ranking v2) database components have been deployed.
 
 ## Next Steps (Phase 1 EPIC I)
 
-### Required Integrations:
-1. ✅ Database schema deployed
-2. ⬜ **Update `get_reels_feed_v2` RPC** to call:
-   - `get_controversial_penalty_v1`
-   - `get_diversity_config_v1`
-   - `get_author_fatigue_penalty_v1`
-   - `record_ranking_explanation_v1`
+### Completed:
+1. ✅ Database schema deployed (migrations 161000, 162000, 163000)
+2. ✅ **Feed RPC integration** (migration 164000):
+   - `get_controversial_penalty_v1` ✅
+   - `get_diversity_config_v1` ✅
+   - `get_author_fatigue_penalty_v1` ✅
+   - `record_ranking_explanation_v1` ✅
+
+### Remaining Work:
+3. ⬜ **Deploy background workers** (Priority: HIGH):
+   - Controversial scanner (`batch_check_controversial_v1`) - Every 1 hour
+   - Diversity analyzer (`batch_analyze_diversity_v1`) - Every 6 hours
+   - Cleanup jobs (expired flags, old explanations) - Every 24 hours
    
-3. ⬜ **Deploy background workers**:
-   - Controversial scanner (pg_cron or Edge Function)
-   - Diversity analyzer (pg_cron or Edge Function)
-   
-4. ⬜ **Frontend components**:
-   - Ranking explanation UI
-   - Diversity indicator
+4. ⬜ **Frontend components** (Priority: MEDIUM):
+   - Ranking explanation UI (use `get_ranking_explanation_v1`)
+   - Diversity indicator (show echo chamber status)
+   - Controversial content badge (for admins)
+
+5. ⬜ **Monitoring & Metrics** (Priority: HIGH):
+   - Track controversial_items_detected_per_day
+   - Track echo_chamber_users_count
+   - Monitor author_diversity_index
+   - Alert on high controversial_penalty usage
 
 5. ⬜ **Canary rollout**:
    - Test with 1% traffic
