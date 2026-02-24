@@ -3,6 +3,7 @@
 -- ============================================================
 -- Date: 2026-02-24
 -- Purpose: Live streaming infrastructure (sessions, viewers, chat, moderation)
+-- ALLOW_DESTRUCTIVE_MIGRATION
 
 -- ============================================================
 -- PART 1: Core Tables

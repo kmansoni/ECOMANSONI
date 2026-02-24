@@ -110,7 +110,7 @@ export function isValidCyrillicText(text: string): boolean {
   const digitsPattern = /[\d]+/;
   
   // Allow any combination of Cyrillic, Latin, digits, and common punctuation
-  const allowedPattern = /^[a-zA-Z0-9\u0400-\u04FF\s\.,!?\-'"():;—–«»""\n\r]+$/;
+  const allowedPattern = /^[a-zA-Z0-9\u0400-\u04FF\s.,!?\-'"():;—–«»""\n\r]+$/;
   
   return allowedPattern.test(text) || cyrillicPattern.test(text) || latinPattern.test(text);
 }
