@@ -3,7 +3,7 @@
 **Date:** 2026-02-24  
 **Phase:** Phase 1 - PMF (Product-Market Fit)  
 **Goal:** Reels/UGC discovery, retention, creator loop  
-**Status:** EPIC H Complete ✅, EPIC L/M/I Deployed ✅
+**Status:** EPIC G Complete ✅, EPIC H/L/M/I Deployed ✅
 
 ---
 
@@ -12,10 +12,10 @@
 | Metric | Value |
 |--------|-------|
 | **EPICs Planned** | 8 (G, H, I, J, K, L, M, N) |
-| **EPICs Deployed** | 4 (L, M, I, H) |
+| **EPICs Deployed** | 5 (L, M, I, H, G) |
 | **EPICs In Progress** | 0 |
-| **EPICs Remaining** | 4 (G, J, K, N) |
-| **Completion** | 50% (4/8) |
+| **EPICs Remaining** | 3 (J, K, N) |
+| **Completion** | 62.5% (5/8) |
 
 ---
 
@@ -152,42 +152,71 @@
 - `hashtag_watch_rate`
 - `coordinated_attack_detection_rate`
 
+**Git Commit:** `a363a06` (feat: Phase 1 EPIC H - Hashtags + Trends (trust-weighted discovery))
+
+---
+
+### ✅ EPIC G — Explore/Discovery Surface  
+**Status:** 100% Complete (Deployed 2026-02-24)  
+**Migrations:** 2 migrations (20260224180000 → 181000)  
+**Key Components:**
+
+**1. Explore Enhancements** (Migration 180000):
+- Categories system: 15 topic clusters (Entertainment, Music, Dance, Comedy, Food, Sports, etc.)
+- Hashtag-category mapping (many-to-many with relevance scores)
+- Enhanced fresh creators with quality filter (min 3 reels, min trust_score 30, max age 30 days)
+- `get_explore_categories_v1(limit_categories, limit_reels_per_category)`: Returns top reels per category with green content only
+- `get_explore_fresh_creators_v1(limit, min_reels, min_trust, max_age)`: Returns new creators with quality/trust filter
+- `get_explore_page_v2(user_id, segment_id, locale, country, allow_stale, force_refresh)`: Unified Explore API with 5 sections:
+  - **Trending Now**: Trust-weighted trending hashtags from EPIC H
+  - **Hashtags**: Top 20 by usage (normal status only)
+  - **Fresh Creators**: New accounts with quality filter
+  - **Categories**: Topic clusters with top 5 reels each
+  - **Recommended Reels**: Safe pool with higher exploration ratio (0.40 vs feed 0.20)
+- Caching: 120-second TTL
+- Algorithm version: `v2.epic-g`
+
+**2. Analytics & Metrics** (Migration 181000):
+- `explore_sessions` table: Tracks browsing sessions (duration, sections viewed/clicked, total clicks/watches)
+- `explore_section_clicks` table: Tracks individual clicks (section_type, item_type, item_id, position, did_watch, watch_duration)
+- Session management: `start_explore_session_v1()`, `end_explore_session_v1()`
+- Event tracking: `track_explore_click_v1()`, `update_explore_watch_v1()`
+- Metrics calculation:
+  - `calculate_explore_open_rate_v1(window_days)`: % of users who opened Explore
+  - `calculate_explore_to_watch_rate_v1(window_days)`: % of clicks that led to watch
+  - `calculate_explore_session_length_v1(window_days)`: Avg duration in seconds
+  - `calculate_explore_section_distribution_v1(window_days)`: Breakdown by section (clicks, %, avg position, watch rate)
+
+**Integration:**
+- EPIC H: Uses `get_trending_hashtags_v1()` for "Trending Now" section
+- EPIC L: Fresh creators filtered by `trust_profiles.trust_score >= 30`
+- EPIC I: Controversial content filtered (only green reels in Categories and Recommended)
+
+**Deployment:**
+- Database schema: ✅ Deployed (2 migrations)
+- RPC functions: ✅ Deployed (get_explore_page_v2, get_explore_categories_v1, get_explore_fresh_creators_v1, session/click tracking)
+- Analytics tracking: ✅ Deployed (sessions, clicks, watches, metrics calculation)
+- Frontend components: ⏳ Pending (ExplorePage, section components, tracking integration)
+- Documentation: [docs/ops/PHASE1_EPIC_G_DEPLOYMENT.md](docs/ops/PHASE1_EPIC_G_DEPLOYMENT.md)
+
+**Metrics to Track:**
+- `explore_open_rate` (Goal: > 30%)
+- `explore_to_watch_rate` (Goal: > 15%)
+- `explore_session_length` (Goal: > 60 seconds)
+- `explore_section_click_distribution` (Trending Now should be 20-30%)
+
 **Git Commit:** (pending)
 
 ---
 
 ## ⬜ Remaining EPICs (Priority Order)
 
-### EPIC G — Explore/Discovery Surface
-**Status:** Not Started  
-**Goal:** Pull-based discovery surface (categories, collections, trending, new creators)  
-**Dependencies:** Phase 0 Ranking baseline + EPIC I deployed + EPIC H deployed ✅  
-**Priority:** HIGH (next to implement)
-
-**Tasks:**
-- G1. Discovery UX Spec (D0.000 compliant)
-- G2. Candidate sources for Explore (trending, fresh, topic clusters)
-- G3. Discovery ranking contract (text/trend signal weights)
-- G4. Integration with EPIC H (use get_trending_hashtags_v1 for "Trending Now")
-
-**Metrics:**
-- `explore_open_rate`
-- `explore_to_watch_rate`
-- `explore_session_length`
-
----
-
-### EPIC H — Hashtags + Trends (trust-weighted)
-**Status:** 100% Complete ✅ (see above)
-
-
----
-
+### EPIC J — Creator Analytics
 ### EPIC J — Creator Analytics (minimal useful set)
 **Status:** Not Started  
 **Goal:** Retain creators with actionable insights  
-**Dependencies:** Event integrity + EPIC I (stable feed)  
-**Priority:** MEDIUM
+**Dependencies:** Event integrity + EPIC I (stable feed) + EPIC G Explore ✅  
+**Priority:** MEDIUM (next to implement)
 
 **Tasks:**
 - J1. Creator metrics spec (video-level + profile-level)
@@ -243,41 +272,41 @@
 ## Next Actions (Priority Order)
 
 ### Immediate (This Week):
-1. **Deploy EPIC H background workers** (HIGH):
-   - Set up `batch_update_trending_hashtags_v1` (pg_cron every 15-30 minutes)
-   - Set up coordinated attack detection worker (pg_cron every 1 hour)
-   - Set up `cleanup_trending_hashtags_v1` (pg_cron daily)
+1. **Deploy EPIC H + G background workers** (HIGH):
+   - EPIC H: `batch_update_trending_hashtags_v1` (pg_cron every 15-30 min)
+   - EPIC H: Coordinated attack detection (pg_cron every 1 hour)
+   - EPIC H: `cleanup_trending_hashtags_v1` (pg_cron daily)
 
 2. **Deploy EPIC I background workers** (HIGH):
    - Set up `batch_check_controversial_v1` (pg_cron every 1 hour)
    - Set up `batch_analyze_diversity_v1` (pg_cron every 6 hours)
    - Set up cleanup jobs (expired flags, old explanations)
 
-3. **Monitor EPIC H + I metrics** (HIGH):
+3. **Seed hashtag-category mappings** (HIGH):
+   - Map popular hashtags to categories (Entertainment, Music, Dance, etc.)
+   - Target: Each category has >= 20 hashtags
+   - Tools: Manual admin UI or SQL script
+
+4. **Monitor EPIC H + G metrics** (HIGH):
    - EPIC H: trending_hashtags_count, coordinated_attack_detection_rate
+   - EPIC G: explore_open_rate, explore_to_watch_rate, explore_session_length
    - EPIC I: controversial_items_detected_per_day, echo_chamber_users_count
    - Alert on anomalies
 
-4. **Start EPIC G (Explore/Discovery)** (HIGH):
-   - Review P1G spec: [docs/specs/phase1/P1G-explore-discovery-surface.md](docs/specs/phase1/P1G-explore-discovery-surface.md)
-   - Design Discovery UX (D0.000 compliant)
-   - Implement candidate sources (trending hashtags, fresh creators, safe pool)
-   - Integrate EPIC H APIs (get_trending_hashtags_v1 for "Trending Now" section)
-
 ### Short-term (Next 2 Weeks):
-5. **Implement EPIC G (Explore/Discovery)** (HIGH):
-   - Explore layout (Trending now, Hashtags, Fresh creators, Categories, Recommended grid)
-   - Explore ranking (less personalization, more diversity/freshness)
-   - Caching (60-180 sec TTL for sections)
+5. **Implement EPIC G frontend** (HIGH):
+   - ExplorePage.tsx with 5 sections
+   - Session tracking (start/end session, track clicks/watches)
+   - Section components: TrendingNow, Hashtags, FreshCreators, Categories, RecommendedReels
 
-6. **Implement EPIC J (Creator Analytics)** (MEDIUM):
-   - Creator metrics schema
-   - Creator insights UI
-
-7. **Implement EPIC H frontend** (MEDIUM):
+6. **Implement EPIC H frontend** (MEDIUM):
    - HashtagPage with Top/Recent/Trending tabs
    - TrendingHashtagsList widget
    - Search autocomplete
+
+7. **Implement EPIC J (Creator Analytics)** (MEDIUM):
+   - Creator metrics schema
+   - Creator insights UI
 
 ### Long-term (3-4 Weeks):
 8. **Implement EPIC K (Moderation v1)** (MEDIUM):
@@ -300,13 +329,17 @@
    - Impact: Trending hashtags not updated, controversial content not flagged, echo chambers not detected
    - Mitigation: Deploy pg_cron jobs this week
 
-2. **No frontend for hashtag pages / explainability** (EPIC H + I):
-   - Impact: Users/admins can't see hashtag surfaces or ranking explanations
-   - Mitigation: Can be separate PR, not blocking backend functionality
+2. **No frontend for Explore / hashtag pages / explainability** (EPIC G + H + I):
+   - Impact: Users can't access discovery features, hashtag navigation, or see ranking explanations
+   - Mitigation: Backend 100% complete, frontend can be separate PRs
 
-3. **EPIC G depends heavily on EPIC H**:
-   - Impact: Discovery surface needs trending hashtags for "Trending Now" section
-   - Mitigation: EPIC H backend complete ✅, can start EPIC G now
+3. **Hashtag-category mappings not seeded** (EPIC G):
+   - Impact: Categories section empty in Explore
+   - Mitigation: Seed mappings via admin UI or SQL script this week
+
+4. **Low explore_open_rate risk**:
+   - Impact: If users don't engage with Explore, discovery metrics will be poor
+   - Mitigation: A/B test Explore tab prominence, monitor metrics closely
 
 ---
 
@@ -317,15 +350,15 @@ Phase 1 is complete when:
 - ✅ Observability v1 (EPIC M) with guardrails/auto-rollback working
 - ✅ Ranking v2 (EPIC I) with diversity/cold-start/negative feedback
 - ✅ Hashtags + trends (EPIC H) working without cheap manipulation
-- ⬜ Explore/Discovery surface (EPIC G) available
+- ✅ Explore/Discovery surface (EPIC G) available (backend complete, frontend pending)
 - ⬜ Creator analytics (EPIC J) driving creator return rate
 - ⬜ Moderation v1 (EPIC K) meeting SLA with appeals
 - ⬜ All UI changes comply with D0.000
 - ⬜ KPI growth (retention, session duration, completion rate) with stable guardrails
 
-**Current Progress:** 4/7 core EPICs complete (L, M, I, H)  
-**Remaining EPICs:** G, J, K (N is conditional)  
-**Estimated Time to Complete:** 4-6 weeks (based on phase1-pmf-execution-plan.md estimate of 10-16 weeks total)
+**Current Progress:** 5/7 core EPICs complete (L, M, I, H, G)  
+**Remaining EPICs:** J, K (N is conditional)  
+**Estimated Time to Complete:** 2-4 weeks (based on phase1-pmf-execution-plan.md estimate of 10-16 weeks total)
 
 ---
 
@@ -341,9 +374,11 @@ Phase 1 is complete when:
 | 20260224164000 | I | Feed Integration |
 | 20260224170000 | H | Trend Engine |
 | 20260224171000 | H | Hashtag Surfaces + Anti-hijack |
+| 20260224180000 | G | Explore Enhancements |
+| 20260224181000 | G | Explore Analytics |
 
-**Total Migrations Deployed:** 16  
-**Total Migrations Remaining:** ~10-15 (estimated for EPIC G/H/J/K)
+**Total Migrations Deployed:** 18  
+**Total Migrations Remaining:** ~6-10 (estimated for EPIC J/K)
 
 ---
 
