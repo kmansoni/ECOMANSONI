@@ -22,6 +22,7 @@ import { toast } from "sonner";
 import { ReelCommentsSheet } from "@/components/reels/ReelCommentsSheet";
 import { ReelShareSheet } from "@/components/reels/ReelShareSheet";
 import { VerifiedBadge } from "@/components/ui/verified-badge";
+import { RankingExplanation } from "@/components/reel/RankingExplanation";
 
 const REELS_NAV_COOLDOWN_MS = 350;
 const REELS_WHEEL_THRESHOLD_PX = 18;
@@ -861,13 +862,22 @@ export function ReelsPage() {
               </p>
             )}
             {reel.music_title && (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 mb-3">
                 <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-secondary flex items-center justify-center animate-spin-slow">
                   <Music2 className="w-4 h-4 text-white" />
                 </div>
                 <span className="text-white/80 text-sm">{reel.music_title}</span>
               </div>
             )}
+            <div className="text-white/80">
+              <RankingExplanation
+                algorithm_version={reel.algorithm_version}
+                final_score={reel.final_score}
+                ranking_reason={reel.ranking_reason}
+                source_pool={reel.source_pool}
+                feed_position={reel.feed_position}
+              />
+            </div>
           </div>
         </div>
       ))}

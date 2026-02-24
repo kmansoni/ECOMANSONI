@@ -97,11 +97,13 @@ export interface Reel {
   isLiked?: boolean;
   isSaved?: boolean;
   isReposted?: boolean;
-  // Professional impression tracking metadata
+  // EPIC I: Ranking explanation (why this reel was ranked/shown)
   request_id?: string;
   feed_position?: number;
   algorithm_version?: string;
   final_score?: number;
+  ranking_reason?: string;
+  source_pool?: string;
 }
 
 export type ReelsFeedMode = "reels" | "friends";
