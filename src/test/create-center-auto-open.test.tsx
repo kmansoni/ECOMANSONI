@@ -49,7 +49,10 @@ describe("CreateCenterPage auto-open", () => {
     const { CreateCenterPage } = await import("@/pages/CreateCenterPage");
 
     render(
-      <MemoryRouter initialEntries={["/create?tab=reels&auto=1"]}>
+      <MemoryRouter
+        initialEntries={["/create?tab=reels&auto=1"]}
+        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+      >
         <Routes>
           <Route path="/create" element={<CreateCenterPage />} />
         </Routes>
@@ -66,7 +69,10 @@ describe("CreateCenterPage auto-open", () => {
     const { CreateCenterPage } = await import("@/pages/CreateCenterPage");
 
     render(
-      <MemoryRouter initialEntries={["/create?tab=post&auto=1"]}>
+      <MemoryRouter
+        initialEntries={["/create?tab=post&auto=1"]}
+        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+      >
         <Routes>
           <Route path="/create" element={<CreateCenterPage />} />
         </Routes>
@@ -83,7 +89,10 @@ describe("CreateCenterPage auto-open", () => {
     const { CreateCenterPage } = await import("@/pages/CreateCenterPage");
 
     render(
-      <MemoryRouter initialEntries={["/create?tab=story&auto=1"]}>
+      <MemoryRouter
+        initialEntries={["/create?tab=story&auto=1"]}
+        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+      >
         <Routes>
           <Route path="/create" element={<CreateCenterPage />} />
         </Routes>

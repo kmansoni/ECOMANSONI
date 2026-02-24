@@ -1,10 +1,9 @@
 import { useState, useRef, useEffect } from "react";
 import { X, ChevronLeft, ChevronRight, Music, Type, Layers, Sparkles, SlidersHorizontal, Users, MapPin, MessageSquare, HelpCircle, Eye, ImagePlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 import { Switch } from "@/components/ui/switch";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
-import { useChatOpen } from "@/contexts/ChatOpenContext";
+import { SimpleMediaEditor } from "@/components/editor";
 
 interface PostEditorFlowProps {
   isOpen: boolean;
@@ -42,8 +41,14 @@ const suggestedTracks = [
 ];
 
 type Step = "gallery" | "editor" | "details";
-type ContentType = "post" | "story" | "video";
 
+type MediaItem = {
+  id: string;
+  src: string;
+  isVideo?: boolean;
+  views?: number;
+  file?: File;
+};
 export function PostEditorFlow({
   isOpen,
   onClose,
@@ -51,21 +56,17 @@ export function PostEditorFlow({
   initialUrls,
   initialStep,
 }: PostEditorFlowProps) {
-  const { setIsCreatingContent } = useChatOpen();
   const [step, setStep] = useState<Step>("gallery");
-  const [contentType, setContentType] = useState<ContentType>("post");
   const [selectedImages, setSelectedImages] = useState<string[]>([]);
   const [caption, setCaption] = useState("");
   const [aiLabel, setAiLabel] = useState(false);
-  const [deviceImages, setDeviceImages] = useState<{ id: string; src: string }[]>([]);
+  const [deviceImages, setDeviceImages] = useState<MediaItem[]>([]);
+  const [showEditor, setShowEditor] = useState(false);
+  const [editingSrc, setEditingSrc] = useState<string | null>(null);
+  const [editingFile, setEditingFile] = useState<File | null>(null);
+  const [isPreparingEdit, setIsPreparingEdit] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const initialAppliedRef = useRef(false);
-
-  // Hide bottom nav when creating content
-  useEffect(() => {
-    setIsCreatingContent(isOpen);
-    return () => setIsCreatingContent(false);
-  }, [isOpen, setIsCreatingContent]);
 
   // Optional: pre-seed selection from /create.
   useEffect(() => {
@@ -83,11 +84,14 @@ export function PostEditorFlow({
     const seededFromFiles = files.map((file, index) => ({
       id: `seed-${Date.now()}-${index}`,
       src: URL.createObjectURL(file),
+      isVideo: String(file.type || "").startsWith("video/"),
+      file,
     }));
 
     const seededFromUrls = urls.map((src, index) => ({
       id: `seed-url-${Date.now()}-${index}`,
       src,
+      isVideo: inferIsVideo(src),
     }));
 
     const seededDeviceImages = [...seededFromFiles, ...seededFromUrls];
@@ -110,11 +114,26 @@ export function PostEditorFlow({
     const newImages = files.map((file, index) => ({
       id: `device-${Date.now()}-${index}`,
       src: URL.createObjectURL(file),
+      isVideo: String(file.type || "").startsWith("video/"),
+      file,
     }));
     setDeviceImages(prev => [...newImages, ...prev]);
   };
 
-  const allImages = deviceImages.length > 0 
+  const inferIsVideo = (src: string) => {
+    const lower = String(src || "").toLowerCase();
+    return /(\.mp4|\.webm|\.mov|\.avi|\.m4v)(\?|#|$)/.test(lower);
+  };
+
+  const resolveIsVideo = (src: string) => {
+    const deviceMatch = deviceImages.find((img) => img.src === src);
+    if (deviceMatch) return !!deviceMatch.isVideo;
+    const mockMatch = mockGalleryImages.find((img) => img.src === src);
+    if (mockMatch && "isVideo" in mockMatch) return !!mockMatch.isVideo;
+    return inferIsVideo(src);
+  };
+
+  const allImages: MediaItem[] = deviceImages.length > 0 
     ? deviceImages 
     : mockGalleryImages;
 
@@ -142,11 +161,93 @@ export function PostEditorFlow({
     }
   };
 
+  const resolveFileForEdit = async (src: string): Promise<File | null> => {
+    const deviceMatch = deviceImages.find((img) => img.src === src);
+    if (deviceMatch?.file) return deviceMatch.file;
+
+    try {
+      const response = await fetch(src);
+      const blob = await response.blob();
+      const ext = (blob.type.split("/")[1] || "jpg").toLowerCase();
+      const name = `edit-${Date.now()}.${ext}`;
+      return new File([blob], name, { type: blob.type });
+    } catch {
+      return null;
+    }
+  };
+
+  const handleEditClick = async () => {
+    const src = selectedImages[0];
+    if (!src || isPreparingEdit) return;
+
+    setIsPreparingEdit(true);
+    const file = await resolveFileForEdit(src);
+    setIsPreparingEdit(false);
+
+    if (!file) return;
+    setEditingSrc(src);
+    setEditingFile(file);
+    setShowEditor(true);
+  };
+
+  const handleEditorSave = (blob: Blob) => {
+    if (!editingSrc) return;
+
+    const newFile = new File([blob], editingFile?.name || "edited-media", { type: blob.type });
+    const newSrc = URL.createObjectURL(blob);
+
+    setSelectedImages((prev) => prev.map((s) => (s === editingSrc ? newSrc : s)));
+    setDeviceImages((prev) => {
+      const idx = prev.findIndex((img) => img.src === editingSrc);
+      if (idx === -1) {
+        return [
+          {
+            id: `edited-${Date.now()}`,
+            src: newSrc,
+            isVideo: String(newFile.type || "").startsWith("video/"),
+            file: newFile,
+          },
+          ...prev,
+        ];
+      }
+
+      const next = [...prev];
+      const prevItem = next[idx];
+      if (prevItem.src.startsWith("blob:")) {
+        try {
+          URL.revokeObjectURL(prevItem.src);
+        } catch {
+          // ignore
+        }
+      }
+      next[idx] = {
+        ...prevItem,
+        src: newSrc,
+        file: newFile,
+        isVideo: String(newFile.type || "").startsWith("video/"),
+      };
+      return next;
+    });
+
+    if (editingSrc.startsWith("blob:")) {
+      try {
+        URL.revokeObjectURL(editingSrc);
+      } catch {
+        // ignore
+      }
+    }
+
+    setEditingSrc(null);
+    setEditingFile(null);
+    setShowEditor(false);
+  };
+
   const handlePublish = () => {
     console.log("Publishing:", { selectedImages, caption, aiLabel });
     setStep("gallery");
     setSelectedImages([]);
     setCaption("");
+    setAiLabel(false);
     onClose();
   };
 
@@ -154,6 +255,7 @@ export function PostEditorFlow({
     setStep("gallery");
     setSelectedImages([]);
     setCaption("");
+    setAiLabel(false);
     // Clean up object URLs
     deviceImages.forEach((img) => {
       if (img?.src && img.src.startsWith("blob:")) {
@@ -165,6 +267,9 @@ export function PostEditorFlow({
       }
     });
     setDeviceImages([]);
+    setEditingSrc(null);
+    setEditingFile(null);
+    setShowEditor(false);
     onClose();
   };
 
@@ -186,7 +291,7 @@ export function PostEditorFlow({
       {step === "gallery" && (
         <>
           {/* Header */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-border safe-area-top">
+          <div className="flex items-center justify-between px-4 h-12 border-b border-border safe-area-top">
             <Button variant="ghost" size="icon" onClick={handleClose}>
               <X className="w-6 h-6" />
             </Button>
@@ -215,15 +320,26 @@ export function PostEditorFlow({
                   }}
                 />
                 <div className="absolute inset-0 bg-black/20" />
-                <img 
-                  src={selectedImages[0]} 
-                  alt="Selected" 
-                  className="relative w-full h-full object-contain"
-                />
+                {resolveIsVideo(selectedImages[0]) ? (
+                  <video
+                    src={selectedImages[0]}
+                    className="relative w-full h-full object-contain"
+                    playsInline
+                    muted
+                    loop
+                    autoPlay
+                  />
+                ) : (
+                  <img 
+                    src={selectedImages[0]} 
+                    alt="Selected" 
+                    className="relative w-full h-full object-contain"
+                  />
+                )}
               </>
             ) : (
               <div className="w-full h-full bg-muted/30 flex items-center justify-center text-muted-foreground">
-                Выберите фото
+                Выберите медиа
               </div>
             )}
           </div>
@@ -265,11 +381,11 @@ export function PostEditorFlow({
                     alt="" 
                     className="w-full h-full object-cover"
                   />
-                  {'isVideo' in img && (img as { isVideo?: boolean }).isVideo && (
+                  {img.isVideo && (
                     <div className="absolute bottom-1 left-1 flex items-center gap-1">
                       <Eye className="w-3 h-3 text-white" />
                       <span className="text-white text-xs">
-                        {'views' in img ? String((img as { views?: number }).views) : ''}
+                        {img.views ? String(img.views) : ''}
                       </span>
                     </div>
                   )}
@@ -285,25 +401,9 @@ export function PostEditorFlow({
             </div>
           </div>
 
-          {/* Content Type Tabs */}
           <div className="border-t border-border safe-area-bottom">
-            <div className="flex justify-center gap-8 py-4">
-              {[
-                { id: "post", label: "ПУБЛИКАЦИЯ" },
-                { id: "story", label: "ИСТОРИЯ" },
-                { id: "video", label: "ВИДЕО" },
-              ].map((type) => (
-                <button
-                  key={type.id}
-                  onClick={() => setContentType(type.id as ContentType)}
-                  className={cn(
-                    "text-sm font-semibold transition-colors",
-                    contentType === type.id ? "text-foreground" : "text-muted-foreground"
-                  )}
-                >
-                  {type.label}
-                </button>
-              ))}
+            <div className="flex justify-center py-4 text-xs text-muted-foreground">
+              Тип контента выбирается в центре создания.
             </div>
           </div>
         </>
@@ -334,11 +434,22 @@ export function PostEditorFlow({
 
             {/* Image */}
             <div className="absolute inset-0 flex items-center justify-center p-4">
-              <img 
-                src={selectedImages[0]} 
-                alt="Edit" 
-                className="max-w-full max-h-full object-contain rounded-2xl shadow-2xl"
-              />
+              {resolveIsVideo(selectedImages[0]) ? (
+                <video
+                  src={selectedImages[0]}
+                  className="max-w-full max-h-full object-contain rounded-2xl shadow-2xl"
+                  playsInline
+                  muted
+                  loop
+                  autoPlay
+                />
+              ) : (
+                <img 
+                  src={selectedImages[0]} 
+                  alt="Edit" 
+                  className="max-w-full max-h-full object-contain rounded-2xl shadow-2xl"
+                />
+              )}
             </div>
           </div>
 
@@ -347,8 +458,14 @@ export function PostEditorFlow({
             <div className="flex justify-around py-4">
               {editorTools.map((tool) => {
                 const Icon = tool.icon;
+                const isEdit = tool.id === "edit";
                 return (
-                  <button key={tool.id} className="flex flex-col items-center gap-1.5">
+                  <button
+                    key={tool.id}
+                    className="flex flex-col items-center gap-1.5"
+                    onClick={isEdit ? handleEditClick : undefined}
+                    disabled={isEdit && (selectedImages.length === 0 || isPreparingEdit)}
+                  >
                     <div className="w-12 h-12 rounded-2xl bg-muted flex items-center justify-center">
                       <Icon className="w-5 h-5" />
                     </div>
@@ -375,12 +492,18 @@ export function PostEditorFlow({
       {step === "details" && (
         <>
           {/* Header */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-border safe-area-top">
+          <div className="flex items-center justify-between px-4 h-12 border-b border-border safe-area-top">
             <Button variant="ghost" size="icon" onClick={handleBack}>
               <ChevronLeft className="w-6 h-6" />
             </Button>
             <h1 className="font-semibold text-lg">Новая публикация</h1>
-            <div className="w-10" />
+            <Button
+              variant="link"
+              className="text-primary font-semibold px-0"
+              onClick={handlePublish}
+            >
+              Поделиться
+            </Button>
           </div>
 
           {/* Content */}
@@ -388,11 +511,22 @@ export function PostEditorFlow({
             {/* Preview */}
             <div className="p-4 flex justify-center">
               <div className="w-48 aspect-[3/4] rounded-xl overflow-hidden shadow-lg">
-                <img 
-                  src={selectedImages[0]} 
-                  alt="Preview" 
-                  className="w-full h-full object-cover"
-                />
+                {resolveIsVideo(selectedImages[0]) ? (
+                  <video
+                    src={selectedImages[0]}
+                    className="w-full h-full object-cover"
+                    playsInline
+                    muted
+                    loop
+                    autoPlay
+                  />
+                ) : (
+                  <img 
+                    src={selectedImages[0]} 
+                    alt="Preview" 
+                    className="w-full h-full object-cover"
+                  />
+                )}
               </div>
             </div>
 
@@ -459,6 +593,20 @@ export function PostEditorFlow({
                 <ChevronRight className="w-5 h-5 text-muted-foreground" />
               </button>
 
+              {/* Audience Settings */}
+              <button className="w-full flex items-center gap-4 px-4 py-4 border-b border-border">
+                <Eye className="w-6 h-6" />
+                <span className="flex-1 text-left font-medium">Настройки аудитории</span>
+                <ChevronRight className="w-5 h-5 text-muted-foreground" />
+              </button>
+
+              {/* Advanced Settings */}
+              <button className="w-full flex items-center gap-4 px-4 py-4 border-b border-border">
+                <SlidersHorizontal className="w-6 h-6" />
+                <span className="flex-1 text-left font-medium">Расширенные настройки</span>
+                <ChevronRight className="w-5 h-5 text-muted-foreground" />
+              </button>
+
               {/* AI Label */}
               <div className="flex items-start gap-4 px-4 py-4">
                 <Sparkles className="w-6 h-6 flex-shrink-0 mt-0.5" />
@@ -473,17 +621,22 @@ export function PostEditorFlow({
             </div>
           </div>
 
-          {/* Publish Button */}
-          <div className="px-4 py-4 border-t border-border safe-area-bottom">
-            <Button 
-              className="w-full rounded-full h-12 font-semibold text-base"
-              onClick={handlePublish}
-            >
-              Поделиться
-            </Button>
-          </div>
         </>
       )}
+
+      {/* Media Editor Modal */}
+      <SimpleMediaEditor
+        open={showEditor}
+        onOpenChange={setShowEditor}
+        mediaFile={editingFile}
+        contentType="post"
+        onSave={handleEditorSave}
+        onCancel={() => {
+          setEditingSrc(null);
+          setEditingFile(null);
+          setShowEditor(false);
+        }}
+      />
     </div>
   );
 }

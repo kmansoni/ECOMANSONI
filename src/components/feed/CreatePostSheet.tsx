@@ -222,7 +222,7 @@ export function CreatePostSheet({ isOpen, onClose }: CreatePostSheetProps) {
           {isUploading ? (
             <Loader2 className="w-4 h-4 animate-spin" />
           ) : (
-            "Опубликовать"
+            "Поделиться"
           )}
         </Button>
       </div>

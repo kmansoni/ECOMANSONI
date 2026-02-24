@@ -113,7 +113,7 @@ describe("CreateReelSheet idempotency (P0C)", () => {
     expect(input).toBeTruthy();
     fireEvent.change(input, { target: { files: [file] } });
 
-    const publish = await screen.findByRole("button", { name: "Опубликовать" });
+    const publish = await screen.findByRole("button", { name: "Поделиться" });
     fireEvent.click(publish);
     fireEvent.click(publish);
 
@@ -158,7 +158,7 @@ describe("CreateReelSheet idempotency (P0C)", () => {
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;
     fireEvent.change(input, { target: { files: [file] } });
 
-    const publish = await screen.findByRole("button", { name: "Опубликовать" });
+    const publish = await screen.findByRole("button", { name: "Поделиться" });
     fireEvent.click(publish);
 
     await waitFor(() => {
@@ -169,7 +169,7 @@ describe("CreateReelSheet idempotency (P0C)", () => {
     expect(sessionStorage.getItem("reels_client_publish_id:user-123")).toBe("publish-1");
 
     // Retry after failure
-    fireEvent.click(await screen.findByRole("button", { name: "Опубликовать" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Поделиться" }));
 
     await waitFor(() => {
       expect(state.upload).toHaveBeenCalledTimes(2);

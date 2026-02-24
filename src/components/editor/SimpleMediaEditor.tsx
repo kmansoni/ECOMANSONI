@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { 
@@ -252,7 +252,12 @@ export function SimpleMediaEditor({
             <X className="w-5 h-5" />
           </Button>
           
-          <span className="font-semibold">Редактор</span>
+          <div className="flex flex-col items-center">
+            <DialogTitle className="font-semibold">Редактор</DialogTitle>
+            <DialogDescription className="sr-only">
+              Инструменты редактирования медиа для публикации.
+            </DialogDescription>
+          </div>
           
           <Button 
             variant="ghost" 

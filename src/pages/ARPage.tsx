@@ -33,7 +33,9 @@ async function requestCameraAccess(): Promise<boolean> {
     stream.getTracks().forEach((t) => t.stop());
     return true;
   } catch (err) {
-    console.debug("Camera access denied:", err);
+    if (import.meta.env.MODE !== "test") {
+      console.debug("Camera access denied:", err);
+    }
     return false;
   }
 }

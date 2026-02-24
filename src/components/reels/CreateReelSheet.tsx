@@ -3,13 +3,14 @@ import {
   Sheet,
   SheetContent,
   SheetHeader,
+  SheetDescription,
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Video, Upload, X, Loader2, Music, Wand2 } from "lucide-react";
+import { Video, Upload, X, Loader2, Music, Wand2, Users, MapPin, Eye, SlidersHorizontal, ChevronRight } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useReels } from "@/hooks/useReels";
@@ -294,10 +295,21 @@ export function CreateReelSheet({ open, onOpenChange, initialVideoFile }: Create
 
   return (
     <Sheet open={open} onOpenChange={handleSheetOpenChange}>
-      <SheetContent side="bottom" className="h-[90vh] bg-background">
-        <SheetHeader>
+      <SheetContent side="bottom" className="h-[90vh] bg-background" hideCloseButton>
+        <SheetHeader className="sr-only">
           <SheetTitle>Новый Reel</SheetTitle>
+          <SheetDescription>
+            Создание и публикация нового Reels-видео.
+          </SheetDescription>
         </SheetHeader>
+
+        <div className="flex items-center justify-between px-4 h-12 border-b border-border safe-area-top">
+          <Button variant="ghost" size="icon" onClick={() => handleSheetOpenChange(false)}>
+            <X className="w-5 h-5" />
+          </Button>
+          <h1 className="font-semibold text-lg">Новый Reel</h1>
+          <div className="w-10" />
+        </div>
 
         <div className="flex flex-col gap-4 mt-4 h-[calc(100%-4rem)] overflow-y-auto">
           {/* Video Upload Area */}
@@ -396,6 +408,30 @@ export function CreateReelSheet({ open, onOpenChange, initialVideoFile }: Create
             </div>
           </div>
 
+          {/* Publish Options */}
+          <div className="border border-border rounded-xl overflow-hidden">
+            <button className="w-full flex items-center gap-4 px-4 py-4 border-b border-border">
+              <Users className="w-6 h-6" />
+              <span className="flex-1 text-left font-medium">Отметить людей</span>
+              <ChevronRight className="w-5 h-5 text-muted-foreground" />
+            </button>
+            <button className="w-full flex items-center gap-4 px-4 py-4 border-b border-border">
+              <MapPin className="w-6 h-6" />
+              <span className="flex-1 text-left font-medium">Добавить место</span>
+              <ChevronRight className="w-5 h-5 text-muted-foreground" />
+            </button>
+            <button className="w-full flex items-center gap-4 px-4 py-4 border-b border-border">
+              <Eye className="w-6 h-6" />
+              <span className="flex-1 text-left font-medium">Настройки аудитории</span>
+              <ChevronRight className="w-5 h-5 text-muted-foreground" />
+            </button>
+            <button className="w-full flex items-center gap-4 px-4 py-4">
+              <SlidersHorizontal className="w-6 h-6" />
+              <span className="flex-1 text-left font-medium">Расширенные настройки</span>
+              <ChevronRight className="w-5 h-5 text-muted-foreground" />
+            </button>
+          </div>
+
           {/* Submit Button */}
           <Button
             onClick={handleSubmit}
@@ -409,7 +445,7 @@ export function CreateReelSheet({ open, onOpenChange, initialVideoFile }: Create
                 Публикация...
               </>
             ) : (
-              "Опубликовать"
+              "Поделиться"
             )}
           </Button>
         </div>

@@ -1,12 +1,10 @@
 import { useState, useRef, useEffect } from "react";
-import { X, ChevronDown, Camera, Smile, Music, AtSign, ArrowRight, Eye, ImagePlus, Wand2, Loader2 } from "lucide-react";
+import { X, ChevronDown, Camera, Smile, Music, AtSign, ArrowRight, Eye, ImagePlus, Wand2, Loader2, Users, MapPin, SlidersHorizontal, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 import { SimpleMediaEditor } from "@/components/editor";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { useChatOpen } from "@/contexts/ChatOpenContext";
 
 interface StoryEditorFlowProps {
   isOpen: boolean;
@@ -31,7 +29,6 @@ type Step = "gallery" | "editor";
 
 export function StoryEditorFlow({ isOpen, onClose, initialFile, initialUrl }: StoryEditorFlowProps) {
   const { user } = useAuth();
-  const { setIsCreatingContent } = useChatOpen();
   const [step, setStep] = useState<Step>("gallery");
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -42,12 +39,6 @@ export function StoryEditorFlow({ isOpen, onClose, initialFile, initialUrl }: St
   const fileInputRef = useRef<HTMLInputElement>(null);
   const seededOnceRef = useRef(false);
   const seededObjectUrlRef = useRef<string | null>(null);
-
-  // Hide bottom nav when creating content
-  useEffect(() => {
-    setIsCreatingContent(isOpen);
-    return () => setIsCreatingContent(false);
-  }, [isOpen, setIsCreatingContent]);
 
   // Optional: open directly in editor with preselected media.
   useEffect(() => {
@@ -241,7 +232,7 @@ export function StoryEditorFlow({ isOpen, onClose, initialFile, initialUrl }: St
             <button onClick={handleClose} className="text-muted-foreground hover:text-foreground">
               <X className="w-7 h-7" strokeWidth={1.5} />
             </button>
-            <h1 className="font-medium text-[17px] text-foreground">Добавить в историю</h1>
+            <h1 className="font-medium text-[17px] text-foreground">Новая история</h1>
             <div className="flex items-center gap-3">
               <span className="text-muted-foreground text-[15px]">Текст</span>
               <span className="text-foreground text-xl font-semibold">Aa</span>
@@ -310,25 +301,29 @@ export function StoryEditorFlow({ isOpen, onClose, initialFile, initialUrl }: St
               alt="Story" 
               className="w-full h-full object-cover"
             />
-            
-            {/* Close Button */}
-            <button 
-              className="absolute top-4 left-4 w-10 h-10 bg-black/30 backdrop-blur-sm text-white rounded-full flex items-center justify-center safe-area-top"
-              onClick={handleBack}
-            >
-              <X className="w-6 h-6" strokeWidth={1.5} />
-            </button>
 
-            {/* Right Side Tools */}
-            <div className="absolute top-16 right-4 flex flex-col gap-3 safe-area-top">
-              {/* Advanced Editor Button - always visible when we have an image */}
-              <button 
+            {/* Header */}
+            <div className="absolute top-0 left-0 right-0 flex items-center justify-between px-4 h-12 safe-area-top bg-gradient-to-b from-black/50 to-transparent">
+              <button
+                className="w-10 h-10 bg-black/30 backdrop-blur-sm text-white rounded-full flex items-center justify-center"
+                onClick={handleBack}
+              >
+                <X className="w-6 h-6" strokeWidth={1.5} />
+              </button>
+              <div className="text-white text-sm font-semibold">Новая история</div>
+              <button
+                className="w-10 h-10 bg-black/30 backdrop-blur-sm text-white rounded-full flex items-center justify-center"
                 onClick={() => setShowAdvancedEditor(true)}
                 disabled={!selectedFile}
-                className="w-10 h-10 rounded-full bg-primary/90 backdrop-blur-sm flex items-center justify-center disabled:opacity-50"
+                aria-label="Редактировать"
               >
-                <Wand2 className="w-5 h-5 text-primary-foreground" strokeWidth={1.5} />
+                <Wand2 className="w-5 h-5" strokeWidth={1.5} />
               </button>
+            </div>
+
+            {/* Right Side Tools */}
+            <div className="absolute top-20 right-4 flex flex-col gap-3 safe-area-top">
+              {/* Advanced Editor Button - always visible when we have an image */}
               <button className="w-10 h-10 rounded-full bg-black/30 backdrop-blur-sm flex items-center justify-center">
                 <span className="text-white font-semibold text-[15px]">Aa</span>
               </button>
@@ -352,7 +347,30 @@ export function StoryEditorFlow({ isOpen, onClose, initialFile, initialUrl }: St
           </div>
 
           {/* Bottom Actions - More visible */}
-          <div className="absolute bottom-0 left-0 right-0 px-4 py-6 bg-gradient-to-t from-black/60 to-transparent safe-area-bottom">
+          <div className="absolute bottom-0 left-0 right-0 px-4 py-4 bg-gradient-to-t from-black/70 via-black/30 to-transparent safe-area-bottom">
+            <div className="mb-3 rounded-2xl border border-white/10 bg-black/35 backdrop-blur-md overflow-hidden">
+              <button className="w-full flex items-center gap-3 px-4 py-3 border-b border-white/10 text-white">
+                <Users className="w-5 h-5" />
+                <span className="flex-1 text-left text-sm font-medium">Отметить людей</span>
+                <ChevronRight className="w-4 h-4 text-white/70" />
+              </button>
+              <button className="w-full flex items-center gap-3 px-4 py-3 border-b border-white/10 text-white">
+                <MapPin className="w-5 h-5" />
+                <span className="flex-1 text-left text-sm font-medium">Добавить место</span>
+                <ChevronRight className="w-4 h-4 text-white/70" />
+              </button>
+              <button className="w-full flex items-center gap-3 px-4 py-3 border-b border-white/10 text-white">
+                <Eye className="w-5 h-5" />
+                <span className="flex-1 text-left text-sm font-medium">Настройки аудитории</span>
+                <ChevronRight className="w-4 h-4 text-white/70" />
+              </button>
+              <button className="w-full flex items-center gap-3 px-4 py-3 text-white">
+                <SlidersHorizontal className="w-5 h-5" />
+                <span className="flex-1 text-left text-sm font-medium">Расширенные настройки</span>
+                <ChevronRight className="w-4 h-4 text-white/70" />
+              </button>
+            </div>
+
             <div className="flex gap-3">
               <Button
                 variant="outline"
@@ -371,7 +389,7 @@ export function StoryEditorFlow({ isOpen, onClose, initialFile, initialUrl }: St
                 {isPublishing ? (
                   <Loader2 className="w-5 h-5 animate-spin" />
                 ) : (
-                  "Опубликовать"
+                  "Поделиться"
                 )}
               </Button>
             </div>

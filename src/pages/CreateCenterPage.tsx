@@ -747,8 +747,8 @@ export function CreateCenterPage() {
       <PostEditorFlow
         isOpen={postOpen}
         onClose={() => setPostOpen(false)}
-        initialFiles={[]}
-        initialUrls={selectedItems.map((i) => i.url)}
+        initialFiles={selectedFiles}
+        initialUrls={selectedRemoteUrls}
         initialStep={selectedItems.length > 0 ? "editor" : "gallery"}
       />
       <StoryEditorFlow
