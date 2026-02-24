@@ -162,6 +162,10 @@ export function CreateCenterPage() {
     const t = normalizeTab(searchParams.get("tab"));
     setActiveTab(t);
 
+    if (t === "post") setPostOpen(true);
+    if (t === "story") setStoryOpen(true);
+    if (t === "reels") setReelsOpen(true);
+
     const next = new URLSearchParams(searchParams);
     next.delete("auto");
     setSearchParams(next, { replace: true });
