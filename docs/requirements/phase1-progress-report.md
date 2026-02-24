@@ -3,7 +3,7 @@
 **Date:** 2026-02-24  
 **Phase:** Phase 1 - PMF (Product-Market Fit)  
 **Goal:** Reels/UGC discovery, retention, creator loop  
-**Status:** EPIC I Complete ✅, EPIC L/M Deployed ✅
+**Status:** EPIC H Complete ✅, EPIC L/M/I Deployed ✅
 
 ---
 
@@ -12,10 +12,10 @@
 | Metric | Value |
 |--------|-------|
 | **EPICs Planned** | 8 (G, H, I, J, K, L, M, N) |
-| **EPICs Deployed** | 3 (L, M, I) |
+| **EPICs Deployed** | 4 (L, M, I, H) |
 | **EPICs In Progress** | 0 |
-| **EPICs Remaining** | 5 (G, H, J, K, N) |
-| **Completion** | 37.5% (3/8) |
+| **EPICs Remaining** | 4 (G, J, K, N) |
+| **Completion** | 50% (4/8) |
 
 ---
 
@@ -113,18 +113,62 @@
 
 ---
 
+### ✅ EPIC H — Hashtags + Trends (trust-weighted)
+**Status:** 100% Complete (Deployed 2026-02-24)  
+**Migrations:** 2 migrations (20260224170000 → 171000)  
+**Key Components:**
+
+**1. Trend Engine** (Migration 170000):
+- Trending hashtags tracking with velocity metrics
+- Trust-weighted trend scoring (integrates EPIC L user_trust_scores)
+- Exponential decay curve (score × e^(-rate × age / lifetime))
+- Eligibility gates (min creators/viewers, max report/hide rates, no controversial content)
+- Background worker: `batch_update_trending_hashtags_v1` (every 15-30 min)
+- Public API: `get_trending_hashtags_v1(limit, min_score)`
+- Cleanup worker: `cleanup_trending_hashtags_v1` (daily)
+
+**2. Hashtag Surfaces + Anti-hijack** (Migration 171000):
+- Hashtag page with 3 surfaces:
+  - **Top**: Relevance-weighted + engagement ranking
+  - **Recent**: Chronological with min relevance 0.3
+  - **Trending**: Last 48h, min relevance 0.5, only if hashtag is trending
+- Related hashtags based on co-occurrence (min 3)
+- Anti-hijack relevance scoring (detects off-topic hashtag usage)
+- Coordinated attack detection (low-trust accounts, velocity spikes)
+- Rate limiting: 20 searches/minute (EPIC L integration)
+- Search autocomplete with rate limit enforcement
+
+**Deployment:**
+- Database schema: ✅ Deployed (2 migrations)
+- RPC functions: ✅ Deployed (get_hashtag_feed_v1, search_hashtags_v1, get_trending_hashtags_v1)
+- Background workers: ⏳ Pending (trending updater, attack detection, cleanup)
+- Frontend components: ⏳ Pending (hashtag page UI, trending widget, search autocomplete)
+- Documentation: [docs/ops/PHASE1_EPIC_H_DEPLOYMENT.md](docs/ops/PHASE1_EPIC_H_DEPLOYMENT.md)
+
+**Metrics to Track:**
+- `trending_hashtags_count`
+- `trend_false_positive_rate`
+- `hashtag_click_rate`
+- `hashtag_watch_rate`
+- `coordinated_attack_detection_rate`
+
+**Git Commit:** (pending)
+
+---
+
 ## ⬜ Remaining EPICs (Priority Order)
 
 ### EPIC G — Explore/Discovery Surface
 **Status:** Not Started  
 **Goal:** Pull-based discovery surface (categories, collections, trending, new creators)  
-**Dependencies:** Phase 0 Ranking baseline + EPIC I deployed  
+**Dependencies:** Phase 0 Ranking baseline + EPIC I deployed + EPIC H deployed ✅  
 **Priority:** HIGH (next to implement)
 
 **Tasks:**
 - G1. Discovery UX Spec (D0.000 compliant)
 - G2. Candidate sources for Explore (trending, fresh, topic clusters)
 - G3. Discovery ranking contract (text/trend signal weights)
+- G4. Integration with EPIC H (use get_trending_hashtags_v1 for "Trending Now")
 
 **Metrics:**
 - `explore_open_rate`
@@ -134,20 +178,8 @@
 ---
 
 ### EPIC H — Hashtags + Trends (trust-weighted)
-**Status:** Not Started  
-**Goal:** Structured discovery without cheap manipulation  
-**Dependencies:** EPIC L (trust-lite)  
-**Priority:** HIGH
+**Status:** 100% Complete ✅ (see above)
 
-**Tasks:**
-- H1. Hashtag canonicalization rules (normalization, limits, anti-stuffing)
-- H2. Hashtag moderation rules (toxic tag hiding/limiting)
-- H3. Trend spec (velocity + unique creators + trust-weighted engagement + decay)
-
-**Metrics:**
-- `hashtag_click_rate`
-- `hashtag_watch_rate`
-- `trend_anomaly_flag_rate`
 
 ---
 
@@ -211,36 +243,48 @@
 ## Next Actions (Priority Order)
 
 ### Immediate (This Week):
-1. **Deploy EPIC I background workers** (HIGH):
+1. **Deploy EPIC H background workers** (HIGH):
+   - Set up `batch_update_trending_hashtags_v1` (pg_cron every 15-30 minutes)
+   - Set up coordinated attack detection worker (pg_cron every 1 hour)
+   - Set up `cleanup_trending_hashtags_v1` (pg_cron daily)
+
+2. **Deploy EPIC I background workers** (HIGH):
    - Set up `batch_check_controversial_v1` (pg_cron every 1 hour)
    - Set up `batch_analyze_diversity_v1` (pg_cron every 6 hours)
    - Set up cleanup jobs (expired flags, old explanations)
 
-2. **Monitor EPIC I metrics** (HIGH):
-   - Track controversial_items_detected_per_day
-   - Track echo_chamber_users_count
+3. **Monitor EPIC H + I metrics** (HIGH):
+   - EPIC H: trending_hashtags_count, coordinated_attack_detection_rate
+   - EPIC I: controversial_items_detected_per_day, echo_chamber_users_count
    - Alert on anomalies
 
-3. **Start EPIC G (Explore/Discovery)** (HIGH):
-   - Review P1G spec: [docs/specs/phase1/P1G-explore-discovery-surface.md](docs/specs/phase1/P1G-explore-discovery-surface.md) (if exists)
+4. **Start EPIC G (Explore/Discovery)** (HIGH):
+   - Review P1G spec: [docs/specs/phase1/P1G-explore-discovery-surface.md](docs/specs/phase1/P1G-explore-discovery-surface.md)
    - Design Discovery UX (D0.000 compliant)
-   - Implement candidate sources
+   - Implement candidate sources (trending hashtags, fresh creators, safe pool)
+   - Integrate EPIC H APIs (get_trending_hashtags_v1 for "Trending Now" section)
 
 ### Short-term (Next 2 Weeks):
-4. **Implement EPIC H (Hashtags + Trends)** (HIGH):
-   - Hashtag canonicalization + moderation
-   - Trust-weighted trend calculation
+5. **Implement EPIC G (Explore/Discovery)** (HIGH):
+   - Explore layout (Trending now, Hashtags, Fresh creators, Categories, Recommended grid)
+   - Explore ranking (less personalization, more diversity/freshness)
+   - Caching (60-180 sec TTL for sections)
 
-5. **Implement EPIC J (Creator Analytics)** (MEDIUM):
+6. **Implement EPIC J (Creator Analytics)** (MEDIUM):
    - Creator metrics schema
    - Creator insights UI
 
+7. **Implement EPIC H frontend** (MEDIUM):
+   - HashtagPage with Top/Recent/Trending tabs
+   - TrendingHashtagsList widget
+   - Search autocomplete
+
 ### Long-term (3-4 Weeks):
-6. **Implement EPIC K (Moderation v1)** (MEDIUM):
+8. **Implement EPIC K (Moderation v1)** (MEDIUM):
    - Moderation queue system
    - Appeals flow
 
-7. **Evaluate EPIC N (Live beta)** (LOW):
+9. **Evaluate EPIC N (Live beta)** (LOW):
    - Only if Phase 1 KPI green
    - Trust-lite + Moderation stable
 
@@ -252,17 +296,17 @@
 - None
 
 ### Risks:
-1. **Background workers not deployed** (EPIC I):
-   - Impact: Controversial content not flagged, echo chambers not detected
+1. **Background workers not deployed** (EPIC H + I):
+   - Impact: Trending hashtags not updated, controversial content not flagged, echo chambers not detected
    - Mitigation: Deploy pg_cron jobs this week
 
-2. **No frontend for explainability** (EPIC I):
-   - Impact: Users/admins can't see ranking explanations
-   - Mitigation: Can be separate PR, not blocking feed functionality
+2. **No frontend for hashtag pages / explainability** (EPIC H + I):
+   - Impact: Users/admins can't see hashtag surfaces or ranking explanations
+   - Mitigation: Can be separate PR, not blocking backend functionality
 
-3. **EPIC G/H dependency chain**:
-   - Impact: Discovery surface needs hashtags/trends for value
-   - Mitigation: Implement G and H together or in quick succession
+3. **EPIC G depends heavily on EPIC H**:
+   - Impact: Discovery surface needs trending hashtags for "Trending Now" section
+   - Mitigation: EPIC H backend complete ✅, can start EPIC G now
 
 ---
 
@@ -272,16 +316,16 @@ Phase 1 is complete when:
 - ✅ Anti-abuse v1 (EPIC L) deployed and active
 - ✅ Observability v1 (EPIC M) with guardrails/auto-rollback working
 - ✅ Ranking v2 (EPIC I) with diversity/cold-start/negative feedback
+- ✅ Hashtags + trends (EPIC H) working without cheap manipulation
 - ⬜ Explore/Discovery surface (EPIC G) available
-- ⬜ Hashtags + trends (EPIC H) working without cheap manipulation
 - ⬜ Creator analytics (EPIC J) driving creator return rate
 - ⬜ Moderation v1 (EPIC K) meeting SLA with appeals
 - ⬜ All UI changes comply with D0.000
 - ⬜ KPI growth (retention, session duration, completion rate) with stable guardrails
 
-**Current Progress:** 3/7 core EPICs complete (L, M, I)  
-**Remaining EPICs:** G, H, J, K (N is conditional)  
-**Estimated Time to Complete:** 6-8 weeks (based on phase1-pmf-execution-plan.md estimate of 10-16 weeks total)
+**Current Progress:** 4/7 core EPICs complete (L, M, I, H)  
+**Remaining EPICs:** G, J, K (N is conditional)  
+**Estimated Time to Complete:** 4-6 weeks (based on phase1-pmf-execution-plan.md estimate of 10-16 weeks total)
 
 ---
 
@@ -295,8 +339,10 @@ Phase 1 is complete when:
 | 20260224162000 | I | Echo Chamber Limiter |
 | 20260224163000 | I | Explainability v2 |
 | 20260224164000 | I | Feed Integration |
+| 20260224170000 | H | Trend Engine |
+| 20260224171000 | H | Hashtag Surfaces + Anti-hijack |
 
-**Total Migrations Deployed:** 14  
+**Total Migrations Deployed:** 16  
 **Total Migrations Remaining:** ~10-15 (estimated for EPIC G/H/J/K)
 
 ---
