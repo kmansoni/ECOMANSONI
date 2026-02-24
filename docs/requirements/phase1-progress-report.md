@@ -98,7 +98,7 @@
 **Deployment:**
 - Database schema: ✅ Deployed (4 migrations)
 - Feed RPC integration: ✅ Deployed (`get_reels_feed_v2` updated)
-- Background workers: ⏳ Pending (controversial scanner, diversity analyzer)
+- Background workers: ✅ Scheduled via pg_cron (20260224202000)
 - Frontend components: ⏳ Pending (ranking explanation UI, diversity indicator)
 - Documentation: [docs/ops/PHASE1_EPIC_I_DEPLOYMENT.md](docs/ops/PHASE1_EPIC_I_DEPLOYMENT.md)
 
@@ -141,7 +141,7 @@
 **Deployment:**
 - Database schema: ✅ Deployed (2 migrations)
 - RPC functions: ✅ Deployed (get_hashtag_feed_v1, search_hashtags_v1, get_trending_hashtags_v1)
-- Background workers: ⏳ Pending (trending updater, attack detection, cleanup)
+- Background workers: ✅ Scheduled via pg_cron (20260224202000)
 - Frontend components: ⏳ Pending (hashtag page UI, trending widget, search autocomplete)
 - Documentation: [docs/ops/PHASE1_EPIC_H_DEPLOYMENT.md](docs/ops/PHASE1_EPIC_H_DEPLOYMENT.md)
 
@@ -250,7 +250,7 @@
 **Deployment:**
 - Database schema: ✅ Deployed (3 migrations)
 - RPC functions: ✅ Deployed (8 functions)
-- Background workers: ⏳ Pending (needs pg_cron or Edge Function scheduler)
+- Background workers: ✅ Scheduled via pg_cron (20260224202000)
 - Documentation: [docs/ops/PHASE1_EPIC_J_DEPLOYMENT.md](docs/ops/PHASE1_EPIC_J_DEPLOYMENT.md)
 
 **Metrics to Track:**
@@ -425,7 +425,7 @@ Phase 1 is complete when:
 - ✅ Ranking v2 (EPIC I) with diversity/cold-start/negative feedback
 - ✅ Hashtags + trends (EPIC H) working without cheap manipulation
 - ✅ Explore/Discovery surface (EPIC G) available (backend complete, frontend pending)
-- ✅ Creator analytics (EPIC J) backend deployed (frontend + background workers pending)
+- ✅ Creator analytics (EPIC J) backend deployed (frontend pending, background workers scheduled)
 - ✅ Moderation v1 (EPIC K) deployed (queues + appeals + borderline enforcement)
 - ⬜ All UI changes comply with D0.000
 - ⬜ KPI growth (retention, session duration, completion rate) with stable guardrails
@@ -455,8 +455,9 @@ Phase 1 is complete when:
 | 20260224192000 | J | Insights Functions |
 | 20260224200000 | K | Moderation Queues + Borderline Enforcement |
 | 20260224201000 | K | Appeals Lifecycle |
+| 20260224202000 | Ops | Background workers scheduling (pg_cron) |
 
-**Total Migrations Deployed:** 23  
+**Total Migrations Deployed:** 24  
 **Total Migrations Remaining:** ~1-3 (estimated for EPIC N)
 
 ---
