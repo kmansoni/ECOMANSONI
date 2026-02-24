@@ -36,6 +36,7 @@ A full-featured social and marketplace platform built with React, TypeScript, Vi
 | **Multi-Account** | Switch between multiple authenticated profiles |
 | **Notifications** | Push-style in-app notification system |
 | **Trust & Rate Limiting** | DB-backed fixed-window rate limiting with canary rollout (Phase 1 EPIC L) |
+| **Observability** | Metrics registry, guardrails with auto-rollback, SLO monitoring (Phase 1 EPIC M) |
 
 ---
 

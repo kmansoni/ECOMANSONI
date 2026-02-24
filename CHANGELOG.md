@@ -9,6 +9,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ## [Unreleased]
 
 ### Added
+- **Phase 1 EPIC M: Observability v1**
+  - Metrics registry: catalog of all observable metrics with SLO targets (`metrics_registry` table)
+  - Guardrails: automated thresholds triggering alerts or auto-rollback (`guardrails_config` table)
+  - Time-series storage: simple PostgreSQL-based metrics samples (7-day retention)
+  - Auto-rollback on breach: guardrails automatically disable feature flags when SLO breached
+  - RPC functions: `evaluate_guardrails_v1`, `get_slo_status_v1`, `get_active_guardrail_breaches_v1`, `cleanup_old_metric_samples_v1`
+  - Frontend observability client: TypeScript types + API helpers (`src/lib/observability/`)
+  - Kill-switch expansion: 6 new feature flags (`personalized_ranking`, `discovery_surface`, `hashtag_trends`, `moderation_queue_processing`, `appeals_flow`, `strict_safety_mode`)
+  - Incident playbooks: step-by-step guides for Phase 1 scenarios (`docs/ops/PHASE1_INCIDENT_PLAYBOOKS.md`)
+  - E2E test: guardrail breach triggers auto-rollback (`scripts/phase1/test-observability.mjs`)
+  - Deployment guide: `docs/ops/PHASE1_EPIC_M_DEPLOYMENT.md` with verification steps
 - **Phase 1 EPIC L: Trust & Rate Limiting**
   - Database-backed fixed-window rate limiting (no Redis required for MVP)
   - `rate_limit_audits` table for audit trail and compliance
