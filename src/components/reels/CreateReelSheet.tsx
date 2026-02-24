@@ -244,12 +244,12 @@ export function CreateReelSheet({ open, onOpenChange, initialVideoFile }: Create
         // Idempotency: treat object already existing as success for the same publish intent.
         const objectExists = status === 409 || msg.toLowerCase().includes("already exists") || msg.toLowerCase().includes("resource already exists");
         if (!objectExists) {
-        // If bucket doesn't exist, create it first
-        if (uploadError.message.includes("not found")) {
-          toast.error("Хранилище не настроено. Обратитесь к администратору.");
-          return;
-        }
-        throw uploadError;
+          // Bucket or storage not available — surface a clear error instead of a generic one.
+          if (msg.toLowerCase().includes("not found")) {
+            toast.error("Хранилище не настроено. Обратитесь к администратору.");
+            return;
+          }
+          throw uploadError;
         }
       }
 
@@ -273,7 +273,7 @@ export function CreateReelSheet({ open, onOpenChange, initialVideoFile }: Create
       onOpenChange(false);
     } catch (error: any) {
       console.error("Error creating reel:", error);
-      toast.error("Ошибка при публикации: " + error.message);
+      toast.error("Ошибка при публикации: " + (error?.message || "Неизвестная ошибка"));
     } finally {
       setIsUploading(false);
       inFlightRef.current = false;
