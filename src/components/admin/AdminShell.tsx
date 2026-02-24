@@ -20,6 +20,8 @@ export function AdminShell({ children }: { children: ReactNode }) {
     { to: "/admin/staff-profiles", label: "Staff Profiles", requireScope: "staff.profile.read" },
     { to: "/admin/verifications", label: "Verifications", requireScope: "verification.read" },
     { to: "/admin/hashtags", label: "Hashtags", requireScope: "hashtag.status.write" },
+    { to: "/admin/moderation-queue", label: "Mod Queue", requireScope: "moderation.review" },
+    { to: "/admin/appeals", label: "Appeals", requireScope: "moderation.review" },
     { to: "/admin/audit", label: "Аудит" },
     { to: "/admin/approvals", label: "Approvals" },
     { to: "/admin/jit", label: "JIT", requireScope: "security.jit.request" },

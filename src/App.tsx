@@ -61,6 +61,8 @@ const AdminVerificationsPage = lazy(() => import("@/pages/admin/AdminVerificatio
 const AdminStaffProfilesPage = lazy(() => import("@/pages/admin/AdminStaffProfilesPage").then(m => ({ default: m.AdminStaffProfilesPage })));
 const AdminHashtagModerationPage = lazy(() => import("@/pages/admin/AdminHashtagModerationPage").then(m => ({ default: m.AdminHashtagModerationPage })));
 const KpiDashboardPage = lazy(() => import("@/pages/admin/KpiDashboardPage").then(m => ({ default: m.KpiDashboardPage })));
+const ModerationQueuePage = lazy(() => import("@/pages/admin/ModerationQueuePage").then(m => ({ default: m.ModerationQueuePage })));
+const AppealsPage = lazy(() => import("@/pages/admin/AppealsPage").then(m => ({ default: m.AppealsPage })));
 
 // Loading fallback component
 function PageLoader() {
@@ -170,6 +172,16 @@ const App = () => {
                   <Route path="/admin/kpi-dashboard" element={
                     <Suspense fallback={<PageLoader />}>
                       <KpiDashboardPage />
+                    </Suspense>
+                  } />
+                  <Route path="/admin/moderation-queue" element={
+                    <Suspense fallback={<PageLoader />}>
+                      <ModerationQueuePage />
+                    </Suspense>
+                  } />
+                  <Route path="/admin/appeals" element={
+                    <Suspense fallback={<PageLoader />}>
+                      <AppealsPage />
                     </Suspense>
                   } />
                 </Route>
