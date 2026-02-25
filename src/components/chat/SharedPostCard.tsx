@@ -169,11 +169,11 @@ export function SharedPostCard({ postId, isOwn, messageId, onDelete }: SharedPos
       >
         {/* Image preview */}
         {imageUrl && (
-          <div className="relative h-36 overflow-hidden">
+          <div className="relative media-frame media-frame--preview">
             <img
               src={imageUrl}
               alt=""
-              className="w-full h-full object-cover"
+              className="media-object media-object--fill media-object--cover"
             />
             <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
           </div>

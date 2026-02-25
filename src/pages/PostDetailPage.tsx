@@ -213,11 +213,11 @@ export function PostDetailPage() {
 
         {/* Media */}
         {post.media.length > 0 && (
-          <div className="relative">
+          <div className="relative media-frame media-frame--post">
             <img
               src={post.media[currentImageIndex]?.media_url}
               alt=""
-              className="w-full aspect-square object-cover"
+              className="media-object media-object--fill media-object--cover"
             />
             {post.media.length > 1 && (
               <>

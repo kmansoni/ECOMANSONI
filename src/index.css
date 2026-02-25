@@ -356,6 +356,64 @@ html.appearance-no-sticker-anim .emoji-picker-ios .EmojiPickerReact .epr-emoji i
   border-radius: var(--message-corner-radius) !important;
 }
 
+:root {
+  --media-frame-radius: 18px;
+  --media-frame-max-width: 560px;
+  --media-frame-max-height: 60vh;
+}
+
+.media-frame {
+  max-width: var(--media-frame-max-width);
+  border-radius: var(--media-frame-radius);
+  overflow: hidden;
+}
+
+.media-frame--chat {
+  max-width: min(62vw, 340px);
+}
+
+.media-frame--chat .media-object {
+  max-height: 38vh;
+}
+
+.media-frame--channel {
+  max-width: 100%;
+  display: block;
+  width: 100%;
+}
+
+.media-frame--post {
+  max-width: 100%;
+  aspect-ratio: 1 / 1;
+  display: block;
+  width: 100%;
+}
+
+.media-frame--preview {
+  aspect-ratio: 16 / 9;
+  display: block;
+  width: 100%;
+}
+
+.media-object {
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: var(--media-frame-max-height);
+  object-fit: contain;
+  display: block;
+  background-color: rgba(0, 0, 0, 0.25);
+}
+
+.media-object--fill {
+  width: 100%;
+  height: 100%;
+}
+
+.media-object--cover {
+  object-fit: cover;
+}
+
 /* Fixed positioning fix for iOS Safari & Android WebView */
 .fixed-nav {
   position: fixed !important;

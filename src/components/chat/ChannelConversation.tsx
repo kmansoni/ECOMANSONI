@@ -1809,12 +1809,14 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
                       </div>
                     </div>
                   ) : String((msg as any)?.media_type || "image") === "video" ? (
-                    <video
-                      src={msg.media_url}
-                      controls
-                      className="w-full max-h-80 object-cover"
-                      playsInline
-                    />
+                    <div className="media-frame media-frame--channel">
+                      <video
+                        src={msg.media_url}
+                        controls
+                        className="media-object media-object--fill"
+                        playsInline
+                      />
+                    </div>
                   ) : String((msg as any)?.media_type || "image") === "document" ? (
                     <a
                       href={msg.media_url}
@@ -1832,7 +1834,9 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
                       onClick={() => setViewingImage(msg.media_url || null)}
                       aria-label="Открыть изображение"
                     >
-                      <img src={msg.media_url} alt="" className="w-full max-h-80 object-cover" />
+                      <div className="media-frame media-frame--channel">
+                        <img src={msg.media_url} alt="" className="media-object media-object--fill" />
+                      </div>
                     </button>
                   )}
                 </div>
@@ -2057,4 +2061,3 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
     </div>
   );
 }
-

@@ -65,6 +65,10 @@ export function ChatsPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [primaryTab, setPrimaryTab] = useState<"chats" | "calls">("chats");
   const [callsFilter, setCallsFilter] = useState<"all" | "missed">("all");
+  const [dmActivityByConversation, setDmActivityByConversation] = useState<
+    Record<string, { activity: "typing" | "recording_voice" | "recording_video"; at: number }>
+  >({});
+  const [activityNowTick, setActivityNowTick] = useState<number>(Date.now());
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -387,6 +391,63 @@ export function ChatsPage() {
       return "";
     }
   };
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setActivityNowTick(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    const dmConversations = conversations
+      .map((conv) => {
+        const other = conv.participants.find((p) => p.user_id !== user.id);
+        return { id: conv.id, otherUserId: other?.user_id || null };
+      })
+      .filter((item): item is { id: string; otherUserId: string } => Boolean(item.otherUserId));
+
+    if (!dmConversations.length) {
+      setDmActivityByConversation({});
+      return;
+    }
+
+    const channels = dmConversations.map(({ id, otherUserId }) => {
+      return supabase
+        .channel(`typing:${id}`)
+        .on(
+          "broadcast" as any,
+          { event: "typing" },
+          (payload: any) => {
+            const p = payload?.payload;
+            if (!p || p.user_id !== otherUserId) return;
+
+            const isTyping = !!p.is_typing;
+            const activityRaw = String(p.activity || (isTyping ? "typing" : ""));
+            const activity =
+              activityRaw === "recording_voice" || activityRaw === "recording_video" || activityRaw === "typing"
+                ? activityRaw
+                : "typing";
+
+            setDmActivityByConversation((prev) => {
+              const next = { ...prev };
+              if (!isTyping) {
+                delete next[id];
+                return next;
+              }
+              next[id] = { activity, at: Date.now() };
+              return next;
+            });
+          }
+        )
+        .subscribe();
+    });
+
+    return () => {
+      channels.forEach((channel) => {
+        void supabase.removeChannel(channel);
+      });
+    };
+  }, [conversations, user?.id]);
 
   // Get user IDs already in conversations
   const conversationUserIds = new Set(
@@ -934,6 +995,29 @@ export function ChatsPage() {
                 const other = getOtherParticipant(conv);
                 const lastMessage = conv.last_message;
                 const isMyMessage = lastMessage?.sender_id === user?.id;
+                const liveActivity = dmActivityByConversation[conv.id];
+                const activityIsFresh =
+                  liveActivity && activityNowTick - liveActivity.at < 5000;
+                const activityText =
+                  activityIsFresh && liveActivity
+                    ? liveActivity.activity === "recording_voice"
+                      ? "🎤 записывает голосовое…"
+                      : liveActivity.activity === "recording_video"
+                        ? "🎥 записывает кружочек…"
+                        : "печатает…"
+                    : null;
+
+                const lastPreviewText = activityText
+                  ? activityText
+                  : lastMessage?.media_type === 'video_circle'
+                    ? '🎥 Видеосообщение'
+                    : lastMessage?.media_type === 'voice'
+                      ? '🎤 Голосовое сообщение'
+                      : lastMessage?.media_type === 'video'
+                        ? '🎬 Видео'
+                        : lastMessage?.media_url
+                          ? '📷 Фото'
+                          : lastMessage?.content || "Нет сообщений";
 
                 return (
                   <div
@@ -961,20 +1045,21 @@ export function ChatsPage() {
                       </div>
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-1 flex-1 min-w-0">
-                          {isMyMessage && lastMessage?.is_read && (
+                          {isMyMessage && lastMessage?.is_read && !activityText && (
                             <CheckCheck className="w-4 h-4 text-cyan-400 flex-shrink-0" />
                           )}
-                          {isMyMessage && !lastMessage?.is_read && (
+                          {isMyMessage && !lastMessage?.is_read && !activityText && (
                             <Check className="w-4 h-4 text-muted-foreground/60 dark:text-white/40 flex-shrink-0" />
                           )}
-                          <p className="text-sm text-muted-foreground dark:text-white/50 truncate">
-                            {lastMessage?.media_type === 'video_circle' 
-                              ? '🎥 Видеосообщение'
-                              : lastMessage?.media_type === 'voice'
-                              ? '🎤 Голосовое сообщение'
-                              : lastMessage?.media_url
-                              ? '📷 Фото'
-                              : lastMessage?.content || "Нет сообщений"}
+                          <p
+                            className={cn(
+                              "text-sm truncate",
+                              activityText
+                                ? "text-cyan-400"
+                                : "text-muted-foreground dark:text-white/50"
+                            )}
+                          >
+                            {isMyMessage && !activityText ? `Вы: ${lastPreviewText}` : lastPreviewText}
                           </p>
                         </div>
 

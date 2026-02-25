@@ -7,6 +7,8 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import type { ContentType } from '@/hooks/useMediaEditor';
 import { useUnifiedContentCreator } from '@/hooks/useUnifiedContentCreator';
+import { CameraHost, type CameraHostHandle, type CaptureMode } from '@/components/camera/CameraHost';
+import type { CameraDebugSnapshot } from '@/components/camera/CameraHost';
 
 interface CreateContentModalProps {
   isOpen: boolean;
@@ -28,7 +30,6 @@ export function CreateContentModal({ isOpen, onClose, onSuccess }: CreateContent
   const {
     isLoading,
     error,
-    activeContentType,
     setActiveContentType,
     uploadStoryMedia,
     uploadPostMedia,
@@ -45,104 +46,37 @@ export function CreateContentModal({ isOpen, onClose, onSuccess }: CreateContent
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [touchStart, setTouchStart] = useState<number | null>(null);
   const [isCameraReady, setIsCameraReady] = useState(false);
+  const [isCameraRecording, setIsCameraRecording] = useState(false);
+  const [cameraDebug, setCameraDebug] = useState<CameraDebugSnapshot | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const cameraHostRef = useRef<CameraHostHandle | null>(null);
 
   useEffect(() => {
-    if (!isOpen) {
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop());
-        streamRef.current = null;
+    return () => {
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
       }
-      return;
-    }
-    
-    if (cameraMode === 'camera' && activeTab !== 'live') {
-      startCamera();
-    }
-  }, [isOpen, cameraMode, activeTab]);
-
-  const startCamera = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { 
-          facingMode: 'environment',
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
-        },
-        audio: activeTab === 'reels'
-      });
-      
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        streamRef.current = stream;
-        setIsCameraReady(true);
-      }
-    } catch (err) {
-      console.error('Ошибка доступа к камере:', err);
-      toast.error('Не удалось открыть камеру');
-      setCameraMode('gallery');
-    }
-  };
-
-  const stopCamera = () => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
-      streamRef.current = null;
-      setIsCameraReady(false);
-    }
-  };
-
-  const capturePhoto = async () => {
-    if (!videoRef.current || !canvasRef.current) return;
-    
-    const context = canvasRef.current.getContext('2d');
-    if (!context) return;
-    
-    canvasRef.current.width = videoRef.current.videoWidth;
-    canvasRef.current.height = videoRef.current.videoHeight;
-    context.drawImage(videoRef.current, 0, 0);
-    
-    canvasRef.current.toBlob((blob) => {
-      if (blob) {
-        const file = new File([blob], `photo-${Date.now()}.jpg`, { type: 'image/jpeg' });
-        setSelectedFile(file);
-        setPreviewUrl(URL.createObjectURL(blob));
-        setCameraMode('gallery');
-        stopCamera();
-        toast.success('Фото загружено');
-      }
-    }, 'image/jpeg', 0.95);
-  };
-
-  const recordVideo = async () => {
-    if (!videoRef.current || !streamRef.current) return;
-    
-    const mediaRecorder = new MediaRecorder(streamRef.current);
-    const chunks: Blob[] = [];
-    
-    mediaRecorder.ondataavailable = (e) => chunks.push(e.data);
-    mediaRecorder.onstop = () => {
-      const blob = new Blob(chunks, { type: 'video/webm' });
-      const file = new File([blob], `video-${Date.now()}.webm`, { type: 'video/webm' });
-      setSelectedFile(file);
-      setPreviewUrl(URL.createObjectURL(blob));
-      setCameraMode('gallery');
-      stopCamera();
-      toast.success('Видео загружено');
     };
-    
-    mediaRecorder.start();
-    setTimeout(() => mediaRecorder.stop(), 15000);
+  }, [previewUrl]);
+
+  const setPreviewFromCapture = (file: File, url: string) => {
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+    }
+    setSelectedFile(file);
+    setPreviewUrl(url);
+    setCameraMode('gallery');
   };
 
   const handleTabChange = (tabId: TabType) => {
+    if (isCameraRecording) {
+      toast.error('Остановите запись перед переключением режима');
+      return;
+    }
+
     setActiveTab(tabId);
     setActiveContentType(TABS.find(t => t.id === tabId)?.contentType || 'post');
-    setCameraMode('camera');
-    stopCamera();
+    setCameraMode(tabId === 'live' ? 'gallery' : 'camera');
   };
 
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -243,6 +177,9 @@ export function CreateContentModal({ isOpen, onClose, onSuccess }: CreateContent
     setCaption('');
     setTitle('');
     setSelectedFile(null);
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+    }
     setPreviewUrl(null);
     setCategory('other');
     setCameraMode('camera');
@@ -252,6 +189,11 @@ export function CreateContentModal({ isOpen, onClose, onSuccess }: CreateContent
   };
 
   const handleClose = () => {
+    if (isCameraRecording) {
+      toast.error('Остановите запись перед закрытием');
+      return;
+    }
+
     if (!isLoading) {
       resetForm();
       onClose();
@@ -262,6 +204,8 @@ export function CreateContentModal({ isOpen, onClose, onSuccess }: CreateContent
 
   const currentTab = TABS.find((t) => t.id === activeTab);
   const isCameraAvailable = activeTab !== 'live';
+  const captureMode: CaptureMode = activeTab === 'reels' ? 'reel' : 'story';
+  const isPreviewVideo = selectedFile ? selectedFile.type.startsWith('video/') : activeTab === 'reels';
 
   return (
     <div className="fixed inset-0 z-[999] bg-black/50 backdrop-blur-sm flex items-end">
@@ -293,11 +237,13 @@ export function CreateContentModal({ isOpen, onClose, onSuccess }: CreateContent
               <button
                 key={tab.id}
                 onClick={() => handleTabChange(tab.id)}
+                disabled={isCameraRecording}
                 className={cn(
                   'px-4 py-2 rounded-lg font-medium whitespace-nowrap transition-all flex items-center gap-2 flex-shrink-0',
                   isActive
                     ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/50'
-                    : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                    : 'bg-slate-800 text-slate-300 hover:bg-slate-700',
+                  isCameraRecording && 'opacity-60 cursor-not-allowed'
                 )}
               >
                 <Icon className="w-4 h-4" />
@@ -315,60 +261,86 @@ export function CreateContentModal({ isOpen, onClose, onSuccess }: CreateContent
             onTouchStart={handleTouchStart}
             onTouchEnd={handleTouchEnd}
           >
+            {isCameraAvailable && (
+              <CameraHost
+                ref={cameraHostRef}
+                isActive={isOpen && isCameraAvailable}
+                mode={captureMode}
+                className={cn(
+                  'absolute inset-0 transition-opacity duration-150',
+                  cameraMode === 'camera' && !previewUrl ? 'opacity-100' : 'opacity-0 pointer-events-none'
+                )}
+                videoClassName="w-full h-full object-cover"
+                onReadyChange={setIsCameraReady}
+                onRecordingChange={setIsCameraRecording}
+                onPhotoCaptured={(file, url) => {
+                  setPreviewFromCapture(file, url);
+                  toast.success('Фото загружено');
+                }}
+                onVideoRecorded={(file, url) => {
+                  setPreviewFromCapture(file, url);
+                  toast.success('Видео загружено');
+                }}
+                onError={(err) => {
+                  console.error('Ошибка доступа к камере:', err);
+                  toast.error('Не удалось открыть камеру');
+                  setCameraMode('gallery');
+                }}
+                onDebugChange={setCameraDebug}
+              />
+            )}
+
             {cameraMode === 'camera' && isCameraAvailable ? (
               <>
-                {isCameraReady ? (
-                  <>
-                    <video
-                      ref={videoRef}
-                      autoPlay
-                      playsInline
-                      className="w-full h-full object-cover"
-                    />
-                    <canvas ref={canvasRef} className="hidden" />
-                    
-                    <div className="absolute bottom-4 left-0 right-0 flex gap-3 justify-center px-4">
-                      <Button
-                        onClick={() => setCameraMode('gallery')}
-                        variant="outline"
-                        size="sm"
-                        className="bg-slate-900/80 border-slate-600"
-                      >
-                        <Upload className="w-4 h-4 mr-2" />
-                        Галерея
-                      </Button>
-                      
-                      {activeTab === 'stories' || activeTab === 'publications' ? (
-                        <Button
-                          onClick={capturePhoto}
-                          size="sm"
-                          className="bg-blue-600 hover:bg-blue-700"
-                        >
-                          <Camera className="w-4 h-4 mr-2" />
-                          Снимок
-                        </Button>
-                      ) : activeTab === 'reels' ? (
-                        <Button
-                          onClick={recordVideo}
-                          size="sm"
-                          className="bg-red-600 hover:bg-red-700"
-                        >
-                          <Film className="w-4 h-4 mr-2" />
-                          Запись
-                        </Button>
-                      ) : null}
-                    </div>
-                  </>
-                ) : (
+                {!isCameraReady && (
                   <div className="flex flex-col items-center gap-2 text-slate-400">
                     <Loader2 className="w-8 h-8 animate-spin" />
                     <span className="text-sm">Включение камеры...</span>
                   </div>
                 )}
+
+                <div className="absolute bottom-4 left-0 right-0 flex gap-3 justify-center px-4">
+                  <Button
+                    onClick={() => setCameraMode('gallery')}
+                    variant="outline"
+                    size="sm"
+                    className="bg-slate-900/80 border-slate-600"
+                    disabled={isCameraRecording}
+                  >
+                    <Upload className="w-4 h-4 mr-2" />
+                    Галерея
+                  </Button>
+
+                  {activeTab === 'stories' || activeTab === 'publications' ? (
+                    <Button
+                      onClick={() => {
+                        void cameraHostRef.current?.capturePhoto();
+                      }}
+                      size="sm"
+                      className="bg-blue-600 hover:bg-blue-700"
+                      disabled={!isCameraReady || isCameraRecording}
+                    >
+                      <Camera className="w-4 h-4 mr-2" />
+                      Снимок
+                    </Button>
+                  ) : activeTab === 'reels' ? (
+                    <Button
+                      onClick={() => {
+                        void cameraHostRef.current?.recordVideo();
+                      }}
+                      size="sm"
+                      className="bg-red-600 hover:bg-red-700"
+                      disabled={!isCameraReady || isCameraRecording}
+                    >
+                      <Film className="w-4 h-4 mr-2" />
+                      {isCameraRecording ? 'Запись...' : 'Запись'}
+                    </Button>
+                  ) : null}
+                </div>
               </>
             ) : previewUrl ? (
               <>
-                {activeTab === 'stories' || activeTab === 'reels' ? (
+                {isPreviewVideo ? (
                   <video
                     src={previewUrl}
                     className="w-full h-full object-cover"

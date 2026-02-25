@@ -259,6 +259,43 @@ export function useConversations() {
       if (inboxRes.error) throw inboxRes.error;
 
       const rows = Array.isArray(inboxRes.data) ? inboxRes.data : [];
+      const lastMessageIds = rows
+        .map((r: any) => (r?.last_message_id ? String(r.last_message_id) : null))
+        .filter((id: string | null): id is string => Boolean(id));
+
+      const lastMessagesById = new Map<string, ChatMessage>();
+      if (lastMessageIds.length > 0) {
+        const lastMessagesRes = await withTimeout(
+          "inbox_last_messages_v2",
+          supabase
+            .from("messages")
+            .select(
+              "id, conversation_id, sender_id, content, is_read, created_at, seq, media_url, media_type, duration_seconds, shared_post_id, shared_reel_id"
+            )
+            .in("id", lastMessageIds),
+          20000
+        );
+
+        if ((lastMessagesRes as any).error) throw (lastMessagesRes as any).error;
+        for (const m of ((lastMessagesRes as any).data || []) as any[]) {
+          const id = String(m.id);
+          lastMessagesById.set(id, {
+            id,
+            conversation_id: String(m.conversation_id),
+            sender_id: String(m.sender_id || ""),
+            content: String(m.content || ""),
+            is_read: Boolean(m.is_read),
+            created_at: String(m.created_at || new Date().toISOString()),
+            seq: typeof m.seq === "number" ? m.seq : Number(m.seq || 0) || 0,
+            media_url: (m.media_url ?? null) as string | null,
+            media_type: (m.media_type ?? null) as string | null,
+            duration_seconds: (m.duration_seconds ?? null) as number | null,
+            shared_post_id: (m.shared_post_id ?? null) as string | null,
+            shared_reel_id: (m.shared_reel_id ?? null) as string | null,
+          });
+        }
+      }
+
       const convs: Conversation[] = rows.map((r: any) => {
         const participantsRaw = Array.isArray(r?.participants) ? r.participants : [];
         const participants = participantsRaw.map((p: any) => ({
@@ -270,15 +307,22 @@ export function useConversations() {
         }));
 
         const lastMessageId = r?.last_message_id ? String(r.last_message_id) : "";
+        const lastFromDb = lastMessageId ? lastMessagesById.get(lastMessageId) : undefined;
+          const seqSource = lastFromDb?.seq ?? r.last_seq ?? 0;
         const lastMessage: ChatMessage | undefined = lastMessageId
           ? {
               id: lastMessageId,
               conversation_id: String(r.conversation_id),
-              sender_id: String(r.last_sender_id || ""),
-              content: String(r.last_preview_text || ""),
-              is_read: true,
-              created_at: String(r.last_created_at || r.updated_at || new Date().toISOString()),
-              seq: typeof r.last_seq === "number" ? r.last_seq : Number(r.last_seq || 0) || 0,
+              sender_id: String(lastFromDb?.sender_id || r.last_sender_id || ""),
+              content: String(lastFromDb?.content || r.last_preview_text || ""),
+              is_read: Boolean(lastFromDb?.is_read ?? false),
+              created_at: String(lastFromDb?.created_at || r.last_created_at || r.updated_at || new Date().toISOString()),
+            seq: typeof seqSource === "number" ? Number(seqSource) : Number(seqSource) || 0,
+              media_url: lastFromDb?.media_url ?? null,
+              media_type: lastFromDb?.media_type ?? null,
+              duration_seconds: lastFromDb?.duration_seconds ?? null,
+              shared_post_id: lastFromDb?.shared_post_id ?? null,
+              shared_reel_id: lastFromDb?.shared_reel_id ?? null,
             }
           : undefined;
 

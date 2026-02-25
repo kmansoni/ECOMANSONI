@@ -237,7 +237,7 @@ export function PostCard({
       {/* Image Carousel */}
       {allImages.length > 0 && (
         <div 
-          className="relative aspect-square cursor-pointer select-none"
+          className="relative media-frame media-frame--post cursor-pointer select-none"
           onDoubleClick={handleDoubleTap}
           onTouchStart={onTouchStart}
           onTouchMove={onTouchMove}
@@ -246,7 +246,7 @@ export function PostCard({
           <img
             src={allImages[currentImageIndex]}
             alt="Post image"
-            className="w-full h-full object-cover"
+            className="media-object media-object--fill media-object--cover"
           />
           
           {/* Floating hearts on double tap */}

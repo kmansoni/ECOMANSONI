@@ -14,6 +14,7 @@ import { validateCreateSession, type CreateValidationReason } from "@/features/c
 import type { CreateAsset } from "@/features/create/session/types";
 
 type CreateTab = "post" | "story" | "reels" | "live";
+type CreateEntry = "plus" | "swipe" | "shortcut";
 
 type RecentItem = {
   id: string;
@@ -38,10 +39,22 @@ const MOCK_RECENTS: RecentItem[] = [
   { id: "r10", kind: "image", source: "remote", url: "https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=600&q=80" },
 ];
 
-function normalizeTab(v: string | null): CreateTab {
+function normalizeEntry(v: string | null): CreateEntry {
+  const entry = String(v || "").toLowerCase();
+  if (entry === "swipe") return "swipe";
+  if (entry === "shortcut") return "shortcut";
+  return "plus";
+}
+
+function defaultTabForEntry(entry: CreateEntry): CreateTab {
+  if (entry === "swipe") return "story";
+  return "post";
+}
+
+function normalizeTab(v: string | null, entry: CreateEntry = "plus"): CreateTab {
   const t = String(v || "").toLowerCase();
   if (t === "post" || t === "story" || t === "reels" || t === "live") return t;
-  return "reels";
+  return defaultTabForEntry(entry);
 }
 
 const TAB_ORDER: CreateTab[] = ["post", "story", "reels", "live"];
@@ -56,13 +69,14 @@ function titleForTab(tab: CreateTab) {
 export function CreateCenterPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const initialTab = useMemo(() => normalizeTab(searchParams.get("tab")), [searchParams]);
+  const entry = useMemo(() => normalizeEntry(searchParams.get("entry")), [searchParams]);
+  const initialTab = useMemo(() => normalizeTab(searchParams.get("tab"), entry), [entry, searchParams]);
 
   const { setIsCreatingContent } = useChatOpen();
 
   const { session, setMode, setAssets } = useCreateSessionStore({
     initialMode: initialTab,
-    entry: searchParams.get("auto") === "1" ? "shortcut" : "plus",
+    entry: searchParams.get("auto") === "1" ? "shortcut" : entry,
   });
   const activeTab = session.mode;
 
@@ -203,7 +217,8 @@ export function CreateCenterPage() {
   useEffect(() => {
     const auto = searchParams.get("auto") === "1";
     if (!auto) return;
-    const t = normalizeTab(searchParams.get("tab"));
+    const autoEntry = normalizeEntry(searchParams.get("entry"));
+    const t = normalizeTab(searchParams.get("tab"), autoEntry);
     setActiveTab(t);
 
     if (t === "post") setPostOpen(true);

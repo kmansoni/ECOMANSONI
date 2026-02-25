@@ -46,11 +46,11 @@ export function VideoPlayer({ src, isOwn, onFullscreen }: VideoPlayerProps) {
   };
 
   return (
-    <div className="relative max-w-[280px] rounded-2xl overflow-hidden">
+    <div className="relative inline-block media-frame media-frame--chat">
       <video
         ref={videoRef}
         src={src}
-        className="w-full h-auto"
+        className="media-object"
         onTimeUpdate={handleTimeUpdate}
         onEnded={handleEnded}
         playsInline

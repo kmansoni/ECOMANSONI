@@ -7,6 +7,7 @@ export function useUserPresenceStatus(userId?: string | null) {
   const [lastSeenAt, setLastSeenAt] = useState<string | null>(null);
   const [statusEmoji, setStatusEmoji] = useState<string | null>(null);
   const [statusStickerUrl, setStatusStickerUrl] = useState<string | null>(null);
+  const [statusTick, setStatusTick] = useState(0);
 
   useEffect(() => {
     if (!userId) return;
@@ -83,13 +84,21 @@ export function useUserPresenceStatus(userId?: string | null) {
     };
   }, [userId]);
 
-  const isOnline = useMemo(() => isOnlineFromLastSeen(lastSeenAt), [lastSeenAt]);
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      setStatusTick((v) => v + 1);
+    }, 5000);
+
+    return () => window.clearInterval(id);
+  }, []);
+
+  const isOnline = useMemo(() => isOnlineFromLastSeen(lastSeenAt), [lastSeenAt, statusTick]);
 
   const statusText = useMemo(() => {
     if (isOnline) return "в сети";
     if (!lastSeenAt) return "был(а) недавно";
     return formatLastSeen(lastSeenAt);
-  }, [isOnline, lastSeenAt]);
+  }, [isOnline, lastSeenAt, statusTick]);
 
   return { lastSeenAt, isOnline, statusText, statusEmoji, statusStickerUrl };
 }

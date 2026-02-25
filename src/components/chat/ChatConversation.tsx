@@ -117,6 +117,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
   );
 
   const [isOtherTyping, setIsOtherTyping] = useState(false);
+  const [otherLiveActivity, setOtherLiveActivity] = useState<"typing" | "recording_voice" | "recording_video" | null>(null);
   const typingChannelRef = useRef<any>(null);
   const typingStopTimerRef = useRef<number | null>(null);
   const lastTypingSentAtRef = useRef<number>(0);
@@ -352,11 +353,21 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
           if (!p || p.user_id !== otherUserId) return;
 
           const isTyping = !!p.is_typing;
-          setIsOtherTyping(isTyping);
+          const activityRaw = String(p.activity || (isTyping ? "typing" : ""));
+          const activity: "typing" | "recording_voice" | "recording_video" =
+            activityRaw === "recording_voice" || activityRaw === "recording_video"
+              ? activityRaw
+              : "typing";
+
+          setIsOtherTyping(isTyping && activity === "typing");
+          setOtherLiveActivity(isTyping ? activity : null);
 
           if (otherTypingTimerRef.current) window.clearTimeout(otherTypingTimerRef.current);
           if (isTyping) {
-            otherTypingTimerRef.current = window.setTimeout(() => setIsOtherTyping(false), 3500);
+            otherTypingTimerRef.current = window.setTimeout(() => {
+              setIsOtherTyping(false);
+              setOtherLiveActivity(null);
+            }, 3500);
           }
         },
       )
@@ -373,7 +384,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
   }, [conversationId, otherUserId, user?.id, isGroup]);
 
   const sendTyping = useCallback(
-    (isTyping: boolean) => {
+    (isTyping: boolean, activity: "typing" | "recording_voice" | "recording_video" = "typing") => {
       if (isGroup) return;
       if (!typingChannelRef.current) return;
       if (!user?.id) return;
@@ -381,7 +392,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
       typingChannelRef.current.send({
         type: "broadcast",
         event: "typing",
-        payload: { user_id: user.id, is_typing: isTyping },
+        payload: { user_id: user.id, is_typing: isTyping, activity },
       });
     },
     [user?.id, isGroup],
@@ -401,13 +412,13 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
 
       const now = Date.now();
       if (now - lastTypingSentAtRef.current > 700) {
-        sendTyping(value.trim().length > 0);
+        sendTyping(value.trim().length > 0, "typing");
         lastTypingSentAtRef.current = now;
       }
 
       if (typingStopTimerRef.current) window.clearTimeout(typingStopTimerRef.current);
       typingStopTimerRef.current = window.setTimeout(() => {
-        sendTyping(false);
+        sendTyping(false, "typing");
       }, 2000);
     },
     [sendTyping, isGroup],
@@ -417,9 +428,11 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
     if (isGroup) {
       return `${participantCount || 0} участник${participantCount === 1 ? "" : participantCount && participantCount < 5 ? "а" : "ов"}`;
     }
-    if (isOtherTyping) return "печатает…";
+    if (otherLiveActivity === "recording_voice") return "записывает голосовое…";
+    if (otherLiveActivity === "recording_video") return "записывает кружочек…";
+    if (isOtherTyping || otherLiveActivity === "typing") return "печатает…";
     return otherPresenceText;
-  }, [isGroup, participantCount, isOtherTyping, otherPresenceText]);
+  }, [isGroup, participantCount, isOtherTyping, otherPresenceText, otherLiveActivity]);
 
   // Mark incoming messages as read when chat is opened / receives new messages.
   useEffect(() => {
@@ -603,6 +616,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
 
       mediaRecorder.start();
       setIsRecording(true);
+      sendTyping(true, "recording_voice");
     } catch (err) {
       console.error('Failed to start recording:', err);
     }
@@ -631,8 +645,9 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
 
       mediaRecorderRef.current!.stop();
       setIsRecording(false);
+      sendTyping(false, "recording_voice");
     });
-  }, [isRecording, sendMediaMessage]);
+  }, [isRecording, sendMediaMessage, sendTyping]);
 
   const cancelRecording = () => {
     if (mediaRecorderRef.current) {
@@ -641,6 +656,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
     }
     audioChunksRef.current = [];
     setIsRecording(false);
+    sendTyping(false, "recording_voice");
   };
 
   const toggleVoicePlay = async (messageId: string, mediaUrl?: string) => {
@@ -713,10 +729,18 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
   };
 
   // Hold-to-record handlers for dynamic mic/video button
-  const holdStartedRef = useRef(false); // Track if mousedown happened on button
+  const holdStartedRef = useRef(false);
+  const activePointerIdRef = useRef<number | null>(null);
 
-  const handleRecordButtonDown = useCallback((e: React.TouchEvent | React.MouseEvent) => {
+  const handleRecordButtonDown = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
     e.preventDefault();
+    if (activePointerIdRef.current !== null) return;
+    activePointerIdRef.current = e.pointerId;
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // ignore
+    }
     isHoldingRef.current = false;
     holdStartedRef.current = true;
     
@@ -726,14 +750,19 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
         startRecording();
       } else {
         setShowVideoRecorder(true);
+        sendTyping(true, "recording_video");
       }
     }, 200); // 200ms delay to distinguish tap from hold
-  }, [recordMode]);
+  }, [recordMode, sendTyping]);
 
-  const handleRecordButtonUp = useCallback(() => {
+  const handleRecordButtonUp = useCallback((e?: React.PointerEvent<HTMLButtonElement>) => {
+    if (e && activePointerIdRef.current !== null && e.pointerId !== activePointerIdRef.current) {
+      return;
+    }
     // Only process if button down started on this button
     if (!holdStartedRef.current) return;
     holdStartedRef.current = false;
+    activePointerIdRef.current = null;
     
     if (holdTimerRef.current) {
       clearTimeout(holdTimerRef.current);
@@ -745,12 +774,15 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
       if (recordMode === 'voice' && isRecording) {
         stopRecording();
       }
+      if (recordMode === 'video') {
+        sendTyping(false, "recording_video");
+      }
     } else {
       // This was a tap — switch mode
       setRecordMode(prev => prev === 'voice' ? 'video' : 'voice');
     }
     isHoldingRef.current = false;
-  }, [recordMode, isRecording, stopRecording]);
+  }, [recordMode, isRecording, stopRecording, sendTyping]);
 
   // Cancel hold timer when mouse leaves (but don't switch mode)
   const handleRecordButtonLeave = useCallback(() => {
@@ -1269,7 +1301,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
                 ) : (
                   <div className={`flex flex-col gap-1 flex-1 min-w-0 ${isOwn ? "items-end" : "items-start"}`}>
                     <div 
-                      className={`chat-bubble inline-block max-w-[min(75%,560px)] rounded-2xl overflow-hidden ${mediaTapEnabled ? "cursor-pointer" : ""} backdrop-blur-xl ${
+                      className={`chat-bubble inline-block media-frame media-frame--chat rounded-2xl ${mediaTapEnabled ? "cursor-pointer" : ""} backdrop-blur-xl ${
                         isOwn 
                           ? "rounded-br-md bg-white/10 border border-white/10" 
                           : "rounded-bl-md bg-white/5 border border-white/10"
@@ -1287,7 +1319,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
                       <img 
                         src={message.media_url} 
                         alt="Изображение" 
-                        className="max-w-full h-auto"
+                        className="media-object"
                       />
                     </div>
                     <div className={`mt-0.5 flex items-center gap-1 px-1 ${isOwn ? "self-end" : "self-start"}`}>
@@ -1541,11 +1573,10 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
                 </button>
               ) : (
                 <button
-                  onTouchStart={handleRecordButtonDown}
-                  onTouchEnd={handleRecordButtonUp}
-                  onMouseDown={handleRecordButtonDown}
-                  onMouseUp={handleRecordButtonUp}
-                  onMouseLeave={handleRecordButtonLeave}
+                  onPointerDown={handleRecordButtonDown}
+                  onPointerUp={handleRecordButtonUp}
+                  onPointerCancel={handleRecordButtonUp}
+                  onPointerLeave={handleRecordButtonLeave}
                   onContextMenu={(e) => e.preventDefault()}
                   className="w-12 h-12 rounded-full flex items-center justify-center shrink-0 transition-all backdrop-blur-xl border border-cyan-400/30 select-none"
                   style={{
@@ -1583,7 +1614,10 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
       {showVideoRecorder && (
         <VideoCircleRecorder
           onRecord={handleVideoRecord}
-          onCancel={() => setShowVideoRecorder(false)}
+          onCancel={() => {
+            setShowVideoRecorder(false);
+            sendTyping(false, "recording_video");
+          }}
         />
       )}
 

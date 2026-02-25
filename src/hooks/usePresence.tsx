@@ -2,7 +2,8 @@ import { useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
 
-const UPDATE_INTERVAL = 30000; // 30 seconds
+const UPDATE_INTERVAL = 15000; // 15 seconds
+const ONLINE_WINDOW_MS = 45000; // 45 seconds
 
 export function usePresence() {
   const { user } = useAuth();
@@ -66,7 +67,7 @@ export function formatLastSeen(lastSeenAt: string | null): string {
   const diffHours = Math.floor(diffMinutes / 60);
   const diffDays = Math.floor(diffHours / 24);
 
-  if (diffMinutes < 2) return "онлайн";
+  if (diffMs < ONLINE_WINDOW_MS) return "онлайн";
   if (diffMinutes < 60) return `был(а) ${diffMinutes} мин назад`;
   if (diffHours < 24) return `был(а) ${diffHours} ч назад`;
   if (diffDays === 1) return "был(а) вчера";
@@ -78,5 +79,5 @@ export function isOnline(lastSeenAt: string | null): boolean {
   const lastSeen = new Date(lastSeenAt);
   const now = new Date();
   const diffMs = now.getTime() - lastSeen.getTime();
-  return diffMs < 120000; // 2 minutes
+  return diffMs < ONLINE_WINDOW_MS;
 }
