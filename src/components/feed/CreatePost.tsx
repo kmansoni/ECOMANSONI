@@ -1,11 +1,10 @@
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
-import { CreateMenu } from "./CreateMenu";
-import { useNavigate } from "react-router-dom";
+import { CreateContentModal } from "./CreateContentModal";
+import type { ContentType } from "@/hooks/useMediaEditor";
 
 export function CreatePost() {
-  const navigate = useNavigate();
-  const [showMenu, setShowMenu] = useState(false);
+  const [showModal, setShowModal] = useState(false);
 
   return (
     <>
@@ -17,24 +16,24 @@ export function CreatePost() {
         />
         <div 
           className="flex-1 text-muted-foreground text-sm cursor-pointer"
-          onClick={() => setShowMenu(true)}
+          onClick={() => setShowModal(true)}
         >
           Что нового?
         </div>
         <Button 
           size="sm" 
           className="rounded-full px-5 font-semibold h-9"
-          onClick={() => setShowMenu(true)}
+          onClick={() => setShowModal(true)}
         >
           Создать
         </Button>
       </div>
 
-      <CreateMenu
-        isOpen={showMenu}
-        onClose={() => setShowMenu(false)}
-        onSelect={(type) => {
-          navigate(`/create?tab=${encodeURIComponent(type)}&auto=1`);
+      <CreateContentModal
+        isOpen={showModal}
+        onClose={() => setShowModal(false)}
+        onSuccess={(contentType: ContentType) => {
+          setShowModal(false);
         }}
       />
     </>

@@ -6,8 +6,10 @@ import { useChatOpen } from "@/contexts/ChatOpenContext";
 import { cn } from "@/lib/utils";
 import { usePresence } from "@/hooks/usePresence";
 import { Plus } from "lucide-react";
-import { CreateMenu } from "@/components/feed/CreateMenu";
+import { CreateContentModal } from "@/components/feed/CreateContentModal";
 import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
+import type { ContentType } from "@/hooks/useMediaEditor";
 
 export function AppLayout() {
   usePresence();
@@ -74,11 +76,12 @@ export function AppLayout() {
         </button>
       )}
 
-      <CreateMenu
+      <CreateContentModal
         isOpen={createOpen}
         onClose={() => setCreateOpen(false)}
-        onSelect={(type) => {
-          navigate(`/create?tab=${encodeURIComponent(type)}&auto=1`);
+        onSuccess={(contentType: ContentType) => {
+          toast.success('Контент готов к публикации');
+          setCreateOpen(false);
         }}
       />
 

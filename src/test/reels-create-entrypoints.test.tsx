@@ -28,9 +28,9 @@ vi.mock("@/components/reels/ReelCommentsSheet", () => ({
   ReelCommentsSheet: () => null,
 }));
 
-vi.mock("@/components/feed/CreateMenu", () => ({
-  CreateMenu: ({ onSelect }: { onSelect: (type: string) => void }) => (
-    <button type="button" onClick={() => onSelect("reels")}>
+vi.mock("@/components/feed/CreateContentModal", () => ({
+  CreateContentModal: ({ onSuccess }: { onSuccess: (type: string) => void }) => (
+    <button type="button" onClick={() => onSuccess("reel")}>
       select-reels
     </button>
   ),

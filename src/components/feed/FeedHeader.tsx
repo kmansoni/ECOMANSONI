@@ -6,8 +6,8 @@ import { cn } from "@/lib/utils";
 import { useScrollContainer } from "@/contexts/ScrollContainerContext";
 import { StoryViewer } from "./StoryViewer";
 import { useStories, type UserWithStories } from "@/hooks/useStories";
-import { CreateMenu } from "@/components/feed/CreateMenu";
-import { useNavigate } from "react-router-dom";
+import { CreateContentModal } from "@/components/feed/CreateContentModal";
+import type { ContentType } from "@/hooks/useMediaEditor";
 
 // Animation constants - moved outside for performance
 const EXPANDED_AVATAR_SIZE = 64;
@@ -220,11 +220,11 @@ export function FeedHeader() {
         onClose={() => setStoryViewerOpen(false)}
       />
 
-      <CreateMenu
+      <CreateContentModal
         isOpen={createOpen}
         onClose={() => setCreateOpen(false)}
-        onSelect={(type) => {
-          navigate(`/create?tab=${encodeURIComponent(type)}&auto=1`);
+        onSuccess={(contentType: ContentType) => {
+          setCreateOpen(false);
         }}
       />
     </div>

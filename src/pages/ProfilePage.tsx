@@ -3,8 +3,9 @@ import { Button } from "@/components/ui/button";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
-import { CreateMenu } from "@/components/feed/CreateMenu";
+import { CreateContentModal } from "@/components/feed/CreateContentModal";
 import { FollowersSheet } from "@/components/profile/FollowersSheet";
+import type { ContentType } from "@/hooks/useMediaEditor";
 import { useProfile, useUserPosts } from "@/hooks/useProfile";
 import { useSavedPosts } from "@/hooks/useSavedPosts";
 import { useAuth } from "@/hooks/useAuth";
@@ -46,7 +47,7 @@ export function ProfilePage() {
   const { savedPosts, fetchSavedPosts, loading: savedLoading } = useSavedPosts();
   
   const [activeTab, setActiveTab] = useState("posts");
-  const [showCreateMenu, setShowCreateMenu] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
   
   const [showFollowers, setShowFollowers] = useState(false);
   const [showFollowing, setShowFollowing] = useState(false);
@@ -91,9 +92,7 @@ export function ProfilePage() {
     }
   };
 
-  const handleCreateSelect = (type: string) => {
-    navigate(`/create?tab=${encodeURIComponent(type)}&auto=1`);
-  };
+
 
   const handleTabChange = (tabId: string) => {
     setActiveTab(tabId);
@@ -161,7 +160,7 @@ export function ProfilePage() {
         <div className="flex items-center justify-between px-4 py-3 safe-area-top">
           <button
             type="button"
-            onClick={() => setShowCreateMenu(true)}
+            onClick={() => setShowCreateModal(true)}
             className="w-10 h-10 rounded-full bg-card/80 backdrop-blur-xl border border-border flex items-center justify-center hover:bg-muted/50 transition-colors"
             aria-label="Создать"
           >
@@ -194,7 +193,7 @@ export function ProfilePage() {
             {/* Avatar - clickable to open create menu */}
             <button 
               className="relative cursor-pointer"
-              onClick={() => setShowCreateMenu(true)}
+              onClick={() => setShowCreateModal(true)}
             >
               <div className="absolute -inset-1 rounded-full bg-gradient-to-br from-white/20 via-white/5 to-white/10 backdrop-blur-xl" />
               <Avatar className="w-20 h-20 border-2 border-border relative">
@@ -481,10 +480,12 @@ export function ProfilePage() {
       </div>
 
       {/* Create Menu */}
-      <CreateMenu 
-        isOpen={showCreateMenu} 
-        onClose={() => setShowCreateMenu(false)} 
-        onSelect={handleCreateSelect}
+      <CreateContentModal 
+        isOpen={showCreateModal} 
+        onClose={() => setShowCreateModal(false)} 
+        onSuccess={(contentType: ContentType) => {
+          setShowCreateModal(false);
+        }}
       />
 
 
