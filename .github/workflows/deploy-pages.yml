@@ -50,7 +50,7 @@ jobs:
       - name: Build
         run: npx vite build
         env:
-          VITE_BASE: /
+          VITE_BASE: ./
           SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
