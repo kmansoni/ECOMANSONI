@@ -8,6 +8,13 @@ import { initIceCacheAutoInvalidation } from "@/lib/webrtc-config";
 initTelegramMiniApp();
 initIceCacheAutoInvalidation();
 
+// GitHub Pages SPA fallback: restore the original path saved by 404.html
+const saved = sessionStorage.getItem("__spa_path__");
+if (saved && /^\/[^/]/.test(saved)) {
+  sessionStorage.removeItem("__spa_path__");
+  history.replaceState(null, "", saved);
+}
+
 createRoot(document.getElementById("root")!).render(
   <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
     <App />
