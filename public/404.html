@@ -10,6 +10,11 @@
       (function () {
         var l = window.location;
 
+        // Prevent infinite redirect loop - if already in ?/ format, don't redirect again
+        if (l.search && l.search.startsWith('?/')) {
+          return;
+        }
+
         // /<repo>/<path...>
         var segments = l.pathname.split('/').filter(Boolean);
         var repo = segments.length ? segments[0] : '';

@@ -16,6 +16,14 @@
         var l = window.location;
         if (l.search && l.search.startsWith('?/')) {
           var query = l.search.slice(2);
+          
+          // Prevent malformed URLs like ?/&/&/&... from infinite loops
+          if (query.startsWith('&/&') || query.match(/(&\/){3,}/)) {
+            // Corrupted URL - reset to home
+            window.history.replaceState(null, '', l.pathname);
+            return;
+          }
+          
           var parts = query.split('&');
           var path = parts.shift() || '';
           var remaining = parts.length ? ('?' + parts.join('&')) : '';
