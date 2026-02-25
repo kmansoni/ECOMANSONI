@@ -27,7 +27,6 @@ const COLLAPSED_Y = (HEADER_HEIGHT - COLLAPSED_AVATAR_SIZE) / 2;
 const Y_DIFF = COLLAPSED_Y - HEADER_HEIGHT;
 
 export function FeedHeader() {
-  const navigate = useNavigate();
   const { collapseProgress } = useScrollCollapse(100);
   const scrollContainerRef = useScrollContainer();
   const { usersWithStories, loading } = useStories();
