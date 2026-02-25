@@ -9,6 +9,9 @@ import { CreateReelSheet } from "@/components/reels/CreateReelSheet";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useChatOpen } from "@/contexts/ChatOpenContext";
+import { useCreateSessionStore } from "@/features/create/session/useCreateSessionStore";
+import { validateCreateSession, type CreateValidationReason } from "@/features/create/session/validator";
+import type { CreateAsset } from "@/features/create/session/types";
 
 type CreateTab = "post" | "story" | "reels" | "live";
 
@@ -57,7 +60,16 @@ export function CreateCenterPage() {
 
   const { setIsCreatingContent } = useChatOpen();
 
-  const [activeTab, setActiveTab] = useState<CreateTab>(initialTab);
+  const { session, setMode, setAssets } = useCreateSessionStore({
+    initialMode: initialTab,
+    entry: searchParams.get("auto") === "1" ? "shortcut" : "plus",
+  });
+  const activeTab = session.mode;
+
+  const setActiveTab = useCallback((tab: CreateTab) => {
+    setMode(tab);
+  }, [setMode]);
+
   const [postOpen, setPostOpen] = useState(false);
   const [storyOpen, setStoryOpen] = useState(false);
   const [reelsOpen, setReelsOpen] = useState(false);
@@ -81,11 +93,34 @@ export function CreateCenterPage() {
   );
   const selectedPreviewUrls = useMemo(() => selectedItems.map((i) => i.url), [selectedItems]);
 
-  const canProceed = useMemo(() => {
-    if (activeTab === "live") return false;
-    if (activeTab === "reels") return selectedItems.length > 0 && selectedItems[0]?.kind === "video" && !!selectedItems[0]?.file;
-    return selectedItems.length > 0;
-  }, [activeTab, selectedItems]);
+  const sessionAssets = useMemo<CreateAsset[]>(
+    () =>
+      selectedItems.map((item) => ({
+        id: item.id,
+        kind: item.kind,
+        source: item.source,
+        localFile: item.file,
+        localUrl: item.source === "local" ? item.url : undefined,
+        remoteUrl: item.source === "remote" ? item.url : undefined,
+        mimeType: item.file?.type,
+        status: item.source === "remote" ? "uploaded" : "local",
+      })),
+    [selectedItems],
+  );
+
+  useEffect(() => {
+    setAssets(sessionAssets);
+  }, [sessionAssets, setAssets]);
+
+  const validation = useMemo(() => {
+    return validateCreateSession({
+      ...session,
+      mode: activeTab,
+      assets: sessionAssets,
+    });
+  }, [activeTab, session, sessionAssets]);
+
+  const canProceed = validation.ok;
 
   const previewUrl = selectedPreviewUrls[focusIndex] ?? null;
   const previewFile = selectedItems[focusIndex]?.file ?? null;
@@ -102,6 +137,15 @@ export function CreateCenterPage() {
     (!previewFile && inferIsVideoUrl(previewUrl));
 
   const previewAspectClass = activeTab === "post" ? "aspect-square" : "aspect-[9/16]";
+
+  const validationText: Record<CreateValidationReason, string> = {
+    LIVE_NOT_READY: "Прямой эфир пока в разработке",
+    NO_ASSETS: "Выберите медиа",
+    TOO_MANY_ASSETS: `Можно выбрать максимум ${POST_MULTI_MAX}`,
+    STORY_SINGLE_ONLY: "Для истории доступен только один файл",
+    REELS_VIDEO_ONLY: "Для Reels нужно выбрать видео",
+    REELS_LOCAL_FILE_REQUIRED: "Для Reels выберите локальное видео из галереи",
+  };
 
   useEffect(() => {
     focusIndexRef.current = focusIndex;
@@ -347,7 +391,11 @@ export function CreateCenterPage() {
   }, [activeTab, postMultiSelect]);
 
   const handleNext = () => {
-    if (!canProceed) return;
+    if (!canProceed) {
+      const reason = validation.reasons[0];
+      if (reason) toast.error(validationText[reason]);
+      return;
+    }
     if (activeTab === "post") {
       setPostOpen(true);
       return;
