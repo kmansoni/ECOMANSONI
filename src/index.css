@@ -221,7 +221,10 @@ All colors MUST be HSL.
 
   html.dark,
   html.dark body {
-    background: #000000;
+    background:
+      radial-gradient(circle at 50% 30%, rgba(15,69,255,0.08) 0%, rgba(106,54,255,0.06) 18%, transparent 40%),
+      radial-gradient(circle at 50% 85%, rgba(15,69,255,0.28) 0%, rgba(106,54,255,0.22) 22%, transparent 60%),
+      linear-gradient(180deg, #05050A 0%, #0C0C14 100%);
     background-attachment: fixed;
   }
 
