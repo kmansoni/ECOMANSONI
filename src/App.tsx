@@ -75,7 +75,13 @@ function PageLoader() {
 
 const ROUTER_BASENAME = (() => {
   const baseUrl = import.meta.env.BASE_URL;
-  if (!baseUrl || baseUrl === "/") return "/";
+  if (!baseUrl || baseUrl === "/" || baseUrl === "./") {
+    if (typeof window !== "undefined" && window.location.hostname.endsWith("github.io")) {
+      const firstSegment = window.location.pathname.split("/").filter(Boolean)[0];
+      if (firstSegment) return `/${firstSegment}`;
+    }
+    return "/";
+  }
   return baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
 })();
 
