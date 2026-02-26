@@ -6,22 +6,16 @@ import { PhoneInput } from "@/components/ui/phone-input";
 import { toast } from "sonner";
 import logo from "@/assets/logo.png";
 import { RegistrationModal } from "@/components/auth/RegistrationModal";
-import { supabase, SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/supabase";
+import { supabase } from "@/lib/supabase";
 import { RecommendedUsersModal } from "@/components/profile/RecommendedUsersModal";
 import { setGuestMode } from "@/lib/demo/demoMode";
+import { getPhoneAuthFunctionUrls, getPhoneAuthHeaders } from "@/lib/auth/backendEndpoints";
 
 const DEMO_GUEST_PHONE = "+70000000000";
 
 type AuthMode = "select" | "login" | "register";
 
 const PHONE_AUTH_TIMEOUT_MS = 12_000;
-
-function buildPhoneAuthUrl(): string {
-  // Prefer env-configured project URL to avoid hardcoding projectRef.
-  const base = (SUPABASE_URL || "").replace(/\/+$/, "");
-  if (!base) return "";
-  return `${base}/functions/v1/phone-auth`;
-}
 
 async function fetchJsonWithTimeout(
   input: RequestInfo | URL,
@@ -91,16 +85,16 @@ export function AuthPage() {
       const invokeStartTime = Date.now();
       
       // Manually create the request to debug
-      const functionUrl = buildPhoneAuthUrl();
-      if (!functionUrl) {
-        toast.error("Не настроен Supabase URL");
+      const functionUrls = getPhoneAuthFunctionUrls();
+      if (functionUrls.length === 0) {
+        toast.error("Не настроен endpoint авторизации");
         return;
       }
       
-      console.log("🔵 [AuthPage] Manual fetch request to:", functionUrl);
+      console.log("🔵 [AuthPage] Manual fetch requests:", functionUrls);
       console.log("🔵 [AuthPage] Headers:", { 
         'Content-Type': 'application/json',
-        'apikey': SUPABASE_ANON_KEY ? `${SUPABASE_ANON_KEY.substring(0, 10)}...` : 'MISSING',
+        'apikey': getPhoneAuthHeaders().apikey ? `${String(getPhoneAuthHeaders().apikey).substring(0, 10)}...` : 'MISSING',
         'x-client-info': 'supabase-js/2'
       });
       
@@ -114,21 +108,35 @@ export function AuthPage() {
       console.log("🔵 [AuthPage] Request body:", body);
       
       // Try manual fetch with detailed logging
-      const { response, data } = await fetchJsonWithTimeout(
-        functionUrl,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-            apikey: SUPABASE_ANON_KEY,
-            "x-client-info": "supabase-js/2",
-          },
-          body: JSON.stringify(body),
-        },
-        PHONE_AUTH_TIMEOUT_MS,
-        "phone-auth",
-      );
+      let response: Response | null = null;
+      let data: any | null = null;
+      let lastAuthError: any = null;
+
+      for (const functionUrl of functionUrls) {
+        try {
+          const result = await fetchJsonWithTimeout(
+            functionUrl,
+            {
+              method: "POST",
+              headers: getPhoneAuthHeaders(),
+              body: JSON.stringify(body),
+            },
+            PHONE_AUTH_TIMEOUT_MS,
+            "phone-auth",
+          );
+
+          response = result.response;
+          data = result.data;
+          if (response.ok && data?.ok) break;
+          lastAuthError = data?.error || `HTTP ${response.status}`;
+        } catch (err) {
+          lastAuthError = err;
+        }
+      }
+
+      if (!response) {
+        throw (lastAuthError || new Error("Failed to fetch phone-auth"));
+      }
       
       console.log(`🔵 [AuthPage] Response received after ${Date.now() - invokeStartTime}ms:`, {
         status: response.status,
@@ -144,7 +152,7 @@ export function AuthPage() {
           data 
         });
         toast.error("Не удалось выполнить вход", { 
-          description: data?.error || `HTTP ${response.status}` 
+          description: data?.error || (lastAuthError instanceof Error ? lastAuthError.message : String(lastAuthError || `HTTP ${response.status}`)) 
         });
         return;
       }
@@ -205,9 +213,9 @@ export function AuthPage() {
     try {
       console.log("🔵 [AuthPage] Guest access: starting");
 
-      const functionUrl = buildPhoneAuthUrl() || "";
-      if (!functionUrl) {
-        toast.error("Не настроен Supabase URL");
+      const functionUrls = getPhoneAuthFunctionUrls();
+      if (functionUrls.length === 0) {
+        toast.error("Не настроен endpoint авторизации");
         return;
       }
       const body = {
@@ -217,23 +225,36 @@ export function AuthPage() {
         email: "guest@placeholder.local",
       };
 
-      const { response, data } = await fetchJsonWithTimeout(
-        functionUrl,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-            apikey: SUPABASE_ANON_KEY,
-            "x-client-info": "supabase-js/2",
-          },
-          body: JSON.stringify(body),
-        },
-        PHONE_AUTH_TIMEOUT_MS,
-        "guest-phone-auth",
-      );
+      let response: Response | null = null;
+      let data: any | null = null;
+      let lastAuthError: any = null;
+
+      for (const functionUrl of functionUrls) {
+        try {
+          const result = await fetchJsonWithTimeout(
+            functionUrl,
+            {
+              method: "POST",
+              headers: getPhoneAuthHeaders(),
+              body: JSON.stringify(body),
+            },
+            PHONE_AUTH_TIMEOUT_MS,
+            "guest-phone-auth",
+          );
+          response = result.response;
+          data = result.data;
+          if (response.ok && data?.ok) break;
+          lastAuthError = data?.error || `HTTP ${response.status}`;
+        } catch (err) {
+          lastAuthError = err;
+        }
+      }
+
+      if (!response) {
+        throw (lastAuthError || new Error("Failed to fetch guest phone-auth"));
+      }
       if (!response.ok || !data?.ok) {
-        toast.error("Не удалось войти как гость", { description: data?.error || `HTTP ${response.status}` });
+        toast.error("Не удалось войти как гость", { description: data?.error || (lastAuthError instanceof Error ? lastAuthError.message : String(lastAuthError || `HTTP ${response.status}`)) });
         return;
       }
 

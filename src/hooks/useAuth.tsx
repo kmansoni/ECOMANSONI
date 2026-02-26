@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, createContext, useContext, ReactNode } fro
 import { User, Session } from "@supabase/supabase-js";
 import { supabase, SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/supabase";
 import { startAutoPushTokenRegistration } from "@/lib/push/autoRegister";
+import { getPhoneAuthFunctionUrls, getPhoneAuthHeaders } from "@/lib/auth/backendEndpoints";
 
 interface AuthContextType {
   user: User | null;
@@ -17,11 +18,6 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const USE_SUPABASE_PHONE_OTP = import.meta.env.VITE_USE_SUPABASE_PHONE_OTP === "true";
 
-function buildPhoneAuthUrl(): string {
-  const base = (SUPABASE_URL || "").replace(/\/+$/, "");
-  return base ? `${base}/functions/v1/phone-auth` : "";
-}
-
 function isPhoneProviderDisabled(err: any): boolean {
   const code = String(err?.code || "").toLowerCase();
   const message = String(err?.message || "").toLowerCase();
@@ -34,12 +30,9 @@ async function signInWithPhoneAuthFallback(phone: string): Promise<{ error: any 
     return { error: new Error("Invalid phone number") };
   }
 
-  const functionUrl = buildPhoneAuthUrl();
-  if (!functionUrl) {
-    return { error: new Error("Supabase URL is not configured") };
-  }
-  if (!SUPABASE_ANON_KEY) {
-    return { error: new Error("Supabase anon key is not configured") };
+  const functionUrls = getPhoneAuthFunctionUrls();
+  if (functionUrls.length === 0) {
+    return { error: new Error("Phone auth endpoint is not configured") };
   }
 
   const body = {
@@ -49,49 +42,49 @@ async function signInWithPhoneAuthFallback(phone: string): Promise<{ error: any 
     email: `user${digits}@placeholder.local`,
   };
 
-  try {
-    const response = await fetch(functionUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-        apikey: SUPABASE_ANON_KEY,
-        "x-client-info": "supabase-js/2",
-      },
-      body: JSON.stringify(body),
-    });
-
-    const text = await response.text();
-    let data: any = null;
+  let lastError: any = null;
+  for (const functionUrl of functionUrls) {
     try {
-      data = text ? JSON.parse(text) : null;
-    } catch {
-      data = null;
-    }
+      const response = await fetch(functionUrl, {
+        method: "POST",
+        headers: getPhoneAuthHeaders(),
+        body: JSON.stringify(body),
+      });
 
-    if (!response.ok || !data?.ok) {
-      return {
-        error: {
+      const text = await response.text();
+      let data: any = null;
+      try {
+        data = text ? JSON.parse(text) : null;
+      } catch {
+        data = null;
+      }
+
+      if (!response.ok || !data?.ok) {
+        lastError = {
           message: data?.error || `HTTP ${response.status}`,
           status: response.status,
           code: data?.code || "phone_auth_failed",
-        },
-      };
+        };
+        continue;
+      }
+
+      if (!data.accessToken || !data.refreshToken) {
+        lastError = new Error("phone-auth did not return session tokens");
+        continue;
+      }
+
+      const { error: sessionError } = await supabase.auth.setSession({
+        access_token: data.accessToken,
+        refresh_token: data.refreshToken,
+      });
+
+      return { error: (sessionError as any) ?? null };
+    } catch (err) {
+      lastError = err as any;
     }
-
-    if (!data.accessToken || !data.refreshToken) {
-      return { error: new Error("phone-auth did not return session tokens") };
-    }
-
-    const { error: sessionError } = await supabase.auth.setSession({
-      access_token: data.accessToken,
-      refresh_token: data.refreshToken,
-    });
-
-    return { error: (sessionError as any) ?? null };
-  } catch (err) {
-    return { error: err as any };
   }
+
+  return { error: lastError ?? new Error("Phone auth failed") };
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -216,11 +209,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  const userId = user?.id;
+
   useEffect(() => {
-    if (!user) return;
+    if (!userId) return;
     const stop = startAutoPushTokenRegistration();
     return () => stop();
-  }, [user?.id]);
+  }, [userId]);
 
   const signIn = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({
@@ -297,10 +292,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 }
 
-export function useAuth() {
+// eslint-disable-next-line react-refresh/only-export-components
+export const useAuth = () => {
   const context = useContext(AuthContext);
   if (context === undefined) {
     throw new Error("useAuth must be used within an AuthProvider");
   }
   return context;
-}
+};
