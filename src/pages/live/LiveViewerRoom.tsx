@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -29,6 +29,7 @@ interface ChatMessage {
 export function LiveViewerRoom() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
+  const supabaseUnsafe = supabase as any;
   const [title, setTitle] = useState("");
   const [creatorName, setCreatorName] = useState("");
   const [viewerCount, setViewerCount] = useState(0);
@@ -37,24 +38,9 @@ export function LiveViewerRoom() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
-    if (!sessionId) return;
-    loadSession();
-    loadMessages();
-
-    const subscription = supabase
-      .channel(`live:${sessionId}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "live_chat_messages" }, () => {
-        loadMessages();
-      })
-      .subscribe();
-
-    return () => subscription.unsubscribe();
-  }, [sessionId]);
-
-  async function loadSession() {
+  const loadSession = useCallback(async () => {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await supabaseUnsafe
         .from("live_sessions")
         .select("title, creator_id, viewer_count_current")
         .eq("id", sessionId)
@@ -62,14 +48,20 @@ export function LiveViewerRoom() {
 
       if (error) throw error;
 
-      setTitle(data.title);
-      setViewerCount(data.viewer_count_current || 0);
+      const sessionData = {
+        title: String(data?.title ?? data?.name ?? "Live Stream"),
+        creator_id: String(data?.creator_id ?? data?.author_id ?? ""),
+        viewer_count_current: Number(data?.viewer_count_current ?? 0),
+      };
+
+      setTitle(sessionData.title);
+      setViewerCount(sessionData.viewer_count_current || 0);
 
       // Get creator name
       const { data: profile } = await supabase
         .from("profiles")
         .select("display_name")
-        .eq("id", data.creator_id)
+        .eq("id", sessionData.creator_id)
         .single();
 
       if (profile) setCreatorName(profile.display_name || "Creator");
@@ -79,11 +71,11 @@ export function LiveViewerRoom() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [sessionId, supabaseUnsafe]);
 
-  async function loadMessages() {
+  const loadMessages = useCallback(async () => {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await supabaseUnsafe
         .from("live_chat_messages")
         .select("*")
         .eq("session_id", sessionId)
@@ -91,11 +83,34 @@ export function LiveViewerRoom() {
         .order("created_at", { ascending: true });
 
       if (error) throw error;
-      setMessages(data || []);
+      const mapped = (data || []).map((row: any) => ({
+        id: Number(row?.id ?? 0),
+        content: String(row?.content ?? ""),
+        sender_id: String(row?.sender_id ?? ""),
+        created_at: String(row?.created_at ?? ""),
+      }));
+      setMessages(mapped);
     } catch (error) {
       console.error("Failed to load messages:", error);
     }
-  }
+  }, [sessionId, supabaseUnsafe]);
+
+  useEffect(() => {
+    if (!sessionId) return;
+    void loadSession();
+    void loadMessages();
+
+    const subscription = supabase
+      .channel(`live:${sessionId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "live_chat_messages" }, () => {
+        void loadMessages();
+      })
+      .subscribe();
+
+    return () => {
+      void subscription.unsubscribe();
+    };
+  }, [loadMessages, loadSession, sessionId]);
 
   async function sendMessage() {
     if (!messageText.trim()) return;
@@ -105,7 +120,7 @@ export function LiveViewerRoom() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Not authenticated");
 
-      const { error } = await supabase.from("live_chat_messages").insert([
+      const { error } = await supabaseUnsafe.from("live_chat_messages").insert([
         {
           session_id: sessionId,
           sender_id: user.id,
@@ -132,7 +147,7 @@ export function LiveViewerRoom() {
     if (!reason) return;
 
     try {
-      const { error } = await supabase.rpc("report_live_stream_v1", {
+      const { error } = await supabaseUnsafe.rpc("report_live_stream_v1", {
         p_session_id: sessionId,
         p_reporter_id: (await supabase.auth.getUser()).data.user?.id,
         p_report_type: reason,

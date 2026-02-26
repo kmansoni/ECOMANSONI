@@ -251,7 +251,7 @@ export function MediaEditorModal({
       cleanupEditor();
       if (mediaUrl) URL.revokeObjectURL(mediaUrl);
     };
-  }, [open, mediaFile, isVideo, preset, onSave, cleanupEditor]);
+  }, [open, mediaFile, contentType, isVideo, preset, onSave, cleanupEditor]);
 
   // Handle export
   const handleExport = async () => {

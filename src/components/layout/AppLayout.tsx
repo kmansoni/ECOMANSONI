@@ -5,7 +5,6 @@ import { ScrollContainerProvider } from "@/contexts/ScrollContainerContext";
 import { useChatOpen } from "@/contexts/ChatOpenContext";
 import { cn } from "@/lib/utils";
 import { usePresence } from "@/hooks/usePresence";
-import { Plus } from "lucide-react";
 import { CreateContentModal } from "@/components/feed/CreateContentModal";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -19,18 +18,16 @@ export function AppLayout() {
   const navigate = useNavigate();
   const { shouldHideBottomNav, isCreatingContent } = useChatOpen();
   const isReelsPage = location.pathname === "/reels";
+  const isFullWidthPage =
+    location.pathname.startsWith("/profile") ||
+    location.pathname.startsWith("/user/") ||
+    location.pathname.startsWith("/contact/");
   const [createOpen, setCreateOpen] = useState(false);
-
-  const showGlobalCreate =
-    !isCreatingContent &&
-    location.pathname !== "/" &&
-    location.pathname !== "/create" &&
-    location.pathname !== "/reels";
 
   return (
     <div 
       className={cn(
-        "h-full flex flex-col safe-area-top safe-area-left safe-area-right relative bg-transparent"
+        "AppShell h-full flex flex-col safe-area-left safe-area-right relative bg-transparent"
       )}
       style={{ 
         position: 'relative',
@@ -42,7 +39,8 @@ export function AppLayout() {
         <main 
           ref={mainRef}
           className={cn(
-            "flex-1 overflow-x-hidden max-w-lg mx-auto w-full native-scroll relative z-10",
+            "flex-1 overflow-x-hidden w-full native-scroll relative z-10",
+            isFullWidthPage ? "max-w-none" : "max-w-lg mx-auto",
             isReelsPage ? "overflow-hidden" : "overflow-y-auto",
             !isReelsPage && "pb-20"
           )}
@@ -56,25 +54,6 @@ export function AppLayout() {
           <Outlet />
         </main>
       </ScrollContainerProvider>
-
-      {showGlobalCreate && (
-        <button
-          type="button"
-          onClick={() => setCreateOpen(true)}
-          className={cn(
-            "fixed z-40",
-            "top-3 right-3",
-            "safe-area-top safe-area-right",
-            "w-11 h-11 rounded-full",
-            "bg-card/80 backdrop-blur border border-border",
-            "flex items-center justify-center",
-            "hover:bg-card active:bg-card/90",
-          )}
-          aria-label="Создать"
-        >
-          <Plus className="w-6 h-6" />
-        </button>
-      )}
 
       <CreateContentModal
         isOpen={createOpen}

@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
 import { isGuestMode } from "@/lib/demo/demoMode";
 import { getDemoBotsReels, isDemoId } from "@/lib/demo/demoBots";
+import { trackAnalyticsEvent } from "@/lib/analytics/firehose";
 
 function safeRandomUUID(): string {
   try {
@@ -428,6 +429,13 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
     }
   }, [PAGE_SIZE, enrichRows, fetchRawBatch, getFollowedAuthorIdsIfNeeded, hasMore, loading, loadingMore, reels.length]);
 
+  const resolveReelOwnerId = useCallback(
+    (reelId: string): string | null => {
+      return reels.find((r) => r.id === reelId)?.author_id ?? null;
+    },
+    [reels],
+  );
+
   const toggleLike = useCallback(async (reelId: string) => {
     if (!user) return;
 
@@ -650,11 +658,24 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
         setReels((prev) =>
           prev.map((r) => (r.id === reelId ? { ...r, shares_count: (r.shares_count || 0) + 1 } : r)),
         );
+
+        const ownerId = resolveReelOwnerId(reelId);
+        if (ownerId) {
+          trackAnalyticsEvent({
+            actorId: user.id,
+            objectType: "reel",
+            objectId: reelId,
+            ownerId,
+            eventType: "share_complete",
+            eventSubtype: targetType,
+            props: { target_id: targetId },
+          });
+        }
       } catch (error) {
         console.error("Error recording share:", error);
       }
     },
-    [user],
+    [resolveReelOwnerId, user],
   );
 
   const recordView = useCallback(async (reelId: string) => {
@@ -711,16 +732,35 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
           p_algorithm_version: params?.algorithm_version ?? null,
           p_score: params?.score ?? null,
         });
+
+        const ownerId = resolveReelOwnerId(reelId);
+        if (ownerId) {
+          const actorId = user?.id ?? `anon:${sessionId ?? anonSessionId ?? "unknown"}`;
+          trackAnalyticsEvent({
+            actorId,
+            objectType: "reel",
+            objectId: reelId,
+            ownerId,
+            eventType: "view_start",
+            positionIndex: params?.position,
+            props: {
+              source: params?.source ?? "reels",
+              request_id: params?.request_id ?? null,
+              algorithm_version: params?.algorithm_version ?? null,
+              score: params?.score ?? null,
+            },
+          });
+        }
       } catch (error) {
         console.error("Error recording impression:", error);
       }
     },
-    [user],
+    [resolveReelOwnerId, user],
   );
 
   // Progressive Disclosure Layer 1: VIEWED (user started watching >2sec)
   const recordViewed = useCallback(
-    async (reelId: string) => {
+    async (reelId: string, watchDurationSeconds?: number, reelDurationSeconds?: number) => {
       if (isDemoId(reelId)) return;
       try {
         let anonSessionId: string | null = null;
@@ -737,11 +777,26 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
           p_reel_id: reelId,
           p_session_id: sessionId,
         });
+
+        const ownerId = resolveReelOwnerId(reelId);
+        if (ownerId) {
+          const actorId = user?.id ?? `anon:${sessionId ?? anonSessionId ?? "unknown"}`;
+          trackAnalyticsEvent({
+            actorId,
+            objectType: "reel",
+            objectId: reelId,
+            ownerId,
+            eventType: "view_progress",
+            watchMs: typeof watchDurationSeconds === "number" ? Math.max(0, Math.floor(watchDurationSeconds * 1000)) : undefined,
+            durationMs: typeof reelDurationSeconds === "number" ? Math.max(0, Math.floor(reelDurationSeconds * 1000)) : undefined,
+            props: { viewed_threshold: "2s" },
+          });
+        }
       } catch (error) {
         console.error("Error recording viewed:", error);
       }
     },
-    [user],
+    [resolveReelOwnerId, user],
   );
 
   // Progressive Disclosure Layer 2: WATCHED (user completed >50%)
@@ -765,11 +820,26 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
           p_reel_duration_seconds: reelDurationSeconds,
           p_session_id: sessionId,
         });
+
+        const ownerId = resolveReelOwnerId(reelId);
+        if (ownerId) {
+          const actorId = user?.id ?? `anon:${sessionId ?? anonSessionId ?? "unknown"}`;
+          trackAnalyticsEvent({
+            actorId,
+            objectType: "reel",
+            objectId: reelId,
+            ownerId,
+            eventType: "view_end",
+            watchMs: Math.max(0, Math.floor(watchDurationSeconds * 1000)),
+            durationMs: Math.max(0, Math.floor(reelDurationSeconds * 1000)),
+            props: { completed: true },
+          });
+        }
       } catch (error) {
         console.error("Error recording watched:", error);
       }
     },
-    [user],
+    [resolveReelOwnerId, user],
   );
 
   // Negative Signal: SKIP (user skipped, especially <2sec = quick skip)
@@ -793,11 +863,36 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
           p_reel_duration_seconds: reelDurationSeconds,
           p_session_id: sessionId,
         });
+
+        const ownerId = resolveReelOwnerId(reelId);
+        if (ownerId) {
+          const actorId = user?.id ?? `anon:${sessionId ?? anonSessionId ?? "unknown"}`;
+          trackAnalyticsEvent({
+            actorId,
+            objectType: "reel",
+            objectId: reelId,
+            ownerId,
+            eventType: "exit",
+            watchMs: Math.max(0, Math.floor(skippedAtSecond * 1000)),
+            durationMs: Math.max(0, Math.floor(reelDurationSeconds * 1000)),
+            props: { instant_skip: skippedAtSecond < 2 },
+          });
+          trackAnalyticsEvent({
+            actorId,
+            objectType: "reel",
+            objectId: reelId,
+            ownerId,
+            eventType: "view_end",
+            watchMs: Math.max(0, Math.floor(skippedAtSecond * 1000)),
+            durationMs: Math.max(0, Math.floor(reelDurationSeconds * 1000)),
+            props: { completed: false, instant_skip: skippedAtSecond < 2 },
+          });
+        }
       } catch (error) {
         console.error("Error recording skip:", error);
       }
     },
-    [user],
+    [resolveReelOwnerId, user],
   );
 
   const setReelFeedback = useCallback(

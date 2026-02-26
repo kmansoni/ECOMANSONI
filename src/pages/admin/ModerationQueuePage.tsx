@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { AdminShell } from "@/components/admin/AdminShell";
 import { useAdminMe } from "@/hooks/useAdminMe";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -59,6 +59,7 @@ const REASON_CODES = [
 
 export function ModerationQueuePage() {
   const { me: adminMe } = useAdminMe();
+  const supabaseUnsafe = supabase as any;
   const [queueItems, setQueueItems] = useState<QueueItemWithContent[]>([]);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -74,11 +75,7 @@ export function ModerationQueuePage() {
   const [reasonCode, setReasonCode] = useState("");
   const [notes, setNotes] = useState("");
 
-  useEffect(() => {
-    loadQueue();
-  }, [filterContentType, filterStatus]);
-
-  const loadQueue = async () => {
+  const loadQueue = useCallback(async () => {
     setLoading(true);
     try {
       let query = supabase
@@ -130,7 +127,7 @@ export function ModerationQueuePage() {
                 authorId = comment.author_id;
               }
             } else if (item.content_type === "message") {
-              const { data: message } = await supabase
+              const { data: message } = await supabaseUnsafe
                 .from("direct_messages")
                 .select("content, from_id")
                 .eq("id", item.content_id)
@@ -150,7 +147,7 @@ export function ModerationQueuePage() {
                 authorId = profile.id;
               }
             } else if (item.content_type === "hashtag") {
-              const { data: hashtag } = await supabase
+              const { data: hashtag } = await supabaseUnsafe
                 .from("hashtags")
                 .select("canonical_form")
                 .eq("id", item.content_id)
@@ -187,7 +184,11 @@ export function ModerationQueuePage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [filterContentType, filterStatus, supabaseUnsafe]);
+
+  useEffect(() => {
+    void loadQueue();
+  }, [loadQueue]);
 
   const openModerationDialog = (item: QueueItemWithContent) => {
     setSelectedItem(item);

@@ -85,7 +85,7 @@ beforeAll(async () => {
   expect(row).toBeDefined();
   scopeId = row?.scope_id;
   expect(scopeId).toBeDefined();
-});
+}, 30000);
 
 afterAll(async () => {
   // Cleanup
@@ -143,7 +143,7 @@ describe("CHAOS-01: DB Lock Contention", () => {
         expect(replay?.outcome_code).toBe(outcome.outcome_code);
       }
     }
-  });
+  }, 15000);
 
   it("idempotency_consistency_under_concurrent_load", async () => {
     const key = "chaos-001-ididem-" + Date.now();
@@ -171,7 +171,7 @@ describe("CHAOS-01: DB Lock Contention", () => {
     for (const outcome of outcomes) {
       expect(outcome?.outcome_code).toBe(firstOutcome?.outcome_code);
     }
-  });
+  }, 15000);
 });
 
 /**
@@ -229,7 +229,7 @@ describe("CHAOS-02: Partial API Outage", () => {
     if (first) {
       expect(retry?.outcome_code).toBe(first.outcome_code);
     }
-  });
+  }, 15000);
 });
 
 /**

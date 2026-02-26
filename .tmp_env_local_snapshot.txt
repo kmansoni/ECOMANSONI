@@ -1,0 +1,18 @@
+# ==============================================================================
+# TIMEWEB BACKEND CONFIGURATION
+# Автоматически сгенерировано: 2026-02-26 01:36:43
+# ==============================================================================
+
+# Supabase (только для auth и storage)
+VITE_SUPABASE_URL=https://lfkbgnbjxskspsownvjm.supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxma2JnbmJqeHNrc3Bzb3dudmptIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Mzg2ODEwNDAsImV4cCI6MjA1NDI1NzA0MH0.rrjDRZ89-YbKIQ_Cc_4YMGaATLaSjIuIHjBzxUbgADo
+
+# Timeweb Backend (все остальные таблицы)
+VITE_TIMEWEB_API_URL=https://mansoni.ru/api
+VITE_TIMEWEB_API_KEY=
+
+# TURN Server
+VITE_TURN_CREDENTIALS_URL=https://mansoni.ru/turn-credentials
+
+
+

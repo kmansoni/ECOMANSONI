@@ -1,16 +1,18 @@
 // @ts-nocheck
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, x-client-info, apikey",
-};
+import { enforceCors, getCorsHeaders, handleCors, isProductionEnv } from "../_shared/utils.ts";
 
 serve(async (req: Request) => {
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
+  const cors = handleCors(req);
+  if (cors) return cors;
+  const corsBlock = enforceCors(req);
+  if (corsBlock) return corsBlock;
+  const origin = req.headers.get("origin");
+  const corsHeaders = getCorsHeaders(origin);
+
+  if (isProductionEnv()) {
+    return new Response("not found", { status: 404, headers: corsHeaders });
   }
 
   if (req.method !== "POST") {

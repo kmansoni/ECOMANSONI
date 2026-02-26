@@ -1,0 +1,2 @@
+// Ringtone audio file for call UI
+// Place your ringtone .mp3 or .ogg in public/ and reference as /ringtone.mp3

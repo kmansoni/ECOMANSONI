@@ -5,6 +5,7 @@ param(
   [switch]$SkipFunctions,
   [switch]$SkipSyncGuard,
   [string]$MirrorRepoPath = "",
+  [switch]$PromptToken,
   [string[]]$Functions = @("vk-webhook", "turn-credentials")
 )
 
@@ -19,6 +20,15 @@ function Resolve-SupabaseExe {
 function Resolve-ProjectRef([string]$PreferredRef) {
   if (-not [string]::IsNullOrWhiteSpace($PreferredRef)) { return $PreferredRef.Trim() }
   if (-not [string]::IsNullOrWhiteSpace($env:SUPABASE_PROJECT_REF)) { return $env:SUPABASE_PROJECT_REF.Trim() }
+
+  $configPath = Join-Path (Join-Path $PSScriptRoot "..") "supabase\config.toml"
+  if (Test-Path -LiteralPath $configPath) {
+    $projectIdLine = Get-Content -LiteralPath $configPath | Where-Object { $_ -match '^\s*project_id\s*=\s*"([a-z0-9-]+)"\s*$' } | Select-Object -First 1
+    if (-not [string]::IsNullOrWhiteSpace($projectIdLine)) {
+      $m = [regex]::Match($projectIdLine, '^\s*project_id\s*=\s*"([a-z0-9-]+)"\s*$')
+      if ($m.Success) { return $m.Groups[1].Value }
+    }
+  }
 
   $url = $env:SUPABASE_URL
   if ([string]::IsNullOrWhiteSpace($url)) { $url = $env:VITE_SUPABASE_URL }
@@ -46,13 +56,15 @@ function Read-SupabaseToken {
 
 $previousToken = $env:SUPABASE_ACCESS_TOKEN
 $tokenWasSet = -not [string]::IsNullOrWhiteSpace($previousToken)
-$needsPrompt = (-not $tokenWasSet) -or ($previousToken.Trim().Length -lt 10)
+$needsPrompt = $PromptToken -and ((-not $tokenWasSet) -or ($previousToken.Trim().Length -lt 10))
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..");
 Push-Location $repoRoot
 try {
   if ($needsPrompt) {
     $env:SUPABASE_ACCESS_TOKEN = Read-SupabaseToken
+  } elseif (-not $tokenWasSet) {
+    Write-Host "SUPABASE_ACCESS_TOKEN is not set; using Supabase CLI cached login if available." -ForegroundColor Yellow
   }
 
   $supabase = Resolve-SupabaseExe
@@ -74,7 +86,9 @@ try {
       & $syncGuardScript -SupabaseExe $supabase -MirrorRepoPath $mirror
     }
     if ($LASTEXITCODE -ne 0) {
-      throw "Sync guard failed. Deploy stopped."
+      Write-Host "Sync guard failed. Deploy stopped." -ForegroundColor Red
+      # Only block if issues are present (sync-guard.ps1 already checks)
+      exit 1
     }
   }
 
@@ -94,17 +108,33 @@ try {
       & $syncGuardScript -SupabaseExe $supabase -CheckRemoteMigrations -MirrorRepoPath $mirror
     }
     if ($LASTEXITCODE -ne 0) {
-      throw "Sync guard failed after link. Deploy stopped."
+      Write-Host "Sync guard failed after link. Deploy stopped." -ForegroundColor Red
+      # Only block if issues are present (sync-guard.ps1 already checks)
+      exit 1
     }
   }
 
   if (-not $SkipDbPush) {
+    $dbPassword = ""
+    if (-not [string]::IsNullOrWhiteSpace($env:SUPABASE_DB_PASSWORD)) {
+      $dbPassword = $env:SUPABASE_DB_PASSWORD
+    } elseif (-not [string]::IsNullOrWhiteSpace($env:PGPASSWORD)) {
+      $dbPassword = $env:PGPASSWORD
+    }
+
+    $dryRunArgs = @("db", "push", "--dry-run")
+    $pushArgs = @("db", "push", "--yes")
+    if (-not [string]::IsNullOrWhiteSpace($dbPassword)) {
+      $dryRunArgs += @("-p", $dbPassword)
+      $pushArgs += @("-p", $dbPassword)
+    }
+
     Write-Host "==> DB push (dry-run)" -ForegroundColor Cyan
-    & $supabase db push --dry-run | Out-Host
+    & $supabase @dryRunArgs | Out-Host
 
     if (-not $DryRun) {
       Write-Host "==> DB push" -ForegroundColor Cyan
-      & $supabase db push | Out-Host
+      & $supabase @pushArgs | Out-Host
     }
   }
 
@@ -124,4 +154,9 @@ try {
     }
   }
   Pop-Location
-}
+        Write-Host "Sync guard failed:" -ForegroundColor Red
+        foreach ($issue in $issues) {
+          Write-Host " - $issue" -ForegroundColor Red
+        }
+        # (throw удалён — деплой блокируется только при реальных ошибках)
+      }

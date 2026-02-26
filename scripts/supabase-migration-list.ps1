@@ -1,4 +1,5 @@
 param(
+  [switch]$PromptToken,
   [string]$SupabaseExePath = "C:\\Users\\manso\\AppData\\Local\\supabase-cli\\v2.75.0\\supabase.exe"
 )
 
@@ -12,7 +13,7 @@ $previousToken = $env:SUPABASE_ACCESS_TOKEN
 $tokenWasSet = [string]::IsNullOrWhiteSpace($previousToken) -eq $false
 
 try {
-  if (-not $tokenWasSet) {
+  if ($PromptToken -and -not $tokenWasSet) {
     $secure = Read-Host "Supabase access token (sbp_...)" -AsSecureString
     $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
     try {
@@ -26,6 +27,8 @@ try {
     }
 
     $env:SUPABASE_ACCESS_TOKEN = $token
+  } elseif (-not $tokenWasSet) {
+    Write-Host "SUPABASE_ACCESS_TOKEN is not set; using Supabase CLI cached login if available." -ForegroundColor Yellow
   }
 
   $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path

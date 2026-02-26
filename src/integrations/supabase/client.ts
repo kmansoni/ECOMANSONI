@@ -2,6 +2,7 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 import { createFetchWithTimeout } from "@/lib/network/fetchWithTimeout";
+import { timewebClient, isTimewebEnabled } from "@/integrations/timeweb/client";
 
 function normalizeEnv(value: unknown): string {
   if (typeof value !== "string") return "";
@@ -63,7 +64,7 @@ if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
 
-export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+const baseSupabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
   global: {
     fetch: createFetchWithTimeout({ timeoutMs: 45_000 }), // Increased from 15s to 45s for slow functions
   },
@@ -75,3 +76,78 @@ export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABL
     autoRefreshToken: true,
   }
 });
+
+function isRetryableError(error: unknown): boolean {
+  const message = String((error as any)?.message ?? "").toLowerCase();
+  const code = String((error as any)?.code ?? "").toLowerCase();
+  return (
+    message.includes("fetch") ||
+    message.includes("network") ||
+    message.includes("timeout") ||
+    code === "ecconnreset" ||
+    code === "etimedout"
+  );
+}
+
+async function rpcWithFallback(fn: string, args?: Record<string, unknown>, options?: Record<string, unknown>) {
+  const primary = await (baseSupabase as any).rpc(fn, args as any, options as any);
+  if (!primary?.error) return primary;
+
+  if (!isTimewebEnabled || !timewebClient) {
+    return primary;
+  }
+
+  try {
+    const fallback = await (timewebClient as any).rpc(fn, args as any, options as any);
+    if (fallback?.error) {
+      return primary;
+    }
+    if (import.meta.env.DEV) {
+      console.warn("[BackendBridge] rpc fallback used", { fn, primaryError: primary.error });
+    }
+    return fallback;
+  } catch {
+    return primary;
+  }
+}
+
+async function invokeWithRetry(fnName: string, options?: Record<string, unknown>) {
+  const first = await (baseSupabase.functions as any).invoke(fnName, options as any);
+  if (!first?.error) return first;
+  if (!isRetryableError(first.error)) return first;
+
+  const second = await (baseSupabase.functions as any).invoke(fnName, options as any);
+  if (second?.error && import.meta.env.DEV) {
+    console.warn("[BackendBridge] functions.invoke failed after retry", {
+      fnName,
+      firstError: first.error,
+      secondError: second.error,
+    });
+  }
+  return second;
+}
+
+const functionsProxy = new Proxy((baseSupabase as any).functions, {
+  get(target, prop, receiver) {
+    if (prop === "invoke") {
+      return invokeWithRetry;
+    }
+    const value = Reflect.get(target, prop, receiver);
+    return typeof value === "function" ? value.bind(target) : value;
+  },
+});
+
+const supabaseProxy = new Proxy(baseSupabase as any, {
+  get(target, prop, receiver) {
+    if (prop === "rpc") {
+      return rpcWithFallback;
+    }
+    if (prop === "functions") {
+      return functionsProxy;
+    }
+    const value = Reflect.get(target, prop, receiver);
+    return typeof value === "function" ? value.bind(target) : value;
+  },
+});
+
+export const supabase = supabaseProxy as typeof baseSupabase;

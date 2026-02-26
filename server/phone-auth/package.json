@@ -1,0 +1,20 @@
+{
+  "name": "phone-auth",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Phone-based authentication backend for Timeweb",
+  "main": "index.mjs",
+  "scripts": {
+    "dev": "node index.mjs",
+    "start": "node index.mjs",
+    "init": "node init.js"
+  },
+  "dependencies": {
+    "pg": "^8.9.0",
+    "jsonwebtoken": "^9.0.2",
+    "helmet": "^7.1.0",
+    "express": "^4.18.2",
+    "express-rate-limit": "^7.1.5"
+  },
+  "devDependencies": {}
+}

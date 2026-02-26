@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -10,7 +10,7 @@ import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 
 interface LiveSession {
-  id: number;
+  id: string;
   title: string;
   category: string;
   status: string;
@@ -33,7 +33,8 @@ interface ChatMessage {
  */
 export function LiveBroadcastRoom() {
   const { sessionId } = useParams<{ sessionId: string }>();
-const navigate = useNavigate();
+  const navigate = useNavigate();
+  const supabaseUnsafe = supabase as any;
   const [session, setSession] = useState<LiveSession | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [messageText, setMessageText] = useState("");
@@ -42,16 +43,70 @@ const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
+  const loadSession = useCallback(async () => {
+    try {
+      const { data, error } = await supabaseUnsafe
+        .from("live_sessions")
+        .select("*")
+        .eq("id", sessionId)
+        .single();
+
+      if (error) throw error;
+      const mapped: LiveSession = {
+        id: String(data?.id ?? sessionId ?? ""),
+        title: String(data?.title ?? data?.name ?? "Live Broadcast"),
+        category: String(data?.category ?? "general"),
+        status: String(data?.status ?? data?.state ?? "active"),
+        viewer_count_current: Number(data?.viewer_count_current ?? 0),
+        started_at: String(data?.started_at ?? data?.created_at ?? new Date().toISOString()),
+        created_at: String(data?.created_at ?? new Date().toISOString()),
+      };
+      setSession(mapped);
+      setViewerCount(mapped.viewer_count_current || 0);
+
+      const startTime = new Date(mapped.started_at).getTime();
+      const elapsed = Math.floor((Date.now() - startTime) / 1000);
+      setElapsedSeconds(elapsed);
+    } catch (error) {
+      console.error("Failed to load session:", error);
+      toast.error("Failed to load session");
+    } finally {
+      setLoading(false);
+    }
+  }, [sessionId, supabaseUnsafe]);
+
+  const loadMessages = useCallback(async () => {
+    try {
+      const { data, error } = await supabaseUnsafe
+        .from("live_chat_messages")
+        .select("*")
+        .eq("session_id", sessionId)
+        .order("created_at", { ascending: true });
+
+      if (error) throw error;
+      const mapped = (data || []).map((row: any) => ({
+        id: Number(row?.id ?? 0),
+        content: String(row?.content ?? ""),
+        sender_id: String(row?.sender_id ?? ""),
+        is_creator_message: Boolean(row?.is_creator_message),
+        created_at: String(row?.created_at ?? ""),
+      }));
+      setMessages(mapped);
+    } catch (error) {
+      console.error("Failed to load messages:", error);
+    }
+  }, [sessionId, supabaseUnsafe]);
+
   useEffect(() => {
     if (!sessionId) return;
-    loadSession();
-    loadMessages();
+    void loadSession();
+    void loadMessages();
 
     // Real-time subscription to messages
     const subscription = supabase
       .channel(`live:${sessionId}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "live_chat_messages" }, () => {
-        loadMessages();
+        void loadMessages();
       })
       .subscribe();
 
@@ -64,45 +119,7 @@ const navigate = useNavigate();
       subscription.unsubscribe();
       clearInterval(timer);
     };
-  }, [sessionId]);
-
-  async function loadSession() {
-    try {
-      const { data, error } = await supabase
-        .from("live_sessions")
-        .select("*")
-        .eq("id", sessionId)
-        .single();
-
-      if (error) throw error;
-      setSession(data as LiveSession);
-      setViewerCount(data.viewer_count_current || 0);
-
-      const startTime = new Date(data.started_at).getTime();
-      const elapsed = Math.floor((Date.now() - startTime) / 1000);
-      setElapsedSeconds(elapsed);
-    } catch (error) {
-      console.error("Failed to load session:", error);
-      toast.error("Failed to load session");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function loadMessages() {
-    try {
-      const { data, error } = await supabase
-        .from("live_chat_messages")
-        .select("*")
-        .eq("session_id", sessionId)
-        .order("created_at", { ascending: true });
-
-      if (error) throw error;
-      setMessages(data || []);
-    } catch (error) {
-      console.error("Failed to load messages:", error);
-    }
-  }
+  }, [loadMessages, loadSession, sessionId]);
 
   async function sendAck() {
     if (!messageText.trim()) return;
@@ -112,7 +129,7 @@ const navigate = useNavigate();
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Not authenticated");
 
-      const { error } = await supabase.from("live_chat_messages").insert([
+      const { error } = await supabaseUnsafe.from("live_chat_messages").insert([
         {
           session_id: sessionId,
           sender_id: user.id,
@@ -136,7 +153,7 @@ const navigate = useNavigate();
     if (!confirm("End broadcasting? This will end the session immediately.")) return;
 
     try {
-      const { error } = await supabase.rpc("broadcast_end_session_v1", {
+      const { error } = await supabaseUnsafe.rpc("broadcast_end_session_v1", {
         p_session_id: sessionId,
       });
 

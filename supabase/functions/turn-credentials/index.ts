@@ -1,10 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { enforceCors, getCorsHeaders, handleCors } from "../_shared/utils.ts";
 
 const DEFAULT_TURN_TTL_SECONDS = 3600;
 const MIN_TURN_TTL_SECONDS = 60;
@@ -90,7 +86,11 @@ function shouldFailHardOnRateLimitMisconfig(): boolean {
   return raw === "1" || raw === "true";
 }
 
-async function enforceTurnIssueRateLimit(userId: string, ip: string): Promise<Response | null> {
+async function enforceTurnIssueRateLimit(
+  userId: string,
+  ip: string,
+  corsHeaders: Record<string, string>
+): Promise<Response | null> {
   if (!isUuid(userId)) {
     // Dev-only anonymous mode returns a non-UUID (e.g. "dev-anon").
     // In production, this must never happen.
@@ -182,10 +182,12 @@ function splitIceServersByUrl(server: { urls: string | string[]; username?: stri
 }
 
 serve(async (req) => {
-  // Handle CORS preflight
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
+  const cors = handleCors(req);
+  if (cors) return cors;
+  const corsBlock = enforceCors(req);
+  if (corsBlock) return corsBlock;
+  const origin = req.headers.get("origin");
+  const corsHeaders = getCorsHeaders(origin);
   if (Deno.env.get("TURN_ALLOW_ANON_DEV") === "1" && isProductionEnv()) {
     return new Response(
       JSON.stringify({ error: "misconfigured" }),
@@ -201,7 +203,7 @@ serve(async (req) => {
     );
   }
   const clientIp = getClientIp(req);
-  const rl = await enforceTurnIssueRateLimit(userId, clientIp);
+  const rl = await enforceTurnIssueRateLimit(userId, clientIp, corsHeaders);
   if (rl) return rl;
 
   const ttlSeconds = Math.max(

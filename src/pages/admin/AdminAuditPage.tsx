@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { AdminShell } from "@/components/admin/AdminShell";
 import { adminApi } from "@/lib/adminApi";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -33,14 +33,18 @@ export function AdminAuditPage() {
   const [resourceId, setResourceId] = useState("");
   const [actorId, setActorId] = useState("");
 
-  const load = async () => {
+  const load = useCallback(async (filters?: { resourceType?: string; resourceId?: string; actorId?: string }) => {
     setLoading(true);
     try {
+      const nextResourceType = filters?.resourceType ?? "";
+      const nextResourceId = filters?.resourceId ?? "";
+      const nextActorId = filters?.actorId ?? "";
+
       const data = await adminApi<AuditRow[]>("audit.search", {
         limit: 100,
-        resource_type: resourceType || undefined,
-        resource_id: resourceId || undefined,
-        actor_id: actorId || undefined,
+        resource_type: nextResourceType || undefined,
+        resource_id: nextResourceId || undefined,
+        actor_id: nextActorId || undefined,
       });
       setRows(data);
     } catch (e) {
@@ -48,11 +52,11 @@ export function AdminAuditPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     void load();
-  }, []);
+  }, [load]);
 
   return (
     <AdminShell>
@@ -75,7 +79,16 @@ export function AdminAuditPage() {
               <Input value={actorId} onChange={(e) => setActorId(e.target.value)} placeholder="admin_user_id" />
             </div>
             <div className="flex items-end">
-              <Button className="w-full" onClick={load}>
+              <Button
+                className="w-full"
+                onClick={() =>
+                  void load({
+                    resourceType,
+                    resourceId,
+                    actorId,
+                  })
+                }
+              >
                 Поиск
               </Button>
             </div>

@@ -1,5 +1,16 @@
 import { supabase } from "@/integrations/supabase/client";
 
+function normalizeEnv(value: unknown): string {
+  if (typeof value !== "string") return "";
+  return value
+    .trim()
+    .replace(/^["']+|["']+$/g, "")
+    .replace(/\s+/g, "");
+}
+
+const TURN_CREDENTIALS_URL = normalizeEnv(import.meta.env.VITE_TURN_CREDENTIALS_URL);
+const TURN_CREDENTIALS_API_KEY = normalizeEnv(import.meta.env.VITE_TURN_CREDENTIALS_API_KEY);
+
 export interface IceServerConfig {
   iceServers: RTCIceServer[];
   iceCandidatePoolSize: number;
@@ -46,6 +57,16 @@ async function fetchTurnCredentials(): Promise<{ iceServers: RTCIceServer[] | nu
   try {
     console.log("[WebRTC Config] Fetching TURN credentials...");
 
+    if (TURN_CREDENTIALS_URL) {
+      const { data, error } = await fetchTurnCredentialsFromUrl();
+      if (error) {
+        console.error("[WebRTC Config] TURN endpoint error:", error);
+        return { iceServers: null, ttlMs: FALLBACK_CACHE_TTL_MS };
+      }
+      const parsed = (data ?? {}) as TurnCredentialsResponse;
+      return parseTurnResponse(parsed);
+    }
+
     const { data, error } = await supabase.functions.invoke("turn-credentials");
 
     if (error) {
@@ -54,6 +75,14 @@ async function fetchTurnCredentials(): Promise<{ iceServers: RTCIceServer[] | nu
     }
 
     const parsed = (data ?? {}) as TurnCredentialsResponse;
+    return parseTurnResponse(parsed);
+  } catch (err) {
+    console.error("[WebRTC Config] Failed to fetch TURN credentials:", err);
+    return { iceServers: null, ttlMs: FALLBACK_CACHE_TTL_MS };
+  }
+}
+
+function parseTurnResponse(parsed: TurnCredentialsResponse): { iceServers: RTCIceServer[] | null; ttlMs: number } {
     if (parsed.error) {
       console.warn("[WebRTC Config] TURN error:", parsed.error);
     }
@@ -79,9 +108,33 @@ async function fetchTurnCredentials(): Promise<{ iceServers: RTCIceServer[] | nu
     }
 
     return { iceServers: null, ttlMs: FALLBACK_CACHE_TTL_MS };
+  }
+
+async function fetchTurnCredentialsFromUrl(): Promise<{ data: unknown | null; error: Error | null }> {
+  try {
+    const session = await supabase.auth.getSession();
+    const token = session.data.session?.access_token ?? "";
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (token) headers.Authorization = `Bearer ${token}`;
+    if (TURN_CREDENTIALS_API_KEY) headers.apikey = TURN_CREDENTIALS_API_KEY;
+
+    const response = await fetch(TURN_CREDENTIALS_URL, {
+      method: "POST",
+      headers,
+      body: "{}",
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      return { data: null, error: new Error(`TURN endpoint ${response.status}: ${text}`) };
+    }
+
+    const data = await response.json().catch(() => ({}));
+    return { data, error: null };
   } catch (err) {
-    console.error("[WebRTC Config] Failed to fetch TURN credentials:", err);
-    return { iceServers: null, ttlMs: FALLBACK_CACHE_TTL_MS };
+    return { data: null, error: err instanceof Error ? err : new Error("TURN endpoint error") };
   }
 }
 

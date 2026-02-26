@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useStories, type UserWithStories } from "@/hooks/useStories";
@@ -7,6 +8,9 @@ import { ru } from "date-fns/locale";
 import { useChatOpen } from "@/contexts/ChatOpenContext";
 import { useNavigate } from "react-router-dom";
 import { VerifiedBadge } from "@/components/ui/verified-badge";
+import { useAuth } from "@/hooks/useAuth";
+import { getOrCreateDeviceId } from "@/lib/multiAccount/vault";
+import { trackAnalyticsEvent } from "@/lib/analytics/firehose";
 
 interface StoryViewerProps {
   usersWithStories: UserWithStories[];
@@ -21,6 +25,7 @@ export function StoryViewer({ usersWithStories, initialUserIndex, isOpen, onClos
   const { markAsViewed } = useStories();
   const { setIsStoryOpen } = useChatOpen();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [currentUserIndex, setCurrentUserIndex] = useState(initialUserIndex);
   const [currentStoryInUser, setCurrentStoryInUser] = useState(0);
   const [progress, setProgress] = useState(0);
@@ -31,6 +36,9 @@ export function StoryViewer({ usersWithStories, initialUserIndex, isOpen, onClos
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const progressInterval = useRef<NodeJS.Timeout | null>(null);
   const hasInitialized = useRef(false);
+  const viewStartMsRef = useRef<number | null>(null);
+  const viewStoryIdRef = useRef<string | null>(null);
+  const viewOwnerIdRef = useRef<string | null>(null);
 
   const STORY_DURATION = 5000;
   const PROGRESS_INTERVAL = 50;
@@ -72,6 +80,77 @@ export function StoryViewer({ usersWithStories, initialUserIndex, isOpen, onClos
       markAsViewed(currentUserStories[currentStoryInUser].id);
     }
   }, [isOpen, currentUser, currentStoryInUser, currentUserStories, markAsViewed]);
+
+  // Firehose: view_start / view_end for stories.
+  useEffect(() => {
+    if (!isOpen) return;
+    const story = currentUserStories[currentStoryInUser];
+    if (!story) return;
+
+    const actorId = user?.id ?? `anon:${getOrCreateDeviceId()}`;
+
+    if (viewStoryIdRef.current && viewStoryIdRef.current !== story.id) {
+      const startedAt = viewStartMsRef.current ?? Date.now();
+      const watchMs = Math.max(0, Date.now() - startedAt);
+      trackAnalyticsEvent({
+        actorId,
+        objectType: "story",
+        objectId: viewStoryIdRef.current,
+        ownerId: viewOwnerIdRef.current ?? story.author_id,
+        eventType: "view_end",
+        watchMs,
+        durationMs: STORY_DURATION,
+        props: { completed: watchMs >= STORY_DURATION },
+      });
+    }
+
+    viewStoryIdRef.current = story.id;
+    viewOwnerIdRef.current = story.author_id;
+    viewStartMsRef.current = Date.now();
+    trackAnalyticsEvent({
+      actorId,
+      objectType: "story",
+      objectId: story.id,
+      ownerId: story.author_id,
+      eventType: "view_start",
+      durationMs: STORY_DURATION,
+    });
+  }, [currentStoryInUser, currentUserStories, isOpen, user]);
+
+  useEffect(() => {
+    if (isOpen) return;
+    const storyId = viewStoryIdRef.current;
+    const ownerId = viewOwnerIdRef.current;
+    if (!storyId || !ownerId) return;
+    const actorId = user?.id ?? `anon:${getOrCreateDeviceId()}`;
+    const startedAt = viewStartMsRef.current ?? Date.now();
+    const watchMs = Math.max(0, Date.now() - startedAt);
+    if (watchMs < STORY_DURATION) {
+      trackAnalyticsEvent({
+        actorId,
+        objectType: "story",
+        objectId: storyId,
+        ownerId,
+        eventType: "exit",
+        watchMs,
+        durationMs: STORY_DURATION,
+        props: { reason: "close" },
+      });
+    }
+    trackAnalyticsEvent({
+      actorId,
+      objectType: "story",
+      objectId: storyId,
+      ownerId,
+      eventType: "view_end",
+      watchMs,
+      durationMs: STORY_DURATION,
+      props: { completed: watchMs >= STORY_DURATION },
+    });
+    viewStoryIdRef.current = null;
+    viewOwnerIdRef.current = null;
+    viewStartMsRef.current = null;
+  }, [isOpen, user]);
 
   // Progress timer
   useEffect(() => {
@@ -115,6 +194,17 @@ export function StoryViewer({ usersWithStories, initialUserIndex, isOpen, onClos
   }, [isOpen, isPaused, currentUserIndex, currentStoryInUser, totalStoriesForUser, activeUsers.length, onClose]);
 
   const goToNextStory = useCallback(() => {
+    const story = currentUserStories[currentStoryInUser];
+    if (story) {
+      const actorId = user?.id ?? `anon:${getOrCreateDeviceId()}`;
+      trackAnalyticsEvent({
+        actorId,
+        objectType: "story",
+        objectId: story.id,
+        ownerId: story.author_id,
+        eventType: "tap_forward",
+      });
+    }
     if (currentStoryInUser < totalStoriesForUser - 1) {
       setCurrentStoryInUser(curr => curr + 1);
       setProgress(0);
@@ -127,9 +217,20 @@ export function StoryViewer({ usersWithStories, initialUserIndex, isOpen, onClos
         onClose();
       }
     }
-  }, [currentStoryInUser, totalStoriesForUser, currentUserIndex, activeUsers.length, onClose]);
+  }, [currentStoryInUser, currentUserStories, totalStoriesForUser, currentUserIndex, activeUsers.length, onClose, user]);
 
   const goToPrevStory = useCallback(() => {
+    const story = currentUserStories[currentStoryInUser];
+    if (story) {
+      const actorId = user?.id ?? `anon:${getOrCreateDeviceId()}`;
+      trackAnalyticsEvent({
+        actorId,
+        objectType: "story",
+        objectId: story.id,
+        ownerId: story.author_id,
+        eventType: "tap_back",
+      });
+    }
     if (progress > 20 || currentStoryInUser > 0) {
       if (currentStoryInUser > 0 && progress <= 20) {
         setCurrentStoryInUser(curr => curr - 1);
@@ -142,7 +243,7 @@ export function StoryViewer({ usersWithStories, initialUserIndex, isOpen, onClos
       setCurrentStoryInUser(prevUser.stories.length - 1);
       setProgress(0);
     }
-  }, [currentUserIndex, currentStoryInUser, progress, activeUsers]);
+  }, [currentUserIndex, currentStoryInUser, currentUserStories, progress, activeUsers, user]);
 
   // Touch handlers for swipe
   const onTouchStart = (e: React.TouchEvent) => {
@@ -207,11 +308,12 @@ export function StoryViewer({ usersWithStories, initialUserIndex, isOpen, onClos
     }
   })();
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 bg-black flex items-center justify-center">
       {/* Story content */}
       <div
         className="relative w-full h-full overflow-hidden"
+        style={{ minHeight: '100vh', height: '100vh' }}
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
@@ -325,6 +427,7 @@ export function StoryViewer({ usersWithStories, initialUserIndex, isOpen, onClos
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

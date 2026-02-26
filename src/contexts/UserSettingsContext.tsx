@@ -170,6 +170,7 @@ export function UserSettingsProvider({ children }: { children: React.ReactNode }
   return <UserSettingsContext.Provider value={value}>{children}</UserSettingsContext.Provider>;
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useUserSettings() {
   const ctx = React.useContext(UserSettingsContext);
   if (!ctx) {

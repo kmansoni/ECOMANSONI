@@ -1,14 +1,84 @@
 import { useState, useEffect, useRef } from "react";
+// Simple ringtone player component
+function RingtonePlayer({ play }: { play: boolean }) {
+  const audioRef = useRef<HTMLAudioElement>(null);
+  useEffect(() => {
+    if (!audioRef.current) return;
+    if (play) {
+      audioRef.current.currentTime = 0;
+      audioRef.current.play().catch(() => {});
+    } else {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+    }
+  }, [play]);
+  return (
+    <audio ref={audioRef} src="/ringtone.mp3" loop style={{ display: "none" }} />
+  );
+}
 import {
   ChevronLeft,
   Volume2,
+  Headphones,
   Video,
   VideoOff,
   Mic,
   MicOff,
   X,
   RefreshCw,
+  PhoneCall,
+  PhoneIncoming,
+  PhoneOutgoing,
+  Loader2,
+  AlertTriangle,
+  CheckCircle,
 } from "lucide-react";
+// Status icon and color for call states
+function StatusIndicator({ status, connectionState }: { status: string, connectionState: string }) {
+  let icon = null;
+  let color = "text-blue-400";
+  let pulse = false;
+  let label = "";
+  switch (true) {
+    case connectionState === "failed":
+      icon = <AlertTriangle className="w-6 h-6 animate-shake" />;
+      color = "text-red-500";
+      label = "Ошибка";
+      break;
+    case status === "calling":
+      icon = <PhoneOutgoing className="w-6 h-6 animate-pulse" />;
+      color = "text-blue-400";
+      label = "Вызов";
+      pulse = true;
+      break;
+    case status === "ringing":
+      icon = <PhoneIncoming className="w-6 h-6 animate-pulse" />;
+      color = "text-yellow-400";
+      label = "Звонок";
+      pulse = true;
+      break;
+    case connectionState === "connecting":
+      icon = <Loader2 className="w-6 h-6 animate-spin" />;
+      color = "text-blue-400";
+      label = "Подключение";
+      break;
+    case connectionState === "connected" && status === "connected":
+      icon = <CheckCircle className="w-6 h-6" />;
+      color = "text-green-400";
+      label = "Соединение";
+      break;
+    default:
+      icon = <PhoneCall className="w-6 h-6" />;
+      color = "text-gray-400";
+      label = "Ожидание";
+  }
+  return (
+    <span className={`flex items-center gap-2 ${color} transition-colors duration-500`}>
+      {icon}
+      <span className="font-medium text-base">{label}</span>
+    </span>
+  );
+}
 import type { VideoCall, VideoCallStatus } from "@/contexts/VideoCallContext";
 import { useAuth } from "@/hooks/useAuth";
 import { GradientAvatar } from "@/components/ui/gradient-avatar";
@@ -94,8 +164,20 @@ export function VideoCallScreen({
   const { user } = useAuth();
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  const audioOutRef = useRef<HTMLAudioElement>(null);
   const [callDuration, setCallDuration] = useState(0);
   const [isSpeakerOn, setIsSpeakerOn] = useState(true);
+  const [isSelfMain, setIsSelfMain] = useState(true); // swap state
+  // Try to use setSinkId if available
+  useEffect(() => {
+    if (audioOutRef.current && typeof audioOutRef.current.setSinkId === "function") {
+      const sinkId = isSpeakerOn ? "default" : "communications";
+      audioOutRef.current.setSinkId(sinkId).catch(() => {});
+    }
+  }, [isSpeakerOn]);
+
+  // Play ringtone if outgoing or incoming ringing
+  const shouldPlayRingtone = status === "calling" || status === "ringing";
 
   // Handle null call during state transitions
   const isInitiator = call ? call.caller_id === user?.id : true;
@@ -141,70 +223,98 @@ export function VideoCallScreen({
     return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   };
 
+  // Новый статус: иконка + цвет + плавный переход
   const getStatusText = (): string => {
-    if (connectionState === "failed") {
-      return "Ошибка соединения";
-    }
-
-    if (isConnected) {
-      return formatDuration(callDuration);
-    }
-
+    if (connectionState === "failed") return "Ошибка соединения";
+    if (isConnected) return formatDuration(callDuration);
     switch (status) {
-      case "calling":
-        return "Вызов";
-      case "ringing":
-        return "Звонок";
-      default:
-        break;
+      case "calling": return "Вызов";
+      case "ringing": return "Звонок";
     }
-
     switch (connectionState) {
-      case "connecting":
-        return "Подключение";
-      case "new":
-        return "Инициализация";
-      default:
-        return "Соединение";
+      case "connecting": return "Подключение";
+      case "new": return "Инициализация";
+      default: return "Соединение";
     }
   };
 
   const showWaitingUI = status !== "connected" || connectionState !== "connected";
   const showRetryButton = connectionState === "failed";
 
-  // Video call - show local camera immediately, remote after connection
+  // Video call - swap local/remote preview
   if (isVideoCall && localStream && !isVideoOff) {
     return (
       <div className="fixed inset-0 bg-black z-[100] flex flex-col">
+        {/* Ringtone player */}
+        <RingtonePlayer play={shouldPlayRingtone} />
         {/* Main video area */}
+
         {hasRemoteVideo ? (
-          // Connected: Remote video full screen
-          <video
-            ref={remoteVideoRef}
-            autoPlay
-            playsInline
-            className="absolute inset-0 w-full h-full object-cover"
-          />
+          <div className="absolute inset-0 w-full h-full">
+            {/* Main video: local or remote */}
+            {isSelfMain ? (
+              <video
+                ref={localVideoRef}
+                autoPlay
+                playsInline
+                muted
+                className="w-full h-full object-cover scale-x-[-1] transition-all duration-500 cursor-pointer"
+                style={{ opacity: isVideoOff ? 0.15 : 1, filter: isVideoOff ? 'blur(2px) grayscale(0.7)' : 'none', transition: 'opacity 0.4s, filter 0.4s' }}
+                onClick={() => setIsSelfMain(false)}
+                title="Поменять местами"
+              />
+            ) : (
+              <video
+                ref={remoteVideoRef}
+                autoPlay
+                playsInline
+                className="w-full h-full object-cover transition-all duration-500 cursor-pointer"
+                onClick={() => setIsSelfMain(true)}
+                title="Поменять местами"
+              />
+            )}
+            {/* PiP: второе видео */}
+            <div className="absolute top-20 right-4 w-28 h-40 z-10 transition-all duration-500">
+              {isSelfMain ? (
+                <video
+                  ref={remoteVideoRef}
+                  autoPlay
+                  playsInline
+                  className="w-full h-full object-cover rounded-2xl border-2 border-white/30 shadow-lg transition-all duration-500 cursor-pointer"
+                  onClick={() => setIsSelfMain(true)}
+                  title="Поменять местами"
+                />
+              ) : (
+                <video
+                  ref={localVideoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className="w-full h-full object-cover rounded-2xl border-2 border-white/30 scale-x-[-1] shadow-lg transition-all duration-500 cursor-pointer"
+                  style={{ opacity: isVideoOff ? 0.15 : 1, filter: isVideoOff ? 'blur(2px) grayscale(0.7)' : 'none', transition: 'opacity 0.4s, filter 0.4s' }}
+                  onClick={() => setIsSelfMain(false)}
+                  title="Поменять местами"
+                />
+              )}
+            </div>
+          </div>
         ) : (
           // Waiting: Local video full screen (mirror effect)
-          <video
-            ref={localVideoRef}
-            autoPlay
-            playsInline
-            muted
-            className="absolute inset-0 w-full h-full object-cover scale-x-[-1]"
-          />
-        )}
-
-        {/* Local video PiP (small overlay) - only show when connected */}
-        {hasRemoteVideo && localStream && (
-          <video
-            ref={localVideoRef}
-            autoPlay
-            playsInline
-            muted
-            className="absolute top-20 right-4 w-28 h-40 object-cover rounded-2xl border-2 border-white/30 z-10 scale-x-[-1] shadow-lg"
-          />
+          <div className="absolute inset-0 w-full h-full">
+            <video
+              ref={localVideoRef}
+              autoPlay
+              playsInline
+              muted
+              className="w-full h-full object-cover scale-x-[-1] transition-opacity duration-400"
+              style={{ opacity: isVideoOff ? 0.15 : 1, filter: isVideoOff ? 'blur(2px) grayscale(0.7)' : 'none', transition: 'opacity 0.4s, filter 0.4s' }}
+            />
+            {isVideoOff && (
+              <div className="absolute inset-0 flex items-center justify-center bg-black/60 transition-all duration-400">
+                <VideoOff className="w-16 h-16 text-white/80 animate-fade-in" />
+              </div>
+            )}
+          </div>
         )}
 
         {/* Waiting overlay with avatar and status */}
@@ -242,8 +352,8 @@ export function VideoCallScreen({
 
               {/* Name and status */}
               <h3 className="text-2xl font-semibold text-white mt-6 mb-2 drop-shadow-lg">{otherName}</h3>
-              <div className="flex items-center">
-                <span className="text-white/80 text-base drop-shadow-lg">{getStatusText()}</span>
+              <div className="flex items-center gap-3">
+                <StatusIndicator status={status} connectionState={connectionState} />
                 {!showRetryButton && (
                   <span className="flex ml-0.5">
                     <span className="animate-bounce text-white/80" style={{ animationDelay: "0ms", animationDuration: "1s" }}>.</span>
@@ -320,6 +430,8 @@ export function VideoCallScreen({
   // Audio call or waiting state - with brand background
   return (
     <div className="fixed inset-0 z-[100] flex flex-col">
+      {/* Ringtone player */}
+      <RingtonePlayer play={shouldPlayRingtone} />
       {/* Brand animated background */}
       <CallBackground />
       
@@ -335,8 +447,11 @@ export function VideoCallScreen({
 
         {/* Main content */}
         <div className="flex-1 flex flex-col items-center justify-center -mt-16">
-          {/* Status text above avatar */}
-          <p className="text-white/60 text-sm mb-3">{getStatusText()}{showWaitingUI && !showRetryButton && '...'}</p>
+          {/* Status text above avatar + индикатор */}
+          <div className="flex items-center gap-3 mb-3">
+            <StatusIndicator status={status} connectionState={connectionState} />
+            <span className="text-white/60 text-sm">{getStatusText()}{showWaitingUI && !showRetryButton && '...'}</span>
+          </div>
           
           {/* Name */}
           <h2 className="text-4xl font-semibold text-white mb-10">{otherName}</h2>
@@ -393,16 +508,17 @@ export function VideoCallScreen({
         </div>
 
         {/* Audio element for audio calls */}
+        {/* Аудиовыход с поддержкой setSinkId */}
         {!isVideoCall && remoteStream && (
-          <audio ref={remoteVideoRef as any} autoPlay playsInline />
+          <audio ref={audioOutRef} autoPlay playsInline />
         )}
 
         {/* Bottom controls */}
         <div className="p-6 pb-10 safe-area-bottom">
           <div className="flex items-center justify-around">
             <GlassControlButton
-              icon={<Volume2 className="w-6 h-6" />}
-              label="Динамик"
+              icon={isSpeakerOn ? <Volume2 className="w-6 h-6" /> : <Headphones className="w-6 h-6" />}
+              label={isSpeakerOn ? "Динамик" : "Наушники"}
               isActive={isSpeakerOn}
               onClick={() => setIsSpeakerOn(!isSpeakerOn)}
             />

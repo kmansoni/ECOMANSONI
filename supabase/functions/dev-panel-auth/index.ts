@@ -1,13 +1,16 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { enforceCors, getCorsHeaders, isProductionEnv, handleCors } from "../_shared/utils.ts";
 
 serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
+  const cors = handleCors(req);
+  if (cors) return cors;
+  const corsBlock = enforceCors(req);
+  if (corsBlock) return corsBlock;
+  const origin = req.headers.get("origin");
+  const corsHeaders = getCorsHeaders(origin);
+
+  if (isProductionEnv()) {
+    return new Response("not found", { status: 404, headers: corsHeaders });
   }
 
   try {

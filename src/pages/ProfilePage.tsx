@@ -158,14 +158,6 @@ export function ProfilePage() {
       <div className="relative z-10 min-h-screen pb-24">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 safe-area-top">
-          <button
-            type="button"
-            onClick={() => setShowCreateModal(true)}
-            className="w-10 h-10 rounded-full bg-card/80 backdrop-blur-xl border border-border flex items-center justify-center hover:bg-muted/50 transition-colors"
-            aria-label="Создать"
-          >
-            <Plus className="w-5 h-5 text-foreground" />
-          </button>
           <div className="flex items-center gap-1.5">
             <h1 className="font-semibold text-lg text-foreground">{profile.display_name || 'Профиль'}{(profile as any).status_emoji ? ` ${(profile as any).status_emoji}` : ""}</h1>
             {profile.verified && <VerifiedBadge size="md" />}
@@ -190,19 +182,14 @@ export function ProfilePage() {
         {/* Profile Info Row */}
         <div className="px-4 py-4">
           <div className="flex items-start gap-4">
-            {/* Avatar - clickable to open create menu */}
-            <button 
-              className="relative cursor-pointer"
-              onClick={() => setShowCreateModal(true)}
-            >
-              <div className="absolute -inset-1 rounded-full bg-gradient-to-br from-white/20 via-white/5 to-white/10 backdrop-blur-xl" />
+            {/* Avatar - plus button next to avatar, opens create menu */}
+            <div className="relative flex items-center">
               <Avatar className="w-20 h-20 border-2 border-border relative">
                 <AvatarImage src={profile.avatar_url || undefined} alt={profile.display_name || 'Profile'} />
                 <AvatarFallback className="bg-violet-500/80 backdrop-blur-xl text-white text-2xl font-medium">
                   {profile.display_name?.charAt(0)?.toUpperCase() || <User className="w-8 h-8" />}
                 </AvatarFallback>
               </Avatar>
-
               {(profile as any).status_sticker_url ? (
                 <img
                   src={(profile as any).status_sticker_url}
@@ -210,11 +197,15 @@ export function ProfilePage() {
                   className="absolute -bottom-2 -left-2 w-10 h-10 rounded-xl object-cover bg-card/80 border border-border"
                 />
               ) : null}
-              {/* Add story button */}
-              <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-primary border-2 border-border flex items-center justify-center">
-                <Plus className="w-4 h-4 text-primary-foreground" />
-              </div>
-            </button>
+              {/* Plus button next to avatar */}
+              <button
+                className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full bg-primary border-2 border-border flex items-center justify-center shadow-lg"
+                onClick={() => setShowCreateModal(true)}
+                aria-label="Создать контент"
+              >
+                <Plus className="w-5 h-5 text-primary-foreground" />
+              </button>
+            </div>
 
             {/* Stats */}
             <div className="flex-1">
@@ -485,6 +476,9 @@ export function ProfilePage() {
         onClose={() => setShowCreateModal(false)} 
         onSuccess={(contentType: ContentType) => {
           setShowCreateModal(false);
+          if (contentType === "reel") {
+            navigate("/create?tab=reels&auto=1");
+          }
         }}
       />
 

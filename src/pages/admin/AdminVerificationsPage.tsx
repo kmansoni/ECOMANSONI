@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AdminShell } from "@/components/admin/AdminShell";
 import { adminApi } from "@/lib/adminApi";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -49,14 +49,18 @@ export function AdminVerificationsPage() {
 
   const ownerTargetSummary = useMemo(() => `${targetUserId.trim()}:owner`, [targetUserId]);
 
-  const load = async () => {
+  const load = useCallback(async (filters?: { userId?: string; type?: string; status?: string }) => {
     setLoading(true);
     try {
+      const nextUserId = filters?.userId ?? "";
+      const nextType = filters?.type ?? "all";
+      const nextStatus = filters?.status ?? "all";
+
       const data = await adminApi<VerificationRow[]>("verifications.list", {
         limit: 200,
-        user_id: filterUserId || undefined,
-        verification_type: filterType === "all" ? undefined : filterType,
-        is_active: filterStatus === "all" ? undefined : filterStatus === "active",
+        user_id: nextUserId || undefined,
+        verification_type: nextType === "all" ? undefined : nextType,
+        is_active: nextStatus === "all" ? undefined : nextStatus === "active",
       });
       setRows(data ?? []);
     } catch (e) {
@@ -64,11 +68,11 @@ export function AdminVerificationsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     void load();
-  }, []);
+  }, [load]);
 
   const requestOwnerApproval = async (operation: "verification.grant" | "verification.revoke", userId: string) => {
     if (!userId.trim()) {
@@ -127,7 +131,7 @@ export function AdminVerificationsPage() {
       setReason("");
       setTicketId("");
       setApprovalId("");
-      await load();
+      await load({ userId: filterUserId, type: filterType, status: filterStatus });
     } catch (e) {
       toast.error("Grant failed", { description: e instanceof Error ? e.message : String(e) });
     } finally {
@@ -159,7 +163,7 @@ export function AdminVerificationsPage() {
       setRevokeReason("");
       setRevokeTicketId("");
       setRevokeApprovalId("");
-      await load();
+      await load({ userId: filterUserId, type: filterType, status: filterStatus });
     } catch (e) {
       toast.error("Revoke failed", { description: e instanceof Error ? e.message : String(e) });
     }
@@ -263,7 +267,13 @@ export function AdminVerificationsPage() {
                 </Select>
               </div>
               <div className="flex items-end">
-                <Button variant="outline" className="w-full" onClick={() => void load()}>Refresh</Button>
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => void load({ userId: filterUserId, type: filterType, status: filterStatus })}
+                >
+                  Refresh
+                </Button>
               </div>
             </div>
 

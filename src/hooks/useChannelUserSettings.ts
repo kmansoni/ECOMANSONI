@@ -23,11 +23,10 @@ export function useChannelUserSettings(channelId: string | null) {
   const [loading, setLoading] = useState(false);
   const [tick, setTick] = useState(0);
 
-  const muted = useMemo(
-    () => isMutedNow(settings?.muted_until ?? null) || settings?.notifications_enabled === false,
-    // tick forces recompute when mute-until expires
-    [settings, tick],
-  );
+  const muted = useMemo(() => {
+    const currentTick = tick;
+    return currentTick >= 0 && (isMutedNow(settings?.muted_until ?? null) || settings?.notifications_enabled === false);
+  }, [settings, tick]);
 
   const load = useCallback(async () => {
     if (!channelId || !user?.id) {

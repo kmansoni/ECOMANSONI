@@ -587,7 +587,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
     }
   };
 
-  const startRecording = async () => {
+  const startRecording = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
@@ -620,7 +620,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
     } catch (err) {
       console.error('Failed to start recording:', err);
     }
-  };
+  }, [sendTyping]);
 
   const stopRecording = useCallback(async () => {
     if (!mediaRecorderRef.current || !isRecording) return;
@@ -753,7 +753,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
         sendTyping(true, "recording_video");
       }
     }, 200); // 200ms delay to distinguish tap from hold
-  }, [recordMode, sendTyping]);
+  }, [recordMode, sendTyping, startRecording]);
 
   const handleRecordButtonUp = useCallback((e?: React.PointerEvent<HTMLButtonElement>) => {
     if (e && activePointerIdRef.current !== null && e.pointerId !== activePointerIdRef.current) {

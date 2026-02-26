@@ -5,28 +5,66 @@
  * - Error handling
  */
 
-// E1: Restrict CORS to specific origins
-const ALLOWED_ORIGINS = [
-  "https://mansoni.ru",
-  "https://app.mansoni.ru",
-  "https://kmansoni.github.io",
+const LOCALHOST_ORIGINS = [
   "http://localhost:5173",
   "http://localhost:3000",
+  "http://127.0.0.1:5173",
+  "http://127.0.0.1:3000",
 ];
+
+function parseAllowedOrigins(): string[] {
+  const raw = (Deno.env.get("CORS_ALLOWED_ORIGINS") ?? "").trim();
+  if (!raw) return [];
+  return raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((s) => s.replace(/\/$/, ""));
+}
+
+export function isProductionEnv(): boolean {
+  const env = (
+    Deno.env.get("ENV") ??
+    Deno.env.get("DENO_ENV") ??
+    Deno.env.get("NODE_ENV") ??
+    ""
+  ).toLowerCase();
+  if (env === "prod" || env === "production") return true;
+
+  const supabaseUrl = (Deno.env.get("SUPABASE_URL") ?? "").toLowerCase();
+  if (!supabaseUrl) return true;
+  if (supabaseUrl.includes("localhost") || supabaseUrl.includes("127.0.0.1")) return false;
+  return true;
+}
+
+function getAllowedOrigins(): string[] {
+  const allowed = parseAllowedOrigins();
+  if (allowed.length > 0) return allowed;
+  if (!isProductionEnv()) return LOCALHOST_ORIGINS.map((s) => s.replace(/\/$/, ""));
+  return [];
+}
+
+function isOriginAllowed(origin: string | null): boolean {
+  if (!origin) return true; // Non-browser clients
+  const normalized = origin.replace(/\/$/, "");
+  const allowed = getAllowedOrigins();
+  if (allowed.length === 0) return false;
+  return allowed.includes(normalized);
+}
 
 /**
  * Get CORS headers for the request origin
  */
 export function getCorsHeaders(requestOrigin: string | null): Record<string, string> {
-  const origin = requestOrigin && ALLOWED_ORIGINS.some(allowed => 
-    requestOrigin.startsWith(allowed.replace(/\/$/, ''))
-  ) ? requestOrigin : ALLOWED_ORIGINS[0];
+  const originAllowed = isOriginAllowed(requestOrigin);
+  const origin = originAllowed && requestOrigin ? requestOrigin : "null";
 
   return {
     "Access-Control-Allow-Origin": origin,
     "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
     "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
     "Access-Control-Max-Age": "86400",
+    Vary: "Origin",
   };
 }
 
@@ -36,7 +74,19 @@ export function getCorsHeaders(requestOrigin: string | null): Record<string, str
 export function handleCors(req: Request): Response | null {
   if (req.method === "OPTIONS") {
     const origin = req.headers.get("origin");
-    return new Response(null, { headers: getCorsHeaders(origin) });
+    if (!isOriginAllowed(origin)) {
+      return new Response("forbidden", { status: 403, headers: getCorsHeaders(origin) });
+    }
+    return new Response(null, { status: 204, headers: getCorsHeaders(origin) });
+  }
+  return null;
+}
+
+export function enforceCors(req: Request): Response | null {
+  const origin = req.headers.get("origin");
+  if (!origin) return null;
+  if (!isOriginAllowed(origin)) {
+    return new Response("forbidden", { status: 403, headers: getCorsHeaders(origin) });
   }
   return null;
 }

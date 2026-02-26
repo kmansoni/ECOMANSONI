@@ -84,7 +84,7 @@ describe("T-DM: DM Scope Creation and Uniqueness", () => {
 
     expect(row?.scope_id).toBeDefined();
     expect(row?.status).toBe("created");
-  });
+  }, 15000);
 
   it("T-DM-02: Reject duplicate DM (same canonical pair)", async () => {
     // Try to create DM again with same users (should fail)

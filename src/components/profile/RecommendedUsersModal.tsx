@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -22,23 +22,7 @@ export function RecommendedUsersModal({ isOpen, onClose }: RecommendedUsersModal
   const [showContactsPermission, setShowContactsPermission] = useState(true);
   const [hasFromContacts, setHasFromContacts] = useState(false);
 
-  useEffect(() => {
-    if (isOpen && user) {
-      // Загружаем текущие подписки
-      loadCurrentFollowing();
-    }
-  }, [isOpen, user]);
-
-  useEffect(() => {
-    // Проверяем есть ли пользователи из контактов
-    const fromContacts = users.some(u => u.is_from_contacts);
-    setHasFromContacts(fromContacts);
-    if (fromContacts) {
-      setShowContactsPermission(false);
-    }
-  }, [users]);
-
-  const loadCurrentFollowing = async () => {
+  const loadCurrentFollowing = useCallback(async () => {
     if (!user) return;
 
     const { data } = await supabase
@@ -49,7 +33,23 @@ export function RecommendedUsersModal({ isOpen, onClose }: RecommendedUsersModal
     if (data) {
       setFollowing(new Set(data.map(f => f.following_id)));
     }
-  };
+  }, [user]);
+
+  useEffect(() => {
+    if (isOpen && user) {
+      // Загружаем текущие подписки
+      void loadCurrentFollowing();
+    }
+  }, [isOpen, loadCurrentFollowing, user]);
+
+  useEffect(() => {
+    // Проверяем есть ли пользователи из контактов
+    const fromContacts = users.some(u => u.is_from_contacts);
+    setHasFromContacts(fromContacts);
+    if (fromContacts) {
+      setShowContactsPermission(false);
+    }
+  }, [users]);
 
   const handleFollow = async (userId: string) => {
     if (!user) return;

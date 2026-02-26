@@ -1022,7 +1022,12 @@ export function ChatsPage() {
                 return (
                   <div
                     key={`dm-${conv.id}`}
-                    onClick={() => setSelectedConversation(conv)}
+                    onClick={() => {
+                      // Сбросить unread_count для выбранного чата локально
+                      setSelectedConversation({ ...conv, unread_count: 0 });
+                      // Обновить список чатов с сервера
+                      refetch();
+                    }}
                     className="flex items-center gap-3 px-4 py-3 hover:bg-muted/60 active:bg-muted transition-colors cursor-pointer dark:hover:bg-white/5 dark:active:bg-white/10"
                   >
                     <div className="relative flex-shrink-0">

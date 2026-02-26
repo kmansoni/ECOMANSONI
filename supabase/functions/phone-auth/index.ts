@@ -1,27 +1,24 @@
 // @ts-nocheck
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-// CORS headers
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, x-client-info, apikey",
-};
+import { getCorsHeaders } from "../_shared/utils.ts";
 
 type Json = string | number | boolean | null | Json[] | { [key: string]: Json };
 
 serve(async (req: Request) => {
-  // Handle CORS
+  const origin = req.headers.get("origin");
+  const corsHeaders = {
+    ...getCorsHeaders(origin),
+    "Access-Control-Allow-Origin": origin || "*",
+  };
+
   if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
+    return new Response(null, { status: 204, headers: corsHeaders });
   }
 
   if (req.method !== "POST") {
-    return new Response("Method not allowed", { status: 405 });
+    return new Response("Method not allowed", { status: 405, headers: corsHeaders });
   }
-
-  const origin = req.headers.get("origin");
   const requestStartTime = Date.now();
 
   try {

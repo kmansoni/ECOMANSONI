@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AdminShell } from "@/components/admin/AdminShell";
 import { adminApi } from "@/lib/adminApi";
 import { Button } from "@/components/ui/button";
@@ -64,7 +64,7 @@ export function AdminUsersPage() {
   const assignNeedsApproval = Boolean(selectedRole?.requires_approval) || selectedRole?.category === "owner" || selectedRole?.category === "security";
   const revokeNeedsApproval = revokeDraft?.role_category === "owner" || revokeDraft?.role_category === "security";
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     try {
       const [admins, roleData] = await Promise.all([
@@ -73,18 +73,22 @@ export function AdminUsersPage() {
       ]);
       setRows(admins ?? []);
       setRoles(roleData ?? []);
-      if (!targetAdminId && admins?.length) setTargetAdminId(admins[0].id);
-      if (!roleName && roleData?.length) setRoleName(roleData[0].name);
+      if (admins?.length) {
+        setTargetAdminId((prev) => prev || admins[0].id);
+      }
+      if (roleData?.length) {
+        setRoleName((prev) => prev || roleData[0].name);
+      }
     } catch (e) {
       toast.error("Failed to load admins", { description: e instanceof Error ? e.message : String(e) });
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     void load();
-  }, []);
+  }, [load]);
 
   const createAdmin = async (e: React.FormEvent) => {
     e.preventDefault();

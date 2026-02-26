@@ -2,7 +2,7 @@ import { AdminShell } from "@/components/admin/AdminShell";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAdminMe } from "@/hooks/useAdminMe";
 import { adminApi, hasScope, JitRequest } from "@/lib/adminApi";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -39,7 +39,7 @@ export function SecurityAdminJitPage() {
 
   const canRequest = useMemo(() => hasScope(me, "security.jit.request"), [me]);
 
-  const loadRoles = async () => {
+  const loadRoles = useCallback(async () => {
     if (!canRequest) return;
     try {
       setRolesLoading(true);
@@ -50,11 +50,11 @@ export function SecurityAdminJitPage() {
     } finally {
       setRolesLoading(false);
     }
-  };
+  }, [canRequest]);
 
   useEffect(() => {
     void loadRoles();
-  }, [canRequest]);
+  }, [loadRoles]);
 
   const requestJit = async () => {
     if (!selectedRoleId || !reason.trim() || !ticketId.trim()) {

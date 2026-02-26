@@ -113,6 +113,7 @@ export function AppearanceRuntimeProvider({ children }: { children: React.ReactN
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAppearanceRuntime() {
   const ctx = React.useContext(AppearanceRuntimeContext);
   if (!ctx) {

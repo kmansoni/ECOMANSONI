@@ -2,7 +2,7 @@ import { AdminShell } from "@/components/admin/AdminShell";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAdminMe } from "@/hooks/useAdminMe";
 import { adminApi, isOwner, KillSwitchRow, JitRequest } from "@/lib/adminApi";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -20,7 +20,7 @@ export function OwnerConsolePage() {
 
   const canSee = useMemo(() => isOwner(me), [me]);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     if (!canSee) return;
     setLoading(true);
     try {
@@ -31,11 +31,11 @@ export function OwnerConsolePage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [canSee]);
 
   useEffect(() => {
     void load();
-  }, [canSee]);
+  }, [load]);
 
   const setSwitch = async (key: string, enabled: boolean) => {
     if (!reason.trim()) {

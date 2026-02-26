@@ -124,6 +124,7 @@ All colors MUST be HSL.
 
     /* Runtime appearance tokens */
     --app-font-scale: 100%;
+    --app-h: 100dvh;
     --message-corner-radius: 18px;
     --accent-primary: #4f8cff;
     --accent-secondary: #8b5cf6;
@@ -462,14 +463,21 @@ html.appearance-no-sticker-anim .emoji-picker-ios .EmojiPickerReact .epr-emoji i
 
 /* Prevent body scroll issues on Android */
 html, body, #root {
-  height: 100%;
-  min-height: 100dvh;
+  height: var(--app-h);
+  min-height: var(--app-h);
   overflow: hidden;
 }
 
 #root {
   display: flex;
   flex-direction: column;
+}
+
+.AppShell {
+  height: var(--app-h);
+  min-height: var(--app-h);
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 /* ============================================

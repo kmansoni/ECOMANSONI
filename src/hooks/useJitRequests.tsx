@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { adminApi, JitRequest, AdminMe } from "@/lib/adminApi";
 
 export function useJitRequests(me: AdminMe | null | undefined) {
@@ -6,7 +6,7 @@ export function useJitRequests(me: AdminMe | null | undefined) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     if (!me) return;
     try {
       setLoading(true);
@@ -18,13 +18,13 @@ export function useJitRequests(me: AdminMe | null | undefined) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [me]);
 
   useEffect(() => {
     load();
     const interval = setInterval(load, 10000); // Refresh every 10s
     return () => clearInterval(interval);
-  }, [me]);
+  }, [load]);
 
   return { requests, loading, error, refresh: load };
 }

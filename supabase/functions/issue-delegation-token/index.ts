@@ -27,12 +27,7 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import * as jose from "https://deno.land/x/jose@v5.2.0/index.ts";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+import { enforceCors, getCorsHeaders, handleCors } from "../_shared/utils.ts";
 
 type RequestBody = {
   service_id: string;
@@ -54,10 +49,10 @@ type IssueTokenResult = {
   };
 };
 
-function json(status: number, body: unknown): Response {
+function json(status: number, body: unknown, origin: string | null): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...getCorsHeaders(origin), "Content-Type": "application/json" },
   });
 }
 
@@ -157,19 +152,29 @@ async function getUserFromAuth(req: Request, supabaseUrl: string, anonKey: strin
 }
 
 serve(async (req: Request) => {
-  // Handle CORS preflight
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
+  const cors = handleCors(req);
+  if (cors) return cors;
+  const corsBlock = enforceCors(req);
+  if (corsBlock) return corsBlock;
+  const origin = req.headers.get("origin");
 
   if (req.method !== "POST") {
-    return json(405, { error: "Method not allowed" });
+    return json(405, { error: "Method not allowed" }, origin);
   }
 
   try {
     const supabaseUrl = requireEnv("SUPABASE_URL");
     const serviceKey = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
     const anonKey = req.headers.get("apikey") || Deno.env.get("SUPABASE_ANON_KEY") || "";
+
+    const issuerSecret = Deno.env.get("DELEGATION_ISSUER_SECRET");
+    if (!issuerSecret) {
+      return json(500, { error: "Server configuration error" }, origin);
+    }
+    const issuerHeader = req.headers.get("x-delegation-issuer");
+    if (!issuerHeader || issuerHeader !== issuerSecret) {
+      return json(403, { error: "Forbidden" }, origin);
+    }
 
     // Authenticate user
     const user = await getUserFromAuth(req, supabaseUrl, anonKey);
@@ -180,7 +185,7 @@ serve(async (req: Request) => {
     const { service_id, scopes, expires_minutes = 60 } = body;
 
     if (!service_id || !scopes || !Array.isArray(scopes) || scopes.length === 0) {
-      return json(400, { error: "Missing or invalid service_id or scopes" });
+      return json(400, { error: "Missing or invalid service_id or scopes" }, origin);
     }
 
     // Create service-role Supabase client
@@ -198,28 +203,27 @@ serve(async (req: Request) => {
 
     if (tenantIdError) {
       console.error("[issue-delegation-token] get_user_tenant_id_v1 error:", tenantIdError);
-      return json(500, { error: `Failed to resolve tenant_id: ${tenantIdError.message}` });
+      return json(500, { error: `Failed to resolve tenant_id: ${tenantIdError.message}` }, origin);
     }
 
     if (!tenantId) {
-      return json(400, { error: "No tenant found for user" });
+      return json(400, { error: "No tenant found for user" }, origin);
     }
 
-    // Ensure the service identity exists (FK requirement for delegations)
-    const { error: serviceIdentityError } = await supabase
+    const { data: serviceIdentity, error: serviceIdentityError } = await supabase
       .from("service_identities")
-      .upsert(
-        {
-          tenant_id: tenantId,
-          service_id,
-          status: "active",
-        },
-        { onConflict: "tenant_id,service_id" },
-      );
+      .select("service_id, status")
+      .eq("tenant_id", tenantId)
+      .eq("service_id", service_id)
+      .maybeSingle();
 
     if (serviceIdentityError) {
       console.error("[issue-delegation-token] service_identities upsert error:", serviceIdentityError);
-      return json(500, { error: `Failed to ensure service identity: ${serviceIdentityError.message}` });
+      return json(500, { error: `Failed to verify service identity: ${serviceIdentityError.message}` }, origin);
+    }
+
+    if (!serviceIdentity || serviceIdentity.status !== "active") {
+      return json(403, { error: "Service identity not allowed" }, origin);
     }
 
     // Call RPC to create delegation record (returns placeholder JWT + payload)
@@ -235,23 +239,23 @@ serve(async (req: Request) => {
       
       // Handle specific error codes
       if (error.code === "P0019") {
-        return json(401, { error: "Invalid auth context" });
+        return json(401, { error: "Invalid auth context" }, origin);
       }
       if (error.code === "P0008") {
-        return json(400, { error: "Invalid scopes (wildcards not allowed)" });
+        return json(400, { error: "Invalid scopes (wildcards not allowed)" }, origin);
       }
       if (error.code === "42883") {
-        return json(400, { error: "Scope validation failed" });
+        return json(400, { error: "Scope validation failed" }, origin);
       }
       if (error.message?.includes("rate_limit_exceeded")) {
-        return json(429, { error: "Rate limit exceeded" });
+        return json(429, { error: "Rate limit exceeded" }, origin);
       }
       
-      return json(500, { error: `Token issuance failed: ${error.message}` });
+      return json(500, { error: `Token issuance failed: ${error.message}` }, origin);
     }
 
     if (!data || data.length === 0) {
-      return json(500, { error: "RPC returned no data" });
+      return json(500, { error: "RPC returned no data" }, origin);
     }
 
     const result = data[0] as IssueTokenResult;
@@ -285,7 +289,7 @@ serve(async (req: Request) => {
       signatureOk = true;
     } catch (verifyError) {
       console.error("[issue-delegation-token] JWT verification failed:", verifyError);
-      return json(500, { error: "JWT signing verification failed" });
+      return json(500, { error: "JWT signing verification failed" }, origin);
     }
 
     // Update delegation_tokens table with real JWT hash
@@ -320,7 +324,7 @@ serve(async (req: Request) => {
 
     if (verifyDb && dbVerification && !dbVerification.ok) {
       console.error("[issue-delegation-token] DB verification failed:", dbVerification);
-      return json(500, { error: "DB verification failed" });
+      return json(500, { error: "DB verification failed" }, origin);
     }
 
     return json(200, {
@@ -332,26 +336,26 @@ serve(async (req: Request) => {
       alg: "HS256",
       db_verified: verifyDb ? true : undefined,
       db: verifyDb ? dbVerification : undefined,
-    });
+    }, origin);
 
   } catch (error) {
     console.error("[issue-delegation-token] Error:", error);
     
     if (error instanceof Error) {
       if (error.message.includes("not configured")) {
-        return json(500, { error: "Server configuration error" });
+        return json(500, { error: "Server configuration error" }, origin);
       }
       if (error.message.includes("Authorization")) {
-        return json(401, { error: "Unauthorized" });
+        return json(401, { error: "Unauthorized" }, origin);
       }
     }
     
     const debug = Deno.env.get("DEBUG_ERRORS") === "1";
     if (debug) {
       const message = error instanceof Error ? error.message : String(error);
-      return json(500, { error: "Internal server error", message });
+      return json(500, { error: "Internal server error", message }, origin);
     }
 
-    return json(500, { error: "Internal server error" });
+    return json(500, { error: "Internal server error" }, origin);
   }
 });

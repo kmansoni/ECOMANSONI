@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AdminShell } from "@/components/admin/AdminShell";
 import { adminApi, PrimaryOwner, StaffProfile } from "@/lib/adminApi";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -37,7 +37,7 @@ export function AdminStaffProfilesPage() {
 
   const canManage = useMemo(() => isOwner(me), [me]);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     try {
       const [profiles, owner] = await Promise.all([
@@ -60,11 +60,11 @@ export function AdminStaffProfilesPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [primaryTarget, targetAdminId]);
 
   useEffect(() => {
     void load();
-  }, []);
+  }, [load]);
 
   const hydrateForm = (row: StaffProfile) => {
     setStaffKind(row.staff_kind);

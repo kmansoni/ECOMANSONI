@@ -10,7 +10,6 @@ import {
   Play,
   User,
   Loader2,
-  Plus,
   Volume2,
   VolumeX,
 } from "lucide-react";
@@ -26,6 +25,8 @@ import { RankingExplanation } from "@/components/reel/RankingExplanation";
 
 const REELS_NAV_COOLDOWN_MS = 350;
 const REELS_WHEEL_THRESHOLD_PX = 18;
+const REELS_VIDEO_RETRY_LIMIT = 2;
+const REELS_VIDEO_RETRY_BASE_DELAY_MS = 1200;
 
 function formatNumber(num: number): string {
   if (num >= 1000000) {
@@ -39,9 +40,19 @@ function formatNumber(num: number): string {
 
 function isProbablyVideoUrl(url: string): boolean {
   const lower = (url || "").toLowerCase();
+
+  if (!lower) return false;
+
+  if (lower.startsWith("blob:") || lower.startsWith("data:video/")) {
+    return true;
+  }
   
   // Covers public storage URLs and direct file URLs.
-  if (/\.(mp4|webm|mov|avi|m4v)(\?|#|$)/.test(lower)) {
+  if (/\.(mp4|webm|mov|avi|m4v|m3u8)(\?|#|$)/.test(lower)) {
+    return true;
+  }
+
+  if (lower.includes("content-type=video") || lower.includes("mime=video")) {
     return true;
   }
   
@@ -80,6 +91,8 @@ export function ReelsPage() {
   } = useReels();
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true);
+  const [isUserPaused, setIsUserPaused] = useState(false);
+  const [currentProgress, setCurrentProgress] = useState(0);
   const [isMuted, setIsMuted] = useState(true);
   const [commentsReelId, setCommentsReelId] = useState<string | null>(null);
   const [shareReelId, setShareReelId] = useState<string | null>(null);
@@ -101,8 +114,35 @@ export function ReelsPage() {
   const visibilityTimers = useRef<Map<string, NodeJS.Timeout>>(new Map());
   const isScrolling = useRef(false);
   const errorToastShown = useRef<Set<string>>(new Set());
+  const prefetchedVideoUrls = useRef<Set<string>>(new Set());
+  const prefetchedPosterUrls = useRef<Set<string>>(new Set());
+  const videoErrorRetries = useRef<Map<string, number>>(new Map());
+  const lastProgressRef = useRef(0);
 
   const currentReel = reels[currentIndex];
+  const overlaysOpen = !!commentsReelId || !!shareReelId;
+
+  const syncPlaybackPolicy = useCallback(
+    (nextUserPaused: boolean = isUserPaused) => {
+      const isHidden = typeof document !== "undefined" && document.visibilityState !== "visible";
+      const shouldPause = overlaysOpen || isHidden || nextUserPaused;
+      setIsPlaying(!shouldPause);
+    },
+    [isUserPaused, overlaysOpen],
+  );
+
+  const updateCurrentProgress = useCallback(
+    (index: number, video: HTMLVideoElement) => {
+      if (index !== currentIndex) return;
+      const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 0;
+      const raw = duration > 0 ? video.currentTime / duration : 0;
+      const clamped = Math.max(0, Math.min(1, raw));
+      if (Math.abs(lastProgressRef.current - clamped) < 0.01) return;
+      lastProgressRef.current = clamped;
+      setCurrentProgress(clamped);
+    },
+    [currentIndex],
+  );
 
   const scrollToIndex = useCallback(
     (nextIndex: number) => {
@@ -117,9 +157,10 @@ export function ReelsPage() {
         containerRef.current.scrollTo({ top: nextIndex * itemHeight, behavior: "smooth" });
       }
       setCurrentIndex(nextIndex);
-      setIsPlaying(true);
+      setIsUserPaused(false);
+      syncPlaybackPolicy(false);
     },
-    [reels.length],
+    [reels.length, syncPlaybackPolicy],
   );
 
   const navigateRelative = useCallback(
@@ -146,6 +187,7 @@ export function ReelsPage() {
 
   // IntersectionObserver: viewport tracking (50%+ visibility, 1+ sec)
   useEffect(() => {
+    const visibilityTimersMap = visibilityTimers.current;
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
@@ -196,8 +238,8 @@ export function ReelsPage() {
     return () => {
       observer.disconnect();
       // Clear all visibility timers
-      visibilityTimers.current.forEach((timer) => clearTimeout(timer));
-      visibilityTimers.current.clear();
+      visibilityTimersMap.forEach((timer) => clearTimeout(timer));
+      visibilityTimersMap.clear();
     };
   }, [reels, recordImpression]);
 
@@ -206,39 +248,81 @@ export function ReelsPage() {
     if (!currentReel) return;
     const reelId = currentReel.id;
     const reelDuration = currentReel.duration_seconds ?? 30; // fallback to 30s
-    reelWatchStartMs.current.set(reelId, Date.now());
+    const reelWatchStartMsMap = reelWatchStartMs.current;
+    const reelTotalWatchedMsMap = reelTotalWatchedMs.current;
+    const viewedRecordedForReelMap = viewedRecordedForReel.current;
+    const watchedRecordedForReelMap = watchedRecordedForReel.current;
+    reelWatchStartMsMap.set(reelId, Date.now());
 
     return () => {
-      const start = reelWatchStartMs.current.get(reelId);
+      const start = reelWatchStartMsMap.get(reelId);
       if (start) {
         const elapsed = Date.now() - start;
-        const prev = reelTotalWatchedMs.current.get(reelId) ?? 0;
+        const prev = reelTotalWatchedMsMap.get(reelId) ?? 0;
         const totalWatched = prev + elapsed;
-        reelTotalWatchedMs.current.set(reelId, totalWatched);
+        reelTotalWatchedMsMap.set(reelId, totalWatched);
 
         const watchedSeconds = Math.floor(totalWatched / 1000);
 
         // Progressive Disclosure Layer 1: VIEWED (>2 sec)
-        if (watchedSeconds >= 2 && !viewedRecordedForReel.current.get(reelId)) {
-          viewedRecordedForReel.current.set(reelId, true);
-          recordViewed(reelId);
+        if (watchedSeconds >= 2 && !viewedRecordedForReelMap.get(reelId)) {
+          viewedRecordedForReelMap.set(reelId, true);
+          recordViewed(reelId, watchedSeconds, reelDuration);
         }
 
         // Progressive Disclosure Layer 2: WATCHED (>50% completion)
         const completionRate = (watchedSeconds / reelDuration) * 100;
-        if (completionRate >= 50 && !watchedRecordedForReel.current.get(reelId)) {
-          watchedRecordedForReel.current.set(reelId, true);
+        if (completionRate >= 50 && !watchedRecordedForReelMap.get(reelId)) {
+          watchedRecordedForReelMap.set(reelId, true);
           recordWatched(reelId, watchedSeconds, reelDuration);
         }
 
         // Negative Signal: SKIP (<2 sec when switching away)
-        if (watchedSeconds < 2 && !viewedRecordedForReel.current.get(reelId)) {
+        if (watchedSeconds < 2 && !viewedRecordedForReelMap.get(reelId)) {
           recordSkip(reelId, watchedSeconds, reelDuration);
         }
       }
-      reelWatchStartMs.current.delete(reelId);
+      reelWatchStartMsMap.delete(reelId);
     };
   }, [currentReel, recordViewed, recordWatched, recordSkip]);
+
+  // Prefetch next reels for smoother swipe transitions.
+  useEffect(() => {
+    lastProgressRef.current = 0;
+    setCurrentProgress(0);
+  }, [currentIndex]);
+
+  useEffect(() => {
+    videoRefs.current.forEach((_, index) => {
+      if (index >= reels.length) {
+        videoRefs.current.delete(index);
+      }
+    });
+    reelElementRefs.current.forEach((_, index) => {
+      if (index >= reels.length) {
+        reelElementRefs.current.delete(index);
+      }
+    });
+  }, [reels.length]);
+
+  useEffect(() => {
+    const candidates = [reels[currentIndex + 1], reels[currentIndex + 2]].filter(Boolean);
+    candidates.forEach((reel) => {
+      if (isProbablyVideoUrl(reel.video_url) && !prefetchedVideoUrls.current.has(reel.video_url)) {
+        prefetchedVideoUrls.current.add(reel.video_url);
+        const link = document.createElement("link");
+        link.rel = "prefetch";
+        link.as = "video";
+        link.href = reel.video_url;
+        document.head.appendChild(link);
+      }
+      if (reel.thumbnail_url && !prefetchedPosterUrls.current.has(reel.thumbnail_url)) {
+        prefetchedPosterUrls.current.add(reel.thumbnail_url);
+        const img = new Image();
+        img.src = reel.thumbnail_url;
+      }
+    });
+  }, [currentIndex, reels]);
 
   // Record view on video play (first view) or after 10s of watch time (repeat view)
   const handleVideoPlay = useCallback(
@@ -309,7 +393,24 @@ export function ReelsPage() {
         }
       }
     });
-  }, [currentIndex, isPlaying]);
+  }, [currentIndex, isMuted, isPlaying, tryPlayVideo]);
+
+  // Pause policy: overlay open/close + app background/foreground.
+  useEffect(() => {
+    if (overlaysOpen) {
+      syncPlaybackPolicy();
+      return;
+    }
+    syncPlaybackPolicy();
+  }, [overlaysOpen, syncPlaybackPolicy]);
+
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      syncPlaybackPolicy();
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
+  }, [syncPlaybackPolicy]);
 
   // Sync muted state separately (don't retrigger play)
   useEffect(() => {
@@ -330,9 +431,10 @@ export function ReelsPage() {
 
     if (newIndex !== currentIndex && newIndex >= 0 && newIndex < reels.length) {
       setCurrentIndex(newIndex);
-      setIsPlaying(true);
+      setIsUserPaused(false);
+      syncPlaybackPolicy(false);
     }
-  }, [currentIndex, reels.length]);
+  }, [currentIndex, reels.length, syncPlaybackPolicy]);
 
   const handleWheel = useCallback(
     (e: React.WheelEvent) => {
@@ -443,15 +545,22 @@ export function ReelsPage() {
     [setReelFeedback, refetch],
   );
 
-  const togglePlay = () => {
-    setIsPlaying(!isPlaying);
-  };
+  const togglePlay = useCallback(() => {
+    if (isPlaying) {
+      setIsUserPaused(true);
+      syncPlaybackPolicy(true);
+      return;
+    }
+
+    setIsUserPaused(false);
+    syncPlaybackPolicy(false);
+  }, [isPlaying, syncPlaybackPolicy]);
 
   const toggleMute = useCallback(() => {
     setIsMuted(!isMuted);
   }, [isMuted]);
 
-  const handleVideoError = useCallback((reelId: string) => {
+  const handleVideoError = useCallback((reelId: string, index: number) => {
     setFailedVideoIds((prev) => {
       if (prev.has(reelId)) return prev;
       const next = new Set(prev);
@@ -459,11 +568,36 @@ export function ReelsPage() {
       return next;
     });
 
+    const retries = videoErrorRetries.current.get(reelId) ?? 0;
+    if (retries < REELS_VIDEO_RETRY_LIMIT) {
+      const nextRetries = retries + 1;
+      videoErrorRetries.current.set(reelId, nextRetries);
+      const delay = REELS_VIDEO_RETRY_BASE_DELAY_MS * nextRetries;
+
+      setTimeout(() => {
+        setFailedVideoIds((prev) => {
+          if (!prev.has(reelId)) return prev;
+          const next = new Set(prev);
+          next.delete(reelId);
+          return next;
+        });
+
+        const video = videoRefs.current.get(index);
+        if (video) {
+          video.load();
+          if (index === currentIndex && isPlaying) {
+            tryPlayVideo(index);
+          }
+        }
+      }, delay);
+      return;
+    }
+
     if (!errorToastShown.current.has(reelId)) {
       errorToastShown.current.add(reelId);
       toast.error("Видео недоступно");
     }
-  }, []);
+  }, [currentIndex, isPlaying, tryPlayVideo]);
 
   // Double tap to like
   const lastTap = useRef<number>(0);
@@ -481,7 +615,7 @@ export function ReelsPage() {
       togglePlay();
     }
     lastTap.current = now;
-  }, [handleLike]);
+  }, [handleLike, togglePlay]);
 
   if (loading) {
     return (
@@ -493,19 +627,7 @@ export function ReelsPage() {
 
   const header = (
     <header className="sticky top-0 z-30 safe-area-top backdrop-blur-xl bg-black/20 border-b border-white/10">
-      <div className="h-12 px-3 flex items-center justify-end">
-        {user && (
-          <button
-            type="button"
-            onClick={() => navigate("/create?tab=reels&auto=1")}
-            className="w-10 h-10 rounded-full bg-white/10 backdrop-blur-xl border border-white/20 flex items-center justify-center hover:bg-white/15 active:bg-white/20 transition-colors"
-            aria-label="Создать Reel"
-            title="Создать"
-          >
-            <Plus className="w-6 h-6 text-white" />
-          </button>
-        )}
-      </div>
+      <div className="h-12 px-3 flex items-center" />
     </header>
   );
 
@@ -520,7 +642,7 @@ export function ReelsPage() {
             Пока нет видео для просмотра. Будьте первым!
           </p>
           {user ? (
-            <p className="text-white/60 text-center px-8">Нажмите + вверху, чтобы создать Reel</p>
+            <p className="text-white/60 text-center px-8">Откройте центр создания, чтобы добавить Reel</p>
           ) : (
             <p className="text-white/60 text-center px-8">Войдите, чтобы создавать Reels</p>
           )}
@@ -551,6 +673,7 @@ export function ReelsPage() {
           key={reel.id}
           ref={(el) => {
             if (el) reelElementRefs.current.set(index, el);
+            else reelElementRefs.current.delete(index);
           }}
           data-reel-id={reel.id}
           data-reel-index={index}
@@ -571,6 +694,8 @@ export function ReelsPage() {
                     // Playback attributes (some mobile webviews are picky)
                     el.setAttribute('webkit-playsinline', 'true');
                     el.setAttribute('x5-playsinline', 'true');
+                  } else {
+                    videoRefs.current.delete(index);
                   }
                 }}
                 src={reel.video_url}
@@ -593,7 +718,7 @@ export function ReelsPage() {
                 preload="auto"
                 onError={(e) => {
                   console.error("[Reels] Video ERROR:", reel.id, e);
-                  handleVideoError(reel.id);
+                  handleVideoError(reel.id, index);
                 }}
                 onLoadedMetadata={(e) => {
                   const vid = e.currentTarget;
@@ -603,6 +728,7 @@ export function ReelsPage() {
                     displaySize: `${vid.clientWidth}x${vid.clientHeight}`,
                     duration: vid.duration.toFixed(1),
                   });
+                  updateCurrentProgress(index, vid);
                 }}
                 onLoadedData={() => {
                   if (index === currentIndex && isPlaying) tryPlayVideo(index);
@@ -625,8 +751,8 @@ export function ReelsPage() {
                 onPause={() => {
                   // Video paused
                 }}
-                onTimeUpdate={() => {
-                  // Video playing
+                onTimeUpdate={(e) => {
+                  updateCurrentProgress(index, e.currentTarget);
                 }}
               />
             ) : reel.thumbnail_url ? (
@@ -882,19 +1008,12 @@ export function ReelsPage() {
         </div>
       ))}
 
-      {/* Progress indicator dots */}
-      <div className="fixed top-3 left-1/2 -translate-x-1/2 flex gap-1.5 z-20">
-        {reels.slice(0, Math.min(5, reels.length)).map((_, index) => (
-          <div 
-            key={index}
-            className={cn(
-              "w-1.5 h-1.5 rounded-full transition-all duration-300",
-              index === currentIndex % 5 
-                ? "bg-white w-4" 
-                : "bg-white/40"
-            )}
-          />
-        ))}
+      {/* Current reel progress */}
+      <div className="fixed top-3 left-1/2 -translate-x-1/2 w-[min(360px,calc(100%-2rem))] h-1.5 rounded-full bg-white/30 overflow-hidden z-20">
+        <div
+          className="h-full bg-white transition-[width] duration-100 linear"
+          style={{ width: `${Math.round(currentProgress * 100)}%` }}
+        />
       </div>
 
       </div>

@@ -31,7 +31,6 @@ export function useMarkConversationRead() {
             .eq("id", conversationId)
             .maybeSingle();
           if (convErr) {
-            // eslint-disable-next-line no-console
             console.error("[markConversationRead] conversation load error", convErr);
             return;
           }
@@ -46,7 +45,6 @@ export function useMarkConversationRead() {
             p_client_sent_at: new Date().toISOString(),
           });
           if (rpcErr) {
-            // eslint-disable-next-line no-console
             console.error("[markConversationRead] v11 rpc error", rpcErr);
           }
           return;
@@ -59,7 +57,6 @@ export function useMarkConversationRead() {
           .eq("id", conversationId)
           .maybeSingle();
         if (convErr) {
-          // eslint-disable-next-line no-console
           console.error("[markConversationRead] conversation load error", convErr);
           return;
         }
@@ -74,7 +71,6 @@ export function useMarkConversationRead() {
           p_up_to_seq: targetSeq,
         });
         if (deliveredErr) {
-          // eslint-disable-next-line no-console
           console.error("[markConversationRead] ack_delivered_v1 rpc error", deliveredErr);
           return;
         }
@@ -104,13 +100,11 @@ export function useMarkConversationRead() {
                   p_up_to_seq: Math.min(targetSeq, deliveredRetrySeq),
                 });
                 if (!readRetryErr) return;
-                // eslint-disable-next-line no-console
                 console.error("[markConversationRead] ack_read_v1 retry rpc error", readRetryErr);
                 return;
               }
             }
           }
-          // eslint-disable-next-line no-console
           console.error("[markConversationRead] ack_read_v1 rpc error", rpcErr);
         }
       } finally {

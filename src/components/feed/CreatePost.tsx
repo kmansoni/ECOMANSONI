@@ -1,10 +1,12 @@
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { CreateContentModal } from "./CreateContentModal";
 import type { ContentType } from "@/hooks/useMediaEditor";
 
 export function CreatePost() {
   const [showModal, setShowModal] = useState(false);
+  const navigate = useNavigate();
 
   return (
     <>
@@ -34,6 +36,9 @@ export function CreatePost() {
         onClose={() => setShowModal(false)}
         onSuccess={(contentType: ContentType) => {
           setShowModal(false);
+          if (contentType === "reel") {
+            navigate("/create?tab=reels&auto=1");
+          }
         }}
       />
     </>

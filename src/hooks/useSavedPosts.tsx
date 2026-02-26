@@ -76,11 +76,12 @@ export function useSavedPosts() {
   const loading = savedIdsQuery.isLoading || savedPostsQuery.isFetching;
 
   const savedPosts = savedPostsQuery.data || [];
+  const refetchSavedPosts = savedPostsQuery.refetch;
 
   // Fetch full saved posts with details (used on Saved page)
   const fetchSavedPosts = useCallback(async () => {
-    await savedPostsQuery.refetch();
-  }, [savedPostsQuery.refetch]);
+    await refetchSavedPosts();
+  }, [refetchSavedPosts]);
 
   const isSaved = useCallback((postId: string) => {
     return savedPostIds.has(postId);

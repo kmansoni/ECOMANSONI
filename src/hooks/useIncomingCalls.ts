@@ -55,6 +55,7 @@ export function useIncomingCalls(options: UseIncomingCallsOptions = {}) {
   // Cleanup stale ringing calls on mount
   useEffect(() => {
     if (!user) return;
+    const notifiedCalls = notifiedCallsRef.current;
 
     const cleanupStaleRingingCalls = async () => {
       const cutoff = new Date(Date.now() - 60000).toISOString();
@@ -162,7 +163,7 @@ export function useIncomingCalls(options: UseIncomingCallsOptions = {}) {
       console.log("[IncomingCalls] Cleaning up");
       supabase.removeChannel(channel);
       clearInterval(pollInterval);
-      notifiedCallsRef.current.clear();
+      notifiedCalls.clear();
     };
   }, [user, processIncomingCall]);
 

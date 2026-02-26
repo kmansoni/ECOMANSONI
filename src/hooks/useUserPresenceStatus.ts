@@ -92,12 +92,16 @@ export function useUserPresenceStatus(userId?: string | null) {
     return () => window.clearInterval(id);
   }, []);
 
-  const isOnline = useMemo(() => isOnlineFromLastSeen(lastSeenAt), [lastSeenAt, statusTick]);
+  const isOnline = useMemo(() => {
+    const currentStatusTick = statusTick;
+    return currentStatusTick >= 0 && isOnlineFromLastSeen(lastSeenAt);
+  }, [lastSeenAt, statusTick]);
 
   const statusText = useMemo(() => {
+    const currentStatusTick = statusTick;
     if (isOnline) return "в сети";
     if (!lastSeenAt) return "был(а) недавно";
-    return formatLastSeen(lastSeenAt);
+    return currentStatusTick >= 0 ? formatLastSeen(lastSeenAt) : formatLastSeen(lastSeenAt);
   }, [isOnline, lastSeenAt, statusTick]);
 
   return { lastSeenAt, isOnline, statusText, statusEmoji, statusStickerUrl };

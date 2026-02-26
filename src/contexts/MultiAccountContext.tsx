@@ -709,7 +709,7 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [beginProfileLoad, isCurrentProfileLoad]);
 
   const addAccountWithPassword = React.useCallback(async (email: string, password: string) => {
     try {
@@ -989,6 +989,7 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useMultiAccount() {
   const ctx = React.useContext(MultiAccountContext);
   if (!ctx) throw new Error("useMultiAccount must be used within MultiAccountProvider");

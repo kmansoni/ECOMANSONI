@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { AdminShell } from "@/components/admin/AdminShell";
 import { adminApi } from "@/lib/adminApi";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -76,7 +76,7 @@ export function AdminHashtagModerationPage() {
   const [bulkSurfacePolicy, setBulkSurfacePolicy] = useState("suppress_for_you");
   const [bulkNotes, setBulkNotes] = useState("");
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     try {
       const data = await adminApi<HashtagRow[]>("hashtags.list", {
@@ -90,11 +90,11 @@ export function AdminHashtagModerationPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [filterStatus]);
 
   useEffect(() => {
     void load();
-  }, [filterStatus]);
+  }, [load]);
 
   const handleSelectForEdit = (row: HashtagRow) => {
     setSelectedForEdit(row);

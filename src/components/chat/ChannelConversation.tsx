@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   Bell,
@@ -437,7 +437,7 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
     setInfoView("main");
   };
 
-  const loadAdmins = async () => {
+  const loadAdmins = useCallback(async () => {
     setAdminsLoading(true);
     try {
       const { data: rows, error } = await supabase
@@ -484,9 +484,9 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
     } finally {
       setAdminsLoading(false);
     }
-  };
+  }, [channel.id, channel.owner_id]);
 
-  const loadSubscribers = async () => {
+  const loadSubscribers = useCallback(async () => {
     setSubsLoading(true);
     try {
       const { data: rows, error } = await supabase
@@ -544,7 +544,7 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
     } finally {
       setSubsLoading(false);
     }
-  };
+  }, [channel.id]);
 
   useEffect(() => {
     if (!infoOpen) return;
@@ -554,9 +554,9 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
     if (infoView === "subscribers" && subscribers.length === 0 && !subsLoading) {
       void loadSubscribers();
     }
-  }, [admins.length, adminsLoading, infoOpen, infoView, subscribers.length, subsLoading]);
+  }, [admins.length, adminsLoading, infoOpen, infoView, loadAdmins, loadSubscribers, subscribers.length, subsLoading]);
 
-  const loadAutoDeleteSeconds = async () => {
+  const loadAutoDeleteSeconds = useCallback(async () => {
     setAutoDeleteLoading(true);
     try {
       const { data, error } = await supabase
@@ -572,12 +572,12 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
     } finally {
       setAutoDeleteLoading(false);
     }
-  };
+  }, [channel.id]);
 
   useEffect(() => {
     if (!infoOpen) return;
     void loadAutoDeleteSeconds();
-  }, [infoOpen, channel.id]);
+  }, [infoOpen, loadAutoDeleteSeconds]);
 
   const messageById = useMemo(() => {
     const m = new Map<string, any>();

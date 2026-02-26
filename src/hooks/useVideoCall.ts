@@ -723,7 +723,7 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
       await cleanup("start_call_error");
       return null;
     }
-  }, [user, status, setupBroadcastChannel, startSignalPolling, createPeerConnection, cleanup, log, warn]);
+  }, [user, status, setupBroadcastChannel, startSignalPolling, createPeerConnection, sendSignal, cleanup, log, warn]);
 
   // Answer incoming call
   const answerCall = useCallback(async (call: VideoCall) => {

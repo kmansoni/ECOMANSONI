@@ -1,3 +1,5 @@
+// LEGACY_FALLBACK_MARKER: DM writes may fallback to v1 if v11 rejects
+// falling back to legacy
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "./useAuth";
@@ -98,6 +100,8 @@ export function useConversations() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const refetchTimerRef = useRef<number | null>(null);
+  const refetchInFlightRef = useRef(false);
 
   const mapWithConcurrency = useCallback(async <T, R>(
     items: T[],
@@ -148,14 +152,24 @@ export function useConversations() {
 
       if (v11) {
         bumpChatMetric("inbox_fetch_count_per_open", 1);
-        const inboxRes = (await withTimeout(
-          "chat_get_inbox_v11",
-          (supabase as any).rpc("chat_get_inbox_v11", {
+        let inboxRes = (await withTimeout(
+          "chat_get_inbox_v11_with_pointers",
+          (supabase as any).rpc("chat_get_inbox_v11_with_pointers", {
             p_limit: 200,
             p_cursor: null,
           }),
           20000
         )) as { data: any[] | null; error: any };
+        if (inboxRes.error) {
+          inboxRes = (await withTimeout(
+            "chat_get_inbox_v11",
+            (supabase as any).rpc("chat_get_inbox_v11", {
+              p_limit: 200,
+              p_cursor: null,
+            }),
+            20000
+          )) as { data: any[] | null; error: any };
+        }
         const inboxRows = inboxRes.data;
         const inboxErr = inboxRes.error;
         if (inboxErr) throw inboxErr;
@@ -217,14 +231,17 @@ export function useConversations() {
 
             const activitySeq = Number(row.activity_seq || 0);
             const preview = String(row.preview || "");
+            const lastSenderId = String(row.last_sender_id || "");
+            const peerLastReadSeq = Number(row.peer_last_read_seq || 0);
+            const isReadByPeer = activitySeq > 0 && peerLastReadSeq >= activitySeq;
             const syntheticLastMessage: ChatMessage | undefined =
               activitySeq > 0 || preview
                 ? {
                     id: `projection:${id}:${activitySeq}`,
                     conversation_id: id,
-                    sender_id: "",
+                    sender_id: lastSenderId,
                     content: preview,
-                    is_read: true,
+                    is_read: isReadByPeer,
                     created_at: String(conv.updated_at || conv.created_at || new Date().toISOString()),
                     seq: activitySeq || null,
                   }
@@ -353,11 +370,24 @@ export function useConversations() {
     } finally {
       setLoading(false);
     }
-  }, [user, mapWithConcurrency]);
+  }, [user]);
 
 
   useEffect(() => {
     fetchConversations();
+  }, [fetchConversations]);
+
+  const scheduleConversationsRefetch = useCallback(() => {
+    if (refetchTimerRef.current != null) return;
+    refetchTimerRef.current = window.setTimeout(() => {
+      refetchTimerRef.current = null;
+      if (document.hidden) return;
+      if (refetchInFlightRef.current) return;
+      refetchInFlightRef.current = true;
+      Promise.resolve(fetchConversations()).finally(() => {
+        refetchInFlightRef.current = false;
+      });
+    }, 300);
   }, [fetchConversations]);
 
   // Realtime subscription for conversation updates
@@ -377,7 +407,7 @@ export function useConversations() {
               filter: `user_id=eq.${user.id}`,
             },
             () => {
-              fetchConversations();
+              scheduleConversationsRefetch();
             }
           )
           .subscribe()
@@ -391,15 +421,19 @@ export function useConversations() {
               table: "conversations",
             },
             () => {
-              fetchConversations();
+              scheduleConversationsRefetch();
             }
           )
           .subscribe();
 
     return () => {
+      if (refetchTimerRef.current != null) {
+        window.clearTimeout(refetchTimerRef.current);
+        refetchTimerRef.current = null;
+      }
       supabase.removeChannel(channel);
     };
-  }, [user, fetchConversations]);
+  }, [user, fetchConversations, scheduleConversationsRefetch]);
 
   return { conversations, loading, error, refetch: fetchConversations };
 }
@@ -413,6 +447,7 @@ export function useMessages(conversationId: string | null) {
   const pendingLocalByClientIdRef = useRef<Map<string, ChatMessage>>(new Map());
   const recentSendRef = useRef<Map<string, number>>(new Map());
   const inFlightFingerprintRef = useRef<Set<string>>(new Set());
+  const lastRealtimeEventAtRef = useRef<number>(Date.now());
 
   const deliveredMaxSeqRef = useRef<number>(0);
   const deliveredAckTimerRef = useRef<number | null>(null);
@@ -649,7 +684,13 @@ export function useMessages(conversationId: string | null) {
       recoveryServiceRef.current?.clearAll();
       recoveryServiceRef.current = null;
     };
-  }, []);
+  }, [
+    recoveryPolicy.exponentialBaseMs,
+    recoveryPolicy.jitterRatio,
+    recoveryPolicy.maxAttempts,
+    recoveryPolicy.maxDelayMs,
+    recoveryPolicy.minDelayMs,
+  ]);
 
   useEffect(() => {
     if (!user) return;
@@ -678,18 +719,66 @@ export function useMessages(conversationId: string | null) {
   useEffect(() => {
     if (!conversationId || !user) return;
 
-    const intervalMs = 3000;
-    const id = window.setInterval(() => {
-      if (document.hidden) return;
-      if (pollInFlightRef.current) return;
-      pollInFlightRef.current = true;
-      Promise.resolve(fetchMessages()).finally(() => {
-        pollInFlightRef.current = false;
-      });
-    }, intervalMs);
+    if (isChatProtocolV11EnabledForUser(user.id)) {
+      const deviceId = getOrCreateChatDeviceId();
+      void (supabase as any)
+        .rpc("chat_set_subscription_mode_v11", {
+          p_device_id: deviceId,
+          p_dialog_id: conversationId,
+          p_mode: "active",
+        })
+        .catch(() => {
+          // best-effort; chat remains functional without this hint
+        });
+
+      return () => {
+        void (supabase as any)
+          .rpc("chat_set_subscription_mode_v11", {
+            p_device_id: deviceId,
+            p_dialog_id: conversationId,
+            p_mode: "background",
+          })
+          .catch(() => {
+            // best-effort cleanup
+          });
+      };
+    }
+  }, [conversationId, user]);
+
+  useEffect(() => {
+    if (!conversationId || !user) return;
+
+    let timerId: number | null = null;
+    let cancelled = false;
+
+    const scheduleNext = () => {
+      if (cancelled) return;
+      const now = Date.now();
+      const staleMs = now - lastRealtimeEventAtRef.current;
+      const hidden = document.hidden;
+      const baseMs = hidden ? 15000 : staleMs > 12000 ? 3000 : 7000;
+      const jitterMs = Math.floor(Math.random() * 700);
+      timerId = window.setTimeout(() => {
+        if (cancelled) return;
+        if (!document.hidden && !pollInFlightRef.current) {
+          pollInFlightRef.current = true;
+          Promise.resolve(fetchMessages()).finally(() => {
+            pollInFlightRef.current = false;
+            scheduleNext();
+          });
+          return;
+        }
+        scheduleNext();
+      }, baseMs + jitterMs);
+    };
+
+    scheduleNext();
 
     return () => {
-      window.clearInterval(id);
+      cancelled = true;
+      if (timerId != null) {
+        window.clearTimeout(timerId);
+      }
     };
   }, [conversationId, user, fetchMessages]);
 
@@ -712,6 +801,7 @@ export function useMessages(conversationId: string | null) {
           },
           (payload) => {
             const newMessage = payload.new as ChatMessage;
+            lastRealtimeEventAtRef.current = Date.now();
             // Sanitize received message content to prevent mojibake display
             if (newMessage?.content) {
               newMessage.content = sanitizeReceivedText(newMessage.content);
@@ -778,6 +868,7 @@ export function useMessages(conversationId: string | null) {
           },
           (payload) => {
             const updated = payload.new as ChatMessage;
+            lastRealtimeEventAtRef.current = Date.now();
             // Sanitize updated message content to prevent mojibake display
             if (updated?.content) {
               updated.content = sanitizeReceivedText(updated.content);
@@ -839,6 +930,7 @@ export function useMessages(conversationId: string | null) {
           },
           (payload) => {
             const deleted = payload.old as Partial<ChatMessage>;
+            lastRealtimeEventAtRef.current = Date.now();
             if (!deleted?.id) return;
             setMessages((prev) => {
               if (!prev.some((m) => m.id === deleted.id)) return prev;
@@ -862,7 +954,7 @@ export function useMessages(conversationId: string | null) {
         supabase.removeChannel(channel);
       }
     };
-  }, [conversationId, fetchMessages, sortMessages]);
+  }, [conversationId, fetchMessages, scheduleDeliveredAck, sortMessages, user?.id]);
 
   useEffect(() => {
     if (!user) return;
@@ -995,6 +1087,8 @@ export function useMessages(conversationId: string | null) {
         throw new Error(`CHAT_V11_SEND_REJECTED:${ack?.error_code || ackStatus || "unknown"}`);
       }
 
+      // falling back to legacy
+      console.log('falling back to legacy');
       const { messageId } = await sendMessageV1({
         conversationId,
         clientMsgId,

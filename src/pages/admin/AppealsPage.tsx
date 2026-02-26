@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { AdminShell } from "@/components/admin/AdminShell";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -46,6 +46,7 @@ const CONTENT_TYPE_LABELS: Record<string, string> = {
 
 export function AppealsPage() {
   const { me: adminMe } = useAdminMe();
+  const supabaseUnsafe = supabase as any;
   const [appeals, setAppeals] = useState<AppealWithDetails[]>([]);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -61,11 +62,7 @@ export function AppealsPage() {
   const [reasonCode, setReasonCode] = useState("");
   const [notes, setNotes] = useState("");
 
-  useEffect(() => {
-    loadAppeals();
-  }, [filterStatus, filterContentType]);
-
-  const loadAppeals = async () => {
+  const loadAppeals = useCallback(async () => {
     setLoading(true);
     try {
       let query = supabase
@@ -112,7 +109,7 @@ export function AppealsPage() {
                 preview = (comment.content || "").substring(0, 150);
               }
             } else if (appeal.content_type === "message") {
-              const { data: message } = await supabase
+              const { data: message } = await supabaseUnsafe
                 .from("direct_messages")
                 .select("content")
                 .eq("id", appeal.content_id)
@@ -130,7 +127,7 @@ export function AppealsPage() {
                 preview = `${profile.display_name || ""}${profile.bio ? " - " + profile.bio : ""}`.substring(0, 150);
               }
             } else if (appeal.content_type === "hashtag") {
-              const { data: hashtag } = await supabase
+              const { data: hashtag } = await supabaseUnsafe
                 .from("hashtags")
                 .select("canonical_form")
                 .eq("id", appeal.content_id)
@@ -158,7 +155,11 @@ export function AppealsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [filterContentType, filterStatus, supabaseUnsafe]);
+
+  useEffect(() => {
+    void loadAppeals();
+  }, [loadAppeals]);
 
   const openReviewDialog = (appeal: AppealWithDetails) => {
     setSelectedAppeal(appeal);

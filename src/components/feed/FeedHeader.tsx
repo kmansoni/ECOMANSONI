@@ -1,13 +1,11 @@
 import { useState, useMemo } from "react";
-import { Plus, Loader2, User } from "lucide-react";
+import { Loader2, User } from "lucide-react";
 import { useScrollCollapse } from "@/hooks/useScrollCollapse";
 import { ServicesMenu } from "@/components/layout/ServicesMenu";
 import { cn } from "@/lib/utils";
 import { useScrollContainer } from "@/contexts/ScrollContainerContext";
 import { StoryViewer } from "./StoryViewer";
 import { useStories, type UserWithStories } from "@/hooks/useStories";
-import { CreateContentModal } from "@/components/feed/CreateContentModal";
-import type { ContentType } from "@/hooks/useMediaEditor";
 
 // Animation constants - moved outside for performance
 const EXPANDED_AVATAR_SIZE = 64;
@@ -32,7 +30,6 @@ export function FeedHeader() {
   const { usersWithStories, loading } = useStories();
   const [storyViewerOpen, setStoryViewerOpen] = useState(false);
   const [selectedStoryIndex, setSelectedStoryIndex] = useState(0);
-  const [createOpen, setCreateOpen] = useState(false);
 
   // Handle story click - either scroll to top or open viewer
   const handleStoryClick = (index: number, user: UserWithStories) => {
@@ -96,21 +93,6 @@ export function FeedHeader() {
       >
         <div className="flex items-center w-full">
           <ServicesMenu />
-          <div className="ml-auto">
-            <button
-              type="button"
-              onClick={() => setCreateOpen(true)}
-              className={cn(
-                "w-10 h-10 rounded-full",
-                "bg-card/80 backdrop-blur border border-border",
-                "flex items-center justify-center",
-                "hover:bg-card active:bg-card/90 transition-colors",
-              )}
-              aria-label="Создать"
-            >
-              <Plus className="w-6 h-6 text-foreground" />
-            </button>
-          </div>
         </div>
       </div>
 
@@ -219,13 +201,6 @@ export function FeedHeader() {
         onClose={() => setStoryViewerOpen(false)}
       />
 
-      <CreateContentModal
-        isOpen={createOpen}
-        onClose={() => setCreateOpen(false)}
-        onSuccess={(contentType: ContentType) => {
-          setCreateOpen(false);
-        }}
-      />
     </div>
   );
 }

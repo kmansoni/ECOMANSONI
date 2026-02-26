@@ -192,8 +192,9 @@ export function CreateCenterPage() {
 
   // Revoke object URLs on unmount.
   useEffect(() => {
+    const objectUrls = objectUrlsRef.current;
     return () => {
-      for (const u of objectUrlsRef.current) {
+      for (const u of objectUrls) {
         try {
           URL.revokeObjectURL(u);
         } catch {

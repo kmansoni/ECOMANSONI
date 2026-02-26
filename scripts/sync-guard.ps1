@@ -46,16 +46,23 @@ foreach ($rel in $requiredFiles) {
   }
 }
 
-$useChatPath = Join-Path $repoRoot "src/hooks/useChat.tsx"
-if (Test-Path $useChatPath) {
-  $useChatRaw = Get-Content -Raw $useChatPath
-  if ($useChatRaw -notmatch 'falling back to legacy') {
-    Add-Issue $issues "useChat.tsx: no legacy fallback marker found. DM writes may hard-fail on v11 rejects."
-  }
-  if ($useChatRaw -notmatch 'ackStatus === "accepted" \|\| ackStatus === "duplicate"') {
-    Add-Issue $issues "useChat.tsx: expected ack-status acceptance gate not found."
-  }
-}
+ $useChatPath = Join-Path $repoRoot "src/hooks/useChat.tsx"
+ if (Test-Path $useChatPath) {
+   $useChatRaw = [System.IO.File]::ReadAllText($useChatPath, [Text.UTF8Encoding]::new($false))
+   $hash = (Get-FileHash $useChatPath -Algorithm SHA256).Hash
+   Write-Host "[sync-guard] useChat.tsx hash: $hash" -ForegroundColor Yellow
+   Write-Host "[sync-guard] First 200 chars:" -ForegroundColor Yellow
+   Write-Host ($useChatRaw.Substring(0, [Math]::Min(200, $useChatRaw.Length)))
+   $contains = $useChatRaw.Contains('falling back to legacy')
+   $idx = $useChatRaw.IndexOf('falling back to legacy', [StringComparison]::Ordinal)
+   Write-Host "[sync-guard] Contains: $contains, IndexOf: $idx" -ForegroundColor Yellow
+   if (-not $contains) {
+     Add-Issue $issues "useChat.tsx: no legacy fallback marker found. DM writes may hard-fail on v11 rejects."
+   }
+   if ($useChatRaw -notmatch 'ackStatus === "accepted" \|\| ackStatus === "duplicate"') {
+     Add-Issue $issues "useChat.tsx: expected ack-status acceptance gate not found."
+   }
+ }
 
 if (-not [string]::IsNullOrWhiteSpace($MirrorRepoPath)) {
   $mirror = $MirrorRepoPath.Trim()
@@ -133,13 +140,19 @@ if ($CheckRemoteMigrations) {
   }
 }
 
+
+Write-Host ""
+Write-Host "Sync guard diagnostics:" -ForegroundColor Cyan
+Write-Host "Issues count: $($issues.Count)"
 if ($issues.Count -gt 0) {
-  Write-Host ""
   Write-Host "Sync guard failed:" -ForegroundColor Red
   foreach ($i in $issues) {
     Write-Host " - $i" -ForegroundColor Red
   }
   exit 1
+} else {
+  Write-Host "Sync guard passed." -ForegroundColor Green
+  exit 0
 }
 
 Write-Host "Sync guard passed." -ForegroundColor Green
