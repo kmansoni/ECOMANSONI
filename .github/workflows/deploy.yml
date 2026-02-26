@@ -32,6 +32,16 @@ jobs:
       - name: Build frontend
         run: npm run build
 
+      - name: Deploy frontend to mansoni.ru (Timeweb Cloud)
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ env.SERVER_HOST }}
+          username: ${{ env.SERVER_USER }}
+          password: ${{ env.SERVER_DB_PASS }}
+          port: 22
+          source: "dist/*"
+          target: "/var/www/mansoni/dist/"
+
       - name: Deploy Supabase
         run: |
           pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/supabase-deploy.ps1
