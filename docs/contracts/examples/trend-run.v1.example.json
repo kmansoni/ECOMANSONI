@@ -1,8 +1,8 @@
 {
-  "run_id": "trendrun_20260222_1020_6h",
+  "run_id": "trendrun_20260224_1020_6h",
   "window": "6h",
-  "started_at": "2026-02-22T10:20:00Z",
-  "ended_at": "2026-02-22T10:20:12Z",
+  "started_at": "2026-02-24T10:20:00Z",
+  "ended_at": "2026-02-24T10:20:12Z",
   "status": "succeeded",
   "inputs": {
     "source": "events_aggregate",
@@ -12,12 +12,12 @@
   "outputs": {
     "trend_items": [
       {
-        "trend_id": "trend_20260222_001",
+        "trend_id": "trend_20260224_001",
         "type": "hashtag",
         "subject_id": "hashtag:cars",
         "score": 0.82,
         "window": "6h",
-        "generated_at": "2026-02-22T10:15:00Z",
+        "generated_at": "2026-02-24T10:15:00Z",
         "flags": ["rank.trust_weighted"]
       }
     ]

@@ -34,7 +34,7 @@ describe("useSearch explore page", () => {
     const { supabase } = await import("@/integrations/supabase/client");
     (supabase as any).rpc.mockResolvedValueOnce({
       data: {
-        generated_at: "2026-02-22T00:00:00Z",
+        generated_at: "2026-02-24T00:00:00Z",
         sections: [
           { type: "hashtags", title: "Hashtags", items: [{ hashtag: "cats", status: "normal", post_count_approx: 10 }] },
         ],

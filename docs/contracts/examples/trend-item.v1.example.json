@@ -1,9 +1,9 @@
 {
-  "trend_id": "trend_20260222_001",
+  "trend_id": "trend_20260224_001",
   "type": "hashtag",
   "subject_id": "hashtag:cars",
   "score": 0.82,
   "window": "6h",
-  "generated_at": "2026-02-22T10:15:00Z",
+  "generated_at": "2026-02-24T10:15:00Z",
   "flags": ["rank.trust_weighted"]
 }

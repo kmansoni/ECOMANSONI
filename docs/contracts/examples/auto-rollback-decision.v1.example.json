@@ -1,9 +1,9 @@
 {
-  "decision_id": "ard_20260222_001",
-  "version_id": "rank_v2_20260222_01",
+  "decision_id": "ard_20260224_001",
+  "version_id": "rank_v2_20260224_01",
   "stage": "rollout.stage_10pct",
   "baseline_version_id": "rank_v1_20260210_01",
-  "decided_at": "2026-02-22T10:12:00Z",
+  "decided_at": "2026-02-24T10:12:00Z",
   "action": "rollback",
   "reason_codes": ["rank.guardrail_triggered", "rollout.rollback_triggered"],
   "guardrail_snapshot": {

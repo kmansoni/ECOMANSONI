@@ -88,7 +88,7 @@ describe("chat v1.1 recovery path", () => {
                     msg_seq: 1,
                     sender_id: "user-1",
                     content: "hello",
-                    created_at: "2026-02-22T00:00:00.000Z",
+                    created_at: "2026-02-24T00:00:00.000Z",
                   },
                 ],
               },

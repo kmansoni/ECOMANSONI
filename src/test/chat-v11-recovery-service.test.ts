@@ -4,7 +4,7 @@ import { ChatV11RecoveryService } from "@/lib/chat/recoveryV11";
 describe("ChatV11RecoveryService", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-02-22T00:00:00.000Z"));
+    vi.setSystemTime(new Date("2026-02-24T00:00:00.000Z"));
   });
 
   afterEach(() => {
