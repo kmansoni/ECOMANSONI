@@ -1,0 +1,134 @@
+name: Deploy Sync (GitHub -> Supabase + AdminVPS)
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Run dry-run only"
+        required: false
+        default: "false"
+
+concurrency:
+  group: deploy-sync-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      SUPABASE_CHECK_TABLES: ${{ secrets.SUPABASE_CHECK_TABLES }}
+      ADMINVPS_HOST: ${{ secrets.ADMINVPS_HOST }}
+      ADMINVPS_USER: ${{ secrets.ADMINVPS_USER }}
+      ADMINVPS_SSH_KEY: ${{ secrets.ADMINVPS_SSH_KEY }}
+      ADMINVPS_BACKUP_DIR: ${{ secrets.ADMINVPS_BACKUP_DIR }}
+      ADMINVPS_APP_DIR: ${{ secrets.ADMINVPS_APP_DIR }}
+      ADMINVPS_SYSTEMD_SERVICES: ${{ secrets.ADMINVPS_SYSTEMD_SERVICES }}
+      ADMINVPS_HEALTH_URL: ${{ secrets.ADMINVPS_HEALTH_URL }}
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Preflight checks
+        run: |
+          set -e
+          [ -n "$SUPABASE_ACCESS_TOKEN" ]
+          [ -n "$SUPABASE_DB_URL" ]
+          [ -n "$ADMINVPS_HOST" ]
+          [ -n "$ADMINVPS_USER" ]
+          [ -n "$ADMINVPS_SSH_KEY" ]
+          [ -n "$ADMINVPS_BACKUP_DIR" ]
+          [ -n "$ADMINVPS_APP_DIR" ]
+
+      - name: Dry run notice
+        if: ${{ env.DRY_RUN == 'true' }}
+        run: echo "Dry run enabled. Deploy steps will be skipped."
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Deploy Supabase (migrations + functions + secrets)
+        if: ${{ env.DRY_RUN != 'true' }}
+        run: pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/supabase-deploy.ps1
+
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Create Supabase backup
+        if: ${{ env.DRY_RUN != 'true' }}
+        run: pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/supabase-backup-to-adminvps.ps1 -DbUrl "$env:SUPABASE_DB_URL"
+
+      - name: Supabase integrity check (row counts + checksums)
+        run: |
+          pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/supabase-integrity-check.ps1 -DbUrl "$env:SUPABASE_DB_URL" -Tables "$env:SUPABASE_CHECK_TABLES"
+
+      - name: Upload backup to AdminVPS
+        if: ${{ env.DRY_RUN != 'true' }}
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ env.ADMINVPS_HOST }}
+          username: ${{ env.ADMINVPS_USER }}
+          key: ${{ env.ADMINVPS_SSH_KEY }}
+          source: ".tmp/supabase-backups/*"
+          target: ${{ env.ADMINVPS_BACKUP_DIR }}
+
+      - name: Upload integrity artifacts to AdminVPS
+        if: ${{ env.DRY_RUN != 'true' }}
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ env.ADMINVPS_HOST }}
+          username: ${{ env.ADMINVPS_USER }}
+          key: ${{ env.ADMINVPS_SSH_KEY }}
+          source: ".tmp/supabase-integrity/*"
+          target: ${{ env.ADMINVPS_BACKUP_DIR }}/integrity
+
+      - name: Deploy to AdminVPS
+        if: ${{ env.DRY_RUN != 'true' }}
+        uses: appleboy/ssh-action@v0.1.7
+        with:
+          host: ${{ env.ADMINVPS_HOST }}
+          username: ${{ env.ADMINVPS_USER }}
+          key: ${{ env.ADMINVPS_SSH_KEY }}
+          script: |
+            set -e
+            export APP_DIR="${{ env.ADMINVPS_APP_DIR }}"
+            export SYSTEMD_SERVICES="${{ env.ADMINVPS_SYSTEMD_SERVICES }}"
+            export DRY_RUN="${{ env.DRY_RUN }}"
+            cd "$APP_DIR"
+            chmod +x scripts/adminvps-deploy.sh
+            ./scripts/adminvps-deploy.sh
+
+      - name: Verify AdminVPS backup retention
+        if: ${{ env.DRY_RUN != 'true' }}
+        uses: appleboy/ssh-action@v0.1.7
+        with:
+          host: ${{ env.ADMINVPS_HOST }}
+          username: ${{ env.ADMINVPS_USER }}
+          key: ${{ env.ADMINVPS_SSH_KEY }}
+          script: |
+            set -e
+            mkdir -p "${{ env.ADMINVPS_BACKUP_DIR }}"
+            find "${{ env.ADMINVPS_BACKUP_DIR }}" -type f -mtime +30 -delete
+
+      - name: Health check (optional)
+        if: ${{ env.DRY_RUN != 'true' && env.ADMINVPS_HEALTH_URL != '' }}
+        run: |
+          curl -f "${{ env.ADMINVPS_HEALTH_URL }}"
+
+      - name: Done
+        run: echo "Deploy sync complete."
