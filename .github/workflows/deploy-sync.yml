@@ -134,10 +134,7 @@ jobs:
               git fetch origin main
               git checkout main
               git pull --ff-only origin main
-              cat > .env.production <<EOF
-              VITE_SUPABASE_URL="${VITE_SUPABASE_URL}"
-              VITE_SUPABASE_PUBLISHABLE_KEY="${VITE_SUPABASE_PUBLISHABLE_KEY}"
-              EOF
+              printf 'VITE_SUPABASE_URL="%s"\nVITE_SUPABASE_PUBLISHABLE_KEY="%s"\n' "$VITE_SUPABASE_URL" "$VITE_SUPABASE_PUBLISHABLE_KEY" > .env.production
               npm ci
               npm run build
             fi
