@@ -12,8 +12,16 @@ param(
 $ErrorActionPreference = "Stop"
 
 function Resolve-SupabaseExe {
-  $pinned = Join-Path $env:LOCALAPPDATA "supabase-cli\v2.75.0\supabase.exe"
-  if (Test-Path $pinned) { return $pinned }
+  if (-not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
+    $pinned = Join-Path $env:LOCALAPPDATA "supabase-cli\v2.75.0\supabase.exe"
+    if (Test-Path $pinned) { return $pinned }
+  }
+
+  $supabaseCmd = Get-Command supabase -ErrorAction SilentlyContinue
+  if ($null -ne $supabaseCmd -and -not [string]::IsNullOrWhiteSpace($supabaseCmd.Source)) {
+    return $supabaseCmd.Source
+  }
+
   return "supabase"
 }
 
