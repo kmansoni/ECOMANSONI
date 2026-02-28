@@ -73,11 +73,11 @@ jobs:
 
       - name: Create Supabase backup
         if: ${{ env.DRY_RUN != 'true' }}
-        run: pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/supabase-backup-to-adminvps.ps1 -DbUrl "$env:SUPABASE_DB_URL"
+        run: pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/supabase-backup-to-adminvps.ps1 -DbUrl "$SUPABASE_DB_URL"
 
       - name: Supabase integrity check (row counts + checksums)
         run: |
-          pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/supabase-integrity-check.ps1 -DbUrl "$env:SUPABASE_DB_URL" -Tables "$env:SUPABASE_CHECK_TABLES"
+          pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/supabase-integrity-check.ps1 -DbUrl "$SUPABASE_DB_URL" -Tables "$SUPABASE_CHECK_TABLES"
 
       - name: Upload backup to AdminVPS
         if: ${{ env.DRY_RUN != 'true' }}
