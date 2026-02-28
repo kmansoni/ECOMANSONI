@@ -47,13 +47,15 @@ jobs:
       - name: Preflight checks
         run: |
           set -e
-          [ -n "$SUPABASE_ACCESS_TOKEN" ]
           [ -n "$SUPABASE_DB_URL" ]
-          [ -n "$ADMINVPS_HOST" ]
-          [ -n "$ADMINVPS_USER" ]
-          [ -n "$ADMINVPS_SSH_KEY" ]
-          [ -n "$ADMINVPS_BACKUP_DIR" ]
-          [ -n "$ADMINVPS_APP_DIR" ]
+          if [ "$DRY_RUN" != "true" ]; then
+            [ -n "$SUPABASE_ACCESS_TOKEN" ]
+            [ -n "$ADMINVPS_HOST" ]
+            [ -n "$ADMINVPS_USER" ]
+            [ -n "$ADMINVPS_SSH_KEY" ]
+            [ -n "$ADMINVPS_BACKUP_DIR" ]
+            [ -n "$ADMINVPS_APP_DIR" ]
+          fi
 
       - name: Dry run notice
         if: ${{ env.DRY_RUN == 'true' }}
