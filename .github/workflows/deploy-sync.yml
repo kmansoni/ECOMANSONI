@@ -24,6 +24,7 @@ jobs:
       SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
       SUPABASE_CHECK_TABLES: ${{ secrets.SUPABASE_CHECK_TABLES }}
       ADMINVPS_HOST: ${{ secrets.ADMINVPS_HOST }}
+      ADMINVPS_SSH_PORT: ${{ secrets.ADMINVPS_SSH_PORT }}
       ADMINVPS_USER: ${{ secrets.ADMINVPS_USER }}
       ADMINVPS_SSH_KEY: ${{ secrets.ADMINVPS_SSH_KEY }}
       ADMINVPS_BACKUP_DIR: ${{ secrets.ADMINVPS_BACKUP_DIR }}
@@ -89,6 +90,7 @@ jobs:
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ env.ADMINVPS_HOST }}
+          port: ${{ env.ADMINVPS_SSH_PORT || '22' }}
           username: ${{ env.ADMINVPS_USER }}
           key: ${{ env.ADMINVPS_SSH_KEY }}
           source: ".tmp/supabase-backups/*"
@@ -99,6 +101,7 @@ jobs:
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ env.ADMINVPS_HOST }}
+          port: ${{ env.ADMINVPS_SSH_PORT || '22' }}
           username: ${{ env.ADMINVPS_USER }}
           key: ${{ env.ADMINVPS_SSH_KEY }}
           source: ".tmp/supabase-integrity/*"
@@ -109,6 +112,7 @@ jobs:
         uses: appleboy/ssh-action@v0.1.7
         with:
           host: ${{ env.ADMINVPS_HOST }}
+          port: ${{ env.ADMINVPS_SSH_PORT || '22' }}
           username: ${{ env.ADMINVPS_USER }}
           key: ${{ env.ADMINVPS_SSH_KEY }}
           script: |
@@ -125,6 +129,7 @@ jobs:
         uses: appleboy/ssh-action@v0.1.7
         with:
           host: ${{ env.ADMINVPS_HOST }}
+          port: ${{ env.ADMINVPS_SSH_PORT || '22' }}
           username: ${{ env.ADMINVPS_USER }}
           key: ${{ env.ADMINVPS_SSH_KEY }}
           script: |
