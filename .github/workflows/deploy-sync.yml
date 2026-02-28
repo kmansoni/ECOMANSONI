@@ -121,8 +121,16 @@ jobs:
             export SYSTEMD_SERVICES="${{ env.ADMINVPS_SYSTEMD_SERVICES }}"
             export DRY_RUN="${{ env.DRY_RUN }}"
             cd "$APP_DIR"
-            chmod +x scripts/adminvps-deploy.sh
-            ./scripts/adminvps-deploy.sh
+            if [ -f "scripts/adminvps-deploy.sh" ]; then
+              chmod +x scripts/adminvps-deploy.sh
+              ./scripts/adminvps-deploy.sh
+            else
+              git fetch origin main
+              git checkout main
+              git pull --ff-only origin main
+              npm ci
+              npm run build
+            fi
 
       - name: Verify AdminVPS backup retention
         if: ${{ env.DRY_RUN != 'true' }}
