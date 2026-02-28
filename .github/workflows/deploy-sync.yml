@@ -127,16 +127,19 @@ jobs:
             export VITE_SUPABASE_URL="${{ env.VITE_SUPABASE_URL }}"
             export VITE_SUPABASE_PUBLISHABLE_KEY="${{ env.VITE_SUPABASE_PUBLISHABLE_KEY }}"
             cd "$APP_DIR"
-            if [ -f "scripts/adminvps-deploy.sh" ]; then
-              chmod +x scripts/adminvps-deploy.sh
-              ./scripts/adminvps-deploy.sh
-            else
-              git fetch origin main
-              git checkout main
-              git pull --ff-only origin main
-              printf 'VITE_SUPABASE_URL="%s"\nVITE_SUPABASE_PUBLISHABLE_KEY="%s"\n' "$VITE_SUPABASE_URL" "$VITE_SUPABASE_PUBLISHABLE_KEY" > .env.production
-              npm ci
-              npm run build
+            if [ -n "$(git status --porcelain)" ]; then
+              git stash push -u -m "gha-auto-stash-$(date +%Y%m%d-%H%M%S)" >/dev/null || true
+            fi
+            git fetch origin main
+            git checkout main
+            git pull --ff-only origin main
+            printf 'VITE_SUPABASE_URL="%s"\nVITE_SUPABASE_PUBLISHABLE_KEY="%s"\n' "$VITE_SUPABASE_URL" "$VITE_SUPABASE_PUBLISHABLE_KEY" > .env.production
+            npm ci
+            npm run build
+            if [ -n "$SYSTEMD_SERVICES" ]; then
+              for svc in $SYSTEMD_SERVICES; do
+                sudo systemctl restart "$svc"
+              done
             fi
 
       - name: Verify AdminVPS backup retention
