@@ -31,6 +31,8 @@ jobs:
       ADMINVPS_APP_DIR: ${{ secrets.ADMINVPS_APP_DIR }}
       ADMINVPS_SYSTEMD_SERVICES: ${{ secrets.ADMINVPS_SYSTEMD_SERVICES }}
       ADMINVPS_HEALTH_URL: ${{ secrets.ADMINVPS_HEALTH_URL }}
+      VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || secrets.SUPABASE_URL }}
+      VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY || secrets.VITE_SUPABASE_ANON_KEY || secrets.SUPABASE_ANON_KEY }}
 
     steps:
       - name: Checkout repo
@@ -61,6 +63,8 @@ jobs:
             [ -n "$ADMINVPS_SSH_KEY" ]
             [ -n "$ADMINVPS_BACKUP_DIR" ]
             [ -n "$ADMINVPS_APP_DIR" ]
+            [ -n "$VITE_SUPABASE_URL" ]
+            [ -n "$VITE_SUPABASE_PUBLISHABLE_KEY" ]
           fi
 
       - name: Dry run notice
@@ -72,7 +76,7 @@ jobs:
 
       - name: Deploy Supabase (migrations + functions + secrets)
         if: ${{ env.DRY_RUN != 'true' }}
-        run: pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/supabase-deploy.ps1
+        run: pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/supabase-deploy.ps1 -SkipSyncGuard -SkipDbPush
 
       - name: Install PostgreSQL client
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
@@ -120,6 +124,8 @@ jobs:
             export APP_DIR="${{ env.ADMINVPS_APP_DIR }}"
             export SYSTEMD_SERVICES="${{ env.ADMINVPS_SYSTEMD_SERVICES }}"
             export DRY_RUN="${{ env.DRY_RUN }}"
+            export VITE_SUPABASE_URL="${{ env.VITE_SUPABASE_URL }}"
+            export VITE_SUPABASE_PUBLISHABLE_KEY="${{ env.VITE_SUPABASE_PUBLISHABLE_KEY }}"
             cd "$APP_DIR"
             if [ -f "scripts/adminvps-deploy.sh" ]; then
               chmod +x scripts/adminvps-deploy.sh
@@ -128,6 +134,10 @@ jobs:
               git fetch origin main
               git checkout main
               git pull --ff-only origin main
+              cat > .env.production <<EOF
+              VITE_SUPABASE_URL="${VITE_SUPABASE_URL}"
+              VITE_SUPABASE_PUBLISHABLE_KEY="${VITE_SUPABASE_PUBLISHABLE_KEY}"
+              EOF
               npm ci
               npm run build
             fi

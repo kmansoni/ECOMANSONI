@@ -30,11 +30,21 @@ function reloadOnChunkFailureOnce(reason: unknown) {
 }
 
 function setAppHeight() {
-  const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
-  document.documentElement.style.setProperty("--app-h", `${viewportHeight}px`);
+  const vvHeight = window.visualViewport?.height;
+  const innerHeight = window.innerHeight;
+  const docHeight = document.documentElement.clientHeight;
+
+  const candidates = [vvHeight, innerHeight, docHeight].filter(
+    (value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0,
+  );
+
+  const viewportHeight = candidates.length > 0 ? Math.max(...candidates) : 0;
+  const safeHeight = Math.max(320, Math.round(viewportHeight));
+  document.documentElement.style.setProperty("--app-h", `${safeHeight}px`);
 }
 
 setAppHeight();
+window.addEventListener("load", setAppHeight);
 window.addEventListener("resize", setAppHeight);
 window.visualViewport?.addEventListener("resize", setAppHeight);
 
