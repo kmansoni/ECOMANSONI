@@ -163,7 +163,7 @@ export function useIncomingCalls(options: UseIncomingCallsOptions = {}) {
       console.log("[IncomingCalls] Cleaning up");
       supabase.removeChannel(channel);
       clearInterval(pollInterval);
-      notifiedCalls.clear();
+      notifiedCallsRef.current.clear();
     };
   }, [user, processIncomingCall]);
 

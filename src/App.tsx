@@ -18,6 +18,7 @@ import { AdminProtectedRoute } from "@/components/admin/AdminProtectedRoute";
 import { AppearanceRuntimeProvider } from "@/contexts/AppearanceRuntimeContext";
 import { runChatSchemaProbeOnce } from "@/lib/chat/schemaProbe";
 import { toast } from "sonner";
+import { AppErrorBoundary } from "@/components/system/AppErrorBoundary";
 const HashtagPage = lazy(() => import("@/pages/HashtagPage").then(m => ({ default: m.HashtagPage })));
 
 // Initialize error tracking
@@ -36,6 +37,7 @@ const UserProfilePage = lazy(() => import("@/pages/UserProfilePage").then(m => (
 const ContactProfilePage = lazy(() => import("@/pages/ContactProfilePage").then(m => ({ default: m.ContactProfilePage })));
 const ReelsPage = lazy(() => import("@/pages/ReelsPage").then(m => ({ default: m.ReelsPage })));
 const CreateCenterPage = lazy(() => import("@/pages/CreateCenterPage").then(m => ({ default: m.CreateCenterPage })));
+const CreateSurfacePage = lazy(() => import("@/pages/CreateSurfacePage").then(m => ({ default: m.CreateSurfacePage })));
 const RealEstatePage = lazy(() => import("@/pages/RealEstatePage").then(m => ({ default: m.RealEstatePage })));
 const PropertyDetailPage = lazy(() => import("@/pages/PropertyDetailPage").then(m => ({ default: m.PropertyDetailPage })));
 const InsurancePage = lazy(() => import("@/pages/InsurancePage").then(m => ({ default: m.InsurancePage })));
@@ -46,8 +48,12 @@ const AuthPage = lazy(() => import("@/pages/AuthPage").then(m => ({ default: m.A
 const NotFound = lazy(() => import("@/pages/NotFound"));
 const DevPanelPage = lazy(() => import("@/pages/DevPanelPage"));
 const SettingsPage = lazy(() => import("@/pages/SettingsPage").then(m => ({ default: m.SettingsPage })));
+const CRMPage = lazy(() => import("@/pages/CRMPage").then(m => ({ default: m.CRMPage })));
+const CRMDashboard = lazy(() => import("@/pages/CRMDashboard").then(m => ({ default: m.CRMDashboard })));
 const CommandPalette = lazy(() => import("@/components/CommandPalette").then(m => ({ default: m.CommandPalette })));
 const ARPage = lazy(() => import("@/pages/ARPage").then(m => ({ default: m.ARPage })));
+const BotListPage = lazy(() => import("@/pages/BotListPage").then(m => ({ default: m.BotListPage })));
+const MiniAppListPage = lazy(() => import("@/pages/MiniAppListPage").then(m => ({ default: m.MiniAppListPage })));
 
 // Admin Console (lazy)
 const AdminLoginPage = lazy(() => import("@/pages/admin/AdminLoginPage").then(m => ({ default: m.AdminLoginPage })));
@@ -98,20 +104,21 @@ const App = () => {
   }, []);
 
   return (
-    <MultiAccountProvider>
-      <AuthProvider>
-        <UserSettingsProvider>
-          <AppearanceRuntimeProvider>
-            <VideoCallProvider>
-              <ChatOpenProvider>
-                <TooltipProvider>
-                  <Toaster />
-                  <Sonner />
-                  <GlobalCallOverlay />
-                  <BrowserRouter
-                    basename={ROUTER_BASENAME}
-                    future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
-                  >
+    <AppErrorBoundary>
+      <MultiAccountProvider>
+        <AuthProvider>
+          <UserSettingsProvider>
+            <AppearanceRuntimeProvider>
+              <VideoCallProvider>
+                <ChatOpenProvider>
+                  <TooltipProvider>
+                    <Toaster />
+                    <Sonner />
+                    <GlobalCallOverlay />
+                    <BrowserRouter
+                      basename={ROUTER_BASENAME}
+                      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+                    >
                   <Suspense fallback={null}>
                     <CommandPalette />
                   </Suspense>
@@ -247,11 +254,29 @@ const App = () => {
                       </Suspense>
                     } />
 
+                    <Route path="/create-surface" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <CreateSurfacePage />
+                      </Suspense>
+                    } />
                     <Route path="/ar" element={
                       <Suspense fallback={<PageLoader />}>
                         <ARPage />
                       </Suspense>
                     } />
+
+                    {/* Bot Platform Routes */}
+                    <Route path="/bots" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <BotListPage />
+                      </Suspense>
+                    } />
+                    <Route path="/mini-apps" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <MiniAppListPage />
+                      </Suspense>
+                    } />
+
                     <Route path="/user/:username" element={
                       <Suspense fallback={<PageLoader />}>
                         <UserProfilePage />
@@ -282,6 +307,16 @@ const App = () => {
                         <InsurancePoliciesPage />
                       </Suspense>
                     } />
+                    <Route path="/crm" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <CRMPage />
+                      </Suspense>
+                    } />
+                    <Route path="/crm/dashboard" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <CRMDashboard />
+                      </Suspense>
+                    } />
                     <Route path="/reels" element={
                       <Suspense fallback={<PageLoader />}>
                         <ReelsPage />
@@ -310,14 +345,15 @@ const App = () => {
                   </Suspense>
                 } />
                   </Routes>
-                  </BrowserRouter>
-                </TooltipProvider>
-              </ChatOpenProvider>
-            </VideoCallProvider>
-          </AppearanceRuntimeProvider>
-        </UserSettingsProvider>
-      </AuthProvider>
-    </MultiAccountProvider>
+                    </BrowserRouter>
+                  </TooltipProvider>
+                </ChatOpenProvider>
+              </VideoCallProvider>
+            </AppearanceRuntimeProvider>
+          </UserSettingsProvider>
+        </AuthProvider>
+      </MultiAccountProvider>
+    </AppErrorBoundary>
   );
 };
 
