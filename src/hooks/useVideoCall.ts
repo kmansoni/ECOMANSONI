@@ -510,15 +510,15 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
     isInitiator: boolean,
     forceRelay: boolean = false
   ) => {
-    // Important: do NOT force TURN-only by default.
-    // Some Telegram/WebView networks block certain public TURNs; if we force `relay`, ICE may never connect.
-    // We start with `all` and only switch to `relay` on actual failure (see retry logic).
+    // Force TURN relay on Telegram iOS to avoid frequent ICE failures in WebView/NAT environments.
+    // On other platforms keep adaptive behavior: start with "all" and switch to relay on failure.
     const isTelegramIOS = /iPhone|iPad/i.test(navigator.userAgent) &&
       ((window as any).Telegram?.WebApp || /Telegram/i.test(navigator.userAgent));
+    const shouldForceRelay = forceRelay || isTelegramIOS;
 
-    log("Creating peer connection, initiator:", isInitiator, "forceRelay:", forceRelay, "isTelegramIOS:", isTelegramIOS);
+    log("Creating peer connection, initiator:", isInitiator, "forceRelay:", shouldForceRelay, "isTelegramIOS:", isTelegramIOS);
 
-    const config = await getIceServers(forceRelay);
+    const config = await getIceServers(shouldForceRelay);
     const pc = new RTCPeerConnection(config);
 
     // Add local tracks
@@ -575,7 +575,7 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
       } else if (state === "failed") {
          // If we're not already forcing relay, try a hard restart with TURN-only first.
          // This helps on Telegram iOS / restrictive NATs where STUN candidates fail.
-         if (!forceRelay && iceRestartCountRef.current === 0) {
+         if (!shouldForceRelay && iceRestartCountRef.current === 0) {
            warn("Connection failed - retrying with TURN-only (relay)");
            iceRestartCountRef.current++; // Count this as a restart attempt
            setTimeout(async () => {
