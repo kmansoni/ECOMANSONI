@@ -173,7 +173,7 @@ export function FeedHeader() {
                     opacity: collapseProgress < 0.5 ? 1 : 0,
                   }}
                 >
-                  <Plus className="w-3 h-3 text-primary-foreground" />
+                  <span className="w-3 h-3 text-primary-foreground text-[12px] leading-none flex items-center justify-center">+</span>
                 </div>
               )}
             </div>

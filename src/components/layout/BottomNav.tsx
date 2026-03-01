@@ -1,5 +1,5 @@
 import { useState, useEffect, forwardRef, useRef, useCallback } from "react";
-import { Home, Search, Heart, FileText, LucideIcon, Plus, Check, ChevronDown, Camera, MessageCircle, User, PlaySquare, AlertCircle } from "lucide-react";
+import { Home, Search, Heart, FileText, LucideIcon, Check, ChevronDown, Camera, MessageCircle, User, PlaySquare, AlertCircle } from "lucide-react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { useUnreadChats } from "@/hooks/useUnreadChats";
@@ -408,7 +408,7 @@ export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function Bottom
               className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-muted transition-colors"
             >
               <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center">
-                <Plus className="w-6 h-6 text-foreground" />
+                <span className="w-6 h-6 text-foreground text-xl leading-none flex items-center justify-center">+</span>
               </div>
               <p className="font-medium text-foreground">Добавить аккаунт</p>
             </button>
