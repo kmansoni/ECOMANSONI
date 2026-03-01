@@ -642,7 +642,17 @@ export function ReelsPage() {
             Пока нет видео для просмотра. Будьте первым!
           </p>
           {user ? (
-            <p className="text-white/60 text-center px-8">Откройте центр создания, чтобы добавить Reel</p>
+            <>
+              <p className="text-white/60 text-center px-8">Откройте центр создания, чтобы добавить Reel</p>
+              <button
+                type="button"
+                className="mt-5 h-11 px-5 rounded-full bg-white text-slate-900 font-semibold"
+                onClick={() => navigate('/create?tab=reels&auto=1')}
+                aria-label="Создать Reel"
+              >
+                Создать Reel
+              </button>
+            </>
           ) : (
             <p className="text-white/60 text-center px-8">Войдите, чтобы создавать Reels</p>
           )}
@@ -813,6 +823,26 @@ export function ReelsPage() {
 
           {/* Right sidebar actions */}
           <div className="absolute right-3 bottom-8 flex flex-col items-center gap-4 z-10">
+            <button
+              className="flex flex-col items-center gap-1"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (!user) {
+                  toast.error("Войдите, чтобы создавать Reels");
+                  navigate('/auth');
+                  return;
+                }
+                navigate('/create?tab=reels&auto=1');
+              }}
+              aria-label="Создать Reel"
+              title="Создать Reel"
+            >
+              <div className="w-12 h-12 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center">
+                <Play className="w-6 h-6 text-white" />
+              </div>
+              <span className="text-white text-xs font-medium">Создать</span>
+            </button>
+
             {/* Feedback */}
             <button
               className="flex flex-col items-center gap-1"

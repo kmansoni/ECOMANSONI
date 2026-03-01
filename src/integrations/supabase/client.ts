@@ -2,7 +2,7 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 import { createFetchWithTimeout } from "@/lib/network/fetchWithTimeout";
-import { timewebClient, isTimewebEnabled } from "@/integrations/timeweb/client";
+import { getSupabaseRuntimeConfig } from "@/lib/supabaseRuntimeConfig";
 
 function normalizeEnv(value: unknown): string {
   if (typeof value !== "string") return "";
@@ -21,10 +21,9 @@ function normalizeSupabaseKey(value: unknown): string {
   return normalizeEnv(value).replace(/\s+/g, "");
 }
 
-const SUPABASE_URL = normalizeEnv(import.meta.env.VITE_SUPABASE_URL);
-const SUPABASE_PUBLISHABLE_KEY = normalizeSupabaseKey(
-  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? import.meta.env.VITE_SUPABASE_ANON_KEY,
-);
+const runtimeConfig = getSupabaseRuntimeConfig();
+const SUPABASE_URL = normalizeEnv(runtimeConfig.supabaseUrl);
+const SUPABASE_PUBLISHABLE_KEY = normalizeSupabaseKey(runtimeConfig.supabasePublishableKey);
 
 function extractProjectRefFromUrl(url: string): string | null {
   const m = String(url || "").trim().match(/^https?:\/\/([a-z0-9-]+)\.supabase\.co\/?/i);
@@ -61,6 +60,15 @@ if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
   console.error("[Supabase] Missing VITE_SUPABASE_URL or VITE_SUPABASE_PUBLISHABLE_KEY");
 }
 
+if (runtimeConfig.usedFallback) {
+  // Always log in dev, but also log error in production to ensure this is noticed
+  if (import.meta.env.DEV) {
+    console.warn("[Supabase] Using fallback runtime config because VITE_SUPABASE_* is missing");
+  } else {
+    console.error("[Supabase] CRITICAL: Missing environment variables in production! App will likely fail.");
+  }
+}
+
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
 
@@ -87,28 +95,6 @@ function isRetryableError(error: unknown): boolean {
     code === "ecconnreset" ||
     code === "etimedout"
   );
-}
-
-async function rpcWithFallback(fn: string, args?: Record<string, unknown>, options?: Record<string, unknown>) {
-  const primary = await (baseSupabase as any).rpc(fn, args as any, options as any);
-  if (!primary?.error) return primary;
-
-  if (!isTimewebEnabled || !timewebClient) {
-    return primary;
-  }
-
-  try {
-    const fallback = await (timewebClient as any).rpc(fn, args as any, options as any);
-    if (fallback?.error) {
-      return primary;
-    }
-    if (import.meta.env.DEV) {
-      console.warn("[BackendBridge] rpc fallback used", { fn, primaryError: primary.error });
-    }
-    return fallback;
-  } catch {
-    return primary;
-  }
 }
 
 async function invokeWithRetry(fnName: string, options?: Record<string, unknown>) {
@@ -139,9 +125,6 @@ const functionsProxy = new Proxy((baseSupabase as any).functions, {
 
 const supabaseProxy = new Proxy(baseSupabase as any, {
   get(target, prop, receiver) {
-    if (prop === "rpc") {
-      return rpcWithFallback;
-    }
     if (prop === "functions") {
       return functionsProxy;
     }

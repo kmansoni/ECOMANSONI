@@ -2,6 +2,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 import { createMemoryStorage } from "@/lib/multiAccount/memoryStorage";
 import { createFetchWithTimeout } from "@/lib/network/fetchWithTimeout";
+import { getSupabaseRuntimeConfig } from "@/lib/supabaseRuntimeConfig";
 
 function normalizeEnv(value: unknown): string {
   if (typeof value !== "string") return "";
@@ -13,10 +14,9 @@ function normalizeSupabaseKey(value: unknown): string {
 }
 
 export function createEphemeralSupabaseClient(): SupabaseClient<Database> {
-  const SUPABASE_URL = normalizeEnv(import.meta.env.VITE_SUPABASE_URL);
-  const SUPABASE_PUBLISHABLE_KEY = normalizeSupabaseKey(
-    import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? import.meta.env.VITE_SUPABASE_ANON_KEY,
-  );
+  const runtimeConfig = getSupabaseRuntimeConfig();
+  const SUPABASE_URL = normalizeEnv(runtimeConfig.supabaseUrl);
+  const SUPABASE_PUBLISHABLE_KEY = normalizeSupabaseKey(runtimeConfig.supabasePublishableKey);
 
   const storage = createMemoryStorage();
 

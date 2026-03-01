@@ -210,6 +210,10 @@ export async function createRedisStore({
       await redis.expire(roomMembersKey(callId), 3600);
     },
 
+    async removeMember(callId, deviceId) {
+      await redis.srem(roomMembersKey(callId), deviceId);
+    },
+
     async bumpRoomVersion(callId) {
       return await redis.incr(roomVersionKey(callId));
     },

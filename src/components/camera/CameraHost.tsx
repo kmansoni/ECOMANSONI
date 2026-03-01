@@ -45,9 +45,13 @@ declare global {
   }
 }
 
+export type FacingMode = "user" | "environment";
+
 interface CameraHostProps {
   isActive: boolean;
   mode: CaptureMode;
+  /** Which camera to use. Changing this prop restarts the stream. Default: "environment" */
+  facingMode?: FacingMode;
   className?: string;
   videoClassName?: string;
   onReadyChange?: (ready: boolean) => void;
@@ -59,15 +63,15 @@ interface CameraHostProps {
   children?: React.ReactNode;
 }
 
-const DEFAULT_CONSTRAINTS: MediaStreamConstraints = {
+const buildConstraints = (facingMode: FacingMode = "environment"): MediaStreamConstraints => ({
   video: {
-    facingMode: "environment",
+    facingMode: { ideal: facingMode },
     width: { ideal: 1280 },
     height: { ideal: 720 },
     frameRate: { ideal: 30, max: 30 },
   },
   audio: true,
-};
+});
 
 const buildProfile = (mode: CaptureMode): CaptureProfile => {
   if (mode === "reel") {
@@ -122,6 +126,7 @@ export const CameraHost = forwardRef<CameraHostHandle, CameraHostProps>(function
   {
     isActive,
     mode,
+    facingMode = "environment",
     className,
     videoClassName,
     onReadyChange,
@@ -134,6 +139,11 @@ export const CameraHost = forwardRef<CameraHostHandle, CameraHostProps>(function
   },
   ref,
 ) {
+  const facingModeRef = useRef<FacingMode>(facingMode);
+  useEffect(() => {
+    facingModeRef.current = facingMode;
+  }, [facingMode]);
+
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -265,7 +275,7 @@ export const CameraHost = forwardRef<CameraHostHandle, CameraHostProps>(function
       emitDebug({
         getUserMediaCalls: metricsRef.current.getUserMediaCalls + 1,
       });
-      const stream = await navigator.mediaDevices.getUserMedia(DEFAULT_CONSTRAINTS);
+      const stream = await navigator.mediaDevices.getUserMedia(buildConstraints(facingModeRef.current));
       streamRef.current = stream;
       await attachVideo();
       setReady(true);

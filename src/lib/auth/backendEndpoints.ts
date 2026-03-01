@@ -1,3 +1,5 @@
+import { getSupabaseRuntimeConfig } from "@/lib/supabaseRuntimeConfig";
+
 function normalizeEnv(value: unknown): string {
   if (typeof value !== "string") return "";
   return value.trim().replace(/^['"]+|['"]+$/g, "").trim();
@@ -63,27 +65,30 @@ export function getPhoneAuthFunctionUrl(): string {
 }
 
 export function getPhoneAuthHeaders(): Record<string, string> {
-  const supabaseKey = normalizeEnv(
-    (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as unknown) ?? (import.meta.env.VITE_SUPABASE_ANON_KEY as unknown),
-  );
+  const runtimeConfig = getSupabaseRuntimeConfig();
+  const supabaseKey = normalizeEnv(runtimeConfig.supabasePublishableKey);
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
 
   if (supabaseKey) {
-    headers.Authorization = `Bearer ${supabaseKey}`;
     headers.apikey = supabaseKey;
     headers["x-client-info"] = "supabase-js/2";
+
+    // `sb_publishable_*` is not a JWT and must not be sent as Bearer token.
+    // Keep Authorization only for legacy anon JWT keys.
+    if (!supabaseKey.startsWith("sb_publishable_")) {
+      headers.Authorization = `Bearer ${supabaseKey}`;
+    }
   }
 
   return headers;
 }
 
 export function isSupabaseConfigured(): boolean {
-  const supabaseUrl = normalizeEnv(import.meta.env.VITE_SUPABASE_URL as unknown);
-  const supabaseKey = normalizeEnv(
-    (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as unknown) ?? (import.meta.env.VITE_SUPABASE_ANON_KEY as unknown),
-  );
+  const runtimeConfig = getSupabaseRuntimeConfig();
+  const supabaseUrl = normalizeEnv(runtimeConfig.supabaseUrl);
+  const supabaseKey = normalizeEnv(runtimeConfig.supabasePublishableKey);
   return Boolean(supabaseUrl && supabaseKey);
 }

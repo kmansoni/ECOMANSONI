@@ -7,12 +7,48 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+function Normalize-Secret([string]$value) {
+  if ($null -eq $value) { return $null }
+  $s = $value.Trim()
+  if ($s.Length -ge 2) {
+    if (($s.StartsWith('"') -and $s.EndsWith('"')) -or ($s.StartsWith("'") -and $s.EndsWith("'"))) {
+      $s = $s.Substring(1, $s.Length - 2).Trim()
+    }
+  }
+  if ($s -match '%[0-9A-Fa-f]{2}') {
+    try {
+      $decoded = [System.Uri]::UnescapeDataString($s)
+      if (-not [string]::IsNullOrWhiteSpace($decoded)) {
+        $s = $decoded
+      }
+    } catch {
+      # no-op
+    }
+  }
+  return $s
+}
+
 if (-not (Test-Path -LiteralPath $SupabaseExePath)) {
   throw "Supabase CLI not found at: $SupabaseExePath"
 }
 
 $previousToken = $env:SUPABASE_ACCESS_TOKEN
 $tokenWasSet = [string]::IsNullOrWhiteSpace($previousToken) -eq $false
+$previousPgPassword = $env:PGPASSWORD
+$previousSupabaseDbPassword = $env:SUPABASE_DB_PASSWORD
+
+# Resolve token from user/machine env if not present in current session.
+if (-not $tokenWasSet) {
+  $userToken = [Environment]::GetEnvironmentVariable('SUPABASE_ACCESS_TOKEN', 'User')
+  $machineToken = [Environment]::GetEnvironmentVariable('SUPABASE_ACCESS_TOKEN', 'Machine')
+  if (-not [string]::IsNullOrWhiteSpace($userToken)) {
+    $env:SUPABASE_ACCESS_TOKEN = $userToken
+    $tokenWasSet = $true
+  } elseif (-not [string]::IsNullOrWhiteSpace($machineToken)) {
+    $env:SUPABASE_ACCESS_TOKEN = $machineToken
+    $tokenWasSet = $true
+  }
+}
 
 $DbPasswordSecure = $null
 $dbPasswordWasSet = $false
@@ -25,9 +61,24 @@ try {
 
   $dbPasswordPlain = $null
   if (-not [string]::IsNullOrWhiteSpace($env:SUPABASE_DB_PASSWORD)) {
-    $dbPasswordPlain = $env:SUPABASE_DB_PASSWORD
+    $dbPasswordPlain = Normalize-Secret $env:SUPABASE_DB_PASSWORD
   } elseif (-not [string]::IsNullOrWhiteSpace($env:PGPASSWORD)) {
-    $dbPasswordPlain = $env:PGPASSWORD
+    $dbPasswordPlain = Normalize-Secret $env:PGPASSWORD
+  } else {
+    $userDbPassword = [Environment]::GetEnvironmentVariable('SUPABASE_DB_PASSWORD', 'User')
+    $machineDbPassword = [Environment]::GetEnvironmentVariable('SUPABASE_DB_PASSWORD', 'Machine')
+    $userPgPassword = [Environment]::GetEnvironmentVariable('PGPASSWORD', 'User')
+    $machinePgPassword = [Environment]::GetEnvironmentVariable('PGPASSWORD', 'Machine')
+
+    if (-not [string]::IsNullOrWhiteSpace($userDbPassword)) {
+      $dbPasswordPlain = Normalize-Secret $userDbPassword
+    } elseif (-not [string]::IsNullOrWhiteSpace($machineDbPassword)) {
+      $dbPasswordPlain = Normalize-Secret $machineDbPassword
+    } elseif (-not [string]::IsNullOrWhiteSpace($userPgPassword)) {
+      $dbPasswordPlain = Normalize-Secret $userPgPassword
+    } elseif (-not [string]::IsNullOrWhiteSpace($machinePgPassword)) {
+      $dbPasswordPlain = Normalize-Secret $machinePgPassword
+    }
   }
 
   if ($PromptDbPassword -and [string]::IsNullOrWhiteSpace($dbPasswordPlain)) {
@@ -45,6 +96,7 @@ try {
     } finally {
       [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstrPw)
     }
+    $dbPasswordPlain = Normalize-Secret $dbPasswordPlain
     if ([string]::IsNullOrWhiteSpace($dbPasswordPlain)) {
       throw "Database password is empty."
     }
@@ -61,8 +113,9 @@ try {
     $pushArgsForLog += '--yes'
   }
   if (-not [string]::IsNullOrWhiteSpace($dbPasswordPlain)) {
-    $pushArgs += @('-p', $dbPasswordPlain)
-    $pushArgsForLog += @('-p', '<redacted>')
+    $env:PGPASSWORD = $dbPasswordPlain
+    $env:SUPABASE_DB_PASSWORD = $dbPasswordPlain
+    $pushArgsForLog += @('-p', '<env:redacted>')
   }
 
   $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
@@ -105,4 +158,14 @@ finally {
   # Best-effort: clear password variable
   $DbPasswordSecure = $null
   $dbPasswordPlain = $null
+  if ($null -eq $previousPgPassword) {
+    Remove-Item Env:PGPASSWORD -ErrorAction SilentlyContinue
+  } else {
+    $env:PGPASSWORD = $previousPgPassword
+  }
+  if ($null -eq $previousSupabaseDbPassword) {
+    Remove-Item Env:SUPABASE_DB_PASSWORD -ErrorAction SilentlyContinue
+  } else {
+    $env:SUPABASE_DB_PASSWORD = $previousSupabaseDbPassword
+  }
 }

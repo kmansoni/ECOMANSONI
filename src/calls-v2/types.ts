@@ -22,10 +22,42 @@ export type WsEnvelopeV1<TPayload extends object = any> = {
 };
 
 export type CallsWsConfig = {
-  url: string; // wss://call.mansoni.com/ws
+  url?: string; // single endpoint
+  urls?: string[]; // multi-region failover endpoints
   heartbeatMs?: number; // default 10s
+  reconnect?: {
+    enabled?: boolean;
+    maxAttempts?: number;
+    baseDelayMs?: number;
+    maxDelayMs?: number;
+  };
+  ackRetry?: {
+    maxRetries?: number;
+    retryDelayMs?: number;
+  };
 };
 
 export type CallsWsAuth = {
   accessToken: string;
 };
+
+export type CallsWsEvent =
+  | "WELCOME"
+  | "AUTH_OK"
+  | "E2EE_POLICY"
+  | "ROOM_CREATED"
+  | "ROOM_JOIN_OK"
+  | "ROOM_SNAPSHOT"
+  | "PEER_JOINED"
+  | "PEER_LEFT"
+  | "TRANSPORT_CREATED"
+  | "PRODUCER_ADDED"
+  | "PRODUCED"
+  | "CONSUMER_ADDED"
+  | "ICE_RESTART_OK"
+  | "REKEY_BEGIN"
+  | "REKEY_COMMIT"
+  | "KEY_PACKAGE"
+  | "KEY_ACK";
+
+export type CallsWsEventHandler = (frame: WsEnvelopeV1) => void;

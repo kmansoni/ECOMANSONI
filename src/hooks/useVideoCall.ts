@@ -30,6 +30,7 @@ const ICE_RESTART_DELAY_MS = 3000;
 const MAX_ICE_RESTARTS = 3;
 // DB fallback signaling: Realtime INSERT is primary; polling is only a safety net.
 const SIGNAL_POLL_INTERVAL_MS = 1500;
+const SLO_SAMPLE_INTERVAL_MS = 5000;
 
 function getStableDeviceId(): string {
   const key = "mansoni_device_id";
@@ -62,6 +63,9 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
   const isCleaningUpRef = useRef(false);
   const pendingCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
   const localStreamRef = useRef<MediaStream | null>(null);
+  const setupStartedAtRef = useRef<number | null>(null);
+  const statusSampleTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const seenSignalIdsRef = useRef<Set<string>>(new Set());
   
   // Track if we're in an active call process (used to prevent visibility-based cleanup)
   const isCallActiveRef = useRef(false);
@@ -121,6 +125,11 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
       signalPollRef.current = null;
     }
 
+    if (statusSampleTimerRef.current) {
+      clearInterval(statusSampleTimerRef.current);
+      statusSampleTimerRef.current = null;
+    }
+
     if (broadcastChannelRef.current) {
       await supabase.removeChannel(broadcastChannelRef.current);
       broadcastChannelRef.current = null;
@@ -151,6 +160,7 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
     setIsVideoOff(false);
     iceRestartCountRef.current = 0;
     pendingCandidatesRef.current = [];
+    setupStartedAtRef.current = null;
     isCleaningUpRef.current = false;
   }, [log]);
 
@@ -204,6 +214,15 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
   ) => {
     if (!user) return;
 
+    const normalizedSignalData = (() => {
+      if (signalData && typeof signalData === "object") {
+        return signalData.__signalId
+          ? signalData
+          : { ...signalData, __signalId: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}_${Math.random()}` };
+      }
+      return { value: signalData, __signalId: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}_${Math.random()}` };
+    })();
+
     // 1. Send via Broadcast (primary, low latency)
     if (broadcastChannelRef.current) {
       try {
@@ -213,7 +232,7 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
           payload: {
             from: user.id,
             type: signalType,
-            data: signalData,
+            data: normalizedSignalData,
           },
         });
         log(`Sent ${signalType} via Broadcast`);
@@ -229,7 +248,7 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
         sender_id: user.id,
         processed: false,
         signal_type: signalType,
-        signal_data: signalData,
+        signal_data: normalizedSignalData,
       });
       log(`Saved ${signalType} to DB`);
     } catch (err) {
@@ -244,6 +263,18 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
     fromUserId: string
   ) => {
     if (fromUserId === user?.id) return;
+
+    const signalId = signalData && typeof signalData === "object" ? signalData.__signalId : null;
+    if (typeof signalId === "string" && signalId.length > 0) {
+      if (seenSignalIdsRef.current.has(signalId)) {
+        return;
+      }
+      seenSignalIdsRef.current.add(signalId);
+      if (seenSignalIdsRef.current.size > 1000) {
+        const values = Array.from(seenSignalIdsRef.current);
+        seenSignalIdsRef.current = new Set(values.slice(values.length - 500));
+      }
+    }
 
     log(`Processing ${signalType} from ${fromUserId.slice(0, 8)}`);
 
@@ -567,6 +598,14 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
       setConnectionState(state);
 
       if (state === "connected") {
+        if (setupStartedAtRef.current && currentCall) {
+          const setupMs = Math.max(0, Date.now() - setupStartedAtRef.current);
+          void debugEvent(currentCall.id, "slo_call_setup_time", {
+            call_setup_ms: setupMs,
+            ice_restarts: iceRestartCountRef.current,
+          });
+          setupStartedAtRef.current = null;
+        }
         setStatus("connected");
         if (callTimeoutRef.current) {
           clearTimeout(callTimeoutRef.current);
@@ -638,7 +677,7 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
     }
 
     return pc;
-  }, [sendSignal, cleanup, log, warn]);
+  }, [sendSignal, cleanup, log, warn, currentCall, debugEvent]);
 
   // Start outgoing call
   const startCall = useCallback(async (
@@ -652,6 +691,7 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
     }
 
     log("Starting call to:", calleeId.slice(0, 8));
+    setupStartedAtRef.current = Date.now();
     isCallActiveRef.current = true; // Mark call as active BEFORE getUserMedia
     setStatus("calling");
 
@@ -753,6 +793,7 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
 
     log("Answering call:", call.id.slice(0, 8), "type:", call.call_type);
     void debugEvent(call.id, "answer_start", { call_type: call.call_type });
+    setupStartedAtRef.current = Date.now();
     isCallActiveRef.current = true; // Mark call as active BEFORE getUserMedia
     setStatus("ringing");
     setCurrentCall(call);
@@ -993,6 +1034,72 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
 
   // NOTE: Incoming calls are handled by useIncomingCalls hook separately
   // This avoids duplicate subscriptions and race conditions
+
+  useEffect(() => {
+    if (!currentCall || status !== "connected") {
+      if (statusSampleTimerRef.current) {
+        clearInterval(statusSampleTimerRef.current);
+        statusSampleTimerRef.current = null;
+      }
+      return;
+    }
+
+    const sample = async () => {
+      const pc = peerConnectionRef.current;
+      if (!pc) return;
+
+      try {
+        const stats = await pc.getStats();
+        let selectedPair: RTCIceCandidatePairStats | null = null;
+        let inboundAudioLoss = { lost: 0, received: 0 };
+        let inboundVideoLoss = { lost: 0, received: 0 };
+
+        stats.forEach((report) => {
+          if (report.type === "candidate-pair" && (report as RTCIceCandidatePairStats).state === "succeeded" && (report as RTCIceCandidatePairStats).nominated) {
+            selectedPair = report as RTCIceCandidatePairStats;
+          }
+          if (report.type === "inbound-rtp") {
+            const inbound = report as RTCInboundRtpStreamStats;
+            const packetsLost = Number(inbound.packetsLost ?? 0);
+            const packetsReceived = Number(inbound.packetsReceived ?? 0);
+            if (inbound.kind === "audio") {
+              inboundAudioLoss = { lost: packetsLost, received: packetsReceived };
+            }
+            if (inbound.kind === "video") {
+              inboundVideoLoss = { lost: packetsLost, received: packetsReceived };
+            }
+          }
+        });
+
+        const ratio = (lost: number, received: number) => {
+          const total = Math.max(1, lost + received);
+          return Number(((lost / total) * 100).toFixed(2));
+        };
+
+        await debugEvent(currentCall.id, "slo_sample", {
+          rtt_ms: selectedPair?.currentRoundTripTime ? Math.round(selectedPair.currentRoundTripTime * 1000) : null,
+          packet_loss_audio_pct: ratio(inboundAudioLoss.lost, inboundAudioLoss.received),
+          packet_loss_video_pct: ratio(inboundVideoLoss.lost, inboundVideoLoss.received),
+          reconnect_proxy_ice_restart_count: iceRestartCountRef.current,
+          connection_state: peerConnectionRef.current?.connectionState ?? "unknown",
+        });
+      } catch {
+        // best effort only
+      }
+    };
+
+    void sample();
+    statusSampleTimerRef.current = setInterval(() => {
+      void sample();
+    }, SLO_SAMPLE_INTERVAL_MS);
+
+    return () => {
+      if (statusSampleTimerRef.current) {
+        clearInterval(statusSampleTimerRef.current);
+        statusSampleTimerRef.current = null;
+      }
+    };
+  }, [currentCall, status, debugEvent]);
 
   // Subscribe to call status changes + fallback polling
   useEffect(() => {

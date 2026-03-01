@@ -18,6 +18,8 @@
     "req:dashboard": "node ./scripts/requirements/dashboard.mjs",
     "req:check": "node ./scripts/requirements/check.mjs",
     "calls:validate": "node ./scripts/calls/validate-ws-contracts.mjs",
+    "calls:mediasoup:smoke": "node ./scripts/calls-mediasoup-smoke.mjs",
+    "calls:chaos:gate": "node ./scripts/calls-chaos-gate.mjs",
     "calls:ws:dev": "node ./server/calls-ws/index.mjs",
     "calls:sfu:dev": "node ./server/sfu/index.mjs",
     "turn:ws:guard": "node ./scripts/turn/verify-calls-ws-no-creds.mjs",

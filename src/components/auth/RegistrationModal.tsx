@@ -5,7 +5,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { supabase, SUPABASE_ANON_KEY } from "@/lib/supabase";
+import { supabase } from "@/lib/supabase";
+import { getPhoneAuthHeaders } from "@/lib/auth/backendEndpoints";
 import { useSearchParams } from "react-router-dom";
 
 interface RegistrationModalProps {
@@ -61,10 +62,7 @@ export function RegistrationModal({ isOpen, onClose, phone, onSuccess }: Registr
 
       // Call phone-auth function via supabase.functions.invoke
       const { data, error } = await supabase.functions.invoke('phone-auth', {
-        headers: {
-          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-          apikey: SUPABASE_ANON_KEY,
-        },
+        headers: getPhoneAuthHeaders(),
         body: {
           action: "register-or-login",
           phone: `+${digits}`,

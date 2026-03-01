@@ -207,7 +207,7 @@ function displayNextSteps() {
   console.log(`   curl -X POST http://localhost:${process.env.PHONE_AUTH_PORT || 3000}/auth/phone/request-otp \\`);
   console.log(`     -H "Content-Type: application/json" \\`);
   console.log(`     -d '{"phone": "+79991234567"}'\n`);
-  console.log(`5. For production deployment, see TIMEWEB_AUTH_MIGRATION.md\n`);
+  console.log(`5. For production deployment, follow the project deployment runbooks\n`);
 }
 
 // === Main ===

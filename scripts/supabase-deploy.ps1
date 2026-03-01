@@ -11,6 +11,27 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+function Normalize-Secret([string]$value) {
+  if ($null -eq $value) { return $null }
+  $s = $value.Trim()
+  if ($s.Length -ge 2) {
+    if (($s.StartsWith('"') -and $s.EndsWith('"')) -or ($s.StartsWith("'") -and $s.EndsWith("'"))) {
+      $s = $s.Substring(1, $s.Length - 2).Trim()
+    }
+  }
+  if ($s -match '%[0-9A-Fa-f]{2}') {
+    try {
+      $decoded = [System.Uri]::UnescapeDataString($s)
+      if (-not [string]::IsNullOrWhiteSpace($decoded)) {
+        $s = $decoded
+      }
+    } catch {
+      # no-op
+    }
+  }
+  return $s
+}
+
 function Resolve-SupabaseExe {
   if (-not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
     $pinned = Join-Path $env:LOCALAPPDATA "supabase-cli\v2.75.0\supabase.exe"
@@ -65,6 +86,8 @@ function Read-SupabaseToken {
 $previousToken = $env:SUPABASE_ACCESS_TOKEN
 $tokenWasSet = -not [string]::IsNullOrWhiteSpace($previousToken)
 $needsPrompt = $PromptToken -and ((-not $tokenWasSet) -or ($previousToken.Trim().Length -lt 10))
+$previousPgPassword = $env:PGPASSWORD
+$previousSupabaseDbPassword = $env:SUPABASE_DB_PASSWORD
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..");
 Push-Location $repoRoot
@@ -125,16 +148,16 @@ try {
   if (-not $SkipDbPush) {
     $dbPassword = ""
     if (-not [string]::IsNullOrWhiteSpace($env:SUPABASE_DB_PASSWORD)) {
-      $dbPassword = $env:SUPABASE_DB_PASSWORD
+      $dbPassword = Normalize-Secret $env:SUPABASE_DB_PASSWORD
     } elseif (-not [string]::IsNullOrWhiteSpace($env:PGPASSWORD)) {
-      $dbPassword = $env:PGPASSWORD
+      $dbPassword = Normalize-Secret $env:PGPASSWORD
     }
 
     $dryRunArgs = @("db", "push", "--dry-run")
     $pushArgs = @("db", "push", "--yes")
     if (-not [string]::IsNullOrWhiteSpace($dbPassword)) {
-      $dryRunArgs += @("-p", $dbPassword)
-      $pushArgs += @("-p", $dbPassword)
+      $env:PGPASSWORD = $dbPassword
+      $env:SUPABASE_DB_PASSWORD = $dbPassword
     }
 
     Write-Host "==> DB push (dry-run)" -ForegroundColor Cyan
@@ -161,10 +184,15 @@ try {
       $env:SUPABASE_ACCESS_TOKEN = $previousToken
     }
   }
+  if ($null -eq $previousPgPassword) {
+    Remove-Item Env:PGPASSWORD -ErrorAction SilentlyContinue
+  } else {
+    $env:PGPASSWORD = $previousPgPassword
+  }
+  if ($null -eq $previousSupabaseDbPassword) {
+    Remove-Item Env:SUPABASE_DB_PASSWORD -ErrorAction SilentlyContinue
+  } else {
+    $env:SUPABASE_DB_PASSWORD = $previousSupabaseDbPassword
+  }
   Pop-Location
-        Write-Host "Sync guard failed:" -ForegroundColor Red
-        foreach ($issue in $issues) {
-          Write-Host " - $issue" -ForegroundColor Red
-        }
-        # (throw удалён — деплой блокируется только при реальных ошибках)
-      }
+}

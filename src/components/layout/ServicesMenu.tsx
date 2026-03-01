@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { Car, Package, ShoppingBag, Home, Shield, Briefcase, Building2, TrendingUp, Plane, Hotel, Film, Dumbbell, GraduationCap, Music, Truck } from "lucide-react";
+import { Car, Package, ShoppingBag, Home, Shield, Briefcase, Building2, TrendingUp, Plane, Hotel, Film, Dumbbell, GraduationCap, Music, Truck, Users } from "lucide-react";
 import logoImage from "@/assets/logo.png";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
@@ -20,6 +20,7 @@ const services: ServiceItem[] = [
   { id: "marketplace", name: "Маркетплейс", icon: ShoppingBag, available: true },
   { id: "realestate", name: "Недвижимость", icon: Home, route: "/realestate", available: true },
   { id: "insurance", name: "Страхование", icon: Shield, route: "/insurance", available: true },
+  { id: "crm", name: "CRM", icon: Users, route: "/crm", available: true },
   { id: "jobs", name: "Работа", icon: Briefcase, available: false },
   { id: "banking", name: "Банк", icon: Building2, available: false },
   { id: "investments", name: "Инвестиции", icon: TrendingUp, available: false },

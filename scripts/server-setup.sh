@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Скрипт автоматической настройки PostgreSQL на Timeweb Cloud VPS
+# Скрипт автоматической настройки PostgreSQL на VPS
 # Выполни на сервере: bash server-setup.sh
 #
 

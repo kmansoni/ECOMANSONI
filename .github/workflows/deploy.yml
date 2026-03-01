@@ -11,6 +11,10 @@ jobs:
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SYNC_GUARD_MIRROR_PATH: ${{ secrets.SYNC_GUARD_MIRROR_PATH }}
+      VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+      VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+      VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+      VITE_EXPECTED_SUPABASE_PROJECT_REF: ${{ secrets.VITE_EXPECTED_SUPABASE_PROJECT_REF }}
       VITE_API_URL: ${{ secrets.VITE_API_URL }}
       VITE_API_KEY: ${{ secrets.VITE_API_KEY }}
       SERVER_HOST: ${{ secrets.MANSONI_SERVER_HOST }}
@@ -32,7 +36,7 @@ jobs:
       - name: Build frontend
         run: npm run build
 
-      - name: Deploy frontend to mansoni.ru (Timeweb Cloud)
+      - name: Deploy frontend to mansoni.ru
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ env.SERVER_HOST }}
@@ -50,7 +54,7 @@ jobs:
         run: |
           tar -czf all-migrations.tar.gz supabase/migrations/*.sql
 
-      - name: Deploy to mansoni.ru (Timeweb Cloud)
+      - name: Deploy to mansoni.ru
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ env.SERVER_HOST }}

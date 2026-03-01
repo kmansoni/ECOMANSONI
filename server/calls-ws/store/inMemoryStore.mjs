@@ -50,6 +50,13 @@ export function createInMemoryStore({ degraded = true } = {}) {
       set.add(deviceId);
     },
 
+    async removeMember(callId, deviceId) {
+      const set = membersByCall.get(callId);
+      if (!set) return;
+      set.delete(deviceId);
+      if (set.size === 0) membersByCall.delete(callId);
+    },
+
     async bumpRoomVersion(callId) {
       const next = (roomVersionByCall.get(callId) ?? 0) + 1;
       roomVersionByCall.set(callId, next);

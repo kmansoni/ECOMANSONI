@@ -49,23 +49,7 @@
 				}
 			},
 			"isBackground": true,
-			"problemMatcher": [
-				{
-					"owner": "vite",
-						"type": "promptString",
-						"description": "VITE_SUPABASE_ANON_KEY (Supabase anon key)",
-						"file": 1,
-						"line": 2,
-						"column": 3,
-						"message": 4
-					},
-					"background": {
-						"activeOnStart": true,
-						"beginsPattern": "VITE v",
-						"endsPattern": "ready in"
-					}
-				}
-			]
+			"problemMatcher": []
 		},
 		{
 			"label": "Supabase: CLI version",
@@ -81,7 +65,7 @@
 		},
 		{
 			"label": "Supabase: Link project (lfkbgnbjxskspsownvjm)",
-								"VITE_SUPABASE_ANON_KEY": "${input:viteSupabaseAnonKey}"
+			"type": "shell",
 			"command": "C:\\Users\\manso\\AppData\\Local\\supabase-cli\\v2.75.0\\supabase.exe",
 			"args": [
 				"link",
@@ -432,23 +416,7 @@
 			],
 			"isBackground": false
 		},
-		{
-			"label": "Timeweb: Deploy email-router (sendmail, secure prompt)",
-			"type": "shell",
-			"command": "pwsh",
-			"args": [
-				"-NoProfile",
-				"-ExecutionPolicy",
-				"Bypass",
-				"-File",
-				"${workspaceFolder}\\scripts\\deploy-email-router-timeweb.ps1",
-				"-PromptPassword"
-			],
-			"options": {
-				"cwd": "${workspaceFolder}"
-			},
-			"problemMatcher": []
-		},
+
 		{
 			"label": "Supabase Deploy Secure Prompt",
 			"type": "shell",
@@ -589,6 +557,19 @@
 				"Bypass",
 				"-File",
 				"c:\\Users\\manso\\Desktop\\разработка\\your-ai-companion-main\\scripts\\supabase-deploy.ps1"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Supabase: Apply pending migrations via API",
+			"type": "shell",
+			"command": "pwsh",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				"c:\\Users\\manso\\Desktop\\разработка\\your-ai-companion-main\\scripts\\apply-pending-migrations-via-api.ps1"
 			],
 			"isBackground": false
 		}

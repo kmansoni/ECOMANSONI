@@ -1,6 +1,6 @@
 #!/bin/bash
 # Database migration for phone-auth service
-# Run this on Timeweb PostgreSQL before deploying phone-auth service
+# Run this on PostgreSQL before deploying phone-auth service
 
 psql "${DATABASE_URL}" <<EOF
 
@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS revoked_tokens (
 CREATE INDEX IF NOT EXISTS idx_revoked_tokens_user ON revoked_tokens(user_id);
 CREATE INDEX IF NOT EXISTS idx_revoked_tokens_revoked_at ON revoked_tokens(revoked_at DESC);
 
--- RLS policy for users table (if using Timeweb managed PostgreSQL)
+-- RLS policy for users table (if using managed PostgreSQL)
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 
 -- Allow users to read their own data

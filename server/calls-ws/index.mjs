@@ -6,8 +6,16 @@ import WebSocket, { WebSocketServer } from "ws";
 import { createStoreFromEnv } from "./store/index.mjs";
 
 const PORT = Number(process.env.CALLS_WS_PORT ?? "8787");
+const NODE_ENV = String(process.env.NODE_ENV ?? "").toLowerCase();
+const ENV = String(process.env.ENV ?? "").toLowerCase();
+const IS_PROD_LIKE = NODE_ENV === "production" || ENV === "prod" || ENV === "production";
 const CALLS_DEV_INSECURE_AUTH = process.env.CALLS_DEV_INSECURE_AUTH === "1";
+if (CALLS_DEV_INSECURE_AUTH && IS_PROD_LIKE) {
+  throw new Error("CALLS_DEV_INSECURE_AUTH is forbidden in production-like environments");
+}
 const CALLS_JOIN_TOKEN_TTL_SEC = Math.max(30, Number(process.env.CALLS_JOIN_TOKEN_TTL_SEC ?? "600"));
+const KEY_TTL_MS = Math.max(15_000, Number(process.env.CALLS_KEY_TTL_MS ?? "120000"));
+const DEDUP_TTL_MS = Math.max(30_000, Number(process.env.CALLS_DEDUP_TTL_SEC ?? "600") * 1000);
 const { store, degraded } = await createStoreFromEnv();
 
 const GW_HELLO_PAYLOAD = {
@@ -77,6 +85,15 @@ function wsError(code, message, details, retryable) {
 const rooms = new Map(); // roomId -> { callId, region, nodeId, epoch, memberSetVersion, peers: Map(deviceId -> {userId, role, e2eeReady}), producers: [] }
 
 const deviceSockets = new Map(); // deviceId -> ws
+const usedJoinTokenJtis = new Map(); // jti -> expMs
+
+const joinReplayGc = setInterval(() => {
+  const now = Date.now();
+  for (const [jti, expMs] of usedJoinTokenJtis.entries()) {
+    if (!Number.isFinite(expMs) || expMs <= now) usedJoinTokenJtis.delete(jti);
+  }
+}, 60_000);
+joinReplayGc.unref?.();
 
 function getTurnIceServersPublic() {
   const urls = String(process.env.CALLS_TURN_URLS ?? "")
@@ -91,7 +108,21 @@ function getTurnIceServersPublic() {
 }
 
 function getJoinTokenSecret() {
-  return process.env.CALLS_JOIN_TOKEN_SECRET ?? process.env.SUPABASE_JWT_SECRET ?? "dev-only-join-token-secret";
+  const explicit = process.env.CALLS_JOIN_TOKEN_SECRET;
+  if (explicit && explicit.length >= 32) return explicit;
+
+  if (IS_PROD_LIKE) {
+    throw new Error("Missing CALLS_JOIN_TOKEN_SECRET in production-like environment");
+  }
+
+  const supabaseJwtSecret = process.env.SUPABASE_JWT_SECRET;
+  if (supabaseJwtSecret && supabaseJwtSecret.length >= 32) {
+    console.warn("[calls-ws] Using SUPABASE_JWT_SECRET fallback for join token signing in non-prod environment");
+    return supabaseJwtSecret;
+  }
+
+  console.warn("[calls-ws] Using development-only join token secret (non-prod only)");
+  return "dev-only-join-token-secret";
 }
 
 function encodeBase64Url(raw) {
@@ -114,6 +145,7 @@ function issueJoinToken({ roomId, callId, userId }) {
     roomId,
     callId,
     userId,
+    jti: uuid(),
     exp: Math.floor(Date.now() / 1000) + CALLS_JOIN_TOKEN_TTL_SEC,
   };
   const encodedPayload = encodeBase64Url(JSON.stringify(payload));
@@ -133,18 +165,34 @@ function verifyJoinToken(joinToken) {
     .createHmac("sha256", getJoinTokenSecret())
     .update(encodedPayload)
     .digest("base64url");
-  if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expectedSig))) return null;
+  const sigBuf = Buffer.from(sig);
+  const expectedSigBuf = Buffer.from(expectedSig);
+  if (sigBuf.length !== expectedSigBuf.length) return null;
+  if (!crypto.timingSafeEqual(sigBuf, expectedSigBuf)) return null;
 
   try {
     const payload = JSON.parse(decodeBase64Url(encodedPayload));
     const expMs = Number(payload?.exp ?? 0) * 1000;
     if (!expMs || expMs <= Date.now()) return null;
+    if (typeof payload?.jti !== "string" || payload.jti.length < 8) return null;
     if (typeof payload?.roomId !== "string" || typeof payload?.callId !== "string" || typeof payload?.userId !== "string") {
       return null;
     }
+
+    // One-time token usage (best effort, process-local).
+    if (usedJoinTokenJtis.has(payload.jti)) return null;
+    usedJoinTokenJtis.set(payload.jti, expMs);
+
     return payload;
   } catch {
     return null;
+  }
+}
+
+function pruneSeenMsgIds(seenMsgIds) {
+  const cutoff = nowMs() - DEDUP_TTL_MS;
+  for (const [msgId, ts] of seenMsgIds.entries()) {
+    if (ts < cutoff) seenMsgIds.delete(msgId);
   }
 }
 
@@ -258,6 +306,9 @@ wss.on("connection", (ws) => {
     }
 
     // Duplicate msgId (in-memory TTL)
+    if (conn.seenMsgIds.size > 1024) {
+      pruneSeenMsgIds(conn.seenMsgIds);
+    }
     if (conn.seenMsgIds.has(frame.msgId)) {
       ack(ws, frame.msgId, true);
       return;
@@ -797,6 +848,17 @@ wss.on("connection", (ws) => {
   ws.on("close", () => {
     if (conn.deviceId && deviceSockets.get(conn.deviceId) === ws) {
       deviceSockets.delete(conn.deviceId);
+    }
+
+    if (!conn.deviceId) return;
+
+    for (const room of rooms.values()) {
+      if (!room.peers.has(conn.deviceId)) continue;
+
+      room.peers.delete(conn.deviceId);
+      room.memberSetVersion++;
+      void store.removeMember?.(room.callId, conn.deviceId);
+      void store.bumpRoomVersion(room.callId);
     }
   });
 });

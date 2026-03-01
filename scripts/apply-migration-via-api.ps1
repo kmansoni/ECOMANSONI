@@ -1,22 +1,40 @@
 param(
   [Parameter(Mandatory = $true)]
   [string]$MigrationFile,
-  [string]$ProjectRef = "lfkbgnbjxskspsownvjm"
+  [string]$ProjectRef = "lfkbgnbjxskspsownvjm",
+  [string]$AccessToken,
+  [switch]$PromptToken
 )
 
 $ErrorActionPreference = 'Stop'
 
-# Запросить access token
-$tokenSecure = Read-Host "Supabase access token (sbp_...)" -AsSecureString
-$bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($tokenSecure)
-try {
-  $token = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
-} finally {
-  [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+# Resolve access token without prompting by default:
+# 1) -AccessToken param
+# 2) current session env SUPABASE_ACCESS_TOKEN
+# 3) user/machine env SUPABASE_ACCESS_TOKEN
+$token = $AccessToken
+if ([string]::IsNullOrWhiteSpace($token)) {
+  $token = $env:SUPABASE_ACCESS_TOKEN
+}
+if ([string]::IsNullOrWhiteSpace($token)) {
+  $token = [Environment]::GetEnvironmentVariable('SUPABASE_ACCESS_TOKEN', 'User')
+}
+if ([string]::IsNullOrWhiteSpace($token)) {
+  $token = [Environment]::GetEnvironmentVariable('SUPABASE_ACCESS_TOKEN', 'Machine')
+}
+
+if ([string]::IsNullOrWhiteSpace($token) -and $PromptToken) {
+  $tokenSecure = Read-Host "Supabase access token (sbp_...)" -AsSecureString
+  $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($tokenSecure)
+  try {
+    $token = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
+  } finally {
+    [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+  }
 }
 
 if ([string]::IsNullOrWhiteSpace($token)) {
-  throw "Access token is required"
+  throw "Access token is required. Set SUPABASE_ACCESS_TOKEN in env (User/Machine/session), pass -AccessToken, or use -PromptToken."
 }
 
 # Прочитать SQL из файла

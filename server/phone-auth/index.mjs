@@ -1,5 +1,5 @@
 /**
- * Phone-based Authentication Backend for Timeweb
+ * Phone-based Authentication Backend
  * 
  * ============================================================================
  * SECURITY FEATURES:
@@ -23,8 +23,7 @@
  * - JWT_SECRET: Secret for signing JWT tokens
  * - OTP_VALIDITY_SEC: OTP validity in seconds (default: 300)
  * - OTP_MAX_ATTEMPTS: Max verification attempts per OTP (default: 5)
- * - SMS_PROVIDER: 'stub' | 'twilio' | 'timeweb' (default: 'stub')
- * - TIMEWEB_SMS_API_KEY: Timeweb SMS API key (if using timeweb provider)
+ * - SMS_PROVIDER: 'stub' | 'twilio' (default: 'stub')
  * - CORS_ALLOWED_ORIGINS: Comma-separated list of allowed origins
  * - NODE_ENV: 'production' or 'development' (default: 'development')
  * - RATE_LIMIT_WINDOW_MS: Rate limit window in ms (default: 60000)
@@ -50,7 +49,6 @@ const JWT_SECRET = process.env.JWT_SECRET;
 const OTP_VALIDITY_SEC = Number(process.env.OTP_VALIDITY_SEC ?? "300");
 const OTP_MAX_ATTEMPTS = Number(process.env.OTP_MAX_ATTEMPTS ?? "5");
 const SMS_PROVIDER = process.env.SMS_PROVIDER ?? "stub";
-const TIMEWEB_SMS_API_KEY = process.env.TIMEWEB_SMS_API_KEY;
 const NODE_ENV = process.env.NODE_ENV ?? "development";
 
 // CORS Configuration
@@ -256,11 +254,6 @@ async function sendOTP(phoneNumber, otp) {
       // TODO: Implement Twilio integration
       console.warn("[TWILIO] SMS provider not yet implemented");
       return { success: false, error: "Twilio provider not implemented" };
-      
-    case "timeweb":
-      // TODO: Implement Timeweb SMS integration
-      console.warn("[TIMEWEB] SMS provider not yet implemented");
-      return { success: false, error: "Timeweb SMS provider not implemented" };
       
     default:
       return { success: false, error: `Unknown SMS provider: ${SMS_PROVIDER}` };

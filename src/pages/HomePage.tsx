@@ -75,27 +75,36 @@ export function HomePage() {
           </div>
         ) : (
           <div className="space-y-0">
-            {filteredPosts.map((post) => (
-              <PostCard
-                key={post.id}
-                id={post.id}
-                authorId={post.author_id}
-                author={{
-                  name: post.author?.display_name || "Пользователь",
-                  username: post.author?.display_name || post.author_id.slice(0, 8),
-                  avatar: post.author?.avatar_url || `https://i.pravatar.cc/150?u=${post.author_id}`,
-                  verified: false,
-                }}
-                content={post.content || ""}
-                images={post.media?.map(m => m.media_url)}
-                likes={post.likes_count}
-                comments={post.comments_count}
-                shares={post.shares_count}
-                
-                timeAgo={formatTimeAgo(post.created_at)}
-                isLiked={post.is_liked}
-              />
-            ))}
+            {filteredPosts.map((post, index) => {
+              const safePostId = typeof post.id === "string" && post.id.trim().length > 0
+                ? post.id
+                : `post-fallback-${String(post.id || 'unknown').slice(0, 8)}-${index}`;
+              const safeAuthorId = typeof post.author_id === "string" && post.author_id.trim().length > 0
+                ? post.author_id
+                : "unknown-author";
+              const safeUsername = post.author?.display_name || safeAuthorId.slice(0, 8);
+
+              return (
+                <PostCard
+                  key={safePostId}
+                  id={safePostId}
+                  authorId={safeAuthorId}
+                  author={{
+                    name: post.author?.display_name || "Пользователь",
+                    username: safeUsername,
+                    avatar: post.author?.avatar_url || `https://i.pravatar.cc/150?u=${safeAuthorId}`,
+                    verified: false,
+                  }}
+                  content={post.content || ""}
+                  images={post.media?.map(m => m.media_url)}
+                  likes={post.likes_count}
+                  comments={post.comments_count}
+                  shares={post.shares_count}
+                  timeAgo={formatTimeAgo(post.created_at)}
+                  isLiked={post.is_liked}
+                />
+              );
+            })}
           </div>
         )}
       </div>

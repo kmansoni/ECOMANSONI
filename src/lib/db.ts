@@ -1,13 +1,10 @@
 /**
- * Database Adapter - умный роутер между Supabase и Timeweb
+ * Database Adapter - единая точка доступа к Supabase
  * 
- * Автоматически направляет запросы:
- * - Auth, TURN, Storage → Supabase (критично для звонков!)
- * - Все остальное (данные) → Timeweb (если настроен)
+ * Все запросы направляются в Supabase.
  */
 
 import { supabase as supabaseClient } from '@/integrations/supabase/client';
-import { timewebClient, isTimewebEnabled } from '@/integrations/timeweb/client';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/integrations/supabase/types';
 
@@ -24,18 +21,7 @@ type TableName = keyof Database['public']['Tables'];
  * Определяет, какой клиент использовать для операции
  */
 function getClientForTable(tableName: string): SupabaseClient<Database> {
-  // Если Timeweb не настроен, всегда используем Supabase
-  if (!isTimewebEnabled) {
-    return supabaseClient;
-  }
-
-  // Таблицы для WebRTC и Auth остаются на Supabase
-  if (SUPABASE_ONLY_TABLES.includes(tableName)) {
-    return supabaseClient;
-  }
-
-  // Остальное идет в Timeweb
-  return timewebClient!;
+  return supabaseClient;
 }
 
 /**
@@ -51,11 +37,10 @@ export const db = {
   },
 
   /**
-   * RPC - всегда через Timeweb (если настроен)
+   * RPC - через Supabase
    */
   rpc: (fn: string, params?: any) => {
-    const client = isTimewebEnabled ? timewebClient! : supabaseClient;
-    return (client as any).rpc(fn, params);
+    return (supabaseClient as any).rpc(fn, params);
   },
 
   /**
@@ -78,14 +63,12 @@ export const db = {
    */
   clients: {
     supabase: supabaseClient,
-    timeweb: timewebClient,
   },
 
   /**
    * Информация о текущей конфигурации
    */
   config: {
-    isTimewebEnabled,
     getClientForTable,
   },
 };
@@ -99,8 +82,7 @@ export const supabase = supabaseClient;
 // Логирование в dev режиме
 if (import.meta.env.DEV) {
   console.info("[DB Adapter] Configuration", {
-    timewebEnabled: isTimewebEnabled,
-    mode: isTimewebEnabled ? 'DUAL (Timeweb + Supabase)' : 'SUPABASE_ONLY',
+    mode: 'SUPABASE_ONLY',
     supabaseOnlyTables: SUPABASE_ONLY_TABLES,
   });
 }

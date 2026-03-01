@@ -2,7 +2,7 @@
   "name": "phone-auth",
   "version": "1.0.0",
   "type": "module",
-  "description": "Phone-based authentication backend for Timeweb",
+  "description": "Phone-based authentication backend",
   "main": "index.mjs",
   "scripts": {
     "dev": "node index.mjs",
