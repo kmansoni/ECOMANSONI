@@ -141,6 +141,27 @@ jobs:
                 sudo systemctl restart "$svc"
               done
             fi
+            if command -v nginx >/dev/null 2>&1 && [ -d /etc/nginx ]; then
+              sudo mkdir -p /etc/nginx/snippets
+              printf '%s\n' \
+                'location ~* \.html$ {' \
+                '  add_header Cache-Control "no-store, no-cache, must-revalidate, max-age=0" always;' \
+                '  add_header Pragma "no-cache" always;' \
+                '  add_header Expires "0" always;' \
+                '}' | sudo tee /etc/nginx/snippets/mansoni-html-nocache.conf >/dev/null
+
+              for site in /etc/nginx/sites-enabled/* /etc/nginx/sites-available/*; do
+                [ -f "$site" ] || continue
+                if sudo grep -Eq 'server_name[^;]*(mansoni\.ru|www\.mansoni\.ru)' "$site"; then
+                  if ! sudo grep -q 'snippets/mansoni-html-nocache.conf' "$site"; then
+                    sudo sed -i '0,/server\s*{/s//server {\n    include \/etc\/nginx\/snippets\/mansoni-html-nocache.conf;/' "$site"
+                  fi
+                fi
+              done
+
+              sudo nginx -t
+              sudo systemctl reload nginx
+            fi
 
       - name: Verify AdminVPS backup retention
         if: ${{ env.DRY_RUN != 'true' }}
