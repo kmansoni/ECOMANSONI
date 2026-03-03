@@ -61,7 +61,16 @@ async function checkEnvironment() {
   logSection('1. Checking Environment Variables');
 
   const required = ['DATABASE_URL', 'JWT_SECRET'];
-  const optional = ['PHONE_AUTH_PORT', 'OTP_VALIDITY_SEC', 'SMS_PROVIDER', 'CORS_ALLOWED_ORIGINS'];
+  const optional = [
+    'PHONE_AUTH_PORT',
+    'OTP_VALIDITY_SEC',
+    'SMS_PROVIDER',
+    'CORS_ALLOWED_ORIGINS',
+    'TWILIO_ACCOUNT_SID',
+    'TWILIO_AUTH_TOKEN',
+    'TWILIO_FROM_NUMBER',
+    'TWILIO_MESSAGING_SERVICE_SID'
+  ];
   const missing = [];
 
   for (const env of required) {
@@ -87,6 +96,20 @@ async function checkEnvironment() {
     console.log(`  DATABASE_URL=postgresql://user:password@host:port/db`);
     console.log(`  JWT_SECRET=$(openssl rand -base64 32)`);
     process.exit(1);
+  }
+
+  if ((process.env.SMS_PROVIDER ?? 'stub') === 'twilio') {
+    const twilioMissing = [];
+    if (!process.env.TWILIO_ACCOUNT_SID) twilioMissing.push('TWILIO_ACCOUNT_SID');
+    if (!process.env.TWILIO_AUTH_TOKEN) twilioMissing.push('TWILIO_AUTH_TOKEN');
+    if (!process.env.TWILIO_FROM_NUMBER && !process.env.TWILIO_MESSAGING_SERVICE_SID) {
+      twilioMissing.push('TWILIO_FROM_NUMBER or TWILIO_MESSAGING_SERVICE_SID');
+    }
+
+    if (twilioMissing.length > 0) {
+      logError(`SMS_PROVIDER=twilio but missing: ${twilioMissing.join(', ')}`);
+      process.exit(1);
+    }
   }
 
   return true;

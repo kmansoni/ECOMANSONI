@@ -21,7 +21,8 @@ export function AppLayout() {
   const isFullWidthPage =
     location.pathname.startsWith("/profile") ||
     location.pathname.startsWith("/user/") ||
-    location.pathname.startsWith("/contact/");
+    location.pathname.startsWith("/contact/") ||
+    isReelsPage;
   const [createOpen, setCreateOpen] = useState(false);
 
   return (
@@ -45,7 +46,7 @@ export function AppLayout() {
             !isReelsPage && "pb-20"
           )}
           style={{
-            WebkitOverflowScrolling: 'touch',
+            ...(isReelsPage ? {} : { WebkitOverflowScrolling: 'touch' as const }),
             overscrollBehavior: 'contain',
             touchAction: 'pan-y',
             isolation: 'isolate',
@@ -64,7 +65,7 @@ export function AppLayout() {
         }}
       />
 
-      <BottomNav hidden={shouldHideBottomNav} />
+      <BottomNav hidden={shouldHideBottomNav || isReelsPage} />
       {/* Call UI is now handled globally by GlobalCallOverlay in App.tsx */}
     </div>
   );

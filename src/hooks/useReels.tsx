@@ -115,6 +115,18 @@ function isMissingColumnError(error: unknown, columnName: string): boolean {
   return code === "42703" && message.includes(String(columnName).toLowerCase());
 }
 
+const PAGE_SIZE = 10;
+
+function getAnonSessionId(user: any): string | null {
+  if (user) return null;
+  let anonSessionId = sessionStorage.getItem("reels_anon_session_id");
+  if (!anonSessionId) {
+    anonSessionId = safeRandomUUID();
+    sessionStorage.setItem("reels_anon_session_id", anonSessionId);
+  }
+  return `anon-${anonSessionId}`;
+}
+
 export function useReels(feedMode: ReelsFeedMode = "reels") {
   const { user } = useAuth();
   const [reels, setReels] = useState<Reel[]>([]);
@@ -125,8 +137,6 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
   const [savedReels, setSavedReels] = useState<Set<string>>(new Set());
   const [repostedReels, setRepostedReels] = useState<Set<string>>(new Set());
   const storageSyncOnceRef = useRef(false);
-
-  const PAGE_SIZE = 50;
 
   const getFollowedAuthorIdsIfNeeded = useCallback(async (): Promise<string[] | null> => {
     if (feedMode !== "friends") return null;
@@ -206,16 +216,7 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
       if (feedMode === "reels") {
         const fetchRequestId = safeRandomUUID();
 
-        let anonSessionId: string | null = null;
-        if (!user) {
-          anonSessionId = sessionStorage.getItem("reels_anon_session_id");
-          if (!anonSessionId) {
-            anonSessionId = safeRandomUUID();
-            sessionStorage.setItem("reels_anon_session_id", anonSessionId);
-          }
-        }
-
-        const sessionId = !user ? `anon-${anonSessionId}` : null;
+        const sessionId = getAnonSessionId(user);
         let rpc = await (supabase as any).rpc("get_reels_feed_v2", {
           p_limit: limit,
           p_offset: offset,
@@ -336,26 +337,17 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
   const fetchReels = useCallback(async () => {
     setLoading(true);
     try {
-      console.log("[useReels] fetchReels started", { feedMode, isGuest: isGuestMode() });
-      
       // Best-effort: sync storage-only uploads into public.reels so they appear in the feed.
-      // This must run even when RPC works (otherwise Edge fallback never runs and storage-only files stay invisible).
       if (!storageSyncOnceRef.current && !isGuestMode() && feedMode === "reels") {
         storageSyncOnceRef.current = true;
-        console.log("[useReels] ✓ Starting storage sync...");
         try {
-          const syncResult = await supabase.functions.invoke("reels-feed", { body: { limit: PAGE_SIZE, offset: 0 } });
-          console.log("[useReels] ✓ Sync completed:", { syncError: syncResult.error, syncDataLength: (syncResult.data?.data || [])?.length });
-        } catch (e) {
-          console.warn("[useReels] ✗ Sync exception:", e);
+          await supabase.functions.invoke("reels-feed", { body: { limit: PAGE_SIZE, offset: 0 } });
+        } catch {
           // ignore (network/env may not allow functions)
         }
-      } else {
-        console.log("[useReels] Skipping sync:", { alreadySync: storageSyncOnceRef.current, isGuest: isGuestMode(), feedMode });
       }
 
       if (feedMode === "friends" && !user) {
-        console.log("[useReels] Friends mode without user, returning empty");
         setReels([]);
         setHasMore(false);
         setLoading(false);
@@ -364,10 +356,7 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
 
       const followedAuthorIds = await getFollowedAuthorIdsIfNeeded();
       const raw = await fetchRawBatch({ offset: 0, limit: PAGE_SIZE, followedAuthorIds });
-      console.log("[useReels] fetchRawBatch returned:", { count: raw?.length, rawLength: raw?.length });
-      
       const enriched = await enrichRows(raw);
-      console.log("[useReels] After enrichRows:", { count: enriched.reels?.length });
 
       setLikedReels(new Set(enriched.likedIds));
       setSavedReels(new Set(enriched.savedIds));
@@ -377,11 +366,9 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
       if (isGuestMode()) {
         const demo = getDemoBotsReels() as any as Reel[];
         const withoutDemo = enriched.reels.filter((r) => !String(r.id).startsWith("demo_"));
-        console.log("[useReels] Guest mode - combining demo + real:", { demoCount: demo.length, reelCount: withoutDemo.length });
         setReels([...demo, ...withoutDemo]);
         setHasMore(false);
       } else {
-        console.log("[useReels] ✓ Setting reels:", { count: enriched.reels?.length });
         setReels(enriched.reels);
       }
     } catch (error) {
@@ -681,16 +668,7 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
   const recordView = useCallback(async (reelId: string) => {
     if (isDemoId(reelId)) return;
     try {
-      let anonSessionId: string | null = null;
-      if (!user) {
-        anonSessionId = sessionStorage.getItem("reels_anon_session_id");
-        if (!anonSessionId) {
-          anonSessionId = crypto.randomUUID();
-          sessionStorage.setItem("reels_anon_session_id", anonSessionId);
-        }
-      }
-
-      const sessionId = !user ? `anon-${anonSessionId}` : null;
+      const sessionId = getAnonSessionId(user);
       await (supabase as any).rpc("record_reel_view", {
         p_reel_id: reelId,
         p_session_id: sessionId,
@@ -713,16 +691,7 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
     ) => {
       if (isDemoId(reelId)) return;
       try {
-        let anonSessionId: string | null = null;
-        if (!user) {
-          anonSessionId = sessionStorage.getItem("reels_anon_session_id");
-          if (!anonSessionId) {
-            anonSessionId = crypto.randomUUID();
-            sessionStorage.setItem("reels_anon_session_id", anonSessionId);
-          }
-        }
-
-        const sessionId = !user ? `anon-${anonSessionId}` : null;
+        const sessionId = getAnonSessionId(user);
         await (supabase as any).rpc("record_reel_impression_v2", {
           p_reel_id: reelId,
           p_session_id: sessionId,
@@ -735,7 +704,7 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
 
         const ownerId = resolveReelOwnerId(reelId);
         if (ownerId) {
-          const actorId = user?.id ?? `anon:${sessionId ?? anonSessionId ?? "unknown"}`;
+          const actorId = user?.id ?? `anon:${sessionId ?? "unknown"}`;
           trackAnalyticsEvent({
             actorId,
             objectType: "reel",
@@ -763,16 +732,7 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
     async (reelId: string, watchDurationSeconds?: number, reelDurationSeconds?: number) => {
       if (isDemoId(reelId)) return;
       try {
-        let anonSessionId: string | null = null;
-        if (!user) {
-          anonSessionId = sessionStorage.getItem("reels_anon_session_id");
-          if (!anonSessionId) {
-            anonSessionId = crypto.randomUUID();
-            sessionStorage.setItem("reels_anon_session_id", anonSessionId);
-          }
-        }
-
-        const sessionId = !user ? `anon-${anonSessionId}` : null;
+        const sessionId = getAnonSessionId(user);
         await (supabase as any).rpc("record_reel_viewed", {
           p_reel_id: reelId,
           p_session_id: sessionId,
@@ -780,7 +740,7 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
 
         const ownerId = resolveReelOwnerId(reelId);
         if (ownerId) {
-          const actorId = user?.id ?? `anon:${sessionId ?? anonSessionId ?? "unknown"}`;
+          const actorId = user?.id ?? `anon:${sessionId ?? "unknown"}`;
           trackAnalyticsEvent({
             actorId,
             objectType: "reel",
@@ -804,16 +764,7 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
     async (reelId: string, watchDurationSeconds: number, reelDurationSeconds: number) => {
       if (isDemoId(reelId)) return;
       try {
-        let anonSessionId: string | null = null;
-        if (!user) {
-          anonSessionId = sessionStorage.getItem("reels_anon_session_id");
-          if (!anonSessionId) {
-            anonSessionId = crypto.randomUUID();
-            sessionStorage.setItem("reels_anon_session_id", anonSessionId);
-          }
-        }
-
-        const sessionId = !user ? `anon-${anonSessionId}` : null;
+        const sessionId = getAnonSessionId(user);
         await (supabase as any).rpc("record_reel_watched", {
           p_reel_id: reelId,
           p_watch_duration_seconds: watchDurationSeconds,
@@ -823,7 +774,7 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
 
         const ownerId = resolveReelOwnerId(reelId);
         if (ownerId) {
-          const actorId = user?.id ?? `anon:${sessionId ?? anonSessionId ?? "unknown"}`;
+          const actorId = user?.id ?? `anon:${sessionId ?? "unknown"}`;
           trackAnalyticsEvent({
             actorId,
             objectType: "reel",
@@ -847,16 +798,7 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
     async (reelId: string, skippedAtSecond: number, reelDurationSeconds: number) => {
       if (isDemoId(reelId)) return;
       try {
-        let anonSessionId: string | null = null;
-        if (!user) {
-          anonSessionId = sessionStorage.getItem("reels_anon_session_id");
-          if (!anonSessionId) {
-            anonSessionId = crypto.randomUUID();
-            sessionStorage.setItem("reels_anon_session_id", anonSessionId);
-          }
-        }
-
-        const sessionId = !user ? `anon-${anonSessionId}` : null;
+        const sessionId = getAnonSessionId(user);
         await (supabase as any).rpc("record_reel_skip", {
           p_reel_id: reelId,
           p_skipped_at_second: skippedAtSecond,
@@ -866,7 +808,7 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
 
         const ownerId = resolveReelOwnerId(reelId);
         if (ownerId) {
-          const actorId = user?.id ?? `anon:${sessionId ?? anonSessionId ?? "unknown"}`;
+          const actorId = user?.id ?? `anon:${sessionId ?? "unknown"}`;
           trackAnalyticsEvent({
             actorId,
             objectType: "reel",
@@ -899,16 +841,7 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
     async (reelId: string, feedback: "interested" | "not_interested") => {
       if (isDemoId(reelId)) return;
       try {
-        let anonSessionId: string | null = null;
-        if (!user) {
-          anonSessionId = sessionStorage.getItem("reels_anon_session_id");
-          if (!anonSessionId) {
-            anonSessionId = crypto.randomUUID();
-            sessionStorage.setItem("reels_anon_session_id", anonSessionId);
-          }
-        }
-
-        const sessionId = !user ? `anon-${anonSessionId}` : null;
+        const sessionId = getAnonSessionId(user);
         await (supabase as any).rpc("set_reel_feedback", {
           p_reel_id: reelId,
           p_feedback: feedback,

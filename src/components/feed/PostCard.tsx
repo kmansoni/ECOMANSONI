@@ -1,4 +1,5 @@
-import { Heart, MessageCircle, Send, Bookmark, MoreHorizontal } from "lucide-react";
+import { Heart, MessageCircle, Send, Bookmark, MoreHorizontal, Pin } from "lucide-react";
+import { WhyRecommended } from "./WhyRecommended";
 import { Button } from "@/components/ui/button";
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
@@ -9,6 +10,8 @@ import { PostOptionsSheet } from "./PostOptionsSheet";
 import { usePostActions } from "@/hooks/usePosts";
 import { useSavedPosts } from "@/hooks/useSavedPosts";
 import { VerifiedBadge } from "@/components/ui/verified-badge";
+import { LocationTag } from "./LocationTag";
+import { PostReminder } from "./PostReminder";
 
 interface PostCardProps {
   id?: string;
@@ -26,11 +29,17 @@ interface PostCardProps {
   comments: number;
   shares: number;
   saves?: number;
-  
   timeAgo: string;
   isRecommended?: boolean;
   isLiked?: boolean;
   onLikeChange?: (postId: string, liked: boolean) => void;
+  // New fields
+  locationName?: string;
+  locationLat?: number;
+  locationLng?: number;
+  altText?: string;
+  isPaidPartnership?: boolean;
+  pinPosition?: number | null;
 }
 
 export function PostCard({
@@ -48,6 +57,12 @@ export function PostCard({
   isRecommended = false,
   isLiked = false,
   onLikeChange,
+  locationName,
+  locationLat,
+  locationLng,
+  altText,
+  isPaidPartnership = false,
+  pinPosition,
 }: PostCardProps) {
   const navigate = useNavigate();
   const { toggleLike } = usePostActions();
@@ -62,9 +77,14 @@ export function PostCard({
   const [showOptions, setShowOptions] = useState(false);
   const [likeAnimation, setLikeAnimation] = useState(false);
   const [floatingHearts, setFloatingHearts] = useState<{ id: number; x: number; y: number }[]>([]);
-  const [touchStart, setTouchStart] = useState<number | null>(null);
-  const [touchEnd, setTouchEnd] = useState<number | null>(null);
   const heartIdRef = useRef(0);
+  // Touch double-tap detection
+  const lastTapRef = useRef<number>(0);
+  const lastTapXRef = useRef<number>(0);
+  const lastTapYRef = useRef<number>(0);
+  // Carousel swipe
+  const touchStartXRef = useRef<number | null>(null);
+  const touchStartYRef = useRef<number | null>(null);
   
   
   const saved = id ? isSaved(id) : false;
@@ -92,28 +112,51 @@ export function PostCard({
 
   const allImages = images || (image ? [image] : []);
   const hasMultipleImages = allImages.length > 1;
-  const MIN_SWIPE_DISTANCE = 50;
+  const MIN_SWIPE = 50;
 
-  // Swipe handlers for image navigation
+  // Swipe/double-tap handlers
   const onTouchStart = (e: React.TouchEvent) => {
-    setTouchEnd(null);
-    setTouchStart(e.targetTouches[0].clientX);
+    const t = e.touches[0];
+    touchStartXRef.current = t.clientX;
+    touchStartYRef.current = t.clientY;
   };
 
-  const onTouchMove = (e: React.TouchEvent) => {
-    setTouchEnd(e.targetTouches[0].clientX);
-  };
+  const onTouchEnd = (e: React.TouchEvent) => {
+    const t = e.changedTouches[0];
+    if (!t || touchStartXRef.current == null) return;
 
-  const onTouchEnd = () => {
-    if (!touchStart || !touchEnd) return;
-    
-    const distance = touchStart - touchEnd;
-    const isLeftSwipe = distance > MIN_SWIPE_DISTANCE;
-    const isRightSwipe = distance < -MIN_SWIPE_DISTANCE;
+    const dx = t.clientX - touchStartXRef.current;
+    const dy = t.clientY - (touchStartYRef.current ?? t.clientY);
+    touchStartXRef.current = null;
+    touchStartYRef.current = null;
 
-    if (isLeftSwipe && currentImageIndex < allImages.length - 1) {
+    // Double-tap → like
+    const now = Date.now();
+    const isDoubleTap = now - lastTapRef.current < 300 && Math.abs(t.clientX - lastTapXRef.current) < 40 && Math.abs(t.clientY - lastTapYRef.current) < 40;
+    if (isDoubleTap && Math.abs(dx) < 20 && Math.abs(dy) < 20) {
+      lastTapRef.current = 0;
+      if (!liked && id) {
+        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+        const x = t.clientX - rect.left;
+        const y = t.clientY - rect.top;
+        const newHeart = { id: heartIdRef.current++, x, y };
+        setFloatingHearts(prev => [...prev, newHeart]);
+        setTimeout(() => setFloatingHearts(prev => prev.filter(h => h.id !== newHeart.id)), 1000);
+        setLikeAnimation(true);
+        setTimeout(() => setLikeAnimation(false), 300);
+        void handleLike();
+      }
+      return;
+    }
+    lastTapRef.current = now;
+    lastTapXRef.current = t.clientX;
+    lastTapYRef.current = t.clientY;
+
+    // Swipe carousel
+    if (Math.abs(dx) < MIN_SWIPE || Math.abs(dy) > Math.abs(dx)) return;
+    if (dx < 0 && currentImageIndex < allImages.length - 1) {
       setCurrentImageIndex(currentImageIndex + 1);
-    } else if (isRightSwipe && currentImageIndex > 0) {
+    } else if (dx > 0 && currentImageIndex > 0) {
       setCurrentImageIndex(currentImageIndex - 1);
     }
   };
@@ -144,28 +187,6 @@ export function PostCard({
       }
     } finally {
       setLikePending(false);
-    }
-  };
-
-  const handleDoubleTap = (e: React.MouseEvent) => {
-    if (!id) return;
-    if (!liked) {
-      const rect = e.currentTarget.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-      
-      const newHeart = { id: heartIdRef.current++, x, y };
-      setFloatingHearts(prev => [...prev, newHeart]);
-      
-      setTimeout(() => {
-        setFloatingHearts(prev => prev.filter(h => h.id !== newHeart.id));
-      }, 1000);
-
-      setLikeAnimation(true);
-      setTimeout(() => setLikeAnimation(false), 300);
-
-      // Persist like in DB (single source of truth).
-      void handleLike();
     }
   };
 
@@ -209,7 +230,8 @@ export function PostCard({
           </div>
           <div>
             <div className="flex items-center gap-1">
-              <span 
+              {pinPosition && <Pin className="w-3.5 h-3.5 text-muted-foreground" />}
+              <span
                 className="font-semibold text-foreground text-sm cursor-pointer hover:underline"
                 onClick={goToProfile}
               >
@@ -217,8 +239,14 @@ export function PostCard({
               </span>
               {author.verified && <VerifiedBadge size="sm" />}
             </div>
-            {isRecommended && (
-              <p className="text-xs text-muted-foreground">Рекомендации для вас</p>
+            {isPaidPartnership && (
+              <p className="text-xs text-muted-foreground">Платное партнёрство</p>
+            )}
+            {isRecommended && !isPaidPartnership && id && (
+              <WhyRecommended postId={id} reason="interests" />
+            )}
+            {locationName && (
+              <LocationTag name={locationName} lat={locationLat} lng={locationLng} />
             )}
           </div>
         </div>
@@ -234,20 +262,40 @@ export function PostCard({
         </div>
       </div>
 
-      {/* Image Carousel */}
+      {/* Image/Video Carousel */}
       {allImages.length > 0 && (
-        <div 
-          className="relative media-frame media-frame--post cursor-pointer select-none"
-          onDoubleClick={handleDoubleTap}
+        <div
+          className="relative media-frame media-frame--post cursor-pointer select-none overflow-hidden"
           onTouchStart={onTouchStart}
-          onTouchMove={onTouchMove}
           onTouchEnd={onTouchEnd}
         >
-          <img
-            src={allImages[currentImageIndex]}
-            alt="Post image"
-            className="media-object media-object--fill media-object--cover"
-          />
+          {/* Слайдер с плавной анимацией */}
+          <div
+            className="flex transition-transform duration-300 ease-out"
+            style={{ transform: `translateX(-${currentImageIndex * 100}%)` }}
+          >
+            {allImages.map((src, idx) => {
+              const isVideo = /\.(mp4|webm|mov|m4v)(\?|$)/i.test(src) || (idx === 0 && !image && images);
+              return isVideo ? (
+                <video
+                  key={idx}
+                  src={src}
+                  className="media-object media-object--fill media-object--cover shrink-0 w-full"
+                  autoPlay={idx === currentImageIndex}
+                  loop
+                  muted
+                  playsInline
+                />
+              ) : (
+                <img
+                  key={idx}
+                  src={src}
+                  alt={altText || `Post ${idx + 1}`}
+                  className="media-object media-object--fill media-object--cover shrink-0 w-full"
+                />
+              );
+            })}
+          </div>
           
           {/* Floating hearts on double tap */}
           {floatingHearts.map((heart) => (
@@ -334,13 +382,13 @@ export function PostCard({
         </div>
       </div>
 
-      {/* Caption */}
+      {/* Caption with clickable hashtags */}
       <div className="px-4 py-2">
         <p className="text-sm">
           <span className="font-semibold">{author.username}</span>{" "}
-          <span className="text-foreground">{truncatedContent}</span>
+          <CaptionText text={truncatedContent} navigate={navigate} />
           {content.length > 100 && !expanded && (
-            <button 
+            <button
               onClick={() => setExpanded(true)}
               className="text-muted-foreground ml-1"
             >
@@ -350,13 +398,10 @@ export function PostCard({
         </p>
       </div>
 
-      {/* Time & Translation */}
-      <div className="px-4 pb-3 flex items-center gap-2 text-xs text-muted-foreground">
-        <span>{timeAgo}</span>
-        <span>·</span>
-        <button className="hover:text-foreground transition-colors">
-          Показать перевод
-        </button>
+      {/* Time + Reminder */}
+      <div className="px-4 pb-3 flex items-center justify-between">
+        <span className="text-xs text-muted-foreground">{timeAgo}</span>
+        {id && <PostReminder postId={id} />}
       </div>
 
       {/* Comments Sheet */}
@@ -387,5 +432,36 @@ export function PostCard({
         </>
       )}
     </div>
+  );
+}
+
+// Компонент для текста с кликабельными хэштегами
+function CaptionText({
+  text,
+  navigate,
+}: {
+  text: string;
+  navigate: ReturnType<typeof import("react-router-dom").useNavigate>;
+}) {
+  const parts = text.split(/(#[\wа-яёА-ЯЁ]+)/gi);
+  return (
+    <>
+      {parts.map((part, i) =>
+        part.startsWith("#") ? (
+          <button
+            key={i}
+            className="text-primary font-medium hover:underline"
+            onClick={(e) => {
+              e.stopPropagation();
+              navigate(`/explore?tag=${encodeURIComponent(part.slice(1))}`);
+            }}
+          >
+            {part}
+          </button>
+        ) : (
+          <span key={i}>{part}</span>
+        ),
+      )}
+    </>
   );
 }

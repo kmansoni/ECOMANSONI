@@ -2,7 +2,6 @@ import type { AppConfig } from "../config.js";
 import type { EmailProvider } from "../types.js";
 import { SendmailEmailProvider } from "./sendmailProvider.js";
 import { SmtpEmailProvider } from "./smtpProvider.js";
-import { StubEmailProvider } from "./stubProvider.js";
 
 export function createEmailProvider(config: AppConfig): EmailProvider {
   if (config.provider === "smtp") {
@@ -13,5 +12,5 @@ export function createEmailProvider(config: AppConfig): EmailProvider {
     return new SendmailEmailProvider(config);
   }
 
-  return new StubEmailProvider();
+  throw new Error(`Unsupported EMAIL_ROUTER_PROVIDER: ${String(config.provider)}`);
 }

@@ -1,9 +1,10 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { FeedHeader } from "@/components/feed/FeedHeader";
 import { FeedFilters, ContentFilter } from "@/components/feed/FeedFilters";
 import { PostCard } from "@/components/feed/PostCard";
 import { PullToRefresh } from "@/components/feed/PullToRefresh";
-import { usePosts } from "@/hooks/usePosts";
+import { SmartFeedToggle } from "@/components/feed/SmartFeedToggle";
+import { useSmartFeed } from "@/hooks/useSmartFeed";
 import { usePresence } from "@/hooks/usePresence";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
@@ -11,9 +12,9 @@ import { formatDistanceToNow } from "date-fns";
 import { ru } from "date-fns/locale";
 
 export function HomePage() {
-  const { posts, loading, refetch } = usePosts();
+  const { posts, loading, loadingMore, hasMore, mode, setMode, refetch, loadMore } = useSmartFeed();
   const [contentFilter, setContentFilter] = useState<ContentFilter>('all');
-  
+
   // Initialize presence tracking
   usePresence();
 
@@ -44,16 +45,35 @@ export function HomePage() {
     return posts;
   }, [posts, contentFilter]);
 
+  // Infinite scroll
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(entries => {
+      if (entries[0].isIntersecting && hasMore && !loadingMore) {
+        loadMore();
+      }
+    }, { threshold: 0.1 });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [hasMore, loadingMore, loadMore]);
+
   return (
     <PullToRefresh onRefresh={handleRefresh}>
       <div className="min-h-screen">
         <FeedHeader />
-        
-        <FeedFilters 
-          filter={contentFilter} 
-          onFilterChange={setContentFilter} 
+
+        {/* Smart Feed Toggle */}
+        <div className="flex justify-center px-4 py-2 sticky top-0 z-10 bg-background/80 backdrop-blur border-b border-white/5">
+          <SmartFeedToggle mode={mode} onChange={setMode} />
+        </div>
+
+        <FeedFilters
+          filter={contentFilter}
+          onFilterChange={setContentFilter}
         />
-        
+
         {loading && posts.length === 0 ? (
           <div className="flex items-center justify-center py-20">
             <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -61,14 +81,14 @@ export function HomePage() {
         ) : filteredPosts.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center px-4">
             <p className="text-muted-foreground text-lg">
-              {contentFilter === 'all' 
-                ? "Пока нет публикаций" 
-                : contentFilter === 'media' 
+              {contentFilter === 'all'
+                ? "Пока нет публикаций"
+                : contentFilter === 'media'
                   ? "Нет публикаций с медиа"
                   : "Нет текстовых публикаций"}
             </p>
             <p className="text-muted-foreground/70 text-sm mt-1">
-              {contentFilter === 'all' 
+              {contentFilter === 'all'
                 ? "Создайте первую запись или подпишитесь на авторов"
                 : "Попробуйте другой фильтр"}
             </p>
@@ -105,6 +125,21 @@ export function HomePage() {
                 />
               );
             })}
+
+            {/* Infinite scroll sentinel */}
+            <div ref={sentinelRef} className="h-4" />
+
+            {loadingMore && (
+              <div className="flex justify-center py-6">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            )}
+
+            {!hasMore && filteredPosts.length > 0 && (
+              <p className="text-center text-zinc-600 text-sm py-6">
+                Вы посмотрели все публикации
+              </p>
+            )}
           </div>
         )}
       </div>

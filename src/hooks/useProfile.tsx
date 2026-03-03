@@ -415,6 +415,135 @@ export function useProfileByUsername(username?: string) {
   };
 }
 
+// ────────────────────────────────────────────────────────────────
+// Highlights
+// ────────────────────────────────────────────────────────────────
+export interface Highlight {
+  id: string;
+  user_id: string;
+  title: string;
+  cover_url: string | null;
+  position: number;
+  created_at: string;
+}
+
+export async function getHighlights(userId: string): Promise<Highlight[]> {
+  const { data, error } = await (supabase as any)
+    .from('highlights')
+    .select('*')
+    .eq('user_id', userId)
+    .order('position', { ascending: true });
+  if (error) throw error;
+  return data || [];
+}
+
+export async function createHighlight(
+  userId: string,
+  title: string,
+  coverFile: File | null,
+  storyIds: string[]
+): Promise<Highlight> {
+  let cover_url: string | null = null;
+  if (coverFile) {
+    const path = `highlights/${userId}/${Date.now()}-${coverFile.name}`;
+    const { error: uploadError } = await supabase.storage
+      .from('avatars')
+      .upload(path, coverFile, { upsert: true });
+    if (!uploadError) {
+      const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path);
+      cover_url = urlData.publicUrl;
+    }
+  }
+
+  const { data: highlight, error } = await (supabase as any)
+    .from('highlights')
+    .insert({ user_id: userId, title, cover_url })
+    .select()
+    .single();
+  if (error) throw error;
+
+  if (storyIds.length > 0) {
+    const rows = storyIds.map((story_id, i) => ({
+      highlight_id: highlight.id,
+      story_id,
+      position: i,
+    }));
+    await (supabase as any).from('highlight_stories').insert(rows);
+  }
+
+  return highlight;
+}
+
+export async function deleteHighlight(id: string): Promise<void> {
+  const { error } = await (supabase as any)
+    .from('highlights')
+    .delete()
+    .eq('id', id);
+  if (error) throw error;
+}
+
+// ────────────────────────────────────────────────────────────────
+// Archive
+// ────────────────────────────────────────────────────────────────
+export async function archivePost(userId: string, postId: string): Promise<void> {
+  const { error } = await (supabase as any)
+    .from('archived_posts')
+    .insert({ user_id: userId, post_id: postId });
+  if (error) throw error;
+}
+
+export async function unarchivePost(userId: string, postId: string): Promise<void> {
+  const { error } = await (supabase as any)
+    .from('archived_posts')
+    .delete()
+    .eq('user_id', userId)
+    .eq('post_id', postId);
+  if (error) throw error;
+}
+
+export async function getArchivedPosts(userId: string): Promise<any[]> {
+  const { data, error } = await (supabase as any)
+    .from('archived_posts')
+    .select('post_id, posts(*, post_media(*))')
+    .eq('user_id', userId)
+    .order('archived_at', { ascending: false });
+  if (error) throw error;
+  return (data || []).map((row: any) => row.posts).filter(Boolean);
+}
+
+// ────────────────────────────────────────────────────────────────
+// Block
+// ────────────────────────────────────────────────────────────────
+export async function blockUser(blockerId: string, blockedId: string): Promise<void> {
+  const { error } = await (supabase as any)
+    .from('blocked_users')
+    .insert({ blocker_id: blockerId, blocked_id: blockedId });
+  if (error) throw error;
+}
+
+export async function unblockUser(blockerId: string, blockedId: string): Promise<void> {
+  const { error } = await (supabase as any)
+    .from('blocked_users')
+    .delete()
+    .eq('blocker_id', blockerId)
+    .eq('blocked_id', blockedId);
+  if (error) throw error;
+}
+
+// ────────────────────────────────────────────────────────────────
+// uploadAvatar helper
+// ────────────────────────────────────────────────────────────────
+export async function uploadAvatar(userId: string, file: File): Promise<string> {
+  const ext = file.name.split('.').pop() || 'jpg';
+  const path = `avatars/${userId}/avatar.${ext}`;
+  const { error } = await supabase.storage
+    .from('avatars')
+    .upload(path, file, { upsert: true });
+  if (error) throw error;
+  const { data } = supabase.storage.from('avatars').getPublicUrl(path);
+  return `${data.publicUrl}?t=${Date.now()}`;
+}
+
 // Hook to get user's posts
 export function useUserPosts(userId?: string) {
   const { user } = useAuth();

@@ -1,79 +1,128 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Play } from "lucide-react";
+import { Loader2, Radio } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 interface LiveSession {
-  id: number;
+  id: string;
   title: string;
   category: string;
   thumbnail_url: string | null;
   viewer_count_current: number;
   creator_id: string;
+  creator_name?: string;
+  creator_avatar?: string;
 }
 
+const CATEGORY_LABELS: Record<string, string> = {
+  general: "Общее",
+  gaming: "Игры",
+  music: "Музыка",
+  education: "Образование",
+  sport: "Спорт",
+  cooking: "Кулинария",
+  travel: "Путешествия",
+};
+
 /**
- * LiveTab
- * Discovery tab showing active live streams
- * Displayed in ShortVideoFeed as a tab option
+ * LiveTab — Лента активных прямых эфиров с Realtime subscription
  */
 export function LiveTab() {
   const navigate = useNavigate();
   const [sessions, setSessions] = useState<LiveSession[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    loadLiveSessions();
-
-    // Refresh every 10 seconds
-    const interval = setInterval(loadLiveSessions, 10000);
-    return () => clearInterval(interval);
-  }, []);
-
-  async function loadLiveSessions() {
+  const loadSessions = async () => {
     try {
-      const { data, error } = await (supabase.rpc("get_active_live_sessions_v1", {
-        p_limit: 20,
-      }) as any);
+      const { data, error } = await (supabase as any)
+        .from("live_sessions")
+        .select("id, title, category, thumbnail_url, viewer_count_current, creator_id")
+        .eq("status", "active")
+        .order("viewer_count_current", { ascending: false })
+        .limit(20);
 
       if (error) throw error;
-      setSessions(data as LiveSession[] || []);
-    } catch (error) {
-      console.error("Failed to load live sessions:", error);
+
+      const rows = (data || []) as LiveSession[];
+
+      // Загрузить аватары создателей
+      const creatorIds = [...new Set(rows.map((r) => r.creator_id).filter(Boolean))];
+      let profileMap: Record<string, { display_name: string; avatar_url: string | null }> = {};
+      if (creatorIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from("profiles")
+          .select("user_id, display_name, avatar_url")
+          .in("user_id", creatorIds);
+        for (const p of profiles || []) {
+          profileMap[String((p as any).user_id)] = {
+            display_name: String((p as any).display_name ?? ""),
+            avatar_url: (p as any).avatar_url ?? null,
+          };
+        }
+      }
+
+      setSessions(
+        rows.map((r) => ({
+          ...r,
+          creator_name: profileMap[r.creator_id]?.display_name ?? "Стример",
+          creator_avatar: profileMap[r.creator_id]?.avatar_url ?? undefined,
+        })),
+      );
+    } catch (err) {
+      console.error("Ошибка загрузки эфиров:", err);
     } finally {
       setLoading(false);
     }
-  }
+  };
+
+  useEffect(() => {
+    void loadSessions();
+
+    // Realtime подписка — обновлять список при любых изменениях live_sessions
+    const sub = supabase
+      .channel("live_tab_sessions")
+      .on("postgres_changes", {
+        event: "*",
+        schema: "public",
+        table: "live_sessions",
+      }, () => {
+        void loadSessions();
+      })
+      .subscribe();
+
+    return () => { sub.unsubscribe(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-96">
-        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-7 h-7 animate-spin text-muted-foreground" />
       </div>
     );
   }
 
   if (sessions.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-96 gap-3">
-        <Play className="w-12 h-12 text-muted-foreground" />
-        <p className="text-muted-foreground">No live streams right now</p>
-        <p className="text-sm text-muted-foreground">Check back soon!</p>
+      <div className="flex flex-col items-center justify-center h-64 gap-3 text-muted-foreground">
+        <Radio className="w-12 h-12" />
+        <p className="text-base font-medium">Сейчас нет активных эфиров</p>
+        <p className="text-sm">Загляните позже!</p>
       </div>
     );
   }
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 p-4">
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4">
       {sessions.map((session) => (
-        <Card
+        <button
           key={session.id}
-          className="cursor-pointer hover:shadow-lg transition-shadow overflow-hidden"
           onClick={() => navigate(`/live/${session.id}`)}
+          className="text-left rounded-2xl overflow-hidden border border-border bg-card hover:shadow-md transition-all active:scale-[0.98]"
         >
-          {/* Thumbnail */}
+          {/* Превью */}
           <div className="aspect-video bg-gray-900 relative flex items-center justify-center">
             {session.thumbnail_url ? (
               <img
@@ -82,28 +131,39 @@ export function LiveTab() {
                 className="w-full h-full object-cover"
               />
             ) : (
-              <div className="text-gray-400">📺 Live</div>
+              <div className="flex flex-col items-center gap-2 text-gray-400">
+                <Avatar className="w-14 h-14 border-2 border-red-500">
+                  <AvatarImage src={session.creator_avatar} />
+                  <AvatarFallback className="bg-gray-700 text-white text-lg">
+                    {session.creator_name?.slice(0, 2).toUpperCase() ?? "?"}
+                  </AvatarFallback>
+                </Avatar>
+              </div>
             )}
-
-            {/* Live badge */}
-            <Badge className="absolute top-2 left-2 bg-red-600 animate-pulse">
+            <Badge className="absolute top-2 left-2 bg-red-600 text-white animate-pulse">
               🔴 LIVE
             </Badge>
-
-            {/* Viewer count */}
-            <Badge variant="secondary" className="absolute bottom-2 right-2">
-              {session.viewer_count_current} watching
+            <Badge variant="secondary" className="absolute bottom-2 right-2 text-xs">
+              👁 {session.viewer_count_current} зрителей
             </Badge>
           </div>
 
-          {/* Info */}
-          <CardContent className="p-3 space-y-2">
-            <p className="font-semibold line-clamp-2 text-sm">{session.title}</p>
-            <p className="text-xs text-muted-foreground">
-              {session.category.charAt(0).toUpperCase() + session.category.slice(1)}
-            </p>
-          </CardContent>
-        </Card>
+          {/* Информация */}
+          <div className="p-3 flex items-center gap-2">
+            <Avatar className="w-8 h-8 shrink-0">
+              <AvatarImage src={session.creator_avatar} />
+              <AvatarFallback className="bg-muted text-xs">
+                {session.creator_name?.slice(0, 2).toUpperCase() ?? "?"}
+              </AvatarFallback>
+            </Avatar>
+            <div className="min-w-0">
+              <p className="font-semibold text-sm line-clamp-1">{session.title}</p>
+              <p className="text-xs text-muted-foreground line-clamp-1">
+                {session.creator_name} · {CATEGORY_LABELS[session.category] ?? session.category}
+              </p>
+            </div>
+          </div>
+        </button>
       ))}
     </div>
   );

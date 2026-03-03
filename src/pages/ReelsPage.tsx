@@ -1,42 +1,37 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useReducer } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  Heart,
-  MessageCircle,
-  Send,
-  Bookmark,
-  Repeat2,
-  Music2,
   Play,
-  User,
   Loader2,
   Volume2,
   VolumeX,
+  EyeOff,
+  Flag,
+  Bookmark,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { supabase } from "@/integrations/supabase/client";
 import { useReels } from "@/hooks/useReels";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { ReelCommentsSheet } from "@/components/reels/ReelCommentsSheet";
 import { ReelShareSheet } from "@/components/reels/ReelShareSheet";
-import { VerifiedBadge } from "@/components/ui/verified-badge";
-import { RankingExplanation } from "@/components/reel/RankingExplanation";
+import { RemixReelSheet } from "@/components/reels/RemixReelSheet";
+import { ReelInsights } from "@/components/reels/ReelInsights";
+import { ReelSidebar } from "@/components/reels/ReelSidebar";
+import { ReelOverlay } from "@/components/reels/ReelOverlay";
+import { ReelPlayer } from "@/components/reels/ReelPlayer";
+import { useReelGestures } from "@/hooks/useReelGestures";
+import {
+  reduceReels,
+  createInitialReelsState,
+  type ReelsMachineState,
+  type ReelsEvent,
+} from "@/features/reels/fsm";
 
 const REELS_NAV_COOLDOWN_MS = 350;
 const REELS_WHEEL_THRESHOLD_PX = 18;
 const REELS_VIDEO_RETRY_LIMIT = 2;
 const REELS_VIDEO_RETRY_BASE_DELAY_MS = 1200;
-
-function formatNumber(num: number): string {
-  if (num >= 1000000) {
-    return (num / 1000000).toFixed(1).replace(/\.0$/, "") + "M";
-  }
-  if (num >= 1000) {
-    return (num / 1000).toFixed(1).replace(/\.0$/, "") + "K";
-  }
-  return num.toString();
-}
 
 function isProbablyVideoUrl(url: string): boolean {
   const lower = (url || "").toLowerCase();
@@ -47,7 +42,6 @@ function isProbablyVideoUrl(url: string): boolean {
     return true;
   }
   
-  // Covers public storage URLs and direct file URLs.
   if (/\.(mp4|webm|mov|avi|m4v|m3u8)(\?|#|$)/.test(lower)) {
     return true;
   }
@@ -56,17 +50,20 @@ function isProbablyVideoUrl(url: string): boolean {
     return true;
   }
   
-  // Heuristic fallback: some URLs don't contain an extension.
   if (lower.includes("video/")) {
     return true;
   }
   
-  // Supabase storage paths
   if (lower.includes("/reels-media/") || lower.includes("/storage/v1/object/public/reels-media/")) {
     return true;
   }
   
   return false;
+}
+
+// Wrapper to adapt FSM reducer for useReducer (which expects (state, action) => state)
+function fsmReducer(state: ReelsMachineState, event: ReelsEvent): ReelsMachineState {
+  return reduceReels(state, event).state;
 }
 
 export function ReelsPage() {
@@ -89,23 +86,34 @@ export function ReelsPage() {
     setReelFeedback,
     refetch,
   } = useReels();
+
+  // --- FSM state via useReducer ---
+  const [fsmState, dispatch] = useReducer(fsmReducer, createInitialReelsState());
+
+  // Derivative values from FSM
+  const isPlaying = fsmState.status === "PLAYING";
+  const isMuted = fsmState.context.isMuted;
+
+  // TODO: currentIndex could be unified with fsmState.context.activeIndex once
+  // reels items are fed into FSM via REELS_FEED_LOADED. For now kept as useState.
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(true);
-  const [isUserPaused, setIsUserPaused] = useState(false);
+
   const [currentProgress, setCurrentProgress] = useState(0);
-  const [isMuted, setIsMuted] = useState(true);
   const [commentsReelId, setCommentsReelId] = useState<string | null>(null);
   const [shareReelId, setShareReelId] = useState<string | null>(null);
   const [failedVideoIds, setFailedVideoIds] = useState<Set<string>>(() => new Set());
-  
+  const [expandedDescriptions, setExpandedDescriptions] = useState<Set<string>>(() => new Set());
+  const [contextMenuReelId, setContextMenuReelId] = useState<string | null>(null);
+  const [followedAuthors, setFollowedAuthors] = useState<Set<string>>(() => new Set());
+  const [remixReelId, setRemixReelId] = useState<string | null>(null);
+  const [showCaptions, setShowCaptions] = useState(false);
+  const [insightsReelId, setInsightsReelId] = useState<string | null>(null);
+
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRefs = useRef<Map<number, HTMLVideoElement>>(new Map());
   const reelElementRefs = useRef<Map<number, HTMLDivElement>>(new Map());
-  const touchStartY = useRef<number | null>(null);
-  const touchStartAt = useRef<number | null>(null);
   const lastNavAt = useRef<number>(0);
   const viewRecordedForReel = useRef<Set<string>>(new Set());
-  // Progressive tracking state (per reel, per session)
   const impressionRecordedForReel = useRef<Map<string, boolean>>(new Map());
   const viewedRecordedForReel = useRef<Map<string, boolean>>(new Map());
   const watchedRecordedForReel = useRef<Map<string, boolean>>(new Map());
@@ -116,20 +124,41 @@ export function ReelsPage() {
   const errorToastShown = useRef<Set<string>>(new Set());
   const prefetchedVideoUrls = useRef<Set<string>>(new Set());
   const prefetchedPosterUrls = useRef<Set<string>>(new Set());
+  const lastProgressUpdateRef = useRef<number>(0);
   const videoErrorRetries = useRef<Map<string, number>>(new Map());
   const lastProgressRef = useRef(0);
+  const observerRef = useRef<IntersectionObserver | null>(null);
+  const tapTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const reelsRef = useRef(reels);
+  const recordImpressionRef = useRef(recordImpression);
 
   const currentReel = reels[currentIndex];
-  const overlaysOpen = !!commentsReelId || !!shareReelId;
 
-  const syncPlaybackPolicy = useCallback(
-    (nextUserPaused: boolean = isUserPaused) => {
-      const isHidden = typeof document !== "undefined" && document.visibilityState !== "visible";
-      const shouldPause = overlaysOpen || isHidden || nextUserPaused;
-      setIsPlaying(!shouldPause);
-    },
-    [isUserPaused, overlaysOpen],
-  );
+  useEffect(() => { reelsRef.current = reels; }, [reels]);
+  useEffect(() => { recordImpressionRef.current = recordImpression; }, [recordImpression]);
+
+  useEffect(() => {
+    if (!user) return;
+    supabase
+      .from("followers")
+      .select("following_id")
+      .eq("follower_id", user.id)
+      .then(({ data }) => {
+        if (data) setFollowedAuthors(new Set(data.map((f: any) => f.following_id)));
+      });
+  }, [user]);
+
+  const handleFollow = useCallback(async (authorId: string) => {
+    if (!user) { toast.error("Войдите, чтобы подписаться"); navigate("/auth"); return; }
+    const isFollowing = followedAuthors.has(authorId);
+    if (isFollowing) {
+      await supabase.from("followers").delete().eq("follower_id", user.id).eq("following_id", authorId);
+      setFollowedAuthors(prev => { const n = new Set(prev); n.delete(authorId); return n; });
+    } else {
+      await (supabase as any).from("followers").insert({ follower_id: user.id, following_id: authorId });
+      setFollowedAuthors(prev => new Set([...prev, authorId]));
+    }
+  }, [user, followedAuthors, navigate]);
 
   const updateCurrentProgress = useCallback(
     (index: number, video: HTMLVideoElement) => {
@@ -157,10 +186,10 @@ export function ReelsPage() {
         containerRef.current.scrollTo({ top: nextIndex * itemHeight, behavior: "smooth" });
       }
       setCurrentIndex(nextIndex);
-      setIsUserPaused(false);
-      syncPlaybackPolicy(false);
+      // Resume playback after navigation (clears tap-pause)
+      dispatch({ t: "PLAYER_PLAY" });
     },
-    [reels.length, syncPlaybackPolicy],
+    [reels.length],
   );
 
   const navigateRelative = useCallback(
@@ -173,7 +202,6 @@ export function ReelsPage() {
     [commentsReelId, currentIndex, reels.length, scrollToIndex, shareReelId],
   );
 
-  // Auto-load next page when approaching the end.
   useEffect(() => {
     if (loading) return;
     if (loadingMore) return;
@@ -185,25 +213,23 @@ export function ReelsPage() {
     }
   }, [currentIndex, hasMore, loadMore, loading, loadingMore, reels.length]);
 
-  // IntersectionObserver: viewport tracking (50%+ visibility, 1+ sec)
+  // Create IntersectionObserver once (stable)
   useEffect(() => {
     const visibilityTimersMap = visibilityTimers.current;
-    const observer = new IntersectionObserver(
+    observerRef.current = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
           const reelId = entry.target.getAttribute('data-reel-id');
           const reelIndex = parseInt(entry.target.getAttribute('data-reel-index') || '0', 10);
-          const reel = reels[reelIndex];
+          const reel = reelsRef.current[reelIndex];
           if (!reelId || !reel) return;
 
           if (entry.isIntersecting && entry.intersectionRatio >= 0.5) {
-            // Reel is 50%+ visible: start timer for impression (1+ sec)
             if (!visibilityTimers.current.has(reelId)) {
               const timer = setTimeout(() => {
-                // After 1 sec visibility: record impression
                 if (!impressionRecordedForReel.current.get(reelId)) {
                   impressionRecordedForReel.current.set(reelId, true);
-                  recordImpression(reelId, {
+                  recordImpressionRef.current(reelId, {
                     position: reel.feed_position ?? reelIndex,
                     source: 'reels_feed',
                     request_id: reel.request_id,
@@ -215,7 +241,6 @@ export function ReelsPage() {
               visibilityTimers.current.set(reelId, timer);
             }
           } else {
-            // Reel is <50% visible: clear timer
             const timer = visibilityTimers.current.get(reelId);
             if (timer) {
               clearTimeout(timer);
@@ -230,24 +255,34 @@ export function ReelsPage() {
       }
     );
 
-    // Observe all reel elements
-    reelElementRefs.current.forEach((element) => {
-      if (element) observer.observe(element);
-    });
-
     return () => {
-      observer.disconnect();
-      // Clear all visibility timers
+      observerRef.current?.disconnect();
       visibilityTimersMap.forEach((timer) => clearTimeout(timer));
       visibilityTimersMap.clear();
     };
-  }, [reels, recordImpression]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Track watch time: start timer when reel becomes active
+  // Observe/unobserve elements when reel count changes
+  useEffect(() => {
+    const observer = observerRef.current;
+    if (!observer) return;
+
+    const elements = reelElementRefs.current;
+    elements.forEach((el) => {
+      if (el) observer.observe(el);
+    });
+
+    return () => {
+      elements.forEach((el) => {
+        if (el) observer.unobserve(el);
+      });
+    };
+  }, [reels.length]);
+
   useEffect(() => {
     if (!currentReel) return;
     const reelId = currentReel.id;
-    const reelDuration = currentReel.duration_seconds ?? 30; // fallback to 30s
+    const reelDuration = currentReel.duration_seconds ?? 30;
     const reelWatchStartMsMap = reelWatchStartMs.current;
     const reelTotalWatchedMsMap = reelTotalWatchedMs.current;
     const viewedRecordedForReelMap = viewedRecordedForReel.current;
@@ -264,20 +299,17 @@ export function ReelsPage() {
 
         const watchedSeconds = Math.floor(totalWatched / 1000);
 
-        // Progressive Disclosure Layer 1: VIEWED (>2 sec)
         if (watchedSeconds >= 2 && !viewedRecordedForReelMap.get(reelId)) {
           viewedRecordedForReelMap.set(reelId, true);
           recordViewed(reelId, watchedSeconds, reelDuration);
         }
 
-        // Progressive Disclosure Layer 2: WATCHED (>50% completion)
         const completionRate = (watchedSeconds / reelDuration) * 100;
         if (completionRate >= 50 && !watchedRecordedForReelMap.get(reelId)) {
           watchedRecordedForReelMap.set(reelId, true);
           recordWatched(reelId, watchedSeconds, reelDuration);
         }
 
-        // Negative Signal: SKIP (<2 sec when switching away)
         if (watchedSeconds < 2 && !viewedRecordedForReelMap.get(reelId)) {
           recordSkip(reelId, watchedSeconds, reelDuration);
         }
@@ -286,7 +318,6 @@ export function ReelsPage() {
     };
   }, [currentReel, recordViewed, recordWatched, recordSkip]);
 
-  // Prefetch next reels for smoother swipe transitions.
   useEffect(() => {
     lastProgressRef.current = 0;
     setCurrentProgress(0);
@@ -305,6 +336,15 @@ export function ReelsPage() {
     });
   }, [reels.length]);
 
+  // Cleanup prefetch links on unmount
+  useEffect(() => {
+    return () => {
+      document.querySelectorAll('link[data-reel-prefetch="true"]').forEach(el => el.remove());
+      if (prefetchedVideoUrls.current) prefetchedVideoUrls.current.clear();
+      if (prefetchedPosterUrls.current) prefetchedPosterUrls.current.clear();
+    };
+  }, []);
+
   useEffect(() => {
     const candidates = [reels[currentIndex + 1], reels[currentIndex + 2]].filter(Boolean);
     candidates.forEach((reel) => {
@@ -314,6 +354,7 @@ export function ReelsPage() {
         link.rel = "prefetch";
         link.as = "video";
         link.href = reel.video_url;
+        link.dataset.reelPrefetch = "true";
         document.head.appendChild(link);
       }
       if (reel.thumbnail_url && !prefetchedPosterUrls.current.has(reel.thumbnail_url)) {
@@ -324,24 +365,19 @@ export function ReelsPage() {
     });
   }, [currentIndex, reels]);
 
-  // Record view on video play (first view) or after 10s of watch time (repeat view)
   const handleVideoPlay = useCallback(
     (reelId: string, authorId: string) => {
-      // Do not count self-views
       if (user && authorId === user.id) return;
 
       const alreadyRecorded = viewRecordedForReel.current.has(reelId);
       if (!alreadyRecorded) {
-        // First view: record immediately on play
         viewRecordedForReel.current.add(reelId);
         recordView(reelId);
         return;
       }
 
-      // Repeat view: must have watched ≥10 seconds total
       const totalWatched = reelTotalWatchedMs.current.get(reelId) ?? 0;
       if (totalWatched >= 10_000) {
-        // Reset counter and record new view
         reelTotalWatchedMs.current.set(reelId, 0);
         recordView(reelId);
       }
@@ -362,10 +398,10 @@ export function ReelsPage() {
         .then(() => undefined)
         .catch((err) => {
           console.warn("[Reels] Play failed:", err.name);
-          // If unmuted play fails (browser policy), try muted
           if (!video.muted) {
             video.muted = true;
-            setIsMuted(true);
+            // Force mute in FSM as well
+            dispatch({ t: "MUTE_TOGGLE" });
             void video.play().catch((retryErr) => {
               console.error("[Reels] Muted play also failed:", retryErr);
             });
@@ -374,20 +410,19 @@ export function ReelsPage() {
     }
   }, [isMuted]);
 
-  // Handle video play/pause based on current index
+  // --- FSM-driven video synchronisation ---
+  // This replaces the previous imperative useEffect that called tryPlayVideo directly.
+  // The FSM status (PLAYING / PAUSED / BUFFERING) drives actual video element calls.
   useEffect(() => {
     videoRefs.current.forEach((video, index) => {
       if (index === currentIndex && isPlaying) {
-        // Only play if not already playing
         if (video.paused) {
           video.muted = isMuted;
           tryPlayVideo(index);
         } else {
-          // Just sync muted state if already playing
           video.muted = isMuted;
         }
       } else {
-        // Pause non-current videos
         if (!video.paused) {
           video.pause();
         }
@@ -395,24 +430,16 @@ export function ReelsPage() {
     });
   }, [currentIndex, isMuted, isPlaying, tryPlayVideo]);
 
-  // Pause policy: overlay open/close + app background/foreground.
-  useEffect(() => {
-    if (overlaysOpen) {
-      syncPlaybackPolicy();
-      return;
-    }
-    syncPlaybackPolicy();
-  }, [overlaysOpen, syncPlaybackPolicy]);
-
+  // Sync document visibility changes into FSM
   useEffect(() => {
     const onVisibilityChange = () => {
-      syncPlaybackPolicy();
+      dispatch({ t: "VISIBILITY_CHANGED", isVisible: document.visibilityState === "visible" });
     };
     document.addEventListener("visibilitychange", onVisibilityChange);
     return () => document.removeEventListener("visibilitychange", onVisibilityChange);
-  }, [syncPlaybackPolicy]);
+  }, []);
 
-  // Sync muted state separately (don't retrigger play)
+  // Sync muted state to current video when it changes
   useEffect(() => {
     const currentVideo = videoRefs.current.get(currentIndex);
     if (currentVideo) {
@@ -420,7 +447,6 @@ export function ReelsPage() {
     }
   }, [isMuted, currentIndex]);
 
-  // Native scroll handler - detect which reel is visible
   const handleScroll = useCallback(() => {
     if (!containerRef.current) return;
     
@@ -431,15 +457,13 @@ export function ReelsPage() {
 
     if (newIndex !== currentIndex && newIndex >= 0 && newIndex < reels.length) {
       setCurrentIndex(newIndex);
-      setIsUserPaused(false);
-      syncPlaybackPolicy(false);
+      // Clear tap-pause on scroll navigation
+      dispatch({ t: "PLAYER_PLAY" });
     }
-  }, [currentIndex, reels.length, syncPlaybackPolicy]);
+  }, [currentIndex, reels.length]);
 
   const handleWheel = useCallback(
     (e: React.WheelEvent) => {
-      // Desktop convenience: wheel/trackpad scrolls one reel at a time.
-      // Keep native touch scroll-snap for mobile.
       if (commentsReelId || shareReelId) return;
       if (!reels.length) return;
 
@@ -454,52 +478,6 @@ export function ReelsPage() {
       navigateRelative(dy > 0 ? 1 : -1);
     },
     [commentsReelId, navigateRelative, reels.length, shareReelId],
-  );
-
-  const handleTouchStart = useCallback((e: React.TouchEvent) => {
-    if (e.touches.length !== 1) return;
-    touchStartY.current = e.touches[0].clientY;
-    touchStartAt.current = Date.now();
-  }, []);
-
-  const handleTouchEnd = useCallback(
-    (e: React.TouchEvent) => {
-      const startY = touchStartY.current;
-      const startAt = touchStartAt.current;
-      touchStartY.current = null;
-      touchStartAt.current = null;
-
-      if (startY == null || startAt == null) return;
-      const endY = e.changedTouches[0]?.clientY;
-      if (typeof endY !== "number") return;
-
-      const dy = endY - startY;
-      const dt = Date.now() - startAt;
-
-      // Debounce nav: avoid double-trigger on some devices.
-      const now = Date.now();
-      if (now - lastNavAt.current < REELS_NAV_COOLDOWN_MS) return;
-
-      // Fallback swipe navigation: helpful on devices where nested scroll + snap is flaky.
-      // Only trigger on a reasonably fast, deliberate swipe.
-      if (dt > 800) {
-        return;
-      }
-      if (Math.abs(dy) < 60) {
-        return;
-      }
-
-      lastNavAt.current = now;
-
-      if (dy < 0) {
-        // swipe up -> next
-        navigateRelative(1);
-      } else {
-        // swipe down -> prev
-        navigateRelative(-1);
-      }
-    },
-    [navigateRelative],
   );
 
   const handleLike = useCallback((reelId: string) => {
@@ -535,7 +513,6 @@ export function ReelsPage() {
         await setReelFeedback(reelId, feedback);
         toast.success(feedback === "interested" ? "Учтём ваши интересы" : "Покажем меньше такого");
         if (feedback === "not_interested") {
-          // Best-effort: refresh feed so the item disappears sooner.
           refetch();
         }
       } catch {
@@ -547,18 +524,15 @@ export function ReelsPage() {
 
   const togglePlay = useCallback(() => {
     if (isPlaying) {
-      setIsUserPaused(true);
-      syncPlaybackPolicy(true);
-      return;
+      dispatch({ t: "PLAYER_PAUSE", reason: "tap" });
+    } else {
+      dispatch({ t: "PLAYER_PLAY" });
     }
-
-    setIsUserPaused(false);
-    syncPlaybackPolicy(false);
-  }, [isPlaying, syncPlaybackPolicy]);
+  }, [isPlaying]);
 
   const toggleMute = useCallback(() => {
-    setIsMuted(!isMuted);
-  }, [isMuted]);
+    dispatch({ t: "MUTE_TOGGLE" });
+  }, []);
 
   const handleVideoError = useCallback((reelId: string, index: number) => {
     setFailedVideoIds((prev) => {
@@ -599,43 +573,62 @@ export function ReelsPage() {
     }
   }, [currentIndex, isPlaying, tryPlayVideo]);
 
-  // Double tap to like
-  const lastTap = useRef<number>(0);
   const [showHeartAnimation, setShowHeartAnimation] = useState(false);
-  
-  const handleDoubleTap = useCallback((reelId: string, isLiked: boolean) => {
-    const now = Date.now();
-    if (now - lastTap.current < 300) {
-      if (!isLiked) {
-        handleLike(reelId);
-      }
+
+  const handleTap = useCallback((reelId: string, isLiked: boolean) => {
+    if (tapTimeoutRef.current) {
+      clearTimeout(tapTimeoutRef.current);
+      tapTimeoutRef.current = null;
+      if (!isLiked) handleLike(reelId);
       setShowHeartAnimation(true);
       setTimeout(() => setShowHeartAnimation(false), 1000);
     } else {
-      togglePlay();
+      tapTimeoutRef.current = setTimeout(() => {
+        tapTimeoutRef.current = null;
+      }, 300);
     }
-    lastTap.current = now;
-  }, [handleLike, togglePlay]);
+  }, [handleLike]);
+
+  const handleTimeUpdate = useCallback((index: number, videoEl: HTMLVideoElement) => {
+    const now = Date.now();
+    if (now - lastProgressUpdateRef.current < 250) return; // Throttle: max 4 updates/sec
+    lastProgressUpdateRef.current = now;
+    updateCurrentProgress(index, videoEl);
+  }, [updateCurrentProgress]);
+
+  const handleLongPress = useCallback((reelId: string) => {
+    setContextMenuReelId(reelId);
+  }, []);
+
+  const {
+    handleTouchStart,
+    handleTouchEnd,
+    handleReelTouchStart,
+    handleReelTouchEnd,
+    handlePointerDown,
+    handlePointerUp,
+    clearLongPress,
+  } = useReelGestures({
+    onSwipeUp: () => navigateRelative(1),
+    onSwipeDown: () => navigateRelative(-1),
+    onTap: handleTap,
+    onLongPress: handleLongPress,
+    onSwipeLeft: (authorId) => navigate(`/user/${authorId}`),
+    lastNavAt,
+  });
 
   if (loading) {
     return (
-      <div className="min-h-[calc(100vh-4rem)] bg-transparent flex items-center justify-center">
+      <div className="min-h-[100dvh] bg-transparent flex items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-white" />
       </div>
     );
   }
 
-  const header = (
-    <header className="sticky top-0 z-30 safe-area-top backdrop-blur-xl bg-black/20 border-b border-white/10">
-      <div className="h-12 px-3 flex items-center" />
-    </header>
-  );
-
   if (reels.length === 0) {
     return (
-      <div className="min-h-[calc(100vh-4rem)] bg-transparent text-white">
-        {header}
-        <div className="flex flex-col items-center justify-center text-white px-4" style={{ minHeight: "calc(100vh - 4rem - 3rem)" }}>
+      <div className="min-h-[100dvh] bg-transparent text-white">
+        <div className="flex flex-col items-center justify-center text-white px-4 min-h-[100dvh]">
           <Play className="w-16 h-16 mb-4 opacity-40" />
           <h2 className="text-lg font-semibold mb-2">Нет Reels</h2>
           <p className="text-white/60 text-center px-8 mb-6">
@@ -662,11 +655,10 @@ export function ReelsPage() {
   }
 
   return (
-    <div className="h-[calc(100vh-4rem)] bg-transparent">
-      {header}
+    <div className="h-[100dvh] bg-transparent">
       <div
         ref={containerRef}
-        className="h-[calc(100vh-4rem-3rem)] overflow-y-auto overflow-x-hidden scrollbar-hide"
+        className="h-[100dvh] overflow-y-auto overflow-x-hidden scrollbar-hide"
         onScroll={handleScroll}
         onWheel={handleWheel}
         onTouchStart={handleTouchStart}
@@ -687,117 +679,43 @@ export function ReelsPage() {
           }}
           data-reel-id={reel.id}
           data-reel-index={index}
-          className="relative w-full h-[calc(100vh-4rem-3rem)] flex-shrink-0"
+          className="relative w-full h-[100dvh] flex-shrink-0"
           style={{
             scrollSnapAlign: 'start',
             scrollSnapStop: 'always',
           }}
-          onClick={() => handleDoubleTap(reel.id, reel.isLiked || false)}
+          onPointerDown={() => handlePointerDown(reel.id, reel.isLiked || false)}
+          onPointerUp={() => handlePointerUp(reel.id, reel.isLiked || false)}
+          onPointerLeave={clearLongPress}
+          onTouchStart={handleReelTouchStart}
+          onTouchEnd={(e) => handleReelTouchEnd(reel.author_id, e)}
         >
           {/* Video/Image Background */}
-          <div className="absolute inset-0 overflow-hidden" style={{ zIndex: 0 }}>
-            {isProbablyVideoUrl(reel.video_url) && !failedVideoIds.has(reel.id) ? (
-              <video
-                ref={(el) => {
-                  if (el) {
-                    videoRefs.current.set(index, el);
-                    // Playback attributes (some mobile webviews are picky)
-                    el.setAttribute('webkit-playsinline', 'true');
-                    el.setAttribute('x5-playsinline', 'true');
-                  } else {
-                    videoRefs.current.delete(index);
-                  }
-                }}
-                src={reel.video_url}
-                className="w-full h-full"
-                style={{
-                  backgroundColor: '#000',
-                  objectFit: 'contain',
-                  zIndex: 1,
-                  display: 'block',
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  width: '100%',
-                  height: '100%',
-                }}
-                loop
-                muted={isMuted}
-                playsInline
-                autoPlay={index === currentIndex && isPlaying}
-                preload="auto"
-                onError={(e) => {
-                  console.error("[Reels] Video ERROR:", reel.id, e);
-                  handleVideoError(reel.id, index);
-                }}
-                onLoadedMetadata={(e) => {
-                  const vid = e.currentTarget;
-                  console.log("[Reels] ✓ Metadata loaded:", {
-                    id: reel.id.slice(0,8),
-                    videoSize: `${vid.videoWidth}x${vid.videoHeight}`,
-                    displaySize: `${vid.clientWidth}x${vid.clientHeight}`,
-                    duration: vid.duration.toFixed(1),
-                  });
-                  updateCurrentProgress(index, vid);
-                }}
-                onLoadedData={() => {
-                  if (index === currentIndex && isPlaying) tryPlayVideo(index);
-                }}
-                onPlay={(e) => {
-                  const vid = e.currentTarget;
-                  console.log("[Reels] ▶ Video PLAY:", {
-                    paused: vid.paused,
-                    currentTime: vid.currentTime,
-                    width: vid.offsetWidth,
-                    height: vid.offsetHeight,
-                    visible: vid.offsetParent !== null,
-                    display: getComputedStyle(vid).display,
-                  });
-                  handleVideoPlay(reel.id, reel.author_id);
-                }}
-                onPlaying={() => {
-                  // Video is actually playing now
-                }}
-                onPause={() => {
-                  // Video paused
-                }}
-                onTimeUpdate={(e) => {
-                  updateCurrentProgress(index, e.currentTarget);
-                }}
-              />
-            ) : reel.thumbnail_url ? (
-              <img
-                src={reel.thumbnail_url}
-                alt=""
-                className="w-full h-full object-cover"
-              />
-            ) : (
-              <div className="w-full h-full bg-black flex items-center justify-center">
-                <Play className="w-12 h-12 text-white/60" />
-              </div>
-            )}
-
-            {/* Play/Pause indicator */}
-            {index === currentIndex && !isPlaying && (
-              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <div className="w-20 h-20 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center animate-scale-in">
-                  <Play className="w-10 h-10 text-white fill-white ml-1" />
-                </div>
-              </div>
-            )}
-            
-            {/* Double tap heart animation */}
-            {index === currentIndex && showHeartAnimation && (
-              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <Heart 
-                  className="w-28 h-28 text-white fill-white animate-[heartBurst_1s_ease-out_forwards]" 
-                  style={{
-                    filter: 'drop-shadow(0 0 20px rgba(255,255,255,0.5))',
-                  }}
-                />
-              </div>
-            )}
-          </div>
+          <ReelPlayer
+            reel={reel}
+            index={index}
+            currentIndex={currentIndex}
+            isMuted={isMuted}
+            isPlaying={isPlaying}
+            showHeartAnimation={showHeartAnimation}
+            failedVideoIds={failedVideoIds}
+            onVideoRef={(idx, el) => {
+              if (el) {
+                videoRefs.current.set(idx, el);
+                el.setAttribute('webkit-playsinline', 'true');
+                el.setAttribute('x5-playsinline', 'true');
+              } else {
+                videoRefs.current.delete(idx);
+              }
+            }}
+            onError={() => handleVideoError(reel.id, index)}
+            onLoadedMetadata={(e) => updateCurrentProgress(index, e.currentTarget)}
+            onLoadedData={() => {
+              if (index === currentIndex && isPlaying) tryPlayVideo(index);
+            }}
+            onPlay={() => handleVideoPlay(reel.id, reel.author_id)}
+            onTimeUpdate={(e) => handleTimeUpdate(index, e.currentTarget)}
+          />
 
           {/* Gradient overlays */}
           <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-black/60 to-transparent pointer-events-none" style={{ zIndex: 2 }} />
@@ -822,237 +740,109 @@ export function ReelsPage() {
           )}
 
           {/* Right sidebar actions */}
-          <div className="absolute right-3 bottom-8 flex flex-col items-center gap-4 z-10">
-            <button
-              className="flex flex-col items-center gap-1"
-              onClick={(e) => {
-                e.stopPropagation();
-                if (!user) {
-                  toast.error("Войдите, чтобы создавать Reels");
-                  navigate('/auth');
-                  return;
-                }
-                navigate('/create?tab=reels&auto=1');
-              }}
-              aria-label="Создать Reel"
-              title="Создать Reel"
-            >
-              <div className="w-12 h-12 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center">
-                <Play className="w-6 h-6 text-white" />
-              </div>
-              <span className="text-white text-xs font-medium">Создать</span>
-            </button>
+          <ReelSidebar
+            reel={reel}
+            onLike={() => handleLike(reel.id)}
+            onComment={() => {
+              setCommentsReelId(reel.id);
+              dispatch({ t: "OPEN_COMMENTS" });
+            }}
+            onShare={() => {
+              if (!user) {
+                toast.error("Войдите, чтобы поделиться");
+                navigate("/auth");
+                return;
+              }
+              setShareReelId(reel.id);
+              dispatch({ t: "SHARE_OPEN" });
+            }}
+            onSave={() => handleSave(reel.id)}
+            onAuthorClick={() => {
+              if (reel.author_id) navigate(`/user/${reel.author_id}`);
+            }}
+          />
 
-            {/* Feedback */}
-            <button
-              className="flex flex-col items-center gap-1"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleFeedback(reel.id, "interested");
-              }}
-              title="Интересно"
-            >
-              <div className="w-12 h-12 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center">
-                <span className="text-white text-lg">👍</span>
-              </div>
-              <span className="text-white text-xs font-medium">Интересно</span>
-            </button>
+          {/* Bottom overlay: author info, description, music */}
+          <ReelOverlay
+            reel={reel}
+            user={user}
+            followedAuthors={followedAuthors}
+            expandedDescriptions={expandedDescriptions}
+            onAuthorClick={() => navigate(`/user/${reel.author_id}`)}
+            onFollow={() => handleFollow(reel.author_id)}
+            onHashtagClick={(tag) => navigate(`/hashtag/${tag}`)}
+            onMusicClick={() => {
+              if ((reel as any).audio_id) navigate(`/reels/audio/${(reel as any).audio_id}`);
+            }}
+            onExpandDescription={() => setExpandedDescriptions(prev => {
+              const n = new Set(prev);
+              expandedDescriptions.has(reel.id) ? n.delete(reel.id) : n.add(reel.id);
+              return n;
+            })}
+            onContextMenu={() => setContextMenuReelId(reel.id)}
+          />
 
-            <button
-              className="flex flex-col items-center gap-1"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleFeedback(reel.id, "not_interested");
-              }}
-              title="Не интересно"
+          {/* Context menu overlay */}
+          {contextMenuReelId === reel.id && (
+            <div
+              className="absolute inset-0 z-40 bg-black/50 flex items-end"
+              onClick={(e) => { e.stopPropagation(); setContextMenuReelId(null); }}
             >
-              <div className="w-12 h-12 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center">
-                <span className="text-white text-lg">👎</span>
+              <div className="w-full bg-zinc-900 rounded-t-2xl p-4 space-y-1" onClick={(e) => e.stopPropagation()}>
+                <button
+                  type="button"
+                  className="w-full flex items-center gap-3 px-4 py-3 text-white hover:bg-white/10 rounded-xl"
+                  onClick={() => { setContextMenuReelId(null); handleFeedback(reel.id, "not_interested"); }}
+                >
+                  <EyeOff className="w-5 h-5" /> Не интересно
+                </button>
+                <button
+                  type="button"
+                  className="w-full flex items-center gap-3 px-4 py-3 text-white hover:bg-white/10 rounded-xl"
+                  onClick={() => { setContextMenuReelId(null); handleSave(reel.id); }}
+                >
+                  <Bookmark className="w-5 h-5" /> Сохранить
+                </button>
+                <button
+                  type="button"
+                  className="w-full flex items-center gap-3 px-4 py-3 text-red-400 hover:bg-white/10 rounded-xl"
+                  onClick={() => { setContextMenuReelId(null); toast.info("Жалоба отправлена"); }}
+                >
+                  <Flag className="w-5 h-5" /> Пожаловаться
+                </button>
+                <button
+                  type="button"
+                  className="w-full px-4 py-3 text-white/60 hover:bg-white/10 rounded-xl"
+                  onClick={() => setContextMenuReelId(null)}
+                >
+                  Отмена
+                </button>
               </div>
-              <span className="text-white text-xs font-medium">Не интересно</span>
-            </button>
-
-            {/* Like */}
-            <button 
-              className="flex flex-col items-center gap-1" 
-              onClick={(e) => { e.stopPropagation(); handleLike(reel.id); }}
-            >
-              <div
-                className={cn(
-                  "w-12 h-12 rounded-full flex items-center justify-center transition-all duration-200",
-                  reel.isLiked ? "bg-destructive/20 scale-110" : "bg-white/10 backdrop-blur-sm"
-                )}
-              >
-                <Heart
-                  className={cn(
-                    "w-7 h-7 transition-all duration-200",
-                    reel.isLiked ? "text-destructive fill-destructive scale-110" : "text-white"
-                  )}
-                />
-              </div>
-              <span className="text-white text-xs font-medium">
-                {reel.likes_count > 0 ? formatNumber(reel.likes_count) : ""}
-              </span>
-            </button>
-
-            {/* Comments */}
-            <button 
-              className="flex flex-col items-center gap-1" 
-              onClick={(e) => { 
-                e.stopPropagation(); 
-                setCommentsReelId(reel.id);
-              }}
-            >
-              <div className="w-12 h-12 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center">
-                <MessageCircle className="w-7 h-7 text-white" />
-              </div>
-              <span className="text-white text-xs font-medium">
-                {reel.comments_count > 0 ? formatNumber(reel.comments_count) : ""}
-              </span>
-            </button>
-
-            {/* Share */}
-            <button 
-              className="flex flex-col items-center gap-1" 
-              onClick={(e) => { 
-                e.stopPropagation(); 
-                if (!user) {
-                  toast.error("Войдите, чтобы поделиться");
-                  navigate("/auth");
-                  return;
-                }
-                setShareReelId(reel.id);
-              }}
-            >
-              <div className="w-12 h-12 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center">
-                <Send className="w-6 h-6 text-white" />
-              </div>
-              <span className="text-white text-xs font-medium">Отправить</span>
-            </button>
-
-            {/* Repost */}
-            <button
-              className="flex flex-col items-center gap-1"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleRepost(reel.id);
-              }}
-            >
-              <div
-                className={cn(
-                  "w-12 h-12 rounded-full flex items-center justify-center transition-all duration-200",
-                  reel.isReposted ? "bg-white/20 scale-110" : "bg-white/10 backdrop-blur-sm",
-                )}
-              >
-                <Repeat2
-                  className={cn(
-                    "w-6 h-6 transition-all duration-200",
-                    reel.isReposted ? "text-white scale-110" : "text-white",
-                  )}
-                />
-              </div>
-              <span className="text-white text-xs font-medium">
-                {(reel.reposts_count || 0) > 0 ? formatNumber(reel.reposts_count || 0) : ""}
-              </span>
-            </button>
-
-            {/* Save */}
-            <button
-              className="flex flex-col items-center gap-1"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleSave(reel.id);
-              }}
-            >
-              <div
-                className={cn(
-                  "w-12 h-12 rounded-full flex items-center justify-center transition-all duration-200",
-                  reel.isSaved ? "bg-white/20 scale-110" : "bg-white/10 backdrop-blur-sm",
-                )}
-              >
-                <Bookmark
-                  className={cn(
-                    "w-6 h-6 transition-all duration-200",
-                    reel.isSaved ? "text-white fill-white scale-110" : "text-white",
-                  )}
-                />
-              </div>
-              <span className="text-white text-xs font-medium">
-                {(reel.saves_count || 0) > 0 ? formatNumber(reel.saves_count || 0) : ""}
-              </span>
-            </button>
-
-            {/* Author avatar */}
-            <button
-              className="relative"
-              onClick={(e) => {
-                e.stopPropagation();
-                // Always navigate by author_id (user_id) to ensure correct profile
-                if (reel.author_id) {
-                  navigate(`/user/${reel.author_id}`);
-                }
-              }}
-            >
-              <Avatar className="w-11 h-11 border-2 border-white">
-                <AvatarImage src={reel.author?.avatar_url || undefined} />
-                <AvatarFallback className="bg-muted">
-                  <User className="w-5 h-5" />
-                </AvatarFallback>
-              </Avatar>
-              <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-5 h-5 rounded-full bg-primary flex items-center justify-center">
-                <span className="text-primary-foreground text-xs font-bold">+</span>
-              </div>
-            </button>
-          </div>
-
-          <div className="absolute left-4 right-20 bottom-4 z-10">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-white font-semibold">
-                @{reel.author?.display_name || "user"}
-              </span>
-              {reel.author?.verified && <VerifiedBadge size="sm" />}
             </div>
-            {reel.description && (
-              <p className="text-white/90 text-sm line-clamp-2 mb-3">
-                {reel.description}
-              </p>
-            )}
-            {reel.music_title && (
-              <div className="flex items-center gap-2 mb-3">
-                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-secondary flex items-center justify-center animate-spin-slow">
-                  <Music2 className="w-4 h-4 text-white" />
-                </div>
-                <span className="text-white/80 text-sm">{reel.music_title}</span>
-              </div>
-            )}
-            <div className="text-white/80">
-              <RankingExplanation
-                algorithm_version={reel.algorithm_version}
-                final_score={reel.final_score}
-                ranking_reason={reel.ranking_reason}
-                source_pool={reel.source_pool}
-                feed_position={reel.feed_position}
-              />
-            </div>
-          </div>
+          )}
         </div>
       ))}
 
-      {/* Current reel progress */}
-      <div className="fixed top-3 left-1/2 -translate-x-1/2 w-[min(360px,calc(100%-2rem))] h-1.5 rounded-full bg-white/30 overflow-hidden z-20">
+      </div>
+
+      {/* Current reel progress — outside scroll container, fixed position */}
+      <div
+        className="fixed left-1/2 -translate-x-1/2 w-[min(360px,calc(100%-2rem))] h-1.5 rounded-full bg-white/30 overflow-hidden z-20 pointer-events-none"
+        style={{ top: 'max(0.75rem, env(safe-area-inset-top, 0px))' }}
+      >
         <div
-          className="h-full bg-white transition-[width] duration-100 linear"
+          className="h-full bg-white transition-[width] duration-100 ease-linear"
           style={{ width: `${Math.round(currentProgress * 100)}%` }}
         />
       </div>
 
-      </div>
-
-      
       {/* Share Sheet */}
       <ReelShareSheet
         isOpen={!!shareReelId}
-        onClose={() => setShareReelId(null)}
+        onClose={() => {
+          setShareReelId(null);
+          dispatch({ t: "SHARE_CLOSE" });
+        }}
         reelId={shareReelId || ""}
       />
 
@@ -1061,30 +851,31 @@ export function ReelsPage() {
           isOpen={!!commentsReelId}
           onClose={() => {
             setCommentsReelId(null);
-            refetch();
+            dispatch({ t: "CLOSE_COMMENTS" });
           }}
           reelId={commentsReelId}
           commentsCount={reels.find(r => r.id === commentsReelId)?.comments_count || 0}
         />
       )}
+      {/* Remix Sheet */}
+      {remixReelId && (
+        <RemixReelSheet
+          isOpen={!!remixReelId}
+          onClose={() => setRemixReelId(null)}
+          originalReelId={remixReelId}
+          originalVideoUrl={reels.find((r) => r.id === remixReelId)?.video_url || ""}
+          onStartRecording={() => { setRemixReelId(null); toast.info("Открой камеру для записи Remix"); }}
+        />
+      )}
 
-      {/* Keyframes for heart animation */}
-      <style>{`
-        @keyframes heartBurst {
-          0% {
-            transform: scale(0);
-            opacity: 1;
-          }
-          50% {
-            transform: scale(1.2);
-            opacity: 1;
-          }
-          100% {
-            transform: scale(1);
-            opacity: 0;
-          }
-        }
-      `}</style>
+      {/* Insights */}
+      {insightsReelId && (
+        <ReelInsights
+          reelId={insightsReelId}
+          isOpen={!!insightsReelId}
+          onClose={() => setInsightsReelId(null)}
+        />
+      )}
     </div>
   );
 }

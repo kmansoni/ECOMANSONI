@@ -1,0 +1,106 @@
+/**
+ * AdjustmentsPanel — ручные настройки изображения через CSS filter
+ */
+import React from "react";
+import { Slider } from "@/components/ui/slider";
+
+export interface Adjustments {
+  brightness: number;   // -100..+100
+  contrast: number;
+  saturation: number;
+  warmth: number;       // сдвиг hue
+  shadows: number;
+  highlights: number;
+  vignette: number;
+  sharpness: number;
+  grain: number;
+}
+
+export const DEFAULT_ADJUSTMENTS: Adjustments = {
+  brightness: 0,
+  contrast: 0,
+  saturation: 0,
+  warmth: 0,
+  shadows: 0,
+  highlights: 0,
+  vignette: 0,
+  sharpness: 0,
+  grain: 0,
+};
+
+export function adjustmentsToFilter(adj: Adjustments): React.CSSProperties {
+  const brightness = 1 + adj.brightness / 100;
+  const contrast = 1 + adj.contrast / 100;
+  const saturate = 1 + adj.saturation / 100;
+  const hueRotate = adj.warmth * 0.5; // warmth → небольшой hue-rotate
+  // shadows/highlights через brightness аппроксимация
+  const shadowAdj = 1 + adj.shadows / 200;
+  const highlightAdj = 1 + adj.highlights / 200;
+  const totalBrightness = brightness * shadowAdj * highlightAdj;
+
+  return {
+    filter: [
+      `brightness(${totalBrightness.toFixed(2)})`,
+      `contrast(${contrast.toFixed(2)})`,
+      `saturate(${saturate.toFixed(2)})`,
+      adj.warmth !== 0 ? `hue-rotate(${hueRotate.toFixed(0)}deg)` : "",
+      adj.sharpness > 0 ? `drop-shadow(0 0 ${(adj.sharpness / 100).toFixed(2)}px rgba(0,0,0,0.5))` : "",
+    ].filter(Boolean).join(" "),
+  };
+}
+
+const PARAMS: { key: keyof Adjustments; label: string; min: number; max: number }[] = [
+  { key: "brightness", label: "Яркость", min: -100, max: 100 },
+  { key: "contrast", label: "Контраст", min: -100, max: 100 },
+  { key: "saturation", label: "Насыщенность", min: -100, max: 100 },
+  { key: "warmth", label: "Теплота", min: -100, max: 100 },
+  { key: "shadows", label: "Тени", min: -100, max: 100 },
+  { key: "highlights", label: "Светлые участки", min: -100, max: 100 },
+  { key: "vignette", label: "Виньетка", min: 0, max: 100 },
+  { key: "sharpness", label: "Резкость", min: 0, max: 100 },
+  { key: "grain", label: "Зернистость", min: 0, max: 100 },
+];
+
+interface Props {
+  adjustments: Adjustments;
+  onChange: (adj: Adjustments) => void;
+}
+
+export function AdjustmentsPanel({ adjustments, onChange }: Props) {
+  const handleChange = (key: keyof Adjustments, value: number) => {
+    onChange({ ...adjustments, [key]: value });
+  };
+
+  const reset = () => onChange(DEFAULT_ADJUSTMENTS);
+
+  const hasChanges = Object.entries(adjustments).some(([, v]) => v !== 0);
+
+  return (
+    <div className="flex flex-col gap-3 px-2">
+      {PARAMS.map(({ key, label, min, max }) => (
+        <div key={key} className="flex items-center gap-3">
+          <span className="text-xs text-white/70 w-32 flex-shrink-0">{label}</span>
+          <Slider
+            value={[adjustments[key]]}
+            onValueChange={([v]) => handleChange(key, v)}
+            min={min}
+            max={max}
+            step={1}
+            className="flex-1"
+          />
+          <span className="text-xs text-white/60 w-8 text-right">
+            {adjustments[key] > 0 ? "+" : ""}{adjustments[key]}
+          </span>
+        </div>
+      ))}
+      {hasChanges && (
+        <button
+          onClick={reset}
+          className="self-end text-xs text-primary underline mt-1"
+        >
+          Сбросить
+        </button>
+      )}
+    </div>
+  );
+}

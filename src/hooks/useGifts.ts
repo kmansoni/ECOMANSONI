@@ -1,0 +1,180 @@
+import { useState, useEffect, useCallback, useRef } from "react";
+import { supabase } from "@/lib/supabase";
+import { useAuth } from "./useAuth";
+import { toast } from "sonner";
+
+export interface GiftCatalogItem {
+  id: string;
+  name: string;
+  emoji: string;
+  description?: string | null;
+  price_stars: number;
+  animation_url?: string | null;
+  category: string;
+  rarity: "common" | "rare" | "epic" | "legendary";
+  is_available: boolean;
+  sort_order: number;
+}
+
+export interface SentGift {
+  id: string;
+  gift_id: string;
+  sender_id: string;
+  recipient_id: string;
+  conversation_id: string;
+  message_id?: string | null;
+  message_text?: string | null;
+  stars_spent: number;
+  is_opened: boolean;
+  opened_at?: string | null;
+  created_at: string;
+  gift?: GiftCatalogItem;
+}
+
+let catalogCache: GiftCatalogItem[] | null = null;
+
+export function useGifts() {
+  const { user } = useAuth();
+  const [catalog, setCatalog] = useState<GiftCatalogItem[]>(catalogCache ?? []);
+  const [receivedGifts, setReceivedGifts] = useState<SentGift[]>([]);
+  const [sentGifts, setSentGifts] = useState<SentGift[]>([]);
+  const [loading, setLoading] = useState(false);
+  const fetchingCatalog = useRef(false);
+
+  const fetchCatalog = useCallback(async () => {
+    if (catalogCache) {
+      setCatalog(catalogCache);
+      return;
+    }
+    if (fetchingCatalog.current) return;
+    fetchingCatalog.current = true;
+    try {
+      const { data } = await (supabase as any)
+        .from("gift_catalog")
+        .select("*")
+        .eq("is_available", true)
+        .order("sort_order", { ascending: true });
+      catalogCache = data ?? [];
+      setCatalog(catalogCache!);
+    } catch (e) {
+      console.error("fetchCatalog error", e);
+    } finally {
+      fetchingCatalog.current = false;
+    }
+  }, []);
+
+  const fetchReceivedGifts = useCallback(async () => {
+    if (!user) return;
+    try {
+      const { data } = await (supabase as any)
+        .from("sent_gifts")
+        .select("*, gift:gift_catalog(*)")
+        .eq("recipient_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(50);
+      setReceivedGifts(data ?? []);
+    } catch (e) {
+      console.error("fetchReceivedGifts error", e);
+    }
+  }, [user]);
+
+  const fetchSentGifts = useCallback(async () => {
+    if (!user) return;
+    try {
+      const { data } = await (supabase as any)
+        .from("sent_gifts")
+        .select("*, gift:gift_catalog(*)")
+        .eq("sender_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(50);
+      setSentGifts(data ?? []);
+    } catch (e) {
+      console.error("fetchSentGifts error", e);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    fetchCatalog();
+  }, [fetchCatalog]);
+
+  useEffect(() => {
+    if (!user) return;
+    setLoading(true);
+    Promise.all([fetchReceivedGifts(), fetchSentGifts()]).finally(() =>
+      setLoading(false)
+    );
+  }, [user, fetchReceivedGifts, fetchSentGifts]);
+
+  const sendGift = useCallback(
+    async (params: {
+      recipientId: string;
+      giftId: string;
+      conversationId: string;
+      messageText?: string;
+    }): Promise<{ ok: boolean; error?: string; sentGiftId?: string; giftEmoji?: string; giftName?: string }> => {
+      if (!user) return { ok: false, error: "not_authenticated" };
+      try {
+        const { data, error } = await (supabase as any).rpc("send_gift_v1", {
+          p_sender_id: user.id,
+          p_recipient_id: params.recipientId,
+          p_gift_id: params.giftId,
+          p_conversation_id: params.conversationId,
+          p_message_text: params.messageText ?? null,
+        });
+        if (error) {
+          console.error("send_gift_v1 error", error);
+          return { ok: false, error: error.message };
+        }
+        if (!data?.ok) {
+          return { ok: false, error: data?.error ?? "unknown" };
+        }
+        return {
+          ok: true,
+          sentGiftId: data.sent_gift_id,
+          giftEmoji: data.gift_emoji,
+          giftName: data.gift_name,
+        };
+      } catch (e: any) {
+        return { ok: false, error: e?.message ?? "unknown" };
+      }
+    },
+    [user]
+  );
+
+  const openGift = useCallback(
+    async (sentGiftId: string) => {
+      if (!user) return;
+      try {
+        await (supabase as any)
+          .from("sent_gifts")
+          .update({ is_opened: true, opened_at: new Date().toISOString() })
+          .eq("id", sentGiftId)
+          .eq("recipient_id", user.id);
+        setReceivedGifts((prev) =>
+          prev.map((g) =>
+            g.id === sentGiftId
+              ? { ...g, is_opened: true, opened_at: new Date().toISOString() }
+              : g
+          )
+        );
+      } catch (e) {
+        console.error("openGift error", e);
+        toast.error("Не удалось открыть подарок");
+      }
+    },
+    [user]
+  );
+
+  return {
+    catalog,
+    loading,
+    sendGift,
+    receivedGifts,
+    sentGifts,
+    openGift,
+    refetch: () => {
+      fetchReceivedGifts();
+      fetchSentGifts();
+    },
+  };
+}

@@ -6,6 +6,78 @@
 All colors MUST be HSL.
 */
 
+/* ============================================================
+   ACCESSIBILITY (WCAG 2.1)
+   ============================================================ */
+
+/* Масштаб шрифта */
+:root {
+  --font-scale: 1;
+}
+body.font-sm  { --font-scale: 0.875; }
+body.font-lg  { --font-scale: 1.125; }
+body.font-xl  { --font-scale: 1.25; }
+
+/* Применяем масштаб к базовому шрифту */
+html {
+  font-size: calc(16px * var(--font-scale));
+}
+
+/* Высокий контраст */
+body.high-contrast {
+  --border: 215 20% 40%;
+  --ring: 215 80% 60%;
+}
+body.high-contrast *:not([aria-hidden="true"]) {
+  outline-color: hsl(var(--ring)) !important;
+}
+body.high-contrast .border-border,
+body.high-contrast [class*="border-"] {
+  border-width: 2px !important;
+}
+body.high-contrast .shadow,
+body.high-contrast .shadow-sm,
+body.high-contrast .shadow-md,
+body.high-contrast .shadow-lg {
+  box-shadow: 0 0 0 2px hsl(var(--border)) !important;
+}
+
+/* Уменьшение анимаций */
+body.reduce-motion *,
+body.reduce-motion *::before,
+body.reduce-motion *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+
+/* Цветовые фильтры для дальтонизма */
+body.filter-protanopia  { filter: url(#protanopia); }
+body.filter-deuteranopia { filter: url(#deuteranopia); }
+body.filter-tritanopia  { filter: url(#tritanopia); }
+
+/* Focus visible — улучшенное кольцо фокуса */
+:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+/* Screen reader only utility */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* ============================================================ */
+
 /* Auth page animations */
 @keyframes float-orb-1 {
   0%, 100% { transform: translate(0, 0) scale(1); }

@@ -4,6 +4,8 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { Suspense, lazy } from "react";
 import { useEffect } from "react";
+import { SkipToContent } from "@/components/accessibility/SkipToContent";
+import { ColorFilterSVG } from "@/components/accessibility/ColorFilterSVG";
 import { AuthProvider } from "@/hooks/useAuth";
 import { ChatOpenProvider } from "@/contexts/ChatOpenContext";
 import { VideoCallProvider } from "@/contexts/VideoCallContext";
@@ -20,6 +22,11 @@ import { runChatSchemaProbeOnce } from "@/lib/chat/schemaProbe";
 import { toast } from "sonner";
 import { AppErrorBoundary } from "@/components/system/AppErrorBoundary";
 const HashtagPage = lazy(() => import("@/pages/HashtagPage").then(m => ({ default: m.HashtagPage })));
+const ExplorePage = lazy(() => import("@/pages/ExplorePage"));
+const ProfessionalDashboard = lazy(() => import("@/pages/ProfessionalDashboard"));
+const GuidePage = lazy(() => import("@/pages/GuidePage"));
+const FollowRequestsPage = lazy(() => import("@/pages/FollowRequestsPage"));
+const LocationPage = lazy(() => import("@/pages/LocationPage"));
 
 // Initialize error tracking
 initErrorTracking();
@@ -36,12 +43,40 @@ const CreatorAnalyticsDashboard = lazy(() => import("@/pages/CreatorAnalyticsDas
 const UserProfilePage = lazy(() => import("@/pages/UserProfilePage").then(m => ({ default: m.UserProfilePage })));
 const ContactProfilePage = lazy(() => import("@/pages/ContactProfilePage").then(m => ({ default: m.ContactProfilePage })));
 const ReelsPage = lazy(() => import("@/pages/ReelsPage").then(m => ({ default: m.ReelsPage })));
+const ReelAudioPage = lazy(() => import("@/pages/ReelAudioPage"));
 const CreateCenterPage = lazy(() => import("@/pages/CreateCenterPage").then(m => ({ default: m.CreateCenterPage })));
 const CreateSurfacePage = lazy(() => import("@/pages/CreateSurfacePage").then(m => ({ default: m.CreateSurfacePage })));
 const RealEstatePage = lazy(() => import("@/pages/RealEstatePage").then(m => ({ default: m.RealEstatePage })));
 const PropertyDetailPage = lazy(() => import("@/pages/PropertyDetailPage").then(m => ({ default: m.PropertyDetailPage })));
-const InsurancePage = lazy(() => import("@/pages/InsurancePage").then(m => ({ default: m.InsurancePage })));
 const InsurancePoliciesPage = lazy(() => import("@/pages/InsurancePoliciesPage"));
+const InsuranceHomePage = lazy(() => import("./pages/insurance/InsuranceHomePage"));
+const OsagoCalculatorPage = lazy(() => import("./pages/insurance/OsagoCalculatorPage"));
+const KaskoCalculatorPage = lazy(() => import("./pages/insurance/KaskoCalculatorPage"));
+const DmsCalculatorPage = lazy(() => import("./pages/insurance/DmsCalculatorPage"));
+const TravelCalculatorPage = lazy(() => import("./pages/insurance/TravelCalculatorPage"));
+const PropertyCalculatorPage = lazy(() => import("./pages/insurance/PropertyCalculatorPage"));
+const MortgageCalculatorPage = lazy(() => import("./pages/insurance/MortgageCalculatorPage"));
+const LifeCalculatorPage = lazy(() => import("./pages/insurance/LifeCalculatorPage"));
+const InsuranceComparePage = lazy(() => import("./pages/insurance/InsuranceComparePage"));
+const InsuranceCompaniesPage = lazy(() => import("./pages/insurance/InsuranceCompaniesPage"));
+const InsuranceCompanyDetailPage = lazy(() => import("./pages/insurance/InsuranceCompanyDetailPage"));
+const InsuranceFaqPage = lazy(() => import("./pages/insurance/InsuranceFaqPage"));
+const InsuranceDownloadPage = lazy(() => import("./pages/insurance/InsuranceDownloadPage"));
+const InsuranceClaimsPage = lazy(() => import("./pages/insurance/InsuranceClaimsPage"));
+const InsuranceNewClaimPage = lazy(() => import("./pages/insurance/InsuranceNewClaimPage"));
+const InsurancePolicyDetailPage = lazy(() => import("./pages/insurance/InsurancePolicyDetailPage"));
+const InsuranceApplyPage = lazy(() => import("./pages/insurance/InsuranceApplyPage"));
+const InsuranceSuccessPage = lazy(() => import("./pages/insurance/InsuranceSuccessPage"));
+const InsuranceAgentPage = lazy(() => import("./pages/insurance/InsuranceAgentPage"));
+const AccessibilitySettingsPage = lazy(() =>
+  import("@/components/accessibility/AccessibilitySettings").then(m => ({ default: m.AccessibilitySettings }))
+);
+const ShopPage = lazy(() => import("@/pages/ShopPage"));
+const CheckoutPage = lazy(() => import("@/pages/CheckoutPage"));
+const ShopDiscoveryPage = lazy(() => import("@/pages/ShopDiscoveryPage"));
+const ContentPreferencesPage = lazy(() => import("@/pages/ContentPreferencesPage"));
+const ARFilterGalleryPage = lazy(() => import("@/pages/ARFilterGalleryPage"));
+const CreatorFundPage = lazy(() => import("@/pages/CreatorFundPage"));
 const ExploreFeedPage = lazy(() => import("@/pages/ExploreFeedPage").then(m => ({ default: m.ExploreFeedPage })));
 const PostDetailPage = lazy(() => import("@/pages/PostDetailPage").then(m => ({ default: m.PostDetailPage })));
 const AuthPage = lazy(() => import("@/pages/AuthPage").then(m => ({ default: m.AuthPage })));
@@ -50,10 +85,15 @@ const DevPanelPage = lazy(() => import("@/pages/DevPanelPage"));
 const SettingsPage = lazy(() => import("@/pages/SettingsPage").then(m => ({ default: m.SettingsPage })));
 const CRMPage = lazy(() => import("@/pages/CRMPage").then(m => ({ default: m.CRMPage })));
 const CRMDashboard = lazy(() => import("@/pages/CRMDashboard").then(m => ({ default: m.CRMDashboard })));
+const EmailPage = lazy(() => import("@/pages/EmailPage").then(m => ({ default: m.EmailPage })));
 const CommandPalette = lazy(() => import("@/components/CommandPalette").then(m => ({ default: m.CommandPalette })));
 const ARPage = lazy(() => import("@/pages/ARPage").then(m => ({ default: m.ARPage })));
+const AudioRoomsPage = lazy(() => import("@/pages/AudioRoomsPage").then(m => ({ default: m.AudioRoomsPage })));
 const BotListPage = lazy(() => import("@/pages/BotListPage").then(m => ({ default: m.BotListPage })));
 const MiniAppListPage = lazy(() => import("@/pages/MiniAppListPage").then(m => ({ default: m.MiniAppListPage })));
+
+const NotificationsPage = lazy(() => import("@/pages/NotificationsPage").then(m => ({ default: m.NotificationsPage })));
+const NotificationSettingsPage = lazy(() => import("@/pages/NotificationSettingsPage").then(m => ({ default: m.NotificationSettingsPage })));
 
 // Admin Console (lazy)
 const AdminLoginPage = lazy(() => import("@/pages/admin/AdminLoginPage").then(m => ({ default: m.AdminLoginPage })));
@@ -105,16 +145,25 @@ const App = () => {
 
   return (
     <AppErrorBoundary>
-      <MultiAccountProvider>
-        <AuthProvider>
-          <UserSettingsProvider>
-            <AppearanceRuntimeProvider>
-              <VideoCallProvider>
-                <ChatOpenProvider>
-                  <TooltipProvider>
-                    <Toaster />
-                    <Sonner />
-                    <GlobalCallOverlay />
+<MultiAccountProvider>
+<AuthProvider>
+<UserSettingsProvider>
+<AppearanceRuntimeProvider>
+  <VideoCallProvider>
+    <ChatOpenProvider>
+      <TooltipProvider>
+        <SkipToContent />
+        <ColorFilterSVG />
+        {/* aria-live region для screen reader */}
+        <div
+          id="a11y-live-region"
+          aria-live="polite"
+          aria-atomic="true"
+          className="sr-only"
+        />
+        <Toaster />
+        <Sonner />
+        <GlobalCallOverlay />
                     <BrowserRouter
                       basename={ROUTER_BASENAME}
                       future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
@@ -218,6 +267,11 @@ const App = () => {
                         <HashtagPage />
                       </Suspense>
                     } />
+                    <Route path="/explore" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <ExplorePage />
+                      </Suspense>
+                    } />
                     <Route path="/explore/:postIndex" element={
                       <Suspense fallback={<PageLoader />}>
                         <ExploreFeedPage />
@@ -226,6 +280,16 @@ const App = () => {
                     <Route path="/post/:id" element={
                       <Suspense fallback={<PageLoader />}>
                         <PostDetailPage />
+                      </Suspense>
+                    } />
+                    <Route path="/notifications" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <NotificationsPage />
+                      </Suspense>
+                    } />
+                    <Route path="/notifications/settings" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <NotificationSettingsPage />
                       </Suspense>
                     } />
                     <Route path="/chats" element={
@@ -248,9 +312,74 @@ const App = () => {
                         <CreatorAnalyticsDashboard />
                       </Suspense>
                     } />
+                    <Route path="/professional-dashboard" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <ProfessionalDashboard />
+                      </Suspense>
+                    } />
+                    <Route path="/guides/:id" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <GuidePage />
+                      </Suspense>
+                    } />
+                    <Route path="/follow-requests" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <FollowRequestsPage />
+                      </Suspense>
+                    } />
+                    <Route path="/location/:id" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <LocationPage />
+                      </Suspense>
+                    } />
+                    <Route path="/shop" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <ShopPage />
+                      </Suspense>
+                    } />
+                    <Route path="/shop/:shopId" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <ShopPage />
+                      </Suspense>
+                    } />
+                    <Route path="/checkout" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <CheckoutPage />
+                      </Suspense>
+                    } />
+                    <Route path="/shop/discover" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <ShopDiscoveryPage />
+                      </Suspense>
+                    } />
+                    <Route path="/content-preferences" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <ContentPreferencesPage />
+                      </Suspense>
+                    } />
+                    <Route path="/ar/gallery" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <ARFilterGalleryPage />
+                      </Suspense>
+                    } />
+                    <Route path="/orders/:id" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <ShopPage />
+                      </Suspense>
+                    } />
+                    <Route path="/creator-fund" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <CreatorFundPage />
+                      </Suspense>
+                    } />
                     <Route path="/settings" element={
                       <Suspense fallback={<PageLoader />}>
                         <SettingsPage />
+                      </Suspense>
+                    } />
+                    <Route path="/settings/accessibility" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <AccessibilitySettingsPage />
                       </Suspense>
                     } />
 
@@ -262,6 +391,16 @@ const App = () => {
                     <Route path="/ar" element={
                       <Suspense fallback={<PageLoader />}>
                         <ARPage />
+                      </Suspense>
+                    } />
+                    <Route path="/audio-rooms" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <AudioRoomsPage />
+                      </Suspense>
+                    } />
+                    <Route path="/audio-rooms/:roomId" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <AudioRoomsPage />
                       </Suspense>
                     } />
 
@@ -299,12 +438,107 @@ const App = () => {
                     } />
                     <Route path="/insurance" element={
                       <Suspense fallback={<PageLoader />}>
-                        <InsurancePage />
+                        <InsuranceHomePage />
+                      </Suspense>
+                    } />
+                    <Route path="/insurance/osago" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <OsagoCalculatorPage />
+                      </Suspense>
+                    } />
+                    <Route path="/insurance/kasko" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <KaskoCalculatorPage />
+                      </Suspense>
+                    } />
+                    <Route path="/insurance/dms" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <DmsCalculatorPage />
+                      </Suspense>
+                    } />
+                    <Route path="/insurance/travel" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <TravelCalculatorPage />
+                      </Suspense>
+                    } />
+                    <Route path="/insurance/property" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <PropertyCalculatorPage />
+                      </Suspense>
+                    } />
+                    <Route path="/insurance/mortgage" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <MortgageCalculatorPage />
+                      </Suspense>
+                    } />
+                    <Route path="/insurance/life" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <LifeCalculatorPage />
+                      </Suspense>
+                    } />
+                    <Route path="/insurance/compare" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <InsuranceComparePage />
+                      </Suspense>
+                    } />
+                    <Route path="/insurance/companies" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <InsuranceCompaniesPage />
                       </Suspense>
                     } />
                     <Route path="/insurance/policies" element={
                       <Suspense fallback={<PageLoader />}>
                         <InsurancePoliciesPage />
+                      </Suspense>
+                    } />
+                    <Route path="/insurance/policy/:id" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <InsurancePolicyDetailPage />
+                      </Suspense>
+                    } />
+                    <Route path="/insurance/apply/:productId" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <InsuranceApplyPage />
+                      </Suspense>
+                    } />
+                    <Route path="/insurance/apply" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <InsuranceApplyPage />
+                      </Suspense>
+                    } />
+                    <Route path="/insurance/success/:policyId" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <InsuranceSuccessPage />
+                      </Suspense>
+                    } />
+                    <Route path="/insurance/agent" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <InsuranceAgentPage />
+                      </Suspense>
+                    } />
+                    <Route path="/insurance/company/:slug" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <InsuranceCompanyDetailPage />
+                      </Suspense>
+                    } />
+                    <Route path="/insurance/faq" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <InsuranceFaqPage />
+                      </Suspense>
+                    } />
+                    <Route path="/insurance/download" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <InsuranceDownloadPage />
+                      </Suspense>
+                    } />
+                    <Route path="/insurance/claims" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <InsuranceClaimsPage />
+                      </Suspense>
+                    } />
+                    <Route path="/insurance/claims/new" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <InsuranceNewClaimPage />
                       </Suspense>
                     } />
                     <Route path="/crm" element={
@@ -315,6 +549,16 @@ const App = () => {
                     <Route path="/crm/dashboard" element={
                       <Suspense fallback={<PageLoader />}>
                         <CRMDashboard />
+                      </Suspense>
+                    } />
+                    <Route path="/email" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <EmailPage />
+                      </Suspense>
+                    } />
+                    <Route path="/reels/audio/:audioId" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <ReelAudioPage />
                       </Suspense>
                     } />
                     <Route path="/reels" element={

@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
-import { Heart, Send, Loader2 } from "lucide-react";
+import { Heart, Send, Loader2, Trash2, SortAsc, Clock } from "lucide-react";
+import { CommentFilter } from "@/components/moderation/CommentFilter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -42,12 +43,14 @@ export function CommentsSheet({
     comments,
     loading,
     addComment,
-    toggleLike
-  } = useComments(postId);
+    toggleLike,
+    deleteComment,
+  } = useComments(postId) as any;
   const [newComment, setNewComment] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [replyingTo, setReplyingTo] = useState<ReplyingTo | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const [sortMode, setSortMode] = useState<"new" | "popular">("new");
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const formatTimeAgo = (dateString: string) => {
     try {
@@ -118,15 +121,29 @@ export function CommentsSheet({
     }
   }, [replyingTo]);
 
-  const totalComments = comments.reduce((acc, c) => acc + 1 + (c.replies?.length || 0), 0);
+  const sortedComments = [...comments].sort((a, b) => {
+    if (sortMode === "popular") return (b.likes_count ?? 0) - (a.likes_count ?? 0);
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+  });
+
+  const totalComments = comments.reduce((acc: number, c: any) => acc + 1 + (c.replies?.length || 0), 0);
 
   return (
     <Drawer open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DrawerContent className="h-[92dvh] max-h-[92dvh] mt-0 flex flex-col">
         <DrawerHeader className="border-b border-border pb-3 flex-shrink-0">
-          <DrawerTitle className="text-center">
-            Комментарии {totalComments > 0 && `(${totalComments})`}
-          </DrawerTitle>
+          <div className="flex items-center justify-between">
+            <DrawerTitle>
+              Комментарии {totalComments > 0 && `(${totalComments})`}
+            </DrawerTitle>
+            <button
+              onClick={() => setSortMode((m) => m === "new" ? "popular" : "new")}
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              {sortMode === "new" ? <Clock className="w-3.5 h-3.5" /> : <SortAsc className="w-3.5 h-3.5" />}
+              {sortMode === "new" ? "Новые" : "Популярные"}
+            </button>
+          </div>
         </DrawerHeader>
         
         {/* Comments List */}
@@ -141,29 +158,32 @@ export function CommentsSheet({
               <p className="text-sm mt-1">Будьте первым!</p>
             </div>
           ) : (
-            comments.map(comment => (
+            sortedComments.map((comment: Comment) => (
               <div key={comment.id} className="space-y-3">
-                {/* Main comment */}
-                <CommentItem 
-                  comment={comment} 
-                  onLike={() => handleLikeComment(comment)} 
-                  onReply={() => handleReply(comment)} 
-                  onGoToProfile={goToProfile} 
-                  formatTimeAgo={formatTimeAgo} 
-                />
-                
-                {/* Replies */}
+                <CommentFilter text={comment.content ?? ""}>
+                  <CommentItem
+                    comment={comment}
+                    onLike={() => handleLikeComment(comment)}
+                    onReply={() => handleReply(comment)}
+                    onGoToProfile={goToProfile}
+                    formatTimeAgo={formatTimeAgo}
+                    onDelete={deleteComment ? () => deleteComment(comment.id) : undefined}
+                    currentUserId={user?.id}
+                  />
+                </CommentFilter>
                 {comment.replies && comment.replies.length > 0 && (
                   <div className="ml-12 space-y-3 border-l-2 border-border pl-3">
-                    {comment.replies.map(reply => (
-                      <CommentItem 
-                        key={reply.id} 
-                        comment={reply} 
-                        onLike={() => handleLikeComment(reply)} 
+                    {comment.replies.map((reply: Comment) => (
+                      <CommentItem
+                        key={reply.id}
+                        comment={reply}
+                        onLike={() => handleLikeComment(reply)}
                         onReply={() => handleReply(comment)}
-                        onGoToProfile={goToProfile} 
-                        formatTimeAgo={formatTimeAgo} 
-                        isReply 
+                        onGoToProfile={goToProfile}
+                        formatTimeAgo={formatTimeAgo}
+                        onDelete={deleteComment ? () => deleteComment(reply.id) : undefined}
+                        currentUserId={user?.id}
+                        isReply
                       />
                     ))}
                   </div>
@@ -187,21 +207,33 @@ export function CommentsSheet({
             </div>
           )}
           
-          <div className="p-4 flex items-center gap-3 safe-area-bottom">
-            <img 
-              src={`https://i.pravatar.cc/150?u=${user?.id || 'guest'}`} 
-              alt="You" 
-              className="w-9 h-9 rounded-full object-cover flex-shrink-0" 
-            />
+          <div className="p-4 flex items-start gap-3 safe-area-bottom">
+            {user?.user_metadata?.avatar_url ? (
+              <img
+                src={user.user_metadata.avatar_url}
+                alt="Вы"
+                className="w-9 h-9 rounded-full object-cover flex-shrink-0 mt-1"
+              />
+            ) : (
+              <div className="w-9 h-9 rounded-full bg-muted flex-shrink-0 mt-1 flex items-center justify-center text-sm font-bold text-muted-foreground">
+                {user?.email?.slice(0, 1)?.toUpperCase() ?? "?"}
+              </div>
+            )}
             <div className="flex-1">
-              <Input 
-                ref={inputRef} 
-                placeholder={user ? (replyingTo ? "Напишите ответ..." : "Добавьте комментарий...") : "Войдите чтобы комментировать"} 
-                value={newComment} 
-                onChange={e => setNewComment(e.target.value)} 
-                onKeyDown={e => e.key === "Enter" && handleSubmitComment()} 
-                className="rounded-full bg-muted border-0 h-11" 
-                disabled={!user || submitting} 
+              <textarea
+                ref={inputRef}
+                placeholder={user ? (replyingTo ? "Напишите ответ..." : "Добавьте комментарий...") : "Войдите чтобы комментировать"}
+                value={newComment}
+                onChange={e => setNewComment(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSubmitComment();
+                  }
+                }}
+                rows={1}
+                className="w-full rounded-2xl bg-muted border-0 px-4 py-2.5 text-sm resize-none outline-none focus:ring-1 focus:ring-primary/50"
+                disabled={!user || submitting}
               />
             </div>
             <Button 
@@ -226,6 +258,8 @@ interface CommentItemProps {
   onReply: () => void;
   onGoToProfile: (userId: string) => void;
   formatTimeAgo: (date: string) => string;
+  onDelete?: () => void;
+  currentUserId?: string;
   isReply?: boolean;
 }
 
@@ -235,27 +269,42 @@ function CommentItem({
   onReply,
   onGoToProfile,
   formatTimeAgo,
-  isReply
+  onDelete,
+  currentUserId,
+  isReply,
 }: CommentItemProps) {
-  const avatarUrl = comment.author.avatar_url || `https://i.pravatar.cc/150?u=${comment.author.user_id}`;
-  
+  const isOwn = currentUserId && currentUserId === comment.author.user_id;
+  const avatarUrl = comment.author.avatar_url;
+
   return (
     <div className="flex gap-3">
-      <img 
-        src={avatarUrl} 
-        alt={comment.author.display_name} 
-        className={cn(
-          "rounded-full object-cover flex-shrink-0 cursor-pointer", 
-          isReply ? "w-8 h-8" : "w-10 h-10"
-        )} 
-        onClick={() => onGoToProfile(comment.author.user_id)} 
-      />
+      {avatarUrl ? (
+        <img
+          src={avatarUrl}
+          alt={comment.author.display_name}
+          className={cn(
+            "rounded-full object-cover flex-shrink-0 cursor-pointer",
+            isReply ? "w-8 h-8" : "w-10 h-10",
+          )}
+          onClick={() => onGoToProfile(comment.author.user_id)}
+        />
+      ) : (
+        <div
+          className={cn(
+            "rounded-full bg-muted flex-shrink-0 flex items-center justify-center text-xs font-bold text-muted-foreground cursor-pointer",
+            isReply ? "w-8 h-8" : "w-10 h-10",
+          )}
+          onClick={() => onGoToProfile(comment.author.user_id)}
+        >
+          {comment.author.display_name?.slice(0, 1)?.toUpperCase() ?? "?"}
+        </div>
+      )}
       <div className="flex-1 min-w-0">
         <div className="flex items-start justify-between gap-2">
           <div className="flex-1">
             <div className="flex items-center gap-1">
-              <span 
-                className="font-semibold text-sm cursor-pointer hover:underline" 
+              <span
+                className="font-semibold text-sm cursor-pointer hover:underline"
                 onClick={() => onGoToProfile(comment.author.user_id)}
               >
                 {comment.author.display_name}
@@ -267,24 +316,31 @@ function CommentItem({
             </div>
             <p className="text-sm text-foreground mt-1">{comment.content}</p>
             <div className="flex items-center gap-4 mt-2">
-              <button 
-                onClick={onReply} 
+              <button
+                onClick={onReply}
                 className="text-xs text-muted-foreground font-medium hover:text-foreground transition-colors"
               >
                 Ответить
               </button>
+              {isOwn && onDelete && (
+                <button
+                  onClick={onDelete}
+                  className="text-xs text-destructive/70 hover:text-destructive transition-colors flex items-center gap-0.5"
+                >
+                  <Trash2 className="w-3 h-3" />
+                  Удалить
+                </button>
+              )}
             </div>
           </div>
           <button onClick={onLike} className="flex flex-col items-center gap-0.5 pt-1">
-            <Heart 
+            <Heart
               className={cn(
-                "w-4 h-4", 
-                comment.liked_by_user ? "fill-destructive text-destructive" : "text-muted-foreground"
-              )} 
+                "w-4 h-4",
+                comment.liked_by_user ? "fill-destructive text-destructive" : "text-muted-foreground",
+              )}
             />
-            <span className="text-xs text-muted-foreground">
-              {comment.likes_count}
-            </span>
+            <span className="text-xs text-muted-foreground">{comment.likes_count}</span>
           </button>
         </div>
       </div>

@@ -4,9 +4,14 @@
 
 1. API принимает запросы на отправку и кладет их в `public.email_outbox`.
 2. Worker периодически claim-ит пачку писем через RPC `public.claim_email_outbox_batch`.
-3. Провайдер (`stub`, `smtp` или `sendmail`) выполняет отправку.
+3. Провайдер (`smtp` или `sendmail`) выполняет отправку.
 4. Результат каждой попытки логируется в `public.email_deliveries`.
 5. Входящие письма принимаются в `public.email_inbox`, связываются в треды (`public.email_threads`) и доступны через inbox/thread API.
+
+Поддерживаются папки:
+
+- Inbox: `inbox`, `spam`, `trash`
+- Outbox: `sent`, `draft`, `trash`
 
 ## Переменные окружения
 
@@ -20,7 +25,7 @@
 - `EMAIL_ROUTER_POSTGREST_URL` (для прямого PostgREST, например `https://mansoni.ru/api`)
 
 - `EMAIL_ROUTER_PORT` (default: `8090`)
-- `EMAIL_ROUTER_PROVIDER` (`stub` | `smtp` | `sendmail`, default: `stub`)
+- `EMAIL_ROUTER_PROVIDER` (`smtp` | `sendmail`, default: `sendmail`)
 - `EMAIL_ROUTER_POLL_MS` (default: `2000`)
 - `EMAIL_ROUTER_BATCH_SIZE` (default: `25`)
 - `EMAIL_ROUTER_LOCK_SECONDS` (default: `90`)
@@ -158,6 +163,26 @@ PGPASSWORD='<db_password>' psql -U mansoni_app -d mansoni -f /root/all-migration
 
 Поддерживается фильтр только непрочитанных: `GET /v1/email/inbox?to=<email>&limit=50&unreadOnly=true`.
 
+Также поддерживается фильтр по папке: `folder=inbox|spam|trash`.
+
+### `GET /v1/email/outbox?from=<email>&limit=50&folder=sent`
+
+Возвращает исходящие письма по папкам `sent|draft|trash`.
+
+### `POST /v1/email/drafts`
+
+Сохраняет черновик в `email_outbox` с `status=draft` и `folder=draft`.
+
+```json
+{
+  "to": "user@example.com",
+  "from": "support@mansoni.ru",
+  "subject": "Черновик",
+  "text": "Текст черновика",
+  "idempotencyKey": "draft-2026-03-03-001"
+}
+```
+
 ### `GET /v1/email/threads?to=<email>&limit=50&unreadOnly=true`
 
 Возвращает список тредов для конкретного mailbox (получателя).
@@ -177,6 +202,30 @@ PGPASSWORD='<db_password>' psql -U mansoni_app -d mansoni -f /root/all-migration
 {
   "read": true
 }
+
+### `PATCH /v1/email/inbox/:id/folder`
+
+Перенос входящего письма в папку:
+
+```json
+{
+  "folder": "spam"
+}
+```
+
+Допустимые значения: `inbox`, `spam`, `trash`.
+
+### `PATCH /v1/email/outbox/:id/folder`
+
+Перенос исходящего письма в папку:
+
+```json
+{
+  "folder": "trash"
+}
+```
+
+Допустимые значения: `sent`, `draft`, `trash`.
 ```
 
 ### `POST /v1/email/threads/:threadId/reply`

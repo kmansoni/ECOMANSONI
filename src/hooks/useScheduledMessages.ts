@@ -76,7 +76,7 @@ export function useScheduledMessages(conversationId?: string | null) {
     fetchScheduledMessages();
   }, [fetchScheduledMessages]);
 
-  // Poll for scheduled messages that need to be sent
+  // Poll for scheduled messages every 30s
   useEffect(() => {
     if (!user) return;
 
@@ -86,6 +86,35 @@ export function useScheduledMessages(conversationId?: string | null) {
 
     return () => window.clearInterval(intervalId);
   }, [user, fetchScheduledMessages]);
+
+  // Realtime подписка
+  useEffect(() => {
+    if (!user) return;
+
+    const filter = conversationId
+      ? `user_id=eq.${user.id},conversation_id=eq.${conversationId}`
+      : `user_id=eq.${user.id}`;
+
+    const channel = supabase
+      .channel(`scheduled-messages:${conversationId ?? 'all'}:${user.id}`)
+      .on(
+        'postgres_changes' as any,
+        {
+          event: '*',
+          schema: 'public',
+          table: 'scheduled_messages',
+          filter,
+        },
+        () => {
+          void fetchScheduledMessages();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [user, conversationId, fetchScheduledMessages]);
 
   const scheduleMessage = useCallback(async (input: ScheduleMessageInput) => {
     if (!user) {
@@ -138,6 +167,63 @@ export function useScheduledMessages(conversationId?: string | null) {
     setScheduledMessages((prev) => prev.filter((message) => message.id !== id));
   }, [user]);
 
+  const deleteScheduledMessage = useCallback(async (id: string) => {
+    if (!user) throw new Error('Not authenticated');
+
+    const { error: deleteError } = await supabaseAny
+      .from('scheduled_messages')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', user.id);
+
+    if (deleteError) throw deleteError;
+    setScheduledMessages((prev) => prev.filter((m) => m.id !== id));
+  }, [user]);
+
+  const editScheduledMessage = useCallback(
+    async (id: string, updates: Partial<Pick<ScheduledMessage, 'content' | 'scheduled_for'>>) => {
+      if (!user) throw new Error('Not authenticated');
+
+      const { data, error: updateError } = await supabaseAny
+        .from('scheduled_messages')
+        .update(updates)
+        .eq('id', id)
+        .eq('user_id', user.id)
+        .eq('status', 'scheduled')
+        .select('*')
+        .single();
+
+      if (updateError) throw updateError;
+
+      setScheduledMessages((prev) =>
+        prev.map((m) => (m.id === id ? { ...m, ...data } : m))
+      );
+
+      return data as ScheduledMessage;
+    },
+    [user]
+  );
+
+  const sendNow = useCallback(
+    async (id: string) => {
+      if (!user) throw new Error('Not authenticated');
+
+      // Mark as instant send (set scheduled_for to now, backend processes it)
+      const { error: updateError } = await supabaseAny
+        .from('scheduled_messages')
+        .update({
+          scheduled_for: new Date().toISOString(),
+          status: 'scheduled',
+        })
+        .eq('id', id)
+        .eq('user_id', user.id);
+
+      if (updateError) throw updateError;
+      await fetchScheduledMessages();
+    },
+    [user, fetchScheduledMessages]
+  );
+
   return {
     scheduledMessages,
     loading,
@@ -145,5 +231,9 @@ export function useScheduledMessages(conversationId?: string | null) {
     refresh: fetchScheduledMessages,
     scheduleMessage,
     cancelScheduledMessage,
+    deleteScheduledMessage,
+    editScheduledMessage,
+    sendNow,
+    count: scheduledMessages.length,
   };
 }

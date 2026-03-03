@@ -312,6 +312,21 @@ export function SettingsPage() {
   const [mfaEnroll, setMfaEnroll] = useState<any | null>(null);
   const [mfaCode, setMfaCode] = useState("");
   const [mfaChallengeId, setMfaChallengeId] = useState<string | null>(null);
+  const mfaQrImageSrc = useMemo(() => {
+    const qr = mfaEnroll?.totp?.qr_code;
+    if (!qr || typeof qr !== "string") return null;
+
+    if (/^data:image\/(png|jpeg|jpg|gif|webp|svg\+xml);/i.test(qr)) {
+      return qr;
+    }
+
+    const trimmed = qr.trim();
+    if (trimmed.startsWith("<svg") && trimmed.endsWith("</svg>")) {
+      return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(trimmed)}`;
+    }
+
+    return null;
+  }, [mfaEnroll?.totp?.qr_code]);
 
   // Branded content partner requests
   const [partnerQuery, setPartnerQuery] = useState("");
@@ -1925,9 +1940,9 @@ export function SettingsPage() {
 
                       <div className="mt-4 flex items-center justify-center">
                         {mfaEnroll?.totp?.qr_code ? (
-                          mfaEnroll.totp.qr_code.startsWith("data:") ? (
+                          mfaQrImageSrc ? (
                             <img
-                              src={mfaEnroll.totp.qr_code}
+                              src={mfaQrImageSrc}
                               alt="2FA QR"
                               className={cn(
                                 "rounded-xl border p-3 bg-white",
@@ -1935,13 +1950,9 @@ export function SettingsPage() {
                               )}
                             />
                           ) : (
-                            <div
-                              className={cn(
-                                "rounded-xl border p-3 bg-white",
-                                isDark ? "border-white/10" : "border-white/20",
-                              )}
-                              dangerouslySetInnerHTML={{ __html: mfaEnroll.totp.qr_code }}
-                            />
+                            <div className={cn("text-sm", isDark ? "text-white/60" : "text-white/70")}>
+                              QR недоступен в безопасном формате. Используйте URI ниже.
+                            </div>
                           )
                         ) : (
                           <div className={cn("text-sm", isDark ? "text-white/60" : "text-white/70")}>

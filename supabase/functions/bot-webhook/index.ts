@@ -80,6 +80,10 @@ interface TelegramBotCommand {
   description: string;
 }
 
+type BotRecord = {
+  owner_id?: string;
+};
+
 // ============================================================================
 // HELPERS
 // ============================================================================
@@ -128,6 +132,8 @@ async function verifyToken(token: string): Promise<{ botId: string; bot: any } |
 }
 
 async function findOrCreateBotChat(botId: string, userId: string, chatId?: string) {
+  if (!userId) return null;
+
   // Try to find existing chat
   const { data: existingChat } = await supabase
     .from('bot_chats')
@@ -137,17 +143,13 @@ async function findOrCreateBotChat(botId: string, userId: string, chatId?: strin
     .single();
 
   if (existingChat) {
-    // Update chat_id if provided and different
-    if (chatId && existingChat.chat_id !== chatId) {
-      await supabase
-        .from('bot_chats')
-        .update({ 
-          chat_id: chatId,
-          last_message_at: new Date().toISOString(),
-          message_count: existingChat.message_count + 1
-        })
-        .eq('id', existingChat.id);
-    }
+    await supabase
+      .from('bot_chats')
+      .update({
+        last_message_at: new Date().toISOString(),
+        message_count: (existingChat.message_count || 0) + 1
+      })
+      .eq('id', existingChat.id);
     return existingChat;
   }
 
@@ -157,7 +159,7 @@ async function findOrCreateBotChat(botId: string, userId: string, chatId?: strin
     .insert({
       bot_id: botId,
       user_id: userId,
-      chat_id: chatId,
+      chat_id: null,
       message_count: 1
     })
     .select()
@@ -171,7 +173,57 @@ async function findOrCreateBotChat(botId: string, userId: string, chatId?: strin
   return newChat;
 }
 
-async function processMessage(botId: string, message: TelegramMessage) {
+async function resolveProfileIdForTelegramUser(telegramUserId: number): Promise<string | null> {
+  const telegramId = String(telegramUserId);
+
+  const { data: crmClient } = await supabase
+    .schema('crm')
+    .from('clients')
+    .select('user_id')
+    .eq('telegram_id', telegramId)
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!crmClient?.user_id) {
+    return null;
+  }
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('id')
+    .eq('user_id', crmClient.user_id)
+    .maybeSingle();
+
+  return profile?.id ?? null;
+}
+
+async function storeBotUpdateEvent(input: {
+  botId: string;
+  direction: 'incoming' | 'outgoing';
+  eventType: string;
+  telegramChatId?: string;
+  telegramMessageId?: string;
+  telegramUserId?: number;
+  payload: unknown;
+}) {
+  const { error } = await supabase.from('bot_update_events').insert({
+    bot_id: input.botId,
+    direction: input.direction,
+    event_type: input.eventType,
+    telegram_chat_id: input.telegramChatId ?? null,
+    telegram_message_id: input.telegramMessageId ?? null,
+    telegram_user_id: input.telegramUserId ?? null,
+    payload: input.payload,
+    processed_at: new Date().toISOString(),
+  });
+
+  if (error) {
+    console.error('Error storing bot update event:', error);
+  }
+}
+
+async function processMessage(botId: string, bot: BotRecord, message: TelegramMessage) {
   const chat = message.chat;
   const from = message.from;
   
@@ -180,33 +232,36 @@ async function processMessage(botId: string, message: TelegramMessage) {
     return;
   }
 
-  // Map Telegram user ID to platform user
-  // This is a placeholder - in production, you'd need to link Telegram users to platform users
-  const userId = `telegram_${from.id}`;
+  const linkedProfileId = await resolveProfileIdForTelegramUser(from.id);
+  const userId = linkedProfileId ?? bot.owner_id ?? null;
   
   // Find or create bot chat
-  await findOrCreateBotChat(botId, userId, `tg_${chat.id}`);
+  if (userId) {
+    await findOrCreateBotChat(botId, userId, String(chat.id));
+  }
 
   // Extract command if present
   const command = extractCommand(message.text);
 
-  // Store the message
-  await supabase.from('bot_messages').insert({
-    bot_id: botId,
-    chat_id: `tg_${chat.id}`, // Would reference actual chat in production
-    message_id: `tg_${message.message_id}`,
+  // Store raw incoming update event
+  await storeBotUpdateEvent({
+    botId,
     direction: 'incoming',
-    raw_update: {
-      update_type: 'message',
+    eventType: 'message',
+    telegramChatId: String(chat.id),
+    telegramMessageId: String(message.message_id),
+    telegramUserId: from.id,
+    payload: {
       text: message.text,
-      command: command,
+      command,
       from: {
         id: from.id,
         first_name: from.first_name,
-        username: from.username
-      }
+        username: from.username,
+      },
+      linked_profile_id: linkedProfileId,
+      fallback_owner_profile_id: linkedProfileId ? null : bot.owner_id,
     },
-    processed_at: new Date().toISOString()
   });
 
   // Update analytics
@@ -224,55 +279,60 @@ async function processMessage(botId: string, message: TelegramMessage) {
 
 async function processCallbackQuery(botId: string, callback: TelegramCallbackQuery) {
   const from = callback.from;
-  const userId = `telegram_${from.id}`;
+  const userId = await resolveProfileIdForTelegramUser(from.id);
 
   // Find bot chat
-  await findOrCreateBotChat(botId, userId);
+  if (userId) {
+    await findOrCreateBotChat(botId, userId);
+  }
 
-  // Store callback query
-  await supabase.from('bot_messages').insert({
-    bot_id: botId,
-    chat_id: callback.message ? `tg_${callback.message.chat.id}` : 'unknown',
-    message_id: callback.message ? `tg_${callback.message.message_id}` : 'unknown',
+  // Store callback query event
+  await storeBotUpdateEvent({
+    botId,
     direction: 'incoming',
-    raw_update: {
-      update_type: 'callback_query',
+    eventType: 'callback_query',
+    telegramChatId: callback.message ? String(callback.message.chat.id) : undefined,
+    telegramMessageId: callback.message ? String(callback.message.message_id) : undefined,
+    telegramUserId: from.id,
+    payload: {
       callback_id: callback.id,
       data: callback.data,
       from: {
         id: from.id,
         first_name: from.first_name,
-        username: from.username
-      }
+        username: from.username,
+      },
+      linked_profile_id: userId,
     },
-    processed_at: new Date().toISOString()
   });
 }
 
 async function processInlineQuery(botId: string, inline: TelegramInlineQuery) {
   const from = inline.from;
-  const userId = `telegram_${from.id}`;
+  const userId = await resolveProfileIdForTelegramUser(from.id);
 
   // Find bot chat
-  await findOrCreateBotChat(botId, userId);
+  if (userId) {
+    await findOrCreateBotChat(botId, userId);
+  }
 
-  // Store inline query
-  await supabase.from('bot_messages').insert({
-    bot_id: botId,
-    chat_id: 'inline',
-    message_id: inline.id,
+  // Store inline query event
+  await storeBotUpdateEvent({
+    botId,
     direction: 'incoming',
-    raw_update: {
-      update_type: 'inline_query',
+    eventType: 'inline_query',
+    telegramMessageId: inline.id,
+    telegramUserId: from.id,
+    payload: {
       query: inline.query,
       offset: inline.offset,
       from: {
         id: from.id,
         first_name: from.first_name,
-        username: from.username
-      }
+        username: from.username,
+      },
+      linked_profile_id: userId,
     },
-    processed_at: new Date().toISOString()
   });
 }
 
@@ -290,20 +350,17 @@ async function sendMessage(
     reply_to_message_id?: number;
   }
 ): Promise<{ message_id: number }> {
-  // Store outgoing message
-  const messageId = `out_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  
-  await supabase.from('bot_messages').insert({
-    bot_id: botId,
-    chat_id: String(chatId),
-    message_id: messageId,
+  // Store outgoing command as event-log entry
+  await storeBotUpdateEvent({
+    botId,
     direction: 'outgoing',
-    raw_update: {
-      update_type: 'send_message',
+    eventType: 'send_message',
+    telegramChatId: String(chatId),
+    telegramMessageId: `out_${Date.now()}`,
+    payload: {
       text,
-      options
+      options,
     },
-    processed_at: new Date().toISOString()
   });
 
   // Update analytics
@@ -317,15 +374,6 @@ async function sendMessage(
   } catch {
     // Best-effort analytics
   }
-
-  // Update bot chat message count
-  await supabase
-    .from('bot_chats')
-    .update({ 
-      last_message_at: new Date().toISOString()
-    })
-    .eq('bot_id', botId)
-    .like('chat_id', `%${chatId}%`);
 
   return { message_id: Date.now() };
 }
@@ -403,7 +451,7 @@ Deno.serve(async (req: Request) => {
   try {
     // Process update based on type
     if (update.message) {
-      await processMessage(botId, update.message);
+      await processMessage(botId, bot as BotRecord, update.message);
     } else if (update.callback_query) {
       await processCallbackQuery(botId, update.callback_query);
     } else if (update.inline_query) {

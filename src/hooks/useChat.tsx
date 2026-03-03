@@ -78,6 +78,9 @@ export interface ChatMessage {
   duration_seconds?: number | null;
   shared_post_id?: string | null;
   shared_reel_id?: string | null;
+  disappear_in_seconds?: number | null;
+  disappear_at?: string | null;
+  disappeared?: boolean | null;
 }
 
 export interface Conversation {

@@ -24,20 +24,9 @@ type RecentItem = {
   source: "local" | "remote";
 };
 
-// Web fallback: device gallery access is not available in a normal browser.
-// Keep these lightweight and safe; videos are intentionally omitted here.
-const MOCK_RECENTS: RecentItem[] = [
-  { id: "r1", kind: "image", source: "remote", url: "https://images.unsplash.com/photo-1498050108023-c5249f4df085?w=600&q=80" },
-  { id: "r2", kind: "image", source: "remote", url: "https://images.unsplash.com/photo-1517694712202-14dd9538aa97?w=600&q=80" },
-  { id: "r3", kind: "image", source: "remote", url: "https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=600&q=80" },
-  { id: "r4", kind: "image", source: "remote", url: "https://images.unsplash.com/photo-1504639725590-34d0984388bd?w=600&q=80" },
-  { id: "r5", kind: "image", source: "remote", url: "https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=600&q=80" },
-  { id: "r6", kind: "image", source: "remote", url: "https://images.unsplash.com/photo-1512453979798-5ea266f8880c?w=600&q=80" },
-  { id: "r7", kind: "image", source: "remote", url: "https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=600&q=80" },
-  { id: "r8", kind: "image", source: "remote", url: "https://images.unsplash.com/photo-1542831371-29b0f74f9713?w=600&q=80" },
-  { id: "r9", kind: "image", source: "remote", url: "https://images.unsplash.com/photo-1512453979798-5ea266f8880c?w=600&q=80" },
-  { id: "r10", kind: "image", source: "remote", url: "https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=600&q=80" },
-];
+// Реальная галерея доступна только через input[type=file].
+// MOCK_RECENTS убраны — используется пустое начальное состояние.
+const MOCK_RECENTS: RecentItem[] = [];
 
 function normalizeEntry(v: string | null): CreateEntry {
   const entry = String(v || "").toLowerCase();

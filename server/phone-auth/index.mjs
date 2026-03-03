@@ -24,6 +24,10 @@
  * - OTP_VALIDITY_SEC: OTP validity in seconds (default: 300)
  * - OTP_MAX_ATTEMPTS: Max verification attempts per OTP (default: 5)
  * - SMS_PROVIDER: 'stub' | 'twilio' (default: 'stub')
+ * - TWILIO_ACCOUNT_SID: Twilio Account SID (required when SMS_PROVIDER=twilio)
+ * - TWILIO_AUTH_TOKEN: Twilio Auth Token (required when SMS_PROVIDER=twilio)
+ * - TWILIO_FROM_NUMBER: Twilio sender phone number in E.164 (optional if messaging service is set)
+ * - TWILIO_MESSAGING_SERVICE_SID: Twilio Messaging Service SID (optional alternative to from number)
  * - CORS_ALLOWED_ORIGINS: Comma-separated list of allowed origins
  * - NODE_ENV: 'production' or 'development' (default: 'development')
  * - RATE_LIMIT_WINDOW_MS: Rate limit window in ms (default: 60000)
@@ -49,6 +53,10 @@ const JWT_SECRET = process.env.JWT_SECRET;
 const OTP_VALIDITY_SEC = Number(process.env.OTP_VALIDITY_SEC ?? "300");
 const OTP_MAX_ATTEMPTS = Number(process.env.OTP_MAX_ATTEMPTS ?? "5");
 const SMS_PROVIDER = process.env.SMS_PROVIDER ?? "stub";
+const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
+const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
+const TWILIO_FROM_NUMBER = process.env.TWILIO_FROM_NUMBER;
+const TWILIO_MESSAGING_SERVICE_SID = process.env.TWILIO_MESSAGING_SERVICE_SID;
 const NODE_ENV = process.env.NODE_ENV ?? "development";
 
 // CORS Configuration
@@ -72,6 +80,16 @@ if (!DATABASE_URL) {
 if (!JWT_SECRET) {
   console.error("ERROR: JWT_SECRET environment variable is required");
   process.exit(1);
+}
+if (SMS_PROVIDER === "twilio") {
+  if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN) {
+    console.error("ERROR: TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN are required when SMS_PROVIDER=twilio");
+    process.exit(1);
+  }
+  if (!TWILIO_FROM_NUMBER && !TWILIO_MESSAGING_SERVICE_SID) {
+    console.error("ERROR: Set TWILIO_FROM_NUMBER or TWILIO_MESSAGING_SERVICE_SID when SMS_PROVIDER=twilio");
+    process.exit(1);
+  }
 }
 
 // Initialize database pool
@@ -240,6 +258,80 @@ function generateJWT(userId, phoneNumber) {
   return jwt.sign(payload, JWT_SECRET, { expiresIn: "7d" });
 }
 
+function toE164(phoneNumber) {
+  const value = (phoneNumber ?? "").trim();
+  if (!value) return null;
+  if (value.startsWith("+")) {
+    const normalized = `+${value.slice(1).replace(/\D/g, "")}`;
+    return /^\+[1-9]\d{7,14}$/.test(normalized) ? normalized : null;
+  }
+
+  const digits = value.replace(/\D/g, "");
+  if (digits.length === 11 && digits.startsWith("8")) {
+    return `+7${digits.slice(1)}`;
+  }
+  if (digits.length === 10) {
+    return `+7${digits}`;
+  }
+  if (digits.length >= 8 && digits.length <= 15) {
+    return `+${digits}`;
+  }
+  return null;
+}
+
+async function sendOtpViaTwilio(phoneNumber, otp) {
+  if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN) {
+    return { success: false, error: "Twilio credentials are not configured" };
+  }
+
+  const to = toE164(phoneNumber);
+  if (!to) {
+    return { success: false, error: "Invalid phone number for Twilio" };
+  }
+
+  const endpoint = `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`;
+  const auth = Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString("base64");
+  const body = new URLSearchParams({
+    To: to,
+    Body: `Your verification code is ${otp}. It is valid for ${OTP_VALIDITY_SEC} seconds.`,
+  });
+
+  if (TWILIO_MESSAGING_SERVICE_SID) {
+    body.set("MessagingServiceSid", TWILIO_MESSAGING_SERVICE_SID);
+  } else if (TWILIO_FROM_NUMBER) {
+    body.set("From", TWILIO_FROM_NUMBER);
+  }
+
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${auth}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: body.toString(),
+    });
+
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) {
+      const message = payload?.message || `Twilio API error (${response.status})`;
+      return { success: false, error: message };
+    }
+
+    return {
+      success: true,
+      provider: "twilio",
+      sid: payload?.sid,
+      status: payload?.status,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Twilio network error",
+    };
+  }
+}
+
 async function sendOTP(phoneNumber, otp) {
   const normalizedPhone = phoneNumber.replace(/\D/g, "");
 
@@ -251,9 +343,7 @@ async function sendOTP(phoneNumber, otp) {
       return { success: true, provider: "stub" };
       
     case "twilio":
-      // TODO: Implement Twilio integration
-      console.warn("[TWILIO] SMS provider not yet implemented");
-      return { success: false, error: "Twilio provider not implemented" };
+      return await sendOtpViaTwilio(phoneNumber, otp);
       
     default:
       return { success: false, error: `Unknown SMS provider: ${SMS_PROVIDER}` };

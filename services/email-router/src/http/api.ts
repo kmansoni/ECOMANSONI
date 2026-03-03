@@ -49,9 +49,16 @@ const inboundPayloadSchema = z.object({
 const inboxQuerySchema = z.object({
   to: z.string().email(),
   limit: z.coerce.number().int().positive().max(200).default(50),
+  folder: z.enum(["inbox", "spam", "trash"]).default("inbox"),
   unreadOnly: z
     .union([z.literal("1"), z.literal("0"), z.literal("true"), z.literal("false")])
     .optional(),
+});
+
+const outboxQuerySchema = z.object({
+  from: z.string().email(),
+  limit: z.coerce.number().int().positive().max(200).default(50),
+  folder: z.enum(["sent", "draft", "trash"]).default("sent"),
 });
 
 const threadMessagesQuerySchema = z.object({
@@ -60,6 +67,26 @@ const threadMessagesQuerySchema = z.object({
 
 const markReadBodySchema = z.object({
   read: z.boolean().default(true),
+});
+
+const inboxFolderBodySchema = z.object({
+  folder: z.enum(["inbox", "spam", "trash"]),
+});
+
+const outboxFolderBodySchema = z.object({
+  folder: z.enum(["sent", "draft", "trash"]),
+});
+
+const draftPayloadSchema = z.object({
+  to: z.string().email().optional(),
+  from: z.string().email().optional(),
+  cc: z.array(z.string().email()).max(100).optional(),
+  bcc: z.array(z.string().email()).max(100).optional(),
+  subject: z.string().max(250).optional(),
+  html: z.string().max(200_000).optional(),
+  text: z.string().max(200_000).optional(),
+  threadId: z.string().uuid().optional(),
+  idempotencyKey: z.string().min(1).max(160).optional(),
 });
 
 const replyBodySchema = z.object({
@@ -201,7 +228,7 @@ export function createApi(config: AppConfig, db: EmailDb) {
 
       const query = inboxQuerySchema.parse(req.query);
       const unreadOnly = query.unreadOnly === "1" || query.unreadOnly === "true";
-      const rows = await db.listInbox(query.to, query.limit, unreadOnly);
+      const rows = await db.listInbox(query.to, query.limit, unreadOnly, query.folder);
 
       return res.status(200).json({ ok: true, items: rows, count: rows.length });
     } catch (error) {
@@ -225,6 +252,28 @@ export function createApi(config: AppConfig, db: EmailDb) {
       const query = inboxQuerySchema.parse(req.query);
       const unreadOnly = query.unreadOnly === "1" || query.unreadOnly === "true";
       const rows = await db.listThreads(query.to, query.limit, unreadOnly);
+
+      return res.status(200).json({ ok: true, items: rows, count: rows.length });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ ok: false, error: error.issues.map((i) => i.message).join("; ") });
+      }
+
+      return res.status(500).json({
+        ok: false,
+        error: error instanceof Error ? error.message : "unknown error",
+      });
+    }
+  });
+
+  app.get("/v1/email/outbox", async (req: Request, res: Response) => {
+    try {
+      if (!ensureIngestKey(config, req, res)) {
+        return;
+      }
+
+      const query = outboxQuerySchema.parse(req.query);
+      const rows = await db.listOutbox(query.from, query.limit, query.folder);
 
       return res.status(200).json({ ok: true, items: rows, count: rows.length });
     } catch (error) {
@@ -277,6 +326,84 @@ export function createApi(config: AppConfig, db: EmailDb) {
       const payload = markReadBodySchema.parse(req.body ?? {});
       await db.markInboxRead(id, payload.read);
       return res.status(200).json({ ok: true, id, read: payload.read });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ ok: false, error: error.issues.map((i) => i.message).join("; ") });
+      }
+
+      return res.status(500).json({
+        ok: false,
+        error: error instanceof Error ? error.message : "unknown error",
+      });
+    }
+  });
+
+  app.patch("/v1/email/inbox/:id/folder", async (req: Request, res: Response) => {
+    try {
+      if (!ensureIngestKey(config, req, res)) {
+        return;
+      }
+
+      const { id } = req.params;
+      const payload = inboxFolderBodySchema.parse(req.body ?? {});
+      await db.moveInboxFolder(id, payload.folder);
+      return res.status(200).json({ ok: true, id, folder: payload.folder });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ ok: false, error: error.issues.map((i) => i.message).join("; ") });
+      }
+
+      return res.status(500).json({
+        ok: false,
+        error: error instanceof Error ? error.message : "unknown error",
+      });
+    }
+  });
+
+  app.patch("/v1/email/outbox/:id/folder", async (req: Request, res: Response) => {
+    try {
+      if (!ensureIngestKey(config, req, res)) {
+        return;
+      }
+
+      const { id } = req.params;
+      const payload = outboxFolderBodySchema.parse(req.body ?? {});
+      await db.moveOutboxFolder(id, payload.folder);
+      return res.status(200).json({ ok: true, id, folder: payload.folder });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ ok: false, error: error.issues.map((i) => i.message).join("; ") });
+      }
+
+      return res.status(500).json({
+        ok: false,
+        error: error instanceof Error ? error.message : "unknown error",
+      });
+    }
+  });
+
+  app.post("/v1/email/drafts", async (req: Request, res: Response) => {
+    try {
+      if (!ensureIngestKey(config, req, res)) {
+        return;
+      }
+
+      const payload = draftPayloadSchema.parse(req.body ?? {});
+      const draft = await db.enqueue({
+        toEmail: payload.to ?? payload.from ?? config.defaultFrom,
+        fromEmail: payload.from ?? config.defaultFrom,
+        ccEmails: payload.cc,
+        bccEmails: payload.bcc,
+        subject: payload.subject,
+        htmlBody: payload.html,
+        textBody: payload.text,
+        threadId: payload.threadId,
+        idempotencyKey: payload.idempotencyKey,
+        status: "draft",
+        folder: "draft",
+      });
+
+      return res.status(201).json({ ok: true, id: draft.id, status: "draft" });
     } catch (error) {
       if (error instanceof z.ZodError) {
         return res.status(400).json({ ok: false, error: error.issues.map((i) => i.message).join("; ") });

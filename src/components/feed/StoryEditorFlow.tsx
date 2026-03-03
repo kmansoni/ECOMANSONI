@@ -1,10 +1,13 @@
 import { useState, useRef, useEffect } from "react";
-import { X, ChevronDown, Camera, Smile, Music, AtSign, ArrowRight, Eye, ImagePlus, Wand2, Loader2, Users, MapPin, SlidersHorizontal, ChevronRight } from "lucide-react";
+import { X, ChevronDown, Camera, Smile, Music, AtSign, ArrowRight, Eye, ImagePlus, Wand2, Loader2, Users, MapPin, SlidersHorizontal, ChevronRight, Type, Pencil, UserCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SimpleMediaEditor } from "@/components/editor";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { StoryStickerPicker, type StickerType } from "./StoryStickerPicker";
+import { StoryTextTool, type TextLayer } from "./StoryTextTool";
+import { StoryDrawingTool } from "./StoryDrawingTool";
 
 interface StoryEditorFlowProps {
   isOpen: boolean;
@@ -36,6 +39,10 @@ export function StoryEditorFlow({ isOpen, onClose, initialFile, initialUrl }: St
   const [deviceImages, setDeviceImages] = useState<{ id: string; src: string; file: File }[]>([]);
   const [isPublishing, setIsPublishing] = useState(false);
   const [showAdvancedEditor, setShowAdvancedEditor] = useState(false);
+  const [showStickerPicker, setShowStickerPicker] = useState(false);
+  const [showTextTool, setShowTextTool] = useState(false);
+  const [showDrawingTool, setShowDrawingTool] = useState(false);
+  const [textLayers, setTextLayers] = useState<TextLayer[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const seededOnceRef = useRef(false);
   const seededObjectUrlRef = useRef<string | null>(null);
@@ -323,20 +330,52 @@ export function StoryEditorFlow({ isOpen, onClose, initialFile, initialUrl }: St
 
             {/* Right Side Tools */}
             <div className="absolute top-20 right-4 flex flex-col gap-3 safe-area-top">
-              {/* Advanced Editor Button - always visible when we have an image */}
-              <button className="w-10 h-10 rounded-full bg-black/30 backdrop-blur-sm flex items-center justify-center">
-                <span className="text-white font-semibold text-[15px]">Aa</span>
+              <button
+                onClick={() => setShowTextTool(true)}
+                className="w-10 h-10 rounded-full bg-black/30 backdrop-blur-sm flex items-center justify-center"
+              >
+                <Type className="w-5 h-5 text-white" strokeWidth={1.5} />
               </button>
-              <button className="w-10 h-10 rounded-full bg-black/30 backdrop-blur-sm flex items-center justify-center">
+              <button
+                onClick={() => setShowDrawingTool(true)}
+                className="w-10 h-10 rounded-full bg-black/30 backdrop-blur-sm flex items-center justify-center"
+              >
+                <Pencil className="w-5 h-5 text-white" strokeWidth={1.5} />
+              </button>
+              <button
+                onClick={() => setShowStickerPicker(true)}
+                className="w-10 h-10 rounded-full bg-black/30 backdrop-blur-sm flex items-center justify-center"
+              >
                 <Smile className="w-5 h-5 text-white" strokeWidth={1.5} />
-              </button>
-              <button className="w-10 h-10 rounded-full bg-black/30 backdrop-blur-sm flex items-center justify-center">
-                <Music className="w-5 h-5 text-white" strokeWidth={1.5} />
               </button>
               <button className="w-10 h-10 rounded-full bg-black/30 backdrop-blur-sm flex items-center justify-center">
                 <AtSign className="w-5 h-5 text-white" strokeWidth={1.5} />
               </button>
             </div>
+
+            {/* Text layers overlay */}
+            {textLayers.map((layer) => (
+              <div
+                key={layer.id}
+                style={{
+                  position: 'absolute',
+                  left: `${layer.x * 100}%`,
+                  top: `${layer.y * 100}%`,
+                  transform: 'translate(-50%, -50%)',
+                  fontSize: layer.fontSize,
+                  color: layer.color,
+                  textAlign: layer.align,
+                  fontWeight: layer.font.includes('bold') ? 'bold' : 'normal',
+                  fontStyle: layer.font.includes('italic') ? 'italic' : 'normal',
+                  background: layer.background ? 'rgba(0,0,0,0.5)' : 'transparent',
+                  borderRadius: layer.background ? '8px' : '0',
+                  padding: layer.background ? '4px 8px' : '0',
+                  pointerEvents: 'none',
+                }}
+              >
+                {layer.text}
+              </div>
+            ))}
 
             {/* Edited badge */}
             {editedBlob && (
@@ -406,6 +445,34 @@ export function StoryEditorFlow({ isOpen, onClose, initialFile, initialUrl }: St
         onSave={handleEditorSave}
         onCancel={() => setShowAdvancedEditor(false)}
       />
+
+      {/* Sticker Picker */}
+      <StoryStickerPicker
+        isOpen={showStickerPicker}
+        onClose={() => setShowStickerPicker(false)}
+        onSelect={(_type: StickerType) => {
+          // handle sticker selection per type
+          setShowStickerPicker(false);
+        }}
+      />
+
+      {/* Text Tool */}
+      {showTextTool && (
+        <StoryTextTool
+          onAdd={(layer) => setTextLayers((prev) => [...prev, layer])}
+          onClose={() => setShowTextTool(false)}
+        />
+      )}
+
+      {/* Drawing Tool */}
+      {showDrawingTool && (
+        <StoryDrawingTool
+          width={window.innerWidth}
+          height={window.innerHeight}
+          onSave={(_dataUrl) => setShowDrawingTool(false)}
+          onClose={() => setShowDrawingTool(false)}
+        />
+      )}
     </div>
   );
 }

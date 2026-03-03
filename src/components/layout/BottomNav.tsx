@@ -1,8 +1,10 @@
 import { useState, useEffect, forwardRef, useRef, useCallback } from "react";
-import { Home, Search, Heart, FileText, LucideIcon, Check, ChevronDown, Camera, MessageCircle, User, PlaySquare, AlertCircle } from "lucide-react";
+import { Home, Search, Heart, FileText, LucideIcon, Check, ChevronDown, Camera, MessageCircle, User, PlaySquare, AlertCircle, Bell } from "lucide-react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { useUnreadChats } from "@/hooks/useUnreadChats";
+import { useNotifications } from "@/hooks/useNotifications";
+import { NotificationBadge } from "@/components/notifications/NotificationBadge";
 import {
   Drawer,
   DrawerContent,
@@ -22,10 +24,11 @@ interface NavItem {
 }
 
 
-// Default nav items: Лента → Reels → Чаты → Профиль | AR (отдельная кнопка)
+// Default nav items: Лента → Reels → Уведомления → Чаты → Профиль | AR (отдельная кнопка)
 const defaultNavItems: NavItem[] = [
   { to: "/", icon: Home, label: "Лента" },
   { to: "/reels", icon: PlaySquare, label: "Reels" },
+  { to: "/notifications", icon: Bell, label: "Уведомления", hasBadge: true },
   { to: "/chats", icon: MessageCircle, label: "Чаты", hasBadge: true },
   { to: "/profile", icon: User, label: "Профиль", hasLongPress: true },
   { to: "/ar", label: "AR" },
@@ -54,6 +57,7 @@ export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function Bottom
   const location = useLocation();
   const navigate = useNavigate();
   const { unreadCount } = useUnreadChats();
+  const { unreadCount: notifUnreadCount } = useNotifications();
   const { accounts: maAccounts, activeAccountId, switchAccount } = useMultiAccount();
   const [keyboardOpen, setKeyboardOpen] = useState(false);
   const [accountSwitcherOpen, setAccountSwitcherOpen] = useState(false);
@@ -252,8 +256,11 @@ export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function Bottom
                             strokeWidth={isActive ? 2.2 : 1.8}
                           />
                         )}
-                        {item.hasBadge && unreadCount > 0 && (
-                          <span 
+                        {item.hasBadge && item.to === "/notifications" && (
+                          <NotificationBadge count={notifUnreadCount} />
+                        )}
+                        {item.hasBadge && item.to === "/chats" && unreadCount > 0 && (
+                          <span
                             className={cn(
                               "absolute -top-1 -right-1",
                               "bg-primary text-primary-foreground",

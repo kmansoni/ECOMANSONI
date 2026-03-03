@@ -1,7 +1,27 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { useSecretChat } from "@/hooks/useSecretChat";
+import { usePolls } from "@/hooks/usePolls";
+import { SecretChatBanner } from "./SecretChatBanner";
+import { MessageSearchSheet } from "./MessageSearchSheet";
+import { CreatePollSheet } from "./CreatePollSheet";
+import { PollMessage } from "./PollMessage";
+import { useReadReceipts } from "@/hooks/useReadReceipts";
+import { usePinnedMessages } from "@/hooks/usePinnedMessages";
+import { useScheduledMessages } from "@/hooks/useScheduledMessages";
+import { MessageStatus } from "./MessageStatus";
+import { PinnedMessageBar } from "./PinnedMessageBar";
+import { PinnedMessagesSheet } from "./PinnedMessagesSheet";
+import { ScheduleMessagePicker } from "./ScheduleMessagePicker";
+import { ScheduledMessagesList } from "./ScheduledMessagesList";
+import { GiftCatalog } from "./GiftCatalog";
+import { GiftMessage } from "./GiftMessage";
+import { StarsWallet } from "./StarsWallet";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Phone, Video, Send, Mic, X, Play, Pause, Check, CheckCheck, Smile } from "lucide-react";
+import { ArrowLeft, Phone, Video, Send, Mic, X, Play, Pause, Check, CheckCheck, Smile, Timer, Search, Settings2 } from "lucide-react";
 import { AttachmentIcon } from "./AttachmentIcon";
+import { EncryptionBadge } from "./EncryptionBadge";
+import { EncryptionToggle } from "./EncryptionToggle";
+import { useE2EEncryption } from "@/hooks/useE2EEncryption";
 import { Button } from "@/components/ui/button";
 import { useMessages } from "@/hooks/useChat";
 import { sanitizeReceivedText } from "@/lib/text-encoding";
@@ -21,9 +41,20 @@ import { ImageViewer } from "./ImageViewer";
 import { VideoPlayer, FullscreenVideoPlayer } from "./VideoPlayer";
 import { SharedPostCard } from "./SharedPostCard";
 import { SharedReelCard } from "./SharedReelCard";
-import { EmojiStickerPicker } from "./EmojiStickerPicker";
+import { StickerGifPicker } from "./StickerGifPicker";
+import { StickerMessage } from "./StickerMessage";
+import { GifMessage } from "./GifMessage";
+import { buildChatBodyEnvelope, sendMessageV1 } from "@/lib/chat/sendMessageV1";
 import { MessageContextMenu } from "./MessageContextMenu";
+import { SwipeableMessage } from "./SwipeableMessage";
+import { DoubleTapReaction } from "./DoubleTapReaction";
+import { ChatSettingsSheet } from "./ChatSettingsSheet";
+import { ChatBackground } from "./ChatBackground";
+import { useChatSettings } from "@/hooks/useChatSettings";
 import { ForwardMessageSheet } from "./ForwardMessageSheet";
+import { DisappearTimerPicker } from "./DisappearTimerPicker";
+import { DisappearCountdown } from "./DisappearCountdown";
+import { useDisappearingMessages } from "@/hooks/useDisappearingMessages";
 import { supabase } from "@/integrations/supabase/client";
 import { useUserPresenceStatus } from "@/hooks/useUserPresenceStatus";
 import { cn } from "@/lib/utils";
@@ -62,11 +93,36 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
   const navigate = useNavigate();
   const { user } = useAuth();
   const { settings } = useUserSettings();
+  const { settings: chatSettings } = useChatSettings(conversationId);
   const { appearance, energy } = useAppearanceRuntime();
   const { messages, loading, sendMessage, sendMediaMessage, deleteMessage } = useMessages(conversationId);
   const { markConversationRead } = useMarkConversationRead();
+  const { getMessageStatus, markAsRead } = useReadReceipts(conversationId);
+  const { pinnedMessages, pinMessage, unpinMessage } = usePinnedMessages(conversationId);
+  const {
+    scheduledMessages,
+    scheduleMessage,
+    deleteScheduledMessage,
+    editScheduledMessage,
+    sendNow: sendScheduledNow,
+    count: scheduledCount,
+  } = useScheduledMessages(conversationId);
   const { startCall } = useVideoCallContext();
   const { setIsChatOpen } = useChatOpen();
+
+  const {
+    encryptionEnabled,
+    currentKeyVersion,
+    isReady: encryptionReady,
+    enableEncryption,
+    disableEncryption,
+    rotateKey,
+    encryptContent,
+    decryptContent,
+  } = useE2EEncryption(conversationId);
+
+  // Кеш расшифрованных текстов: messageId → decrypted string | null
+  const [decryptedCache, setDecryptedCache] = useState<Record<string, string | null>>({});
   
   const [inputText, setInputText] = useState("");
   const [isSending, setIsSending] = useState(false);
@@ -126,8 +182,6 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const [replyTo, setReplyTo] = useState<{ id: string; preview: string } | null>(null);
-  const [pinnedMessageId, setPinnedMessageId] = useState<string | null>(null);
-  const [pinnedLoaded, setPinnedLoaded] = useState(false);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
@@ -135,8 +189,31 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
     { open: false, messageId: null }
   );
 
+  const [showPinnedSheet, setShowPinnedSheet] = useState(false);
+  const [showScheduledList, setShowScheduledList] = useState(false);
+  const [showSchedulePicker, setShowSchedulePicker] = useState(false);
+  const [pendingScheduleContent, setPendingScheduleContent] = useState('');
+  const sendButtonLongPressRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const [forwardOpen, setForwardOpen] = useState(false);
   const [forwardMessage, setForwardMessage] = useState<import("@/hooks/useChat").ChatMessage | null>(null);
+
+  const [showGiftCatalog, setShowGiftCatalog] = useState(false);
+  const [showChatSettings, setShowChatSettings] = useState(false);
+  const [showTimerPicker, setShowTimerPicker] = useState(false);
+  const {
+    defaultTimer,
+    setConversationTimer,
+    enrichMessageWithDisappear,
+    formatTimerLabel,
+  } = useDisappearingMessages(conversationId);
+
+  const { isSecret, secretChat } = useSecretChat(conversationId);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const _polls = usePolls(conversationId);
+
+  const [showMessageSearch, setShowMessageSearch] = useState(false);
+  const [showCreatePoll, setShowCreatePoll] = useState(false);
 
   const hiddenKey = user && conversationId ? `chat.hiddenMessages.v1.${user.id}.${conversationId}` : null;
 
@@ -187,60 +264,19 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
     }
   }, [hiddenKey]);
 
+  // ─── Дешифрование входящих зашифрованных сообщений ─────────────────────────
   useEffect(() => {
-    if (!conversationId || !user?.id) {
-      setPinnedMessageId(null);
-      setPinnedLoaded(true);
-      return;
-    }
+    const encrypted = messages.filter(
+      (m: any) => m.is_encrypted && m.encryption_iv && !(m.id in decryptedCache),
+    );
+    if (!encrypted.length) return;
 
-    let cancelled = false;
-    const loadPinned = async () => {
-      try {
-        const { data, error } = await (supabase as any)
-          .from("conversation_pins")
-          .select("message_id")
-          .eq("conversation_id", conversationId)
-          .maybeSingle();
-        if (error) throw error;
-        if (cancelled) return;
-        setPinnedMessageId(data?.message_id ? String(data.message_id) : null);
-      } catch {
-        if (cancelled) return;
-        setPinnedMessageId(null);
-      } finally {
-        if (!cancelled) setPinnedLoaded(true);
-      }
-    };
-
-    void loadPinned();
-
-    const pinChannel = supabase
-      .channel(`conversation-pins:${conversationId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "conversation_pins",
-          filter: `conversation_id=eq.${conversationId}`,
-        },
-        (payload) => {
-          if (payload.eventType === "DELETE") {
-            setPinnedMessageId(null);
-            return;
-          }
-          const next = (payload.new as any)?.message_id;
-          setPinnedMessageId(next ? String(next) : null);
-        }
-      )
-      .subscribe();
-
-    return () => {
-      cancelled = true;
-      void supabase.removeChannel(pinChannel);
-    };
-  }, [conversationId, user?.id]);
+    encrypted.forEach(async (m: any) => {
+      const plain = await decryptContent(m.content, m.encryption_iv, m.encryption_key_version ?? 1);
+      setDecryptedCache((prev) => ({ ...prev, [m.id]: plain }));
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages, decryptContent]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -443,7 +479,15 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
       // Refresh list so unread badge updates immediately.
       onRefetch?.();
     })();
-  }, [conversationId, user, isGroup, messages.length, markConversationRead, onRefetch]);
+
+    // Mark unread incoming messages as read via read-receipts hook
+    const incomingUnread = messages.filter(
+      (m) => m.sender_id !== user.id && !m.is_read
+    );
+    for (const msg of incomingUnread) {
+      markAsRead(msg.id);
+    }
+  }, [conversationId, user, isGroup, messages.length, markConversationRead, onRefetch, markAsRead]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -542,7 +586,21 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
     lastDraftTrimmedRef.current = "";
 
     try {
-      await sendMessage(withReply, { clientMsgId });
+      // Шифруем сообщение если E2E включено
+      let contentToSend = withReply;
+      let extraFields: Record<string, unknown> = {};
+      if (encryptionEnabled) {
+        const encrypted = await encryptContent(withReply);
+        if (encrypted) {
+          contentToSend = encrypted.ciphertext;
+          extraFields = {
+            is_encrypted: true,
+            encryption_iv: encrypted.iv,
+            encryption_key_version: encrypted.keyVersion,
+          };
+        }
+      }
+      await sendMessage(contentToSend, { clientMsgId, ...enrichMessageWithDisappear(extraFields) });
 
       // Keep focus on input to prevent keyboard closing on mobile
       requestAnimationFrame(() => {
@@ -830,33 +888,11 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
 
   const handleMessagePin = async (messageId: string) => {
     if (!conversationId || !user?.id) return;
-    try {
-      if (pinnedMessageId === messageId) {
-        const { error } = await (supabase as any)
-          .from("conversation_pins")
-          .delete()
-          .eq("conversation_id", conversationId);
-        if (error) throw error;
-        setPinnedMessageId(null);
-        toast.success("Закрепление снято");
-      } else {
-        const { error } = await (supabase as any)
-          .from("conversation_pins")
-          .upsert(
-            {
-              conversation_id: conversationId,
-              message_id: messageId,
-              pinned_by: user.id,
-              pinned_at: new Date().toISOString(),
-            },
-            { onConflict: "conversation_id" },
-          );
-        if (error) throw error;
-        setPinnedMessageId(messageId);
-        toast.success("Сообщение закреплено");
-      }
-    } catch {
-      toast.error("Не удалось закрепить сообщение");
+    const alreadyPinned = pinnedMessages.some((p) => p.message_id === messageId);
+    if (alreadyPinned) {
+      await unpinMessage(messageId);
+    } else {
+      await pinMessage(messageId);
     }
   };
 
@@ -1029,8 +1065,57 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
             </div>
           </button>
           
-          {/* Right - Call buttons */}
+          {/* Right - Stars + Encryption toggle + Call buttons */}
           <div className="flex items-center">
+            {/* Stars Wallet */}
+            {!isGroup && <StarsWallet />}
+            {/* Timer indicator in header */}
+            {defaultTimer !== null && (
+              <button
+                onClick={() => setShowTimerPicker(true)}
+                className="p-2 rounded-full hover:bg-white/10 transition-colors"
+                aria-label={`Автоудаление: ${formatTimerLabel(defaultTimer)}`}
+                title={`Автоудаление: ${formatTimerLabel(defaultTimer)}`}
+              >
+                <Timer className="w-4 h-4 text-orange-400" />
+              </button>
+            )}
+            <EncryptionToggle
+              enabled={encryptionEnabled}
+              isReady={encryptionReady}
+              onEnable={enableEncryption}
+              onDisable={disableEncryption}
+              onRotate={rotateKey}
+            />
+            {/* Scheduled messages button */}
+            <button
+              onClick={() => setShowScheduledList(true)}
+              className="relative p-2 rounded-full hover:bg-white/10 transition-colors"
+              aria-label="Запланированные сообщения"
+            >
+              <span className="text-base leading-none">⏰</span>
+              {scheduledCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-amber-500 text-white text-[9px] font-bold flex items-center justify-center">
+                  {scheduledCount > 9 ? '9+' : scheduledCount}
+                </span>
+              )}
+            </button>
+            {/* Search button */}
+            <button
+              onClick={() => setShowMessageSearch(true)}
+              className="p-2 rounded-full hover:bg-white/10 transition-colors"
+              aria-label="Поиск сообщений"
+            >
+              <Search className="w-4 h-4 text-white/60" />
+            </button>
+            {/* Chat settings button */}
+            <button
+              onClick={() => setShowChatSettings(true)}
+              className="p-2 rounded-full hover:bg-white/10 transition-colors"
+              aria-label="Настройки чата"
+            >
+              <Settings2 className="w-4 h-4 text-white/60" />
+            </button>
             {/* Audio call button */}
             {!isGroup && (
               <button
@@ -1074,45 +1159,18 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
         )}
       </div>
 
-      {pinnedLoaded && pinnedMessageId && (
-        <div className="flex-shrink-0 px-3 py-2 bg-black/25 backdrop-blur-xl border-b border-white/10">
-          <button
-            className="w-full flex items-center justify-between gap-3 rounded-xl px-3 py-2 hover:bg-white/5 active:bg-white/10 transition-colors"
-            onClick={() => scrollToMessage(pinnedMessageId)}
-          >
-            <div className="min-w-0 text-left">
-              <p className="text-xs text-white/60">Закреплённое сообщение</p>
-              <p className="text-sm text-white truncate">
-                {(messages.find((m) => m.id === pinnedMessageId)?.content || "").trim() || "Сообщение"}
-              </p>
-            </div>
-            <button
-              className="shrink-0 p-1 rounded-md hover:bg-white/10"
-              onClick={async (e) => {
-                e.stopPropagation();
-                if (!conversationId) return;
-                try {
-                  const { error } = await (supabase as any)
-                    .from("conversation_pins")
-                    .delete()
-                    .eq("conversation_id", conversationId);
-                  if (error) throw error;
-                  setPinnedMessageId(null);
-                  toast.success("Закрепление снято");
-                } catch {
-                  toast.error("Не удалось снять закрепление");
-                }
-              }}
-              aria-label="Снять закрепление"
-            >
-              <X className="w-4 h-4 text-white/60" />
-            </button>
-          </button>
-        </div>
+      {isSecret && (
+        <SecretChatBanner ttlSeconds={secretChat?.default_ttl_seconds ?? undefined} />
       )}
 
+      <PinnedMessageBar
+        pinnedMessages={pinnedMessages}
+        onScrollTo={scrollToMessage}
+        onLongPress={() => setShowPinnedSheet(true)}
+      />
+
       {/* Messages - scrollable with animated brand background */}
-      <div className="flex-1 overflow-y-auto overflow-x-hidden native-scroll flex flex-col relative">
+      <ChatBackground wallpaper={chatSettings.chat_wallpaper} className="flex-1 overflow-y-auto overflow-x-hidden native-scroll flex flex-col">
         {/* Content layer */}
         <div className="relative z-10 flex-1 flex flex-col p-4 overflow-x-hidden min-w-0">
         {/* Spacer to push messages to bottom */}
@@ -1141,6 +1199,10 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
           const isVideoCircle = message.media_type === 'video_circle';
           const isImage = message.media_type === 'image';
           const isVideo = message.media_type === 'video';
+          const isSticker = message.media_type === 'sticker';
+          const isGif = message.media_type === 'gif';
+          const isGift = message.media_type === 'gift';
+          const isPoll = message.media_type === 'poll' && !!(message as any).poll_id;
           const isSharedPost = !!message.shared_post_id;
           const isSharedReel = !!message.shared_reel_id;
           const isRead = message.is_read;
@@ -1160,8 +1222,19 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
           const isManuallyLoaded = manualMediaLoaded.has(message.id);
 
           return (
-            <div
+            <SwipeableMessage
               key={message.id}
+              messageId={message.id}
+              onReply={(id) => {
+                const msg = renderMessages.find((m) => m.id === id);
+                if (msg) {
+                  const preview = (msg.content || "").trim().slice(0, 140);
+                  setReplyTo({ id: msg.id, preview });
+                  requestAnimationFrame(() => inputRef.current?.focus());
+                }
+              }}
+            >
+            <div
               ref={(el) => {
                 messageRefs.current[message.id] = el;
               }}
@@ -1182,7 +1255,13 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
                 </div>
               )}
 
-              {isSharedReel && message.shared_reel_id ? (
+              {isPoll && (message as any).poll_id ? (
+                <PollMessage
+                  pollId={(message as any).poll_id}
+                  conversationId={conversationId}
+                  isOwn={isOwn}
+                />
+              ) : isSharedReel && message.shared_reel_id ? (
                 <div className="flex flex-col gap-1 flex-1 min-w-0">
                   <SharedReelCard 
                     reelId={message.shared_reel_id} 
@@ -1261,6 +1340,53 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
                     )}
                   </div>
                 </div>
+              ) : isSticker && message.media_url ? (
+                <div className={`flex flex-col gap-1 ${isOwn ? "items-end" : "items-start"}`}>
+                  <StickerMessage
+                    fileUrl={message.media_url}
+                    fileType="webp"
+                    onReply={() => {}}
+                    onDelete={() => deleteMessage(message.id)}
+                  />
+                  <div className={`flex items-center gap-1 ${isOwn ? "justify-end" : "justify-start"}`}>
+                    <span className="text-[10px] text-muted-foreground dark:text-white/50">{formatMessageTime(message.created_at)}</span>
+                    {isOwn && <CheckCheck className={`w-4 h-4 ${isRead ? 'text-[#6ab3f3]' : 'text-white/40'}`} />}
+                  </div>
+                </div>
+              ) : isGif && message.media_url ? (
+                <div className={`flex flex-col gap-1 ${isOwn ? "items-end" : "items-start"}`}>
+                  <GifMessage gifUrl={message.media_url} />
+                  <div className={`flex items-center gap-1 ${isOwn ? "justify-end" : "justify-start"}`}>
+                    <span className="text-[10px] text-muted-foreground dark:text-white/50">{formatMessageTime(message.created_at)}</span>
+                    {isOwn && <CheckCheck className={`w-4 h-4 ${isRead ? 'text-[#6ab3f3]' : 'text-white/40'}`} />}
+                  </div>
+                </div>
+              ) : isGift ? (
+                (() => {
+                  let giftData: any = {};
+                  try { giftData = JSON.parse(message.content || "{}"); } catch {}
+                  return (
+                    <div className="flex-1 min-w-0">
+                      <GiftMessage
+                        sentGiftId={giftData.sent_gift_id ?? ""}
+                        giftId={giftData.gift_id ?? ""}
+                        giftEmoji={giftData.gift_emoji ?? "🎁"}
+                        giftName={giftData.gift_name ?? "Подарок"}
+                        giftRarity={(giftData.gift_rarity ?? "common") as any}
+                        starsSpent={giftData.stars_spent ?? 0}
+                        senderName={senderName}
+                        messageText={giftData.message_text}
+                        isOwn={isOwn}
+                        isOpened={giftData.is_opened ?? false}
+                        isRecipient={!isOwn}
+                      />
+                      <div className={`flex items-center gap-1 px-2 ${isOwn ? "justify-end" : "justify-start"}`}>
+                        <span className="text-[10px] text-muted-foreground dark:text-white/50">{formatMessageTime(message.created_at)}</span>
+                        {isOwn && <CheckCheck className={`w-4 h-4 ${isRead ? 'text-[#6ab3f3]' : 'text-white/40'}`} />}
+                      </div>
+                    </div>
+                  );
+                })()
               ) : isImage && message.media_url ? (
                 requiresManualLoad && !isManuallyLoaded ? (
                   <div className={`flex flex-col gap-1 flex-1 min-w-0 ${isOwn ? "items-end" : "items-start"}`}>
@@ -1435,8 +1561,23 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
                         {message.duration_seconds ? formatTime(message.duration_seconds) : "0:00"}
                       </span>
                     </div>
+                  ) : message.disappeared ? (
+                    <p className="text-[14px] italic text-white/40 flex items-center gap-1">
+                      <span>👻</span>
+                      <span>Сообщение исчезло</span>
+                    </p>
                   ) : (
-                    <p className="text-[15px] leading-[1.4] whitespace-pre-wrap break-words max-h-[60vh] overflow-auto">{normalizeBrokenVerticalText(sanitizeReceivedText(message.content))}</p>
+                    <p className="text-[15px] leading-[1.4] whitespace-pre-wrap break-words max-h-[60vh] overflow-auto">
+                      {(message as any).is_encrypted
+                        ? decryptedCache[message.id] !== undefined
+                          ? <>
+                              <EncryptionBadge className="mr-1 align-middle" />
+                              {normalizeBrokenVerticalText(sanitizeReceivedText(decryptedCache[message.id] ?? "🔒 Не удалось расшифровать"))}
+                            </>
+                          : <span className="opacity-50 italic text-sm">🔒 Расшифровка…</span>
+                        : normalizeBrokenVerticalText(sanitizeReceivedText(message.content))
+                      }
+                    </p>
                   )}
                   
                   </div>
@@ -1444,19 +1585,26 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
                   {/* Time and read status (outside bubble) */}
                   <div className={`mt-0.5 flex items-center gap-1 px-1 ${isOwn ? "self-end" : "self-start"}`}>
                     <span className="text-[11px] text-muted-foreground dark:text-white/50">{formatMessageTime(message.created_at)}</span>
+                    {message.disappear_at && message.disappear_in_seconds && !message.disappeared && (
+                      <DisappearCountdown
+                        disappearAt={message.disappear_at}
+                        disappearInSeconds={message.disappear_in_seconds}
+                      />
+                    )}
                     {isOwn && (
-                      <CheckCheck className={`w-4 h-4 ${isRead ? 'text-[#6ab3f3]' : 'text-white/40'}`} />
+                      <MessageStatus status={getMessageStatus(message.id)} />
                     )}
                   </div>
                 </div>
               )}
             </div>
+            </SwipeableMessage>
           );
         })}
         </div>
         <div ref={messagesEndRef} />
         </div>
-      </div>
+      </ChatBackground>
 
       {/* Input area - Fully transparent like Telegram */}
       <div className="flex-shrink-0 relative z-10">
@@ -1542,17 +1690,41 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
                 />
                 {/* Icons inside input */}
                 <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                  {/* Timer button */}
+                  <button
+                    onClick={() => setShowTimerPicker(true)}
+                    className={`transition-colors ${defaultTimer !== null ? 'text-orange-400' : 'text-white/50 hover:text-white/70'}`}
+                    aria-label="Таймер автоудаления"
+                  >
+                    <Timer className="w-5 h-5" />
+                  </button>
                   <button
                     onClick={() => setShowEmojiPicker(!showEmojiPicker)}
                     className={`transition-colors ${showEmojiPicker ? 'text-cyan-400' : 'text-white/50 hover:text-white/70'}`}
                   >
                     <Smile className="w-5 h-5" />
                   </button>
-                  <button 
+                  <button
                     onClick={() => setShowAttachmentSheet(true)}
                     className="text-white/50 hover:text-white/70 transition-colors"
                   >
                     <AttachmentIcon className="w-5 h-5" />
+                  </button>
+                  {!isGroup && (
+                    <button
+                      onClick={() => setShowGiftCatalog(true)}
+                      className="text-amber-400/70 hover:text-amber-400 transition-colors"
+                      aria-label="Отправить подарок"
+                    >
+                      <span className="text-base leading-none">🎁</span>
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setShowCreatePoll(true)}
+                    className="text-white/50 hover:text-blue-400 transition-colors"
+                    aria-label="Создать опрос"
+                  >
+                    <span className="text-base leading-none">📊</span>
                   </button>
                 </div>
               </div>
@@ -1560,8 +1732,42 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
               {/* Right button - Dynamic based on text and record mode */}
               {inputText.trim() ? (
                 <button
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={handleSendMessage}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    sendButtonLongPressRef.current = setTimeout(() => {
+                      sendButtonLongPressRef.current = null;
+                      setPendingScheduleContent(inputText.trim());
+                      setShowSchedulePicker(true);
+                    }, 600);
+                  }}
+                  onMouseUp={(e) => {
+                    if (sendButtonLongPressRef.current) {
+                      clearTimeout(sendButtonLongPressRef.current);
+                      sendButtonLongPressRef.current = null;
+                      void handleSendMessage();
+                    }
+                  }}
+                  onMouseLeave={() => {
+                    if (sendButtonLongPressRef.current) {
+                      clearTimeout(sendButtonLongPressRef.current);
+                      sendButtonLongPressRef.current = null;
+                    }
+                  }}
+                  onTouchStart={(e) => {
+                    e.preventDefault();
+                    sendButtonLongPressRef.current = setTimeout(() => {
+                      sendButtonLongPressRef.current = null;
+                      setPendingScheduleContent(inputText.trim());
+                      setShowSchedulePicker(true);
+                    }, 600);
+                  }}
+                  onTouchEnd={() => {
+                    if (sendButtonLongPressRef.current) {
+                      clearTimeout(sendButtonLongPressRef.current);
+                      sendButtonLongPressRef.current = null;
+                      void handleSendMessage();
+                    }
+                  }}
                   disabled={isSending}
                   className="w-12 h-12 rounded-full flex items-center justify-center shrink-0 transition-all"
                   style={{
@@ -1597,12 +1803,45 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
           )}
         </div>
         
-        {/* Emoji Picker - Telegram style inline below input */}
-        <EmojiStickerPicker
+        {/* Sticker/GIF/Emoji Picker */}
+        <StickerGifPicker
           open={showEmojiPicker}
           onOpenChange={setShowEmojiPicker}
           onEmojiSelect={(emoji) => {
             setInputText((prev) => prev + emoji);
+          }}
+          onStickerSelect={async (sticker) => {
+            setShowEmojiPicker(false);
+            if (!conversationId || !user) return;
+            const clientMsgId = crypto.randomUUID();
+            const envelope = buildChatBodyEnvelope({
+              kind: 'media',
+              text: '🎭 Стикер',
+              media_type: 'sticker',
+              media_url: sticker.file_url,
+              sticker_id: sticker.id,
+            });
+            try {
+              await sendMessageV1({ conversationId, clientMsgId, body: envelope });
+            } catch (e) {
+              console.error('sendSticker error', e);
+            }
+          }}
+          onGifSelect={async (gif) => {
+            setShowEmojiPicker(false);
+            if (!conversationId || !user) return;
+            const clientMsgId = crypto.randomUUID();
+            const envelope = buildChatBodyEnvelope({
+              kind: 'media',
+              text: 'GIF',
+              media_type: 'gif',
+              media_url: gif.url,
+            });
+            try {
+              await sendMessageV1({ conversationId, clientMsgId, body: envelope });
+            } catch (e) {
+              console.error('sendGif error', e);
+            }
           }}
         />
       </div>
@@ -1649,6 +1888,47 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
         open={forwardOpen}
         onOpenChange={setForwardOpen}
         message={forwardMessage}
+      />
+
+      {/* Gift Catalog */}
+      {!isGroup && (
+        <GiftCatalog
+          open={showGiftCatalog}
+          onClose={() => setShowGiftCatalog(false)}
+          recipientId={otherUserId}
+          recipientName={chatName}
+          recipientAvatar={chatAvatar}
+          conversationId={conversationId}
+          onGiftSent={async (giftEmoji, giftName, sentGiftId) => {
+            // Send a message with media_type='gift' encoding gift data as content JSON
+            const clientMsgId = crypto.randomUUID();
+            const envelope = buildChatBodyEnvelope({
+              kind: 'media',
+              text: JSON.stringify({
+                sent_gift_id: sentGiftId,
+                gift_emoji: giftEmoji,
+                gift_name: giftName,
+                stars_spent: 0,
+                is_opened: false,
+              }),
+              media_type: 'gift',
+              media_url: null,
+            });
+            try {
+              await sendMessageV1({ conversationId, clientMsgId, body: envelope });
+            } catch (e) {
+              console.error('sendGiftMessage error', e);
+            }
+          }}
+        />
+      )}
+
+      {/* Disappearing messages timer picker */}
+      <DisappearTimerPicker
+        open={showTimerPicker}
+        onOpenChange={setShowTimerPicker}
+        currentTimer={defaultTimer}
+        onSelect={setConversationTimer}
       />
 
       {/* Selection actions */}
@@ -1699,6 +1979,107 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
           onSelect={handleMessageSelect}
         />
       )}
+
+      {/* Pinned Messages Sheet */}
+      <PinnedMessagesSheet
+        open={showPinnedSheet}
+        onClose={() => setShowPinnedSheet(false)}
+        pinnedMessages={pinnedMessages}
+        onScrollTo={(messageId) => {
+          scrollToMessage(messageId);
+          setShowPinnedSheet(false);
+        }}
+        onUnpin={unpinMessage}
+      />
+
+      {/* Scheduled Messages List */}
+      <ScheduledMessagesList
+        open={showScheduledList}
+        onClose={() => setShowScheduledList(false)}
+        scheduledMessages={scheduledMessages}
+        onSendNow={async (id) => {
+          try {
+            await sendScheduledNow(id);
+          } catch {
+            toast.error('Не удалось отправить сообщение');
+          }
+        }}
+        onEdit={(msg) => {
+          setPendingScheduleContent(msg.content);
+          setShowScheduledList(false);
+          setShowSchedulePicker(true);
+        }}
+        onDelete={async (id) => {
+          try {
+            await deleteScheduledMessage(id);
+          } catch {
+            toast.error('Не удалось удалить запланированное сообщение');
+          }
+        }}
+      />
+
+      {/* Schedule Message Picker */}
+      <ScheduleMessagePicker
+        open={showSchedulePicker}
+        onClose={() => setShowSchedulePicker(false)}
+        messagePreview={pendingScheduleContent}
+        onSchedule={async (scheduledFor) => {
+          if (!conversationId || !pendingScheduleContent) return;
+          try {
+            await scheduleMessage({
+              conversation_id: conversationId,
+              content: pendingScheduleContent,
+              scheduled_for: scheduledFor,
+            });
+            setInputText('');
+            setPendingScheduleContent('');
+            toast.success('Сообщение запланировано');
+          } catch {
+            toast.error('Не удалось запланировать сообщение');
+          }
+        }}
+      />
+
+      {/* Message Search Sheet */}
+      <MessageSearchSheet
+        open={showMessageSearch}
+        onOpenChange={setShowMessageSearch}
+        conversationId={conversationId}
+        onSelectMessage={(msgId) => scrollToMessage(msgId)}
+      />
+
+      {/* Create Poll Sheet */}
+      {conversationId && (
+        <CreatePollSheet
+          open={showCreatePoll}
+          onOpenChange={setShowCreatePoll}
+          conversationId={conversationId}
+          onCreated={async (pollId) => {
+            // Send poll message
+            const clientMsgId = crypto.randomUUID();
+            const envelope = buildChatBodyEnvelope({
+              kind: 'media',
+              text: '📊 Опрос',
+              media_type: 'poll',
+              media_url: null,
+            });
+            // attach poll_id via extra field
+            (envelope as any).poll_id = pollId;
+            try {
+              await sendMessageV1({ conversationId, clientMsgId, body: { ...envelope, poll_id: pollId } });
+            } catch (e) {
+              console.error('sendPoll error', e);
+            }
+          }}
+        />
+      )}
+
+      {/* Chat Settings Sheet */}
+      <ChatSettingsSheet
+        conversationId={conversationId}
+        open={showChatSettings}
+        onClose={() => setShowChatSettings(false)}
+      />
 
     </div>
   );

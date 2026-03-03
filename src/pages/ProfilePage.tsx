@@ -1,506 +1,552 @@
-import { Settings, Grid3X3, Bookmark, Play, Plus, Share2, Eye, User, Loader2, Edit3, QrCode, AtSign, TrendingUp } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  Settings, Grid3X3, Bookmark, Play, Plus, User,
+  Loader2, AtSign, TrendingUp, Link, ChevronDown, MoreHorizontal, QrCode,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { cn } from "@/lib/utils";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { VerifiedBadge } from "@/components/ui/verified-badge";
 import { CreateContentModal } from "@/components/feed/CreateContentModal";
 import { FollowersSheet } from "@/components/profile/FollowersSheet";
-import type { ContentType } from "@/hooks/useMediaEditor";
+import { EditProfileSheet } from "@/components/profile/EditProfileSheet";
+import { HighlightCircle } from "@/components/profile/HighlightCircle";
+import { CreateHighlightSheet } from "@/components/profile/CreateHighlightSheet";
+import { ProfileGrid } from "@/components/profile/ProfileGrid";
+import { ProfileMenu } from "@/components/profile/ProfileMenu";
+import { BusinessActionButtons } from "@/components/profile/BusinessActionButtons";
+import { TaggedPostsGrid } from "@/components/profile/TaggedPostsGrid";
+import { SavedCollections } from "@/components/profile/SavedCollections";
+import { ProfileQRCode } from "@/components/profile/ProfileQRCode";
 import { useProfile, useUserPosts } from "@/hooks/useProfile";
+import { getHighlights, deleteHighlight, blockUser, Highlight } from "@/hooks/useProfile";
 import { useSavedPosts } from "@/hooks/useSavedPosts";
 import { useAuth } from "@/hooks/useAuth";
 import { normalizeReelMediaUrl } from "@/hooks/useReels";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { VerifiedBadge } from "@/components/ui/verified-badge";
-import { HighlightsManager } from "@/components/profile/HighlightsManager";
 import { supabase } from "@/integrations/supabase/client";
+import { cn } from "@/lib/utils";
+import type { ContentType } from "@/hooks/useMediaEditor";
+import { toast } from "sonner";
 
-const tabs = [
-  { id: "posts", icon: Grid3X3, label: "Публикации" },
-  { id: "saved", icon: Bookmark, label: "Сохраненное" },
-  { id: "reels", icon: Play, label: "Reels" },
-];
-
-type UserReelRow = {
-  id: string;
-  author_id: string;
-  video_url: string;
-  thumbnail_url: string | null;
-  created_at: string;
-};
-
-function formatNumber(num: number): string {
-  if (num >= 1000000) {
-    return (num / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
-  }
-  if (num >= 1000) {
-    return (num / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
-  }
-  return num.toString();
+function formatNumber(n: number): string {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, "") + "M";
+  if (n >= 1_000) return (n / 1_000).toFixed(1).replace(/\.0$/, "") + "K";
+  return String(n);
 }
+
+const TABS = [
+  { id: "posts", icon: Grid3X3, label: "Публикации" },
+  { id: "reels", icon: Play, label: "Reels" },
+  { id: "tagged", icon: AtSign, label: "Отмеченные" },
+] as const;
+
+type TabId = (typeof TABS)[number]["id"] | "saved";
 
 export function ProfilePage() {
   const navigate = useNavigate();
+  const { userId: paramUserId } = useParams<{ userId?: string }>();
   const { user } = useAuth();
-  const { profile, loading: profileLoading, updateProfile } = useProfile();
-  const { posts, loading: postsLoading } = useUserPosts();
+
+  // Determine which profile to show
+  const targetUserId = paramUserId || user?.id;
+  const isOwnProfile = !paramUserId || paramUserId === user?.id;
+
+  const { profile, loading: profileLoading, follow, unfollow, updateProfile, refetch } = useProfile(targetUserId);
+  const { posts, loading: postsLoading } = useUserPosts(targetUserId);
   const { savedPosts, fetchSavedPosts, loading: savedLoading } = useSavedPosts();
-  
-  const [activeTab, setActiveTab] = useState("posts");
+
+  const [activeTab, setActiveTab] = useState<TabId>("posts");
   const [showCreateModal, setShowCreateModal] = useState(false);
-  
   const [showFollowers, setShowFollowers] = useState(false);
   const [showFollowing, setShowFollowing] = useState(false);
+  const [showEditProfile, setShowEditProfile] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
+  const [showCreateHighlight, setShowCreateHighlight] = useState(false);
+  const [showArchive, setShowArchive] = useState(false);
+  const [showQR, setShowQR] = useState(false);
 
-  const [myReels, setMyReels] = useState<UserReelRow[]>([]);
+  const [highlights, setHighlights] = useState<Highlight[]>([]);
+  const [highlightsLoading, setHighlightsLoading] = useState(false);
+
+  const [myReels, setMyReels] = useState<any[]>([]);
   const [myReelsLoading, setMyReelsLoading] = useState(false);
-  const [myReelsError, setMyReelsError] = useState<string | null>(null);
   const [myReelsHasMore, setMyReelsHasMore] = useState(true);
 
-  const loadMyReels = async (opts?: { reset?: boolean }) => {
-    if (!user) return;
+  // Load highlights
+  const loadHighlights = useCallback(async () => {
+    if (!targetUserId) return;
+    setHighlightsLoading(true);
+    try {
+      const data = await getHighlights(targetUserId);
+      setHighlights(data);
+    } catch {
+      // ignore
+    } finally {
+      setHighlightsLoading(false);
+    }
+  }, [targetUserId]);
+
+  useEffect(() => {
+    loadHighlights();
+  }, [loadHighlights]);
+
+  // Load reels on tab switch
+  const loadMyReels = useCallback(async (opts?: { reset?: boolean }) => {
+    if (!targetUserId || myReelsLoading) return;
     const reset = Boolean(opts?.reset);
-
-    if (myReelsLoading) return;
     if (!reset && !myReelsHasMore) return;
-
     setMyReelsLoading(true);
-    setMyReelsError(null);
     try {
       const limit = 30;
       const offset = reset ? 0 : myReels.length;
       const { data, error } = await (supabase as any).rpc("get_user_reels_v1", {
-        p_author_id: user.id,
+        p_author_id: targetUserId,
         p_limit: limit,
         p_offset: offset,
       });
       if (error) throw error;
-
-      const rows = (data || []) as UserReelRow[];
-      const normalized = rows.map((r: any) => ({
+      const rows = (data || []).map((r: any) => ({
         ...r,
         video_url: normalizeReelMediaUrl(r?.video_url, "reels-media"),
         thumbnail_url: normalizeReelMediaUrl(r?.thumbnail_url, "reels-media") || r?.thumbnail_url,
       }));
-      setMyReels((prev) => (reset ? normalized : [...prev, ...normalized]));
+      setMyReels(prev => (reset ? rows : [...prev, ...rows]));
       setMyReelsHasMore(rows.length >= limit);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      setMyReelsError(msg);
+    } catch {
+      // ignore
     } finally {
       setMyReelsLoading(false);
     }
-  };
+  }, [targetUserId, myReelsLoading, myReelsHasMore, myReels.length]);
 
-
-
-  const handleTabChange = (tabId: string) => {
+  const handleTabChange = (tabId: TabId) => {
     setActiveTab(tabId);
-    if (tabId === "saved") {
-      fetchSavedPosts();
-    }
-    if (tabId === "reels") {
-      // Fetch on-demand when the user opens the Reels tab.
-      void loadMyReels({ reset: true });
-    }
+    if (tabId === "saved") fetchSavedPosts();
+    if (tabId === "reels") void loadMyReels({ reset: true });
   };
 
   useEffect(() => {
-    // If the user changes (sign out/in), reset cached reels.
     setMyReels([]);
     setMyReelsHasMore(true);
-    setMyReelsError(null);
-  }, [user?.id]);
+  }, [targetUserId]);
 
-  // Get first media URL for a post
-  const getPostImage = (post: any): string | null => {
-    if (post.post_media && post.post_media.length > 0) {
-      return post.post_media[0].media_url;
+  const handleDeleteHighlight = async (id: string) => {
+    try {
+      await deleteHighlight(id);
+      setHighlights(prev => prev.filter(h => h.id !== id));
+      toast.success("Подборка удалена");
+    } catch {
+      toast.error("Не удалось удалить подборку");
     }
-    return null;
   };
 
+  const handleBlock = async () => {
+    if (!user || !targetUserId) return;
+    try {
+      await blockUser(user.id, targetUserId);
+      toast.success("Пользователь заблокирован");
+      navigate(-1);
+    } catch {
+      toast.error("Не удалось заблокировать");
+    }
+  };
+
+  const handleFollowToggle = async () => {
+    try {
+      if (profile?.isFollowing) {
+        await unfollow();
+        toast.success("Вы отписались");
+      } else {
+        await follow();
+        toast.success("Вы подписались");
+      }
+    } catch {
+      toast.error("Не удалось выполнить действие");
+    }
+  };
+
+  // ── Loading state ──────────────────────────────────────────────
   if (profileLoading) {
     return (
-      <div className="min-h-screen bg-background relative overflow-hidden">
-        <div className="relative z-10 min-h-screen flex items-center justify-center">
-          <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
-        </div>
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
 
-  if (!user || !profile) {
+  if (!user && !profile) {
     return (
-      <div className="min-h-screen bg-background relative overflow-hidden">
-        <div className="relative z-10 min-h-screen flex flex-col items-center justify-center p-4">
-          <div className="w-20 h-20 rounded-full bg-card/80 backdrop-blur-xl border border-border flex items-center justify-center mb-4">
-            <User className="w-10 h-10 text-muted-foreground" />
-          </div>
-          <h2 className="text-lg font-semibold text-foreground mb-2">Войдите в аккаунт</h2>
-          <p className="text-muted-foreground text-center mb-4">
-            Чтобы просматривать свой профиль, войдите в аккаунт
-          </p>
-          <button 
-            onClick={() => navigate('/auth')}
-            className="px-6 py-3 bg-card/80 backdrop-blur-xl rounded-2xl border border-border text-white font-medium hover:bg-white/20 transition-colors"
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4 gap-4">
+        <User className="w-16 h-16 text-muted-foreground" />
+        <h2 className="text-lg font-semibold">Войдите в аккаунт</h2>
+        <p className="text-muted-foreground text-center text-sm">Чтобы просматривать профиль</p>
+        <Button onClick={() => navigate("/auth")}>Войти</Button>
+      </div>
+    );
+  }
+
+  const displayProfile = profile;
+
+  const allTabs = isOwnProfile
+    ? ([...TABS, { id: "saved" as const, icon: Bookmark, label: "Сохранённые" }])
+    : TABS;
+
+  // ── Render ─────────────────────────────────────────────────────
+  return (
+    <div className="min-h-screen bg-background pb-24">
+      {/* ── Top bar ── */}
+      <div className="flex items-center justify-between px-4 py-3 safe-area-top">
+        <div className="flex items-center gap-1.5">
+          {!isOwnProfile && (
+            <button onClick={() => navigate(-1)} className="mr-2">
+              <ChevronDown className="w-6 h-6 rotate-90" />
+            </button>
+          )}
+          <h1 className="font-semibold text-lg text-foreground">
+            {displayProfile?.display_name || "Профиль"}
+          </h1>
+          {displayProfile?.verified && <VerifiedBadge size="md" />}
+        </div>
+        <div className="flex items-center gap-2">
+          {isOwnProfile && (
+            <>
+              <button
+                onClick={() => navigate("/analytics")}
+                className="w-10 h-10 rounded-full bg-card/80 border border-border flex items-center justify-center"
+                aria-label="Аналитика"
+              >
+                <TrendingUp className="w-5 h-5" />
+              </button>
+              <button
+                onClick={() => setShowQR(true)}
+                className="w-10 h-10 rounded-full bg-card/80 border border-border flex items-center justify-center"
+                aria-label="QR-код"
+              >
+                <QrCode className="w-5 h-5" />
+              </button>
+            </>
+          )}
+          <button
+            onClick={() => setShowMenu(true)}
+            className="w-10 h-10 rounded-full bg-card/80 border border-border flex items-center justify-center"
           >
-            Войти
+            {isOwnProfile ? <Settings className="w-5 h-5" /> : <MoreHorizontal className="w-5 h-5" />}
           </button>
         </div>
       </div>
-    );
-  }
 
-  return (
-    <div className="min-h-screen bg-background relative overflow-hidden">
-      {/* Content */}
-      <div className="relative z-10 min-h-screen pb-24">
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 safe-area-top">
-          <div className="flex items-center gap-1.5">
-            <h1 className="font-semibold text-lg text-foreground">{profile.display_name || 'Профиль'}{(profile as any).status_emoji ? ` ${(profile as any).status_emoji}` : ""}</h1>
-            {profile.verified && <VerifiedBadge size="md" />}
+      {/* ── Profile header ── */}
+      <div className="px-4 pt-2 pb-4">
+        <div className="flex items-start gap-4">
+          {/* Avatar */}
+          <div className="relative flex-shrink-0">
+            <button
+              onClick={() => isOwnProfile && setShowEditProfile(true)}
+              className="relative block"
+            >
+              <div className="w-20 h-20 rounded-full ring-2 ring-offset-2 ring-offset-background ring-gradient-to-tr from-yellow-400 via-pink-500 to-purple-600 p-0.5">
+                <Avatar className="w-full h-full">
+                  <AvatarImage src={displayProfile?.avatar_url || undefined} />
+                  <AvatarFallback className="bg-violet-500 text-white text-2xl font-semibold">
+                    {displayProfile?.display_name?.charAt(0)?.toUpperCase() || <User className="w-8 h-8" />}
+                  </AvatarFallback>
+                </Avatar>
+              </div>
+            </button>
+            {isOwnProfile && (
+              <button
+                className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-primary border-2 border-background flex items-center justify-center shadow"
+                onClick={() => setShowCreateModal(true)}
+              >
+                <Plus className="w-4 h-4 text-white" />
+              </button>
+            )}
           </div>
-          <div className="flex items-center gap-2">
-            <button 
-              onClick={() => navigate('/analytics')}
-              className="w-10 h-10 rounded-full bg-card/80 backdrop-blur-xl border border-border flex items-center justify-center hover:bg-muted/50 transition-colors"
-              aria-label="Аналитика"
-            >
-              <TrendingUp className="w-5 h-5 text-foreground" />
-            </button>
-            <button 
-              onClick={() => navigate('/settings')}
-              className="w-10 h-10 rounded-full bg-card/80 backdrop-blur-xl border border-border flex items-center justify-center hover:bg-muted/50 transition-colors"
-            >
-              <Settings className="w-5 h-5 text-foreground" />
-            </button>
+
+          {/* Stats */}
+          <div className="flex-1 pt-1">
+            <div className="flex items-center gap-1 mb-2">
+              <span className="font-semibold text-foreground text-base">
+                {displayProfile?.display_name || "Пользователь"}
+              </span>
+              {(displayProfile as any)?.status_emoji && (
+                <span>{(displayProfile as any).status_emoji}</span>
+              )}
+              {displayProfile?.verified && <VerifiedBadge size="sm" />}
+            </div>
+            {(displayProfile as any)?.category && (
+              <p className="text-xs text-muted-foreground mb-2">{(displayProfile as any).category}</p>
+            )}
+            <div className="flex items-center gap-5">
+              <div className="text-center">
+                <p className="font-bold text-foreground text-sm">{displayProfile?.stats?.postsCount ?? 0}</p>
+                <p className="text-xs text-muted-foreground">публикации</p>
+              </div>
+              <button onClick={() => setShowFollowers(true)} className="text-center">
+                <p className="font-bold text-foreground text-sm">{formatNumber(displayProfile?.stats?.followersCount ?? 0)}</p>
+                <p className="text-xs text-muted-foreground">подписчики</p>
+              </button>
+              <button onClick={() => setShowFollowing(true)} className="text-center">
+                <p className="font-bold text-foreground text-sm">{formatNumber(displayProfile?.stats?.followingCount ?? 0)}</p>
+                <p className="text-xs text-muted-foreground">подписки</p>
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* Profile Info Row */}
-        <div className="px-4 py-4">
-          <div className="flex items-start gap-4">
-            {/* Avatar - plus button next to avatar, opens create menu */}
-            <div className="relative flex items-center">
-              <Avatar className="w-20 h-20 border-2 border-border relative">
-                <AvatarImage src={profile.avatar_url || undefined} alt={profile.display_name || 'Profile'} />
-                <AvatarFallback className="bg-violet-500/80 backdrop-blur-xl text-white text-2xl font-medium">
-                  {profile.display_name?.charAt(0)?.toUpperCase() || <User className="w-8 h-8" />}
-                </AvatarFallback>
-              </Avatar>
-              {(profile as any).status_sticker_url ? (
-                <img
-                  src={(profile as any).status_sticker_url}
-                  alt="status sticker"
-                  className="absolute -bottom-2 -left-2 w-10 h-10 rounded-xl object-cover bg-card/80 border border-border"
-                />
-              ) : null}
-              {/* Plus button next to avatar */}
-              <button
-                className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full bg-primary border-2 border-border flex items-center justify-center shadow-lg"
-                onClick={() => setShowCreateModal(true)}
-                aria-label="Создать контент"
-              >
-                <Plus className="w-5 h-5 text-primary-foreground" />
-              </button>
-            </div>
-
-            {/* Stats */}
-            <div className="flex-1">
-              <div className="flex items-center gap-1.5 mb-2">
-                <h1 className="text-lg font-semibold text-foreground">{profile.display_name || 'Пользователь'}</h1>
-                {(profile as any).status_emoji ? (
-                  <span className="text-lg leading-none">{(profile as any).status_emoji}</span>
-                ) : null}
-                {profile.verified && <VerifiedBadge size="md" />}
-              </div>
-              <div className="flex items-center gap-6">
-                <div className="text-center">
-                  <p className="font-bold text-foreground">{profile.stats.postsCount}</p>
-                  <p className="text-xs text-muted-foreground">публикации</p>
-                </div>
-                <button 
-                  className="text-center"
-                  onClick={() => setShowFollowers(true)}
-                >
-                  <p className="font-bold text-foreground">{formatNumber(profile.stats.followersCount)}</p>
-                  <p className="text-xs text-muted-foreground">подписчики</p>
-                </button>
-                <button 
-                  className="text-center"
-                  onClick={() => setShowFollowing(true)}
-                >
-                  <p className="font-bold text-foreground">{formatNumber(profile.stats.followingCount)}</p>
-                  <p className="text-xs text-muted-foreground">подписки</p>
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Bio */}
-          <div className="mt-3">
-            {profile.bio && (
-              <p className="text-sm text-foreground">{profile.bio}</p>
+        {/* Bio */}
+        {(displayProfile?.bio || displayProfile?.website) && (
+          <div className="mt-3 space-y-0.5">
+            {displayProfile?.bio && (
+              <p className="text-sm text-foreground whitespace-pre-line">{displayProfile.bio}</p>
             )}
-            {profile.website && (
-              <a href={profile.website.startsWith('http') ? profile.website : `https://${profile.website}`} 
-                 target="_blank" 
-                 rel="noopener noreferrer"
-                 className="text-sm text-[#6ab3f3] font-medium">
-                {profile.website}
+            {displayProfile?.website && (
+              <a
+                href={displayProfile.website.startsWith("http") ? displayProfile.website : `https://${displayProfile.website}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm text-[#6ab3f3] font-medium flex items-center gap-1"
+              >
+                <Link className="w-3 h-3" />
+                {displayProfile.website.replace(/^https?:\/\//, "")}
               </a>
             )}
           </div>
+        )}
 
-          {/* Action Buttons */}
-          <div className="flex items-center gap-2 mt-4">
-            <button 
-              onClick={() => navigate('/profile/edit')}
-              className="px-4 py-2 bg-card/80 backdrop-blur-xl rounded-xl border border-border text-sm font-semibold text-foreground hover:bg-muted/50 transition-colors"
-            >
-              Редактировать профиль
-            </button>
-            <button className="px-4 py-2 bg-card/80 backdrop-blur-xl rounded-xl border border-border text-sm font-semibold text-foreground hover:bg-muted/50 transition-colors">
-              Поделиться профилем
-            </button>
-          </div>
+        {/* Business action buttons */}
+        {!isOwnProfile && (displayProfile as any)?.account_type === "business" && (
+          <BusinessActionButtons
+            email={(displayProfile as any)?.action_email}
+            phone={(displayProfile as any)?.action_phone}
+            address={(displayProfile as any)?.action_address}
+          />
+        )}
+
+        {/* Professional Dashboard link (own profile, creator/business) */}
+        {isOwnProfile && ["creator", "business"].includes((displayProfile as any)?.account_type ?? "") && (
+          <button
+            onClick={() => navigate("/professional-dashboard")}
+            className="w-full mt-2 py-2 bg-gradient-to-r from-purple-600 to-pink-600 rounded-xl text-sm font-semibold text-white"
+          >
+            Профессиональный дашборд
+          </button>
+        )}
+
+        {/* Action buttons */}
+        <div className="flex items-center gap-2 mt-4">
+          {isOwnProfile ? (
+            <>
+              <button
+                onClick={() => setShowEditProfile(true)}
+                className="flex-1 py-2 bg-muted rounded-xl text-sm font-semibold text-foreground hover:bg-muted/80 transition-colors"
+              >
+                Редактировать профиль
+              </button>
+              <button
+                onClick={() => {
+                  const url = `${window.location.origin}/user/${user?.id}`;
+                  navigator.clipboard.writeText(url).then(() => toast.success("Ссылка скопирована"));
+                }}
+                className="flex-1 py-2 bg-muted rounded-xl text-sm font-semibold text-foreground hover:bg-muted/80 transition-colors"
+              >
+                Поделиться профилем
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={handleFollowToggle}
+                className={cn(
+                  "flex-1 py-2 rounded-xl text-sm font-semibold transition-colors",
+                  displayProfile?.isFollowing
+                    ? "bg-muted text-foreground hover:bg-muted/80"
+                    : "bg-primary text-primary-foreground hover:bg-primary/80"
+                )}
+              >
+                {displayProfile?.isFollowing ? "Подписки" : "Подписаться"}
+              </button>
+              <button
+                onClick={() => navigate(`/chat?userId=${targetUserId}`)}
+                className="flex-1 py-2 bg-muted rounded-xl text-sm font-semibold text-foreground hover:bg-muted/80 transition-colors"
+              >
+                Сообщение
+              </button>
+              <button
+                onClick={() => setShowMenu(true)}
+                className="w-10 py-2 bg-muted rounded-xl flex items-center justify-center"
+              >
+                <ChevronDown className="w-4 h-4" />
+              </button>
+            </>
+          )}
         </div>
+      </div>
 
-        {/* Highlights Section */}
-        <div className="px-4 py-4 border-t border-border mt-4">
-          <HighlightsManager userId={user?.id || ''} isOwnProfile={true} />
+      {/* ── Highlights ── */}
+      <div className="border-t border-border">
+        <div className="flex items-center gap-4 px-4 py-4 overflow-x-auto scrollbar-hide">
+          {isOwnProfile && (
+            <HighlightCircle
+              title="Новое"
+              isNew
+              onClick={() => setShowCreateHighlight(true)}
+            />
+          )}
+          {highlightsLoading
+            ? Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="flex flex-col items-center gap-1.5 min-w-[72px]">
+                  <div className="w-16 h-16 rounded-full bg-muted animate-pulse" />
+                  <div className="w-10 h-2.5 bg-muted animate-pulse rounded" />
+                </div>
+              ))
+            : highlights.map(h => (
+                <HighlightCircle
+                  key={h.id}
+                  id={h.id}
+                  title={h.title}
+                  coverUrl={h.cover_url}
+                  onLongPress={
+                    isOwnProfile
+                      ? () => {
+                          if (confirm(`Удалить подборку "${h.title}"?`)) {
+                            handleDeleteHighlight(h.id);
+                          }
+                        }
+                      : undefined
+                  }
+                />
+              ))}
         </div>
+      </div>
 
-        {/* Content Tabs */}
-        <div className="px-4 mb-3">
-          <div className="bg-card/80 backdrop-blur-xl rounded-2xl border border-border p-1 flex">
-            {tabs.map((tab) => {
-              const Icon = tab.icon;
-              const isActive = activeTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => handleTabChange(tab.id)}
-                  className={cn(
-                    "flex-1 flex items-center justify-center py-2.5 rounded-xl transition-all",
-                    isActive
-                      ? "bg-muted text-foreground"
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  <Icon className={cn("w-5 h-5", tab.id === "reels" && "fill-current")} />
-                </button>
-              );
-            })}
-          </div>
+      {/* ── Tabs ── */}
+      <div className="border-t border-border sticky top-0 z-10 bg-background">
+        <div className="flex">
+          {allTabs.map(tab => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => handleTabChange(tab.id as TabId)}
+                className={cn(
+                  "flex-1 flex items-center justify-center py-3 border-b-2 transition-colors",
+                  isActive ? "border-foreground text-foreground" : "border-transparent text-muted-foreground"
+                )}
+              >
+                <Icon className={cn("w-5 h-5", tab.id === "reels" && isActive && "fill-current")} />
+              </button>
+            );
+          })}
         </div>
+      </div>
 
-        {/* Posts Grid */}
-        <div className="px-4">
+      {/* ── Content ── */}
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={activeTab}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.15 }}
+        >
           {activeTab === "posts" && (
-            <>
-              {postsLoading ? (
-                <div className="p-12 flex justify-center">
-                  <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
-                </div>
-              ) : posts.length > 0 ? (
-                <div className="grid grid-cols-3 gap-1 rounded-2xl overflow-hidden">
-                  {posts.map((post) => {
-                    const imageUrl = getPostImage(post);
-                    const isVideo = post.post_media?.[0]?.media_type === 'video';
-                    return (
-                      <div key={post.id} className="aspect-square relative group cursor-pointer overflow-hidden bg-white/10">
-                        {imageUrl ? (
-                          <img
-                            src={imageUrl}
-                            alt={`Post ${post.id}`}
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center">
-                            <Grid3X3 className="w-6 h-6 text-white/40" />
-                          </div>
-                        )}
-                        {isVideo && (
-                          <>
-                            <div className="absolute top-2 right-2">
-                              <Play className="w-5 h-5 text-white fill-white drop-shadow-lg" />
-                            </div>
-                            <div className="absolute bottom-2 left-2 flex items-center gap-1">
-                              <Eye className="w-4 h-4 text-white drop-shadow-lg" />
-                              <span className="text-white text-xs font-medium drop-shadow-lg">{post.views_count}</span>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="py-12 text-center">
-                  <div className="w-16 h-16 rounded-full bg-card/80 backdrop-blur-xl border border-border flex items-center justify-center mx-auto mb-3">
-                    <Grid3X3 className="w-8 h-8 text-muted-foreground" />
-                  </div>
-                  <h3 className="font-semibold text-foreground mb-1">Нет публикаций</h3>
-                  <p className="text-sm text-muted-foreground">Создайте свой первый пост</p>
-                </div>
-              )}
-            </>
+            <ProfileGrid items={posts} loading={postsLoading} type="posts" />
           )}
-
-          {activeTab === "saved" && (
-            <>
-              {savedLoading ? (
-                <div className="p-12 flex justify-center">
-                  <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
-                </div>
-              ) : savedPosts.length > 0 ? (
-                <div className="grid grid-cols-3 gap-1 rounded-2xl overflow-hidden">
-                  {savedPosts.map((post: any) => {
-                    const imageUrl = post.post_media?.[0]?.media_url;
-                    return (
-                      <div key={post.id} className="aspect-square relative group cursor-pointer overflow-hidden bg-white/10">
-                        {imageUrl ? (
-                          <img
-                            src={imageUrl}
-                            alt={`Saved ${post.id}`}
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center">
-                            <Bookmark className="w-6 h-6 text-white/40" />
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="py-12 text-center">
-                  <div className="w-16 h-16 rounded-full bg-card/80 backdrop-blur-xl border border-border flex items-center justify-center mx-auto mb-3">
-                    <Bookmark className="w-8 h-8 text-muted-foreground" />
-                  </div>
-                  <h3 className="font-semibold text-foreground mb-1">Сохраненное</h3>
-                  <p className="text-sm text-muted-foreground">Сохраняйте понравившиеся публикации</p>
-                </div>
-              )}
-            </>
-          )}
-
           {activeTab === "reels" && (
             <>
-              {myReelsLoading && myReels.length === 0 ? (
-                <div className="py-12 flex items-center justify-center">
-                  <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-                </div>
-              ) : myReelsError ? (
-                <div className="py-12 text-center">
-                  <div className="w-16 h-16 rounded-full bg-card/80 backdrop-blur-xl border border-border flex items-center justify-center mx-auto mb-3">
-                    <Play className="w-8 h-8 text-muted-foreground" />
-                  </div>
-                  <h3 className="font-semibold text-foreground mb-1">Reels</h3>
-                  <p className="text-sm text-muted-foreground">Не удалось загрузить ваши Reels</p>
-                  <div className="mt-4">
-                    <Button variant="outline" onClick={() => void loadMyReels({ reset: true })}>
-                      Повторить
-                    </Button>
-                  </div>
-                </div>
-              ) : myReels.length > 0 ? (
-                <div className="grid grid-cols-3 gap-1 rounded-2xl overflow-hidden">
-                  {myReels.map((reel) => (
-                    <div key={reel.id} className="aspect-square relative overflow-hidden bg-card/40">
-                      {reel.thumbnail_url ? (
-                        <img
-                          src={reel.thumbnail_url}
-                          alt=""
-                          className="w-full h-full object-cover"
-                          loading="lazy"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center">
-                          <Play className="w-6 h-6 text-muted-foreground" />
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="py-12 text-center">
-                  <div className="w-16 h-16 rounded-full bg-card/80 backdrop-blur-xl border border-border flex items-center justify-center mx-auto mb-3">
-                    <Play className="w-8 h-8 text-muted-foreground" />
-                  </div>
-                  <h3 className="font-semibold text-foreground mb-1">Reels</h3>
-                  <p className="text-sm text-muted-foreground">У вас пока нет Reels</p>
-                </div>
-              )}
-
+              <ProfileGrid items={myReels} loading={myReelsLoading && myReels.length === 0} type="reels" />
               {myReels.length > 0 && myReelsHasMore && (
-                <div className="pt-4 flex justify-center">
-                  <Button
-                    variant="outline"
-                    disabled={myReelsLoading}
-                    onClick={() => void loadMyReels()}
-                  >
-                    {myReelsLoading ? (
-                      <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        Загрузка...
-                      </>
-                    ) : (
-                      "Загрузить ещё"
-                    )}
+                <div className="flex justify-center py-4">
+                  <Button variant="outline" onClick={() => void loadMyReels()} disabled={myReelsLoading}>
+                    {myReelsLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                    Загрузить ещё
                   </Button>
                 </div>
               )}
             </>
           )}
-
-          {activeTab === "tagged" && (
-            <div className="py-12 text-center">
-              <div className="w-16 h-16 rounded-full bg-card/80 backdrop-blur-xl border border-border flex items-center justify-center mx-auto mb-3">
-                <AtSign className="w-8 h-8 text-muted-foreground" />
-              </div>
-              <h3 className="font-semibold text-foreground mb-1">Отметки</h3>
-              <p className="text-sm text-muted-foreground">Публикации с вашими отметками</p>
-            </div>
+          {activeTab === "tagged" && targetUserId && (
+            <TaggedPostsGrid userId={targetUserId} />
           )}
-        </div>
-      </div>
+          {activeTab === "saved" && isOwnProfile && (
+            <SavedCollections />
+          )}
+        </motion.div>
+      </AnimatePresence>
 
-      {/* Create Menu */}
-      <CreateContentModal 
-        isOpen={showCreateModal} 
-        onClose={() => setShowCreateModal(false)} 
+      {/* ── Modals ── */}
+      <CreateContentModal
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
         onSuccess={(contentType: ContentType) => {
           setShowCreateModal(false);
-          if (contentType === "reel") {
-            navigate("/create?tab=reels&auto=1");
-          }
+          if (contentType === "reel") navigate("/create?tab=reels&auto=1");
         }}
       />
 
-
-      {/* Followers Sheet */}
-      {user && (
+      {targetUserId && (
         <>
           <FollowersSheet
             isOpen={showFollowers}
             onClose={() => setShowFollowers(false)}
-            userId={user.id}
+            userId={targetUserId}
             type="followers"
             title="Подписчики"
           />
           <FollowersSheet
             isOpen={showFollowing}
             onClose={() => setShowFollowing(false)}
-            userId={user.id}
+            userId={targetUserId}
             type="following"
             title="Подписки"
           />
         </>
+      )}
+
+      {isOwnProfile && displayProfile && user && (
+        <EditProfileSheet
+          isOpen={showEditProfile}
+          onClose={() => setShowEditProfile(false)}
+          profile={displayProfile}
+          userId={user.id}
+          onSaved={(updated) => {
+            updateProfile(updated);
+            refetch();
+          }}
+        />
+      )}
+
+      <ProfileMenu
+        isOpen={showMenu}
+        onClose={() => setShowMenu(false)}
+        isOwnProfile={isOwnProfile}
+        username={displayProfile?.display_name || undefined}
+        onBlock={handleBlock}
+        onArchive={() => { setShowMenu(false); setShowArchive(true); }}
+        onSettings={() => { setShowMenu(false); navigate("/settings"); }}
+      />
+
+      {isOwnProfile && user && (
+        <CreateHighlightSheet
+          isOpen={showCreateHighlight}
+          onClose={() => setShowCreateHighlight(false)}
+          userId={user.id}
+          onCreated={loadHighlights}
+        />
+      )}
+
+      {/* QR Code */}
+      {isOwnProfile && user && displayProfile && (
+        <ProfileQRCode
+          isOpen={showQR}
+          onClose={() => setShowQR(false)}
+          username={displayProfile.display_name || user.id}
+          userId={user.id}
+          avatarUrl={displayProfile.avatar_url || undefined}
+        />
       )}
     </div>
   );

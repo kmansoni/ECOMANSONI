@@ -121,7 +121,7 @@ export async function createChannelInviteToken(
     _ttl_hours: ttlHours,
   });
   if (error && isSchemaMissingError(error)) {
-    throw new Error("invite_schema_missing");
+    throw new Error("invite_schema_missing:create_channel_invite");
   }
   if (error) throw error;
   return String(data);
@@ -138,7 +138,7 @@ export async function createGroupInviteToken(
     _ttl_hours: ttlHours,
   });
   if (error && isSchemaMissingError(error)) {
-    throw new Error("invite_schema_missing");
+    throw new Error("invite_schema_missing:create_group_invite");
   }
   if (error) throw error;
   return String(data);
@@ -149,7 +149,7 @@ export async function joinChannelByInviteToken(token: string): Promise<string> {
     _token: token,
   });
   if (error && isSchemaMissingError(error)) {
-    throw new Error("invite_schema_missing");
+    throw new Error("invite_schema_missing:join_channel_by_invite");
   }
   if (error) throw error;
   return String(data);
@@ -160,7 +160,7 @@ export async function joinGroupByInviteToken(token: string): Promise<string> {
     _token: token,
   });
   if (error && isSchemaMissingError(error)) {
-    throw new Error("invite_schema_missing");
+    throw new Error("invite_schema_missing:join_group_by_invite");
   }
   if (error) throw error;
   return String(data);

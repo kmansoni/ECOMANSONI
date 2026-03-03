@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X, Moon, Sun, Bell, Lock, HelpCircle, Info, LogOut, ChevronRight, ChevronLeft, User, Shield, Heart, Archive, Clock, Bookmark, Eye, UserX, MessageCircle, AtSign, Share2, Users, Globe, Smartphone, Key, Mail, Phone, Database, Trash2, Download, FileText, AlertCircle } from "lucide-react";
+import { X, Moon, Sun, Bell, Lock, HelpCircle, Info, LogOut, ChevronRight, ChevronLeft, User, Shield, Heart, Archive, Clock, Bookmark, Eye, UserX, MessageCircle, AtSign, Share2, Users, Globe, Smartphone, Key, Phone, Database, Trash2, Download, FileText, AlertCircle } from "lucide-react";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
 import { Switch } from "@/components/ui/switch";
@@ -176,7 +176,6 @@ export function SettingsDrawer({ isOpen, onClose }: SettingsDrawerProps) {
               {renderMenuItem(<AtSign className="w-5 h-5 text-muted-foreground" />, "Имя пользователя", undefined, "alex_ivanov")}
               {renderMenuItem(<FileText className="w-5 h-5 text-muted-foreground" />, "О себе", undefined, "Предприниматель")}
               {renderMenuItem(<Globe className="w-5 h-5 text-muted-foreground" />, "Ссылка", undefined, "Добавить")}
-              {renderMenuItem(<Mail className="w-5 h-5 text-muted-foreground" />, "Эл. почта", undefined, "alex@mail.ru")}
               {renderMenuItem(<Phone className="w-5 h-5 text-muted-foreground" />, "Телефон", undefined, "+7 999 ***")}
             </div>
           </div>

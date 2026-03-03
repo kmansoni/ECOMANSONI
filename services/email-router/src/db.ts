@@ -1,6 +1,13 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { AppConfig } from "./config.js";
-import type { EmailInboxRecord, EmailOutboxRecord, EmailTemplateRecord, EmailThreadRecord } from "./types.js";
+import type {
+  EmailInboxRecord,
+  EmailOutboxRecord,
+  EmailTemplateRecord,
+  EmailThreadRecord,
+  InboxFolder,
+  OutboxFolder,
+} from "./types.js";
 
 interface DeliveryAttemptLog {
   outboxId: string;
@@ -14,6 +21,7 @@ interface DeliveryAttemptLog {
 export interface EnqueueEmailInput {
   toEmail: string;
   fromEmail?: string;
+  folder?: OutboxFolder;
   ccEmails?: string[];
   bccEmails?: string[];
   subject?: string;
@@ -25,6 +33,7 @@ export interface EnqueueEmailInput {
   templateVars?: Record<string, unknown>;
   idempotencyKey?: string;
   maxAttempts?: number;
+  status?: "pending" | "draft";
 }
 
 export interface IngestInboundEmailInput {
@@ -237,6 +246,9 @@ export class EmailDb {
   }
 
   async enqueue(input: EnqueueEmailInput): Promise<EmailOutboxRecord> {
+    const status = input.status ?? "pending";
+    const folder = input.folder ?? (status === "draft" ? "draft" : "sent");
+
     const resolvedThreadId =
       input.threadId ??
       (await this.findThreadByReply(input.toEmail, input.replyToMessageId)) ??
@@ -245,6 +257,7 @@ export class EmailDb {
     const payload = {
       to_email: input.toEmail,
       from_email: input.fromEmail ?? null,
+      folder,
       cc_email: input.ccEmails ?? [],
       bcc_email: input.bccEmails ?? [],
       subject: input.subject ?? null,
@@ -254,6 +267,7 @@ export class EmailDb {
       thread_id: resolvedThreadId,
       template_key: input.templateKey ?? null,
       template_vars: input.templateVars ?? {},
+      status,
       idempotency_key: input.idempotencyKey ?? null,
       max_attempts: input.maxAttempts ?? 5,
     };
@@ -388,7 +402,12 @@ export class EmailDb {
     return data as EmailInboxRecord;
   }
 
-  async listInbox(toEmail: string, limit: number, unreadOnly = false): Promise<EmailInboxRecord[]> {
+  async listInbox(
+    toEmail: string,
+    limit: number,
+    unreadOnly = false,
+    folder: InboxFolder = "inbox",
+  ): Promise<EmailInboxRecord[]> {
     const safeLimit = Math.max(1, Math.min(200, limit));
 
     if (this.isPostgrestMode()) {
@@ -396,7 +415,7 @@ export class EmailDb {
       const rows = await this.postgrestFetch<EmailInboxRecord[]>(
         "/email_inbox",
         { method: "GET" },
-        `to_email=eq.${encodeURIComponent(toEmail)}${unreadQuery}&select=*&order=received_at.desc&limit=${safeLimit}`,
+        `to_email=eq.${encodeURIComponent(toEmail)}&folder=eq.${encodeURIComponent(folder)}${unreadQuery}&select=*&order=received_at.desc&limit=${safeLimit}`,
       );
 
       return rows ?? [];
@@ -406,6 +425,7 @@ export class EmailDb {
       .from("email_inbox")
       .select("*")
       .eq("to_email", toEmail)
+      .eq("folder", folder)
       .order("received_at", { ascending: false })
       .limit(safeLimit);
 
@@ -454,6 +474,72 @@ export class EmailDb {
     const { error } = await this.supabase.from("email_inbox").update(patch).eq("id", id);
     if (error) {
       throw new Error(`mark inbox read failed: ${error.message}`);
+    }
+  }
+
+  async moveInboxFolder(id: string, folder: InboxFolder): Promise<void> {
+    const patch = { folder };
+
+    if (this.isPostgrestMode()) {
+      await this.postgrestFetch<null>(
+        "/email_inbox",
+        { method: "PATCH", body: JSON.stringify(patch) },
+        `id=eq.${encodeURIComponent(id)}`,
+      );
+      return;
+    }
+
+    const { error } = await this.supabase.from("email_inbox").update(patch).eq("id", id);
+    if (error) {
+      throw new Error(`move inbox folder failed: ${error.message}`);
+    }
+  }
+
+  async listOutbox(fromEmail: string, limit: number, folder: OutboxFolder = "sent"): Promise<EmailOutboxRecord[]> {
+    const safeLimit = Math.max(1, Math.min(200, limit));
+
+    if (this.isPostgrestMode()) {
+      const rows = await this.postgrestFetch<EmailOutboxRecord[]>(
+        "/email_outbox",
+        { method: "GET" },
+        `from_email=eq.${encodeURIComponent(fromEmail)}&folder=eq.${encodeURIComponent(folder)}&select=*&order=created_at.desc&limit=${safeLimit}`,
+      );
+      return rows ?? [];
+    }
+
+    const { data, error } = await this.supabase
+      .from("email_outbox")
+      .select("*")
+      .eq("from_email", fromEmail)
+      .eq("folder", folder)
+      .order("created_at", { ascending: false })
+      .limit(safeLimit);
+
+    if (error) {
+      throw new Error(`list outbox failed: ${error.message}`);
+    }
+
+    return (data ?? []) as EmailOutboxRecord[];
+  }
+
+  async moveOutboxFolder(id: string, folder: OutboxFolder): Promise<void> {
+    const patch = {
+      folder,
+      status: folder === "draft" ? "draft" : undefined,
+    };
+
+    if (this.isPostgrestMode()) {
+      await this.postgrestFetch<null>(
+        "/email_outbox",
+        { method: "PATCH", body: JSON.stringify(patch) },
+        `id=eq.${encodeURIComponent(id)}`,
+      );
+      return;
+    }
+
+    const { error } = await this.supabase.from("email_outbox").update(patch).eq("id", id);
+    if (error) {
+      throw new Error(`move outbox folder failed: ${error.message}`);
     }
   }
 

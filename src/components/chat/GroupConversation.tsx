@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, CheckCheck, Link, LogOut, MoreVertical, Send, UserPlus, Users } from "lucide-react";
+import { ArrowLeft, CheckCheck, Hash, Link, LogOut, MoreVertical, Send, UserPlus, Users } from "lucide-react";
+import { useGroupTopics } from "@/hooks/useGroupTopics";
+import { TopicsList } from "@/components/chat/TopicsList";
+import { CreateTopicSheet } from "@/components/chat/CreateTopicSheet";
 import { format } from "date-fns";
 import { toast } from "sonner";
 import { getHashtagBlockedToastPayload } from "@/lib/hashtagModeration";
@@ -35,9 +38,13 @@ export function GroupConversation({ group, onBack, onLeave }: GroupConversationP
   const { settings, update: updateGlobalSettings } = useCommunityGlobalSettings();
   const { createGroupInvite } = useCommunityInvites();
   const { setIsChatOpen } = useChatOpen();
+  const { topics, createTopic } = useGroupTopics(group.id);
 
   const [inputText, setInputText] = useState("");
   const [sending, setSending] = useState(false);
+  const [activeTopic, setActiveTopic] = useState<string | null>(null);
+  const [showCreateTopic, setShowCreateTopic] = useState(false);
+  const [topicsEnabled, setTopicsEnabled] = useState<boolean>((group as any).topics_enabled ?? false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const isOwner = group.owner_id === user?.id;
   const canInvite = isOwner && (settings?.allow_group_invites ?? true);
@@ -101,6 +108,19 @@ export function GroupConversation({ group, onBack, onLeave }: GroupConversationP
     }
   };
 
+  const handleToggleTopics = async () => {
+    const newVal = !topicsEnabled;
+    setTopicsEnabled(newVal);
+    await (supabase as any).from("group_chats").update({ topics_enabled: newVal }).eq("id", group.id);
+    if (newVal && topics.length === 0) {
+      const general = await createTopic({ name: "Общее", icon_emoji: "💬", icon_color: "#3B82F6" });
+      if (general) {
+        await (supabase as any).from("group_topics").update({ is_general: true }).eq("id", general.id);
+        setActiveTopic(general.id);
+      }
+    }
+  };
+
   const handleCreateGroupInvite = async () => {
     try {
       if (!canInvite) {
@@ -118,7 +138,8 @@ export function GroupConversation({ group, onBack, onLeave }: GroupConversationP
   };
 
   return (
-    <div className="h-full flex flex-col bg-background">
+    <>
+      <div className="h-full flex flex-col bg-background">
       <div className="flex-shrink-0 safe-area-top relative z-10 bg-background/95 backdrop-blur-sm border-b border-border">
         <div className="flex items-center px-2 py-2">
           <button
@@ -155,6 +176,12 @@ export function GroupConversation({ group, onBack, onLeave }: GroupConversationP
                 <Link className="w-4 h-4 mr-2" />
                 Скопировать invite-link
               </DropdownMenuItem>
+              {isOwner && (
+                <DropdownMenuItem onClick={handleToggleTopics}>
+                  <Hash className="w-4 h-4 mr-2" />
+                  {topicsEnabled ? "Отключить темы" : "Включить темы"}
+                </DropdownMenuItem>
+              )}
               {!isOwner && (
                 <DropdownMenuItem onClick={handleLeave} className="text-destructive">
                   <LogOut className="w-4 h-4 mr-2" />
@@ -165,6 +192,16 @@ export function GroupConversation({ group, onBack, onLeave }: GroupConversationP
           </DropdownMenu>
         </div>
       </div>
+
+      {topicsEnabled && topics.length > 0 && (
+        <TopicsList
+          topics={topics}
+          activeTopic={activeTopic}
+          onSelectTopic={setActiveTopic}
+          onCreateTopic={() => setShowCreateTopic(true)}
+          canCreate={isOwner}
+        />
+      )}
 
       <div className="flex-1 overflow-y-auto overflow-x-hidden native-scroll relative">
         <div className="relative z-10 p-4 space-y-1 overflow-x-hidden min-w-0">
@@ -275,6 +312,14 @@ export function GroupConversation({ group, onBack, onLeave }: GroupConversationP
           </Button>
         </div>
       </div>
-    </div>
+
+      </div>
+
+      <CreateTopicSheet
+        open={showCreateTopic}
+        onClose={() => setShowCreateTopic(false)}
+        onSubmit={async (params) => { await createTopic(params); }}
+      />
+    </>
   );
 }

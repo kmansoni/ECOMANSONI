@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Search, Loader2, Send, Users, Radio } from "lucide-react";
+import { Search, Loader2, Send, Users, Radio, Link, BookOpen } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -186,10 +186,12 @@ export function ShareSheet({
       }
 
       await Promise.all(promises);
-      
+
+      const n = selectedTargets.size;
+      const declension = n === 1 ? "чат" : n >= 2 && n <= 4 ? "чата" : "чатов";
       toast({
         title: "Отправлено",
-        description: `Пост отправлен в ${selectedTargets.size} чат${selectedTargets.size > 1 ? "ов" : ""}`,
+        description: `Пост отправлен в ${n} ${declension}`,
       });
       
       onClose();
@@ -216,12 +218,35 @@ export function ShareSheet({
     }
   };
 
+  const handleCopyLink = async () => {
+    const url = `${window.location.origin}/post/${postId}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      toast({ title: "Ссылка скопирована" });
+    } catch {
+      toast({ title: "Не удалось скопировать", variant: "destructive" });
+    }
+  };
+
   return (
     <Drawer open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DrawerContent className="h-[70dvh] max-h-[70dvh] mt-0 flex flex-col">
+      <DrawerContent className="h-[75dvh] max-h-[75dvh] mt-0 flex flex-col">
         <DrawerHeader className="border-b border-border pb-3 flex-shrink-0">
           <DrawerTitle className="text-center">Поделиться</DrawerTitle>
         </DrawerHeader>
+
+        {/* Быстрые действия */}
+        <div className="flex gap-3 px-4 py-3 border-b border-border overflow-x-auto">
+          <button
+            onClick={handleCopyLink}
+            className="flex flex-col items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors shrink-0"
+          >
+            <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center">
+              <Link className="w-5 h-5" />
+            </div>
+            Скопировать ссылку
+          </button>
+        </div>
 
         {/* Search */}
         <div className="px-4 py-3 border-b border-border">

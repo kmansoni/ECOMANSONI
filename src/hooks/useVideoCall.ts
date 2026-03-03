@@ -62,6 +62,8 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
   const iceRestartCountRef = useRef(0);
   const isCleaningUpRef = useRef(false);
   const pendingCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
+  const lastOfferSdpRef = useRef<string | null>(null);
+  const lastAnswerSdpRef = useRef<string | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const setupStartedAtRef = useRef<number | null>(null);
   const statusSampleTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -69,6 +71,7 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
   
   // Track if we're in an active call process (used to prevent visibility-based cleanup)
   const isCallActiveRef = useRef(false);
+  const answerInFlightRef = useRef(false);
 
   const log = useCallback((msg: string, ...args: any[]) => {
     console.log(`[VideoCall] ${msg}`, ...args);
@@ -76,6 +79,28 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
 
   const warn = useCallback((msg: string, ...args: any[]) => {
     console.warn(`[VideoCall] ${msg}`, ...args);
+  }, []);
+
+  const sanitizeDebugPayload = useCallback((payload: Record<string, any>) => {
+    const next = { ...payload };
+
+    if (typeof next.ua === "string") {
+      next.ua = next.ua.slice(0, 64);
+    }
+
+    if (next.constraints) {
+      next.constraints = "[redacted]";
+    }
+
+    if (typeof next.sdp === "string") {
+      next.sdp = "[redacted]";
+    }
+
+    if (next.candidate) {
+      next.candidate = "[redacted]";
+    }
+
+    return next;
   }, []);
 
   // Persist debug info to DB so we can debug Telegram iOS where console is unreliable
@@ -89,14 +114,14 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
           signal_data: {
             stage,
             ts: new Date().toISOString(),
-            ...payload,
+            ...sanitizeDebugPayload(payload),
           },
         });
       } catch {
         // never throw from debug
       }
     },
-    [user]
+    [sanitizeDebugPayload, user]
   );
 
   // Keep localStreamRef in sync
@@ -160,6 +185,8 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
     setIsVideoOff(false);
     iceRestartCountRef.current = 0;
     pendingCandidatesRef.current = [];
+    lastOfferSdpRef.current = null;
+    lastAnswerSdpRef.current = null;
     setupStartedAtRef.current = null;
     isCleaningUpRef.current = false;
   }, [log]);
@@ -281,6 +308,12 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
     try {
       switch (signalType) {
         case "offer": {
+          const incomingOfferSdp = typeof signalData?.sdp === "string" ? signalData.sdp : null;
+          if (incomingOfferSdp && lastOfferSdpRef.current === incomingOfferSdp) {
+            log("Duplicate offer SDP received, ignoring");
+            return;
+          }
+
           // If we receive a new offer while already having a PC, the other side may have restarted
           // (e.g., relay retry). We need to handle this gracefully:
           // 1. If PC is in "failed" or "closed" state, recreate it
@@ -362,10 +395,29 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
             log("No peer connection available for offer, ignoring");
             return;
           }
+
+          if (peerConnectionRef.current.signalingState === "have-local-offer") {
+            try {
+              await peerConnectionRef.current.setLocalDescription({ type: "rollback" } as RTCSessionDescriptionInit);
+            } catch (rollbackError) {
+              warn("Rollback before processing offer failed:", rollbackError);
+            }
+          }
+
+          if (
+            peerConnectionRef.current.remoteDescription?.type === "offer" &&
+            peerConnectionRef.current.remoteDescription.sdp === incomingOfferSdp
+          ) {
+            log("Offer already applied as remote description, ignoring");
+            return;
+          }
           
           await peerConnectionRef.current.setRemoteDescription(
             new RTCSessionDescription(signalData)
           );
+          if (incomingOfferSdp) {
+            lastOfferSdpRef.current = incomingOfferSdp;
+          }
           // Apply pending candidates
           for (const candidate of pendingCandidatesRef.current) {
             await peerConnectionRef.current.addIceCandidate(
@@ -387,9 +439,32 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
             log("No peer connection for answer, ignoring");
             return;
           }
+
+          const incomingAnswerSdp = typeof signalData?.sdp === "string" ? signalData.sdp : null;
+          if (incomingAnswerSdp && lastAnswerSdpRef.current === incomingAnswerSdp) {
+            log("Duplicate answer SDP received, ignoring");
+            return;
+          }
+
+          if (
+            peerConnectionRef.current.remoteDescription?.type === "answer" &&
+            peerConnectionRef.current.remoteDescription.sdp === incomingAnswerSdp
+          ) {
+            log("Answer already applied as remote description, ignoring");
+            return;
+          }
+
+          if (peerConnectionRef.current.signalingState !== "have-local-offer") {
+            log("Answer received in unexpected signaling state, ignoring:", peerConnectionRef.current.signalingState);
+            return;
+          }
+
           await peerConnectionRef.current.setRemoteDescription(
             new RTCSessionDescription(signalData)
           );
+          if (incomingAnswerSdp) {
+            lastAnswerSdpRef.current = incomingAnswerSdp;
+          }
           // Apply pending candidates
           for (const candidate of pendingCandidatesRef.current) {
             await peerConnectionRef.current.addIceCandidate(
@@ -768,6 +843,11 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
   // Answer incoming call
   const answerCall = useCallback(async (call: VideoCall) => {
     if (!user) return;
+    if (answerInFlightRef.current) {
+      warn("answerCall already in progress, ignoring duplicate trigger");
+      return;
+    }
+    answerInFlightRef.current = true;
 
     // FIRST: Send early debug event IMMEDIATELY (non-blocking) - before anything else
     // This helps debug when the function is called but crashes before getUserMedia
@@ -860,13 +940,25 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
       // Update call status FIRST (so caller knows we answered)
       log("Updating call status to answered...");
       void debugEvent(call.id, "answer_update_call_status_request");
-      await supabase
+      const { data: updatedCall, error: updateError } = await supabase
         .from("video_calls")
         .update({
           status: "answered",
           started_at: new Date().toISOString(),
         })
-        .eq("id", call.id);
+        .eq("id", call.id)
+        .select("id, started_at")
+        .maybeSingle();
+
+      if (updateError || !updatedCall?.started_at) {
+        void debugEvent(call.id, "answer_started_at_update_failed", {
+          code: (updateError as any)?.code ?? null,
+          message: (updateError as any)?.message ?? "started_at_not_set",
+        });
+        throw new Error("Failed to mark call as answered (started_at)");
+      }
+
+      setStatus("ringing");
       void debugEvent(call.id, "answer_update_call_status_success");
       await sendSignal(call.id, "call.accept", {
         call_id: call.id,
@@ -882,6 +974,8 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
         .select("*")
         .eq("call_id", call.id)
         .eq("signal_type", "offer")
+        .neq("sender_id", user.id)
+        .or("processed.is.null,processed.eq.false")
         .order("created_at", { ascending: false })
         .limit(1);
 
@@ -910,10 +1004,17 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
       // If we found an offer earlier, process it NOW (after PC is ready)
       if (existingOffer && peerConnectionRef.current && existingOffer.sender_id !== user.id) {
         try {
+          const existingOfferSdp = typeof existingOffer.signal_data?.sdp === "string" ? existingOffer.signal_data.sdp : null;
+          if (existingOfferSdp && lastOfferSdpRef.current === existingOfferSdp) {
+            log("Existing offer already processed, skipping duplicate");
+          } else {
           log("Processing existing offer...");
           await peerConnectionRef.current.setRemoteDescription(
             new RTCSessionDescription(existingOffer.signal_data as unknown as RTCSessionDescriptionInit)
           );
+          if (existingOfferSdp) {
+            lastOfferSdpRef.current = existingOfferSdp;
+          }
           
           // Apply any buffered ICE candidates
           for (const candidate of pendingCandidatesRef.current) {
@@ -925,6 +1026,7 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
           await peerConnectionRef.current.setLocalDescription(answer);
           await sendSignal(call.id, "answer", answer);
           log("Processed existing offer and sent answer");
+          }
           
           // Mark offer as processed
           await supabase
@@ -953,6 +1055,8 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
       });
       isCallActiveRef.current = false;
       await cleanup("answer_call_error");
+    } finally {
+      answerInFlightRef.current = false;
     }
   }, [user, debugEvent, setupBroadcastChannel, startSignalPolling, createPeerConnection, sendSignal, cleanup, log, warn]);
 

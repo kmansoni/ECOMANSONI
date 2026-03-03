@@ -6,7 +6,7 @@ const envSchema = z.object({
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
   EMAIL_ROUTER_POSTGREST_URL: z.string().url().optional(),
   EMAIL_ROUTER_PORT: z.coerce.number().int().positive().default(8090),
-  EMAIL_ROUTER_PROVIDER: z.enum(["stub", "smtp", "sendmail"]).default("stub"),
+  EMAIL_ROUTER_PROVIDER: z.enum(["smtp", "sendmail"]).default("sendmail"),
   EMAIL_ROUTER_POLL_MS: z.coerce.number().int().positive().default(2000),
   EMAIL_ROUTER_BATCH_SIZE: z.coerce.number().int().positive().max(200).default(25),
   EMAIL_ROUTER_LOCK_SECONDS: z.coerce.number().int().positive().default(90),
