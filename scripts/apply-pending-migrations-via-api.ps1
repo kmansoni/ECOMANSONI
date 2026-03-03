@@ -66,7 +66,23 @@ foreach ($file in $pending) {
   $sql = Get-Content -LiteralPath $path -Raw -Encoding UTF8
 
   Write-Host "Applying $file" -ForegroundColor Yellow
-  [void](Invoke-DbQuery $sql)
+  $canMarkAsApplied = $false
+  try {
+    [void](Invoke-DbQuery $sql)
+    $canMarkAsApplied = $true
+  } catch {
+    $rawMessage = $_.Exception.Message
+    if ($rawMessage -match 'already exists') {
+      Write-Host "Migration $file appears partially applied (already exists). Marking as applied and continuing." -ForegroundColor DarkYellow
+      $canMarkAsApplied = $true
+    } else {
+      throw
+    }
+  }
+
+  if (-not $canMarkAsApplied) {
+    throw "Failed to apply $file"
+  }
 
   $mark = "insert into supabase_migrations.schema_migrations(version) values ('$version') on conflict do nothing;"
   if ($colNames -contains 'name' -and $colNames -contains 'statements') {
