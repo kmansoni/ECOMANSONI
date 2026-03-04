@@ -5,7 +5,7 @@
  * This is a Supabase Edge Function that handles incoming webhook requests.
  */
 
-import { createClient } from '@supabase/supabase-js';
+import { createClient } from 'npm:@supabase/supabase-js@2';
 
 declare const Deno: {
   env: { get(name: string): string | undefined };
