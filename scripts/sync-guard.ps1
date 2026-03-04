@@ -103,6 +103,13 @@ if (-not [string]::IsNullOrWhiteSpace($MirrorRepoPath)) {
 
 if ($CheckRemoteMigrations) {
   Write-Host "==> Remote migration drift check" -ForegroundColor Cyan
+  $dbPassword = $env:SUPABASE_DB_PASSWORD
+  if ([string]::IsNullOrWhiteSpace($dbPassword)) {
+    $dbPassword = $env:PGPASSWORD
+  }
+  if ([string]::IsNullOrWhiteSpace($dbPassword)) {
+    Write-Host "Remote migration check skipped: SUPABASE_DB_PASSWORD/PGPASSWORD is not set." -ForegroundColor Yellow
+  } else {
   $exe = $SupabaseExe.Trim()
   $oldEap = $ErrorActionPreference
   $ErrorActionPreference = "Continue"
@@ -117,10 +124,16 @@ if ($CheckRemoteMigrations) {
   } finally {
     $ErrorActionPreference = $oldEap
   }
-  if ($LASTEXITCODE -ne 0) {
-    Add-Issue $issues "Unable to read remote migrations. Supabase CLI exit code: $LASTEXITCODE"
-  }
   $lines = @($raw)
+  if ($LASTEXITCODE -ne 0) {
+    $rawText = ($lines | ForEach-Object { [string]$_ }) -join "`n"
+    if ($rawText -match 'SUPABASE_DB_PASSWORD|unexpected login role status 401|Connect to your database by setting the env var') {
+      Write-Host "Remote migration check skipped: Supabase CLI requires DB password (SUPABASE_DB_PASSWORD)." -ForegroundColor Yellow
+    } else {
+      $snippet = (($lines | Select-Object -First 3) | ForEach-Object { [string]$_ }) -join " | "
+      Add-Issue $issues "Unable to read remote migrations. Supabase CLI exit code: $LASTEXITCODE. Output: $snippet"
+    }
+  }
 
   foreach ($line in $lines) {
     $s = [string]$line
@@ -137,6 +150,7 @@ if ($CheckRemoteMigrations) {
     if ([string]::IsNullOrWhiteSpace($local) -xor [string]::IsNullOrWhiteSpace($remote)) {
       Add-Issue $issues "Migration drift row: local='$local' remote='$remote'"
     }
+  }
   }
 }
 

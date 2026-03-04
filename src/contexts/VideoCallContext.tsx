@@ -16,6 +16,32 @@ const CALLS_V2_WS_URLS = (import.meta.env.VITE_CALLS_V2_WS_URLS ?? "")
 const REKEY_INTERVAL_MS = Math.max(30_000, Number(import.meta.env.VITE_CALLS_V2_REKEY_INTERVAL_MS ?? "120000"));
 const FRAME_E2EE_ADVERTISE_SFRAME = import.meta.env.VITE_CALLS_FRAME_E2EE_ADVERTISE_SFRAME === "true";
 
+function normalizeWsEndpoint(raw: string): string {
+  const value = String(raw || "").trim();
+  if (!value) return "";
+
+  if (value.startsWith("ws://") || value.startsWith("wss://")) return value;
+  if (value.startsWith("http://")) return `ws://${value.slice("http://".length)}`;
+  if (value.startsWith("https://")) return `wss://${value.slice("https://".length)}`;
+  if (value.startsWith("/")) {
+    const scheme = window.location.protocol === "https:" ? "wss" : "ws";
+    return `${scheme}://${window.location.host}${value}`;
+  }
+
+  const scheme = window.location.protocol === "https:" ? "wss" : "ws";
+  return `${scheme}://${value}`;
+}
+
+function isLocalEndpoint(endpoint: string): boolean {
+  try {
+    const url = new URL(endpoint);
+    const h = url.hostname.toLowerCase();
+    return h === "localhost" || h === "127.0.0.1" || h === "::1";
+  } catch {
+    return false;
+  }
+}
+
 function hasInsertableStreamsSupport(): boolean {
   try {
     return typeof RTCRtpSender !== "undefined" && "createEncodedStreams" in RTCRtpSender.prototype;
@@ -31,6 +57,18 @@ function getStableCallsDeviceId(): string {
   const created = globalThis.crypto?.randomUUID?.() ?? `dev_${Date.now()}`;
   window.localStorage.setItem(key, created);
   return created;
+}
+
+function toBase64Utf8(value: string): string {
+  return btoa(unescape(encodeURIComponent(value)));
+}
+
+function makeRandomB64(size: number): string {
+  const buf = new Uint8Array(size);
+  crypto.getRandomValues(buf);
+  let binary = "";
+  for (let i = 0; i < buf.length; i++) binary += String.fromCharCode(buf[i]);
+  return btoa(binary);
 }
 
 interface VideoCallContextType {
@@ -61,12 +99,15 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const [pendingIncomingCall, setPendingIncomingCall] = useState<VideoCall | null>(null);
   const callsWsRef = useRef<CallsWsClient | null>(null);
+  const callsWsCallIdRef = useRef<string | null>(null);
   const callsWsRoomRef = useRef<string | null>(null);
   const callsWsMediaRoomRef = useRef<string | null>(null);
   const callsWsSendTransportRef = useRef<string | null>(null);
   const callsWsRecvTransportRef = useRef<string | null>(null);
   const rekeyTimerRef = useRef<number | null>(null);
   const e2eeEpochRef = useRef<number>(0);
+  const e2eeLeaderDeviceRef = useRef<string | null>(null);
+  const keyPackageNonceRef = useRef<Set<string>>(new Set());
   
   // UI-lock: keeps call UI visible even during transient status changes (permission prompts, etc.)
   const [isCallUiActive, setIsCallUiActive] = useState(false);
@@ -94,8 +135,12 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
   } = useVideoCall({
     onCallEnded: (call) => {
       console.log("[VideoCallContext] Call ended:", call.id.slice(0, 8));
-      if (callsWsRoomRef.current === call.id) {
+      if (callsWsCallIdRef.current === call.id) {
+        callsWsCallIdRef.current = null;
         callsWsRoomRef.current = null;
+        callsWsMediaRoomRef.current = null;
+        callsWsSendTransportRef.current = null;
+        callsWsRecvTransportRef.current = null;
       }
       setPendingIncomingCall(null);
       setIsCallUiActive(false); // Release UI-lock on call end
@@ -110,31 +155,58 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     if (!callsWsRef.current) return;
     callsWsRef.current.close();
     callsWsRef.current = null;
+    callsWsCallIdRef.current = null;
     callsWsRoomRef.current = null;
     callsWsMediaRoomRef.current = null;
     callsWsSendTransportRef.current = null;
     callsWsRecvTransportRef.current = null;
+    e2eeLeaderDeviceRef.current = null;
+    keyPackageNonceRef.current.clear();
   }, []);
 
   const ensureCallsV2Connected = useCallback(async (): Promise<CallsWsClient | null> => {
-    if (!CALLS_V2_ENABLED || !CALLS_V2_WS_URL || !user) return null;
+    if (!CALLS_V2_ENABLED || !user) return null;
+    if (!CALLS_V2_WS_URL && CALLS_V2_WS_URLS.length === 0) {
+      console.warn("[VideoCallContext] calls-v2 disabled: no WS endpoint configured");
+      return null;
+    }
     if (callsWsRef.current) return callsWsRef.current;
 
-    const endpoints = CALLS_V2_WS_URLS.length > 0 ? CALLS_V2_WS_URLS : (CALLS_V2_WS_URL ? [CALLS_V2_WS_URL] : []);
+    const rawEndpoints = CALLS_V2_WS_URLS.length > 0 ? CALLS_V2_WS_URLS : (CALLS_V2_WS_URL ? [CALLS_V2_WS_URL] : []);
+    const endpoints = rawEndpoints
+      .map(normalizeWsEndpoint)
+      .filter((v, i, arr) => !!v && arr.indexOf(v) === i);
+    if (endpoints.length === 0) {
+      console.warn("[VideoCallContext] calls-v2 disabled: WS endpoints normalized to empty", { rawEndpoints });
+      return null;
+    }
+
+    const requireWss = !import.meta.env.DEV && !endpoints.some(isLocalEndpoint);
+    console.info("[VideoCallContext] calls-v2 connect:start", {
+      endpointCount: endpoints.length,
+      firstEndpoint: endpoints[0],
+      requireWss,
+    });
     const client = new CallsWsClient({
       url: endpoints[0],
       urls: endpoints,
+      requireWss,
       heartbeatMs: 10_000,
       reconnect: { enabled: true, maxAttempts: 20, baseDelayMs: 500, maxDelayMs: 12_000 },
       ackRetry: { maxRetries: 1, retryDelayMs: 250 },
     });
 
     try {
+      const offState = client.onConnectionStateChange((state) => {
+        console.info("[VideoCallContext] calls-v2 ws-state", { state });
+      });
       await client.connect();
+      console.info("[VideoCallContext] calls-v2 connect:ok", { state: client.connectionState });
 
       const { data } = await supabase.auth.getSession();
       const accessToken = data.session?.access_token;
       if (!accessToken) {
+        console.warn("[VideoCallContext] calls-v2 auth:skip no access token");
         client.close();
         return null;
       }
@@ -147,10 +219,114 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
           deviceId,
         },
       });
+      console.info("[VideoCallContext] calls-v2 hello:ok", { deviceId });
       await client.auth({ accessToken });
+      console.info("[VideoCallContext] calls-v2 auth:ok");
       await client.e2eeCaps({
         insertableStreams: hasInsertableStreamsSupport(),
         sframe: FRAME_E2EE_ADVERTISE_SFRAME && hasInsertableStreamsSupport(),
+      });
+      console.info("[VideoCallContext] calls-v2 e2ee_caps:ok");
+
+      client.on("AUTH_FAIL", (frame) => {
+        console.warn("[VideoCallContext] calls-v2 auth-fail", { payload: frame.payload });
+      });
+
+      client.on("ERROR", (frame) => {
+        console.warn("[VideoCallContext] calls-v2 server-error", {
+          type: frame.type,
+          payload: frame.payload,
+          ack: frame.ack,
+        });
+      });
+
+      client.on("ROOM_LEFT", (frame) => {
+        console.warn("[VideoCallContext] calls-v2 room-left", { payload: frame.payload });
+      });
+
+      // SECURITY FIX: Unsubscribe connection state handler after setup to prevent
+      // handler accumulation across re-renders and potential memory/event-listener leaks.
+      offState();
+
+      client.on("ROOM_SNAPSHOT", (frame) => {
+        const snapshot = frame.payload as any;
+        const leader = snapshot?.e2ee?.leaderDeviceId;
+        if (typeof leader === "string" && leader.length > 0) {
+          e2eeLeaderDeviceRef.current = leader;
+        }
+      });
+
+      client.on("REKEY_BEGIN", (frame) => {
+        const activeRoomId = callsWsRoomRef.current;
+        const roomId = frame.payload?.roomId as string | undefined;
+        if (!activeRoomId || !roomId || roomId !== activeRoomId) return;
+
+        const epochRaw = frame.payload?.epoch;
+        const epoch = typeof epochRaw === "number" ? epochRaw : Number(epochRaw);
+        if (!Number.isFinite(epoch) || epoch < 0) return;
+
+        const myDeviceId = getStableCallsDeviceId();
+        const leaderDeviceId = e2eeLeaderDeviceRef.current;
+        if (!leaderDeviceId || leaderDeviceId === myDeviceId) return;
+
+        const nonce = `${roomId}:${epoch}:${myDeviceId}`;
+        if (keyPackageNonceRef.current.has(nonce)) return;
+        keyPackageNonceRef.current.add(nonce);
+        if (keyPackageNonceRef.current.size > 2000) {
+          const keep = Array.from(keyPackageNonceRef.current).slice(-1000);
+          keyPackageNonceRef.current = new Set(keep);
+        }
+
+        // SECURITY WARNING: KEY_PACKAGE protocol is NOT YET IMPLEMENTED.
+        // Current implementation sends a STUB payload — no actual key material is exchanged.
+        // TODO(e2ee-calls): Replace with real ECDH key exchange:
+        //   1. Get identity key pair from E2EEKeyStore
+        //   2. ECDH with leader's public key
+        //   3. AES-KW wrap the epoch group key
+        //   4. Real ECDSA signature over (roomId + epoch + ciphertext)
+        // Until this is implemented, calls are NOT end-to-end encrypted at the media layer.
+        // SECURITY FIX: Added explicit __stub marker so downstream auditing can detect this.
+        console.warn("[VideoCallContext] KEY_PACKAGE is a STUB — E2EE key exchange for calls is NOT active");
+        const ciphertext = toBase64Utf8(JSON.stringify({
+          __stub: true, // SECURITY: explicit marker — real key material absent
+          roomId,
+          epoch,
+          fromDeviceId: myDeviceId,
+          ts: Date.now(),
+        }));
+
+        void client.keyPackage({
+          roomId,
+          targetDeviceId: leaderDeviceId,
+          epoch,
+          ciphertext,
+          sig: makeRandomB64(32),
+          senderPublicKey: makeRandomB64(32),
+        }).catch((error) => {
+          console.warn("[VideoCallContext] KEY_PACKAGE send failed", error);
+        });
+      });
+
+      client.on("KEY_PACKAGE", (frame) => {
+        const activeRoomId = callsWsRoomRef.current;
+        const roomId = frame.payload?.roomId as string | undefined;
+        if (!activeRoomId || !roomId || roomId !== activeRoomId) return;
+
+        const myDeviceId = getStableCallsDeviceId();
+        const targetDeviceId = frame.payload?.targetDeviceId as string | undefined;
+        if (!targetDeviceId || targetDeviceId !== myDeviceId) return;
+
+        const epochRaw = frame.payload?.epoch;
+        const epoch = typeof epochRaw === "number" ? epochRaw : Number(epochRaw);
+        if (!Number.isFinite(epoch) || epoch < 0) return;
+
+        void client.keyAck({
+          roomId,
+          epoch,
+          fromDeviceId: myDeviceId,
+        }).catch((error) => {
+          console.warn("[VideoCallContext] KEY_ACK send failed", error);
+        });
       });
 
       client.on("REKEY_COMMIT", (frame) => {
@@ -180,31 +356,76 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
 
   const bootstrapCallsV2Room = useCallback(
     async (call: VideoCall, role: "caller" | "callee") => {
-      if (!CALLS_V2_ENABLED || !CALLS_V2_WS_URL || !user) return;
+      if (!CALLS_V2_ENABLED || !user) return;
+      if (!CALLS_V2_WS_URL && CALLS_V2_WS_URLS.length === 0) return;
 
-      const roomId = call.id;
-      if (callsWsRoomRef.current === roomId) return;
+      const callId = call.id;
+      if (callsWsCallIdRef.current === callId && callsWsRoomRef.current) return;
+      console.info("[VideoCallContext] calls-v2 room-bootstrap:start", { callId, role });
 
       const client = await ensureCallsV2Connected();
       if (!client) return;
 
       try {
+        let roomId: string;
+        let joinToken: string | undefined;
+
         if (role === "caller") {
           await client.roomCreate({
-            roomId,
-            callId: call.id,
+            callId,
             preferredRegion: "tr",
+          });
+          console.info("[VideoCallContext] calls-v2 room-create:sent", { callId });
+
+          const createdFrame = await client.waitFor(
+            "ROOM_CREATED",
+            (frame) => typeof frame.payload?.roomId === "string" && frame.payload?.roomId.length > 0,
+            { timeoutMs: 5000, acceptRecent: true }
+          );
+          roomId = createdFrame.payload?.roomId as string;
+          console.info("[VideoCallContext] calls-v2 room-created:ok", { callId, roomId });
+
+          const secretFrame = await client.waitFor(
+            "ROOM_JOIN_SECRET",
+            (frame) => frame.payload?.roomId === roomId && typeof frame.payload?.joinToken === "string" && frame.payload?.joinToken.length > 0,
+            { timeoutMs: 5000, acceptRecent: true }
+          );
+          joinToken = secretFrame.payload?.joinToken as string;
+          console.info("[VideoCallContext] calls-v2 room-join-secret:ok", { roomId });
+        } else {
+          const hintedRoomId = (call as VideoCall & { room_id?: string; calls_v2_room_id?: string }).calls_v2_room_id
+            ?? (call as VideoCall & { room_id?: string }).room_id;
+          const hintedJoinToken = (call as VideoCall & { join_token?: string; calls_v2_join_token?: string }).calls_v2_join_token
+            ?? (call as VideoCall & { join_token?: string }).join_token;
+
+          if (!hintedRoomId || !hintedJoinToken) {
+            console.warn("[VideoCallContext] calls-v2 callee bootstrap skipped: missing room/join token", {
+              callId,
+              hasRoomId: !!hintedRoomId,
+              hasJoinToken: !!hintedJoinToken,
+            });
+            return;
+          }
+
+          roomId = hintedRoomId;
+          joinToken = hintedJoinToken;
+          console.info("[VideoCallContext] calls-v2 callee-room-hint:ok", {
+            callId,
+            roomId,
+            hasJoinToken: !!joinToken,
           });
         }
 
         await client.roomJoin({
           roomId,
-          callId: call.id,
+          joinToken,
           deviceId: getStableCallsDeviceId(),
           preferredRegion: "tr",
         });
+        console.info("[VideoCallContext] calls-v2 room-join:ok", { callId, roomId, role });
         e2eeEpochRef.current = 0;
         await client.e2eeReady({ roomId, epoch: 0 });
+        console.info("[VideoCallContext] calls-v2 e2ee-ready:ok", { roomId, epoch: 0 });
 
         const consumeUnsub = client.on("PRODUCER_ADDED", (frame) => {
           if (frame.payload?.roomId !== roomId) return;
@@ -219,7 +440,9 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
           consumeUnsub();
         }, 10 * 60_000);
 
+        callsWsCallIdRef.current = callId;
         callsWsRoomRef.current = roomId;
+        console.info("[VideoCallContext] calls-v2 room-bootstrap:done", { callId, roomId });
 
         if (rekeyTimerRef.current) {
           window.clearInterval(rekeyTimerRef.current);
@@ -254,8 +477,24 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
 
   const bootstrapCallsV2Media = useCallback(
     async (call: VideoCall, stream: MediaStream | null) => {
-      if (!CALLS_V2_ENABLED || !CALLS_V2_WS_URL || !user || !stream) return;
-      const roomId = call.id;
+      if (!CALLS_V2_ENABLED || !user || !stream) return;
+      if (!CALLS_V2_WS_URL && CALLS_V2_WS_URLS.length === 0) return;
+      const callId = call.id;
+      const hintedRoomId = (call as VideoCall & { room_id?: string; calls_v2_room_id?: string }).calls_v2_room_id
+        ?? (call as VideoCall & { room_id?: string }).room_id;
+      const roomId = callsWsCallIdRef.current === callId
+        ? callsWsRoomRef.current
+        : (hintedRoomId ?? null);
+
+      if (!roomId) {
+        console.warn("[VideoCallContext] calls-v2 media-bootstrap skipped: room unresolved", {
+          callId,
+          mappedCallId: callsWsCallIdRef.current,
+          mappedRoomId: callsWsRoomRef.current,
+          hintedRoomId,
+        });
+        return;
+      }
 
       if (callsWsRoomRef.current !== roomId) return;
       if (callsWsMediaRoomRef.current === roomId) return;
@@ -264,6 +503,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       if (!client) return;
 
       try {
+        console.info("[VideoCallContext] calls-v2 media-bootstrap:start", { callId, roomId });
         await client.transportCreate({ roomId, direction: "send" });
         const sendCreated = await client.waitFor(
           "TRANSPORT_CREATED",
@@ -272,6 +512,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         );
         const sendTransportId = sendCreated.payload?.transportId as string | undefined;
         if (!sendTransportId) return;
+        console.info("[VideoCallContext] calls-v2 transport-created:send", { roomId, sendTransportId });
 
         await client.transportCreate({ roomId, direction: "recv" });
         const recvCreated = await client.waitFor(
@@ -281,6 +522,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         );
         const recvTransportId = recvCreated.payload?.transportId as string | undefined;
         if (!recvTransportId) return;
+        console.info("[VideoCallContext] calls-v2 transport-created:recv", { roomId, recvTransportId });
 
         await client.transportConnect({ roomId, transportId: sendTransportId, dtlsParameters: {} });
         await client.transportConnect({ roomId, transportId: recvTransportId, dtlsParameters: {} });
@@ -298,9 +540,11 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
             rtpParameters: {},
             appData: { trackId: track.id },
           });
+          console.info("[VideoCallContext] calls-v2 produce:ok", { roomId, kind, trackId: track.id });
         }
 
         callsWsMediaRoomRef.current = roomId;
+        console.info("[VideoCallContext] calls-v2 media-bootstrap:done", { roomId, trackCount: tracks.length });
       } catch (err) {
         console.warn("[VideoCallContext] calls-v2 media bootstrap failed", err);
       }
@@ -467,10 +711,16 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       }
 
       if ((actionType === "end" || actionType === "disconnect") && matchesCurrent) {
-        await endCall();
+        console.log("[VideoCallContext] Ignoring native end/disconnect action to avoid false DB ended status", {
+          callId: action.callId,
+          actionType,
+          status,
+          connectionState,
+        });
+        return;
       }
     });
-  }, [pendingIncomingCall, incomingCall, currentCall, answerCall, declineCall, endCall]);
+  }, [pendingIncomingCall, incomingCall, currentCall, answerCall, declineCall, status, connectionState]);
 
   useEffect(() => {
     return () => {

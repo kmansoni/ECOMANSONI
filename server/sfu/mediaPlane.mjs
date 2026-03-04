@@ -167,11 +167,65 @@ async function createFallbackController() {
 
 async function createMediasoupController() {
   const mediasoup = await import("mediasoup");
-  const worker = await mediasoup.createWorker({
-    rtcMinPort: Number(process.env.SFU_RTC_MIN_PORT ?? "40000"),
-    rtcMaxPort: Number(process.env.SFU_RTC_MAX_PORT ?? "49999"),
-    logLevel: process.env.SFU_MEDIASOUP_LOG_LEVEL ?? "warn",
-  });
+  const os = await import("node:os");
+
+  const BASE_PORT = parseInt(process.env.SFU_RTC_MIN_PORT || "40000", 10);
+  const MAX_PORT = parseInt(process.env.SFU_RTC_MAX_PORT || "49999", 10);
+  const PORTS_PER_WORKER = 1000;
+  const maxWorkersByPort = Math.floor((MAX_PORT - BASE_PORT + 1) / PORTS_PER_WORKER);
+
+  const numWorkers = Math.max(
+    1,
+    Math.min(
+      parseInt(process.env.MEDIASOUP_WORKERS || "0", 10) || os.cpus().length,
+      os.cpus().length,
+      maxWorkersByPort,
+    )
+  );
+
+  const workers = [];
+
+  async function spawnWorker(index) {
+    const minPort = BASE_PORT + index * PORTS_PER_WORKER;
+    const maxPort = minPort + PORTS_PER_WORKER - 1;
+    const w = await mediasoup.createWorker({
+      logLevel: process.env.MEDIASOUP_LOG_LEVEL ?? process.env.SFU_MEDIASOUP_LOG_LEVEL ?? "warn",
+      logTags: ["info", "ice", "dtls", "rtp", "srtp", "rtcp"],
+      rtcMinPort: minPort,
+      rtcMaxPort: maxPort,
+    });
+    w.on("died", () => {
+      console.warn(`[mediasoup] Worker ${index} died — invalidating affected rooms, restarting in 2s`);
+      // Invalidate routers belonging to this worker so ensureRouter() recreates them
+      for (const room of rooms.values()) {
+        if (room.workerIndex === index) {
+          room.router = null;
+          room.workerIndex = undefined;
+        }
+      }
+      setTimeout(async () => {
+        try {
+          workers[index] = await spawnWorker(index);
+          console.log(`[mediasoup] Worker ${index} restarted`);
+        } catch (e) {
+          console.error(`[mediasoup] Worker ${index} restart failed: ${e?.message ?? e}`);
+        }
+      }, 2000);
+    });
+    return w;
+  }
+
+  for (let i = 0; i < numWorkers; i++) {
+    workers.push(await spawnWorker(i));
+  }
+  console.log(`[mediasoup] Started ${workers.length} workers`);
+
+  let nextWorkerIdx = 0;
+  function getNextWorker() {
+    const w = workers[nextWorkerIdx % workers.length];
+    nextWorkerIdx++;
+    return w;
+  }
 
   const rooms = new Map();
 
@@ -194,7 +248,9 @@ async function createMediasoupController() {
     const room = ensureRoom(roomId);
     if (room.router) return room.router;
 
-    room.router = await worker.createRouter({ mediaCodecs: DEFAULT_MEDIA_CODECS });
+    const workerIdx = nextWorkerIdx % workers.length;
+    room.workerIndex = workerIdx;
+    room.router = await getNextWorker().createRouter({ mediaCodecs: DEFAULT_MEDIA_CODECS });
     return room.router;
   }
 
@@ -266,7 +322,7 @@ async function createMediasoupController() {
       peerSet.add(producer.id);
       room.peerToProducerIds.set(peerDeviceId, peerSet);
 
-      return { id: producer.id, kind: producer.kind };
+      return { id: producer.id, kind: producer.kind, observer: producer.observer };
     },
 
     async consume(roomId, peerDeviceId, producerId, rtpCapabilities = null) {
@@ -356,7 +412,7 @@ async function createMediasoupController() {
         transportCount,
         producerCount,
         consumerCount,
-        workerCount: 1,
+        workerCount: workers.length,
       };
     },
   };

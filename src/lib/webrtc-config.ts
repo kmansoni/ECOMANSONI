@@ -17,6 +17,17 @@ export interface IceServerConfig {
   iceTransportPolicy: RTCIceTransportPolicy;
 }
 
+// REMOVED: Hardcoded public TURN credentials (security vulnerability)
+// All TURN credentials must be obtained dynamically via edge function
+
+export type P2PMode = 'always' | 'contacts' | 'never';
+
+export interface WebRTCConfigOptions {
+  forceRelay?: boolean;
+  p2pMode?: P2PMode;
+  isContactCall?: boolean; // true если звонящий в списке контактов
+}
+
 // Baseline STUN fallback (safe in all environments).
 const STUN_FALLBACK_ICE_SERVERS: RTCIceServer[] = [
   { urls: "stun:stun.l.google.com:19302" },
@@ -35,10 +46,11 @@ let cachedIceServers: RTCIceServer[] | null = null;
 let cacheExpiry = 0;
 let cacheAutoInvalidationInitialized = false;
 
-// Default cache aims to stay comfortably below typical 1h shared-secret TTLs.
+// Max cache TTL — 1 hour (short-lived credentials)
 const DEFAULT_CACHE_TTL_MS = 25 * 60 * 1000; // 25 minutes
 const FALLBACK_CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutes
 const MIN_CACHE_TTL_MS = 2 * 60 * 1000;
+const MAX_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour cap
 
 interface TurnCredentialsResponse {
   iceServers?: RTCIceServer[];
@@ -59,12 +71,17 @@ async function fetchTurnCredentials(): Promise<{ iceServers: RTCIceServer[] | nu
 
     if (TURN_CREDENTIALS_URL) {
       const { data, error } = await fetchTurnCredentialsFromUrl();
-      if (error) {
+      if (!error) {
+        const parsed = (data ?? {}) as TurnCredentialsResponse;
+        const parsedResult = parseTurnResponse(parsed);
+        if (parsedResult.iceServers && parsedResult.iceServers.length > 0) {
+          return parsedResult;
+        }
+        console.warn("[WebRTC Config] TURN endpoint returned no ICE servers, falling back to Supabase function");
+      } else {
         console.error("[WebRTC Config] TURN endpoint error:", error);
-        return { iceServers: null, ttlMs: FALLBACK_CACHE_TTL_MS };
+        console.warn("[WebRTC Config] Falling back to Supabase turn-credentials function");
       }
-      const parsed = (data ?? {}) as TurnCredentialsResponse;
-      return parseTurnResponse(parsed);
     }
 
     const { data, error } = await supabase.functions.invoke("turn-credentials");
@@ -83,32 +100,35 @@ async function fetchTurnCredentials(): Promise<{ iceServers: RTCIceServer[] | nu
 }
 
 function parseTurnResponse(parsed: TurnCredentialsResponse): { iceServers: RTCIceServer[] | null; ttlMs: number } {
-    if (parsed.error) {
-      console.warn("[WebRTC Config] TURN error:", parsed.error);
-    }
+  if (parsed.error) {
+    console.warn("[WebRTC Config] TURN error:", parsed.error);
+  }
 
-    const ttlFromServerMs = typeof parsed.ttlSeconds === "number" && Number.isFinite(parsed.ttlSeconds)
-      ? Math.max(0, parsed.ttlSeconds) * 1000
-      : 0;
+  const ttlFromServerMs = typeof parsed.ttlSeconds === "number" && Number.isFinite(parsed.ttlSeconds)
+    ? Math.max(0, parsed.ttlSeconds) * 1000
+    : 0;
 
-    // Keep cache below half of server TTL and still refresh a bit ahead of expiry.
-    const ttlMs = Math.max(
-      MIN_CACHE_TTL_MS,
+  // Keep cache below half of server TTL, capped at MAX_CACHE_TTL_MS (1 hour).
+  const ttlMs = Math.max(
+    MIN_CACHE_TTL_MS,
+    Math.min(
+      MAX_CACHE_TTL_MS,
       Math.min(
         DEFAULT_CACHE_TTL_MS,
         ttlFromServerMs > 0
           ? Math.max(0, Math.min(ttlFromServerMs / 2, ttlFromServerMs - 60 * 1000))
           : DEFAULT_CACHE_TTL_MS,
       ),
-    );
+    ),
+  );
 
-    if (Array.isArray(parsed.iceServers) && parsed.iceServers.length > 0) {
-      console.log("[WebRTC Config] Got", parsed.iceServers.length, "ICE servers");
-      return { iceServers: parsed.iceServers, ttlMs };
-    }
-
-    return { iceServers: null, ttlMs: FALLBACK_CACHE_TTL_MS };
+  if (Array.isArray(parsed.iceServers) && parsed.iceServers.length > 0) {
+    console.log("[WebRTC Config] Got", parsed.iceServers.length, "ICE servers");
+    return { iceServers: parsed.iceServers, ttlMs };
   }
+
+  return { iceServers: null, ttlMs: FALLBACK_CACHE_TTL_MS };
+}
 
 async function fetchTurnCredentialsFromUrl(): Promise<{ data: unknown | null; error: Error | null }> {
   try {
@@ -139,26 +159,55 @@ async function fetchTurnCredentialsFromUrl(): Promise<{ data: unknown | null; er
 }
 
 /**
+ * Determine ICE transport policy from p2p mode options.
+ */
+function resolveIceTransportPolicy(
+  options: WebRTCConfigOptions,
+  canRelay: boolean,
+): RTCIceTransportPolicy {
+  const { forceRelay, p2pMode, isContactCall } = options;
+
+  const wantRelay =
+    forceRelay ||
+    p2pMode === 'never' ||
+    (p2pMode === 'contacts' && !isContactCall);
+
+  if (wantRelay) {
+    if (!canRelay) {
+      console.warn("[WebRTC Config] relay requested but TURN is unavailable; downgrading to policy=all");
+      return "all";
+    }
+    return "relay";
+  }
+  return "all";
+}
+
+/**
  * Get ICE servers with dynamic TURN (cached) or fallbacks.
  *
- * NOTE: `forceRelay` is best-effort; if TURN is unavailable we must downgrade to `all`
+ * NOTE: relay policy is best-effort; if TURN is unavailable we downgrade to `all`
  * or the peer connection will fail to gather viable candidates.
  */
-export async function getIceServers(forceRelay = false): Promise<IceServerConfig> {
+export async function getIceServers(
+  optionsOrForceRelay: WebRTCConfigOptions | boolean = false,
+): Promise<IceServerConfig> {
   initIceCacheAutoInvalidation();
+
+  // Back-compat: accept plain boolean
+  const options: WebRTCConfigOptions =
+    typeof optionsOrForceRelay === "boolean"
+      ? { forceRelay: optionsOrForceRelay }
+      : optionsOrForceRelay;
+
   const now = Date.now();
 
   if (cachedIceServers && cacheExpiry > now) {
     console.log("[WebRTC Config] Using cached ICE servers");
     const canRelay = hasTurnServer(cachedIceServers);
-    const policy: RTCIceTransportPolicy = forceRelay && canRelay ? "relay" : "all";
-    if (forceRelay && !canRelay) {
-      console.warn("[WebRTC Config] forceRelay requested but TURN is unavailable; downgrading to policy=all");
-    }
     return {
       iceServers: cachedIceServers,
       iceCandidatePoolSize: 10,
-      iceTransportPolicy: policy,
+      iceTransportPolicy: resolveIceTransportPolicy(options, canRelay),
     };
   }
 
@@ -175,15 +224,11 @@ export async function getIceServers(forceRelay = false): Promise<IceServerConfig
   }
 
   const canRelay = hasTurnServer(cachedIceServers);
-  const policy: RTCIceTransportPolicy = forceRelay && canRelay ? "relay" : "all";
-  if (forceRelay && !canRelay) {
-    console.warn("[WebRTC Config] forceRelay requested but TURN is unavailable; downgrading to policy=all");
-  }
 
   return {
     iceServers: cachedIceServers,
     iceCandidatePoolSize: 10,
-    iceTransportPolicy: policy,
+    iceTransportPolicy: resolveIceTransportPolicy(options, canRelay),
   };
 }
 
@@ -192,6 +237,7 @@ export function clearIceServerCache(): void {
   cacheExpiry = 0;
   console.log("[WebRTC Config] ICE server cache cleared");
 }
+
 export function initIceCacheAutoInvalidation(): void {
   if (cacheAutoInvalidationInitialized || typeof window === "undefined") return;
   cacheAutoInvalidationInitialized = true;
@@ -202,6 +248,54 @@ export function initIceCacheAutoInvalidation(): void {
 
   const nav = navigator as Navigator & { connection?: { addEventListener?: (type: string, listener: () => void) => void } };
   nav.connection?.addEventListener?.("change", clear);
+}
+
+/**
+ * Filter ICE candidates to remove private/local IP addresses for privacy.
+ * When relay-only mode is active, also removes srflx candidates.
+ */
+export function filterIceCandidate(
+  candidate: RTCIceCandidate,
+  p2pMode: P2PMode,
+  isContactCall: boolean,
+): boolean {
+  if (!candidate.candidate) return true; // allow empty candidates (end-of-candidates)
+
+  const candidateStr = candidate.candidate;
+
+  // Always filter host candidates with private IPs (RFC 1918, RFC 4193)
+  if (candidate.type === 'host' || candidateStr.includes(' host ')) {
+    const ipMatch = candidateStr.match(/(?:\d{1,3}\.){3}\d{1,3}/);
+    if (ipMatch) {
+      const ip = ipMatch[0];
+      const parts = ip.split('.').map(Number);
+      const isPrivate =
+        parts[0] === 10 ||
+        (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) ||
+        (parts[0] === 192 && parts[1] === 168) ||
+        parts[0] === 127;
+      if (isPrivate) return false; // filter out private IPs
+    }
+
+    // IPv6 private (loopback, link-local, ULA)
+    const ipv6Match = candidateStr.match(/\b([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}\b/);
+    if (ipv6Match) {
+      const ip6 = ipv6Match[0].toLowerCase();
+      const isPrivateV6 =
+        ip6 === '::1' ||
+        ip6.startsWith('fe80:') ||   // link-local
+        ip6.startsWith('fc') ||      // ULA (fc00::/7)
+        ip6.startsWith('fd');        // ULA (fc00::/7)
+      if (isPrivateV6) return false;
+    }
+  }
+
+  // In relay-only mode, only allow relay candidates
+  if (p2pMode === 'never' || (p2pMode === 'contacts' && !isContactCall)) {
+    return candidateStr.includes(' relay ') || candidate.type === 'relay';
+  }
+
+  return true;
 }
 
 export function getMediaConstraints(callType: "video" | "audio"): MediaStreamConstraints {

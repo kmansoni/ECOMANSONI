@@ -65,19 +65,19 @@ describe("CallsWsClient reliability", () => {
     const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0);
 
     const client = new CallsWsClient({
-      urls: ["ws://region-a/ws", "ws://region-b/ws"],
+      urls: ["wss://region-a/ws", "wss://region-b/ws"],
       reconnect: { enabled: true, baseDelayMs: 10, maxDelayMs: 10, maxAttempts: 3 },
     });
 
     await client.connect();
     expect(MockWebSocket.instances.length).toBe(1);
-    expect(MockWebSocket.instances[0].url).toBe("ws://region-a/ws");
+    expect(MockWebSocket.instances[0].url).toBe("wss://region-a/ws");
 
     MockWebSocket.instances[0].emitClose();
     await vi.advanceTimersByTimeAsync(12);
 
     expect(MockWebSocket.instances.length).toBe(2);
-    expect(MockWebSocket.instances[1].url).toBe("ws://region-b/ws");
+    expect(MockWebSocket.instances[1].url).toBe("wss://region-b/ws");
 
     client.close();
     randomSpy.mockRestore();
@@ -85,7 +85,7 @@ describe("CallsWsClient reliability", () => {
 
   it("retries ACK with the same message id (idempotent)", async () => {
     const client = new CallsWsClient({
-      url: "ws://single/ws",
+      url: "wss://single/ws",
       ackRetry: { maxRetries: 1, retryDelayMs: 0 },
     });
 
@@ -119,7 +119,7 @@ describe("CallsWsClient reliability", () => {
   });
 
   it("waitFor consumes recent buffered event", async () => {
-    const client = new CallsWsClient({ url: "ws://single/ws" });
+    const client = new CallsWsClient({ url: "wss://single/ws" });
     await client.connect();
 
     const ws = MockWebSocket.instances[0];
@@ -142,7 +142,7 @@ describe("CallsWsClient reliability", () => {
   });
 
   it("drops duplicate msgId and non-monotonic seq frames", async () => {
-    const client = new CallsWsClient({ url: "ws://single/ws" });
+    const client = new CallsWsClient({ url: "wss://single/ws" });
     await client.connect();
 
     const ws = MockWebSocket.instances[0];

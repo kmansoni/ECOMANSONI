@@ -65,7 +65,10 @@ export function AppLayout() {
         }}
       />
 
-      <BottomNav hidden={shouldHideBottomNav || isReelsPage} />
+      <BottomNav
+        hidden={shouldHideBottomNav || isReelsPage}
+        onCreateClick={() => setCreateOpen(true)}
+      />
       {/* Call UI is now handled globally by GlobalCallOverlay in App.tsx */}
     </div>
   );

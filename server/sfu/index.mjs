@@ -17,6 +17,58 @@ const SUPABASE_URL = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?
 const SUPABASE_AUTH_KEY = process.env.SUPABASE_PUBLISHABLE_KEY ?? process.env.SUPABASE_ANON_KEY ?? process.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? process.env.VITE_SUPABASE_ANON_KEY ?? "";
 const STARTED_AT = Date.now();
 
+/**
+ * E2EE rate limiting — per-process sliding window.
+ *
+ * LIMITATION: This rate limiter is process-local (in-memory Map).
+ * In multi-instance SFU deployments behind a load balancer, an attacker
+ * can bypass the limit by distributing requests across instances.
+ *
+ * TODO(production): Replace with Redis-backed rate limiter when multiple
+ * SFU instances are deployed. See server/calls-ws/index.mjs `isJoinTokenUsed()`
+ * for a Redis pattern that can be adapted here.
+ */
+const e2eeRateLimits = new Map(); // deviceId -> { keyPackages, rekeys, lastReset }
+const E2EE_RATE_WINDOW = 60000; // 1 minute
+const E2EE_MAX_KEY_PACKAGES = 50;
+const E2EE_MAX_REKEYS = 5;
+// SECURITY FIX: Cap Map size to prevent OOM under device-ID flooding.
+// Without this bound an attacker can open many WebSocket connections with unique
+// deviceIds to grow the Map without limit before the 2-minute cleanup fires.
+// Past this threshold new (unseen) devices are rate-limited hard — existing entries
+// continue operating normally.
+const E2EE_RATE_LIMIT_MAX_ENTRIES = 200_000;
+
+function checkE2EERateLimit(deviceId, operation) {
+  const now = Date.now();
+  let entry = e2eeRateLimits.get(deviceId);
+  if (!entry || now - entry.lastReset > E2EE_RATE_WINDOW) {
+    if (!entry && e2eeRateLimits.size >= E2EE_RATE_LIMIT_MAX_ENTRIES) {
+      // Map is full — reject new device to prevent OOM. Existing devices unaffected.
+      console.warn(`[E2EE] e2eeRateLimits at capacity (${E2EE_RATE_LIMIT_MAX_ENTRIES}), rejecting new deviceId`);
+      return false;
+    }
+    entry = { keyPackages: 0, rekeys: 0, lastReset: now };
+    e2eeRateLimits.set(deviceId, entry);
+  }
+  if (operation === "KEY_PACKAGE") {
+    entry.keyPackages++;
+    return entry.keyPackages <= E2EE_MAX_KEY_PACKAGES;
+  }
+  if (operation === "REKEY_BEGIN") {
+    entry.rekeys++;
+    return entry.rekeys <= E2EE_MAX_REKEYS;
+  }
+  return true;
+}
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of e2eeRateLimits) {
+    if (now - v.lastReset > E2EE_RATE_WINDOW * 2) e2eeRateLimits.delete(k);
+  }
+}, E2EE_RATE_WINDOW * 2).unref?.();
+
 if (IS_PROD && !CALLS_DEV_INSECURE_AUTH && (!SUPABASE_URL || !SUPABASE_AUTH_KEY)) {
   throw new Error("[sfu] hard auth requires SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY/SUPABASE_ANON_KEY in production");
 }
@@ -179,6 +231,20 @@ function broadcastRoom(room, frame, exceptDeviceId = null) {
     if (!peer.ws || peer.ws.readyState !== WebSocket.OPEN) continue;
     send(peer.ws, frame);
   }
+}
+
+function sendToDevice(room, deviceId, frame) {
+  const peer = room?.peers?.get(deviceId);
+  if (!peer?.ws || peer.ws.readyState !== WebSocket.OPEN) {
+    return false;
+  }
+  send(peer.ws, frame);
+  return true;
+}
+
+function isLikelyBase64(value, minLength = 16) {
+  if (typeof value !== "string" || value.length < minLength) return false;
+  return /^[A-Za-z0-9+/=]+$/.test(value);
 }
 
 function isPeerE2EEReadyForEpoch(room, peerDeviceId) {
@@ -605,6 +671,50 @@ wss.on("connection", (ws) => {
         };
         room.producers.set(producerId, producer);
 
+        // SFrame header validation for incoming media frames
+        // SECURITY FIX: SFrame enforcement — producers sending only tiny frames
+        // (< 17 bytes, the minimum SFrame overhead) are blocked as they cannot
+        // carry valid encrypted payloads and indicate a bypassed E2EE sender.
+        if (process.env.SFU_REQUIRE_SFRAME === "1" || process.env.SFU_E2EE_REQUIRED === "1") {
+          if (produced.observer && typeof produced.observer.on === "function") {
+            // REQUIRED: mediasoup v3 does NOT emit "trace" events unless enableTrace() is called.
+            // Without this the entire SFrame enforcement block is dead code.
+            if (typeof produced.enableTrace === "function") {
+              produced.enableTrace(["rtp"]);
+            }
+            let framesChecked = 0;
+            let suspiciousFrames = 0;
+            const MAX_CHECK_FRAMES = 5;
+            const SFRAME_CHECK_TIMEOUT = 10000;
+            const checkTimer = setTimeout(() => {
+              if (framesChecked === 0) {
+                console.log(`[SFrame] WARN: No frames received from producer ${producerId} within ${SFRAME_CHECK_TIMEOUT}ms`);
+              }
+            }, SFRAME_CHECK_TIMEOUT);
+            produced.observer.on("trace", (trace) => {
+              if (trace.type === "rtp" && framesChecked < MAX_CHECK_FRAMES) {
+                framesChecked++;
+                // SECURITY FIX: Track frames too small to contain SFrame header + ciphertext
+                if (trace.size !== undefined && trace.size < 17) {
+                  suspiciousFrames++;
+                  console.log(`[SFrame] WARN: Producer ${producerId} frame ${framesChecked} too small for SFrame (${trace.size} bytes)`);
+                }
+                if (framesChecked >= MAX_CHECK_FRAMES) {
+                  clearTimeout(checkTimer);
+                  // SECURITY FIX: If ALL sampled frames are too small, close the producer.
+                  // A single outlier (e.g. RTCP SR, padding) is tolerated; unanimous failure is not.
+                  if (suspiciousFrames >= MAX_CHECK_FRAMES) {
+                    console.warn(`[SFrame] BLOCKING: Producer ${producerId} — ALL ${MAX_CHECK_FRAMES} frames too small for SFrame. Closing producer.`);
+                    produced.close();
+                  } else {
+                    console.log(`[SFrame] OK: Producer ${producerId} passed ${MAX_CHECK_FRAMES} frame checks (${suspiciousFrames} suspicious)`);
+                  }
+                }
+              }
+            });
+          }
+        }
+
         send(ws, {
           v: 1,
           type: "PRODUCED",
@@ -692,18 +802,30 @@ wss.on("connection", (ws) => {
         return;
       }
 
-      case "REKEY_BEGIN":
-      case "REKEY_COMMIT":
-      case "KEY_PACKAGE":
-      case "KEY_ACK": {
+      case "REKEY_BEGIN": {
         if (!ensureAuth()) return;
         const room = rooms.get(frame.payload?.roomId ?? conn.roomId);
         if (!room || !conn.deviceId || !room.peers.has(conn.deviceId)) {
           ack(ws, frame.msgId, false, wsError("UNAUTHORIZED", "Not a room member", {}, false));
           return;
         }
+        if (!checkE2EERateLimit(conn.deviceId, "REKEY_BEGIN")) {
+          ack(ws, frame.msgId, false, wsError("RATE_LIMITED", "Too many rekey operations", {}, true));
+          return;
+        }
+        broadcastRoom(room, { ...frame, msgId: uuid(), ts: nowMs() }, conn.deviceId);
+        ack(ws, frame.msgId, true);
+        return;
+      }
 
-        if (frame.type === "REKEY_COMMIT" && Number.isFinite(frame.payload?.epoch)) {
+      case "REKEY_COMMIT": {
+        if (!ensureAuth()) return;
+        const room = rooms.get(frame.payload?.roomId ?? conn.roomId);
+        if (!room || !conn.deviceId || !room.peers.has(conn.deviceId)) {
+          ack(ws, frame.msgId, false, wsError("UNAUTHORIZED", "Not a room member", {}, false));
+          return;
+        }
+        if (Number.isFinite(frame.payload?.epoch)) {
           room.epoch = Number(frame.payload.epoch);
           if (E2EE_REQUIRED_DEFAULT) {
             for (const peer of room.peers.values()) {
@@ -712,8 +834,86 @@ wss.on("connection", (ws) => {
             }
           }
         }
+        broadcastRoom(room, { ...frame, msgId: uuid(), ts: nowMs() }, conn.deviceId);
+        ack(ws, frame.msgId, true);
+        return;
+      }
 
-        broadcastRoom(room, { ...frame, msgId: uuid(), ts: nowMs() }, null);
+      case "KEY_PACKAGE": {
+        if (!ensureAuth()) return;
+        const room = rooms.get(frame.payload?.roomId ?? conn.roomId);
+        if (!room || !conn.deviceId || !room.peers.has(conn.deviceId)) {
+          ack(ws, frame.msgId, false, wsError("UNAUTHORIZED", "Not a room member", {}, false));
+          return;
+        }
+        if (!checkE2EERateLimit(conn.deviceId, "KEY_PACKAGE")) {
+          ack(ws, frame.msgId, false, wsError("RATE_LIMITED", "Too many key packages", {}, true));
+          return;
+        }
+        // Validate required KEY_PACKAGE fields
+        const kp = frame.payload ?? {};
+        if (!kp.ciphertext || typeof kp.ciphertext !== "string" || kp.ciphertext.length < 24) {
+          ack(ws, frame.msgId, false, wsError("KEY_PACKAGE_INVALID", "Missing or invalid ciphertext field", {}, false));
+          return;
+        }
+        if (!kp.targetDeviceId || typeof kp.targetDeviceId !== "string") {
+          ack(ws, frame.msgId, false, wsError("KEY_PACKAGE_INVALID", "Missing targetDeviceId", {}, false));
+          return;
+        }
+        if (typeof kp.epoch !== "number" || kp.epoch < 0) {
+          ack(ws, frame.msgId, false, wsError("KEY_PACKAGE_INVALID", "Invalid epoch", {}, false));
+          return;
+        }
+
+        if (!kp.sig || !isLikelyBase64(kp.sig, 24)) {
+          ack(ws, frame.msgId, false, wsError("KEY_PACKAGE_INVALID", "Missing or invalid sig", {}, false));
+          return;
+        }
+
+        if (!kp.senderPublicKey || !isLikelyBase64(kp.senderPublicKey, 24)) {
+          ack(ws, frame.msgId, false, wsError("KEY_PACKAGE_INVALID", "Missing or invalid senderPublicKey", {}, false));
+          return;
+        }
+
+        if (!room.peers.has(kp.targetDeviceId)) {
+          ack(ws, frame.msgId, false, wsError("KEY_PACKAGE_TARGET_NOT_FOUND", "Target device not in room", {}, false));
+          return;
+        }
+
+        const delivered = sendToDevice(room, kp.targetDeviceId, {
+          ...frame,
+          msgId: uuid(),
+          ts: nowMs(),
+        });
+
+        if (!delivered) {
+          ack(ws, frame.msgId, false, wsError("KEY_PACKAGE_TARGET_OFFLINE", "Target device unavailable", {}, true));
+          return;
+        }
+
+        ack(ws, frame.msgId, true);
+        return;
+      }
+
+      case "KEY_ACK": {
+        if (!ensureAuth()) return;
+        const room = rooms.get(frame.payload?.roomId ?? conn.roomId);
+        if (!room || !conn.deviceId || !room.peers.has(conn.deviceId)) {
+          ack(ws, frame.msgId, false, wsError("UNAUTHORIZED", "Not a room member", {}, false));
+          return;
+        }
+
+        const ka = frame.payload ?? {};
+        if (typeof ka.epoch !== "number" || ka.epoch < 0) {
+          ack(ws, frame.msgId, false, wsError("KEY_ACK_INVALID", "Invalid epoch", {}, false));
+          return;
+        }
+        if (typeof ka.fromDeviceId !== "string" || ka.fromDeviceId !== conn.deviceId) {
+          ack(ws, frame.msgId, false, wsError("KEY_ACK_INVALID", "fromDeviceId mismatch", {}, false));
+          return;
+        }
+
+        broadcastRoom(room, { ...frame, msgId: uuid(), ts: nowMs() }, conn.deviceId);
         ack(ws, frame.msgId, true);
         return;
       }

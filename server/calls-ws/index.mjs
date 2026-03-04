@@ -13,6 +13,9 @@ const CALLS_DEV_INSECURE_AUTH = process.env.CALLS_DEV_INSECURE_AUTH === "1";
 if (CALLS_DEV_INSECURE_AUTH && IS_PROD_LIKE) {
   throw new Error("CALLS_DEV_INSECURE_AUTH is forbidden in production-like environments");
 }
+if (CALLS_DEV_INSECURE_AUTH) {
+  console.warn("[SECURITY] WARNING: CALLS_DEV_INSECURE_AUTH is enabled — DO NOT USE IN PRODUCTION");
+}
 const CALLS_JOIN_TOKEN_TTL_SEC = Math.max(30, Number(process.env.CALLS_JOIN_TOKEN_TTL_SEC ?? "600"));
 const KEY_TTL_MS = Math.max(15_000, Number(process.env.CALLS_KEY_TTL_MS ?? "120000"));
 const DEDUP_TTL_MS = Math.max(30_000, Number(process.env.CALLS_DEDUP_TTL_SEC ?? "600") * 1000);
@@ -179,7 +182,8 @@ function verifyJoinToken(joinToken) {
       return null;
     }
 
-    // One-time token usage (best effort, process-local).
+    // One-time token usage — checked via isJoinTokenUsed (may be Redis-backed).
+    // NOTE: verifyJoinToken remains sync; Redis check is done separately in ROOM_JOIN handler.
     if (usedJoinTokenJtis.has(payload.jti)) return null;
     usedJoinTokenJtis.set(payload.jti, expMs);
 
@@ -187,6 +191,25 @@ function verifyJoinToken(joinToken) {
   } catch {
     return null;
   }
+}
+
+// Distributed join token replay protection (Redis-backed when available)
+async function isJoinTokenUsed(jti, expMs) {
+  // Try Redis first if available
+  if (store.redis) {
+    try {
+      const key = `join-token:${jti}`;
+      const ttlSec = Math.max(1, Math.ceil((expMs - Date.now()) / 1000) + 120);
+      const result = await store.redis.set(key, "1", "NX", "EX", ttlSec);
+      return result === null; // null = key already existed = token already used
+    } catch {
+      // Redis error — fall through to local check
+    }
+  }
+  // Fallback: verifyJoinToken already inserted jti into usedJoinTokenJtis,
+  // so the token uniqueness in this process is already guaranteed there.
+  // Do NOT re-check here — that would cause a false positive on first use.
+  return false;
 }
 
 function pruneSeenMsgIds(seenMsgIds) {
@@ -508,6 +531,11 @@ wss.on("connection", (ws) => {
           ack(ws, frame.msgId, false, wsError("UNAUTHORIZED", "Invalid join token", { roomId }, false));
           return;
         }
+        // Distributed replay protection (Redis-backed if available)
+        if (await isJoinTokenUsed(joinPayload.jti, (joinPayload.exp ?? 0) * 1000)) {
+          ack(ws, frame.msgId, false, wsError("UNAUTHORIZED", "Join token already used", { roomId }, false));
+          return;
+        }
         if (joinPayload.roomId !== roomId || joinPayload.callId !== room.callId || joinPayload.userId !== conn.userId) {
           ack(ws, frame.msgId, false, wsError("UNAUTHORIZED", "Invalid join token", { roomId }, false));
           return;
@@ -609,6 +637,19 @@ wss.on("connection", (ws) => {
           return;
         }
         const p = frame.payload ?? {};
+        // Validate required KEY_PACKAGE fields
+        if (!p.targetDeviceId && !p.toDeviceId) {
+          ack(ws, frame.msgId, false, wsError("INVALID_KEY_PACKAGE", "Missing required field: targetDeviceId", {}, false));
+          return;
+        }
+        if (!p.ciphertext || typeof p.ciphertext !== "string" || p.ciphertext.length < 24) {
+          ack(ws, frame.msgId, false, wsError("INVALID_KEY_PACKAGE", "Missing or invalid ciphertext field", {}, false));
+          return;
+        }
+        if (p.ciphertext.length > 65536) {
+          ack(ws, frame.msgId, false, wsError("INVALID_KEY_PACKAGE", "ciphertext must be a string under 64KB", {}, false));
+          return;
+        }
         const room = rooms.get(p.roomId);
         if (!room) {
           ack(ws, frame.msgId, false, wsError("ROOM_NOT_FOUND", "Unknown room", { roomId: p.roomId }, false));

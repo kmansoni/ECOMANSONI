@@ -50,6 +50,9 @@ tmp/
 
 # Local scratch/archive
 .archive/
+
+# Local secrets directory (never commit secrets)
+.secrets/
 .git-push-force.ps1
 
 # Test artifacts

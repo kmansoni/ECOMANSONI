@@ -1,4 +1,34 @@
-import type { CallsWsAuth, CallsWsConfig, CallsWsEvent, CallsWsEventHandler, WsEnvelopeV1 } from "./types";
+import type {
+  CallsWsAuth,
+  CallsWsConfig,
+  CallsWsEvent,
+  CallsWsEventHandler,
+  ClientMessageMap,
+  ConnectionState,
+  ConnectionStateHandler,
+  MessageHandler,
+  WsEnvelopeV1,
+  HelloPayload,
+  AuthPayload,
+  RoomCreatePayload,
+  RoomJoinPayload,
+  RoomLeavePayload,
+  TransportCreatePayload,
+  TransportConnectPayload,
+  ProducePayload,
+  ConsumePayload,
+  ConsumerResumePayload,
+  IceRestartPayload,
+  OfferPayload,
+  AnswerPayload,
+  IceCandidatePayload,
+  E2EECapsPayload,
+  E2EEReadyPayload,
+  RekeyBeginPayload,
+  RekeyCommitPayload,
+  KeyPackagePayload,
+  KeyAckPayload,
+} from "./types";
 
 function nowMs() {
   return Date.now();
@@ -38,11 +68,44 @@ export class CallsWsClient {
   private reconnectTimer: number | null = null;
   private reconnectAttempts = 0;
   private manualClose = false;
+  private _connectionState: ConnectionState = 'disconnected';
+  private readonly connectionStateHandlers = new Set<ConnectionStateHandler>();
 
   constructor(private readonly config: CallsWsConfig) {}
 
+  get connectionState(): ConnectionState {
+    return this._connectionState;
+  }
+
+  onConnectionStateChange(handler: ConnectionStateHandler): () => void {
+    this.connectionStateHandlers.add(handler);
+    return () => {
+      this.connectionStateHandlers.delete(handler);
+    };
+  }
+
+  private setConnectionState(state: ConnectionState) {
+    if (this._connectionState === state) return;
+    this._connectionState = state;
+    this.connectionStateHandlers.forEach((h) => {
+      try { h(state); } catch { /* ignore */ }
+    });
+  }
+
   connect(): Promise<void> {
     this.manualClose = false;
+
+    // WSS enforcement
+    if (this.config.requireWss !== false) {
+      const endpoints = this.getEndpoints();
+      const hasInsecure = endpoints.some((ep) => ep.startsWith('ws://'));
+      if (hasInsecure) {
+        return Promise.reject(new Error(
+          '[CallsWsClient] WSS enforcement: all endpoints must use wss:// protocol. ' +
+          'Set requireWss: false in config to disable (NOT RECOMMENDED for production).'
+        ));
+      }
+    }
 
     if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
       return Promise.resolve();
@@ -55,6 +118,7 @@ export class CallsWsClient {
       return Promise.reject(new Error("No WS endpoints configured"));
     }
 
+    this.setConnectionState('connecting');
     this.connectPromise = this.connectWithFailover();
     this.connectPromise.finally(() => {
       this.connectPromise = null;
@@ -75,12 +139,14 @@ export class CallsWsClient {
         await this.connectSingle(url);
         this.endpointIndex = idx;
         this.reconnectAttempts = 0;
+        this.setConnectionState('connected');
         return;
       } catch (err) {
         lastError = err instanceof Error ? err : new Error("WS connection error");
       }
     }
 
+    this.setConnectionState('failed');
     throw lastError ?? new Error("WS connection error");
   }
 
@@ -108,7 +174,10 @@ export class CallsWsClient {
       ws.onclose = () => {
         this.stopHeartbeat();
         this.ws = null;
-        if (this.manualClose) return;
+        if (this.manualClose) {
+          this.setConnectionState('disconnected');
+          return;
+        }
 
         // If not yet resolved and socket closed early - fail current attempt.
         if (!settled) {
@@ -117,6 +186,7 @@ export class CallsWsClient {
           return;
         }
 
+        this.setConnectionState('reconnecting');
         this.scheduleReconnect();
       };
       ws.onmessage = (evt) => this.onMessage(evt.data);
@@ -137,6 +207,7 @@ export class CallsWsClient {
     this.pendingAcks.clear();
     this.ws?.close();
     this.ws = null;
+    this.setConnectionState('disconnected');
   }
 
   private scheduleReconnect() {
@@ -144,11 +215,14 @@ export class CallsWsClient {
     const reconnectCfg = this.config.reconnect;
     if (reconnectCfg?.enabled === false) return;
 
-    const maxAttempts = reconnectCfg?.maxAttempts ?? 12;
-    if (this.reconnectAttempts >= maxAttempts) return;
+    const maxAttempts = reconnectCfg?.maxAttempts ?? this.config.maxReconnectAttempts ?? 12;
+    if (this.reconnectAttempts >= maxAttempts) {
+      this.setConnectionState('failed');
+      return;
+    }
 
-    const base = reconnectCfg?.baseDelayMs ?? 500;
-    const max = reconnectCfg?.maxDelayMs ?? 10_000;
+    const base = reconnectCfg?.baseDelayMs ?? this.config.reconnectBaseMs ?? 500;
+    const max = reconnectCfg?.maxDelayMs ?? this.config.reconnectMaxMs ?? 10_000;
     const exp = Math.min(max, base * Math.pow(2, this.reconnectAttempts));
     const jitter = Math.floor(Math.random() * Math.max(100, exp * 0.2));
     const delay = Math.min(max, exp + jitter);
@@ -170,8 +244,11 @@ export class CallsWsClient {
   }
 
   private getEndpoints(): string[] {
+    if (Array.isArray(this.config.endpoints) && this.config.endpoints.length > 0) {
+      return this.config.endpoints.filter((v) => typeof v === "string" && v.trim().length > 0);
+    }
     if (Array.isArray(this.config.urls) && this.config.urls.length > 0) {
-      return this.config.urls.filter((value) => typeof value === "string" && value.trim().length > 0);
+      return this.config.urls.filter((v) => typeof v === "string" && v.trim().length > 0);
     }
     if (this.config.url && this.config.url.trim().length > 0) {
       return [this.config.url.trim()];
@@ -179,65 +256,100 @@ export class CallsWsClient {
     return [];
   }
 
-  async hello(payload: any) {
-    await this.sendOrderedAcked("HELLO", payload);
+  // ----------- Typed send methods -----------
+
+  private _send<T extends keyof ClientMessageMap>(
+    type: T,
+    payload: ClientMessageMap[T]
+  ): Promise<void> {
+    return this.sendOrderedAcked(type as string, payload as object);
   }
 
-  async auth(auth: CallsWsAuth) {
-    await this.sendOrderedAcked("AUTH", { accessToken: auth.accessToken });
+  async hello(payload: HelloPayload) {
+    return this._send('HELLO', payload);
   }
 
-  async e2eeCaps(payload: any) {
-    await this.sendOrderedAcked("E2EE_CAPS", payload);
+  async auth(payloadOrLegacy: AuthPayload | CallsWsAuth) {
+    // Support legacy CallsWsAuth shape { accessToken }
+    if ('accessToken' in payloadOrLegacy) {
+      return this.sendOrderedAcked('AUTH', { accessToken: payloadOrLegacy.accessToken });
+    }
+    return this._send('AUTH', payloadOrLegacy);
   }
 
-  async e2eeReady(payload: any) {
-    await this.sendOrderedAcked("E2EE_READY", payload);
+  async roomCreate(payload: RoomCreatePayload) {
+    return this._send('ROOM_CREATE', payload);
   }
 
-  async roomCreate(payload: any) {
-    await this.sendOrderedAcked("ROOM_CREATE", payload);
+  async roomJoin(payload: RoomJoinPayload) {
+    return this._send('ROOM_JOIN', payload);
   }
 
-  async roomJoin(payload: any) {
-    await this.sendOrderedAcked("ROOM_JOIN", payload);
+  async roomLeave(payload: RoomLeavePayload) {
+    return this._send('ROOM_LEAVE', payload);
   }
 
-  async transportCreate(payload: any) {
-    await this.sendOrderedAcked("TRANSPORT_CREATE", payload);
+  async transportCreate(payload: TransportCreatePayload) {
+    return this._send('TRANSPORT_CREATE', payload);
   }
 
-  async transportConnect(payload: any) {
-    await this.sendOrderedAcked("TRANSPORT_CONNECT", payload);
+  async transportConnect(payload: TransportConnectPayload) {
+    return this._send('TRANSPORT_CONNECT', payload);
   }
 
-  async produce(payload: any) {
-    await this.sendOrderedAcked("PRODUCE", payload);
+  async produce(payload: ProducePayload) {
+    return this._send('PRODUCE', payload);
   }
 
-  async consume(payload: any) {
-    await this.sendOrderedAcked("CONSUME", payload);
+  async consume(payload: ConsumePayload) {
+    return this._send('CONSUME', payload);
   }
 
-  async iceRestart(payload: any) {
-    await this.sendOrderedAcked("ICE_RESTART", payload);
+  async consumerResume(payload: ConsumerResumePayload) {
+    return this._send('CONSUMER_RESUME', payload);
   }
 
-  async rekeyBegin(payload: any) {
-    await this.sendOrderedAcked("REKEY_BEGIN", payload);
+  async iceRestart(payload: IceRestartPayload) {
+    return this._send('ICE_RESTART', payload);
   }
 
-  async keyPackage(payload: any) {
-    await this.sendOrderedAcked("KEY_PACKAGE", payload);
+  async offer(payload: OfferPayload) {
+    return this._send('OFFER', payload);
   }
 
-  async keyAck(payload: any) {
-    await this.sendOrderedAcked("KEY_ACK", payload);
+  async answer(payload: AnswerPayload) {
+    return this._send('ANSWER', payload);
   }
 
-  async rekeyCommit(payload: any) {
-    await this.sendOrderedAcked("REKEY_COMMIT", payload);
+  async iceCandidate(payload: IceCandidatePayload) {
+    return this._send('ICE_CANDIDATE', payload);
   }
+
+  async e2eeCaps(payload: E2EECapsPayload) {
+    return this._send('E2EE_CAPS', payload);
+  }
+
+  async e2eeReady(payload: E2EEReadyPayload) {
+    return this._send('E2EE_READY', payload);
+  }
+
+  async rekeyBegin(payload: RekeyBeginPayload) {
+    return this._send('REKEY_BEGIN', payload);
+  }
+
+  async rekeyCommit(payload: RekeyCommitPayload) {
+    return this._send('REKEY_COMMIT', payload);
+  }
+
+  async keyPackage(payload: KeyPackagePayload) {
+    return this._send('KEY_PACKAGE', payload);
+  }
+
+  async keyAck(payload: KeyAckPayload) {
+    return this._send('KEY_ACK', payload);
+  }
+
+  // ----------- Event subscription -----------
 
   on(event: CallsWsEvent, handler: CallsWsEventHandler): () => void {
     let handlers = this.listeners.get(event);
@@ -252,6 +364,14 @@ export class CallsWsClient {
       current.delete(handler);
       if (current.size === 0) this.listeners.delete(event);
     };
+  }
+
+  /** Typed event subscription — returns unsubscribe fn */
+  onEvent<E extends CallsWsEvent>(
+    event: E,
+    handler: MessageHandler
+  ): () => void {
+    return this.on(event, handler as CallsWsEventHandler);
   }
 
   waitFor(
@@ -287,6 +407,8 @@ export class CallsWsClient {
     });
   }
 
+  // ----------- Internal -----------
+
   private send(frame: WsEnvelopeV1) {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       throw new Error("WS is not open");
@@ -308,8 +430,8 @@ export class CallsWsClient {
     };
 
     return new Promise((resolve, reject) => {
-      const maxRetries = this.config.ackRetry?.maxRetries ?? 1;
-      const retryDelayMs = this.config.ackRetry?.retryDelayMs ?? 250;
+      const maxRetries = this.config.ackRetry?.maxRetries ?? this.config.ackMaxRetries ?? 1;
+      const retryDelayMs = this.config.ackRetry?.retryDelayMs ?? this.config.ackRetryMs ?? 250;
 
       const scheduleTimeout = () =>
         window.setTimeout(() => {
@@ -369,10 +491,10 @@ export class CallsWsClient {
     });
   }
 
-  private onMessage(raw: any) {
+  private onMessage(raw: unknown) {
     let msg: WsEnvelopeV1 | null = null;
     try {
-      msg = JSON.parse(typeof raw === "string" ? raw : new TextDecoder().decode(raw));
+      msg = JSON.parse(typeof raw === "string" ? raw : new TextDecoder().decode(raw as ArrayBuffer));
     } catch {
       return;
     }
@@ -394,7 +516,8 @@ export class CallsWsClient {
       }
       this.seenServerMsgIds.add(msg.msgId);
       this.seenServerMsgIdQueue.push(msg.msgId);
-      if (this.seenServerMsgIdQueue.length > 4000) {
+      const dedupWindowSize = this.config.dedupWindowSize ?? 10_000;
+      if (this.seenServerMsgIdQueue.length > dedupWindowSize) {
         const stale = this.seenServerMsgIdQueue.shift();
         if (stale) this.seenServerMsgIds.delete(stale);
       }
@@ -421,8 +544,7 @@ export class CallsWsClient {
     handlers.forEach((handler) => {
       try {
         handler(frame);
-      } catch {
-      }
+      } catch { /* ignore */ }
     });
   }
 
@@ -430,7 +552,6 @@ export class CallsWsClient {
     this.stopHeartbeat();
     const ms = this.config.heartbeatMs ?? 10_000;
     this.heartbeatTimer = window.setInterval(() => {
-      // Keep-alive frame (UNORDERED). Server may ignore.
       if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
       this.send({ v: 1, type: "PING", msgId: uuid(), ts: nowMs(), seq: this.expectedSeq++, payload: {} });
     }, ms);

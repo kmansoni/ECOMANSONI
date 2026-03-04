@@ -84,3 +84,13 @@ npm run calls:mediasoup:smoke
 ```
 
 If `mediasoup` is not installed in the environment, smoke test exits with `skip` and success.
+
+## Security Notes
+
+### E2EE Rate Limiting
+The SFU implements per-process rate limiting for E2EE operations:
+- `KEY_PACKAGE`: max 50 per minute per device
+- `REKEY_BEGIN`: max 5 per minute per device
+
+**⚠️ Known Limitation**: Rate limiting is process-local. In multi-instance deployments,
+consider migrating to Redis-backed counters (see `server/calls-ws/index.mjs` for a pattern).

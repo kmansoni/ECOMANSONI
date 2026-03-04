@@ -159,15 +159,39 @@ async function getAuthenticatedUserId(req: Request): Promise<string | null> {
   if (!token) return null;
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
-  if (!supabaseUrl || !supabaseAnonKey) return null;
+  if (!supabaseUrl) return null;
 
-  const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-    global: { headers: { Authorization: `Bearer ${token}` } },
-  });
-  const { data, error } = await supabase.auth.getUser(token);
-  if (error || !data?.user?.id) return null;
-  return data.user.id;
+  // SECURITY FIX: Removed SUPABASE_SERVICE_ROLE_KEY from auth key candidates.
+  // The service role key bypasses RLS and must never be used in externally-reachable
+  // endpoints. A compromised TURN credential request could leverage it to read/write
+  // arbitrary rows across the entire database. User JWTs are validated against anon
+  // and publishable keys only.
+  const authKeys = [
+    Deno.env.get("SUPABASE_ANON_KEY") ?? "",
+    Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? "",
+    // REMOVED: SUPABASE_SERVICE_ROLE_KEY — must not be exposed in external-facing endpoints
+  ].map((v) => v.trim()).filter((v, i, arr) => !!v && arr.indexOf(v) === i);
+
+  if (authKeys.length === 0) {
+    console.error("[TURN] Missing auth keys for token validation");
+    return null;
+  }
+
+  for (const key of authKeys) {
+    try {
+      const supabase = createClient(supabaseUrl, key, {
+        global: { headers: { Authorization: `Bearer ${token}` } },
+        auth: { persistSession: false, autoRefreshToken: false },
+      });
+      const { data, error } = await supabase.auth.getUser(token);
+      if (!error && data?.user?.id) return data.user.id;
+    } catch {
+      // try next key
+    }
+  }
+
+  console.warn("[TURN] Token validation failed for all configured keys");
+  return null;
 }
 
 function splitIceServersByUrl(server: { urls: string | string[]; username?: string; credential?: string }) {

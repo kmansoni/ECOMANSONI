@@ -1,294 +1,538 @@
-import { useState, useEffect, useCallback, useRef } from "react";
-import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/hooks/useAuth";
+/**
+ * useE2EEncryption — хук для управления E2E-шифрованием беседы.
+ * ФАЗА 2: ECDH identity keys, AES-KW key distribution, IndexedDB key store.
+ */
+
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useAuth } from '@/hooks/useAuth';
 import {
-  generateEncryptionKey,
-  exportKey,
-  importKey,
-  encryptMessage,
-  decryptMessage,
-  encryptKeyForUser,
-  decryptKeyForUser,
-  deriveKeyFromPassphrase,
-} from "@/lib/chat/e2ee";
+  encryptWithAAD,
+  decryptWithAAD,
+  generateMessageKey,
+  exportPublicKey,
+  importPublicKey,
+  computeSafetyNumber,
+} from '@/lib/e2ee/crypto';
+import type { EncryptedPayload, SafetyNumber } from '@/lib/e2ee/crypto';
+import { E2EEKeyStore } from '@/lib/e2ee/keyStore';
+import {
+  publishIdentityKey,
+  distributeGroupKey,
+  receiveGroupKey,
+  rotateGroupKey,
+  getParticipantPublicKey,
+  clearPublicKeyCache,
+  GROUP_KEY_EXPIRES_OFFSET_MS,
+  MITMDetectedError,
+} from '@/lib/e2ee/keyDistribution';
+import { e2eeDb } from '@/lib/e2ee/db-types';
 
-// ─── Константы ────────────────────────────────────────────────────────────────
+// ─── Публичные типы ───────────────────────────────────────────────────────────
 
-/** Ключ localStorage, где хранится мастер-ключ текущей сессии (base64) */
-const MASTER_KEY_STORAGE_PREFIX = "e2ee.masterKey.v1.";
-/** Соль для деривации мастер-ключа (генерируется один раз и хранится в localStorage) */
-const MASTER_SALT_STORAGE_PREFIX = "e2ee.masterSalt.v1.";
-
-// ─── Тип хука ─────────────────────────────────────────────────────────────────
+export type { EncryptedPayload, SafetyNumber };
 
 export interface UseE2EEncryptionReturn {
+  // Состояние
+  isEncrypted: boolean;
+  /** @deprecated используй isEncrypted */
   encryptionEnabled: boolean;
-  currentKeyVersion: number;
+  isLoading: boolean;
+  /** @deprecated используй isLoading */
   isReady: boolean;
+  error: string | null;
+  currentKeyVersion: number | null;
+
+  // Управление шифрованием
   enableEncryption: () => Promise<void>;
   disableEncryption: () => Promise<void>;
   rotateKey: () => Promise<void>;
-  encryptContent: (plaintext: string) => Promise<{ ciphertext: string; iv: string; keyVersion: number } | null>;
-  decryptContent: (ciphertext: string, iv: string, keyVersion: number) => Promise<string | null>;
+
+  // Шифрование/расшифровка
+  encryptContent: (content: string) => Promise<EncryptedPayload | null>;
+  decryptContent: (payload: EncryptedPayload, senderId: string) => Promise<string | null>;
+
+  // Верификация
+  getSafetyNumber: (remoteUserId: string) => Promise<SafetyNumber | null>;
+
+  // Identity
+  getFingerprint: () => Promise<string | null>;
 }
 
-// ─── Утилиты: мастер-ключ пользователя ───────────────────────────────────────
-
-async function getOrCreateMasterKey(userId: string): Promise<CryptoKey> {
-  const saltKey = MASTER_SALT_STORAGE_PREFIX + userId;
-  const keyKey = MASTER_KEY_STORAGE_PREFIX + userId;
-
-  let masterKeyB64 = sessionStorage.getItem(keyKey);
-  if (masterKeyB64) {
-    return importKey(masterKeyB64);
-  }
-
-  // Деривируем из случайной "passphrase" — в первый раз генерируем её
-  let salt = localStorage.getItem(saltKey);
-  // Генерируем случайную passphrase для этого устройства (хранится в localStoage)
-  const passphraseKey = "e2ee.passphrase.v1." + userId;
-  let passphrase = localStorage.getItem(passphraseKey);
-  if (!passphrase) {
-    const rand = crypto.getRandomValues(new Uint8Array(32));
-    passphrase = btoa(String.fromCharCode(...rand));
-    localStorage.setItem(passphraseKey, passphrase);
-  }
-
-  const { key, salt: newSalt } = await deriveKeyFromPassphrase(passphrase, salt ?? undefined);
-  if (!salt) {
-    localStorage.setItem(saltKey, newSalt);
-  }
-
-  masterKeyB64 = await exportKey(key);
-  sessionStorage.setItem(keyKey, masterKeyB64);
-  return key;
-}
-
-// ─── Основной хук ─────────────────────────────────────────────────────────────
+// ─── Хук ─────────────────────────────────────────────────────────────────────
 
 export function useE2EEncryption(conversationId: string | null): UseE2EEncryptionReturn {
   const { user } = useAuth();
-  const [encryptionEnabled, setEncryptionEnabled] = useState(false);
-  const [currentKeyVersion, setCurrentKeyVersion] = useState(0);
-  const [isReady, setIsReady] = useState(false);
 
-  // Кеш расшифрованных групповых ключей: version → CryptoKey
+  const [isEncrypted, setIsEncrypted] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [currentKeyVersion, setCurrentKeyVersion] = useState<number | null>(null);
+
+  // Кеш расшифрованных групповых ключей: version → CryptoKey (forward secrecy)
   const groupKeyCacheRef = useRef<Map<number, CryptoKey>>(new Map());
+  // Lazy-init E2EEKeyStore (singleton per hook instance)
+  const keyStoreRef = useRef<E2EEKeyStore | null>(null);
 
-  // ─── Загрузка статуса шифрования ─────────────────────────────────────────
+  function getKeyStore(): E2EEKeyStore {
+    if (!keyStoreRef.current) {
+      keyStoreRef.current = new E2EEKeyStore({ dbName: 'e2ee-keystore-v2' });
+    }
+    return keyStoreRef.current;
+  }
+
+  // ─── Инициализация KeyStore ───────────────────────────────────────────────
+
+  useEffect(() => {
+    let cancelled = false;
+    const ks = getKeyStore();
+    ks.init().catch((err) => {
+      if (!cancelled) console.warn('[useE2EEncryption] keyStore init error:', err);
+    });
+    return () => {
+      cancelled = true;
+      ks.close();
+    };
+  }, []);
+
+  // ─── Загрузка статуса шифрования при монтировании ────────────────────────
 
   useEffect(() => {
     if (!conversationId) {
-      setEncryptionEnabled(false);
-      setCurrentKeyVersion(0);
-      setIsReady(false);
+      setIsEncrypted(false);
+      setCurrentKeyVersion(null);
+      setIsLoading(false);
       groupKeyCacheRef.current.clear();
+      clearPublicKeyCache();
       return;
     }
 
     let cancelled = false;
+    setIsLoading(true);
+    setError(null);
+
     async function load() {
       try {
-        const { data, error } = await (supabase as any)
-          .from("conversations")
-          .select("encryption_enabled")
-          .eq("id", conversationId)
-          .single();
+        const { data, error: convErr } = await e2eeDb.conversations.selectEncryptionEnabled(conversationId);
 
         if (cancelled) return;
-        if (error || !data) {
-          setEncryptionEnabled(false);
-        } else {
-          setEncryptionEnabled(!!data.encryption_enabled);
+        if (convErr || !data) {
+          setIsEncrypted(false);
+          return;
         }
 
-        if (data?.encryption_enabled) {
-          // Загружаем последнюю версию ключа
-          const { data: keyData } = await (supabase as any)
-            .from("chat_encryption_keys")
-            .select("key_version")
-            .eq("conversation_id", conversationId)
-            .is("revoked_at", null)
-            .order("key_version", { ascending: false })
-            .limit(1)
-            .single();
+        const enabled = !!data.encryption_enabled;
+        setIsEncrypted(enabled);
+
+        if (enabled) {
+          const { data: keyData } = await e2eeDb.chatEncryptionKeys.selectActiveLatestVersion(conversationId);
 
           if (!cancelled && keyData) {
             setCurrentKeyVersion(keyData.key_version);
           }
         }
+      } catch (err) {
+        if (!cancelled) {
+          const msg = err instanceof Error ? err.message : String(err);
+          setError(msg);
+        }
       } finally {
-        if (!cancelled) setIsReady(true);
+        if (!cancelled) setIsLoading(false);
       }
     }
+
     void load();
     return () => { cancelled = true; };
   }, [conversationId]);
 
-  // ─── Получение расшифрованного группового ключа ───────────────────────────
+  // ─── Получение/кеширование identity key pair ─────────────────────────────
 
-  const getGroupKey = useCallback(
-    async (keyVersion: number): Promise<CryptoKey | null> => {
-      if (!conversationId || !user?.id) return null;
+  const getIdentityKeyPair = useCallback(async () => {
+    if (!user?.id) return null;
+    const ks = getKeyStore();
+    return ks.getOrCreateIdentityKeyPair(user.id);
+  }, [user?.id]);
 
-      if (groupKeyCacheRef.current.has(keyVersion)) {
-        return groupKeyCacheRef.current.get(keyVersion)!;
+  // ─── Получение группового ключа (с кешем) ────────────────────────────────
+
+  const getGroupKey = useCallback(async (version: number): Promise<CryptoKey | null> => {
+    if (!conversationId || !user?.id) return null;
+
+    // Проверяем in-memory кеш (forward secrecy: старые версии не удаляем)
+    if (groupKeyCacheRef.current.has(version)) {
+      return groupKeyCacheRef.current.get(version)!;
+    }
+
+    // Пробуем получить из keyStore
+    const ks = getKeyStore();
+    const stored = await ks.getKey(`group:${conversationId}:v${version}`);
+    if (stored) {
+      groupKeyCacheRef.current.set(version, stored);
+      return stored;
+    }
+
+    // Получаем через key distribution (ECDH unwrap from Supabase)
+    const identityKP = await getIdentityKeyPair();
+    if (!identityKP) return null;
+
+    try {
+      const groupKey = await receiveGroupKey(
+        conversationId,
+        version,
+        { publicKey: identityKP.publicKey, privateKey: identityKP.privateKey },
+        user.id,
+      );
+      if (!groupKey) return null;
+
+      // Кешируем
+      groupKeyCacheRef.current.set(version, groupKey);
+      // Сохраняем в IndexedDB для следующих сессий
+      const storedAt = Date.now();
+      await ks.storeKey({
+        id: `group:${conversationId}:v${version}`,
+        key: groupKey,
+        createdAt: storedAt,
+        // SUGGESTION fix: TTL 90 дней — старые версии auto-cleanup в IndexedDB
+        expiresAt: storedAt + GROUP_KEY_EXPIRES_OFFSET_MS,
+        type: 'group',
+        metadata: { conversationId, version: String(version) },
+      });
+
+      return groupKey;
+    } catch (err) {
+      if (err instanceof MITMDetectedError) {
+        setError(`⚠️ Предупреждение безопасности: ${err.message}`);
       }
+      return null;
+    }
+  }, [conversationId, user?.id, getIdentityKeyPair]);
 
-      try {
-        const { data, error } = await (supabase as any)
-          .from("user_encryption_keys")
-          .select("encrypted_group_key")
-          .eq("user_id", user.id)
-          .eq("conversation_id", conversationId)
-          .eq("key_version", keyVersion)
-          .single();
-
-        if (error || !data) return null;
-
-        const masterKey = await getOrCreateMasterKey(user.id);
-        const groupKey = await decryptKeyForUser(data.encrypted_group_key, masterKey);
-        groupKeyCacheRef.current.set(keyVersion, groupKey);
-        return groupKey;
-      } catch (e) {
-        console.error("[useE2EEncryption] getGroupKey error:", e);
-        return null;
-      }
-    },
-    [conversationId, user?.id],
-  );
-
-  // ─── Включение шифрования ─────────────────────────────────────────────────
+  // ─── enableEncryption ────────────────────────────────────────────────────
 
   const enableEncryption = useCallback(async () => {
     if (!conversationId || !user?.id) return;
 
+    setIsLoading(true);
+    setError(null);
     try {
-      // Генерируем новый групповой ключ
-      const groupKey = await generateEncryptionKey();
-      const masterKey = await getOrCreateMasterKey(user.id);
-      const encryptedGroupKey = await encryptKeyForUser(groupKey, masterKey);
-      const newVersion = 1;
+      // 1. Получить/создать identity key pair
+      const identityKP = await getIdentityKeyPair();
+      if (!identityKP) throw new Error('Failed to get identity key pair');
 
-      // Сохраняем в БД
-      await (supabase as any).from("chat_encryption_keys").insert({
-        conversation_id: conversationId,
-        key_version: newVersion,
-        encrypted_key: encryptedGroupKey,
-        algorithm: "AES-256-GCM",
-        created_by: user.id,
+      // Проверяем, есть ли уже активный ключ для этой беседы
+      const { data: existingKey } = await e2eeDb.chatEncryptionKeys.selectActiveLatestVersion(conversationId);
+
+      if (existingKey) {
+        // Ключ уже создан другим участником — используем его
+        const groupKey = await getGroupKey(existingKey.key_version);
+        if (groupKey) {
+          // Включаем шифрование серверным RPC (RLS-safe)
+          const { data: enableResult, error: enableError } = await e2eeDb.rpc.enableConversationEncryption(
+            conversationId,
+            existingKey.key_version,
+          );
+          if (enableError || !enableResult?.ok) {
+            throw new Error(
+              `[enableEncryption] RPC enable failed: ${enableError?.message ?? enableResult?.error ?? 'unknown'}`,
+            );
+          }
+
+          setCurrentKeyVersion(existingKey.key_version);
+          setIsEncrypted(true);
+          return; // не создаём новый ключ
+        }
+        // Если не удалось получить существующий ключ — продолжаем создание нового
+      }
+
+      // 2. Публикуем публичный ключ в Supabase
+      const exported = await exportPublicKey(identityKP.publicKey);
+      await publishIdentityKey(user.id, exported.raw, exported.fingerprint);
+
+      // 3. Генерируем групповой ключ
+      const groupKey = await generateMessageKey();
+      const keyVersion = 1;
+
+      // 4. Распространяем групповой ключ всем участникам
+      const distResult = await distributeGroupKey(
+        conversationId,
+        groupKey,
+        keyVersion,
+        { publicKey: identityKP.publicKey, privateKey: identityKP.privateKey },
+        user.id,
+        exported.raw,
+      );
+
+      if (distResult.distributed.length === 0) {
+        throw new Error('Key distribution failed for all participants');
+      }
+
+      // 4b. Post-distribution race condition guard
+      const { data: verifyKey } = await e2eeDb.chatEncryptionKeys.selectActiveVersionForRecipient(
+        conversationId,
+        keyVersion,
+        user.id,
+      );
+
+      if (verifyKey && verifyKey.sender_id !== user.id) {
+        // Другой участник создал ключ раньше — откатываем свой и принимаем его
+        console.warn(
+          `[useE2EEncryption] Race detected: key v${keyVersion} created by ${verifyKey.sender_id}, not us. Accepting theirs.`,
+        );
+        groupKeyCacheRef.current.delete(keyVersion);
+        const foreignGroupKey = await getGroupKey(keyVersion);
+        if (foreignGroupKey) {
+          const { data: enableResult, error: enableError } = await e2eeDb.rpc.enableConversationEncryption(
+            conversationId,
+            keyVersion,
+          );
+          if (enableError || !enableResult?.ok) {
+            throw new Error(
+              `[enableEncryption] RPC enable failed: ${enableError?.message ?? enableResult?.error ?? 'unknown'}`,
+            );
+          }
+
+          setCurrentKeyVersion(keyVersion);
+          setIsEncrypted(true);
+          return;
+        }
+        // Не удалось получить чужой ключ — продолжаем со своим
+      }
+
+      if (distResult.failed.length > 0) {
+        console.warn(
+          `[useE2EEncryption] Key distribution partial failure: ${distResult.failed.length} failed, ${distResult.distributed.length} succeeded`,
+          distResult.errors,
+        );
+        // Уведомляем пользователя о частичном сбое (но продолжаем включение)
+        setError(
+          `Шифрование включено, но ${distResult.failed.length} участник(ов) не получили ключ. ` +
+          `Они не смогут читать новые сообщения до повторной ротации ключа.`
+        );
+      }
+
+      // 5. Включаем шифрование в беседе серверным RPC
+      const { data: enableResult, error: enableError } = await e2eeDb.rpc.enableConversationEncryption(
+        conversationId,
+        keyVersion,
+      );
+      if (enableError || !enableResult?.ok) {
+        throw new Error(
+          `[enableEncryption] RPC enable failed: ${enableError?.message ?? enableResult?.error ?? 'unknown'}`,
+        );
+      }
+
+      // 6. Кешируем групповой ключ локально
+      groupKeyCacheRef.current.set(keyVersion, groupKey);
+      const ks = getKeyStore();
+      const now = Date.now();
+      await ks.storeKey({
+        id: `group:${conversationId}:v${keyVersion}`,
+        key: groupKey,
+        createdAt: now,
+        // SUGGESTION fix: TTL 90 дней — старые версии auto-cleanup
+        expiresAt: now + GROUP_KEY_EXPIRES_OFFSET_MS,
+        type: 'group',
+        metadata: { conversationId, version: String(keyVersion) },
       });
 
-      await (supabase as any).from("user_encryption_keys").insert({
-        user_id: user.id,
-        conversation_id: conversationId,
-        key_version: newVersion,
-        encrypted_group_key: encryptedGroupKey,
-      });
-
-      // Включаем шифрование в беседе
-      await (supabase as any)
-        .from("conversations")
-        .update({ encryption_enabled: true })
-        .eq("id", conversationId);
-
-      groupKeyCacheRef.current.set(newVersion, groupKey);
-      setCurrentKeyVersion(newVersion);
-      setEncryptionEnabled(true);
-    } catch (e) {
-      console.error("[useE2EEncryption] enableEncryption error:", e);
-      throw e;
+      setCurrentKeyVersion(keyVersion);
+      setIsEncrypted(true);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(msg);
+      throw err;
+    } finally {
+      setIsLoading(false);
     }
-  }, [conversationId, user?.id]);
+  }, [conversationId, user?.id, getIdentityKeyPair, getGroupKey]);
 
-  // ─── Отключение шифрования ────────────────────────────────────────────────
+  // ─── disableEncryption ───────────────────────────────────────────────────
 
   const disableEncryption = useCallback(async () => {
     if (!conversationId || !user?.id) return;
 
-    await (supabase as any)
-      .from("conversations")
-      .update({ encryption_enabled: false })
-      .eq("id", conversationId);
+    setIsLoading(true);
+    setError(null);
+    try {
+      // Server-side RPC: атомически проверяет, что вызывающий является создателем
+      // беседы, деактивирует ВСЕ wrapped keys (всех отправителей, не только текущего),
+      // и сбрасывает encryption_enabled. Заменяет клиентскую проверку created_by.
+      const { data: rpcResult, error: rpcError } = await e2eeDb.rpc.disableConversationEncryption(conversationId);
 
-    groupKeyCacheRef.current.clear();
-    setEncryptionEnabled(false);
+      if (rpcError) {
+        throw new Error(`[disableEncryption] RPC failed: ${rpcError.message}`);
+      }
+
+      if (!rpcResult?.ok) {
+        const reason = rpcResult?.error ?? 'unknown';
+        if (reason === 'forbidden') {
+          throw new Error('Только создатель беседы может отключить шифрование');
+        }
+        if (reason === 'conversation_not_found') {
+          throw new Error('Беседа не найдена');
+        }
+        throw new Error(`[disableEncryption] unexpected RPC error: ${reason}`);
+      }
+
+      groupKeyCacheRef.current.clear();
+      setIsEncrypted(false);
+      setCurrentKeyVersion(null);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(msg);
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
   }, [conversationId, user?.id]);
 
-  // ─── Ротация ключа ────────────────────────────────────────────────────────
+  // ─── rotateKey ───────────────────────────────────────────────────────────
 
   const rotateKey = useCallback(async () => {
     if (!conversationId || !user?.id) return;
 
-    const newVersion = currentKeyVersion + 1;
-    const groupKey = await generateEncryptionKey();
-    const masterKey = await getOrCreateMasterKey(user.id);
-    const encryptedGroupKey = await encryptKeyForUser(groupKey, masterKey);
+    setIsLoading(true);
+    setError(null);
+    try {
+      const identityKP = await getIdentityKeyPair();
+      if (!identityKP) throw new Error('Failed to get identity key pair');
 
-    // Отзываем старый ключ
-    await (supabase as any)
-      .from("chat_encryption_keys")
-      .update({ revoked_at: new Date().toISOString() })
-      .eq("conversation_id", conversationId)
-      .eq("key_version", currentKeyVersion);
+      const exported = await exportPublicKey(identityKP.publicKey);
+      const rotResult = await rotateGroupKey(
+        conversationId,
+        { publicKey: identityKP.publicKey, privateKey: identityKP.privateKey },
+        user.id,
+        exported.raw,
+      );
 
-    await (supabase as any).from("chat_encryption_keys").insert({
-      conversation_id: conversationId,
-      key_version: newVersion,
-      encrypted_key: encryptedGroupKey,
-      algorithm: "AES-256-GCM",
-      created_by: user.id,
-    });
+      if (!rotResult) throw new Error('rotateGroupKey returned null');
 
-    await (supabase as any).from("user_encryption_keys").insert({
-      user_id: user.id,
-      conversation_id: conversationId,
-      key_version: newVersion,
-      encrypted_group_key: encryptedGroupKey,
-    });
+      // Кешируем новый ключ
+      const newKey = await getGroupKey(rotResult.keyVersion);
+      if (newKey) {
+        groupKeyCacheRef.current.set(rotResult.keyVersion, newKey);
+      }
 
-    groupKeyCacheRef.current.set(newVersion, groupKey);
-    setCurrentKeyVersion(newVersion);
-  }, [conversationId, user?.id, currentKeyVersion]);
+      setCurrentKeyVersion(rotResult.keyVersion);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(msg);
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [conversationId, user?.id, getIdentityKeyPair, getGroupKey]);
 
-  // ─── Шифрование контента ─────────────────────────────────────────────────
+  // ─── encryptContent ──────────────────────────────────────────────────────
 
-  const encryptContent = useCallback(
-    async (plaintext: string) => {
-      if (!encryptionEnabled || currentKeyVersion === 0) return null;
-      const groupKey = await getGroupKey(currentKeyVersion);
+  const encryptContent = useCallback(async (content: string): Promise<EncryptedPayload | null> => {
+    if (!isEncrypted || currentKeyVersion === null || !user?.id || !conversationId) return null;
+
+    // SECURITY: encryption failures MUST propagate to the caller.
+    // Silently returning null risks sending plaintext in an encrypted conversation.
+    const groupKey = await getGroupKey(currentKeyVersion);
+    if (!groupKey) {
+      const msg = 'Ключ шифрования недоступен — сообщение не может быть зашифровано';
+      setError(msg);
+      throw new Error(msg);
+    }
+
+    try {
+      return await encryptWithAAD(groupKey, content, {
+        conversationId,
+        keyVersion: currentKeyVersion,
+        senderId: user.id,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(`Ошибка шифрования: ${msg}`);
+      throw err; // propagate — caller MUST NOT send plaintext
+    }
+  }, [isEncrypted, currentKeyVersion, user?.id, conversationId, getGroupKey]);
+
+  // ─── decryptContent ──────────────────────────────────────────────────────
+
+  const decryptContent = useCallback(async (payload: EncryptedPayload, senderId: string): Promise<string | null> => {
+    if (!conversationId || !user?.id) return null;
+
+    try {
+      const version = payload.epoch;
+      const groupKey = await getGroupKey(version);
       if (!groupKey) return null;
 
-      const { ciphertext, iv } = await encryptMessage(plaintext, groupKey);
-      return { ciphertext, iv, keyVersion: currentKeyVersion };
-    },
-    [encryptionEnabled, currentKeyVersion, getGroupKey],
-  );
-
-  // ─── Дешифрование контента ────────────────────────────────────────────────
-
-  const decryptContent = useCallback(
-    async (ciphertext: string, iv: string, keyVersion: number): Promise<string | null> => {
-      try {
-        const groupKey = await getGroupKey(keyVersion);
-        if (!groupKey) return null;
-        return await decryptMessage(ciphertext, iv, groupKey);
-      } catch (e) {
-        console.error("[useE2EEncryption] decryptContent error:", e);
-        return null;
+      return await decryptWithAAD(groupKey, payload, {
+        conversationId,
+        keyVersion: version,
+        senderId,
+      });
+    } catch (err) {
+      if (err instanceof MITMDetectedError) {
+        setError(`⚠️ Предупреждение безопасности: ${err.message}`);
       }
-    },
-    [getGroupKey],
-  );
+      console.error('[useE2EEncryption] decryptContent error:', err);
+      return null;
+    }
+  }, [conversationId, user?.id, getGroupKey]);
+
+  // ─── getSafetyNumber ─────────────────────────────────────────────────────
+
+  const getSafetyNumber = useCallback(async (remoteUserId: string): Promise<SafetyNumber | null> => {
+    if (!user?.id) return null;
+
+    try {
+      const localKP = await getIdentityKeyPair();
+      if (!localKP) return null;
+
+      const remoteInfo = await getParticipantPublicKey(remoteUserId);
+      if (!remoteInfo) return null;
+
+      const remoteKey = await importPublicKey(remoteInfo.publicKeyRaw);
+
+      return await computeSafetyNumber(
+        localKP.publicKey,
+        remoteKey,
+        user.id,
+        remoteUserId,
+      );
+    } catch (err) {
+      console.error('[useE2EEncryption] getSafetyNumber error:', err);
+      return null;
+    }
+  }, [user?.id, getIdentityKeyPair]);
+
+  // ─── getFingerprint ──────────────────────────────────────────────────────
+
+  const getFingerprint = useCallback(async (): Promise<string | null> => {
+    try {
+      const identityKP = await getIdentityKeyPair();
+      if (!identityKP) return null;
+      return identityKP.fingerprint;
+    } catch {
+      return null;
+    }
+  }, [getIdentityKeyPair]);
+
+  // ─── Return ───────────────────────────────────────────────────────────────
 
   return {
-    encryptionEnabled,
+    // Состояние
+    isEncrypted,
+    encryptionEnabled: isEncrypted,   // backward compat
+    isLoading,
+    isReady: !isLoading,              // backward compat
+    error,
     currentKeyVersion,
-    isReady,
+
+    // Управление
     enableEncryption,
     disableEncryption,
     rotateKey,
+
+    // Крипто
     encryptContent,
     decryptContent,
+
+    // Верификация
+    getSafetyNumber,
+    getFingerprint,
   };
 }

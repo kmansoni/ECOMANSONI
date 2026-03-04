@@ -326,7 +326,8 @@
 				"-ExecutionPolicy",
 				"Bypass",
 				"-File",
-				"${workspaceFolder}\\scripts\\supabase-deploy.ps1"
+				"${workspaceFolder}\\scripts\\supabase-deploy.ps1",
+				"-PromptToken"
 			],
 			"options": {
 				"cwd": "${workspaceFolder}",

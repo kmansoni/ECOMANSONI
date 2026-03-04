@@ -4,6 +4,7 @@ param(
   [switch]$SkipDbPush,
   [switch]$SkipFunctions,
   [switch]$SkipSyncGuard,
+  [switch]$SkipE2EEChecks,
   [string]$MirrorRepoPath = "",
   [switch]$PromptToken,
   [string[]]$Functions = @("vk-webhook", "turn-credentials")
@@ -29,6 +30,10 @@ function Normalize-Secret([string]$value) {
       # no-op
     }
   }
+  # Remove hidden Unicode formatting chars that often appear after copy/paste
+  # (zero-width spaces, BOM) and control chars from terminals/password managers.
+  $s = [System.Text.RegularExpressions.Regex]::Replace($s, '[\u200B-\u200D\u2060\uFEFF]', '')
+  $s = [System.Text.RegularExpressions.Regex]::Replace($s, '[\x00-\x1F\x7F]', '')
   return $s
 }
 
@@ -83,6 +88,24 @@ function Read-SupabaseToken {
   return $token
 }
 
+function Assert-LastExitCode([string]$stepName) {
+  if ($LASTEXITCODE -ne 0) {
+    throw "$stepName failed with exit code $LASTEXITCODE"
+  }
+}
+
+function Get-LinkedProjectRef([string]$repoRootPath) {
+  $linkedRefPath = Join-Path (Join-Path $repoRootPath "supabase") ".temp\project-ref"
+  if (-not (Test-Path -LiteralPath $linkedRefPath)) {
+    return ""
+  }
+  try {
+    return (Get-Content -LiteralPath $linkedRefPath -Raw).Trim()
+  } catch {
+    return ""
+  }
+}
+
 $previousToken = $env:SUPABASE_ACCESS_TOKEN
 $tokenWasSet = -not [string]::IsNullOrWhiteSpace($previousToken)
 $needsPrompt = $PromptToken -and ((-not $tokenWasSet) -or ($previousToken.Trim().Length -lt 10))
@@ -100,6 +123,17 @@ try {
 
   $supabase = Resolve-SupabaseExe
   $resolvedProjectRef = Resolve-ProjectRef $ProjectRef
+
+  if (-not $SkipE2EEChecks) {
+    $e2eeGuardScript = Join-Path $PSScriptRoot "e2ee-guard.ps1"
+    if (-not (Test-Path -LiteralPath $e2eeGuardScript)) {
+      throw "E2EE guard script not found: $e2eeGuardScript"
+    }
+    & $e2eeGuardScript -RepoRoot $repoRoot
+    if (-not $?) {
+      throw "E2EE guard failed."
+    }
+  }
 
   if (-not $SkipSyncGuard) {
     $syncGuardScript = Join-Path $PSScriptRoot "sync-guard.ps1"
@@ -125,6 +159,14 @@ try {
 
   Write-Host "==> Linking project $resolvedProjectRef" -ForegroundColor Cyan
   & $supabase link --project-ref $resolvedProjectRef | Out-Host
+  if ($LASTEXITCODE -ne 0) {
+    $alreadyLinkedRef = Get-LinkedProjectRef $repoRoot
+    if ($alreadyLinkedRef -eq $resolvedProjectRef) {
+      Write-Host "supabase link failed, but project is already linked locally ($alreadyLinkedRef). Continuing." -ForegroundColor Yellow
+    } else {
+      Assert-LastExitCode "supabase link"
+    }
+  }
 
   if (-not $SkipSyncGuard) {
     $syncGuardScript = Join-Path $PSScriptRoot "sync-guard.ps1"
@@ -153,19 +195,25 @@ try {
       $dbPassword = Normalize-Secret $env:PGPASSWORD
     }
 
-    $dryRunArgs = @("db", "push", "--dry-run")
-    $pushArgs = @("db", "push", "--yes")
-    if (-not [string]::IsNullOrWhiteSpace($dbPassword)) {
+    if ([string]::IsNullOrWhiteSpace($dbPassword)) {
+      Write-Host "Skipping DB push: SUPABASE_DB_PASSWORD/PGPASSWORD is not set." -ForegroundColor Yellow
+    } else {
+      $dryRunArgs = @("db", "push", "--dry-run")
+      $pushArgs = @("db", "push", "--yes")
       $env:PGPASSWORD = $dbPassword
       $env:SUPABASE_DB_PASSWORD = $dbPassword
-    }
+      $dryRunArgs += @("--password", $dbPassword)
+      $pushArgs += @("--password", $dbPassword)
 
-    Write-Host "==> DB push (dry-run)" -ForegroundColor Cyan
-    & $supabase @dryRunArgs | Out-Host
+      Write-Host "==> DB push (dry-run)" -ForegroundColor Cyan
+      & $supabase @dryRunArgs | Out-Host
+      Assert-LastExitCode "supabase db push --dry-run"
 
-    if (-not $DryRun) {
-      Write-Host "==> DB push" -ForegroundColor Cyan
-      & $supabase @pushArgs | Out-Host
+      if (-not $DryRun) {
+        Write-Host "==> DB push" -ForegroundColor Cyan
+        & $supabase @pushArgs | Out-Host
+        Assert-LastExitCode "supabase db push --yes"
+      }
     }
   }
 
@@ -173,6 +221,18 @@ try {
     foreach ($fn in $Functions) {
       Write-Host "==> Deploy function: $fn" -ForegroundColor Cyan
       & $supabase functions deploy $fn | Out-Host
+      Assert-LastExitCode "supabase functions deploy $fn"
+    }
+  }
+
+  if (-not $SkipE2EEChecks) {
+    $e2eeCheckScript = Join-Path $PSScriptRoot "e2ee-version-check.ps1"
+    if (-not (Test-Path -LiteralPath $e2eeCheckScript)) {
+      throw "E2EE version check script not found: $e2eeCheckScript"
+    }
+    & $e2eeCheckScript -ProjectRef $resolvedProjectRef
+    if (-not $?) {
+      throw "E2EE version check failed."
     }
   }
 

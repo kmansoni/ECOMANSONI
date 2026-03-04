@@ -22,6 +22,7 @@ import { AttachmentIcon } from "./AttachmentIcon";
 import { EncryptionBadge } from "./EncryptionBadge";
 import { EncryptionToggle } from "./EncryptionToggle";
 import { useE2EEncryption } from "@/hooks/useE2EEncryption";
+import type { EncryptedPayload } from "@/hooks/useE2EEncryption";
 import { Button } from "@/components/ui/button";
 import { useMessages } from "@/hooks/useChat";
 import { sanitizeReceivedText } from "@/lib/text-encoding";
@@ -267,12 +268,35 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
   // ─── Дешифрование входящих зашифрованных сообщений ─────────────────────────
   useEffect(() => {
     const encrypted = messages.filter(
-      (m: any) => m.is_encrypted && m.encryption_iv && !(m.id in decryptedCache),
+      (m: any) => m.is_encrypted && !(m.id in decryptedCache),
     );
     if (!encrypted.length) return;
 
     encrypted.forEach(async (m: any) => {
-      const plain = await decryptContent(m.content, m.encryption_iv, m.encryption_key_version ?? 1);
+      let payload: EncryptedPayload | null = null;
+      try {
+        const parsed = JSON.parse(String(m.content ?? ""));
+        if (
+          parsed &&
+          parsed.v === 2 &&
+          typeof parsed.iv === "string" &&
+          typeof parsed.ct === "string" &&
+          typeof parsed.tag === "string" &&
+          typeof parsed.epoch === "number" &&
+          typeof parsed.kid === "string"
+        ) {
+          payload = parsed as EncryptedPayload;
+        }
+      } catch {
+        payload = null;
+      }
+
+      if (!payload) {
+        setDecryptedCache((prev) => ({ ...prev, [m.id]: null }));
+        return;
+      }
+
+      const plain = await decryptContent(payload, m.sender_id);
       setDecryptedCache((prev) => ({ ...prev, [m.id]: plain }));
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -592,11 +616,11 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
       if (encryptionEnabled) {
         const encrypted = await encryptContent(withReply);
         if (encrypted) {
-          contentToSend = encrypted.ciphertext;
+          contentToSend = JSON.stringify(encrypted);
           extraFields = {
             is_encrypted: true,
             encryption_iv: encrypted.iv,
-            encryption_key_version: encrypted.keyVersion,
+            encryption_key_version: encrypted.epoch,
           };
         }
       }

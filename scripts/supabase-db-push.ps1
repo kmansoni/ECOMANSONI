@@ -25,6 +25,10 @@ function Normalize-Secret([string]$value) {
       # no-op
     }
   }
+  # Remove hidden Unicode formatting chars that often appear after copy/paste
+  # (zero-width spaces, BOM) and control chars from terminals/password managers.
+  $s = [System.Text.RegularExpressions.Regex]::Replace($s, '[\u200B-\u200D\u2060\uFEFF]', '')
+  $s = [System.Text.RegularExpressions.Regex]::Replace($s, '[\x00-\x1F\x7F]', '')
   return $s
 }
 
@@ -102,6 +106,15 @@ try {
     }
   }
 
+  if (-not [string]::IsNullOrWhiteSpace($dbPasswordPlain)) {
+    if ($dbPasswordPlain.StartsWith('sbp_')) {
+      throw "Database password looks like a Supabase Access Token (sbp_...). Use the project's DATABASE password from Supabase Dashboard > Project Settings > Database."
+    }
+    if ($dbPasswordPlain.StartsWith('eyJ')) {
+      throw "Database password looks like a JWT token. Use the project's DATABASE password from Supabase Dashboard > Project Settings > Database."
+    }
+  }
+
   $pushArgs = @('db', 'push')
   $pushArgsForLog = @('db', 'push')
   if ($DryRun) {
@@ -115,6 +128,7 @@ try {
   if (-not [string]::IsNullOrWhiteSpace($dbPasswordPlain)) {
     $env:PGPASSWORD = $dbPasswordPlain
     $env:SUPABASE_DB_PASSWORD = $dbPasswordPlain
+    $pushArgs += @('--password', $dbPasswordPlain)
     $pushArgsForLog += @('-p', '<env:redacted>')
   }
 
@@ -144,6 +158,14 @@ try {
 
   if ($exitCode -ne 0) {
     $output | ForEach-Object { Write-Host $_ }
+
+    $joined = ($output | ForEach-Object { [string]$_ }) -join "`n"
+    if ($joined -match 'SQLSTATE 28P01|password authentication failed') {
+      Write-Host "" -ForegroundColor Yellow
+      Write-Host "DB authentication failed (SQLSTATE 28P01)." -ForegroundColor Yellow
+      Write-Host "Use the project Database password (not sbp_ token / JWT)." -ForegroundColor Yellow
+      Write-Host "If unsure, reset it here: https://supabase.com/dashboard/project/lfkbgnbjxskspsownvjm/settings/database" -ForegroundColor Yellow
+    }
   }
 
   exit $exitCode

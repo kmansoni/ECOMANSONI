@@ -38,41 +38,19 @@ export interface ExportedPublicKey {
 
 // ─── Утилиты ─────────────────────────────────────────────────────────────────
 
-function toBase64(buf: ArrayBuffer | Uint8Array): string {
-  const bytes = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
-  let binary = '';
-  for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return btoa(binary);
-}
+import { toBase64, fromBase64 } from './utils';
 
-/** Возвращает Uint8Array с гарантированным ArrayBuffer буфером */
-function fromBase64(b64: string): Uint8Array {
-  const binary = atob(b64);
-  const buf = new ArrayBuffer(binary.length);
-  const bytes = new Uint8Array(buf);
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  return bytes;
-}
-
-/** TextEncoder с гарантированным ArrayBuffer буфером */
-function encodeText(text: string): Uint8Array {
+function encodeText(text: string): ArrayBuffer {
   const encoded = new TextEncoder().encode(text);
   const buf = new ArrayBuffer(encoded.length);
-  const bytes = new Uint8Array(buf);
-  bytes.set(encoded);
-  return bytes;
+  new Uint8Array(buf).set(encoded);
+  return buf;
 }
 
-/** Создаёт Uint8Array с гарантированным ArrayBuffer */
-function secureRandom(size: number): Uint8Array {
+function secureRandom(size: number): ArrayBuffer {
   const buf = new ArrayBuffer(size);
-  const arr = new Uint8Array(buf);
-  crypto.getRandomValues(arr);
-  return arr;
+  crypto.getRandomValues(new Uint8Array(buf));
+  return buf;
 }
 
 // ─── Генерация ключей ─────────────────────────────────────────────────────────
@@ -106,10 +84,9 @@ export async function exportPublicKey(key: CryptoKey): Promise<ExportedPublicKey
  * Импорт публичного ключа из raw bytes (base64)
  */
 export async function importPublicKey(raw: string): Promise<CryptoKey> {
-  const bytes = fromBase64(raw);
   return crypto.subtle.importKey(
     'raw',
-    bytes,
+    fromBase64(raw),
     { name: 'ECDH', namedCurve: 'P-256' },
     true,
     []
@@ -137,21 +114,16 @@ export async function deriveSharedSecret(
  */
 export async function hkdfDerive(
   sharedSecret: CryptoKey,
-  salt: Uint8Array,
+  salt: ArrayBuffer,
   info: string,
   keyLength = 256
 ): Promise<CryptoKey> {
-  const infoBytes = encodeText(info);
-  // Обеспечиваем корректный ArrayBuffer для salt
-  const saltBuf = new ArrayBuffer(salt.byteLength);
-  new Uint8Array(saltBuf).set(salt);
-
   return crypto.subtle.deriveKey(
     {
       name: 'HKDF',
       hash: 'SHA-256',
-      salt: saltBuf,
-      info: infoBytes,
+      salt,
+      info: encodeText(info),
     },
     sharedSecret,
     { name: 'AES-GCM', length: keyLength },
@@ -176,6 +148,33 @@ export async function generateMessageKey(): Promise<CryptoKey> {
 /**
  * Шифрование с AAD (Additional Authenticated Data)
  */
+/**
+ * Derive a stable key-id (kid) from a CryptoKey — first 8 bytes of SHA-256
+ * over the exported raw key material.  Non-extractable keys export as empty
+ * the raw format is unavailable; in that case we fall back to a zero kid so
+ * the field stays well-defined (decryption never relies on kid for lookup —
+ * epoch is the authoritative version discriminator).
+ */
+// SECURITY FIX: deriveKid now accepts optional epoch for non-extractable keys.
+// When key is non-extractable (e.g. after unwrapKey with extractable:false),
+// we derive a stable kid from epoch to maintain per-version uniqueness
+// without ever exposing raw key material.
+async function deriveKid(key: CryptoKey, epoch?: number): Promise<string> {
+  try {
+    const raw = await crypto.subtle.exportKey('raw', key);
+    const hash = await crypto.subtle.digest('SHA-256', raw);
+    return toBase64(hash.slice(0, 8));
+  } catch {
+    // Non-extractable key — derive kid from epoch to maintain uniqueness
+    if (epoch !== undefined) {
+      const buf = new TextEncoder().encode(`kid:epoch:${epoch}`);
+      const hash = await crypto.subtle.digest('SHA-256', buf);
+      return toBase64(hash.slice(0, 8));
+    }
+    return toBase64(new ArrayBuffer(8));
+  }
+}
+
 export async function encryptWithAAD(
   key: CryptoKey,
   plaintext: string,
@@ -183,33 +182,33 @@ export async function encryptWithAAD(
 ): Promise<EncryptedPayload> {
   const iv = secureRandom(12);
   const aad = encodeText(`${context.conversationId}:${context.keyVersion}:${context.senderId}`);
-  const plaintextBytes = encodeText(plaintext);
+  const plaintextBuf = encodeText(plaintext);
 
   const encrypted = await crypto.subtle.encrypt(
     {
       name: 'AES-GCM',
-      iv: iv,
+      iv,
       additionalData: aad,
       tagLength: 128,
     },
     key,
-    plaintextBytes
+    plaintextBuf
   );
 
   // Последние 16 байт — auth tag
   const encryptedBytes = new Uint8Array(encrypted);
-  const ciphertext = encryptedBytes.slice(0, encryptedBytes.length - 16);
-  const authTag = encryptedBytes.slice(encryptedBytes.length - 16);
-
-  const kidBytes = secureRandom(8);
+  const ctBuf = new ArrayBuffer(encryptedBytes.length - 16);
+  const tagBuf = new ArrayBuffer(16);
+  new Uint8Array(ctBuf).set(encryptedBytes.slice(0, encryptedBytes.length - 16));
+  new Uint8Array(tagBuf).set(encryptedBytes.slice(encryptedBytes.length - 16));
 
   return {
     v: 2,
     iv: toBase64(iv),
-    ct: toBase64(ciphertext),
-    tag: toBase64(authTag),
+    ct: toBase64(ctBuf),
+    tag: toBase64(tagBuf),
     epoch: context.keyVersion,
-    kid: toBase64(kidBytes),
+    kid: await deriveKid(key, context.keyVersion),
   };
 }
 
@@ -226,20 +225,20 @@ export async function decryptWithAAD(
   }
 
   const iv = fromBase64(payload.iv);
-  const ciphertext = fromBase64(payload.ct);
-  const authTag = fromBase64(payload.tag);
+  const ciphertextBytes = new Uint8Array(fromBase64(payload.ct));
+  const tagBytes = new Uint8Array(fromBase64(payload.tag));
   const aad = encodeText(`${context.conversationId}:${context.keyVersion}:${context.senderId}`);
 
-  // Объединяем ciphertext + tag (WebCrypto ожидает их вместе)
-  const combinedBuf = new ArrayBuffer(ciphertext.length + authTag.length);
+  // WebCrypto ожидает ciphertext + tag вместе
+  const combinedBuf = new ArrayBuffer(ciphertextBytes.length + tagBytes.length);
   const combined = new Uint8Array(combinedBuf);
-  combined.set(ciphertext);
-  combined.set(authTag, ciphertext.length);
+  combined.set(ciphertextBytes);
+  combined.set(tagBytes, ciphertextBytes.length);
 
   const decrypted = await crypto.subtle.decrypt(
     {
       name: 'AES-GCM',
-      iv: iv,
+      iv,
       additionalData: aad,
       tagLength: 128,
     },
@@ -270,14 +269,15 @@ export async function unwrapKey(
   wrappedKey: string,
   unwrappingKey: CryptoKey
 ): Promise<CryptoKey> {
-  const wrappedBytes = fromBase64(wrappedKey);
+  // SECURITY FIX: extractable:false prevents XSS from exfiltrating raw key material
+  // via crypto.subtle.exportKey. Key is usable for encrypt/decrypt but cannot be extracted.
   return crypto.subtle.unwrapKey(
     'raw',
-    wrappedBytes,
+    fromBase64(wrappedKey),
     unwrappingKey,
     'AES-KW',
     { name: 'AES-GCM', length: 256 },
-    true,
+    false,
     ['encrypt', 'decrypt']
   );
 }
@@ -304,7 +304,6 @@ export async function computeSafetyNumber(
   localUserId: string,
   remoteUserId: string
 ): Promise<SafetyNumber> {
-  // Сортируем по userId для детерминированности
   const [firstKey, secondKey, firstId, secondId] =
     localUserId < remoteUserId
       ? [localIdentityKey, remoteIdentityKey, localUserId, remoteUserId]
@@ -313,32 +312,41 @@ export async function computeSafetyNumber(
   const firstRaw = await crypto.subtle.exportKey('raw', firstKey);
   const secondRaw = await crypto.subtle.exportKey('raw', secondKey);
 
-  const firstIdBytes = encodeText(firstId);
-  const secondIdBytes = encodeText(secondId);
+  const firstIdBuf = encodeText(firstId);
+  const secondIdBuf = encodeText(secondId);
 
-  // Конкатенация: firstId || firstKey || secondId || secondKey
-  const totalLen = firstIdBytes.length + firstRaw.byteLength +
-    secondIdBytes.length + secondRaw.byteLength;
+  const firstIdBytes = new Uint8Array(firstIdBuf);
+  const secondIdBytes = new Uint8Array(secondIdBuf);
+  const firstRawBytes = new Uint8Array(firstRaw);
+  const secondRawBytes = new Uint8Array(secondRaw);
+
+  const totalLen = firstIdBytes.length + firstRawBytes.length +
+    secondIdBytes.length + secondRawBytes.length;
   const combinedBuf = new ArrayBuffer(totalLen);
   const combined = new Uint8Array(combinedBuf);
   let offset = 0;
   combined.set(firstIdBytes, offset); offset += firstIdBytes.length;
-  combined.set(new Uint8Array(firstRaw), offset); offset += firstRaw.byteLength;
+  combined.set(firstRawBytes, offset); offset += firstRawBytes.length;
   combined.set(secondIdBytes, offset); offset += secondIdBytes.length;
-  combined.set(new Uint8Array(secondRaw), offset);
+  combined.set(secondRawBytes, offset);
 
   const hashBuf = await crypto.subtle.digest('SHA-256', combinedBuf);
   const hash = new Uint8Array(hashBuf);
+  const numericSeedBuf = await crypto.subtle.digest('SHA-512', combinedBuf);
+  const numericSeed = new Uint8Array(numericSeedBuf);
 
   // 60-digit number: 12 групп по 5 цифр
   let numeric = '';
+  // SECURITY FIX: Use non-overlapping 3-byte windows from SHA-512 output
+  // to avoid byte overlap correlation between adjacent groups.
   for (let i = 0; i < 12; i++) {
-    const byteIdx = Math.floor(i * 2.5);
-    const val = ((hash[byteIdx] << 8) | hash[byteIdx + 1]) % 100000;
+    const byteIdx = i * 3;
+    const val =
+      ((numericSeed[byteIdx] << 16) | (numericSeed[byteIdx + 1] << 8) | numericSeed[byteIdx + 2]) %
+      100000;
     numeric += val.toString().padStart(5, '0');
   }
 
-  // Emoji: первые 8 байт → индекс в массиве из 64 emoji
   const emoji: string[] = [];
   for (let i = 0; i < 8; i++) {
     emoji.push(SAFETY_EMOJI[hash[i] % 64]);
@@ -353,8 +361,7 @@ export async function computeSafetyNumber(
 export async function computeFingerprint(key: CryptoKey): Promise<string> {
   const raw = await crypto.subtle.exportKey('raw', key);
   const hashBuf = await crypto.subtle.digest('SHA-256', raw);
-  const hash = new Uint8Array(hashBuf);
-  return Array.from(hash)
+  return Array.from(new Uint8Array(hashBuf))
     .map(b => b.toString(16).padStart(2, '0'))
     .join(':');
 }
@@ -370,27 +377,28 @@ export class NonceManager {
     this.maxSize = maxSize;
   }
 
-  /**
-   * Возвращает true если nonce НОВЫЙ (не встречался ранее)
-   */
+  /** Возвращает true если nonce НОВЫЙ (не встречался ранее) */
   check(nonce: string): boolean {
     return !this.seen.has(nonce);
   }
 
   add(nonce: string): void {
     if (this.seen.size >= this.maxSize) {
-      // Удаляем первый элемент (FIFO)
       const first = this.seen.values().next().value;
-      if (first !== undefined) {
-        this.seen.delete(first);
-      }
+      if (first !== undefined) this.seen.delete(first);
     }
     this.seen.add(nonce);
   }
 
-  /**
-   * Генерация криптографически случайного nonce (12 байт, base64)
-   */
+  // SECURITY FIX: Atomic check-and-add prevents TOCTOU races in concurrent decrypt paths.
+  /** Атомарная проверка и добавление. Возвращает true если nonce НОВЫЙ (не повтор). */
+  checkAndAdd(nonce: string): boolean {
+    if (this.seen.has(nonce)) return false;
+    this.add(nonce);
+    return true;
+  }
+
+  /** Генерация криптографически случайного nonce (12 байт, base64) */
   generateNonce(): string {
     return toBase64(secureRandom(12));
   }
