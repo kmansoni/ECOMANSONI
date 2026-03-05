@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
-import { normalizeReelMediaUrl } from "@/hooks/useReels";
+import { normalizeReelMediaUrl } from "@/lib/reels/media";
 import { toast } from "sonner";
 import { useProfileByUsername, useUserPosts } from "@/hooks/useProfile";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -242,11 +242,20 @@ export function UserProfilePage() {
     } catch (error) {
       console.error("[Chat] Error:", error);
       const msg = error instanceof Error ? error.message : String(error);
+      const anyErr = error as any;
+      const details = typeof anyErr?.details === "string" ? anyErr.details : "";
+      // Only match explicit blocked_user signals — do NOT match generic 42501
+      // (insufficient_privilege) which fires for unrelated permission errors.
+      const blockedPair =
+        msg.toLowerCase().includes("blocked_user") ||
+        details.toLowerCase().includes("blocked_user");
       
       if (msg.includes("Cannot message yourself")) {
         toast.error("Нельзя написать самому себе");
       } else if (msg.includes("Target not registered")) {
         toast.info("Этот пользователь ещё не зарегистрирован");
+      } else if (blockedPair) {
+        toast.error("Чат недоступен: пользователь в блокировке");
       } else {
         toast.error("Не удалось открыть чат", { description: msg });
       }

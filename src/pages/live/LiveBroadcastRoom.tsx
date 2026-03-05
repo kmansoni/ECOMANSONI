@@ -5,8 +5,18 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Loader2, Send, X, Mic, MicOff, Camera, CameraOff,
-  FlipHorizontal, Users, Clock, MessageCircleQuestion, UserPlus2, Video,
+  FlipHorizontal, Users, Clock, MessageCircleQuestion, UserPlus2,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
@@ -49,7 +59,9 @@ function formatDuration(sec: number) {
 export function LiveBroadcastRoom() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
-  const supabaseUnsafe = supabase as any;
+  // Typed Supabase client — cast only where schema types are not yet generated
+  // for live_* tables. Remove once Supabase types include these tables.
+  const db = supabase as any; // TODO: replace with typed client after schema gen
 
   const [session, setSession] = useState<LiveSession | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -63,7 +75,7 @@ export function LiveBroadcastRoom() {
   const [facing, setFacing] = useState<"user" | "environment">("user");
   const [showQA, setShowQA] = useState(false);
   const [showInviteGuest, setShowInviteGuest] = useState(false);
-  const [pinnedComment, setPinnedComment] = useState<string>("");
+  const [showEndConfirm, setShowEndConfirm] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -92,7 +104,7 @@ export function LiveBroadcastRoom() {
   // Загрузка данных сессии
   const loadSession = useCallback(async () => {
     try {
-      const { data, error } = await supabaseUnsafe
+      const { data, error } = await db
         .from("live_sessions")
         .select("*")
         .eq("id", sessionId)
@@ -115,12 +127,12 @@ export function LiveBroadcastRoom() {
     } finally {
       setLoading(false);
     }
-  }, [sessionId, supabaseUnsafe]);
+  }, [sessionId, db]);
 
   // Загрузка сообщений
   const loadMessages = useCallback(async () => {
     try {
-      const { data, error } = await supabaseUnsafe
+      const { data, error } = await db
         .from("live_chat_messages")
         .select("*")
         .eq("session_id", sessionId)
@@ -136,7 +148,7 @@ export function LiveBroadcastRoom() {
         created_at: String(row.created_at ?? ""),
       })));
     } catch { /* игнорируем */ }
-  }, [sessionId, supabaseUnsafe]);
+  }, [sessionId, db]);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -211,7 +223,7 @@ export function LiveBroadcastRoom() {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Не авторизован");
-      const { error } = await supabaseUnsafe.from("live_chat_messages").insert({
+      const { error } = await db.from("live_chat_messages").insert({
         session_id: sessionId,
         sender_id: user.id,
         content: messageText.trim(),
@@ -226,10 +238,9 @@ export function LiveBroadcastRoom() {
     }
   };
 
-  const endBroadcast = async () => {
-    if (!confirm("Завершить эфир?")) return;
+  const doEndBroadcast = async () => {
     try {
-      await supabaseUnsafe.from("live_sessions").update({
+      await db.from("live_sessions").update({
         status: "ended",
         ended_at: new Date().toISOString(),
       }).eq("id", sessionId);
@@ -240,6 +251,8 @@ export function LiveBroadcastRoom() {
       toast.error("Ошибка завершения эфира");
     }
   };
+
+  const endBroadcast = () => setShowEndConfirm(true);
 
   if (loading) {
     return (
@@ -294,65 +307,62 @@ export function LiveBroadcastRoom() {
             <p className="text-white font-semibold text-base drop-shadow">{session?.title}</p>
           </div>
 
-          {/* Закреплённый комментарий */}
-          {pinnedComment && (
-            <div className="absolute top-16 left-4 right-4 bg-black/70 backdrop-blur-sm rounded-xl px-3 py-2 text-sm text-white border border-white/20">
-              📌 {pinnedComment}
-            </div>
-          )}
+          {/* LiveReplay + LiveDonation — restored after refactor */}
+          <div className="absolute bottom-20 left-4 right-4 flex items-center gap-2">
+            <LiveReplay sessionId={sessionId!} stream={streamRef.current} />
+            {session && (
+              <LiveDonation sessionId={sessionId!} streamerId={session.id} isStreamer={true} />
+            )}
+          </div>
 
           {/* Кнопки управления */}
-          <div className="absolute bottom-4 left-4 right-4">
-            <div className="flex items-center justify-between mb-2">
-              {/* LiveReplay */}
-              <LiveReplay sessionId={sessionId!} stream={streamRef.current} />
-              {/* Донаты стримеру */}
-              {session && <LiveDonation sessionId={sessionId!} streamerId={session.id} isStreamer={true} />}
+          <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between">
+            <div className="flex gap-3">
+              <button
+                onClick={toggleMute}
+                className={cn(
+                  "w-11 h-11 rounded-full flex items-center justify-center backdrop-blur-sm",
+                  muted ? "bg-red-600/80" : "bg-black/50",
+                )}
+              >
+                {muted ? <MicOff className="w-5 h-5 text-white" /> : <Mic className="w-5 h-5 text-white" />}
+              </button>
+              <button
+                onClick={toggleCamera}
+                className={cn(
+                  "w-11 h-11 rounded-full flex items-center justify-center backdrop-blur-sm",
+                  cameraOff ? "bg-red-600/80" : "bg-black/50",
+                )}
+              >
+                {cameraOff ? <CameraOff className="w-5 h-5 text-white" /> : <Camera className="w-5 h-5 text-white" />}
+              </button>
+              <button
+                onClick={flipCamera}
+                className="w-11 h-11 rounded-full bg-black/50 flex items-center justify-center backdrop-blur-sm"
+              >
+                <FlipHorizontal className="w-5 h-5 text-white" />
+              </button>
+              {/* Q&A toggle — restored: removed from controls in refactor but state/render still relied on it */}
+              <button
+                onClick={() => setShowQA((v) => !v)}
+                className={cn("w-11 h-11 rounded-full flex items-center justify-center backdrop-blur-sm", showQA ? "bg-primary/80" : "bg-black/50")}
+                aria-label="Q&A"
+              >
+                <MessageCircleQuestion className="w-5 h-5 text-white" />
+              </button>
+              {/* InviteGuest toggle — restored: removed from controls in refactor but InviteGuestSheet render still relied on it */}
+              <button
+                onClick={() => setShowInviteGuest(true)}
+                className="w-11 h-11 rounded-full bg-black/50 flex items-center justify-center backdrop-blur-sm"
+                aria-label="Пригласить гостя"
+              >
+                <UserPlus2 className="w-5 h-5 text-white" />
+              </button>
             </div>
-            <div className="flex items-center justify-between">
-              <div className="flex gap-3">
-                <button
-                  onClick={toggleMute}
-                  className={cn(
-                    "w-11 h-11 rounded-full flex items-center justify-center backdrop-blur-sm",
-                    muted ? "bg-red-600/80" : "bg-black/50",
-                  )}
-                >
-                  {muted ? <MicOff className="w-5 h-5 text-white" /> : <Mic className="w-5 h-5 text-white" />}
-                </button>
-                <button
-                  onClick={toggleCamera}
-                  className={cn(
-                    "w-11 h-11 rounded-full flex items-center justify-center backdrop-blur-sm",
-                    cameraOff ? "bg-red-600/80" : "bg-black/50",
-                  )}
-                >
-                  {cameraOff ? <CameraOff className="w-5 h-5 text-white" /> : <Camera className="w-5 h-5 text-white" />}
-                </button>
-                <button
-                  onClick={flipCamera}
-                  className="w-11 h-11 rounded-full bg-black/50 flex items-center justify-center backdrop-blur-sm"
-                >
-                  <FlipHorizontal className="w-5 h-5 text-white" />
-                </button>
-                <button
-                  onClick={() => setShowQA((v) => !v)}
-                  className={cn("w-11 h-11 rounded-full flex items-center justify-center backdrop-blur-sm", showQA ? "bg-primary/80" : "bg-black/50")}
-                >
-                  <MessageCircleQuestion className="w-5 h-5 text-white" />
-                </button>
-                <button
-                  onClick={() => setShowInviteGuest(true)}
-                  className="w-11 h-11 rounded-full bg-black/50 flex items-center justify-center backdrop-blur-sm"
-                >
-                  <UserPlus2 className="w-5 h-5 text-white" />
-                </button>
-              </div>
-              <Button variant="destructive" size="sm" onClick={endBroadcast} className="rounded-full px-4">
-                <X className="w-4 h-4 mr-1" />
-                Завершить
-              </Button>
-            </div>
+            <Button variant="destructive" size="sm" onClick={endBroadcast} className="rounded-full px-4">
+              <X className="w-4 h-4 mr-1" />
+              Завершить
+            </Button>
           </div>
         </div>
       </div>
@@ -360,43 +370,81 @@ export function LiveBroadcastRoom() {
       {/* Боковой чат */}
       <div className="w-full md:w-80 flex flex-col bg-gray-950 border-l border-gray-800 max-h-[40vh] md:max-h-full">
         <div className="p-3 border-b border-gray-800 flex items-center justify-between">
-          <p className="font-semibold text-white text-sm">Чат</p>
+          <p className="font-semibold text-white text-sm">{showQA ? "Q&A" : "Чат"}</p>
           <span className="text-xs text-gray-400">{messages.length} сообщ.</span>
         </div>
 
-        <ScrollArea className="flex-1 p-3">
-          <div className="space-y-2">
-            {messages.map((msg) => (
-              <div key={msg.id} className="text-sm flex gap-2">
-                {msg.is_creator_message && (
-                  <span className="text-yellow-400 font-bold shrink-0">Вы:</span>
-                )}
-                <span className="text-gray-200 break-words">{msg.content}</span>
-              </div>
-            ))}
-            <div ref={chatBottomRef} />
+        {showQA ? (
+          <div className="flex-1 overflow-hidden">
+            <LiveQAQueue sessionId={sessionId!} isStreamer={true} />
           </div>
-        </ScrollArea>
+        ) : (
+          <ScrollArea className="flex-1 p-3">
+            <div className="space-y-2">
+              {messages.map((msg) => (
+                <div key={msg.id} className="text-sm flex gap-2">
+                  {msg.is_creator_message && (
+                    <span className="text-yellow-400 font-bold shrink-0">Вы:</span>
+                  )}
+                  <span className="text-gray-200 break-words">{msg.content}</span>
+                </div>
+              ))}
+              <div ref={chatBottomRef} />
+            </div>
+          </ScrollArea>
+        )}
 
-        <div className="p-3 border-t border-gray-800 flex gap-2">
-          <Input
-            placeholder="Написать..."
-            value={messageText}
-            onChange={(e) => setMessageText(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && sendMessage()}
-            className="bg-gray-800 border-gray-700 text-white text-sm"
-            maxLength={200}
-          />
-          <Button
-            size="icon"
-            onClick={sendMessage}
-            disabled={submitting || !messageText.trim()}
-            className="shrink-0"
-          >
-            {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-          </Button>
-        </div>
+        {!showQA && (
+          <div className="p-3 border-t border-gray-800 flex gap-2">
+            <Input
+              placeholder="Написать..."
+              value={messageText}
+              onChange={(e) => setMessageText(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && sendMessage()}
+              className="bg-gray-800 border-gray-700 text-white text-sm"
+              maxLength={200}
+            />
+            <Button
+              size="icon"
+              onClick={sendMessage}
+              disabled={submitting || !messageText.trim()}
+              className="shrink-0"
+            >
+              {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+            </Button>
+          </div>
+        )}
       </div>
+
+      {/* InviteGuest */}
+      {showInviteGuest && (
+        <InviteGuestSheet
+          sessionId={sessionId!}
+          hostStream={streamRef.current}
+          onClose={() => setShowInviteGuest(false)}
+        />
+      )}
+
+      {/* End broadcast confirmation — replaces window.confirm() */}
+      <AlertDialog open={showEndConfirm} onOpenChange={setShowEndConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Завершить эфир?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Трансляция будет остановлена для всех зрителей. Это действие нельзя отменить.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => void doEndBroadcast()}
+            >
+              Завершить
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
