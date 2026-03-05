@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { Car, Package, ShoppingBag, Home, Shield, Briefcase, Building2, TrendingUp, Plane, Hotel, Film, Dumbbell, GraduationCap, Music, Truck, Users, Mail } from "lucide-react";
+import { Car, Package, ShoppingBag, Home, Shield, Briefcase, Building2, TrendingUp, Plane, Hotel, Film, Dumbbell, GraduationCap, Music, Truck, Users, Mail, Bot } from "lucide-react";
 import logoImage from "@/assets/logo.png";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
@@ -14,6 +14,7 @@ interface ServiceItem {
 }
 
 const services: ServiceItem[] = [
+  { id: "ai-assistant", name: "ИИ-ассистент", icon: Bot, route: "/ai-assistant", available: true },
   { id: "taxi", name: "Такси", icon: Car, available: true },
   { id: "carsharing", name: "Каршеринг", icon: Car, available: true },
   { id: "delivery", name: "Доставка", icon: Truck, available: true },

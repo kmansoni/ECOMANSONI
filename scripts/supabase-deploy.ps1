@@ -1,4 +1,4 @@
-param(
+деparam(
   [string]$ProjectRef = "",
   [switch]$DryRun,
   [switch]$SkipDbPush,
@@ -7,7 +7,7 @@ param(
   [switch]$SkipE2EEChecks,
   [string]$MirrorRepoPath = "",
   [switch]$PromptToken,
-  [string[]]$Functions = @("vk-webhook", "turn-credentials")
+  [string[]]$Functions = @("vk-webhook", "turn-credentials", "aria-chat", "insurance-assistant", "property-assistant")
 )
 
 $ErrorActionPreference = "Stop"

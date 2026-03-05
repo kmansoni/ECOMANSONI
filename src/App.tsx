@@ -1,9 +1,12 @@
+import { PageTransition } from "@/components/layout/PageTransition";
+import { SwipeBackGesture } from "@/components/layout/SwipeBackGesture";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import { Suspense, lazy } from "react";
-import { useEffect } from "react";
+import { Suspense, lazy, useEffect } from "react";
+import { ChatsPage } from "@/pages/ChatsPage";
+import { useDeepLinks } from "@/hooks/useDeepLinks";
 import { SkipToContent } from "@/components/accessibility/SkipToContent";
 import { ColorFilterSVG } from "@/components/accessibility/ColorFilterSVG";
 import { AuthProvider } from "@/hooks/useAuth";
@@ -21,6 +24,7 @@ import { AppearanceRuntimeProvider } from "@/contexts/AppearanceRuntimeContext";
 import { runChatSchemaProbeOnce } from "@/lib/chat/schemaProbe";
 import { toast } from "sonner";
 import { AppErrorBoundary } from "@/components/system/AppErrorBoundary";
+
 const HashtagPage = lazy(() => import("@/pages/HashtagPage").then(m => ({ default: m.HashtagPage })));
 const ExplorePage = lazy(() => import("@/pages/ExplorePage"));
 const ProfessionalDashboard = lazy(() => import("@/pages/ProfessionalDashboard"));
@@ -36,14 +40,12 @@ initErrorTracking();
 // F4: Lazy load heavy pages
 const HomePage = lazy(() => import("@/pages/HomePage").then(m => ({ default: m.HomePage })));
 const SearchPage = lazy(() => import("@/pages/SearchPage").then(m => ({ default: m.SearchPage })));
-const ChatsPage = lazy(() => import("@/pages/ChatsPage").then(m => ({ default: m.ChatsPage })));
+const SavedMessagesPage = lazy(() => import("@/pages/SavedMessagesPage").then(m => ({ default: m.SavedMessagesPage })));
 const ProfilePage = lazy(() => import("@/pages/ProfilePage").then(m => ({ default: m.ProfilePage })));
 const EditProfilePage = lazy(() => import("@/pages/EditProfilePage").then(m => ({ default: m.EditProfilePage })));
 const CreatorAnalyticsDashboard = lazy(() => import("@/pages/CreatorAnalyticsDashboard").then(m => ({ default: m.default })));
 const UserProfilePage = lazy(() => import("@/pages/UserProfilePage").then(m => ({ default: m.UserProfilePage })));
 const ContactProfilePage = lazy(() => import("@/pages/ContactProfilePage").then(m => ({ default: m.ContactProfilePage })));
-const ReelsPage = lazy(() => import("@/pages/ReelsPage").then(m => ({ default: m.ReelsPage })));
-const ReelAudioPage = lazy(() => import("@/pages/ReelAudioPage"));
 const CreateCenterPage = lazy(() => import("@/pages/CreateCenterPage").then(m => ({ default: m.CreateCenterPage })));
 const CreateSurfacePage = lazy(() => import("@/pages/CreateSurfacePage").then(m => ({ default: m.CreateSurfacePage })));
 const RealEstatePage = lazy(() => import("@/pages/RealEstatePage").then(m => ({ default: m.RealEstatePage })));
@@ -91,6 +93,10 @@ const ARPage = lazy(() => import("@/pages/ARPage").then(m => ({ default: m.ARPag
 const AudioRoomsPage = lazy(() => import("@/pages/AudioRoomsPage").then(m => ({ default: m.AudioRoomsPage })));
 const BotListPage = lazy(() => import("@/pages/BotListPage").then(m => ({ default: m.BotListPage })));
 const MiniAppListPage = lazy(() => import("@/pages/MiniAppListPage").then(m => ({ default: m.MiniAppListPage })));
+const DeleteAccountPage = lazy(() => import("@/pages/DeleteAccountPage").then(m => ({ default: m.DeleteAccountPage })));
+const PeopleNearbyPage = lazy(() => import("./pages/PeopleNearbyPage"));
+const BusinessAccountPage = lazy(() => import("./pages/BusinessAccountPage"));
+const AIAssistantPage = lazy(() => import("@/pages/AIAssistantPage"));
 
 const NotificationsPage = lazy(() => import("@/pages/NotificationsPage").then(m => ({ default: m.NotificationsPage })));
 const NotificationSettingsPage = lazy(() => import("@/pages/NotificationSettingsPage").then(m => ({ default: m.NotificationSettingsPage })));
@@ -109,6 +115,12 @@ const AdminHashtagModerationPage = lazy(() => import("@/pages/admin/AdminHashtag
 const KpiDashboardPage = lazy(() => import("@/pages/admin/KpiDashboardPage").then(m => ({ default: m.KpiDashboardPage })));
 const ModerationQueuePage = lazy(() => import("@/pages/admin/ModerationQueuePage").then(m => ({ default: m.ModerationQueuePage })));
 const AppealsPage = lazy(() => import("@/pages/admin/AppealsPage").then(m => ({ default: m.AppealsPage })));
+
+// Deep link handler — must be inside BrowserRouter
+function DeepLinkHandler() {
+  useDeepLinks();
+  return null;
+}
 
 // Loading fallback component
 function PageLoader() {
@@ -171,6 +183,10 @@ const App = () => {
                   <Suspense fallback={null}>
                     <CommandPalette />
                   </Suspense>
+                  <DeepLinkHandler />
+                  <SwipeBackGesture>
+                  <div style={{ position: "relative", height: "100%", overflow: "hidden" }}>
+                  <PageTransition>
                   <Routes>
                 {/* Public route - Auth page */}
                 <Route path="/auth" element={
@@ -297,9 +313,29 @@ const App = () => {
                         <ChatsPage />
                       </Suspense>
                     } />
+                    <Route path="/saved-messages" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <SavedMessagesPage />
+                      </Suspense>
+                    } />
                     <Route path="/profile" element={
                       <Suspense fallback={<PageLoader />}>
                         <ProfilePage />
+                      </Suspense>
+                    } />
+                    <Route path="/delete-account" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <DeleteAccountPage />
+                      </Suspense>
+                    } />
+                    <Route path="/people-nearby" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <PeopleNearbyPage />
+                      </Suspense>
+                    } />
+                    <Route path="/business" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <BusinessAccountPage />
                       </Suspense>
                     } />
                     <Route path="/profile/edit" element={
@@ -556,17 +592,11 @@ const App = () => {
                         <EmailPage />
                       </Suspense>
                     } />
-                    <Route path="/reels/audio/:audioId" element={
+                    <Route path="/ai-assistant" element={
                       <Suspense fallback={<PageLoader />}>
-                        <ReelAudioPage />
+                        <AIAssistantPage />
                       </Suspense>
                     } />
-                    <Route path="/reels" element={
-                      <Suspense fallback={<PageLoader />}>
-                        <ReelsPage />
-                      </Suspense>
-                    } />
-
                     <Route path="/create" element={
                       <Suspense fallback={<PageLoader />}>
                         <CreateCenterPage />
@@ -589,6 +619,9 @@ const App = () => {
                   </Suspense>
                 } />
                   </Routes>
+                  </PageTransition>
+                  </div>
+                  </SwipeBackGesture>
                     </BrowserRouter>
                   </TooltipProvider>
                 </ChatOpenProvider>
