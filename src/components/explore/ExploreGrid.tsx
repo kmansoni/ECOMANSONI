@@ -26,7 +26,7 @@ function GridCell({ post, large }: { post: ExplorePost; large?: boolean }) {
 
   const handleClick = () => {
     if (post.type === 'reel') {
-      navigate(`/reels?id=${post.id}`);
+      navigate('/explore');
     } else {
       navigate(`/post/${post.id}`);
     }

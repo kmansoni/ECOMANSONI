@@ -1,881 +1,539 @@
-import { useState, useEffect, useRef, useCallback, useReducer } from "react";
-import { useNavigate } from "react-router-dom";
-import {
-  Play,
-  Loader2,
-  Volume2,
-  VolumeX,
-  EyeOff,
-  Flag,
-  Bookmark,
-} from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
-import { useReels } from "@/hooks/useReels";
-import { useAuth } from "@/hooks/useAuth";
-import { toast } from "sonner";
-import { ReelCommentsSheet } from "@/components/reels/ReelCommentsSheet";
-import { ReelShareSheet } from "@/components/reels/ReelShareSheet";
-import { RemixReelSheet } from "@/components/reels/RemixReelSheet";
-import { ReelInsights } from "@/components/reels/ReelInsights";
-import { ReelSidebar } from "@/components/reels/ReelSidebar";
-import { ReelOverlay } from "@/components/reels/ReelOverlay";
-import { ReelPlayer } from "@/components/reels/ReelPlayer";
-import { useReelGestures } from "@/hooks/useReelGestures";
-import {
-  reduceReels,
-  createInitialReelsState,
-  type ReelsMachineState,
-  type ReelsEvent,
-} from "@/features/reels/fsm";
+/**
+ * @file src/pages/ReelsPage.tsx
+ * @description Full-screen вертикальный фид Reels с scroll-snap и виртуализацией.
+ *
+ * Архитектурные решения:
+ * - Один IntersectionObserver (не per-item) — O(1) памяти при любом размере фида.
+ * - Виртуализация: рендерим только currentIndex ± 1 (3 DOM-узла).
+ *   Остальные — placeholder div с h-[100dvh], чтобы scroll-snap работал корректно.
+ * - scroll-snap-type: y mandatory → залипание на каждом Reel без JS.
+ * - 100dvh (dynamic viewport height) для iOS Safari с динамической адресной строкой.
+ * - overscroll-behavior: contain → предотвращает pull-to-refresh Chrome/Safari.
+ * - mapToFeedItem() изолирует разрыв между Reel (useReels) и ReelFeedItem (types).
+ *
+ * Lifecycle isReelsPage:
+ *   mount  → setIsReelsPage(true)  [скрывает BottomNav]
+ *   unmount → setIsReelsPage(false) [восстанавливает BottomNav]
+ */
 
-const REELS_NAV_COOLDOWN_MS = 350;
-const REELS_WHEEL_THRESHOLD_PX = 18;
-const REELS_VIDEO_RETRY_LIMIT = 2;
-const REELS_VIDEO_RETRY_BASE_DELAY_MS = 1200;
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useReelsContext } from '@/contexts/ReelsContext';
+import { useReels, type Reel } from '@/hooks/useReels';
+import { ReelItem } from '@/components/reels/ReelItem';
+import { ReelCommentsSheet } from '@/components/reels/ReelCommentsSheet';
+import { ReelShareSheet } from '@/components/reels/ReelShareSheet';
+import type { ReelFeedItem, ReelAuthor, ReelMetrics } from '@/types/reels';
 
-function isProbablyVideoUrl(url: string): boolean {
-  const lower = (url || "").toLowerCase();
+// ---------------------------------------------------------------------------
+// Константы
+// ---------------------------------------------------------------------------
 
-  if (!lower) return false;
+/** Порог видимости Intersection Observer: 50% = Reel считается "видимым" */
+const IO_THRESHOLD = 0.5;
 
-  if (lower.startsWith("blob:") || lower.startsWith("data:video/")) {
-    return true;
-  }
-  
-  if (/\.(mp4|webm|mov|avi|m4v|m3u8)(\?|#|$)/.test(lower)) {
-    return true;
-  }
+/** Сколько Reel до конца фида начинаем подгрузку следующей страницы */
+const PREFETCH_AHEAD = 2;
 
-  if (lower.includes("content-type=video") || lower.includes("mime=video")) {
-    return true;
-  }
-  
-  if (lower.includes("video/")) {
-    return true;
-  }
-  
-  if (lower.includes("/reels-media/") || lower.includes("/storage/v1/object/public/reels-media/")) {
-    return true;
-  }
-  
-  return false;
+// ---------------------------------------------------------------------------
+// Маппинг Reel (хук) → ReelFeedItem (типы)
+// Изолирует контракт useReels от контракта компонентов
+// ---------------------------------------------------------------------------
+
+/**
+ * Преобразует сырой `Reel` из `useReels` в `ReelFeedItem`.
+ *
+ * Гарантии:
+ *  - Никогда не выбрасывает исключение (все поля nullable обрабатываются gracefully)
+ *  - Все числовые счётчики ≥ 0
+ *  - `author.id` совпадает с `author_id` для навигации `/profile/:id`
+ */
+function mapToFeedItem(reel: Reel, index: number): ReelFeedItem {
+  const author: ReelAuthor = {
+    id: reel.author_id,
+    username: reel.author_id, // username недоступен в useReels — используем id как fallback
+    display_name: reel.author?.display_name ?? 'Пользователь',
+    avatar_url: reel.author?.avatar_url ?? null,
+    is_verified: reel.author?.verified ?? false,
+    is_following: false, // состояние подписки не хранится в useReels
+  };
+
+  const metrics: ReelMetrics = {
+    likes_count: Math.max(0, reel.likes_count ?? 0),
+    comments_count: Math.max(0, reel.comments_count ?? 0),
+    shares_count: Math.max(0, reel.shares_count ?? 0),
+    saves_count: Math.max(0, reel.saves_count ?? 0),
+    views_count: Math.max(0, reel.views_count ?? 0),
+    reposts_count: Math.max(0, reel.reposts_count ?? 0),
+  };
+
+  return {
+    id: reel.id,
+    video_url: reel.video_url,
+    thumbnail_url: reel.thumbnail_url ?? null,
+    description: reel.description ?? null,
+    music_title: reel.music_title ?? null,
+    music_artist: null, // отсутствует в Reel, graceful null
+    duration_seconds: reel.duration_seconds ?? 0,
+    author,
+    metrics,
+    hashtags: [], // parseHashtags из description делать не обязательно на этом этапе
+    created_at: reel.created_at,
+    is_liked: reel.isLiked ?? false,
+    is_saved: reel.isSaved ?? false,
+    is_reposted: reel.isReposted ?? false,
+    feed_position: reel.feed_position ?? index,
+    recommendation_reason: reel.ranking_reason,
+    final_score: reel.final_score,
+  };
 }
 
-// Wrapper to adapt FSM reducer for useReducer (which expects (state, action) => state)
-function fsmReducer(state: ReelsMachineState, event: ReelsEvent): ReelsMachineState {
-  return reduceReels(state, event).state;
+// ---------------------------------------------------------------------------
+// Состояния загрузки
+// ---------------------------------------------------------------------------
+
+function ReelsSkeletonScreen(): JSX.Element {
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black flex flex-col items-center justify-center"
+      aria-label="Загрузка Reels"
+    >
+      {/* Пульсирующий placeholder на весь экран */}
+      <div className="w-full h-[100dvh] bg-gradient-to-b from-zinc-900 to-zinc-800 animate-pulse" />
+      {/* Имитация overlay */}
+      <div className="absolute bottom-20 left-4 right-16 space-y-2">
+        <div className="h-4 w-2/3 bg-zinc-700 rounded animate-pulse" />
+        <div className="h-3 w-1/2 bg-zinc-700 rounded animate-pulse" />
+        <div className="h-3 w-1/3 bg-zinc-700 rounded animate-pulse" />
+      </div>
+      {/* Имитация sidebar */}
+      <div className="absolute bottom-20 right-4 flex flex-col gap-5">
+        {[1, 2, 3, 4].map((i) => (
+          <div key={i} className="w-8 h-8 rounded-full bg-zinc-700 animate-pulse" />
+        ))}
+      </div>
+    </div>
+  );
 }
 
-export function ReelsPage() {
+interface ErrorScreenProps {
+  onRetry: () => void;
+}
+
+function ReelsErrorScreen({ onRetry }: ErrorScreenProps): JSX.Element {
+  return (
+    <div className="fixed inset-0 z-50 bg-black flex flex-col items-center justify-center gap-6 px-6">
+      <div className="text-6xl" role="img" aria-label="Ошибка">⚠️</div>
+      <p className="text-white text-lg font-medium text-center">
+        Не удалось загрузить Reels
+      </p>
+      <p className="text-zinc-400 text-sm text-center">
+        Проверьте подключение к интернету и попробуйте снова
+      </p>
+      <button
+        onClick={onRetry}
+        className="mt-2 px-8 py-3 bg-white text-black font-semibold rounded-full active:scale-95 transition-transform"
+      >
+        Повторить
+      </button>
+    </div>
+  );
+}
+
+function ReelsEmptyScreen(): JSX.Element {
+  return (
+    <div className="fixed inset-0 z-50 bg-black flex flex-col items-center justify-center gap-4 px-8">
+      <div className="text-7xl" role="img" aria-label="Нет контента">🎬</div>
+      <p className="text-white text-xl font-semibold text-center">
+        Нет Reels для показа
+      </p>
+      <p className="text-zinc-400 text-sm text-center">
+        Подпишитесь на авторов или загляните позже
+      </p>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// ReelsPage
+// ---------------------------------------------------------------------------
+
+export default function ReelsPage(): JSX.Element {
+  const { setIsReelsPage } = useReelsContext();
   const navigate = useNavigate();
-  const { user } = useAuth();
+
+  // ---------------------------------------------------------------------------
+  // Данные из useReels
+  // ---------------------------------------------------------------------------
+
   const {
-    reels,
+    reels: rawReels,
     loading,
-    loadMore,
-    hasMore,
     loadingMore,
+    hasMore,
+    loadMore,
     toggleLike,
     toggleSave,
     toggleRepost,
-    recordView,
     recordImpression,
-    recordViewed,
-    recordWatched,
-    recordSkip,
-    setReelFeedback,
+    recordView,
     refetch,
-  } = useReels();
+  } = useReels('reels');
 
-  // --- FSM state via useReducer ---
-  const [fsmState, dispatch] = useReducer(fsmReducer, createInitialReelsState());
+  // ---------------------------------------------------------------------------
+  // Локальный флаг ошибки
+  // Хук useReels не экспортирует error — определяем «пустой + не loading» как error-state
+  // только если loading=false, reels=[] и первоначальная загрузка завершилась неудачно.
+  // Для этого отслеживаем, была ли когда-либо успешная загрузка.
+  // ---------------------------------------------------------------------------
 
-  // Derivative values from FSM
-  const isPlaying = fsmState.status === "PLAYING";
-  const isMuted = fsmState.context.isMuted;
-
-  // TODO: currentIndex could be unified with fsmState.context.activeIndex once
-  // reels items are fed into FSM via REELS_FEED_LOADED. For now kept as useState.
-  const [currentIndex, setCurrentIndex] = useState(0);
-
-  const [currentProgress, setCurrentProgress] = useState(0);
-  const [commentsReelId, setCommentsReelId] = useState<string | null>(null);
-  const [shareReelId, setShareReelId] = useState<string | null>(null);
-  const [failedVideoIds, setFailedVideoIds] = useState<Set<string>>(() => new Set());
-  const [expandedDescriptions, setExpandedDescriptions] = useState<Set<string>>(() => new Set());
-  const [contextMenuReelId, setContextMenuReelId] = useState<string | null>(null);
-  const [followedAuthors, setFollowedAuthors] = useState<Set<string>>(() => new Set());
-  const [remixReelId, setRemixReelId] = useState<string | null>(null);
-  const [showCaptions, setShowCaptions] = useState(false);
-  const [insightsReelId, setInsightsReelId] = useState<string | null>(null);
-
-  const containerRef = useRef<HTMLDivElement>(null);
-  const videoRefs = useRef<Map<number, HTMLVideoElement>>(new Map());
-  const reelElementRefs = useRef<Map<number, HTMLDivElement>>(new Map());
-  const lastNavAt = useRef<number>(0);
-  const viewRecordedForReel = useRef<Set<string>>(new Set());
-  const impressionRecordedForReel = useRef<Map<string, boolean>>(new Map());
-  const viewedRecordedForReel = useRef<Map<string, boolean>>(new Map());
-  const watchedRecordedForReel = useRef<Map<string, boolean>>(new Map());
-  const reelWatchStartMs = useRef<Map<string, number>>(new Map());
-  const reelTotalWatchedMs = useRef<Map<string, number>>(new Map());
-  const visibilityTimers = useRef<Map<string, NodeJS.Timeout>>(new Map());
-  const isScrolling = useRef(false);
-  const errorToastShown = useRef<Set<string>>(new Set());
-  const prefetchedVideoUrls = useRef<Set<string>>(new Set());
-  const prefetchedPosterUrls = useRef<Set<string>>(new Set());
-  const lastProgressUpdateRef = useRef<number>(0);
-  const videoErrorRetries = useRef<Map<string, number>>(new Map());
-  const lastProgressRef = useRef(0);
-  const observerRef = useRef<IntersectionObserver | null>(null);
-  const tapTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const reelsRef = useRef(reels);
-  const recordImpressionRef = useRef(recordImpression);
-
-  const currentReel = reels[currentIndex];
-
-  useEffect(() => { reelsRef.current = reels; }, [reels]);
-  useEffect(() => { recordImpressionRef.current = recordImpression; }, [recordImpression]);
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
+  const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
-    if (!user) return;
-    supabase
-      .from("followers")
-      .select("following_id")
-      .eq("follower_id", user.id)
-      .then(({ data }) => {
-        if (data) setFollowedAuthors(new Set(data.map((f: any) => f.following_id)));
-      });
-  }, [user]);
-
-  const handleFollow = useCallback(async (authorId: string) => {
-    if (!user) { toast.error("Войдите, чтобы подписаться"); navigate("/auth"); return; }
-    const isFollowing = followedAuthors.has(authorId);
-    if (isFollowing) {
-      await supabase.from("followers").delete().eq("follower_id", user.id).eq("following_id", authorId);
-      setFollowedAuthors(prev => { const n = new Set(prev); n.delete(authorId); return n; });
-    } else {
-      await (supabase as any).from("followers").insert({ follower_id: user.id, following_id: authorId });
-      setFollowedAuthors(prev => new Set([...prev, authorId]));
+    if (!loading) {
+      setHasLoadedOnce(true);
     }
-  }, [user, followedAuthors, navigate]);
+  }, [loading]);
 
-  const updateCurrentProgress = useCallback(
-    (index: number, video: HTMLVideoElement) => {
-      if (index !== currentIndex) return;
-      const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 0;
-      const raw = duration > 0 ? video.currentTime / duration : 0;
-      const clamped = Math.max(0, Math.min(1, raw));
-      if (Math.abs(lastProgressRef.current - clamped) < 0.01) return;
-      lastProgressRef.current = clamped;
-      setCurrentProgress(clamped);
-    },
+  // Простейшая эвристика: если loading=false, rawReels=[],
+  // и мы уже ждали первую загрузку — считаем ошибкой только если
+  // поймали исключение (здесь не можем, useReels не пробрасывает error).
+  // Поэтому loadError управляется вручную только через handleRetry.
+  // По умолчанию пустой фид — это EmptyScreen, не ErrorScreen.
+
+  const handleRetry = useCallback(() => {
+    setLoadError(false);
+    void refetch();
+  }, [refetch]);
+
+  // ---------------------------------------------------------------------------
+  // Маппинг в ReelFeedItem[]
+  // ---------------------------------------------------------------------------
+
+  const feedItems: ReelFeedItem[] = useMemo(
+    () => rawReels.map((r, i) => mapToFeedItem(r, i)),
+    [rawReels],
+  );
+
+  // ---------------------------------------------------------------------------
+  // Текущий индекс (определяется через IntersectionObserver)
+  // ---------------------------------------------------------------------------
+
+  const [currentIndex, setCurrentIndex] = useState(0);
+
+  // Phase 5: Comments sheet state
+  const [commentsReelId, setCommentsReelId] = useState<string | null>(null);
+
+  // Phase 6: Share sheet state
+  const [shareReelId, setShareReelId] = useState<string | null>(null);
+
+  // Ref на DOM-узлы каждого Reel (включая placeholder-ы), индексированные позицией
+  const itemRefs = useRef<Map<number, Element>>(new Map());
+
+  // Единственный IntersectionObserver для всего фида
+  const observerRef = useRef<IntersectionObserver | null>(null);
+
+  // Scroll container
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  // ---------------------------------------------------------------------------
+  // Lifecycle: isReelsPage + cleanup
+  // ---------------------------------------------------------------------------
+
+  useEffect(() => {
+    setIsReelsPage(true);
+    return () => {
+      setIsReelsPage(false);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ---------------------------------------------------------------------------
+  // IntersectionObserver: один экземпляр на весь фид
+  // ---------------------------------------------------------------------------
+
+  useEffect(() => {
+    // Создаём observer с threshold=0.5
+    const observer = new IntersectionObserver(
+      (entries) => {
+        // Из всех entries берём ту, у которой intersectionRatio максимален
+        // (избегаем race condition когда одновременно входит/выходит два Reel)
+        let maxRatio = 0;
+        let maxIndex = -1;
+
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          if (entry.intersectionRatio > maxRatio) {
+            maxRatio = entry.intersectionRatio;
+            const idxAttr = (entry.target as HTMLElement).dataset.reelIndex;
+            if (idxAttr !== undefined) {
+              maxIndex = parseInt(idxAttr, 10);
+            }
+          }
+        }
+
+        if (maxIndex >= 0) {
+          setCurrentIndex((prev) => {
+            if (prev === maxIndex) return prev;
+            return maxIndex;
+          });
+        }
+      },
+      {
+        root: scrollContainerRef.current,
+        threshold: IO_THRESHOLD,
+      },
+    );
+
+    observerRef.current = observer;
+
+    // Наблюдаем за всеми уже зарегистрированными элементами
+    itemRefs.current.forEach((el) => observer.observe(el));
+
+    return () => {
+      observer.disconnect();
+      observerRef.current = null;
+    };
+    // root зависит от scrollContainerRef.current, но он стабилен после mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ---------------------------------------------------------------------------
+  // Callback для регистрации/снятия наблюдения за элементом фида
+  // ---------------------------------------------------------------------------
+
+  const registerRef = useCallback((index: number, el: Element | null) => {
+    const observer = observerRef.current;
+
+    if (el) {
+      itemRefs.current.set(index, el);
+      if (observer) observer.observe(el);
+    } else {
+      const prev = itemRefs.current.get(index);
+      if (prev && observer) observer.unobserve(prev);
+      itemRefs.current.delete(index);
+    }
+  }, []);
+
+  // ---------------------------------------------------------------------------
+  // recordImpression при смене currentIndex
+  // ---------------------------------------------------------------------------
+
+  const prevIndexRef = useRef<number>(-1);
+
+  useEffect(() => {
+    if (!feedItems[currentIndex]) return;
+    if (prevIndexRef.current === currentIndex) return;
+    prevIndexRef.current = currentIndex;
+
+    const reel = feedItems[currentIndex];
+    void recordImpression(reel.id);
+    void recordView(reel.id);
+  }, [currentIndex, feedItems, recordImpression, recordView]);
+
+  // ---------------------------------------------------------------------------
+  // Infinite scroll: подгружаем следующую страницу заблаговременно
+  // ---------------------------------------------------------------------------
+
+  useEffect(() => {
+    if (!hasMore) return;
+    if (loadingMore) return;
+    if (feedItems.length === 0) return;
+
+    const distanceToEnd = feedItems.length - 1 - currentIndex;
+    if (distanceToEnd <= PREFETCH_AHEAD) {
+      loadMore();
+    }
+  }, [currentIndex, feedItems.length, hasMore, loadingMore, loadMore]);
+
+  // ---------------------------------------------------------------------------
+  // Callbacks для ReelItem (стабильные через useCallback)
+  // ---------------------------------------------------------------------------
+
+  const handleLike = useCallback(
+    (reelId: string) => void toggleLike(reelId),
+    [toggleLike],
+  );
+
+  const handleSave = useCallback(
+    (reelId: string) => void toggleSave(reelId),
+    [toggleSave],
+  );
+
+  const handleRepost = useCallback(
+    (reelId: string) => void toggleRepost(reelId),
+    [toggleRepost],
+  );
+
+  // Phase 6: Share sheet
+  const handleShare = useCallback((reelId: string) => {
+    setShareReelId(reelId);
+  }, []);
+
+  const handleShareClose = useCallback(() => {
+    setShareReelId(null);
+  }, []);
+
+  // Phase 5: Comments sheet
+  const handleComment = useCallback((reelId: string) => {
+    setCommentsReelId(reelId);
+  }, []);
+
+  const handleCommentsClose = useCallback(() => {
+    setCommentsReelId(null);
+  }, []);
+
+  const handleAuthorPress = useCallback(
+    (authorId: string) => navigate(`/profile/${authorId}`),
+    [navigate],
+  );
+
+  const handleHashtagPress = useCallback(
+    (hashtag: string) => navigate(`/hashtag/${hashtag}`),
+    [navigate],
+  );
+
+  // Phase N: Follow — noop пока
+  const handleFollowPress = useCallback((_authorId: string) => {
+    // TODO: Phase N — follow/unfollow
+  }, []);
+
+  // ---------------------------------------------------------------------------
+  // Виртуализация: рендерить только currentIndex ± 1
+  // ---------------------------------------------------------------------------
+
+  const shouldRender = useCallback(
+    (index: number) => Math.abs(index - currentIndex) <= 1,
     [currentIndex],
   );
 
-  const scrollToIndex = useCallback(
-    (nextIndex: number) => {
-      if (nextIndex < 0 || nextIndex >= reels.length) {
-        return;
-      }
-      const el = reelElementRefs.current.get(nextIndex);
-      if (el) {
-        el.scrollIntoView({ behavior: "smooth", block: "start" });
-      } else if (containerRef.current) {
-        const itemHeight = containerRef.current.clientHeight;
-        containerRef.current.scrollTo({ top: nextIndex * itemHeight, behavior: "smooth" });
-      }
-      setCurrentIndex(nextIndex);
-      // Resume playback after navigation (clears tap-pause)
-      dispatch({ t: "PLAYER_PLAY" });
-    },
-    [reels.length],
-  );
+  // ---------------------------------------------------------------------------
+  // Render — состояния
+  // ---------------------------------------------------------------------------
 
-  const navigateRelative = useCallback(
-    (delta: number) => {
-      if (reels.length === 0) return;
-      if (commentsReelId || shareReelId) return;
-      const nextIndex = currentIndex + delta;
-      scrollToIndex(nextIndex);
-    },
-    [commentsReelId, currentIndex, reels.length, scrollToIndex, shareReelId],
-  );
-
-  useEffect(() => {
-    if (loading) return;
-    if (loadingMore) return;
-    if (!hasMore) return;
-    if (reels.length === 0) return;
-
-    if (currentIndex >= reels.length - 3) {
-      loadMore();
-    }
-  }, [currentIndex, hasMore, loadMore, loading, loadingMore, reels.length]);
-
-  // Create IntersectionObserver once (stable)
-  useEffect(() => {
-    const visibilityTimersMap = visibilityTimers.current;
-    observerRef.current = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          const reelId = entry.target.getAttribute('data-reel-id');
-          const reelIndex = parseInt(entry.target.getAttribute('data-reel-index') || '0', 10);
-          const reel = reelsRef.current[reelIndex];
-          if (!reelId || !reel) return;
-
-          if (entry.isIntersecting && entry.intersectionRatio >= 0.5) {
-            if (!visibilityTimers.current.has(reelId)) {
-              const timer = setTimeout(() => {
-                if (!impressionRecordedForReel.current.get(reelId)) {
-                  impressionRecordedForReel.current.set(reelId, true);
-                  recordImpressionRef.current(reelId, {
-                    position: reel.feed_position ?? reelIndex,
-                    source: 'reels_feed',
-                    request_id: reel.request_id,
-                    algorithm_version: reel.algorithm_version,
-                    score: reel.final_score,
-                  });
-                }
-              }, 1000);
-              visibilityTimers.current.set(reelId, timer);
-            }
-          } else {
-            const timer = visibilityTimers.current.get(reelId);
-            if (timer) {
-              clearTimeout(timer);
-              visibilityTimers.current.delete(reelId);
-            }
-          }
-        });
-      },
-      {
-        root: containerRef.current,
-        threshold: [0, 0.5, 1.0],
-      }
-    );
-
-    return () => {
-      observerRef.current?.disconnect();
-      visibilityTimersMap.forEach((timer) => clearTimeout(timer));
-      visibilityTimersMap.clear();
-    };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Observe/unobserve elements when reel count changes
-  useEffect(() => {
-    const observer = observerRef.current;
-    if (!observer) return;
-
-    const elements = reelElementRefs.current;
-    elements.forEach((el) => {
-      if (el) observer.observe(el);
-    });
-
-    return () => {
-      elements.forEach((el) => {
-        if (el) observer.unobserve(el);
-      });
-    };
-  }, [reels.length]);
-
-  useEffect(() => {
-    if (!currentReel) return;
-    const reelId = currentReel.id;
-    const reelDuration = currentReel.duration_seconds ?? 30;
-    const reelWatchStartMsMap = reelWatchStartMs.current;
-    const reelTotalWatchedMsMap = reelTotalWatchedMs.current;
-    const viewedRecordedForReelMap = viewedRecordedForReel.current;
-    const watchedRecordedForReelMap = watchedRecordedForReel.current;
-    reelWatchStartMsMap.set(reelId, Date.now());
-
-    return () => {
-      const start = reelWatchStartMsMap.get(reelId);
-      if (start) {
-        const elapsed = Date.now() - start;
-        const prev = reelTotalWatchedMsMap.get(reelId) ?? 0;
-        const totalWatched = prev + elapsed;
-        reelTotalWatchedMsMap.set(reelId, totalWatched);
-
-        const watchedSeconds = Math.floor(totalWatched / 1000);
-
-        if (watchedSeconds >= 2 && !viewedRecordedForReelMap.get(reelId)) {
-          viewedRecordedForReelMap.set(reelId, true);
-          recordViewed(reelId, watchedSeconds, reelDuration);
-        }
-
-        const completionRate = (watchedSeconds / reelDuration) * 100;
-        if (completionRate >= 50 && !watchedRecordedForReelMap.get(reelId)) {
-          watchedRecordedForReelMap.set(reelId, true);
-          recordWatched(reelId, watchedSeconds, reelDuration);
-        }
-
-        if (watchedSeconds < 2 && !viewedRecordedForReelMap.get(reelId)) {
-          recordSkip(reelId, watchedSeconds, reelDuration);
-        }
-      }
-      reelWatchStartMsMap.delete(reelId);
-    };
-  }, [currentReel, recordViewed, recordWatched, recordSkip]);
-
-  useEffect(() => {
-    lastProgressRef.current = 0;
-    setCurrentProgress(0);
-  }, [currentIndex]);
-
-  useEffect(() => {
-    videoRefs.current.forEach((_, index) => {
-      if (index >= reels.length) {
-        videoRefs.current.delete(index);
-      }
-    });
-    reelElementRefs.current.forEach((_, index) => {
-      if (index >= reels.length) {
-        reelElementRefs.current.delete(index);
-      }
-    });
-  }, [reels.length]);
-
-  // Cleanup prefetch links on unmount
-  useEffect(() => {
-    return () => {
-      document.querySelectorAll('link[data-reel-prefetch="true"]').forEach(el => el.remove());
-      if (prefetchedVideoUrls.current) prefetchedVideoUrls.current.clear();
-      if (prefetchedPosterUrls.current) prefetchedPosterUrls.current.clear();
-    };
-  }, []);
-
-  useEffect(() => {
-    const candidates = [reels[currentIndex + 1], reels[currentIndex + 2]].filter(Boolean);
-    candidates.forEach((reel) => {
-      if (isProbablyVideoUrl(reel.video_url) && !prefetchedVideoUrls.current.has(reel.video_url)) {
-        prefetchedVideoUrls.current.add(reel.video_url);
-        const link = document.createElement("link");
-        link.rel = "prefetch";
-        link.as = "video";
-        link.href = reel.video_url;
-        link.dataset.reelPrefetch = "true";
-        document.head.appendChild(link);
-      }
-      if (reel.thumbnail_url && !prefetchedPosterUrls.current.has(reel.thumbnail_url)) {
-        prefetchedPosterUrls.current.add(reel.thumbnail_url);
-        const img = new Image();
-        img.src = reel.thumbnail_url;
-      }
-    });
-  }, [currentIndex, reels]);
-
-  const handleVideoPlay = useCallback(
-    (reelId: string, authorId: string) => {
-      if (user && authorId === user.id) return;
-
-      const alreadyRecorded = viewRecordedForReel.current.has(reelId);
-      if (!alreadyRecorded) {
-        viewRecordedForReel.current.add(reelId);
-        recordView(reelId);
-        return;
-      }
-
-      const totalWatched = reelTotalWatchedMs.current.get(reelId) ?? 0;
-      if (totalWatched >= 10_000) {
-        reelTotalWatchedMs.current.set(reelId, 0);
-        recordView(reelId);
-      }
-    },
-    [user, recordView],
-  );
-
-  const tryPlayVideo = useCallback((index: number) => {
-    const video = videoRefs.current.get(index);
-    if (!video) return;
-    
-    video.muted = isMuted;
-    video.playsInline = true;
-    
-    const playPromise = video.play();
-    if (playPromise !== undefined) {
-      playPromise
-        .then(() => undefined)
-        .catch((err) => {
-          console.warn("[Reels] Play failed:", err.name);
-          if (!video.muted) {
-            video.muted = true;
-            // Force mute in FSM as well
-            dispatch({ t: "MUTE_TOGGLE" });
-            void video.play().catch((retryErr) => {
-              console.error("[Reels] Muted play also failed:", retryErr);
-            });
-          }
-        });
-    }
-  }, [isMuted]);
-
-  // --- FSM-driven video synchronisation ---
-  // This replaces the previous imperative useEffect that called tryPlayVideo directly.
-  // The FSM status (PLAYING / PAUSED / BUFFERING) drives actual video element calls.
-  useEffect(() => {
-    videoRefs.current.forEach((video, index) => {
-      if (index === currentIndex && isPlaying) {
-        if (video.paused) {
-          video.muted = isMuted;
-          tryPlayVideo(index);
-        } else {
-          video.muted = isMuted;
-        }
-      } else {
-        if (!video.paused) {
-          video.pause();
-        }
-      }
-    });
-  }, [currentIndex, isMuted, isPlaying, tryPlayVideo]);
-
-  // Sync document visibility changes into FSM
-  useEffect(() => {
-    const onVisibilityChange = () => {
-      dispatch({ t: "VISIBILITY_CHANGED", isVisible: document.visibilityState === "visible" });
-    };
-    document.addEventListener("visibilitychange", onVisibilityChange);
-    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
-  }, []);
-
-  // Sync muted state to current video when it changes
-  useEffect(() => {
-    const currentVideo = videoRefs.current.get(currentIndex);
-    if (currentVideo) {
-      currentVideo.muted = isMuted;
-    }
-  }, [isMuted, currentIndex]);
-
-  const handleScroll = useCallback(() => {
-    if (!containerRef.current) return;
-    
-    const container = containerRef.current;
-    const scrollTop = container.scrollTop;
-    const itemHeight = container.clientHeight;
-    const newIndex = Math.round(scrollTop / itemHeight);
-
-    if (newIndex !== currentIndex && newIndex >= 0 && newIndex < reels.length) {
-      setCurrentIndex(newIndex);
-      // Clear tap-pause on scroll navigation
-      dispatch({ t: "PLAYER_PLAY" });
-    }
-  }, [currentIndex, reels.length]);
-
-  const handleWheel = useCallback(
-    (e: React.WheelEvent) => {
-      if (commentsReelId || shareReelId) return;
-      if (!reels.length) return;
-
-      const dy = e.deltaY;
-      if (Math.abs(dy) < REELS_WHEEL_THRESHOLD_PX) return;
-
-      const now = Date.now();
-      if (now - lastNavAt.current < REELS_NAV_COOLDOWN_MS) return;
-      lastNavAt.current = now;
-
-      e.preventDefault();
-      navigateRelative(dy > 0 ? 1 : -1);
-    },
-    [commentsReelId, navigateRelative, reels.length, shareReelId],
-  );
-
-  const handleLike = useCallback((reelId: string) => {
-    if (!user) {
-      toast.error("Войдите, чтобы поставить лайк");
-      navigate("/auth");
-      return;
-    }
-    toggleLike(reelId);
-  }, [user, toggleLike, navigate]);
-
-  const handleSave = useCallback((reelId: string) => {
-    if (!user) {
-      toast.error("Войдите, чтобы сохранить");
-      navigate("/auth");
-      return;
-    }
-    toggleSave(reelId);
-  }, [user, toggleSave, navigate]);
-
-  const handleRepost = useCallback((reelId: string) => {
-    if (!user) {
-      toast.error("Войдите, чтобы сделать репост");
-      navigate("/auth");
-      return;
-    }
-    toggleRepost(reelId);
-  }, [user, toggleRepost, navigate]);
-
-  const handleFeedback = useCallback(
-    async (reelId: string, feedback: "interested" | "not_interested") => {
-      try {
-        await setReelFeedback(reelId, feedback);
-        toast.success(feedback === "interested" ? "Учтём ваши интересы" : "Покажем меньше такого");
-        if (feedback === "not_interested") {
-          refetch();
-        }
-      } catch {
-        toast.error("Не удалось отправить обратную связь");
-      }
-    },
-    [setReelFeedback, refetch],
-  );
-
-  const togglePlay = useCallback(() => {
-    if (isPlaying) {
-      dispatch({ t: "PLAYER_PAUSE", reason: "tap" });
-    } else {
-      dispatch({ t: "PLAYER_PLAY" });
-    }
-  }, [isPlaying]);
-
-  const toggleMute = useCallback(() => {
-    dispatch({ t: "MUTE_TOGGLE" });
-  }, []);
-
-  const handleVideoError = useCallback((reelId: string, index: number) => {
-    setFailedVideoIds((prev) => {
-      if (prev.has(reelId)) return prev;
-      const next = new Set(prev);
-      next.add(reelId);
-      return next;
-    });
-
-    const retries = videoErrorRetries.current.get(reelId) ?? 0;
-    if (retries < REELS_VIDEO_RETRY_LIMIT) {
-      const nextRetries = retries + 1;
-      videoErrorRetries.current.set(reelId, nextRetries);
-      const delay = REELS_VIDEO_RETRY_BASE_DELAY_MS * nextRetries;
-
-      setTimeout(() => {
-        setFailedVideoIds((prev) => {
-          if (!prev.has(reelId)) return prev;
-          const next = new Set(prev);
-          next.delete(reelId);
-          return next;
-        });
-
-        const video = videoRefs.current.get(index);
-        if (video) {
-          video.load();
-          if (index === currentIndex && isPlaying) {
-            tryPlayVideo(index);
-          }
-        }
-      }, delay);
-      return;
-    }
-
-    if (!errorToastShown.current.has(reelId)) {
-      errorToastShown.current.add(reelId);
-      toast.error("Видео недоступно");
-    }
-  }, [currentIndex, isPlaying, tryPlayVideo]);
-
-  const [showHeartAnimation, setShowHeartAnimation] = useState(false);
-
-  const handleTap = useCallback((reelId: string, isLiked: boolean) => {
-    if (tapTimeoutRef.current) {
-      clearTimeout(tapTimeoutRef.current);
-      tapTimeoutRef.current = null;
-      if (!isLiked) handleLike(reelId);
-      setShowHeartAnimation(true);
-      setTimeout(() => setShowHeartAnimation(false), 1000);
-    } else {
-      tapTimeoutRef.current = setTimeout(() => {
-        tapTimeoutRef.current = null;
-      }, 300);
-    }
-  }, [handleLike]);
-
-  const handleTimeUpdate = useCallback((index: number, videoEl: HTMLVideoElement) => {
-    const now = Date.now();
-    if (now - lastProgressUpdateRef.current < 250) return; // Throttle: max 4 updates/sec
-    lastProgressUpdateRef.current = now;
-    updateCurrentProgress(index, videoEl);
-  }, [updateCurrentProgress]);
-
-  const handleLongPress = useCallback((reelId: string) => {
-    setContextMenuReelId(reelId);
-  }, []);
-
-  const {
-    handleTouchStart,
-    handleTouchEnd,
-    handleReelTouchStart,
-    handleReelTouchEnd,
-    handlePointerDown,
-    handlePointerUp,
-    clearLongPress,
-  } = useReelGestures({
-    onSwipeUp: () => navigateRelative(1),
-    onSwipeDown: () => navigateRelative(-1),
-    onTap: handleTap,
-    onLongPress: handleLongPress,
-    onSwipeLeft: (authorId) => navigate(`/user/${authorId}`),
-    lastNavAt,
-  });
-
-  if (loading) {
-    return (
-      <div className="min-h-[100dvh] bg-transparent flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-white" />
-      </div>
-    );
+  if (loading && !hasLoadedOnce) {
+    return <ReelsSkeletonScreen />;
   }
 
-  if (reels.length === 0) {
-    return (
-      <div className="min-h-[100dvh] bg-transparent text-white">
-        <div className="flex flex-col items-center justify-center text-white px-4 min-h-[100dvh]">
-          <Play className="w-16 h-16 mb-4 opacity-40" />
-          <h2 className="text-lg font-semibold mb-2">Нет Reels</h2>
-          <p className="text-white/60 text-center px-8 mb-6">
-            Пока нет видео для просмотра. Будьте первым!
-          </p>
-          {user ? (
-            <>
-              <p className="text-white/60 text-center px-8">Откройте центр создания, чтобы добавить Reel</p>
-              <button
-                type="button"
-                className="mt-5 h-11 px-5 rounded-full bg-white text-slate-900 font-semibold"
-                onClick={() => navigate('/create?tab=reels&auto=1')}
-                aria-label="Создать Reel"
-              >
-                Создать Reel
-              </button>
-            </>
-          ) : (
-            <p className="text-white/60 text-center px-8">Войдите, чтобы создавать Reels</p>
-          )}
-        </div>
-      </div>
-    );
+  if (loadError) {
+    return <ReelsErrorScreen onRetry={handleRetry} />;
   }
+
+  if (!loading && hasLoadedOnce && feedItems.length === 0) {
+    return <ReelsEmptyScreen />;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Render — основной фид
+  // ---------------------------------------------------------------------------
 
   return (
-    <div className="h-[100dvh] bg-transparent">
+    <div
+      className="fixed inset-0 bg-black overflow-hidden z-50"
+      aria-label="Reels"
+    >
+      {/*
+        Scroll container:
+        - h-[100dvh]: dynamic viewport height (корректно на iOS с адресной строкой)
+        - overflow-y-scroll: скролл только по Y
+        - snap-y snap-mandatory: CSS scroll snap
+        - overscroll-contain: блокирует pull-to-refresh
+        - [scrollbar-width:none]: скрываем скроллбар Firefox
+        - [-webkit-overflow-scrolling:touch]: плавный инерционный скролл iOS
+      */}
       <div
-        ref={containerRef}
-        className="h-[100dvh] overflow-y-auto overflow-x-hidden scrollbar-hide"
-        onScroll={handleScroll}
-        onWheel={handleWheel}
-        onTouchStart={handleTouchStart}
-        onTouchEnd={handleTouchEnd}
+        ref={scrollContainerRef}
+        className={[
+          'h-[100dvh] w-full',
+          'overflow-y-scroll',
+          'snap-y snap-mandatory',
+          'overscroll-contain',
+          '[scrollbar-width:none]',
+          '[-webkit-overflow-scrolling:touch]',
+          '[&::-webkit-scrollbar]:hidden',
+        ].join(' ')}
         style={{
-          scrollSnapType: 'y mandatory',
-          WebkitOverflowScrolling: 'touch',
-          scrollBehavior: 'smooth',
-          touchAction: 'pan-y',
+          // Принудительно GPU-слой для плавного scroll-snap
+          willChange: 'scroll-position',
         }}
       >
-      {reels.map((reel, index) => (
-        <div
-          key={reel.id}
-          ref={(el) => {
-            if (el) reelElementRefs.current.set(index, el);
-            else reelElementRefs.current.delete(index);
-          }}
-          data-reel-id={reel.id}
-          data-reel-index={index}
-          className="relative w-full h-[100dvh] flex-shrink-0"
-          style={{
-            scrollSnapAlign: 'start',
-            scrollSnapStop: 'always',
-          }}
-          onPointerDown={() => handlePointerDown(reel.id, reel.isLiked || false)}
-          onPointerUp={() => handlePointerUp(reel.id, reel.isLiked || false)}
-          onPointerLeave={clearLongPress}
-          onTouchStart={handleReelTouchStart}
-          onTouchEnd={(e) => handleReelTouchEnd(reel.author_id, e)}
-        >
-          {/* Video/Image Background */}
-          <ReelPlayer
-            reel={reel}
-            index={index}
-            currentIndex={currentIndex}
-            isMuted={isMuted}
-            isPlaying={isPlaying}
-            showHeartAnimation={showHeartAnimation}
-            failedVideoIds={failedVideoIds}
-            onVideoRef={(idx, el) => {
-              if (el) {
-                videoRefs.current.set(idx, el);
-                el.setAttribute('webkit-playsinline', 'true');
-                el.setAttribute('x5-playsinline', 'true');
-              } else {
-                videoRefs.current.delete(idx);
-              }
-            }}
-            onError={() => handleVideoError(reel.id, index)}
-            onLoadedMetadata={(e) => updateCurrentProgress(index, e.currentTarget)}
-            onLoadedData={() => {
-              if (index === currentIndex && isPlaying) tryPlayVideo(index);
-            }}
-            onPlay={() => handleVideoPlay(reel.id, reel.author_id)}
-            onTimeUpdate={(e) => handleTimeUpdate(index, e.currentTarget)}
-          />
+        {feedItems.map((reel, index) => {
+          const isActive = index === currentIndex;
 
-          {/* Gradient overlays */}
-          <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-black/60 to-transparent pointer-events-none" style={{ zIndex: 2 }} />
-          <div className="absolute inset-x-0 bottom-0 h-48 bg-gradient-to-t from-black/80 to-transparent pointer-events-none" style={{ zIndex: 2 }} />
+          if (!shouldRender(index)) {
+            // Placeholder: занимает ту же высоту что и ReelItem,
+            // но не рендерит ни видео, ни DOM-тяжёлые компоненты.
+            return (
+              <div
+                key={reel.id}
+                ref={(el) => registerRef(index, el)}
+                data-reel-index={index}
+                className="h-[100dvh] w-full bg-black snap-start snap-always flex-shrink-0"
+                aria-hidden="true"
+              />
+            );
+          }
 
-          {/* Sound control button (top left) */}
-          {index === currentIndex && isProbablyVideoUrl(reel.video_url) && (
-            <button
-              className="absolute top-4 left-4 z-20 w-10 h-10 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center transition-all duration-200 hover:bg-black/60 active:scale-95"
-              onClick={(e) => {
-                e.stopPropagation();
-                toggleMute();
-              }}
-              aria-label={isMuted ? "Включить звук" : "Выключить звук"}
-            >
-              {isMuted ? (
-                <VolumeX className="w-5 h-5 text-white" />
-              ) : (
-                <Volume2 className="w-5 h-5 text-white" />
-              )}
-            </button>
-          )}
-
-          {/* Right sidebar actions */}
-          <ReelSidebar
-            reel={reel}
-            onLike={() => handleLike(reel.id)}
-            onComment={() => {
-              setCommentsReelId(reel.id);
-              dispatch({ t: "OPEN_COMMENTS" });
-            }}
-            onShare={() => {
-              if (!user) {
-                toast.error("Войдите, чтобы поделиться");
-                navigate("/auth");
-                return;
-              }
-              setShareReelId(reel.id);
-              dispatch({ t: "SHARE_OPEN" });
-            }}
-            onSave={() => handleSave(reel.id)}
-            onAuthorClick={() => {
-              if (reel.author_id) navigate(`/user/${reel.author_id}`);
-            }}
-          />
-
-          {/* Bottom overlay: author info, description, music */}
-          <ReelOverlay
-            reel={reel}
-            user={user}
-            followedAuthors={followedAuthors}
-            expandedDescriptions={expandedDescriptions}
-            onAuthorClick={() => navigate(`/user/${reel.author_id}`)}
-            onFollow={() => handleFollow(reel.author_id)}
-            onHashtagClick={(tag) => navigate(`/hashtag/${tag}`)}
-            onMusicClick={() => {
-              if ((reel as any).audio_id) navigate(`/reels/audio/${(reel as any).audio_id}`);
-            }}
-            onExpandDescription={() => setExpandedDescriptions(prev => {
-              const n = new Set(prev);
-              expandedDescriptions.has(reel.id) ? n.delete(reel.id) : n.add(reel.id);
-              return n;
-            })}
-            onContextMenu={() => setContextMenuReelId(reel.id)}
-          />
-
-          {/* Context menu overlay */}
-          {contextMenuReelId === reel.id && (
+          return (
             <div
-              className="absolute inset-0 z-40 bg-black/50 flex items-end"
-              onClick={(e) => { e.stopPropagation(); setContextMenuReelId(null); }}
+              key={reel.id}
+              ref={(el) => registerRef(index, el)}
+              data-reel-index={index}
+              className="h-[100dvh] w-full flex-shrink-0 snap-start snap-always"
             >
-              <div className="w-full bg-zinc-900 rounded-t-2xl p-4 space-y-1" onClick={(e) => e.stopPropagation()}>
-                <button
-                  type="button"
-                  className="w-full flex items-center gap-3 px-4 py-3 text-white hover:bg-white/10 rounded-xl"
-                  onClick={() => { setContextMenuReelId(null); handleFeedback(reel.id, "not_interested"); }}
-                >
-                  <EyeOff className="w-5 h-5" /> Не интересно
-                </button>
-                <button
-                  type="button"
-                  className="w-full flex items-center gap-3 px-4 py-3 text-white hover:bg-white/10 rounded-xl"
-                  onClick={() => { setContextMenuReelId(null); handleSave(reel.id); }}
-                >
-                  <Bookmark className="w-5 h-5" /> Сохранить
-                </button>
-                <button
-                  type="button"
-                  className="w-full flex items-center gap-3 px-4 py-3 text-red-400 hover:bg-white/10 rounded-xl"
-                  onClick={() => { setContextMenuReelId(null); toast.info("Жалоба отправлена"); }}
-                >
-                  <Flag className="w-5 h-5" /> Пожаловаться
-                </button>
-                <button
-                  type="button"
-                  className="w-full px-4 py-3 text-white/60 hover:bg-white/10 rounded-xl"
-                  onClick={() => setContextMenuReelId(null)}
-                >
-                  Отмена
-                </button>
-              </div>
+              <ReelItem
+                reel={reel}
+                isActive={isActive}
+                onLike={handleLike}
+                onSave={handleSave}
+                onRepost={handleRepost}
+                onShare={handleShare}
+                onComment={handleComment}
+                onAuthorPress={handleAuthorPress}
+                onHashtagPress={handleHashtagPress}
+                onFollowPress={handleFollowPress}
+              />
             </div>
-          )}
-        </div>
-      ))}
+          );
+        })}
 
+        {/* Loading more indicator: показывается после последнего Reel */}
+        {loadingMore && (
+          <div
+            className="h-20 w-full flex items-center justify-center"
+            aria-label="Загрузка следующей страницы"
+          >
+            <span className="inline-block w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
+          </div>
+        )}
       </div>
 
-      {/* Current reel progress — outside scroll container, fixed position */}
-      <div
-        className="fixed left-1/2 -translate-x-1/2 w-[min(360px,calc(100%-2rem))] h-1.5 rounded-full bg-white/30 overflow-hidden z-20 pointer-events-none"
-        style={{ top: 'max(0.75rem, env(safe-area-inset-top, 0px))' }}
-      >
-        <div
-          className="h-full bg-white transition-[width] duration-100 ease-linear"
-          style={{ width: `${Math.round(currentProgress * 100)}%` }}
-        />
-      </div>
-
-      {/* Share Sheet */}
-      <ReelShareSheet
-        isOpen={!!shareReelId}
-        onClose={() => {
-          setShareReelId(null);
-          dispatch({ t: "SHARE_CLOSE" });
-        }}
-        reelId={shareReelId || ""}
-      />
-
-      {commentsReelId && (
+      {/* Phase 5: Comments Sheet — рендерится поверх через createPortal */}
+      {commentsReelId !== null && (
         <ReelCommentsSheet
-          isOpen={!!commentsReelId}
-          onClose={() => {
-            setCommentsReelId(null);
-            dispatch({ t: "CLOSE_COMMENTS" });
-          }}
           reelId={commentsReelId}
-          commentsCount={reels.find(r => r.id === commentsReelId)?.comments_count || 0}
-        />
-      )}
-      {/* Remix Sheet */}
-      {remixReelId && (
-        <RemixReelSheet
-          isOpen={!!remixReelId}
-          onClose={() => setRemixReelId(null)}
-          originalReelId={remixReelId}
-          originalVideoUrl={reels.find((r) => r.id === remixReelId)?.video_url || ""}
-          onStartRecording={() => { setRemixReelId(null); toast.info("Открой камеру для записи Remix"); }}
+          isOpen={true}
+          onClose={handleCommentsClose}
+          commentsCount={
+            feedItems.find((r) => r.id === commentsReelId)?.metrics
+              .comments_count ?? 0
+          }
         />
       )}
 
-      {/* Insights */}
-      {insightsReelId && (
-        <ReelInsights
-          reelId={insightsReelId}
-          isOpen={!!insightsReelId}
-          onClose={() => setInsightsReelId(null)}
-        />
-      )}
+      {/* Phase 6: Share Sheet — рендерится через createPortal */}
+      {shareReelId !== null && <ReelShareSheet
+        reelId={shareReelId}
+        isOpen
+        onClose={handleShareClose}
+      />}
     </div>
   );
 }

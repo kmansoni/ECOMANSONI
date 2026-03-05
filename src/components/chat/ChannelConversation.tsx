@@ -1,4 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, Fragment } from "react";
+import { FloatingDate, DateSeparator } from "./FloatingDate";
+import { ScrollToBottomFab } from "./ScrollToBottomFab";
+import { JumpToDatePicker } from "./JumpToDatePicker";
 import {
   ArrowLeft,
   Bell,
@@ -23,6 +26,7 @@ import {
   Users,
   Settings2,
   ChevronRight,
+  QrCode,
 } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
@@ -35,6 +39,7 @@ import { Input } from "@/components/ui/input";
 import { Drawer, DrawerClose, DrawerContent } from "@/components/ui/drawer";
 import { AttachmentIcon } from "@/components/chat/AttachmentIcon";
 import { AttachmentSheet } from "@/components/chat/AttachmentSheet";
+import { CameraCaptureSheet } from "@/components/chat/CameraCaptureSheet";
 import { EmojiStickerPicker } from "@/components/chat/EmojiStickerPicker";
 import { ImageViewer } from "@/components/chat/ImageViewer";
 import { VideoCircleRecorder } from "@/components/chat/VideoCircleRecorder";
@@ -52,6 +57,9 @@ import {
   DropdownMenuRadioItem,
 } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/hooks/useAuth";
+import { useMessageReactions } from "@/hooks/useMessageReactions";
+import { MessageReactions } from "@/components/chat/MessageReactions";
+import { MessageContextMenu } from "@/components/chat/MessageContextMenu";
 import type { Channel } from "@/hooks/useChannels";
 import { useChannelMessages, useJoinChannel } from "@/hooks/useChannels";
 import { useChannelCapabilities } from "@/hooks/useChannelCapabilities";
@@ -60,6 +68,18 @@ import { useChatOpen } from "@/contexts/ChatOpenContext";
 import { GradientAvatar } from "@/components/ui/gradient-avatar";
 import { supabase } from "@/lib/supabase";
 import { useChannelUserSettings } from "@/hooks/useChannelUserSettings";
+import { InviteQrDialog } from "@/components/chat/InviteQrDialog";
+import { LinkPreview } from "@/components/chat/LinkPreview";
+import { MentionSuggestions } from "@/components/chat/MentionSuggestions";
+import { SendOptionsMenu } from "@/components/chat/SendOptionsMenu";
+import { extractUrls } from "@/hooks/useLinkPreview";
+import {
+  detectMentionTrigger,
+  getMentionSuggestions,
+  insertMention,
+  useMentions,
+  type MentionUser,
+} from "@/hooks/useMentions";
 
 interface ChannelConversationProps {
   channel: Channel;
@@ -106,7 +126,8 @@ const stableIntInRange = (seed: string, minInclusive: number, maxInclusive: numb
 export function ChannelConversation({ channel, onBack, onLeave }: ChannelConversationProps) {
   const { user } = useAuth();
   const { setIsChatOpen } = useChatOpen();
-  const { messages, loading, sendMessage, sendMediaMessage } = useChannelMessages(channel.id);
+  const { messages, loading, sendMessage, sendMediaMessage, editChannelMessage } = useChannelMessages(channel.id);
+  const { toggleReaction, getReactions } = useMessageReactions(channel.id);
   const { joinChannel, leaveChannel } = useJoinChannel();
   const { can, canRpc, role } = useChannelCapabilities(channel);
   const { settings } = useCommunityGlobalSettings();
@@ -122,8 +143,18 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
   } = useChannelUserSettings(channel.id);
   const [isMember, setIsMember] = useState(channel.is_member);
   const [draftPost, setDraftPost] = useState("");
+  const [editingChannelMsg, setEditingChannelMsg] = useState<{ id: string; content: string } | null>(null);
+  const [contextMenuChannelMsg, setContextMenuChannelMsg] = useState<{
+    id: string;
+    content: string;
+    isOwn: boolean;
+    position: { top: number; left: number; width: number };
+  } | null>(null);
+  const longPressChannelRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sendButtonLongPressRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [sendingPost, setSendingPost] = useState(false);
   const [showAttachmentSheet, setShowAttachmentSheet] = useState(false);
+  const [showCameraSheet, setShowCameraSheet] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [viewingImage, setViewingImage] = useState<string | null>(null);
   const [notifySubscribers, setNotifySubscribers] = useState<boolean>(() => {
@@ -146,8 +177,21 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
   const isHoldingRef = useRef(false);
   const recordingMimeTypeRef = useRef<string | null>(null);
   const [showVideoRecorder, setShowVideoRecorder] = useState(false);
+  const [showSendOptions, setShowSendOptions] = useState(false);
+  // @Mention state
+  const [mentionParticipants, setMentionParticipants] = useState<MentionUser[]>([]);
+  const [mentionTrigger, setMentionTrigger] = useState<{ query: string; triggerStart: number } | null>(null);
+  const [mentionActiveIndex, setMentionActiveIndex] = useState(0);
+  const mentionSuggestions = useMemo(
+    () => mentionTrigger ? getMentionSuggestions(mentionTrigger.query, mentionParticipants) : [],
+    [mentionTrigger, mentionParticipants]
+  );
   const [showScrollDown, setShowScrollDown] = useState(false);
   const [isAtBottom, setIsAtBottom] = useState(true);
+  // UI-1: floating date state
+  const [floatingDate, setFloatingDate] = useState<Date | null>(null);
+  // UI-6: jump to date picker
+  const [showJumpToPicker, setShowJumpToPicker] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectMode, setSelectMode] = useState(false);
@@ -173,8 +217,11 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
   const [autoDeleteLoading, setAutoDeleteLoading] = useState(false);
   const [pinnedMessageId, setPinnedMessageId] = useState<string | null>(null);
   const [pinnedLoaded, setPinnedLoaded] = useState(false);
+  const [inviteQrOpen, setInviteQrOpen] = useState(false);
+  const [inviteQrUrl, setInviteQrUrl] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const channelInputRef = useRef<HTMLInputElement>(null);
   const canCreatePosts = isMember && can("channel.posts.create");
   const canInvite = isMember && can("channel.members.invite") && (settings?.allow_channel_invites ?? true);
   const canDeletePostsAny = isMember && (can("channel.posts.delete") || role === "owner" || role === "admin");
@@ -185,6 +232,37 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
   useEffect(() => {
     recordingTimeRef.current = recordingTime;
   }, [recordingTime]);
+
+  // ─── Load channel member participants for @mentions ────────────────────────
+  useEffect(() => {
+    if (!channel.id || !user) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { data: memberRows } = await supabase
+          .from("channel_members" as never)
+          .select("user_id")
+          .eq("channel_id", channel.id)
+          .limit(200);
+        const ids = ((memberRows ?? []) as any[]).map((r) => r.user_id as string).filter(Boolean);
+        if (!ids.length) return;
+        const { data: profileRows } = await supabase
+          .from("profiles")
+          .select("user_id, display_name, username, avatar_url")
+          .in("user_id", ids);
+        if (cancelled) return;
+        setMentionParticipants(((profileRows ?? []) as any[]).map((r) => ({
+          user_id: r.user_id,
+          display_name: r.display_name ?? null,
+          username: r.username ?? null,
+          avatar_url: r.avatar_url ?? null,
+        })));
+      } catch { /* non-fatal */ }
+    })();
+    return () => { cancelled = true; };
+  }, [channel.id, user]);
+
+  const { renderText } = useMentions(mentionParticipants);
 
   useEffect(() => {
     if (!channel.id) {
@@ -632,7 +710,8 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
 
   const handleScroll = () => {
     if (!scrollContainerRef.current) return;
-    const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current;
+    const container = scrollContainerRef.current;
+    const { scrollTop, scrollHeight, clientHeight } = container;
     const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
     const atBottom = distanceFromBottom <= 80;
     setIsAtBottom(atBottom);
@@ -641,6 +720,23 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
     // If user scrolls away from bottom, pause live-follow.
     if (!atBottom && liveMode) {
       setLiveModePersisted(false);
+    }
+
+    // UI-1: update floating date from topmost visible date separator
+    const separators = container.querySelectorAll<HTMLElement>("[data-date-id]");
+    let topmost: { el: HTMLElement; top: number } | null = null;
+    separators.forEach((el) => {
+      const rect = el.getBoundingClientRect();
+      const cRect = container.getBoundingClientRect();
+      if (rect.top <= cRect.top + 4) {
+        if (!topmost || rect.top > topmost.top) {
+          topmost = { el, top: rect.top };
+        }
+      }
+    });
+    if (topmost) {
+      const dateId = (topmost as { el: HTMLElement }).el.getAttribute("data-date-id");
+      if (dateId) setFloatingDate(new Date(dateId));
     }
   };
 
@@ -723,6 +819,20 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
     const text = draftPost.trim();
     if (!text || !user) return;
 
+    // ── Edit mode ────────────────────────────────────────────────────────────
+    if (editingChannelMsg) {
+      const editing = editingChannelMsg;
+      setEditingChannelMsg(null);
+      setDraftPost("");
+      const result = await editChannelMessage(editing.id, text);
+      if (result?.error) {
+        toast.error("Не удалось отредактировать", { description: String(result.error) });
+        setEditingChannelMsg(editing);
+        setDraftPost(text);
+      }
+      return;
+    }
+
     try {
       setSendingPost(true);
       const allowedByRpc = await canRpc("channel.posts.create");
@@ -804,19 +914,36 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
     }
   };
 
+  const createChannelInviteUrl = async () => {
+    if (!canInvite) {
+      toast.error("Приглашения отключены настройками или правами");
+      return null;
+    }
+    const token = await createChannelInvite(channel.id);
+    return `https://mansoni.ru/chats?channel_invite=${token}`;
+  };
+
   const handleCreateInvite = async () => {
     try {
-      if (!canInvite) {
-        toast.error("Приглашения отключены настройками или правами");
-        return;
-      }
-      const token = await createChannelInvite(channel.id);
-      const url = `${window.location.origin}/chats?channel_invite=${token}`;
+      const url = await createChannelInviteUrl();
+      if (!url) return;
       await navigator.clipboard.writeText(url);
       toast.success("Ссылка-приглашение скопирована");
     } catch (err) {
       console.error("Failed to create channel invite:", err);
       toast.error("Не удалось создать приглашение");
+    }
+  };
+
+  const handleShowInviteQr = async () => {
+    try {
+      const url = await createChannelInviteUrl();
+      if (!url) return;
+      setInviteQrUrl(url);
+      setInviteQrOpen(true);
+    } catch (err) {
+      console.error("Failed to prepare channel invite QR:", err);
+      toast.error("Не удалось подготовить QR-приглашение");
     }
   };
 
@@ -1107,6 +1234,10 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
             <DropdownMenuItem onClick={handleCreateInvite} disabled={!canInvite}>
               <Link className="w-4 h-4 mr-2" />
               Пригласить в канал
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={handleShowInviteQr} disabled={!canInvite}>
+              <QrCode className="w-4 h-4 mr-2" />
+              Показать QR-приглашение
             </DropdownMenuItem>
 
             <DropdownMenuSeparator />
@@ -1757,7 +1888,17 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
           </div>
         )}
 
-        {visibleMessages.map((msg) => {
+        {visibleMessages.map((msg, index) => {
+          // UI-1: date separator between messages of different calendar days
+          const msgDate = new Date(msg.created_at);
+          const prevMsg = index > 0 ? visibleMessages[index - 1] : null;
+          const prevMsgDate = prevMsg ? new Date(prevMsg.created_at) : null;
+          const showDateSep = !prevMsgDate ||
+            msgDate.getFullYear() !== prevMsgDate.getFullYear() ||
+            msgDate.getMonth() !== prevMsgDate.getMonth() ||
+            msgDate.getDate() !== prevMsgDate.getDate();
+          const dateSepId = `${msgDate.getFullYear()}-${String(msgDate.getMonth() + 1).padStart(2, "0")}-${String(msgDate.getDate()).padStart(2, "0")}`;
+
           const viewCount = Number.isFinite((msg as any)?.views_count) ? Number((msg as any).views_count) : 0;
           const postReactions: Array<{ emoji: string; count: number }> = Array.isArray((msg as any)?.reactions)
             ? ((msg as any).reactions as any[])
@@ -1765,8 +1906,13 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
                 .map((r) => ({ emoji: String(r.emoji), count: Number(r.count) }))
             : [];
 
+          const isOwnMsg = String(msg.sender_id) === String(user?.id);
+          const liveReactions = getReactions(msg.id);
+
           return (
-            <div key={msg.id} id={`channel-msg-${msg.id}`} className="flex flex-col gap-1">
+            <Fragment key={msg.id}>
+            {showDateSep && <DateSeparator date={msgDate} id={dateSepId} />}
+            <div id={`channel-msg-${msg.id}`} className="flex flex-col gap-1">
               <div
                 className={`bg-card rounded-2xl overflow-hidden border ${
                   selectMode && selectedIds.has(msg.id) ? "border-primary" : "border-border/60"
@@ -1774,6 +1920,34 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
                 onClick={() => {
                   if (!selectMode) return;
                   toggleSelect(msg.id);
+                }}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                  setContextMenuChannelMsg({
+                    id: msg.id,
+                    content: msg.content || "",
+                    isOwn: isOwnMsg,
+                    position: { top: rect.top, left: rect.left, width: rect.width },
+                  });
+                }}
+                onTouchStart={(e) => {
+                  const el = e.currentTarget as HTMLElement;
+                  const rect = el.getBoundingClientRect();
+                  longPressChannelRef.current = setTimeout(() => {
+                    setContextMenuChannelMsg({
+                      id: msg.id,
+                      content: msg.content || "",
+                      isOwn: isOwnMsg,
+                      position: { top: rect.top, left: rect.left, width: rect.width },
+                    });
+                  }, 500);
+                }}
+                onTouchEnd={() => {
+                  if (longPressChannelRef.current) {
+                    clearTimeout(longPressChannelRef.current);
+                    longPressChannelRef.current = null;
+                  }
                 }}
                 role={selectMode ? "button" : undefined}
                 aria-label={selectMode ? "Выбрать сообщение" : undefined}
@@ -1844,15 +2018,36 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
 
               <div className="px-3 py-2">
                 <p className="text-foreground text-[15px] leading-relaxed whitespace-pre-wrap break-words">
-                  {renderHighlightedText(msg.content || "")}
+                  {renderText(msg.content || "", user?.id)}
                 </p>
+                {/* Link Preview — max 1 per post */}
+                {(() => {
+                  const urls = extractUrls(msg.content || "");
+                  return urls.length > 0 ? (
+                    <LinkPreview key={urls[0]} url={urls[0]} enabled />
+                  ) : null;
+                })()}
               </div>
 
-              {postReactions.length > 0 && (
+              {/* Live reactions from DB */}
+              {liveReactions.length > 0 && (
+                <div className="px-3 pb-1">
+                  <MessageReactions
+                    messageId={msg.id}
+                    reactions={liveReactions}
+                    showPicker={false}
+                    onPickerClose={() => {}}
+                    onReactionChange={() => {}}
+                  />
+                </div>
+              )}
+              {/* Fallback static reactions from message payload */}
+              {liveReactions.length === 0 && postReactions.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 px-3 py-2">
                   {postReactions.map((reaction, i) => (
                     <button
                       key={`${msg.id}-${i}`}
+                      onClick={() => toggleReaction(msg.id, reaction.emoji)}
                       className="flex items-center gap-1 px-2 py-1 rounded-full bg-muted/60 hover:bg-muted transition-colors"
                     >
                       <span className="text-sm">{reaction.emoji}</span>
@@ -1890,40 +2085,131 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
               </div>
 
               {/* Time (outside card) */}
-              <div className="px-1 text-xs text-muted-foreground">
+              <div className="px-1 text-xs text-muted-foreground flex items-center gap-1">
                 {formatTime(msg.created_at)}
+                {(msg as any).edited_at && (
+                  <span className="italic opacity-70">ред.</span>
+                )}
               </div>
             </div>
+            </Fragment>
           );
         })}
         <div ref={messagesEndRef} />
       </div>
 
-      {showScrollDown && (
-        <button
-          onClick={() => {
-            setLiveModePersisted(true);
-            scrollToBottom();
-          }}
-          className="absolute right-4 bottom-20 w-10 h-10 rounded-full bg-card flex items-center justify-center shadow-lg hover:bg-muted transition-colors border border-border"
-          aria-label="Вернуться в live"
-        >
-          <ChevronDown className="w-6 h-6 text-foreground" />
-        </button>
+      {/* UI-1: Floating date */}
+      <FloatingDate date={floatingDate} onClick={() => setShowJumpToPicker(true)} />
+
+      {/* UI-2: Scroll-to-bottom FAB replacing old button */}
+      <ScrollToBottomFab
+        visible={showScrollDown}
+        onClick={() => { setLiveModePersisted(true); scrollToBottom(); }}
+      />
+
+      {contextMenuChannelMsg && (
+        <MessageContextMenu
+          isOpen={!!contextMenuChannelMsg}
+          onClose={() => setContextMenuChannelMsg(null)}
+          messageId={contextMenuChannelMsg.id}
+          messageContent={contextMenuChannelMsg.content}
+          isOwn={contextMenuChannelMsg.isOwn}
+          position={contextMenuChannelMsg.position}
+          onReaction={(msgId, emoji) => toggleReaction(msgId, emoji)}
+          onEdit={contextMenuChannelMsg.isOwn ? (msgId, content) => {
+            setEditingChannelMsg({ id: msgId, content });
+            setDraftPost(content);
+            setContextMenuChannelMsg(null);
+          } : undefined}
+        />
       )}
 
       {isMember && (
         <div className="flex-shrink-0 px-3 py-3 relative z-10 bg-background/95 backdrop-blur-sm border-t border-border safe-area-bottom">
+          {editingChannelMsg && (
+            <div className="mb-2 rounded-2xl bg-blue-900/40 border border-blue-500/30 px-3 py-2 flex items-start justify-between gap-2">
+              <div className="min-w-0 flex items-center gap-2">
+                <X className="w-4 h-4 text-blue-400 shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-xs text-blue-300">Редактирование</p>
+                  <p className="text-sm text-foreground/80 truncate">{editingChannelMsg.content}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setEditingChannelMsg(null); setDraftPost(""); }}
+                className="shrink-0 p-1 rounded-md hover:bg-white/10"
+                aria-label="Отменить редактирование"
+              >
+                <X className="w-4 h-4 text-muted-foreground" />
+              </button>
+            </div>
+          )}
           <div className="flex items-center gap-2 text-[11px] text-muted-foreground mb-2">
             <span>Роль: {role}</span>
             {!canCreatePosts && <span>• публикация отключена</span>}
           </div>
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowAttachmentSheet(true)}
+              disabled={!canCreatePosts || sendingPost}
+              className="w-11 h-11 rounded-full shrink-0 flex items-center justify-center border border-border bg-card text-muted-foreground hover:text-foreground disabled:opacity-50"
+              aria-label="Вложение"
+            >
+              <AttachmentIcon className="w-5 h-5" />
+            </button>
+
             <div className="flex-1 relative">
+              {/* @Mention suggestions */}
+              <MentionSuggestions
+                suggestions={mentionSuggestions}
+                visible={mentionTrigger !== null && mentionSuggestions.length > 0}
+                onSelect={(user) => {
+                  if (!mentionTrigger) return;
+                  const caret = channelInputRef.current?.selectionStart ?? draftPost.length;
+                  const { newText, newCaretPos } = insertMention(draftPost, caret, mentionTrigger.triggerStart, user.username ?? user.display_name ?? user.user_id);
+                  setDraftPost(newText);
+                  setMentionTrigger(null);
+                  requestAnimationFrame(() => {
+                    if (channelInputRef.current) {
+                      channelInputRef.current.focus();
+                      channelInputRef.current.setSelectionRange(newCaretPos, newCaretPos);
+                    }
+                  });
+                }}
+                externalActiveIndex={mentionActiveIndex}
+              />
               <Input
+                ref={channelInputRef}
                 value={draftPost}
-                onChange={(e) => setDraftPost(e.target.value)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setDraftPost(val);
+                  const caret = e.target.selectionStart ?? val.length;
+                  const trigger = detectMentionTrigger(val, caret);
+                  setMentionTrigger(trigger);
+                  setMentionActiveIndex(0);
+                }}
                 onKeyDown={(e) => {
+                  // Mention keyboard nav
+                  if (mentionTrigger && mentionSuggestions.length > 0) {
+                    if (e.key === "ArrowDown") { e.preventDefault(); setMentionActiveIndex(i => Math.min(i + 1, mentionSuggestions.length - 1)); return; }
+                    if (e.key === "ArrowUp") { e.preventDefault(); setMentionActiveIndex(i => Math.max(i - 1, 0)); return; }
+                    if (e.key === "Enter" || e.key === "Tab") {
+                      e.preventDefault();
+                      const sel = mentionSuggestions[mentionActiveIndex];
+                      if (sel) {
+                        const caret = channelInputRef.current?.selectionStart ?? draftPost.length;
+                        const { newText, newCaretPos } = insertMention(draftPost, caret, mentionTrigger.triggerStart, sel.username ?? sel.display_name ?? sel.user_id);
+                        setDraftPost(newText);
+                        setMentionTrigger(null);
+                        requestAnimationFrame(() => { if (channelInputRef.current) { channelInputRef.current.focus(); channelInputRef.current.setSelectionRange(newCaretPos, newCaretPos); } });
+                      }
+                      return;
+                    }
+                    if (e.key === "Escape") { setMentionTrigger(null); return; }
+                  }
                   if (e.key !== "Enter") return;
                   e.preventDefault();
                   if (e.repeat) return;
@@ -1965,28 +2251,55 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
                 >
                   <span className="text-[15px]">🧩</span>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setShowAttachmentSheet(true)}
-                  disabled={!canCreatePosts || sendingPost}
-                  className="text-muted-foreground hover:text-foreground disabled:opacity-50"
-                  aria-label="Вложение"
-                >
-                  <AttachmentIcon className="w-5 h-5" />
-                </button>
               </div>
             </div>
             {draftPost.trim() ? (
-              <Button
-                onClick={handlePublishPost}
-                disabled={!canCreatePosts || sendingPost || !draftPost.trim()}
-                size="icon"
-                className="w-11 h-11 rounded-full shrink-0"
-                aria-label="Опубликовать"
-                type="button"
-              >
-                <Send className="w-5 h-5 text-primary-foreground" />
-              </Button>
+              <div className="relative shrink-0">
+                <SendOptionsMenu
+                  open={showSendOptions}
+                  onClose={() => setShowSendOptions(false)}
+                  onSend={() => void handlePublishPost()}
+                  onSilent={() => { setNotifySubscribers(false); void handlePublishPost(); }}
+                  onSchedule={() => { /* channel doesn't have scheduler yet */ toast.info("Планирование постов скоро"); }}
+                />
+                <Button
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    sendButtonLongPressRef.current = setTimeout(() => {
+                      sendButtonLongPressRef.current = null;
+                      setShowSendOptions(true);
+                    }, 500) as unknown as ReturnType<typeof setTimeout>;
+                  }}
+                  onMouseUp={() => {
+                    if (sendButtonLongPressRef.current) {
+                      clearTimeout(sendButtonLongPressRef.current);
+                      sendButtonLongPressRef.current = null;
+                      void handlePublishPost();
+                    }
+                  }}
+                  onTouchStart={(e) => {
+                    e.preventDefault();
+                    sendButtonLongPressRef.current = setTimeout(() => {
+                      sendButtonLongPressRef.current = null;
+                      setShowSendOptions(true);
+                    }, 500) as unknown as ReturnType<typeof setTimeout>;
+                  }}
+                  onTouchEnd={() => {
+                    if (sendButtonLongPressRef.current) {
+                      clearTimeout(sendButtonLongPressRef.current);
+                      sendButtonLongPressRef.current = null;
+                      void handlePublishPost();
+                    }
+                  }}
+                  disabled={!canCreatePosts || sendingPost || !draftPost.trim()}
+                  size="icon"
+                  className="w-11 h-11 rounded-full"
+                  aria-label="Опубликовать"
+                  type="button"
+                >
+                  <Send className="w-5 h-5 text-primary-foreground" />
+                </Button>
+              </div>
             ) : (
               <button
                 onTouchStart={handleRecordButtonDown}
@@ -2049,6 +2362,18 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
             onOpenChange={setShowAttachmentSheet}
             onSelectFile={handleAttachment}
             onSelectLocation={() => toast.message("Геопозиция пока не поддерживается")}
+            onOpenCamera={() => {
+              setShowCameraSheet(true);
+            }}
+          />
+
+          <CameraCaptureSheet
+            open={showCameraSheet}
+            onOpenChange={setShowCameraSheet}
+            settingsScopeKey={`channel:${channel.id}`}
+            onSendFile={async (file, type) => {
+              await handleAttachment(file, type);
+            }}
           />
 
           {viewingImage ? <ImageViewer src={viewingImage} onClose={() => setViewingImage(null)} /> : null}
@@ -2058,6 +2383,23 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
           ) : null}
         </div>
       )}
+
+      {/* UI-6: Jump to date picker */}
+      <JumpToDatePicker
+        open={showJumpToPicker}
+        onClose={() => setShowJumpToPicker(false)}
+        messages={messages}
+        onJump={scrollToChannelMessage}
+      />
+
+      <InviteQrDialog
+        open={inviteQrOpen}
+        onOpenChange={setInviteQrOpen}
+        title="QR-приглашение в канал"
+        description="Отсканируйте QR-код, чтобы открыть ссылку-приглашение в канал"
+        inviteUrl={inviteQrUrl}
+        downloadFileName={`channel-${channel.id}-invite-qr.png`}
+      />
     </div>
   );
 }

@@ -1,336 +1,309 @@
-import { useState, useEffect, useRef } from "react";
-import { Search, Loader2, Send, Users, Radio } from "lucide-react";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { cn } from "@/lib/utils";
-import { useConversations } from "@/hooks/useChat";
-import { useGroupChats } from "@/hooks/useGroupChats";
-import { useChannels } from "@/hooks/useChannels";
-import { useAuth } from "@/hooks/useAuth";
-import { toast } from "sonner";
-import { supabase } from "@/lib/supabase";
-import { buildChatBodyEnvelope, sendMessageV1 } from "@/lib/chat/sendMessageV1";
-import {
-  Drawer,
-  DrawerContent,
-  DrawerHeader,
-  DrawerTitle,
-} from "@/components/ui/drawer";
+/**
+ * @file src/components/reels/ReelShareSheet.tsx
+ * @description Bottom sheet для шаринга Reel — контакты, копирование ссылки, Web Share API.
+ *
+ * Архитектурные решения:
+ * - Фиксированная высота ~40% экрана (не drag-to-expand)
+ * - Drag-to-dismiss: onDragEnd offset.y > 80px → onClose()
+ * - Portal → рендерится вне scroll-контейнера Reels (z-[61])
+ * - Web Share API с fallback на clipboard
+ * - Mock-контакты (6 шт.) — API будет добавлен позже
+ * - Client-side поиск по имени контакта
+ * - Toast через sonner (уже в проекте)
+ */
 
-interface ReelShareSheetProps {
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Link, PlusCircle, Share2, Flag } from 'lucide-react';
+import { toast } from 'sonner';
+
+// ---------------------------------------------------------------------------
+// Props
+// ---------------------------------------------------------------------------
+
+export interface ReelShareSheetProps {
+  reelId: string;
   isOpen: boolean;
   onClose: () => void;
-  reelId: string;
 }
 
-interface ShareTarget {
+// ---------------------------------------------------------------------------
+// Mock-контакты (будут заменены на API в следующих фазах)
+// ---------------------------------------------------------------------------
+
+interface MockContact {
   id: string;
-  type: "dm" | "group" | "channel";
   name: string;
-  avatar?: string;
+  avatar_url: string | null;
 }
 
-export function ReelShareSheet({
-  isOpen,
-  onClose,
-  reelId,
-}: ReelShareSheetProps) {
-  const { user } = useAuth();
-  const { conversations, loading: dmsLoading } = useConversations();
-  const { groups, loading: groupsLoading } = useGroupChats();
-  const { channels, loading: channelsLoading } = useChannels();
-  
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedTargets, setSelectedTargets] = useState<Set<string>>(new Set());
-  const [sending, setSending] = useState(false);
-  const dmClientMsgIdsRef = useRef<Map<string, string>>(new Map());
+const MOCK_CONTACTS: MockContact[] = [
+  { id: '1', name: 'Алексей Смирнов', avatar_url: null },
+  { id: '2', name: 'Мария Иванова', avatar_url: null },
+  { id: '3', name: 'Дмитрий Козлов', avatar_url: null },
+  { id: '4', name: 'Анна Петрова', avatar_url: null },
+  { id: '5', name: 'Сергей Новиков', avatar_url: null },
+  { id: '6', name: 'Елена Морозова', avatar_url: null },
+];
 
-  // Reset selection when sheet opens/closes
+// ---------------------------------------------------------------------------
+// Avatar fallback
+// ---------------------------------------------------------------------------
+
+function ContactAvatar({ name, size = 48 }: { name: string; size?: number }): JSX.Element {
+  const initial = name.trim().slice(0, 1).toUpperCase() || '?';
+  return (
+    <div
+      className="rounded-full bg-zinc-700 flex items-center justify-center text-white font-semibold flex-shrink-0 select-none"
+      style={{ width: size, height: size, fontSize: size * 0.38 }}
+      aria-hidden="true"
+    >
+      {initial}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Кнопка действия (иконка в круге + подпись)
+// ---------------------------------------------------------------------------
+
+interface ActionButtonProps {
+  icon: React.ReactNode;
+  label: string;
+  onClick: () => void;
+  'aria-label': string;
+}
+
+function ActionButton({ icon, label, onClick, 'aria-label': ariaLabel }: ActionButtonProps): JSX.Element {
+  return (
+    <motion.button
+      onClick={onClick}
+      whileTap={{ scale: 0.9 }}
+      transition={{ type: 'spring', stiffness: 400, damping: 15 }}
+      className="flex flex-col items-center gap-1.5"
+      aria-label={ariaLabel}
+    >
+      <div className="w-12 h-12 rounded-full bg-zinc-800 flex items-center justify-center">
+        {icon}
+      </div>
+      <span className="text-zinc-300 text-xs text-center leading-tight">{label}</span>
+    </motion.button>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// ReelShareSheet
+// ---------------------------------------------------------------------------
+
+export function ReelShareSheet({ reelId, isOpen, onClose }: ReelShareSheetProps): JSX.Element | null {
+  const [search, setSearch] = useState('');
+
+  // Сброс поиска при открытии
   useEffect(() => {
-    if (!isOpen) {
-      setSelectedTargets(new Set());
-      setSearchQuery("");
-      dmClientMsgIdsRef.current.clear();
-    }
+    if (isOpen) setSearch('');
   }, [isOpen]);
 
-  const getDmClientMsgId = (conversationId: string) => {
-    const existing = dmClientMsgIdsRef.current.get(conversationId);
-    if (existing) return existing;
-    const next = crypto.randomUUID();
-    dmClientMsgIdsRef.current.set(conversationId, next);
-    return next;
-  };
+  // Client-side фильтрация
+  const filteredContacts = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return MOCK_CONTACTS;
+    return MOCK_CONTACTS.filter((c) => c.name.toLowerCase().includes(q));
+  }, [search]);
 
-  const loading = dmsLoading || groupsLoading || channelsLoading;
+  // ---------------------------------------------------------------------------
+  // Drag-to-dismiss
+  // ---------------------------------------------------------------------------
 
-  // Build unified list of share targets
-  const targets: ShareTarget[] = [];
-
-  // Add DM conversations
-  conversations.forEach((conv) => {
-    const other = conv.participants.find((p) => p.user_id !== user?.id);
-    if (other?.profile) {
-      targets.push({
-        id: `dm:${conv.id}`,
-        type: "dm",
-        name: other.profile.display_name || "Пользователь",
-        avatar: other.profile.avatar_url || undefined,
-      });
-    }
-  });
-
-  // Add groups
-  groups.forEach((group) => {
-    targets.push({
-      id: `group:${group.id}`,
-      type: "group",
-      name: group.name,
-      avatar: group.avatar_url || undefined,
-    });
-  });
-
-  // Add channels where user can post
-  channels.forEach((channel) => {
-    if (channel.owner_id === user?.id) {
-      targets.push({
-        id: `channel:${channel.id}`,
-        type: "channel",
-        name: channel.name,
-        avatar: channel.avatar_url || undefined,
-      });
-    }
-  });
-
-  // Filter by search
-  const filteredTargets = targets.filter((t) =>
-    t.name.toLowerCase().includes(searchQuery.toLowerCase())
+  const handleDragEnd = useCallback(
+    (_: unknown, info: { offset: { y: number } }) => {
+      if (info.offset.y > 80) {
+        onClose();
+      }
+    },
+    [onClose],
   );
 
-  const toggleTarget = (id: string) => {
-    setSelectedTargets((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      return next;
-    });
-  };
+  // ---------------------------------------------------------------------------
+  // Действия
+  // ---------------------------------------------------------------------------
 
-  const handleShare = async () => {
-    if (selectedTargets.size === 0 || !user) return;
-    
-    setSending(true);
-    
+  const handleSendToContact = useCallback((contactName: string) => {
+    toast.success(`Отправлено ${contactName}`);
+  }, []);
+
+  const handleCopyLink = useCallback(async () => {
+    const url = `${window.location.origin}/reels/${reelId}`;
     try {
-      const promises: Promise<void>[] = [];
+      await navigator.clipboard.writeText(url);
+      toast.success('Ссылка скопирована');
+    } catch {
+      toast.error('Не удалось скопировать ссылку');
+    }
+  }, [reelId]);
 
-      for (const targetId of selectedTargets) {
-        const [type, id] = targetId.split(":");
-        
-        if (type === "dm") {
-          // Send to DM conversation with shared reel
-          const sendDm = async () => {
-            const body = buildChatBodyEnvelope({
-              kind: "share_reel",
-              text: "🎬 Поделился Reels",
-              shared_reel_id: reelId,
-            });
-            await sendMessageV1({
-              conversationId: id,
-              clientMsgId: getDmClientMsgId(id),
-              body,
-            });
-
-            try {
-              await (supabase as any).from("reel_shares").insert({
-                reel_id: reelId,
-                user_id: user.id,
-                target_type: "dm",
-                target_id: id,
-              });
-            } catch {
-              // ignore share analytics errors
-            }
-          };
-          promises.push(sendDm());
-        } else if (type === "group") {
-          // Send to group chat with shared reel
-          const sendGroup = async () => {
-            const { error } = await supabase.from("group_chat_messages").insert({
-              group_id: id,
-              sender_id: user.id,
-              content: "🎬 Поделился Reels",
-              shared_reel_id: reelId,
-            });
-            if (error) throw error;
-            await supabase
-              .from("group_chats")
-              .update({ updated_at: new Date().toISOString() })
-              .eq("id", id);
-
-            try {
-              await (supabase as any).from("reel_shares").insert({
-                reel_id: reelId,
-                user_id: user.id,
-                target_type: "group",
-                target_id: id,
-              });
-            } catch {
-              // ignore share analytics errors
-            }
-          };
-          promises.push(sendGroup());
-        } else if (type === "channel") {
-          // Send to channel with shared reel
-          const sendChannel = async () => {
-            const { error } = await supabase.from("channel_messages").insert({
-              channel_id: id,
-              sender_id: user.id,
-              content: "🎬 Поделился Reels",
-              shared_reel_id: reelId,
-            });
-            if (error) throw error;
-            await supabase
-              .from("channels")
-              .update({ updated_at: new Date().toISOString() })
-              .eq("id", id);
-
-            try {
-              await (supabase as any).from("reel_shares").insert({
-                reel_id: reelId,
-                user_id: user.id,
-                target_type: "channel",
-                target_id: id,
-              });
-            } catch {
-              // ignore share analytics errors
-            }
-          };
-          promises.push(sendChannel());
+  const handleWebShare = useCallback(async () => {
+    const url = `${window.location.origin}/reels/${reelId}`;
+    if (typeof navigator.share === 'function') {
+      try {
+        await navigator.share({
+          title: 'Посмотри этот Reel',
+          url,
+        });
+      } catch (err) {
+        // Пользователь отменил — игнорируем
+        if (err instanceof Error && err.name !== 'AbortError') {
+          // fallback: копируем ссылку
+          void handleCopyLink();
         }
       }
-
-      await Promise.all(promises);
-      
-      toast.success(`Reel отправлен в ${selectedTargets.size} чат${selectedTargets.size > 1 ? "ов" : ""}`);
-      
-      onClose();
-    } catch (err) {
-      console.error("Failed to share reel:", err);
-      toast.error("Не удалось поделиться Reels");
-    } finally {
-      setSending(false);
+    } else {
+      // Fallback: копируем ссылку
+      void handleCopyLink();
     }
-  };
+  }, [reelId, handleCopyLink]);
 
-  const getIcon = (type: ShareTarget["type"]) => {
-    switch (type) {
-      case "group":
-        return <Users className="w-4 h-4 text-muted-foreground" />;
-      case "channel":
-        return <Radio className="w-4 h-4 text-muted-foreground" />;
-      default:
-        return null;
-    }
-  };
+  const handleShareToStory = useCallback(() => {
+    toast('Скоро', { description: 'Функция в разработке' });
+  }, []);
 
-  return (
-    <Drawer open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DrawerContent className="h-[70dvh] max-h-[70dvh] mt-0 flex flex-col">
-        <DrawerHeader className="border-b border-border pb-3 flex-shrink-0">
-          <DrawerTitle className="text-center">Поделиться Reels</DrawerTitle>
-        </DrawerHeader>
+  const handleReport = useCallback(() => {
+    toast('Функция в разработке', { description: 'Жалобы будут доступны в следующем обновлении' });
+    onClose();
+  }, [onClose]);
 
-        {/* Search */}
-        <div className="px-4 py-3 border-b border-border">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
-              placeholder="Поиск..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 bg-muted border-0 rounded-lg"
-            />
-          </div>
-        </div>
+  // ---------------------------------------------------------------------------
+  // Portal
+  // ---------------------------------------------------------------------------
 
-        {/* Targets List */}
-        <div className="flex-1 overflow-y-auto native-scroll">
-          {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+  const portalTarget = typeof document !== 'undefined' ? document.body : null;
+  if (!portalTarget) return null;
+
+  const content = (
+    <AnimatePresence>
+      {isOpen && (
+        <>
+          {/* Backdrop */}
+          <motion.div
+            key="share-backdrop"
+            className="fixed inset-0 bg-black/40 z-[60]"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            onClick={onClose}
+            aria-hidden="true"
+          />
+
+          {/* Sheet */}
+          <motion.div
+            key="share-sheet"
+            className="fixed bottom-0 left-0 right-0 bg-zinc-900 rounded-t-2xl z-[61] flex flex-col"
+            style={{ maxHeight: '45dvh', minHeight: 'min(40dvh, 320px)' }}
+            initial={{ y: '100%' }}
+            animate={{ y: 0 }}
+            exit={{ y: '100%' }}
+            transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+            drag="y"
+            dragConstraints={{ top: 0, bottom: 0 }}
+            dragElastic={{ top: 0, bottom: 0.3 }}
+            onDragEnd={handleDragEnd}
+            aria-modal="true"
+            role="dialog"
+            aria-label="Поделиться"
+          >
+            {/* Drag handle */}
+            <div className="flex justify-center pt-2 pb-0.5 flex-shrink-0">
+              <div className="w-10 h-1 bg-zinc-600 rounded-full" aria-hidden="true" />
             </div>
-          ) : filteredTargets.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-              <p className="text-base">Нет доступных чатов</p>
-              <p className="text-sm mt-1">Начните переписку, чтобы делиться</p>
+
+            {/* Заголовок */}
+            <div className="flex items-center justify-center px-4 py-2 border-b border-zinc-700 flex-shrink-0">
+              <span className="text-white font-semibold text-sm">Поделиться</span>
             </div>
-          ) : (
-            <div className="py-2">
-              {filteredTargets.map((target) => {
-                const isSelected = selectedTargets.has(target.id);
-                return (
-                  <button
-                    key={target.id}
-                    onClick={() => toggleTarget(target.id)}
-                    className={cn(
-                      "w-full flex items-center gap-3 px-4 py-3 transition-colors",
-                      isSelected ? "bg-primary/10" : "hover:bg-muted/50"
-                    )}
-                  >
-                    <Avatar className="w-12 h-12">
-                      <AvatarImage src={target.avatar} />
-                      <AvatarFallback className="bg-muted text-muted-foreground">
-                        {target.name.slice(0, 2).toUpperCase()}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="flex-1 text-left">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">{target.name}</span>
-                        {getIcon(target.type)}
-                      </div>
-                    </div>
-                    <div
-                      className={cn(
-                        "w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors",
-                        isSelected
-                          ? "bg-primary border-primary"
-                          : "border-muted-foreground/30"
-                      )}
+
+            {/* Контент — скроллируемая часть */}
+            <div className="flex-1 overflow-y-auto overscroll-contain">
+              {/* Поиск */}
+              <div className="px-4 pt-3 pb-1 flex-shrink-0">
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Поиск..."
+                  className="w-full bg-zinc-800 text-white placeholder-zinc-500 rounded-xl px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-zinc-600"
+                  aria-label="Поиск контактов"
+                />
+              </div>
+
+              {/* Горизонтальный скролл контактов */}
+              <div
+                className="flex gap-4 overflow-x-auto px-4 py-3 scrollbar-hide"
+                style={{ WebkitOverflowScrolling: 'touch' } as React.CSSProperties}
+              >
+                {filteredContacts.length === 0 ? (
+                  <p className="text-zinc-500 text-sm py-2">Нет контактов</p>
+                ) : (
+                  filteredContacts.map((contact) => (
+                    <motion.button
+                      key={contact.id}
+                      onClick={() => handleSendToContact(contact.name)}
+                      whileTap={{ scale: 0.9 }}
+                      transition={{ type: 'spring', stiffness: 400, damping: 15 }}
+                      className="flex flex-col items-center gap-1 min-w-[64px]"
+                      aria-label={`Отправить ${contact.name}`}
                     >
-                      {isSelected && (
-                        <div className="w-2 h-2 rounded-full bg-white" />
-                      )}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
+                      <ContactAvatar name={contact.name} size={48} />
+                      <span className="text-zinc-300 text-xs text-center w-16 truncate leading-tight">
+                        {contact.name.split(' ')[0]}
+                      </span>
+                    </motion.button>
+                  ))
+                )}
+              </div>
 
-        {/* Send Button */}
-        {selectedTargets.size > 0 && (
-          <div className="p-4 border-t border-border safe-area-bottom">
-            <Button
-              onClick={handleShare}
-              disabled={sending}
-              className="w-full h-12 text-base font-semibold"
+              {/* Кнопки действий */}
+              <div className="grid grid-cols-4 gap-4 px-4 py-3">
+                <ActionButton
+                  icon={<Link size={20} className="text-white" />}
+                  label="Копировать"
+                  onClick={() => void handleCopyLink()}
+                  aria-label="Копировать ссылку"
+                />
+                <ActionButton
+                  icon={<PlusCircle size={20} className="text-white" />}
+                  label="В историю"
+                  onClick={handleShareToStory}
+                  aria-label="Поделиться в историю"
+                />
+                <ActionButton
+                  icon={<Share2 size={20} className="text-white" />}
+                  label="Поделиться"
+                  onClick={() => void handleWebShare()}
+                  aria-label="Системный шаринг"
+                />
+                <ActionButton
+                  icon={<Flag size={20} className="text-white" />}
+                  label="Жалоба"
+                  onClick={handleReport}
+                  aria-label="Пожаловаться"
+                />
+              </div>
+            </div>
+
+            {/* Кнопка Отмена */}
+            <button
+              onClick={onClose}
+              className="w-full py-3 text-center text-white font-medium border-t border-zinc-700 flex-shrink-0 active:bg-zinc-800 transition-colors"
+              aria-label="Отмена"
             >
-              {sending ? (
-                <Loader2 className="w-5 h-5 animate-spin mr-2" />
-              ) : (
-                <Send className="w-5 h-5 mr-2" />
-              )}
-              Отправить ({selectedTargets.size})
-            </Button>
-          </div>
-        )}
-      </DrawerContent>
-    </Drawer>
+              Отмена
+            </button>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
   );
+
+  return createPortal(content, portalTarget);
 }

@@ -2,9 +2,141 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here.
 All colors MUST be HSL.
 */
+
+/* ============================================================
+   PLATFORM LAYOUT SYSTEM
+   Управляется через data-атрибуты на <html>, которые
+   устанавливаются src/hooks/usePlatform.ts::applyPlatformAttributes()
+   и src/main.tsx при старте.
+
+   Breakpoints:
+     phone   < 600px short side
+     tablet  600–1023px short side  (или iPadOS)
+     desktop ≥ 1024px
+   ============================================================ */
+
+:root {
+  /* Устанавливаются динамически через JS в PlatformLayout */
+  --sidebar-width: 0px;
+  --nav-rail-width: 0px;
+  --screen-w: 100vw;
+  --screen-h: 100vh;
+
+  /* iOS safe-area insets (переопределяются браузером на iOS) */
+  --safe-top:    env(safe-area-inset-top,    0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left:   env(safe-area-inset-left,   0px);
+  --safe-right:  env(safe-area-inset-right,  0px);
+}
+
+/* ── PlatformLayout root ───────────────────────────────────── */
+.platform-root {
+  display: flex;
+  flex-direction: row;
+  height: var(--app-h, 100vh);
+  width: 100%;
+  overflow: hidden;
+  position: relative;
+}
+
+/* ── Nav rail (desktop only) ───────────────────────────────── */
+.platform-nav-rail {
+  flex: 0 0 var(--nav-rail-width);
+  height: 100%;
+  overflow: hidden;
+  overflow-y: auto;
+  z-index: 20;
+}
+
+/* ── Sidebar ────────────────────────────────────────────────── */
+.platform-sidebar {
+  flex: 0 0 var(--sidebar-width);
+  height: 100%;
+  overflow: hidden;
+  overflow-y: auto;
+  z-index: 10;
+  border-right: 1px solid hsl(var(--border, 215 20% 15%));
+}
+
+/* ── Main content area ──────────────────────────────────────── */
+.platform-content {
+  flex: 1 1 0%;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+  overflow-y: auto;
+  /* Scrollbar gutter prevents layout shift when scrollbar appears */
+  scrollbar-gutter: stable;
+}
+
+/* ── Phone: full-screen single column ───────────────────────── */
+.platform-root--phone .platform-sidebar,
+.platform-root--phone .platform-nav-rail {
+  display: none;
+}
+
+.platform-root--phone .platform-content {
+  padding-top: var(--safe-top);
+  padding-bottom: var(--safe-bottom);
+  padding-left: var(--safe-left);
+  padding-right: var(--safe-right);
+}
+
+/* ── iOS-specific adjustments ───────────────────────────────── */
+[data-os="ios"] .platform-content,
+[data-os="ipados"] .platform-content {
+  /* Prevent content from going behind home indicator */
+  padding-bottom: max(var(--safe-bottom), 8px);
+}
+
+/* ── Android-specific adjustments ──────────────────────────── */
+[data-os="android"] .platform-content {
+  /* Android gesture nav bar */
+  padding-bottom: max(var(--safe-bottom), 0px);
+}
+
+/* ── Windows / desktop: max-width container ─────────────────── */
+[data-form-factor="desktop"] .platform-root {
+  max-width: 1440px;
+  margin: 0 auto;
+}
+
+/* ── Tablet portrait: sidebar hidden, drawer-style ─────────── */
+[data-form-factor="tablet"][data-orientation="portrait"] .platform-sidebar {
+  display: none;
+}
+
+/* ── Tablet landscape: sidebar always visible ───────────────── */
+[data-form-factor="tablet"][data-orientation="landscape"] .platform-sidebar {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Responsive media query fallbacks (Tailwind doesn't know   */
+/*    about platform data-attrs, so we duplicate key guards)    */
+@media (max-width: 599px) {
+  :root {
+    --sidebar-width: 0px;
+    --nav-rail-width: 0px;
+  }
+}
+
+@media (min-width: 600px) and (max-width: 1023px) {
+  :root {
+    --sidebar-width: 280px;
+  }
+}
+
+@media (min-width: 1024px) {
+  :root {
+    --sidebar-width: 320px;
+    --nav-rail-width: 72px;
+  }
+}
+
 
 /* ============================================================
    ACCESSIBILITY (WCAG 2.1)

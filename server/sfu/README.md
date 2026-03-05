@@ -94,3 +94,40 @@ The SFU implements per-process rate limiting for E2EE operations:
 
 **⚠️ Known Limitation**: Rate limiting is process-local. In multi-instance deployments,
 consider migrating to Redis-backed counters (see `server/calls-ws/index.mjs` for a pattern).
+
+---
+
+## Production Configuration
+
+### Required Environment Variables for SFU-only mode
+
+```env
+# Core SFU
+SFU_ENABLE_MEDIASOUP=1          # Enable mediasoup media plane
+SFU_REQUIRE_MEDIASOUP=1         # Reject connections if mediasoup unavailable
+SFU_REQUIRE_SFRAME=1            # Require SFrame-capable clients
+
+# E2EE
+SFU_E2EE_REQUIRED=1             # E2EE mandatory — no plaintext media
+E2EE_REQUIRED_DEFAULT=true      # Default E2EE policy for all rooms
+
+# Security
+SFU_STRICT_VALIDATION=1         # Reject empty dtlsParameters/rtpParameters
+SFU_INSECURE_DEV_MODE=0         # Disable dev mode auth bypass
+
+# Rate Limits
+SFU_KEY_PACKAGE_RATE=50         # Max KEY_PACKAGE per minute per peer
+SFU_REKEY_BEGIN_RATE=5          # Max REKEY_BEGIN per minute per room
+
+# Scaling
+SFU_WORKER_COUNT=auto           # mediasoup workers = CPU cores
+SFU_MAX_ROOMS_PER_WORKER=100    # Room limit per worker
+```
+
+### Deployment Checklist
+- [ ] mediasoup native addon built for target platform
+- [ ] TURN servers configured and reachable
+- [ ] Redis available for distributed state (rate limits, anti-replay)
+- [ ] TLS certificates for WSS
+- [ ] Health check endpoint responds
+- [ ] Metrics endpoint configured

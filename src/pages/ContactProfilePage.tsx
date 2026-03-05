@@ -1,4 +1,4 @@
-import { MessageCircle, Bell, BellOff, Phone, Video, Image, FileText, Link2, Mic, Users, Ban, X, User, Loader2, QrCode } from "lucide-react";
+import { MessageCircle, Bell, BellOff, Phone, Video, Image, FileText, Link2, Mic, Users, Ban, X, User, Loader2, QrCode, Settings2, Timer, Clock3 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -6,6 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useVideoCallContext } from "@/contexts/VideoCallContext";
 import { MediaGallerySheet } from "@/components/chat/MediaGallerySheet";
 import { useUserPresenceStatus } from "@/hooks/useUserPresenceStatus";
+import { useChatSettings } from "@/hooks/useChatSettings";
 
 interface ContactProfile {
   display_name: string | null;
@@ -34,7 +35,6 @@ export function ContactProfilePage() {
   
   const [profile, setProfile] = useState<ContactProfile | null>(null);
   const [loading, setLoading] = useState(true);
-  const [isMuted, setIsMuted] = useState(false);
   const [mediaStats, setMediaStats] = useState<MediaStats>({
     photos: 0,
     files: 0,
@@ -46,6 +46,8 @@ export function ContactProfilePage() {
   const [showBlockModal, setShowBlockModal] = useState(false);
   const [isBlocking, setIsBlocking] = useState(false);
   const [isBlocked, setIsBlocked] = useState(false);
+  const { settings: chatSettings, updateSetting } = useChatSettings(state?.conversationId);
+  const isMuted = !chatSettings.notifications_enabled;
 
   // Hydrate from navigation state immediately
   useEffect(() => {
@@ -163,6 +165,22 @@ export function ContactProfilePage() {
     }
   };
 
+  const openConversation = (chatAction?: 'settings' | 'timer' | 'scheduled') => {
+    if (state?.conversationId) {
+      navigate('/chats', {
+        state: {
+          conversationId: state.conversationId,
+          otherUserId: userId,
+          otherDisplayName: profile?.display_name,
+          otherAvatarUrl: profile?.avatar_url,
+          ...(chatAction ? { chatAction } : {}),
+        },
+      });
+      return;
+    }
+    navigate(-1);
+  };
+
   if (loading && !profile) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -227,20 +245,7 @@ export function ContactProfilePage() {
           {/* Action Buttons */}
           <div className="flex items-center gap-3 mb-8">
             <button 
-              onClick={() => {
-                if (state?.conversationId) {
-                  navigate('/chats', { 
-                    state: { 
-                      conversationId: state.conversationId,
-                      otherUserId: userId,
-                      otherDisplayName: profile?.display_name,
-                      otherAvatarUrl: profile?.avatar_url
-                    } 
-                  });
-                } else {
-                  navigate(-1);
-                }
-              }}
+              onClick={() => openConversation()}
               className="flex flex-col items-center gap-1.5"
             >
               <div className="w-14 h-14 rounded-2xl bg-white/10 backdrop-blur-xl border border-white/20 flex items-center justify-center hover:bg-white/20 transition-colors">
@@ -250,8 +255,11 @@ export function ContactProfilePage() {
             </button>
 
             <button 
-              onClick={() => setIsMuted(!isMuted)}
+              onClick={() => {
+                void updateSetting('notifications_enabled', isMuted);
+              }}
               className="flex flex-col items-center gap-1.5"
+              disabled={!state?.conversationId}
             >
               <div className="w-14 h-14 rounded-2xl bg-white/10 backdrop-blur-xl border border-white/20 flex items-center justify-center hover:bg-white/20 transition-colors">
                 {isMuted ? <BellOff className="w-6 h-6 text-white" /> : <Bell className="w-6 h-6 text-white" />}
@@ -292,6 +300,34 @@ export function ContactProfilePage() {
               </div>
               <QrCode className="w-6 h-6 text-white/40" />
             </div>
+          </div>
+
+          {/* Chat controls grouped logically */}
+          <div className="bg-white/10 backdrop-blur-xl rounded-2xl border border-white/20 overflow-hidden">
+            <button
+              onClick={() => openConversation('settings')}
+              className="w-full flex items-center gap-4 p-4 hover:bg-white/5 transition-colors border-b border-white/10"
+              disabled={!state?.conversationId}
+            >
+              <Settings2 className="w-5 h-5 text-white/60" />
+              <span className="text-white flex-1 text-left">Настройки чата</span>
+            </button>
+            <button
+              onClick={() => openConversation('timer')}
+              className="w-full flex items-center gap-4 p-4 hover:bg-white/5 transition-colors border-b border-white/10"
+              disabled={!state?.conversationId}
+            >
+              <Timer className="w-5 h-5 text-orange-300" />
+              <span className="text-white flex-1 text-left">Автоудаление сообщений</span>
+            </button>
+            <button
+              onClick={() => openConversation('scheduled')}
+              className="w-full flex items-center gap-4 p-4 hover:bg-white/5 transition-colors"
+              disabled={!state?.conversationId}
+            >
+              <Clock3 className="w-5 h-5 text-amber-300" />
+              <span className="text-white flex-1 text-left">Запланированные сообщения</span>
+            </button>
           </div>
 
 

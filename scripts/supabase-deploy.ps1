@@ -1,4 +1,4 @@
-деparam(
+param(
   [string]$ProjectRef = "",
   [switch]$DryRun,
   [switch]$SkipDbPush,

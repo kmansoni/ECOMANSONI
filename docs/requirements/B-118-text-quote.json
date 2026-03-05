@@ -1,0 +1,64 @@
+{
+  "req_id": "REQ-0118",
+  "title": "Text Quote / Block Quote (Partial Text Selection for Reply)",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "messaging",
+  "priority": "P1",
+  "depends_on": ["REQ-0070"],
+  "description": "Users can select a specific substring of a message text and quote only that excerpt in a reply, rather than quoting the entire message. The quoted fragment appears as a highlighted block quote above the reply. This is distinct from full-message reply: it carries a reference to the original message id AND a byte-range (offset, length) within the original text.",
+  "data_model": {
+    "quote_block_schema": {
+      "original_message_id": "UUID — FK to messages.id",
+      "quote_offset": "INTEGER — UTF-16 code unit start position in original text",
+      "quote_length": "INTEGER — UTF-16 code unit length of selected text",
+      "quote_text": "TEXT — denormalized snapshot of quoted fragment (up to 1024 chars)",
+      "quote_entities": "JSONB[] — formatting entities from original scoped to the quote range"
+    },
+    "message_schema_extension": {
+      "quote": "JSONB (nullable) — contains quote_block_schema fields"
+    },
+    "denormalization_rationale": "quote_text is stored to survive original message edit/deletion. Recipients see the quoted text as it was at time of reply, not current state — ensures conversational coherence."
+  },
+  "server_validation": [
+    "quote_offset + quote_length ≤ len(original_message.text) — prevents out-of-bounds quote.",
+    "quote_length ≤ 1024 chars — prevents DoS via huge quotes.",
+    "quote_text must match original_message.text[offset:offset+length] at time of send (server recomputes and validates, client-provided text is advisory only — server's value wins).",
+    "original_message_id must belong to the same conversation.",
+    "original_message must not be deleted (if deleted: reject with 404, client should gracefully degrade to full reply)."
+  ],
+  "security": {
+    "fake_quote_attack": "Malicious client sends quote_text that differs from actual message to create false impressions. Mitigated: server validates quote_text against live message content and overwrites client value with server-computed substring. Client's quote_text is NEVER trusted.",
+    "edit_after_quote": "Original message edited after being quoted: stored quote_text remains as snapshot. No retroactive update to quote blocks — by design."
+  },
+  "api": {
+    "send_reply_with_quote": {
+      "endpoint": "POST /v1/messages",
+      "body": {
+        "conversation_id": "UUID",
+        "text": "string",
+        "reply_to_message_id": "UUID",
+        "quote": {
+          "original_message_id": "UUID",
+          "quote_offset": "integer",
+          "quote_length": "integer"
+        },
+        "idempotency_key": "UUID"
+      }
+    }
+  },
+  "ui": {
+    "text_selection_trigger": "Long-press message text → text selection handles appear → drag to select substring → context menu shows 'Quote' option",
+    "quote_preview_in_composer": "Selected text appears in composer as styled blockquote with original sender name. User can dismiss or keep.",
+    "rendered_quote_bubble": {
+      "style": "Left-bordered colored block (sender's accent color), truncated to 3 lines with expand option",
+      "tap_action": "Scroll to original message and highlight"
+    }
+  },
+  "observability": {
+    "metrics": [
+      "counter: message.quote.sent",
+      "counter: message.quote.validation_failed{reason=out_of_bounds|length_exceeded|message_deleted|text_mismatch}"
+    ]
+  }
+}

@@ -1,5 +1,5 @@
 import { useRef } from "react";
-import { Image, FileText, MapPin } from "lucide-react";
+import { Image, FileText, MapPin, UserPlus, Camera } from "lucide-react";
 import {
   Drawer,
   DrawerContent,
@@ -10,6 +10,8 @@ interface AttachmentSheetProps {
   onOpenChange: (open: boolean) => void;
   onSelectFile: (file: File, type: "image" | "video" | "document") => void;
   onSelectLocation?: () => void;
+  onContactShare?: () => void;
+  onOpenCamera?: () => void;
 }
 
 export function AttachmentSheet({
@@ -17,6 +19,8 @@ export function AttachmentSheet({
   onOpenChange,
   onSelectFile,
   onSelectLocation,
+  onContactShare,
+  onOpenCamera,
 }: AttachmentSheetProps) {
   const mediaInputRef = useRef<HTMLInputElement>(null);
   const documentInputRef = useRef<HTMLInputElement>(null);
@@ -54,6 +58,18 @@ export function AttachmentSheet({
   };
 
   const menuItems = [
+    ...(onOpenCamera
+      ? [
+          {
+            icon: Camera,
+            label: "Камера",
+            onClick: () => {
+              onOpenCamera();
+              onOpenChange(false);
+            },
+          },
+        ]
+      : []),
     {
       icon: Image,
       label: "Фото или видео",
@@ -69,6 +85,11 @@ export function AttachmentSheet({
       label: "Геопозиция",
       onClick: handleLocationSelect,
     },
+    ...(onContactShare ? [{
+      icon: UserPlus,
+      label: "Контакт",
+      onClick: () => { onContactShare(); onOpenChange(false); },
+    }] : []),
   ];
 
   return (

@@ -1,0 +1,13 @@
+# AI Engine — все зависимости
+# Основные ML/AI библиотеки
+numpy>=1.24.0
+scikit-learn>=1.3.0
+sentence-transformers>=2.2.2
+
+# Трансформеры (зависимость sentence-transformers)
+torch>=2.0.0
+transformers>=4.35.0
+
+# Существующие зависимости
+# (из ai_engine/requirements.txt)
+# (пусто — добавьте если были)

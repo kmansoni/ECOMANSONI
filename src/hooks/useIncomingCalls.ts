@@ -2,6 +2,11 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import type { VideoCall } from "./useVideoCall";
+import {
+  activateForegroundCallWake,
+  stopRingtone,
+} from "@/lib/platform/callWakeStrategy";
+import type { WakeLockHandle } from "@/lib/platform/wakelock";
 
 interface UseIncomingCallsOptions {
   onIncomingCall?: (call: VideoCall) => void;
@@ -19,11 +24,82 @@ export function useIncomingCalls(options: UseIncomingCallsOptions = {}) {
   
   // Track which calls we've already notified about
   const notifiedCallsRef = useRef<Set<string>>(new Set());
+  const wakeLockHandleRef = useRef<WakeLockHandle | null>(null);
+
+  const releaseCallWake = useCallback(async () => {
+    stopRingtone();
+    if (!wakeLockHandleRef.current) return;
+    try {
+      await wakeLockHandleRef.current.release();
+    } catch {
+      // ignore release errors
+    } finally {
+      wakeLockHandleRef.current = null;
+    }
+  }, []);
+
+  const resolveIncomingCallAlertPolicy = useCallback(async (call: VideoCall) => {
+    const now = new Date();
+    let notificationsEnabled = true;
+    let soundEnabled = true;
+    let vibrationEnabled = true;
+
+    if (user) {
+      const { data: globalSettings } = await supabase
+        .from("user_global_chat_settings" as never)
+        .select("in_app_sounds, in_app_vibrate")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (globalSettings && typeof globalSettings === "object") {
+        const gs = globalSettings as { in_app_sounds?: boolean | null; in_app_vibrate?: boolean | null };
+        if (gs.in_app_sounds === false) soundEnabled = false;
+        if (gs.in_app_vibrate === false) vibrationEnabled = false;
+      }
+    }
+
+    if (user && call.conversation_id) {
+      const { data: chatSettings } = await supabase
+        .from("user_chat_settings" as never)
+        .select("notifications_enabled, notification_sound, notification_vibration, muted_until")
+        .eq("user_id", user.id)
+        .eq("conversation_id", call.conversation_id)
+        .maybeSingle();
+
+      if (chatSettings && typeof chatSettings === "object") {
+        const cs = chatSettings as {
+          notifications_enabled?: boolean | null;
+          notification_sound?: string | null;
+          notification_vibration?: boolean | null;
+          muted_until?: string | null;
+        };
+
+        const mutedUntil = cs.muted_until ? new Date(cs.muted_until) : null;
+        const mutedByTime = !!mutedUntil && mutedUntil > now;
+        notificationsEnabled = (cs.notifications_enabled ?? true) && !mutedByTime;
+
+        if ((cs.notification_sound ?? "default") === "none") {
+          soundEnabled = false;
+        }
+        if (cs.notification_vibration === false) {
+          vibrationEnabled = false;
+        }
+      }
+    }
+
+    if (!notificationsEnabled) {
+      soundEnabled = false;
+      vibrationEnabled = false;
+    }
+
+    return { soundEnabled, vibrationEnabled };
+  }, [user]);
 
   const clearIncomingCall = useCallback(() => {
     console.log("[IncomingCalls] Clearing incoming call");
     setIncomingCall(null);
-  }, []);
+    void releaseCallWake();
+  }, [releaseCallWake]);
 
   // Helper to process a new incoming call
   const processIncomingCall = useCallback(async (call: VideoCall) => {
@@ -48,9 +124,30 @@ export function useIncomingCalls(options: UseIncomingCallsOptions = {}) {
       caller_profile: profile || undefined,
     };
 
+    const alertPolicy = await resolveIncomingCallAlertPolicy(callWithProfile);
+
+    await releaseCallWake();
+    if (alertPolicy.soundEnabled || alertPolicy.vibrationEnabled) {
+      try {
+        wakeLockHandleRef.current = await activateForegroundCallWake(
+          {
+            callId: callWithProfile.id,
+            callerName: callWithProfile.caller_profile?.display_name || "Unknown caller",
+            hasVideo: callWithProfile.call_type === "video",
+          },
+          {
+            playSound: alertPolicy.soundEnabled,
+            vibrate: alertPolicy.vibrationEnabled,
+          }
+        );
+      } catch {
+        // ignore wake/sound errors (autoplay restrictions etc.)
+      }
+    }
+
     setIncomingCall(callWithProfile);
     onIncomingCallRef.current?.(callWithProfile);
-  }, []);
+  }, [resolveIncomingCallAlertPolicy, releaseCallWake]);
 
   // Cleanup stale ringing calls on mount
   useEffect(() => {
@@ -119,6 +216,7 @@ export function useIncomingCalls(options: UseIncomingCallsOptions = {}) {
           if (["answered", "declined", "ended", "missed"].includes(updated.status)) {
             console.log("[IncomingCalls] Call status changed to:", updated.status);
             notifiedCallsRef.current.delete(updated.id);
+            void releaseCallWake();
             setIncomingCall((current) => {
               if (current?.id === updated.id) {
                 return null;
@@ -164,8 +262,9 @@ export function useIncomingCalls(options: UseIncomingCallsOptions = {}) {
       supabase.removeChannel(channel);
       clearInterval(pollInterval);
       notifiedCallsRef.current.clear();
+      void releaseCallWake();
     };
-  }, [user, processIncomingCall]);
+  }, [user, processIncomingCall, releaseCallWake]);
 
   return {
     incomingCall,

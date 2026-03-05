@@ -39,6 +39,20 @@ function getErrorMessage(err: unknown): string {
   return String(err);
 }
 
+function isBlockedDmError(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const anyErr = err as any;
+  const code = typeof anyErr.code === "string" ? anyErr.code : "";
+  const message = typeof anyErr.message === "string" ? anyErr.message.toLowerCase() : "";
+  const details = typeof anyErr.details === "string" ? anyErr.details.toLowerCase() : "";
+
+  return (
+    code === "42501" ||
+    message.includes("blocked_user") ||
+    details.includes("blocked_user")
+  );
+}
+
 function normalizeBrokenVerticalText(text: string): string {
   // Validate that text is properly encoded (basic UTF-8 sanity check)
   try {
@@ -72,6 +86,7 @@ export interface ChatMessage {
   content: string;
   is_read: boolean;
   created_at: string;
+  edited_at?: string | null;
   seq?: number | null;
   media_url?: string | null;
   media_type?: string | null; // 'voice', 'video_circle', 'image'
@@ -81,6 +96,7 @@ export interface ChatMessage {
   disappear_in_seconds?: number | null;
   disappear_at?: string | null;
   disappeared?: boolean | null;
+  is_silent?: boolean | null;
 }
 
 export interface Conversation {
@@ -448,7 +464,6 @@ export function useMessages(conversationId: string | null) {
   const recoveryPolicy = getChatV11RecoveryPolicyConfig();
   const pollInFlightRef = useRef(false);
   const pendingLocalByClientIdRef = useRef<Map<string, ChatMessage>>(new Map());
-  const recentSendRef = useRef<Map<string, number>>(new Map());
   const inFlightFingerprintRef = useRef<Set<string>>(new Set());
   const lastRealtimeEventAtRef = useRef<number>(Date.now());
 
@@ -993,7 +1008,7 @@ export function useMessages(conversationId: string | null) {
     };
   }, [user]);
 
-  const sendMessage = async (content: string, opts?: { clientMsgId?: string }) => {
+  const sendMessage = async (content: string, opts?: { clientMsgId?: string; is_silent?: boolean; [key: string]: unknown }) => {
     let normalizedContent = normalizeBrokenVerticalText(content).trim();
     // Ensure proper UTF-8 encoding for Cyrillic and other Unicode text
     normalizedContent = sanitizeTextForTransport(normalizedContent);
@@ -1018,16 +1033,10 @@ export function useMessages(conversationId: string | null) {
     let v11ClientWriteSeq: number | null = null;
 
     try {
-      const now = Date.now();
-      const lastAt = recentSendRef.current.get(fingerprint);
-      if (typeof lastAt === "number" && now - lastAt < 8_000) return;
-
       const hashtagVerdict = await checkHashtagsAllowedForText(normalizedContent);
       if (!hashtagVerdict.ok) {
         throw new Error(`HASHTAG_BLOCKED:${("blockedTags" in hashtagVerdict ? hashtagVerdict.blockedTags : []).join(", ")}`);
       }
-
-      recentSendRef.current.set(fingerprint, now);
 
       const optimistic: ChatMessage = {
         id: `local:${clientMsgId}`,
@@ -1210,7 +1219,53 @@ export function useMessages(conversationId: string | null) {
     }
   };
 
-  return { messages, loading, sendMessage, sendMediaMessage, deleteMessage, refetch: fetchMessages };
+  const editMessage = async (messageId: string, newContent: string) => {
+    if (!user) return { error: 'Not authenticated' };
+
+    const trimmed = newContent.trim();
+    if (!trimmed) return { error: 'Content cannot be empty' };
+
+    // Validation: only own messages, not older than 48 hours
+    const msg = messages.find((m) => m.id === messageId);
+    if (!msg) return { error: 'Message not found' };
+    if (msg.sender_id !== user.id) return { error: 'Cannot edit someone else message' };
+    const ageMs = Date.now() - new Date(msg.created_at).getTime();
+    if (ageMs > 48 * 60 * 60 * 1000) return { error: 'Message is too old to edit' };
+
+    const now = new Date().toISOString();
+
+    // Optimistic update
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === messageId ? { ...m, content: trimmed, edited_at: now } : m
+      )
+    );
+
+    try {
+      const { error } = await (supabase as any)
+        .from("messages")
+        .update({ content: trimmed, edited_at: now })
+        .eq("id", messageId)
+        .eq("sender_id", user.id);
+
+      if (error) {
+        // Rollback optimistic update
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === messageId ? { ...m, content: msg.content, edited_at: msg.edited_at ?? null } : m
+          )
+        );
+        throw error;
+      }
+
+      return { error: null };
+    } catch (error) {
+      console.error("Error editing message:", error);
+      return { error: error instanceof Error ? error.message : 'Failed to edit message' };
+    }
+  };
+
+  return { messages, loading, sendMessage, sendMediaMessage, deleteMessage, editMessage, refetch: fetchMessages };
 }
 
 export function useCreateConversation() {
@@ -1238,6 +1293,11 @@ export function useCreateConversation() {
         if (id) return String(id);
       }
 
+      if (rpcError && isBlockedDmError(rpcError)) {
+        toast.error("Чат недоступен: пользователь в блокировке.");
+        return null;
+      }
+
       console.error("[Chat] get_or_create_dm unavailable or returned empty result", {
         error: rpcError,
         dataType: Array.isArray(rpcData) ? "array" : typeof rpcData,
@@ -1246,6 +1306,11 @@ export function useCreateConversation() {
       return null;
     } catch (error) {
       console.error("Error creating conversation:", error);
+
+      if (isBlockedDmError(error)) {
+        toast.error("Чат недоступен: пользователь в блокировке.");
+        return null;
+      }
 
       // Deterministic failure: do not attempt any legacy inserts.
       toast.error("Chat service misconfigured: DM creation unavailable.");

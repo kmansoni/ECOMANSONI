@@ -1,0 +1,68 @@
+{
+  "req_id": "REQ-0117",
+  "title": "Speech-to-Text Transcription for Voice Messages",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "messaging",
+  "priority": "P2",
+  "depends_on": ["REQ-0074"],
+  "description": "Automatic server-side transcription of voice messages (OGG/Opus, max 10 min) into text. Transcription is stored alongside the audio, rendered in the message bubble with toggle. Uses a self-hosted or privacy-compliant third-party ASR engine (Whisper-compatible API). Zero audio retention beyond transcription pipeline.",
+  "architecture": {
+    "pipeline": {
+      "steps": [
+        "1. Voice message uploaded and stored in object storage (encrypted at rest, AES-256).",
+        "2. Message created in DB with transcription_status = 'pending'.",
+        "3. Transcription job queued to dedicated ASR worker pool via message queue (e.g., BullMQ/Redis).",
+        "4. ASR worker fetches audio via pre-signed URL (TTL: 5 minutes — short to limit exposure window).",
+        "5. ASR engine (Whisper large-v3 or equivalent) processes audio, returns segments with timestamps.",
+        "6. Worker writes result to messages.transcription JSONB field, sets transcription_status = 'done'.",
+        "7. WebSocket event emitted to conversation subscribers: MESSAGE_TRANSCRIPTION_READY.",
+        "8. Pre-signed URL revoked / expired naturally."
+      ],
+      "failure_states": {
+        "asr_timeout": "After 120s: transcription_status = 'failed'. Worker retries max 2 times with exponential backoff.",
+        "audio_too_long": "Reject at upload: voice > 600s → 413 error, no transcription attempted.",
+        "language_detection_fail": "Fallback: flag transcription_status = 'unsupported_language', do not persist garbled text."
+      }
+    },
+    "worker_isolation": {
+      "description": "ASR workers run in isolated namespace with no direct DB write access beyond transcript column. Use service account with column-level Postgres privilege.",
+      "network": "Workers have no outbound internet access (air-gapped pod network). Whisper model loaded from internal model registry.",
+      "horizontal_scaling": "ASR workers scale independently via queue depth metric. Target: < 30s p95 transcription latency for 1-min audio."
+    }
+  },
+  "data_model": {
+    "messages_table_extensions": {
+      "transcription": "JSONB (nullable) — { text: string, segments: [{start_ms, end_ms, text}], language: string, confidence: float }",
+      "transcription_status": "ENUM('none', 'pending', 'done', 'failed', 'unsupported_language') DEFAULT 'none'"
+    }
+  },
+  "privacy": [
+    "Audio never sent to external cloud ASR APIs unless explicit user opt-in AND privacy policy updated.",
+    "Transcription text treated as message content — same E2EE scope. For secret chats: transcription runs on device if E2EE, not server-side.",
+    "Users can delete transcription independently of audio: PATCH /v1/messages/{id} { delete_transcription: true } — sets transcription = NULL, status = 'none'.",
+    "GDPR/DSAR: transcription included in user data export."
+  ],
+  "security": {
+    "pre_signed_url_scope": "ASR worker gets read-only access to specific object key, not bucket-wide.",
+    "prompt_injection": "ASR output treated as untrusted user-generated content. Never executed, never used as system prompt in any downstream AI. Stored as escaped text.",
+    "dos_vector": "Bulk-uploading long voice messages to exhaust ASR queue: mitigated by per-user daily transcription quota (e.g., 60 minutes/day)."
+  },
+  "ui": {
+    "message_bubble": "Voice message player + 'Show transcript' toggle below waveform. Collapsed by default.",
+    "transcription_states": {
+      "pending": "Spinner with label 'Transcribing...'",
+      "done": "Expandable text block with detected language badge",
+      "failed": "Subtle 'Transcript unavailable' label",
+      "unsupported_language": "'Language not supported' label"
+    }
+  },
+  "observability": {
+    "metrics": [
+      "histogram: asr.processing_time_ms{status=done|failed}",
+      "gauge: asr.queue_depth",
+      "counter: asr.quota_exceeded_per_user"
+    ],
+    "slo": "p95 transcription latency for ≤60s audio: < 30s"
+  }
+}

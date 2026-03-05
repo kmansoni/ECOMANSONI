@@ -4,6 +4,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Search, Edit3, Archive } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import { useE2EEncryption } from '@/hooks/useE2EEncryption';
+import type { EncryptedPayload } from '@/hooks/useE2EEncryption';
 import { NotesBar } from '@/components/chat/NotesBar';
 
 interface ChatItem {
@@ -24,7 +26,29 @@ interface ChatItem {
   unread_count: number;
 }
 
-function getLastMessagePreview(msg?: ChatItem['last_message'], currentUserId?: string) {
+function parseEncryptedPayload(content: unknown): EncryptedPayload | null {
+  if (typeof content !== 'string') return null;
+  const trimmed = content.trim();
+  if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) return null;
+  try {
+    const parsed = JSON.parse(trimmed) as Partial<EncryptedPayload>;
+    const isValid = (
+      typeof parsed === 'object' &&
+      parsed !== null &&
+      typeof parsed.v === 'number' &&
+      typeof parsed.iv === 'string' &&
+      typeof parsed.ct === 'string' &&
+      typeof parsed.tag === 'string' &&
+      typeof parsed.epoch === 'number' &&
+      typeof parsed.kid === 'string'
+    );
+    return isValid ? (parsed as EncryptedPayload) : null;
+  } catch {
+    return null;
+  }
+}
+
+function getLastMessagePreview(msg?: ChatItem['last_message'], currentUserId?: string, fallbackText?: string) {
   if (!msg) return 'Начните переписку';
   const prefix = msg.sender_id === currentUserId ? 'Вы: ' : '';
   switch (msg.media_type) {
@@ -32,8 +56,39 @@ function getLastMessagePreview(msg?: ChatItem['last_message'], currentUserId?: s
     case 'image': return `${prefix}📷 Фото`;
     case 'video': return `${prefix}🎬 Видео`;
     case 'gif': return `${prefix}GIF`;
-    default: return `${prefix}${msg.content}`;
+    default: return `${prefix}${fallbackText ?? msg.content ?? 'Начните переписку'}`;
   }
+}
+
+function ChatListPreview({ chat, currentUserId }: { chat: ChatItem; currentUserId?: string }) {
+  const encryptedPayload = parseEncryptedPayload(chat.last_message?.content);
+  const { decryptContent } = useE2EEncryption(chat.id);
+  const [decryptedText, setDecryptedText] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setDecryptedText(null);
+
+    if (!encryptedPayload || !chat.last_message?.sender_id) return;
+
+    const run = async () => {
+      const plain = await decryptContent(encryptedPayload, chat.last_message!.sender_id);
+      if (!cancelled) {
+        setDecryptedText(plain && plain.trim() ? plain : 'Зашифрованное сообщение');
+      }
+    };
+
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [chat.last_message?.sender_id, decryptContent, encryptedPayload]);
+
+  const fallback = encryptedPayload
+    ? (decryptedText || 'Зашифрованное сообщение')
+    : (chat.last_message?.content || 'Начните переписку');
+
+  return <>{getLastMessagePreview(chat.last_message, currentUserId, fallback)}</>;
 }
 
 function formatTime(dateStr: string) {
@@ -120,7 +175,7 @@ function ChatListItem({
           </div>
           <div className="flex items-center justify-between">
             <p className="text-zinc-500 text-xs truncate flex-1">
-              {getLastMessagePreview(chat.last_message, user?.id)}
+              <ChatListPreview chat={chat} currentUserId={user?.id} />
             </p>
             {chat.unread_count > 0 && (
               <span className="flex-shrink-0 ml-2 min-w-[18px] h-[18px] rounded-full bg-blue-500 text-white text-[10px] font-bold flex items-center justify-center px-1">

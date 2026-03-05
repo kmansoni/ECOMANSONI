@@ -1,14 +1,37 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { RefreshCw } from 'lucide-react';
 import type { DeliveryStatus } from '@/hooks/useReadReceipts';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface MessageStatusProps {
   status: DeliveryStatus;
   onRetry?: () => void;
   className?: string;
+  readAt?: string;
+  deliveredAt?: string;
 }
 
-export function MessageStatus({ status, onRetry, className = '' }: MessageStatusProps) {
+function formatTime(iso?: string): string {
+  if (!iso) return "—";
+  try {
+    return new Intl.DateTimeFormat("ru", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      day: "numeric",
+      month: "short",
+    }).format(new Date(iso));
+  } catch {
+    return iso;
+  }
+}
+
+function StatusIcon({ status, onRetry, className = '' }: Pick<MessageStatusProps, 'status' | 'onRetry' | 'className'>) {
   return (
     <AnimatePresence mode="wait">
       <motion.span
@@ -48,5 +71,37 @@ export function MessageStatus({ status, onRetry, className = '' }: MessageStatus
         )}
       </motion.span>
     </AnimatePresence>
+  );
+}
+
+export function MessageStatus({ status, onRetry, className = '', readAt, deliveredAt }: MessageStatusProps) {
+  const hasTooltipData = (status === 'delivered' || status === 'read') && (deliveredAt || readAt);
+
+  if (!hasTooltipData) {
+    return <StatusIcon status={status} onRetry={onRetry} className={className} />;
+  }
+
+  return (
+    <TooltipProvider delayDuration={200}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="inline-flex items-center cursor-default">
+            <StatusIcon status={status} onRetry={onRetry} className={className} />
+          </span>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="text-xs">
+          {readAt ? (
+            <div className="space-y-0.5">
+              {deliveredAt && <div>Доставлено: {formatTime(deliveredAt)}</div>}
+              <div>Прочитано: {formatTime(readAt)}</div>
+            </div>
+          ) : deliveredAt ? (
+            <div>Доставлено: {formatTime(deliveredAt)}</div>
+          ) : (
+            <div>Отправлено</div>
+          )}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }

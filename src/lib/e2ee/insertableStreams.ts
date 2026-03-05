@@ -78,15 +78,10 @@ export class MediaEncryptor {
    * Uses Insertable Streams (encoded transforms).
    */
   setupSenderTransform(sender: RTCRtpSender, trackId: string): void {
-    if (!MediaEncryptor.isSupported()) {
-      console.warn('[MediaEncryptor] Insertable Streams not supported');
-      return;
-    }
-
     this.removeTransform(trackId);
 
-    // Method 1: createEncodedStreams (Chrome)
-    if ('createEncodedStreams' in sender) {
+    // Method 1: Insertable Streams via createEncodedStreams (Chrome 86+, Edge)
+    if (typeof (sender as any).createEncodedStreams === 'function') {
       const { readable, writable } = (sender as any).createEncodedStreams() as TransformEntry;
 
       const transformStream = new TransformStream({
@@ -115,23 +110,30 @@ export class MediaEncryptor {
       return;
     }
 
-    // Method 2: RTCRtpScriptTransform (spec-compliant)
-    // TODO: implement when widely supported
-    console.warn('[MediaEncryptor] createEncodedStreams not available on this sender');
+    // C-4: Method 2: RTCRtpScriptTransform (Firefox 117+, Safari 15.4+) — NOT YET IMPLEMENTED
+    // Fail-closed: do NOT pass media through unencrypted. Throw to halt call setup.
+    if (typeof (globalThis as any).RTCRtpScriptTransform !== 'undefined') {
+      throw new Error(
+        '[MediaEncryptor] RTCRtpScriptTransform is required on this browser but not yet implemented. ' +
+        'E2EE media encryption unavailable. Call cannot proceed securely.'
+      );
+    }
+
+    // C-4: No E2EE transform support at all — fail-closed
+    throw new Error(
+      '[MediaEncryptor] Neither Insertable Streams (createEncodedStreams) nor RTCRtpScriptTransform ' +
+      'is supported on this browser. E2EE media encryption unavailable.'
+    );
   }
 
   /**
    * Apply decryption transform to an incoming RTCRtpReceiver.
    */
   setupReceiverTransform(receiver: RTCRtpReceiver, trackId: string, peerId: string): void {
-    if (!MediaEncryptor.isSupported()) {
-      console.warn('[MediaEncryptor] Insertable Streams not supported');
-      return;
-    }
-
     this.removeTransform(trackId);
 
-    if ('createEncodedStreams' in receiver) {
+    // Method 1: Insertable Streams via createEncodedStreams (Chrome 86+, Edge)
+    if (typeof (receiver as any).createEncodedStreams === 'function') {
       const { readable, writable } = (receiver as any).createEncodedStreams() as TransformEntry;
 
       const transformStream = new TransformStream({
@@ -170,7 +172,19 @@ export class MediaEncryptor {
       return;
     }
 
-    console.warn('[MediaEncryptor] createEncodedStreams not available on this receiver');
+    // C-4: Method 2: RTCRtpScriptTransform (Firefox 117+, Safari 15.4+) — NOT YET IMPLEMENTED
+    if (typeof (globalThis as any).RTCRtpScriptTransform !== 'undefined') {
+      throw new Error(
+        '[MediaEncryptor] RTCRtpScriptTransform is required on this browser but not yet implemented. ' +
+        'E2EE media decryption unavailable. Call cannot proceed securely.'
+      );
+    }
+
+    // C-4: No E2EE transform support — fail-closed
+    throw new Error(
+      '[MediaEncryptor] Neither Insertable Streams (createEncodedStreams) nor RTCRtpScriptTransform ' +
+      'is supported on this browser. E2EE media decryption unavailable.'
+    );
   }
 
   /**
@@ -197,12 +211,16 @@ export class MediaEncryptor {
   /**
    * Check if the browser supports Insertable Streams API.
    */
+  /**
+   * C-4: Check if the browser supports E2EE transforms that are actually IMPLEMENTED.
+   * RTCRtpScriptTransform is detected but NOT supported yet — excluded from true.
+   * Only returns true if we can ACTUALLY apply transforms (Insertable Streams / createEncodedStreams).
+   */
   static isSupported(): boolean {
-    return (
-      (typeof RTCRtpSender !== 'undefined' &&
-        'createEncodedStreams' in RTCRtpSender.prototype) ||
-      typeof (window as any).RTCRtpScriptTransform !== 'undefined'
-    );
+    if (typeof RTCRtpSender === 'undefined') return false;
+    // Only report support for Insertable Streams — the only implemented method.
+    // RTCRtpScriptTransform detected but NOT implemented yet (see C-4 fix in setup*Transform).
+    return 'createEncodedStreams' in RTCRtpSender.prototype;
   }
 
   /**

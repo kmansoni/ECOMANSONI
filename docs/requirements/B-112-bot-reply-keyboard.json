@@ -1,0 +1,86 @@
+{
+  "req_id": "REQ-0112",
+  "title": "Bot Reply Keyboard (Persistent Custom Keyboards)",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "bots",
+  "priority": "P1",
+  "depends_on": ["REQ-0094"],
+  "description": "Bots can send a persistent reply keyboard that replaces the default text input panel for the duration of a flow. Unlike inline keyboards (attached to a specific message), reply keyboards are session-scoped and appear as a row of tappable buttons above the composer. Supports text buttons, request_contact, request_location, request_poll types.",
+  "keyboard_types": {
+    "ReplyKeyboardMarkup": {
+      "keyboard": "Button[][] — 2D array defining rows and columns",
+      "resize_keyboard": "boolean — fit height to button count or fixed full height",
+      "one_time_keyboard": "boolean — auto-hide after single tap",
+      "input_field_placeholder": "string (max 64 chars) — placeholder text in composer",
+      "selective": "boolean — show keyboard only to mentioned users (groups)"
+    },
+    "ReplyKeyboardRemove": {
+      "remove_keyboard": true,
+      "selective": "boolean"
+    },
+    "KeyboardButton": {
+      "text": "string — displayed label AND value sent as message text",
+      "request_contact": "boolean — sends phone number upon tap (requires user consent)",
+      "request_location": "boolean — sends current location upon tap (requires permission)",
+      "request_poll": { "type": "quiz | regular" },
+      "web_app": { "url": "string — opens Mini App in bounded iframe" }
+    }
+  },
+  "server_architecture": {
+    "storage": {
+      "table": "bot_reply_keyboards",
+      "schema": {
+        "id": "UUID PK",
+        "bot_id": "UUID FK → bots.id",
+        "user_id": "UUID FK → users.id",
+        "conversation_id": "UUID FK → conversations.id",
+        "keyboard_json": "JSONB NOT NULL",
+        "one_time": "BOOLEAN DEFAULT FALSE",
+        "activated_at": "TIMESTAMPTZ",
+        "dismissed_at": "TIMESTAMPTZ (NULL = active)",
+        "message_id": "UUID FK → messages.id (message that injected this keyboard)"
+      },
+      "rls": "SELECT/UPDATE allowed only for bot_role owning bot_id AND user owning user_id. No cross-user visibility.",
+      "indexes": ["UNIQUE idx_brkb_active ON bot_reply_keyboards(user_id, conversation_id) WHERE dismissed_at IS NULL"]
+    },
+    "state_machine": {
+      "states": ["INACTIVE", "ACTIVE", "ONE_TIME_USED", "REMOVED"],
+      "transitions": [
+        "INACTIVE → ACTIVE: bot sends message with ReplyKeyboardMarkup",
+        "ACTIVE → ONE_TIME_USED: user taps button AND one_time=true",
+        "ACTIVE → REMOVED: bot sends ReplyKeyboardRemove OR user dismisses manually",
+        "ONE_TIME_USED → INACTIVE: keyboard hidden from composer"
+      ]
+    }
+  },
+  "security": {
+    "server_enforced": [
+      "Bot cannot set reply keyboard for a conversation where it has no active session (user has not started /start or bot is not member).",
+      "request_contact and request_location buttons: server must emit explicit user-consent challenge before transmitting sensitive data — client UX not sufficient.",
+      "Keyboard JSON validated server-side: max 100 buttons total, max 10 rows, max 10 buttons per row. Exceeding limits → 400 error.",
+      "XSS prevention: button text HTML-escaped at storage time; client renders as plain text only.",
+      "Rate limit: bot can update/set keyboard max 20 times/minute per user conversation."
+    ],
+    "attack_vectors": [
+      "Malicious bot floods keyboard updates to drain client render budget → mitigated by rate limit + client debounce.",
+      "Homoglyph attack in button text to impersonate system actions → mitigated by Unicode normalization (NFC) on write.",
+      "request_contact bypass: bot tries to extract contact without user tap → server only emits contact on explicit user action tracked by server-side event."
+    ]
+  },
+  "api": {
+    "send_message_with_keyboard": "POST /v1/bots/{bot_id}/messages — reply_markup field accepts ReplyKeyboardMarkup JSON",
+    "keyboard_state_query": "GET /v1/conversations/{conv_id}/keyboard?user_id={uid} — returns active keyboard for composer render (JWT scoped to user)"
+  },
+  "ui": {
+    "composer_integration": "When active keyboard exists: hide default keyboard, render button grid above safe area. 'Dismiss' chevron → sends ReplyKeyboardRemove equivalent.",
+    "button_tap_flow": "Tap → text value injected into message, sent immediately (no compose step for simple text buttons). request_contact/location → permission dialog first."
+  },
+  "observability": {
+    "metrics": [
+      "counter: bot.reply_keyboard.set{bot_id}",
+      "counter: bot.reply_keyboard.button_tapped{bot_id, button_type}",
+      "counter: bot.reply_keyboard.removed{reason=bot|user}"
+    ]
+  }
+}

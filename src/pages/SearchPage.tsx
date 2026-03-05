@@ -4,7 +4,7 @@ import { Search, Play, Hash, User, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
-import { normalizeReelMediaUrl } from "@/hooks/useReels";
+import { normalizeReelMediaUrl } from "@/lib/reels/media";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useSearch } from "@/hooks/useSearch";
 import { VerifiedBadge } from "@/components/ui/verified-badge";
@@ -231,7 +231,7 @@ export function SearchPage() {
                   <button
                     type="button"
                     className="text-sm font-semibold text-primary"
-                    onClick={() => navigate("/reels")}
+                    onClick={() => navigate("/explore")}
                   >
                     Открыть
                   </button>
@@ -243,7 +243,7 @@ export function SearchPage() {
                         key={String(r?.reel_id ?? "")}
                         type="button"
                         className="w-24 h-32 rounded-xl overflow-hidden bg-muted flex-shrink-0"
-                        onClick={() => navigate("/reels")}
+                        onClick={() => navigate("/explore")}
                         aria-label="Открыть Reels"
                       >
                         {r?.thumbnail_url ? (

@@ -1,0 +1,83 @@
+{
+  "req_id": "REQ-0119",
+  "title": "People Nearby (Proximity-Based User Discovery)",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "discovery",
+  "priority": "P3",
+  "depends_on": [],
+  "description": "Opt-in feature allowing users to discover other users and groups within a configurable geographic radius. Visibility is entirely voluntary and requires explicit activation per session. No passive location tracking. Designed with k-anonymity and differential privacy to prevent pinpointing exact user locations.",
+  "privacy_threat_model": {
+    "threats": [
+      "Trilateration attack: adversary queries from multiple known positions to derive exact location of victim.",
+      "Stalking: malicious user repeatedly queries to track victim's movements over time.",
+      "Profile enumeration: bulk-harvest user profiles near high-traffic locations.",
+      "Correlation with external data: cross-referencing platform profiles with physical presence."
+    ],
+    "mitigations": [
+      "Location stored as geohash precision 6 (±610m cells) — never exact coordinates.",
+      "Fuzzing: add random offset ±0 to ±300m (Gaussian, σ=100m) before geohash encoding on write.",
+      "Results return approximate distance band only ('within 100m / 500m / 1km / 5km') — not exact distance.",
+      "Anti-trilateration: distances are quantized to 5 bands; resolving to < 50m accuracy requires > 10,000 distinct vantage points (computationally infeasible given rate limits).",
+      "Rate limit: max 1 refresh per 30 seconds per user_id (Redis token bucket).",
+      "Session-scoped: location shared only while user is actively in 'People Nearby' screen. Background sharing prohibited.",
+      "Visibility TTL: if user closes screen without explicit 'Stop Sharing', server auto-expires visibility after 15 minutes.",
+      "No history stored: only current position vector, not trajectory."
+    ]
+  },
+  "data_model": {
+    "storage": "Redis Sorted Set with GEO commands (GEOADD, GEORADIUS)",
+    "key": "nearby:users:{geohash_prefix_4} — shard by 4-char geohash (~140km² cells)",
+    "member": "user_id",
+    "score": "geohash (numeric encoding for Redis GEO)",
+    "ttl_per_member": "900 seconds (15 min) — refreshed on each location update",
+    "no_postgres_writes": "Proximity data never persisted to PostgreSQL. Redis-only."
+  },
+  "api": {
+    "start_sharing": {
+      "endpoint": "POST /v1/nearby/sessions",
+      "body": { "latitude": "float64", "longitude": "float64" },
+      "server_action": "Fuzz coordinates, encode to geohash-6, GEOADD to Redis set with TTL",
+      "response": { "session_id": "UUID", "expires_at": "ISO8601" }
+    },
+    "update_location": {
+      "endpoint": "PUT /v1/nearby/sessions/{session_id}",
+      "body": { "latitude": "float64", "longitude": "float64" },
+      "rate_limit": "1 req / 30s per user"
+    },
+    "query": {
+      "endpoint": "GET /v1/nearby/users?radius_km=1",
+      "response": {
+        "users": [{
+          "user_id": "UUID",
+          "display_name": "string",
+          "avatar_url": "string",
+          "distance_band": "ENUM('under_100m','under_500m','under_1km','under_5km','over_5km')"
+        }],
+        "groups": [{ "group_id": "UUID", "name": "string", "member_count": "integer", "distance_band": "string" }]
+      },
+      "max_results": 100
+    },
+    "stop_sharing": {
+      "endpoint": "DELETE /v1/nearby/sessions/{session_id}",
+      "server_action": "ZREM user from all nearby Redis sets immediately"
+    }
+  },
+  "groups_nearby": {
+    "description": "Group admins can optionally make their group visible in People Nearby by sharing a static location.",
+    "storage": "Separate Redis key: nearby:groups:{geohash_prefix_4}",
+    "moderation": "Groups flagged by trust & safety can be excluded from nearby results via blocklist."
+  },
+  "ui": {
+    "entry": "Contacts tab → 'Find People Nearby' — requires explicit tap, no passive activation",
+    "screen": "Map + list view with distance bands. Refresh button (rate-limited). 'Stop Sharing' always prominent.",
+    "onboarding": "Full-screen consent prompt with privacy explanation before first activation."
+  },
+  "observability": {
+    "metrics": [
+      "gauge: nearby.active_sessions",
+      "counter: nearby.query.total",
+      "counter: nearby.rate_limited"
+    ]
+  }
+}

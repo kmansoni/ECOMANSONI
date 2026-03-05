@@ -1,129 +1,314 @@
-import { Heart, MessageCircle, Send, Bookmark, User } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+/**
+ * @file src/components/reels/ReelSidebar.tsx
+ * @description Вертикальный ряд кнопок действий справа от видео (Phase 3).
+ *
+ * Архитектура (docs/reels-module-architecture.md, раздел 5.5):
+ * - Абсолютное позиционирование, z-index 20
+ * - Framer Motion: spring-анимации при toggle Like/Save, whileTap scale для всех кнопок
+ * - Touch targets: минимум 44×44px (padding компенсирует меньший размер иконки)
+ * - Haptic feedback через Capacitor Haptics (динамический импорт, fallback: noop)
+ * - Все счётчики форматируются через formatCount()
+ * - React.memo + useCallback для предотвращения лишних ре-рендеров при 60fps
+ */
 
-function formatNumber(num: number): string {
-  if (num >= 1000000) {
-    return (num / 1000000).toFixed(1).replace(/\.0$/, "") + "M";
+import React, { memo, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  Heart,
+  MessageCircle,
+  Send,
+  Bookmark,
+  Repeat2,
+  Volume2,
+  VolumeX,
+  MoreHorizontal,
+} from 'lucide-react';
+import { formatCount } from '@/lib/reels/format';
+import type { ReelMetrics } from '@/types/reels';
+
+// ---------------------------------------------------------------------------
+// Haptic feedback (Capacitor — динамический импорт, web fallback = noop)
+// ---------------------------------------------------------------------------
+
+async function triggerHaptic(): Promise<void> {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const cap = await import('@capacitor/haptics' as any) as any;
+    await cap.Haptics.impact({ style: cap.ImpactStyle.Light });
+  } catch {
+    // Capacitor недоступен на вебе — молча игнорируем
   }
-  if (num >= 1000) {
-    return (num / 1000).toFixed(1).replace(/\.0$/, "") + "K";
-  }
-  return num.toString();
 }
 
-interface ReelSidebarProps {
-  reel: any;
+// ---------------------------------------------------------------------------
+// Props
+// ---------------------------------------------------------------------------
+
+export interface ReelSidebarProps {
+  reelId: string;
+  metrics: ReelMetrics;
+  isLiked: boolean;
+  isSaved: boolean;
+  isReposted: boolean;
+  authorAvatarUrl: string | null;
   onLike: () => void;
   onComment: () => void;
   onShare: () => void;
   onSave: () => void;
-  onAuthorClick: () => void;
+  onRepost: () => void;
+  onMore: () => void;
+  onMuteToggle: () => void;
+  isMuted: boolean;
 }
 
-export function ReelSidebar({
-  reel,
-  onLike,
-  onComment,
-  onShare,
-  onSave,
-  onAuthorClick,
-}: ReelSidebarProps) {
-  return (
-    <div
-      className="absolute right-3 bottom-4 flex flex-col items-center gap-3 z-10"
-      style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
-    >
-      {/* Like */}
-      <button
-        className="flex flex-col items-center gap-1"
-        onClick={(e) => { e.stopPropagation(); onLike(); }}
-        aria-label={reel.isLiked ? "Убрать лайк" : "Поставить лайк"}
+// ---------------------------------------------------------------------------
+// Spring transition — используется для bounce-анимации toggle-кнопок
+// ---------------------------------------------------------------------------
+
+const SPRING_BOUNCE = {
+  type: 'spring' as const,
+  stiffness: 500,
+  damping: 15,
+};
+
+// ---------------------------------------------------------------------------
+// SidebarButton — переиспользуемый touch-target (44×44 минимум)
+// ---------------------------------------------------------------------------
+
+interface SidebarButtonProps {
+  onClick: () => void;
+  ariaLabel: string;
+  ariaPressed?: boolean;
+  children: React.ReactNode;
+  counter?: string;
+}
+
+const SidebarButton = memo<SidebarButtonProps>(
+  ({ onClick, ariaLabel, ariaPressed, children, counter }) => (
+    <div className="flex flex-col items-center gap-1">
+      <motion.button
+        type="button"
+        onClick={onClick}
+        aria-label={ariaLabel}
+        {...(ariaPressed !== undefined ? { 'aria-pressed': ariaPressed } : {})}
+        /**
+         * Touch target ≥ 44×44px:
+         * иконка 28px + padding 8px по каждой стороне = 44px
+         */
+        className="flex items-center justify-center w-11 h-11 rounded-full"
+        whileTap={{ scale: 0.85 }}
+        transition={SPRING_BOUNCE}
       >
-        <div
-          className={cn(
-            "w-12 h-12 rounded-full flex items-center justify-center transition-all duration-200",
-            reel.isLiked ? "bg-destructive/20 scale-110" : "bg-white/10 backdrop-blur-sm"
-          )}
-        >
-          <Heart
-            className={cn(
-              "w-7 h-7 transition-all duration-200",
-              reel.isLiked ? "text-destructive fill-destructive scale-110" : "text-white"
-            )}
-          />
-        </div>
-        <span className="text-white text-xs font-medium">
-          {reel.likes_count > 0 ? formatNumber(reel.likes_count) : ""}
+        {children}
+      </motion.button>
+      {counter !== undefined && (
+        <span className="text-white text-[11px] font-medium drop-shadow-md select-none leading-none">
+          {counter}
         </span>
-      </button>
-
-      {/* Comments */}
-      <button
-        className="flex flex-col items-center gap-1"
-        onClick={(e) => { e.stopPropagation(); onComment(); }}
-        aria-label="Открыть комментарии"
-      >
-        <div className="w-12 h-12 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center">
-          <MessageCircle className="w-7 h-7 text-white" />
-        </div>
-        <span className="text-white text-xs font-medium">
-          {reel.comments_count > 0 ? formatNumber(reel.comments_count) : ""}
-        </span>
-      </button>
-
-      {/* Share */}
-      <button
-        className="flex flex-col items-center gap-1"
-        onClick={(e) => { e.stopPropagation(); onShare(); }}
-        aria-label="Поделиться"
-      >
-        <div className="w-12 h-12 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center">
-          <Send className="w-6 h-6 text-white" />
-        </div>
-        <span className="text-white text-xs font-medium">Отправить</span>
-      </button>
-
-      {/* Save */}
-      <button
-        className="flex flex-col items-center gap-1"
-        onClick={(e) => { e.stopPropagation(); onSave(); }}
-        aria-label={reel.isSaved ? "Убрать из сохранённых" : "Сохранить"}
-      >
-        <div
-          className={cn(
-            "w-12 h-12 rounded-full flex items-center justify-center transition-all duration-200",
-            reel.isSaved ? "bg-white/20 scale-110" : "bg-white/10 backdrop-blur-sm",
-          )}
-        >
-          <Bookmark
-            className={cn(
-              "w-6 h-6 transition-all duration-200",
-              reel.isSaved ? "text-white fill-white scale-110" : "text-white",
-            )}
-          />
-        </div>
-        <span className="text-white text-xs font-medium">
-          {(reel.saves_count || 0) > 0 ? formatNumber(reel.saves_count || 0) : ""}
-        </span>
-      </button>
-
-      {/* Author avatar */}
-      <button
-        className="relative"
-        onClick={(e) => { e.stopPropagation(); onAuthorClick(); }}
-        aria-label="Перейти к профилю автора"
-      >
-        <Avatar className="w-11 h-11 border-2 border-white">
-          <AvatarImage src={reel.author?.avatar_url || undefined} />
-          <AvatarFallback className="bg-muted">
-            <User className="w-5 h-5" />
-          </AvatarFallback>
-        </Avatar>
-        <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-5 h-5 rounded-full bg-primary flex items-center justify-center">
-          <span className="text-primary-foreground text-xs font-bold">+</span>
-        </div>
-      </button>
+      )}
     </div>
-  );
-}
+  ),
+);
+SidebarButton.displayName = 'SidebarButton';
+
+// ---------------------------------------------------------------------------
+// ReelSidebar
+// ---------------------------------------------------------------------------
+
+const ReelSidebar = memo<ReelSidebarProps>(
+  ({
+    metrics,
+    isLiked,
+    isSaved,
+    isReposted,
+    onLike,
+    onComment,
+    onShare,
+    onSave,
+    onRepost,
+    onMore,
+    onMuteToggle,
+    isMuted,
+  }) => {
+    // -------------------------------------------------------------------------
+    // Callbacks с haptic feedback
+    // -------------------------------------------------------------------------
+
+    const handleLike = useCallback(() => {
+      void triggerHaptic();
+      onLike();
+    }, [onLike]);
+
+    const handleSave = useCallback(() => {
+      void triggerHaptic();
+      onSave();
+    }, [onSave]);
+
+    const handleRepost = useCallback(() => {
+      void triggerHaptic();
+      onRepost();
+    }, [onRepost]);
+
+    const handleComment = useCallback(() => {
+      void triggerHaptic();
+      onComment();
+    }, [onComment]);
+
+    const handleShare = useCallback(() => {
+      void triggerHaptic();
+      onShare();
+    }, [onShare]);
+
+    const handleMuteToggle = useCallback(() => {
+      void triggerHaptic();
+      onMuteToggle();
+    }, [onMuteToggle]);
+
+    const handleMore = useCallback(() => {
+      void triggerHaptic();
+      onMore();
+    }, [onMore]);
+
+    // -------------------------------------------------------------------------
+    // Render
+    // -------------------------------------------------------------------------
+
+    return (
+      <div
+        role="group"
+        aria-label="Действия"
+        className="absolute right-3 bottom-[120px] flex flex-col items-center gap-5 z-20"
+      >
+        {/* 1. Like ---------------------------------------------------------- */}
+        <div className="flex flex-col items-center gap-1">
+          <motion.button
+            type="button"
+            onClick={handleLike}
+            aria-label={`Нравится, ${formatCount(metrics.likes_count)}`}
+            aria-pressed={isLiked}
+            className="flex items-center justify-center w-11 h-11 rounded-full"
+            whileTap={{ scale: 0.85 }}
+            /**
+             * Spring bounce при toggle: animate меняется когда isLiked меняется.
+             * Ключ используется чтобы Framer Motion повторно запускал анимацию.
+             */
+            animate={{ scale: 1 }}
+            transition={SPRING_BOUNCE}
+          >
+            <motion.div
+              key={isLiked ? 'liked' : 'unliked'}
+              animate={{ scale: [1, 1.3, 1] }}
+              transition={SPRING_BOUNCE}
+            >
+              <Heart
+                className={`w-7 h-7 drop-shadow-lg ${
+                  isLiked
+                    ? 'fill-red-500 text-red-500'
+                    : 'fill-transparent text-white'
+                }`}
+              />
+            </motion.div>
+          </motion.button>
+          <span className="text-white text-[11px] font-medium drop-shadow-md select-none leading-none">
+            {formatCount(metrics.likes_count)}
+          </span>
+        </div>
+
+        {/* 2. Comment ------------------------------------------------------- */}
+        <SidebarButton
+          onClick={handleComment}
+          ariaLabel={`Комментарии, ${formatCount(metrics.comments_count)}`}
+          counter={formatCount(metrics.comments_count)}
+        >
+          <MessageCircle className="w-7 h-7 text-white drop-shadow-lg fill-transparent" />
+        </SidebarButton>
+
+        {/* 3. Share --------------------------------------------------------- */}
+        <SidebarButton
+          onClick={handleShare}
+          ariaLabel={`Поделиться, ${formatCount(metrics.shares_count)}`}
+          counter={formatCount(metrics.shares_count)}
+        >
+          <Send className="w-7 h-7 text-white drop-shadow-lg" />
+        </SidebarButton>
+
+        {/* 4. Save ---------------------------------------------------------- */}
+        <div className="flex flex-col items-center gap-1">
+          <motion.button
+            type="button"
+            onClick={handleSave}
+            aria-label={`Сохранить, ${formatCount(metrics.saves_count)}`}
+            aria-pressed={isSaved}
+            className="flex items-center justify-center w-11 h-11 rounded-full"
+            whileTap={{ scale: 0.85 }}
+            animate={{ scale: 1 }}
+            transition={SPRING_BOUNCE}
+          >
+            <motion.div
+              key={isSaved ? 'saved' : 'unsaved'}
+              animate={{ scale: [1, 1.3, 1] }}
+              transition={SPRING_BOUNCE}
+            >
+              <Bookmark
+                className={`w-7 h-7 drop-shadow-lg ${
+                  isSaved ? 'fill-white text-white' : 'fill-transparent text-white'
+                }`}
+              />
+            </motion.div>
+          </motion.button>
+          <span className="text-white text-[11px] font-medium drop-shadow-md select-none leading-none">
+            {formatCount(metrics.saves_count)}
+          </span>
+        </div>
+
+        {/* 5. Repost -------------------------------------------------------- */}
+        <SidebarButton
+          onClick={handleRepost}
+          ariaLabel={`Репост, ${formatCount(metrics.reposts_count)}`}
+          ariaPressed={isReposted}
+          counter={formatCount(metrics.reposts_count)}
+        >
+          <Repeat2
+            className={`w-7 h-7 drop-shadow-lg ${
+              isReposted ? 'text-green-400' : 'text-white'
+            }`}
+          />
+        </SidebarButton>
+
+        {/* 6. Mute/Unmute --------------------------------------------------- */}
+        <SidebarButton
+          onClick={handleMuteToggle}
+          ariaLabel={isMuted ? 'Включить звук' : 'Выключить звук'}
+        >
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={isMuted ? 'muted' : 'unmuted'}
+              initial={{ opacity: 0, scale: 0.7 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.7 }}
+              transition={{ duration: 0.15 }}
+            >
+              {isMuted ? (
+                <VolumeX className="w-5 h-5 text-white drop-shadow-lg" />
+              ) : (
+                <Volume2 className="w-5 h-5 text-white drop-shadow-lg" />
+              )}
+            </motion.div>
+          </AnimatePresence>
+        </SidebarButton>
+
+        {/* 7. More ---------------------------------------------------------- */}
+        <SidebarButton
+          onClick={handleMore}
+          ariaLabel="Ещё"
+        >
+          <MoreHorizontal className="w-7 h-7 text-white drop-shadow-lg" />
+        </SidebarButton>
+      </div>
+    );
+  },
+);
+
+ReelSidebar.displayName = 'ReelSidebar';
+
+export { ReelSidebar };

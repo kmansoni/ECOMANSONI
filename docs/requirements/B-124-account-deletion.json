@@ -1,0 +1,96 @@
+{
+  "req_id": "REQ-0124",
+  "title": "Account Deletion (GDPR-Compliant Full Account Erasure)",
+  "version": "1.0",
+  "status": "in-design",
+  "domain": "accounts",
+  "priority": "P0",
+  "depends_on": [],
+  "description": "Users can initiate permanent deletion of their account and all associated data. GDPR Article 17 compliance mandatory. Deletion is a multi-phase pipeline: soft-delete (grace period) → hard-delete (purge). Users have 30-day grace period to cancel. After hard-delete: all PII, messages (in personal/DM contexts), and media purged. Group messages deleted or anonymized per policy.",
+  "deletion_pipeline": {
+    "phase_1_initiation": {
+      "trigger": "POST /v1/account/deletion-request",
+      "auth": "Full re-authentication required (password + 2FA if enabled). JWT alone insufficient — prevents CSRF-based deletion.",
+      "idempotency": "Only one pending deletion request per user_id. Second request returns existing request details.",
+      "server_actions": [
+        "INSERT account_deletion_requests (user_id, requested_at, scheduled_hard_delete_at = now() + 30 days, status = 'pending')",
+        "Revoke all active sessions immediately (logout all devices)",
+        "Disable all bot tokens associated with account",
+        "Send confirmation email with cancel link (signed token, valid 30 days)",
+        "Emit account.deletion_requested event (for downstream audit)"
+      ]
+    },
+    "phase_2_grace_period": {
+      "duration": "30 days (configurable per jurisdiction: Russia LGPD-equivalent may require different period)",
+      "cancellation": "POST /v1/account/deletion-request/cancel — requires signed cancel token from email. Updates status = 'cancelled'. Account restored.",
+      "visibility": "During grace period: account marked as 'deactivation pending'. DMs not accepted. Profile not searchable. Existing messages still visible to recipients."
+    },
+    "phase_3_hard_delete": {
+      "trigger": "scheduled_hard_delete_at reached AND status = 'pending' (not cancelled)",
+      "execution": "Async background job (not synchronous API call — may take minutes to hours for large accounts)",
+      "data_erasure_scope": {
+        "deleted_immediately": [
+          "users row (or anonymized: name → '[Deleted User]', phone/email NULLed, avatar removed)",
+          "sessions",
+          "auth_tokens",
+          "device_keys (E2EE key material)",
+          "passport_data blobs",
+          "draft_messages",
+          "saved_messages",
+          "private_media_objects (user's own uploads in DMs)"
+        ],
+        "anonymized_not_deleted": [
+          "Group messages: sender_id NULLed, display_name replaced with '[Deleted User]'. Content preserved for group history integrity.",
+          "Channel posts: same anonymization.",
+          "Payment records: user_id replaced with pseudonym for financial audit trail (legal requirement)."
+        ],
+        "retained_for_legal_hold": [
+          "Trust & Safety action records (CSAM reports, etc.) — 7-year retention per applicable law.",
+          "Forward provenance logs — same.",
+          "Financial audit trail — 7 years."
+        ]
+      },
+      "object_storage_purge": [
+        "All signed URLs for user's objects revoked immediately.",
+        "Object keys scheduled for deletion via storage lifecycle policy (max 24h lag).",
+        "CDN cache purged for avatar and media CDN keys."
+      ],
+      "database_transaction_strategy": {
+        "isolation": "READ COMMITTED (no phantom risk on distinct user_id rows)",
+        "approach": "Chunked deletes (1000 rows at a time) to avoid table lock contention. Long-running jobs use advisory locks per user_id.",
+        "deadlock_prevention": "Fixed deletion order: messages → media_references → conversation_members → user. No circular FK dependency."
+      }
+    }
+  },
+  "gdpr_compliance": {
+    "right_to_erasure": "Fulfilled by hard-delete pipeline. Response within 30 days (same as grace period).",
+    "exemptions": "Legal obligation retention (financial, CSAM) documented in Privacy Policy.",
+    "dsar_before_deletion": "User can download data archive (DSAR) before initiating deletion. Link provided on deletion initiation screen.",
+    "data_portability": "Export includes: messages, media, profile data. Format: JSON + media zip. Generated on-demand, expires 48h."
+  },
+  "security": {
+    "unauthorized_deletion": "Re-auth + 2FA required. Deletion request contains signed token. Cancel requires email-delivered token — no API-only cancel to prevent account takeover post-deletion.",
+    "timing_attack": "Deletion confirmation email sent even if account doesn't exist (to prevent account enumeration via error).",
+    "admin_deletion": "Admin-initiated deletion (e.g., CSAM enforcement) skips grace period. Documented separately in enforcement runbook."
+  },
+  "ui": {
+    "entry_points": ["Settings → Privacy → Delete Account"],
+    "flow": [
+      "Warning screen: 'This is permanent. All your data will be deleted.'",
+      "Re-authentication screen",
+      "Optional: DSAR download prompt ('Download your data before deleting')",
+      "Reason selection (optional, for product analytics: 'Found another app', 'Privacy concerns', etc.)",
+      "Final confirmation: type 'DELETE' to confirm",
+      "Success screen with grace period countdown"
+    ]
+  },
+  "observability": {
+    "metrics": [
+      "counter: account.deletion.requested",
+      "counter: account.deletion.cancelled",
+      "counter: account.deletion.hard_delete_completed",
+      "histogram: account.deletion.hard_delete_duration_ms"
+    ],
+    "alerts": ["account.deletion.hard_delete_completed lag > 48h → PagerDuty P2 (pipeline stuck)"]
+  }
+}

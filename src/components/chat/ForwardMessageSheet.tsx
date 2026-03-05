@@ -65,6 +65,7 @@ export function ForwardMessageSheet({ open, onOpenChange, message }: ForwardMess
 
   const [query, setQuery] = useState("");
   const [withSignature, setWithSignature] = useState(true);
+  const [hideSender, setHideSender] = useState(false);
   const [senderName, setSenderName] = useState("");
   const dmClientMsgIdsRef = useRef<Map<string, string>>(new Map());
 
@@ -72,6 +73,7 @@ export function ForwardMessageSheet({ open, onOpenChange, message }: ForwardMess
     if (!open) {
       setQuery("");
       setWithSignature(true);
+      setHideSender(false);
       dmClientMsgIdsRef.current.clear();
     }
   }, [open]);
@@ -148,7 +150,7 @@ export function ForwardMessageSheet({ open, onOpenChange, message }: ForwardMess
     if (!user || !message) return;
 
     const baseContent = (message.content || "").trim() || messagePreview(message);
-    const content = withOptionalSignature(baseContent, senderName, withSignature);
+    const content = withOptionalSignature(baseContent, senderName, hideSender ? false : withSignature);
 
     const kind = message.shared_post_id
       ? "share_post"
@@ -179,7 +181,7 @@ export function ForwardMessageSheet({ open, onOpenChange, message }: ForwardMess
     if (!user || !message) return;
 
     const baseContent = (message.content || "").trim() || messagePreview(message);
-    const content = withOptionalSignature(baseContent, senderName, withSignature);
+    const content = withOptionalSignature(baseContent, senderName, hideSender ? false : withSignature);
 
     const { error } = await supabase.from("group_chat_messages").insert({
       group_id: groupId,
@@ -201,7 +203,7 @@ export function ForwardMessageSheet({ open, onOpenChange, message }: ForwardMess
     if (!user || !message) return;
 
     const baseContent = (message.content || "").trim() || messagePreview(message);
-    const content = withOptionalSignature(baseContent, senderName, withSignature);
+    const content = withOptionalSignature(baseContent, senderName, hideSender ? false : withSignature);
 
     const { error } = await supabase.from("channel_messages").insert({
       channel_id: channelId,
@@ -273,14 +275,19 @@ export function ForwardMessageSheet({ open, onOpenChange, message }: ForwardMess
             )}
           </SheetHeader>
 
-          <div className="mb-4 rounded-2xl bg-white/10 border border-white/10 px-3 py-2 flex items-center justify-between">
+          <div className="mb-3 rounded-2xl bg-white/10 border border-white/10 px-3 py-2 flex items-center justify-between">
             <div className="min-w-0">
               <div className="text-sm text-white">С подписью</div>
               <div className="text-xs text-white/50 truncate">
                 {senderName ? `↪ Переслано от ${senderName}` : "↪ Переслано"}
               </div>
             </div>
-            <Switch checked={withSignature} onCheckedChange={setWithSignature} />
+            <Switch checked={withSignature} onCheckedChange={setWithSignature} disabled={hideSender} />
+          </div>
+
+          <div className="flex items-center justify-between px-4 py-2 mb-3 border-t border-border/40 rounded-2xl bg-white/10 border border-white/10">
+            <span className="text-sm text-muted-foreground text-white/70">Скрыть отправителя</span>
+            <Switch checked={hideSender} onCheckedChange={setHideSender} />
           </div>
 
           <div className="relative mb-4">

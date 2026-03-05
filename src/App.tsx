@@ -19,6 +19,7 @@ import { initErrorTracking } from "@/lib/sentry";
 import { Loader2 } from "lucide-react";
 import { UserSettingsProvider } from "@/contexts/UserSettingsContext";
 import { MultiAccountProvider } from "@/contexts/MultiAccountContext";
+import { ReelsProvider } from "@/contexts/ReelsContext";
 import { AdminProtectedRoute } from "@/components/admin/AdminProtectedRoute";
 import { AppearanceRuntimeProvider } from "@/contexts/AppearanceRuntimeContext";
 import { runChatSchemaProbeOnce } from "@/lib/chat/schemaProbe";
@@ -94,6 +95,7 @@ const AudioRoomsPage = lazy(() => import("@/pages/AudioRoomsPage").then(m => ({ 
 const BotListPage = lazy(() => import("@/pages/BotListPage").then(m => ({ default: m.BotListPage })));
 const MiniAppListPage = lazy(() => import("@/pages/MiniAppListPage").then(m => ({ default: m.MiniAppListPage })));
 const DeleteAccountPage = lazy(() => import("@/pages/DeleteAccountPage").then(m => ({ default: m.DeleteAccountPage })));
+const ReelsPage = lazy(() => import("./pages/ReelsPage"));
 const PeopleNearbyPage = lazy(() => import("./pages/PeopleNearbyPage"));
 const BusinessAccountPage = lazy(() => import("./pages/BusinessAccountPage"));
 const AIAssistantPage = lazy(() => import("@/pages/AIAssistantPage"));
@@ -161,6 +163,7 @@ const App = () => {
 <AuthProvider>
 <UserSettingsProvider>
 <AppearanceRuntimeProvider>
+  <ReelsProvider>
   <VideoCallProvider>
     <ChatOpenProvider>
       <TooltipProvider>
@@ -602,6 +605,11 @@ const App = () => {
                         <CreateCenterPage />
                       </Suspense>
                     } />
+                    <Route path="/reels" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <ReelsPage />
+                      </Suspense>
+                    } />
                   </Route>
                 </Route>
                 
@@ -626,6 +634,7 @@ const App = () => {
                   </TooltipProvider>
                 </ChatOpenProvider>
               </VideoCallProvider>
+            </ReelsProvider>
             </AppearanceRuntimeProvider>
           </UserSettingsProvider>
         </AuthProvider>

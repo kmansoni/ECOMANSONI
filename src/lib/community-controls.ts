@@ -113,7 +113,7 @@ export async function updateUserCommunitySettings(
 export async function createChannelInviteToken(
   channelId: string,
   maxUses?: number | null,
-  ttlHours = 168,
+  ttlHours = 24,
 ): Promise<string> {
   const { data, error } = await (supabase as any).rpc("create_channel_invite", {
     _channel_id: channelId,
@@ -130,7 +130,7 @@ export async function createChannelInviteToken(
 export async function createGroupInviteToken(
   groupId: string,
   maxUses?: number | null,
-  ttlHours = 168,
+  ttlHours = 24,
 ): Promise<string> {
   const { data, error } = await (supabase as any).rpc("create_group_invite", {
     _group_id: groupId,

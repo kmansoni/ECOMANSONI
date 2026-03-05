@@ -153,7 +153,7 @@ export function InsuranceReelsBanner({ filterCompanyId }: InsuranceReelsBannerPr
           variant="ghost"
           size="sm"
           className="text-violet-400 text-xs h-7 px-2"
-          onClick={() => navigate("/reels")}
+          onClick={() => navigate("/explore")}
         >
           Все видео
         </Button>
@@ -168,7 +168,7 @@ export function InsuranceReelsBanner({ filterCompanyId }: InsuranceReelsBannerPr
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: idx * 0.06 }}
               whileTap={{ scale: 0.95 }}
-              onClick={() => navigate("/reels")}
+              onClick={() => navigate("/explore")}
               className="flex-shrink-0 w-36 text-left"
             >
               <div className={`relative w-36 h-52 rounded-xl bg-gradient-to-b ${GRADIENT_COLORS[idx % GRADIENT_COLORS.length]} overflow-hidden mb-2`}>

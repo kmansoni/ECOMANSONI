@@ -4,6 +4,8 @@ import App from "./App.tsx";
 import "./index.css";
 import { initTelegramMiniApp } from "@/lib/telegramWebApp";
 import { initIceCacheAutoInvalidation } from "@/lib/webrtc-config";
+import { detectDevice } from "@/lib/platform/device";
+import { applyPlatformAttributes } from "@/hooks/usePlatform";
 
 const CHUNK_RELOAD_ONCE_KEY = "app.chunk_reload_once";
 
@@ -50,6 +52,12 @@ window.visualViewport?.addEventListener("resize", setAppHeight);
 
 initTelegramMiniApp();
 initIceCacheAutoInvalidation();
+
+// ─── Platform bootstrap ────────────────────────────────────────────────────
+// Detect device once on startup and write data-attributes to <html>.
+// This enables CSS platform targeting before any React component mounts.
+const platformInfo = detectDevice();
+applyPlatformAttributes(platformInfo);
 
 window.addEventListener("unhandledrejection", (event) => {
   reloadOnChunkFailureOnce(event.reason);

@@ -12,3 +12,27 @@ services:
       # Mount host Let's Encrypt certs into the container (read-only)
       - /etc/letsencrypt:/etc/letsencrypt:ro
     command: ["-c", "/etc/coturn/turnserver.conf", "-n", "--log-file=stdout"]
+  sfu:
+    # mediasoup SFU — production SFU-only mode
+    # Build: docker build -t mansoni-sfu ./server/sfu
+    image: mansoni-sfu:latest
+    restart: unless-stopped
+    ports:
+      - "4443:4443"
+      - "40000-49999:40000-49999/udp"
+    environment:
+      - SFU_ENABLE_MEDIASOUP=1
+      - SFU_REQUIRE_MEDIASOUP=1
+      - SFU_REQUIRE_SFRAME=1
+      - SFU_E2EE_REQUIRED=1
+      - E2EE_REQUIRED_DEFAULT=true
+      - SFU_STRICT_VALIDATION=1
+      - SFU_INSECURE_DEV_MODE=0
+      - SFU_KEY_PACKAGE_RATE=50
+      - SFU_REKEY_BEGIN_RATE=5
+      - SFU_WORKER_COUNT=auto
+      - SFU_MAX_ROOMS_PER_WORKER=100
+      - PORT=4443
+      - REGION=primary
+    env_file:
+      - ../../server/sfu/.env.production

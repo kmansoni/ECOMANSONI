@@ -25,6 +25,7 @@ async function main() {
     "npm run test -- src/test/calls-v2-wsclient-reliability.test.ts",
     "npm run calls:validate",
     "npm run calls:mediasoup:smoke",
+    "npm run calls:e2ee:gate",
   ];
 
   for (const step of steps) {

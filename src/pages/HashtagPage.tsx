@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Hash, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
-import { normalizeReelMediaUrl } from "@/hooks/useReels";
+import { normalizeReelMediaUrl } from "@/lib/reels/media";
 
 type HashtagPagePayload = {
   hashtag: string;

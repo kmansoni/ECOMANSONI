@@ -1,3 +1,11 @@
+/**
+ * @deprecated Use useVideoCallSfu instead.
+ * This legacy hook uses P2P RTCPeerConnection + Supabase DB signaling.
+ * Kept for reference and rollback during canary phase.
+ * Will be deleted after 7-day canary without degradation.
+ *
+ * @see useVideoCallSfu — SFU-only replacement
+ */
 import { useState, useRef, useCallback, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";

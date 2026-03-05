@@ -16,7 +16,6 @@ import {
   User,
   Building2,
   Shield,
-  Video,
   Settings,
   Plus,
   TrendingUp,
@@ -31,7 +30,6 @@ const navigationItems = [
   { icon: User, label: "Профиль", path: "/profile", keywords: "profile профиль аккаунт" },
   { icon: Building2, label: "Недвижимость", path: "/realestate", keywords: "real estate недвижимость квартира дом" },
   { icon: Shield, label: "Страхование", path: "/insurance", keywords: "insurance страхование полис" },
-  { icon: Video, label: "Reels", path: "/reels", keywords: "reels видео клипы" },
 ];
 
 const quickActions = [

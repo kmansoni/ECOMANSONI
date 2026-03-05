@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef, useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { Search, Check, CheckCheck, LogIn, MessageCircle, Megaphone, Users, Phone } from "lucide-react";
+import { Search, Check, CheckCheck, LogIn, MessageCircle, Megaphone, Users, Phone, Bookmark, Archive, Pin, PinOff, ArchiveRestore } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { GradientAvatar } from "@/components/ui/gradient-avatar";
@@ -11,6 +11,8 @@ import { CreateChatSheet } from "@/components/chat/CreateChatSheet";
 import { ChannelConversation } from "@/components/chat/ChannelConversation";
 import { GroupConversation } from "@/components/chat/GroupConversation";
 import { useAuth } from "@/hooks/useAuth";
+import { useChatDrafts } from "@/hooks/useChatDrafts";
+import { useSavedMessages } from "@/hooks/useSavedMessages";
 import { useConversations, Conversation, useCreateConversation } from "@/hooks/useChat";
 import { useChannels, Channel } from "@/hooks/useChannels";
 import { useGroupChats, GroupChat } from "@/hooks/useGroupChats";
@@ -28,6 +30,12 @@ import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { sha256Hex } from "@/lib/passcode";
+import { useArchivedChats } from "@/hooks/useArchivedChats";
+import { usePinnedChats } from "@/hooks/usePinnedChats";
+import { useE2EEncryption } from "@/hooks/useE2EEncryption";
+import type { EncryptedPayload } from "@/hooks/useE2EEncryption";
+import { motion, AnimatePresence } from "framer-motion";
+import { clearHandledChatsQueryParams, parseChatsQueryActions } from "@/lib/chat/deepLinkQuery";
 
 
 interface LocationState {
@@ -36,6 +44,7 @@ interface LocationState {
   otherUserId?: string;
   otherDisplayName?: string;
   otherAvatarUrl?: string | null;
+  chatAction?: "settings" | "timer" | "scheduled";
 }
 
 // Animation constants
@@ -44,11 +53,88 @@ const PRIMARY_TABS_HEIGHT = 40;
 const FILTERS_HEIGHT = 44;
 const STORIES_ROW_HEIGHT = 92;
 
+function parseEncryptedPayload(content: unknown): EncryptedPayload | null {
+  if (typeof content !== "string") return null;
+  const trimmed = content.trim();
+  if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) return null;
+  try {
+    const parsed = JSON.parse(trimmed) as Partial<EncryptedPayload>;
+    const isValid = (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      typeof parsed.v === "number" &&
+      typeof parsed.iv === "string" &&
+      typeof parsed.ct === "string" &&
+      typeof parsed.tag === "string" &&
+      typeof parsed.epoch === "number" &&
+      typeof parsed.kid === "string"
+    );
+    return isValid ? (parsed as EncryptedPayload) : null;
+  } catch {
+    return null;
+  }
+}
+
+function LastMessagePreview({
+  conversationId,
+  lastMessage,
+  isMyMessage,
+  activityText,
+}: {
+  conversationId: string;
+  lastMessage: Conversation["last_message"];
+  isMyMessage: boolean;
+  activityText: string | null;
+}) {
+  const encryptedPayload = useMemo(
+    () => parseEncryptedPayload(lastMessage?.content),
+    [lastMessage?.content]
+  );
+  const { decryptContent } = useE2EEncryption(conversationId);
+  const [decryptedPreview, setDecryptedPreview] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setDecryptedPreview(null);
+
+    if (!encryptedPayload || !lastMessage?.sender_id) return;
+
+    const run = async () => {
+      const plain = await decryptContent(encryptedPayload, lastMessage.sender_id);
+      if (!cancelled) {
+        setDecryptedPreview(plain && plain.trim() ? plain : "Зашифрованное сообщение");
+      }
+    };
+
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [decryptContent, encryptedPayload, lastMessage?.sender_id]);
+
+  const previewText = activityText
+    ? activityText
+    : lastMessage?.media_type === "video_circle"
+      ? "🎥 Видеосообщение"
+      : lastMessage?.media_type === "voice"
+        ? "🎤 Голосовое сообщение"
+        : lastMessage?.media_type === "video"
+          ? "🎬 Видео"
+          : lastMessage?.media_url
+            ? "📷 Фото"
+            : encryptedPayload
+              ? decryptedPreview || "Зашифрованное сообщение"
+              : (lastMessage?.content || "Нет сообщений");
+
+  return <>{isMyMessage && !activityText ? `Вы: ${previewText}` : previewText}</>;
+}
+
 export function ChatsPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const locationState = location.state as LocationState | null;
   const { user, loading: authLoading } = useAuth();
+  const { getDraft, hasDraft, saveDraft } = useChatDrafts();
   const { conversations, loading: chatsLoading, error: chatsError, refetch } = useConversations();
   const { channels, loading: channelsLoading, refetch: refetchChannels } = useChannels();
   const { groups, loading: groupsLoading, refetch: refetchGroups } = useGroupChats();
@@ -57,12 +143,40 @@ export function ChatsPage() {
   const { settings } = useUserSettings();
   const { calls, missedCalls, profilesById, loading: callsLoading } = useCallHistory();
   const { startCall } = useVideoCallContext();
+  const { messages: savedMessages } = useSavedMessages({ pageSize: 1 });
+
+  // Archive & Pin
+  const {
+    archivedChatIds,
+    archivedCount,
+    archiveChat,
+    unarchiveChat,
+    isArchived,
+  } = useArchivedChats();
+  const {
+    pinnedOrder,
+    pinnedChatIds,
+    pinChat,
+    unpinChat,
+    isPinned,
+  } = usePinnedChats();
+
+  // Show archived view
+  const [showArchive, setShowArchive] = useState(false);
+
+  // Swipe state per item: { [itemKey]: offsetX }
+  const [swipeOffsets, setSwipeOffsets] = useState<Record<string, number>>({});
+  const swipeStartX = useRef<Record<string, number>>({});
+  const swipeStartY = useRef<Record<string, number>>({});
+  const swipeActive = useRef<Record<string, boolean>>({});
 
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
+  const [initialPanelAction, setInitialPanelAction] = useState<"settings" | "timer" | "scheduled" | null>(null);
   const [selectedChannel, setSelectedChannel] = useState<Channel | null>(null);
   const [selectedGroup, setSelectedGroup] = useState<GroupChat | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
+  const [pendingNewMessageText, setPendingNewMessageText] = useState<string | null>(null);
   const [primaryTab, setPrimaryTab] = useState<"chats" | "calls">("chats");
   const [callsFilter, setCallsFilter] = useState<"all" | "missed">("all");
   const [dmActivityByConversation, setDmActivityByConversation] = useState<
@@ -133,6 +247,7 @@ export function ChatsPage() {
   const [activeTabId, setActiveTabId] = useState<string>("all");
   const [tabOrder, setTabOrder] = useState<string[]>([]);
   const [unlockedTabs, setUnlockedTabs] = useState<Set<string>>(new Set());
+  const handledQueryRef = useRef<string | null>(null);
 
   useEffect(() => {
     const next = visibleTabs.map((t) => t.id);
@@ -317,19 +432,53 @@ export function ChatsPage() {
     ].sort((a, b) => new Date(b.activityAt).getTime() - new Date(a.activityAt).getTime());
   }, [channels, conversations, groups]);
 
+  // Archived items (for archive view)
+  const archivedItems = useMemo(() => {
+    return combinedItems.filter((it) => archivedChatIds.has(it.id));
+  }, [combinedItems, archivedChatIds]);
+
   const visibleItems = useMemo(() => {
-    if (!activeFolder) return combinedItems;
+    // In archive view — show archived
+    if (showArchive) return archivedItems;
 
-    // System folders: automatic distribution
-    if (activeFolder.system_kind === "all") return combinedItems;
-    if (activeFolder.system_kind === "chats") return combinedItems.filter((it) => it.kind === "dm");
-    if (activeFolder.system_kind === "groups") return combinedItems.filter((it) => it.kind === "group");
-    if (activeFolder.system_kind === "channels") return combinedItems.filter((it) => it.kind === "channel");
+    // Base filter: exclude archived
+    const unarchived = combinedItems.filter((it) => !archivedChatIds.has(it.id));
 
-    // Custom folders: explicit selection
-    if (!activeFolderKeys) return [];
-    return combinedItems.filter((it) => activeFolderKeys.has(`${it.kind}:${it.id}`));
-  }, [activeFolder, activeFolderKeys, combinedItems]);
+    let filtered: CombinedItem[];
+    if (!activeFolder) {
+      filtered = unarchived;
+    } else if (activeFolder.system_kind === "all") {
+      filtered = unarchived;
+    } else if (activeFolder.system_kind === "chats") {
+      filtered = unarchived.filter((it) => it.kind === "dm");
+    } else if (activeFolder.system_kind === "groups") {
+      filtered = unarchived.filter((it) => it.kind === "group");
+    } else if (activeFolder.system_kind === "channels") {
+      filtered = unarchived.filter((it) => it.kind === "channel");
+    } else if (!activeFolderKeys) {
+      filtered = [];
+    } else {
+      filtered = unarchived.filter((it) => activeFolderKeys.has(`${it.kind}:${it.id}`));
+    }
+
+    // Sort: pinned first (in pinnedOrder sequence), then regular by activityAt
+    const pinnedItems: CombinedItem[] = [];
+    const regularItems: CombinedItem[] = [];
+
+    // Build pinned in correct order
+    for (const pid of pinnedOrder) {
+      const item = filtered.find((it) => it.id === pid);
+      if (item) pinnedItems.push(item);
+    }
+
+    for (const item of filtered) {
+      if (!pinnedChatIds.has(item.id)) {
+        regularItems.push(item);
+      }
+    }
+
+    return [...pinnedItems, ...regularItems];
+  }, [activeFolder, activeFolderKeys, combinedItems, archivedChatIds, pinnedOrder, pinnedChatIds, showArchive, archivedItems]);
 
   const activeCalls = useMemo(() => {
     return callsFilter === "missed" ? missedCalls : calls;
@@ -337,7 +486,10 @@ export function ChatsPage() {
 
   // Get the other participant's info for display
   const getOtherParticipant = (conv: Conversation) => {
-    const other = conv.participants.find((p) => p.user_id !== user?.id);
+    const participants = Array.isArray((conv as any)?.participants)
+      ? (conv as any).participants
+      : [];
+    const other = participants.find((p: any) => p?.user_id !== user?.id);
     return {
       user_id: other?.user_id || "",
       ...(other?.profile || { display_name: "Пользователь", avatar_url: null })
@@ -367,10 +519,130 @@ export function ChatsPage() {
       };
       
       setSelectedConversation(immediateConv);
+      if (locationState.chatAction) {
+        setInitialPanelAction(locationState.chatAction);
+      }
       window.history.replaceState({}, document.title);
       refetch();
     }
   }, [locationState, refetch]);
+
+  useEffect(() => {
+    const search = location.search;
+    if (!search || handledQueryRef.current === search) return;
+
+    const {
+      openDmId,
+      openChannelId,
+      openGroupId,
+      invite,
+      newMessage,
+      startCallUserId,
+      startCallType,
+    } = parseChatsQueryActions(search);
+
+    let handled = false;
+
+    if (openDmId) {
+      const fullConv = conversations.find((c) => c.id === openDmId);
+      if (fullConv) {
+        setSelectedConversation(fullConv);
+        handled = true;
+      } else if (!chatsLoading) {
+        setSelectedConversation({
+          id: openDmId,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          participants: [],
+          unread_count: 0,
+        });
+        void refetch();
+        handled = true;
+      } else {
+        return;
+      }
+    }
+
+    if (openChannelId) {
+      const channel = channels.find((c) => c.id === openChannelId);
+      if (channel) {
+        setSelectedChannel(channel);
+        handled = true;
+      } else if (channelsLoading) {
+        return;
+      }
+    }
+
+    if (openGroupId) {
+      const group = groups.find((g) => g.id === openGroupId);
+      if (group) {
+        setSelectedGroup(group);
+        handled = true;
+      } else if (groupsLoading) {
+        return;
+      }
+    }
+
+    if (invite) {
+      handled = true;
+      void (async () => {
+        try {
+          await joinChannelByInviteToken(invite);
+          toast.success("Вы присоединились к каналу по приглашению");
+          await refetchChannels();
+          return;
+        } catch {
+          // ignore and try group flow
+        }
+
+        try {
+          await joinGroupByInviteToken(invite);
+          toast.success("Вы присоединились к группе по приглашению");
+          await refetchGroups();
+        } catch {
+          toast.error("Приглашение недействительно или истекло");
+        }
+      })();
+    }
+
+    if (newMessage) {
+      setPendingNewMessageText(newMessage);
+      setSearchOpen(true);
+      handled = true;
+    }
+
+    if (startCallUserId) {
+      handled = true;
+      void startCall(startCallUserId, null, startCallType);
+    }
+
+    if (!handled) return;
+
+    handledQueryRef.current = search;
+    const nextSearch = clearHandledChatsQueryParams(search);
+    navigate(
+      {
+        pathname: location.pathname,
+        search: nextSearch,
+      },
+      { replace: true, state: location.state }
+    );
+  }, [
+    location.pathname,
+    location.search,
+    location.state,
+    navigate,
+    conversations,
+    channels,
+    groups,
+    chatsLoading,
+    channelsLoading,
+    groupsLoading,
+    refetch,
+    refetchChannels,
+    refetchGroups,
+    startCall,
+  ]);
 
   // Hydrate selectedConversation with full data once conversations load
   useEffect(() => {
@@ -392,6 +664,41 @@ export function ChatsPage() {
     }
   };
 
+  // ── Swipe helpers ──────────────────────────────────────────────────────────
+
+  const SWIPE_THRESHOLD = 60; // px — revealed actions threshold
+  const SWIPE_MAX = 120;      // px — max drag distance
+
+  const onSwipeTouchStart = useCallback((key: string, e: React.TouchEvent) => {
+    const touch = e.touches[0];
+    swipeStartX.current[key] = touch.clientX;
+    swipeStartY.current[key] = touch.clientY;
+    swipeActive.current[key] = false;
+  }, []);
+
+  const onSwipeTouchMove = useCallback((key: string, e: React.TouchEvent) => {
+    const touch = e.touches[0];
+    const dx = touch.clientX - (swipeStartX.current[key] ?? touch.clientX);
+    const dy = Math.abs(touch.clientY - (swipeStartY.current[key] ?? touch.clientY));
+    if (!swipeActive.current[key] && dy > Math.abs(dx) * 0.8) return;
+    swipeActive.current[key] = true;
+    const clamped = Math.max(-SWIPE_MAX, Math.min(SWIPE_MAX, dx));
+    setSwipeOffsets((prev) => ({ ...prev, [key]: clamped }));
+  }, []);
+
+  const onSwipeTouchEnd = useCallback((key: string) => {
+    const offset = swipeOffsets[key] ?? 0;
+    const snapped = Math.abs(offset) >= SWIPE_THRESHOLD
+      ? (offset < 0 ? -SWIPE_THRESHOLD : SWIPE_THRESHOLD)
+      : 0;
+    setSwipeOffsets((prev) => ({ ...prev, [key]: snapped }));
+    swipeActive.current[key] = false;
+  }, [swipeOffsets]);
+
+  const closeSwipe = useCallback((key: string) => {
+    setSwipeOffsets((prev) => ({ ...prev, [key]: 0 }));
+  }, []);
+
   useEffect(() => {
     const timer = window.setInterval(() => setActivityNowTick(Date.now()), 1000);
     return () => window.clearInterval(timer);
@@ -401,7 +708,10 @@ export function ChatsPage() {
     if (!user?.id) return;
     const dmConversations = conversations
       .map((conv) => {
-        const other = conv.participants.find((p) => p.user_id !== user.id);
+        const participants = Array.isArray((conv as any)?.participants)
+          ? (conv as any).participants
+          : [];
+        const other = participants.find((p: any) => p?.user_id !== user.id);
         return { id: conv.id, otherUserId: other?.user_id || null };
       })
       .filter((item): item is { id: string; otherUserId: string } => Boolean(item.otherUserId));
@@ -451,13 +761,24 @@ export function ChatsPage() {
 
   // Get user IDs already in conversations
   const conversationUserIds = new Set(
-    conversations.flatMap(c => c.participants.map(p => p.user_id))
+    conversations.flatMap((c) => {
+      const participants = Array.isArray((c as any)?.participants)
+        ? (c as any).participants
+        : [];
+      return participants
+        .map((p: any) => (typeof p?.user_id === "string" ? p.user_id : ""))
+        .filter(Boolean);
+    })
   );
 
   const handleUserSelect = async (searchUser: SearchUser) => {
     try {
       const convId = await createConversation(searchUser.user_id);
       if (convId) {
+        if (pendingNewMessageText && pendingNewMessageText.trim()) {
+          saveDraft(convId, pendingNewMessageText.trim());
+          setPendingNewMessageText(null);
+        }
         const newConv: Conversation = {
           id: convId,
           created_at: new Date().toISOString(),
@@ -536,10 +857,13 @@ export function ChatsPage() {
         chatName={other.display_name || "Пользователь"}
         chatAvatar={other.avatar_url ?? null}
         otherUserId={other.user_id}
+        initialOpenPanelAction={initialPanelAction ?? undefined}
+        onInitialPanelHandled={() => setInitialPanelAction(null)}
         totalUnreadCount={totalUnreadCount}
         onRefetch={refetch}
         onBack={() => {
           setSelectedConversation(null);
+          setInitialPanelAction(null);
           refetch();
         }}
       />
@@ -906,87 +1230,239 @@ export function ChatsPage() {
 
               {/* Unified list sorted by activity - Telegram style */}
               <div className="divide-y divide-border/60 dark:divide-white/10">
+
+              {/* Archive header (when viewing archive) */}
+              {showArchive && (
+                <div className="flex items-center gap-3 px-4 py-2 bg-muted/30">
+                  <button
+                    onClick={() => setShowArchive(false)}
+                    className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    <ArchiveRestore className="w-4 h-4" />
+                    ← Назад к чатам
+                  </button>
+                  <span className="text-sm font-medium text-foreground dark:text-white ml-auto">
+                    Архив ({archivedCount})
+                  </span>
+                </div>
+              )}
+
+              {/* Saved Messages — always first (only in main view) */}
+              {!showArchive && (
+                <div
+                  onClick={() => navigate("/saved-messages")}
+                  className="flex items-center gap-3 px-4 py-3 hover:bg-muted/60 active:bg-muted transition-colors cursor-pointer dark:hover:bg-white/5 dark:active:bg-white/10"
+                >
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-cyan-400 flex items-center justify-center flex-shrink-0">
+                    <Bookmark className="w-5 h-5 text-white" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between mb-0.5">
+                      <span className="font-medium text-foreground dark:text-white truncate">
+                        Избранное
+                      </span>
+                      {savedMessages.length > 0 && savedMessages[0]?.saved_at && (
+                        <span className="text-xs text-muted-foreground/70 dark:text-white/40 flex-shrink-0 ml-2">
+                          {formatTime(savedMessages[0].saved_at)}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-sm text-muted-foreground dark:text-white/50 truncate">
+                      {savedMessages.length > 0
+                        ? savedMessages[0]?.content || "Медиафайл"
+                        : "Сохраняйте сообщения здесь"}
+                    </p>
+                  </div>
+                  {savedMessages.length > 0 && (
+                    <span className="flex-shrink-0 min-w-[20px] h-5 px-1.5 rounded-full bg-blue-500 text-white text-xs font-medium flex items-center justify-center">
+                      {savedMessages.length}
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* Archive button (only in main view when archive not empty) */}
+              {!showArchive && archivedCount > 0 && (
+                <div
+                  onClick={() => setShowArchive(true)}
+                  className="flex items-center gap-3 px-4 py-3 hover:bg-muted/60 active:bg-muted transition-colors cursor-pointer dark:hover:bg-white/5 dark:active:bg-white/10"
+                >
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-slate-500 to-slate-600 flex items-center justify-center flex-shrink-0">
+                    <Archive className="w-5 h-5 text-white" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <span className="font-medium text-foreground dark:text-white">
+                      Архив
+                    </span>
+                    <p className="text-sm text-muted-foreground dark:text-white/50">
+                      {archivedCount} {archivedCount === 1 ? "чат" : archivedCount < 5 ? "чата" : "чатов"}
+                    </p>
+                  </div>
+                  <Badge className="h-5 min-w-5 rounded-full px-1.5 text-[11px] flex-shrink-0 ml-2 bg-slate-500 text-white border-0">
+                    {archivedCount}
+                  </Badge>
+                </div>
+              )}
+
               {visibleItems.map((item) => {
+                const itemKey = `${item.kind}-${item.id}`;
+                const swipeOffset = swipeOffsets[itemKey] ?? 0;
+                // swipe left (-) = archive/delete actions; swipe right (+) = pin/unpin
+                const showLeftActions = swipeOffset <= -SWIPE_THRESHOLD;
+                const showRightActions = swipeOffset >= SWIPE_THRESHOLD;
+
                 if (item.kind === "channel") {
                   const channel = item.channel;
                   return (
-                    <div
-                      key={`channel-${channel.id}`}
-                      onClick={() => setSelectedChannel(channel)}
-                      className="flex items-center gap-3 px-4 py-3 hover:bg-muted/60 active:bg-muted transition-colors cursor-pointer dark:hover:bg-white/5 dark:active:bg-white/10"
-                    >
-                      <div className="relative flex-shrink-0">
-                        <GradientAvatar
-                          name={channel.name}
-                          seed={channel.id}
-                          avatarUrl={channel.avatar_url}
-                          size="md"
-                        />
-                        {channel.is_member && (
-                          <div className="absolute -bottom-0.5 -right-0.5 w-5 h-5 bg-emerald-500 rounded-full flex items-center justify-center border-2 border-background dark:border-slate-900">
-                            <Check className="w-3 h-3 text-white" />
+                    <div key={itemKey} className="relative overflow-hidden">
+                      {/* Right swipe reveal: pin */}
+                      <AnimatePresence>
+                        {showRightActions && (
+                          <div className="absolute inset-y-0 left-0 flex items-center px-2 bg-cyan-500/20">
+                            <button
+                              onClick={() => { closeSwipe(itemKey); }}
+                              className="flex flex-col items-center justify-center w-14 h-full text-cyan-600 dark:text-cyan-400 text-xs gap-1"
+                            >
+                              <Pin className="w-5 h-5" />
+                              <span>Закрепить</span>
+                            </button>
                           </div>
                         )}
-                      </div>
-
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between mb-0.5">
-                          <span className="font-medium text-foreground dark:text-white truncate flex items-center gap-1.5">
-                            <Megaphone className="w-4 h-4 text-cyan-400 flex-shrink-0" />
-                            {channel.name}
-                          </span>
-                          <span className="text-xs text-muted-foreground/70 dark:text-white/40 flex-shrink-0 ml-2">
-                            {formatTime(channel.last_message?.created_at || channel.updated_at)}
-                          </span>
+                      </AnimatePresence>
+                      {/* Left swipe reveal: archive */}
+                      <AnimatePresence>
+                        {showLeftActions && (
+                          <div className="absolute inset-y-0 right-0 flex items-center px-2 bg-orange-500/20">
+                            <button
+                              onClick={() => {
+                                closeSwipe(itemKey);
+                                void archiveChat(channel.id);
+                              }}
+                              className="flex flex-col items-center justify-center w-14 h-full text-orange-600 dark:text-orange-400 text-xs gap-1"
+                            >
+                              <Archive className="w-5 h-5" />
+                              <span>Архив</span>
+                            </button>
+                          </div>
+                        )}
+                      </AnimatePresence>
+                      <motion.div
+                        animate={{ x: swipeOffset }}
+                        transition={{ type: "spring", stiffness: 400, damping: 35 }}
+                        onTouchStart={(e) => onSwipeTouchStart(itemKey, e)}
+                        onTouchMove={(e) => onSwipeTouchMove(itemKey, e)}
+                        onTouchEnd={() => onSwipeTouchEnd(itemKey)}
+                        onClick={() => {
+                          if (Math.abs(swipeOffset) > 10) { closeSwipe(itemKey); return; }
+                          setSelectedChannel(channel);
+                        }}
+                        className="flex items-center gap-3 px-4 py-3 bg-background hover:bg-muted/60 active:bg-muted transition-colors cursor-pointer dark:bg-transparent dark:hover:bg-white/5"
+                      >
+                        <div className="relative flex-shrink-0">
+                          <GradientAvatar name={channel.name} seed={channel.id} avatarUrl={channel.avatar_url} size="md" />
+                          {channel.is_member && (
+                            <div className="absolute -bottom-0.5 -right-0.5 w-5 h-5 bg-emerald-500 rounded-full flex items-center justify-center border-2 border-background dark:border-slate-900">
+                              <Check className="w-3 h-3 text-white" />
+                            </div>
+                          )}
                         </div>
-                        <div className="flex items-center justify-between">
-                          <p className="text-sm text-muted-foreground dark:text-white/50 truncate flex-1">
-                            {channel.last_message?.content || channel.description || `${channel.member_count} подписчиков`}
-                          </p>
-                          <div className="flex items-center gap-1 text-xs text-muted-foreground/70 dark:text-white/40 ml-2">
-                            <Users className="w-3 h-3" />
-                            {channel.member_count}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between mb-0.5">
+                            <span className="font-medium text-foreground dark:text-white truncate flex items-center gap-1.5">
+                              <Megaphone className="w-4 h-4 text-cyan-400 flex-shrink-0" />
+                              {channel.name}
+                            </span>
+                            <span className="text-xs text-muted-foreground/70 dark:text-white/40 flex-shrink-0 ml-2">
+                              {formatTime(channel.last_message?.created_at || channel.updated_at)}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <p className="text-sm text-muted-foreground dark:text-white/50 truncate flex-1">
+                              {channel.last_message?.content || channel.description || `${channel.member_count} подписчиков`}
+                            </p>
+                            <div className="flex items-center gap-1 text-xs text-muted-foreground/70 dark:text-white/40 ml-2">
+                              <Users className="w-3 h-3" />
+                              {channel.member_count}
+                            </div>
                           </div>
                         </div>
-                      </div>
+                      </motion.div>
                     </div>
                   );
                 }
 
                 if (item.kind === "group") {
                   const group = item.group;
+                  const pinned = isPinned(group.id);
                   return (
-                    <div
-                      key={`group-${group.id}`}
-                      onClick={() => setSelectedGroup(group)}
-                      className="flex items-center gap-3 px-4 py-3 hover:bg-muted/60 active:bg-muted transition-colors cursor-pointer dark:hover:bg-white/5 dark:active:bg-white/10"
-                    >
-                      <div className="relative flex-shrink-0">
-                        <GradientAvatar
-                          name={group.name}
-                          seed={group.id}
-                          avatarUrl={group.avatar_url}
-                          size="md"
-                        />
-                        <div className="absolute -bottom-0.5 -right-0.5 w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center border-2 border-background dark:border-slate-900">
-                          <Users className="w-3 h-3 text-white" />
+                    <div key={itemKey} className="relative overflow-hidden">
+                      <AnimatePresence>
+                        {showRightActions && (
+                          <div className="absolute inset-y-0 left-0 flex items-center px-2 bg-cyan-500/20">
+                            <button
+                              onClick={() => {
+                                closeSwipe(itemKey);
+                                void (pinned ? unpinChat(group.id) : pinChat(group.id));
+                              }}
+                              className="flex flex-col items-center justify-center w-14 h-full text-cyan-600 dark:text-cyan-400 text-xs gap-1"
+                            >
+                              {pinned ? <PinOff className="w-5 h-5" /> : <Pin className="w-5 h-5" />}
+                              <span>{pinned ? "Открепить" : "Закрепить"}</span>
+                            </button>
+                          </div>
+                        )}
+                      </AnimatePresence>
+                      <AnimatePresence>
+                        {showLeftActions && (
+                          <div className="absolute inset-y-0 right-0 flex items-center px-2 bg-orange-500/20">
+                            <button
+                              onClick={() => {
+                                closeSwipe(itemKey);
+                                void archiveChat(group.id);
+                              }}
+                              className="flex flex-col items-center justify-center w-14 h-full text-orange-600 dark:text-orange-400 text-xs gap-1"
+                            >
+                              <Archive className="w-5 h-5" />
+                              <span>Архив</span>
+                            </button>
+                          </div>
+                        )}
+                      </AnimatePresence>
+                      <motion.div
+                        animate={{ x: swipeOffset }}
+                        transition={{ type: "spring", stiffness: 400, damping: 35 }}
+                        onTouchStart={(e) => onSwipeTouchStart(itemKey, e)}
+                        onTouchMove={(e) => onSwipeTouchMove(itemKey, e)}
+                        onTouchEnd={() => onSwipeTouchEnd(itemKey)}
+                        onClick={() => {
+                          if (Math.abs(swipeOffset) > 10) { closeSwipe(itemKey); return; }
+                          setSelectedGroup(group);
+                        }}
+                        className="flex items-center gap-3 px-4 py-3 bg-background hover:bg-muted/60 active:bg-muted transition-colors cursor-pointer dark:bg-transparent dark:hover:bg-white/5"
+                      >
+                        <div className="relative flex-shrink-0">
+                          <GradientAvatar name={group.name} seed={group.id} avatarUrl={group.avatar_url} size="md" />
+                          <div className="absolute -bottom-0.5 -right-0.5 w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center border-2 border-background dark:border-slate-900">
+                            <Users className="w-3 h-3 text-white" />
+                          </div>
                         </div>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between mb-0.5">
-                          <span className="font-medium text-foreground dark:text-white truncate">
-                            {group.name}
-                          </span>
-                          <span className="text-xs text-muted-foreground/70 dark:text-white/40 flex-shrink-0 ml-2">
-                            {formatTime(group.last_message?.created_at || group.updated_at)}
-                          </span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between mb-0.5">
+                            <span className="font-medium text-foreground dark:text-white truncate flex items-center gap-1.5">
+                              {pinned && <Pin className="w-3 h-3 text-cyan-400 flex-shrink-0" />}
+                              {group.name}
+                            </span>
+                            <span className="text-xs text-muted-foreground/70 dark:text-white/40 flex-shrink-0 ml-2">
+                              {formatTime(group.last_message?.created_at || group.updated_at)}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <p className="text-sm text-muted-foreground dark:text-white/50 truncate flex-1">
+                              {group.last_message?.content || `${group.member_count} участников`}
+                            </p>
+                          </div>
                         </div>
-                        <div className="flex items-center justify-between">
-                          <p className="text-sm text-muted-foreground dark:text-white/50 truncate flex-1">
-                            {group.last_message?.content || `${group.member_count} участников`}
-                          </p>
-                        </div>
-                      </div>
+                      </motion.div>
                     </div>
                   );
                 }
@@ -996,8 +1472,7 @@ export function ChatsPage() {
                 const lastMessage = conv.last_message;
                 const isMyMessage = lastMessage?.sender_id === user?.id;
                 const liveActivity = dmActivityByConversation[conv.id];
-                const activityIsFresh =
-                  liveActivity && activityNowTick - liveActivity.at < 5000;
+                const activityIsFresh = liveActivity && activityNowTick - liveActivity.at < 5000;
                 const activityText =
                   activityIsFresh && liveActivity
                     ? liveActivity.activity === "recording_voice"
@@ -1007,74 +1482,117 @@ export function ChatsPage() {
                         : "печатает…"
                     : null;
 
-                const lastPreviewText = activityText
-                  ? activityText
-                  : lastMessage?.media_type === 'video_circle'
-                    ? '🎥 Видеосообщение'
-                    : lastMessage?.media_type === 'voice'
-                      ? '🎤 Голосовое сообщение'
-                      : lastMessage?.media_type === 'video'
-                        ? '🎬 Видео'
-                        : lastMessage?.media_url
-                          ? '📷 Фото'
-                          : lastMessage?.content || "Нет сообщений";
+                const pinned = isPinned(conv.id);
+                const archived = isArchived(conv.id);
 
                 return (
-                  <div
-                    key={`dm-${conv.id}`}
-                    onClick={() => {
-                      // Сбросить unread_count для выбранного чата локально
-                      setSelectedConversation({ ...conv, unread_count: 0 });
-                      // Обновить список чатов с сервера
-                      refetch();
-                    }}
-                    className="flex items-center gap-3 px-4 py-3 hover:bg-muted/60 active:bg-muted transition-colors cursor-pointer dark:hover:bg-white/5 dark:active:bg-white/10"
-                  >
-                    <div className="relative flex-shrink-0">
-                      <GradientAvatar
-                        name={other.display_name || "User"}
-                        seed={conv.id}
-                        avatarUrl={other.avatar_url}
-                        size="md"
-                      />
-                    </div>
-
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between mb-0.5">
-                        <span className="font-medium text-foreground dark:text-white truncate">
-                          {other.display_name || "Пользователь"}
-                        </span>
-                        <span className="text-xs text-muted-foreground/70 dark:text-white/40 flex-shrink-0 ml-2">
-                          {formatTime(lastMessage?.created_at || conv.updated_at)}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1 flex-1 min-w-0">
-                          {isMyMessage && lastMessage?.is_read && !activityText && (
-                            <CheckCheck className="w-4 h-4 text-cyan-400 flex-shrink-0" />
-                          )}
-                          {isMyMessage && !lastMessage?.is_read && !activityText && (
-                            <Check className="w-4 h-4 text-muted-foreground/60 dark:text-white/40 flex-shrink-0" />
-                          )}
-                          <p
-                            className={cn(
-                              "text-sm truncate",
-                              activityText
-                                ? "text-cyan-400"
-                                : "text-muted-foreground dark:text-white/50"
-                            )}
+                  <div key={itemKey} className="relative overflow-hidden">
+                    {/* Right swipe reveal: pin/unpin */}
+                    <AnimatePresence>
+                      {showRightActions && (
+                        <div className="absolute inset-y-0 left-0 flex items-center px-2 bg-cyan-500/20">
+                          <button
+                            onClick={() => {
+                              closeSwipe(itemKey);
+                              void (pinned ? unpinChat(conv.id) : pinChat(conv.id));
+                            }}
+                            className="flex flex-col items-center justify-center w-14 h-full text-cyan-600 dark:text-cyan-400 text-xs gap-1"
                           >
-                            {isMyMessage && !activityText ? `Вы: ${lastPreviewText}` : lastPreviewText}
-                          </p>
+                            {pinned ? <PinOff className="w-5 h-5" /> : <Pin className="w-5 h-5" />}
+                            <span>{pinned ? "Открепить" : "Закреп."}</span>
+                          </button>
                         </div>
-
-                        {conv.unread_count > 0 && (
-                          <Badge className="h-5 min-w-5 rounded-full px-1.5 text-[11px] flex-shrink-0 ml-2 bg-cyan-500 text-white border-0">
-                            {conv.unread_count}
-                          </Badge>
-                        )}
+                      )}
+                    </AnimatePresence>
+                    {/* Left swipe reveal: archive/unarchive */}
+                    <AnimatePresence>
+                      {showLeftActions && (
+                        <div className="absolute inset-y-0 right-0 flex items-center px-2 bg-orange-500/20">
+                          <button
+                            onClick={() => {
+                              closeSwipe(itemKey);
+                              void (archived ? unarchiveChat(conv.id) : archiveChat(conv.id));
+                            }}
+                            className="flex flex-col items-center justify-center w-14 h-full text-orange-600 dark:text-orange-400 text-xs gap-1"
+                          >
+                            {archived ? <ArchiveRestore className="w-5 h-5" /> : <Archive className="w-5 h-5" />}
+                            <span>{archived ? "Достать" : "Архив"}</span>
+                          </button>
+                        </div>
+                      )}
+                    </AnimatePresence>
+                    <motion.div
+                      animate={{ x: swipeOffset }}
+                      transition={{ type: "spring", stiffness: 400, damping: 35 }}
+                      onTouchStart={(e) => onSwipeTouchStart(itemKey, e)}
+                      onTouchMove={(e) => onSwipeTouchMove(itemKey, e)}
+                      onTouchEnd={() => onSwipeTouchEnd(itemKey)}
+                      onClick={() => {
+                        if (Math.abs(swipeOffset) > 10) { closeSwipe(itemKey); return; }
+                        setSelectedConversation({ ...conv, unread_count: 0 });
+                        refetch();
+                      }}
+                      className="flex items-center gap-3 px-4 py-3 bg-background hover:bg-muted/60 active:bg-muted transition-colors cursor-pointer dark:bg-transparent dark:hover:bg-white/5"
+                    >
+                      <div className="relative flex-shrink-0">
+                        <GradientAvatar
+                          name={other.display_name || "User"}
+                          seed={conv.id}
+                          avatarUrl={other.avatar_url}
+                          size="md"
+                        />
                       </div>
-                    </div>
+
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between mb-0.5">
+                          <span className="font-medium text-foreground dark:text-white truncate flex items-center gap-1.5">
+                            {pinned && <Pin className="w-3 h-3 text-cyan-400 flex-shrink-0" />}
+                            {other.display_name || "Пользователь"}
+                          </span>
+                          <span className="text-xs text-muted-foreground/70 dark:text-white/40 flex-shrink-0 ml-2">
+                            {formatTime(lastMessage?.created_at || conv.updated_at)}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1 flex-1 min-w-0">
+                            {!activityText && !hasDraft(conv.id) && isMyMessage && lastMessage?.is_read && (
+                              <CheckCheck className="w-4 h-4 text-cyan-400 flex-shrink-0" />
+                            )}
+                            {!activityText && !hasDraft(conv.id) && isMyMessage && !lastMessage?.is_read && (
+                              <Check className="w-4 h-4 text-muted-foreground/60 dark:text-white/40 flex-shrink-0" />
+                            )}
+                            {hasDraft(conv.id) && !activityText ? (
+                              <p className="text-sm truncate">
+                                <span className="text-red-500 font-medium">Черновик: </span>
+                                <span className="text-muted-foreground dark:text-white/50">{getDraft(conv.id)?.slice(0, 50)}</span>
+                              </p>
+                            ) : (
+                              <p
+                                className={cn(
+                                  "text-sm truncate",
+                                  activityText
+                                    ? "text-cyan-400"
+                                    : "text-muted-foreground dark:text-white/50"
+                                )}
+                              >
+                                <LastMessagePreview
+                                  conversationId={conv.id}
+                                  lastMessage={lastMessage}
+                                  isMyMessage={isMyMessage}
+                                  activityText={activityText}
+                                />
+                              </p>
+                            )}
+                          </div>
+
+                          {conv.unread_count > 0 && (
+                            <Badge className="h-5 min-w-5 rounded-full px-1.5 text-[11px] flex-shrink-0 ml-2 bg-cyan-500 text-white border-0">
+                              {conv.unread_count}
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                    </motion.div>
                   </div>
                 );
               })}

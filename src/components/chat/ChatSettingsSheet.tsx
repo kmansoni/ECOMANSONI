@@ -1,8 +1,12 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Bell, BellOff, Volume2, Vibrate, Palette, Type, Layers, Download, Clock } from 'lucide-react';
+import { X, Bell, BellOff, Volume2, Vibrate, Palette, Type, Layers, Download, Archive, ArchiveRestore, Pin, PinOff } from 'lucide-react';
 import { useChatSettings } from '@/hooks/useChatSettings';
+import { useArchivedChats } from '@/hooks/useArchivedChats';
+import { usePinnedChats } from '@/hooks/usePinnedChats';
 import { WallpaperPicker } from './WallpaperPicker';
+import { BubbleGradientPicker } from './BubbleGradientPicker';
+import { MessageDensityToggle } from './MessageDensityToggle';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 
@@ -47,8 +51,13 @@ function SectionHeader({ title }: { title: string }) {
 
 export function ChatSettingsSheet({ conversationId, open, onClose }: ChatSettingsSheetProps) {
   const { settings, updateSetting, muteChat, unmuteChat, isMuted } = useChatSettings(conversationId);
+  const { isArchived, archiveChat, unarchiveChat } = useArchivedChats();
+  const { isPinned, pinChat, unpinChat } = usePinnedChats();
   const [showMuteMenu, setShowMuteMenu] = useState(false);
   const [showWallpaper, setShowWallpaper] = useState(false);
+
+  const archived = isArchived(conversationId);
+  const pinned = isPinned(conversationId);
 
   const handleMute = async (duration: MuteDuration) => {
     await muteChat(duration);
@@ -212,6 +221,14 @@ export function ChatSettingsSheet({ conversationId, open, onClose }: ChatSetting
                 </SettingRow>
               </div>
 
+              {/* === Цвет сообщений === */}
+              <div className="pt-4 pb-3">
+                <BubbleGradientPicker />
+              </div>
+              <div className="pb-3">
+                <MessageDensityToggle />
+              </div>
+
               {/* === Медиа === */}
               <SectionHeader title="Медиа" />
               <div className="bg-muted/30 rounded-xl px-3">
@@ -220,6 +237,56 @@ export function ChatSettingsSheet({ conversationId, open, onClose }: ChatSetting
                     checked={settings.auto_download_media}
                     onCheckedChange={(v) => updateSetting('auto_download_media', v)}
                   />
+                </SettingRow>
+              </div>
+
+              {/* === Действия === */}
+              <SectionHeader title="Действия" />
+              <div className="bg-muted/30 rounded-xl px-3 divide-y divide-border/50">
+                <SettingRow
+                  icon={pinned ? <PinOff className="w-4 h-4" /> : <Pin className="w-4 h-4" />}
+                  label={pinned ? "Открепить чат" : "Закрепить чат"}
+                >
+                  <button
+                    onClick={() => {
+                      if (pinned) {
+                        void unpinChat(conversationId);
+                      } else {
+                        void pinChat(conversationId);
+                      }
+                    }}
+                    className={cn(
+                      "text-xs font-medium px-3 py-1.5 rounded-lg transition-colors",
+                      pinned
+                        ? "text-muted-foreground bg-muted hover:bg-muted/80"
+                        : "text-primary bg-primary/10 hover:bg-primary/20"
+                    )}
+                  >
+                    {pinned ? "Открепить" : "Закрепить"}
+                  </button>
+                </SettingRow>
+
+                <SettingRow
+                  icon={archived ? <ArchiveRestore className="w-4 h-4" /> : <Archive className="w-4 h-4" />}
+                  label={archived ? "Разархивировать чат" : "Архивировать чат"}
+                >
+                  <button
+                    onClick={() => {
+                      if (archived) {
+                        void unarchiveChat(conversationId);
+                      } else {
+                        void archiveChat(conversationId);
+                      }
+                    }}
+                    className={cn(
+                      "text-xs font-medium px-3 py-1.5 rounded-lg transition-colors",
+                      archived
+                        ? "text-primary bg-primary/10 hover:bg-primary/20"
+                        : "text-orange-600 bg-orange-500/10 hover:bg-orange-500/20 dark:text-orange-400"
+                    )}
+                  >
+                    {archived ? "Разархивировать" : "В архив"}
+                  </button>
                 </SettingRow>
               </div>
             </div>

@@ -23,7 +23,7 @@ import { useProfile, useUserPosts } from "@/hooks/useProfile";
 import { getHighlights, deleteHighlight, blockUser, Highlight } from "@/hooks/useProfile";
 import { useSavedPosts } from "@/hooks/useSavedPosts";
 import { useAuth } from "@/hooks/useAuth";
-import { normalizeReelMediaUrl } from "@/hooks/useReels";
+import { normalizeReelMediaUrl } from "@/lib/reels/media";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 import type { ContentType } from "@/hooks/useMediaEditor";
@@ -346,7 +346,7 @@ export function ProfilePage() {
               </button>
               <button
                 onClick={() => {
-                  const url = `${window.location.origin}/user/${user?.id}`;
+                  const url = `https://mansoni.ru/user/${user?.id}`;
                   navigator.clipboard.writeText(url).then(() => toast.success("Ссылка скопирована"));
                 }}
                 className="flex-1 py-2 bg-muted rounded-xl text-sm font-semibold text-foreground hover:bg-muted/80 transition-colors"

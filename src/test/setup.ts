@@ -30,7 +30,6 @@ const originalConsoleInfo = console.info.bind(console);
 
 const shouldSuppressLog = (message: string) => {
   return (
-    message.includes("[useReels]") ||
     message.includes("[Env] Supabase") ||
     message.includes("[ChatSchemaProbe]") ||
     message.includes("arbiter.") ||

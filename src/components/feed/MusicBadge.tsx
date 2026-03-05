@@ -17,7 +17,7 @@ export function MusicBadge({ track, reelId }: MusicBadgeProps) {
 
   const handleClick = () => {
     if (reelId) {
-      navigate(`/reels?music=${track.id}`);
+      navigate('/explore');
     }
   };
 

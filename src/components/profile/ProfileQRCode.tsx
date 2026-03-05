@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { Download, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import QRCode from "qrcode";
 
 interface ProfileQRCodeProps {
   isOpen: boolean;
@@ -10,69 +11,21 @@ interface ProfileQRCodeProps {
   avatarUrl?: string;
 }
 
-function generateQRMatrix(text: string): boolean[][] {
-  // Simple QR-like pattern using hash of text for visual representation
-  const size = 25;
-  const matrix: boolean[][] = Array.from({ length: size }, () => Array(size).fill(false));
-
-  // Fixed pattern corners (finder patterns)
-  const setSquare = (row: number, col: number, sz: number) => {
-    for (let r = row; r < row + sz; r++) {
-      for (let c = col; c < col + sz; c++) {
-        if (r >= 0 && r < size && c >= 0 && c < size) {
-          matrix[r][c] = !(r > row && r < row + sz - 1 && c > col && c < col + sz - 1);
-        }
-      }
-    }
-  };
-  setSquare(0, 0, 7);
-  setSquare(0, size - 7, 7);
-  setSquare(size - 7, 0, 7);
-
-  // Data modules - deterministic from text
-  let hash = 0;
-  for (let i = 0; i < text.length; i++) {
-    hash = ((hash << 5) - hash) + text.charCodeAt(i);
-    hash |= 0;
-  }
-  for (let r = 8; r < size - 7; r++) {
-    for (let c = 0; c < size; c++) {
-      hash = ((hash << 5) - hash) + (r * size + c);
-      hash |= 0;
-      matrix[r][c] = (Math.abs(hash) % 3) !== 0;
-    }
-  }
-  return matrix;
-}
-
 export function ProfileQRCode({ isOpen, onClose, username, userId, avatarUrl }: ProfileQRCodeProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const profileUrl = `${window.location.origin}/user/${userId}`;
-  const matrix = generateQRMatrix(profileUrl);
+  const dayStamp = new Date().toISOString().slice(0, 10);
+  const profileUrl = `https://mansoni.ru/user/${userId}?qr_day=${dayStamp}`;
 
   useEffect(() => {
     if (!isOpen || !canvasRef.current) return;
     const canvas = canvasRef.current;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    const cellSize = 10;
-    const size = matrix.length * cellSize;
-    canvas.width = size;
-    canvas.height = size;
-
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, size, size);
-
-    ctx.fillStyle = "#000000";
-    matrix.forEach((row, r) => {
-      row.forEach((cell, c) => {
-        if (cell) {
-          ctx.fillRect(c * cellSize, r * cellSize, cellSize, cellSize);
-        }
-      });
+    void QRCode.toCanvas(canvas, profileUrl, {
+      width: 250,
+      margin: 1,
+      errorCorrectionLevel: "M",
+      color: { dark: "#000000", light: "#FFFFFF" },
     });
-  }, [isOpen, matrix]);
+  }, [isOpen, profileUrl]);
 
   const handleDownload = () => {
     if (!canvasRef.current) return;

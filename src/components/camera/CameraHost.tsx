@@ -12,7 +12,10 @@ export type CaptureProfile = {
 export interface CameraHostHandle {
   capturePhoto: () => Promise<void>;
   recordVideo: () => Promise<void>;
+  stopRecording: () => void;
   isRecording: () => boolean;
+  supportsTorch: () => boolean;
+  setTorchEnabled: (enabled: boolean) => Promise<boolean>;
 }
 
 export interface CameraDebugSnapshot {
@@ -52,8 +55,11 @@ interface CameraHostProps {
   mode: CaptureMode;
   /** Which camera to use. Changing this prop restarts the stream. Default: "environment" */
   facingMode?: FacingMode;
+  /** Optional override for MediaRecorder video bitrate. */
+  targetVideoBitsPerSecond?: number;
   className?: string;
   videoClassName?: string;
+  videoStyle?: React.CSSProperties;
   onReadyChange?: (ready: boolean) => void;
   onRecordingChange?: (recording: boolean) => void;
   onPhotoCaptured?: (file: File, previewUrl: string) => void;
@@ -127,8 +133,10 @@ export const CameraHost = forwardRef<CameraHostHandle, CameraHostProps>(function
     isActive,
     mode,
     facingMode = "environment",
+    targetVideoBitsPerSecond,
     className,
     videoClassName,
+    videoStyle,
     onReadyChange,
     onRecordingChange,
     onPhotoCaptured,
@@ -151,6 +159,7 @@ export const CameraHost = forwardRef<CameraHostHandle, CameraHostProps>(function
   const recorderRef = useRef<MediaRecorder | null>(null);
   const recorderChunksRef = useRef<BlobPart[]>([]);
   const recorderTimerRef = useRef<number | null>(null);
+  const torchSupportedRef = useRef(false);
 
   const [ready, setReady] = useState(false);
   const [recording, setRecording] = useState(false);
@@ -177,6 +186,11 @@ export const CameraHost = forwardRef<CameraHostHandle, CameraHostProps>(function
   useEffect(() => {
     profileRef.current = profile;
   }, [profile]);
+
+  const bitrateOverrideRef = useRef<number | undefined>(targetVideoBitsPerSecond);
+  useEffect(() => {
+    bitrateOverrideRef.current = targetVideoBitsPerSecond;
+  }, [targetVideoBitsPerSecond]);
 
   useEffect(() => {
     onErrorRef.current = onError;
@@ -282,6 +296,13 @@ export const CameraHost = forwardRef<CameraHostHandle, CameraHostProps>(function
 
       const videoTrack = stream.getVideoTracks()[0] ?? null;
       if (videoTrack) {
+        try {
+          const caps = (videoTrack as any).getCapabilities?.();
+          torchSupportedRef.current = Boolean(caps?.torch);
+        } catch {
+          torchSupportedRef.current = false;
+        }
+
         const debug = getCameraDebugGlobal();
         if (debug) {
           debug.lastVideoTrackId = videoTrack.id;
@@ -336,6 +357,7 @@ export const CameraHost = forwardRef<CameraHostHandle, CameraHostProps>(function
 
     const stream = streamRef.current;
     streamRef.current = null;
+    torchSupportedRef.current = false;
     setReady(false);
 
     emitDebug({
@@ -420,10 +442,10 @@ export const CameraHost = forwardRef<CameraHostHandle, CameraHostProps>(function
       mimeType
         ? {
             mimeType,
-            videoBitsPerSecond: profileRef.current.targetVideoBitsPerSecond,
+            videoBitsPerSecond: bitrateOverrideRef.current ?? profileRef.current.targetVideoBitsPerSecond,
           }
         : {
-            videoBitsPerSecond: profileRef.current.targetVideoBitsPerSecond,
+            videoBitsPerSecond: bitrateOverrideRef.current ?? profileRef.current.targetVideoBitsPerSecond,
           },
     );
 
@@ -468,19 +490,48 @@ export const CameraHost = forwardRef<CameraHostHandle, CameraHostProps>(function
     }, profileRef.current.maxDurationMs);
   }, [emitDebug, onVideoRecorded]);
 
+  const stopRecording = useCallback(() => {
+    if (recorderRef.current && recorderRef.current.state === "recording") {
+      recorderRef.current.stop();
+    }
+  }, []);
+
+  const supportsTorch = useCallback(() => {
+    return torchSupportedRef.current;
+  }, []);
+
+  const setTorchEnabled = useCallback(async (enabled: boolean): Promise<boolean> => {
+    const stream = streamRef.current;
+    if (!stream) return false;
+    const videoTrack = stream.getVideoTracks()[0];
+    if (!videoTrack) return false;
+
+    try {
+      const caps = (videoTrack as any).getCapabilities?.();
+      if (!caps?.torch) return false;
+      await (videoTrack as any).applyConstraints({ advanced: [{ torch: enabled }] });
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
+
   useImperativeHandle(
     ref,
     () => ({
       capturePhoto,
       recordVideo,
+      stopRecording,
       isRecording: () => recording,
+      supportsTorch,
+      setTorchEnabled,
     }),
-    [capturePhoto, recordVideo, recording],
+    [capturePhoto, recordVideo, stopRecording, recording, supportsTorch, setTorchEnabled],
   );
 
   return (
     <div className={className}>
-      <video ref={videoRef} autoPlay playsInline muted className={videoClassName} />
+      <video ref={videoRef} autoPlay playsInline muted className={videoClassName} style={videoStyle} />
       <canvas ref={canvasRef} className="hidden" />
       {children}
     </div>

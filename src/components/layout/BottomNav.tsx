@@ -1,6 +1,7 @@
 import { useState, useEffect, forwardRef, useRef, useCallback } from "react";
-import { Home, Search, Heart, FileText, LucideIcon, Check, ChevronDown, Camera, MessageCircle, User, PlaySquare, AlertCircle, Bell, Plus } from "lucide-react";
+import { Home, Search, Heart, FileText, LucideIcon, Check, ChevronDown, Camera, MessageCircle, User, AlertCircle, Bell, Plus, Film } from "lucide-react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
+import { useReelsContext } from "@/contexts/ReelsContext";
 import { cn } from "@/lib/utils";
 import { useUnreadChats } from "@/hooks/useUnreadChats";
 import { useNotifications } from "@/hooks/useNotifications";
@@ -27,7 +28,7 @@ interface NavItem {
 // Default nav items: Лента → Reels → Уведомления → Чаты → Профиль | AR (отдельная кнопка)
 const defaultNavItems: NavItem[] = [
   { to: "/", icon: Home, label: "Лента" },
-  { to: "/reels", icon: PlaySquare, label: "Reels" },
+  { to: "/reels", icon: Film, label: "Reels" },
   { to: "/notifications", icon: Bell, label: "Уведомления", hasBadge: true },
   { to: "/chats", icon: MessageCircle, label: "Чаты", hasBadge: true },
   { to: "/profile", icon: User, label: "Профиль", hasLongPress: true },
@@ -56,6 +57,7 @@ interface BottomNavProps {
 }
 
 export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function BottomNav({ hidden = false, onCreateClick }, ref) {
+  const { isReelsPage } = useReelsContext();
   const location = useLocation();
   const navigate = useNavigate();
   const { unreadCount } = useUnreadChats();
@@ -98,8 +100,6 @@ export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function Bottom
   };
 
   const navItems = getNavItems();
-
-  const isReelsPage = location.pathname === "/reels";
 
   const handleSwitchAccount = async (accountId: string) => {
     try {
@@ -154,7 +154,7 @@ export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function Bottom
           "fixed bottom-0 left-0 right-0 z-[100]",
           "touch-none select-none",
           "px-4",
-          (keyboardOpen || hidden) && "pointer-events-none"
+          (keyboardOpen || hidden || isReelsPage) && "pointer-events-none"
         )}
         style={{
           position: 'fixed',
@@ -162,9 +162,9 @@ export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function Bottom
           left: 0,
           right: 0,
           paddingBottom: 'env(safe-area-inset-bottom, 0px)',
-          transform: (keyboardOpen || hidden) ? 'translate3d(0, 100%, 0)' : 'translate3d(0, 0, 0)',
-          WebkitTransform: (keyboardOpen || hidden) ? 'translate3d(0, 100%, 0)' : 'translate3d(0, 0, 0)',
-          opacity: hidden ? 0 : 1,
+          transform: (keyboardOpen || hidden || isReelsPage) ? 'translate3d(0, 100%, 0)' : 'translate3d(0, 0, 0)',
+          WebkitTransform: (keyboardOpen || hidden || isReelsPage) ? 'translate3d(0, 100%, 0)' : 'translate3d(0, 0, 0)',
+          opacity: (hidden || isReelsPage) ? 0 : 1,
           transition: 'transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease',
           WebkitTransition: '-webkit-transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease',
           willChange: 'transform, opacity',

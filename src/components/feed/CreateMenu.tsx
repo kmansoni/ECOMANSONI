@@ -1,4 +1,4 @@
-import { X, Image, Film, Radio, Sparkles, Camera, Aperture } from "lucide-react";
+import { X, Image, Radio, Sparkles, Camera, Aperture } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface CreateMenuProps {
@@ -9,7 +9,6 @@ interface CreateMenuProps {
 
 const menuItems = [
   { id: "create-surface", label: "Камера", icon: Aperture },
-  { id: "reels", label: "Видео Reels", icon: Film },
   { id: "post", label: "Публикация", icon: Image },
   { id: "story", label: "История", icon: Camera },
   { id: "live", label: "Эфир", icon: Radio },

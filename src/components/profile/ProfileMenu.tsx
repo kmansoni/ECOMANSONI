@@ -1,6 +1,7 @@
 import { motion, AnimatePresence } from "framer-motion";
-import { Share2, Link, Flag, UserX, Settings, Archive, Bookmark, Users } from "lucide-react";
+import { Share2, Link, Flag, UserX, Settings, Archive, Bookmark, Users, Trash2, Briefcase, MapPin } from "lucide-react";
 import { toast } from "sonner";
+import { useNavigate } from "react-router-dom";
 
 interface ProfileMenuProps {
   isOpen: boolean;
@@ -13,14 +14,15 @@ interface ProfileMenuProps {
 }
 
 export function ProfileMenu({ isOpen, onClose, isOwnProfile, username, onBlock, onArchive, onSettings }: ProfileMenuProps) {
+  const navigate = useNavigate();
   const copyLink = () => {
-    const url = `${window.location.origin}/profile/${username || ""}`;
+    const url = `https://mansoni.ru/profile/${username || ""}`;
     navigator.clipboard.writeText(url).then(() => toast.success("Ссылка скопирована"));
     onClose();
   };
 
   const share = () => {
-    const url = `${window.location.origin}/profile/${username || ""}`;
+    const url = `https://mansoni.ru/profile/${username || ""}`;
     if (navigator.share) {
       navigator.share({ url });
     } else {
@@ -32,8 +34,11 @@ export function ProfileMenu({ isOpen, onClose, isOwnProfile, username, onBlock, 
   const ownItems = [
     { icon: Settings, label: "Настройки", action: () => { onSettings?.(); onClose(); } },
     { icon: Archive, label: "Архив", action: () => { onArchive?.(); onClose(); } },
+    { icon: MapPin, label: "Люди рядом", action: () => { onClose(); navigate("/people-nearby"); } },
+    { icon: Briefcase, label: "Бизнес-инструменты", action: () => { onClose(); navigate("/business"); } },
     { icon: Share2, label: "Поделиться профилем", action: share },
     { icon: Link, label: "Скопировать ссылку", action: copyLink },
+    { icon: Trash2, label: "Удалить аккаунт", action: () => { onClose(); navigate("/delete-account"); }, danger: true },
   ];
 
   const otherItems = [

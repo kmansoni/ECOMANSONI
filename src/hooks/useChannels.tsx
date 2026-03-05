@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "./useAuth";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { checkChannelCapabilityViaRpc } from "@/lib/channel-capabilities";
 import { checkHashtagsAllowedForText } from "@/lib/hashtagModeration";
+import { removeRealtimeMessage, upsertRealtimeMessage } from "@/lib/chat/realtimeMessageReducer";
 
 function isSchemaMissingError(error: unknown): boolean {
   const msg = String((error as any)?.message ?? error).toLowerCase();
@@ -52,17 +53,34 @@ export interface ChannelMessage {
   duration_seconds?: number | null;
   silent?: boolean | null;
   created_at: string;
+  edited_at?: string | null;
   sender?: {
     display_name: string | null;
     avatar_url: string | null;
   };
 }
 
+type SenderProfile = {
+  display_name: string | null;
+  avatar_url: string | null;
+};
+
+type CachedSenderProfile = {
+  profile: SenderProfile;
+  cachedAt: number;
+};
+
+const LIST_REFRESH_DEBOUNCE_MS = 300;
+const PROFILE_CACHE_TTL_MS = 5 * 60 * 1000;
+const PROFILE_CACHE_MAX_ENTRIES = 200;
+
 export function useChannels() {
   const { user } = useAuth();
   const [channels, setChannels] = useState<Channel[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const listRefreshTimerRef = useRef<number | null>(null);
+  const pendingChannelIdsRef = useRef<Set<string>>(new Set());
 
   const mapWithConcurrency = useCallback(async <T, R>(
     items: T[],
@@ -148,6 +166,74 @@ export function useChannels() {
     }
   }, [user, mapWithConcurrency]);
 
+  const refreshChannelsByIds = useCallback(async (channelIds: string[]) => {
+    const uniqueIds = [...new Set(channelIds.filter(Boolean))];
+    if (uniqueIds.length === 0) return;
+
+    try {
+      const rows = await mapWithConcurrency(uniqueIds, 6, async (id) => {
+        const { data, error: msgError } = await supabase
+          .from("channel_messages")
+          .select("*")
+          .eq("channel_id", id)
+          .order("created_at", { ascending: false })
+          .limit(1);
+        if (msgError) throw msgError;
+        return { id, msg: (data && data[0]) as ChannelMessage | undefined };
+      });
+
+      const msgById: Record<string, ChannelMessage | undefined> = {};
+      for (const row of rows) {
+        msgById[row.id] = row.msg;
+      }
+
+      const idSet = new Set(uniqueIds);
+      setChannels((prev) =>
+        prev.map((channel) => {
+          if (!idSet.has(channel.id)) return channel;
+          const nextLastMessage = msgById[channel.id];
+          return {
+            ...channel,
+            last_message: nextLastMessage,
+            updated_at: nextLastMessage?.created_at ?? channel.updated_at,
+          };
+        }),
+      );
+    } catch (err) {
+      console.error("Error refreshing channels by ids:", err);
+      void fetchChannels();
+    }
+  }, [mapWithConcurrency, fetchChannels]);
+
+  const scheduleChannelsRefresh = useCallback((channelId?: string | null) => {
+    if (channelId) {
+      pendingChannelIdsRef.current.add(String(channelId));
+    }
+
+    if (listRefreshTimerRef.current !== null) return;
+
+    listRefreshTimerRef.current = window.setTimeout(() => {
+      listRefreshTimerRef.current = null;
+      const pendingIds = [...pendingChannelIdsRef.current];
+      pendingChannelIdsRef.current.clear();
+      if (pendingIds.length > 0) {
+        void refreshChannelsByIds(pendingIds);
+      } else {
+        void fetchChannels();
+      }
+    }, LIST_REFRESH_DEBOUNCE_MS);
+  }, [fetchChannels, refreshChannelsByIds]);
+
+  useEffect(() => {
+    return () => {
+      if (listRefreshTimerRef.current !== null) {
+        window.clearTimeout(listRefreshTimerRef.current);
+        listRefreshTimerRef.current = null;
+      }
+      pendingChannelIdsRef.current.clear();
+    };
+  }, []);
+
   useEffect(() => {
     fetchChannels();
   }, [fetchChannels]);
@@ -165,8 +251,9 @@ export function useChannels() {
           schema: 'public',
           table: 'channels',
         },
-        () => {
-          fetchChannels();
+        (payload) => {
+          const row = (payload as any)?.new ?? (payload as any)?.old;
+          scheduleChannelsRefresh(row?.id ?? null);
         }
       )
       .subscribe();
@@ -174,7 +261,55 @@ export function useChannels() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user, fetchChannels]);
+  }, [user, scheduleChannelsRefresh]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const channel = supabase
+      .channel('channel-messages-list-updates')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'channel_messages',
+        },
+        (payload) => {
+          const row = (payload as any)?.new ?? (payload as any)?.old;
+          scheduleChannelsRefresh(row?.channel_id ?? null);
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'channel_messages',
+        },
+        (payload) => {
+          const row = (payload as any)?.new ?? (payload as any)?.old;
+          scheduleChannelsRefresh(row?.channel_id ?? null);
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'channel_messages',
+        },
+        (payload) => {
+          const row = (payload as any)?.new ?? (payload as any)?.old;
+          scheduleChannelsRefresh(row?.channel_id ?? null);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user, scheduleChannelsRefresh]);
 
   return { channels, loading, error, refetch: fetchChannels };
 }
@@ -188,11 +323,73 @@ export function useChannelMessages(channelId: string | null): {
     mediaType: "image" | "video" | "document" | "voice" | "video_circle",
     options?: { silent?: boolean; durationSeconds?: number },
   ) => Promise<void>;
+  editChannelMessage: (messageId: string, newContent: string) => Promise<{ error: string | null }>;
   refetch: () => Promise<void>;
 } {
   const { user } = useAuth();
   const [messages, setMessages] = useState<ChannelMessage[]>([]);
   const [loading, setLoading] = useState(true);
+  const profileCacheRef = useRef<Map<string, CachedSenderProfile>>(new Map());
+  const profileInFlightRef = useRef<Record<string, Promise<SenderProfile | undefined>>>({});
+
+  const getCachedProfile = useCallback((senderId: string): SenderProfile | undefined => {
+    const entry = profileCacheRef.current.get(senderId);
+    if (!entry) return undefined;
+
+    if (Date.now() - entry.cachedAt > PROFILE_CACHE_TTL_MS) {
+      profileCacheRef.current.delete(senderId);
+      return undefined;
+    }
+
+    profileCacheRef.current.delete(senderId);
+    profileCacheRef.current.set(senderId, entry);
+    return entry.profile;
+  }, []);
+
+  const setCachedProfile = useCallback((senderId: string, profile: SenderProfile) => {
+    profileCacheRef.current.delete(senderId);
+    profileCacheRef.current.set(senderId, { profile, cachedAt: Date.now() });
+
+    while (profileCacheRef.current.size > PROFILE_CACHE_MAX_ENTRIES) {
+      const oldestKey = profileCacheRef.current.keys().next().value as string | undefined;
+      if (!oldestKey) break;
+      profileCacheRef.current.delete(oldestKey);
+    }
+  }, []);
+
+  const getSenderProfile = useCallback(async (senderId: string) => {
+    if (!senderId) return undefined;
+    const cached = getCachedProfile(senderId);
+    if (cached) return cached;
+
+    if (!profileInFlightRef.current[senderId]) {
+      profileInFlightRef.current[senderId] = (async () => {
+        try {
+          const { data: profile } = await supabase
+            .from("profiles")
+            .select("display_name, avatar_url")
+            .eq("user_id", senderId)
+            .single();
+
+          const normalized = profile
+            ? {
+                display_name: profile.display_name,
+                avatar_url: profile.avatar_url,
+              }
+            : undefined;
+
+          if (normalized) {
+            setCachedProfile(senderId, normalized);
+          }
+          return normalized;
+        } finally {
+          delete profileInFlightRef.current[senderId];
+        }
+      })();
+    }
+
+    return profileInFlightRef.current[senderId];
+  }, [getCachedProfile, setCachedProfile]);
 
   const fetchMessages = useCallback(async () => {
     if (!channelId) {
@@ -220,6 +417,7 @@ export function useChannelMessages(channelId: string | null): {
       const profileMap: Record<string, { display_name: string | null; avatar_url: string | null }> = {};
       (profiles || []).forEach(p => {
         profileMap[p.user_id] = { display_name: p.display_name, avatar_url: p.avatar_url };
+        setCachedProfile(p.user_id, profileMap[p.user_id]);
       });
 
       const messagesWithSenders = (data || []).map(msg => ({
@@ -233,7 +431,7 @@ export function useChannelMessages(channelId: string | null): {
     } finally {
       setLoading(false);
     }
-  }, [channelId]);
+  }, [channelId, setCachedProfile]);
 
   useEffect(() => {
     fetchMessages();
@@ -258,18 +456,53 @@ export function useChannelMessages(channelId: string | null): {
           },
           async (payload) => {
             const newMessage = payload.new as ChannelMessage;
-            
-            // Fetch sender profile
-            const { data: profile } = await supabase
-              .from("profiles")
-              .select("display_name, avatar_url")
-              .eq("user_id", newMessage.sender_id)
-              .single();
-            
-            setMessages((prev) => [...prev, { ...newMessage, sender: profile || undefined }]);
+            const profile = await getSenderProfile(newMessage.sender_id);
+
+            setMessages((prev) =>
+              upsertRealtimeMessage(prev, {
+                ...newMessage,
+                sender: profile,
+              }),
+            );
           }
         )
-        .subscribe();
+        .on(
+          "postgres_changes",
+          {
+            event: "UPDATE",
+            schema: "public",
+            table: "channel_messages",
+            filter: `channel_id=eq.${channelId}`,
+          },
+          (payload) => {
+            const updatedMessage = payload.new as ChannelMessage;
+            setMessages((prev) => {
+              const existing = prev.find((message) => message.id === updatedMessage.id);
+              return upsertRealtimeMessage(prev, {
+                ...updatedMessage,
+                sender: updatedMessage.sender ?? existing?.sender,
+              });
+            });
+          }
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "DELETE",
+            schema: "public",
+            table: "channel_messages",
+            filter: `channel_id=eq.${channelId}`,
+          },
+          (payload) => {
+            const deletedMessage = payload.old as Pick<ChannelMessage, "id">;
+            setMessages((prev) => removeRealtimeMessage(prev, deletedMessage.id));
+          }
+        )
+        .subscribe((status) => {
+          if (status === "SUBSCRIBED" || status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+            void fetchMessages();
+          }
+        });
     };
 
     setupSubscription();
@@ -279,7 +512,20 @@ export function useChannelMessages(channelId: string | null): {
         supabase.removeChannel(channel);
       }
     };
-  }, [channelId]);
+  }, [channelId, fetchMessages, getSenderProfile]);
+
+  useEffect(() => {
+    if (!channelId) return;
+
+    const handleOnline = () => {
+      void fetchMessages();
+    };
+
+    window.addEventListener("online", handleOnline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+    };
+  }, [channelId, fetchMessages]);
 
   const sendMessage = async (content: string, options?: { silent?: boolean }) => {
     if (!channelId || !user || !content.trim()) {
@@ -416,7 +662,43 @@ export function useChannelMessages(channelId: string | null): {
     }
   };
 
-  return { messages, loading, sendMessage, sendMediaMessage, refetch: fetchMessages };
+  const editChannelMessage = async (messageId: string, newContent: string) => {
+    if (!user) return { error: 'Not authenticated' };
+    const trimmed = newContent.trim();
+    if (!trimmed) return { error: 'Content cannot be empty' };
+
+    const msg = messages.find((m) => m.id === messageId);
+    if (!msg) return { error: 'Message not found' };
+    if (msg.sender_id !== user.id) return { error: 'Cannot edit someone else message' };
+    const ageMs = Date.now() - new Date(msg.created_at).getTime();
+    if (ageMs > 48 * 60 * 60 * 1000) return { error: 'Message is too old to edit' };
+
+    const now = new Date().toISOString();
+    // Optimistic
+    setMessages((prev) =>
+      prev.map((m) => (m.id === messageId ? { ...m, content: trimmed, edited_at: now } : m))
+    );
+
+    try {
+      const { error } = await (supabase as any)
+        .from("channel_messages")
+        .update({ content: trimmed, edited_at: now })
+        .eq("id", messageId)
+        .eq("sender_id", user.id);
+
+      if (error) {
+        setMessages((prev) =>
+          prev.map((m) => (m.id === messageId ? { ...m, content: msg.content, edited_at: msg.edited_at ?? null } : m))
+        );
+        throw error;
+      }
+      return { error: null };
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : 'Failed to edit message' };
+    }
+  };
+
+  return { messages, loading, sendMessage, sendMediaMessage, editChannelMessage, refetch: fetchMessages };
 }
 
 export function useCreateChannel() {

@@ -127,6 +127,79 @@ export interface RoomLeavePayload {
   reason?: string;
 }
 
+// ----------- Mediasoup typed structures -----------
+
+/** DTLS parameters для TRANSPORT_CONNECT */
+export interface DtlsParameters {
+  role?: 'auto' | 'client' | 'server';
+  fingerprints: Array<{
+    algorithm: string;
+    value: string;
+  }>;
+}
+
+/** ICE parameters из TRANSPORT_CREATED */
+export interface IceParameters {
+  usernameFragment: string;
+  password: string;
+  iceLite?: boolean;
+}
+
+/** ICE candidate из TRANSPORT_CREATED */
+export interface IceCandidate {
+  foundation: string;
+  priority: number;
+  ip: string;
+  protocol: 'udp' | 'tcp';
+  port: number;
+  type: 'host' | 'srflx' | 'prflx' | 'relay';
+  tcpType?: 'active' | 'passive' | 'so';
+}
+
+/** RTP parameters для PRODUCE */
+export interface RtpParameters {
+  mid?: string;
+  codecs: Array<{
+    mimeType: string;
+    payloadType: number;
+    clockRate: number;
+    channels?: number;
+    parameters?: Record<string, unknown>;
+    rtcpFeedback?: Array<{ type: string; parameter?: string }>;
+  }>;
+  headerExtensions?: Array<{
+    uri: string;
+    id: number;
+    encrypt?: boolean;
+    parameters?: Record<string, unknown>;
+  }>;
+  encodings?: Array<Record<string, unknown>>;
+  rtcp?: {
+    cname?: string;
+    reducedSize?: boolean;
+  };
+}
+
+/** RTP capabilities для CONSUME и Device */
+export interface RtpCapabilities {
+  codecs?: Array<{
+    mimeType: string;
+    kind: 'audio' | 'video';
+    preferredPayloadType?: number;
+    clockRate: number;
+    channels?: number;
+    parameters?: Record<string, unknown>;
+    rtcpFeedback?: Array<{ type: string; parameter?: string }>;
+  }>;
+  headerExtensions?: Array<{
+    uri: string;
+    kind: 'audio' | 'video' | '';
+    preferredId: number;
+    preferredEncrypt?: boolean;
+    direction?: string;
+  }>;
+}
+
 // ----------- SFU Transport payloads -----------
 
 export interface TransportCreatePayload {
@@ -137,21 +210,21 @@ export interface TransportCreatePayload {
 export interface TransportConnectPayload {
   roomId: string;
   transportId: string;
-  dtlsParameters: Record<string, unknown>;
+  dtlsParameters: DtlsParameters;
 }
 
 export interface ProducePayload {
   roomId: string;
   transportId: string;
   kind: 'audio' | 'video';
-  rtpParameters: Record<string, unknown>;
+  rtpParameters: RtpParameters;
   appData?: Record<string, unknown>;
 }
 
 export interface ConsumePayload {
   roomId: string;
   producerId: string;
-  rtpCapabilities: Record<string, unknown>;
+  rtpCapabilities: RtpCapabilities;
 }
 
 export interface ConsumerResumePayload {
@@ -216,6 +289,12 @@ export interface KeyPackagePayload {
   ciphertext: string;           // encrypted key material (base64)
   sig: string;                  // signature (base64)
   senderPublicKey?: string;     // sender's public key for ECDH (base64)
+  salt?: string;                // base64 random 32-byte HKDF salt (H-1)
+  senderIdentity: {             // C-2: required for ECDSA sig verification in processKeyPackage
+    userId: string;
+    deviceId: string;
+    sessionId: string;
+  };
 }
 
 export interface KeyAckPayload {
@@ -255,7 +334,7 @@ export interface RoomJoinedPayload {
     userId: string;
     e2eeReady?: boolean;
   }>;
-  routerRtpCapabilities?: Record<string, unknown>;
+  routerRtpCapabilities?: RtpCapabilities;
 }
 
 export interface PeerJoinedPayload {
@@ -274,9 +353,10 @@ export interface PeerLeftPayload {
 export interface TransportCreatedPayload {
   roomId: string;
   transportId: string;
-  iceParameters: Record<string, unknown>;
-  iceCandidates: Record<string, unknown>[];
-  dtlsParameters: Record<string, unknown>;
+  direction?: 'send' | 'recv';
+  iceParameters: IceParameters;
+  iceCandidates: IceCandidate[];
+  dtlsParameters: DtlsParameters;
 }
 
 export interface ProducedPayload {
@@ -289,7 +369,7 @@ export interface ConsumedPayload {
   consumerId: string;
   producerId: string;
   kind: 'audio' | 'video';
-  rtpParameters: Record<string, unknown>;
+  rtpParameters: RtpParameters;
 }
 
 export interface E2EEPolicyPayload {

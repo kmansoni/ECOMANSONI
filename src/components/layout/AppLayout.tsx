@@ -17,12 +17,10 @@ export function AppLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const { shouldHideBottomNav, isCreatingContent } = useChatOpen();
-  const isReelsPage = location.pathname === "/reels";
   const isFullWidthPage =
     location.pathname.startsWith("/profile") ||
     location.pathname.startsWith("/user/") ||
-    location.pathname.startsWith("/contact/") ||
-    isReelsPage;
+    location.pathname.startsWith("/contact/");
   const [createOpen, setCreateOpen] = useState(false);
 
   return (
@@ -42,11 +40,11 @@ export function AppLayout() {
           className={cn(
             "flex-1 overflow-x-hidden w-full native-scroll relative z-10",
             isFullWidthPage ? "max-w-none" : "max-w-lg mx-auto",
-            isReelsPage ? "overflow-hidden" : "overflow-y-auto",
-            !isReelsPage && "pb-20"
+            "overflow-y-auto",
+            "pb-20"
           )}
           style={{
-            ...(isReelsPage ? {} : { WebkitOverflowScrolling: 'touch' as const }),
+            WebkitOverflowScrolling: 'touch' as const,
             overscrollBehavior: 'contain',
             touchAction: 'pan-y',
             isolation: 'isolate',
@@ -66,7 +64,7 @@ export function AppLayout() {
       />
 
       <BottomNav
-        hidden={shouldHideBottomNav || isReelsPage}
+        hidden={shouldHideBottomNav}
         onCreateClick={() => setCreateOpen(true)}
       />
       {/* Call UI is now handled globally by GlobalCallOverlay in App.tsx */}

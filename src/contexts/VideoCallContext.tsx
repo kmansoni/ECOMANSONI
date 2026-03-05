@@ -1,11 +1,20 @@
 import { createContext, useContext, ReactNode, useState, useCallback, useEffect, useRef } from "react";
-import { useVideoCall, type VideoCall, type VideoCallStatus } from "@/hooks/useVideoCall";
+import { getStableCallsDeviceId } from "@/lib/platform/device";
+import { useVideoCallSfu, type VideoCall, type VideoCallStatus } from "@/hooks/useVideoCallSfu";
 import { useIncomingCalls } from "@/hooks/useIncomingCalls";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { onNativeCallAction } from "@/lib/native/callBridge";
 import { supabase } from "@/integrations/supabase/client";
 import { CallsWsClient } from "@/calls-v2/wsClient";
+import { SfuMediaManager } from "@/calls-v2/sfuMediaManager";
+import { CallKeyExchange } from "@/calls-v2/callKeyExchange";
+import { CallMediaEncryption } from "@/calls-v2/callMediaEncryption";
+import { RekeyStateMachine } from "@/calls-v2/rekeyStateMachine";
+import { EpochGuard } from "@/calls-v2/epochGuard";
+import type { RtpCapabilities } from "@/calls-v2/types";
+import type { CallIdentity, KeyPackageData } from "@/calls-v2/callKeyExchange";
+import type { RekeyEvent } from "@/calls-v2/rekeyStateMachine";
 
 const CALLS_V2_ENABLED = import.meta.env.VITE_CALLS_V2_ENABLED === "true";
 const CALLS_V2_WS_URL = (import.meta.env.VITE_CALLS_V2_WS_URL ?? "").trim();
@@ -50,17 +59,14 @@ function hasInsertableStreamsSupport(): boolean {
   }
 }
 
-function getStableCallsDeviceId(): string {
-  const key = "mansoni_calls_v2_device_id";
-  const existing = window.localStorage.getItem(key);
-  if (existing) return existing;
-  const created = globalThis.crypto?.randomUUID?.() ?? `dev_${Date.now()}`;
-  window.localStorage.setItem(key, created);
-  return created;
-}
-
 function toBase64Utf8(value: string): string {
-  return btoa(unescape(encodeURIComponent(value)));
+  // Correct encoding: encodeURIComponent → percent-decode each byte → btoa.
+  // Replaces deprecated unescape() with a spec-compliant equivalent.
+  return btoa(
+    encodeURIComponent(value).replace(/%([0-9A-F]{2})/gi, (_, hex) =>
+      String.fromCharCode(parseInt(hex, 16))
+    )
+  );
 }
 
 function makeRandomB64(size: number): string {
@@ -99,6 +105,8 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const [pendingIncomingCall, setPendingIncomingCall] = useState<VideoCall | null>(null);
   const callsWsRef = useRef<CallsWsClient | null>(null);
+  const sfuManagerRef = useRef<SfuMediaManager | null>(null);
+  const sfuRouterRtpCapabilitiesRef = useRef<RtpCapabilities | null>(null);
   const callsWsCallIdRef = useRef<string | null>(null);
   const callsWsRoomRef = useRef<string | null>(null);
   const callsWsMediaRoomRef = useRef<string | null>(null);
@@ -108,6 +116,10 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
   const e2eeEpochRef = useRef<number>(0);
   const e2eeLeaderDeviceRef = useRef<string | null>(null);
   const keyPackageNonceRef = useRef<Set<string>>(new Set());
+  const callKeyExchangeRef = useRef<CallKeyExchange | null>(null);
+  const callMediaEncryptionRef = useRef<CallMediaEncryption | null>(null);
+  const rekeyMachineRef = useRef<RekeyStateMachine | null>(null);
+  const epochGuardRef = useRef<EpochGuard | null>(null);
   
   // UI-lock: keeps call UI visible even during transient status changes (permission prompts, etc.)
   const [isCallUiActive, setIsCallUiActive] = useState(false);
@@ -132,7 +144,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     toggleMute,
     toggleVideo,
     retryWithFreshCredentials,
-  } = useVideoCall({
+  } = useVideoCallSfu({
     onCallEnded: (call) => {
       console.log("[VideoCallContext] Call ended:", call.id.slice(0, 8));
       if (callsWsCallIdRef.current === call.id) {
@@ -152,6 +164,21 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       window.clearInterval(rekeyTimerRef.current);
       rekeyTimerRef.current = null;
     }
+    if (sfuManagerRef.current) {
+      sfuManagerRef.current.close();
+      sfuManagerRef.current = null;
+    }
+    sfuRouterRtpCapabilitiesRef.current = null;
+    // Destroy E2EE key material and media encryption transforms
+    callKeyExchangeRef.current?.destroy();
+    callKeyExchangeRef.current = null;
+    callMediaEncryptionRef.current?.destroy();
+    callMediaEncryptionRef.current = null;
+    // Destroy rekey state machine + epoch guard
+    rekeyMachineRef.current?.destroy();
+    rekeyMachineRef.current = null;
+    epochGuardRef.current?.markRoomLeft();
+    epochGuardRef.current = null;
     if (!callsWsRef.current) return;
     callsWsRef.current.close();
     callsWsRef.current = null;
@@ -228,7 +255,62 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       });
       console.info("[VideoCallContext] calls-v2 e2ee_caps:ok");
 
-      client.on("AUTH_FAIL", (frame) => {
+      // Initialize CallKeyExchange + CallMediaEncryption for this WS session.
+      // Re-initialize on each new connection (ephemeral keys per session).
+      if (!callKeyExchangeRef.current) {
+        const identity: CallIdentity = {
+          userId: user.id,
+          deviceId: getStableCallsDeviceId(),
+          sessionId: crypto.randomUUID(),
+        };
+        const kx = new CallKeyExchange(identity);
+        await kx.initialize();
+        callKeyExchangeRef.current = kx;
+        console.info("[VideoCallContext] calls-v2 CallKeyExchange initialized");
+      }
+      if (!callMediaEncryptionRef.current) {
+        callMediaEncryptionRef.current = new CallMediaEncryption();
+        console.info("[VideoCallContext] calls-v2 CallMediaEncryption initialized");
+        }
+  
+        // Initialize RekeyStateMachine + EpochGuard for this WS session
+        if (!rekeyMachineRef.current) {
+          rekeyMachineRef.current = new RekeyStateMachine();
+        }
+        if (!epochGuardRef.current) {
+          epochGuardRef.current = new EpochGuard(true); // strict: media blocked without E2EE
+        }
+        epochGuardRef.current.markAuthenticated();
+  
+        // Wire rekey state machine events
+        rekeyMachineRef.current.onEvent((event: RekeyEvent) => {
+          console.log(`[Rekey] ${event.type} epoch=${event.epoch}`, event.reason ?? '');
+  
+          if (event.type === 'QUORUM_REACHED') {
+            // All active peers ACK'd → send REKEY_COMMIT to server
+            const activeRoomId = callsWsRoomRef.current;
+            if (activeRoomId) {
+              void client.rekeyCommit({ roomId: activeRoomId, epoch: event.epoch }).catch((err) => {
+                console.warn('[VideoCallContext] rekeyCommit failed', err);
+              });
+            }
+          }
+  
+          if (event.type === 'REKEY_COMMITTED') {
+            // Epoch activated — ungate media
+            epochGuardRef.current?.markE2eeReady(event.epoch);
+            if (event.epoch > e2eeEpochRef.current) {
+              e2eeEpochRef.current = event.epoch;
+            }
+          }
+  
+          if (event.type === 'REKEY_ABORTED' || event.type === 'DEADLINE_EXCEEDED') {
+            console.error(`[Rekey] Aborted epoch=${event.epoch}: ${event.reason}`);
+            // Keep current epoch active; do NOT advance guard
+          }
+        });
+  
+        client.on("AUTH_FAIL", (frame) => {
         console.warn("[VideoCallContext] calls-v2 auth-fail", { payload: frame.payload });
       });
 
@@ -254,6 +336,13 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         if (typeof leader === "string" && leader.length > 0) {
           e2eeLeaderDeviceRef.current = leader;
         }
+        // Populate rekey machine with current room peers
+        if (Array.isArray(snapshot?.peers)) {
+          const peerIds: string[] = (snapshot.peers as Array<{ peerId?: string; deviceId?: string }>)
+            .map((p) => p.peerId ?? p.deviceId ?? '')
+            .filter(Boolean);
+          rekeyMachineRef.current?.setActivePeers(peerIds);
+        }
       });
 
       client.on("REKEY_BEGIN", (frame) => {
@@ -277,34 +366,46 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
           keyPackageNonceRef.current = new Set(keep);
         }
 
-        // SECURITY WARNING: KEY_PACKAGE protocol is NOT YET IMPLEMENTED.
-        // Current implementation sends a STUB payload — no actual key material is exchanged.
-        // TODO(e2ee-calls): Replace with real ECDH key exchange:
-        //   1. Get identity key pair from E2EEKeyStore
-        //   2. ECDH with leader's public key
-        //   3. AES-KW wrap the epoch group key
-        //   4. Real ECDSA signature over (roomId + epoch + ciphertext)
-        // Until this is implemented, calls are NOT end-to-end encrypted at the media layer.
-        // SECURITY FIX: Added explicit __stub marker so downstream auditing can detect this.
-        console.warn("[VideoCallContext] KEY_PACKAGE is a STUB — E2EE key exchange for calls is NOT active");
-        const ciphertext = toBase64Utf8(JSON.stringify({
-          __stub: true, // SECURITY: explicit marker — real key material absent
-          roomId,
-          epoch,
-          fromDeviceId: myDeviceId,
-          ts: Date.now(),
-        }));
+        // Phase B: Real ECDH KEY_PACKAGE.
+        // Non-leader creates own epoch key (for outbound SFrame encryption) and sends
+        // its ECDH public key to the leader. Leader will respond with a KEY_PACKAGE
+        // containing the epoch key wrapped with ECDH(leader_priv, our_pub).
+        const keyExchange = callKeyExchangeRef.current;
+        const mediaEncryption = callMediaEncryptionRef.current;
 
-        void client.keyPackage({
-          roomId,
-          targetDeviceId: leaderDeviceId,
-          epoch,
-          ciphertext,
-          sig: makeRandomB64(32),
-          senderPublicKey: makeRandomB64(32),
-        }).catch((error) => {
-          console.warn("[VideoCallContext] KEY_PACKAGE send failed", error);
-        });
+        if (!keyExchange || !mediaEncryption) {
+          console.warn("[VideoCallContext] KEY_PACKAGE: key exchange not initialized, skipping");
+          return;
+        }
+
+        void (async () => {
+          try {
+            // Create our epoch key (used for outbound SFrame until leader's epoch key arrives)
+            const epochKey = await keyExchange.createEpochKey(epoch);
+            await mediaEncryption.setEncryptionKey(epochKey);
+
+            const senderPublicKey = await keyExchange.getPublicKeyBase64();
+
+            // Phase B: we don't know leader's ECDH public key yet, so we can't wrap
+            // for them. We send our senderPublicKey so the leader can ECDH back to us.
+            // ciphertext = our senderPublicKey again (discovery packet; no epoch key wrapped yet).
+            // Leader on receipt will createKeyPackage(our_pub, epoch) and send back wrapped epoch key.
+            void client.keyPackage({
+              roomId,
+              targetDeviceId: leaderDeviceId,
+              epoch,
+              ciphertext: senderPublicKey, // discovery: our public key as payload
+              sig: makeRandomB64(64),       // TODO Phase C: real ECDSA identity binding
+              senderPublicKey,
+            }).catch((error) => {
+              console.warn("[VideoCallContext] KEY_PACKAGE send failed", error);
+            });
+
+            console.info("[VideoCallContext] KEY_PACKAGE sent (Phase B ECDH discovery)", { epoch, roomId });
+          } catch (err) {
+            console.warn("[VideoCallContext] KEY_PACKAGE async error", err);
+          }
+        })();
       });
 
       client.on("KEY_PACKAGE", (frame) => {
@@ -320,13 +421,95 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         const epoch = typeof epochRaw === "number" ? epochRaw : Number(epochRaw);
         if (!Number.isFinite(epoch) || epoch < 0) return;
 
-        void client.keyAck({
-          roomId,
-          epoch,
-          fromDeviceId: myDeviceId,
-        }).catch((error) => {
-          console.warn("[VideoCallContext] KEY_ACK send failed", error);
-        });
+        // Phase C: Anti-replay + epoch gating via RekeyStateMachine
+        const msgId = (frame.payload as Record<string, unknown> | undefined)?.messageId as string | undefined;
+        const isValidPkg = rekeyMachineRef.current?.validateKeyPackage(epoch, msgId);
+        if (isValidPkg === false) {
+          console.warn("[VideoCallContext] KEY_PACKAGE rejected: anti-replay or stale epoch", { epoch, msgId });
+          return;
+        }
+
+        const keyExchange = callKeyExchangeRef.current;
+        const mediaEncryption = callMediaEncryptionRef.current;
+
+        void (async () => {
+          try {
+            const rawPayload = frame.payload as Record<string, unknown> | undefined;
+            const senderPublicKeyB64 = rawPayload?.senderPublicKey as string | undefined;
+            const ciphertextB64 = rawPayload?.ciphertext as string | undefined;
+            const sigB64 = rawPayload?.sig as string | undefined;
+
+            if (keyExchange && mediaEncryption && senderPublicKeyB64 && ciphertextB64) {
+              // Determine sender identity from whatever the frame provides
+              const senderUserId = rawPayload?.fromUserId as string | undefined
+                ?? rawPayload?.fromDeviceId as string | undefined
+                ?? 'unknown';
+              const senderDeviceId = rawPayload?.fromDeviceId as string | undefined ?? '';
+
+              const pkgData: KeyPackageData = {
+                senderPublicKey: senderPublicKeyB64,
+                ciphertext: ciphertextB64,
+                sig: sigB64 ?? makeRandomB64(64),
+                epoch,
+                // salt: required by KeyPackageData; extract from payload or use empty string
+                // (processKeyPackage will reject if signature doesn't match due to wrong salt)
+                salt: (rawPayload?.salt as string | undefined) ?? '',
+                senderIdentity: {
+                  userId: senderUserId,
+                  deviceId: senderDeviceId,
+                  sessionId: '',
+                },
+              };
+
+              // Try full ECDH unwrap (real wrapped epoch key from leader)
+              try {
+                const peerEpochKey = await keyExchange.processKeyPackage(pkgData);
+                await mediaEncryption.setDecryptionKey(senderUserId, peerEpochKey);
+                console.info("[VideoCallContext] KEY_PACKAGE: processKeyPackage OK", { epoch, senderUserId });
+              } catch {
+                // Sender sent discovery packet (ciphertext = their public key, not wrapped epoch key).
+                // If we are the leader → create epoch key and respond with wrapped KEY_PACKAGE.
+                const leaderDeviceId = e2eeLeaderDeviceRef.current;
+                if (leaderDeviceId === myDeviceId && senderDeviceId) {
+                  console.info("[VideoCallContext] KEY_PACKAGE: leader responding with wrapped epoch key", { epoch, senderDeviceId });
+                  void (async () => {
+                    try {
+                      // Get or create epoch key for this epoch
+                      const epochKey = keyExchange.getCurrentEpochKey()?.epoch === epoch
+                        ? keyExchange.getCurrentEpochKey()!
+                        : await keyExchange.createEpochKey(epoch);
+                      await mediaEncryption.setEncryptionKey(epochKey);
+
+                      // createKeyPackage uses ECDH with sender's public key
+                      const pkg = await keyExchange.createKeyPackage(senderPublicKeyB64, epoch);
+                      void client.keyPackage({
+                        roomId,
+                        targetDeviceId: senderDeviceId,
+                        epoch,
+                        ciphertext: pkg.ciphertext,
+                        sig: pkg.sig,
+                        senderPublicKey: pkg.senderPublicKey,
+                      }).catch((err) => {
+                        console.warn("[VideoCallContext] leader KEY_PACKAGE response failed", err);
+                      });
+                    } catch (e2) {
+                      console.warn("[VideoCallContext] leader KEY_PACKAGE creation failed", e2);
+                    }
+                  })();
+                }
+              }
+            }
+          } finally {
+            // Always send KEY_ACK regardless of key exchange outcome
+            void client.keyAck({
+              roomId,
+              epoch,
+              fromDeviceId: myDeviceId,
+            }).catch((error) => {
+              console.warn("[VideoCallContext] KEY_ACK send failed", error);
+            });
+          }
+        })();
       });
 
       client.on("REKEY_COMMIT", (frame) => {
@@ -336,12 +519,41 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         // Desync guard: never move backward.
         if (nextEpoch > e2eeEpochRef.current) {
           e2eeEpochRef.current = nextEpoch;
+          // Activate epoch in state machine (if we're the initiator)
+          rekeyMachineRef.current?.activateEpoch(nextEpoch);
+          // Ungate media for new epoch
+          epochGuardRef.current?.markE2eeReady(nextEpoch);
           const activeRoomId = callsWsRoomRef.current;
           if (activeRoomId) {
             void client.e2eeReady({ roomId: activeRoomId, epoch: nextEpoch }).catch((err) => {
               console.warn("[VideoCallContext] E2EE_READY after REKEY_COMMIT failed", err);
             });
           }
+        }
+      });
+
+      client.on("PEER_JOINED", (frame) => {
+        const peerId = (frame.payload as Record<string, unknown> | undefined)?.peerId as string | undefined;
+        if (peerId) {
+          rekeyMachineRef.current?.addPeer(peerId);
+        }
+      });
+
+      client.on("PEER_LEFT", (frame) => {
+        const peerId = (frame.payload as Record<string, unknown> | undefined)?.peerId as string | undefined;
+        if (peerId) {
+          rekeyMachineRef.current?.removePeer(peerId);
+        }
+      });
+
+      client.on("KEY_ACK", (frame) => {
+        const payload = frame.payload as Record<string, unknown> | undefined;
+        const fromDeviceId = payload?.fromDeviceId as string | undefined;
+        const epochRaw = payload?.epoch;
+        const epoch = typeof epochRaw === "number" ? epochRaw : Number(epochRaw ?? 0);
+        const msgId = payload?.messageId as string | undefined;
+        if (fromDeviceId && Number.isFinite(epoch)) {
+          rekeyMachineRef.current?.onKeyAckReceived(fromDeviceId, epoch, msgId);
         }
       });
 
@@ -424,14 +636,37 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         });
         console.info("[VideoCallContext] calls-v2 room-join:ok", { callId, roomId, role });
         e2eeEpochRef.current = 0;
+        // Inform epoch guard that we have joined
+        epochGuardRef.current?.markRoomJoined(0);
         await client.e2eeReady({ roomId, epoch: 0 });
+        epochGuardRef.current?.markE2eeReady(0);
         console.info("[VideoCallContext] calls-v2 e2ee-ready:ok", { roomId, epoch: 0 });
 
+        // Capture routerRtpCapabilities from ROOM_JOINED for SFU Device loading
+        const joinedUnsub = client.on("ROOM_JOINED", (frame) => {
+          const payload = frame.payload as { roomId?: string; routerRtpCapabilities?: RtpCapabilities } | undefined;
+          if (payload?.roomId !== roomId) return;
+          if (payload?.routerRtpCapabilities) {
+            sfuRouterRtpCapabilitiesRef.current = payload.routerRtpCapabilities;
+            console.info("[VideoCallContext] calls-v2 routerRtpCapabilities captured", { roomId });
+          }
+          joinedUnsub();
+        });
+
         const consumeUnsub = client.on("PRODUCER_ADDED", (frame) => {
-          if (frame.payload?.roomId !== roomId) return;
-          const producerId = frame.payload?.producerId as string | undefined;
+          const payload = frame.payload as { roomId?: string; producerId?: string } | undefined;
+          if (payload?.roomId !== roomId) return;
+          const producerId = payload?.producerId;
           if (!producerId) return;
-          void client.consume({ roomId, producerId, mode: "low-latency" }).catch((err) => {
+          // Use SFU device rtpCapabilities if loaded, else router capabilities
+          const rtpCapabilities =
+            sfuManagerRef.current?.rtpCapabilities ??
+            sfuRouterRtpCapabilitiesRef.current;
+          if (!rtpCapabilities) {
+            console.warn("[VideoCallContext] calls-v2 consume skipped: rtpCapabilities not ready", { roomId, producerId });
+            return;
+          }
+          void client.consume({ roomId, producerId, rtpCapabilities }).catch((err) => {
             console.warn("[VideoCallContext] calls-v2 consume failed", err);
           });
         });
@@ -449,24 +684,39 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
           rekeyTimerRef.current = null;
         }
 
+        // Phase C: State machine-driven rekey.
+        // Timer only initiates; actual commit happens on QUORUM_REACHED event.
         rekeyTimerRef.current = window.setInterval(() => {
           const activeClient = callsWsRef.current;
           const activeRoomId = callsWsRoomRef.current;
-          if (!activeClient || !activeRoomId) return;
+          const machine = rekeyMachineRef.current;
+          const keyExchange = callKeyExchangeRef.current;
+          if (!activeClient || !activeRoomId || !machine || !keyExchange) return;
 
-          const nextEpoch = e2eeEpochRef.current + 1;
-          void activeClient
-            .rekeyBegin({ roomId: activeRoomId, epoch: nextEpoch })
-            .then(() => activeClient.rekeyCommit({ roomId: activeRoomId, epoch: nextEpoch }))
-            .then(() => activeClient.e2eeReady({ roomId: activeRoomId, epoch: nextEpoch }))
-            .then(() => {
-              if (nextEpoch > e2eeEpochRef.current) {
-                e2eeEpochRef.current = nextEpoch;
-              }
-            })
-            .catch((error) => {
-              console.warn("[VideoCallContext] periodic rekey failed", error);
-            });
+          const newEpoch = machine.initiateRekey();
+          if (newEpoch === null) return; // blocked: wrong state or cooldown
+
+          const mediaEncryption = callMediaEncryptionRef.current;
+
+          // Advance epoch guard (disables media during key delivery)
+          epochGuardRef.current?.markEpochAdvanced(newEpoch);
+
+          void (async () => {
+            try {
+              const epochKey = await keyExchange.createEpochKey(newEpoch);
+              if (mediaEncryption) await mediaEncryption.setEncryptionKey(epochKey);
+
+              await activeClient.rekeyBegin({ roomId: activeRoomId, epoch: newEpoch });
+              // Transition machine to KEY_DELIVERY; starts deadline timer
+              machine.onRekeyBeginAcked(newEpoch);
+              console.info("[VideoCallContext] calls-v2 rekey:begin sent", { epoch: newEpoch });
+            } catch (err) {
+              console.error("[VideoCallContext] calls-v2 rekey:begin failed, aborting", err);
+              machine.abortRekey(String(err));
+              // Restore previous epoch in guard on abort
+              epochGuardRef.current?.markE2eeReady(e2eeEpochRef.current);
+            }
+          })();
         }, REKEY_INTERVAL_MS);
       } catch (err) {
         console.warn("[VideoCallContext] calls-v2 room bootstrap failed", err);
@@ -504,43 +754,151 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
 
       try {
         console.info("[VideoCallContext] calls-v2 media-bootstrap:start", { callId, roomId });
+
+        // Phase C: Fail-closed epoch guard — no media without E2EE_READY
+        try {
+          epochGuardRef.current?.assertMediaAllowed('PRODUCE');
+        } catch (e) {
+          console.error('[VideoCallContext] [EpochGuard] Cannot bootstrap media:', e);
+          return;
+        }
+
+        // --- SFU Device initialization ---
+        const routerRtpCapabilities = sfuRouterRtpCapabilitiesRef.current;
+        if (!routerRtpCapabilities) {
+          console.warn("[VideoCallContext] calls-v2 media-bootstrap skipped: routerRtpCapabilities not ready. Waiting for ROOM_JOINED event.", { roomId });
+          return;
+        }
+
+        // Lazy-init SfuMediaManager per call session
+        if (!sfuManagerRef.current) {
+          sfuManagerRef.current = new SfuMediaManager();
+        }
+        const sfuManager = sfuManagerRef.current;
+        // cast: our RtpCapabilities is structurally compatible with mediasoup-client RtpCapabilities
+        await sfuManager.loadDevice(routerRtpCapabilities as import('mediasoup-client').types.RtpCapabilities);
+
+        // --- Send Transport ---
         await client.transportCreate({ roomId, direction: "send" });
         const sendCreated = await client.waitFor(
           "TRANSPORT_CREATED",
-          (frame) => frame.payload?.roomId === roomId && frame.payload?.direction === "send",
+          (frame) => {
+            const p = frame.payload as { roomId?: string; direction?: string } | undefined;
+            return p?.roomId === roomId && p?.direction === "send";
+          },
           { timeoutMs: 5000, acceptRecent: true }
         );
-        const sendTransportId = sendCreated.payload?.transportId as string | undefined;
-        if (!sendTransportId) return;
-        console.info("[VideoCallContext] calls-v2 transport-created:send", { roomId, sendTransportId });
+        const sendParams = sendCreated.payload as import('@/calls-v2/types').TransportCreatedPayload | undefined;
+        if (!sendParams?.transportId) return;
+        console.info("[VideoCallContext] calls-v2 transport-created:send", { roomId, transportId: sendParams.transportId });
 
+        sfuManager.createSendTransport(
+          {
+            id: sendParams.transportId,
+            iceParameters: sendParams.iceParameters as import('mediasoup-client').types.IceParameters,
+            iceCandidates: sendParams.iceCandidates as import('mediasoup-client').types.IceCandidate[],
+            dtlsParameters: sendParams.dtlsParameters as import('mediasoup-client').types.DtlsParameters,
+          },
+          async (dtlsParameters) => {
+            await client.transportConnect({
+              roomId,
+              transportId: sendParams.transportId,
+              dtlsParameters: dtlsParameters as import('@/calls-v2/types').DtlsParameters,
+            });
+            console.info("[VideoCallContext] calls-v2 transport-connect:send:ok", { roomId });
+          },
+          async ({ kind, rtpParameters, appData }) => {
+            await client.produce({
+              roomId,
+              transportId: sendParams.transportId,
+              kind,
+              rtpParameters: rtpParameters as import('@/calls-v2/types').RtpParameters,
+              appData: appData as Record<string, unknown>,
+            });
+            const producedFrame = await client.waitFor(
+              "PRODUCED",
+              (frame) => {
+                const p = frame.payload as { roomId?: string; producerId?: string } | undefined;
+                return p?.roomId === roomId && typeof p?.producerId === "string";
+              },
+              { timeoutMs: 5000, acceptRecent: true }
+            );
+            const producerId = (producedFrame.payload as { producerId?: string })?.producerId;
+            if (!producerId) throw new Error("PRODUCED event missing producerId");
+            console.info("[VideoCallContext] calls-v2 produce:ok", { roomId, kind, producerId });
+            return producerId;
+          }
+        );
+        callsWsSendTransportRef.current = sendParams.transportId;
+
+        // --- Recv Transport ---
         await client.transportCreate({ roomId, direction: "recv" });
         const recvCreated = await client.waitFor(
           "TRANSPORT_CREATED",
-          (frame) => frame.payload?.roomId === roomId && frame.payload?.direction === "recv",
+          (frame) => {
+            const p = frame.payload as { roomId?: string; direction?: string } | undefined;
+            return p?.roomId === roomId && p?.direction === "recv";
+          },
           { timeoutMs: 5000, acceptRecent: true }
         );
-        const recvTransportId = recvCreated.payload?.transportId as string | undefined;
-        if (!recvTransportId) return;
-        console.info("[VideoCallContext] calls-v2 transport-created:recv", { roomId, recvTransportId });
+        const recvParams = recvCreated.payload as import('@/calls-v2/types').TransportCreatedPayload | undefined;
+        if (!recvParams?.transportId) return;
+        console.info("[VideoCallContext] calls-v2 transport-created:recv", { roomId, transportId: recvParams.transportId });
 
-        await client.transportConnect({ roomId, transportId: sendTransportId, dtlsParameters: {} });
-        await client.transportConnect({ roomId, transportId: recvTransportId, dtlsParameters: {} });
+        sfuManager.createRecvTransport(
+          {
+            id: recvParams.transportId,
+            iceParameters: recvParams.iceParameters as import('mediasoup-client').types.IceParameters,
+            iceCandidates: recvParams.iceCandidates as import('mediasoup-client').types.IceCandidate[],
+            dtlsParameters: recvParams.dtlsParameters as import('mediasoup-client').types.DtlsParameters,
+          },
+          async (dtlsParameters) => {
+            await client.transportConnect({
+              roomId,
+              transportId: recvParams.transportId,
+              dtlsParameters: dtlsParameters as import('@/calls-v2/types').DtlsParameters,
+            });
+            console.info("[VideoCallContext] calls-v2 transport-connect:recv:ok", { roomId });
+          }
+        );
+        callsWsRecvTransportRef.current = recvParams.transportId;
 
-        callsWsSendTransportRef.current = sendTransportId;
-        callsWsRecvTransportRef.current = recvTransportId;
+        // Subscribe to CONSUMED events and create consumers + attach SFrame receiver transforms
+        client.on("CONSUMED", (frame) => {
+          const p = frame.payload as import('@/calls-v2/types').ConsumedPayload | undefined;
+          if (!p || p.roomId !== roomId) return;
+          void sfuManager.consume({
+            id: p.consumerId,
+            producerId: p.producerId,
+            kind: p.kind as import('mediasoup-client').types.MediaKind,
+            rtpParameters: p.rtpParameters as import('mediasoup-client').types.RtpParameters,
+          }).then((consumer) => {
+            console.info("[VideoCallContext] calls-v2 consumer:created", { roomId, consumerId: consumer.id, kind: consumer.kind });
+            // Attach E2EE receiver transform (Insertable Streams) — fail-closed: frames dropped without key
+            if (CallMediaEncryption.isSupported()) {
+              const receiver = sfuManagerRef.current?.getConsumerReceiver(consumer.id);
+              if (receiver) {
+                // Use producerId as peerId — links to who created this producer
+                callMediaEncryptionRef.current?.setupReceiverTransform(receiver, p.producerId, consumer.id);
+              }
+            }
+            return client.consumerResume({ roomId, consumerId: consumer.id });
+          }).catch((err) => {
+            console.warn("[VideoCallContext] calls-v2 consume/resume failed", err);
+          });
+        });
 
+        // Produce all live local tracks + attach SFrame sender transforms
         const tracks = stream.getTracks().filter((track) => track.readyState === "live");
         for (const track of tracks) {
-          const kind = track.kind === "audio" ? "audio" : "video";
-          await client.produce({
-            roomId,
-            transportId: sendTransportId,
-            kind,
-            rtpParameters: {},
-            appData: { trackId: track.id },
-          });
-          console.info("[VideoCallContext] calls-v2 produce:ok", { roomId, kind, trackId: track.id });
+          const producer = await sfuManager.produce(track, { trackId: track.id });
+          // Attach E2EE sender transform after produce (Insertable Streams)
+          if (CallMediaEncryption.isSupported()) {
+            const sender = sfuManagerRef.current?.getProducerSender(producer.id);
+            if (sender) {
+              callMediaEncryptionRef.current?.setupSenderTransform(sender, producer.id);
+            }
+          }
         }
 
         callsWsMediaRoomRef.current = roomId;

@@ -1,4 +1,5 @@
 import { useState, useRef } from "react";
+import { AnimatedSticker, type StickerSize } from "./AnimatedSticker";
 
 interface StickerMessageProps {
   fileUrl: string;
@@ -20,8 +21,6 @@ export function StickerMessage({
   const [showMenu, setShowMenu] = useState(false);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const size = isAnimated ? 200 : 150;
-
   const handleTouchStart = () => {
     longPressTimer.current = setTimeout(() => {
       setShowMenu(true);
@@ -40,22 +39,19 @@ export function StickerMessage({
     setShowMenu(true);
   };
 
+  const stickerSize: StickerSize = isAnimated ? "large" : "medium";
+
   return (
     <div className="relative inline-block select-none">
-      <img
-        src={fileUrl}
-        alt="стикер"
-        width={size}
-        height={size}
-        className="object-contain"
-        style={{ width: size, height: size }}
+      <div
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
         onMouseDown={handleTouchStart}
         onMouseUp={handleTouchEnd}
         onContextMenu={handleContextMenu}
-        draggable={false}
-      />
+      >
+        <AnimatedSticker url={fileUrl} size={stickerSize} alt="стикер" />
+      </div>
 
       {showMenu && (
         <>

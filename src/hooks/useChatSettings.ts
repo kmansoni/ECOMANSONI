@@ -71,6 +71,13 @@ export function useChatSettings(conversationId?: string) {
   const [settings, setSettings] = useState<ChatSettings>(DEFAULT_CHAT_SETTINGS);
   const [globalSettings, setGlobalSettings] = useState<GlobalChatSettings>(DEFAULT_GLOBAL_SETTINGS);
   const [loading, setLoading] = useState(false);
+  const [globalTableAvailable, setGlobalTableAvailable] = useState(true);
+  const [chatTableAvailable, setChatTableAvailable] = useState(true);
+
+  const isMissingTableError = (error: any): boolean => {
+    const msg = String(error?.message ?? '');
+    return error?.code === '42P01' || error?.code === 'PGRST205' || msg.includes('Could not find the table') || msg.includes('does not exist');
+  };
 
   useEffect(() => {
     if (!user) return;
@@ -79,23 +86,31 @@ export function useChatSettings(conversationId?: string) {
   }, [user, conversationId]);
 
   const loadGlobalSettings = async () => {
-    if (!user) return;
-    const { data } = await supabase
+    if (!user || !globalTableAvailable) return;
+    const { data, error } = await supabase
       .from('user_global_chat_settings' as never)
       .select('*')
       .eq('user_id', user.id)
-      .single();
+      .maybeSingle();
+    if (error) {
+      if (isMissingTableError(error)) setGlobalTableAvailable(false);
+      return;
+    }
     if (data) setGlobalSettings({ ...DEFAULT_GLOBAL_SETTINGS, ...(data as object) });
   };
 
   const loadChatSettings = async () => {
-    if (!user || !conversationId) return;
-    const { data } = await supabase
+    if (!user || !conversationId || !chatTableAvailable) return;
+    const { data, error } = await supabase
       .from('user_chat_settings' as never)
       .select('*')
       .eq('user_id', user.id)
       .eq('conversation_id', conversationId)
-      .single();
+      .maybeSingle();
+    if (error) {
+      if (isMissingTableError(error)) setChatTableAvailable(false);
+      return;
+    }
     if (data) setSettings({ ...DEFAULT_CHAT_SETTINGS, ...(data as object) });
   };
 
@@ -105,15 +120,19 @@ export function useChatSettings(conversationId?: string) {
   ) => {
     if (!user || !conversationId) return;
     setSettings(prev => ({ ...prev, [key]: value }));
-    await supabase
+    if (!chatTableAvailable) return;
+    const { error } = await supabase
       .from('user_chat_settings' as never)
       .upsert({
         user_id: user.id,
         conversation_id: conversationId,
         [key]: value,
         updated_at: new Date().toISOString(),
-      } as never);
-  }, [user, conversationId]);
+      } as never, { onConflict: 'user_id,conversation_id' });
+    if (error && isMissingTableError(error)) {
+      setChatTableAvailable(false);
+    }
+  }, [user, conversationId, chatTableAvailable]);
 
   const updateGlobalSetting = useCallback(async <K extends keyof GlobalChatSettings>(
     key: K,
@@ -121,14 +140,18 @@ export function useChatSettings(conversationId?: string) {
   ) => {
     if (!user) return;
     setGlobalSettings(prev => ({ ...prev, [key]: value }));
-    await supabase
+    if (!globalTableAvailable) return;
+    const { error } = await supabase
       .from('user_global_chat_settings' as never)
       .upsert({
         user_id: user.id,
         [key]: value,
         updated_at: new Date().toISOString(),
-      } as never);
-  }, [user]);
+      } as never, { onConflict: 'user_id' });
+    if (error && isMissingTableError(error)) {
+      setGlobalTableAvailable(false);
+    }
+  }, [user, globalTableAvailable]);
 
   const muteChat = useCallback(async (duration: '1h' | '8h' | '1d' | 'forever') => {
     let until: string | null = null;

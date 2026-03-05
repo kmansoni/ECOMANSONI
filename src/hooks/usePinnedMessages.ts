@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from './useAuth';
 import { toast } from 'sonner';
@@ -24,6 +24,56 @@ export function usePinnedMessages(conversationId: string | null) {
   const { user } = useAuth();
   const [pinnedMessages, setPinnedMessages] = useState<PinnedMessage[]>([]);
   const [loading, setLoading] = useState(false);
+  const supportsJoinRef = useRef(true);
+
+  const mapRows = useCallback((rows: any[], messagesById?: Map<string, any>) => {
+    return (rows ?? []).map((row: any) => {
+      const message = row.messages ?? messagesById?.get(row.message_id) ?? null;
+      return {
+        id: row.id,
+        message_id: row.message_id,
+        conversation_id: row.conversation_id,
+        pinned_by: row.pinned_by,
+        pin_position: row.pin_position,
+        pinned_at: row.pinned_at,
+        content: message?.content ?? '',
+        media_type: message?.media_type ?? null,
+        sender_id: message?.sender_id ?? '',
+        created_at: message?.created_at ?? '',
+      } as PinnedMessage;
+    });
+  }, []);
+
+  const isMissingJoinError = useCallback((error: any) => {
+    const msg = String(error?.message ?? '');
+    return error?.code === 'PGRST200' || msg.includes('Could not find a relationship');
+  }, []);
+
+  const fetchWithoutJoin = useCallback(async () => {
+    const { data, error } = await supabaseAny
+      .from('pinned_messages')
+      .select('id, message_id, conversation_id, pinned_by, pin_position, pinned_at')
+      .eq('conversation_id', conversationId)
+      .order('pin_position', { ascending: true });
+
+    if (error) throw error;
+
+    const rows = data ?? [];
+    const ids = rows
+      .map((r: any) => r.message_id)
+      .filter((id: string | null | undefined): id is string => Boolean(id));
+
+    let messagesById = new Map<string, any>();
+    if (ids.length > 0) {
+      const { data: messagesData } = await supabaseAny
+        .from('messages')
+        .select('id, content, media_type, sender_id, created_at')
+        .in('id', ids);
+      messagesById = new Map((messagesData ?? []).map((m: any) => [m.id, m]));
+    }
+
+    setPinnedMessages(mapRows(rows, messagesById));
+  }, [conversationId, mapRows]);
 
   const fetchPinned = useCallback(async () => {
     if (!conversationId || !user) {
@@ -32,47 +82,46 @@ export function usePinnedMessages(conversationId: string | null) {
     }
     setLoading(true);
     try {
-      const { data, error } = await supabaseAny
-        .from('pinned_messages')
-        .select(`
-          id,
-          message_id,
-          conversation_id,
-          pinned_by,
-          pin_position,
-          pinned_at,
-          messages (
-            content,
-            media_type,
-            sender_id,
-            created_at
-          )
-        `)
-        .eq('conversation_id', conversationId)
-        .order('pin_position', { ascending: true });
+      if (supportsJoinRef.current) {
+        const { data, error } = await supabaseAny
+          .from('pinned_messages')
+          .select(`
+            id,
+            message_id,
+            conversation_id,
+            pinned_by,
+            pin_position,
+            pinned_at,
+            messages (
+              content,
+              media_type,
+              sender_id,
+              created_at
+            )
+          `)
+          .eq('conversation_id', conversationId)
+          .order('pin_position', { ascending: true });
 
-      if (error) throw error;
+        if (error) {
+          if (isMissingJoinError(error)) {
+            supportsJoinRef.current = false;
+            await fetchWithoutJoin();
+            return;
+          }
+          throw error;
+        }
 
-      const rows: PinnedMessage[] = (data ?? []).map((row: any) => ({
-        id: row.id,
-        message_id: row.message_id,
-        conversation_id: row.conversation_id,
-        pinned_by: row.pinned_by,
-        pin_position: row.pin_position,
-        pinned_at: row.pinned_at,
-        content: row.messages?.content ?? '',
-        media_type: row.messages?.media_type ?? null,
-        sender_id: row.messages?.sender_id ?? '',
-        created_at: row.messages?.created_at ?? '',
-      }));
+        setPinnedMessages(mapRows(data ?? []));
+        return;
+      }
 
-      setPinnedMessages(rows);
+      await fetchWithoutJoin();
     } catch (err) {
       console.error('[usePinnedMessages] fetch error:', err);
     } finally {
       setLoading(false);
     }
-  }, [conversationId, user]);
+  }, [conversationId, user, fetchWithoutJoin, isMissingJoinError, mapRows]);
 
   useEffect(() => {
     void fetchPinned();

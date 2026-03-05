@@ -50,11 +50,11 @@ export function useCommunityGlobalSettings() {
 }
 
 export function useCommunityInvites() {
-  const createChannelInvite = useCallback(async (channelId: string, maxUses?: number | null, ttlHours = 168) => {
+  const createChannelInvite = useCallback(async (channelId: string, maxUses?: number | null, ttlHours = 24) => {
     return createChannelInviteToken(channelId, maxUses, ttlHours);
   }, []);
 
-  const createGroupInvite = useCallback(async (groupId: string, maxUses?: number | null, ttlHours = 168) => {
+  const createGroupInvite = useCallback(async (groupId: string, maxUses?: number | null, ttlHours = 24) => {
     return createGroupInviteToken(groupId, maxUses, ttlHours);
   }, []);
 

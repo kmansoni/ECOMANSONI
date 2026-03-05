@@ -2,54 +2,9 @@ import { useRef, useEffect, useState } from "react";
 import { Copy, Share2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import QRCode from "qrcode";
 
 const APP_URL = "https://mansoni.ru/app";
-
-// Простой детерминированный QR-паттерн на Canvas (визуализация без внешних библиотек)
-function drawQrPattern(canvas: HTMLCanvasElement, url: string, size: number) {
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return;
-  const cellCount = 21;
-  const cellSize = size / cellCount;
-
-  ctx.clearRect(0, 0, size, size);
-
-  // Генерируем псевдо-QR матрицу на основе URL
-  const seed = url.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0);
-  const matrix: boolean[][] = Array.from({ length: cellCount }, (_, row) =>
-    Array.from({ length: cellCount }, (_, col) => {
-      // Finder patterns (corners)
-      if (
-        (row < 8 && col < 8) ||
-        (row < 8 && col >= cellCount - 8) ||
-        (row >= cellCount - 8 && col < 8)
-      ) {
-        const r = row < 8 ? row : cellCount - 1 - row;
-        const c = col < 8 ? col : cellCount - 1 - col;
-        if (r === 0 || r === 6 || c === 0 || c === 6) return true;
-        if (r >= 2 && r <= 4 && c >= 2 && c <= 4) return true;
-        return false;
-      }
-      // Timing patterns
-      if (row === 6 || col === 6) return (row + col) % 2 === 0;
-      // Data
-      const h = ((row * 31 + col * 17 + seed) * 2654435761) >>> 0;
-      return h % 3 !== 0;
-    })
-  );
-
-  // Рисуем
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, size, size);
-  ctx.fillStyle = "#000000";
-  for (let r = 0; r < cellCount; r++) {
-    for (let c = 0; c < cellCount; c++) {
-      if (matrix[r][c]) {
-        ctx.fillRect(c * cellSize, r * cellSize, cellSize, cellSize);
-      }
-    }
-  }
-}
 
 interface MessengerQrCodeProps {
   size?: number;
@@ -61,9 +16,13 @@ export function MessengerQrCode({ size = 200, showButtons = true }: MessengerQrC
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    if (canvasRef.current) {
-      drawQrPattern(canvasRef.current, APP_URL, size);
-    }
+    if (!canvasRef.current) return;
+    void QRCode.toCanvas(canvasRef.current, APP_URL, {
+      width: size,
+      margin: 1,
+      errorCorrectionLevel: "M",
+      color: { dark: "#000000", light: "#FFFFFF" },
+    });
   }, [size]);
 
   const handleCopy = async () => {

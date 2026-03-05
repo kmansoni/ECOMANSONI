@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, CheckCheck, Hash, Link, LogOut, MoreVertical, Send, UserPlus, Users } from "lucide-react";
+import { ArrowLeft, CheckCheck, Hash, Link, LogOut, MoreVertical, QrCode, Send, UserPlus, Users } from "lucide-react";
+import { useSlowMode } from "@/hooks/useSlowMode";
+import { SlowModeTimer } from "@/components/chat/SlowModeTimer";
 import { useGroupTopics } from "@/hooks/useGroupTopics";
 import { TopicsList } from "@/components/chat/TopicsList";
 import { CreateTopicSheet } from "@/components/chat/CreateTopicSheet";
@@ -24,6 +26,7 @@ import { useCommunityGlobalSettings, useCommunityInvites } from "@/hooks/useComm
 import { useChatOpen } from "@/contexts/ChatOpenContext";
 import { supabase } from "@/lib/supabase";
 import { GradientAvatar } from "@/components/ui/gradient-avatar";
+import { InviteQrDialog } from "@/components/chat/InviteQrDialog";
 
 interface GroupConversationProps {
   group: GroupChat;
@@ -36,6 +39,13 @@ export function GroupConversation({ group, onBack, onLeave }: GroupConversationP
   const { messages, loading, sendMessage } = useGroupMessages(group.id);
   const { members } = useGroupMembers(group.id);
   const { settings, update: updateGlobalSettings } = useCommunityGlobalSettings();
+  const isOwnerDerived = group.owner_id === user?.id;
+  const slowModeDelaySeconds: number = (group as any).slow_mode_seconds ?? 0;
+  const { remainingSeconds, isRestricted, recordSend } = useSlowMode(
+    group.id,
+    user?.id ?? null,
+    { delaySeconds: slowModeDelaySeconds, isExempt: isOwnerDerived }
+  );
   const { createGroupInvite } = useCommunityInvites();
   const { setIsChatOpen } = useChatOpen();
   const { topics, createTopic } = useGroupTopics(group.id);
@@ -45,6 +55,8 @@ export function GroupConversation({ group, onBack, onLeave }: GroupConversationP
   const [activeTopic, setActiveTopic] = useState<string | null>(null);
   const [showCreateTopic, setShowCreateTopic] = useState(false);
   const [topicsEnabled, setTopicsEnabled] = useState<boolean>((group as any).topics_enabled ?? false);
+  const [inviteQrOpen, setInviteQrOpen] = useState(false);
+  const [inviteQrUrl, setInviteQrUrl] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const isOwner = group.owner_id === user?.id;
   const canInvite = isOwner && (settings?.allow_group_invites ?? true);
@@ -67,11 +79,12 @@ export function GroupConversation({ group, onBack, onLeave }: GroupConversationP
   };
 
   const handleSend = async () => {
-    if (!inputText.trim() || sending) return;
+    if (!inputText.trim() || sending || isRestricted) return;
     try {
       setSending(true);
       await sendMessage(inputText);
       setInputText("");
+      recordSend();
     } catch (error) {
       const payload = getHashtagBlockedToastPayload(error);
       if (payload) toast.error(payload.title, { description: payload.description });
@@ -121,19 +134,36 @@ export function GroupConversation({ group, onBack, onLeave }: GroupConversationP
     }
   };
 
+  const createGroupInviteUrl = async () => {
+    if (!canInvite) {
+      toast.error("Приглашения в группы отключены");
+      return null;
+    }
+    const token = await createGroupInvite(group.id);
+    return `https://mansoni.ru/chats?group_invite=${token}`;
+  };
+
   const handleCreateGroupInvite = async () => {
     try {
-      if (!canInvite) {
-        toast.error("Приглашения в группы отключены");
-        return;
-      }
-      const token = await createGroupInvite(group.id);
-      const url = `${window.location.origin}/chats?group_invite=${token}`;
+      const url = await createGroupInviteUrl();
+      if (!url) return;
       await navigator.clipboard.writeText(url);
       toast.success("Ссылка-приглашение в группу скопирована");
     } catch (error) {
       console.error("Failed to create group invite:", error);
       toast.error("Не удалось создать приглашение");
+    }
+  };
+
+  const handleShowGroupInviteQr = async () => {
+    try {
+      const url = await createGroupInviteUrl();
+      if (!url) return;
+      setInviteQrUrl(url);
+      setInviteQrOpen(true);
+    } catch (error) {
+      console.error("Failed to create group invite QR:", error);
+      toast.error("Не удалось подготовить QR-приглашение");
     }
   };
 
@@ -175,6 +205,10 @@ export function GroupConversation({ group, onBack, onLeave }: GroupConversationP
               <DropdownMenuItem onClick={handleCreateGroupInvite} disabled={!canInvite}>
                 <Link className="w-4 h-4 mr-2" />
                 Скопировать invite-link
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleShowGroupInviteQr} disabled={!canInvite}>
+                <QrCode className="w-4 h-4 mr-2" />
+                Показать QR-приглашение
               </DropdownMenuItem>
               {isOwner && (
                 <DropdownMenuItem onClick={handleToggleTopics}>
@@ -291,18 +325,22 @@ export function GroupConversation({ group, onBack, onLeave }: GroupConversationP
           />
         </div>
         <div className="flex items-center gap-2">
+          {isRestricted && (
+            <SlowModeTimer remainingSeconds={remainingSeconds} delaySeconds={slowModeDelaySeconds} />
+          )}
           <div className="flex-1">
             <Input
-              placeholder="Сообщение"
+              placeholder={isRestricted ? `Медленный режим — подождите ${remainingSeconds}с` : "Сообщение"}
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleSend()}
               className="w-full h-11 rounded-full"
+              disabled={isRestricted}
             />
           </div>
           <Button
             onClick={handleSend}
-            disabled={!inputText.trim() || sending}
+            disabled={!inputText.trim() || sending || isRestricted}
             size="icon"
             className="w-11 h-11 rounded-full shrink-0"
             aria-label="Отправить"
@@ -319,6 +357,14 @@ export function GroupConversation({ group, onBack, onLeave }: GroupConversationP
         open={showCreateTopic}
         onClose={() => setShowCreateTopic(false)}
         onSubmit={async (params) => { await createTopic(params); }}
+      />
+      <InviteQrDialog
+        open={inviteQrOpen}
+        onOpenChange={setInviteQrOpen}
+        title="QR-приглашение в группу"
+        description="Отсканируйте QR-код, чтобы открыть ссылку-приглашение в группу"
+        inviteUrl={inviteQrUrl}
+        downloadFileName={`group-${group.id}-invite-qr.png`}
       />
     </>
   );

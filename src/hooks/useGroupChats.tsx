@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "./useAuth";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { getErrorMessage } from "@/lib/utils";
 import { checkHashtagsAllowedForText } from "@/lib/hashtagModeration";
+import { removeRealtimeMessage, upsertRealtimeMessage } from "@/lib/chat/realtimeMessageReducer";
 
 export interface GroupChat {
   id: string;
@@ -31,11 +32,27 @@ export interface GroupMessage {
   };
 }
 
+type SenderProfile = {
+  display_name: string | null;
+  avatar_url: string | null;
+};
+
+type CachedSenderProfile = {
+  profile: SenderProfile;
+  cachedAt: number;
+};
+
+const LIST_REFRESH_DEBOUNCE_MS = 300;
+const PROFILE_CACHE_TTL_MS = 5 * 60 * 1000;
+const PROFILE_CACHE_MAX_ENTRIES = 200;
+
 export function useGroupChats() {
   const { user } = useAuth();
   const [groups, setGroups] = useState<GroupChat[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const listRefreshTimerRef = useRef<number | null>(null);
+  const pendingGroupIdsRef = useRef<Set<string>>(new Set());
 
   const mapWithConcurrency = useCallback(async <T, R>(
     items: T[],
@@ -125,6 +142,74 @@ export function useGroupChats() {
     }
   }, [user, mapWithConcurrency]);
 
+  const refreshGroupsByIds = useCallback(async (groupIds: string[]) => {
+    const uniqueIds = [...new Set(groupIds.filter(Boolean))];
+    if (uniqueIds.length === 0) return;
+
+    try {
+      const rows = await mapWithConcurrency(uniqueIds, 6, async (id) => {
+        const { data, error: msgError } = await supabase
+          .from("group_chat_messages")
+          .select("*")
+          .eq("group_id", id)
+          .order("created_at", { ascending: false })
+          .limit(1);
+        if (msgError) throw msgError;
+        return { id, msg: (data && data[0]) as GroupMessage | undefined };
+      });
+
+      const msgById: Record<string, GroupMessage | undefined> = {};
+      for (const row of rows) {
+        msgById[row.id] = row.msg;
+      }
+
+      const idSet = new Set(uniqueIds);
+      setGroups((prev) =>
+        prev.map((group) => {
+          if (!idSet.has(group.id)) return group;
+          const nextLastMessage = msgById[group.id];
+          return {
+            ...group,
+            last_message: nextLastMessage,
+            updated_at: nextLastMessage?.created_at ?? group.updated_at,
+          };
+        }),
+      );
+    } catch (err) {
+      console.error("Error refreshing groups by ids:", err);
+      void fetchGroups();
+    }
+  }, [mapWithConcurrency, fetchGroups]);
+
+  const scheduleGroupsRefresh = useCallback((groupId?: string | null) => {
+    if (groupId) {
+      pendingGroupIdsRef.current.add(String(groupId));
+    }
+
+    if (listRefreshTimerRef.current !== null) return;
+
+    listRefreshTimerRef.current = window.setTimeout(() => {
+      listRefreshTimerRef.current = null;
+      const pendingIds = [...pendingGroupIdsRef.current];
+      pendingGroupIdsRef.current.clear();
+      if (pendingIds.length > 0) {
+        void refreshGroupsByIds(pendingIds);
+      } else {
+        void fetchGroups();
+      }
+    }, LIST_REFRESH_DEBOUNCE_MS);
+  }, [fetchGroups, refreshGroupsByIds]);
+
+  useEffect(() => {
+    return () => {
+      if (listRefreshTimerRef.current !== null) {
+        window.clearTimeout(listRefreshTimerRef.current);
+        listRefreshTimerRef.current = null;
+      }
+      pendingGroupIdsRef.current.clear();
+    };
+  }, []);
+
   useEffect(() => {
     fetchGroups();
   }, [fetchGroups]);
@@ -142,8 +227,9 @@ export function useGroupChats() {
           schema: 'public',
           table: 'group_chats',
         },
-        () => {
-          fetchGroups();
+        (payload) => {
+          const row = (payload as any)?.new ?? (payload as any)?.old;
+          scheduleGroupsRefresh(row?.id ?? null);
         }
       )
       .subscribe();
@@ -151,7 +237,55 @@ export function useGroupChats() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user, fetchGroups]);
+  }, [user, scheduleGroupsRefresh]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const channel = supabase
+      .channel('group-messages-list-updates')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'group_chat_messages',
+        },
+        (payload) => {
+          const row = (payload as any)?.new ?? (payload as any)?.old;
+          scheduleGroupsRefresh(row?.group_id ?? null);
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'group_chat_messages',
+        },
+        (payload) => {
+          const row = (payload as any)?.new ?? (payload as any)?.old;
+          scheduleGroupsRefresh(row?.group_id ?? null);
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'group_chat_messages',
+        },
+        (payload) => {
+          const row = (payload as any)?.new ?? (payload as any)?.old;
+          scheduleGroupsRefresh(row?.group_id ?? null);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user, scheduleGroupsRefresh]);
 
   return { groups, loading, error, refetch: fetchGroups };
 }
@@ -160,6 +294,67 @@ export function useGroupMessages(groupId: string | null) {
   const { user } = useAuth();
   const [messages, setMessages] = useState<GroupMessage[]>([]);
   const [loading, setLoading] = useState(true);
+  const profileCacheRef = useRef<Map<string, CachedSenderProfile>>(new Map());
+  const profileInFlightRef = useRef<Record<string, Promise<SenderProfile | undefined>>>({});
+
+  const getCachedProfile = useCallback((senderId: string): SenderProfile | undefined => {
+    const entry = profileCacheRef.current.get(senderId);
+    if (!entry) return undefined;
+
+    if (Date.now() - entry.cachedAt > PROFILE_CACHE_TTL_MS) {
+      profileCacheRef.current.delete(senderId);
+      return undefined;
+    }
+
+    profileCacheRef.current.delete(senderId);
+    profileCacheRef.current.set(senderId, entry);
+    return entry.profile;
+  }, []);
+
+  const setCachedProfile = useCallback((senderId: string, profile: SenderProfile) => {
+    profileCacheRef.current.delete(senderId);
+    profileCacheRef.current.set(senderId, { profile, cachedAt: Date.now() });
+
+    while (profileCacheRef.current.size > PROFILE_CACHE_MAX_ENTRIES) {
+      const oldestKey = profileCacheRef.current.keys().next().value as string | undefined;
+      if (!oldestKey) break;
+      profileCacheRef.current.delete(oldestKey);
+    }
+  }, []);
+
+  const getSenderProfile = useCallback(async (senderId: string) => {
+    if (!senderId) return undefined;
+    const cached = getCachedProfile(senderId);
+    if (cached) return cached;
+
+    if (!profileInFlightRef.current[senderId]) {
+      profileInFlightRef.current[senderId] = (async () => {
+        try {
+          const { data: profile } = await supabase
+            .from("profiles")
+            .select("display_name, avatar_url")
+            .eq("user_id", senderId)
+            .single();
+
+          const normalized = profile
+            ? {
+                display_name: profile.display_name,
+                avatar_url: profile.avatar_url,
+              }
+            : undefined;
+
+          if (normalized) {
+            setCachedProfile(senderId, normalized);
+          }
+          return normalized;
+        } finally {
+          delete profileInFlightRef.current[senderId];
+        }
+      })();
+    }
+
+    return profileInFlightRef.current[senderId];
+  }, [getCachedProfile, setCachedProfile]);
 
   const fetchMessages = useCallback(async () => {
     if (!groupId) {
@@ -187,6 +382,7 @@ export function useGroupMessages(groupId: string | null) {
       const profileMap: Record<string, { display_name: string | null; avatar_url: string | null }> = {};
       (profiles || []).forEach(p => {
         profileMap[p.user_id] = { display_name: p.display_name, avatar_url: p.avatar_url };
+        setCachedProfile(p.user_id, profileMap[p.user_id]);
       });
 
       const messagesWithSenders = (data || []).map(msg => ({
@@ -200,7 +396,7 @@ export function useGroupMessages(groupId: string | null) {
     } finally {
       setLoading(false);
     }
-  }, [groupId]);
+  }, [groupId, setCachedProfile]);
 
   useEffect(() => {
     fetchMessages();
@@ -225,18 +421,53 @@ export function useGroupMessages(groupId: string | null) {
           },
           async (payload) => {
             const newMessage = payload.new as GroupMessage;
-            
-            // Получаем профиль отправителя
-            const { data: profile } = await supabase
-              .from("profiles")
-              .select("display_name, avatar_url")
-              .eq("user_id", newMessage.sender_id)
-              .single();
-            
-            setMessages((prev) => [...prev, { ...newMessage, sender: profile || undefined }]);
+            const profile = await getSenderProfile(newMessage.sender_id);
+
+            setMessages((prev) =>
+              upsertRealtimeMessage(prev, {
+                ...newMessage,
+                sender: profile,
+              }),
+            );
           }
         )
-        .subscribe();
+        .on(
+          "postgres_changes",
+          {
+            event: "UPDATE",
+            schema: "public",
+            table: "group_chat_messages",
+            filter: `group_id=eq.${groupId}`,
+          },
+          (payload) => {
+            const updatedMessage = payload.new as GroupMessage;
+            setMessages((prev) => {
+              const existing = prev.find((message) => message.id === updatedMessage.id);
+              return upsertRealtimeMessage(prev, {
+                ...updatedMessage,
+                sender: updatedMessage.sender ?? existing?.sender,
+              });
+            });
+          }
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "DELETE",
+            schema: "public",
+            table: "group_chat_messages",
+            filter: `group_id=eq.${groupId}`,
+          },
+          (payload) => {
+            const deletedMessage = payload.old as Pick<GroupMessage, "id">;
+            setMessages((prev) => removeRealtimeMessage(prev, deletedMessage.id));
+          }
+        )
+        .subscribe((status) => {
+          if (status === "SUBSCRIBED" || status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+            void fetchMessages();
+          }
+        });
     };
 
     setupSubscription();
@@ -246,7 +477,20 @@ export function useGroupMessages(groupId: string | null) {
         supabase.removeChannel(channel);
       }
     };
-  }, [groupId]);
+  }, [groupId, fetchMessages, getSenderProfile]);
+
+  useEffect(() => {
+    if (!groupId) return;
+
+    const handleOnline = () => {
+      void fetchMessages();
+    };
+
+    window.addEventListener("online", handleOnline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+    };
+  }, [groupId, fetchMessages]);
 
   const sendMessage = async (content: string) => {
     if (!groupId || !user || !content.trim()) {

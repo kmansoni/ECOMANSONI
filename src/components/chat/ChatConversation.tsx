@@ -1,4 +1,12 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo, Fragment } from "react";
+import { AnimatedEmojiFullscreen, isSingleEmoji } from "./AnimatedEmojiFullscreen";
+import { useBubbleGradient } from "@/hooks/useBubbleGradient";
+import { FloatingDate, DateSeparator } from "./FloatingDate";
+import { ScrollToBottomFab } from "./ScrollToBottomFab";
+import { AutoGrowTextarea } from "./AutoGrowTextarea";
+import { BubbleTail } from "./BubbleTail";
+import { AnimatedSticker } from "./AnimatedSticker";
+import { JumpToDatePicker } from "./JumpToDatePicker";
 import { useSecretChat } from "@/hooks/useSecretChat";
 import { usePolls } from "@/hooks/usePolls";
 import { SecretChatBanner } from "./SecretChatBanner";
@@ -15,16 +23,15 @@ import { ScheduleMessagePicker } from "./ScheduleMessagePicker";
 import { ScheduledMessagesList } from "./ScheduledMessagesList";
 import { GiftCatalog } from "./GiftCatalog";
 import { GiftMessage } from "./GiftMessage";
-import { StarsWallet } from "./StarsWallet";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Phone, Video, Send, Mic, X, Play, Pause, Check, CheckCheck, Smile, Timer, Search, Settings2 } from "lucide-react";
+import { ArrowLeft, Phone, Video, Send, Mic, X, Play, Pause, Check, CheckCheck, Smile, Timer, Search, Pencil, Users as UsersIcon } from "lucide-react";
 import { AttachmentIcon } from "./AttachmentIcon";
 import { EncryptionBadge } from "./EncryptionBadge";
-import { EncryptionToggle } from "./EncryptionToggle";
 import { useE2EEncryption } from "@/hooks/useE2EEncryption";
 import type { EncryptedPayload } from "@/hooks/useE2EEncryption";
 import { Button } from "@/components/ui/button";
 import { useMessages } from "@/hooks/useChat";
+import { useMessageReactions } from "@/hooks/useMessageReactions";
 import { sanitizeReceivedText } from "@/lib/text-encoding";
 import { useAuth } from "@/hooks/useAuth";
 import { useMarkConversationRead } from "@/hooks/useMarkConversationRead";
@@ -38,10 +45,10 @@ import { getChatSendErrorToast } from "@/lib/chat/sendError";
 import { VideoCircleRecorder } from "./VideoCircleRecorder";
 import { VideoCircleMessage } from "./VideoCircleMessage";
 import { AttachmentSheet } from "./AttachmentSheet";
+import { CameraCaptureSheet } from "./CameraCaptureSheet";
 import { ImageViewer } from "./ImageViewer";
 import { VideoPlayer, FullscreenVideoPlayer } from "./VideoPlayer";
 import { SharedPostCard } from "./SharedPostCard";
-import { SharedReelCard } from "./SharedReelCard";
 import { StickerGifPicker } from "./StickerGifPicker";
 import { StickerMessage } from "./StickerMessage";
 import { GifMessage } from "./GifMessage";
@@ -49,10 +56,29 @@ import { buildChatBodyEnvelope, sendMessageV1 } from "@/lib/chat/sendMessageV1";
 import { MessageContextMenu } from "./MessageContextMenu";
 import { SwipeableMessage } from "./SwipeableMessage";
 import { DoubleTapReaction } from "./DoubleTapReaction";
+import { MessageReactions } from "./MessageReactions";
 import { ChatSettingsSheet } from "./ChatSettingsSheet";
 import { ChatBackground } from "./ChatBackground";
 import { useChatSettings } from "@/hooks/useChatSettings";
+import { LinkPreview } from "./LinkPreview";
+import { InlineBotResults, detectInlineBotTrigger } from "./InlineBotResults";
+import { MentionSuggestions } from "./MentionSuggestions";
+import { SendOptionsMenu } from "./SendOptionsMenu";
+import { extractUrls } from "@/hooks/useLinkPreview";
+import {
+  detectMentionTrigger,
+  getMentionSuggestions,
+  insertMention,
+  useMentions,
+  type MentionUser,
+} from "@/hooks/useMentions";
 import { ForwardMessageSheet } from "./ForwardMessageSheet";
+import { TextSelectionMenu } from "./TextSelectionMenu";
+import { ReplyKeyboard, type ReplyKeyboardButton } from "./ReplyKeyboard";
+import { useMessageDensity } from "@/hooks/useMessageDensity";
+import { DocumentBubble } from "./DocumentBubble";
+import { SelfDestructMedia } from "./SelfDestructMedia";
+import { useChatDrafts } from "@/hooks/useChatDrafts";
 import { DisappearTimerPicker } from "./DisappearTimerPicker";
 import { DisappearCountdown } from "./DisappearCountdown";
 import { useDisappearingMessages } from "@/hooks/useDisappearingMessages";
@@ -76,6 +102,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { resolveChatMediaDownloadPrefs } from "@/lib/chat/mediaSettings";
 
 interface ChatConversationProps {
   conversationId: string;
@@ -88,15 +115,42 @@ interface ChatConversationProps {
   totalUnreadCount?: number;
   /** Called to refresh conversation list after marking messages read */
   onRefetch?: () => void;
+  initialOpenPanelAction?: "settings" | "timer" | "scheduled";
+  onInitialPanelHandled?: () => void;
 }
 
-export function ChatConversation({ conversationId, chatName, chatAvatar, otherUserId, onBack, participantCount, isGroup, totalUnreadCount, onRefetch }: ChatConversationProps) {
+function parseEncryptedPayload(content: unknown): EncryptedPayload | null {
+  try {
+    const parsed = JSON.parse(String(content ?? ""));
+    if (
+      parsed &&
+      parsed.v === 2 &&
+      typeof parsed.iv === "string" &&
+      typeof parsed.ct === "string" &&
+      typeof parsed.tag === "string" &&
+      typeof parsed.epoch === "number" &&
+      typeof parsed.kid === "string"
+    ) {
+      return parsed as EncryptedPayload;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+export function ChatConversation({ conversationId, chatName, chatAvatar, otherUserId, onBack, participantCount, isGroup, totalUnreadCount, onRefetch, initialOpenPanelAction, onInitialPanelHandled }: ChatConversationProps) {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { getDraft, saveDraft, clearDraft } = useChatDrafts();
   const { settings } = useUserSettings();
-  const { settings: chatSettings } = useChatSettings(conversationId);
+  const { settings: chatSettings, globalSettings } = useChatSettings(conversationId);
   const { appearance, energy } = useAppearanceRuntime();
-  const { messages, loading, sendMessage, sendMediaMessage, deleteMessage } = useMessages(conversationId);
+  const { bubbleClass } = useBubbleGradient();
+  const { styles: densityStyles } = useMessageDensity();
+  const [lastSentEmoji, setLastSentEmoji] = useState<string | null>(null);
+  const { messages, loading, sendMessage, sendMediaMessage, deleteMessage, editMessage } = useMessages(conversationId);
+  const { toggleReaction, getReactions } = useMessageReactions(conversationId);
   const { markConversationRead } = useMarkConversationRead();
   const { getMessageStatus, markAsRead } = useReadReceipts(conversationId);
   const { pinnedMessages, pinMessage, unpinMessage } = usePinnedMessages(conversationId);
@@ -113,11 +167,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
 
   const {
     encryptionEnabled,
-    currentKeyVersion,
     isReady: encryptionReady,
-    enableEncryption,
-    disableEncryption,
-    rotateKey,
     encryptContent,
     decryptContent,
   } = useE2EEncryption(conversationId);
@@ -136,6 +186,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
   const [playingVoice, setPlayingVoice] = useState<string | null>(null);
   const [showVideoRecorder, setShowVideoRecorder] = useState(false);
   const [showAttachmentSheet, setShowAttachmentSheet] = useState(false);
+  const [showCameraSheet, setShowCameraSheet] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [viewingImage, setViewingImage] = useState<string | null>(null);
   const [viewingVideo, setViewingVideo] = useState<string | null>(null);
@@ -149,20 +200,18 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
     recordingTimeRef.current = recordingTime;
   }, [recordingTime]);
 
-  const autoDownloadEnabled = settings?.media_auto_download_enabled ?? true;
   const energyMediaPreload = energy?.media_preload ?? true;
   const energyVideoAutoplay = energy?.autoplay_video ?? true;
   const mediaTapEnabled = appearance?.media_tap_navigation_enabled ?? true;
   const messageCornerRadius = appearance?.message_corner_radius ?? 18;
-  const autoDownloadPhotos =
-    autoDownloadEnabled &&
-    (settings?.media_auto_download_photos ?? true) &&
-    energyMediaPreload;
-  const autoDownloadVideos =
-    autoDownloadEnabled &&
-    (settings?.media_auto_download_videos ?? true) &&
-    energyVideoAutoplay &&
-    energyMediaPreload;
+  const { autoDownloadPhotos, autoDownloadVideos } = resolveChatMediaDownloadPrefs({
+    chatSettings,
+    userSettings: settings,
+    energy: {
+      media_preload: energyMediaPreload,
+      autoplay_video: energyVideoAutoplay,
+    },
+  });
 
   const {
     isOnline: isOtherOnline,
@@ -181,8 +230,11 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
   const otherTypingTimerRef = useRef<number | null>(null);
 
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const lastNotifiedIncomingMessageIdRef = useRef<string | null>(null);
 
   const [replyTo, setReplyTo] = useState<{ id: string; preview: string } | null>(null);
+  const [quotedText, setQuotedText] = useState<string | null>(null);
+  const [editingMessage, setEditingMessage] = useState<{ id: string; content: string } | null>(null);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
@@ -196,12 +248,30 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
   const [pendingScheduleContent, setPendingScheduleContent] = useState('');
   const sendButtonLongPressRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // ─── Silent send ─────────────────────────────────────────────────────────────
+  const [isSilentSend, setIsSilentSend] = useState(false);
+  const [showSendOptions, setShowSendOptions] = useState(false);
+
+  // ─── Inline bot state ────────────────────────────────────────────────────────
+  const [inlineBotTrigger, setInlineBotTrigger] = useState<{ botUsername: string; query: string } | null>(null);
+
+  // ─── @Mention state ──────────────────────────────────────────────────────────
+  const [mentionParticipants, setMentionParticipants] = useState<MentionUser[]>([]);
+  const [mentionTrigger, setMentionTrigger] = useState<{ query: string; triggerStart: number } | null>(null);
+  const [mentionActiveIndex, setMentionActiveIndex] = useState(0);
+  const mentionSuggestions = useMemo(
+    () => mentionTrigger ? getMentionSuggestions(mentionTrigger.query, mentionParticipants) : [],
+    [mentionTrigger, mentionParticipants]
+  );
+
   const [forwardOpen, setForwardOpen] = useState(false);
   const [forwardMessage, setForwardMessage] = useState<import("@/hooks/useChat").ChatMessage | null>(null);
 
+  const [replyKeyboard, setReplyKeyboard] = useState<ReplyKeyboardButton[][] | null>(null);
   const [showGiftCatalog, setShowGiftCatalog] = useState(false);
   const [showChatSettings, setShowChatSettings] = useState(false);
   const [showTimerPicker, setShowTimerPicker] = useState(false);
+  const handledPanelActionRef = useRef<string | null>(null);
   const {
     defaultTimer,
     setConversationTimer,
@@ -234,7 +304,16 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
   >({});
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  // UI-3: textarea ref (HTMLTextAreaElement for AutoGrowTextarea)
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  // UI-1 / UI-2: scroll container ref
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  // UI-1: current floating date pill
+  const [floatingDate, setFloatingDate] = useState<Date | null>(null);
+  // UI-2: show scroll-to-bottom FAB
+  const [showScrollFab, setShowScrollFab] = useState(false);
+  // UI-6: jump-to-date picker
+  const [showJumpToPicker, setShowJumpToPicker] = useState(false);
   const recordingInterval = useRef<NodeJS.Timeout | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -248,6 +327,30 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
     setIsChatOpen(true);
     return () => setIsChatOpen(false);
   }, [setIsChatOpen]);
+
+  // ─── Draft: restore on mount, save on unmount / conversationId change ────────
+  const inputTextRef = useRef<string>("");
+  useEffect(() => {
+    inputTextRef.current = inputText;
+  }, [inputText]);
+
+  useEffect(() => {
+    // Restore draft on mount or conversationId change
+    const saved = getDraft(conversationId);
+    if (saved) {
+      setInputText(saved);
+    }
+    // Save/clear on unmount or when conversationId changes
+    return () => {
+      const current = inputTextRef.current.trim();
+      if (current) {
+        saveDraft(conversationId, current);
+      } else {
+        clearDraft(conversationId);
+      }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversationId]);
 
   useEffect(() => {
     if (!hiddenKey) return;
@@ -265,31 +368,27 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
     }
   }, [hiddenKey]);
 
+  useEffect(() => {
+    if (!initialOpenPanelAction) return;
+    const actionKey = `${conversationId}:${initialOpenPanelAction}`;
+    if (handledPanelActionRef.current === actionKey) return;
+    handledPanelActionRef.current = actionKey;
+
+    if (initialOpenPanelAction === "settings") setShowChatSettings(true);
+    if (initialOpenPanelAction === "timer") setShowTimerPicker(true);
+    if (initialOpenPanelAction === "scheduled") setShowScheduledList(true);
+    onInitialPanelHandled?.();
+  }, [conversationId, initialOpenPanelAction, onInitialPanelHandled]);
+
   // ─── Дешифрование входящих зашифрованных сообщений ─────────────────────────
   useEffect(() => {
     const encrypted = messages.filter(
-      (m: any) => m.is_encrypted && !(m.id in decryptedCache),
+      (m: any) => (Boolean(m.is_encrypted) || Boolean(parseEncryptedPayload(m.content))) && !(m.id in decryptedCache),
     );
     if (!encrypted.length) return;
 
     encrypted.forEach(async (m: any) => {
-      let payload: EncryptedPayload | null = null;
-      try {
-        const parsed = JSON.parse(String(m.content ?? ""));
-        if (
-          parsed &&
-          parsed.v === 2 &&
-          typeof parsed.iv === "string" &&
-          typeof parsed.ct === "string" &&
-          typeof parsed.tag === "string" &&
-          typeof parsed.epoch === "number" &&
-          typeof parsed.kid === "string"
-        ) {
-          payload = parsed as EncryptedPayload;
-        }
-      } catch {
-        payload = null;
-      }
+      const payload = parseEncryptedPayload(m.content);
 
       if (!payload) {
         setDecryptedCache((prev) => ({ ...prev, [m.id]: null }));
@@ -357,6 +456,39 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
     return messages.filter((m) => !hiddenIds.has(m.id));
   }, [messages, hiddenIds]);
 
+  // ─── Load mention participants (for @-completion) ─────────────────────────
+  useEffect(() => {
+    if (!conversationId || !user) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { data: partRows } = await supabase
+          .from("conversation_participants")
+          .select("user_id")
+          .eq("conversation_id", conversationId);
+        const ids = (partRows ?? []).map((r: any) => r.user_id as string).filter(Boolean);
+        if (!ids.length) return;
+        const { data: profileRows } = await supabase
+          .from("profiles")
+          .select("user_id, display_name, username, avatar_url")
+          .in("user_id", ids);
+        if (cancelled) return;
+        const participants: MentionUser[] = (profileRows ?? []).map((r: any) => ({
+          user_id: r.user_id,
+          display_name: r.display_name ?? null,
+          username: r.username ?? null,
+          avatar_url: r.avatar_url ?? null,
+        }));
+        setMentionParticipants(participants);
+      } catch {
+        // non-fatal
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [conversationId, user]);
+
+  const { renderText } = useMentions(mentionParticipants);
+
   useEffect(() => {
     if (!isGroup) {
       setSenderProfiles({});
@@ -393,6 +525,20 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
       cancelled = true;
     };
   }, [isGroup, visibleMessages]);
+
+  // Bot reply keyboard: watch last incoming message for reply_markup
+  useEffect(() => {
+    if (!visibleMessages.length) return;
+    const last = visibleMessages[visibleMessages.length - 1];
+    if (!last || last.sender_id === user?.id) return;
+    const markup = (last as any).reply_markup;
+    if (!markup) return;
+    if (markup.keyboard) {
+      setReplyKeyboard(markup.keyboard as ReplyKeyboardButton[][]);
+    } else if (markup.remove_keyboard) {
+      setReplyKeyboard(null);
+    }
+  }, [visibleMessages, user?.id]);
 
   // Realtime typing status (1:1)
   useEffect(() => {
@@ -446,20 +592,30 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
   const sendTyping = useCallback(
     (isTyping: boolean, activity: "typing" | "recording_voice" | "recording_video" = "typing") => {
       if (isGroup) return;
-      if (!typingChannelRef.current) return;
+      const channel = typingChannelRef.current;
+      if (!channel) return;
       if (!user?.id) return;
 
-      typingChannelRef.current.send({
+      const state = String(channel.state || "");
+      if (state && state !== "joined") return;
+
+      const payload = {
         type: "broadcast",
         event: "typing",
         payload: { user_id: user.id, is_typing: isTyping, activity },
+      };
+
+      const sender = typeof channel.httpSend === "function" ? channel.httpSend.bind(channel) : channel.send.bind(channel);
+
+      Promise.resolve(sender(payload)).catch(() => {
+        // best-effort typing signal only
       });
     },
     [user?.id, isGroup],
   );
 
   const handleInputChange = useCallback(
-    (value: string) => {
+    (value: string, caretPos?: number) => {
       setInputText(value);
 
       const trimmed = value.trim();
@@ -467,6 +623,15 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
         lastDraftTrimmedRef.current = trimmed;
         draftClientMsgIdRef.current = crypto.randomUUID();
       }
+
+      // ── Inline bot detection ─────────────────────────────────────────────────
+      setInlineBotTrigger(detectInlineBotTrigger(value));
+
+      // ── @Mention detection ──────────────────────────────────────────────────
+      const caret = caretPos ?? value.length;
+      const trigger = detectMentionTrigger(value, caret);
+      setMentionTrigger(trigger);
+      setMentionActiveIndex(0);
 
       if (isGroup) return;
 
@@ -514,8 +679,100 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
   }, [conversationId, user, isGroup, messages.length, markConversationRead, onRefetch, markAsRead]);
 
   useEffect(() => {
+    if (!user?.id) return;
+    if (!messages.length) return;
+    if (!chatSettings.notifications_enabled) return;
+
+    const latestIncoming = [...messages]
+      .reverse()
+      .find((m) => m.sender_id !== user.id && !m.disappeared);
+
+    if (!latestIncoming) return;
+    if (lastNotifiedIncomingMessageIdRef.current === latestIncoming.id) return;
+    lastNotifiedIncomingMessageIdRef.current = latestIncoming.id;
+
+    const shouldPlaySound = globalSettings.in_app_sounds && chatSettings.notification_sound !== "none";
+    if (shouldPlaySound) {
+      try {
+        const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const oscillator = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+
+        const baseFreq =
+          chatSettings.notification_sound === "chime"
+            ? 880
+            : chatSettings.notification_sound === "pop"
+              ? 660
+              : chatSettings.notification_sound === "ding"
+                ? 1046
+                : 784;
+
+        oscillator.type = "sine";
+        oscillator.frequency.value = baseFreq;
+        gain.gain.value = 0.0001;
+
+        oscillator.connect(gain);
+        gain.connect(audioCtx.destination);
+
+        const now = audioCtx.currentTime;
+        gain.gain.exponentialRampToValueAtTime(0.08, now + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
+
+        oscillator.start(now);
+        oscillator.stop(now + 0.2);
+        oscillator.onended = () => {
+          void audioCtx.close();
+        };
+      } catch {
+        // Ignore autoplay / audio-context errors silently
+      }
+    }
+
+    if (globalSettings.in_app_vibrate && chatSettings.notification_vibration && typeof navigator !== "undefined" && "vibrate" in navigator) {
+      try {
+        navigator.vibrate(30);
+      } catch {
+        // no-op
+      }
+    }
+  }, [messages, user?.id, chatSettings.notifications_enabled, chatSettings.notification_sound, chatSettings.notification_vibration, globalSettings.in_app_sounds, globalSettings.in_app_vibrate]);
+
+  useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, aiStreamText]);
+
+  // ─── UI-1 / UI-2: scroll events for FloatingDate and ScrollToBottomFab ─────
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const handleScroll = () => {
+      // UI-2: show FAB when scrolled > 300px from bottom
+      const distFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+      setShowScrollFab(distFromBottom > 300);
+
+      // UI-1: find topmost visible date separator
+      const separators = container.querySelectorAll<HTMLElement>("[data-date-id]");
+      let topmost: { el: HTMLElement; top: number } | null = null;
+      separators.forEach((el) => {
+        const rect = el.getBoundingClientRect();
+        const containerRect = container.getBoundingClientRect();
+        // Separator is "above" the visible area → its date label is the floating one
+        if (rect.top <= containerRect.top + 4) {
+          if (!topmost || rect.top > topmost.top) {
+            topmost = { el, top: rect.top };
+          }
+        }
+      });
+      if (topmost) {
+        const dateId = (topmost as { el: HTMLElement }).el.getAttribute("data-date-id");
+        if (dateId) setFloatingDate(new Date(dateId));
+      }
+    };
+
+    container.addEventListener("scroll", handleScroll, { passive: true });
+    return () => container.removeEventListener("scroll", handleScroll);
+  }, []);
 
   useEffect(() => {
     if (isRecording) {
@@ -578,17 +835,34 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
     return visibleMessages;
   }, [visibleMessages]);
 
-  const handleSendMessage = async () => {
-    console.log("[handleSendMessage] inputText:", inputText);
+  const handleSendMessage = async (silent = false, overrideText?: string) => {
+    console.log("[handleSendMessage] inputText:", inputText, "silent:", silent);
     if (sendInFlightRef.current) {
       console.log("[handleSendMessage] send in-flight, skipping");
       return;
     }
 
-    const trimmed = inputText.trim();
+    const trimmed = (overrideText ?? inputText).trim();
     if (!trimmed) {
       console.log("[handleSendMessage] empty input, skipping");
       sendTyping(false);
+      return;
+    }
+
+    // ── Edit mode: update existing message ──────────────────────────────────
+    if (editingMessage) {
+      const editing = editingMessage;
+      setEditingMessage(null);
+      setInputText("");
+      sendTyping(false);
+      const result = await editMessage!(editing.id, trimmed);
+      if (result?.error) {
+        toast.error("Не удалось отредактировать", { description: String(result.error) });
+        // Restore
+        setEditingMessage(editing);
+        setInputText(trimmed);
+      }
+      requestAnimationFrame(() => inputRef.current?.focus());
       return;
     }
 
@@ -603,7 +877,10 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
     // Clear immediately to avoid perceived delay.
     setInputText("");
     setReplyTo(null);
+    setQuotedText(null);
     sendTyping(false);
+    // Clear draft on send
+    clearDraft(conversationId);
 
     // Prepare next draft id right away for the next message.
     draftClientMsgIdRef.current = crypto.randomUUID();
@@ -624,7 +901,17 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
           };
         }
       }
-      await sendMessage(contentToSend, { clientMsgId, ...enrichMessageWithDisappear(extraFields) });
+      await sendMessage(contentToSend, {
+        clientMsgId,
+        ...(silent ? { is_silent: true } : {}),
+        ...enrichMessageWithDisappear(extraFields),
+      });
+      if (isSingleEmoji(trimmed)) {
+        setLastSentEmoji(trimmed);
+      }
+      if (silent) {
+        setIsSilentSend(false);
+      }
 
       // Keep focus on input to prevent keyboard closing on mobile
       requestAnimationFrame(() => {
@@ -921,8 +1208,14 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
   };
 
   const handleMessageReaction = async (messageId: string, emoji: string) => {
-    // Not implemented yet — avoid misleading success.
-    toast.info("Реакции пока не поддерживаются", { description: "Функция в разработке." });
+    await toggleReaction(messageId, emoji);
+  };
+
+  const handleMessageEdit = (messageId: string, content: string) => {
+    setEditingMessage({ id: messageId, content });
+    setInputText(content);
+    setReplyTo(null);
+    requestAnimationFrame(() => inputRef.current?.focus());
   };
 
   const handleMessageReply = (messageId: string) => {
@@ -985,6 +1278,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
 
   return (
     <div className="fixed inset-0 flex flex-col bg-background z-[200]">
+      <AnimatedEmojiFullscreen emoji={lastSentEmoji} onComplete={() => setLastSentEmoji(null)} />
       <AlertDialog
         open={deleteDialog.open}
         onOpenChange={(open) => setDeleteDialog((prev) => ({ ...prev, open }))}
@@ -1045,8 +1339,13 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
           
           {/* Avatar + Name + Status - clickable to profile */}
           <button
-            onClick={() => navigate(`/contact/${otherUserId}`, { state: { name: chatName, avatar: chatAvatar, conversationId } })}
-            className="flex items-center gap-3 flex-1 min-w-0 hover:bg-white/5 rounded-lg px-2 py-1 transition-colors"
+            onClick={() => {
+              if (isGroup) return;
+              navigate(`/contact/${otherUserId}`, { state: { name: chatName, avatar: chatAvatar, conversationId } });
+            }}
+            className={`flex items-center gap-3 flex-1 min-w-0 rounded-lg px-2 py-1 transition-colors ${
+              isGroup ? "cursor-default" : "hover:bg-white/5"
+            }`}
           >
             <div className="relative flex-shrink-0">
               <GradientAvatar
@@ -1089,41 +1388,8 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
             </div>
           </button>
           
-          {/* Right - Stars + Encryption toggle + Call buttons */}
+          {/* Right - quick actions */}
           <div className="flex items-center">
-            {/* Stars Wallet */}
-            {!isGroup && <StarsWallet />}
-            {/* Timer indicator in header */}
-            {defaultTimer !== null && (
-              <button
-                onClick={() => setShowTimerPicker(true)}
-                className="p-2 rounded-full hover:bg-white/10 transition-colors"
-                aria-label={`Автоудаление: ${formatTimerLabel(defaultTimer)}`}
-                title={`Автоудаление: ${formatTimerLabel(defaultTimer)}`}
-              >
-                <Timer className="w-4 h-4 text-orange-400" />
-              </button>
-            )}
-            <EncryptionToggle
-              enabled={encryptionEnabled}
-              isReady={encryptionReady}
-              onEnable={enableEncryption}
-              onDisable={disableEncryption}
-              onRotate={rotateKey}
-            />
-            {/* Scheduled messages button */}
-            <button
-              onClick={() => setShowScheduledList(true)}
-              className="relative p-2 rounded-full hover:bg-white/10 transition-colors"
-              aria-label="Запланированные сообщения"
-            >
-              <span className="text-base leading-none">⏰</span>
-              {scheduledCount > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-amber-500 text-white text-[9px] font-bold flex items-center justify-center">
-                  {scheduledCount > 9 ? '9+' : scheduledCount}
-                </span>
-              )}
-            </button>
             {/* Search button */}
             <button
               onClick={() => setShowMessageSearch(true)}
@@ -1132,52 +1398,34 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
             >
               <Search className="w-4 h-4 text-white/60" />
             </button>
-            {/* Chat settings button */}
-            <button
-              onClick={() => setShowChatSettings(true)}
-              className="p-2 rounded-full hover:bg-white/10 transition-colors"
-              aria-label="Настройки чата"
-            >
-              <Settings2 className="w-4 h-4 text-white/60" />
-            </button>
             {/* Audio call button */}
-            {!isGroup && (
-              <button
-                onClick={handleStartAudioCall}
-                className="p-2 rounded-full hover:bg-white/10 active:bg-white/15 transition-colors"
-                aria-label="Аудиозвонок"
-              >
-                <Phone className="w-5 h-5 text-[#6ab3f3]" />
-              </button>
-            )}
+            <button
+              onClick={handleStartAudioCall}
+              className="p-2 rounded-full hover:bg-white/10 active:bg-white/15 transition-colors relative"
+              aria-label="Аудиозвонок"
+            >
+              <Phone className="w-5 h-5 text-[#6ab3f3]" />
+              {isGroup && <UsersIcon className="w-3 h-3 text-[#6ab3f3] absolute -bottom-0.5 -right-0.5" />}
+            </button>
             
             {/* Video call button */}
-            {!isGroup && (
-              <button
-                onClick={handleStartVideoCall}
-                className="p-2 rounded-full hover:bg-white/10 active:bg-white/15 transition-colors"
-                aria-label="Видеозвонок"
-              >
-                <Video className="w-5 h-5 text-[#6ab3f3]" />
-              </button>
-            )}
+            <button
+              onClick={handleStartVideoCall}
+              className="p-2 rounded-full hover:bg-white/10 active:bg-white/15 transition-colors relative"
+              aria-label="Видеозвонок"
+            >
+              <Video className="w-5 h-5 text-[#6ab3f3]" />
+              {isGroup && <UsersIcon className="w-3 h-3 text-[#6ab3f3] absolute -bottom-0.5 -right-0.5" />}
+            </button>
           </div>
         </div>
 
-        {import.meta.env.DEV ? (
-          <div className="px-3 py-1 text-[11px] text-white/60 border-t border-white/5">
-            <span className="mr-3">conv: {String(conversationId).slice(0, 8)}</span>
-            <span className="mr-3">participants: {typeof participantCount === "number" ? participantCount : "?"}</span>
-            <span>last: {messages.length ? String(messages[messages.length - 1]?.id || "-").slice(0, 8) : "-"}</span>
-          </div>
-        ) : null}
-        
         {/* Add participants banner for groups */}
         {isGroup && (
           <button className="w-full py-2.5 px-4 bg-white/5 flex items-center justify-center gap-2 border-t border-white/5">
             <span className="text-[#6ab3f3] text-sm font-medium">Добавить участников</span>
             <span className="w-5 h-5 rounded-full border border-white/20 flex items-center justify-center">
-              <X className="w-3 h-3 text-white/40" />
+              <span className="text-white/60 text-xs leading-none">+</span>
             </span>
           </button>
         )}
@@ -1194,7 +1442,19 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
       />
 
       {/* Messages - scrollable with animated brand background */}
-      <ChatBackground wallpaper={chatSettings.chat_wallpaper} className="flex-1 overflow-y-auto overflow-x-hidden native-scroll flex flex-col">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto overflow-x-hidden native-scroll flex flex-col relative">
+        {/* UI-1: Floating date pill */}
+        <FloatingDate
+          date={floatingDate}
+          onClick={() => setShowJumpToPicker(true)}
+        />
+        {/* UI-2: Scroll-to-bottom FAB */}
+        <ScrollToBottomFab
+          visible={showScrollFab}
+          unreadCount={totalUnreadCount}
+          onClick={() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })}
+        />
+      <ChatBackground wallpaper={chatSettings.chat_wallpaper} className="flex-1 flex flex-col min-h-full">
         {/* Content layer */}
         <div className="relative z-10 flex-1 flex flex-col p-4 overflow-x-hidden min-w-0">
         {/* Spacer to push messages to bottom */}
@@ -1228,13 +1488,47 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
           const isGift = message.media_type === 'gift';
           const isPoll = message.media_type === 'poll' && !!(message as any).poll_id;
           const isSharedPost = !!message.shared_post_id;
-          const isSharedReel = !!message.shared_reel_id;
+          const isSelfDestruct = (message as any).metadata?.self_destruct === true || ((message as any).ttl_seconds > 0 && (isImage || isVideo));
+          const isDocument = !!message.media_url && !!message.media_type &&
+            !['voice','video_circle','image','video','sticker','gif','gift','poll'].includes(message.media_type) &&
+            (message.media_type.startsWith('application/') || message.media_type.startsWith('text/') || message.media_type === 'document');
           const isRead = message.is_read;
+          const textSizeClass =
+            chatSettings.font_size === "small"
+              ? "text-[13px]"
+              : chatSettings.font_size === "large"
+                ? "text-[17px]"
+                : densityStyles.fontSize;
+          const bubbleTailClass =
+            chatSettings.bubble_style === "classic"
+              ? (isOwn ? "rounded-br-xl" : "rounded-bl-xl")
+              : chatSettings.bubble_style === "minimal"
+                ? "rounded-lg"
+                : (isOwn ? "rounded-br-sm" : "rounded-bl-sm");
+          const effectiveBubbleRadius =
+            chatSettings.bubble_style === "classic"
+              ? Math.max(messageCornerRadius, 18)
+              : chatSettings.bubble_style === "minimal"
+                ? Math.min(messageCornerRadius, 12)
+                : messageCornerRadius;
+          const shouldTreatAsEncrypted = Boolean((message as any).is_encrypted) || Boolean(parseEncryptedPayload(message.content));
+          const hasDecryptedEntry = Object.prototype.hasOwnProperty.call(decryptedCache, message.id);
 
           // Group messages - show avatar only for first in sequence
           const prevMessage = index > 0 ? renderMessages[index - 1] : null;
           const showAvatar = !isOwn && (!prevMessage || prevMessage.sender_id !== message.sender_id);
           const showSenderName = isGroup && !isOwn && showAvatar;
+          // UI-4: show bubble tail only for first message in sender group
+          const isFirstInGroup = !prevMessage || prevMessage.sender_id !== message.sender_id;
+
+          // UI-1: date separator between messages of different calendar days
+          const msgDate = new Date(message.created_at);
+          const prevMsgDate = prevMessage ? new Date(prevMessage.created_at) : null;
+          const showDateSeparator = !prevMsgDate ||
+            msgDate.getFullYear() !== prevMsgDate.getFullYear() ||
+            msgDate.getMonth() !== prevMsgDate.getMonth() ||
+            msgDate.getDate() !== prevMsgDate.getDate();
+          const dateSepId = `${msgDate.getFullYear()}-${String(msgDate.getMonth() + 1).padStart(2, "0")}-${String(msgDate.getDate()).padStart(2, "0")}`;
 
           // Hide message if it's currently shown in context menu
           const isInContextMenu = contextMenuMessage?.id === message.id;
@@ -1246,8 +1540,12 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
           const isManuallyLoaded = manualMediaLoaded.has(message.id);
 
           return (
+            <Fragment key={message.id}>
+            {/* UI-1: date separator */}
+            {showDateSeparator && (
+              <DateSeparator date={msgDate} id={dateSepId} />
+            )}
             <SwipeableMessage
-              key={message.id}
               messageId={message.id}
               onReply={(id) => {
                 const msg = renderMessages.find((m) => m.id === id);
@@ -1262,18 +1560,18 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
               ref={(el) => {
                 messageRefs.current[message.id] = el;
               }}
-              className={`flex items-end gap-2 min-w-0 ${isOwn ? "justify-end" : "justify-start"} ${isInContextMenu ? "opacity-0" : ""}`}
+              className={`flex items-end ${densityStyles.gap} min-w-0 ${isOwn ? "justify-end" : "justify-start"} ${isInContextMenu ? "opacity-0" : ""}`}
             >
               {/* Avatar for incoming messages */}
               {!isOwn && (
-                <div className="w-8 shrink-0">
+                <div className={`${densityStyles.avatarSize} shrink-0`}>
                   {showAvatar && (
                     <GradientAvatar
                       name={senderName}
                       seed={message.sender_id}
                       avatarUrl={senderAvatar}
                       size="sm"
-                      className="w-8 h-8 text-xs border-white/15"
+                      className={`${densityStyles.avatarSize} text-xs border-white/15`}
                     />
                   )}
                 </div>
@@ -1285,26 +1583,6 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
                   conversationId={conversationId}
                   isOwn={isOwn}
                 />
-              ) : isSharedReel && message.shared_reel_id ? (
-                <div className="flex flex-col gap-1 flex-1 min-w-0">
-                  <SharedReelCard 
-                    reelId={message.shared_reel_id} 
-                    isOwn={isOwn} 
-                    messageId={message.id}
-                    onDelete={async (msgId) => {
-                      const result = await deleteMessage(msgId);
-                      if (result.error) {
-                        toast.error("Не удалось удалить сообщение");
-                      }
-                    }}
-                  />
-                  <div className={`flex items-center gap-1 ${isOwn ? "justify-end" : "justify-start"}`}>
-                    <span className="text-[11px] text-muted-foreground dark:text-white/50">{formatMessageTime(message.created_at)}</span>
-                    {isOwn && (
-                      <CheckCheck className={`w-4 h-4 ${isRead ? 'text-[#6ab3f3]' : 'text-white/40'}`} />
-                    )}
-                  </div>
-                </div>
               ) : isSharedPost && message.shared_post_id ? (
                 <div className="flex flex-col gap-1 flex-1 min-w-0">
                   <SharedPostCard 
@@ -1411,6 +1689,36 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
                     </div>
                   );
                 })()
+              ) : isDocument && message.media_url ? (
+                <div className={`flex flex-col gap-1 flex-1 min-w-0 ${isOwn ? "items-end" : "items-start"}`}>
+                  <DocumentBubble
+                    fileName={(message as any).file_name ?? message.media_url.split("/").pop() ?? "file"}
+                    fileUrl={message.media_url}
+                    fileSize={(message as any).file_size ?? 0}
+                    mimeType={message.media_type ?? undefined}
+                  />
+                  <div className={`mt-0.5 flex items-center gap-1 px-1 ${isOwn ? "self-end" : "self-start"}`}>
+                    <span className="text-[11px] text-muted-foreground dark:text-white/50">{formatMessageTime(message.created_at)}</span>
+                    {isOwn && (
+                      <CheckCheck className={`w-4 h-4 ${isRead ? 'text-[#6ab3f3]' : 'text-white/40'}`} />
+                    )}
+                  </div>
+                </div>
+              ) : isImage && message.media_url && isSelfDestruct ? (
+                <div className={`flex flex-col gap-1 flex-1 min-w-0 ${isOwn ? "items-end" : "items-start"}`}>
+                  <SelfDestructMedia
+                    mediaUrl={message.media_url}
+                    mediaType="image"
+                    ttlSeconds={(message as any).ttl_seconds || 10}
+                    alreadyViewed={(message as any).metadata?.viewed === true}
+                  />
+                  <div className={`mt-0.5 flex items-center gap-1 px-1 ${isOwn ? "self-end" : "self-start"}`}>
+                    <span className="text-[11px] text-muted-foreground dark:text-white/50">{formatMessageTime(message.created_at)}</span>
+                    {isOwn && (
+                      <CheckCheck className={`w-4 h-4 ${isRead ? 'text-[#6ab3f3]' : 'text-white/40'}`} />
+                    )}
+                  </div>
+                </div>
               ) : isImage && message.media_url ? (
                 requiresManualLoad && !isManuallyLoaded ? (
                   <div className={`flex flex-col gap-1 flex-1 min-w-0 ${isOwn ? "items-end" : "items-start"}`}>
@@ -1522,14 +1830,14 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
               ) : (
                 <div className={`flex flex-col flex-1 min-w-0 ${isOwn ? "items-end" : "items-start"}`}>
                   <div
-                    className={`chat-bubble inline-block max-w-[min(75%,560px)] rounded-2xl px-3 py-2 select-none backdrop-blur-xl border border-white/10 ${
+                    className={`chat-bubble relative inline-block max-w-[min(75%,560px)] rounded-2xl px-3 py-2 select-none backdrop-blur-xl border border-white/10 ${
                       isOwn
-                        ? "bg-white/10 text-white rounded-br-sm"
-                        : "bg-white/5 text-white rounded-bl-sm"
+                        ? `${bubbleClass} text-white ${bubbleTailClass}`
+                        : `bg-white/5 text-white ${bubbleTailClass}`
                     } ${selectionMode && selectedIds.has(message.id) ? "ring-2 ring-white/30" : ""}`}
                     style={{
-                      borderRadius: `${messageCornerRadius}px`,
-                      boxShadow: isOwn 
+                      borderRadius: `${effectiveBubbleRadius}px`,
+                      boxShadow: isOwn
                         ? 'inset 0 1px 0 rgba(255,255,255,0.15), 0 4px 20px rgba(0,0,0,0.25)'
                         : 'inset 0 1px 0 rgba(255,255,255,0.1), 0 4px 20px rgba(0,0,0,0.2)'
                     }}
@@ -1591,24 +1899,60 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
                       <span>Сообщение исчезло</span>
                     </p>
                   ) : (
-                    <p className="text-[15px] leading-[1.4] whitespace-pre-wrap break-words max-h-[60vh] overflow-auto">
-                      {(message as any).is_encrypted
-                        ? decryptedCache[message.id] !== undefined
+                    <>
+                    <p className={`${textSizeClass} leading-[1.4] whitespace-pre-wrap break-words max-h-[60vh] overflow-auto`}>
+                      {shouldTreatAsEncrypted
+                        ? hasDecryptedEntry
                           ? <>
                               <EncryptionBadge className="mr-1 align-middle" />
-                              {normalizeBrokenVerticalText(sanitizeReceivedText(decryptedCache[message.id] ?? "🔒 Не удалось расшифровать"))}
+                              {renderText(normalizeBrokenVerticalText(sanitizeReceivedText(decryptedCache[message.id] ?? "🔒 Защищённое сообщение")), user?.id)}
                             </>
                           : <span className="opacity-50 italic text-sm">🔒 Расшифровка…</span>
-                        : normalizeBrokenVerticalText(sanitizeReceivedText(message.content))
+                        : renderText(normalizeBrokenVerticalText(sanitizeReceivedText(message.content)), user?.id)
                       }
                     </p>
+                    {/* Link Preview — max 1 per message */}
+                    {globalSettings.link_preview_enabled && !shouldTreatAsEncrypted && (() => {
+                      const urls = extractUrls(message.content || "");
+                      return urls.length > 0 ? (
+                        <LinkPreview key={urls[0]} url={urls[0]} enabled={globalSettings.link_preview_enabled} />
+                      ) : null;
+                    })()}
+                    </>
                   )}
                   
+                  {/* UI-4: Bubble tail for first message in sender group */}
+                  {isFirstInGroup && (
+                    <BubbleTail
+                      side={isOwn ? "right" : "left"}
+                      color={isOwn ? "rgba(255,255,255,0.1)" : "rgba(255,255,255,0.05)"}
+                    />
+                  )}
                   </div>
+
+                  {/* Reactions */}
+                  {(() => {
+                    const msgReactions = getReactions(message.id);
+                    return msgReactions.length > 0 ? (
+                      <MessageReactions
+                        messageId={message.id}
+                        reactions={msgReactions}
+                        showPicker={false}
+                        onPickerClose={() => {}}
+                        onReactionChange={() => {}}
+                      />
+                    ) : null;
+                  })()}
 
                   {/* Time and read status (outside bubble) */}
                   <div className={`mt-0.5 flex items-center gap-1 px-1 ${isOwn ? "self-end" : "self-start"}`}>
                     <span className="text-[11px] text-muted-foreground dark:text-white/50">{formatMessageTime(message.created_at)}</span>
+                    {message.is_silent && (
+                      <span className="text-[11px]" title="Отправлено без звука">🔕</span>
+                    )}
+                    {(message as any).edited_at && (
+                      <span className="text-[10px] text-white/40 italic">ред.</span>
+                    )}
                     {message.disappear_at && message.disappear_in_seconds && !message.disappeared && (
                       <DisappearCountdown
                         disappearAt={message.disappear_at}
@@ -1623,31 +1967,82 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
               )}
             </div>
             </SwipeableMessage>
+            </Fragment>
           );
         })}
         </div>
         <div ref={messagesEndRef} />
         </div>
       </ChatBackground>
+      </div>{/* end scrollContainerRef div */}
+
+      {/* Text selection floating menu */}
+      <TextSelectionMenu
+        onReplyWithQuote={(text) => {
+          setQuotedText(text);
+          setReplyTo({ id: "", preview: text.slice(0, 80) });
+        }}
+        onCopy={(text) => {
+          navigator.clipboard.writeText(text).catch(() => {});
+        }}
+      />
+
+      {/* Reply Keyboard for bots */}
+      {replyKeyboard && (
+        <ReplyKeyboard
+          keyboard={replyKeyboard}
+          onButtonPress={(text) => {
+            void handleSendMessage(false, text);
+          }}
+          resizable
+        />
+      )}
 
       {/* Input area - Fully transparent like Telegram */}
       <div className="flex-shrink-0 relative z-10">
         
         {/* Input controls */}
         <div className="px-3 py-3">
-          {replyTo && (
+          {editingMessage && (
+            <div className="mb-2 rounded-2xl bg-blue-900/40 backdrop-blur-xl border border-blue-500/30 px-3 py-2 flex items-start justify-between gap-2">
+              <div className="min-w-0 flex items-center gap-2">
+                <Pencil className="w-4 h-4 text-blue-400 shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-xs text-blue-300">Редактирование</p>
+                  <p className="text-sm text-white/80 truncate">{editingMessage.content}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingMessage(null);
+                  setInputText("");
+                }}
+                className="shrink-0 p-1 rounded-md hover:bg-white/10"
+                aria-label="Отменить редактирование"
+              >
+                <X className="w-4 h-4 text-white/60" />
+              </button>
+            </div>
+          )}
+          {!editingMessage && replyTo && (
             <div className="mb-2 rounded-2xl bg-black/35 backdrop-blur-xl border border-white/10 px-3 py-2 flex items-start justify-between gap-2">
               <button
                 className="min-w-0 text-left"
-                onClick={() => scrollToMessage(replyTo.id)}
+                onClick={() => replyTo.id ? scrollToMessage(replyTo.id) : undefined}
                 type="button"
               >
                 <p className="text-xs text-white/60">Ответ</p>
                 <p className="text-sm text-white/90 truncate">{replyTo.preview}</p>
+                {quotedText && (
+                  <div className="text-xs italic text-white/60 mt-1 border-l-2 border-blue-400 pl-2">
+                    {quotedText}
+                  </div>
+                )}
               </button>
               <button
                 type="button"
-                onClick={() => setReplyTo(null)}
+                onClick={() => { setReplyTo(null); setQuotedText(null); }}
                 className="shrink-0 p-1 rounded-md hover:bg-white/10"
                 aria-label="Отменить ответ"
               >
@@ -1694,23 +2089,96 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
             </div>
           ) : (
             <div className="flex items-center gap-3">
+              <button
+                onClick={() => setShowAttachmentSheet(true)}
+                className="w-11 h-11 rounded-full shrink-0 flex items-center justify-center border border-white/20 bg-white/5 text-white/60 hover:text-white/80 hover:bg-white/10 transition-colors"
+                aria-label="Вложение"
+                type="button"
+              >
+                <AttachmentIcon className="w-5 h-5" />
+              </button>
+
               {/* Input field - dark transparent like Telegram */}
               <div className="flex-1 relative">
-                <input
+                {/* Inline bot results popup */}
+                {inlineBotTrigger && (
+                  <InlineBotResults
+                    botUsername={inlineBotTrigger.botUsername}
+                    query={inlineBotTrigger.query}
+                    onSelectResult={(result) => {
+                      if (result.sendContent.text) handleSendMessage(false, result.sendContent.text);
+                      setInlineBotTrigger(null);
+                    }}
+                    onDismiss={() => setInlineBotTrigger(null)}
+                  />
+                )}
+
+                {/* @Mention suggestions popup */}
+                <MentionSuggestions
+                  suggestions={mentionSuggestions}
+                  visible={mentionTrigger !== null && mentionSuggestions.length > 0}
+                  onSelect={(user) => {
+                    if (!mentionTrigger) return;
+                    const caret = inputRef.current?.selectionStart ?? inputText.length;
+                    const { newText, newCaretPos } = insertMention(inputText, caret, mentionTrigger.triggerStart, user.username ?? user.display_name ?? user.user_id);
+                    handleInputChange(newText, newCaretPos);
+                    setMentionTrigger(null);
+                    requestAnimationFrame(() => {
+                      if (inputRef.current) {
+                        inputRef.current.focus();
+                        inputRef.current.setSelectionRange(newCaretPos, newCaretPos);
+                      }
+                    });
+                  }}
+                  externalActiveIndex={mentionActiveIndex}
+                />
+                <AutoGrowTextarea
                   ref={inputRef}
-                  type="text"
                   placeholder="Сообщение"
                   value={inputText}
-                  onChange={(e) => handleInputChange(e.target.value)}
+                  onChange={(e) => handleInputChange(e.target.value, (e.target as HTMLTextAreaElement).selectionStart ?? undefined)}
+                  onSend={() => {
+                    if (!isSending) void handleSendMessage();
+                  }}
                   onKeyDown={(e) => {
-                    if (e.key !== "Enter") return;
-                    e.preventDefault();
-                    if (e.repeat) return;
-                    if (isSending) return;
-                    void handleSendMessage();
+                    // Mention keyboard navigation
+                    if (mentionTrigger && mentionSuggestions.length > 0) {
+                      if (e.key === "ArrowDown") {
+                        e.preventDefault();
+                        setMentionActiveIndex(i => Math.min(i + 1, mentionSuggestions.length - 1));
+                        return;
+                      }
+                      if (e.key === "ArrowUp") {
+                        e.preventDefault();
+                        setMentionActiveIndex(i => Math.max(i - 1, 0));
+                        return;
+                      }
+                      if (e.key === "Enter" || e.key === "Tab") {
+                        e.preventDefault();
+                        const selected = mentionSuggestions[mentionActiveIndex];
+                        if (selected) {
+                          const caret = inputRef.current?.selectionStart ?? inputText.length;
+                          const { newText, newCaretPos } = insertMention(inputText, caret, mentionTrigger.triggerStart, selected.username ?? selected.display_name ?? selected.user_id);
+                          handleInputChange(newText, newCaretPos);
+                          setMentionTrigger(null);
+                          requestAnimationFrame(() => {
+                            if (inputRef.current) {
+                              inputRef.current.focus();
+                              inputRef.current.setSelectionRange(newCaretPos, newCaretPos);
+                            }
+                          });
+                        }
+                        return;
+                      }
+                      if (e.key === "Escape") {
+                        setMentionTrigger(null);
+                        return;
+                      }
+                    }
+                    // Enter handled by onSend above; block default to avoid newline on send
                   }}
                   onFocus={() => setShowEmojiPicker(false)}
-                  className="w-full h-11 px-5 pr-20 rounded-full text-white placeholder:text-white/50 outline-none bg-black/40 border-0 transition-all"
+                  className="w-full px-5 pr-20 rounded-2xl bg-black/40"
                 />
                 {/* Icons inside input */}
                 <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
@@ -1727,12 +2195,6 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
                     className={`transition-colors ${showEmojiPicker ? 'text-cyan-400' : 'text-white/50 hover:text-white/70'}`}
                   >
                     <Smile className="w-5 h-5" />
-                  </button>
-                  <button
-                    onClick={() => setShowAttachmentSheet(true)}
-                    className="text-white/50 hover:text-white/70 transition-colors"
-                  >
-                    <AttachmentIcon className="w-5 h-5" />
                   </button>
                   {!isGroup && (
                     <button
@@ -1755,52 +2217,64 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
               
               {/* Right button - Dynamic based on text and record mode */}
               {inputText.trim() ? (
-                <button
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    sendButtonLongPressRef.current = setTimeout(() => {
-                      sendButtonLongPressRef.current = null;
+                <div className="relative shrink-0">
+                  <SendOptionsMenu
+                    open={showSendOptions}
+                    onClose={() => setShowSendOptions(false)}
+                    onSend={() => void handleSendMessage(false)}
+                    onSilent={() => void handleSendMessage(true)}
+                    onSchedule={() => {
                       setPendingScheduleContent(inputText.trim());
                       setShowSchedulePicker(true);
-                    }, 600);
-                  }}
-                  onMouseUp={(e) => {
-                    if (sendButtonLongPressRef.current) {
-                      clearTimeout(sendButtonLongPressRef.current);
-                      sendButtonLongPressRef.current = null;
-                      void handleSendMessage();
-                    }
-                  }}
-                  onMouseLeave={() => {
-                    if (sendButtonLongPressRef.current) {
-                      clearTimeout(sendButtonLongPressRef.current);
-                      sendButtonLongPressRef.current = null;
-                    }
-                  }}
-                  onTouchStart={(e) => {
-                    e.preventDefault();
-                    sendButtonLongPressRef.current = setTimeout(() => {
-                      sendButtonLongPressRef.current = null;
-                      setPendingScheduleContent(inputText.trim());
-                      setShowSchedulePicker(true);
-                    }, 600);
-                  }}
-                  onTouchEnd={() => {
-                    if (sendButtonLongPressRef.current) {
-                      clearTimeout(sendButtonLongPressRef.current);
-                      sendButtonLongPressRef.current = null;
-                      void handleSendMessage();
-                    }
-                  }}
-                  disabled={isSending}
-                  className="w-12 h-12 rounded-full flex items-center justify-center shrink-0 transition-all"
-                  style={{
-                    background: 'linear-gradient(135deg, #00A3B4 0%, #0066CC 50%, #00C896 100%)',
-                    boxShadow: '0 0 25px rgba(0,163,180,0.5), 0 4px 20px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.2)'
-                  }}
-                >
-                  <Send className="w-5 h-5 text-white" />
-                </button>
+                    }}
+                  />
+                  <button
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      sendButtonLongPressRef.current = setTimeout(() => {
+                        sendButtonLongPressRef.current = null;
+                        setShowSendOptions(true);
+                      }, 500);
+                    }}
+                    onMouseUp={() => {
+                      if (sendButtonLongPressRef.current) {
+                        clearTimeout(sendButtonLongPressRef.current);
+                        sendButtonLongPressRef.current = null;
+                        void handleSendMessage(false);
+                      }
+                    }}
+                    onMouseLeave={() => {
+                      if (sendButtonLongPressRef.current) {
+                        clearTimeout(sendButtonLongPressRef.current);
+                        sendButtonLongPressRef.current = null;
+                      }
+                    }}
+                    onTouchStart={(e) => {
+                      e.preventDefault();
+                      sendButtonLongPressRef.current = setTimeout(() => {
+                        sendButtonLongPressRef.current = null;
+                        setShowSendOptions(true);
+                      }, 500);
+                    }}
+                    onTouchEnd={() => {
+                      if (sendButtonLongPressRef.current) {
+                        clearTimeout(sendButtonLongPressRef.current);
+                        sendButtonLongPressRef.current = null;
+                        void handleSendMessage(false);
+                      }
+                    }}
+                    disabled={isSending}
+                    className="w-12 h-12 rounded-full flex items-center justify-center transition-all"
+                    style={{
+                      background: isSilentSend
+                        ? 'linear-gradient(135deg, #b45309 0%, #92400e 100%)'
+                        : 'linear-gradient(135deg, #00A3B4 0%, #0066CC 50%, #00C896 100%)',
+                      boxShadow: '0 0 25px rgba(0,163,180,0.5), 0 4px 20px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.2)'
+                    }}
+                  >
+                    <Send className="w-5 h-5 text-white" />
+                  </button>
+                </div>
               ) : (
                 <button
                   onPointerDown={handleRecordButtonDown}
@@ -1889,6 +2363,18 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
         open={showAttachmentSheet}
         onOpenChange={setShowAttachmentSheet}
         onSelectFile={handleAttachment}
+        onOpenCamera={() => {
+          setShowCameraSheet(true);
+        }}
+      />
+
+      <CameraCaptureSheet
+        open={showCameraSheet}
+        onOpenChange={setShowCameraSheet}
+        settingsScopeKey={`dm:${conversationId}`}
+        onSendFile={async (file, type) => {
+          await handleAttachment(file, type);
+        }}
       />
 
 
@@ -2001,6 +2487,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
           onReply={handleMessageReply}
           onForward={handleMessageForward}
           onSelect={handleMessageSelect}
+          onEdit={handleMessageEdit}
         />
       )}
 
@@ -2090,7 +2577,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
             // attach poll_id via extra field
             (envelope as any).poll_id = pollId;
             try {
-              await sendMessageV1({ conversationId, clientMsgId, body: { ...envelope, poll_id: pollId } });
+              await sendMessageV1({ conversationId, clientMsgId, body: envelope as any });
             } catch (e) {
               console.error('sendPoll error', e);
             }
@@ -2103,6 +2590,14 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
         conversationId={conversationId}
         open={showChatSettings}
         onClose={() => setShowChatSettings(false)}
+      />
+
+      {/* UI-6: Jump to date picker */}
+      <JumpToDatePicker
+        open={showJumpToPicker}
+        onClose={() => setShowJumpToPicker(false)}
+        messages={messages}
+        onJump={scrollToMessage}
       />
 
     </div>

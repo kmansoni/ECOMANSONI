@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { Reply, Copy, Pin, Forward, Trash2, CheckSquare } from "lucide-react";
+import { Reply, Copy, Pin, Forward, Trash2, CheckSquare, Bookmark, BookmarkMinus, Pencil, Languages, Flag } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 interface MessageContextMenuProps {
@@ -16,6 +16,12 @@ interface MessageContextMenuProps {
   onReply?: (messageId: string) => void;
   onForward?: (messageId: string) => void;
   onSelect?: (messageId: string) => void;
+  onSave?: (messageId: string) => void;
+  onUnsave?: (messageId: string) => void;
+  isSaved?: boolean;
+  onEdit?: (messageId: string, content: string) => void;
+  onTranslate?: (messageId: string, text: string) => void;
+  onReport?: (messageId: string) => void;
 }
 
 const QUICK_REACTIONS_FALLBACK = ["❤️", "🔥", "👍", "😂", "😮", "🎉"];
@@ -34,6 +40,12 @@ export function MessageContextMenu({
   onReply,
   onForward,
   onSelect,
+  onSave,
+  onUnsave,
+  isSaved = false,
+  onEdit,
+  onTranslate,
+  onReport,
 }: MessageContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const reactions = quickReactions?.length ? quickReactions : QUICK_REACTIONS_FALLBACK;
@@ -74,6 +86,20 @@ export function MessageContextMenu({
 
   const handleSelect = () => {
     onSelect?.(messageId);
+    onClose();
+  };
+
+  const handleSave = () => {
+    if (isSaved) {
+      onUnsave?.(messageId);
+    } else {
+      onSave?.(messageId);
+    }
+    onClose();
+  };
+
+  const handleEdit = () => {
+    onEdit?.(messageId, messageContent);
     onClose();
   };
 
@@ -185,10 +211,24 @@ export function MessageContextMenu({
             >
               <MenuItem icon={Reply} label="Ответить" onClick={handleReply} />
               <MenuItem icon={Copy} label="Скопировать" onClick={handleCopy} />
+              {isOwn && onEdit && (
+                <MenuItem icon={Pencil} label="Редактировать" onClick={handleEdit} />
+              )}
+              <MenuItem
+                icon={isSaved ? BookmarkMinus : Bookmark}
+                label={isSaved ? "Удалить из избранного" : "Сохранить в избранное"}
+                onClick={handleSave}
+              />
               <MenuItem icon={Pin} label="Закрепить" onClick={handlePin} />
               <MenuItem icon={Forward} label="Переслать" onClick={handleForward} />
+              {onTranslate && (
+                <MenuItem icon={Languages} label="Перевести" onClick={() => { onTranslate(messageId, messageContent); onClose(); }} />
+              )}
               <MenuItem icon={Trash2} label="Удалить" onClick={handleDelete} isDestructive />
-              <MenuItem icon={CheckSquare} label="Выбрать" onClick={handleSelect} isLast />
+              <MenuItem icon={CheckSquare} label="Выбрать" onClick={handleSelect} isLast={!onReport} />
+              {onReport && (
+                <MenuItem icon={Flag} label="Пожаловаться" onClick={() => { onReport(messageId); onClose(); }} isDestructive isLast />
+              )}
             </motion.div>
           </motion.div>
         </motion.div>

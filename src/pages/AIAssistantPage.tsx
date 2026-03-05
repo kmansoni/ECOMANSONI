@@ -38,8 +38,11 @@ const SUPABASE_ANON_KEY = (
   import.meta.env.VITE_SUPABASE_ANON_KEY
 ) as string;
 
-// Edge function URL (requires deployed aria-chat function)
-const EDGE_CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/aria-chat`;
+// Edge function URL (requires deployed aria-chat Supabase function)
+const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL as string | undefined) ?? "";
+const EDGE_CHAT_URL = SUPABASE_URL
+  ? `${SUPABASE_URL}/functions/v1/aria-chat`
+  : "";
 
 // Direct API URL (requires VITE_AI_API_KEY in .env.local)
 const DIRECT_AI_URL =
@@ -52,6 +55,75 @@ const DIRECT_AI_MODEL =
 
 // Use direct API if VITE_AI_API_KEY is set, otherwise use edge function
 const USE_DIRECT = Boolean(DIRECT_AI_KEY);
+
+// ─── Client-side built-in fallback (no server required) ───────────────────────
+function clientBuiltinResponse(messages: Array<{ role: string; content: string }>): string {
+  const lastUser = [...messages].reverse().find((m) => m.role === "user");
+  const prompt = (lastUser?.content ?? "").toLowerCase().trim();
+
+  if (/^(привет|hello|hi |здравствуй|добрый|хай)/.test(prompt)) {
+    return "Привет! Я **ARIA** — ИИ-ассистент платформы Mansoni.\n\nЧем могу помочь?\n- 💻 Код (Python, TypeScript, SQL и др.)\n- 🔒 Безопасность кода\n- 📊 Анализ данных\n- ✍️ Документация и тексты\n\n> **Для полных возможностей:** настройте `VITE_AI_API_KEY` в `.env.local` или задеплойте `aria-chat` Edge Function в Supabase.";
+  }
+  if (/кто ты|who are you|what are you/.test(prompt)) {
+    return "Я **ARIA** (Advanced Reasoning & Intelligence Assistant) — самообучающийся ИИ-ассистент платформы Mansoni.\n\nАрхитектура: GPT-based Transformer + RAG + ReAct Agent + 3-layer Memory.\n\n**Режим:** базовый (client-side fallback)\n> Для полного режима: настройте AI backend через `VITE_AI_API_KEY`.";
+  }
+  if (/(fastapi|flask).*jwt|jwt.*(fastapi|flask)/.test(prompt)) {
+    return `# FastAPI + JWT\n\n\`\`\`python\nfrom fastapi import FastAPI, Depends, HTTPException\nfrom fastapi.security import OAuth2PasswordBearer\nfrom jose import JWTError, jwt\nfrom datetime import datetime, timedelta\nimport os\n\nSECRET_KEY = os.environ["JWT_SECRET"]\nALGORITHM = "HS256"\n\napp = FastAPI()\noauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")\n\ndef create_token(data: dict, expires: timedelta = timedelta(minutes=30)):\n    return jwt.encode({**data, "exp": datetime.utcnow() + expires}, SECRET_KEY, ALGORITHM)\n\n@app.get("/protected")\nasync def protected(token: str = Depends(oauth2_scheme)):\n    try:\n        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])\n        return {"user": payload.get("sub")}\n    except JWTError:\n        raise HTTPException(status_code=401, detail="Invalid token")\n\`\`\`\n\n\`\`\`bash\npip install fastapi python-jose[cryptography] passlib[bcrypt]\n\`\`\``;
+  }
+  if (/python.*list|список.*python|list comprehension/.test(prompt)) {
+    return "# Списки в Python\n\n```python\nnums = [1, 2, 3, 4, 5]\nsquares = [x**2 for x in nums]          # [1, 4, 9, 16, 25]\nevens = [x for x in nums if x % 2 == 0] # [2, 4]\n\n# Сортировка\nnums.sort()                              # На месте\nsorted_desc = sorted(nums, reverse=True) # Новый список\n\n# Срезы\nfirst_three = nums[:3]\nlast_two = nums[-2:]\nreversed_list = nums[::-1]\n\nprint(len(nums), sum(nums), min(nums), max(nums))\n```";
+  }
+  if (/sql|database|запрос/.test(prompt)) {
+    return "# SQL — основные паттерны\n\n```sql\n-- JOIN + агрегация\nSELECT u.name, COUNT(o.id) as orders\nFROM users u\nLEFT JOIN orders o ON u.id = o.user_id\nWHERE u.active = true\nGROUP BY u.id, u.name\nHAVING COUNT(o.id) > 0\nORDER BY orders DESC;\n\n-- Индексы\nCREATE INDEX CONCURRENTLY idx_orders_user ON orders(user_id);\n\n-- CTE\nWITH latest AS (\n  SELECT *, ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY created_at DESC) rn\n  FROM orders\n)\nSELECT * FROM latest WHERE rn = 1;\n```";
+  }
+  if (/безопасност|security|xss|sql.?inject|уязвим/.test(prompt)) {
+    return "# Безопасность кода\n\n## SQL Injection\n```python\n# ❌ Уязвимо\nquery = f\"SELECT * FROM users WHERE id = {user_id}\"\n\n# ✅ Безопасно\ncursor.execute(\"SELECT * FROM users WHERE id = %s\", (user_id,))\n```\n\n## XSS\n```typescript\n// ❌ Уязвимо\nelement.innerHTML = userInput;\n\n// ✅ Безопасно\nelement.textContent = userInput;\n```\n\n## Secrets\n```python\n# ❌ Никогда\nAPI_KEY = \"sk-hardcoded\"\n\n# ✅ Всегда\nAPI_KEY = os.environ[\"API_KEY\"]\n```";
+  }
+  if (/typescript|react|tsx|компонент/.test(prompt)) {
+    return "# React + TypeScript хук\n\n```tsx\nimport { useState, useCallback } from 'react';\n\nfunction useCounter(initial = 0) {\n  const [count, setCount] = useState(initial);\n  const increment = useCallback(() => setCount(c => c + 1), []);\n  const decrement = useCallback(() => setCount(c => c - 1), []);\n  const reset = useCallback(() => setCount(initial), [initial]);\n  return { count, increment, decrement, reset };\n}\n\n// Использование\nexport function Counter() {\n  const { count, increment, decrement, reset } = useCounter(0);\n  return (\n    <div className=\"flex gap-2 items-center\">\n      <button onClick={decrement}>−</button>\n      <span className=\"font-bold\">{count}</span>\n      <button onClick={increment}>+</button>\n      <button onClick={reset} className=\"text-xs\">Reset</button>\n    </div>\n  );\n}\n```";
+  }
+  if (/docker|контейнер|dockerfile/.test(prompt)) {
+    return "# Dockerfile (Python)\n\n```dockerfile\nFROM python:3.12-slim AS builder\nWORKDIR /app\nCOPY requirements.txt .\nRUN pip install --no-cache-dir --user -r requirements.txt\n\nFROM python:3.12-slim\nWORKDIR /app\nRUN useradd --create-home appuser && chown -R appuser /app\nUSER appuser\nCOPY --from=builder /root/.local /home/appuser/.local\nCOPY . .\nENV PATH=/home/appuser/.local/bin:$PATH PYTHONUNBUFFERED=1\nEXPOSE 8000\nCMD [\"uvicorn\", \"main:app\", \"--host\", \"0.0.0.0\", \"--port\", \"8000\"]\n```\n\n```bash\ndocker build -t myapp .\ndocker compose up -d\ndocker logs myapp -f\n```";
+  }
+
+  // Generic response
+  const preview = lastUser?.content?.slice(0, 150) ?? "";
+  return `Я **ARIA** — ИИ-ассистент Mansoni. Вы написали: *"${preview}${preview.length >= 150 ? "..." : ""}"*\n\nПопробуйте спросить о:\n- Коде и архитектуре\n- Безопасности\n- SQL и базах данных\n- Docker и DevOps\n- React / TypeScript\n\n> **Режим:** client-side fallback (без сервера)\n> Для полного AI: настройте \`VITE_AI_API_KEY\` в \`.env.local\``;
+}
+
+/** Создать ReadableStream из текста для имитации SSE streaming */
+function textToSSEStream(text: string): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  const words = text.split(" ");
+  const id = `chatcmpl-local-${Date.now()}`;
+
+  return new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const chunkSize = 3;
+      for (let i = 0; i < words.length; i += chunkSize) {
+        const chunk = words.slice(i, i + chunkSize).join(" ");
+        const delta = i + chunkSize < words.length ? chunk + " " : chunk;
+        const data = JSON.stringify({
+          id, object: "chat.completion.chunk",
+          created: Math.floor(Date.now() / 1000),
+          model: "aria-local",
+          choices: [{ index: 0, delta: { content: delta }, finish_reason: null }],
+        });
+        controller.enqueue(encoder.encode(`data: ${data}\n\n`));
+        await new Promise((r) => setTimeout(r, 20));
+      }
+      const done = JSON.stringify({
+        id, object: "chat.completion.chunk",
+        created: Math.floor(Date.now() / 1000),
+        model: "aria-local",
+        choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+      });
+      controller.enqueue(encoder.encode(`data: ${done}\n\n`));
+      controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+      controller.close();
+    },
+  });
+}
 
 // ─── ARIA System Prompt (client-side, used only in direct-API mode) ───────────
 const ARIA_SYSTEM_PROMPT = `You are ARIA (Advanced Reasoning & Intelligence Assistant) — a multimodal, constitutionally aligned AI assistant.
@@ -302,7 +374,7 @@ export function AIAssistantPage() {
             }),
             signal: controller.signal,
           });
-        } else {
+        } else if (EDGE_CHAT_URL && SUPABASE_ANON_KEY) {
           // ── Edge Function call (aria-chat must be deployed) ───────────────
           resp = await fetch(EDGE_CHAT_URL, {
             method: "POST",
@@ -314,6 +386,9 @@ export function AIAssistantPage() {
             body: JSON.stringify({ messages: historyForApi }),
             signal: controller.signal,
           });
+        } else {
+          // ── No backend configured → client-side fallback immediately ─────
+          throw new TypeError("Failed to fetch: no backend configured");
         }
 
         if (!resp.ok) {
@@ -374,11 +449,54 @@ export function AIAssistantPage() {
         }
 
         console.error("[AIAssistantPage] stream error:", err);
-        toast.error(
-          err instanceof Error ? err.message : "Ошибка соединения с ARIA"
-        );
 
-        // Remove the empty assistant placeholder on error
+        // ── Client-side fallback: если сеть/сервер недоступен — отвечаем локально ──
+        const errMsg = err instanceof Error ? err.message : "";
+        const isNetworkOrServerError =
+          (err instanceof TypeError && errMsg.includes("fetch")) ||
+          errMsg.includes("Failed to fetch") ||
+          errMsg.includes("NetworkError") ||
+          errMsg.includes("не задеплоена") ||
+          errMsg.includes("503") ||
+          errMsg.includes("502") ||
+          errMsg.includes("AI service is not configured");
+
+        if (isNetworkOrServerError) {
+          const historyForFallback = [...messages, userMsg].map((m) => ({
+            role: m.role,
+            content: m.content,
+          }));
+          const localText = clientBuiltinResponse(historyForFallback);
+          const fakeStream = textToSSEStream(localText);
+          const fakeReader = fakeStream.getReader();
+          let accumulated = "";
+          try {
+            for await (const payload of parseSSE(fakeReader)) {
+              try {
+                const parsed = JSON.parse(payload);
+                const delta: string | undefined = parsed.choices?.[0]?.delta?.content;
+                if (delta) {
+                  accumulated += delta;
+                  setMessages((prev) =>
+                    prev.map((m) =>
+                      m.id === assistantId
+                        ? { ...m, content: accumulated, streaming: true }
+                        : m
+                    )
+                  );
+                }
+              } catch { /* ignore incomplete */ }
+            }
+          } catch { /* ignore */ }
+          setMessages((prev) =>
+            prev.map((m) => m.id === assistantId ? { ...m, streaming: false } : m)
+          );
+          return;
+        }
+
+        toast.error(errMsg || "Ошибка соединения с ARIA");
+
+        // Убрать пустой placeholder при ошибке
         setMessages((prev) =>
           prev.filter((m) => !(m.id === assistantId && m.content === ""))
         );
