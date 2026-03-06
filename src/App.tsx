@@ -100,6 +100,11 @@ const PeopleNearbyPage = lazy(() => import("./pages/PeopleNearbyPage"));
 const BusinessAccountPage = lazy(() => import("./pages/BusinessAccountPage"));
 const AIAssistantPage = lazy(() => import("@/pages/AIAssistantPage"));
 
+// Taxi module (lazy)
+const TaxiHomePage = lazy(() => import("./pages/taxi/TaxiHomePage"));
+const TaxiHistoryPage = lazy(() => import("./pages/taxi/TaxiHistoryPage"));
+const TaxiSettingsPage = lazy(() => import("./pages/taxi/TaxiSettingsPage"));
+
 const NotificationsPage = lazy(() => import("@/pages/NotificationsPage").then(m => ({ default: m.NotificationsPage })));
 const NotificationSettingsPage = lazy(() => import("@/pages/NotificationSettingsPage").then(m => ({ default: m.NotificationSettingsPage })));
 
@@ -593,6 +598,22 @@ const App = () => {
                     <Route path="/email" element={
                       <Suspense fallback={<PageLoader />}>
                         <EmailPage />
+                      </Suspense>
+                    } />
+                    {/* ─── Taxi Module ─────────────────────── */}
+                    <Route path="/taxi" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <TaxiHomePage />
+                      </Suspense>
+                    } />
+                    <Route path="/taxi/history" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <TaxiHistoryPage />
+                      </Suspense>
+                    } />
+                    <Route path="/taxi/settings" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <TaxiSettingsPage />
                       </Suspense>
                     } />
                     <Route path="/ai-assistant" element={

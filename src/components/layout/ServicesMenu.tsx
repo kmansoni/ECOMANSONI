@@ -15,7 +15,7 @@ interface ServiceItem {
 
 const services: ServiceItem[] = [
   { id: "ai-assistant", name: "ИИ-ассистент", icon: Bot, route: "/ai-assistant", available: true },
-  { id: "taxi", name: "Такси", icon: Car, available: true },
+  { id: "taxi", name: "Такси", icon: Car, route: "/taxi", available: true },
   { id: "carsharing", name: "Каршеринг", icon: Car, available: true },
   { id: "delivery", name: "Доставка", icon: Truck, available: true },
   { id: "marketplace", name: "Маркетплейс", icon: ShoppingBag, available: true },

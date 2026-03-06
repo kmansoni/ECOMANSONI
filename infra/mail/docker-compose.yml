@@ -1,0 +1,147 @@
+version: "3.8"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Mansoni Mail Server — Production SMTP Stack
+#
+# Components:
+#   mailserver  — docker-mailserver (Postfix + Dovecot + OpenDKIM + SpamAssassin
+#                 + Fail2ban). Handles inbound/outbound SMTP and IMAP.
+#   email-router — HTTP API (port 8090) that accepts JSON send requests,
+#                  renders templates, and relays to Postfix via SMTP :587.
+#   certbot     — Automatic TLS certificate renewal via Let's Encrypt.
+#
+# Security model:
+#   - email-router is NOT exposed to the internet directly.
+#     It is called only by the Supabase Edge Function (email-send) which
+#     holds the API key in Vault. Firewall should block :8090 from public.
+#   - Postfix submission port :587 is only accessible within Docker network
+#     from email-router. External clients use :465 (SMTPS) or :587 with auth.
+#   - All SMTP connections use STARTTLS or implicit TLS.
+#   - Fail2ban protects against brute-force on :25, :587, :465, :993.
+#
+# Usage:
+#   cp .env.example .env && nano .env
+#   ./setup-mail.sh
+#   docker compose up -d
+# ═══════════════════════════════════════════════════════════════════════════════
+
+services:
+
+  # ─── docker-mailserver ──────────────────────────────────────────────────────
+  # Postfix + Dovecot + OpenDKIM + SpamAssassin + Fail2ban
+  # https://docker-mailserver.github.io/docker-mailserver/latest/
+  mailserver:
+    image: ghcr.io/docker-mailserver/docker-mailserver:14
+    container_name: mailserver
+    hostname: mail.mansoni.ru
+    domainname: mansoni.ru
+    restart: unless-stopped
+    stop_grace_period: 60s
+    ports:
+      - "25:25"      # SMTP — inbound from other mail servers (MX)
+      - "465:465"    # SMTPS — implicit TLS (legacy clients)
+      - "587:587"    # SMTP Submission — STARTTLS (authenticated clients)
+      - "993:993"    # IMAPS — Dovecot IMAP over TLS
+    volumes:
+      # Mail storage (Maildir format)
+      - ./data/mail-data/:/var/mail/
+      # Persistent state (queues, indexes)
+      - ./data/mail-state/:/var/mail-state/
+      # Mail logs
+      - ./data/mail-logs/:/var/log/mail/
+      # Configuration (accounts, aliases, DKIM keys, etc.)
+      - ./config/:/tmp/docker-mailserver/
+      # TLS certificates from Let's Encrypt
+      - ./certs/:/etc/letsencrypt/:ro
+      # Timezone
+      - /etc/localtime:/etc/localtime:ro
+    env_file:
+      - mailserver.env
+    environment:
+      # Override hostname (must match PTR record)
+      - OVERRIDE_HOSTNAME=mail.mansoni.ru
+    cap_add:
+      # Required for Fail2ban (iptables manipulation)
+      - NET_ADMIN
+      # Required for Fail2ban (process inspection)
+      - SYS_PTRACE
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    healthcheck:
+      test: ["CMD-SHELL", "ss -tlnp | grep -q ':25 ' && ss -tlnp | grep -q ':587 '"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+    networks:
+      - mail-net
+
+  # ─── email-router ───────────────────────────────────────────────────────────
+  # HTTP API: POST /send → validates → renders template → relays to Postfix
+  # Source: ../../email-router/
+  email-router:
+    build:
+      context: ../../email-router
+      dockerfile: Dockerfile
+      target: production
+    image: mansoni/email-router:latest
+    container_name: email-router
+    restart: unless-stopped
+    stop_grace_period: 30s
+    ports:
+      # Expose only on localhost — Supabase Edge Function reaches via tunnel/VPN
+      # In production: block :8090 on public firewall, use internal network only
+      - "127.0.0.1:8090:8090"
+    environment:
+      - EMAIL_ROUTER_PORT=8090
+      - EMAIL_ROUTER_API_KEY=${EMAIL_ROUTER_API_KEY}
+      # Docker DNS: container name resolves to mailserver's internal IP
+      - SMTP_HOST=mailserver
+      - SMTP_PORT=587
+      - SMTP_USER=${SMTP_ASSET_USER}
+      - SMTP_PASS=${SMTP_ASSET_PASSWORD}
+      - SMTP_FROM=${SMTP_ASSET_USER}
+      - SMTP_SECURE=false
+      - MAIL_DOMAIN=mansoni.ru
+      - CORS_ORIGINS=${CORS_ORIGINS}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    depends_on:
+      mailserver:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"const h=require('http');h.get('http://localhost:8090/health',(r)=>{process.exit(r.statusCode===200||r.statusCode===503?0:1)}).on('error',()=>process.exit(1))\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks:
+      - mail-net
+
+  # ─── certbot ────────────────────────────────────────────────────────────────
+  # Automatic TLS certificate renewal (Let's Encrypt)
+  # Certificates are shared with mailserver via ./certs/ volume
+  certbot:
+    image: certbot/certbot:latest
+    container_name: certbot
+    restart: unless-stopped
+    volumes:
+      - ./certs/:/etc/letsencrypt/
+      - ./certbot-www/:/var/www/certbot/
+    # Renew every 12 hours; certbot only acts when cert is near expiry
+    entrypoint: >
+      /bin/sh -c "
+        trap exit TERM;
+        while :; do
+          certbot renew --quiet --webroot --webroot-path=/var/www/certbot;
+          sleep 12h & wait $${!};
+        done
+      "
+    networks:
+      - mail-net
+
+networks:
+  mail-net:
+    driver: bridge
+    name: mansoni-mail-net

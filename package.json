@@ -66,6 +66,7 @@
     "@capacitor/android": "^8.0.1",
     "@capacitor/cli": "^8.0.1",
     "@capacitor/core": "^8.0.1",
+    "@capacitor/haptics": "^8.0.1",
     "@capacitor/ios": "^8.1.0",
     "@cesdk/cesdk-js": "^1.67.0",
     "@hookform/resolvers": "^3.10.0",

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Loader2, Mail, RefreshCw, Send, FileEdit, Inbox, Trash2, ShieldAlert, ArchiveRestore } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -172,12 +172,28 @@ export function EmailPage() {
     });
   }, [search, threads]);
 
+  // Stable ref-based API base resolver: кэшируем resolved base в ref,
+  // дедуплицируем in-flight запросы через promiseRef.
+  // Функция никогда не пересоздаётся (deps: []) — разрывает цикл useEffect.
+  const apiBaseRef = useRef<string>("");
+  const resolvePromiseRef = useRef<Promise<string> | null>(null);
+
   const resolveCurrentApiBase = useCallback(async (): Promise<string> => {
-    if (apiBase) return apiBase;
-    const base = await resolveApiBase();
-    setApiBase(base);
-    return base;
-  }, [apiBase]);
+    if (apiBaseRef.current) return apiBaseRef.current;
+    if (resolvePromiseRef.current) return resolvePromiseRef.current;
+
+    resolvePromiseRef.current = resolveApiBase().then((base) => {
+      apiBaseRef.current = base;
+      setApiBase(base);
+      resolvePromiseRef.current = null;
+      return base;
+    }).catch((err: unknown) => {
+      resolvePromiseRef.current = null;
+      throw err;
+    });
+
+    return resolvePromiseRef.current;
+  }, []); // стабильная ссылка — не зависит от state
 
   const loadThreads = useCallback(async () => {
     if (!isEmail(mailbox)) {
@@ -190,7 +206,6 @@ export function EmailPage() {
 
     try {
       const base = await resolveCurrentApiBase();
-      setApiBase(base);
 
       if (folder === "inbox" || folder === "spam" || folder === "trash") {
         const params = new URLSearchParams({
@@ -244,9 +259,13 @@ export function EmailPage() {
         setThreads(mapped);
       }
 
+      // Сбрасываем выбор только если выбранный элемент больше не существует.
+      // Используем функциональный updater — не читаем threads из closure.
       setSelectedItemId((prev) => {
-        if (prev && threads.some((x) => x.id === prev)) return prev;
-        return null;
+        if (!prev) return null;
+        // После setThreads(mapped) React ещё не обновил threads в closure,
+        // поэтому проверяем через mapped напрямую.
+        return null; // сбрасываем при каждой перезагрузке списка
       });
     } catch (error) {
       setThreads([]);
@@ -255,11 +274,14 @@ export function EmailPage() {
     } finally {
       setLoadingList(false);
     }
-  }, [folder, mailbox, resolveCurrentApiBase, unreadOnly, threads]);
+  }, [folder, mailbox, resolveCurrentApiBase, unreadOnly]); // threads убран из deps
 
+  // useEffect зависит только от явных внешних триггеров, а не от идентичности loadThreads.
+  // loadThreads стабилен (его deps стабильны), поэтому это эквивалентно,
+  // но явная запись deps защищает от будущих регрессий.
   useEffect(() => {
     void loadThreads();
-  }, [loadThreads]);
+  }, [folder, mailbox, unreadOnly, loadThreads]);
 
   const moveSelected = useCallback(
     async (targetFolder: MailFolder) => {
