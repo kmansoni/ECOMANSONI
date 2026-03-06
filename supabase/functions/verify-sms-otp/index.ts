@@ -61,8 +61,18 @@ serve(async (req) => {
       );
     }
 
-    // Verify code
-    if (otpRecord.code !== normalizedCode) {
+    // Verify code using timing-safe comparison to prevent timing attacks.
+    // Plain string !== comparison leaks timing info digit-by-digit.
+    function timingSafeEqual(a: string, b: string): boolean {
+      const aBytes = new TextEncoder().encode(a);
+      const bBytes = new TextEncoder().encode(b);
+      if (aBytes.length !== bBytes.length) return false;
+      let diff = 0;
+      for (let i = 0; i < aBytes.length; i++) diff |= aBytes[i] ^ bBytes[i];
+      return diff === 0;
+    }
+
+    if (!timingSafeEqual(otpRecord.code, normalizedCode)) {
       // Increment attempts
       await supabase
         .from("phone_otps")

@@ -2,9 +2,13 @@ import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { enforceCors, getCorsHeaders, handleCors } from "../_shared/utils.ts";
 
-// Generate 6-digit OTP code (10^6 = 1,000,000 possible values — adequate entropy).
+// Generate 6-digit OTP code using a cryptographically secure PRNG.
+// Math.random() is NOT cryptographically safe — use crypto.getRandomValues() instead.
 function generateOTP(): string {
-  return String(Math.floor(100000 + Math.random() * 900000));
+  const buf = new Uint32Array(1);
+  crypto.getRandomValues(buf);
+  // Map to [100000, 999999] range: mod 900000 gives [0,899999], +100000 shifts to [100000,999999]
+  return String(100000 + (buf[0] % 900000));
 }
 
 serve(async (req) => {
