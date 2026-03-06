@@ -101,20 +101,12 @@ export function RegistrationModal({ isOpen, onClose, phone, onSuccess }: Registr
         entity_type: entityType,
       };
 
-      console.log("📝 About to upsert profile with user_id:", data.userId);
-      console.log("📝 Profile data:", profilePatch);
-
-      const { data: upsertData, error: updateError } = await supabase
+      const { error: updateError } = await supabase
         .from("profiles")
         .upsert({ user_id: data.userId, ...profilePatch }, { onConflict: "user_id" });
 
-      console.log("✅ Upsert response data:", upsertData);
-
       if (updateError) {
-        console.error("❌ Profile update error:", updateError);
-        console.error("❌ Error code:", updateError.code);
-        console.error("❌ Error message:", updateError.message);
-        console.error("❌ Error details:", JSON.stringify(updateError, null, 2));
+        console.error("[RegistrationModal] profile upsert failed:", updateError.message);
         toast.error("Ошибка обновления профиля: " + (updateError.message || "Unknown error"));
         return;
       }
@@ -122,9 +114,7 @@ export function RegistrationModal({ isOpen, onClose, phone, onSuccess }: Registr
       toast.success("Аккаунт создан!");
       onSuccess();
     } catch (error) {
-      console.error("❌ Registration error:", error);
-      console.error("❌ Error type:", error instanceof Error ? error.constructor.name : typeof error);
-      console.error("❌ Error details:", JSON.stringify(error, null, 2));
+      console.error("[RegistrationModal] registration error:", error instanceof Error ? error.message : String(error));
       toast.error("Ошибка регистрации", {
         description: error instanceof Error ? error.message : String(error),
       });

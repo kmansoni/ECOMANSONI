@@ -82,8 +82,9 @@ serve(async (req) => {
     // Code is valid! Delete OTP record
     await supabase.from("phone_otps").delete().eq("phone", normalizedPhone);
 
-    // Create or get user using phone-based email
-    const fakeEmail = `user.${normalizedPhone}@phoneauth.app`;
+    // Create or get user using phone-based email.
+    // MUST match the pattern used by phone-auth: user{phone}@placeholder.local
+    const fakeEmail = `user${normalizedPhone}@placeholder.local`;
     const password = `ph_${normalizedPhone}`;
 
     // O(1) direct lookup — replaces the old O(N) listUsers scan.

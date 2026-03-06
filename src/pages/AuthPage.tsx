@@ -78,36 +78,20 @@ export function AuthPage() {
     try {
       // Any explicit login disables guest mode
       setGuestMode(false);
-      console.log("🔵 [AuthPage] Starting login with phone:", phone);
-      
-      // Use phone-auth function via supabase.functions.invoke
-      console.log("🔵 [AuthPage] Invoking phone-auth function...");
-      const invokeStartTime = Date.now();
-      
-      // Manually create the request to debug
+
       const functionUrls = getPhoneAuthFunctionUrls();
       if (functionUrls.length === 0) {
         toast.error("Не настроен endpoint авторизации");
         return;
       }
-      
-      console.log("🔵 [AuthPage] Manual fetch requests:", functionUrls);
-      console.log("🔵 [AuthPage] Headers:", { 
-        'Content-Type': 'application/json',
-        'apikey': getPhoneAuthHeaders().apikey ? `${String(getPhoneAuthHeaders().apikey).substring(0, 10)}...` : 'MISSING',
-        'x-client-info': 'supabase-js/2'
-      });
-      
+
       const body = {
         action: "register-or-login",
         phone: `+${digits}`,
         display_name: "User",
         email: `user${digits}@placeholder.local`,
       };
-      
-      console.log("🔵 [AuthPage] Request body:", body);
-      
-      // Try manual fetch with detailed logging
+
       let response: Response | null = null;
       let data: any | null = null;
       let lastAuthError: any = null;
@@ -137,14 +121,6 @@ export function AuthPage() {
       if (!response) {
         throw (lastAuthError || new Error("Failed to fetch phone-auth"));
       }
-      
-      console.log(`🔵 [AuthPage] Response received after ${Date.now() - invokeStartTime}ms:`, {
-        status: response.status,
-        statusText: response.statusText,
-        headers: Object.fromEntries(response.headers.entries()),
-      });
-      
-      console.log("🔵 [AuthPage] Response body:", data);
 
       if (!response.ok || !data?.ok) {
         console.error("🔴 [AuthPage] Function returned error or not ok:", { 
@@ -156,13 +132,6 @@ export function AuthPage() {
         });
         return;
       }
-
-      console.log("🔵 [AuthPage] Got tokens, setting session...", { 
-        hasAccessToken: !!data.accessToken,
-        hasRefreshToken: !!data.refreshToken,
-        userId: data.userId,
-        isNewUser: data.isNewUser
-      });
 
       // Sign in with the access token and refresh token
       const { error: signInError } = await withTimeout(
@@ -180,15 +149,11 @@ export function AuthPage() {
         return;
       }
 
-      console.log("🟢 [AuthPage] Session set successfully!");
-      
       // Handle new vs existing users
       if (data.isNewUser) {
-        console.log("🔵 [AuthPage] New user detected - showing registration modal");
         toast.success("Аккаунт создан, заполните профиль!");
         setShowRegistrationModal(true);
       } else {
-        console.log("🟢 [AuthPage] Existing user - navigating to home");
         toast.success("Добро пожаловать!");
         navigate("/");
       }
@@ -211,8 +176,6 @@ export function AuthPage() {
   const handleGuestAccess = async () => {
     setLoading(true);
     try {
-      console.log("🔵 [AuthPage] Guest access: starting");
-
       const functionUrls = getPhoneAuthFunctionUrls();
       if (functionUrls.length === 0) {
         toast.error("Не настроен endpoint авторизации");
