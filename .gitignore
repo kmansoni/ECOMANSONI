@@ -36,6 +36,15 @@ node_modules
 
 # Frontend build output
 dist/
+*.zip
+
+# Build/CI log artifacts
+tsc_errors.txt
+tsc-output.txt
+vite_errors.txt
+
+# Copilot chat exports
+## GitHub Copilot Chat.md
 
 # Local env (secrets)
 .env
