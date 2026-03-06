@@ -1,7 +1,95 @@
 project_id = "lfkbgnbjxskspsownvjm"
 
+# ─── Pre-auth / public endpoints (no JWT) ────────────────────
 [functions.phone-auth]
 verify_jwt = false
 
+[functions.send-sms-otp]
+verify_jwt = false
+
+[functions.verify-sms-otp]
+verify_jwt = false
+
+# ─── External webhooks (called by 3rd-party services, no JWT) ─
+[functions.vk-webhook]
+verify_jwt = false
+
+[functions.bot-webhook]
+verify_jwt = false
+
+# ─── Health check (no JWT for uptime monitors) ─────────────────
+[functions.health]
+verify_jwt = false
+
+# ─── Authenticated endpoints ───────────────────────────────────
 [functions.turn-credentials]
+verify_jwt = true
+
+[functions.ensure-profile]
+verify_jwt = true
+
+[functions.aria-chat]
+verify_jwt = true
+
+[functions.admin-api]
+verify_jwt = true
+
+[functions.bot-api]
+verify_jwt = true
+
+[functions.delegation-introspect]
+verify_jwt = true
+
+[functions.dev-panel-auth]
+verify_jwt = true
+
+[functions.dm-fetch-delegated]
+verify_jwt = true
+
+[functions.dm-send-delegated]
+verify_jwt = true
+
+[functions.email-send]
+verify_jwt = true
+
+[functions.insurance-assistant]
+verify_jwt = true
+
+[functions.insurance-calculate]
+verify_jwt = true
+
+[functions.insurance-companies]
+verify_jwt = true
+
+[functions.insurance-kbm-check]
+verify_jwt = true
+
+[functions.issue-delegation-token]
+verify_jwt = true
+
+[functions.media-upload-authorize]
+verify_jwt = true
+
+[functions.mini-app-api]
+verify_jwt = true
+
+[functions.process-disappearing]
+verify_jwt = true
+
+[functions.property-assistant]
+verify_jwt = true
+
+[functions.reels-feed]
+verify_jwt = true
+
+[functions.setup-owner]
+verify_jwt = true
+
+[functions.sip-credentials]
+verify_jwt = true
+
+[functions.trends-run]
+verify_jwt = true
+
+[functions.trends-worker]
 verify_jwt = true
