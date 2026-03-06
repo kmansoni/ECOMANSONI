@@ -4,6 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { SimpleMediaEditor } from "@/components/editor";
+import { toast } from "sonner";
+import { usePublish } from "@/hooks/usePublish";
 
 interface PostEditorFlowProps {
   isOpen: boolean;
@@ -56,6 +58,8 @@ export function PostEditorFlow({
   initialUrls,
   initialStep,
 }: PostEditorFlowProps) {
+  const { publishPost, uploading } = usePublish();
+
   const [step, setStep] = useState<Step>("gallery");
   const [selectedImages, setSelectedImages] = useState<string[]>([]);
   const [caption, setCaption] = useState("");
@@ -242,12 +246,29 @@ export function PostEditorFlow({
     setShowEditor(false);
   };
 
-  const handlePublish = () => {
-    console.log("Publishing:", { selectedImages, caption, aiLabel });
+  const handlePublish = async () => {
+    // Gather File objects for selected images (only locally-picked files have File references)
+    const files: File[] = selectedImages
+      .map(src => deviceImages.find(img => img.src === src)?.file)
+      .filter((f): f is File => f !== undefined);
+
+    const { error } = await publishPost(caption, files);
+    if (error) {
+      toast.error("Не удалось опубликовать", { description: error });
+      return;
+    }
+
+    toast.success("Публикация опубликована!");
     setStep("gallery");
     setSelectedImages([]);
     setCaption("");
     setAiLabel(false);
+    deviceImages.forEach(img => {
+      if (img?.src?.startsWith("blob:")) {
+        try { URL.revokeObjectURL(img.src); } catch { /* ignore */ }
+      }
+    });
+    setDeviceImages([]);
     onClose();
   };
 
@@ -501,8 +522,9 @@ export function PostEditorFlow({
               variant="link"
               className="text-primary font-semibold px-0"
               onClick={handlePublish}
+              disabled={uploading}
             >
-              Поделиться
+              {uploading ? "Публикуем..." : "Поделиться"}
             </Button>
           </div>
 

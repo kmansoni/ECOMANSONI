@@ -166,7 +166,6 @@ export function useConversations() {
     }
 
     try {
-      console.log("[useConversations] start", { userId: user.id });
       const v11 = isChatProtocolV11EnabledForUser(user.id);
 
       if (v11) {
@@ -278,7 +277,6 @@ export function useConversations() {
           .filter(Boolean) as Conversation[];
 
         setConversations(convs);
-        console.log("[useConversations] done v11", { count: convs.length });
         return;
       }
 
@@ -373,7 +371,6 @@ export function useConversations() {
       });
 
       setConversations(convs);
-      console.log("[useConversations] done v2", { count: convs.length });
     } catch (error) {
       console.error("Error fetching conversations:", error);
       const msg = getErrorMessage(error);
@@ -1100,7 +1097,6 @@ export function useMessages(conversationId: string | null) {
       }
 
       // falling back to legacy
-      console.log('falling back to legacy');
       const { messageId } = await sendMessageV1({
         conversationId,
         clientMsgId,
