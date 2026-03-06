@@ -98,6 +98,7 @@ const DeleteAccountPage = lazy(() => import("@/pages/DeleteAccountPage").then(m 
 const ReelsPage = lazy(() => import("./pages/ReelsPage"));
 const PeopleNearbyPage = lazy(() => import("./pages/PeopleNearbyPage"));
 const BusinessAccountPage = lazy(() => import("./pages/BusinessAccountPage"));
+const OrderDetailPage = lazy(() => import("@/pages/OrderDetailPage"));
 const AIAssistantPage = lazy(() => import("@/pages/AIAssistantPage"));
 
 // Taxi module (lazy)
@@ -408,7 +409,7 @@ const App = () => {
                     } />
                     <Route path="/orders/:id" element={
                       <Suspense fallback={<PageLoader />}>
-                        <ShopPage />
+                        <OrderDetailPage />
                       </Suspense>
                     } />
                     <Route path="/creator-fund" element={
