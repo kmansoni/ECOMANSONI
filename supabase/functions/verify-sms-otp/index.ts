@@ -84,11 +84,11 @@ serve(async (req) => {
 
     // Create or get user using phone-based email
     const fakeEmail = `user.${normalizedPhone}@phoneauth.app`;
-    const password = `ph_${normalizedPhone}_secure_${Date.now()}`;
+    const password = `ph_${normalizedPhone}`;
 
-    // Try to sign in first (existing user)
-    const { data: signInData, error: signInError } = await supabase.auth.admin.listUsers();
-    const existingUser = signInData?.users?.find(u => u.email === fakeEmail);
+    // O(1) direct lookup — replaces the old O(N) listUsers scan.
+    const { data: existingUserData } = await supabase.auth.admin.getUserByEmail(fakeEmail);
+    const existingUser = existingUserData?.user ?? null;
 
     let userId: string;
     let accessToken: string;

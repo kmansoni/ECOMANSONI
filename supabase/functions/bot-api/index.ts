@@ -5,7 +5,7 @@
  * This is a Supabase Edge Function.
  */
 
-import { createClient } from '@supabase/supabase-js';
+import { createClient } from 'npm:@supabase/supabase-js@2';
 import { createErrorResponse, createSuccessResponse } from './utils.ts';
 
 declare const Deno: {
@@ -527,7 +527,23 @@ function generateSecretToken(): string {
 // ROUTER
 // ============================================================================
 
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
+};
+
+function withCors(res: Response): Response {
+  const out = new Response(res.body, res);
+  for (const [k, v] of Object.entries(CORS_HEADERS)) out.headers.set(k, v);
+  return out;
+}
+
 Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: CORS_HEADERS });
+  }
+
   const url = new URL(req.url);
   const path = url.pathname.replace(/^\/bot-api/, '');
   const segments = path.split('/').filter(Boolean);
@@ -538,25 +554,25 @@ Deno.serve(async (req) => {
   if (segments[0] === 'bot' && segments[1]) {
     // GET /bot-api/bot/:username - public bot info
     if (req.method === 'GET') {
-      return handleGetBotByUsername(req, segments[1]);
+      return withCors(await handleGetBotByUsername(req, segments[1]));
     }
   }
 
   // Protected endpoints require auth
   if (!userId) {
-    return createErrorResponse('Unauthorized', 401);
+    return withCors(createErrorResponse('Unauthorized', 401));
   }
 
   // Bot management
   if (segments[0] === 'bots') {
     // POST /bot-api/bots - create bot
     if (req.method === 'POST') {
-      return handleCreateBot(req, userId);
+      return withCors(await handleCreateBot(req, userId));
     }
     
     // GET /bot-api/bots - list user's bots
     if (req.method === 'GET') {
-      return handleListBots(req, userId);
+      return withCors(await handleListBots(req, userId));
     }
     
     // Bot-specific operations
@@ -565,34 +581,34 @@ Deno.serve(async (req) => {
       
       // GET /bot-api/bots/:id
       if (req.method === 'GET') {
-        return handleGetBot(req, userId, botId);
+        return withCors(await handleGetBot(req, userId, botId));
       }
       
       // PATCH /bot-api/bots/:id
       if (req.method === 'PATCH') {
-        return handleUpdateBot(req, userId, botId);
+        return withCors(await handleUpdateBot(req, userId, botId));
       }
       
       // DELETE /bot-api/bots/:id
       if (req.method === 'DELETE') {
-        return handleDeleteBot(req, userId, botId);
+        return withCors(await handleDeleteBot(req, userId, botId));
       }
       
       // Token management
       if (segments[2] === 'tokens') {
         // POST /bot-api/bots/:id/tokens
         if (req.method === 'POST') {
-          return handleCreateBotToken(req, userId, botId);
+          return withCors(await handleCreateBotToken(req, userId, botId));
         }
         
         // GET /bot-api/bots/:id/tokens
         if (req.method === 'GET') {
-          return handleListBotTokens(req, userId, botId);
+          return withCors(await handleListBotTokens(req, userId, botId));
         }
         
         // DELETE /bot-api/bots/:id/tokens/:tokenId
         if (segments[3] && req.method === 'DELETE') {
-          return handleDeleteBotToken(req, userId, botId, segments[3]);
+          return withCors(await handleDeleteBotToken(req, userId, botId, segments[3]));
         }
       }
       
@@ -600,12 +616,12 @@ Deno.serve(async (req) => {
       if (segments[2] === 'commands') {
         // GET /bot-api/bots/:id/commands
         if (req.method === 'GET') {
-          return handleGetBotCommands(req, userId, botId);
+          return withCors(await handleGetBotCommands(req, userId, botId));
         }
         
         // PUT /bot-api/bots/:id/commands
         if (req.method === 'PUT') {
-          return handleSetBotCommands(req, userId, botId);
+          return withCors(await handleSetBotCommands(req, userId, botId));
         }
       }
       
@@ -613,16 +629,16 @@ Deno.serve(async (req) => {
       if (segments[2] === 'webhook') {
         // POST /bot-api/bots/:id/webhook
         if (req.method === 'POST') {
-          return handleSetBotWebhook(req, userId, botId);
+          return withCors(await handleSetBotWebhook(req, userId, botId));
         }
         
         // DELETE /bot-api/bots/:id/webhook
         if (req.method === 'DELETE') {
-          return handleDeleteBotWebhook(req, userId, botId);
+          return withCors(await handleDeleteBotWebhook(req, userId, botId));
         }
       }
     }
   }
 
-  return createErrorResponse('Not found', 404);
+  return withCors(createErrorResponse('Not found', 404));
 });

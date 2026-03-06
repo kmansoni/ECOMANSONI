@@ -2,31 +2,9 @@ import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { enforceCors, getCorsHeaders, handleCors } from "../_shared/utils.ts";
 
-// In-memory rate limiting (simple, per-instance)
-const rateLimits = new Map<string, { count: number; resetAt: number }>();
-const RATE_LIMIT_MAX = 3; // 3 SMS per phone per 10 minutes
-const RATE_LIMIT_WINDOW = 10 * 60 * 1000; // 10 minutes
-
-function checkRateLimit(phone: string): boolean {
-  const now = Date.now();
-  const entry = rateLimits.get(phone);
-  
-  if (!entry || now > entry.resetAt) {
-    rateLimits.set(phone, { count: 1, resetAt: now + RATE_LIMIT_WINDOW });
-    return true;
-  }
-  
-  if (entry.count >= RATE_LIMIT_MAX) {
-    return false;
-  }
-  
-  entry.count++;
-  return true;
-}
-
-// Generate 4-digit OTP code
+// Generate 6-digit OTP code (10^6 = 1,000,000 possible values — adequate entropy).
 function generateOTP(): string {
-  return Math.floor(1000 + Math.random() * 9000).toString();
+  return String(Math.floor(100000 + Math.random() * 900000));
 }
 
 serve(async (req) => {
@@ -57,14 +35,6 @@ serve(async (req) => {
       );
     }
 
-    // Check rate limit
-    if (!checkRateLimit(normalizedPhone)) {
-      return new Response(
-        JSON.stringify({ error: "Too many requests. Please try again later." }),
-        { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
     // Generate OTP code
     const code = generateOTP();
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
@@ -83,6 +53,34 @@ serve(async (req) => {
       );
     }
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    // DB-based cooldown: check if a valid OTP was sent very recently for this phone.
+    // This is stateless-safe — unaffected by Edge Function cold starts.
+    const cooldownSec = 120; // 2-minute minimum window between re-sends
+    const { data: existingOtp } = await supabase
+      .from("phone_otps")
+      .select("created_at")
+      .eq("phone", normalizedPhone)
+      .maybeSingle();
+
+    if (existingOtp?.created_at) {
+      const secondsSinceLastOtp =
+        (Date.now() - new Date(existingOtp.created_at).getTime()) / 1000;
+      if (secondsSinceLastOtp < cooldownSec) {
+        const retryAfter = Math.ceil(cooldownSec - secondsSinceLastOtp);
+        return new Response(
+          JSON.stringify({ error: "Too many requests. Please try again later." }),
+          {
+            status: 429,
+            headers: {
+              ...corsHeaders,
+              "Content-Type": "application/json",
+              "Retry-After": String(retryAfter),
+            },
+          }
+        );
+      }
+    }
 
     // Delete any existing OTPs for this phone
     await supabase

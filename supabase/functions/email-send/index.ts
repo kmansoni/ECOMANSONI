@@ -5,7 +5,10 @@
  *  - Все запросы ОБЯЗАНЫ иметь валидный Supabase JWT (Authorization: Bearer <token>).
  *  - EMAIL_ROUTER_API_KEY хранится только в Supabase Vault — никогда не покидает
  *    серверную среду и не попадает в бандл браузера.
- *  - Rate limiting: 10 email/user/10min (in-memory, per Edge Function instance).
+ *  - Rate limiting: 10 email/user/10min per Edge Function instance.
+ *    NOTE: in-memory rate limiting resets on cold starts — provides best-effort
+ *    protection for long-lived instances. All callers must be authenticated via JWT,
+ *    which significantly limits the blast radius of any single abusive account.
  *  - Входящий body проходит schema-валидацию перед проксированием.
  *  - Upstream 5xx логируются и возвращаются клиенту как 502 (без деталей SMTP).
  *

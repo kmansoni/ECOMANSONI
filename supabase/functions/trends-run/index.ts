@@ -39,12 +39,17 @@ type TrendsRunRequest = {
 serve(async (req: Request) => {
   if (req.method !== "POST") return json(405, { error: "Method not allowed" });
 
+  // Always require a bearer token — fail hard if the secret is not configured.
+  // Removing the `if (expectedToken)` guard prevents this endpoint from being
+  // accidentally open when the env var is simply not set.
   const expectedToken = Deno.env.get("TRENDS_WORKER_TOKEN") || Deno.env.get("INTERNAL_WORKER_TOKEN");
-  if (expectedToken) {
-    const token = getBearerToken(req);
-    if (!token) return json(401, { error: "Missing Authorization bearer token" });
-    if (token !== expectedToken) return json(403, { error: "Forbidden" });
+  if (!expectedToken) {
+    console.error("[trends-run] TRENDS_WORKER_TOKEN or INTERNAL_WORKER_TOKEN is not configured");
+    return json(500, { error: "Service not configured" });
   }
+  const token = getBearerToken(req);
+  if (!token) return json(401, { error: "Missing Authorization bearer token" });
+  if (token !== expectedToken) return json(403, { error: "Forbidden" });
 
   let body: TrendsRunRequest = {};
   try {

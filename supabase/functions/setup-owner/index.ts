@@ -40,14 +40,19 @@ serve(async (req: Request) => {
     if (action === "setup-owner-and-testuser") {
       const setupSecret = body.setupSecret as string | undefined;
       
-      // For initial setup, accept with environment secret
-      const requiredSecret = Deno.env.get("SETUP_SECRET") || "setup-default-secret";
-      
-      if (setupSecret !== requiredSecret && setupSecret !== "dev-setup-token") {
-        // Allow only if:
-        // 1. setupSecret matches SETUP_SECRET environment variable
-        // 2. Or it's dev-setup-token (for development)
-        // 3. Or authorization token is valid (for Owner after creation)
+      // For initial setup, require the SETUP_SECRET environment variable.
+      // There is no default fallback — if the secret is not configured,
+      // the endpoint returns 500 to prevent accidental open access.
+      const requiredSecret = Deno.env.get("SETUP_SECRET");
+      if (!requiredSecret) {
+        return new Response(
+          JSON.stringify({ ok: false, error: "Service not configured (SETUP_SECRET missing)" }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      if (setupSecret !== requiredSecret) {
+        // Allow if a valid Supabase JWT is provided (owner already created and re-running setup).
         const authToken = (req.headers.get("Authorization") || "").replace("Bearer ", "");
         if (!authToken) {
           return new Response(

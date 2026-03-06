@@ -5,7 +5,7 @@
  * This is a Supabase Edge Function.
  */
 
-import { createClient } from '@supabase/supabase-js';
+import { createClient } from 'npm:@supabase/supabase-js@2';
 
 declare const Deno: {
   env: { get(name: string): string | undefined };
@@ -358,7 +358,23 @@ async function handleEndMiniAppSession(req: Request, userId: string, sessionId: 
 // ROUTER
 // ============================================================================
 
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
+};
+
+function withCors(res: Response): Response {
+  const out = new Response(res.body, res);
+  for (const [k, v] of Object.entries(CORS_HEADERS)) out.headers.set(k, v);
+  return out;
+}
+
 Deno.serve(async (req: Request) => {
+  if (req.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: CORS_HEADERS });
+  }
+
   const url = new URL(req.url);
   const path = url.pathname.replace(/^\/mini-app-api/, '');
   const segments = path.split('/').filter(Boolean);
@@ -369,25 +385,25 @@ Deno.serve(async (req: Request) => {
   if (segments[0] === 'app' && segments[1]) {
     // GET /mini-app-api/app/:slug - public mini app info
     if (req.method === 'GET') {
-      return handleGetMiniAppBySlug(req, segments[1]);
+      return withCors(await handleGetMiniAppBySlug(req, segments[1]));
     }
   }
 
   // Protected endpoints require auth
   if (!userId) {
-    return createErrorResponse('Unauthorized', 401);
+    return withCors(createErrorResponse('Unauthorized', 401));
   }
 
   // Mini app management
   if (segments[0] === 'mini-apps') {
     // POST /mini-app-api/mini-apps - create mini app
     if (req.method === 'POST') {
-      return handleCreateMiniApp(req, userId);
+      return withCors(await handleCreateMiniApp(req, userId));
     }
     
     // GET /mini-app-api/mini-apps - list user's mini apps
     if (req.method === 'GET') {
-      return handleListMiniApps(req, userId);
+      return withCors(await handleListMiniApps(req, userId));
     }
     
     // Mini app-specific operations
@@ -396,24 +412,24 @@ Deno.serve(async (req: Request) => {
       
       // GET /mini-app-api/mini-apps/:id
       if (req.method === 'GET') {
-        return handleGetMiniApp(req, userId, appId);
+        return withCors(await handleGetMiniApp(req, userId, appId));
       }
       
       // PATCH /mini-app-api/mini-apps/:id
       if (req.method === 'PATCH') {
-        return handleUpdateMiniApp(req, userId, appId);
+        return withCors(await handleUpdateMiniApp(req, userId, appId));
       }
       
       // DELETE /mini-app-api/mini-apps/:id
       if (req.method === 'DELETE') {
-        return handleDeleteMiniApp(req, userId, appId);
+        return withCors(await handleDeleteMiniApp(req, userId, appId));
       }
       
       // Session management
       if (segments[2] === 'sessions') {
         // POST /mini-app-api/mini-apps/:id/sessions - start session
         if (req.method === 'POST') {
-          return handleStartMiniAppSession(req, userId, appId);
+          return withCors(await handleStartMiniAppSession(req, userId, appId));
         }
         
         // Session-specific operations
@@ -422,12 +438,12 @@ Deno.serve(async (req: Request) => {
           
           // DELETE /mini-app-api/mini-apps/:id/sessions/:sessionId - end session
           if (req.method === 'DELETE') {
-            return handleEndMiniAppSession(req, userId, sessionId);
+            return withCors(await handleEndMiniAppSession(req, userId, sessionId));
           }
         }
       }
     }
   }
 
-  return createErrorResponse('Not found', 404);
+  return withCors(createErrorResponse('Not found', 404));
 });
