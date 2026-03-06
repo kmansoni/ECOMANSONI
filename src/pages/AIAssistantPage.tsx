@@ -202,14 +202,39 @@ function renderMarkdown(text: string): string {
     .replace(
       /```(\w*)\n?([\s\S]*?)```/g,
       (_, lang, code) =>
-        `<pre class="bg-black/20 rounded-lg p-3 my-2 overflow-x-auto text-xs font-mono"><code class="language-${lang}">${escapeHtml(code.trim())}</code></pre>`
+        `<pre class="bg-black/20 rounded-lg p-3 my-2 overflow-x-auto text-xs font-mono"><code class="language-${escapeHtml(lang)}">${escapeHtml(code.trim())}</code></pre>`
     )
     // Inline code
     .replace(
       /`([^`]+)`/g,
       (_, code) =>
         `<code class="bg-black/20 rounded px-1 py-0.5 font-mono text-xs">${escapeHtml(code)}</code>`
-    )
+    );
+
+  // Escape the rest of the text (everything outside code blocks) before applying
+  // further Markdown transforms, so user-controlled content can never inject HTML.
+  // We use a placeholder approach: replace code blocks with tokens, escape the
+  // remainder, then re-inject the already-escaped code block HTML.
+  const codeTokens: string[] = [];
+  const tokenized = html.replace(
+    /<pre[\s\S]*?<\/pre>|<code[\s\S]*?<\/code>/g,
+    (match) => {
+      codeTokens.push(match);
+      return `\x00CODE${codeTokens.length - 1}\x00`;
+    }
+  );
+
+  // Escape everything that isn't a code token
+  const escaped = tokenized.replace(/[&<>"']/g, (c) => {
+    const map: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&#34;", "'": "&#39;" };
+    return map[c] ?? c;
+  });
+
+  // Re-inject code tokens (already safe)
+  let safe = escaped.replace(/\x00CODE(\d+)\x00/g, (_, i) => codeTokens[Number(i)]);
+
+  // Now apply remaining Markdown transforms on the safe (escaped) text
+  safe = safe
     // Bold **text**
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     // Italic *text*
@@ -238,7 +263,7 @@ function renderMarkdown(text: string): string {
     // Newlines to <br> (but not inside pre blocks)
     .replace(/\n/g, "<br />");
 
-  return html;
+  return safe;
 }
 
 function escapeHtml(str: string): string {
