@@ -80,10 +80,19 @@ serve(async (req: Request) => {
 
         // ===== CREATE OWNER =====
         try {
-          const ownerEmail = "khan@mansoni.ru";
-          const ownerPassword = "Ag121212.";
-          const ownerPhone = "79333222922";
-          const ownerFullName = "Мансуров Джехангир Мирзаевич";
+          // Owner credentials come from env secrets — never hardcode in source.
+          // Set OWNER_EMAIL, OWNER_PASSWORD, OWNER_PHONE in Supabase Vault /
+          // Edge Function secrets before running this action.
+          const ownerEmail = Deno.env.get("OWNER_EMAIL");
+          const ownerPassword = Deno.env.get("OWNER_PASSWORD");
+          const ownerPhone = Deno.env.get("OWNER_PHONE");
+          const ownerFullName = Deno.env.get("OWNER_FULL_NAME") ?? "Platform Owner";
+
+          if (!ownerEmail || !ownerPassword || !ownerPhone) {
+            results.errors.push("Owner setup skipped: OWNER_EMAIL, OWNER_PASSWORD, OWNER_PHONE secrets not configured");
+            results.owner = { status: "skipped", reason: "missing_secrets" };
+            // skip to test user block — do not throw so we continue
+          } else {
 
           // Check if owner already exists
           const { data: existingOwner } = await supabase
@@ -175,6 +184,7 @@ serve(async (req: Request) => {
               };
             }
           }
+          } // end else (secrets present)
         } catch (err: any) {
           results.errors.push(`Owner setup error: ${err?.message || String(err)}`);
         }
