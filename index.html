@@ -85,6 +85,29 @@
       text-decoration: none;
       background: rgba(255,255,255,.08);
     }
+    #maintenance-notice {
+      display: none;
+      margin-top: 32px;
+      padding: 16px 22px;
+      border-radius: 14px;
+      background: rgba(255, 90, 70, .10);
+      border: 1px solid rgba(255, 90, 70, .35);
+      max-width: 380px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    #maintenance-notice .mn-title {
+      margin: 0 0 6px;
+      font-size: 15px;
+      font-weight: 700;
+      color: #ff9a8a;
+    }
+    #maintenance-notice .mn-body {
+      margin: 0;
+      font-size: 13px;
+      opacity: .8;
+      line-height: 1.5;
+    }
   </style>
 </head>
 
@@ -96,9 +119,45 @@
           <p>Если приложение загружается дольше обычного, откройте вход вручную.</p>
           <a href="/auth">Вход</a>
           <a href="/">Главная</a>
+          <div id="maintenance-notice">
+            <p class="mn-title">⚙️ Ведутся технические работы</p>
+            <p class="mn-body">Совсем скоро всё заработает. Попробуйте обновить страницу чуть позже.</p>
+          </div>
         </div>
       </div>
     </div>
+    <script>
+      // Show maintenance notice ONLY if the app fails to load
+      (function () {
+        function showMaintenance() {
+          var fb = document.getElementById('boot-fallback');
+          var mn = document.getElementById('maintenance-notice');
+          if (fb && mn) mn.style.display = 'block';
+        }
+
+        // Case 1: app script load error (network down / 404 / SyntaxError)
+        window.addEventListener('error', function (e) {
+          if (e.target && (e.target.tagName === 'SCRIPT' || e.target.tagName === 'LINK')) {
+            showMaintenance();
+          }
+        }, true);
+
+        // Case 2: React never mounts after 10 s (server down, JS crash before mount)
+        var _bootTimeout = setTimeout(function () {
+          showMaintenance();
+        }, 10000);
+
+        // Clear timer as soon as React takes over (boot-fallback removed from DOM)
+        var _observer = new MutationObserver(function () {
+          if (!document.getElementById('boot-fallback')) {
+            clearTimeout(_bootTimeout);
+            _observer.disconnect();
+          }
+        });
+        var root = document.getElementById('root');
+        if (root) _observer.observe(root, { childList: true, subtree: false });
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
