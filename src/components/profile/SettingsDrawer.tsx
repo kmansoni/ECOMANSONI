@@ -1,17 +1,24 @@
 import { useState } from "react";
-import { X, Moon, Sun, Bell, Lock, HelpCircle, Info, LogOut, ChevronRight, ChevronLeft, User, Shield, Heart, Archive, Clock, Bookmark, Eye, UserX, MessageCircle, AtSign, Share2, Users, Globe, Smartphone, Key, Phone, Database, Trash2, Download, FileText, AlertCircle } from "lucide-react";
+import { X, Moon, Sun, Bell, Lock, HelpCircle, Info, LogOut, ChevronRight, ChevronLeft, User, Shield, Heart, Archive, Clock, Bookmark, Eye, UserX, MessageCircle, AtSign, Share2, Users, Globe, Smartphone, Key, Phone, Database, Trash2, Download, FileText, AlertCircle, Mail } from "lucide-react";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
 import { Switch } from "@/components/ui/switch";
 
+/**
+ * @deprecated This component is a legacy stub with hardcoded data.
+ * Use SettingsPage instead for production settings UI.
+ * Kept for backward compatibility only.
+ */
 interface SettingsDrawerProps {
   isOpen: boolean;
   onClose: () => void;
+  /** FIX-13: Optional logout handler. If not provided, button is visually disabled. */
+  onLogout?: () => void;
 }
 
 type Screen = "main" | "editProfile" | "saved" | "archive" | "activity" | "notifications" | "privacy" | "security" | "help" | "about";
 
-export function SettingsDrawer({ isOpen, onClose }: SettingsDrawerProps) {
+export function SettingsDrawer({ isOpen, onClose, onLogout }: SettingsDrawerProps) {
   const { theme, setTheme } = useTheme();
   const [currentScreen, setCurrentScreen] = useState<Screen>("main");
 
@@ -152,7 +159,16 @@ export function SettingsDrawer({ isOpen, onClose }: SettingsDrawerProps) {
 
             {/* Logout */}
             <div className="px-5 py-4 border-t border-border">
-              <button className="w-full flex items-center gap-4 px-4 py-3 rounded-xl bg-destructive/10 text-destructive active:opacity-70 transition-opacity">
+              {/* FIX-13: onClick connected; FIX-12: deprecated stub warning in JSDoc */}
+              <button
+                className={cn(
+                  "w-full flex items-center gap-4 px-4 py-3 rounded-xl bg-destructive/10 text-destructive active:opacity-70 transition-opacity",
+                  !onLogout && "opacity-40 cursor-not-allowed"
+                )}
+                onClick={onLogout}
+                disabled={!onLogout}
+                title={!onLogout ? "Используйте SettingsPage для выхода" : undefined}
+              >
                 <LogOut className="w-5 h-5" />
                 <span className="font-medium">Выйти</span>
               </button>

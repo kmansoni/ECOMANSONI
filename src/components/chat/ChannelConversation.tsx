@@ -962,8 +962,6 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
       if (error) throw error;
       toast.success("Автоудаление обновлено");
       setAutoDeleteSecondsLocal(v);
-      // Best-effort shadow update.
-      (channel as any).auto_delete_seconds = v;
     } catch (e) {
       console.error("Failed to update auto-delete:", e);
       toast.error("Не удалось обновить автоудаление");

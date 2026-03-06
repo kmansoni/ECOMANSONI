@@ -123,14 +123,32 @@ export function GroupConversation({ group, onBack, onLeave }: GroupConversationP
 
   const handleToggleTopics = async () => {
     const newVal = !topicsEnabled;
-    setTopicsEnabled(newVal);
-    await (supabase as any).from("group_chats").update({ topics_enabled: newVal }).eq("id", group.id);
-    if (newVal && topics.length === 0) {
-      const general = await createTopic({ name: "Общее", icon_emoji: "💬", icon_color: "#3B82F6" });
-      if (general) {
-        await (supabase as any).from("group_topics").update({ is_general: true }).eq("id", general.id);
-        setActiveTopic(general.id);
+    try {
+      const { error } = await (supabase as any)
+        .from("group_chats")
+        .update({ topics_enabled: newVal })
+        .eq("id", group.id);
+      if (error) throw error;
+      setTopicsEnabled(newVal);
+      if (newVal && topics.length === 0) {
+        const general = await createTopic({ name: "Общее", icon_emoji: "💬", icon_color: "#3B82F6" });
+        if (general) {
+          // Activate the topic in UI immediately — the topic record already exists.
+          // The is_general flag is a non-critical metadata update; failure here must
+          // not roll back the UX since the topic itself was created successfully.
+          setActiveTopic(general.id);
+          const { error: topicError } = await (supabase as any)
+            .from("group_topics")
+            .update({ is_general: true })
+            .eq("id", general.id);
+          if (topicError) {
+            console.warn("[handleToggleTopics] is_general not persisted:", topicError);
+          }
+        }
       }
+    } catch (err) {
+      console.error("[handleToggleTopics] failed:", err);
+      toast.error("Не удалось изменить настройки тем");
     }
   };
 
@@ -302,28 +320,32 @@ export function GroupConversation({ group, onBack, onLeave }: GroupConversationP
       </div>
 
       <div className="flex-shrink-0 px-3 py-3 relative z-10 bg-background/95 backdrop-blur-sm border-t border-border safe-area-bottom">
-        <div className="rounded-lg border border-border bg-card px-3 py-2 mb-2 flex items-center justify-between">
-          <span className="text-xs text-muted-foreground">Глобально: приглашения в группы</span>
-          <Switch
-            checked={settings?.allow_group_invites ?? true}
-            onCheckedChange={(checked) =>
-              void updateGlobalSettings({ allow_group_invites: checked }).catch(() =>
-                toast.error("Не удалось обновить глобальные настройки"),
-              )
-            }
-          />
-        </div>
-        <div className="rounded-lg border border-border bg-card px-3 py-2 mb-2 flex items-center justify-between">
-          <span className="text-xs text-muted-foreground">Глобально: превью медиа</span>
-          <Switch
-            checked={settings?.show_media_preview ?? true}
-            onCheckedChange={(checked) =>
-              void updateGlobalSettings({ show_media_preview: checked }).catch(() =>
-                toast.error("Не удалось обновить глобальные настройки"),
-              )
-            }
-          />
-        </div>
+        {isOwner && (
+          <>
+            <div className="rounded-lg border border-border bg-card px-3 py-2 mb-2 flex items-center justify-between">
+              <span className="text-xs text-muted-foreground">Глобально: приглашения в группы</span>
+              <Switch
+                checked={settings?.allow_group_invites ?? true}
+                onCheckedChange={(checked) =>
+                  void updateGlobalSettings({ allow_group_invites: checked }).catch(() =>
+                    toast.error("Не удалось обновить глобальные настройки"),
+                  )
+                }
+              />
+            </div>
+            <div className="rounded-lg border border-border bg-card px-3 py-2 mb-2 flex items-center justify-between">
+              <span className="text-xs text-muted-foreground">Глобально: превью медиа</span>
+              <Switch
+                checked={settings?.show_media_preview ?? true}
+                onCheckedChange={(checked) =>
+                  void updateGlobalSettings({ show_media_preview: checked }).catch(() =>
+                    toast.error("Не удалось обновить глобальные настройки"),
+                  )
+                }
+              />
+            </div>
+          </>
+        )}
         <div className="flex items-center gap-2">
           {isRestricted && (
             <SlowModeTimer remainingSeconds={remainingSeconds} delaySeconds={slowModeDelaySeconds} />

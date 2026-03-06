@@ -1,6 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { X, Moon, Sun, Bell, Lock, HelpCircle, Info, LogOut, ChevronRight, ChevronLeft, Shield, Heart, Archive, Clock, Bookmark, Eye, UserX, MessageCircle, Share2, Users, Smartphone, Key, Mail, Database, Download, FileText, Video, AlertCircle, BarChart3, Accessibility, Globe, BadgeCheck, Smile, Phone, Volume2 } from "lucide-react";
+import { X, Moon, Sun, Bell, Lock, HelpCircle, Info, LogOut, ChevronRight, ChevronLeft, Shield, Heart, Archive, Clock, Bookmark, Eye, UserX, MessageCircle, Share2, Users, Smartphone, Key, Mail, Database, Download, FileText, Video, AlertCircle, BarChart3, Accessibility, Globe, BadgeCheck, Smile, Phone, Volume2, RefreshCw } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useTheme } from "next-themes";
 import { cn, getErrorMessage } from "@/lib/utils";
 import { Switch } from "@/components/ui/switch";
@@ -272,6 +282,12 @@ export function SettingsPage() {
   const [storageTick, setStorageTick] = useState(0);
   const [storageBytes, setStorageBytes] = useState(() => estimateLocalStorageBytes());
 
+  // Confirmation dialogs (replaces window.confirm)
+  const [deleteFolderDialog, setDeleteFolderDialog] = useState<{ open: boolean; folderId: string | null }>({ open: false, folderId: null });
+  const [deleteAllFoldersDialog, setDeleteAllFoldersDialog] = useState(false);
+  const [logoutDialog, setLogoutDialog] = useState(false);
+  const [logoutLoading, setLogoutLoading] = useState(false);
+
   // Notifications (Telegram-like)
   const [notificationSearch, setNotificationSearch] = useState("");
   const [notificationPickerOpen, setNotificationPickerOpen] = useState(false);
@@ -280,6 +296,8 @@ export function SettingsPage() {
   const [creatorInsightsLoading, setCreatorInsightsLoading] = useState(false);
   const [reels, setReels] = useState<any[]>([]);
   const [reelsLoading, setReelsLoading] = useState(false);
+  // FIX-11: content filter state — "all" | "30d"
+  const [statsContentFilter, setStatsContentFilter] = useState<"all" | "30d">("all");
   const [followersGenderLoading, setFollowersGenderLoading] = useState(false);
 
   const { folders, itemsByFolderId, loading: foldersLoading, refetch: refetchFolders } = useChatFolders();
@@ -336,6 +354,8 @@ export function SettingsPage() {
   const [outgoingRequests, setOutgoingRequests] = useState<BrandedPartnerRequest[]>([]);
   const [incomingRequests, setIncomingRequests] = useState<BrandedPartnerRequest[]>([]);
   const [requestsLoading, setRequestsLoading] = useState(false);
+  // FIX-7: UUID → display_name map for partner requests
+  const [requestProfiles, setRequestProfiles] = useState<Record<string, { display_name: string | null; avatar_url: string | null }>>({});
 
   const isAuthed = !!user?.id;
 
@@ -348,23 +368,43 @@ export function SettingsPage() {
   const [statusSaving, setStatusSaving] = useState(false);
   const statusStickerInputRef = useRef<HTMLInputElement | null>(null);
 
-  useEffect(() => {
-    if (!isAuthed) return;
-    if (currentScreen !== "stats_overview" && currentScreen !== "stats_followers") return;
-    if (creatorInsightsLoading) return;
+  /**
+   * Ref-based in-flight guard for creator analytics requests.
+   * Using a ref (instead of including creatorInsightsLoading as a useCallback dep)
+   * keeps the callback identity stable across the loading state transition,
+   * preventing spurious re-runs of the auto-load useEffect.
+   */
+  const insightsLoadingRef = useRef(false);
 
-    void (async () => {
-      setCreatorInsightsLoading(true);
-      try {
-        const data = await getCreatorInsights(30);
-        setCreatorInsights(data);
-      } catch (e) {
-        toast({ title: "Статистика", description: e instanceof Error ? e.message : String(e) });
-      } finally {
-        setCreatorInsightsLoading(false);
-      }
-    })();
-  }, [creatorInsightsLoading, currentScreen, isAuthed]);
+  /**
+   * Loads (or force-refreshes) creator analytics.
+   * Exposed as a stable callback so the "Обновить" button can call it directly.
+   * Clears existing data before the request so stale numbers are never shown
+   * after an explicit refresh.
+   */
+  const loadCreatorInsights = useCallback(async (force = false) => {
+    if (!isAuthed) return;
+    if (insightsLoadingRef.current) return;          // ref guard — no dep churn
+    if (creatorInsights && !force) return;           // already loaded
+    insightsLoadingRef.current = true;
+    setCreatorInsights(null);
+    setCreatorInsightsLoading(true);
+    try {
+      const data = await getCreatorInsights(30);
+      setCreatorInsights(data);
+    } catch (e) {
+      toast({ title: "Статистика", description: e instanceof Error ? e.message : String(e) });
+    } finally {
+      insightsLoadingRef.current = false;
+      setCreatorInsightsLoading(false);
+    }
+  }, [isAuthed, creatorInsights]);
+
+  // Auto-load when user enters a stats screen that shows insights.
+  useEffect(() => {
+    if (currentScreen !== "stats_overview" && currentScreen !== "stats_followers") return;
+    void loadCreatorInsights(false);
+  }, [currentScreen, loadCreatorInsights]);
 
   useEffect(() => {
     setMounted(true);
@@ -558,10 +598,9 @@ export function SettingsPage() {
     }
   };
 
-  const deleteFolder = async (folderId: string) => {
+  // Triggered after AlertDialog confirmation (no window.confirm).
+  const deleteFolderConfirmed = async (folderId: string) => {
     if (!user?.id) return;
-    const ok = window.confirm("Удалить папку?\nЧаты не удалятся — только папка.");
-    if (!ok) return;
     try {
       const del = await supabase.from("chat_folders").delete().eq("id", folderId);
       if (del.error) throw del.error;
@@ -576,6 +615,10 @@ export function SettingsPage() {
     }
   };
 
+  const deleteFolder = (folderId: string) => {
+    setDeleteFolderDialog({ open: true, folderId });
+  };
+
   const toggleFolderKey = useCallback((key: string) => {
     setEditingSelectedKeys((prev) => {
       const next = new Set(prev);
@@ -586,9 +629,52 @@ export function SettingsPage() {
   }, []);
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    navigate('/auth');
+    setLogoutLoading(true);
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+      // Close dialog before navigation — if navigate() throws for any reason
+      // we don't want to leave a stale loading state.
+      setLogoutDialog(false);
+      navigate('/auth');
+    } catch (e) {
+      // Keep dialog open so user can retry or dismiss explicitly.
+      toast({ title: "Выход", description: getErrorMessage(e) });
+    } finally {
+      setLogoutLoading(false);
+    }
   };
+
+  /**
+   * Unified reels loader — used both on screen entry and when the user
+   * switches the content-filter pill.  Keeping one code path prevents
+   * the filter state and the data from diverging on repeated navigation.
+   * Memoised with useCallback so JSX event handlers capture a stable reference.
+   */
+  const loadReels = useCallback(async (filter: "all" | "30d") => {
+    if (!isAuthed || !user?.id) return;
+    setStatsContentFilter(filter);
+    setReelsLoading(true);
+    try {
+      let q = supabase
+        .from("reels")
+        .select("id, description, thumbnail_url, video_url, created_at, views_count, likes_count, comments_count, saves_count, shares_count")
+        .eq("author_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(50);
+      if (filter === "30d") {
+        const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+        q = q.gte("created_at", since);
+      }
+      const { data, error } = await q;
+      if (error) throw error;
+      setReels(data ?? []);
+    } catch (e) {
+      toast({ title: "Контент", description: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setReelsLoading(false);
+    }
+  }, [isAuthed, user?.id, supabase]);
 
   const profileVerified = useMemo(() => {
     const v = myProfile?.verified;
@@ -725,6 +811,26 @@ export function SettingsPage() {
       ]);
       setOutgoingRequests(outgoing);
       setIncomingRequests(incoming);
+
+      // FIX-7: resolve UUIDs to display names
+      const allIds = [
+        ...outgoing.map((r) => r.partner_user_id),
+        ...incoming.map((r) => r.brand_user_id),
+      ].filter(Boolean);
+      const uniqueIds = [...new Set(allIds)];
+      if (uniqueIds.length) {
+        const { data: prof } = await supabase
+          .from("profiles")
+          .select("user_id, display_name, avatar_url")
+          .in("user_id", uniqueIds);
+        const map: Record<string, { display_name: string | null; avatar_url: string | null }> = {};
+        for (const p of prof ?? []) {
+          map[(p as any).user_id] = { display_name: (p as any).display_name, avatar_url: (p as any).avatar_url };
+        }
+        setRequestProfiles(map);
+      } else {
+        setRequestProfiles({});
+      }
     } catch (e) {
       toast({ title: "Бренд‑партнёры", description: e instanceof Error ? e.message : String(e) });
     } finally {
@@ -1239,18 +1345,7 @@ export function SettingsPage() {
                           toast({ title: "Папки", description: "Нужно войти в аккаунт." });
                           return;
                         }
-                        void (async () => {
-                          try {
-                            const ok = window.confirm("Удалить все папки чатов?\nЧаты не удалятся — только папки.");
-                            if (!ok) return;
-                            const { error } = await supabase.from("chat_folders").delete().eq("user_id", user.id);
-                            if (error) throw error;
-                            toast({ title: "Готово", description: "Папки чатов удалены." });
-                            await refetchFolders();
-                          } catch (e) {
-                            toast({ title: "Папки", description: getErrorMessage(e) });
-                          }
-                        })();
+                        setDeleteAllFoldersDialog(true);
                       }}
                     >
                       Удалить папки чатов
@@ -2524,23 +2619,7 @@ export function SettingsPage() {
                   "Контент",
                   async () => {
                     setCurrentScreen("stats_content");
-                    if (isAuthed) {
-                      setReelsLoading(true);
-                      try {
-                        const { data, error } = await supabase
-                          .from("reels")
-                          .select("id, description, thumbnail_url, video_url, created_at, views_count, likes_count, comments_count")
-                          .eq("author_id", user!.id)
-                          .order("created_at", { ascending: false })
-                          .limit(50);
-                        if (error) throw error;
-                        setReels(data ?? []);
-                      } catch (e) {
-                        toast({ title: "Контент", description: e instanceof Error ? e.message : String(e) });
-                      } finally {
-                        setReelsLoading(false);
-                      }
-                    }
+                    await loadReels("all");
                   },
                 )}
                 {renderMenuItem(
@@ -2615,7 +2694,21 @@ export function SettingsPage() {
 
         return (
           <>
-            {renderHeader("Обзор")}
+            <div className="flex items-center">
+              <div className="flex-1">{renderHeader("Обзор")}</div>
+              <button
+                type="button"
+                disabled={creatorInsightsLoading}
+                onClick={() => void loadCreatorInsights(true)}
+                className={cn(
+                  "mr-4 w-9 h-9 rounded-full flex items-center justify-center transition-colors",
+                  isDark ? "settings-dark-pill hover:opacity-90" : "bg-card/80 border border-border hover:bg-muted/50",
+                )}
+                title="Обновить"
+              >
+                <RefreshCw className={cn("w-4 h-4", creatorInsightsLoading && "animate-spin")} />
+              </button>
+            </div>
             <div className="flex-1 overflow-y-auto native-scroll pb-10">
               <div className="px-5 pt-2 pb-4">
                 <p className={cn("text-2xl font-semibold", isDark ? "text-white" : "text-white")}>У вас был удачный период!</p>
@@ -2747,19 +2840,26 @@ export function SettingsPage() {
           <>
             {renderHeader("Контент")}
             <div className="flex-1 overflow-y-auto native-scroll pb-8">
+              {/* FIX-11: functional content filter pills */}
               <div className="px-4 pt-2 pb-3 flex gap-2">
-                <div className={cn(
-                  "px-4 py-2 rounded-full text-sm",
-                  isDark ? "settings-dark-pill settings-dark-pill-active" : "bg-card/80 border border-white/20",
-                )}>
-                  Все
-                </div>
-                <div className={cn(
-                  "px-4 py-2 rounded-full text-sm",
-                  isDark ? "settings-dark-pill" : "bg-card/80 border border-white/20",
-                )}>
-                  За последние 30 дней
-                </div>
+                {(["all", "30d"] as const).map((f) => (
+                  <button
+                    key={f}
+                    type="button"
+                    onClick={() => {
+                      if (statsContentFilter === f) return;
+                      void loadReels(f);
+                    }}
+                    className={cn(
+                      "px-4 py-2 rounded-full text-sm transition-colors",
+                      statsContentFilter === f
+                        ? isDark ? "settings-dark-pill settings-dark-pill-active" : "bg-primary text-primary-foreground"
+                        : isDark ? "settings-dark-pill" : "bg-card/80 border border-white/20",
+                    )}
+                  >
+                    {f === "all" ? "Все" : "За последние 30 дней"}
+                  </button>
+                ))}
               </div>
 
               {reelsLoading ? (
@@ -2788,20 +2888,56 @@ export function SettingsPage() {
                     <div
                       key={r.id}
                       className={cn(
-                        "backdrop-blur-xl rounded-2xl border px-5 py-4",
+                        "backdrop-blur-xl rounded-2xl border overflow-hidden",
                         isDark ? "settings-dark-card" : "bg-card/80 border-white/20",
                       )}
                     >
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="min-w-0">
-                          <p className={cn("font-semibold truncate", isDark ? "text-white" : "text-white")}>
-                            {(r.description ?? "Reel").toString().slice(0, 60) || "Reel"}
+                      {/* Thumbnail + title row */}
+                      <div className="flex items-start gap-3 px-4 pt-4 pb-3">
+                        {r.thumbnail_url ? (
+                          <img
+                            src={r.thumbnail_url}
+                            alt=""
+                            className="w-14 h-14 rounded-xl object-cover flex-shrink-0 bg-black/20"
+                          />
+                        ) : (
+                          <div className={cn(
+                            "w-14 h-14 rounded-xl flex-shrink-0 flex items-center justify-center",
+                            isDark ? "bg-white/10" : "bg-black/10",
+                          )}>
+                            <Video className={cn("w-6 h-6", isDark ? "text-white/40" : "text-black/30")} />
+                          </div>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <p className={cn("font-semibold truncate text-sm", isDark ? "text-white" : "text-white")}>
+                            {(r.description ?? "").toString().slice(0, 80) || "Reel"}
                           </p>
-                          <p className={cn("text-sm mt-1", isDark ? "text-white/60" : "text-white/70")}>
-                            Просмотры: {formatCompact(r.views_count ?? 0)} · Лайки: {formatCompact(r.likes_count ?? 0)} · Комментарии: {formatCompact(r.comments_count ?? 0)}
+                          <p className={cn("text-xs mt-1", isDark ? "text-white/50" : "text-white/60")}>
+                            {new Date(r.created_at).toLocaleDateString("ru-RU", { day: "numeric", month: "short" })}
                           </p>
                         </div>
-                        <ChevronRight className={cn("w-5 h-5 mt-0.5", isDark ? "text-white/40" : "text-muted-foreground")} />
+                      </div>
+
+                      {/* Metrics grid: Views · Likes · Saves · Shares */}
+                      <div className={cn(
+                        "grid grid-cols-4 divide-x border-t",
+                        isDark ? "border-white/10 divide-white/10" : "border-white/20 divide-white/20",
+                      )}>
+                        {([
+                          { label: "Просм.", value: r.views_count ?? 0 },
+                          { label: "Лайки", value: r.likes_count ?? 0 },
+                          { label: "Сохр.", value: r.saves_count ?? 0 },
+                          { label: "Репост", value: r.shares_count ?? 0 },
+                        ] as const).map((m) => (
+                          <div key={m.label} className="flex flex-col items-center py-3 gap-0.5">
+                            <span className={cn("text-sm font-semibold", isDark ? "text-white" : "text-white")}>
+                              {formatCompact(m.value)}
+                            </span>
+                            <span className={cn("text-[10px]", isDark ? "text-white/50" : "text-white/60")}>
+                              {m.label}
+                            </span>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   ))}
@@ -2819,7 +2955,21 @@ export function SettingsPage() {
 
         return (
           <>
-            {renderHeader("Подписчики")}
+            <div className="flex items-center">
+              <div className="flex-1">{renderHeader("Подписчики")}</div>
+              <button
+                type="button"
+                disabled={creatorInsightsLoading}
+                onClick={() => void loadCreatorInsights(true)}
+                className={cn(
+                  "mr-4 w-9 h-9 rounded-full flex items-center justify-center transition-colors",
+                  isDark ? "settings-dark-pill hover:opacity-90" : "bg-card/80 border border-border hover:bg-muted/50",
+                )}
+                title="Обновить"
+              >
+                <RefreshCw className={cn("w-4 h-4", creatorInsightsLoading && "animate-spin")} />
+              </button>
+            </div>
             <div className="flex-1 overflow-y-auto native-scroll pb-8">
               <div className="px-4 pt-2 pb-3 flex items-center justify-between">
                 <div className={cn(
@@ -3119,7 +3269,9 @@ export function SettingsPage() {
                       <div className="mt-3 grid gap-2">
                         {incomingRequests.map((r) => (
                           <div key={r.id} className={cn("p-3 rounded-xl border", isDark ? "border-white/10" : "border-white/20")}>
-                            <p className={cn("font-medium", isDark ? "text-white" : "text-white")}>От: {r.brand_user_id}</p>
+                            <p className={cn("font-medium", isDark ? "text-white" : "text-white")}>
+                              От: {requestProfiles[r.brand_user_id]?.display_name ?? r.brand_user_id}
+                            </p>
                             {r.message ? (
                               <p className={cn("text-sm mt-1", isDark ? "text-white/60" : "text-white/70")}>{r.message}</p>
                             ) : null}
@@ -3177,7 +3329,9 @@ export function SettingsPage() {
                       <div className="mt-3 grid gap-2">
                         {outgoingRequests.map((r) => (
                           <div key={r.id} className={cn("p-3 rounded-xl border", isDark ? "border-white/10" : "border-white/20")}>
-                            <p className={cn("font-medium", isDark ? "text-white" : "text-white")}>Кому: {r.partner_user_id}</p>
+                            <p className={cn("font-medium", isDark ? "text-white" : "text-white")}>
+                              Кому: {requestProfiles[r.partner_user_id]?.display_name ?? r.partner_user_id}
+                            </p>
                             {r.message ? (
                               <p className={cn("text-sm mt-1", isDark ? "text-white/60" : "text-white/70")}>{r.message}</p>
                             ) : null}
@@ -3464,8 +3618,8 @@ export function SettingsPage() {
 
               {/* Logout */}
               <div className="px-4 mt-6">
-                <button 
-                  onClick={handleLogout}
+                <button
+                  onClick={() => setLogoutDialog(true)}
                   className={cn(
                     "w-full flex items-center justify-center gap-3 px-4 py-3.5 rounded-2xl transition-colors",
                     isDark
@@ -3488,6 +3642,90 @@ export function SettingsPage() {
       <div className="relative z-10 min-h-screen flex flex-col safe-area-top safe-area-bottom">
         {renderScreen()}
       </div>
+
+      {/* FIX-6: AlertDialog — удаление папки */}
+      <AlertDialog
+        open={deleteFolderDialog.open}
+        onOpenChange={(open) => !open && setDeleteFolderDialog({ open: false, folderId: null })}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Удалить папку?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Чаты не удалятся — только папка. Это действие нельзя отменить.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={async () => {
+                if (deleteFolderDialog.folderId) {
+                  await deleteFolderConfirmed(deleteFolderDialog.folderId);
+                }
+                setDeleteFolderDialog({ open: false, folderId: null });
+              }}
+            >
+              Удалить
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* FIX-6: AlertDialog — удаление всех папок */}
+      <AlertDialog open={deleteAllFoldersDialog} onOpenChange={setDeleteAllFoldersDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Удалить все папки чатов?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Чаты не удалятся — только папки. Это действие нельзя отменить.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={async () => {
+                if (!user?.id) return;
+                try {
+                  const { error } = await supabase.from("chat_folders").delete().eq("user_id", user.id);
+                  if (error) throw error;
+                  toast({ title: "Готово", description: "Папки чатов удалены." });
+                  await refetchFolders();
+                } catch (e) {
+                  toast({ title: "Папки", description: getErrorMessage(e) });
+                } finally {
+                  setDeleteAllFoldersDialog(false);
+                }
+              }}
+            >
+              Удалить всё
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* FIX-5: AlertDialog — подтверждение выхода */}
+      <AlertDialog open={logoutDialog} onOpenChange={setLogoutDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Выйти из аккаунта?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Вы будете перенаправлены на страницу входа.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={logoutLoading}>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={logoutLoading}
+              onClick={() => void handleLogout()}
+            >
+              {logoutLoading ? "Выход..." : "Выйти"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

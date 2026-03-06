@@ -54,6 +54,9 @@ export function AppearanceAndEnergyCenter({ userId, isDark, mode, onOpenEnergy }
   const [icons, setIcons] = useState<AppIconCatalogItem[]>([]);
   const [selectedIconId, setSelectedIconId] = useState<string>("main");
   const [loading, setLoading] = useState(true);
+  // Local color states to avoid DB write on every color picker drag event.
+  const [localColorPrimary, setLocalColorPrimary] = useState<string>("#6366f1");
+  const [localColorSecondary, setLocalColorSecondary] = useState<string>("#8b5cf6");
 
   useEffect(() => {
     if (!userId) {
@@ -75,6 +78,8 @@ export function AppearanceAndEnergyCenter({ userId, isDark, mode, onOpenEnergy }
         setEnergy(e);
         setIcons(iconCatalog);
         setSelectedIconId(iconId);
+        setLocalColorPrimary(a.personal_color_primary ?? "#6366f1");
+        setLocalColorSecondary(a.personal_color_secondary ?? "#8b5cf6");
       } catch (err) {
         if (!cancelled) {
           toast({ title: "Настройки", description: err instanceof Error ? err.message : String(err) });
@@ -240,14 +245,26 @@ export function AppearanceAndEnergyCenter({ userId, isDark, mode, onOpenEnergy }
               <Palette className={cn("w-4 h-4", isDark ? "text-white/60" : "text-muted-foreground")} />
               <span className="text-sm">Основной</span>
             </div>
-            <Input type="color" value={appearance.personal_color_primary} onChange={(e) => void updateAppearance({ personal_color_primary: e.target.value })} className="w-16 p-1 h-9" />
+            <Input
+              type="color"
+              value={localColorPrimary}
+              onChange={(e) => setLocalColorPrimary(e.target.value)}
+              onBlur={() => void updateAppearance({ personal_color_primary: localColorPrimary })}
+              className="w-16 p-1 h-9"
+            />
           </div>
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <Palette className={cn("w-4 h-4", isDark ? "text-white/60" : "text-muted-foreground")} />
               <span className="text-sm">Дополнительный</span>
             </div>
-            <Input type="color" value={appearance.personal_color_secondary} onChange={(e) => void updateAppearance({ personal_color_secondary: e.target.value })} className="w-16 p-1 h-9" />
+            <Input
+              type="color"
+              value={localColorSecondary}
+              onChange={(e) => setLocalColorSecondary(e.target.value)}
+              onBlur={() => void updateAppearance({ personal_color_secondary: localColorSecondary })}
+              className="w-16 p-1 h-9"
+            />
           </div>
         </div>
       </div>

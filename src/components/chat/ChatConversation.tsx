@@ -381,25 +381,56 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
   }, [conversationId, initialOpenPanelAction, onInitialPanelHandled]);
 
   // ─── Дешифрование входящих зашифрованных сообщений ─────────────────────────
+  // decryptInProgressRef содержит ID сообщений, для которых уже запущен
+  // async-decrypt. Это позволяет исключить их из useMemo без включения
+  // decryptedCache в зависимости (что вызывало бы N+1 проходов useEffect).
+  const decryptInProgressRef = useRef<Set<string>>(new Set());
+
+  const encryptedUndecrypted = useMemo(
+    () =>
+      messages.filter(
+        (m: any) =>
+          (Boolean(m.is_encrypted) || Boolean(parseEncryptedPayload(m.content))) &&
+          !(m.id in decryptedCache) &&
+          !decryptInProgressRef.current.has(m.id),
+      ),
+    // decryptedCache: нужен только чтобы убрать уже расшифрованные.
+    // decryptInProgressRef.current не является реактивным — это намеренно:
+    // нам не нужен лишний пересчёт из-за него; он предотвращает дублирование.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [messages, decryptedCache],
+  );
+
   useEffect(() => {
-    const encrypted = messages.filter(
-      (m: any) => (Boolean(m.is_encrypted) || Boolean(parseEncryptedPayload(m.content))) && !(m.id in decryptedCache),
-    );
-    if (!encrypted.length) return;
+    if (!encryptedUndecrypted.length) return;
 
-    encrypted.forEach(async (m: any) => {
-      const payload = parseEncryptedPayload(m.content);
+    // Регистрируем все ID как «в процессе» до запуска async-работы,
+    // чтобы следующий пересчёт useMemo их исключил.
+    for (const m of encryptedUndecrypted) decryptInProgressRef.current.add(m.id);
 
-      if (!payload) {
-        setDecryptedCache((prev) => ({ ...prev, [m.id]: null }));
-        return;
-      }
-
-      const plain = await decryptContent(payload, m.sender_id);
-      setDecryptedCache((prev) => ({ ...prev, [m.id]: plain }));
-    });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages, decryptContent]);
+    let cancelled = false;
+    void Promise.all(
+      encryptedUndecrypted.map(async (m: any) => {
+        const payload = parseEncryptedPayload(m.content);
+        if (!payload) {
+          if (!cancelled) setDecryptedCache((prev) => ({ ...prev, [m.id]: null }));
+          return;
+        }
+        try {
+          const plain = await decryptContent(payload, m.sender_id);
+          if (!cancelled) setDecryptedCache((prev) => ({ ...prev, [m.id]: plain }));
+        } catch (err) {
+          console.error("[decrypt] failed for message", m.id, err);
+          if (!cancelled) setDecryptedCache((prev) => ({ ...prev, [m.id]: null }));
+        } finally {
+          decryptInProgressRef.current.delete(m.id);
+        }
+      }),
+    ).catch((err) => console.error("[decrypt] unexpected error:", err));
+    return () => {
+      cancelled = true;
+    };
+  }, [encryptedUndecrypted, decryptContent]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -489,13 +520,16 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
 
   const { renderText } = useMentions(mentionParticipants);
 
+  // Stable sender IDs key — prevents DB call on every minor re-render.
+  const senderIdsKey = useMemo(() => {
+    if (!isGroup) return "";
+    const ids = [...new Set(visibleMessages.map((m) => m.sender_id).filter(Boolean))].sort();
+    return ids.join(",");
+  }, [isGroup, visibleMessages]);
+
   useEffect(() => {
-    if (!isGroup) {
-      setSenderProfiles({});
-      return;
-    }
-    const senderIds = [...new Set(visibleMessages.map((m) => m.sender_id).filter(Boolean))];
-    if (!senderIds.length) {
+    const senderIds = senderIdsKey ? senderIdsKey.split(",") : [];
+    if (!isGroup || !senderIds.length) {
       setSenderProfiles({});
       return;
     }
@@ -524,7 +558,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
     return () => {
       cancelled = true;
     };
-  }, [isGroup, visibleMessages]);
+  }, [isGroup, senderIdsKey]);
 
   // Bot reply keyboard: watch last incoming message for reply_markup
   useEffect(() => {
@@ -836,15 +870,10 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
   }, [visibleMessages]);
 
   const handleSendMessage = async (silent = false, overrideText?: string) => {
-    console.log("[handleSendMessage] inputText:", inputText, "silent:", silent);
-    if (sendInFlightRef.current) {
-      console.log("[handleSendMessage] send in-flight, skipping");
-      return;
-    }
+    if (sendInFlightRef.current) return;
 
     const trimmed = (overrideText ?? inputText).trim();
     if (!trimmed) {
-      console.log("[handleSendMessage] empty input, skipping");
       sendTyping(false);
       return;
     }
@@ -892,14 +921,25 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
       let extraFields: Record<string, unknown> = {};
       if (encryptionEnabled) {
         const encrypted = await encryptContent(withReply);
-        if (encrypted) {
-          contentToSend = JSON.stringify(encrypted);
-          extraFields = {
-            is_encrypted: true,
-            encryption_iv: encrypted.iv,
-            encryption_key_version: encrypted.epoch,
-          };
+        if (!encrypted) {
+          // Ключ недоступен — блокируем отправку, чтобы не допустить утечки plaintext.
+          sendInFlightRef.current = false;
+          setIsSending(false);
+          setInputText(trimmed);
+          setReplyTo(reply);
+          draftClientMsgIdRef.current = clientMsgId;
+          lastDraftTrimmedRef.current = trimmed;
+          toast.error("Шифрование недоступно", {
+            description: "Ключ E2EE не готов. Подождите или отключите сквозное шифрование.",
+          });
+          return;
         }
+        contentToSend = JSON.stringify(encrypted);
+        extraFields = {
+          is_encrypted: true,
+          encryption_iv: encrypted.iv,
+          encryption_key_version: encrypted.epoch,
+        };
       }
       await sendMessage(contentToSend, {
         clientMsgId,

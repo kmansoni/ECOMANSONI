@@ -1,0 +1,61 @@
+{
+  "matrix_version": "1.1.0",
+  "modes": [
+    {
+      "mode": "DEG_TRUST_SAFE_SOCIAL_ONLY",
+      "trigger": "trust_service_unavailable",
+      "actions": [
+        "disable_trusted_discovery_pool",
+        "disable_utility_pool",
+        "disable_business_pool",
+        "allow_follow_recent_from_cached_trust_only",
+        "allow_chat_affinity_from_cached_trust_only",
+        "use_conservative_policy"
+      ]
+    },
+    {
+      "mode": "DEG_RETRIEVAL_SOCIAL_BIAS",
+      "trigger": "discovery_pool_failure",
+      "actions": [
+        "increase_social_pool_share",
+        "disable_random_compensation",
+        "preserve_author_caps"
+      ]
+    },
+    {
+      "mode": "DEG_NO_PAGE_CACHE",
+      "trigger": "redis_page_cache_unavailable",
+      "actions": [
+        "recompute_page",
+        "reduce_candidate_set_size",
+        "reduce_page_size",
+        "tighten_latency_budget"
+      ]
+    },
+    {
+      "mode": "DEG_NO_SESSION_STATE",
+      "trigger": "session_store_unavailable",
+      "actions": [
+        "apply_default_conservative_pacing",
+        "tighten_author_caps",
+        "tighten_business_caps",
+        "disable_fatigue_based_boosts"
+      ]
+    },
+    {
+      "mode": "DEG_STALE_ANALYTICS",
+      "trigger": "event_ingest_lagging",
+      "actions": [
+        "continue_feed_serving",
+        "freeze_some_quality_boosts",
+        "mark_decision_logs_as_stale"
+      ]
+    }
+  ],
+  "invariants": [
+    "discovery must fail closed when trust is unavailable",
+    "partial outage must not increase utility density",
+    "partial outage must not silently disable author caps",
+    "feed must prefer conservative social fallback over random expansion"
+  ]
+}

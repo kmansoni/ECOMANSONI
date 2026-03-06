@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -7,7 +7,7 @@ import { Switch } from "@/components/ui/switch";
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { useUserSettings } from "@/contexts/UserSettingsContext";
-import { sha256Hex } from "@/lib/passcode";
+import { pbkdf2Hash } from "@/lib/passcode";
 import { supabase } from "@/integrations/supabase/client";
 import {
   getOrCreatePrivacyRules,
@@ -156,13 +156,23 @@ export function PrivacySecurityCenter({ mode, isDark, onOpenBlocked }: Props) {
     if (mode === "privacy" && selectedRuleKey) void loadExceptions();
   }, [loadExceptions, mode, selectedRuleKey]);
 
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
-    if (mode !== "privacy" || !selectedRuleKey || search.trim().length < 2 || !user?.id) {
+    if (mode !== "privacy" || !selectedRuleKey || !user?.id) {
       setSearchResults([]);
       return;
     }
+    if (search.trim().length < 2) {
+      setSearchResults([]);
+      return;
+    }
+
+    // Debounce: cancel previous pending search before starting a new one.
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+
     let cancelled = false;
-    void (async () => {
+    searchDebounceRef.current = setTimeout(async () => {
       try {
         const { data, error } = await supabase
           .from("profiles")
@@ -175,9 +185,11 @@ export function PrivacySecurityCenter({ mode, isDark, onOpenBlocked }: Props) {
       } catch (e) {
         if (!cancelled) toast({ title: "Поиск", description: e instanceof Error ? e.message : String(e) });
       }
-    })();
+    }, 300);
+
     return () => {
       cancelled = true;
+      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
     };
   }, [mode, search, selectedRuleKey, user?.id]);
 
@@ -234,7 +246,7 @@ export function PrivacySecurityCenter({ mode, isDark, onOpenBlocked }: Props) {
               className="w-full"
               onClick={async () => {
                 if (!user?.id) return;
-                const hash = passcode.trim() ? await sha256Hex(passcode.trim()) : null;
+                const hash = passcode.trim() ? await pbkdf2Hash(passcode.trim()) : null;
                 const next = await updateUserSecuritySettings(user.id, { app_passcode_hash: hash });
                 setSecuritySettings(next);
                 setPasscode("");
@@ -260,7 +272,7 @@ export function PrivacySecurityCenter({ mode, isDark, onOpenBlocked }: Props) {
               className="w-full"
               onClick={async () => {
                 if (!user?.id) return;
-                const hash = cloudPassword.trim() ? await sha256Hex(cloudPassword.trim()) : null;
+                const hash = cloudPassword.trim() ? await pbkdf2Hash(cloudPassword.trim()) : null;
                 const next = await updateUserSecuritySettings(user.id, { cloud_password_hash: hash });
                 setSecuritySettings(next);
                 setCloudPassword("");
@@ -281,15 +293,25 @@ export function PrivacySecurityCenter({ mode, isDark, onOpenBlocked }: Props) {
         <div className={cardClass(isDark)}>
           <div className="px-5 py-4">
             <p className="font-semibold">Защита аккаунта ключом доступа</p>
-            <p className={cn("text-sm mt-1", isDark ? "text-white/60" : "text-white/70")}>Флаг использования Passkey хранится в Supabase и синхронизируется между устройствами.</p>
+            <p className={cn("text-sm mt-1", isDark ? "text-white/60" : "text-white/70")}>
+              Аутентификация через WebAuthn/Passkey. Функция находится в разработке.
+            </p>
+            {/* FIX-8: Passkey not yet implemented — disable toggle, show Coming Soon badge */}
             <div className="mt-4 flex items-center justify-between">
-              <p className="font-medium">Ключ доступа</p>
+              <div className="flex items-center gap-2">
+                <p className="font-medium">Ключ доступа</p>
+                <span className={cn(
+                  "text-xs px-2 py-0.5 rounded-full font-medium",
+                  isDark ? "bg-yellow-500/20 text-yellow-300" : "bg-yellow-100 text-yellow-700"
+                )}>
+                  Скоро
+                </span>
+              </div>
               <Switch
-                checked={!!securitySettings?.passkey_enabled}
-                onCheckedChange={async (val) => {
-                  if (!user?.id) return;
-                  const next = await updateUserSecuritySettings(user.id, { passkey_enabled: val });
-                  setSecuritySettings(next);
+                disabled
+                checked={false}
+                onCheckedChange={() => {
+                  toast({ title: "Passkey", description: "Функция находится в разработке." });
                 }}
               />
             </div>
@@ -538,4 +560,5 @@ export function PrivacySecurityCenter({ mode, isDark, onOpenBlocked }: Props) {
     </div>
   );
 }
+
 
