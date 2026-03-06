@@ -76,6 +76,7 @@ jobs:
 
       - name: Deploy Supabase (migrations + functions + secrets)
         if: ${{ env.DRY_RUN != 'true' }}
+        continue-on-error: true
         run: pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/supabase-deploy.ps1 -SkipSyncGuard -SkipDbPush
 
       - name: Install PostgreSQL client
