@@ -45,6 +45,9 @@ const EDGE_CHAT_URL = SUPABASE_URL
   : "";
 
 // Direct API URL (requires VITE_AI_API_KEY in .env.local)
+// ⚠️  SECURITY: VITE_* vars are inlined into the JS bundle at build time.
+// NEVER set VITE_AI_API_KEY in production .env files — use the aria-chat
+// Edge Function instead (key stays in Supabase Vault, server-side only).
 const DIRECT_AI_URL =
   (import.meta.env.VITE_AI_API_URL as string | undefined) ??
   "https://api.mansoni.ru/v1/chat/completions";
@@ -53,8 +56,14 @@ const DIRECT_AI_MODEL =
   (import.meta.env.VITE_AI_MODEL as string | undefined) ??
   "google/gemini-2.5-pro-exp-03-25";
 
-// Use direct API if VITE_AI_API_KEY is set, otherwise use edge function
-const USE_DIRECT = Boolean(DIRECT_AI_KEY);
+// Block direct mode in production — the key would be visible to every user.
+const USE_DIRECT = Boolean(DIRECT_AI_KEY) && import.meta.env.DEV;
+if (DIRECT_AI_KEY && !import.meta.env.DEV) {
+  console.warn(
+    "[ARIA] VITE_AI_API_KEY is set but will be IGNORED in production builds. " +
+    "Deploy the aria-chat Edge Function and store AI_API_KEY in Supabase Vault."
+  );
+}
 
 // ─── Client-side built-in fallback (no server required) ───────────────────────
 function clientBuiltinResponse(messages: Array<{ role: string; content: string }>): string {
