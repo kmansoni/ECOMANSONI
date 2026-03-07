@@ -1,0 +1,201 @@
+# =============================================================================
+# Martin Tile Server Configuration — ECOMANSONI Navigation Platform
+# Serves Mapbox Vector Tiles (MVT) from PostGIS tables
+# Docs: https://maplibre.org/martin/
+# =============================================================================
+
+# PostgreSQL / PostGIS connection
+# DATABASE_URL env var overrides this section at runtime
+postgres:
+  connection_string: "${DATABASE_URL}"
+  # Pooling: keep connections warm for low-latency tile serving
+  pool_size: 20
+  # Max feature count per tile (performance ceiling)
+  max_feature_count: 10000
+  # Default tile extent (512 = retina tiles)
+  default_srid: 3857
+  # Worker threads per connection for parallel tile rendering
+  worker_threads: 4
+
+# =============================================================================
+# HTTP Server
+# =============================================================================
+listen_addresses: "0.0.0.0:3000"
+keep_alive: 75
+
+# =============================================================================
+# Cache — in-process tile cache (reduces DB reads for hot tiles)
+# =============================================================================
+cache:
+  # Number of tiles to cache in memory
+  size: 1024
+
+# =============================================================================
+# Tile Sources — one entry per PostGIS table/view
+# Each source maps to: /tiles/{source_id}/{z}/{x}/{y}
+# =============================================================================
+postgres_tables:
+
+  # NOTE:
+  # Traffic tiles are served from nav_traffic_segments_tiles view (not base table),
+  # because nav_traffic_segments has no geometry column.
+
+  # ---------------------------------------------------------------------------
+  # Road Segments — transport graph for map rendering
+  # Table: nav_road_segments (geometry: LineString, SRID 4326)
+  # ---------------------------------------------------------------------------
+  nav_road_segments:
+    schema: public
+    table: nav_road_segments
+    # Use the geometry column (must have spatial index)
+    geometry_column: geometry
+    geometry_type: LineString
+    srid: 4326
+    # Zoom range: show roads from z6 (overview) to z18 (street level)
+    minzoom: 6
+    maxzoom: 18
+    # Columns to include in tile feature properties
+    properties:
+      - id
+      - osm_way_id
+      - road_class
+      - name
+      - speed_limit_kmh
+      - surface
+      - is_oneway
+      - lanes
+      - properties
+      - updated_at
+    # Buffer: number of pixels to extend features beyond tile boundary
+    buffer: 64
+    # Extent: coordinate range within tile (4096 = high precision)
+    extent: 4096
+    # Clip geometry to tile boundary
+    clip_geometry: true
+
+  # ---------------------------------------------------------------------------
+  # Points of Interest — landmarks, fuel stations, parking, etc.
+  # Table: nav_pois (geometry: Point, SRID 4326)
+  # ---------------------------------------------------------------------------
+  nav_pois:
+    schema: public
+    table: nav_pois
+    geometry_column: location
+    geometry_type: Point
+    srid: 4326
+    minzoom: 10
+    maxzoom: 18
+    properties:
+      - id
+      - name
+      - category
+      - subcategory
+      - address
+      - phone
+      - rating
+      - is_verified
+      - opening_hours
+      - review_count
+      - source
+    buffer: 8
+    extent: 4096
+    clip_geometry: false
+
+  # ---------------------------------------------------------------------------
+  # Zones — delivery zones, surge pricing zones, admin boundaries
+  # Table: nav_zones (geometry: Polygon/MultiPolygon, SRID 4326)
+  # ---------------------------------------------------------------------------
+  nav_zones:
+    schema: public
+    table: nav_zones
+    geometry_column: boundary
+    geometry_type: Polygon
+    srid: 4326
+    minzoom: 4
+    maxzoom: 16
+    properties:
+      - id
+      - name
+      - city_id
+      - h3_resolution
+      - timezone
+      - is_active
+      - updated_at
+    buffer: 4
+    extent: 4096
+    clip_geometry: true
+
+  # ---------------------------------------------------------------------------
+  # Traffic Segments — latest traffic metrics joined with road geometry
+  # View: nav_traffic_segments_tiles (geometry: LineString, SRID 4326)
+  # ---------------------------------------------------------------------------
+  nav_traffic_segments:
+    schema: public
+    table: nav_traffic_segments_tiles
+    geometry_column: geometry
+    geometry_type: LineString
+    srid: 4326
+    minzoom: 8
+    maxzoom: 18
+    properties:
+      - id
+      - road_segment_id
+      - speed_kmh
+      - free_flow_speed_kmh
+      - congestion_level
+      - confidence
+      - sample_count
+      - measured_at
+      - created_at
+    buffer: 32
+    extent: 4096
+    clip_geometry: true
+
+  # ---------------------------------------------------------------------------
+  # Crowdsource Reports — potholes, accidents, road closures, speed cameras
+  # Table: nav_crowdsource_reports (geometry: Point, SRID 4326)
+  # ---------------------------------------------------------------------------
+  nav_crowdsource_reports:
+    schema: public
+    table: nav_crowdsource_reports
+    geometry_column: location
+    geometry_type: Point
+    srid: 4326
+    minzoom: 10
+    maxzoom: 18
+    # Only serve active, verified reports
+    sql_condition: "status IN ('verified','active') AND (expires_at IS NULL OR expires_at > NOW())"
+    properties:
+      - id
+      - report_type
+      - status
+      - description
+      - direction_deg
+      - confidence_score
+      - upvotes
+      - downvotes
+      - created_at
+      - expires_at
+    buffer: 8
+    extent: 4096
+    clip_geometry: false
+
+# =============================================================================
+# Sprite & Glyphs (optional — serve from CDN in production)
+# =============================================================================
+# sprite: https://cdn.example.com/sprites/navigation
+# font: https://cdn.example.com/fonts/{fontstack}/{range}.pbf
+
+# =============================================================================
+# CORS — allow map clients to fetch tiles cross-origin
+# =============================================================================
+cors:
+  origins:
+    - "*"
+  methods:
+    - GET
+    - HEAD
+    - OPTIONS
+  headers:
+    - Content-Type
+    - Authorization

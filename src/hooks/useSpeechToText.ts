@@ -87,8 +87,8 @@ export function useSpeechToText() {
           setTimeout(() => recognition.stop(), 1000);
         };
         setTimeout(() => {
-          try { recognition.stop(); } catch {}
-          try { audio.pause(); } catch {}
+          try { recognition.stop(); } catch { /* recognition already stopped */ }
+          try { audio.pause(); } catch { /* audio already ended */ }
         }, 60_000);
 
       } catch (err) {

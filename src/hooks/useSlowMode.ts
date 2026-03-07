@@ -83,7 +83,9 @@ export function useSlowMode(
     if (!groupId || !userId || !isEnabled || isExempt) return;
     try {
       localStorage.setItem(LS_KEY(groupId, userId), String(Date.now()));
-    } catch {}
+    } catch {
+      // Storage persistence failed; in-memory timer still updates.
+    }
     setRemainingSeconds(delaySeconds);
   }, [groupId, userId, isEnabled, isExempt, delaySeconds]);
 

@@ -63,7 +63,7 @@ export interface DeviceInfo {
 
 function isCapacitorNative(): boolean {
   try {
-    // @ts-ignore – Capacitor injects window.Capacitor at runtime
+    // @ts-expect-error -- Capacitor runtime object is injected at runtime
     return typeof window !== "undefined" && !!window.Capacitor?.isNativePlatform?.();
   } catch {
     return false;
@@ -72,7 +72,7 @@ function isCapacitorNative(): boolean {
 
 function getCapacitorPlatform(): string | null {
   try {
-    // @ts-ignore
+    // @ts-expect-error -- Capacitor runtime object is injected at runtime
     return window.Capacitor?.getPlatform?.() ?? null;
   } catch {
     return null;
@@ -83,7 +83,7 @@ function isPwa(): boolean {
   if (typeof window === "undefined") return false;
   return (
     window.matchMedia("(display-mode: standalone)").matches ||
-    // @ts-ignore – iOS Safari
+    // @ts-expect-error -- iOS Safari-specific standalone flag
     (window.navigator as any).standalone === true
   );
 }

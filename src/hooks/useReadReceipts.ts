@@ -40,7 +40,7 @@ export function useReadReceipts(conversationId: string | null) {
     };
 
     void loadStatuses();
-  }, [conversationId, user]);
+  }, [conversationId, user, supabaseAny]);
 
   // Realtime подписка на изменения статусов
   useEffect(() => {
@@ -93,7 +93,7 @@ export function useReadReceipts(conversationId: string | null) {
         // ignore
       }
     },
-    [conversationId, user]
+    [conversationId, user, supabaseAny]
   );
 
   // Пакетная отправка read events каждые 500ms
@@ -116,7 +116,7 @@ export function useReadReceipts(conversationId: string | null) {
     } catch {
       // ignore
     }
-  }, [conversationId, user]);
+  }, [conversationId, user, supabaseAny]);
 
   // Добавить сообщение в очередь прочитанных
   const markAsRead = useCallback(

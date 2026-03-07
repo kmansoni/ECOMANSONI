@@ -1,24 +1,52 @@
 import { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { Car, Package, ShoppingBag, Home, Shield, Briefcase, Building2, TrendingUp, Plane, Hotel, Film, Dumbbell, GraduationCap, Music, Truck, Users, Mail, Bot } from "lucide-react";
+import { Car, ShoppingBag, Home, Shield, Briefcase, Building2, TrendingUp, Plane, Hotel, Film, Dumbbell, GraduationCap, Music, Truck, Users, Mail, Bot, Navigation } from "lucide-react";
 import logoImage from "@/assets/logo.png";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 
-interface ServiceItem {
+type AvailableServiceItem = {
   id: string;
   name: string;
   icon: React.ElementType;
-  route?: string;
-  available: boolean;
+  route: string;
+  available: true;
+};
+
+type ComingSoonServiceItem = {
+  id: string;
+  name: string;
+  icon: React.ElementType;
+  route?: undefined;
+  available: false;
+};
+
+type ServiceItem = AvailableServiceItem | ComingSoonServiceItem;
+
+function isAvailableService(item: ServiceItem): item is AvailableServiceItem {
+  return item.available;
+}
+
+function validateServiceConfig(items: ServiceItem[]): void {
+  if (!import.meta.env.DEV) return;
+  for (const item of items) {
+    if (item.available && !item.route) {
+      console.error("[ServicesMenu] Invalid config: available service without route", item.id);
+    }
+    if (!item.available && item.route) {
+      console.warn("[ServicesMenu] Potentially inconsistent config: coming soon service has route", item.id);
+    }
+  }
 }
 
 const services: ServiceItem[] = [
   { id: "ai-assistant", name: "ИИ-ассистент", icon: Bot, route: "/ai-assistant", available: true },
+  { id: "navigation", name: "Навигация", icon: Navigation, route: "/navigation", available: true },
   { id: "taxi", name: "Такси", icon: Car, route: "/taxi", available: true },
-  { id: "carsharing", name: "Каршеринг", icon: Car, available: true },
-  { id: "delivery", name: "Доставка", icon: Truck, available: true },
-  { id: "marketplace", name: "Маркетплейс", icon: ShoppingBag, available: true },
+  // Not routed yet: keep in "Coming Soon" to avoid dead-click UX.
+  { id: "carsharing", name: "Каршеринг", icon: Car, available: false },
+  { id: "delivery", name: "Доставка", icon: Truck, available: false },
+  { id: "marketplace", name: "Маркетплейс", icon: ShoppingBag, available: false },
   { id: "realestate", name: "Недвижимость", icon: Home, route: "/realestate", available: true },
   { id: "insurance", name: "Страхование", icon: Shield, route: "/insurance", available: true },
   { id: "crm", name: "CRM", icon: Users, route: "/crm", available: true },
@@ -35,20 +63,20 @@ const services: ServiceItem[] = [
   { id: "music", name: "Музыка", icon: Music, available: false },
 ];
 
+validateServiceConfig(services);
+
 export function ServicesMenu() {
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
 
-  const handleServiceClick = (service: ServiceItem) => {
-    if (service.route && service.available) {
-      navigate(service.route);
-      setOpen(false);
-    }
+  const handleServiceClick = (service: AvailableServiceItem) => {
+    navigate(service.route);
+    setOpen(false);
   };
 
-  const availableServices = services.filter(s => s.available);
-  const comingSoonServices = services.filter(s => !s.available);
+  const availableServices = services.filter(isAvailableService);
+  const comingSoonServices = services.filter((s) => !s.available);
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
@@ -76,18 +104,18 @@ export function ServicesMenu() {
             <div className="grid grid-cols-3 gap-2">
               {availableServices.map((service) => {
                 const Icon = service.icon;
-                const isActive = service.route && location.pathname.startsWith(service.route);
+                const isActive = location.pathname.startsWith(service.route);
                 
                 return (
                   <button
                     key={service.id}
                     onClick={() => handleServiceClick(service)}
+                    aria-label={`Открыть сервис: ${service.name}`}
                     className={cn(
                       "flex flex-col items-center gap-1.5 p-3 rounded-xl transition-colors",
                       isActive 
                         ? "bg-primary/10 text-primary" 
-                        : "hover:bg-muted text-foreground",
-                      !service.route && "opacity-60"
+                        : "hover:bg-muted text-foreground"
                     )}
                   >
                     <div className={cn(

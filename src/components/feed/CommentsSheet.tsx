@@ -24,6 +24,7 @@ interface CommentsSheetProps {
   onClose: () => void;
   postId: string;
   commentsCount: number;
+  onCommentsCountChange?: (count: number) => void;
 }
 
 interface ReplyingTo {
@@ -35,7 +36,8 @@ export function CommentsSheet({
   isOpen,
   onClose,
   postId,
-  commentsCount
+  commentsCount,
+  onCommentsCountChange,
 }: CommentsSheetProps) {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -128,13 +130,17 @@ export function CommentsSheet({
 
   const totalComments = comments.reduce((acc: number, c: any) => acc + 1 + (c.replies?.length || 0), 0);
 
+  useEffect(() => {
+    onCommentsCountChange?.(totalComments);
+  }, [onCommentsCountChange, totalComments]);
+
   return (
     <Drawer open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DrawerContent className="h-[92dvh] max-h-[92dvh] mt-0 flex flex-col">
         <DrawerHeader className="border-b border-border pb-3 flex-shrink-0">
           <div className="flex items-center justify-between">
             <DrawerTitle>
-              Комментарии {totalComments > 0 && `(${totalComments})`}
+              Комментарии {(totalComments || commentsCount) > 0 && `(${totalComments || commentsCount})`}
             </DrawerTitle>
             <button
               onClick={() => setSortMode((m) => m === "new" ? "popular" : "new")}

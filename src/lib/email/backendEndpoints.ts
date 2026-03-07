@@ -17,7 +17,6 @@
  * Returns empty string if VITE_SUPABASE_URL is not configured.
  */
 export function getEmailEdgeFunctionUrl(): string {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL ?? '';
   if (!supabaseUrl) return '';
   return `${supabaseUrl.replace(/\/$/, '')}/functions/v1/email-send`;
@@ -36,7 +35,6 @@ export function getEmailEdgeFunctionUrl(): string {
  * Returns empty array in production.
  */
 export function getEmailRouterApiBases(): string[] {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const raw: string = (import.meta as any).env?.VITE_EMAIL_ROUTER_API_URL ?? '';
 
   const bases = raw
@@ -45,7 +43,6 @@ export function getEmailRouterApiBases(): string[] {
     .filter((url) => url.length > 0);
 
   // Dev-mode fallback: if no URL configured, try localhost
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   if (bases.length === 0 && (import.meta as any).env?.DEV) {
     bases.push('http://localhost:8090');
   }

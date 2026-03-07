@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
 // TODO: Regenerate Supabase types with `supabase gen types` to include message_reactions table.
 // Using type assertion as temporary measure until types are regenerated.
-const db = supabase as any; // eslint-disable-line @typescript-eslint/no-explicit-any
+const db = supabase as any;
 import type { RealtimeChannel } from "@supabase/supabase-js";
 
 export interface MessageReaction {

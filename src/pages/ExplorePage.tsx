@@ -54,16 +54,16 @@ export default function ExplorePage() {
 
   // Загрузка explore контента при старте
   useEffect(() => {
-    getExploreContent(activeCategory !== 'all' ? activeCategory : undefined);
-  }, [activeCategory]);
+    void getExploreContent(activeCategory !== 'all' ? activeCategory : undefined);
+  }, [activeCategory, getExploreContent]);
 
   // Загрузка истории и трендов при фокусе
   useEffect(() => {
     if (focused) {
-      getSearchHistory();
-      getTrendingHashtags();
+      void getSearchHistory();
+      void getTrendingHashtags();
     }
-  }, [focused]);
+  }, [focused, getSearchHistory, getTrendingHashtags]);
 
   // Debounced search
   useEffect(() => {
@@ -73,7 +73,7 @@ export default function ExplorePage() {
       return;
     }
     debounceRef.current = setTimeout(() => {
-      search(query);
+      void search(query);
       setHasSearched(true);
       // Обновляем URL
       const params = new URLSearchParams();
@@ -83,7 +83,7 @@ export default function ExplorePage() {
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [query]);
+  }, [query, search, setSearchParams]);
 
   const handleFocus = () => setFocused(true);
 
@@ -108,8 +108,10 @@ export default function ExplorePage() {
   };
 
   const handleLoadMore = useCallback(() => {
-    if (!loading) getExploreContent(activeCategory !== 'all' ? activeCategory : undefined);
-  }, [loading, activeCategory]);
+    if (!loading) {
+      void getExploreContent(activeCategory !== 'all' ? activeCategory : undefined);
+    }
+  }, [loading, activeCategory, getExploreContent]);
 
   const isSearchMode = focused || query.length > 0;
 

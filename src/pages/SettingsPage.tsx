@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { X, Moon, Sun, Bell, Lock, HelpCircle, Info, LogOut, ChevronRight, ChevronLeft, Shield, Heart, Archive, Clock, Bookmark, Eye, UserX, MessageCircle, Share2, Users, Smartphone, Key, Mail, Database, Download, FileText, Video, AlertCircle, BarChart3, Accessibility, Globe, BadgeCheck, Smile, Phone, Volume2, RefreshCw } from "lucide-react";
+import { X, Moon, Bell, Lock, HelpCircle, Info, LogOut, ChevronRight, ChevronLeft, Shield, Heart, Archive, Clock, Bookmark, Eye, UserX, MessageCircle, Share2, Users, Smartphone, Key, Mail, Database, Download, FileText, Video, AlertCircle, BarChart3, Accessibility, Globe, BadgeCheck, Smile, Phone, Volume2, RefreshCw } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -56,8 +56,16 @@ import { StickersAndReactionsCenter } from "@/components/settings/StickersAndRea
 type Screen =
   | "main"
   | "saved"
+  | "saved_all_posts"
+  | "saved_liked_posts"
   | "archive"
+  | "archive_stories"
+  | "archive_posts"
+  | "archive_live"
   | "activity"
+  | "activity_likes"
+  | "activity_comments"
+  | "activity_reposts"
   | "notifications"
   | "calls"
   | "data_storage"
@@ -130,6 +138,45 @@ function formatBytes(bytes: number): string {
   }
   return `${v.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
 }
+
+type SettingsPostItem = {
+  id: string;
+  content: string | null;
+  created_at: string;
+  likes_count: number | null;
+  comments_count: number | null;
+  media_url: string | null;
+};
+
+type SettingsStoryItem = {
+  id: string;
+  media_url: string | null;
+  created_at: string;
+  archived_at: string | null;
+};
+
+type SettingsLiveArchiveItem = {
+  id: string;
+  state: string;
+  started_at: string | null;
+  ended_at: string | null;
+  created_at: string;
+};
+
+type ActivityCommentItem = {
+  id: string;
+  post_id: string;
+  content: string;
+  created_at: string;
+};
+
+type ActivityRepostItem = {
+  id: string;
+  reel_id: string;
+  created_at: string | null;
+  reel_description: string | null;
+  reel_thumbnail_url: string | null;
+};
 
 function BlockedUsersPanel({ isDark }: { isDark: boolean }) {
   const { user } = useAuth();
@@ -262,7 +309,7 @@ function BlockedUsersPanel({ isDark }: { isDark: boolean }) {
 
 export function SettingsPage() {
   const navigate = useNavigate();
-  const { theme, setTheme } = useTheme();
+  const { theme } = useTheme();
   const { user } = useAuth();
   const { settings, update: updateSettings } = useUserSettings();
   const [currentScreen, setCurrentScreen] = useState<Screen>("main");
@@ -299,6 +346,23 @@ export function SettingsPage() {
   // FIX-11: content filter state — "all" | "30d"
   const [statsContentFilter, setStatsContentFilter] = useState<"all" | "30d">("all");
   const [followersGenderLoading, setFollowersGenderLoading] = useState(false);
+  const [savedAllPosts, setSavedAllPosts] = useState<SettingsPostItem[]>([]);
+  const [savedLikedPosts, setSavedLikedPosts] = useState<SettingsPostItem[]>([]);
+  const [savedAllPostsLoading, setSavedAllPostsLoading] = useState(false);
+  const [savedLikedPostsLoading, setSavedLikedPostsLoading] = useState(false);
+  const [archivedStories, setArchivedStories] = useState<SettingsStoryItem[]>([]);
+  const [archivedPosts, setArchivedPosts] = useState<SettingsPostItem[]>([]);
+  const [archivedLiveSessions, setArchivedLiveSessions] = useState<SettingsLiveArchiveItem[]>([]);
+  const [archivedStoriesLoading, setArchivedStoriesLoading] = useState(false);
+  const [archivedPostsLoading, setArchivedPostsLoading] = useState(false);
+  const [archivedLiveLoading, setArchivedLiveLoading] = useState(false);
+  const [activityLikes, setActivityLikes] = useState<SettingsPostItem[]>([]);
+  const [activityComments, setActivityComments] = useState<ActivityCommentItem[]>([]);
+  const [activityReposts, setActivityReposts] = useState<ActivityRepostItem[]>([]);
+  const [activityLikesLoading, setActivityLikesLoading] = useState(false);
+  const [activityCommentsLoading, setActivityCommentsLoading] = useState(false);
+  const [activityRepostsLoading, setActivityRepostsLoading] = useState(false);
+  const [activityExportLoading, setActivityExportLoading] = useState(false);
 
   const { folders, itemsByFolderId, loading: foldersLoading, refetch: refetchFolders } = useChatFolders();
   const { conversations } = useConversations();
@@ -421,6 +485,29 @@ export function SettingsPage() {
 
     if (currentScreen === "chat_folder_edit") {
       setCurrentScreen("chat_folders");
+      return;
+    }
+
+    if (currentScreen === "saved_all_posts" || currentScreen === "saved_liked_posts") {
+      setCurrentScreen("saved");
+      return;
+    }
+
+    if (
+      currentScreen === "archive_stories" ||
+      currentScreen === "archive_posts" ||
+      currentScreen === "archive_live"
+    ) {
+      setCurrentScreen("archive");
+      return;
+    }
+
+    if (
+      currentScreen === "activity_likes" ||
+      currentScreen === "activity_comments" ||
+      currentScreen === "activity_reposts"
+    ) {
+      setCurrentScreen("activity");
       return;
     }
 
@@ -674,7 +761,7 @@ export function SettingsPage() {
     } finally {
       setReelsLoading(false);
     }
-  }, [isAuthed, user?.id, supabase]);
+  }, [isAuthed, user?.id]);
 
   const profileVerified = useMemo(() => {
     const v = myProfile?.verified;
@@ -801,6 +888,322 @@ export function SettingsPage() {
     };
   }, [currentScreen, isAuthed, loadApprovedAuthors, user]);
 
+  const fetchPostsByIds = useCallback(async (postIds: string[]): Promise<Map<string, SettingsPostItem>> => {
+    if (!postIds.length) return new Map();
+
+    const { data: postsData, error: postsError } = await supabase
+      .from("posts")
+      .select("id, content, created_at, likes_count, comments_count, post_media ( media_url, sort_order )")
+      .in("id", postIds);
+
+    if (postsError) throw postsError;
+
+    const map = new Map<string, SettingsPostItem>();
+    for (const row of (postsData ?? []) as any[]) {
+      const media = Array.isArray(row.post_media) ? row.post_media : [];
+      media.sort((a: any, b: any) => (a?.sort_order ?? 0) - (b?.sort_order ?? 0));
+      map.set(String(row.id), {
+        id: String(row.id),
+        content: row.content ?? null,
+        created_at: row.created_at,
+        likes_count: row.likes_count ?? 0,
+        comments_count: row.comments_count ?? 0,
+        media_url: media[0]?.media_url ?? null,
+      });
+    }
+
+    return map;
+  }, []);
+
+  const loadSavedAllPosts = useCallback(async () => {
+    if (!user?.id) return;
+    setSavedAllPostsLoading(true);
+    try {
+      const { data: savedRows, error: savedError } = await (supabase as any)
+        .from("saved_posts")
+        .select("post_id, created_at")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false });
+
+      if (savedError) throw savedError;
+
+      const postIds = (savedRows ?? []).map((r: any) => String(r.post_id));
+      const postsMap = await fetchPostsByIds(postIds);
+      const ordered = postIds
+        .map((id) => postsMap.get(id))
+        .filter(Boolean) as SettingsPostItem[];
+
+      setSavedAllPosts(ordered);
+    } catch (e) {
+      toast({ title: "Сохранённое", description: getErrorMessage(e) });
+    } finally {
+      setSavedAllPostsLoading(false);
+    }
+  }, [fetchPostsByIds, user?.id]);
+
+  const loadSavedLikedPosts = useCallback(async () => {
+    if (!user?.id) return;
+    setSavedLikedPostsLoading(true);
+    try {
+      const { data: likeRows, error: likesError } = await (supabase as any)
+        .from("post_likes")
+        .select("post_id, created_at")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false });
+
+      if (likesError) throw likesError;
+
+      const postIds = (likeRows ?? []).map((r: any) => String(r.post_id));
+      const postsMap = await fetchPostsByIds(postIds);
+      const ordered = postIds
+        .map((id) => postsMap.get(id))
+        .filter(Boolean) as SettingsPostItem[];
+
+      setSavedLikedPosts(ordered);
+    } catch (e) {
+      toast({ title: "Понравившиеся", description: getErrorMessage(e) });
+    } finally {
+      setSavedLikedPostsLoading(false);
+    }
+  }, [fetchPostsByIds, user?.id]);
+
+  const loadArchivedStories = useCallback(async () => {
+    if (!user?.id) return;
+    setArchivedStoriesLoading(true);
+    try {
+      const { data, error } = await (supabase as any)
+        .from("stories")
+        .select("id, media_url, created_at, archived_at")
+        .eq("user_id", user.id)
+        .eq("is_archived", true)
+        .order("archived_at", { ascending: false });
+
+      if (error) throw error;
+
+      setArchivedStories((data ?? []).map((row: any) => ({
+        id: String(row.id),
+        media_url: row.media_url ?? null,
+        created_at: row.created_at,
+        archived_at: row.archived_at ?? null,
+      })));
+    } catch (e) {
+      toast({ title: "Архив историй", description: getErrorMessage(e) });
+    } finally {
+      setArchivedStoriesLoading(false);
+    }
+  }, [user?.id]);
+
+  const loadArchivedPosts = useCallback(async () => {
+    if (!user?.id) return;
+    setArchivedPostsLoading(true);
+    try {
+      const { data: archivedRows, error: archivedError } = await (supabase as any)
+        .from("archived_posts")
+        .select("post_id, archived_at")
+        .eq("user_id", user.id)
+        .order("archived_at", { ascending: false });
+
+      if (archivedError) throw archivedError;
+
+      const postIds = (archivedRows ?? []).map((r: any) => String(r.post_id));
+      const postsMap = await fetchPostsByIds(postIds);
+      const ordered = postIds
+        .map((id) => postsMap.get(id))
+        .filter(Boolean) as SettingsPostItem[];
+
+      setArchivedPosts(ordered);
+    } catch (e) {
+      toast({ title: "Архив публикаций", description: getErrorMessage(e) });
+    } finally {
+      setArchivedPostsLoading(false);
+    }
+  }, [fetchPostsByIds, user?.id]);
+
+  const loadArchivedLive = useCallback(async () => {
+    if (!user?.id) return;
+    setArchivedLiveLoading(true);
+    try {
+      const { data, error } = await (supabase as any)
+        .from("live_sessions")
+        .select("id, state, started_at, ended_at, created_at")
+        .eq("author_id", user.id)
+        .not("ended_at", "is", null)
+        .order("ended_at", { ascending: false })
+        .limit(100);
+
+      if (error) throw error;
+
+      setArchivedLiveSessions((data ?? []).map((row: any) => ({
+        id: String(row.id),
+        state: String(row.state ?? "ended"),
+        started_at: row.started_at ?? null,
+        ended_at: row.ended_at ?? null,
+        created_at: row.created_at,
+      })));
+    } catch (e) {
+      toast({ title: "Архив эфиров", description: getErrorMessage(e) });
+    } finally {
+      setArchivedLiveLoading(false);
+    }
+  }, [user?.id]);
+
+  const loadActivityLikes = useCallback(async () => {
+    if (!user?.id) return;
+    setActivityLikesLoading(true);
+    try {
+      const { data: likeRows, error } = await (supabase as any)
+        .from("post_likes")
+        .select("post_id, created_at")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+
+      const postIds = (likeRows ?? []).map((r: any) => String(r.post_id));
+      const postsMap = await fetchPostsByIds(postIds);
+      const ordered = postIds
+        .map((id) => postsMap.get(id))
+        .filter(Boolean) as SettingsPostItem[];
+
+      setActivityLikes(ordered);
+    } catch (e) {
+      toast({ title: "Лайки", description: getErrorMessage(e) });
+    } finally {
+      setActivityLikesLoading(false);
+    }
+  }, [fetchPostsByIds, user?.id]);
+
+  const loadActivityComments = useCallback(async () => {
+    if (!user?.id) return;
+    setActivityCommentsLoading(true);
+    try {
+      const { data, error } = await (supabase as any)
+        .from("comments")
+        .select("id, post_id, content, created_at")
+        .eq("author_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(200);
+
+      if (error) throw error;
+
+      setActivityComments((data ?? []).map((row: any) => ({
+        id: String(row.id),
+        post_id: String(row.post_id),
+        content: String(row.content ?? ""),
+        created_at: row.created_at,
+      })));
+    } catch (e) {
+      toast({ title: "Комментарии", description: getErrorMessage(e) });
+    } finally {
+      setActivityCommentsLoading(false);
+    }
+  }, [user?.id]);
+
+  const loadActivityReposts = useCallback(async () => {
+    if (!user?.id) return;
+    setActivityRepostsLoading(true);
+    try {
+      const { data: repostRows, error } = await (supabase as any)
+        .from("reel_reposts")
+        .select("id, reel_id, created_at")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(200);
+
+      if (error) throw error;
+
+      const reelIds = (repostRows ?? []).map((r: any) => String(r.reel_id));
+      if (!reelIds.length) {
+        setActivityReposts([]);
+        return;
+      }
+
+      const { data: reelsData, error: reelsError } = await (supabase as any)
+        .from("reels")
+        .select("id, description, thumbnail_url")
+        .in("id", reelIds);
+
+      if (reelsError) throw reelsError;
+
+      const reelMap = new Map<string, any>();
+      for (const r of reelsData ?? []) reelMap.set(String((r as any).id), r);
+
+      setActivityReposts((repostRows ?? []).map((row: any) => {
+        const reel = reelMap.get(String(row.reel_id));
+        return {
+          id: String(row.id),
+          reel_id: String(row.reel_id),
+          created_at: row.created_at ?? null,
+          reel_description: reel?.description ?? null,
+          reel_thumbnail_url: reel?.thumbnail_url ?? null,
+        } as ActivityRepostItem;
+      }));
+    } catch (e) {
+      toast({ title: "Репосты", description: getErrorMessage(e) });
+    } finally {
+      setActivityRepostsLoading(false);
+    }
+  }, [user?.id]);
+
+  const exportActivityData = useCallback(async () => {
+    if (!user?.id) return;
+    setActivityExportLoading(true);
+    try {
+      const [likesRes, commentsRes, repostsRes, savedRes] = await Promise.all([
+        (supabase as any)
+          .from("post_likes")
+          .select("id, post_id, created_at")
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: false }),
+        (supabase as any)
+          .from("comments")
+          .select("id, post_id, content, created_at")
+          .eq("author_id", user.id)
+          .order("created_at", { ascending: false }),
+        (supabase as any)
+          .from("reel_reposts")
+          .select("id, reel_id, created_at")
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: false }),
+        (supabase as any)
+          .from("saved_posts")
+          .select("id, post_id, created_at")
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: false }),
+      ]);
+
+      if (likesRes.error) throw likesRes.error;
+      if (commentsRes.error) throw commentsRes.error;
+      if (repostsRes.error) throw repostsRes.error;
+      if (savedRes.error) throw savedRes.error;
+
+      const payload = {
+        exported_at: new Date().toISOString(),
+        user_id: user.id,
+        likes: likesRes.data ?? [],
+        comments: commentsRes.data ?? [],
+        reposts: repostsRes.data ?? [],
+        saved_posts: savedRes.data ?? [],
+      };
+
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `activity-export-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+
+      toast({ title: "Скачать данные", description: "Выгрузка JSON успешно создана." });
+    } catch (e) {
+      toast({ title: "Скачать данные", description: getErrorMessage(e) });
+    } finally {
+      setActivityExportLoading(false);
+    }
+  }, [user?.id]);
+
   const loadPartnerRequests = useCallback(async () => {
     if (!isAuthed) return;
     setRequestsLoading(true);
@@ -917,6 +1320,46 @@ export function SettingsPage() {
     </div>
   );
 
+  const renderPostsList = (rows: SettingsPostItem[], loading: boolean, emptyText: string) => {
+    if (loading) {
+      return <p className={cn("px-5 py-4 text-sm", isDark ? "text-white/60" : "text-white/70")}>Загрузка...</p>;
+    }
+
+    if (!rows.length) {
+      return <p className={cn("px-5 py-4 text-sm", isDark ? "text-white/60" : "text-white/70")}>{emptyText}</p>;
+    }
+
+    return (
+      <div className={cn("border-t", isDark ? "border-white/10" : "border-white/20")}>
+        {rows.map((post) => (
+          <button
+            key={post.id}
+            onClick={() => navigate(`/post/${post.id}`)}
+            className={cn(
+              "w-full px-5 py-4 text-left flex items-center gap-3 border-b",
+              isDark ? "border-white/10 hover:bg-white/5" : "border-white/20 hover:bg-muted/30",
+            )}
+          >
+            <div className={cn("w-14 h-14 rounded-xl overflow-hidden border shrink-0", isDark ? "border-white/10" : "border-white/20")}>
+              {post.media_url ? (
+                <img src={post.media_url} alt="post" className="w-full h-full object-cover" />
+              ) : (
+                <div className={cn("w-full h-full grid place-items-center text-xs", isDark ? "text-white/50" : "text-white/70")}>Нет медиа</div>
+              )}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className={cn("font-medium truncate", isDark ? "text-white" : "text-white")}>{post.content?.trim() || "Публикация без текста"}</p>
+              <p className={cn("text-xs mt-1", isDark ? "text-white/60" : "text-white/70")}>
+                {new Date(post.created_at).toLocaleDateString("ru-RU")} · ❤ {post.likes_count ?? 0} · 💬 {post.comments_count ?? 0}
+              </p>
+            </div>
+            <ChevronRight className={cn("w-5 h-5 shrink-0", isDark ? "text-white/40" : "text-muted-foreground")} />
+          </button>
+        ))}
+      </div>
+    );
+  };
+
   const renderScreen = () => {
     switch (currentScreen) {
       case "saved":
@@ -928,12 +1371,74 @@ export function SettingsPage() {
                 "mx-4 backdrop-blur-xl rounded-2xl border overflow-hidden",
                 isDark ? "settings-dark-card" : "bg-card/80 border-white/20"
               )}>
-                {renderMenuItem(<Bookmark className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />, "Все публикации")}
-                {renderMenuItem(<Heart className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />, "Понравившиеся")}
+                {renderMenuItem(
+                  <Bookmark className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />,
+                  "Все публикации",
+                  () => {
+                    setCurrentScreen("saved_all_posts");
+                    void loadSavedAllPosts();
+                  },
+                  savedAllPosts.length ? String(savedAllPosts.length) : undefined,
+                )}
+                {renderMenuItem(
+                  <Heart className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />,
+                  "Понравившиеся",
+                  () => {
+                    setCurrentScreen("saved_liked_posts");
+                    void loadSavedLikedPosts();
+                  },
+                  savedLikedPosts.length ? String(savedLikedPosts.length) : undefined,
+                )}
               </div>
               <p className={cn("p-5 text-center text-sm", isDark ? "text-white/60" : "text-white/60")}>
                 Создавайте коллекции для сохранённых публикаций
               </p>
+            </div>
+          </>
+        );
+
+      case "saved_all_posts":
+        return (
+          <>
+            {renderHeader("Все публикации")}
+            <div className="flex-1 overflow-y-auto native-scroll pb-8">
+              <div className="px-4">
+                <div className={cn(
+                  "backdrop-blur-xl rounded-2xl border overflow-hidden",
+                  isDark ? "settings-dark-card" : "bg-card/80 border-white/20"
+                )}>
+                  <div className="px-5 py-4">
+                    <p className="font-semibold">Сохранённые публикации</p>
+                    <p className={cn("text-sm mt-1", isDark ? "text-white/60" : "text-white/70")}>
+                      Посты из таблицы saved_posts для вашего аккаунта.
+                    </p>
+                  </div>
+                  {renderPostsList(savedAllPosts, savedAllPostsLoading, "У вас пока нет сохранённых публикаций.")}
+                </div>
+              </div>
+            </div>
+          </>
+        );
+
+      case "saved_liked_posts":
+        return (
+          <>
+            {renderHeader("Понравившиеся")}
+            <div className="flex-1 overflow-y-auto native-scroll pb-8">
+              <div className="px-4">
+                <div className={cn(
+                  "backdrop-blur-xl rounded-2xl border overflow-hidden",
+                  isDark ? "settings-dark-card" : "bg-card/80 border-white/20"
+                )}>
+                  <div className="px-5 py-4">
+                    <p className="font-semibold">Лайкнутые публикации</p>
+                    <p className={cn("text-sm mt-1", isDark ? "text-white/60" : "text-white/70")}>
+                      Посты, которым вы поставили лайк (post_likes).
+                    </p>
+                  </div>
+                  {renderPostsList(savedLikedPosts, savedLikedPostsLoading, "У вас пока нет лайкнутых публикаций.")}
+                </div>
+              </div>
             </div>
           </>
         );
@@ -947,9 +1452,155 @@ export function SettingsPage() {
                 "mx-4 backdrop-blur-xl rounded-2xl border overflow-hidden",
                 isDark ? "settings-dark-card" : "bg-card/80 border-white/20"
               )}>
-                {renderMenuItem(<Archive className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />, "Архив историй")}
-                {renderMenuItem(<Archive className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />, "Архив публикаций")}
-                {renderMenuItem(<Archive className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />, "Архив прямых эфиров")}
+                {renderMenuItem(
+                  <Archive className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />,
+                  "Архив историй",
+                  () => {
+                    setCurrentScreen("archive_stories");
+                    void loadArchivedStories();
+                  },
+                  archivedStories.length ? String(archivedStories.length) : undefined,
+                )}
+                {renderMenuItem(
+                  <Archive className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />,
+                  "Архив публикаций",
+                  () => {
+                    setCurrentScreen("archive_posts");
+                    void loadArchivedPosts();
+                  },
+                  archivedPosts.length ? String(archivedPosts.length) : undefined,
+                )}
+                {renderMenuItem(
+                  <Archive className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />,
+                  "Архив прямых эфиров",
+                  () => {
+                    setCurrentScreen("archive_live");
+                    void loadArchivedLive();
+                  },
+                  archivedLiveSessions.length ? String(archivedLiveSessions.length) : undefined,
+                )}
+              </div>
+            </div>
+          </>
+        );
+
+      case "archive_stories":
+        return (
+          <>
+            {renderHeader("Архив историй")}
+            <div className="flex-1 overflow-y-auto native-scroll pb-8">
+              <div className="px-4">
+                <div className={cn(
+                  "backdrop-blur-xl rounded-2xl border overflow-hidden",
+                  isDark ? "settings-dark-card" : "bg-card/80 border-white/20"
+                )}>
+                  <div className="px-5 py-4">
+                    <p className="font-semibold">Истории в архиве</p>
+                    <p className={cn("text-sm mt-1", isDark ? "text-white/60" : "text-white/70")}>
+                      Источники: таблица stories, поля is_archived и archived_at.
+                    </p>
+                  </div>
+
+                  {archivedStoriesLoading ? (
+                    <p className={cn("px-5 py-4 text-sm", isDark ? "text-white/60" : "text-white/70")}>Загрузка...</p>
+                  ) : archivedStories.length === 0 ? (
+                    <p className={cn("px-5 py-4 text-sm", isDark ? "text-white/60" : "text-white/70")}>Архив историй пуст.</p>
+                  ) : (
+                    <div className={cn("border-t", isDark ? "border-white/10" : "border-white/20")}>
+                      {archivedStories.map((story) => (
+                        <div
+                          key={story.id}
+                          className={cn(
+                            "px-5 py-4 border-b flex items-center gap-3",
+                            isDark ? "border-white/10" : "border-white/20",
+                          )}
+                        >
+                          <div className={cn("w-14 h-14 rounded-xl overflow-hidden border shrink-0", isDark ? "border-white/10" : "border-white/20")}>
+                            {story.media_url ? (
+                              <img src={story.media_url} alt="story" className="w-full h-full object-cover" />
+                            ) : (
+                              <div className={cn("w-full h-full grid place-items-center text-xs", isDark ? "text-white/50" : "text-white/70")}>Нет медиа</div>
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className={cn("font-medium", isDark ? "text-white" : "text-white")}>История #{story.id.slice(0, 8)}</p>
+                            <p className={cn("text-xs mt-1", isDark ? "text-white/60" : "text-white/70")}>
+                              В архиве: {story.archived_at ? new Date(story.archived_at).toLocaleDateString("ru-RU") : "-"}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </>
+        );
+
+      case "archive_posts":
+        return (
+          <>
+            {renderHeader("Архив публикаций")}
+            <div className="flex-1 overflow-y-auto native-scroll pb-8">
+              <div className="px-4">
+                <div className={cn(
+                  "backdrop-blur-xl rounded-2xl border overflow-hidden",
+                  isDark ? "settings-dark-card" : "bg-card/80 border-white/20"
+                )}>
+                  <div className="px-5 py-4">
+                    <p className="font-semibold">Публикации в архиве</p>
+                    <p className={cn("text-sm mt-1", isDark ? "text-white/60" : "text-white/70")}>
+                      Источник: таблица archived_posts.
+                    </p>
+                  </div>
+                  {renderPostsList(archivedPosts, archivedPostsLoading, "Архив публикаций пуст.")}
+                </div>
+              </div>
+            </div>
+          </>
+        );
+
+      case "archive_live":
+        return (
+          <>
+            {renderHeader("Архив прямых эфиров")}
+            <div className="flex-1 overflow-y-auto native-scroll pb-8">
+              <div className="px-4">
+                <div className={cn(
+                  "backdrop-blur-xl rounded-2xl border overflow-hidden",
+                  isDark ? "settings-dark-card" : "bg-card/80 border-white/20"
+                )}>
+                  <div className="px-5 py-4">
+                    <p className="font-semibold">Завершённые эфиры</p>
+                    <p className={cn("text-sm mt-1", isDark ? "text-white/60" : "text-white/70")}>
+                      Источник: таблица live_sessions (ended_at IS NOT NULL).
+                    </p>
+                  </div>
+
+                  {archivedLiveLoading ? (
+                    <p className={cn("px-5 py-4 text-sm", isDark ? "text-white/60" : "text-white/70")}>Загрузка...</p>
+                  ) : archivedLiveSessions.length === 0 ? (
+                    <p className={cn("px-5 py-4 text-sm", isDark ? "text-white/60" : "text-white/70")}>Архив эфиров пуст.</p>
+                  ) : (
+                    <div className={cn("border-t", isDark ? "border-white/10" : "border-white/20")}>
+                      {archivedLiveSessions.map((session) => (
+                        <div
+                          key={session.id}
+                          className={cn("px-5 py-4 border-b", isDark ? "border-white/10" : "border-white/20")}
+                        >
+                          <p className={cn("font-medium", isDark ? "text-white" : "text-white")}>Эфир #{session.id.slice(0, 8)}</p>
+                          <p className={cn("text-xs mt-1", isDark ? "text-white/60" : "text-white/70")}>
+                            Статус: {session.state}
+                          </p>
+                          <p className={cn("text-xs mt-1", isDark ? "text-white/60" : "text-white/70")}>
+                            Завершён: {session.ended_at ? new Date(session.ended_at).toLocaleString("ru-RU") : "-"}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </>
@@ -965,10 +1616,160 @@ export function SettingsPage() {
                 isDark ? "settings-dark-card" : "bg-card/80 border-white/20"
               )}>
                 {renderMenuItem(<Clock className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />, "Время в приложении", undefined, "1ч 23м")}
-                {renderMenuItem(<Heart className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />, "Лайки")}
-                {renderMenuItem(<MessageCircle className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />, "Комментарии")}
-                {renderMenuItem(<Share2 className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />, "Репосты")}
-                {renderMenuItem(<Download className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />, "Скачать данные")}
+                {renderMenuItem(
+                  <Heart className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />,
+                  "Лайки",
+                  () => {
+                    setCurrentScreen("activity_likes");
+                    void loadActivityLikes();
+                  },
+                  activityLikes.length ? String(activityLikes.length) : undefined,
+                )}
+                {renderMenuItem(
+                  <MessageCircle className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />,
+                  "Комментарии",
+                  () => {
+                    setCurrentScreen("activity_comments");
+                    void loadActivityComments();
+                  },
+                  activityComments.length ? String(activityComments.length) : undefined,
+                )}
+                {renderMenuItem(
+                  <Share2 className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />,
+                  "Репосты",
+                  () => {
+                    setCurrentScreen("activity_reposts");
+                    void loadActivityReposts();
+                  },
+                  activityReposts.length ? String(activityReposts.length) : undefined,
+                )}
+                {renderMenuItem(
+                  <Download className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />,
+                  activityExportLoading ? "Скачивание..." : "Скачать данные",
+                  () => {
+                    if (!activityExportLoading) {
+                      void exportActivityData();
+                    }
+                  },
+                )}
+              </div>
+            </div>
+          </>
+        );
+
+      case "activity_likes":
+        return (
+          <>
+            {renderHeader("Лайки")}
+            <div className="flex-1 overflow-y-auto native-scroll pb-8">
+              <div className="px-4">
+                <div className={cn(
+                  "backdrop-blur-xl rounded-2xl border overflow-hidden",
+                  isDark ? "settings-dark-card" : "bg-card/80 border-white/20"
+                )}>
+                  <div className="px-5 py-4">
+                    <p className="font-semibold">Понравившиеся публикации</p>
+                    <p className={cn("text-sm mt-1", isDark ? "text-white/60" : "text-white/70")}>Источник: post_likes.</p>
+                  </div>
+                  {renderPostsList(activityLikes, activityLikesLoading, "Лайков пока нет.")}
+                </div>
+              </div>
+            </div>
+          </>
+        );
+
+      case "activity_comments":
+        return (
+          <>
+            {renderHeader("Комментарии")}
+            <div className="flex-1 overflow-y-auto native-scroll pb-8">
+              <div className="px-4">
+                <div className={cn(
+                  "backdrop-blur-xl rounded-2xl border overflow-hidden",
+                  isDark ? "settings-dark-card" : "bg-card/80 border-white/20"
+                )}>
+                  <div className="px-5 py-4">
+                    <p className="font-semibold">Ваши комментарии</p>
+                    <p className={cn("text-sm mt-1", isDark ? "text-white/60" : "text-white/70")}>Источник: comments (author_id).</p>
+                  </div>
+
+                  {activityCommentsLoading ? (
+                    <p className={cn("px-5 py-4 text-sm", isDark ? "text-white/60" : "text-white/70")}>Загрузка...</p>
+                  ) : activityComments.length === 0 ? (
+                    <p className={cn("px-5 py-4 text-sm", isDark ? "text-white/60" : "text-white/70")}>Комментариев пока нет.</p>
+                  ) : (
+                    <div className={cn("border-t", isDark ? "border-white/10" : "border-white/20")}>
+                      {activityComments.map((item) => (
+                        <button
+                          key={item.id}
+                          onClick={() => navigate(`/post/${item.post_id}`)}
+                          className={cn(
+                            "w-full px-5 py-4 text-left border-b",
+                            isDark ? "border-white/10 hover:bg-white/5" : "border-white/20 hover:bg-muted/30",
+                          )}
+                        >
+                          <p className={cn("font-medium line-clamp-2", isDark ? "text-white" : "text-white")}>{item.content || "Комментарий без текста"}</p>
+                          <p className={cn("text-xs mt-1", isDark ? "text-white/60" : "text-white/70")}>
+                            {new Date(item.created_at).toLocaleString("ru-RU")}
+                          </p>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </>
+        );
+
+      case "activity_reposts":
+        return (
+          <>
+            {renderHeader("Репосты")}
+            <div className="flex-1 overflow-y-auto native-scroll pb-8">
+              <div className="px-4">
+                <div className={cn(
+                  "backdrop-blur-xl rounded-2xl border overflow-hidden",
+                  isDark ? "settings-dark-card" : "bg-card/80 border-white/20"
+                )}>
+                  <div className="px-5 py-4">
+                    <p className="font-semibold">Репосты Reels</p>
+                    <p className={cn("text-sm mt-1", isDark ? "text-white/60" : "text-white/70")}>Источник: reel_reposts.</p>
+                  </div>
+
+                  {activityRepostsLoading ? (
+                    <p className={cn("px-5 py-4 text-sm", isDark ? "text-white/60" : "text-white/70")}>Загрузка...</p>
+                  ) : activityReposts.length === 0 ? (
+                    <p className={cn("px-5 py-4 text-sm", isDark ? "text-white/60" : "text-white/70")}>Репостов пока нет.</p>
+                  ) : (
+                    <div className={cn("border-t", isDark ? "border-white/10" : "border-white/20")}>
+                      {activityReposts.map((item) => (
+                        <button
+                          key={item.id}
+                          onClick={() => navigate("/reels")}
+                          className={cn(
+                            "w-full px-5 py-4 text-left border-b flex items-center gap-3",
+                            isDark ? "border-white/10 hover:bg-white/5" : "border-white/20 hover:bg-muted/30",
+                          )}
+                        >
+                          <div className={cn("w-14 h-14 rounded-xl overflow-hidden border shrink-0", isDark ? "border-white/10" : "border-white/20")}>
+                            {item.reel_thumbnail_url ? (
+                              <img src={item.reel_thumbnail_url} alt="reel" className="w-full h-full object-cover" />
+                            ) : (
+                              <div className={cn("w-full h-full grid place-items-center text-xs", isDark ? "text-white/50" : "text-white/70")}>Reel</div>
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className={cn("font-medium truncate", isDark ? "text-white" : "text-white")}>{item.reel_description || `Reel #${item.reel_id.slice(0, 8)}`}</p>
+                            <p className={cn("text-xs mt-1", isDark ? "text-white/60" : "text-white/70")}>
+                              {item.created_at ? new Date(item.created_at).toLocaleString("ru-RU") : "-"}
+                            </p>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </>
@@ -3529,39 +4330,6 @@ export function SettingsPage() {
             {renderHeader("Настройки", false)}
 
             <div className="flex-1 overflow-y-auto native-scroll pb-8">
-              {/* Theme Toggle */}
-              <div className="px-4 py-4">
-                <p className={cn("text-sm mb-3 px-1", isDark ? "text-white/60" : "text-white/60")}>Тема оформления</p>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setTheme("light")}
-                    className={cn(
-                      "flex-1 flex items-center justify-center gap-2 py-3 rounded-xl transition-all",
-                      isDark ? "settings-dark-pill" : "border border-border bg-card",
-                      currentTheme === "light"
-                        ? (isDark ? "settings-dark-pill-active text-white" : "bg-primary text-primary-foreground border-primary")
-                        : (isDark ? "text-white/70" : "text-foreground")
-                    )}
-                  >
-                    <Sun className="w-5 h-5" />
-                    <span className="font-medium">Светлая</span>
-                  </button>
-                  <button
-                    onClick={() => setTheme("dark")}
-                    className={cn(
-                      "flex-1 flex items-center justify-center gap-2 py-3 rounded-xl transition-all",
-                      isDark ? "settings-dark-pill" : "border border-border bg-card",
-                      currentTheme === "dark"
-                        ? (isDark ? "settings-dark-pill-active text-white" : "bg-primary text-primary-foreground border-primary")
-                        : (isDark ? "text-white/70" : "text-foreground")
-                    )}
-                  >
-                    <Moon className="w-5 h-5" />
-                    <span className="font-medium">Тёмная</span>
-                  </button>
-                </div>
-              </div>
-
               {/* Account */}
               <div className="px-4 mb-3">
                 <p className={cn("text-sm mb-2 px-1", isDark ? "text-white/60" : "text-white/60")}>Аккаунт</p>

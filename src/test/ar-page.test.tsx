@@ -3,12 +3,15 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { ARPage } from "@/pages/ARPage";
 
-// Mock sonner toast
-vi.mock("sonner", () => ({
-  toast: {
-    info: vi.fn(),
-    error: vi.fn(),
-  },
+vi.mock("@/lib/ar/faceDetection", () => ({
+  loadModel: vi.fn().mockResolvedValue(undefined),
+  detectFaces: vi.fn().mockResolvedValue([]),
+}));
+
+vi.mock("@/lib/ar/backgroundSegmentation", () => ({
+  loadSegmentationModel: vi.fn().mockResolvedValue(undefined),
+  segmentPerson: vi.fn().mockResolvedValue(null),
+  applyBackgroundBlur: vi.fn(),
 }));
 
 function renderARPage() {
@@ -22,6 +25,7 @@ function renderARPage() {
 describe("ARPage", () => {
   // Store original mediaDevices so each test restores it
   const originalMediaDevices = Object.getOwnPropertyDescriptor(navigator, "mediaDevices");
+  const originalConsoleError = console.error;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -31,32 +35,32 @@ describe("ARPage", () => {
     if (originalMediaDevices) {
       Object.defineProperty(navigator, "mediaDevices", originalMediaDevices);
     }
+    console.error = originalConsoleError;
   });
 
   it("renders the page heading", () => {
     renderARPage();
-    expect(screen.getByText("AR-просмотр")).toBeInTheDocument();
+    expect(screen.getByText("AR Камера")).toBeInTheDocument();
   });
 
   it("renders the hero section", () => {
     renderARPage();
-    expect(screen.getByText("Дополненная реальность")).toBeInTheDocument();
+    expect(screen.getByText("AR Фильтры")).toBeInTheDocument();
   });
 
   it("shows the AR launch button", () => {
     renderARPage();
-    expect(screen.getByRole("button", { name: /запустить ar/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /открыть камеру/i })).toBeInTheDocument();
   });
 
-  it("renders all AR feature cards", () => {
+  it("renders filter preview grid", () => {
     renderARPage();
-    expect(screen.getByText("Сканирование объектов")).toBeInTheDocument();
-    expect(screen.getByText("3D-просмотр недвижимости")).toBeInTheDocument();
-    expect(screen.getByText("AR-примерка")).toBeInTheDocument();
+    expect(screen.getByText("🌅")).toBeInTheDocument();
+    expect(screen.getByText("🎮")).toBeInTheDocument();
+    expect(screen.getByText(/18\+ уникальных фильтров/i)).toBeInTheDocument();
   });
 
-  it("requests camera access when launch button is clicked (granted)", async () => {
-    // Mock getUserMedia to resolve (camera granted)
+  it("opens AR camera when launch button is clicked", async () => {
     const mockGetUserMedia = vi.fn().mockResolvedValue({
       getTracks: () => [{ stop: vi.fn() }],
     });
@@ -65,34 +69,32 @@ describe("ARPage", () => {
       configurable: true,
     });
 
-    const { toast } = await import("sonner");
     renderARPage();
 
-    fireEvent.click(screen.getByRole("button", { name: /запустить ar/i }));
+    fireEvent.click(screen.getByRole("button", { name: /открыть камеру/i }));
 
     await waitFor(() => {
-      expect(screen.getByText(/доступ к камере предоставлен/i)).toBeInTheDocument();
+      expect(mockGetUserMedia).toHaveBeenCalled();
     });
 
-    expect(toast.info).toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: /фото/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /видео/i })).toBeInTheDocument();
   });
 
-  it("shows error state when camera access is denied", async () => {
+  it("shows camera error state when access is denied", async () => {
+    console.error = vi.fn();
     const mockGetUserMedia = vi.fn().mockRejectedValue(new Error("Permission denied"));
     Object.defineProperty(navigator, "mediaDevices", {
       value: { getUserMedia: mockGetUserMedia },
       configurable: true,
     });
 
-    const { toast } = await import("sonner");
     renderARPage();
 
-    fireEvent.click(screen.getByRole("button", { name: /запустить ar/i }));
+    fireEvent.click(screen.getByRole("button", { name: /открыть камеру/i }));
 
     await waitFor(() => {
-      expect(screen.getByText(/доступ к камере отклонён/i)).toBeInTheDocument();
+      expect(screen.getByText(/нет доступа к камере/i)).toBeInTheDocument();
     });
-
-    expect(toast.error).toHaveBeenCalled();
   });
 });

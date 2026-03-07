@@ -82,7 +82,6 @@ class InsuranceApiClient {
       single?: boolean;
     },
   ): Promise<T> {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let query = (supabase as any)
       .from(table)
       .select(options?.select ?? "*");

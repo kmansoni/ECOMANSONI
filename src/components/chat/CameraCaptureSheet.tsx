@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Camera, FlipHorizontal, Send, Settings, Video, X, Zap, ZapOff } from "lucide-react";
 import { CameraHost, type CameraHostHandle } from "@/components/camera/CameraHost";
 import { cn } from "@/lib/utils";
@@ -42,7 +42,10 @@ export function CameraCaptureSheet({
   onSendFile,
   settingsScopeKey = "global",
 }: CameraCaptureSheetProps) {
-  const storageKey = (suffix: string) => `chat_camera:${settingsScopeKey}:${suffix}`;
+  const storageKey = useCallback(
+    (suffix: string) => `chat_camera:${settingsScopeKey}:${suffix}`,
+    [settingsScopeKey],
+  );
 
   const cameraRef = useRef<CameraHostHandle | null>(null);
   const [ready, setReady] = useState(false);
@@ -86,27 +89,27 @@ export function CameraCaptureSheet({
 
   useEffect(() => {
     localStorage.setItem(storageKey(STORAGE_KEY_FACING), facingMode);
-  }, [facingMode]);
+  }, [facingMode, storageKey]);
 
   useEffect(() => {
     localStorage.setItem(storageKey(STORAGE_KEY_MODE), captureKind);
-  }, [captureKind]);
+  }, [captureKind, storageKey]);
 
   useEffect(() => {
     localStorage.setItem(storageKey(STORAGE_KEY_EFFECT), effect);
-  }, [effect]);
+  }, [effect, storageKey]);
 
   useEffect(() => {
     localStorage.setItem(storageKey(STORAGE_KEY_ZOOM), String(zoom));
-  }, [zoom]);
+  }, [zoom, storageKey]);
 
   useEffect(() => {
     localStorage.setItem(storageKey(STORAGE_KEY_QUALITY), videoQuality);
-  }, [videoQuality]);
+  }, [videoQuality, storageKey]);
 
   useEffect(() => {
     localStorage.setItem(storageKey(STORAGE_KEY_FLASH), flashEnabled ? "1" : "0");
-  }, [flashEnabled]);
+  }, [flashEnabled, storageKey]);
 
   useEffect(() => {
     const syncTorch = async () => {

@@ -13,8 +13,8 @@ export function ARPage() {
     return (
       <ARFilterCamera
         onClose={() => setCameraOpen(false)}
-        onCapture={(dataUrl) => {
-          console.log('Captured:', dataUrl.substring(0, 50));
+        onCapture={() => {
+          // Capture is handled inside ARFilterCamera preview/save/share flow.
         }}
       />
     );

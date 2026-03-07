@@ -1,0 +1,50 @@
+apiVersion: 1
+
+# =============================================================================
+# Grafana Datasources — ECOMANSONI Navigation Platform
+# Provisioned automatically on container start; no manual UI setup required
+# =============================================================================
+
+datasources:
+
+  # ---------------------------------------------------------------------------
+  # Prometheus — operational metrics
+  # ---------------------------------------------------------------------------
+  - name: Prometheus
+    type: prometheus
+    uid: prom-nav
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    jsonData:
+      timeInterval: "15s"
+      queryTimeout: "60s"
+      httpMethod: POST
+      manageAlerts: true
+      prometheusType: Prometheus
+      cacheLevel: 'Low'
+    editable: false
+
+  # ---------------------------------------------------------------------------
+  # ClickHouse — analytics queries (trip funnels, surge, search)
+  # Requires: grafana-clickhouse-datasource plugin (installed via GF_INSTALL_PLUGINS)
+  # ---------------------------------------------------------------------------
+  - name: ClickHouse
+    type: grafana-clickhouse-datasource
+    uid: ch-nav
+    access: proxy
+    url: http://clickhouse:8123
+    isDefault: false
+    jsonData:
+      server: clickhouse
+      port: 8123
+      username: "${CLICKHOUSE_USER:-default}"
+      defaultDatabase: nav
+      protocol: http
+      secure: false
+      dialTimeout: "10"
+      queryTimeout: "60"
+      validateSql: true
+    secureJsonData:
+      password: "${CLICKHOUSE_PASSWORD:-}"
+    editable: false

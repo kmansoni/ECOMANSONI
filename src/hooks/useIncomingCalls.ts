@@ -176,6 +176,8 @@ export function useIncomingCalls(options: UseIncomingCallsOptions = {}) {
   useEffect(() => {
     if (!user) return;
 
+    const notifiedCalls = notifiedCallsRef.current;
+
     console.log("[IncomingCalls] Setting up for user:", user.id.slice(0, 8));
 
     // === REALTIME SUBSCRIPTION (primary) ===
@@ -215,7 +217,7 @@ export function useIncomingCalls(options: UseIncomingCallsOptions = {}) {
           // Clear incoming call if it was answered, declined, ended, or missed
           if (["answered", "declined", "ended", "missed"].includes(updated.status)) {
             console.log("[IncomingCalls] Call status changed to:", updated.status);
-            notifiedCallsRef.current.delete(updated.id);
+            notifiedCalls.delete(updated.id);
             void releaseCallWake();
             setIncomingCall((current) => {
               if (current?.id === updated.id) {
@@ -247,7 +249,7 @@ export function useIncomingCalls(options: UseIncomingCallsOptions = {}) {
         if (ringingCalls && ringingCalls.length > 0) {
           const call = ringingCalls[0] as VideoCall;
           // Only process if not already notified
-          if (!notifiedCallsRef.current.has(call.id)) {
+          if (!notifiedCalls.has(call.id)) {
             console.log("[IncomingCalls] Poll fallback found ringing call:", call.id.slice(0, 8));
             await processIncomingCall(call);
           }
@@ -261,7 +263,7 @@ export function useIncomingCalls(options: UseIncomingCallsOptions = {}) {
       console.log("[IncomingCalls] Cleaning up");
       supabase.removeChannel(channel);
       clearInterval(pollInterval);
-      notifiedCallsRef.current.clear();
+      notifiedCalls.clear();
       void releaseCallWake();
     };
   }, [user, processIncomingCall, releaseCallWake]);

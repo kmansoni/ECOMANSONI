@@ -19,8 +19,8 @@ const FORBIDDEN_WORDS_EN = [
 const ALL_FORBIDDEN = [...FORBIDDEN_WORDS_RU, ...FORBIDDEN_WORDS_EN];
 
 // Regex для телефонов и email (антиспам)
-const PHONE_REGEX = /(\+7|8|7)?[\s\-]?\(?\d{3}\)?[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}/g;
-const EMAIL_REGEX = /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g;
+const PHONE_REGEX = /(\+7|8|7)?[\s-]?\(?\d{3}\)?[\s-]?\d{3}[\s-]?\d{2}[\s-]?\d{2}/g;
+const EMAIL_REGEX = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
 
 // Проверка на повторяющиеся символы (ааааа — 4+ подряд)
 const REPEATED_CHARS_REGEX = /(.)\1{4,}/g;

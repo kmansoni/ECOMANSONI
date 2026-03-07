@@ -17,6 +17,7 @@ export interface ExplorePost {
   content?: string;
   likes_count: number;
   comments_count: number;
+  saves_count: number;
   shares_count: number;
   views_count: number;
   created_at: string;
@@ -29,6 +30,7 @@ export interface ExplorePost {
     media_url: string;
     media_type: string;
   }[];
+  is_liked?: boolean;
 }
 
 export interface TrendingHashtag {
@@ -110,26 +112,59 @@ export function useSearch() {
   const fetchExplorePosts = useCallback(async () => {
     setExploring(true);
     try {
-      const { data, error } = await supabase
+      const selectBase = `
+        id,
+        author_id,
+        content,
+        likes_count,
+        comments_count,
+        shares_count,
+        views_count,
+        created_at,
+        post_media (
+          media_url,
+          media_type,
+          sort_order
+        )
+      `;
+      const selectWithSaves = `
+        id,
+        author_id,
+        content,
+        likes_count,
+        comments_count,
+        saves_count,
+        shares_count,
+        views_count,
+        created_at,
+        post_media (
+          media_url,
+          media_type,
+          sort_order
+        )
+      `;
+
+      let includesSavesColumn = true;
+      let { data, error } = await supabase
         .from("posts")
-        .select(`
-          id,
-          author_id,
-          content,
-          likes_count,
-          comments_count,
-          shares_count,
-          views_count,
-          created_at,
-          post_media (
-            media_url,
-            media_type,
-            sort_order
-          )
-        `)
+        .select(selectWithSaves)
         .eq("is_published", true)
         .order("created_at", { ascending: false })
         .limit(30);
+
+      const errorText = String(error?.message || error?.details || "");
+      const isMissingSavesColumn = !!error && /(saves_count|column)/i.test(errorText);
+      if (isMissingSavesColumn) {
+        includesSavesColumn = false;
+        const retry = await supabase
+          .from("posts")
+          .select(selectBase)
+          .eq("is_published", true)
+          .order("created_at", { ascending: false })
+          .limit(30);
+        data = retry.data;
+        error = retry.error;
+      }
 
       if (error) throw error;
 
@@ -139,25 +174,86 @@ export function useSearch() {
       
       // Fetch author profiles
       const authorIds = [...new Set(postsWithMedia.map((p: any) => p.author_id))];
+      const postIds = postsWithMedia.map((p: any) => p.id);
       const { data: profiles } = await supabase
         .from("profiles")
         .select("user_id, display_name, avatar_url, verified")
         .in("user_id", authorIds);
+
+      // Fetch real engagement rows so Explore counters match Home feed behavior.
+      const [allLikesRes, allCommentsRes, allSavesRes] = await Promise.all([
+        supabase
+          .from("post_likes")
+          .select("post_id")
+          .in("post_id", postIds),
+        supabase
+          .from("comments")
+          .select("post_id")
+          .in("post_id", postIds),
+        includesSavesColumn
+          ? Promise.resolve({ data: [] as { post_id: string }[] })
+          : supabase
+              .from("saved_posts")
+              .select("post_id")
+              .in("post_id", postIds),
+      ]);
+
+      const likesCountMap = new Map<string, number>();
+      const commentsCountMap = new Map<string, number>();
+      const savesCountMap = new Map<string, number>();
+
+      (allLikesRes.data || []).forEach((row: any) => {
+        const postId = String(row.post_id);
+        likesCountMap.set(postId, (likesCountMap.get(postId) || 0) + 1);
+      });
+
+      (allCommentsRes.data || []).forEach((row: any) => {
+        const postId = String(row.post_id);
+        commentsCountMap.set(postId, (commentsCountMap.get(postId) || 0) + 1);
+      });
+
+      (allSavesRes.data || []).forEach((row: any) => {
+        const postId = String(row.post_id);
+        savesCountMap.set(postId, (savesCountMap.get(postId) || 0) + 1);
+      });
+
+      // Fetch current user's likes for Explore posts so the UI heart state is correct on first render.
+      let likedIds = new Set<string>();
+      if (user && postIds.length > 0) {
+        const { data: likes } = await (supabase as any)
+          .from("post_likes")
+          .select("post_id")
+          .eq("user_id", user.id)
+          .in("post_id", postIds);
+        likedIds = new Set((likes || []).map((l: any) => String(l.post_id)));
+      }
       
       const profilesMap = new Map(profiles?.map(p => [p.user_id, p]) || []);
       
-      const enrichedPosts: ExplorePost[] = postsWithMedia.map((p: any) => ({
-        id: p.id,
-        author_id: p.author_id,
-        content: p.content,
-        likes_count: p.likes_count,
-        comments_count: p.comments_count,
-        shares_count: p.shares_count,
-        views_count: p.views_count,
-        created_at: p.created_at,
-        profile: profilesMap.get(p.author_id) || undefined,
-        media: p.post_media,
-      }));
+      const enrichedPosts: ExplorePost[] = postsWithMedia.map((p: any) => {
+        const likesCount = Math.max(0, likesCountMap.get(String(p.id)) ?? p.likes_count ?? 0);
+        const commentsCount = Math.max(0, commentsCountMap.get(String(p.id)) ?? p.comments_count ?? 0);
+        const savesCount = includesSavesColumn
+          ? Math.max(0, p.saves_count ?? 0)
+          : Math.max(0, savesCountMap.get(String(p.id)) ?? p.saves_count ?? 0);
+        const sharesCount = Math.max(0, p.shares_count ?? 0);
+        const viewsCount = Math.max(0, p.views_count ?? 0);
+
+        return {
+          id: p.id,
+          author_id: p.author_id,
+          content: p.content,
+          likes_count: likesCount,
+          comments_count: commentsCount,
+          saves_count: savesCount,
+          shares_count: sharesCount,
+          views_count: viewsCount,
+          created_at: p.created_at,
+          profile: profilesMap.get(p.author_id) || undefined,
+          media: p.post_media,
+          is_liked: likedIds.has(String(p.id)),
+        };
+      });
 
       setExplorePosts(enrichedPosts);
     } catch (error) {
@@ -165,7 +261,7 @@ export function useSearch() {
     } finally {
       setExploring(false);
     }
-  }, []);
+  }, [user]);
 
   const fetchTrendingHashtags = useCallback(async () => {
     setTrendingLoading(true);

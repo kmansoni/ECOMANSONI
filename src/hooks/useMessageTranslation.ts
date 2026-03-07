@@ -32,7 +32,9 @@ function readCache(text: string, targetLang: string): string | null {
 function writeCache(text: string, targetLang: string, translated: string): void {
   try {
     sessionStorage.setItem(cacheKey(text, targetLang), translated);
-  } catch {}
+  } catch {
+    // Cache write is optional; keep flow working without storage.
+  }
 }
 
 export function useMessageTranslation() {

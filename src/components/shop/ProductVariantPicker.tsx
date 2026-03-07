@@ -43,7 +43,7 @@ export function ProductVariantPicker({ productId, basePrice = 0, onVariantChange
 
   useEffect(() => {
     onVariantChange?.(selected, quantity);
-  }, [selectedId, quantity]);
+  }, [selected, quantity, onVariantChange]);
 
   // Group by attributes keys
   const attributeKeys = [...new Set(variants.flatMap(v => Object.keys(v.attributes)))];

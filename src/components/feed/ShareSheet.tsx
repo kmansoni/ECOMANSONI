@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Search, Loader2, Send, Users, Radio, Link, BookOpen } from "lucide-react";
+import { Search, Loader2, Send, Users, Radio, Link } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -22,8 +22,7 @@ interface ShareSheetProps {
   isOpen: boolean;
   onClose: () => void;
   postId: string;
-  postContent?: string;
-  postImage?: string;
+  onShareSuccess?: (sharedToCount: number) => void;
 }
 
 interface ShareTarget {
@@ -37,8 +36,7 @@ export function ShareSheet({
   isOpen,
   onClose,
   postId,
-  postContent,
-  postImage,
+  onShareSuccess,
 }: ShareSheetProps) {
   const { user } = useAuth();
   const { conversations, loading: dmsLoading } = useConversations();
@@ -193,6 +191,7 @@ export function ShareSheet({
         title: "Отправлено",
         description: `Пост отправлен в ${n} ${declension}`,
       });
+      onShareSuccess?.(n);
       
       onClose();
     } catch (err) {

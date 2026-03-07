@@ -12,6 +12,7 @@ export interface Post {
   views_count: number;
   likes_count: number;
   comments_count: number;
+  saves_count: number;
   shares_count: number;
   is_published: boolean;
   author?: {
@@ -247,6 +248,7 @@ export function usePosts(filter: FeedFilter = 'all') {
                 views_count: updatedPost.views_count,
                 likes_count: updatedPost.likes_count,
                 comments_count: updatedPost.comments_count,
+                saves_count: updatedPost.saves_count,
                 shares_count: updatedPost.shares_count,
                 content: updatedPost.content,
                 is_published: updatedPost.is_published

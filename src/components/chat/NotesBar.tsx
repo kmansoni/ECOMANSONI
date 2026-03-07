@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Plus, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { createNote, deleteNote, getNotes } from "@/hooks/useNotes";
@@ -17,6 +17,7 @@ export function NotesBar({ chatUserIds }: NotesBarProps) {
   const [showCreate, setShowCreate] = useState(false);
   const [noteText, setNoteText] = useState("");
   const [noteEmoji, setNoteEmoji] = useState("");
+  const chatUserIdsKey = useMemo(() => chatUserIds.join(","), [chatUserIds]);
 
   useEffect(() => {
     if (!user || !chatUserIds.length) return;
@@ -26,7 +27,7 @@ export function NotesBar({ chatUserIds }: NotesBarProps) {
       setMyNote(mine ?? null);
       setNotes(data.filter(n => n.user_id !== user.id));
     });
-  }, [user, chatUserIds.join(",")]);
+  }, [user, chatUserIds, chatUserIdsKey]);
 
   const handleCreate = async () => {
     if (!user || !noteText.trim()) return;

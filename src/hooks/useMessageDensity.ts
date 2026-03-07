@@ -17,7 +17,9 @@ function loadDensity(): MessageDensity {
   try {
     const val = localStorage.getItem(LS_KEY);
     if (val === "compact" || val === "expanded") return val;
-  } catch {}
+  } catch {
+    // Ignore storage read errors and use expanded by default.
+  }
   return "expanded";
 }
 
@@ -59,7 +61,7 @@ export function useMessageDensity() {
 
   const setDensity = useCallback((d: MessageDensity) => {
     setDensityState(d);
-    try { localStorage.setItem(LS_KEY, d); } catch {}
+    try { localStorage.setItem(LS_KEY, d); } catch { /* storage unavailable */ }
   }, []);
 
   const toggleDensity = useCallback(() => {

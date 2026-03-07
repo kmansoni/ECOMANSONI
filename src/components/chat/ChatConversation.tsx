@@ -280,7 +280,6 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
   } = useDisappearingMessages(conversationId);
 
   const { isSecret, secretChat } = useSecretChat(conversationId);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const _polls = usePolls(conversationId);
 
   const [showMessageSearch, setShowMessageSearch] = useState(false);
@@ -349,8 +348,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
         clearDraft(conversationId);
       }
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversationId]);
+  }, [conversationId, getDraft, saveDraft, clearDraft]);
 
   useEffect(() => {
     if (!hiddenKey) return;
@@ -394,10 +392,6 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
           !(m.id in decryptedCache) &&
           !decryptInProgressRef.current.has(m.id),
       ),
-    // decryptedCache: нужен только чтобы убрать уже расшифрованные.
-    // decryptInProgressRef.current не является реактивным — это намеренно:
-    // нам не нужен лишний пересчёт из-за него; он предотвращает дублирование.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [messages, decryptedCache],
   );
 
@@ -710,7 +704,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
     for (const msg of incomingUnread) {
       markAsRead(msg.id);
     }
-  }, [conversationId, user, isGroup, messages.length, markConversationRead, onRefetch, markAsRead]);
+  }, [conversationId, user, isGroup, messages, markConversationRead, onRefetch, markAsRead]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -1706,7 +1700,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
               ) : isGift ? (
                 (() => {
                   let giftData: any = {};
-                  try { giftData = JSON.parse(message.content || "{}"); } catch {}
+                  try { giftData = JSON.parse(message.content || "{}"); } catch { /* invalid gift JSON payload */ }
                   return (
                     <div className="flex-1 min-w-0">
                       <GiftMessage

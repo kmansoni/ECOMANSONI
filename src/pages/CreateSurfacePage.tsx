@@ -156,8 +156,10 @@ function PostTab() {
   const [savingDraft, setSavingDraft] = useState(false);
 
   useEffect(() => {
+    const urls = urlsRef.current;
+
     return () => {
-      for (const u of urlsRef.current) URL.revokeObjectURL(u);
+      for (const u of urls) URL.revokeObjectURL(u);
     };
   }, []);
 

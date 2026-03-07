@@ -93,7 +93,6 @@ const ReelItem = memo<ReelItemProps>(
     const handleRepost = useCallback(() => onRepost(reel.id), [onRepost, reel.id]);
     const handleShare = useCallback(() => onShare(reel.id), [onShare, reel.id]);
     const handleComment = useCallback(() => onComment(reel.id), [onComment, reel.id]);
-    // eslint-disable-next-line @typescript-eslint/no-empty-function
     const handleMore = useCallback(() => { /* Phase 4: откроет dropdown/sheet */ }, []);
 
     // ---------------------------------------------------------------------------

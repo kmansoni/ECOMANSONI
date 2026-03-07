@@ -229,7 +229,7 @@ function renderMarkdown(text: string): string {
     /<pre[\s\S]*?<\/pre>|<code[\s\S]*?<\/code>/g,
     (match) => {
       codeTokens.push(match);
-      return `\x00CODE${codeTokens.length - 1}\x00`;
+      return `__CODE_TOKEN_${codeTokens.length - 1}__`;
     }
   );
 
@@ -240,7 +240,7 @@ function renderMarkdown(text: string): string {
   });
 
   // Re-inject code tokens (already safe)
-  let safe = escaped.replace(/\x00CODE(\d+)\x00/g, (_, i) => codeTokens[Number(i)]);
+  let safe = escaped.replace(/__CODE_TOKEN_(\d+)__/g, (_, i) => codeTokens[Number(i)]);
 
   // Now apply remaining Markdown transforms on the safe (escaped) text
   safe = safe
@@ -688,7 +688,6 @@ export function AIAssistantPage() {
                       {/* Render markdown for assistant messages */}
                       <div
                         className="prose prose-sm prose-invert max-w-none leading-relaxed [&_pre]:my-2 [&_code]:text-xs [&_li]:my-0.5 [&_h1]:mt-3 [&_h2]:mt-2 [&_h3]:mt-2 [&_table]:w-full [&_table]:border-collapse [&_table]:text-xs [&_td]:border [&_td]:border-border/40 [&_td]:px-2 [&_td]:py-1"
-                        // eslint-disable-next-line react/no-danger
                         dangerouslySetInnerHTML={{
                           __html:
                             msg.content

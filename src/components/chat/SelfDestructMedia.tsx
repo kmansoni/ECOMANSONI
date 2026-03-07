@@ -75,7 +75,7 @@ export function SelfDestructMedia({
         return prev - 1;
       });
     }, 1000);
-  }, [destroyed, onViewed, onDestroyed]);
+  }, [destroyed, revealed, onViewed, onDestroyed]);
 
   useEffect(() => {
     return () => {

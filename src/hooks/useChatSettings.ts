@@ -79,13 +79,7 @@ export function useChatSettings(conversationId?: string) {
     return error?.code === '42P01' || error?.code === 'PGRST205' || msg.includes('Could not find the table') || msg.includes('does not exist');
   };
 
-  useEffect(() => {
-    if (!user) return;
-    loadGlobalSettings();
-    if (conversationId) loadChatSettings();
-  }, [user, conversationId]);
-
-  const loadGlobalSettings = async () => {
+  const loadGlobalSettings = useCallback(async () => {
     if (!user || !globalTableAvailable) return;
     const { data, error } = await supabase
       .from('user_global_chat_settings' as never)
@@ -97,9 +91,9 @@ export function useChatSettings(conversationId?: string) {
       return;
     }
     if (data) setGlobalSettings({ ...DEFAULT_GLOBAL_SETTINGS, ...(data as object) });
-  };
+  }, [user, globalTableAvailable]);
 
-  const loadChatSettings = async () => {
+  const loadChatSettings = useCallback(async () => {
     if (!user || !conversationId || !chatTableAvailable) return;
     const { data, error } = await supabase
       .from('user_chat_settings' as never)
@@ -112,7 +106,15 @@ export function useChatSettings(conversationId?: string) {
       return;
     }
     if (data) setSettings({ ...DEFAULT_CHAT_SETTINGS, ...(data as object) });
-  };
+  }, [user, conversationId, chatTableAvailable]);
+
+  useEffect(() => {
+    if (!user) return;
+    void loadGlobalSettings();
+    if (conversationId) {
+      void loadChatSettings();
+    }
+  }, [user, conversationId, loadChatSettings, loadGlobalSettings]);
 
   const updateSetting = useCallback(async <K extends keyof ChatSettings>(
     key: K,

@@ -1,0 +1,127 @@
+# =============================================================================
+# Prometheus Configuration — ECOMANSONI Navigation Platform
+# Global scrape interval: 15s
+# All targets are internal Docker network hostnames
+# =============================================================================
+
+global:
+  scrape_interval:     15s
+  evaluation_interval: 15s
+  scrape_timeout:      10s
+  external_labels:
+    cluster: 'ecomansoni-nav'
+    environment: 'production'
+
+# =============================================================================
+# Alerting (configure Alertmanager endpoint if available)
+# =============================================================================
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets: ['alertmanager:9093']
+
+# =============================================================================
+# Rule files (load alert/recording rules from separate files)
+# =============================================================================
+# rule_files:
+#   - /etc/prometheus/rules/*.yml
+
+# =============================================================================
+# Scrape Configs
+# =============================================================================
+scrape_configs:
+
+  # ---------------------------------------------------------------------------
+  # Prometheus self-monitoring
+  # ---------------------------------------------------------------------------
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+    metrics_path: /metrics
+
+  # ---------------------------------------------------------------------------
+  # Navigation API (FastAPI / Express service exposing /metrics)
+  # Exposes: request_duration_seconds, active_websocket_connections,
+  #          dispatch_latency_seconds, location_events_per_second
+  # ---------------------------------------------------------------------------
+  - job_name: 'navigation-api'
+    static_configs:
+      - targets: ['navigation-api:8000']
+    metrics_path: /metrics
+    scrape_interval: 15s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        regex: '([^:]+)(?::\d+)?'
+        replacement: '$1'
+
+  # ---------------------------------------------------------------------------
+  # Valhalla Routing Engine
+  # Exposes Prometheus metrics at /metrics (gis-ops image with metrics support)
+  # Key metrics: route_requests_total, route_duration_seconds
+  # ---------------------------------------------------------------------------
+  - job_name: 'valhalla'
+    static_configs:
+      - targets: ['valhalla:8002']
+    metrics_path: /metrics
+    scrape_interval: 15s
+
+  # ---------------------------------------------------------------------------
+  # Martin Tile Server
+  # Built-in Prometheus endpoint at /metrics
+  # Key metrics: tile_requests_total, tile_request_duration_seconds,
+  #              cache_hit_ratio, db_query_duration_seconds
+  # ---------------------------------------------------------------------------
+  - job_name: 'martin'
+    static_configs:
+      - targets: ['martin:3000']
+    metrics_path: /metrics
+    scrape_interval: 15s
+
+  # ---------------------------------------------------------------------------
+  # Redis (via redis_exporter sidecar)
+  # Exposes: redis_connected_clients, redis_memory_used_bytes,
+  #          redis_commands_processed_total, redis_keyspace_hits_total
+  # Deploy redis_exporter alongside redis-nav in production
+  # ---------------------------------------------------------------------------
+  - job_name: 'redis-nav'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+    scrape_interval: 15s
+    params:
+      target: ['redis-nav:6379']
+    relabel_configs:
+      - source_labels: [__param_target]
+        target_label: instance
+
+  # ---------------------------------------------------------------------------
+  # Redpanda (native Prometheus endpoint on Admin API port 9644)
+  # Key metrics: redpanda_kafka_request_latency_microseconds,
+  #              redpanda_storage_log_size_bytes,
+  #              redpanda_kafka_records_produced_total
+  # ---------------------------------------------------------------------------
+  - job_name: 'redpanda'
+    static_configs:
+      - targets: ['redpanda:9644']
+    metrics_path: /metrics
+    scrape_interval: 15s
+
+  # ---------------------------------------------------------------------------
+  # ClickHouse (via clickhouse-exporter or built-in HTTP metrics)
+  # Endpoint: http://clickhouse:8123/metrics (requires prometheus exporter)
+  # Key metrics: ClickHouseAsyncMetrics_*, ClickHouseProfileEvents_*
+  # ---------------------------------------------------------------------------
+  - job_name: 'clickhouse'
+    static_configs:
+      - targets: ['clickhouse:9363']
+    scrape_interval: 30s
+    metrics_path: /metrics
+
+  # ---------------------------------------------------------------------------
+  # Grafana self-monitoring
+  # ---------------------------------------------------------------------------
+  - job_name: 'grafana'
+    static_configs:
+      - targets: ['grafana:3000']
+    metrics_path: /metrics
+    scrape_interval: 30s

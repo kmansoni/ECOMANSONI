@@ -204,14 +204,14 @@ export default function InsuranceApplyPage() {
       }
       setFormData(defaultFormData[category]?.() ?? null);
     }
-  }, [category]);
+  }, [category, formData]);
 
   // Если есть productId и категория, сразу переходим на шаг 2
   useEffect(() => {
     if (productId && category && currentStep === 0) {
       setCurrentStep(1);
     }
-  }, []);
+  }, [productId, category, currentStep]);
 
   const saveDraft = useCallback(() => {
     if (category && formData) {

@@ -1,0 +1,304 @@
+{
+  "mjolnir": {
+    "tile_dir": "/custom_files/valhalla_tiles",
+    "max_cache_size": 1073741824,
+    "id_table_size": 1000000000,
+    "use_lru_mem_cache": false,
+    "lru_mem_cache_hard_control": false,
+    "use_simple_mem_cache": false,
+    "include_driveways": true,
+    "include_bicycle": true,
+    "include_pedestrian": true,
+    "include_construction": false,
+    "import_bike_share_stations": false,
+    "global_synchronized_cache": false,
+    "num_threads": 2,
+    "admin": "/custom_files/admin.sqlite",
+    "timezone": "/custom_files/tz_world.sqlite",
+    "transit_dir": "/custom_files/transit",
+    "logging": {
+      "type": "std_out",
+      "color": false,
+      "file_name": "path_to_some_file.log"
+    }
+  },
+  "additional_data": {
+    "elevation": "/custom_files/elevation"
+  },
+  "loki": {
+    "actions": ["locate", "route", "height", "sources_to_targets", "optimized_route", "isochrone", "trace_route", "trace_attributes", "transit_available", "expansion", "centroid", "status"],
+    "logging": {
+      "type": "std_out",
+      "color": false,
+      "file_name": "path_to_some_file.log"
+    },
+    "service": {
+      "proxy": "ipc:///tmp/loki"
+    }
+  },
+  "meili": {
+    "mode": "auto",
+    "customizable_search_radius": true,
+    "interpolate_matches": true,
+    "default": {
+      "sigma_z": 4.07,
+      "gps_accuracy": 5.0,
+      "beta": 3,
+      "max_route_distance_factor": 5,
+      "max_route_time_factor": 5,
+      "breakage_distance": 2000,
+      "max_search_radius": 100,
+      "interpolation_distance": 10,
+      "search_radius": 50,
+      "geometry": false,
+      "route": true,
+      "turn_penalty_factor": 0
+    },
+    "auto": {
+      "turn_penalty_factor": 200,
+      "search_radius": 50
+    },
+    "pedestrian": {
+      "turn_penalty_factor": 0,
+      "search_radius": 25
+    },
+    "bicycle": {
+      "turn_penalty_factor": 20
+    },
+    "multimodal": {
+      "turn_penalty_factor": 70
+    },
+    "logging": {
+      "type": "std_out",
+      "color": false,
+      "file_name": "path_to_some_file.log"
+    },
+    "service": {
+      "proxy": "ipc:///tmp/meili"
+    }
+  },
+  "httpd": {
+    "service": {
+      "listen": "tcp://*:8002",
+      "loopback": "ipc:///tmp/loopback",
+      "interrupt": "ipc:///tmp/interrupt"
+    }
+  },
+  "thor": {
+    "logging": {
+      "type": "std_out",
+      "color": false,
+      "file_name": "path_to_some_file.log",
+      "long_request": 110.0
+    },
+    "source_to_target_algorithm": "select_optimal",
+    "service": {
+      "proxy": "ipc:///tmp/thor"
+    }
+  },
+  "odin": {
+    "logging": {
+      "type": "std_out",
+      "color": false,
+      "file_name": "path_to_some_file.log"
+    },
+    "service": {
+      "proxy": "ipc:///tmp/odin"
+    }
+  },
+  "skadi": {
+    "actions": ["height"],
+    "logging": {
+      "type": "std_out",
+      "color": false,
+      "file_name": "path_to_some_file.log"
+    },
+    "service": {
+      "proxy": "ipc:///tmp/skadi"
+    },
+    "max_shape": 750000,
+    "min_resample": 10.0
+  },
+  "service_limits": {
+    "auto": {
+      "max_distance": 5000000.0,
+      "max_locations": 20,
+      "max_matrix_distance": 400000.0,
+      "max_matrix_location_pairs": 2500
+    },
+    "auto_shorter": {
+      "max_distance": 5000000.0,
+      "max_locations": 20,
+      "max_matrix_distance": 400000.0,
+      "max_matrix_location_pairs": 2500
+    },
+    "bus": {
+      "max_distance": 5000000.0,
+      "max_locations": 50,
+      "max_matrix_distance": 400000.0,
+      "max_matrix_location_pairs": 2500
+    },
+    "taxi": {
+      "max_distance": 5000000.0,
+      "max_locations": 20,
+      "max_matrix_distance": 400000.0,
+      "max_matrix_location_pairs": 2500
+    },
+    "pedestrian": {
+      "max_distance": 250000.0,
+      "max_locations": 50,
+      "max_matrix_distance": 200000.0,
+      "max_matrix_location_pairs": 2500,
+      "max_transit_walking_distance": 10000,
+      "min_transit_walking_distance": 1
+    },
+    "bicycle": {
+      "max_distance": 500000.0,
+      "max_locations": 50,
+      "max_matrix_distance": 200000.0,
+      "max_matrix_location_pairs": 2500
+    },
+    "truck": {
+      "max_distance": 5000000.0,
+      "max_locations": 20,
+      "max_matrix_distance": 400000.0,
+      "max_matrix_location_pairs": 2500
+    },
+    "motor_scooter": {
+      "max_distance": 500000.0,
+      "max_locations": 50,
+      "max_matrix_distance": 200000.0,
+      "max_matrix_location_pairs": 2500
+    },
+    "motorcycle": {
+      "max_distance": 500000.0,
+      "max_locations": 50,
+      "max_matrix_distance": 200000.0,
+      "max_matrix_location_pairs": 2500
+    },
+    "multimodal": {
+      "max_distance": 500000.0,
+      "max_locations": 50,
+      "max_matrix_distance": 0.0,
+      "max_matrix_location_pairs": 0
+    },
+    "transit": {
+      "max_distance": 500000.0,
+      "max_locations": 50,
+      "max_matrix_distance": 0.0,
+      "max_matrix_location_pairs": 0
+    },
+    "bikeshare": {
+      "max_distance": 500000.0,
+      "max_locations": 50,
+      "max_matrix_distance": 0.0,
+      "max_matrix_location_pairs": 0
+    },
+    "centroid": {
+      "max_distance": 200000.0,
+      "max_locations": 5
+    },
+    "skadi": {
+      "max_shape": 750000,
+      "min_resample": 10.0
+    },
+    "isochrone": {
+      "max_contours": 4,
+      "max_time_contour": 120,
+      "max_distance": 25000.0,
+      "max_locations": 1,
+      "max_distance_contour": 200
+    },
+    "trace": {
+      "max_distance": 200000.0,
+      "max_gps_accuracy": 100.0,
+      "max_search_radius": 100.0,
+      "max_shape": 16000,
+      "max_best_paths": 4,
+      "max_best_paths_shape": 100
+    },
+    "max_exclude_locations": 50,
+    "max_reachability": 100,
+    "max_radius": 200,
+    "max_timedep_distance": 500000,
+    "max_alternates": 2,
+    "max_exclude_polygons_length": 10000
+  },
+  "costing_options": {
+    "auto": {
+      "maneuver_penalty": 5,
+      "destination_only_penalty": 600,
+      "alley_penalty": 5,
+      "gate_cost": 30,
+      "gate_penalty": 300,
+      "toll_booth_cost": 15,
+      "toll_booth_penalty": 0,
+      "ferry_cost": 300,
+      "use_ferry": 0.5,
+      "use_highways": 0.8,
+      "use_tolls": 0.5,
+      "use_living_streets": 0.1,
+      "use_tracks": 0,
+      "private_access_penalty": 450,
+      "service_penalty": 15,
+      "service_factor": 1,
+      "country_crossing_cost": 600,
+      "country_crossing_penalty": 0,
+      "shortest": false
+    },
+    "truck": {
+      "maneuver_penalty": 5,
+      "destination_only_penalty": 600,
+      "alley_penalty": 5,
+      "gate_cost": 30,
+      "gate_penalty": 300,
+      "toll_booth_cost": 15,
+      "toll_booth_penalty": 0,
+      "ferry_cost": 300,
+      "use_ferry": 0.5,
+      "use_highways": 0.8,
+      "use_tolls": 0.5,
+      "country_crossing_cost": 600,
+      "country_crossing_penalty": 0,
+      "hazmat": false,
+      "weight": 21.77,
+      "axle_load": 9.07,
+      "height": 4.11,
+      "width": 2.6,
+      "length": 21.64,
+      "shortest": false
+    },
+    "bicycle": {
+      "maneuver_penalty": 10,
+      "alley_penalty": 60,
+      "gate_penalty": 300,
+      "gate_cost": 30,
+      "ferry_cost": 300,
+      "use_ferry": 0.5,
+      "use_roads": 0.5,
+      "use_hills": 0.5,
+      "use_living_streets": 0.5,
+      "avoid_bad_surfaces": 0.25,
+      "shortest": false,
+      "bicycle_type": "Hybrid",
+      "cycling_speed": 18.0
+    },
+    "pedestrian": {
+      "walking_speed": 5.1,
+      "walkway_factor": 0.9,
+      "alley_factor": 2.0,
+      "driveway_factor": 5.0,
+      "step_penalty": 30,
+      "use_ferry": 1.0,
+      "use_living_streets": 0.5,
+      "use_tracks": 0,
+      "use_hills": 0.5,
+      "service_penalty": 15,
+      "service_factor": 1,
+      "max_hiking_difficulty": 1,
+      "use_lit": 0,
+      "transit_start_end_max_distance": 2145,
+      "transit_transfer_max_distance": 800
+    }
+  }
+}

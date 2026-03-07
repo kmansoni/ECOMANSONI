@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Loader2, Check } from "lucide-react";
 import { toast } from "sonner";
@@ -20,15 +20,7 @@ export function CreateHighlightSheet({ isOpen, onClose, userId, onCreated }: Cre
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    if (!isOpen) return;
-    setStep("stories");
-    setTitle("");
-    setSelectedIds([]);
-    fetchStories();
-  }, [isOpen]);
-
-  const fetchStories = async () => {
+  const fetchStories = useCallback(async () => {
     setLoadingStories(true);
     try {
       const { data } = await (supabase as any)
@@ -43,7 +35,15 @@ export function CreateHighlightSheet({ isOpen, onClose, userId, onCreated }: Cre
     } finally {
       setLoadingStories(false);
     }
-  };
+  }, [userId]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setStep("stories");
+    setTitle("");
+    setSelectedIds([]);
+    void fetchStories();
+  }, [isOpen, fetchStories]);
 
   const toggleStory = (id: string) => {
     setSelectedIds(prev =>

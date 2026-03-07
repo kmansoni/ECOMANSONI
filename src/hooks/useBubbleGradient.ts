@@ -38,7 +38,9 @@ function loadPreset(): BubbleGradientPreset {
   try {
     const val = localStorage.getItem(LS_KEY) as BubbleGradientPreset;
     if (val && val in GRADIENT_PRESETS) return val;
-  } catch {}
+  } catch {
+    // Ignore storage read errors and use default preset.
+  }
   return "default";
 }
 
@@ -47,7 +49,7 @@ export function useBubbleGradient() {
 
   const setPreset = useCallback((p: BubbleGradientPreset) => {
     setPresetState(p);
-    try { localStorage.setItem(LS_KEY, p); } catch {}
+    try { localStorage.setItem(LS_KEY, p); } catch { /* storage unavailable */ }
   }, []);
 
   const bubbleClass = useMemo(() => GRADIENT_PRESETS[preset], [preset]);

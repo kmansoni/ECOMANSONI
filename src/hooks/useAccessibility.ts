@@ -27,7 +27,9 @@ function loadFromStorage(): AccessibilitySettings {
   try {
     const raw = localStorage.getItem(LS_KEY);
     if (raw) return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
-  } catch {}
+  } catch {
+    // Ignore malformed localStorage and fall back to defaults.
+  }
   return { ...DEFAULT_SETTINGS };
 }
 
@@ -62,11 +64,13 @@ export function useAccessibility() {
   // Учитываем системные prefers-reduced-motion
   useEffect(() => {
     const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
-    if (mq.matches && !settings.reducedMotion) {
-      setSettings((prev) => ({ ...prev, reducedMotion: true }));
+    if (mq.matches) {
+      setSettings((prev) => (prev.reducedMotion ? prev : { ...prev, reducedMotion: true }));
     }
     const handler = (e: MediaQueryListEvent) => {
-      if (e.matches) setSettings((prev) => ({ ...prev, reducedMotion: true }));
+      if (e.matches) {
+        setSettings((prev) => (prev.reducedMotion ? prev : { ...prev, reducedMotion: true }));
+      }
     };
     mq.addEventListener('change', handler);
     return () => mq.removeEventListener('change', handler);
@@ -88,7 +92,9 @@ export function useAccessibility() {
           .upsert({ user_id: user.id, accessibility: { ...loadFromStorage(), ...partial } })
           .eq('user_id', user.id);
       }
-    } catch {}
+    } catch {
+      // Non-critical sync failure: keep local settings applied.
+    }
   }, []);
 
   const announce = useCallback((message: string) => {

@@ -376,7 +376,7 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
     } finally {
       setLoading(false);
     }
-  }, [user, feedMode, PAGE_SIZE, enrichRows, fetchRawBatch, getFollowedAuthorIdsIfNeeded]);
+  }, [user, feedMode, enrichRows, fetchRawBatch, getFollowedAuthorIdsIfNeeded]);
 
   const loadMore = useCallback(async () => {
     if (loadingMore || loading) return;
@@ -414,7 +414,7 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
     } finally {
       setLoadingMore(false);
     }
-  }, [PAGE_SIZE, enrichRows, fetchRawBatch, getFollowedAuthorIdsIfNeeded, hasMore, loading, loadingMore, reels.length]);
+  }, [enrichRows, fetchRawBatch, getFollowedAuthorIdsIfNeeded, hasMore, loading, loadingMore, reels.length]);
 
   const resolveReelOwnerId = useCallback(
     (reelId: string): string | null => {

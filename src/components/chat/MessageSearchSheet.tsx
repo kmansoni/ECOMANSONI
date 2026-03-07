@@ -56,7 +56,7 @@ export function MessageSearchSheet({ open, onOpenChange, conversationId, onSelec
       setQuery("");
       search("");
     }
-  }, [open]);
+  }, [open, search]);
 
   const handleQuery = (val: string) => {
     setQuery(val);

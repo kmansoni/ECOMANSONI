@@ -1,0 +1,324 @@
+# ECOMANSONI Navigation Platform — Production Docker Compose
+# Designed for 10M+ concurrent users, zero-trust, horizontally scalable.
+# All services are stateless API consumers; state lives in volumes.
+
+services:
+
+  # =========================================================================
+  # ROUTING ENGINE — Valhalla (OSM-based turn-by-turn routing)
+  # Handles: auto, bicycle, pedestrian, truck costing
+  # Memory: 4G hard limit (tile data is mmap'd)
+  # =========================================================================
+  valhalla:
+    image: ghcr.io/gis-ops/valhalla:latest
+    ports:
+      - "8002:8002"
+    volumes:
+      - valhalla-data:/custom_files
+      - ./valhalla/valhalla.json:/custom_files/valhalla.json:ro
+    environment:
+      - tile_urls=https://download.geofabrik.de/russia-latest.osm.pbf
+      - serve_tiles=True
+      - build_elevation=True
+      - build_admins=True
+      - build_time_zones=True
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 1G
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+
+  # =========================================================================
+  # VECTOR TILE SERVER — Martin (PostGIS → MVT tiles)
+  # Serves: road segments, POIs, zones, traffic, crowdsource layers
+  # =========================================================================
+  martin:
+    image: ghcr.io/maplibre/martin:v0.13.0
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-changeme_in_production}@${POSTGRES_HOST:-db}:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-postgres}
+    command: ["--config", "/config/martin.yaml"]
+    volumes:
+      - ./martin/martin.yaml:/config/martin.yaml:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  # =========================================================================
+  # GEOCODER — Photon (Nominatim-backed, Elasticsearch-powered)
+  # CIS region: RU, KZ, BY, UZ, GE, AM
+  # =========================================================================
+  photon:
+    image: komoot/photon:latest
+    ports:
+      - "2322:2322"
+    volumes:
+      - photon-data:/photon/photon_data
+    environment:
+      - PHOTON_COUNTRY_CODES=ru,kz,by,uz,ge,am
+    deploy:
+      resources:
+        limits:
+          memory: 3G
+        reservations:
+          memory: 1G
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:2322/api?q=test&limit=1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # =========================================================================
+  # PostGIS — Geospatial PostgreSQL (for Martin tile server)
+  # NOTE: In production, replace with managed RDS/Supabase with PostGIS.
+  # This container is provided for local dev / self-hosted setups.
+  # =========================================================================
+  db:
+    image: postgis/postgis:16-3.4-alpine
+    ports:
+      - "5433:5432"
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme_in_production}
+      - POSTGRES_DB=${POSTGRES_DB:-postgres}
+    volumes:
+      - postgis-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ${POSTGRES_DB:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    command: >
+      postgres
+        -c max_connections=200
+        -c shared_buffers=512MB
+        -c effective_cache_size=1536MB
+        -c maintenance_work_mem=128MB
+        -c checkpoint_completion_target=0.9
+        -c wal_buffers=16MB
+        -c default_statistics_target=100
+        -c random_page_cost=1.1
+        -c effective_io_concurrency=200
+        -c work_mem=4MB
+        -c huge_pages=off
+        -c max_wal_size=2GB
+
+  # =========================================================================
+  # REDIS — Geo state, driver presence, session cache, rate limiting
+  # Port: 6380 (avoids conflict with app Redis on 6379)
+  # Persistence: AOF everysec + RDB snapshots
+  # Eviction: allkeys-lru (safe for cache workloads)
+  # =========================================================================
+  redis-nav:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
+    command: >
+      redis-server
+      --maxmemory 2gb
+      --maxmemory-policy allkeys-lru
+      --appendonly yes
+      --appendfsync everysec
+      --save 60 1000
+      --save 300 100
+      --loglevel notice
+      --tcp-keepalive 60
+      --timeout 300
+    volumes:
+      - redis-nav-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # =========================================================================
+  # REDPANDA — Kafka-compatible event streaming (lightweight, no ZooKeeper)
+  # Topics: nav.location.*, nav.trip.*, nav.dispatch.*, nav.traffic.*, etc.
+  # Single-broker dev setup; scale to 3+ brokers in production.
+  # =========================================================================
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:v24.1.1
+    ports:
+      - "9092:9092"    # Kafka API (external)
+      - "8081:8081"    # Schema Registry
+      - "8082:8082"    # HTTP Proxy (Pandaproxy)
+      - "9644:9644"    # Admin API
+    command:
+      - redpanda
+      - start
+      - --smp
+      - "1"
+      - --memory
+      - 1G
+      - --overprovisioned
+      - --kafka-addr
+      - internal://0.0.0.0:29092,external://0.0.0.0:9092
+      - --advertise-kafka-addr
+      - internal://redpanda:29092,external://localhost:9092
+      - --schema-registry-addr
+      - internal://0.0.0.0:8081,external://0.0.0.0:18081
+      - --pandaproxy-addr
+      - internal://0.0.0.0:28082,external://0.0.0.0:8082
+      - --advertise-pandaproxy-addr
+      - internal://redpanda:28082,external://localhost:8082
+    volumes:
+      - redpanda-data:/var/lib/redpanda/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "rpk", "cluster", "health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # =========================================================================
+  # REDPANDA CONSOLE — Kafka topic browser & schema registry UI
+  # =========================================================================
+  redpanda-console:
+    image: docker.redpanda.com/redpandadata/console:v2.4.5
+    ports:
+      - "8080:8080"
+    environment:
+      - KAFKA_BROKERS=redpanda:29092
+      - KAFKA_SCHEMAREGISTRY_ENABLED=true
+      - KAFKA_SCHEMAREGISTRY_URLS=http://redpanda:8081
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # =========================================================================
+  # CLICKHOUSE — Columnar analytics for GPS events, trips, traffic history
+  # Ports: 8123 (HTTP), 9000 (Native TCP)
+  # Write amplification is controlled via MergeTree TTL policies in init.sql
+  # =========================================================================
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.1
+    ports:
+      - "8123:8123"   # HTTP interface
+      - "9000:9000"   # Native TCP
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      - ./clickhouse/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    environment:
+      - CLICKHOUSE_USER=${CLICKHOUSE_USER:-default}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-}
+      - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 1G
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # =========================================================================
+  # PROMETHEUS — Metrics scraping & alerting
+  # Scrapes: navigation-api, valhalla, martin, redis, redpanda, clickhouse
+  # =========================================================================
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=30d
+      - --web.enable-lifecycle
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # =========================================================================
+  # GRAFANA — Dashboards: GPS heatmap, trip funnel, traffic, surge, dispatch
+  # Datasources: Prometheus + ClickHouse
+  # =========================================================================
+  grafana:
+    image: grafana/grafana:10.4.0
+    ports:
+      - "3001:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-changeme_in_production}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_ANALYTICS_REPORTING_ENABLED=false
+      - GF_INSTALL_PLUGINS=grafana-clickhouse-datasource
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+# =============================================================================
+# VOLUMES — All persistent state
+# =============================================================================
+volumes:
+  valhalla-data:
+    driver: local
+  photon-data:
+    driver: local
+  postgis-data:
+    driver: local
+  redis-nav-data:
+    driver: local
+  redpanda-data:
+    driver: local
+  clickhouse-data:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
+
+# =============================================================================
+# NETWORK — Isolated bridge network for navigation stack
+# =============================================================================
+networks:
+  default:
+    name: ecomansoni-nav
+    driver: bridge

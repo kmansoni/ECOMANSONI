@@ -44,7 +44,7 @@ export function NotificationSettingsPage() {
       setSettings(s);
       setLoading(false);
     });
-  }, []);
+  }, [getNotificationSettings]);
 
   const handleToggle = (key: keyof NotificationSettings) => {
     setSettings((prev) => ({ ...prev, [key]: !prev[key] }));

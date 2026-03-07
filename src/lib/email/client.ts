@@ -63,11 +63,9 @@ const REQUEST_TIMEOUT_MS = 15_000;
  * Enabled by setting VITE_EMAIL_ROUTER_DIRECT=true in .env.local.
  * Automatically disabled in production builds (import.meta.env.PROD).
  */
-function useDirectMode(): boolean {
+function isDirectModeEnabled(): boolean {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const isDirect = (import.meta as any).env?.VITE_EMAIL_ROUTER_DIRECT === 'true';
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const isDev = (import.meta as any).env?.DEV === true;
     return isDev && isDirect;
   } catch {
@@ -84,7 +82,6 @@ function useDirectMode(): boolean {
  */
 function getDevApiKey(): string {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return (import.meta as any).env?.VITE_EMAIL_ROUTER_API_KEY ?? '';
   } catch {
     return '';
@@ -250,7 +247,7 @@ async function sendEmailDirect(payload: EmailPayload): Promise<EmailSendResult> 
  * @throws Never — always returns EmailSendResult (success or error)
  */
 export async function sendEmail(payload: EmailPayload): Promise<EmailSendResult> {
-  if (useDirectMode()) {
+  if (isDirectModeEnabled()) {
     return sendEmailDirect(payload);
   }
   return sendEmailViaProxy(payload);
@@ -338,7 +335,7 @@ export async function sendNotification(
  * Returns true if the service is reachable and functioning.
  */
 export async function checkEmailHealth(): Promise<boolean> {
-  if (useDirectMode()) {
+  if (isDirectModeEnabled()) {
     // Dev mode: direct health check
     const bases = getEmailRouterApiBases();
     const apiKey = getDevApiKey();

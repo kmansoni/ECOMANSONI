@@ -15,6 +15,8 @@ interface PostDetail {
   author_id: string;
   likes_count: number;
   comments_count: number;
+  saves_count: number;
+  shares_count: number;
   views_count: number;
   created_at: string;
   author?: {
@@ -29,6 +31,8 @@ interface PostDetail {
   isSaved?: boolean;
 }
 
+const clampCounter = (value: number | null | undefined) => Math.max(0, Number.isFinite(value as number) ? Number(value) : 0);
+
 export function PostDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -37,7 +41,16 @@ export function PostDetailPage() {
   const [loading, setLoading] = useState(true);
   const [showComments, setShowComments] = useState(false);
   const [showShare, setShowShare] = useState(false);
+  const [likePending, setLikePending] = useState(false);
+  const [savePending, setSavePending] = useState(false);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const [frameAspectRatio, setFrameAspectRatio] = useState(1);
+
+  const applyAspectRatio = (width: number, height: number) => {
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return;
+    const next = Math.min(1.91, Math.max(0.56, width / height));
+    setFrameAspectRatio((prev) => (Math.abs(prev - next) < 0.01 ? prev : next));
+  };
 
   useEffect(() => {
     if (!id) return;
@@ -93,6 +106,11 @@ export function PostDetailPage() {
 
         setPost({
           ...postData,
+          likes_count: clampCounter(postData.likes_count),
+          comments_count: clampCounter(postData.comments_count),
+          saves_count: clampCounter(postData.saves_count),
+          shares_count: clampCounter(postData.shares_count),
+          views_count: clampCounter(postData.views_count),
           author: profile || undefined,
           media: media || [],
           isLiked,
@@ -109,46 +127,56 @@ export function PostDetailPage() {
   }, [id, user]);
 
   const handleLike = async () => {
-    if (!post || !user) return;
+    if (!post || !user || likePending) return;
 
     try {
+      setLikePending(true);
       if (post.isLiked) {
-        await supabase
+        const { error } = await supabase
           .from("post_likes")
           .delete()
           .eq("post_id", post.id)
           .eq("user_id", user.id);
+        if (error) throw error;
         setPost({ ...post, isLiked: false, likes_count: post.likes_count - 1 });
       } else {
-        await supabase
+        const { error } = await supabase
           .from("post_likes")
           .insert({ post_id: post.id, user_id: user.id });
+        if (error) throw error;
         setPost({ ...post, isLiked: true, likes_count: post.likes_count + 1 });
       }
     } catch (error) {
       console.error("Error toggling like:", error);
+    } finally {
+      setLikePending(false);
     }
   };
 
   const handleSave = async () => {
-    if (!post || !user) return;
+    if (!post || !user || savePending) return;
 
     try {
+      setSavePending(true);
       if (post.isSaved) {
-        await supabase
+        const { error } = await supabase
           .from("saved_posts")
           .delete()
           .eq("post_id", post.id)
           .eq("user_id", user.id);
-        setPost({ ...post, isSaved: false });
+        if (error) throw error;
+        setPost({ ...post, isSaved: false, saves_count: Math.max(0, (post.saves_count || 0) - 1) });
       } else {
-        await supabase
+        const { error } = await supabase
           .from("saved_posts")
           .insert({ post_id: post.id, user_id: user.id });
-        setPost({ ...post, isSaved: true });
+        if (error) throw error;
+        setPost({ ...post, isSaved: true, saves_count: (post.saves_count || 0) + 1 });
       }
     } catch (error) {
       console.error("Error toggling save:", error);
+    } finally {
+      setSavePending(false);
     }
   };
 
@@ -177,6 +205,12 @@ export function PostDetailPage() {
       </div>
     );
   }
+
+  const currentMedia = post.media[currentImageIndex];
+  const currentIsVideo = !!currentMedia && (
+    (currentMedia.media_type || "").startsWith("video") ||
+    /\.(mp4|webm|mov|m4v)(\?|$)/i.test(currentMedia.media_url)
+  );
 
   const authorName = post.author?.display_name || "Пользователь";
   const authorAvatar = post.author?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${post.author_id}`;
@@ -213,12 +247,31 @@ export function PostDetailPage() {
 
         {/* Media */}
         {post.media.length > 0 && (
-          <div className="relative media-frame media-frame--post">
-            <img
-              src={post.media[currentImageIndex]?.media_url}
-              alt=""
-              className="media-object media-object--fill media-object--cover"
-            />
+          <div className="relative media-frame media-frame--post" style={{ aspectRatio: frameAspectRatio }}>
+            {currentIsVideo ? (
+              <video
+                src={currentMedia?.media_url}
+                className="media-object media-object--fill media-object--cover"
+                autoPlay
+                loop
+                muted
+                playsInline
+                onLoadedMetadata={(e) => {
+                  const el = e.currentTarget;
+                  applyAspectRatio(el.videoWidth, el.videoHeight);
+                }}
+              />
+            ) : (
+              <img
+                src={currentMedia?.media_url}
+                alt=""
+                className="media-object media-object--fill media-object--cover"
+                onLoad={(e) => {
+                  const el = e.currentTarget;
+                  applyAspectRatio(el.naturalWidth, el.naturalHeight);
+                }}
+              />
+            )}
             {post.media.length > 1 && (
               <>
                 <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-1">
@@ -261,16 +314,18 @@ export function PostDetailPage() {
               <MessageCircle className="w-6 h-6" />
               <span className="text-sm font-medium">{post.comments_count}</span>
             </button>
-            <button onClick={() => setShowShare(true)}>
+            <button onClick={() => setShowShare(true)} className="flex items-center gap-1">
               <Share2 className="w-6 h-6" />
+              <span className="text-sm font-medium">{post.shares_count}</span>
             </button>
           </div>
-          <button onClick={handleSave}>
+          <button onClick={handleSave} className="flex items-center gap-1">
             <Bookmark
               className={`w-6 h-6 transition-colors ${
                 post.isSaved ? "fill-foreground" : ""
               }`}
             />
+            <span className="text-sm font-medium">{post.saves_count}</span>
           </button>
         </div>
 
@@ -296,6 +351,7 @@ export function PostDetailPage() {
         onClose={() => setShowComments(false)}
         postId={post.id}
         commentsCount={post.comments_count}
+        onCommentsCountChange={(count) => setPost((prev) => (prev ? { ...prev, comments_count: count } : prev))}
       />
 
       {/* Share Sheet */}
@@ -303,8 +359,11 @@ export function PostDetailPage() {
         isOpen={showShare}
         onClose={() => setShowShare(false)}
         postId={post.id}
-        postContent={post.content || ""}
-        postImage={post.media[0]?.media_url}
+        onShareSuccess={(sharedToCount) => {
+          setPost((prev) =>
+            prev ? { ...prev, shares_count: prev.shares_count + Math.max(1, sharedToCount) } : prev,
+          );
+        }}
       />
     </div>
   );

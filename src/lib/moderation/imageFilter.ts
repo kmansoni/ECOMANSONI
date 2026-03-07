@@ -23,7 +23,7 @@ async function loadModel() {
 
   // Динамический импорт для lazy-load
   try {
-    // @ts-ignore — nsfwjs может не быть в tsconfig
+    // @ts-expect-error -- optional dependency may not have local type declarations
     const nsfwModule = await import("nsfwjs");
     nsfwjs = nsfwModule.default || nsfwModule;
     model = await nsfwjs.load();

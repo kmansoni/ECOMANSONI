@@ -121,7 +121,7 @@ export function MessageEffect({ type, onComplete }: MessageEffectProps) {
     return () => {
       if (animRef.current) cancelAnimationFrame(animRef.current);
     };
-  }, [type]);
+  }, [type, onComplete]);
 
   if (!type) return null;
 

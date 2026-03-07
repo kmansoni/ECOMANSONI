@@ -62,6 +62,7 @@ function getLastMessagePreview(msg?: ChatItem['last_message'], currentUserId?: s
 
 function ChatListPreview({ chat, currentUserId }: { chat: ChatItem; currentUserId?: string }) {
   const encryptedPayload = parseEncryptedPayload(chat.last_message?.content);
+  const senderId = chat.last_message?.sender_id;
   const { decryptContent } = useE2EEncryption(chat.id);
   const [decryptedText, setDecryptedText] = useState<string | null>(null);
 
@@ -69,10 +70,10 @@ function ChatListPreview({ chat, currentUserId }: { chat: ChatItem; currentUserI
     let cancelled = false;
     setDecryptedText(null);
 
-    if (!encryptedPayload || !chat.last_message?.sender_id) return;
+    if (!encryptedPayload || !senderId) return;
 
     const run = async () => {
-      const plain = await decryptContent(encryptedPayload, chat.last_message!.sender_id);
+      const plain = await decryptContent(encryptedPayload, senderId);
       if (!cancelled) {
         setDecryptedText(plain && plain.trim() ? plain : 'Зашифрованное сообщение');
       }
@@ -82,7 +83,7 @@ function ChatListPreview({ chat, currentUserId }: { chat: ChatItem; currentUserI
     return () => {
       cancelled = true;
     };
-  }, [chat.last_message?.sender_id, decryptContent, encryptedPayload]);
+  }, [decryptContent, encryptedPayload, senderId]);
 
   const fallback = encryptedPayload
     ? (decryptedText || 'Зашифрованное сообщение')

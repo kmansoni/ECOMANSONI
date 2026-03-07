@@ -201,12 +201,14 @@ export function useGroupChats() {
   }, [fetchGroups, refreshGroupsByIds]);
 
   useEffect(() => {
+    const pendingGroupIds = pendingGroupIdsRef.current;
+
     return () => {
       if (listRefreshTimerRef.current !== null) {
         window.clearTimeout(listRefreshTimerRef.current);
         listRefreshTimerRef.current = null;
       }
-      pendingGroupIdsRef.current.clear();
+      pendingGroupIds.clear();
     };
   }, []);
 

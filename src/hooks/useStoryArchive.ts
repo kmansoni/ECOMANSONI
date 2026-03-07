@@ -72,10 +72,10 @@ export function useStoryArchive() {
 
   useEffect(() => {
     if (user) {
-      autoArchiveExpired();
-      getArchivedStories();
+      void autoArchiveExpired();
+      void getArchivedStories();
     }
-  }, [user]);
+  }, [user, autoArchiveExpired, getArchivedStories]);
 
   return { archivedStories, loading, getArchivedStories, archiveStory, unarchiveStory };
 }

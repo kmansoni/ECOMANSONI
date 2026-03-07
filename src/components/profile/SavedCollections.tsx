@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Plus, Folder, Loader2, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -28,12 +28,7 @@ export function SavedCollections() {
   const [collectionPosts, setCollectionPosts] = useState<CollectionPost[]>([]);
   const [postsLoading, setPostsLoading] = useState(false);
 
-  useEffect(() => {
-    if (!user) return;
-    loadCollections();
-  }, [user]);
-
-  const loadCollections = async () => {
+  const loadCollections = useCallback(async () => {
     if (!user) return;
     setLoading(true);
     try {
@@ -46,7 +41,12 @@ export function SavedCollections() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    void loadCollections();
+  }, [user, loadCollections]);
 
   const createCollection = async () => {
     if (!newName.trim() || !user) return;

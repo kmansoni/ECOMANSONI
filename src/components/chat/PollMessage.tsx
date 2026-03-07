@@ -17,7 +17,7 @@ export function PollMessage({ pollId, conversationId, isOwn }: PollMessageProps)
     loadPoll(pollId).then((p) => {
       if (p) setPoll(p);
     });
-  }, [pollId]);
+  }, [pollId, loadPoll]);
 
   // Обновляем из store
   const stored = getPollResults(pollId);

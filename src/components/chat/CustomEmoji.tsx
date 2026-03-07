@@ -10,7 +10,7 @@
  * - Premium-gated emoji (shows lock overlay for non-premium users)
  */
 
-import { useState, useEffect, useRef } from "react"; // eslint-disable-line @typescript-eslint/no-unused-vars
+import { useState, useEffect, useRef } from "react";
 import { Lock } from "lucide-react";
 
 interface CustomEmojiProps {

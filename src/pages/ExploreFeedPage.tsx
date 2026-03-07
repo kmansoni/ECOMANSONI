@@ -78,9 +78,12 @@ export function ExploreFeedPage() {
                 }}
                 content={post.content || ""}
                 images={post.media?.map((m) => m.media_url)}
+                mediaItems={post.media?.map((m) => ({ url: m.media_url, type: m.media_type }))}
                 likes={post.likes_count}
                 comments={post.comments_count}
                 shares={post.shares_count}
+                saves={post.saves_count}
+                isLiked={post.is_liked}
                 
                 timeAgo={formatTimeAgo(post.created_at)}
               />

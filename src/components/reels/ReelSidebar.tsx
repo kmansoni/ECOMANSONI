@@ -32,7 +32,6 @@ import type { ReelMetrics } from '@/types/reels';
 
 async function triggerHaptic(): Promise<void> {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const cap = await import('@capacitor/haptics' as any) as any;
     await cap.Haptics.impact({ style: cap.ImpactStyle.Light });
   } catch {

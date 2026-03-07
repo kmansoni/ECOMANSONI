@@ -93,7 +93,6 @@ export function LiveTab() {
       .subscribe();
 
     return () => { sub.unsubscribe(); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (loading) {

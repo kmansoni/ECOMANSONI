@@ -52,7 +52,7 @@ export default function TaxiHomePage() {
     } else {
       map.setPickupMarker(null);
     }
-  }, [order.pickup, map.setPickupMarker]);
+  }, [order.pickup, map]);
 
   // ─── При появлении destination — обновить маркер + маршрут ───────────────
   useEffect(() => {
@@ -64,7 +64,7 @@ export default function TaxiHomePage() {
       map.setDestinationMarker(null);
       map.clearRoute();
     }
-  }, [order.pickup, order.destination]); // eslint-disable-line
+  }, [order.pickup, order.destination, map]);
 
   // ─── При нахождении водителя — начать трекинг ─────────────────────────────
   useEffect(() => {

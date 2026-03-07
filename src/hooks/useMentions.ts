@@ -26,7 +26,7 @@ export interface MentionUser {
 }
 
 // Matches @word (letters, digits, underscores, dots, hyphens — same as most platforms).
-const MENTION_REGEX = /@([\w.\-]+)/g;
+const MENTION_REGEX = /@([\w.-]+)/g;
 
 /**
  * Extracts all @mentions from a text string.

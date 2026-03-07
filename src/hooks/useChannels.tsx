@@ -225,12 +225,14 @@ export function useChannels() {
   }, [fetchChannels, refreshChannelsByIds]);
 
   useEffect(() => {
+    const pendingChannelIds = pendingChannelIdsRef.current;
+
     return () => {
       if (listRefreshTimerRef.current !== null) {
         window.clearTimeout(listRefreshTimerRef.current);
         listRefreshTimerRef.current = null;
       }
-      pendingChannelIdsRef.current.clear();
+      pendingChannelIds.clear();
     };
   }, []);
 

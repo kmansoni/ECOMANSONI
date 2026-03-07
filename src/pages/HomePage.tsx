@@ -7,12 +7,12 @@ import { SmartFeedToggle } from "@/components/feed/SmartFeedToggle";
 import { useSmartFeed } from "@/hooks/useSmartFeed";
 import { usePresence } from "@/hooks/usePresence";
 import { toast } from "sonner";
-import { Loader2 } from "lucide-react";
+import { AlertCircle, Loader2 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { ru } from "date-fns/locale";
 
 export function HomePage() {
-  const { posts, loading, loadingMore, hasMore, mode, setMode, refetch, loadMore } = useSmartFeed();
+  const { posts, loading, loadingMore, hasMore, mode, setMode, refetch, loadMore, error } = useSmartFeed();
   const [contentFilter, setContentFilter] = useState<ContentFilter>('all');
 
   // Initialize presence tracking
@@ -78,6 +78,12 @@ export function HomePage() {
           <div className="flex items-center justify-center py-20">
             <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
           </div>
+        ) : error && posts.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 text-center px-4">
+            <AlertCircle className="h-7 w-7 text-destructive mb-3" />
+            <p className="text-foreground text-base">Не удалось загрузить ленту</p>
+            <p className="text-muted-foreground text-sm mt-1">{error}</p>
+          </div>
         ) : filteredPosts.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center px-4">
             <p className="text-muted-foreground text-lg">
@@ -117,9 +123,11 @@ export function HomePage() {
                   }}
                   content={post.content || ""}
                   images={post.media?.map(m => m.media_url)}
+                  mediaItems={post.media?.map((m) => ({ url: m.media_url, type: m.media_type }))}
                   likes={post.likes_count}
                   comments={post.comments_count}
                   shares={post.shares_count}
+                  saves={post.saves_count}
                   timeAgo={formatTimeAgo(post.created_at)}
                   isLiked={post.is_liked}
                 />

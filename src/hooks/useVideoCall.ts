@@ -442,7 +442,7 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
           break;
         }
 
-        case "answer":
+        case "answer": {
           if (!peerConnectionRef.current) {
             log("No peer connection for answer, ignoring");
             return;
@@ -481,6 +481,7 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
           }
           pendingCandidatesRef.current = [];
           break;
+        }
 
         case "ice-candidate":
           if (!peerConnectionRef.current) {

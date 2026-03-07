@@ -301,8 +301,6 @@ export default function ReelsPage(): JSX.Element {
       observer.disconnect();
       observerRef.current = null;
     };
-    // root зависит от scrollContainerRef.current, но он стабилен после mount
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ---------------------------------------------------------------------------

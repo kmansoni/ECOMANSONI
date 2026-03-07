@@ -1,7 +1,7 @@
 import { Heart, MessageCircle, Send, Bookmark, MoreHorizontal, Pin } from "lucide-react";
 import { WhyRecommended } from "./WhyRecommended";
 import { Button } from "@/components/ui/button";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { useNavigate } from "react-router-dom";
 import { CommentsSheet } from "./CommentsSheet";
@@ -25,6 +25,10 @@ interface PostCardProps {
   content: string;
   image?: string;
   images?: string[];
+  mediaItems?: {
+    url: string;
+    type?: string | null;
+  }[];
   likes: number;
   comments: number;
   shares: number;
@@ -42,6 +46,8 @@ interface PostCardProps {
   pinPosition?: number | null;
 }
 
+const clampCounter = (value: number) => Math.max(0, Number.isFinite(value) ? value : 0);
+
 export function PostCard({
   id,
   authorId,
@@ -49,6 +55,7 @@ export function PostCard({
   content,
   image,
   images,
+  mediaItems,
   likes,
   comments,
   shares,
@@ -68,8 +75,12 @@ export function PostCard({
   const { toggleLike } = usePostActions();
   const { isSaved, toggleSave } = useSavedPosts();
   const [liked, setLiked] = useState(isLiked);
-  const [likeCount, setLikeCount] = useState(likes);
+  const [likeCount, setLikeCount] = useState(clampCounter(likes));
+  const [commentCount, setCommentCount] = useState(clampCounter(comments));
+  const [shareCount, setShareCount] = useState(clampCounter(shares));
+  const [saveCount, setSaveCount] = useState(clampCounter(saves));
   const [likePending, setLikePending] = useState(false);
+  const [savePending, setSavePending] = useState(false);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [expanded, setExpanded] = useState(false);
   const [showComments, setShowComments] = useState(false);
@@ -77,6 +88,9 @@ export function PostCard({
   const [showOptions, setShowOptions] = useState(false);
   const [likeAnimation, setLikeAnimation] = useState(false);
   const [floatingHearts, setFloatingHearts] = useState<{ id: number; x: number; y: number }[]>([]);
+  const [frameAspectRatio, setFrameAspectRatio] = useState(1);
+  const imageRefs = useRef<(HTMLImageElement | null)[]>([]);
+  const videoRefs = useRef<(HTMLVideoElement | null)[]>([]);
   const heartIdRef = useRef(0);
   // Touch double-tap detection
   const lastTapRef = useRef<number>(0);
@@ -97,22 +111,95 @@ export function PostCard({
 
   useEffect(() => {
     if (likePending) return;
-    setLikeCount(likes);
+    setLikeCount(clampCounter(likes));
   }, [id, likes, likePending]);
+
+  useEffect(() => {
+    setCommentCount(clampCounter(comments));
+  }, [id, comments]);
+
+  useEffect(() => {
+    setShareCount(clampCounter(shares));
+  }, [id, shares]);
+
+  useEffect(() => {
+    setSaveCount(clampCounter(saves));
+  }, [id, saves]);
   
   const handleSave = async () => {
-    if (!id) return;
+    if (!id || savePending) return;
+
+    const prevSaved = saved;
+    const prevCount = saveCount;
+    setSaveCount((count) => (prevSaved ? Math.max(0, count - 1) : count + 1));
+    setSavePending(true);
+
     try {
       await toggleSave(id);
     } catch (err) {
+      setSaveCount(prevCount);
       console.error('Failed to toggle save:', err);
+    } finally {
+      setSavePending(false);
     }
   };
 
 
-  const allImages = images || (image ? [image] : []);
-  const hasMultipleImages = allImages.length > 1;
+  const allMedia = useMemo(() => {
+    if (mediaItems && mediaItems.length > 0) {
+      return mediaItems
+        .filter((item) => typeof item?.url === "string" && item.url.trim().length > 0)
+        .map((item) => ({
+          url: item.url,
+          type: item.type ?? undefined,
+        }));
+    }
+
+    const fallback = images || (image ? [image] : []);
+    return fallback
+      .filter((src): src is string => typeof src === "string" && src.trim().length > 0)
+      .map((src) => ({
+        url: src,
+        type: undefined,
+      }));
+  }, [image, images, mediaItems]);
+
+  const hasMultipleImages = allMedia.length > 1;
   const MIN_SWIPE = 50;
+
+  useEffect(() => {
+    setCurrentImageIndex(0);
+    setFrameAspectRatio(1);
+  }, [id, allMedia.length]);
+
+  const applyAspectRatio = (width: number, height: number) => {
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return;
+    // Keep ratio in a sane feed range to avoid extreme layout jumps.
+    const next = Math.min(1.91, Math.max(0.56, width / height));
+    setFrameAspectRatio((prev) => (Math.abs(prev - next) < 0.01 ? prev : next));
+  };
+
+  const isVideoMedia = (media: { url: string; type?: string | null }) => {
+    return (media.type ?? "").startsWith("video") || /\.(mp4|webm|mov|m4v)(\?|$)/i.test(media.url);
+  };
+
+  useEffect(() => {
+    const active = allMedia[currentImageIndex];
+    if (!active) return;
+
+    if (isVideoMedia(active)) {
+      const el = videoRefs.current[currentImageIndex];
+      if (el && el.videoWidth > 0 && el.videoHeight > 0) {
+        applyAspectRatio(el.videoWidth, el.videoHeight);
+      }
+      return;
+    }
+
+    const el = imageRefs.current[currentImageIndex];
+    if (el && el.naturalWidth > 0 && el.naturalHeight > 0) {
+      applyAspectRatio(el.naturalWidth, el.naturalHeight);
+    }
+  }, [allMedia, currentImageIndex]);
 
   // Swipe/double-tap handlers
   const onTouchStart = (e: React.TouchEvent) => {
@@ -154,7 +241,7 @@ export function PostCard({
 
     // Swipe carousel
     if (Math.abs(dx) < MIN_SWIPE || Math.abs(dy) > Math.abs(dx)) return;
-    if (dx < 0 && currentImageIndex < allImages.length - 1) {
+    if (dx < 0 && currentImageIndex < allMedia.length - 1) {
       setCurrentImageIndex(currentImageIndex + 1);
     } else if (dx > 0 && currentImageIndex > 0) {
       setCurrentImageIndex(currentImageIndex - 1);
@@ -263,9 +350,10 @@ export function PostCard({
       </div>
 
       {/* Image/Video Carousel */}
-      {allImages.length > 0 && (
+      {allMedia.length > 0 && (
         <div
           className="relative media-frame media-frame--post cursor-pointer select-none overflow-hidden"
+          style={{ aspectRatio: frameAspectRatio }}
           onTouchStart={onTouchStart}
           onTouchEnd={onTouchEnd}
         >
@@ -274,24 +362,40 @@ export function PostCard({
             className="flex transition-transform duration-300 ease-out"
             style={{ transform: `translateX(-${currentImageIndex * 100}%)` }}
           >
-            {allImages.map((src, idx) => {
-              const isVideo = /\.(mp4|webm|mov|m4v)(\?|$)/i.test(src) || (idx === 0 && !image && images);
+            {allMedia.map((media, idx) => {
+              const isVideo = isVideoMedia(media);
               return isVideo ? (
                 <video
                   key={idx}
-                  src={src}
+                  src={media.url}
+                  ref={(el) => {
+                    videoRefs.current[idx] = el;
+                  }}
                   className="media-object media-object--fill media-object--cover shrink-0 w-full"
                   autoPlay={idx === currentImageIndex}
                   loop
                   muted
                   playsInline
+                  onLoadedMetadata={(e) => {
+                    if (idx !== currentImageIndex) return;
+                    const el = e.currentTarget;
+                    applyAspectRatio(el.videoWidth, el.videoHeight);
+                  }}
                 />
               ) : (
                 <img
                   key={idx}
-                  src={src}
+                  src={media.url}
+                  ref={(el) => {
+                    imageRefs.current[idx] = el;
+                  }}
                   alt={altText || `Post ${idx + 1}`}
                   className="media-object media-object--fill media-object--cover shrink-0 w-full"
+                  onLoad={(e) => {
+                    if (idx !== currentImageIndex) return;
+                    const el = e.currentTarget;
+                    applyAspectRatio(el.naturalWidth, el.naturalHeight);
+                  }}
                 />
               );
             })}
@@ -311,7 +415,7 @@ export function PostCard({
           {/* Image counter */}
           {hasMultipleImages && (
             <div className="absolute top-3 right-3 bg-black/60 text-white text-xs font-medium px-2 py-1 rounded-full">
-              {currentImageIndex + 1}/{allImages.length}
+              {currentImageIndex + 1}/{allMedia.length}
             </div>
           )}
 
@@ -319,7 +423,7 @@ export function PostCard({
           {/* Dots indicator */}
           {hasMultipleImages && (
             <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1">
-              {allImages.map((_, index) => (
+              {allMedia.map((_, index) => (
                 <button
                   key={index}
                   onClick={() => setCurrentImageIndex(index)}
@@ -360,24 +464,26 @@ export function PostCard({
             onClick={() => setShowComments(true)}
           >
             <MessageCircle className="w-6 h-6" />
-            <span className="text-sm">{formatNumber(comments)}</span>
+            <span className="text-sm">{formatNumber(commentCount)}</span>
           </button>
           <button 
             className="flex items-center gap-1.5 text-foreground"
             onClick={() => setShowShare(true)}
           >
             <Send className="w-6 h-6" />
+            <span className="text-sm">{formatNumber(shareCount)}</span>
           </button>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2">
           <button
             onClick={handleSave}
             className={cn(
-              "transition-colors",
+              "transition-colors flex items-center gap-1.5",
               saved ? "text-primary" : "text-foreground"
             )}
           >
             <Bookmark className={cn("w-6 h-6", saved && "fill-current")} />
+            {saveCount > 0 && <span className="text-sm">{formatNumber(saveCount)}</span>}
           </button>
         </div>
       </div>
@@ -411,14 +517,16 @@ export function PostCard({
             isOpen={showComments}
             onClose={() => setShowComments(false)}
             postId={id}
-            commentsCount={comments}
+            commentsCount={commentCount}
+            onCommentsCountChange={setCommentCount}
           />
           <ShareSheet
             isOpen={showShare}
             onClose={() => setShowShare(false)}
             postId={id}
-            postContent={content}
-            postImage={allImages[0]}
+            onShareSuccess={(sharedToCount) => {
+              setShareCount((prev) => prev + Math.max(1, sharedToCount));
+            }}
           />
           {authorId && (
             <PostOptionsSheet

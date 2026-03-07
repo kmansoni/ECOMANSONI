@@ -52,7 +52,7 @@ async function registerCapacitorPush(
   device: DeviceInfo,
 ): Promise<PushRegistrationResult> {
   // Dynamic import — avoids bundling Capacitor in non-native builds.
-  // @ts-ignore — @capacitor/push-notifications is installed at native build time
+  // @ts-expect-error -- native-only package may be unavailable in web type context
   const { PushNotifications } = await import("@capacitor/push-notifications");
 
   // Check and request permission atomically — Capacitor handles system dialog.

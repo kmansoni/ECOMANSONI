@@ -10,10 +10,9 @@
  * - Replay-защита: idempotency_key = SHA-256(user_id + original_message_id).
  */
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const sb = supabase as any;
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
@@ -123,8 +122,12 @@ export function useSavedMessages(options: UseSavedMessagesOptions = {}): UseSave
   const realtimeChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
   // Derived Set of saved original_message_ids for O(1) isSaved()
-  const savedIds = new Set(
-    messages.map((m) => m.original_message_id).filter((id): id is string => Boolean(id))
+  const savedIds = useMemo(
+    () =>
+      new Set(
+        messages.map((m) => m.original_message_id).filter((id): id is string => Boolean(id))
+      ),
+    [messages],
   );
 
   // ── Fetch (Supabase) ──────────────────────────────────────────────────────

@@ -594,6 +594,11 @@ html.appearance-no-sticker-anim .emoji-picker-ios .EmojiPickerReact .epr-emoji i
   width: 100%;
 }
 
+/* Post media should follow frame dimensions, not the global viewport cap. */
+.media-frame--post .media-object {
+  max-height: none;
+}
+
 .media-frame--preview {
   aspect-ratio: 16 / 9;
   display: block;
