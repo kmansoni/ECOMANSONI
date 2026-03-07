@@ -132,15 +132,47 @@ async def set_json(
     value: Any,
     ttl: int | None = None,
     *,
+    nx: bool = False,
     redis: Redis | None = None,
-) -> None:
-    """Serialise value with orjson and SET with optional TTL."""
+) -> bool:
+    """
+    Serialise value with orjson and SET with optional TTL and NX flag.
+
+    Args:
+        key:   Redis key.
+        value: Python object — serialised with orjson.
+        ttl:   Expiry in seconds (positive integer).
+               - Without nx: None or 0 means no expiry (persistent key).
+               - With nx=True: REQUIRED to be > 0; raises ValueError otherwise
+                 to prevent unbounded key growth from NX-idempotency patterns.
+        nx:    If True, only set if key does NOT exist (atomic SET NX EX).
+               Returns True if key was set, False if it already existed.
+               Requires ttl > 0.
+        redis: Optional Redis instance (for testing / DI).
+
+    Returns:
+        True if the key was written, False if nx=True and key already existed.
+
+    Raises:
+        ValueError: if nx=True and ttl is None or <= 0.
+    """
+    # Guard first — before serialisation to avoid wasted CPU on invalid calls.
+    if nx and (ttl is None or ttl <= 0):
+        raise ValueError(
+            f"set_json(..., nx=True) requires ttl > 0 to prevent unbounded key growth. "
+            f"Got ttl={ttl!r}"
+        )
     r = redis or get_redis_client()
     encoded = orjson.dumps(value)
-    if ttl:
+    if nx:
+        # SET key value NX EX ttl — atomic; returns None if key already existed.
+        result = await r.set(key, encoded, nx=True, ex=ttl)
+        return result is not None
+    if ttl is not None and ttl > 0:
         await r.setex(key, ttl, encoded)
     else:
         await r.set(key, encoded)
+    return True
 
 
 async def get_json(

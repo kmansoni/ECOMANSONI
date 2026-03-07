@@ -94,7 +94,7 @@ class DispatchService:
         acquired = await self.redis.set_json(
             lock_key,
             {"locked_at": datetime.now(timezone.utc).isoformat()},
-            ex=60,  # 60s safety TTL — prevents permanent lock on crash
+            ttl=60,  # 60s safety TTL — prevents permanent lock on crash
             nx=True,
         )
         if not acquired:

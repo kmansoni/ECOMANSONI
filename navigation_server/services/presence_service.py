@@ -104,7 +104,7 @@ class PresenceService:
                 {k: v for k, v in extra.items() if v is not None}
             )
 
-        await self.redis.set_json(key, presence_data, ex=PRESENCE_TTL_S)
+        await self.redis.set_json(key, presence_data, ttl=PRESENCE_TTL_S)
 
         # Detect meaningful state transitions and publish to Kafka
         state_changed = (
@@ -220,7 +220,7 @@ class PresenceService:
             geo_key = f"geo:{city_id}:{actor_type}s"
             await self.redis.geo_remove(geo_key, actor_id)
         else:
-            await self.redis.set_json(key, existing, ex=PRESENCE_TTL_S)
+            await self.redis.set_json(key, existing, ttl=PRESENCE_TTL_S)
 
         event = {
             "actor_id": actor_id,

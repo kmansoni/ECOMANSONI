@@ -354,7 +354,7 @@ class RiskService:
             "updated_at": row["updated_at"].isoformat() if row["updated_at"] else None,
         }
         try:
-            await self.redis.set_json(cache_key, result, ex=REDIS_RISK_TTL_S)
+            await self.redis.set_json(cache_key, result, ttl=REDIS_RISK_TTL_S)
         except Exception:  # noqa: BLE001
             pass
         return result
@@ -417,7 +417,7 @@ class RiskService:
             }
 
         try:
-            await self.redis.set_json(cache_key, result, ex=REDIS_ENF_TTL_S)
+            await self.redis.set_json(cache_key, result, ttl=REDIS_ENF_TTL_S)
         except Exception:  # noqa: BLE001
             pass
         return result

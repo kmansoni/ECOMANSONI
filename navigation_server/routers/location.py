@@ -264,7 +264,7 @@ async def share_location(
     await redis.set_json(
         f"share:{share_id}",
         share_data,
-        ex=request.duration_minutes * 60,
+        ttl=request.duration_minutes * 60,
     )
 
     logger.info(

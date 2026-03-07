@@ -695,7 +695,7 @@ class SurgeService:
             await self.redis.set_json(
                 f"surge:detail:{h3_cell}",
                 detail,
-                ex=REDIS_SURGE_TTL_S,
+                ttl=REDIS_SURGE_TTL_S,
             )
         except Exception as exc:  # noqa: BLE001
             logger.error("surge.redis_cache_failed", h3_cell=h3_cell, error=str(exc))

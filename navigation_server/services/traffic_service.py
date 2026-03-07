@@ -199,7 +199,7 @@ class TrafficService:
                 "measured_at": now.isoformat(),
             }
             try:
-                await self.redis.set_json(redis_key, cache_payload, ex=REDIS_SEGMENT_TTL_S)
+                await self.redis.set_json(redis_key, cache_payload, ttl=REDIS_SEGMENT_TTL_S)
             except Exception as exc:  # noqa: BLE001
                 logger.warning("traffic.redis_cache_failed", seg_id=seg_id, error=str(exc))
 
@@ -382,7 +382,7 @@ class TrafficService:
         }
 
         try:
-            await self.redis.set_json(cache_key, summary, ex=REDIS_SUMMARY_TTL_S)
+            await self.redis.set_json(cache_key, summary, ttl=REDIS_SUMMARY_TTL_S)
         except Exception as exc:  # noqa: BLE001
             logger.warning("traffic.summary_cache_failed", error=str(exc))
 
