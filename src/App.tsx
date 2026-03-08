@@ -24,6 +24,7 @@ import { ReelsProvider } from "@/contexts/ReelsContext";
 import { AdminProtectedRoute } from "@/components/admin/AdminProtectedRoute";
 import { AppearanceRuntimeProvider } from "@/contexts/AppearanceRuntimeContext";
 import { runChatSchemaProbeOnce } from "@/lib/chat/schemaProbe";
+import { initOutbox } from "@/lib/chat/messageOutbox";
 import { toast } from "sonner";
 import { AppErrorBoundary } from "@/components/system/AppErrorBoundary";
 
@@ -33,6 +34,7 @@ const ProfessionalDashboard = lazy(() => import("@/pages/ProfessionalDashboard")
 const GuidePage = lazy(() => import("@/pages/GuidePage"));
 const FollowRequestsPage = lazy(() => import("@/pages/FollowRequestsPage"));
 const LocationPage = lazy(() => import("@/pages/LocationPage"));
+const AudioTrackPage = lazy(() => import("@/pages/AudioTrackPage"));
 
 // Initialize error tracking
 initErrorTracking();
@@ -101,6 +103,7 @@ const PeopleNearbyPage = lazy(() => import("./pages/PeopleNearbyPage"));
 const BusinessAccountPage = lazy(() => import("./pages/BusinessAccountPage"));
 const OrderDetailPage = lazy(() => import("@/pages/OrderDetailPage"));
 const AIAssistantPage = lazy(() => import("@/pages/AIAssistantPage"));
+const ServiceBugsPage = lazy(() => import("@/pages/ServiceBugsPage").then(m => ({ default: m.ServiceBugsPage })));
 
 // Batch 5: new pages
 const WebLoginCallbackPage = lazy(() => import("@/pages/WebLoginCallbackPage").then(m => ({ default: m.WebLoginCallbackPage })));
@@ -160,6 +163,9 @@ const ROUTER_BASENAME = (() => {
 
 const App = () => {
   useEffect(() => {
+    // Start offline message outbox flush loop (idempotent, no-op on re-render)
+    initOutbox();
+
     void (async () => {
       const probe = await runChatSchemaProbeOnce();
       if (probe && probe.ok === false) {
@@ -471,6 +477,12 @@ const App = () => {
                       </Suspense>
                     } />
 
+                    <Route path="/audio/:trackTitle" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <AudioTrackPage />
+                      </Suspense>
+                    } />
+
                     {/* Bot Platform Routes */}
                     <Route path="/bots" element={
                       <Suspense fallback={<PageLoader />}>
@@ -621,6 +633,11 @@ const App = () => {
                     <Route path="/email" element={
                       <Suspense fallback={<PageLoader />}>
                         <EmailPage />
+                      </Suspense>
+                    } />
+                    <Route path="/services/bugs" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <ServiceBugsPage />
                       </Suspense>
                     } />
                     {/* ─── Taxi Module ─────────────────────── */}

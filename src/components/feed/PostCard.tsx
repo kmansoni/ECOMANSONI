@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { useNavigate } from "react-router-dom";
 import { CommentsSheet } from "./CommentsSheet";
+import { LikesSheet } from "./LikesSheet";
 import { ShareSheet } from "./ShareSheet";
 import { PostOptionsSheet } from "./PostOptionsSheet";
 import { usePostActions } from "@/hooks/usePosts";
@@ -12,6 +13,7 @@ import { useSavedPosts } from "@/hooks/useSavedPosts";
 import { VerifiedBadge } from "@/components/ui/verified-badge";
 import { LocationTag } from "./LocationTag";
 import { PostReminder } from "./PostReminder";
+import { useHapticFeedback } from "@/hooks/useHapticFeedback";
 
 interface PostCardProps {
   id?: string;
@@ -74,6 +76,7 @@ export function PostCard({
   const navigate = useNavigate();
   const { toggleLike } = usePostActions();
   const { isSaved, toggleSave } = useSavedPosts();
+  const haptic = useHapticFeedback();
   const [liked, setLiked] = useState(isLiked);
   const [likeCount, setLikeCount] = useState(clampCounter(likes));
   const [commentCount, setCommentCount] = useState(clampCounter(comments));
@@ -84,6 +87,7 @@ export function PostCard({
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [expanded, setExpanded] = useState(false);
   const [showComments, setShowComments] = useState(false);
+  const [showLikes, setShowLikes] = useState(false);
   const [showShare, setShowShare] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
   const [likeAnimation, setLikeAnimation] = useState(false);
@@ -257,6 +261,7 @@ export function PostCard({
     if (!liked) {
       setLikeAnimation(true);
       setTimeout(() => setLikeAnimation(false), 300);
+      void haptic.light(); // Instagram-style haptic on like
     }
     
     const nextLiked = !prevLiked;
@@ -450,14 +455,27 @@ export function PostCard({
               liked ? "text-destructive" : "text-foreground"
             )}
           >
-            <Heart 
+            <Heart
               className={cn(
                 "w-6 h-6 transition-transform",
                 liked && "fill-current",
                 likeAnimation && "animate-like-bounce"
-              )} 
+              )}
             />
-            <span className="text-sm">{formatNumber(likeCount)}</span>
+          </button>
+          {/* Tap on like count → open "who liked" sheet (Instagram behaviour) */}
+          <button
+            className={cn(
+              "text-sm transition-colors",
+              liked ? "text-destructive" : "text-foreground"
+            )}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (id && likeCount > 0) setShowLikes(true);
+            }}
+            aria-label="Посмотреть кто поставил лайк"
+          >
+            {formatNumber(likeCount)}
           </button>
           <button 
             className="flex items-center gap-1.5 text-foreground"
@@ -509,6 +527,16 @@ export function PostCard({
         <span className="text-xs text-muted-foreground">{timeAgo}</span>
         {id && <PostReminder postId={id} />}
       </div>
+
+      {/* Likes Sheet */}
+      {id && likeCount > 0 && (
+        <LikesSheet
+          postId={id}
+          likeCount={likeCount}
+          isOpen={showLikes}
+          onClose={() => setShowLikes(false)}
+        />
+      )}
 
       {/* Comments Sheet */}
       {id && (

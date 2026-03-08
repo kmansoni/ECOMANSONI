@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Video, Upload, X, Loader2, Music, Wand2, Users, MapPin, Eye, SlidersHorizontal, ChevronRight } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { uploadMedia } from "@/lib/mediaUpload";
 import { useAuth } from "@/hooks/useAuth";
 import { useReels } from "@/hooks/useReels";
 import { toast } from "sonner";
@@ -224,38 +225,12 @@ export function CreateReelSheet({ open, onOpenChange, initialVideoFile }: Create
       }
       setClientPublishId(publishId);
 
-      // Upload video to storage
-      const fileExt = (fileToUpload.name.split(".").pop() || "mp4").toLowerCase();
-      const fileName = `${user.id}/reels/${publishId}/original.${fileExt}`;
-      const contentType = inferVideoContentType(fileToUpload.type || fileExt);
-
-      const { error: uploadError } = await supabase.storage
-        .from("reels-media")
-        .upload(fileName, fileToUpload, {
-          cacheControl: "3600",
-          contentType,
-          upsert: false,
-        });
-
-      if (uploadError) {
-        const msg = String((uploadError as any)?.message || "");
-        const status = Number((uploadError as any)?.statusCode || (uploadError as any)?.status || 0);
-
-        // Idempotency: treat object already existing as success for the same publish intent.
-        const objectExists = status === 409 || msg.toLowerCase().includes("already exists") || msg.toLowerCase().includes("resource already exists");
-        if (!objectExists) {
-        // If bucket doesn't exist, create it first
-        if (uploadError.message.includes("not found")) {
-          toast.error("Хранилище не настроено. Обратитесь к администратору.");
-          return;
-        }
-        throw uploadError;
-        }
-      }
+      // Upload video to media server
+      const uploadResult = await uploadMedia(fileToUpload, { bucket: 'reels-media' });
 
       // Create reel record
       const result = await createReel(
-        fileName,
+        uploadResult.url,
         undefined, // thumbnail - could generate later
         descriptionTrimmed || undefined,
         musicTitle.trim() || undefined,

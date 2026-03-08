@@ -133,33 +133,34 @@
 		{
 			"label": "Supabase: DB push (dry-run, linked)",
 			"type": "shell",
-			"command": "C:\\Users\\manso\\AppData\\Local\\supabase-cli\\v2.75.0\\supabase.exe",
+			"command": "pwsh",
 			"args": [
-				"db",
-				"push",
-				"--dry-run"
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				"${workspaceFolder}\\scripts\\supabase-db-push.ps1",
+				"-DryRun"
 			],
 			"options": {
-				"cwd": "${workspaceFolder}",
-				"env": {
-					"SUPABASE_ACCESS_TOKEN": "${env:SUPABASE_ACCESS_TOKEN}"
-				}
+				"cwd": "${workspaceFolder}"
 			},
 			"problemMatcher": []
 		},
 		{
 			"label": "Supabase: DB push (linked)",
 			"type": "shell",
-			"command": "C:\\Users\\manso\\AppData\\Local\\supabase-cli\\v2.75.0\\supabase.exe",
+			"command": "pwsh",
 			"args": [
-				"db",
-				"push"
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				"${workspaceFolder}\\scripts\\supabase-db-push.ps1",
+				"-Yes"
 			],
 			"options": {
-				"cwd": "${workspaceFolder}",
-				"env": {
-					"SUPABASE_ACCESS_TOKEN": "${env:SUPABASE_ACCESS_TOKEN}"
-				}
+				"cwd": "${workspaceFolder}"
 			},
 			"problemMatcher": []
 		},
@@ -172,7 +173,8 @@
 				"-ExecutionPolicy",
 				"Bypass",
 				"-File",
-				"${workspaceFolder}\\scripts\\supabase-db-push.ps1"
+				"${workspaceFolder}\\scripts\\supabase-db-push.ps1",
+				"-PromptDbPassword"
 			],
 			"options": {
 				"cwd": "${workspaceFolder}"
@@ -207,7 +209,8 @@
 				"Bypass",
 				"-File",
 				"${workspaceFolder}\\scripts\\supabase-db-push.ps1",
-				"-DryRun"
+				"-DryRun",
+				"-PromptDbPassword"
 			],
 			"options": {
 				"cwd": "${workspaceFolder}"

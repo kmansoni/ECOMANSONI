@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import { uploadMedia } from '@/lib/mediaUpload';
 import { isGuestMode } from '@/lib/demo/demoMode';
 import { getDemoBotsUsersWithStories, isDemoId } from '@/lib/demo/demoBots';
 
@@ -245,20 +246,9 @@ export function useStories() {
     if (!user) return { error: 'Must be logged in', story: null };
 
     try {
-      // Upload to storage
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${user.id}/${Date.now()}.${fileExt}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from('stories-media')
-        .upload(fileName, file);
-
-      if (uploadError) throw uploadError;
-
-      // Get public URL
-      const { data: { publicUrl } } = supabase.storage
-        .from('stories-media')
-        .getPublicUrl(fileName);
+      // Upload to media server
+      const uploadResult = await uploadMedia(file, { bucket: 'stories-media' });
+      const publicUrl = uploadResult.url;
 
       // Create story record
       const mediaType = file.type.startsWith('video/') ? 'video' : 'image';

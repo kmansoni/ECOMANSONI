@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/hooks/useAuth";
 import { usePostActions } from "@/hooks/usePosts";
-import { supabase } from "@/integrations/supabase/client";
+import { uploadMedia } from "@/lib/mediaUpload";
 import { toast } from "sonner";
 import { SimpleMediaEditor } from "@/components/editor";
 import { useChatOpen } from "@/contexts/ChatOpenContext";
@@ -117,23 +117,8 @@ export function CreatePostSheet({ isOpen, onClose }: CreatePostSheetProps) {
     const uploadedUrls: string[] = [];
 
     for (const { file } of selectedImages) {
-      const fileExt = file.name.split(".").pop();
-      const fileName = `${user.id}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from("post-media")
-        .upload(fileName, file);
-
-      if (uploadError) {
-        console.error("Upload error:", uploadError);
-        throw new Error(`Не удалось загрузить ${file.name}`);
-      }
-
-      const { data: publicUrl } = supabase.storage
-        .from("post-media")
-        .getPublicUrl(fileName);
-
-      uploadedUrls.push(publicUrl.publicUrl);
+      const uploadResult = await uploadMedia(file, { bucket: 'post-media' });
+      uploadedUrls.push(uploadResult.url);
     }
 
     return uploadedUrls;

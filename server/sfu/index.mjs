@@ -7,7 +7,10 @@ import { createMediaPlaneController } from "./mediaPlane.mjs";
 const PORT = Number(process.env.SFU_PORT ?? "8888");
 const REGION = process.env.SFU_REGION ?? "tr";
 const NODE_ID = process.env.SFU_NODE_ID ?? "local-sfu-1";
-const E2EE_REQUIRED_DEFAULT = process.env.SFU_E2EE_REQUIRED !== "0";
+const E2EE_REQUIRED_DEFAULT = (() => {
+  const raw = String(process.env.SFU_E2EE_REQUIRED ?? process.env.E2EE_REQUIRED_DEFAULT ?? "1").trim().toLowerCase();
+  return !(raw === "0" || raw === "false" || raw === "off");
+})();
 const HEARTBEAT_SEC = Math.max(5, Number(process.env.SFU_HEARTBEAT_SEC ?? "10"));
 const IS_PROD = process.env.NODE_ENV === "production";
 const CALLS_DEV_INSECURE_AUTH = !IS_PROD && process.env.CALLS_DEV_INSECURE_AUTH === "1";

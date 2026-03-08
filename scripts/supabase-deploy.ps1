@@ -12,31 +12,6 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-function Normalize-Secret([string]$value) {
-  if ($null -eq $value) { return $null }
-  $s = $value.Trim()
-  if ($s.Length -ge 2) {
-    if (($s.StartsWith('"') -and $s.EndsWith('"')) -or ($s.StartsWith("'") -and $s.EndsWith("'"))) {
-      $s = $s.Substring(1, $s.Length - 2).Trim()
-    }
-  }
-  if ($s -match '%[0-9A-Fa-f]{2}') {
-    try {
-      $decoded = [System.Uri]::UnescapeDataString($s)
-      if (-not [string]::IsNullOrWhiteSpace($decoded)) {
-        $s = $decoded
-      }
-    } catch {
-      # no-op
-    }
-  }
-  # Remove hidden Unicode formatting chars that often appear after copy/paste
-  # (zero-width spaces, BOM) and control chars from terminals/password managers.
-  $s = [System.Text.RegularExpressions.Regex]::Replace($s, '[\u200B-\u200D\u2060\uFEFF]', '')
-  $s = [System.Text.RegularExpressions.Regex]::Replace($s, '[\x00-\x1F\x7F]', '')
-  return $s
-}
-
 function Resolve-SupabaseExe {
   if (-not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
     $pinned = Join-Path $env:LOCALAPPDATA "supabase-cli\v2.75.0\supabase.exe"
@@ -106,6 +81,18 @@ function Get-LinkedProjectRef([string]$repoRootPath) {
   }
 }
 
+function Invoke-DbPushPolicyGuard([string]$repoRootPath) {
+  $guardScript = Join-Path $PSScriptRoot "supabase-db-push-policy-guard.ps1"
+  if (-not (Test-Path -LiteralPath $guardScript)) {
+    throw "DB push policy guard script not found: $guardScript"
+  }
+
+  & $guardScript -RepoRoot $repoRootPath | Out-Host
+  if ($LASTEXITCODE -ne 0) {
+    throw "DB push policy guard failed with exit code $LASTEXITCODE"
+  }
+}
+
 $previousToken = $env:SUPABASE_ACCESS_TOKEN
 $tokenWasSet = -not [string]::IsNullOrWhiteSpace($previousToken)
 $needsPrompt = $PromptToken -and ((-not $tokenWasSet) -or ($previousToken.Trim().Length -lt 10))
@@ -123,6 +110,8 @@ try {
 
   $supabase = Resolve-SupabaseExe
   $resolvedProjectRef = Resolve-ProjectRef $ProjectRef
+
+  Invoke-DbPushPolicyGuard -repoRootPath $repoRoot
 
   if (-not $SkipE2EEChecks) {
     $e2eeGuardScript = Join-Path $PSScriptRoot "e2ee-guard.ps1"
@@ -188,32 +177,19 @@ try {
   }
 
   if (-not $SkipDbPush) {
-    $dbPassword = ""
-    if (-not [string]::IsNullOrWhiteSpace($env:SUPABASE_DB_PASSWORD)) {
-      $dbPassword = Normalize-Secret $env:SUPABASE_DB_PASSWORD
-    } elseif (-not [string]::IsNullOrWhiteSpace($env:PGPASSWORD)) {
-      $dbPassword = Normalize-Secret $env:PGPASSWORD
+    $dbPushScript = Join-Path $PSScriptRoot "supabase-db-push.ps1"
+    if (-not (Test-Path -LiteralPath $dbPushScript)) {
+      throw "DB push wrapper script not found: $dbPushScript"
     }
 
-    if ([string]::IsNullOrWhiteSpace($dbPassword)) {
-      Write-Host "Skipping DB push: SUPABASE_DB_PASSWORD/PGPASSWORD is not set." -ForegroundColor Yellow
-    } else {
-      $dryRunArgs = @("db", "push", "--dry-run")
-      $pushArgs = @("db", "push", "--yes")
-      $env:PGPASSWORD = $dbPassword
-      $env:SUPABASE_DB_PASSWORD = $dbPassword
-      $dryRunArgs += @("--password", $dbPassword)
-      $pushArgs += @("--password", $dbPassword)
+    Write-Host "==> DB push (dry-run via resilient wrapper)" -ForegroundColor Cyan
+    & $dbPushScript -DryRun -Yes -SupabaseExePath $supabase | Out-Host
+    Assert-LastExitCode "supabase-db-push.ps1 -DryRun"
 
-      Write-Host "==> DB push (dry-run)" -ForegroundColor Cyan
-      & $supabase @dryRunArgs | Out-Host
-      Assert-LastExitCode "supabase db push --dry-run"
-
-      if (-not $DryRun) {
-        Write-Host "==> DB push" -ForegroundColor Cyan
-        & $supabase @pushArgs | Out-Host
-        Assert-LastExitCode "supabase db push --yes"
-      }
+    if (-not $DryRun) {
+      Write-Host "==> DB push (apply via resilient wrapper)" -ForegroundColor Cyan
+      & $dbPushScript -Yes -SupabaseExePath $supabase | Out-Host
+      Assert-LastExitCode "supabase-db-push.ps1"
     }
   }
 

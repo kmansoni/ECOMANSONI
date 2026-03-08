@@ -61,10 +61,50 @@ serve(async (req: Request) => {
 
       const normalizedPhone = phone.replace(/\D/g, "");
 
+      // Validate normalised phone: must be 7–15 digits (E.164 without '+')
+      if (normalizedPhone.length < 7 || normalizedPhone.length > 15) {
+        return new Response(
+          JSON.stringify({ error: "Invalid phone number format" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
       // Create a fake but unique email for this phone
       // Format: user.+79XXXXXXXXX@phoneauth.app
       const fakeEmail = `user.${normalizedPhone}@phoneauth.app`;
-      const fakePassword = `ph_${normalizedPhone}`;
+
+      // Derive a cryptographically unpredictable password via HMAC-SHA256.
+      //
+      // Key versioning: the password is prefixed with "v1:" so that when
+      // PHONE_AUTH_SECRET is rotated, we can detect stale passwords and
+      // force a re-derivation (increment version prefix to "v2:", etc.).
+      //
+      // PHONE_AUTH_SECRET must be set in Edge Function env — never hardcoded.
+      // Without the secret, an attacker who knows the phone number cannot
+      // reconstruct the password (unlike the old `ph_${phone}` scheme).
+      const HMAC_VERSION = "v1";
+      const phoneAuthSecret = Deno.env.get("PHONE_AUTH_SECRET");
+      if (!phoneAuthSecret) {
+        console.error("[phone-auth] PHONE_AUTH_SECRET env var is not set");
+        return new Response(
+          JSON.stringify({ error: "Server misconfiguration" }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      const encoder = new TextEncoder();
+      const keyMaterial = await crypto.subtle.importKey(
+        "raw",
+        encoder.encode(phoneAuthSecret),
+        { name: "HMAC", hash: "SHA-256" },
+        false,
+        ["sign"]
+      );
+      const signature = await crypto.subtle.sign("HMAC", keyMaterial, encoder.encode(normalizedPhone));
+      const hexHmac = Array.from(new Uint8Array(signature))
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join("");
+      // Versioned password: "v1:<64-char hex>" — 67 chars total, well within Supabase limits
+      const fakePassword = `${HMAC_VERSION}:${hexHmac}`;
 
       // Supabase Functions invoke() sends `apikey` (anon key) and `x-client-info` automatically.
       // Using request `apikey` here avoids requiring extra env configuration.

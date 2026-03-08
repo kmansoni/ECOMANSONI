@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { SimpleMediaEditor } from "@/components/editor";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
+import { uploadMedia } from "@/lib/mediaUpload";
 import { toast } from "sonner";
 import { StoryStickerPicker, type StickerType } from "./StoryStickerPicker";
 import { StoryTextTool } from "./StoryTextTool";
@@ -160,24 +161,14 @@ export function StoryEditorFlow({ isOpen, onClose, initialFile, initialUrl }: St
       const extension = isVideo ? "mp4" : "jpg";
       const fileName = `${user.id}/${Date.now()}.${extension}`;
 
-      const { error: uploadError } = await supabase.storage
-        .from("stories-media")
-        .upload(fileName, mediaToUpload, {
-          contentType: mediaToUpload.type,
-        });
-
-      if (uploadError) throw uploadError;
-
-      const { data: urlData } = supabase.storage
-        .from("stories-media")
-        .getPublicUrl(fileName);
+      const uploadResult = await uploadMedia(mediaToUpload, { bucket: 'stories-media' });
 
       // Create story record
       const { error: insertError } = await supabase
         .from("stories")
         .insert({
           author_id: user.id,
-          media_url: urlData.publicUrl,
+          media_url: uploadResult.url,
           media_type: isVideo ? "video" : "image",
           caption: caption.trim() || null,
         });

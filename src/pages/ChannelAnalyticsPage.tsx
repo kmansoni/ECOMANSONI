@@ -31,23 +31,49 @@ function LineChart({ data, labels, color = "#3b82f6", height = 80 }: LineChartPr
   const svgRef = useRef<SVGSVGElement>(null);
   const WIDTH = 500;
 
-  if (data.length < 2) {
+  // Compute derived values unconditionally (hooks must precede early returns)
+  const hasSufficientData = data.length >= 2;
+  const min = hasSufficientData ? Math.min(...data) : 0;
+  const max = hasSufficientData ? Math.max(...data) : 1;
+  const range = max - min || 1;
+
+  const points = hasSufficientData
+    ? data.map((v, i) => ({
+        x: (i / (data.length - 1)) * WIDTH,
+        y: height - ((v - min) / range) * (height - 10) - 5,
+        v,
+      }))
+    : [];
+
+  // useCallback must be called before any early return (Rules of Hooks)
+  const handleMouseMove = useCallback(
+    (e: React.MouseEvent<SVGSVGElement>) => {
+      if (!points.length) return;
+      const rect = svgRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const relX = ((e.clientX - rect.left) / rect.width) * WIDTH;
+      let closest = points[0];
+      for (const p of points) {
+        if (Math.abs(p.x - relX) < Math.abs(closest.x - relX)) closest = p;
+      }
+      const idx = points.indexOf(closest);
+      setTooltip({
+        x: e.clientX - rect.left,
+        y: (closest.y / height) * rect.height,
+        value: closest.v,
+        label: labels[idx] ?? "",
+      });
+    },
+    [points, labels, height],
+  );
+
+  if (!hasSufficientData) {
     return (
       <div className="flex items-center justify-center h-20 text-zinc-600 text-xs">
         Недостаточно данных
       </div>
     );
   }
-
-  const min = Math.min(...data);
-  const max = Math.max(...data);
-  const range = max - min || 1;
-
-  const points = data.map((v, i) => {
-    const x = (i / (data.length - 1)) * WIDTH;
-    const y = height - ((v - min) / range) * (height - 10) - 5;
-    return { x, y, v };
-  });
 
   const polylinePoints = points.map(p => `${p.x},${p.y}`).join(" ");
   const areaPoints = [
@@ -57,27 +83,6 @@ function LineChart({ data, labels, color = "#3b82f6", height = 80 }: LineChartPr
   ].join(" ");
 
   const gradientId = `grad-${color.replace("#", "")}`;
-
-  const handleMouseMove = useCallback(
-    (e: React.MouseEvent<SVGSVGElement>) => {
-      const rect = svgRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      const relX = ((e.clientX - rect.left) / rect.width) * WIDTH;
-      // Найти ближайшую точку
-      let closest = points[0];
-      for (const p of points) {
-        if (Math.abs(p.x - relX) < Math.abs(closest.x - relX)) closest = p;
-      }
-      const idx = points.indexOf(closest);
-      setTooltip({
-        x: (e.clientX - rect.left),
-        y: (closest.y / height) * rect.height,
-        value: closest.v,
-        label: labels[idx] ?? "",
-      });
-    },
-    [points, labels, height],
-  );
 
   return (
     <div className="relative">

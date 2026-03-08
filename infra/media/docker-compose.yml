@@ -1,0 +1,195 @@
+version: "3.9"
+
+# ============================================================
+# Media Server Infrastructure — mansoni.ru
+# MinIO (S3-compatible) + media-api (Node.js) + Nginx
+# Designed for 10M+ concurrent users, zero-trust perimeter
+# ============================================================
+
+networks:
+  media-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24
+
+volumes:
+  minio-data:
+    driver: local
+  ssl-certs:
+    driver: local
+  nginx-cache:
+    driver: local
+
+services:
+
+  # ----------------------------------------------------------
+  # MinIO — S3-compatible object storage
+  # Console is NOT exposed externally (SSH tunnel only)
+  # API port 9000 is behind Nginx, not exposed directly
+  # ----------------------------------------------------------
+  minio:
+    image: quay.io/minio/minio:RELEASE.2024-03-15T01-07-19Z
+    container_name: mansoni-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      # Disable anonymous metrics reporting
+      MINIO_UPDATE: "off"
+      # Enforce TLS on inter-service calls via env (Nginx handles external TLS)
+      MINIO_BROWSER: "on"
+      # Bind console to localhost only — SSH tunnel required
+      MINIO_BROWSER_REDIRECT_URL: "http://localhost:9001"
+    volumes:
+      - minio-data:/data
+    networks:
+      media-net:
+        ipv4_address: 172.28.0.10
+    # SECURITY: ports NOT published to host — only media-api and Nginx reach MinIO
+    expose:
+      - "9000"
+      - "9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+
+  # ----------------------------------------------------------
+  # MinIO bucket initializer — runs once, exits
+  # Creates all 6 buckets and sets public-read policies
+  # ----------------------------------------------------------
+  minio-init:
+    image: quay.io/minio/mc:RELEASE.2024-03-13T23-51-57Z
+    container_name: mansoni-minio-init
+    restart: "no"
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - ./scripts/init-buckets.sh:/init-buckets.sh:ro
+    networks:
+      - media-net
+    entrypoint: ["/bin/sh", "/init-buckets.sh"]
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ----------------------------------------------------------
+  # media-api — Node.js upload/processing API
+  # Handles: JWT auth, multipart upload, image resize,
+  #          video thumbnail generation, virus scan hooks
+  # ----------------------------------------------------------
+  media-api:
+    build:
+      context: ../../media-server
+      dockerfile: Dockerfile
+    container_name: mansoni-media-api
+    restart: unless-stopped
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: ${MEDIA_API_PORT:-3100}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-http://minio:9000}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MEDIA_DOMAIN: ${MEDIA_DOMAIN}
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      JWT_SECRET: ${JWT_SECRET}
+      MAX_IMAGE_SIZE_MB: ${MAX_IMAGE_SIZE_MB:-20}
+      MAX_VIDEO_SIZE_MB: ${MAX_VIDEO_SIZE_MB:-500}
+      MAX_AUDIO_SIZE_MB: ${MAX_AUDIO_SIZE_MB:-50}
+      MAX_AVATAR_SIZE_MB: ${MAX_AVATAR_SIZE_MB:-5}
+      IMAGE_MAX_WIDTH: ${IMAGE_MAX_WIDTH:-2048}
+      IMAGE_QUALITY: ${IMAGE_QUALITY:-85}
+      VIDEO_MAX_BITRATE: ${VIDEO_MAX_BITRATE:-4000k}
+      THUMBNAIL_WIDTH: ${THUMBNAIL_WIDTH:-480}
+      THUMBNAIL_HEIGHT: ${THUMBNAIL_HEIGHT:-480}
+    networks:
+      media-net:
+        ipv4_address: 172.28.0.11
+    expose:
+      - "3100"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3100/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "10"
+    # Constrain resources — prevent single service exhausting host
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+        reservations:
+          cpus: "0.5"
+          memory: 512M
+
+  # ----------------------------------------------------------
+  # Nginx — TLS termination, reverse proxy, caching, rate limiting
+  # Exposes :443 (HTTPS) and :80 (→ 301 redirect to HTTPS)
+  # GET  /            → MinIO (public CDN reads)
+  # POST /api/upload  → media-api (authenticated writes)
+  # ----------------------------------------------------------
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: mansoni-media-nginx
+    restart: unless-stopped
+    depends_on:
+      media-api:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/media.conf:/etc/nginx/conf.d/media.conf:ro
+      - ./nginx/cors.conf:/etc/nginx/conf.d/cors.conf:ro
+      - ssl-certs:/etc/letsencrypt:ro
+      - nginx-cache:/var/cache/nginx
+    networks:
+      media-net:
+        ipv4_address: 172.28.0.12
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/nginx-health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "10"
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M

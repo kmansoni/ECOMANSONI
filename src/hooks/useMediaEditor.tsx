@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef } from "react";
-import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
+import { uploadMedia, type MediaBucket } from "@/lib/mediaUpload";
 
 export type MediaType = "image" | "video";
 export type ContentType = "post" | "story" | "reel" | "live";
@@ -75,40 +75,17 @@ export function useMediaEditor(): UseMediaEditorReturn {
     setUploadProgress(0);
 
     try {
-      // Determine file extension based on blob type
-      const mimeType = editedBlob.type;
-      const isVideo = mimeType.startsWith("video/");
-      const extension = isVideo 
-        ? "mp4" 
-        : mimeType.includes("png") ? "png" : "jpg";
-
-      const fileName = `${user.id}/${Date.now()}-${Math.random().toString(36).substring(7)}.${extension}`;
-
       // Simulate progress for better UX
       const progressInterval = setInterval(() => {
         setUploadProgress(prev => Math.min(prev + 10, 90));
       }, 200);
 
-      const { error: uploadError } = await supabase.storage
-        .from(bucket)
-        .upload(fileName, editedBlob, {
-          cacheControl: "3600",
-          contentType: mimeType,
-        });
+      const result = await uploadMedia(editedBlob, { bucket: bucket as MediaBucket });
 
       clearInterval(progressInterval);
-
-      if (uploadError) {
-        throw uploadError;
-      }
-
       setUploadProgress(100);
 
-      const { data: publicUrl } = supabase.storage
-        .from(bucket)
-        .getPublicUrl(fileName);
-
-      return publicUrl.publicUrl;
+      return result.url;
     } catch (error: any) {
       console.error("Upload error:", error);
       toast.error("Ошибка загрузки: " + error.message);

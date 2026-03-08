@@ -1,10 +1,13 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { Plus, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { createNote, deleteNote, getNotes } from "@/hooks/useNotes";
+import { createNote, deleteNote, getNotes, sendNoteReaction, deleteNoteReaction, getNoteReactions } from "@/hooks/useNotes";
 import type { StatusNote } from "@/hooks/useNotes";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
+
+// Quick-reaction emoji set (Instagram-style)
+const QUICK_REACTIONS = ["❤️", "😂", "😮", "😢", "😡", "👏", "🔥", "💯"];
 
 interface NotesBarProps {
   chatUserIds: string[];
@@ -17,17 +20,44 @@ export function NotesBar({ chatUserIds }: NotesBarProps) {
   const [showCreate, setShowCreate] = useState(false);
   const [noteText, setNoteText] = useState("");
   const [noteEmoji, setNoteEmoji] = useState("");
+  // Emoji picker: which note owner's picker is open
+  const [reactionPickerFor, setReactionPickerFor] = useState<string | null>(null);
+  // Map: noteOwnerId → emoji sent by current user
+  const [myReactions, setMyReactions] = useState<Record<string, string>>({});
   const chatUserIdsKey = useMemo(() => chatUserIds.join(","), [chatUserIds]);
 
   useEffect(() => {
     if (!user || !chatUserIds.length) return;
     const allIds = [user.id, ...chatUserIds];
-    getNotes(allIds).then(data => {
+    getNotes(allIds).then(async (data) => {
       const mine = data.find(n => n.user_id === user.id);
       setMyNote(mine ?? null);
-      setNotes(data.filter(n => n.user_id !== user.id));
+      const others = data.filter(n => n.user_id !== user.id);
+      setNotes(others);
+      // Fetch existing reactions from current user
+      const ownerIds = others.map(n => n.user_id);
+      if (ownerIds.length) {
+        const reactions = await getNoteReactions(user.id, ownerIds);
+        setMyReactions(reactions);
+      }
     });
   }, [user, chatUserIds, chatUserIdsKey]);
+
+  const handleReaction = useCallback(async (noteOwnerId: string, emoji: string) => {
+    if (!user) return;
+    setReactionPickerFor(null);
+    const prev = myReactions[noteOwnerId];
+    // Toggle: same emoji → remove, different → replace
+    if (prev === emoji) {
+      setMyReactions(r => { const next = { ...r }; delete next[noteOwnerId]; return next; });
+      try { await deleteNoteReaction(user.id, noteOwnerId); }
+      catch { setMyReactions(r => ({ ...r, [noteOwnerId]: prev })); toast.error("Ошибка"); }
+    } else {
+      setMyReactions(r => ({ ...r, [noteOwnerId]: emoji }));
+      try { await sendNoteReaction(user.id, noteOwnerId, emoji); }
+      catch { setMyReactions(r => { const next = { ...r }; if (prev) next[noteOwnerId] = prev; else delete next[noteOwnerId]; return next; }); toast.error("Ошибка"); }
+    }
+  }, [user, myReactions]);
 
   const handleCreate = async () => {
     if (!user || !noteText.trim()) return;
@@ -80,33 +110,83 @@ export function NotesBar({ chatUserIds }: NotesBarProps) {
           </button>
         )}
 
-        {allNotes.map(note => (
-          <div key={note.user_id} className="relative flex flex-col items-center gap-1 min-w-[60px]">
-            <div className="relative">
-              {note.profile?.avatar_url ? (
-                <img src={note.profile.avatar_url} alt="" className="w-12 h-12 rounded-full object-cover" />
-              ) : (
-                <div className="w-12 h-12 rounded-full bg-zinc-700 flex items-center justify-center text-white text-lg font-semibold">
-                  {note.profile?.username?.[0]?.toUpperCase() ?? "?"}
+        {allNotes.map(note => {
+          const isOwn = note.user_id === user?.id;
+          const myReaction = myReactions[note.user_id];
+          const isPickerOpen = reactionPickerFor === note.user_id;
+
+          return (
+            <div key={note.user_id} className="relative flex flex-col items-center gap-1 min-w-[60px]">
+              <div className="relative">
+                {/* Avatar — tappable for others to open reaction picker */}
+                <button
+                  className="block"
+                  onClick={() => {
+                    if (isOwn) return;
+                    setReactionPickerFor(isPickerOpen ? null : note.user_id);
+                  }}
+                  aria-label={isOwn ? undefined : `Реакция на заметку @${note.profile?.username}`}
+                  disabled={isOwn}
+                >
+                  {note.profile?.avatar_url ? (
+                    <img src={note.profile.avatar_url} alt="" className="w-12 h-12 rounded-full object-cover" />
+                  ) : (
+                    <div className="w-12 h-12 rounded-full bg-zinc-700 flex items-center justify-center text-white text-lg font-semibold">
+                      {note.profile?.username?.[0]?.toUpperCase() ?? "?"}
+                    </div>
+                  )}
+                </button>
+
+                {/* Note bubble */}
+                <div className="absolute -top-7 left-1/2 -translate-x-1/2 bg-zinc-800 border border-zinc-700 rounded-xl px-2 py-1 whitespace-nowrap max-w-[120px] overflow-hidden">
+                  <p className="text-white text-[10px] truncate">
+                    {note.emoji} {note.text}
+                  </p>
                 </div>
-              )}
-              {/* Note bubble */}
-              <div className="absolute -top-7 left-1/2 -translate-x-1/2 bg-zinc-800 border border-zinc-700 rounded-xl px-2 py-1 whitespace-nowrap max-w-[120px] overflow-hidden">
-                <p className="text-white text-[10px] truncate">
-                  {note.emoji} {note.text}
-                </p>
+
+                {/* My reaction badge — shown on avatar bottom-right */}
+                {myReaction && (
+                  <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-zinc-900 border border-zinc-700 rounded-full flex items-center justify-center text-[11px] leading-none">
+                    {myReaction}
+                  </div>
+                )}
+
+                {/* Emoji reaction picker */}
+                <AnimatePresence>
+                  {isPickerOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.8, y: 4 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.8, y: 4 }}
+                      transition={{ duration: 0.15 }}
+                      className="absolute bottom-14 left-1/2 -translate-x-1/2 z-50 bg-zinc-800 border border-zinc-700 rounded-2xl px-2 py-1.5 flex gap-1 shadow-xl"
+                    >
+                      {QUICK_REACTIONS.map(emoji => (
+                        <button
+                          key={emoji}
+                          onClick={() => handleReaction(note.user_id, emoji)}
+                          className={`text-xl w-8 h-8 flex items-center justify-center rounded-full transition-transform active:scale-90 hover:scale-110 ${myReaction === emoji ? "bg-zinc-600" : ""}`}
+                          aria-label={emoji}
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
+
+              {isOwn && (
+                <button onClick={handleDelete} className="absolute -top-1 -right-1 w-4 h-4 bg-zinc-700 rounded-full flex items-center justify-center">
+                  <X className="w-2.5 h-2.5 text-white" />
+                </button>
+              )}
+              <span className="text-zinc-500 text-[10px] truncate w-full text-center">
+                {isOwn ? "Вы" : note.profile?.username ?? "..."}
+              </span>
             </div>
-            {note.user_id === user?.id && (
-              <button onClick={handleDelete} className="absolute -top-1 -right-1 w-4 h-4 bg-zinc-700 rounded-full flex items-center justify-center">
-                <X className="w-2.5 h-2.5 text-white" />
-              </button>
-            )}
-            <span className="text-zinc-500 text-[10px] truncate w-full text-center">
-              {note.user_id === user?.id ? "Вы" : note.profile?.username ?? "..."}
-            </span>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Create note panel */}

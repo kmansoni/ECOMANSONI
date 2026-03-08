@@ -25,12 +25,34 @@ import React, {
 } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/hooks/useAuth';
 import { useReelsContext } from '@/contexts/ReelsContext';
 import { useReels, type Reel } from '@/hooks/useReels';
 import { ReelItem } from '@/components/reels/ReelItem';
 import { ReelCommentsSheet } from '@/components/reels/ReelCommentsSheet';
 import { ReelShareSheet } from '@/components/reels/ReelShareSheet';
 import type { ReelFeedItem, ReelAuthor, ReelMetrics } from '@/types/reels';
+
+// ---------------------------------------------------------------------------
+// Reels feed mode
+// ---------------------------------------------------------------------------
+
+type ReelsFeedMode = 'for_you' | 'following';
+
+const REELS_MODE_KEY = 'reels_feed_mode';
+
+function readReelsMode(): ReelsFeedMode {
+  try {
+    const v = localStorage.getItem(REELS_MODE_KEY);
+    if (v === 'for_you' || v === 'following') return v;
+  } catch { /* ignore */ }
+  return 'for_you';
+}
+
+function writeReelsMode(mode: ReelsFeedMode): void {
+  try { localStorage.setItem(REELS_MODE_KEY, mode); } catch { /* ignore */ }
+}
 
 // ---------------------------------------------------------------------------
 // Константы
@@ -168,10 +190,34 @@ function ReelsEmptyScreen(): JSX.Element {
 export default function ReelsPage(): JSX.Element {
   const { setIsReelsPage } = useReelsContext();
   const navigate = useNavigate();
+  const { user } = useAuth();
+
+  // Feed mode: "for_you" (ML-ranked) | "following" (chronological, followed authors)
+  const [feedMode, setFeedModeState] = useState<ReelsFeedMode>(readReelsMode);
+
+  const setFeedMode = useCallback((mode: ReelsFeedMode) => {
+    setFeedModeState(mode);
+    writeReelsMode(mode);
+    // Reset scroll to top when switching tabs
+    scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'instant' });
+  }, []);
+
+  // Local follow-state cache: authorId → isFollowing (optimistic)
+  const [followMap, setFollowMap] = useState<Record<string, boolean>>({});
+  // Ref mirror of followMap — always current, safe to read inside useCallback
+  // without adding followMap to the deps array (which would recreate the
+  // callback on every follow/unfollow and re-render all visible ReelItems).
+  const followMapRef = useRef<Record<string, boolean>>({});
+  followMapRef.current = followMap;
 
   // ---------------------------------------------------------------------------
   // Данные из useReels
   // ---------------------------------------------------------------------------
+
+  // Map UI mode to useReels feedMode:
+  //   for_you  → "reels"   (ML-ranked, full corpus via get_reels_feed_v2 RPC)
+  //   following → "friends" (chronological, followed authors only)
+  const reelsFeedMode = feedMode === 'following' ? 'friends' : 'reels';
 
   const {
     reels: rawReels,
@@ -185,7 +231,7 @@ export default function ReelsPage(): JSX.Element {
     recordImpression,
     recordView,
     refetch,
-  } = useReels('reels');
+  } = useReels(reelsFeedMode);
 
   // ---------------------------------------------------------------------------
   // Локальный флаг ошибки
@@ -399,10 +445,46 @@ export default function ReelsPage(): JSX.Element {
     [navigate],
   );
 
-  // Phase N: Follow — показываем уведомление до реализации API
-  const handleFollowPress = useCallback((_authorId: string) => {
-    toast.info("Подписка скоро будет доступна");
-  }, []);
+  // Follow/unfollow with optimistic update and Supabase persistence.
+  // Reads current follow state from followMapRef (not followMap) so that
+  // the callback is stable across renders — only recreated when user.id changes.
+  const handleFollowPress = useCallback(async (authorId: string) => {
+    if (!user?.id) {
+      toast.info("Войдите, чтобы подписаться");
+      return;
+    }
+    if (authorId === user.id) return; // prevent self-follow
+
+    // Read from ref — always current, never stale
+    const wasFollowing = followMapRef.current[authorId] ?? false;
+    // Optimistic update
+    setFollowMap((prev) => ({ ...prev, [authorId]: !wasFollowing }));
+
+    try {
+      if (wasFollowing) {
+        const { error } = await (supabase as any)
+          .from("followers")
+          .delete()
+          .eq("follower_id", user.id)
+          .eq("following_id", authorId);
+        if (error) throw error;
+        toast.success("Вы отписались");
+      } else {
+        const { error } = await (supabase as any)
+          .from("followers")
+          .upsert(
+            { follower_id: user.id, following_id: authorId },
+            { onConflict: "follower_id,following_id", ignoreDuplicates: true }
+          );
+        if (error) throw error;
+        toast.success("Вы подписались");
+      }
+    } catch {
+      // Rollback on failure
+      setFollowMap((prev) => ({ ...prev, [authorId]: wasFollowing }));
+      toast.error(wasFollowing ? "Не удалось отписаться" : "Не удалось подписаться");
+    }
+  }, [user?.id]); // followMap intentionally omitted — read via followMapRef
 
   // ---------------------------------------------------------------------------
   // Виртуализация: рендерить только currentIndex ± 1
@@ -438,6 +520,43 @@ export default function ReelsPage(): JSX.Element {
       className="fixed inset-0 bg-black overflow-hidden z-50"
       aria-label="Reels"
     >
+      {/* ── Feed mode tabs: "Для вас" / "Подписки" ──────────────────────────
+          Positioned absolutely at the top, above the scroll container.
+          Semi-transparent backdrop so the video is visible behind.
+          Tab indicator: animated underline via CSS transition on width/left.
+          Accessibility: role="tablist" + aria-selected on each tab.
+      ─────────────────────────────────────────────────────────────────────── */}
+      <div
+        className="absolute top-0 left-0 right-0 z-40 flex items-center justify-center gap-6 pt-safe-top pt-3 pb-2"
+        style={{ background: 'linear-gradient(to bottom, rgba(0,0,0,0.5) 0%, transparent 100%)' }}
+        role="tablist"
+        aria-label="Режим ленты Reels"
+      >
+        {([ 'for_you', 'following' ] as const).map((mode) => {
+          const label = mode === 'for_you' ? 'Для вас' : 'Подписки';
+          const isActive = feedMode === mode;
+          return (
+            <button
+              key={mode}
+              role="tab"
+              aria-selected={isActive}
+              onClick={() => setFeedMode(mode)}
+              className={[
+                'relative text-sm font-semibold pb-1 transition-colors duration-150',
+                isActive ? 'text-white' : 'text-white/50',
+              ].join(' ')}
+            >
+              {label}
+              {/* Animated underline */}
+              <span
+                className="absolute bottom-0 left-0 right-0 h-[2px] rounded-full bg-white transition-opacity duration-200"
+                style={{ opacity: isActive ? 1 : 0 }}
+              />
+            </button>
+          );
+        })}
+      </div>
+
       {/*
         Scroll container:
         - h-[100dvh]: dynamic viewport height (корректно на iOS с адресной строкой)

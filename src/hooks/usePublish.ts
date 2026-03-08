@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { useNavigate } from "react-router-dom";
+import { uploadMedia, type MediaBucket } from "@/lib/mediaUpload";
 
 export interface MediaItem {
   url: string;
@@ -12,20 +13,13 @@ export interface MediaItem {
 async function uploadFile(
   file: File,
   bucket: string,
-  path: string,
+  _path: string,
   onProgress?: (pct: number) => void,
 ): Promise<string> {
   onProgress?.(10);
-  const { data, error } = await (supabase as any).storage
-    .from(bucket)
-    .upload(path, file, { upsert: true });
-  if (error) throw error;
-  onProgress?.(80);
-  const { data: urlData } = (supabase as any).storage
-    .from(bucket)
-    .getPublicUrl(data.path);
+  const result = await uploadMedia(file, { bucket: bucket as MediaBucket });
   onProgress?.(100);
-  return urlData.publicUrl as string;
+  return result.url;
 }
 
 export function usePublish() {

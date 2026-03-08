@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './useAuth';
+import { uploadMedia } from '@/lib/mediaUpload';
 
 export interface Verification {
   type: "owner" | "verified" | "professional" | "business";
@@ -445,13 +446,11 @@ export async function createHighlight(
 ): Promise<Highlight> {
   let cover_url: string | null = null;
   if (coverFile) {
-    const path = `highlights/${userId}/${Date.now()}-${coverFile.name}`;
-    const { error: uploadError } = await supabase.storage
-      .from('avatars')
-      .upload(path, coverFile, { upsert: true });
-    if (!uploadError) {
-      const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path);
-      cover_url = urlData.publicUrl;
+    try {
+      const uploadResult = await uploadMedia(coverFile, { bucket: 'avatars' });
+      cover_url = uploadResult.url;
+    } catch {
+      // silently skip cover upload failure, create highlight without cover
     }
   }
 
@@ -534,14 +533,8 @@ export async function unblockUser(blockerId: string, blockedId: string): Promise
 // uploadAvatar helper
 // ────────────────────────────────────────────────────────────────
 export async function uploadAvatar(userId: string, file: File): Promise<string> {
-  const ext = file.name.split('.').pop() || 'jpg';
-  const path = `avatars/${userId}/avatar.${ext}`;
-  const { error } = await supabase.storage
-    .from('avatars')
-    .upload(path, file, { upsert: true });
-  if (error) throw error;
-  const { data } = supabase.storage.from('avatars').getPublicUrl(path);
-  return `${data.publicUrl}?t=${Date.now()}`;
+  const result = await uploadMedia(file, { bucket: 'avatars' });
+  return `${result.url}?t=${Date.now()}`;
 }
 
 // Hook to get user's posts

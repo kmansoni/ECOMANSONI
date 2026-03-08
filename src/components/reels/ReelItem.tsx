@@ -17,6 +17,7 @@
  */
 
 import React, { memo, useCallback, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { ReelPlayer } from './ReelPlayer';
 import { ReelOverlay } from './ReelOverlay';
 import { ReelDoubleTapHeart } from './ReelDoubleTapHeart';
@@ -66,6 +67,7 @@ const ReelItem = memo<ReelItemProps>(
     const [heartPosition, setHeartPosition] = useState<TapPosition | null>(null);
 
     const { isMuted, toggleMute } = useReelsContext();
+    const navigate = useNavigate();
 
     // ---------------------------------------------------------------------------
     // Callbacks
@@ -94,6 +96,14 @@ const ReelItem = memo<ReelItemProps>(
     const handleShare = useCallback(() => onShare(reel.id), [onShare, reel.id]);
     const handleComment = useCallback(() => onComment(reel.id), [onComment, reel.id]);
     const handleMore = useCallback(() => { /* Phase 4: откроет dropdown/sheet */ }, []);
+
+    /** Tap on music badge → navigate to AudioTrackPage */
+    const handleMusicPress = useCallback(
+      (musicTitle: string) => {
+        navigate(`/audio/${encodeURIComponent(musicTitle)}`);
+      },
+      [navigate],
+    );
 
     // ---------------------------------------------------------------------------
     // Render
@@ -129,6 +139,7 @@ const ReelItem = memo<ReelItemProps>(
           onAuthorPress={onAuthorPress}
           onHashtagPress={onHashtagPress}
           onFollowPress={onFollowPress}
+          onMusicPress={handleMusicPress}
         />
 
         {/* ----------------------------------------------------------------

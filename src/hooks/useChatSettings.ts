@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import { uploadMedia } from '@/lib/mediaUpload';
 
 export interface ChatSettings {
   notifications_enabled: boolean;
@@ -168,20 +169,8 @@ export function useChatSettings(conversationId?: string) {
 
     const filePath = `chat-wallpapers/${user.id}/${conversationId}/${Date.now()}-${crypto.randomUUID()}.${extension}`;
 
-    const { error: uploadError } = await supabase.storage
-      .from('chat-media')
-      .upload(filePath, file, {
-        upsert: true,
-        contentType: file.type || undefined,
-        cacheControl: '3600',
-      });
-
-    if (uploadError) {
-      throw uploadError;
-    }
-
-    const { data } = supabase.storage.from('chat-media').getPublicUrl(filePath);
-    const publicUrl = data.publicUrl;
+    const result = await uploadMedia(file, { bucket: 'chat-media' });
+    const publicUrl = result.url;
     await updateSetting('chat_wallpaper', publicUrl);
     return publicUrl;
   }, [conversationId, updateSetting, user]);

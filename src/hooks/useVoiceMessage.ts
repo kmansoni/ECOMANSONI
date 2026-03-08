@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import { uploadMedia } from '@/lib/mediaUpload';
 
 interface VoiceRecordingResult {
   blob: Blob;
@@ -124,18 +125,8 @@ export function useVoiceMessage() {
     async (conversationId: string, blob: Blob, dur: number, wfm: number[]) => {
       if (!user) throw new Error('Не авторизован');
 
-      const fileName = `voice/${user.id}/${Date.now()}.webm`;
-      const { error: uploadError } = await supabase.storage
-        .from('voice-messages')
-        .upload(fileName, blob, { contentType: 'audio/webm' });
-
-      if (uploadError) throw uploadError;
-
-      const { data: urlData } = supabase.storage
-        .from('voice-messages')
-        .getPublicUrl(fileName);
-
-      const audioUrl = urlData.publicUrl;
+      const result = await uploadMedia(blob, { bucket: 'voice-messages' });
+      const audioUrl = result.url;
 
       // Создаём сообщение
       const { data: message, error: msgError } = await (supabase as any)

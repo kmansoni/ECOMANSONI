@@ -31,6 +31,8 @@ interface ReelOverlayProps {
   onAuthorPress: (authorId: string) => void;
   onHashtagPress: (hashtag: string) => void;
   onFollowPress: (authorId: string) => void;
+  /** Called when user taps the music badge — navigate to /audio/:title */
+  onMusicPress?: (musicTitle: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -106,6 +108,7 @@ const ReelOverlay = memo<ReelOverlayProps>(
     onAuthorPress,
     onHashtagPress,
     onFollowPress,
+    onMusicPress,
   }) => {
     const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
 
@@ -243,9 +246,14 @@ const ReelOverlay = memo<ReelOverlayProps>(
             </motion.div>
           )}
 
-          {/* Music badge */}
+          {/* Music badge — tappable, navigates to AudioTrackPage */}
           {musicText && (
-            <div className="flex items-center gap-1.5 text-white text-xs mt-1">
+            <button
+              type="button"
+              className="flex items-center gap-1.5 text-white text-xs mt-1 max-w-[70vw] active:opacity-70 transition-opacity"
+              onClick={() => musicTitle && onMusicPress?.(musicTitle)}
+              aria-label={`Открыть трек: ${musicText}`}
+            >
               {/* Rotating music note */}
               <motion.div
                 animate={{ rotate: 360 }}
@@ -257,7 +265,7 @@ const ReelOverlay = memo<ReelOverlayProps>(
               </motion.div>
 
               <MusicMarquee text={musicText} />
-            </div>
+            </button>
           )}
         </div>
       </div>

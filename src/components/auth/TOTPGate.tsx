@@ -124,7 +124,9 @@ function BackupInput({
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function TOTPGate({ onSuccess, onSignOut }: TOTPGateProps) {
-  const { validate, useBackupCode, isLoading, error } = useTOTP();
+  // Renamed to avoid ESLint react-hooks/rules-of-hooks false positive:
+  // the function returned from useTOTP is not a hook, just a regular async fn.
+  const { validate, useBackupCode: submitBackupCode, isLoading, error } = useTOTP();
   const [token, setToken] = useState("");
   const [showBackup, setShowBackup] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
@@ -142,7 +144,7 @@ export default function TOTPGate({ onSuccess, onSignOut }: TOTPGateProps) {
 
   async function handleBackup(code: string) {
     setLocalError(null);
-    const ok = await useBackupCode(code);
+    const ok = await submitBackupCode(code);
     if (ok) {
       onSuccess();
     } else {

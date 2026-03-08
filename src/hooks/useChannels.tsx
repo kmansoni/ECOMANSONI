@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabase";
+import { uploadMedia } from "@/lib/mediaUpload";
 import { useAuth } from "./useAuth";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { checkChannelCapabilityViaRpc } from "@/lib/channel-capabilities";
@@ -612,14 +613,8 @@ export function useChannelMessages(channelId: string | null): {
               : "bin");
       const fileName = `${user.id}/channels/${channelId}/${Date.now()}.${fileExt}`;
 
-      const { error: uploadError } = await supabase.storage
-        .from("chat-media")
-        .upload(fileName, file);
-      if (uploadError) throw uploadError;
-
-      const { data: urlData } = supabase.storage.from("chat-media").getPublicUrl(fileName);
-      const publicUrl = urlData?.publicUrl;
-      if (!publicUrl) throw new Error("Failed to get public URL");
+      const uploadResult = await uploadMedia(file, { bucket: 'chat-media' });
+      const publicUrl = uploadResult.url;
 
       const contentLabel =
         mediaType === "image"

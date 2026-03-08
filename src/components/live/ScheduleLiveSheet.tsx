@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/lib/supabase";
+import { uploadMedia } from "@/lib/mediaUpload";
 import { toast } from "sonner";
 import { addMinutes, isBefore } from "date-fns";
 
@@ -49,12 +50,10 @@ export function ScheduleLiveSheet({ onClose, onScheduled }: Props) {
 
       let coverUrl: string | null = null;
       if (coverFile) {
-        const path = `live-covers/${user.id}/${Date.now()}_${coverFile.name}`;
-        const { error: uploadErr } = await supabase.storage.from("media").upload(path, coverFile);
-        if (!uploadErr) {
-          const { data: urlData } = supabase.storage.from("media").getPublicUrl(path);
-          coverUrl = urlData.publicUrl;
-        }
+        try {
+          const uploadResult = await uploadMedia(coverFile, { bucket: 'media' });
+          coverUrl = uploadResult.url;
+        } catch { /* cover upload is non-critical */ }
       }
 
       const { data, error } = await db.from("live_sessions").insert({

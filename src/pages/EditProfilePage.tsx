@@ -6,7 +6,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ArrowLeft, Camera, Loader2, User } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
+import { uploadMedia } from '@/lib/mediaUpload';
 import { useAuth } from '@/hooks/useAuth';
 import { useProfile } from '@/hooks/useProfile';
 import { AvatarPresetPicker } from '@/components/profile/AvatarPresetPicker';
@@ -51,19 +51,9 @@ export function EditProfilePage() {
       const fileName = `${user.id}-${Date.now()}.${fileExt}`;
       const filePath = `avatars/${fileName}`;
 
-      // Upload to storage
-      const { error: uploadError } = await supabase.storage
-        .from('post-media')
-        .upload(filePath, file);
-
-      if (uploadError) throw uploadError;
-
-      // Get public URL
-      const { data: { publicUrl } } = supabase.storage
-        .from('post-media')
-        .getPublicUrl(filePath);
-
-      setAvatarUrl(publicUrl);
+      // Upload to media server
+      const uploadResult = await uploadMedia(file, { bucket: 'post-media' });
+      setAvatarUrl(uploadResult.url);
       toast.success('Фото загружено');
     } catch (err) {
       console.error('Upload error:', err);

@@ -2,7 +2,7 @@ import { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Store, Upload, Loader2 } from 'lucide-react';
 import { useShop } from '@/hooks/useShop';
-import { supabase } from '@/integrations/supabase/client';
+import { uploadMedia } from '@/lib/mediaUpload';
 import { toast } from 'sonner';
 
 interface CreateShopSheetProps {
@@ -36,15 +36,10 @@ export function CreateShopSheet({ open, onClose, onCreated }: CreateShopSheetPro
     try {
       let logoUrl: string | undefined;
       if (logoFile) {
-        const ext = logoFile.name.split('.').pop();
-        const path = `shops/${Date.now()}.${ext}`;
-        const { error: uploadError } = await supabase.storage
-          .from('avatars')
-          .upload(path, logoFile, { upsert: true });
-        if (!uploadError) {
-          const { data } = supabase.storage.from('avatars').getPublicUrl(path);
-          logoUrl = data.publicUrl;
-        }
+        try {
+          const uploadResult = await uploadMedia(logoFile, { bucket: 'avatars' });
+          logoUrl = uploadResult.url;
+        } catch { /* logo upload is non-critical */ }
       }
       await createShop(name.trim(), description.trim(), logoUrl);
       toast.success('Магазин создан!');

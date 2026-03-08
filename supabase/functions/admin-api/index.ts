@@ -51,7 +51,10 @@ type ActionRequest = {
     | "jit.revoke"
     | "hashtags.list"
     | "hashtags.status.set"
-    | "hashtags.status.bulk_set";
+    | "hashtags.status.bulk_set"
+    | "service_bugs.create"
+    | "service_bugs.update"
+    | "service_bugs.delete";
   params?: Record<string, Json>;
 };
 
@@ -82,6 +85,22 @@ function requireParams<T extends string>(
     if (p[k] === undefined || p[k] === null) return { ok: false, missing: k };
   }
   return { ok: true, value: p as Record<T, Json> };
+}
+
+const SERVICE_BUG_STATUSES = new Set(["open", "in_progress", "fixed"]);
+
+function normalizeServiceBugStatus(value: unknown): string {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase();
+}
+
+function parseServiceBugSortOrder(
+  value: unknown,
+): { ok: true; value: number } | { ok: false } {
+  const n = Number(value);
+  if (!Number.isFinite(n) || !Number.isInteger(n)) return { ok: false };
+  return { ok: true, value: n };
 }
 
 serve(async (req: Request) => {
@@ -2002,6 +2021,194 @@ serve(async (req: Request) => {
         });
 
         return jsonResponse({ ok: true, data: data ?? [] }, 200, origin);
+      }
+
+      case "service_bugs.create": {
+        await assertNotKilled("admin_writes");
+
+        if (!hasScope("service_bugs.write") && !isActorOwner) {
+          await audit({
+            action: "service_bugs.write.create",
+            resource_type: "service_bug",
+            severity: "SEV1",
+            status: "denied",
+            reason_code: "MISSING_SCOPE",
+          });
+          return errorResponse("Forbidden", 403, origin);
+        }
+
+        const required = requireParams(actionReq.params, ["slug", "service", "title"]);
+        if (!required.ok) return errorResponse(`Missing param: ${required.missing}`, 400, origin);
+
+        const slug = String(required.value.slug).trim().toLowerCase();
+        const service = String(required.value.service).trim();
+        const title = String(required.value.title).trim();
+        if (!slug || !service || !title) return errorResponse("Invalid input", 400, origin);
+
+        const symptoms = Array.isArray(actionReq.params?.symptoms)
+          ? (actionReq.params!.symptoms as any[]).map((x) => String(x)).filter((x) => x.trim().length > 0).slice(0, 24)
+          : [];
+        const techNotes = Array.isArray(actionReq.params?.tech_notes)
+          ? (actionReq.params!.tech_notes as any[]).map((x) => String(x)).filter((x) => x.trim().length > 0).slice(0, 24)
+          : [];
+        const checks = Array.isArray(actionReq.params?.checks)
+          ? (actionReq.params!.checks as any[]).map((x) => String(x)).filter((x) => x.trim().length > 0).slice(0, 24)
+          : [];
+
+        const rootCause = typeof actionReq.params?.root_cause === "string" ? String(actionReq.params.root_cause) : "";
+        const workaround = typeof actionReq.params?.workaround === "string" ? String(actionReq.params.workaround) : "";
+        const status = typeof actionReq.params?.status === "string"
+          ? normalizeServiceBugStatus(actionReq.params.status)
+          : "open";
+        if (!SERVICE_BUG_STATUSES.has(status)) {
+          return errorResponse("Invalid status", 400, origin);
+        }
+        let sortOrder = 100;
+        if (actionReq.params?.sort_order !== undefined) {
+          const parsedSortOrder = parseServiceBugSortOrder(actionReq.params.sort_order);
+          if (!parsedSortOrder.ok) {
+            return errorResponse("Invalid sort_order", 400, origin);
+          }
+          sortOrder = parsedSortOrder.value;
+        }
+
+        const { data, error } = await (supabaseService as any)
+          .from("service_bugs")
+          .insert({
+            slug,
+            service,
+            title,
+            symptoms,
+            root_cause: rootCause,
+            tech_notes: techNotes,
+            checks,
+            workaround,
+            status,
+            sort_order: sortOrder,
+          })
+          .select("id, slug, service, title, status, sort_order, updated_at")
+          .single();
+
+        if (error) throw error;
+
+        await audit({
+          action: "service_bugs.write.create",
+          resource_type: "service_bug",
+          resource_id: String(data?.id ?? slug),
+          severity: "SEV3",
+          status: "success",
+          after_state: data ?? null,
+        });
+
+        return jsonResponse({ ok: true, data }, 200, origin);
+      }
+
+      case "service_bugs.update": {
+        await assertNotKilled("admin_writes");
+
+        if (!hasScope("service_bugs.write") && !isActorOwner) {
+          await audit({
+            action: "service_bugs.write.update",
+            resource_type: "service_bug",
+            severity: "SEV1",
+            status: "denied",
+            reason_code: "MISSING_SCOPE",
+          });
+          return errorResponse("Forbidden", 403, origin);
+        }
+
+        const required = requireParams(actionReq.params, ["id"]);
+        if (!required.ok) return errorResponse(`Missing param: ${required.missing}`, 400, origin);
+
+        const id = String(required.value.id);
+
+        const patch: Record<string, unknown> = {};
+        if (typeof actionReq.params?.slug === "string") patch.slug = String(actionReq.params.slug).trim().toLowerCase();
+        if (typeof actionReq.params?.service === "string") patch.service = String(actionReq.params.service).trim();
+        if (typeof actionReq.params?.title === "string") patch.title = String(actionReq.params.title).trim();
+        if (typeof actionReq.params?.root_cause === "string") patch.root_cause = String(actionReq.params.root_cause);
+        if (typeof actionReq.params?.workaround === "string") patch.workaround = String(actionReq.params.workaround);
+        if (typeof actionReq.params?.status === "string") {
+          const status = normalizeServiceBugStatus(actionReq.params.status);
+          if (!SERVICE_BUG_STATUSES.has(status)) {
+            return errorResponse("Invalid status", 400, origin);
+          }
+          patch.status = status;
+        }
+        if (actionReq.params?.sort_order !== undefined) {
+          const parsedSortOrder = parseServiceBugSortOrder(actionReq.params.sort_order);
+          if (!parsedSortOrder.ok) {
+            return errorResponse("Invalid sort_order", 400, origin);
+          }
+          patch.sort_order = parsedSortOrder.value;
+        }
+        if (Array.isArray(actionReq.params?.symptoms)) {
+          patch.symptoms = (actionReq.params.symptoms as any[]).map((x) => String(x)).filter((x) => x.trim().length > 0).slice(0, 24);
+        }
+        if (Array.isArray(actionReq.params?.tech_notes)) {
+          patch.tech_notes = (actionReq.params.tech_notes as any[]).map((x) => String(x)).filter((x) => x.trim().length > 0).slice(0, 24);
+        }
+        if (Array.isArray(actionReq.params?.checks)) {
+          patch.checks = (actionReq.params.checks as any[]).map((x) => String(x)).filter((x) => x.trim().length > 0).slice(0, 24);
+        }
+
+        if (Object.keys(patch).length === 0) return errorResponse("No update fields", 400, origin);
+
+        const { data, error } = await (supabaseService as any)
+          .from("service_bugs")
+          .update(patch)
+          .eq("id", id)
+          .select("id, slug, service, title, status, sort_order, updated_at")
+          .single();
+
+        if (error) throw error;
+
+        await audit({
+          action: "service_bugs.write.update",
+          resource_type: "service_bug",
+          resource_id: id,
+          severity: "SEV3",
+          status: "success",
+          after_state: data ?? null,
+        });
+
+        return jsonResponse({ ok: true, data }, 200, origin);
+      }
+
+      case "service_bugs.delete": {
+        await assertNotKilled("admin_writes");
+
+        if (!hasScope("service_bugs.write") && !isActorOwner) {
+          await audit({
+            action: "service_bugs.write.delete",
+            resource_type: "service_bug",
+            severity: "SEV1",
+            status: "denied",
+            reason_code: "MISSING_SCOPE",
+          });
+          return errorResponse("Forbidden", 403, origin);
+        }
+
+        const required = requireParams(actionReq.params, ["id"]);
+        if (!required.ok) return errorResponse(`Missing param: ${required.missing}`, 400, origin);
+
+        const id = String(required.value.id);
+
+        const { error } = await (supabaseService as any)
+          .from("service_bugs")
+          .delete()
+          .eq("id", id);
+        if (error) throw error;
+
+        await audit({
+          action: "service_bugs.write.delete",
+          resource_type: "service_bug",
+          resource_id: id,
+          severity: "SEV2",
+          status: "success",
+        });
+
+        return jsonResponse({ ok: true, data: { deleted: true, id } }, 200, origin);
       }
 
       default:

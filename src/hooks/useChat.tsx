@@ -1,11 +1,14 @@
 // LEGACY_FALLBACK_MARKER: DM writes may fallback to v1 if v11 rejects
 // falling back to legacy
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useDeliveryStatus } from "./useDeliveryStatus";
+import type { DeliveryStatusMap } from "./useDeliveryStatus";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "./useAuth";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { toast } from "sonner";
 import { getLastChatSchemaProbe } from "@/lib/chat/schemaProbe";
+import { uploadMedia } from "@/lib/mediaUpload";
 import { buildChatBodyEnvelope, sendMessageV1 } from "@/lib/chat/sendMessageV1";
 import { sanitizeReceivedText, sanitizeTextForTransport } from "@/lib/text-encoding";
 import {
@@ -97,7 +100,11 @@ export interface ChatMessage {
   disappear_at?: string | null;
   disappeared?: boolean | null;
   is_silent?: boolean | null;
+  /** Серверный статус доставки (заполнен после сохранения в БД) */
+  delivery_status?: 'sending' | 'sent' | 'delivered' | 'read' | 'failed' | null;
 }
+
+export type { DeliveryStatusMap };
 
 export interface Conversation {
   id: string;
@@ -1141,16 +1148,8 @@ export function useMessages(conversationId: string | null) {
       const fileExt = file.name.split('.').pop() || 'webm';
       const fileName = `${user.id}/${conversationId}/${Date.now()}.${fileExt}`;
 
-      const { error: uploadError } = await supabase.storage
-        .from('chat-media')
-        .upload(fileName, file);
-
-      if (uploadError) throw uploadError;
-
-      // Get public URL
-      const { data: { publicUrl } } = supabase.storage
-        .from('chat-media')
-        .getPublicUrl(fileName);
+      const uploadResult = await uploadMedia(file, { bucket: 'chat-media' });
+      const publicUrl = uploadResult.url;
 
       const clientMsgId = crypto.randomUUID();
       const content =
@@ -1261,7 +1260,27 @@ export function useMessages(conversationId: string | null) {
     }
   };
 
-  return { messages, loading, sendMessage, sendMediaMessage, deleteMessage, editMessage, refetch: fetchMessages };
+  const {
+    statusMap: deliveryStatusMap,
+    markAsRead,
+    markManyAsRead,
+  } = useDeliveryStatus(conversationId);
+
+  return {
+    messages,
+    loading,
+    sendMessage,
+    sendMediaMessage,
+    deleteMessage,
+    editMessage,
+    refetch: fetchMessages,
+    /** Карта delivery_status для собственных сообщений: messageId → статус */
+    deliveryStatusMap,
+    /** Зафиксировать прочтение одного входящего сообщения (не своего) */
+    markAsRead,
+    /** Batch-фиксация прочтения входящих сообщений */
+    markManyAsRead,
+  };
 }
 
 export function useCreateConversation() {

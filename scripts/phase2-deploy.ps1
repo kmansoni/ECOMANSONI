@@ -6,9 +6,21 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $SupabaseExePath = "C:\\Users\\manso\\AppData\\Local\\supabase-cli\\v2.75.0\\supabase.exe"
+$DbPushWrapperScript = Join-Path $PSScriptRoot "supabase-db-push.ps1"
+$DbPushPolicyGuardScript = Join-Path $PSScriptRoot "supabase-db-push-policy-guard.ps1"
 
 if (-not (Test-Path -LiteralPath $SupabaseExePath)) {
   Write-Error "Supabase CLI not found at: $SupabaseExePath"
+  exit 1
+}
+
+if (-not (Test-Path -LiteralPath $DbPushWrapperScript)) {
+  Write-Error "DB push wrapper script not found at: $DbPushWrapperScript"
+  exit 1
+}
+
+if (-not (Test-Path -LiteralPath $DbPushPolicyGuardScript)) {
+  Write-Error "DB push policy guard script not found at: $DbPushPolicyGuardScript"
   exit 1
 }
 
@@ -31,9 +43,16 @@ try {
   Write-Host "═══════════════════════════════════════════" -ForegroundColor Cyan
   Write-Host ""
 
+  Write-Host "🔒 Enforcing DB push policy guard..." -ForegroundColor Yellow
+  & $DbPushPolicyGuardScript -RepoRoot (Resolve-Path (Join-Path $PSScriptRoot "..")).Path | Out-Host
+  if ($LASTEXITCODE -ne 0) {
+    Write-Error "DB push policy guard failed."
+    exit $LASTEXITCODE
+  }
+
   # Dry run first
   Write-Host "📋 Checking migrations (dry-run)..." -ForegroundColor Yellow
-  & $SupabaseExePath db push --dry-run --include-all 2>&1 | Out-Host
+  & $DbPushWrapperScript -DryRun -Yes -SupabaseExePath $SupabaseExePath 2>&1 | Out-Host
   
   if ($DryRun) {
     Write-Host ""
@@ -43,7 +62,7 @@ try {
 
   Write-Host ""
   Write-Host "🚀 Deploying migrations..." -ForegroundColor Green
-  & $SupabaseExePath db push --include-all --yes 2>&1 | Out-Host
+  & $DbPushWrapperScript -Yes -SupabaseExePath $SupabaseExePath 2>&1 | Out-Host
   
   $lastExitCode = $LASTEXITCODE
   if ($lastExitCode -eq 0) {

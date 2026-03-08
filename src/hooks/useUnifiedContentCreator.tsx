@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import type { ContentType } from './useMediaEditor';
+import { uploadMedia } from '@/lib/mediaUpload';
 
 /**
  * Unified Content Creator Hook
@@ -85,18 +86,9 @@ export function useUnifiedContentCreator(): UseUnifiedContentCreatorReturn {
       setError(null);
 
       try {
-        // Upload to Supabase Storage
-        const fileName = `${user.id}/${Date.now()}_${file.name}`;
-        const { error: uploadError } = await supabase.storage
-          .from('stories-media')
-          .upload(fileName, file);
-
-        if (uploadError) throw uploadError;
-
-        // Get public URL
-        const { data: { publicUrl } } = supabase.storage
-          .from('stories-media')
-          .getPublicUrl(fileName);
+        // Upload to media server
+        const uploadResult = await uploadMedia(file, { bucket: 'stories-media' });
+        const publicUrl = uploadResult.url;
 
         // Create story record
         const mediaType = file.type.startsWith('video/') ? 'video' : 'image';
@@ -157,18 +149,9 @@ export function useUnifiedContentCreator(): UseUnifiedContentCreatorReturn {
 
         if (postError) throw postError;
 
-        // Upload media to Supabase Storage
-        const fileName = `${user.id}/${Date.now()}_${file.name}`;
-        const { error: uploadError } = await supabase.storage
-          .from('post-media')
-          .upload(fileName, file);
-
-        if (uploadError) throw uploadError;
-
-        // Get public URL
-        const { data: { publicUrl } } = supabase.storage
-          .from('post-media')
-          .getPublicUrl(fileName);
+        // Upload media to media server
+        const uploadResult = await uploadMedia(file, { bucket: 'post-media' });
+        const publicUrl = uploadResult.url;
 
         // Create media record
         const mediaType = file.type.startsWith('video/') ? 'video' : 'image';
@@ -216,18 +199,9 @@ export function useUnifiedContentCreator(): UseUnifiedContentCreatorReturn {
       setError(null);
 
       try {
-        // Upload video to Supabase Storage
-        const fileName = `${user.id}/${Date.now()}_${file.name}`;
-        const { error: uploadError } = await supabase.storage
-          .from('reels-media')
-          .upload(fileName, file);
-
-        if (uploadError) throw uploadError;
-
-        // Get public URL
-        const { data: { publicUrl } } = supabase.storage
-          .from('reels-media')
-          .getPublicUrl(fileName);
+        // Upload video to media server
+        const uploadResult = await uploadMedia(file, { bucket: 'reels-media' });
+        const publicUrl = uploadResult.url;
 
         // Create reel record
         const { data: reel, error: reelError } = await (supabase

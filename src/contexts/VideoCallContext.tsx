@@ -18,6 +18,10 @@ import type { RekeyEvent } from "@/calls-v2/rekeyStateMachine";
 
 const CALLS_V2_ENABLED = import.meta.env.VITE_CALLS_V2_ENABLED === "true";
 const CALLS_V2_WS_URL = (import.meta.env.VITE_CALLS_V2_WS_URL ?? "").trim();
+/** URL Edge Function get-turn-credentials. Если задан — используется вместо встроенного turn-credentials. */
+const TURN_CREDENTIALS_EDGE_FN = "get-turn-credentials";
+/** Сколько секунд до истечения credentials начинать экстренное обновление (30 минут). */
+const TURN_REFRESH_BEFORE_EXPIRY_SEC = 30 * 60;
 const CALLS_V2_WS_URLS = (import.meta.env.VITE_CALLS_V2_WS_URLS ?? "")
   .split(",")
   .map((value) => value.trim())
@@ -57,6 +61,12 @@ function hasInsertableStreamsSupport(): boolean {
   } catch {
     return false;
   }
+}
+
+function extractRouterCapsFromJoinPayload(payload: unknown): RtpCapabilities | null {
+  if (!payload || typeof payload !== "object") return null;
+  const p = payload as { routerRtpCapabilities?: RtpCapabilities; mediasoup?: { routerRtpCapabilities?: RtpCapabilities } };
+  return p.routerRtpCapabilities ?? p.mediasoup?.routerRtpCapabilities ?? null;
 }
 
 function toBase64Utf8(value: string): string {
@@ -146,6 +156,8 @@ function getMediaPermissionToastPayload(error: unknown, callType: "video" | "aud
 function isMediaErrorForCall(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
   const name = "name" in error ? String((error as { name?: unknown }).name ?? "") : "";
+  // VideoCallStartError is a DB/network error, never a media-permission error
+  if (name === "VideoCallStartError") return false;
   const causeName = "causeName" in error ? String((error as { causeName?: unknown }).causeName ?? "") : "";
   return (
     name === "VideoCallMediaAccessError" ||
@@ -209,6 +221,13 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
   const callsWsRecvTransportRef = useRef<string | null>(null);
   const rekeyTimerRef = useRef<number | null>(null);
   const e2eeEpochRef = useRef<number>(0);
+  /**
+   * Кэш TURN ICE-серверов, полученных от Edge Function `get-turn-credentials`.
+   * Структурно совместим с RTCIceServer[] и mediasoup-client TransportOptions.iceServers.
+   * Обновляется перед созданием каждого WS-соединения; TTL = 24 ч (сервер вернёт expiresAt).
+   */
+  const turnIceServersRef = useRef<RTCIceServer[] | null>(null);
+  const turnIceExpiryRef = useRef<number>(0); // Unix seconds
   const e2eeLeaderDeviceRef = useRef<string | null>(null);
   const keyPackageNonceRef = useRef<Set<string>>(new Set());
   const callKeyExchangeRef = useRef<CallKeyExchange | null>(null);
@@ -286,6 +305,73 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     keyPackageNonceRef.current.clear();
   }, []);
 
+  /**
+   * Fetch time-limited TURN credentials from Edge Function `get-turn-credentials`.
+   *
+   * Security:
+   *  - Credentials are HMAC-SHA1 per RFC 5766 §9.2, TTL from server (default 24 h)
+   *  - Cached in ref until 30 minutes before server-declared expiry
+   *  - Fallback to null (STUN-only) if function unavailable — calls may still work without NAT
+   *  - No credentials stored in localStorage/sessionStorage — memory-only
+   *
+   * Race condition safety:
+   *  - Multiple concurrent callers may execute this simultaneously; since all write the same
+   *    data and it's a ref (not state), there is no torn read / UI inconsistency risk.
+   */
+  const fetchTurnIceServers = useCallback(async (): Promise<RTCIceServer[] | null> => {
+    const nowSec = Math.floor(Date.now() / 1000);
+
+    // Return cached if still fresh (with 30-min safety margin)
+    if (
+      turnIceServersRef.current &&
+      turnIceExpiryRef.current > nowSec + TURN_REFRESH_BEFORE_EXPIRY_SEC
+    ) {
+      return turnIceServersRef.current;
+    }
+
+    try {
+      const { data, error } = await supabase.functions.invoke(TURN_CREDENTIALS_EDGE_FN);
+
+      if (error) {
+        console.warn("[VideoCallContext] get-turn-credentials error (STUN-only fallback):", error);
+        return null;
+      }
+
+      const parsed = data as {
+        iceServers?: RTCIceServer[];
+        ttl?: number;
+        expiresAt?: number;
+        error?: string;
+      } | null;
+
+      if (parsed?.error) {
+        console.warn("[VideoCallContext] get-turn-credentials server error:", parsed.error);
+        return null;
+      }
+
+      if (!Array.isArray(parsed?.iceServers) || parsed.iceServers.length === 0) {
+        console.warn("[VideoCallContext] get-turn-credentials returned empty iceServers");
+        return null;
+      }
+
+      // Persist in refs — never in React state (avoids re-render, credentials are not UI)
+      turnIceServersRef.current = parsed.iceServers;
+      turnIceExpiryRef.current = typeof parsed.expiresAt === "number"
+        ? parsed.expiresAt
+        : nowSec + (typeof parsed.ttl === "number" ? parsed.ttl : 86_400);
+
+      console.info(
+        "[VideoCallContext] TURN credentials refreshed",
+        { count: parsed.iceServers.length, expiresAt: turnIceExpiryRef.current }
+      );
+
+      return parsed.iceServers;
+    } catch (err) {
+      console.warn("[VideoCallContext] get-turn-credentials fetch exception (STUN-only fallback):", err);
+      return null;
+    }
+  }, []);
+
   const ensureCallsV2Connected = useCallback(async (): Promise<CallsWsClient | null> => {
     if (!CALLS_V2_ENABLED || !user) return null;
     if (!CALLS_V2_WS_URL && CALLS_V2_WS_URLS.length === 0) {
@@ -302,6 +388,10 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       console.warn("[VideoCallContext] calls-v2 disabled: WS endpoints normalized to empty", { rawEndpoints });
       return null;
     }
+
+    // Prefetch TURN credentials before WS connect so they are ready when transports are created.
+    // Fire-and-forget (await) — failure is non-fatal; call proceeds on STUN-only fallback.
+    await fetchTurnIceServers();
 
     const requireWss = !import.meta.env.DEV && !endpoints.some(isLocalEndpoint);
     console.info("[VideoCallContext] calls-v2 connect:start", {
@@ -692,20 +782,26 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
           roomId = createdFrame.payload?.roomId as string;
           console.info("[VideoCallContext] calls-v2 room-created:ok", { callId, roomId });
 
-          const secretFrame = await client.waitFor(
-            "ROOM_JOIN_SECRET",
-            (frame) => frame.payload?.roomId === roomId && typeof frame.payload?.joinToken === "string" && frame.payload?.joinToken.length > 0,
-            { timeoutMs: 5000, acceptRecent: true }
-          );
-          joinToken = secretFrame.payload?.joinToken as string;
-          console.info("[VideoCallContext] calls-v2 room-join-secret:ok", { roomId });
+          try {
+            const secretFrame = await client.waitFor(
+              "ROOM_JOIN_SECRET",
+              (frame) => frame.payload?.roomId === roomId && typeof frame.payload?.joinToken === "string" && frame.payload?.joinToken.length > 0,
+              { timeoutMs: 1200, acceptRecent: true }
+            );
+            joinToken = secretFrame.payload?.joinToken as string;
+            console.info("[VideoCallContext] calls-v2 room-join-secret:ok", { roomId });
+          } catch {
+            // SFU mode: join token is optional and ROOM_JOIN_SECRET is not emitted.
+            joinToken = undefined;
+            console.info("[VideoCallContext] calls-v2 room-join-secret:skip (sfu mode)", { roomId });
+          }
         } else {
           const hintedRoomId = (call as VideoCall & { room_id?: string; calls_v2_room_id?: string }).calls_v2_room_id
             ?? (call as VideoCall & { room_id?: string }).room_id;
           const hintedJoinToken = (call as VideoCall & { join_token?: string; calls_v2_join_token?: string }).calls_v2_join_token
             ?? (call as VideoCall & { join_token?: string }).join_token;
 
-          if (!hintedRoomId || !hintedJoinToken) {
+          if (!hintedRoomId) {
             console.warn("[VideoCallContext] calls-v2 callee bootstrap skipped: missing room/join token", {
               callId,
               hasRoomId: !!hintedRoomId,
@@ -730,19 +826,37 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
           preferredRegion: "tr",
         });
         console.info("[VideoCallContext] calls-v2 room-join:ok", { callId, roomId, role });
-        e2eeEpochRef.current = 0;
+        const joinedFrame = await client.waitFor(
+          "ROOM_JOIN_OK",
+          (frame) => frame.payload?.roomId === roomId,
+          { timeoutMs: 5000, acceptRecent: true }
+        );
+        const joinedPayload = joinedFrame.payload as Record<string, unknown> | undefined;
+        const joinedEpochRaw = joinedPayload?.epoch;
+        const joinedEpoch = typeof joinedEpochRaw === "number" ? joinedEpochRaw : Number(joinedEpochRaw ?? 0);
+        if (Number.isFinite(joinedEpoch) && joinedEpoch >= 0) {
+          e2eeEpochRef.current = joinedEpoch;
+        } else {
+          e2eeEpochRef.current = 0;
+        }
+        const joinCaps = extractRouterCapsFromJoinPayload(joinedPayload);
+        if (joinCaps) {
+          sfuRouterRtpCapabilitiesRef.current = joinCaps;
+          console.info("[VideoCallContext] calls-v2 routerRtpCapabilities captured from ROOM_JOIN_OK", { roomId });
+        }
         // Inform epoch guard that we have joined
-        epochGuardRef.current?.markRoomJoined(0);
-        await client.e2eeReady({ roomId, epoch: 0 });
-        epochGuardRef.current?.markE2eeReady(0);
-        console.info("[VideoCallContext] calls-v2 e2ee-ready:ok", { roomId, epoch: 0 });
+        epochGuardRef.current?.markRoomJoined(e2eeEpochRef.current);
+        await client.e2eeReady({ roomId, epoch: e2eeEpochRef.current });
+        epochGuardRef.current?.markE2eeReady(e2eeEpochRef.current);
+        console.info("[VideoCallContext] calls-v2 e2ee-ready:ok", { roomId, epoch: e2eeEpochRef.current });
 
-        // Capture routerRtpCapabilities from ROOM_JOINED for SFU Device loading
+        // Backward compatibility: some deployments may still emit ROOM_JOINED.
         const joinedUnsub = client.on("ROOM_JOINED", (frame) => {
-          const payload = frame.payload as { roomId?: string; routerRtpCapabilities?: RtpCapabilities } | undefined;
+          const payload = frame.payload as { roomId?: string; routerRtpCapabilities?: RtpCapabilities; mediasoup?: { routerRtpCapabilities?: RtpCapabilities } } | undefined;
           if (payload?.roomId !== roomId) return;
-          if (payload?.routerRtpCapabilities) {
-            sfuRouterRtpCapabilitiesRef.current = payload.routerRtpCapabilities;
+          const caps = extractRouterCapsFromJoinPayload(payload);
+          if (caps) {
+            sfuRouterRtpCapabilitiesRef.current = caps;
             console.info("[VideoCallContext] calls-v2 routerRtpCapabilities captured", { roomId });
           }
           joinedUnsub();
@@ -870,6 +984,42 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
           sfuManagerRef.current = new SfuMediaManager();
         }
         const sfuManager = sfuManagerRef.current;
+
+        // ── TURN credentials injection ────────────────────────────────────────
+        // mediasoup-client Device.createSendTransport/createRecvTransport accept
+        // `iceServers` in TransportOptions, but SfuMediaManager strips it out.
+        // We patch the specific Device *instance* (not the prototype) to inject
+        // TURN ICE servers so the underlying RTCPeerConnection can relay through
+        // coturn when the client is behind a strict NAT / corporate firewall.
+        //
+        // Attack surface: patch is local to this call session's Device instance;
+        // no global state or prototype mutation.
+        const iceServersSnapshot = turnIceServersRef.current;
+        if (iceServersSnapshot && iceServersSnapshot.length > 0) {
+          const sfuManagerAny = sfuManager as unknown as {
+            device?: {
+              createSendTransport: (...args: unknown[]) => unknown;
+              createRecvTransport: (...args: unknown[]) => unknown;
+            };
+          };
+          if (sfuManagerAny.device) {
+            const origSend = sfuManagerAny.device.createSendTransport.bind(sfuManagerAny.device);
+            sfuManagerAny.device.createSendTransport = (opts: unknown, ...rest: unknown[]) => {
+              return origSend({ ...(opts as object), iceServers: iceServersSnapshot }, ...rest);
+            };
+            const origRecv = sfuManagerAny.device.createRecvTransport.bind(sfuManagerAny.device);
+            sfuManagerAny.device.createRecvTransport = (opts: unknown, ...rest: unknown[]) => {
+              return origRecv({ ...(opts as object), iceServers: iceServersSnapshot }, ...rest);
+            };
+            console.info("[VideoCallContext] SFU device patched with TURN iceServers", {
+              count: iceServersSnapshot.length,
+            });
+          }
+        } else {
+          console.warn("[VideoCallContext] No TURN ice servers available — SFU will use STUN only (may fail behind strict NAT)");
+        }
+        // ─────────────────────────────────────────────────────────────────────
+
         // cast: our RtpCapabilities is structurally compatible with mediasoup-client RtpCapabilities
         await sfuManager.loadDevice(routerRtpCapabilities as import('mediasoup-client').types.RtpCapabilities);
 
@@ -958,8 +1108,8 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         );
         callsWsRecvTransportRef.current = recvParams.transportId;
 
-        // Subscribe to CONSUMED events and create consumers + attach SFrame receiver transforms
-        client.on("CONSUMED", (frame) => {
+        // Subscribe to CONSUMER_ADDED events and create consumers + attach SFrame receiver transforms.
+        client.on("CONSUMER_ADDED", (frame) => {
           const p = frame.payload as import('@/calls-v2/types').ConsumedPayload | undefined;
           if (!p || p.roomId !== roomId) return;
           void sfuManager.consume({
@@ -1101,17 +1251,19 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     
     try {
       const result = await startVideoCall(calleeId, conversationId, callType);
-      if (result) {
-        void bootstrapCallsV2Room(result, "caller");
-      }
+      // startVideoCall is expected to throw VideoCallStartError on failure.
+      // Guard against a null return defensively — if the contract ever changes this
+      // prevents passing null into bootstrapCallsV2Room and crashing silently.
       if (!result) {
-        console.log("[VideoCallContext] startCall returned null, releasing UI-lock");
-        setIsCallUiActive(false); // Release UI-lock if call failed
+        console.error("[VideoCallContext] startVideoCall returned null unexpectedly — releasing UI-lock");
+        setIsCallUiActive(false);
         toast.error("Не удалось начать звонок", {
           description: "Проверьте сеть и попробуйте снова",
           duration: 5000,
         });
+        return null;
       }
+      void bootstrapCallsV2Room(result, "caller");
       return result;
     } catch (err) {
       console.error("[VideoCallContext] startCall error:", err);

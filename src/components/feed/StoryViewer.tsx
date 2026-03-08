@@ -130,6 +130,11 @@ export function StoryViewer({ usersWithStories, initialUserIndex, isOpen, onClos
   const [isPaused, setIsPaused] = useState(false);
   const [touchStart, setTouchStart] = useState<number | null>(null);
   const [touchEnd, setTouchEnd] = useState<number | null>(null);
+  // Use refs for touch tracking to avoid stale-closure race conditions in
+  // rapid touchmove events (React state updates are async / batched).
+  const touchStartYRef = useRef<number | null>(null);
+  const dragYRef = useRef(0);
+  const [dragY, setDragY] = useState(0); // px dragged downward for swipe-down-to-close (render state)
   const [isMuted, setIsMuted] = useState(false);
   const [videoDurationMs, setVideoDurationMs] = useState<number | null>(null);
   const [replyText, setReplyText] = useState("");
@@ -145,6 +150,8 @@ export function StoryViewer({ usersWithStories, initialUserIndex, isOpen, onClos
   const STORY_DURATION = 5000;
   const PROGRESS_INTERVAL = 50;
   const MIN_SWIPE_DISTANCE = 50;
+  const SWIPE_DOWN_CLOSE_THRESHOLD = 120; // px — dismiss threshold
+  const SWIPE_DOWN_DRAG_RESISTANCE = 0.55; // rubber-band factor
 
   // Sync story open state with context for hiding BottomNav
   useEffect(() => {
@@ -375,22 +382,57 @@ export function StoryViewer({ usersWithStories, initialUserIndex, isOpen, onClos
     }
   }, [currentUserIndex, currentStoryInUser, currentUserStories, progress, activeUsers, user]);
 
-  // Touch handlers for swipe
+  // Touch handlers for swipe (horizontal = navigate, vertical down = close).
+  // Vertical tracking uses refs (not state) to avoid stale-closure race
+  // conditions: touchmove fires many times per frame and React's async
+  // state batching means useState reads in the same event cycle can be stale.
   const onTouchStart = (e: React.TouchEvent) => {
     setTouchEnd(null);
     setTouchStart(e.targetTouches[0].clientX);
+    touchStartYRef.current = e.targetTouches[0].clientY;
+    dragYRef.current = 0;
+    setDragY(0);
     setIsPaused(true);
   };
 
   const onTouchMove = (e: React.TouchEvent) => {
     setTouchEnd(e.targetTouches[0].clientX);
+    if (touchStartYRef.current !== null) {
+      const dy = e.targetTouches[0].clientY - touchStartYRef.current;
+      if (dy > 0) {
+        // Only track downward drag; apply rubber-band resistance
+        const resistedDy = dy * SWIPE_DOWN_DRAG_RESISTANCE;
+        dragYRef.current = resistedDy;
+        setDragY(resistedDy);
+      } else {
+        // Upward swipe — reset drag
+        dragYRef.current = 0;
+        setDragY(0);
+      }
+    }
   };
 
   const onTouchEnd = () => {
     setIsPaused(false);
-    
+
+    // Read from ref — always current, never stale
+    const currentDragY = dragYRef.current;
+
+    // Swipe-down-to-close: if dragged far enough, close
+    if (currentDragY >= SWIPE_DOWN_CLOSE_THRESHOLD) {
+      dragYRef.current = 0;
+      touchStartYRef.current = null;
+      setDragY(0);
+      onClose();
+      return;
+    }
+    // Snap back
+    dragYRef.current = 0;
+    touchStartYRef.current = null;
+    setDragY(0);
+
     if (!touchStart || !touchEnd) return;
-    
+
     const distance = touchStart - touchEnd;
     const isLeftSwipe = distance > MIN_SWIPE_DISTANCE;
     const isRightSwipe = distance < -MIN_SWIPE_DISTANCE;
@@ -440,12 +482,26 @@ export function StoryViewer({ usersWithStories, initialUserIndex, isOpen, onClos
     }
   })();
 
+  // Derive drag-based visual transforms for swipe-down-to-close
+  const dragProgress = Math.min(dragY / SWIPE_DOWN_CLOSE_THRESHOLD, 1);
+  const dragScale = 1 - dragProgress * 0.08; // shrink slightly while dragging
+  const dragOpacity = 1 - dragProgress * 0.4;
+
   return createPortal(
-    <div className="fixed inset-0 z-50 bg-black flex items-center justify-center">
+    <div
+      className="fixed inset-0 z-50 bg-black flex items-center justify-center"
+      style={{ opacity: dragOpacity }}
+    >
       {/* Story content */}
       <div
         className="relative w-full h-full overflow-hidden"
-        style={{ minHeight: '100vh', height: '100vh' }}
+        style={{
+          minHeight: '100vh',
+          height: '100vh',
+          transform: `translateY(${dragY}px) scale(${dragScale})`,
+          transition: dragY === 0 ? 'transform 0.25s cubic-bezier(0.4,0,0.2,1)' : 'none',
+          transformOrigin: 'center top',
+        }}
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
@@ -494,25 +550,38 @@ export function StoryViewer({ usersWithStories, initialUserIndex, isOpen, onClos
           <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/60" />
         </div>
 
-        {/* Progress bars */}
-        <div className="absolute top-0 left-0 right-0 z-10 p-2 pt-3 flex gap-1">
-          {currentUserStories.map((_, index) => (
-            <div 
-              key={index} 
-              className="flex-1 h-0.5 bg-white/30 rounded-full overflow-hidden"
-            >
-              <div 
-                className="h-full bg-white rounded-full transition-all ease-linear duration-100"
-                style={{ 
-                  width: index < currentStoryInUser 
-                    ? "100%" 
-                    : index === currentStoryInUser 
-                      ? `${progress}%` 
-                      : "0%" 
-                }}
-              />
-            </div>
-          ))}
+        {/* Progress bars — one thin strip per story in the current user's set.
+            Uses CSS transition on width only (not transition-all) to avoid
+            animating unrelated properties and reduce paint cost.
+            Paused state: isPaused removes the transition so the bar freezes
+            instantly without a visual jump when resuming. */}
+        <div className="absolute top-0 left-0 right-0 z-10 px-2 pt-safe-top pt-2 flex gap-[3px]">
+          {currentUserStories.map((_, index) => {
+            const isCurrent = index === currentStoryInUser;
+            const isDone = index < currentStoryInUser;
+            return (
+              <div
+                key={index}
+                className="flex-1 h-[2px] bg-white/30 rounded-full overflow-hidden"
+                role="progressbar"
+                aria-valuenow={isCurrent ? Math.round(progress) : isDone ? 100 : 0}
+                aria-valuemin={0}
+                aria-valuemax={100}
+              >
+                <div
+                  className="h-full bg-white rounded-full"
+                  style={{
+                    width: isDone ? '100%' : isCurrent ? `${progress}%` : '0%',
+                    // Only animate the active bar; freeze instantly on pause
+                    transition: isCurrent && !isPaused
+                      ? `width ${PROGRESS_INTERVAL}ms linear`
+                      : 'none',
+                    willChange: isCurrent ? 'width' : 'auto',
+                  }}
+                />
+              </div>
+            );
+          })}
         </div>
 
         {/* Header with user info */}

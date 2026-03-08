@@ -200,33 +200,70 @@ export function useThreadBadge(conversationId: string | null) {
 
     const fetchThreads = async () => {
       try {
-        // Get all root messages with replies in this conversation
-        const { data, error } = await supabaseAny
-          .from('messages')
-          .select('id, thread_root_message_id, created_at')
-          .eq('conversation_id', conversationId)
-          .not('thread_root_message_id', 'is', null)
-          .order('created_at', { ascending: false });
+        // Fetch all thread replies + last-read timestamps in one query batch.
+        // thread_read_positions stores (user_id, thread_root_message_id, last_read_at).
+        const [repliesResult, readResult] = await Promise.all([
+          supabaseAny
+            .from('messages')
+            .select('id, thread_root_message_id, created_at')
+            .eq('conversation_id', conversationId)
+            .not('thread_root_message_id', 'is', null)
+            .order('created_at', { ascending: false }),
+          supabaseAny
+            .from('thread_read_positions')
+            .select('thread_root_message_id, last_read_at')
+            .eq('user_id', user!.id)
+            .eq('conversation_id', conversationId),
+        ]);
 
-        if (error) throw error;
+        if (repliesResult.error) throw repliesResult.error;
 
-        // Group by thread root and count
-        const threadMap = new Map<string, number>();
-        (data || []).forEach((msg: { thread_root_message_id: string | null }) => {
-          if (msg.thread_root_message_id) {
-            const count = threadMap.get(msg.thread_root_message_id) || 0;
-            threadMap.set(msg.thread_root_message_id, count + 1);
+        // Build two maps in a single O(N) pass over the replies array:
+        //   threadMap: rootMessageId → { count, latestAt, replies[] }
+        //   (replies[] is used below for O(K) unread counting per thread)
+        // This avoids the previous O(K×N) nested filter.
+        type MsgRow = { thread_root_message_id: string | null; created_at: string };
+        type ThreadEntry = { count: number; latestAt: string; replies: MsgRow[] };
+        const threadMap = new Map<string, ThreadEntry>();
+        for (const msg of ((repliesResult.data as MsgRow[]) || [])) {
+          if (!msg.thread_root_message_id) continue;
+          const existing = threadMap.get(msg.thread_root_message_id);
+          if (existing) {
+            existing.count += 1;
+            if (msg.created_at > existing.latestAt) existing.latestAt = msg.created_at;
+            existing.replies.push(msg);
+          } else {
+            threadMap.set(msg.thread_root_message_id, {
+              count: 1,
+              latestAt: msg.created_at,
+              replies: [msg],
+            });
           }
-        });
+        }
 
-        // Get root messages that have replies
-        const threads = Array.from(threadMap.entries()).map(
-          ([messageId, replyCount]) => ({
-            messageId,
-            replyCount,
-            unreadCount: 0, // TODO: Calculate based on last read position
-          })
-        );
+        // Build map: rootMessageId → last_read_at for current user
+        type ReadRow = { thread_root_message_id: string; last_read_at: string };
+        const readMap = new Map<string, string>();
+        if (!readResult.error) {
+          for (const r of ((readResult.data as ReadRow[]) || [])) {
+            readMap.set(r.thread_root_message_id, r.last_read_at);
+          }
+        }
+
+        // Calculate unread: O(K + N) total — each reply visited at most twice.
+        const threads = Array.from(threadMap.entries()).map(([messageId, info]) => {
+          const lastReadAt = readMap.get(messageId);
+          let unreadCount: number;
+          if (!lastReadAt) {
+            // Never opened — all replies are unread
+            unreadCount = info.count;
+          } else {
+            // Count only replies within this thread that are newer than last read.
+            // info.replies is already scoped to this thread — O(replies_in_thread).
+            unreadCount = info.replies.filter((m) => m.created_at > lastReadAt).length;
+          }
+          return { messageId, replyCount: info.count, unreadCount };
+        });
 
         setThreadsWithReplies(threads);
       } catch (err) {

@@ -146,6 +146,17 @@ export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function Bottom
     }
   }, []);
 
+  // Instagram-style: tap on already-active tab → scroll page to top
+  const handleNavClick = useCallback((item: NavItem, isActive: boolean) => {
+    if (!isActive) return;
+    // Find the main scrollable container: <main> or first overflow-y-auto ancestor
+    const scrollTarget =
+      document.querySelector<HTMLElement>("main") ??
+      document.querySelector<HTMLElement>('[data-scroll-container]') ??
+      document.documentElement;
+    scrollTarget.scrollTo({ top: 0, behavior: "smooth" });
+  }, []);
+
   return (
     <>
       <div 
@@ -232,6 +243,18 @@ export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function Bottom
                   onMouseUp={(e) => handleTouchEnd(item, e)}
                   onMouseLeave={(e) => handleTouchEnd(item, e)}
                   onContextMenu={(e) => handleContextMenu(item, e)}
+                  onClick={(e) => {
+                    // Use React Router's own match logic — same source of truth
+                    // as the isActive prop passed to className/children render props.
+                    const matched = item.to === "/"
+                      ? location.pathname === "/"
+                      : location.pathname === item.to || location.pathname.startsWith(`${item.to}/`);
+                    if (matched) {
+                      // Already on this tab — don't navigate again, just scroll to top
+                      e.preventDefault();
+                      handleNavClick(item, true);
+                    }
+                  }}
                   className={({ isActive }) =>
                     cn(
                       "flex flex-col items-center justify-center flex-1 h-full",

@@ -1,36 +1,29 @@
 param(
-  [string]$ProjectRef = "lfkbgnbjxskspsownvjm",
+  [string]$ProjectRef = "",
   [switch]$SkipE2EEGuard
 )
 
 $ErrorActionPreference = 'Stop'
 
-$pending = @(
-  '20260228183000_email_router_inbound_inbox.sql',
-  '20260228190000_email_router_threads_and_read_state.sql',
-  '20260228193000_bots_and_mini_apps.sql',
-  '20260229000000_crm_core.sql',
-  '20260229000001_phase1_chat_features_b076_b077_b097_b098.sql',
-  '20260229001000_crm_rpc.sql',
-  '20260303150000_e2ee_schema_alignment_v2.sql',
-  '20260304060000_e2ee_disable_encryption_rpc.sql',
-  '20260304103000_e2ee_enable_encryption_rpc.sql'
-)
+function Resolve-ProjectRef([string]$PreferredRef, [string]$repoRoot) {
+  if (-not [string]::IsNullOrWhiteSpace($PreferredRef)) { return $PreferredRef.Trim() }
 
-$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-if (-not $SkipE2EEGuard) {
-  $e2eeGuardScript = Join-Path $PSScriptRoot "e2ee-guard.ps1"
-  if (-not (Test-Path -LiteralPath $e2eeGuardScript)) {
-    throw "E2EE guard script not found: $e2eeGuardScript"
+  $linkedRefPath = Join-Path $repoRoot 'supabase\.temp\project-ref'
+  if (Test-Path -LiteralPath $linkedRefPath) {
+    $linked = (Get-Content -LiteralPath $linkedRefPath -Raw -Encoding UTF8).Trim()
+    if (-not [string]::IsNullOrWhiteSpace($linked)) { return $linked }
   }
-  $global:LASTEXITCODE = 0
-  & $e2eeGuardScript -RepoRoot $repoRoot -MigrationFiles $pending
-  if (-not $?) {
-    throw "E2EE guard failed before applying migrations."
+
+  $configPath = Join-Path $repoRoot 'supabase\config.toml'
+  if (Test-Path -LiteralPath $configPath) {
+    $line = Get-Content -LiteralPath $configPath | Where-Object { $_ -match '^\s*project_id\s*=\s*"([a-z0-9-]+)"\s*$' } | Select-Object -First 1
+    if (-not [string]::IsNullOrWhiteSpace($line)) {
+      $m = [regex]::Match($line, '^\s*project_id\s*=\s*"([a-z0-9-]+)"\s*$')
+      if ($m.Success) { return $m.Groups[1].Value }
+    }
   }
-  if ($LASTEXITCODE -ne 0) {
-    throw "E2EE guard failed before applying migrations with exit code $LASTEXITCODE."
-  }
+
+  throw 'Project ref is missing. Set -ProjectRef or link project first.'
 }
 
 function Read-Secret([string]$Prompt) {
@@ -41,8 +34,35 @@ function Read-Secret([string]$Prompt) {
   } finally {
     [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
   }
-  return ($value.Trim().Trim('"').Trim("'").Replace("`r",'').Replace("`n",'').Replace(' ',''))
+  return ($value.Trim().Trim('"').Trim("'").Replace("`r",'').Replace("`n",''))
 }
+
+function Get-LocalMigrations([string]$repoRoot) {
+  $migrationsDir = Join-Path $repoRoot 'supabase\migrations'
+  if (-not (Test-Path -LiteralPath $migrationsDir)) {
+    throw "Migrations directory not found: $migrationsDir"
+  }
+
+  $items = @()
+  Get-ChildItem -LiteralPath $migrationsDir -Filter '*.sql' -File | Sort-Object Name | ForEach-Object {
+    $m = [regex]::Match($_.Name, '^(\d+)_')
+    if ($m.Success) {
+      $version = $m.Groups[1].Value
+      $name = ($_.BaseName.Substring($version.Length + 1))
+      $items += [PSCustomObject]@{
+        Version = $version
+        Name = $name
+        FileName = $_.Name
+        Path = $_.FullName
+      }
+    }
+  }
+
+  return $items
+}
+
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$resolvedProjectRef = Resolve-ProjectRef -PreferredRef $ProjectRef -repoRoot $repoRoot
 
 $token = $env:SUPABASE_ACCESS_TOKEN
 if ([string]::IsNullOrWhiteSpace($token)) {
@@ -51,12 +71,11 @@ if ([string]::IsNullOrWhiteSpace($token)) {
 if ([string]::IsNullOrWhiteSpace($token)) {
   $token = Read-Secret 'Supabase access token (sbp_...)'
 }
-
 if ([string]::IsNullOrWhiteSpace($token)) {
   throw 'Supabase access token is empty.'
 }
 
-$api = "https://api.supabase.com/v1/projects/$ProjectRef/database/query"
+$api = "https://api.supabase.com/v1/projects/$resolvedProjectRef/database/query"
 $headers = @{
   Authorization = "Bearer $token"
   apikey = $token
@@ -131,14 +150,47 @@ $cols = Invoke-DbQuery "select column_name from information_schema.columns where
 $colNames = @($cols | ForEach-Object { $_.column_name })
 Write-Host ("columns: " + ($colNames -join ', ')) -ForegroundColor Gray
 
-foreach ($file in $pending) {
-  $path = Join-Path $repoRoot ("supabase/migrations/" + $file)
-  if (-not (Test-Path -LiteralPath $path)) {
-    throw "Migration file not found: $path"
+Write-Host "Fetching remote applied migration versions..." -ForegroundColor Cyan
+$appliedRows = Invoke-DbQuery "select version from supabase_migrations.schema_migrations order by version;"
+$appliedVersions = New-Object 'System.Collections.Generic.HashSet[string]'
+foreach ($row in @($appliedRows)) {
+  if ($null -ne $row.version) {
+    [void]$appliedVersions.Add([string]$row.version)
+  }
+}
+
+$localMigrations = Get-LocalMigrations -repoRoot $repoRoot
+$pending = @($localMigrations | Where-Object { -not $appliedVersions.Contains($_.Version) })
+
+Write-Host "Local migrations: $($localMigrations.Count), remote applied: $($appliedVersions.Count), pending: $($pending.Count)" -ForegroundColor Gray
+if ($pending.Count -eq 0) {
+  Write-Host 'No pending migrations. Nothing to apply.' -ForegroundColor Green
+  exit 0
+}
+
+if (-not $SkipE2EEGuard) {
+  $e2eeGuardScript = Join-Path $PSScriptRoot "e2ee-guard.ps1"
+  if (-not (Test-Path -LiteralPath $e2eeGuardScript)) {
+    throw "E2EE guard script not found: $e2eeGuardScript"
   }
 
-  $version = ($file -split '_')[0]
-  $name = ($file.Substring($version.Length + 1) -replace '\\.sql$','')
+  $pendingFiles = @($pending | ForEach-Object { $_.FileName })
+  $global:LASTEXITCODE = 0
+  & $e2eeGuardScript -RepoRoot $repoRoot -MigrationFiles $pendingFiles
+  if (-not $?) {
+    throw "E2EE guard failed before applying migrations."
+  }
+  if ($LASTEXITCODE -ne 0) {
+    throw "E2EE guard failed before applying migrations with exit code $LASTEXITCODE."
+  }
+}
+
+foreach ($mig in $pending) {
+  $version = $mig.Version
+  $name = $mig.Name
+  $file = $mig.FileName
+  $path = $mig.Path
+
   $sql = Get-Content -LiteralPath $path -Raw -Encoding UTF8
 
   if ($version -eq '20260229001000') {

@@ -27,7 +27,10 @@ export type AdminApiAction =
   | "jit.revoke"
   | "hashtags.list"
   | "hashtags.status.set"
-  | "hashtags.status.bulk_set";
+  | "hashtags.status.bulk_set"
+  | "service_bugs.create"
+  | "service_bugs.update"
+  | "service_bugs.delete";
 
 export type KillSwitchRow = {
   key: string;

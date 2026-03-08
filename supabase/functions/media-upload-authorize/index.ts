@@ -1,4 +1,11 @@
 /**
+ * @deprecated This function is no longer used. Media uploads now go through
+ * the media-server on AdminVPS (media.mansoni.ru). This function is kept
+ * temporarily for backward compatibility during the migration period.
+ * Remove after 2026-04-08.
+ */
+
+/**
  * Phase 1 Trust-lite: Delegation token consumer for media:upload
  *
  * Accepts a delegation JWT (Authorization: Bearer <token>) and returns a signed

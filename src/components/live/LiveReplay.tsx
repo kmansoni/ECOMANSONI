@@ -4,6 +4,7 @@
 import React, { useState, useRef, useCallback } from "react";
 import { Play, Square, Save, Download, Loader2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { uploadMedia } from "@/lib/mediaUpload";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -60,16 +61,8 @@ export function LiveReplay({ sessionId, stream, onSaved }: Props) {
       if (!user) throw new Error("Не авторизован");
 
       const blob = new Blob(chunksRef.current, { type: "video/webm" });
-      const fileName = `live-replay/${sessionId}/${Date.now()}.webm`;
-
-      const { error: uploadErr } = await supabase.storage
-        .from("media")
-        .upload(fileName, blob, { contentType: "video/webm" });
-
-      if (uploadErr) throw uploadErr;
-
-      const { data: urlData } = supabase.storage.from("media").getPublicUrl(fileName);
-      const replayUrl = urlData.publicUrl;
+      const uploadResult = await uploadMedia(blob, { bucket: 'media' });
+      const replayUrl = uploadResult.url;
 
       // Сохранить ссылку в live_sessions
       await db.from("live_sessions").update({ replay_url: replayUrl }).eq("id", sessionId);

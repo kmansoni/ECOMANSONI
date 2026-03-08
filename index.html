@@ -61,54 +61,64 @@
   <meta property="og:description" content="Социальная сеть mansoni">
   <meta name="twitter:description" content="Социальная сеть mansoni">
   <link rel="icon" type="image/png" href="https://storage.googleapis.com/gpt-engineer-file-uploads/cPeXRra4uUQ0AEG8Mui49FbVGp73/uploads/1769982762295-296e92f8a59e339a7d403032aab87b66-a2004440-7949-409c-8198-d96636af0cf2.png">
-  <link rel="stylesheet" href="/boot-fallback.css">
 </head>
 
   <body>
     <div id="root">
-      <div id="boot-fallback">
+      <!-- Minimal inline boot-fallback shown until React mounts.
+           Provides basic navigation links if the JS bundle fails to load. -->
+      <div id="boot-fallback" style="display:none;min-height:100vh;align-items:center;justify-content:center;background:#0a1628;color:#fff;font-family:Inter,sans-serif;text-align:center;padding:24px">
         <div>
-          <h1>Добро пожаловать</h1>
-          <p>Если приложение загружается дольше обычного, откройте вход вручную.</p>
-          <a href="/auth">Вход</a>
-          <a href="/">Главная</a>
-          <div id="maintenance-notice">
-            <p class="mn-title">⚙️ Ведутся технические работы</p>
-            <p class="mn-body">Совсем скоро всё заработает. Попробуйте обновить страницу чуть позже.</p>
-          </div>
+          <h1 style="margin:0 0 12px;font-size:24px;font-weight:700">Загрузка…</h1>
+          <p style="margin:0 0 20px;opacity:.8">Если страница не открывается, попробуйте обновить.</p>
+          <a href="/" style="display:inline-block;padding:10px 20px;margin:0 6px;border-radius:12px;border:1px solid rgba(255,255,255,.25);color:#fff;text-decoration:none;background:rgba(255,255,255,.08)">Главная</a>
+          <a href="/auth" style="display:inline-block;padding:10px 20px;margin:0 6px;border-radius:12px;border:1px solid rgba(255,255,255,.25);color:#fff;text-decoration:none;background:rgba(255,255,255,.08)">Войти</a>
         </div>
       </div>
     </div>
     <script>
-      // Show maintenance notice ONLY if the app fails to load
+      // Boot fallback strategy:
+      //   1. Show fallback after 250 ms — avoids flash on fast connections.
+      //   2. Hide fallback as soon as React mounts (MutationObserver).
+      //   3. If React never mounts after 10 s (bundle error / network down),
+      //      keep fallback visible so the user can navigate manually.
       (function () {
-        function showMaintenance() {
-          var fb = document.getElementById('boot-fallback');
-          var mn = document.getElementById('maintenance-notice');
-          if (fb && mn) mn.style.display = 'block';
+        var fb = document.getElementById('boot-fallback');
+        var root = document.getElementById('root');
+        var showTimer = null;
+        var hideTimer = null;
+
+        function showFallback() {
+          if (fb) fb.style.display = 'flex';
         }
 
-        // Case 1: app script load error (network down / 404 / SyntaxError)
-        window.addEventListener('error', function (e) {
-          if (e.target && (e.target.tagName === 'SCRIPT' || e.target.tagName === 'LINK')) {
-            showMaintenance();
-          }
-        }, true);
+        function hideFallback(obs) {
+          if (showTimer) clearTimeout(showTimer);
+          if (hideTimer) clearTimeout(hideTimer);
+          if (fb) fb.style.display = 'none';
+          if (obs) obs.disconnect();
+        }
 
-        // Case 2: React never mounts after 10 s (server down, JS crash before mount)
-        var _bootTimeout = setTimeout(function () {
-          showMaintenance();
-        }, 10000);
+        // Delay showing fallback — on fast connections React mounts before this fires
+        showTimer = setTimeout(showFallback, 250);
 
-        // Clear timer as soon as React takes over (boot-fallback removed from DOM)
-        var _observer = new MutationObserver(function () {
-          if (!document.getElementById('boot-fallback')) {
-            clearTimeout(_bootTimeout);
-            _observer.disconnect();
-          }
-        });
-        var root = document.getElementById('root');
-        if (root) _observer.observe(root, { childList: true, subtree: false });
+        // Safety net: if React never mounts in 10 s, show fallback permanently
+        hideTimer = setTimeout(showFallback, 10000);
+
+        if (root) {
+          var obs = new MutationObserver(function (_, o) {
+            // React has mounted when #root has children other than boot-fallback
+            if (!document.getElementById('boot-fallback')) {
+              hideFallback(o);
+            } else if (
+              root.children.length > 1 ||
+              (root.children[0] && root.children[0].id !== 'boot-fallback')
+            ) {
+              hideFallback(o);
+            }
+          });
+          obs.observe(root, { childList: true });
+        }
       })();
     </script>
     <script type="module" src="/src/main.tsx"></script>

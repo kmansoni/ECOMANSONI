@@ -58,6 +58,7 @@ import { useNotificationPreferences, type NotificationCategory } from "@/hooks/u
 import { PrivacySecurityCenter } from "@/components/settings/PrivacySecurityCenter";
 import { AppearanceAndEnergyCenter } from "@/components/settings/AppearanceAndEnergyCenter";
 import { StickersAndReactionsCenter } from "@/components/settings/StickersAndReactionsCenter";
+import { uploadMedia } from "@/lib/mediaUpload";
 
 type Screen =
   | "main"
@@ -2828,15 +2829,8 @@ export function SettingsPage() {
                             const fileName = `${user!.id}-${Date.now()}.${ext}`;
                             const filePath = `status-stickers/${fileName}`;
 
-                            const { error: uploadError } = await supabase.storage
-                              .from("post-media")
-                              .upload(filePath, file, { upsert: true });
-                            if (uploadError) throw uploadError;
-
-                            const { data: urlData } = supabase.storage
-                              .from("post-media")
-                              .getPublicUrl(filePath);
-                            const publicUrl = urlData.publicUrl;
+                            const uploadResult = await uploadMedia(file, { bucket: 'post-media' });
+                            const publicUrl = uploadResult.url;
 
                             const { error: updError } = await supabase
                               .from("profiles")

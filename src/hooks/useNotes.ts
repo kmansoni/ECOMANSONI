@@ -11,6 +11,58 @@ export interface StatusNote {
     username: string;
     avatar_url?: string;
   };
+  /** Emoji reaction sent by the current viewer (if any) */
+  myReaction?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Note reactions — stored in `note_reactions` table:
+//   (reactor_id, note_owner_id, emoji, created_at)
+//   PK: (reactor_id, note_owner_id) — one reaction per viewer per note
+// ---------------------------------------------------------------------------
+
+export async function sendNoteReaction(
+  reactorId: string,
+  noteOwnerId: string,
+  emoji: string
+): Promise<void> {
+  const { error } = await (supabase as any)
+    .from("note_reactions")
+    .upsert(
+      { reactor_id: reactorId, note_owner_id: noteOwnerId, emoji },
+      { onConflict: "reactor_id,note_owner_id" }
+    );
+  if (error) throw error;
+}
+
+export async function deleteNoteReaction(
+  reactorId: string,
+  noteOwnerId: string
+): Promise<void> {
+  const { error } = await (supabase as any)
+    .from("note_reactions")
+    .delete()
+    .eq("reactor_id", reactorId)
+    .eq("note_owner_id", noteOwnerId);
+  if (error) throw error;
+}
+
+/** Fetch reactions sent by `reactorId` for a list of note owners */
+export async function getNoteReactions(
+  reactorId: string,
+  noteOwnerIds: string[]
+): Promise<Record<string, string>> {
+  if (!noteOwnerIds.length) return {};
+  const { data } = await (supabase as any)
+    .from("note_reactions")
+    .select("note_owner_id, emoji")
+    .eq("reactor_id", reactorId)
+    .in("note_owner_id", noteOwnerIds);
+  const map: Record<string, string> = {};
+  for (const row of (data ?? []) as Array<{ note_owner_id: string; emoji: string }>) {
+    map[row.note_owner_id] = row.emoji;
+  }
+  return map;
 }
 
 export async function createNote(userId: string, text: string, emoji?: string): Promise<void> {

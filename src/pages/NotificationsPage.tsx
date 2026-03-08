@@ -8,78 +8,160 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { isToday, isThisWeek, parseISO } from "date-fns";
 import { NotificationFilters } from "@/components/notifications/NotificationFilters";
-import { filterNotifications, type NotificationFilterType } from "@/components/notifications/notificationFiltersModel";
+import {
+  filterNotifications,
+  groupNotifications,
+  buildGroupSummary,
+  type NotificationFilterType,
+  type GroupedNotification,
+} from "@/components/notifications/notificationFiltersModel";
 import { initPushNotifications } from "@/lib/push/serviceWorker";
 
-function groupNotifications(notifications: Notification[]) {
-  const today: Notification[] = [];
-  const week: Notification[] = [];
-  const earlier: Notification[] = [];
+// ---------------------------------------------------------------------------
+// Time-based section grouping
+// ---------------------------------------------------------------------------
 
-  for (const n of notifications) {
-    const date = parseISO(n.created_at);
+interface NotificationSections {
+  today: GroupedNotification[];
+  week: GroupedNotification[];
+  earlier: GroupedNotification[];
+}
+
+function sectionGroups(groups: GroupedNotification[]): NotificationSections {
+  const today: GroupedNotification[] = [];
+  const week: GroupedNotification[] = [];
+  const earlier: GroupedNotification[] = [];
+
+  for (const g of groups) {
+    const date = parseISO(g.representative.created_at);
     if (isToday(date)) {
-      today.push(n);
+      today.push(g);
     } else if (isThisWeek(date)) {
-      week.push(n);
+      week.push(g);
     } else {
-      earlier.push(n);
+      earlier.push(g);
     }
   }
 
   return { today, week, earlier };
 }
 
+// ---------------------------------------------------------------------------
+// GroupedNotificationItem — renders a single grouped row
+// ---------------------------------------------------------------------------
+
+interface GroupedItemProps {
+  group: GroupedNotification;
+  onMarkAsRead: (id: string) => void;
+  onDelete: (id: string) => void;
+}
+
+function GroupedNotificationItem({ group, onMarkAsRead, onDelete }: GroupedItemProps) {
+  const { representative, actorCount, members } = group;
+
+  // For multi-actor groups, override the notification body with the summary
+  const displayNotification: Notification =
+    actorCount > 1
+      ? {
+          ...representative,
+          // Override body with grouped summary
+          body: buildGroupSummary(group),
+        }
+      : representative;
+
+  return (
+    <NotificationItem
+      notification={displayNotification}
+      onMarkAsRead={() => {
+        // Mark all members as read
+        members.forEach((m) => {
+          if (!m.is_read) onMarkAsRead(m.id);
+        });
+      }}
+      onDelete={() => onDelete(representative.id)}
+    />
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Section renderer
+// ---------------------------------------------------------------------------
+
+function renderSection(
+  title: string,
+  groups: GroupedNotification[],
+  onMarkAsRead: (id: string) => void,
+  onDelete: (id: string) => void,
+) {
+  if (groups.length === 0) return null;
+  return (
+    <div key={title} className="mb-4">
+      <p className="text-xs font-semibold text-white/40 uppercase tracking-wider px-4 py-2">
+        {title}
+      </p>
+      <AnimatePresence>
+        {groups.map((g) => (
+          <motion.div
+            key={g.key}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, x: -100 }}
+            transition={{ duration: 0.2 }}
+          >
+            <GroupedNotificationItem
+              group={g}
+              onMarkAsRead={onMarkAsRead}
+              onDelete={onDelete}
+            />
+          </motion.div>
+        ))}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Page
+// ---------------------------------------------------------------------------
+
 export function NotificationsPage() {
   const navigate = useNavigate();
-  const { notifications, loading, unreadCount, markAsRead, markAllAsRead, deleteNotification, loadMore, hasMore, refetch } = useNotifications();
-  const [activeFilter, setActiveFilter] = useState<NotificationFilterType>("all");
+  const {
+    notifications,
+    loading,
+    unreadCount,
+    markAsRead,
+    markAllAsRead,
+    deleteNotification,
+    loadMore,
+    hasMore,
+    refetch,
+  } = useNotifications();
 
-  // Регистрация push-уведомлений
+  // Default to "you" tab — matches Instagram's default behaviour
+  const [activeFilter, setActiveFilter] = useState<NotificationFilterType>("you");
+
+  // Register push notifications on mount
   useEffect(() => {
     void initPushNotifications(import.meta.env.VITE_VAPID_PUBLIC_KEY);
   }, []);
 
-  // Pull-to-refresh
+  // Pull-to-refresh via touch gesture
   const startY = useRef(0);
-  const handleTouchStart = (e: React.TouchEvent) => {
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
     startY.current = e.touches[0].clientY;
-  };
-  const handleTouchEnd = (e: React.TouchEvent) => {
+  }, []);
+  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
     const dy = e.changedTouches[0].clientY - startY.current;
-    if (dy > 80) refetch();
-  };
+    if (dy > 80) void refetch();
+  }, [refetch]);
 
-  const filteredNotifications = filterNotifications(notifications, activeFilter);
-  const groups = groupNotifications(filteredNotifications);
+  // Filter → group → section
+  const filtered = filterNotifications(notifications, activeFilter);
+  const grouped = groupNotifications(filtered);
+  const sections = sectionGroups(grouped);
 
-  const renderSection = (title: string, items: Notification[]) => {
-    if (!items.length) return null;
-    return (
-      <div key={title} className="mb-4">
-        <p className="text-xs font-semibold text-white/40 uppercase tracking-wider px-4 py-2">
-          {title}
-        </p>
-        <AnimatePresence>
-          {items.map((n) => (
-            <motion.div
-              key={n.id}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, x: -100 }}
-              transition={{ duration: 0.2 }}
-            >
-              <NotificationItem
-                notification={n}
-                onMarkAsRead={markAsRead}
-                onDelete={deleteNotification}
-              />
-            </motion.div>
-          ))}
-        </AnimatePresence>
-      </div>
-    );
-  };
+  const isEmpty = !loading && grouped.length === 0;
 
   return (
     <div
@@ -106,13 +188,14 @@ export function NotificationsPage() {
             size="icon"
             className="w-9 h-9 text-white/70"
             onClick={() => navigate("/notifications/settings")}
+            aria-label="Настройки уведомлений"
           >
             <Settings className="w-5 h-5" />
           </Button>
         </div>
       </div>
 
-      {/* Фильтры */}
+      {/* Filter tabs */}
       <NotificationFilters
         active={activeFilter}
         onChange={setActiveFilter}
@@ -122,7 +205,7 @@ export function NotificationsPage() {
       {/* Content */}
       <div className="pb-6">
         {loading ? (
-          <div className="px-4 space-y-4 pt-4">
+          <div className="px-4 space-y-4 pt-4" aria-label="Загрузка уведомлений">
             {Array.from({ length: 6 }).map((_, i) => (
               <div key={i} className="flex items-center gap-3">
                 <Skeleton className="w-11 h-11 rounded-full bg-white/10" />
@@ -133,17 +216,17 @@ export function NotificationsPage() {
               </div>
             ))}
           </div>
-        ) : notifications.length === 0 ? (
+        ) : isEmpty ? (
           <div className="flex flex-col items-center justify-center gap-3 pt-20 text-white/40">
-            <RefreshCw className="w-12 h-12" />
+            <RefreshCw className="w-12 h-12" aria-hidden="true" />
             <p className="text-base font-medium">Нет уведомлений</p>
             <p className="text-sm">Мы сообщим, когда что-то произойдёт</p>
           </div>
         ) : (
           <>
-            {renderSection("Сегодня", groups.today)}
-            {renderSection("На этой неделе", groups.week)}
-            {renderSection("Ранее", groups.earlier)}
+            {renderSection("Сегодня", sections.today, markAsRead, deleteNotification)}
+            {renderSection("На этой неделе", sections.week, markAsRead, deleteNotification)}
+            {renderSection("Ранее", sections.earlier, markAsRead, deleteNotification)}
 
             {hasMore && (
               <div className="flex justify-center pt-4 pb-8">
