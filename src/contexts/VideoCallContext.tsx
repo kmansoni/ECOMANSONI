@@ -77,6 +77,37 @@ function makeRandomB64(size: number): string {
   return btoa(binary);
 }
 
+function getMediaPermissionToastPayload(error: unknown, callType: "video" | "audio"): { title: string; description: string } {
+  const title = callType === "video" ? "Нет доступа к камере или микрофону" : "Нет доступа к микрофону";
+
+  if (error && typeof error === "object" && "name" in error) {
+    const name = String((error as { name?: unknown }).name ?? "");
+    if (name === "NotAllowedError" || name === "SecurityError") {
+      return {
+        title,
+        description: "Разрешите доступ в настройках браузера и перезапустите звонок",
+      };
+    }
+    if (name === "NotFoundError" || name === "DevicesNotFoundError") {
+      return {
+        title,
+        description: "Не найдено устройство микрофона или камеры",
+      };
+    }
+    if (name === "NotReadableError" || name === "TrackStartError") {
+      return {
+        title,
+        description: "Устройство занято другим приложением",
+      };
+    }
+  }
+
+  return {
+    title,
+    description: "Проверьте доступ к устройствам и попробуйте снова",
+  };
+}
+
 interface VideoCallContextType {
   // State
   status: VideoCallStatus;
@@ -946,6 +977,11 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       void bootstrapCallsV2Room(call, "callee");
     } catch (err) {
       console.error("[VideoCallContext] answerCall error:", err);
+      const toastPayload = getMediaPermissionToastPayload(err, call.call_type === "video" ? "video" : "audio");
+      toast.error(toastPayload.title, {
+        description: toastPayload.description,
+        duration: 5000,
+      });
       setIsCallUiActive(false); // Release UI-lock on error
     }
   }, [answerVideoCall, clearIncomingCall, bootstrapCallsV2Room]);
@@ -1000,23 +1036,19 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       if (!result) {
         console.log("[VideoCallContext] startCall returned null, releasing UI-lock");
         setIsCallUiActive(false); // Release UI-lock if call failed
-        // Show permission error toast
-        toast.error(
-          callType === "video" 
-            ? "Нет доступа к камере или микрофону"
-            : "Нет доступа к микрофону",
-          {
-            description: "Разрешите доступ в настройках браузера",
-            duration: 5000,
-          }
-        );
+        const toastPayload = getMediaPermissionToastPayload(null, callType);
+        toast.error(toastPayload.title, {
+          description: toastPayload.description,
+          duration: 5000,
+        });
       }
       return result;
     } catch (err) {
       console.error("[VideoCallContext] startCall error:", err);
       setIsCallUiActive(false); // Release UI-lock on error
-      toast.error("Ошибка при начале звонка", {
-        description: "Попробуйте еще раз",
+      const toastPayload = getMediaPermissionToastPayload(err, callType);
+      toast.error(toastPayload.title, {
+        description: toastPayload.description,
         duration: 4000,
       });
       return null;

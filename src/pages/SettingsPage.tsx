@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { X, Moon, Bell, Lock, HelpCircle, Info, LogOut, ChevronRight, ChevronLeft, Shield, Heart, Archive, Clock, Bookmark, Eye, UserX, MessageCircle, Share2, Users, Smartphone, Key, Mail, Database, Download, FileText, Video, AlertCircle, BarChart3, Accessibility, Globe, BadgeCheck, Smile, Phone, Volume2, RefreshCw } from "lucide-react";
+import { X, Moon, Bell, Lock, HelpCircle, Info, LogOut, ChevronRight, ChevronLeft, Shield, Heart, Archive, Clock, Bookmark, Eye, UserX, MessageCircle, Share2, Users, Smartphone, Key, Mail, Database, Download, FileText, Video, AlertCircle, BarChart3, Accessibility, Globe, BadgeCheck, Smile, Phone, Volume2, RefreshCw, UserPlus } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -31,9 +31,15 @@ import {
   listBrandedApprovedAuthors,
   listOutgoingBrandedPartnerRequests,
   revokeBrandedAuthor,
+  listCloseFriends,
+  addCloseFriend,
+  removeCloseFriend,
+  getScreenTimeToday,
+  pingScreenTime,
   type BrandedPartnerRequest,
   type BrandedApprovedAuthor,
   type CreatorInsights,
+  type CloseFriend,
 } from "@/lib/user-settings";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { CartesianGrid, Line, LineChart, XAxis, YAxis, Bar, BarChart, ResponsiveContainer } from "recharts";
@@ -95,6 +101,7 @@ type Screen =
   | "branded_content_requests"
   | "branded_content_info"
   | "help"
+  | "close_friends"
   | "about";
 
 function formatCompact(num: number) {
@@ -364,6 +371,18 @@ export function SettingsPage() {
   const [activityRepostsLoading, setActivityRepostsLoading] = useState(false);
   const [activityExportLoading, setActivityExportLoading] = useState(false);
 
+  // Screen time tracking
+  const [screenTimeSeconds, setScreenTimeSeconds] = useState<number>(0);
+  const [screenTimeLoading, setScreenTimeLoading] = useState(false);
+
+  // Close friends
+  const [closeFriends, setCloseFriends] = useState<CloseFriend[]>([]);
+  const [closeFriendsLoading, setCloseFriendsLoading] = useState(false);
+  const [closeFriendsProfiles, setCloseFriendsProfiles] = useState<Record<string, any>>({});
+  const [closeFriendSearch, setCloseFriendSearch] = useState("");
+  const [closeFriendSearchResults, setCloseFriendSearchResults] = useState<any[]>([]);
+  const [closeFriendSearchLoading, setCloseFriendSearchLoading] = useState(false);
+
   const { folders, itemsByFolderId, loading: foldersLoading, refetch: refetchFolders } = useChatFolders();
   const { conversations } = useConversations();
   const { channels } = useChannels();
@@ -474,6 +493,16 @@ export function SettingsPage() {
     setMounted(true);
   }, []);
 
+  // Screen time — ping every 60s while app is open
+  useEffect(() => {
+    if (!isAuthed) return;
+    void pingScreenTime(0); // initial touch
+    const timer = setInterval(() => {
+      void pingScreenTime(60);
+    }, 60_000);
+    return () => clearInterval(timer);
+  }, [isAuthed]);
+
   const currentTheme = (mounted ? theme : "dark") ?? "dark";
   const isDark = currentTheme === "dark";
 
@@ -508,6 +537,25 @@ export function SettingsPage() {
       currentScreen === "activity_reposts"
     ) {
       setCurrentScreen("activity");
+      return;
+    }
+
+    if (
+      currentScreen === "stats_recommendations" ||
+      currentScreen === "stats_overview" ||
+      currentScreen === "stats_content" ||
+      currentScreen === "stats_followers"
+    ) {
+      setCurrentScreen("statistics");
+      return;
+    }
+
+    if (
+      currentScreen === "branded_content_authors" ||
+      currentScreen === "branded_content_requests" ||
+      currentScreen === "branded_content_info"
+    ) {
+      setCurrentScreen("branded_content");
       return;
     }
 
@@ -1615,7 +1663,24 @@ export function SettingsPage() {
                 "mx-4 backdrop-blur-xl rounded-2xl border overflow-hidden",
                 isDark ? "settings-dark-card" : "bg-card/80 border-white/20"
               )}>
-                {renderMenuItem(<Clock className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />, "Время в приложении", undefined, "1ч 23м")}
+                {renderMenuItem(
+                  <Clock className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />,
+                  "Время в приложении",
+                  () => {
+                    if (!screenTimeLoading) {
+                      setScreenTimeLoading(true);
+                      getScreenTimeToday()
+                        .then((s) => setScreenTimeSeconds(s))
+                        .catch(() => {})
+                        .finally(() => setScreenTimeLoading(false));
+                    }
+                  },
+                  screenTimeLoading
+                    ? "..."
+                    : screenTimeSeconds > 0
+                      ? `${Math.floor(screenTimeSeconds / 3600)}ч ${Math.floor((screenTimeSeconds % 3600) / 60)}м`
+                      : "0м",
+                )}
                 {renderMenuItem(
                   <Heart className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />,
                   "Лайки",
@@ -2087,6 +2152,57 @@ export function SettingsPage() {
                     }
                   )}
                 </div>
+
+                <div className={cn(
+                  "backdrop-blur-xl rounded-2xl border overflow-hidden",
+                  isDark ? "settings-dark-card" : "bg-card/80 border-white/20"
+                )}>
+                  {renderToggleItem(
+                    <Volume2 className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />,
+                    "Шумоподавление",
+                    "Подавлять фоновый шум во время звонков",
+                    settings?.calls_noise_suppression ?? true,
+                    async (val) => {
+                      if (!isAuthed) return;
+                      await updateSettings({ calls_noise_suppression: val });
+                    }
+                  )}
+                </div>
+
+                <div className={cn(
+                  "backdrop-blur-xl rounded-2xl border overflow-hidden",
+                  isDark ? "settings-dark-card" : "bg-card/80 border-white/20"
+                )}>
+                  <div className="px-5 py-4">
+                    <p className="font-semibold">Peer-to-Peer</p>
+                    <p className={cn("text-sm mt-1", isDark ? "text-white/60" : "text-white/70")}>
+                      Кто может использовать прямое P2P-соединение
+                    </p>
+                  </div>
+                  <div className="px-5 pb-4 flex flex-col gap-1">
+                    {(["everyone", "contacts", "nobody"] as const).map((mode) => {
+                      const labels: Record<string, string> = { everyone: "Все", contacts: "Контакты", nobody: "Никто" };
+                      const isActive = (settings?.calls_p2p_mode ?? "contacts") === mode;
+                      return (
+                        <button
+                          key={mode}
+                          onClick={async () => {
+                            if (!isAuthed) return;
+                            await updateSettings({ calls_p2p_mode: mode });
+                          }}
+                          className={cn(
+                            "w-full text-left px-4 py-3 rounded-xl transition-colors",
+                            isActive
+                              ? isDark ? "bg-white/10 font-semibold" : "bg-primary/10 font-semibold text-primary"
+                              : isDark ? "hover:bg-white/5" : "hover:bg-muted/30"
+                          )}
+                        >
+                          {labels[mode]}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             </div>
           </>
@@ -2385,8 +2501,12 @@ export function SettingsPage() {
                   "Сайты",
                   () => setCurrentScreen("security_sites"),
                 )}
-                {renderMenuItem(<Mail className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />, "Письма от нас")}
-                {renderMenuItem(<Database className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />, "Данные аккаунта")}
+                {renderMenuItem(<Mail className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />, "Письма от нас", () => {
+                  navigate("/settings/notifications");
+                })}
+                {renderMenuItem(<Database className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />, "Данные аккаунта", () => {
+                  navigate("/profile");
+                })}
               </div>
             </div>
           </>
@@ -4289,10 +4409,18 @@ export function SettingsPage() {
                 "mx-4 backdrop-blur-xl rounded-2xl border overflow-hidden",
                 isDark ? "settings-dark-card" : "bg-card/80 border-white/20"
               )}>
-                {renderMenuItem(<HelpCircle className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />, "Справочный центр")}
-                {renderMenuItem(<AlertCircle className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />, "Сообщить о проблеме")}
-                {renderMenuItem(<FileText className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />, "Условия использования")}
-                {renderMenuItem(<Lock className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />, "Политика конфиденциальности")}
+                {renderMenuItem(<HelpCircle className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />, "Справочный центр", () => {
+                  window.open("https://mansoni.app/help", "_blank", "noopener,noreferrer");
+                })}
+                {renderMenuItem(<AlertCircle className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />, "Сообщить о проблеме", () => {
+                  window.open("mailto:support@mansoni.app?subject=%D0%A1%D0%BE%D0%BE%D0%B1%D1%89%D0%B5%D0%BD%D0%B8%D0%B5%20%D0%BE%20%D0%BF%D1%80%D0%BE%D0%B1%D0%BB%D0%B5%D0%BC%D0%B5", "_blank", "noopener,noreferrer");
+                })}
+                {renderMenuItem(<FileText className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />, "Условия использования", () => {
+                  window.open("https://mansoni.app/terms", "_blank", "noopener,noreferrer");
+                })}
+                {renderMenuItem(<Lock className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />, "Политика конфиденциальности", () => {
+                  window.open("https://mansoni.app/privacy", "_blank", "noopener,noreferrer");
+                })}
               </div>
             </div>
           </>
@@ -4317,8 +4445,12 @@ export function SettingsPage() {
                 "mx-4 backdrop-blur-xl rounded-2xl border overflow-hidden",
                 isDark ? "settings-dark-card" : "bg-card/80 border-white/20"
               )}>
-                {renderMenuItem(<FileText className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />, "Лицензии открытого ПО")}
-                {renderMenuItem(<Info className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />, "Информация о разработчике")}
+                {renderMenuItem(<FileText className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />, "Лицензии открытого ПО", () => {
+                  window.open("https://mansoni.app/licenses", "_blank", "noopener,noreferrer");
+                })}
+                {renderMenuItem(<Info className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />, "Информация о разработчике", () => {
+                  toast({ title: "Разработчик", description: "mansoni — мессенджер нового поколения. © 2024–2026 Mansoni Team." });
+                })}
               </div>
             </div>
           </>
@@ -4355,6 +4487,7 @@ export function SettingsPage() {
                   {renderMenuItem(<AlertCircle className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />, "Энергосбережение", () => setCurrentScreen("energy_saver"))}
                   {renderMenuItem(<Database className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />, "Данные и память", () => setCurrentScreen("data_storage"))}
                   {renderMenuItem(<Lock className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />, "Конфиденциальность", () => setCurrentScreen("privacy"))}
+                  {renderMenuItem(<Users className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />, "Близкие друзья", () => setCurrentScreen("close_friends"), closeFriends.length ? String(closeFriends.length) : undefined)}
                   {renderMenuItem(
                     <Smile className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />,
                     "Стикеры и эмодзи",

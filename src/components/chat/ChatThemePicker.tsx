@@ -1,24 +1,9 @@
+import { useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Check } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-
-export const CHAT_THEMES = [
-  { id: "default", label: "По умолчанию", gradient: "from-zinc-900 to-zinc-950", preview: "#18181b" },
-  { id: "midnight", label: "Полночь", gradient: "from-indigo-950 to-black", preview: "#1e1b4b" },
-  { id: "rose", label: "Роза", gradient: "from-rose-950 to-zinc-950", preview: "#4c0519" },
-  { id: "ocean", label: "Океан", gradient: "from-cyan-950 to-zinc-950", preview: "#083344" },
-  { id: "forest", label: "Лес", gradient: "from-green-950 to-zinc-950", preview: "#052e16" },
-  { id: "sunset", label: "Закат", gradient: "from-orange-950 to-zinc-950", preview: "#431407" },
-  { id: "purple", label: "Фиолетовый", gradient: "from-purple-950 to-zinc-950", preview: "#3b0764" },
-  { id: "gold", label: "Золото", gradient: "from-yellow-950 to-zinc-950", preview: "#422006" },
-  { id: "pink", label: "Розовый", gradient: "from-pink-950 to-zinc-950", preview: "#500724" },
-  { id: "teal", label: "Бирюза", gradient: "from-teal-950 to-zinc-950", preview: "#042f2e" },
-  { id: "red", label: "Красный", gradient: "from-red-950 to-zinc-950", preview: "#450a0a" },
-  { id: "blue", label: "Синий", gradient: "from-blue-950 to-zinc-950", preview: "#172554" },
-] as const;
-
-export type ThemeId = (typeof CHAT_THEMES)[number]["id"];
+import { CHAT_THEMES, type ThemeId } from "./chatThemes";
 
 const EMOJIS = ["❤️", "🔥", "⭐", "🌙", "🌈", "💫", "🎵", "🌸", "🦋", "🎉", "🍀", "🐾"];
 
@@ -34,27 +19,86 @@ interface ChatThemePickerProps {
 export function ChatThemePicker({
   isOpen, onClose, conversationId, currentTheme, currentEmoji, onThemeChange
 }: ChatThemePickerProps) {
+  const [savingField, setSavingField] = useState<"theme" | "emoji" | null>(null);
+  const requestSeqRef = useRef(0);
+
   const handleSelect = async (themeId: ThemeId) => {
+    if (savingField) return;
+    const requestSeq = ++requestSeqRef.current;
+    setSavingField("theme");
+
     try {
-      await (supabase as any)
+      const { data, error } = await supabase
         .from("conversations")
         .update({ theme: themeId })
-        .eq("id", conversationId);
+        .eq("id", conversationId)
+        .select("id")
+        .maybeSingle();
+
+      if (requestSeq !== requestSeqRef.current) {
+        return;
+      }
+
+      if (error) {
+        throw error;
+      }
+
+      if (!data?.id) {
+        toast.error("Не удалось сменить тему", {
+          description: "Нет доступа к чату или запись не найдена",
+        });
+        return;
+      }
+
       onThemeChange(themeId, currentEmoji);
-    } catch {
-      toast.error("Не удалось сменить тему");
+    } catch (err: unknown) {
+      toast.error("Не удалось сменить тему", {
+        description: err instanceof Error ? err.message : "Ошибка сохранения",
+      });
+    } finally {
+      if (requestSeq === requestSeqRef.current) {
+        setSavingField(null);
+      }
     }
   };
 
   const handleEmojiSelect = async (emoji: string) => {
+    if (savingField) return;
+    const requestSeq = ++requestSeqRef.current;
+    setSavingField("emoji");
+
     try {
-      await (supabase as any)
+      const { data, error } = await supabase
         .from("conversations")
         .update({ emoji })
-        .eq("id", conversationId);
+        .eq("id", conversationId)
+        .select("id")
+        .maybeSingle();
+
+      if (requestSeq !== requestSeqRef.current) {
+        return;
+      }
+
+      if (error) {
+        throw error;
+      }
+
+      if (!data?.id) {
+        toast.error("Не удалось изменить эмодзи", {
+          description: "Нет доступа к чату или запись не найдена",
+        });
+        return;
+      }
+
       onThemeChange(currentTheme, emoji);
-    } catch {
-      toast.error("Не удалось изменить эмодзи");
+    } catch (err: unknown) {
+      toast.error("Не удалось изменить эмодзи", {
+        description: err instanceof Error ? err.message : "Ошибка сохранения",
+      });
+    } finally {
+      if (requestSeq === requestSeqRef.current) {
+        setSavingField(null);
+      }
     }
   };
 
@@ -91,8 +135,10 @@ export function ChatThemePicker({
                   {CHAT_THEMES.map(theme => (
                     <button
                       key={theme.id}
+                      type="button"
+                      disabled={Boolean(savingField)}
                       onClick={() => handleSelect(theme.id)}
-                      className="flex flex-col items-center gap-1.5"
+                      className="flex flex-col items-center gap-1.5 disabled:opacity-60 disabled:cursor-not-allowed"
                     >
                       <div
                         className="w-14 h-14 rounded-2xl relative border-2 transition-all"
@@ -120,10 +166,12 @@ export function ChatThemePicker({
                   {EMOJIS.map(emoji => (
                     <button
                       key={emoji}
+                      type="button"
+                      disabled={Boolean(savingField)}
                       onClick={() => handleEmojiSelect(emoji)}
                       className={`w-10 h-10 rounded-xl text-xl flex items-center justify-center transition-all ${
                         currentEmoji === emoji ? "bg-white/20 ring-2 ring-white" : "bg-zinc-800"
-                      }`}
+                      } disabled:opacity-60 disabled:cursor-not-allowed`}
                     >
                       {emoji}
                     </button>

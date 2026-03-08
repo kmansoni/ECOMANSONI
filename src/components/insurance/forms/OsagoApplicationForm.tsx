@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Separator } from "@/components/ui/separator";
 import { User, Car, Users, Calendar, Plus, Trash2 } from "lucide-react";
 import { VEHICLE_MAKES, VEHICLE_TYPES } from "@/lib/insurance/vehicle-dictionary";
+import { type OsagoFormData } from "./osagoFormModel";
 
 interface Driver {
   id: string;
@@ -19,37 +20,6 @@ interface Driver {
   kbm: string;
 }
 
-export interface OsagoFormData {
-  // Страхователь
-  lastName: string;
-  firstName: string;
-  middleName: string;
-  birthDate: string;
-  passportSeries: string;
-  passportNumber: string;
-  passportIssued: string;
-  passportDate: string;
-  phone: string;
-  email: string;
-  address: string;
-  // ТС
-  make: string;
-  model: string;
-  year: string;
-  vin: string;
-  regNumber: string;
-  enginePower: string;
-  vehicleType: string;
-  ptsSeries: string;
-  ptsNumber: string;
-  stsSeries: string;
-  stsNumber: string;
-  // Водители
-  drivers: Driver[];
-  // Период
-  startDate: string;
-  usagePeriod: string;
-}
 
 interface Props {
   data: OsagoFormData;
@@ -343,14 +313,3 @@ export default function OsagoApplicationForm({ data, onChange }: Props) {
   );
 }
 
-export function createDefaultOsagoFormData(): OsagoFormData {
-  return {
-    lastName: "", firstName: "", middleName: "", birthDate: "",
-    passportSeries: "", passportNumber: "", passportIssued: "", passportDate: "",
-    phone: "", email: "", address: "",
-    make: "", model: "", year: "", vin: "", regNumber: "",
-    enginePower: "", vehicleType: "", ptsSeries: "", ptsNumber: "", stsSeries: "", stsNumber: "",
-    drivers: [{ id: "1", lastName: "", firstName: "", middleName: "", birthDate: "", licenseNumber: "", licenseDate: "", kbm: "" }],
-    startDate: "", usagePeriod: "12",
-  };
-}

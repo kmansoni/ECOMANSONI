@@ -6,8 +6,7 @@ import React, { useRef, useEffect, useState, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { Slider } from "@/components/ui/slider";
 import { FlipHorizontal, FlipVertical, RotateCcw } from "lucide-react";
-
-export type AspectRatio = "free" | "1:1" | "4:5" | "16:9";
+import { type AspectRatio } from "./cropRotateModel";
 
 const RATIOS: { label: string; value: AspectRatio; ratio?: number }[] = [
   { label: "Свободно", value: "free" },

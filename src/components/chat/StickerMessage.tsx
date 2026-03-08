@@ -1,5 +1,6 @@
 import { useState, useRef } from "react";
-import { AnimatedSticker, type StickerSize } from "./AnimatedSticker";
+import { AnimatedSticker } from "./AnimatedSticker";
+import { type StickerSize } from "./stickerModel";
 
 interface StickerMessageProps {
   fileUrl: string;

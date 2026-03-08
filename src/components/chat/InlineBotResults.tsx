@@ -167,13 +167,3 @@ export function InlineBotResults({ botUsername, query, onSelectResult, onDismiss
   );
 }
 
-/**
- * Detects inline bot trigger in input text.
- * Returns { botUsername, query } or null.
- * Pattern: @botname query text
- */
-export function detectInlineBotTrigger(text: string): { botUsername: string; query: string } | null {
-  const match = text.match(/^@(\w+)\s+(.*)/);
-  if (!match) return null;
-  return { botUsername: match[1], query: match[2] };
-}

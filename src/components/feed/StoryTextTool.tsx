@@ -1,18 +1,7 @@
 import { useState, useRef } from "react";
 import { AlignLeft, AlignCenter, AlignRight, X, Check } from "lucide-react";
 import { motion } from "framer-motion";
-
-export interface TextLayer {
-  id: string;
-  text: string;
-  font: string;
-  color: string;
-  align: "left" | "center" | "right";
-  background: boolean;
-  x: number;
-  y: number;
-  fontSize: number;
-}
+import { type TextLayer } from "./storyTextModel";
 
 interface StoryTextToolProps {
   onAdd: (layer: TextLayer) => void;

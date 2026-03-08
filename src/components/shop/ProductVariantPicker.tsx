@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Minus, Plus } from 'lucide-react';
 
-export interface ProductVariant {
+interface ProductVariant {
   id: string;
   product_id: string;
   name: string;

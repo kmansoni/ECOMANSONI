@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
@@ -109,36 +109,4 @@ export function MessageReactions({
       )}
     </>
   );
-}
-
-// Хук для управления реакциями сообщения
-export function useMessageReactions(messageId: string) {
-  const { user } = useAuth();
-  const [reactions, setReactions] = useState<Reaction[]>([]);
-  const [showPicker, setShowPicker] = useState(false);
-
-  const loadReactions = useCallback(async () => {
-    const { data } = await (supabase as any)
-      .from('message_reactions')
-      .select('emoji, user_id')
-      .eq('message_id', messageId);
-
-    if (!data) return;
-
-    const map: Record<string, { count: number; hasReacted: boolean }> = {};
-    for (const row of data as { emoji: string; user_id: string }[]) {
-      if (!map[row.emoji]) map[row.emoji] = { count: 0, hasReacted: false };
-      map[row.emoji].count++;
-      if (row.user_id === user?.id) map[row.emoji].hasReacted = true;
-    }
-
-    setReactions(Object.entries(map).map(([emoji, d]) => ({ emoji, ...d })));
-  }, [messageId, user]);
-
-  return {
-    reactions,
-    showPicker,
-    setShowPicker,
-    loadReactions,
-  };
 }

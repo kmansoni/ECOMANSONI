@@ -170,11 +170,27 @@ export function ForwardMessageSheet({ open, onOpenChange, message }: ForwardMess
       shared_reel_id: message.shared_reel_id ?? null,
     });
 
-    await sendMessageV1({
+    const result = await sendMessageV1({
       conversationId,
       clientMsgId: getDmClientMsgId(conversationId),
       body,
     });
+
+    // Persist forward_hide_sender flag on the created message record.
+    // We do this as a follow-up UPDATE because sendMessageV1 uses an RPC
+    // that does not accept this field directly. The UPDATE is idempotent
+    // and safe: if it fails, the message is still sent; only the metadata is missing.
+    if (hideSender && result?.messageId) {
+      try {
+        await (supabase as any)
+          .from("messages")
+          .update({ forward_hide_sender: true })
+          .eq("id", result.messageId);
+      } catch {
+        // Non-critical: log but don't re-throw — message was already delivered.
+        console.warn("[forward] failed to set forward_hide_sender on DM message", result.messageId);
+      }
+    }
   };
 
   const sendToGroup = async (groupId: string) => {
@@ -183,12 +199,13 @@ export function ForwardMessageSheet({ open, onOpenChange, message }: ForwardMess
     const baseContent = (message.content || "").trim() || messagePreview(message);
     const content = withOptionalSignature(baseContent, senderName, hideSender ? false : withSignature);
 
-    const { error } = await supabase.from("group_chat_messages").insert({
+    const { error } = await (supabase as any).from("group_chat_messages").insert({
       group_id: groupId,
       sender_id: user.id,
       content,
       media_url: message.media_url ?? null,
       media_type: message.media_type ?? null,
+      forward_hide_sender: hideSender,
     });
 
     if (error) throw error;
@@ -205,12 +222,13 @@ export function ForwardMessageSheet({ open, onOpenChange, message }: ForwardMess
     const baseContent = (message.content || "").trim() || messagePreview(message);
     const content = withOptionalSignature(baseContent, senderName, hideSender ? false : withSignature);
 
-    const { error } = await supabase.from("channel_messages").insert({
+    const { error } = await (supabase as any).from("channel_messages").insert({
       channel_id: channelId,
       sender_id: user.id,
       content,
       media_url: message.media_url ?? null,
       media_type: message.media_type ?? null,
+      forward_hide_sender: hideSender,
     });
 
     if (error) throw error;

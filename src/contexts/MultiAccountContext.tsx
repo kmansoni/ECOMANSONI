@@ -273,6 +273,8 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
   const activeAccountIdRef = React.useRef<AccountId | null>(activeAccountId);
   const switchAccountRef = React.useRef<((id: AccountId) => Promise<void>) | null>(null);
   const externalSwitchRef = React.useRef<((id: AccountId) => Promise<void>) | null>(null);
+  const internalSessionTransitionRef = React.useRef(0);
+  const lastAuthenticatedAccountRef = React.useRef<AccountId | null>(null);
 
   React.useEffect(() => {
     activeAccountIdRef.current = activeAccountId;
@@ -308,6 +310,7 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
       throw new Error("missing_tokens");
     }
 
+    internalSessionTransitionRef.current += 1;
     const { error } = await withTimeout(
       supabase.auth.setSession({
         access_token: tokens.accessToken,
@@ -315,7 +318,9 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
       }),
       4000,
       "setSession",
-    );
+    ).finally(() => {
+      internalSessionTransitionRef.current = Math.max(0, internalSessionTransitionRef.current - 1);
+    });
     if (error) throw error;
 
     setActiveAccountId(accountId);
@@ -606,6 +611,7 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
       logDebug(`onAuthStateChange: event=${_evt}, hasSession=${!!session}, accountId=${accountId}`);
       
       if (session && accountId) {
+        lastAuthenticatedAccountRef.current = accountId;
         logDebug(`onAuthStateChange: session active, setting up account...`);
         
         void upsertDeviceAccountLink(accountId);
@@ -682,9 +688,17 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
           return;
         }
 
+        // During internal setSession transitions, GoTrue can briefly emit SIGNED_OUT.
+        // Treat those events as transient and never clear stored multi-account tokens.
+        if (internalSessionTransitionRef.current > 0) {
+          logDebug(`onAuthStateChange: ignoring transient SIGNED_OUT during internal session transition`);
+          return;
+        }
+
         logDebug(`onAuthStateChange: session cleared`);
         setGuestMode(false);
-        const prev = getActiveAccountId();
+        const prev = lastAuthenticatedAccountRef.current ?? getActiveAccountId();
+        lastAuthenticatedAccountRef.current = null;
         if (prev) {
           clearTokens(prev);
           setAccounts(upsertAccountIndex({ accountId: prev, requiresReauth: true }));

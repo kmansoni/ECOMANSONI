@@ -7,7 +7,8 @@ import { NotificationItem } from "@/components/notifications/NotificationItem";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { isToday, isThisWeek, parseISO } from "date-fns";
-import { NotificationFilters, filterNotifications, type NotificationFilterType } from "@/components/notifications/NotificationFilters";
+import { NotificationFilters } from "@/components/notifications/NotificationFilters";
+import { filterNotifications, type NotificationFilterType } from "@/components/notifications/notificationFiltersModel";
 import { initPushNotifications } from "@/lib/push/serviceWorker";
 
 function groupNotifications(notifications: Notification[]) {

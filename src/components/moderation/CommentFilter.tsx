@@ -4,7 +4,6 @@
 import React, { useState } from "react";
 import { EyeOff, Eye } from "lucide-react";
 import { useHiddenWords } from "@/hooks/useHiddenWords";
-import { cn } from "@/lib/utils";
 
 interface Props {
   text: string;
@@ -41,7 +40,3 @@ export function CommentFilter({ text, children, forceShow = false }: Props) {
   );
 }
 
-/**
- * Хук для проверки текста на скрытые слова
- */
-export { useHiddenWords };

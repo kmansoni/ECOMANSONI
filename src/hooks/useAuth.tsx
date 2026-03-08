@@ -282,6 +282,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
+    // Очищаем ВСЕ SW-кэши перед выходом, чтобы персональные данные
+    // (сообщения, профили) не оставались в Cache Storage.
+    // Gracefully degraded: если SW недоступен — ничего страшного.
+    try {
+      const { mediaCache } = await import("@/lib/mediaCache");
+      await mediaCache.clearAll();
+    } catch {
+      // ignore — кэш недоступен или SW не зарегистрирован
+    }
     await supabase.auth.signOut();
   };
 

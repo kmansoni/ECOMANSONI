@@ -1,6 +1,6 @@
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { cn } from '@/lib/utils';
-import { WALLPAPERS } from './ChatBackground';
+import { CHAT_WALLPAPERS } from './chatWallpapers';
 import { Check, ImagePlus } from 'lucide-react';
 
 const WALLPAPER_LABELS: Record<string, string> = {
@@ -18,10 +18,12 @@ const WALLPAPER_LABELS: Record<string, string> = {
 interface WallpaperPickerProps {
   selected: string;
   onChange: (wallpaper: string) => void;
+  onCustomFileSelected?: (file: File) => Promise<void> | void;
+  isUploading?: boolean;
 }
 
 function WallpaperThumb({ wallpaperKey, selected, onClick }: { wallpaperKey: string; selected: boolean; onClick: () => void }) {
-  const classes = WALLPAPERS[wallpaperKey] ?? '';
+  const classes = CHAT_WALLPAPERS[wallpaperKey] ?? '';
   return (
     <button
       onClick={onClick}
@@ -45,21 +47,47 @@ function WallpaperThumb({ wallpaperKey, selected, onClick }: { wallpaperKey: str
   );
 }
 
-export function WallpaperPicker({ selected, onChange }: WallpaperPickerProps) {
+export function WallpaperPicker({ selected, onChange, onCustomFileSelected, isUploading = false }: WallpaperPickerProps) {
   const fileRef = useRef<HTMLInputElement>(null);
+  const objectUrlRef = useRef<string | null>(null);
 
-  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+  useEffect(() => {
+    return () => {
+      if (objectUrlRef.current) {
+        URL.revokeObjectURL(objectUrlRef.current);
+      }
+    };
+  }, []);
+
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    // Preferred flow: persist custom image in backend storage.
+    if (onCustomFileSelected) {
+      await onCustomFileSelected(file);
+      e.currentTarget.value = '';
+      return;
+    }
+
+    // Fallback for legacy usage: temporary in-memory object URL.
+    if (objectUrlRef.current) {
+      URL.revokeObjectURL(objectUrlRef.current);
+    }
+
     const url = URL.createObjectURL(file);
+    objectUrlRef.current = url;
     onChange(url);
+    e.currentTarget.value = '';
   };
+
+  const isCustomSelected = !!selected && !(selected in CHAT_WALLPAPERS);
 
   return (
     <div className="space-y-3">
       <p className="text-sm text-muted-foreground px-1">Обои чата</p>
       <div className="grid grid-cols-3 gap-2">
-        {Object.keys(WALLPAPERS).map((key) => (
+        {Object.keys(CHAT_WALLPAPERS).map((key) => (
           <WallpaperThumb
             key={key}
             wallpaperKey={key}
@@ -68,11 +96,17 @@ export function WallpaperPicker({ selected, onChange }: WallpaperPickerProps) {
           />
         ))}
         <button
+          disabled={isUploading}
           onClick={() => fileRef.current?.click()}
-          className="h-20 rounded-xl border-2 border-dashed border-muted-foreground/30 flex flex-col items-center justify-center gap-1 hover:border-primary transition-colors"
+          className={cn(
+            'h-20 rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-1 transition-colors',
+            isCustomSelected ? 'border-primary bg-primary/5' : 'border-muted-foreground/30 hover:border-primary',
+            isUploading && 'opacity-60 cursor-not-allowed'
+          )}
         >
           <ImagePlus className="w-5 h-5 text-muted-foreground" />
-          <span className="text-[10px] text-muted-foreground">Свой фон</span>
+          <span className="text-[10px] text-muted-foreground">{isUploading ? 'Загрузка...' : 'Свой фон'}</span>
+          {isCustomSelected ? <Check className="w-3 h-3 text-primary" /> : null}
         </button>
       </div>
       <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />

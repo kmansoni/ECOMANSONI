@@ -5,16 +5,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
 import { User, Home, FileText, Shield } from "lucide-react";
-
-export interface PropertyFormData {
-  lastName: string; firstName: string; middleName: string;
-  passportSeries: string; passportNumber: string; phone: string; email: string;
-  propertyType: string; address: string; cadastralNumber: string;
-  area: string; builtYear: string; floor: string; totalFloors: string;
-  wallMaterial: string; roomsCount: string; propertyValue: string;
-  docType: string; docNumber: string; docDate: string;
-  hasConstruction: boolean; hasInterior: boolean; hasMovables: boolean; hasLiability: boolean;
-}
+import { type PropertyFormData } from "./propertyFormModel";
 
 interface Props { data: PropertyFormData; onChange: (data: PropertyFormData) => void; }
 
@@ -132,13 +123,4 @@ export default function PropertyApplicationForm({ data, onChange }: Props) {
       </Card>
     </div>
   );
-}
-
-export function createDefaultPropertyFormData(): PropertyFormData {
-  return {
-    lastName: "", firstName: "", middleName: "", passportSeries: "", passportNumber: "", phone: "", email: "",
-    propertyType: "apartment", address: "", cadastralNumber: "", area: "", builtYear: "", floor: "", totalFloors: "", wallMaterial: "", roomsCount: "", propertyValue: "",
-    docType: "egrn", docNumber: "", docDate: "",
-    hasConstruction: true, hasInterior: true, hasMovables: false, hasLiability: false,
-  };
 }

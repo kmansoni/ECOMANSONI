@@ -5,6 +5,7 @@ import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { useNotifications, type NotificationSettings } from "@/hooks/useNotifications";
+import { QuietHoursSettings } from "@/components/settings/QuietHoursSettings";
 
 const SETTINGS_LABELS: { key: keyof NotificationSettings; label: string; description?: string }[] = [
   { key: "likes", label: "Лайки", description: "Когда кто-то лайкнул вашу публикацию" },
@@ -136,6 +137,16 @@ export function NotificationSettingsPage() {
                 ))}
               </div>
             )}
+          </div>
+        </div>
+
+        {/* Quiet Hours */}
+        <div className="space-y-3">
+          <h2 className="text-sm font-semibold text-white/60 uppercase tracking-wider">
+            Расписание уведомлений
+          </h2>
+          <div className="bg-white/5 rounded-2xl p-4">
+            <QuietHoursSettings />
           </div>
         </div>
 

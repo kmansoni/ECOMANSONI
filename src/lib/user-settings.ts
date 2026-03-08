@@ -35,6 +35,13 @@ export type UserSettings = {
   messages_auto_delete_seconds: number;
   account_self_destruct_days: number;
 
+  // Notifications — mention
+  mention_notifications: boolean;
+
+  // Calls — extended
+  calls_noise_suppression: boolean;
+  calls_p2p_mode: "everyone" | "contacts" | "nobody";
+
   // Data & storage (Telegram-like)
   media_auto_download_enabled: boolean;
   media_auto_download_photos: boolean;
@@ -70,6 +77,9 @@ function withDataStorageDefaults(partial: Partial<UserSettings>): UserSettings {
     media_auto_download_files_max_mb: 3,
     cache_auto_delete_days: 7,
     cache_max_size_mb: null,
+    mention_notifications: true,
+    calls_noise_suppression: true,
+    calls_p2p_mode: "contacts",
     // existing defaults are handled by DB; for fallback we just spread what we got
     ...(partial as any),
   } as UserSettings;
@@ -262,6 +272,54 @@ export async function createBrandedPartnerRequest(
       partner_user_id: partnerUserId,
       message: message ?? null,
     });
+  if (error) throw error;
+}
+
+// ─── Close Friends ───────────────────────────────────────────────
+
+export type CloseFriend = {
+  id: string;
+  user_id: string;
+  friend_id: string;
+  created_at: string;
+};
+
+export async function listCloseFriends(userId: string): Promise<CloseFriend[]> {
+  const { data, error } = await supabaseAny
+    .from("close_friends")
+    .select("id, user_id, friend_id, created_at")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as CloseFriend[];
+}
+
+export async function addCloseFriend(userId: string, friendId: string): Promise<void> {
+  const { error } = await supabaseAny
+    .from("close_friends")
+    .insert({ user_id: userId, friend_id: friendId });
+  if (error) throw error;
+}
+
+export async function removeCloseFriend(userId: string, friendId: string): Promise<void> {
+  const { error } = await supabaseAny
+    .from("close_friends")
+    .delete()
+    .eq("user_id", userId)
+    .eq("friend_id", friendId);
+  if (error) throw error;
+}
+
+// ─── Screen Time ─────────────────────────────────────────────────
+
+export async function getScreenTimeToday(): Promise<number> {
+  const { data, error } = await supabaseAny.rpc("get_screen_time_today");
+  if (error) throw error;
+  return typeof data === "number" ? data : 0;
+}
+
+export async function pingScreenTime(seconds: number = 60): Promise<void> {
+  const { error } = await supabaseAny.rpc("increment_screen_time", { p_seconds: seconds });
   if (error) throw error;
 }
 

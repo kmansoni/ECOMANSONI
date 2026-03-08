@@ -155,6 +155,37 @@ export function useChatSettings(conversationId?: string) {
     }
   }, [user, globalTableAvailable]);
 
+  const uploadCustomWallpaper = useCallback(async (file: File): Promise<string> => {
+    if (!user || !conversationId) {
+      throw new Error('Нужен авторизованный пользователь и открытый чат');
+    }
+
+    const extensionFromName = file.name.split('.').pop()?.toLowerCase() ?? 'jpg';
+    const extensionFromType = file.type.startsWith('image/')
+      ? file.type.replace('image/', '').toLowerCase()
+      : extensionFromName;
+    const extension = extensionFromType || 'jpg';
+
+    const filePath = `chat-wallpapers/${user.id}/${conversationId}/${Date.now()}-${crypto.randomUUID()}.${extension}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('chat-media')
+      .upload(filePath, file, {
+        upsert: true,
+        contentType: file.type || undefined,
+        cacheControl: '3600',
+      });
+
+    if (uploadError) {
+      throw uploadError;
+    }
+
+    const { data } = supabase.storage.from('chat-media').getPublicUrl(filePath);
+    const publicUrl = data.publicUrl;
+    await updateSetting('chat_wallpaper', publicUrl);
+    return publicUrl;
+  }, [conversationId, updateSetting, user]);
+
   const muteChat = useCallback(async (duration: '1h' | '8h' | '1d' | 'forever') => {
     let until: string | null = null;
     if (duration !== 'forever') {
@@ -180,6 +211,7 @@ export function useChatSettings(conversationId?: string) {
     loading,
     updateSetting,
     updateGlobalSetting,
+    uploadCustomWallpaper,
     muteChat,
     unmuteChat,
     isMuted,

@@ -43,7 +43,7 @@ async function triggerHaptic(): Promise<void> {
 // Props
 // ---------------------------------------------------------------------------
 
-export interface ReelSidebarProps {
+interface ReelSidebarProps {
   reelId: string;
   metrics: ReelMetrics;
   isLiked: boolean;

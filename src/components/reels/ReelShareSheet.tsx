@@ -22,7 +22,7 @@ import { toast } from 'sonner';
 // Props
 // ---------------------------------------------------------------------------
 
-export interface ReelShareSheetProps {
+interface ReelShareSheetProps {
   reelId: string;
   isOpen: boolean;
   onClose: () => void;

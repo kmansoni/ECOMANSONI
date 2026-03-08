@@ -7,6 +7,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { User, Globe, Users, Shield, Plus, Trash2 } from "lucide-react";
+import { type TravelFormData } from "./travelFormModel";
 
 const TRAVEL_COUNTRIES = [
   "Германия", "Франция", "Испания", "Италия", "Греция", "Турция",
@@ -19,16 +20,6 @@ interface Traveler {
   id: string;
   lastName: string; firstName: string; birthDate: string;
   passportSeries: string; passportNumber: string; passportExpiry: string;
-}
-
-export interface TravelFormData {
-  lastName: string; firstName: string; birthDate: string; citizenship: string;
-  passportSeries: string; passportNumber: string; passportExpiry: string;
-  country: string; city: string; departureDate: string; returnDate: string;
-  purpose: string; flightNumber: string;
-  travelers: Traveler[];
-  coverageAmount: string;
-  hasSports: boolean; hasCancellation: boolean; hasBaggage: boolean; hasAccident: boolean;
 }
 
 interface Props { data: TravelFormData; onChange: (data: TravelFormData) => void; }
@@ -166,15 +157,4 @@ export default function TravelApplicationForm({ data, onChange }: Props) {
       </Card>
     </div>
   );
-}
-
-export function createDefaultTravelFormData(): TravelFormData {
-  return {
-    lastName: "", firstName: "", birthDate: "", citizenship: "Российская Федерация",
-    passportSeries: "", passportNumber: "", passportExpiry: "",
-    country: "", city: "", departureDate: "", returnDate: "", purpose: "tourism", flightNumber: "",
-    travelers: [],
-    coverageAmount: "50000",
-    hasSports: false, hasCancellation: false, hasBaggage: false, hasAccident: false,
-  };
 }

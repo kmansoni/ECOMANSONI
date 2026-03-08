@@ -28,7 +28,7 @@ import type { ReelFeedItem, TapPosition } from '@/types/reels';
 // Props
 // ---------------------------------------------------------------------------
 
-export interface ReelItemProps {
+interface ReelItemProps {
   reel: ReelFeedItem;
   /**
    * true когда этот Reel виден в viewport (IntersectionObserver на уровне страницы).

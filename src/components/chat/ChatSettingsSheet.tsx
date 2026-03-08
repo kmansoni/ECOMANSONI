@@ -9,6 +9,7 @@ import { BubbleGradientPicker } from './BubbleGradientPicker';
 import { MessageDensityToggle } from './MessageDensityToggle';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 
 interface ChatSettingsSheetProps {
   conversationId: string;
@@ -50,11 +51,12 @@ function SectionHeader({ title }: { title: string }) {
 }
 
 export function ChatSettingsSheet({ conversationId, open, onClose }: ChatSettingsSheetProps) {
-  const { settings, updateSetting, muteChat, unmuteChat, isMuted } = useChatSettings(conversationId);
+  const { settings, updateSetting, uploadCustomWallpaper, muteChat, unmuteChat, isMuted } = useChatSettings(conversationId);
   const { isArchived, archiveChat, unarchiveChat } = useArchivedChats();
   const { isPinned, pinChat, unpinChat } = usePinnedChats();
   const [showMuteMenu, setShowMuteMenu] = useState(false);
   const [showWallpaper, setShowWallpaper] = useState(false);
+  const [isUploadingWallpaper, setIsUploadingWallpaper] = useState(false);
 
   const archived = isArchived(conversationId);
   const pinned = isPinned(conversationId);
@@ -62,6 +64,19 @@ export function ChatSettingsSheet({ conversationId, open, onClose }: ChatSetting
   const handleMute = async (duration: MuteDuration) => {
     await muteChat(duration);
     setShowMuteMenu(false);
+  };
+
+  const handleCustomWallpaper = async (file: File) => {
+    setIsUploadingWallpaper(true);
+    try {
+      await uploadCustomWallpaper(file);
+      toast.success('Фон чата обновлен');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Не удалось загрузить изображение';
+      toast.error('Ошибка загрузки фона', { description: message });
+    } finally {
+      setIsUploadingWallpaper(false);
+    }
   };
 
   return (
@@ -182,6 +197,8 @@ export function ChatSettingsSheet({ conversationId, open, onClose }: ChatSetting
                     <WallpaperPicker
                       selected={settings.chat_wallpaper}
                       onChange={(w) => updateSetting('chat_wallpaper', w)}
+                      onCustomFileSelected={handleCustomWallpaper}
+                      isUploading={isUploadingWallpaper}
                     />
                   </div>
                 ) : null}

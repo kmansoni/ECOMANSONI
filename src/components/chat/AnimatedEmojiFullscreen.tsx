@@ -1,12 +1,6 @@
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-
-// Regex: exactly 1-3 emoji characters (extended unicode) and nothing else
-const SINGLE_EMOJI_REGEX = /^(\p{Emoji_Presentation}|\p{Extended_Pictographic}){1,3}$/u;
-
-export function isSingleEmoji(text: string): boolean {
-  return SINGLE_EMOJI_REGEX.test(text.trim());
-}
+import { isSingleEmoji } from "./emojiUtils";
 
 interface AnimatedEmojiFullscreenProps {
   /** The message text to check and animate */

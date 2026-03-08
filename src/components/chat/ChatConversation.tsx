@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo, Fragment } from "react";
-import { AnimatedEmojiFullscreen, isSingleEmoji } from "./AnimatedEmojiFullscreen";
+import { AnimatedEmojiFullscreen } from "./AnimatedEmojiFullscreen";
+import { isSingleEmoji } from "./emojiUtils";
 import { useBubbleGradient } from "@/hooks/useBubbleGradient";
 import { FloatingDate, DateSeparator } from "./FloatingDate";
 import { ScrollToBottomFab } from "./ScrollToBottomFab";
@@ -61,7 +62,8 @@ import { ChatSettingsSheet } from "./ChatSettingsSheet";
 import { ChatBackground } from "./ChatBackground";
 import { useChatSettings } from "@/hooks/useChatSettings";
 import { LinkPreview } from "./LinkPreview";
-import { InlineBotResults, detectInlineBotTrigger } from "./InlineBotResults";
+import { InlineBotResults } from "./InlineBotResults";
+import { detectInlineBotTrigger } from "./inlineBotTrigger";
 import { MentionSuggestions } from "./MentionSuggestions";
 import { SendOptionsMenu } from "./SendOptionsMenu";
 import { extractUrls } from "@/hooks/useLinkPreview";

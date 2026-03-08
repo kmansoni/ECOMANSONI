@@ -51,7 +51,7 @@ function getUserMetadata(user: unknown): UserMetadata {
 // Props
 // ---------------------------------------------------------------------------
 
-export interface ReelCommentsSheetProps {
+interface ReelCommentsSheetProps {
   reelId: string;
   isOpen: boolean;
   onClose: () => void;

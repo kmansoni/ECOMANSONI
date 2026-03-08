@@ -1,17 +1,6 @@
 import { ReactNode } from 'react';
 import { cn } from '@/lib/utils';
-
-export const WALLPAPERS: Record<string, string> = {
-  default: 'bg-background',
-  dark: 'bg-gradient-to-b from-gray-900 to-black',
-  'gradient-blue': 'bg-gradient-to-br from-blue-900 via-indigo-900 to-purple-900',
-  'gradient-purple': 'bg-gradient-to-br from-purple-900 via-pink-900 to-rose-900',
-  'gradient-green': 'bg-gradient-to-br from-emerald-900 via-teal-900 to-cyan-900',
-  stars: 'bg-gray-900',
-  geometric: 'bg-zinc-900',
-  'minimal-dark': 'bg-zinc-900',
-  'minimal-light': 'bg-zinc-100 dark:bg-zinc-800',
-};
+import { CHAT_WALLPAPERS } from './chatWallpapers';
 
 interface ChatBackgroundProps {
   wallpaper?: string;
@@ -19,9 +8,39 @@ interface ChatBackgroundProps {
   className?: string;
 }
 
+function isTrustedCustomWallpaper(wallpaper: string): boolean {
+  if (!wallpaper) return false;
+  if (wallpaper.startsWith('blob:')) return true;
+  if (wallpaper.startsWith('/')) return true;
+
+  if (!wallpaper.startsWith('http://') && !wallpaper.startsWith('https://')) {
+    return false;
+  }
+
+  try {
+    const parsed = new URL(wallpaper);
+    if (typeof window === 'undefined') return false;
+
+    if (parsed.origin === window.location.origin) {
+      return true;
+    }
+
+    const supabaseUrl = String(import.meta.env.VITE_SUPABASE_URL ?? '').trim();
+    if (!supabaseUrl) {
+      return false;
+    }
+
+    const supabaseHost = new URL(supabaseUrl).hostname;
+    const isSupabaseStoragePath = parsed.pathname.includes('/storage/v1/object/public/');
+    return parsed.hostname === supabaseHost && isSupabaseStoragePath;
+  } catch {
+    return false;
+  }
+}
+
 export function ChatBackground({ wallpaper = 'default', children, className }: ChatBackgroundProps) {
-  const isCustomUrl = wallpaper.startsWith('http') || wallpaper.startsWith('/');
-  const builtIn = WALLPAPERS[wallpaper] ?? WALLPAPERS.default;
+  const isCustomUrl = isTrustedCustomWallpaper(wallpaper);
+  const builtIn = CHAT_WALLPAPERS[wallpaper] ?? CHAT_WALLPAPERS.default;
 
   if (isCustomUrl) {
     return (

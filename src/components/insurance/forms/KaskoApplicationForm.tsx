@@ -8,25 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { User, Car, Shield, History, Star } from "lucide-react";
 import { VEHICLE_MAKES, VEHICLE_TYPES } from "@/lib/insurance/vehicle-dictionary";
-
-export interface KaskoFormData {
-  // Страхователь
-  lastName: string; firstName: string; middleName: string; birthDate: string;
-  passportSeries: string; passportNumber: string; passportIssued: string; passportDate: string;
-  phone: string; email: string; address: string;
-  // ТС
-  make: string; model: string; year: string; vin: string; regNumber: string;
-  enginePower: string; vehicleType: string; ptsSeries: string; ptsNumber: string;
-  stsSeries: string; stsNumber: string;
-  carValue: string; mileage: string; color: string;
-  hasExtraEquipment: boolean; extraEquipmentDesc: string;
-  // Параметры
-  coverageType: string; franchise: string; antiTheft: string; parkingType: string;
-  // Предыдущее страхование
-  hasPrevPolicy: boolean; prevCompany: string; hasLosses: boolean; lossesDesc: string;
-  // Опции
-  hasGap: boolean; hasKeyless: boolean; hasTowing: boolean; hasCommissioner: boolean; hasReplacement: boolean;
-}
+import { type KaskoFormData } from "./kaskoFormModel";
 
 interface Props { data: KaskoFormData; onChange: (data: KaskoFormData) => void; }
 
@@ -222,18 +204,4 @@ export default function KaskoApplicationForm({ data, onChange }: Props) {
       </Card>
     </div>
   );
-}
-
-export function createDefaultKaskoFormData(): KaskoFormData {
-  return {
-    lastName: "", firstName: "", middleName: "", birthDate: "",
-    passportSeries: "", passportNumber: "", passportIssued: "", passportDate: "",
-    phone: "", email: "", address: "",
-    make: "", model: "", year: "", vin: "", regNumber: "",
-    enginePower: "", vehicleType: "", ptsSeries: "", ptsNumber: "", stsSeries: "", stsNumber: "",
-    carValue: "", mileage: "", color: "", hasExtraEquipment: false, extraEquipmentDesc: "",
-    coverageType: "full", franchise: "0", antiTheft: "none", parkingType: "garage",
-    hasPrevPolicy: false, prevCompany: "", hasLosses: false, lossesDesc: "",
-    hasGap: false, hasKeyless: false, hasTowing: false, hasCommissioner: false, hasReplacement: false,
-  };
 }

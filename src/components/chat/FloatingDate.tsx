@@ -1,6 +1,5 @@
 import { motion, AnimatePresence } from "framer-motion";
-import { format, isToday, isYesterday } from "date-fns";
-import { ru } from "date-fns/locale";
+import { formatDateLabel } from "./dateLabel";
 
 interface FloatingDateProps {
   /** ISO date string or Date object of the currently visible group */
@@ -49,12 +48,6 @@ export function FloatingDate({ date, onClick }: FloatingDateProps) {
       )}
     </AnimatePresence>
   );
-}
-
-export function formatDateLabel(date: Date): string {
-  if (isToday(date)) return "Сегодня";
-  if (isYesterday(date)) return "Вчера";
-  return format(date, "d MMMM yyyy", { locale: ru });
 }
 
 /**

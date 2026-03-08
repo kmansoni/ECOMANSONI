@@ -1,3 +1,4 @@
+import { OfflineIndicator } from "@/components/common/OfflineIndicator";
 import { PageTransition } from "@/components/layout/PageTransition";
 import { SwipeBackGesture } from "@/components/layout/SwipeBackGesture";
 import { Toaster } from "@/components/ui/toaster";
@@ -101,6 +102,12 @@ const BusinessAccountPage = lazy(() => import("./pages/BusinessAccountPage"));
 const OrderDetailPage = lazy(() => import("@/pages/OrderDetailPage"));
 const AIAssistantPage = lazy(() => import("@/pages/AIAssistantPage"));
 
+// Batch 5: new pages
+const WebLoginCallbackPage = lazy(() => import("@/pages/WebLoginCallbackPage").then(m => ({ default: m.WebLoginCallbackPage })));
+
+// Batch 6: offline cache + storage settings
+const StorageSettingsPage = lazy(() => import("@/pages/StorageSettingsPage").then(m => ({ default: m.StorageSettingsPage })));
+
 // Taxi module (lazy)
 const TaxiHomePage = lazy(() => import("./pages/taxi/TaxiHomePage"));
 const TaxiHistoryPage = lazy(() => import("./pages/taxi/TaxiHistoryPage"));
@@ -193,6 +200,7 @@ const App = () => {
                     <CommandPalette />
                   </Suspense>
                   <DeepLinkHandler />
+                  <OfflineIndicator />
                   <SwipeBackGesture>
                   <div style={{ position: "relative", height: "100%", overflow: "hidden" }}>
                   <PageTransition>
@@ -201,6 +209,13 @@ const App = () => {
                 <Route path="/auth" element={
                   <Suspense fallback={<PageLoader />}>
                     <AuthPage />
+                  </Suspense>
+                } />
+
+                {/* Web Login Widget — public, shown in popup */}
+                <Route path="/auth/web-login" element={
+                  <Suspense fallback={<PageLoader />}>
+                    <WebLoginCallbackPage />
                   </Suspense>
                 } />
 
@@ -428,6 +443,13 @@ const App = () => {
                       </Suspense>
                     } />
 
+                    {/* Batch 5: additional settings & channel routes */}
+                    <Route path="/settings/business" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <BusinessAccountPage />
+                      </Suspense>
+                    } />
+
                     <Route path="/create-surface" element={
                       <Suspense fallback={<PageLoader />}>
                         <CreateSurfacePage />
@@ -642,6 +664,13 @@ const App = () => {
                   </Suspense>
                 } />
                 
+                {/* Batch 6: Storage Settings */}
+                <Route path="/storage-settings" element={
+                  <Suspense fallback={<PageLoader />}>
+                    <StorageSettingsPage />
+                  </Suspense>
+                } />
+
                 {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                 <Route path="*" element={
                   <Suspense fallback={<PageLoader />}>

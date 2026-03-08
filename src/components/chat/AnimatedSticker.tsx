@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, memo } from "react";
-
-export type StickerSize = "small" | "medium" | "large";
+import { type StickerSize } from "./stickerModel";
 
 const SIZE_MAP: Record<StickerSize, number> = {
   small: 100,

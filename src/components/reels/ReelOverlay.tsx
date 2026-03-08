@@ -21,7 +21,7 @@ import type { ReelAuthor } from '@/types/reels';
 // Props
 // ---------------------------------------------------------------------------
 
-export interface ReelOverlayProps {
+interface ReelOverlayProps {
   author: ReelAuthor;
   description: string | null;
   musicTitle: string | null;

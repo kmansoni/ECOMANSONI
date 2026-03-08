@@ -5,7 +5,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { isToday } from "date-fns";
 
 /** Minimal shape required from any message object */
-export interface MessageDateEntry {
+interface MessageDateEntry {
   id: string;
   created_at: string;
 }

@@ -1,6 +1,6 @@
 import { CheckCircle2, Circle, Package, Truck, Home } from 'lucide-react';
 
-export type OrderStatus = 'pending' | 'confirmed' | 'shipped' | 'delivered' | 'cancelled';
+type OrderStatus = 'pending' | 'confirmed' | 'shipped' | 'delivered' | 'cancelled';
 
 interface OrderStep {
   status: OrderStatus;

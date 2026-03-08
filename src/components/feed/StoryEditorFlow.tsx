@@ -6,7 +6,8 @@ import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { StoryStickerPicker, type StickerType } from "./StoryStickerPicker";
-import { StoryTextTool, type TextLayer } from "./StoryTextTool";
+import { StoryTextTool } from "./StoryTextTool";
+import { type TextLayer } from "./storyTextModel";
 import { StoryDrawingTool } from "./StoryDrawingTool";
 
 interface StoryEditorFlowProps {

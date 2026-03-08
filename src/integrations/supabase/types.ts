@@ -2701,23 +2701,29 @@ export type Database = {
       conversations: {
         Row: {
           created_at: string
+          emoji: string | null
           id: string
           last_message_seq: number
           server_seq: number
+          theme: string | null
           updated_at: string
         }
         Insert: {
           created_at?: string
+          emoji?: string | null
           id?: string
           last_message_seq?: number
           server_seq?: number
+          theme?: string | null
           updated_at?: string
         }
         Update: {
           created_at?: string
+          emoji?: string | null
           id?: string
           last_message_seq?: number
           server_seq?: number
+          theme?: string | null
           updated_at?: string
         }
         Relationships: []
