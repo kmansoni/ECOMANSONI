@@ -297,29 +297,39 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
 
     // Persist call record — used for push notification routing and call history.
     // NOTE: SFU signaling does NOT go through DB — only WS.
-    const { data: callData, error } = await supabase
+    const callId = crypto.randomUUID();
+    const createdAt = new Date().toISOString();
+
+    const { error } = await supabase
       .from("video_calls")
       .insert({
+        id: callId,
         caller_id: user.id,
         callee_id: calleeId,
         conversation_id: conversationId,
         call_type: callType,
         status: "ringing",
-      })
-      .select(
-        `id, caller_id, callee_id, conversation_id, call_type, status,
-         created_at, started_at, ended_at`
-      )
-      .single();
+        created_at: createdAt,
+      });
 
-    if (error || !callData) {
+    if (error) {
       console.error("[useVideoCallSfu] startCall: DB insert failed", error);
       releaseLocalMedia();
       setStatus("idle");
       throw new VideoCallStartError("db_insert_failed", error);
     }
 
-    const call = callData as unknown as VideoCall;
+    const call: VideoCall = {
+      id: callId,
+      caller_id: user.id,
+      callee_id: calleeId,
+      conversation_id: conversationId,
+      call_type: callType,
+      status: "ringing",
+      created_at: createdAt,
+      started_at: null,
+      ended_at: null,
+    };
     setCurrentCall(call);
     setConnectionState("good");
     return call;
@@ -346,13 +356,19 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
     setLocalStream(stream);
 
     // Update DB status — callee acknowledged
-    await supabase
+    const { error: answerError } = await supabase
       .from("video_calls")
       .update({
         status: "connected",
         started_at: new Date().toISOString(),
       })
       .eq("id", call.id);
+
+    if (answerError) {
+      releaseLocalMedia();
+      setStatus("idle");
+      throw new VideoCallStartError("db_answer_update_failed", answerError);
+    }
 
     const answeredCall: VideoCall = { ...call, status: "connected" };
     setCurrentCall(answeredCall);
