@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { toast } from "sonner";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { 
   ArrowLeft, 
@@ -106,18 +107,15 @@ export function CRMDashboard() {
   }, [loadData]);
 
   const handleAddClient = () => {
-    // TODO: Open add client modal
-    console.log('Add client');
+    toast.info("Добавление клиента скоро будет доступно");
   };
 
   const handleAddDeal = () => {
-    // TODO: Open add deal modal
-    console.log('Add deal');
+    toast.info("Создание сделки скоро будет доступно");
   };
 
   const handleAddTask = () => {
-    // TODO: Open add task modal
-    console.log('Add task');
+    toast.info("Создание задачи скоро будет доступно");
   };
 
   const quickActions: QuickAction[] = [

@@ -1683,7 +1683,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
                   <StickerMessage
                     fileUrl={message.media_url}
                     fileType="webp"
-                    onReply={() => {}}
+                    onReply={() => handleMessageReply(message.id)}
                     onDelete={() => deleteMessage(message.id)}
                   />
                   <div className={`flex items-center gap-1 ${isOwn ? "justify-end" : "justify-start"}`}>

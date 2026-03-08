@@ -78,33 +78,68 @@ function makeRandomB64(size: number): string {
 }
 
 function getMediaPermissionToastPayload(error: unknown, callType: "video" | "audio"): { title: string; description: string } {
-  const title = callType === "video" ? "Нет доступа к камере или микрофону" : "Нет доступа к микрофону";
+  const permissionTitle = callType === "video" ? "Нет доступа к камере или микрофону" : "Нет доступа к микрофону";
+  const mediaStartTitle = callType === "video" ? "Не удалось запустить камеру или микрофон" : "Не удалось запустить микрофон";
+
+  if (error && typeof error === "object" && "name" in error && String((error as { name?: unknown }).name ?? "") === "VideoCallMediaAccessError") {
+    const causeName = String((error as { causeName?: unknown }).causeName ?? "UnknownError");
+    if (causeName === "NotAllowedError" || causeName === "SecurityError") {
+      return {
+        title: permissionTitle,
+        description: "Разрешите доступ в настройках браузера и перезапустите звонок",
+      };
+    }
+    if (causeName === "NotFoundError" || causeName === "DevicesNotFoundError") {
+      return {
+        title: mediaStartTitle,
+        description: "Не найдено устройство микрофона или камеры",
+      };
+    }
+    if (causeName === "NotReadableError" || causeName === "TrackStartError") {
+      return {
+        title: mediaStartTitle,
+        description: "Устройство занято другим приложением",
+      };
+    }
+    if (causeName === "NotSupportedError" || causeName === "NotSecureError") {
+      return {
+        title: "Звонки не поддерживаются",
+        description: "Браузер или WebView не поддерживает доступ к микрофону для звонков",
+      };
+    }
+    if (causeName === "AbortError") {
+      return {
+        title: mediaStartTitle,
+        description: "Запрос доступа к микрофону был прерван. Попробуйте еще раз",
+      };
+    }
+  }
 
   if (error && typeof error === "object" && "name" in error) {
     const name = String((error as { name?: unknown }).name ?? "");
     if (name === "NotAllowedError" || name === "SecurityError") {
       return {
-        title,
+        title: permissionTitle,
         description: "Разрешите доступ в настройках браузера и перезапустите звонок",
       };
     }
     if (name === "NotFoundError" || name === "DevicesNotFoundError") {
       return {
-        title,
+        title: mediaStartTitle,
         description: "Не найдено устройство микрофона или камеры",
       };
     }
     if (name === "NotReadableError" || name === "TrackStartError") {
       return {
-        title,
+        title: mediaStartTitle,
         description: "Устройство занято другим приложением",
       };
     }
   }
 
   return {
-    title,
-    description: "Проверьте доступ к устройствам и попробуйте снова",
+    title: "Не удалось начать звонок",
+    description: "Произошла ошибка инициализации медиа. Попробуйте еще раз",
   };
 }
 
@@ -1036,9 +1071,8 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       if (!result) {
         console.log("[VideoCallContext] startCall returned null, releasing UI-lock");
         setIsCallUiActive(false); // Release UI-lock if call failed
-        const toastPayload = getMediaPermissionToastPayload(null, callType);
-        toast.error(toastPayload.title, {
-          description: toastPayload.description,
+        toast.error("Не удалось начать звонок", {
+          description: "Проверьте сеть и попробуйте снова",
           duration: 5000,
         });
       }

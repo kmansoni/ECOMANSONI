@@ -33,11 +33,11 @@ const navigationItems = [
 ];
 
 const quickActions = [
-  { icon: Plus, label: "Создать пост", action: "create-post", keywords: "create post создать пост" },
-  { icon: TrendingUp, label: "Тренды", action: "trends", keywords: "trends тренды популярное" },
-  { icon: Bell, label: "Уведомления", action: "notifications", keywords: "notifications уведомления" },
-  { icon: Bookmark, label: "Сохранённое", action: "saved", keywords: "saved bookmarks сохранённое закладки" },
-  { icon: Settings, label: "Настройки", action: "settings", keywords: "settings настройки" },
+  { icon: Plus, label: "Создать пост", action: "create-post", path: "/create", keywords: "create post создать пост" },
+  { icon: TrendingUp, label: "Тренды", action: "trends", path: "/explore", keywords: "trends тренды популярное" },
+  { icon: Bell, label: "Уведомления", action: "notifications", path: "/notifications", keywords: "notifications уведомления" },
+  { icon: Bookmark, label: "Сохранённое", action: "saved", path: "/saved", keywords: "saved bookmarks сохранённое закладки" },
+  { icon: Settings, label: "Настройки", action: "settings", path: "/settings", keywords: "settings настройки" },
 ];
 
 export function CommandPalette() {
@@ -61,10 +61,9 @@ export function CommandPalette() {
     setOpen(false);
   };
 
-  const handleAction = (action: string) => {
-    // В будущем можно добавить реальные действия
-    console.log("Action:", action);
+  const handleAction = (path: string) => {
     setOpen(false);
+    navigate(path);
   };
 
   return (
@@ -94,7 +93,7 @@ export function CommandPalette() {
             <CommandItem
               key={item.action}
               value={item.keywords}
-              onSelect={() => handleAction(item.action)}
+              onSelect={() => handleAction(item.path)}
               className="flex items-center gap-3 cursor-pointer"
             >
               <item.icon className="h-4 w-4 text-muted-foreground" />

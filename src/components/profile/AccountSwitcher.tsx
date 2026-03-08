@@ -1,5 +1,6 @@
 import { Plus, Check, ChevronDown } from "lucide-react";
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Drawer,
   DrawerContent,
@@ -39,6 +40,7 @@ interface AccountSwitcherProps {
 }
 
 export function AccountSwitcher({ currentUsername }: AccountSwitcherProps) {
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [accounts, setAccounts] = useState(mockAccounts);
 
@@ -53,9 +55,8 @@ export function AccountSwitcher({ currentUsername }: AccountSwitcherProps) {
   };
 
   const handleAddAccount = () => {
-    // TODO: Navigate to auth page or show login modal
-    console.log("Add account");
     setOpen(false);
+    navigate("/auth");
   };
 
   const activeAccount = accounts.find(acc => acc.isActive);

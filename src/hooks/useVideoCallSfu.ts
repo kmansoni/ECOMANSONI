@@ -52,36 +52,89 @@ function toSafeEndStatus(reason: string): EndCallStatus {
  * under hardware/permission constraints.
  */
 async function acquireLocalMedia(isVideo: boolean): Promise<MediaStream> {
-  try {
-    return await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-      },
-      video: isVideo
-        ? {
-            width: { ideal: 1280, max: 1920 },
-            height: { ideal: 720, max: 1080 },
-            frameRate: { ideal: 30, max: 30 },
-          }
-        : false,
-    });
-  } catch (err) {
-    if (isVideo) {
-      // Graceful degradation: video device unusable → audio-only
-      console.warn("[useVideoCallSfu] Video acquisition failed, retrying audio-only:", err);
-      return navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-        video: false,
-      });
+  if (!navigator.mediaDevices?.getUserMedia) {
+    const unsupported = new Error("MediaDevices API unavailable");
+    unsupported.name = "NotSupportedError";
+    throw unsupported;
+  }
+
+  const baseAudio: MediaTrackConstraints = {
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: true,
+  };
+
+  const hdVideo: MediaTrackConstraints = {
+    width: { ideal: 1280, max: 1920 },
+    height: { ideal: 720, max: 1080 },
+    frameRate: { ideal: 30, max: 30 },
+  };
+
+  const safeVideo: MediaTrackConstraints = {
+    width: { ideal: 640, max: 1280 },
+    height: { ideal: 480, max: 720 },
+    frameRate: { ideal: 24, max: 30 },
+  };
+
+  const isTransientMediaError = (error: unknown): boolean => {
+    const name =
+      error && typeof error === "object" && "name" in error
+        ? String((error as { name?: unknown }).name ?? "")
+        : "";
+    return name === "AbortError" || name === "NotReadableError" || name === "TrackStartError" || name === "OverconstrainedError";
+  };
+
+  const request = async (constraints: MediaStreamConstraints, label: string): Promise<MediaStream> => {
+    try {
+      return await navigator.mediaDevices.getUserMedia(constraints);
+    } catch (error) {
+      if (isTransientMediaError(error)) {
+        // Some WebViews/browsers fail the first call right after user clicks "Allow".
+        await new Promise((resolve) => window.setTimeout(resolve, 150));
+        return navigator.mediaDevices.getUserMedia(constraints);
+      }
+      console.warn(`[acquireLocalMedia] ${label} failed`, error);
+      throw error;
     }
+  };
+
+  try {
+    if (isVideo) {
+      try {
+        return await request({ audio: baseAudio, video: hdVideo }, "video+audio(hd)");
+      } catch {
+        try {
+          return await request({ audio: baseAudio, video: safeVideo }, "video+audio(safe)");
+        } catch {
+          // Graceful degradation: keep the call alive in audio-only mode.
+          return await request({ audio: baseAudio, video: false }, "audio-only fallback");
+        }
+      }
+    }
+
+    return await request({ audio: baseAudio, video: false }, "audio-only");
+  } catch (err) {
+    console.error("[acquireLocalMedia] Failed to acquire local media", err);
     throw err;
   }
+}
+
+class VideoCallMediaAccessError extends Error {
+  public readonly causeName: string;
+
+  constructor(causeName: string, message = "media_access_failed") {
+    super(message);
+    this.name = "VideoCallMediaAccessError";
+    this.causeName = causeName;
+  }
+}
+
+function toMediaAccessError(error: unknown): VideoCallMediaAccessError {
+  const causeName =
+    error && typeof error === "object" && "name" in error
+      ? String((error as { name?: unknown }).name ?? "UnknownError")
+      : "UnknownError";
+  return new VideoCallMediaAccessError(causeName);
 }
 
 // ---------------------------------------------------------------------------
@@ -224,7 +277,7 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
       stream = await acquireLocalMedia(isVideo);
     } catch (err) {
       console.error("[useVideoCallSfu] startCall: media acquisition failed", err);
-      return null;
+      throw toMediaAccessError(err);
     }
 
     setLocalStream(stream);
@@ -277,7 +330,7 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
       stream = await acquireLocalMedia(isVideo);
     } catch (err) {
       console.error("[useVideoCallSfu] answerCall: media acquisition failed", err);
-      throw err;
+      throw toMediaAccessError(err);
     }
 
     setLocalStream(stream);

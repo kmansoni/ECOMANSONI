@@ -24,6 +24,7 @@ import React, {
   useState,
 } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 import { useReelsContext } from '@/contexts/ReelsContext';
 import { useReels, type Reel } from '@/hooks/useReels';
 import { ReelItem } from '@/components/reels/ReelItem';
@@ -398,9 +399,9 @@ export default function ReelsPage(): JSX.Element {
     [navigate],
   );
 
-  // Phase N: Follow — noop пока
+  // Phase N: Follow — показываем уведомление до реализации API
   const handleFollowPress = useCallback((_authorId: string) => {
-    // TODO: Phase N — follow/unfollow
+    toast.info("Подписка скоро будет доступна");
   }, []);
 
   // ---------------------------------------------------------------------------
