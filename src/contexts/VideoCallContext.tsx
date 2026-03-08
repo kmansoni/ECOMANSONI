@@ -795,6 +795,25 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
             joinToken = undefined;
             console.info("[VideoCallContext] calls-v2 room-join-secret:skip (sfu mode)", { roomId });
           }
+
+          // Persist room bootstrap hints for callee-side answer flow.
+          // Incoming call polling reads from `video_calls`; storing room metadata here
+          // allows callee to join the exact same calls-v2 room instead of failing with
+          // "missing room/join token" during accept.
+          const { error: persistRoomError } = await supabase
+            .from("video_calls" as never)
+            .update({
+              calls_v2_room_id: roomId,
+              calls_v2_join_token: joinToken ?? null,
+            } as never)
+            .eq("id", callId);
+          if (persistRoomError) {
+            console.warn("[VideoCallContext] calls-v2 room hints persist failed", {
+              callId,
+              roomId,
+              error: persistRoomError.message,
+            });
+          }
         } else {
           const hintedRoomId = (call as VideoCall & { room_id?: string; calls_v2_room_id?: string }).calls_v2_room_id
             ?? (call as VideoCall & { room_id?: string }).room_id;
@@ -1188,7 +1207,36 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     
     try {
       await answerVideoCall(call);
-      void bootstrapCallsV2Room(call, "callee");
+
+      // Refresh call row to pick up caller-persisted calls-v2 room metadata.
+      // This avoids a race where incoming polling saw the call before room hints
+      // were written, which previously caused callee bootstrap to skip.
+      let resolvedCall = call as VideoCall & {
+        calls_v2_room_id?: string | null;
+        calls_v2_join_token?: string | null;
+      };
+      try {
+        const { data: freshCall } = await supabase
+          .from("video_calls" as never)
+          .select("id, calls_v2_room_id, calls_v2_join_token" as never)
+          .eq("id", call.id)
+          .maybeSingle();
+        if (freshCall && typeof freshCall === "object") {
+          const fresh = freshCall as {
+            calls_v2_room_id?: string | null;
+            calls_v2_join_token?: string | null;
+          };
+          resolvedCall = {
+            ...resolvedCall,
+            calls_v2_room_id: fresh.calls_v2_room_id ?? null,
+            calls_v2_join_token: fresh.calls_v2_join_token ?? null,
+          };
+        }
+      } catch (roomHintError) {
+        console.warn("[VideoCallContext] answerCall room-hints refresh failed", roomHintError);
+      }
+
+      void bootstrapCallsV2Room(resolvedCall, "callee");
     } catch (err) {
       console.error("[VideoCallContext] answerCall error:", err);
       if (isMediaErrorForCall(err)) {
