@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { Car, ShoppingBag, Home, Shield, Briefcase, Building2, TrendingUp, Plane, Hotel, Film, Dumbbell, GraduationCap, Music, Truck, Users, Mail, Bot, Navigation, Bug } from "lucide-react";
+import { Car, ShoppingBag, Home, Shield, Briefcase, Building2, TrendingUp, Plane, Hotel, Film, Dumbbell, GraduationCap, Music, Truck, Users, Mail, Bot, Navigation, Bug, Radio } from "lucide-react";
 import logoImage from "@/assets/logo.png";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
@@ -41,6 +41,7 @@ function validateServiceConfig(items: ServiceItem[]): void {
 
 const services: ServiceItem[] = [
   { id: "ai-assistant", name: "ИИ-ассистент", icon: Bot, route: "/ai-assistant", available: true },
+  { id: "live", name: "Прямой эфир", icon: Radio, route: "/live/explore", available: true },
   { id: "navigation", name: "Навигация", icon: Navigation, route: "/navigation", available: true },
   { id: "taxi", name: "Такси", icon: Car, route: "/taxi", available: true },
   // Not routed yet: keep in "Coming Soon" to avoid dead-click UX.

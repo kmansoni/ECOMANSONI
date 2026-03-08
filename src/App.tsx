@@ -99,6 +99,9 @@ const BotListPage = lazy(() => import("@/pages/BotListPage").then(m => ({ defaul
 const MiniAppListPage = lazy(() => import("@/pages/MiniAppListPage").then(m => ({ default: m.MiniAppListPage })));
 const DeleteAccountPage = lazy(() => import("@/pages/DeleteAccountPage").then(m => ({ default: m.DeleteAccountPage })));
 const ReelsPage = lazy(() => import("./pages/ReelsPage"));
+const GoLivePage = lazy(() => import("./pages/GoLivePage"));
+const LiveViewerPage = lazy(() => import("./pages/LiveViewerPage"));
+const LiveExplorePage = lazy(() => import("./pages/LiveExplorePage"));
 const PeopleNearbyPage = lazy(() => import("./pages/PeopleNearbyPage"));
 const BusinessAccountPage = lazy(() => import("./pages/BusinessAccountPage"));
 const OrderDetailPage = lazy(() => import("@/pages/OrderDetailPage"));
@@ -669,6 +672,23 @@ const App = () => {
                     <Route path="/reels" element={
                       <Suspense fallback={<PageLoader />}>
                         <ReelsPage />
+                      </Suspense>
+                    } />
+
+                    {/* ─── Livestream Module ────────────────── */}
+                    <Route path="/live" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <GoLivePage />
+                      </Suspense>
+                    } />
+                    <Route path="/live/explore" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <LiveExplorePage />
+                      </Suspense>
+                    } />
+                    <Route path="/live/:sessionId" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <LiveViewerPage />
                       </Suspense>
                     } />
                   </Route>

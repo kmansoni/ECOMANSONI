@@ -31,15 +31,15 @@ export function useStoryReactions(storyId: string | null) {
 
   const fetchReactions = useCallback(async () => {
     if (!storyId) return;
-    const { data, error } = await (supabase as any)
+    const { data, error } = await supabase
       .from('story_reactions')
       .select('*')
       .eq('story_id', storyId)
       .order('created_at', { ascending: false });
     if (!error && data) {
-      setReactions(data as StoryReaction[]);
+      setReactions(data as unknown as StoryReaction[]);
       if (user) {
-        const mine = data.find((r: StoryReaction) => r.user_id === user.id);
+        const mine = (data as unknown as StoryReaction[]).find((r) => r.user_id === user.id);
         setMyReaction(mine ? mine.reaction_type as ReactionType : null);
       }
     }
@@ -66,7 +66,7 @@ export function useStoryReactions(storyId: string | null) {
     setMyReaction(type);
 
     // Upsert в БД
-    const { error } = await (supabase as any)
+    const { error } = await supabase
       .from('story_reactions')
       .upsert({ story_id: sid, user_id: user.id, reaction_type: type });
     if (error) {
@@ -81,7 +81,7 @@ export function useStoryReactions(storyId: string | null) {
     setReactions(prev => prev.filter(r => r.user_id !== user.id));
     setMyReaction(null);
 
-    const { error } = await (supabase as any)
+    const { error } = await supabase
       .from('story_reactions')
       .delete()
       .eq('story_id', sid)

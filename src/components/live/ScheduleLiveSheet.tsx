@@ -11,8 +11,6 @@ import { uploadMedia } from "@/lib/mediaUpload";
 import { toast } from "sonner";
 import { addMinutes, isBefore } from "date-fns";
 
-const db = supabase as any;
-
 interface Props {
   onClose: () => void;
   onScheduled?: (sessionId: string) => void;
@@ -56,19 +54,23 @@ export function ScheduleLiveSheet({ onClose, onScheduled }: Props) {
         } catch { /* cover upload is non-critical */ }
       }
 
-      const { data, error } = await db.from("live_sessions").insert({
-        creator_id: user.id,
-        title: title.trim(),
-        description: description.trim() || null,
-        scheduled_at: selectedDate.toISOString(),
-        status: "scheduled",
-        cover_url: coverUrl,
-        category: "general",
-      }).select().single();
+      const { data, error } = await supabase
+        .from("live_sessions")
+        .insert({
+          creator_id: user.id,
+          title: title.trim(),
+          description: description.trim() || null,
+          scheduled_at: selectedDate.toISOString(),
+          status: "scheduled",
+          cover_url: coverUrl,
+          category: "general",
+        })
+        .select()
+        .single();
 
       if (error) throw error;
       toast.success("Эфир запланирован! Подписчики получат уведомление.");
-      onScheduled?.(data.id);
+      onScheduled?.(String(data.id));
       onClose();
     } catch (err: any) {
       toast.error("Ошибка: " + (err.message || "неизвестная ошибка"));

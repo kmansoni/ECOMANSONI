@@ -59,11 +59,11 @@ export function useStories() {
       setError(null);
 
       // Fetch active stories (not expired)
-      const { data: storiesData, error: storiesError } = await (supabase
-        .from('stories' as any)
+      const { data: storiesData, error: storiesError } = await supabase
+        .from('stories')
         .select('*')
         .gt('expires_at', new Date().toISOString())
-        .order('created_at', { ascending: false }) as any);
+        .order('created_at', { ascending: false });
 
       if (storiesError) throw storiesError;
 
@@ -110,11 +110,11 @@ export function useStories() {
       // Check which stories the current user has viewed
       let viewedStoryIds = new Set<string>();
       if (user) {
-        const { data: viewsData } = await (supabase
-          .from('story_views' as any)
+        const { data: viewsData } = await supabase
+          .from('story_views')
           .select('story_id')
           .eq('viewer_id', user.id)
-          .in('story_id', stories.map(s => s.id)) as any);
+          .in('story_id', stories.map(s => s.id));
 
         if (viewsData) {
           viewedStoryIds = new Set((viewsData as StoryViewRow[]).map(v => v.story_id));
@@ -231,12 +231,12 @@ export function useStories() {
     }
 
     try {
-      await (supabase
-        .from('story_views' as any)
+      await supabase
+        .from('story_views')
         .upsert({
           story_id: storyId,
           viewer_id: user.id
-        }, { onConflict: 'story_id,viewer_id' }) as any);
+        }, { onConflict: 'story_id,viewer_id' });
     } catch (err) {
       console.error('Error marking story as viewed:', err);
     }
@@ -253,8 +253,8 @@ export function useStories() {
       // Create story record
       const mediaType = file.type.startsWith('video/') ? 'video' : 'image';
       
-      const { data: story, error: storyError } = await (supabase
-        .from('stories' as any)
+      const { data: story, error: storyError } = await supabase
+        .from('stories')
         .insert({
           author_id: user.id,
           media_url: publicUrl,
@@ -262,7 +262,7 @@ export function useStories() {
           caption: caption || null
         })
         .select()
-        .single() as any);
+        .single();
 
       if (storyError) throw storyError;
 

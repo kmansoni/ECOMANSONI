@@ -1,5 +1,8 @@
 /**
- * @deprecated Use useVideoCallSfu instead.
+ * @deprecated Use useVideoCallSfu from './useVideoCallSfu' instead.
+ * This P2P implementation is kept for emergency rollback only.
+ * Will be removed in v3.0.
+ *
  * This legacy hook uses P2P RTCPeerConnection + Supabase DB signaling.
  * Kept for reference and rollback during canary phase.
  * Will be deleted after 7-day canary without degradation.

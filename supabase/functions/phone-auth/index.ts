@@ -53,7 +53,8 @@ serve(async (req: Request) => {
       // Compatibility path: iterate users by pages until match or end.
       let page = 1;
       const perPage = 200;
-      while (true) {
+      const MAX_PAGES = 50; // Safety limit: 50 × 200 = 10 000 users max
+      while (page <= MAX_PAGES) {
         const { data, error } = await adminApi.listUsers({ page, perPage });
         if (error) {
           console.error("[phone-auth] listUsers error during lookup:", error.message);

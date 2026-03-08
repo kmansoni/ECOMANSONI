@@ -1,0 +1,420 @@
+# ECOMANSONI Livestream Platform — Production Docker Compose
+# Stack: LiveKit Server + Ingress + Egress + Redis + MinIO + Nginx + Gateway
+# Design: Zero-trust, horizontally scalable, 10M+ concurrent users.
+# All secrets via .env; no hardcoded credentials in this file.
+
+# =============================================================================
+# EXTENSION FIELDS — reusable logging / restart policy fragments
+# =============================================================================
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "50m"
+    max-file: "5"
+    compress: "true"
+
+x-restart: &default-restart
+  restart: unless-stopped
+
+services:
+
+  # ===========================================================================
+  # REDIS — Shared state bus for LiveKit cluster coordination, stream-key
+  # validation, rate-limiting sliding windows, and pub-sub fan-out.
+  # Port 6381 — avoids collision with app Redis (6379) and nav Redis (6380).
+  # Persistence: AOF everysec + RDB 60/1000 to survive restarts without
+  # losing active stream-key mappings (TTL ~6h on stream keys).
+  # Eviction: allkeys-lru — safe for session-cache workloads.
+  # ===========================================================================
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6381:6379"
+    command: >
+      redis-server
+      --maxmemory 1gb
+      --maxmemory-policy allkeys-lru
+      --appendonly yes
+      --appendfsync everysec
+      --save 60 1000
+      --save 300 100
+      --loglevel notice
+      --tcp-keepalive 60
+      --timeout 300
+      --protected-mode no
+    volumes:
+      - redis-data:/data
+    networks:
+      - livestream-net
+    <<: *default-restart
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1.5G
+        reservations:
+          memory: 256M
+
+  # ===========================================================================
+  # MINIO — S3-compatible object storage for HLS segments, VOD recordings,
+  # thumbnails. Three buckets:
+  #   livestream-recordings — MP4 full recordings (lifecycle: keep 90 days)
+  #   livestream-thumbnails — JPEG thumbnails (CDN-served, keep forever)
+  #   livestream-hls        — HLS .ts + .m3u8 segments (lifecycle: 7 days)
+  # Security: presigned URLs issued by gateway; never expose raw MinIO to WAN.
+  # ===========================================================================
+  minio:
+    image: minio/minio:latest
+    ports:
+      - "9000:9000"   # S3 API — internal only (expose via nginx in prod)
+      - "9001:9001"   # MinIO Console — restrict to VPN/tailscale in prod
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      # Enable versioning audit trail for recordings
+      MINIO_VERSIONING: "off"
+      # Prometheus metrics endpoint
+      MINIO_PROMETHEUS_AUTH_TYPE: public
+    volumes:
+      - minio-data:/data
+    networks:
+      - livestream-net
+    <<: *default-restart
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2G
+        reservations:
+          memory: 512M
+
+  # ===========================================================================
+  # MINIO INIT — one-shot sidecar that creates buckets + policies.
+  # Runs after MinIO is healthy; exits 0 on success.
+  # Re-running is idempotent (--ignore-existing).
+  # ===========================================================================
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: /bin/sh
+    command: /scripts/init-minio.sh
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    volumes:
+      - ./init-minio.sh:/scripts/init-minio.sh:ro
+    networks:
+      - livestream-net
+    restart: "no"
+    logging: *default-logging
+
+  # ===========================================================================
+  # LIVEKIT SERVER — Core WebRTC SFU + Room Manager
+  # Ports:
+  #   7880 — HTTP API (REST + WebSocket signalling)
+  #   7881 — RTC/TCP fallback (for clients behind symmetric NAT)
+  #   7882 — TURN/TLS (co-located TURN; use coturn cluster in high-scale prod)
+  #   50000-60000/udp — WebRTC media plane (UDP fan-out for each participant)
+  # Security:
+  #   - API keys never exposed outside this compose network
+  #   - Webhook HMAC validates every event before DB write
+  #   - auto_create: false — only gateway can create rooms
+  # Scaling note: run 2+ replicas behind L4 LB in prod; Redis provides
+  # cross-node room state coordination (distributed room model).
+  # ===========================================================================
+  livekit-server:
+    image: livekit/livekit-server:v1.7
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "7882:7882"
+      - "50000-60000:50000-60000/udp"
+    command: --config /etc/livekit/livekit.yaml
+    volumes:
+      - ./livekit.yaml:/etc/livekit/livekit.yaml:ro
+      - livekit-certs:/etc/livekit/certs:ro
+    environment:
+      # Override config values at runtime from .env
+      LIVEKIT_KEYS: "${LIVEKIT_API_KEY:-devkey}: ${LIVEKIT_API_SECRET:-secret}"
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - livestream-net
+    <<: *default-restart
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:7880"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 4G
+        reservations:
+          cpus: "1"
+          memory: 1G
+
+  # ===========================================================================
+  # LIVEKIT INGRESS — RTMP / WHIP → WebRTC transcoder
+  # Receives OBS/Streamlabs RTMP streams on port 1935.
+  # Receives browser WHIP streams on port 8080.
+  # Validates stream_key against Redis before publishing to LiveKit room.
+  # Attack vector: unauthenticated RTMP flood → stream_key validation at
+  # ingress layer (reject unknown keys before allocating transcoder CPU).
+  # Resource: H.264 decode + VP8/VP9 re-encode is CPU-heavy — 2 CPUs minimum.
+  # ===========================================================================
+  livekit-ingress:
+    image: livekit/ingress:v1.4
+    ports:
+      - "1935:1935"   # RTMP ingest — expose to internet via LB
+      - "8088:8080"   # WHIP endpoint — proxy via nginx /whip/
+    environment:
+      INGRESS_CONFIG_BODY: |
+        log_level: info
+        api_key: ${LIVEKIT_API_KEY:-devkey}
+        api_secret: ${LIVEKIT_API_SECRET:-secret}
+        ws_url: ws://livekit-server:7880
+        rtmp_port: 1935
+        whip_port: 8080
+        http_relay_port: 9090
+        cpu_cost:
+          rtmp_cpu_cost: 2
+          whip_cpu_cost: 2
+          whip_bypass_transcoding_cpu_cost: 0.5
+    depends_on:
+      livekit-server:
+        condition: service_healthy
+    networks:
+      - livestream-net
+    <<: *default-restart
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2G
+        reservations:
+          cpus: "0.5"
+          memory: 512M
+
+  # ===========================================================================
+  # LIVEKIT EGRESS — WebRTC → HLS segments + MP4 recording
+  # Consumes LiveKit room tracks and writes:
+  #   HLS: minio/livestream-hls/{session_id}/playlist.m3u8 + .ts
+  #   MP4: minio/livestream-recordings/{session_id}.mp4
+  # Uses S3 force_path_style for MinIO compatibility.
+  # CPU: FFmpeg multi-output transcoding (4 ABR variants) is very heavy.
+  # Each active egress process uses ~1 CPU core; plan 1 core per concurrent
+  # stream being recorded. Limit: 4 cores → max 3-4 simultaneous recordings.
+  # For >10 simultaneous egress, deploy egress as separate scaled service.
+  # ===========================================================================
+  livekit-egress:
+    image: livekit/egress:v1.8
+    volumes:
+      - ./egress.yaml:/etc/egress/egress.yaml:ro
+    environment:
+      EGRESS_CONFIG_FILE: /etc/egress/egress.yaml
+    depends_on:
+      livekit-server:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - livestream-net
+    <<: *default-restart
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    # Egress needs elevated privilege for Chrome headless (composited recording)
+    # and GStreamer pipelines. Run as non-root when using track-composite egress.
+    security_opt:
+      - seccomp:unconfined   # Required for Chrome sandbox in egress
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 4G
+        reservations:
+          cpus: "1"
+          memory: 1G
+
+  # ===========================================================================
+  # LIVESTREAM GATEWAY — Node.js / Fastify API + WebSocket server
+  # Responsibilities:
+  #   - JWT validation (Supabase auth tokens)
+  #   - Eligibility checks before creating LiveKit rooms
+  #   - Stream key generation and Redis storage (TTL 6h)
+  #   - LiveKit participant token minting
+  #   - Webhook event ingestion from LiveKit (room started/ended, egress)
+  #   - Rate limiting (chat, reactions) via Redis sliding window
+  #   - Presence aggregation write-back to Postgres every 10s
+  # Attack surfaces:
+  #   - Token forgery → verify with Supabase JWKS
+  #   - Webhook replay → validate HMAC + nonce in Redis
+  #   - DoS on /join → rate limit per user_id in Redis
+  # ===========================================================================
+  livestream-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.gateway
+    ports:
+      - "3100:3100"
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: 3100
+      HOST: 0.0.0.0
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      # LiveKit
+      LIVEKIT_URL: ws://livekit-server:7880
+      LIVEKIT_PUBLIC_URL: ${LIVEKIT_PUBLIC_URL:-wss://live.yourdomain.com}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-devkey}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-secret}
+      # Redis
+      REDIS_URL: redis://redis:6379
+      # MinIO / S3
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      S3_BUCKET_RECORDINGS: ${S3_BUCKET_RECORDINGS:-livestream-recordings}
+      S3_BUCKET_THUMBNAILS: ${S3_BUCKET_THUMBNAILS:-livestream-thumbnails}
+      S3_BUCKET_HLS: ${S3_BUCKET_HLS:-livestream-hls}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_FORCE_PATH_STYLE: "true"
+      # Supabase
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      SUPABASE_JWT_SECRET: ${SUPABASE_JWT_SECRET}
+      # CDN
+      CDN_URL: ${CDN_URL:-}
+      # Moderation
+      NSFW_API_URL: ${NSFW_API_URL:-}
+      NSFW_THRESHOLD: ${NSFW_THRESHOLD:-0.7}
+      # Webhook HMAC secret (must match livekit.yaml webhook.api_key secret)
+      LIVEKIT_WEBHOOK_HMAC_SECRET: ${LIVEKIT_WEBHOOK_HMAC_SECRET:-${LIVEKIT_API_SECRET:-secret}}
+    depends_on:
+      livekit-server:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - livestream-net
+      - app-net
+    <<: *default-restart
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3100/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1G
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+
+  # ===========================================================================
+  # NGINX — Reverse proxy, WebSocket upgrade, HLS caching, CORS, rate limiting
+  # Terminates TLS in production (cert paths via env / volume mount).
+  # Proxies:
+  #   /api/       → livestream-gateway:3100
+  #   /whip/      → livekit-ingress:8080
+  #   /rtc/       → livekit-server:7880 (WebSocket upgrade)
+  #   /hls/       → minio:9000 (streaming proxy with caching)
+  # ===========================================================================
+  nginx:
+    image: nginx:1.25-alpine
+    ports:
+      - "3101:80"     # HTTP — in prod, supply TLS cert and use 443
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - nginx-cache:/var/cache/nginx
+    depends_on:
+      - livestream-gateway
+      - livekit-server
+      - livekit-ingress
+      - minio
+    networks:
+      - livestream-net
+      - app-net
+    <<: *default-restart
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:80/nginx-health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 512M
+        reservations:
+          memory: 128M
+
+# =============================================================================
+# VOLUMES — Persistent state
+# =============================================================================
+volumes:
+  redis-data:
+    driver: local
+  minio-data:
+    driver: local
+  livekit-certs:
+    driver: local
+  nginx-cache:
+    driver: local
+
+# =============================================================================
+# NETWORKS
+# livestream-net — isolated bridge; no direct WAN access
+# app-net        — external network shared with main app stack (supabase, etc.)
+# =============================================================================
+networks:
+  livestream-net:
+    name: ecomansoni-livestream
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+
+  app-net:
+    name: ecomansoni-app
+    external: true

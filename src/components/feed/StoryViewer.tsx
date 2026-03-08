@@ -47,11 +47,11 @@ function StoryWidgetsLayer({ storyId, currentUser }: { storyId: string; currentU
     (async () => {
       const { supabase } = await import("@/integrations/supabase/client");
       const [q, c, qz, sl, st] = await Promise.all([
-        (supabase as any).from('story_questions').select('*').eq('story_id', storyId),
-        (supabase as any).from('story_countdowns').select('*').eq('story_id', storyId),
-        (supabase as any).from('story_quizzes').select('*').eq('story_id', storyId),
-        (supabase as any).from('story_emoji_sliders').select('*').eq('story_id', storyId),
-        (supabase as any).from('story_stickers').select('*').eq('story_id', storyId),
+        supabase.from('story_questions').select('*').eq('story_id', storyId),
+        supabase.from('story_countdowns').select('*').eq('story_id', storyId),
+        supabase.from('story_quizzes').select('*').eq('story_id', storyId),
+        supabase.from('story_emoji_sliders').select('*').eq('story_id', storyId),
+        supabase.from('story_stickers').select('*').eq('story_id', storyId),
       ]);
       setQuestions(q.data || []);
       setCountdowns(c.data || []);

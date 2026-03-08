@@ -359,7 +359,8 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
     const { error: answerError } = await supabase
       .from("video_calls")
       .update({
-        status: "connected",
+        // DB enum/constraint accepts 'answered' (not 'connected').
+        status: "answered",
         started_at: new Date().toISOString(),
       })
       .eq("id", call.id);
@@ -370,7 +371,7 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
       throw new VideoCallStartError("db_answer_update_failed", answerError);
     }
 
-    const answeredCall: VideoCall = { ...call, status: "connected" };
+    const answeredCall: VideoCall = { ...call, status: "answered" };
     setCurrentCall(answeredCall);
     setStatus("connected");
     setConnectionState("good");

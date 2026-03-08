@@ -1,0 +1,81 @@
+# LiveKit Egress Service Configuration — ECOMANSONI Livestream Platform
+# Version: 1.8
+# Egress handles two output types:
+#   1. RoomCompositeEgress → HLS ABR segments (live streaming fallback for CDN)
+#   2. RoomCompositeEgress → MP4 recording (uploaded to MinIO on stream end)
+#
+# Architecture note: each active egress job spawns a Chrome headless + GStreamer
+# pipeline. This is CPU/memory intensive. One egress container handles 3-4
+# concurrent streams. For >10 concurrent streams, scale egress horizontally
+# (multiple replicas behind Redis-coordinated job queue).
+#
+# S3 write path: egress → MinIO (force_path_style required for non-AWS S3).
+# Auth: egress authenticates to LiveKit server using api_key / api_secret below.
+
+# =============================================================================
+# Logging
+# =============================================================================
+log_level: info
+
+# =============================================================================
+# LiveKit Server connection
+# insecure: true — internal network, TLS not needed on the internal bridge.
+#           Set to false when deploying over public network.
+# =============================================================================
+api_key: ${LIVEKIT_API_KEY:-devkey}
+api_secret: ${LIVEKIT_API_SECRET:-secret}
+ws_url: ws://livekit-server:7880
+insecure: true
+
+# =============================================================================
+# Health and monitoring ports
+# health_port: 8080 — liveness probe endpoint GET /health → 200 OK
+# template_port: 7980 — internal port for composite egress Chrome template server
+# prometheus_port: 7979 — Prometheus metrics scrape endpoint
+# =============================================================================
+health_port: 8080
+template_port: 7980
+prometheus_port: 7979
+
+# =============================================================================
+# S3-compatible storage — MinIO
+# force_path_style: REQUIRED for MinIO (non-AWS S3 does not support virtual
+#   hosted bucket URLs like bucket.s3.amazonaws.com).
+# bucket: default bucket for recordings; HLS jobs override to livestream-hls.
+# region: us-east-1 is required by MinIO SDK even though it's a local cluster.
+#
+# Key rotation: update S3 access_key/secret via .env without container rebuild.
+# Write amplification: each HLS segment is a separate S3 PUT object.
+#   At 2s segments × 5 ABR variants = 2.5 PUT/s per active stream.
+#   At 100 concurrent streams = 250 PUT/s → check MinIO IOPS capacity.
+# =============================================================================
+s3:
+  access_key: ${MINIO_ROOT_USER:-minioadmin}
+  secret: ${MINIO_ROOT_PASSWORD:-minioadmin}
+  region: ${S3_REGION:-us-east-1}
+  endpoint: http://minio:9000
+  bucket: ${S3_BUCKET_RECORDINGS:-livestream-recordings}
+  force_path_style: true
+
+# =============================================================================
+# CPU cost hints — used by egress scheduler to decide if node can accept
+# new jobs without overloading. Values are fractional CPU cores.
+# room_composite_cpu_cost: 3.0 — Chrome + GStreamer + FFmpeg pipeline.
+# track_composite_cpu_cost: 2.0 — lighter, no Chrome.
+# =============================================================================
+cpu_cost:
+  room_composite_cpu_cost: 3.0
+  audio_room_composite_cpu_cost: 0.5
+  video_room_composite_cpu_cost: 2.5
+  track_composite_cpu_cost: 2.0
+  track_egress_cpu_cost: 0.5
+
+# =============================================================================
+# Default HLS output profile (used when gateway starts HLS egress for CDN).
+# These values match the ABR spec in architecture doc section 5.2.
+# segment_duration: 2s — Low-Latency HLS compatible (LL-HLS requires ≤ 2s).
+# playlist_window: 5 segments visible → 10s DVR buffer for join-in-progress.
+# =============================================================================
+# NOTE: Full output profile is specified per-egress-request from the gateway
+# (EgressClient.startRoomCompositeEgress with HLSOptions). This section
+# provides defaults that the gateway can override per stream.

@@ -1312,6 +1312,42 @@ export type Database = {
         }
         Relationships: []
       }
+      archived_posts: {
+        Row: {
+          archived_at: string
+          post_id: string
+          user_id: string
+        }
+        Insert: {
+          archived_at?: string
+          post_id: string
+          user_id: string
+        }
+        Update: {
+          archived_at?: string
+          post_id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      archived_stories: {
+        Row: {
+          archived_at: string
+          story_id: string
+          user_id: string
+        }
+        Insert: {
+          archived_at?: string
+          story_id: string
+          user_id: string
+        }
+        Update: {
+          archived_at?: string
+          story_id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       blocked_users: {
         Row: {
           blocked_id: string
@@ -4368,6 +4404,54 @@ export type Database = {
         }
         Relationships: []
       }
+      close_friends: {
+        Row: {
+          created_at: string
+          friend_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          friend_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          friend_id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      highlights: {
+        Row: {
+          cover_url: string | null
+          created_at: string
+          id: string
+          position: number
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          cover_url?: string | null
+          created_at?: string
+          id?: string
+          position?: number
+          title: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          cover_url?: string | null
+          created_at?: string
+          id?: string
+          position?: number
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       highlight_stories: {
         Row: {
           added_at: string
@@ -5280,59 +5364,551 @@ export type Database = {
         }
         Relationships: []
       }
-      live_sessions: {
+      live_donations: {
         Row: {
-          author_id: string
+          amount: number
           created_at: string
-          draft_id: string | null
-          ended_at: string | null
+          currency: string
+          donor_id: string
           id: string
-          ingest_protocol: string
-          replay_asset_id: string | null
-          started_at: string | null
-          state: string
-          stream_key_hash: string
+          message: string | null
+          session_id: string
+          streamer_id: string
         }
         Insert: {
-          author_id: string
+          amount: number
           created_at?: string
-          draft_id?: string | null
-          ended_at?: string | null
+          currency?: string
+          donor_id: string
           id?: string
-          ingest_protocol: string
-          replay_asset_id?: string | null
-          started_at?: string | null
-          state: string
-          stream_key_hash: string
+          message?: string | null
+          session_id: string
+          streamer_id: string
         }
         Update: {
-          author_id?: string
+          amount?: number
           created_at?: string
-          draft_id?: string | null
-          ended_at?: string | null
+          currency?: string
+          donor_id?: string
           id?: string
-          ingest_protocol?: string
-          replay_asset_id?: string | null
-          started_at?: string | null
-          state?: string
-          stream_key_hash?: string
+          message?: string | null
+          session_id?: string
+          streamer_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "live_sessions_draft_id_fkey"
-            columns: ["draft_id"]
-            isOneToOne: false
-            referencedRelation: "drafts"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "live_sessions_replay_asset_id_fkey"
-            columns: ["replay_asset_id"]
-            isOneToOne: false
-            referencedRelation: "assets"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
+      }
+      live_questions: {
+        Row: {
+          created_at: string
+          id: string
+          is_answered: boolean
+          is_pinned: boolean
+          question: string
+          session_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_answered?: boolean
+          is_pinned?: boolean
+          question: string
+          session_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_answered?: boolean
+          is_pinned?: boolean
+          question?: string
+          session_id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      live_chat_bans: {
+        Row: {
+          banned_by: string
+          created_at: string
+          duration_minutes: number | null
+          expires_at: string | null
+          id: string
+          reason: string | null
+          session_id: number
+          user_id: string
+        }
+        Insert: {
+          banned_by: string
+          created_at?: string
+          duration_minutes?: number | null
+          expires_at?: string | null
+          id?: string
+          reason?: string | null
+          session_id: number
+          user_id: string
+        }
+        Update: {
+          banned_by?: string
+          created_at?: string
+          duration_minutes?: number | null
+          expires_at?: string | null
+          id?: string
+          reason?: string | null
+          session_id?: number
+          user_id?: string
+        }
+        Relationships: []
+      }
+      live_chat_messages: {
+        Row: {
+          content: string
+          created_at: string
+          hide_reason: string | null
+          id: number
+          is_auto_hidden: boolean
+          is_creator_message: boolean
+          is_hidden_by_creator: boolean
+          is_pinned: boolean
+          metadata: Json | null
+          pinned_at: string | null
+          pinned_by: string | null
+          reply_to_id: number | null
+          sender_id: string
+          session_id: number
+          type: string
+          updated_at: string
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          hide_reason?: string | null
+          id?: number
+          is_auto_hidden?: boolean
+          is_creator_message?: boolean
+          is_hidden_by_creator?: boolean
+          is_pinned?: boolean
+          metadata?: Json | null
+          pinned_at?: string | null
+          pinned_by?: string | null
+          reply_to_id?: number | null
+          sender_id: string
+          session_id: number
+          type?: string
+          updated_at?: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          hide_reason?: string | null
+          id?: number
+          is_auto_hidden?: boolean
+          is_creator_message?: boolean
+          is_hidden_by_creator?: boolean
+          is_pinned?: boolean
+          metadata?: Json | null
+          pinned_at?: string | null
+          pinned_by?: string | null
+          reply_to_id?: number | null
+          sender_id?: string
+          session_id?: number
+          type?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      live_guests: {
+        Row: {
+          id: string
+          invited_at: string
+          joined_at: string | null
+          left_at: string | null
+          session_id: number
+          slot_position: number | null
+          status: string
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          invited_at?: string
+          joined_at?: string | null
+          left_at?: string | null
+          session_id: number
+          slot_position?: number | null
+          status?: string
+          user_id: string
+        }
+        Update: {
+          id?: string
+          invited_at?: string
+          joined_at?: string | null
+          left_at?: string | null
+          session_id?: number
+          slot_position?: number | null
+          status?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      live_moderators: {
+        Row: {
+          created_at: string
+          granted_by: string
+          id: string
+          permissions: string[]
+          session_id: number
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          granted_by: string
+          id?: string
+          permissions?: string[]
+          session_id: number
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          granted_by?: string
+          id?: string
+          permissions?: string[]
+          session_id?: number
+          user_id?: string
+        }
+        Relationships: []
+      }
+      live_schedule_reminders: {
+        Row: {
+          created_at: string
+          id: string
+          notified: boolean
+          notify_at: string
+          session_id: number
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          notified?: boolean
+          notify_at: string
+          session_id: number
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          notified?: boolean
+          notify_at?: string
+          session_id?: number
+          user_id?: string
+        }
+        Relationships: []
+      }
+      live_session_analytics: {
+        Row: {
+          avg_watch_duration_sec: number
+          chat_activity_curve: Json
+          computed_at: string
+          device_breakdown: Json
+          geo_breakdown: Json
+          id: string
+          new_followers_during_stream: number
+          peak_viewers: number
+          session_id: number
+          shares_count: number
+          top_chatters: Json
+          total_chat_messages: number
+          total_donations_amount: number
+          total_donations_count: number
+          total_gifts_count: number
+          total_reactions: number
+          total_unique_viewers: number
+          viewer_retention_curve: Json
+        }
+        Insert: {
+          avg_watch_duration_sec?: number
+          chat_activity_curve?: Json
+          computed_at?: string
+          device_breakdown?: Json
+          geo_breakdown?: Json
+          id?: string
+          new_followers_during_stream?: number
+          peak_viewers?: number
+          session_id: number
+          shares_count?: number
+          top_chatters?: Json
+          total_chat_messages?: number
+          total_donations_amount?: number
+          total_donations_count?: number
+          total_gifts_count?: number
+          total_reactions?: number
+          total_unique_viewers?: number
+          viewer_retention_curve?: Json
+        }
+        Update: {
+          avg_watch_duration_sec?: number
+          chat_activity_curve?: Json
+          computed_at?: string
+          device_breakdown?: Json
+          geo_breakdown?: Json
+          id?: string
+          new_followers_during_stream?: number
+          peak_viewers?: number
+          session_id?: number
+          shares_count?: number
+          top_chatters?: Json
+          total_chat_messages?: number
+          total_donations_amount?: number
+          total_donations_count?: number
+          total_gifts_count?: number
+          total_reactions?: number
+          total_unique_viewers?: number
+          viewer_retention_curve?: Json
+        }
+        Relationships: []
+      }
+      live_shopping_products: {
+        Row: {
+          clicks_count: number
+          created_at: string
+          currency: string
+          display_order: number
+          id: string
+          is_featured: boolean
+          price: number | null
+          product_image_url: string | null
+          product_name: string
+          product_url: string
+          session_id: number
+        }
+        Insert: {
+          clicks_count?: number
+          created_at?: string
+          currency?: string
+          display_order?: number
+          id?: string
+          is_featured?: boolean
+          price?: number | null
+          product_image_url?: string | null
+          product_name: string
+          product_url: string
+          session_id: number
+        }
+        Update: {
+          clicks_count?: number
+          created_at?: string
+          currency?: string
+          display_order?: number
+          id?: string
+          is_featured?: boolean
+          price?: number | null
+          product_image_url?: string | null
+          product_name?: string
+          product_url?: string
+          session_id?: number
+        }
+        Relationships: []
+      }
+      live_stream_reports: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: number
+          report_type: string
+          report_weight: number
+          reporter_id: string
+          reporter_quality_score: number
+          session_id: number
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: number
+          report_type: string
+          report_weight?: number
+          reporter_id: string
+          reporter_quality_score?: number
+          session_id: number
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: number
+          report_type?: string
+          report_weight?: number
+          reporter_id?: string
+          reporter_quality_score?: number
+          session_id?: number
+        }
+        Relationships: []
+      }
+      live_viewers: {
+        Row: {
+          created_at: string
+          id: number
+          is_active: boolean
+          is_reporter: boolean
+          joined_at: string
+          left_at: string | null
+          participant_sid: string | null
+          session_id: number
+          viewer_id: string
+          watch_duration_seconds: number
+        }
+        Insert: {
+          created_at?: string
+          id?: number
+          is_active?: boolean
+          is_reporter?: boolean
+          joined_at?: string
+          left_at?: string | null
+          participant_sid?: string | null
+          session_id: number
+          viewer_id: string
+          watch_duration_seconds?: number
+        }
+        Update: {
+          created_at?: string
+          id?: number
+          is_active?: boolean
+          is_reporter?: boolean
+          joined_at?: string
+          left_at?: string | null
+          participant_sid?: string | null
+          session_id?: number
+          viewer_id?: string
+          watch_duration_seconds?: number
+        }
+        Relationships: []
+      }
+      live_sessions: {
+        Row: {
+          id: number
+          creator_id: string
+          title: string
+          description: string | null
+          category: string
+          thumbnail_url: string | null
+          cover_url: string | null
+          status: string
+          started_at: string | null
+          ended_at: string | null
+          is_public: boolean
+          is_followers_only: boolean
+          moderation_status: string
+          moderation_decision: string | null
+          moderation_restricted_at: string | null
+          viewer_count_current: number | null
+          viewer_count_peak: number | null
+          report_count: number | null
+          message_count: number | null
+          created_at: string
+          updated_at: string
+          livekit_room_name: string | null
+          livekit_room_sid: string | null
+          stream_key_id: string | null
+          scheduled_at: string | null
+          actual_start_at: string | null
+          actual_end_at: string | null
+          max_viewers: number
+          total_viewers: number
+          avg_watch_duration_sec: number
+          replay_url: string | null
+          replay_thumbnail_url: string | null
+          is_replay_available: boolean
+          is_mature_content: boolean
+          language: string
+          tags: string[]
+          geo_restrictions: string[]
+          ingest_protocol: string
+          max_guests: number | null
+          pinned_comment: string | null
+        }
+        Insert: {
+          id?: number
+          creator_id: string
+          title: string
+          description?: string | null
+          category?: string
+          thumbnail_url?: string | null
+          cover_url?: string | null
+          status?: string
+          started_at?: string | null
+          ended_at?: string | null
+          is_public?: boolean
+          is_followers_only?: boolean
+          moderation_status?: string
+          moderation_decision?: string | null
+          moderation_restricted_at?: string | null
+          viewer_count_current?: number | null
+          viewer_count_peak?: number | null
+          report_count?: number | null
+          message_count?: number | null
+          created_at?: string
+          updated_at?: string
+          livekit_room_name?: string | null
+          livekit_room_sid?: string | null
+          stream_key_id?: string | null
+          scheduled_at?: string | null
+          actual_start_at?: string | null
+          actual_end_at?: string | null
+          max_viewers?: number
+          total_viewers?: number
+          avg_watch_duration_sec?: number
+          replay_url?: string | null
+          replay_thumbnail_url?: string | null
+          is_replay_available?: boolean
+          is_mature_content?: boolean
+          language?: string
+          tags?: string[]
+          geo_restrictions?: string[]
+          ingest_protocol?: string
+          max_guests?: number | null
+          pinned_comment?: string | null
+        }
+        Update: {
+          id?: number
+          creator_id?: string
+          title?: string
+          description?: string | null
+          category?: string
+          thumbnail_url?: string | null
+          cover_url?: string | null
+          status?: string
+          started_at?: string | null
+          ended_at?: string | null
+          is_public?: boolean
+          is_followers_only?: boolean
+          moderation_status?: string
+          moderation_decision?: string | null
+          moderation_restricted_at?: string | null
+          viewer_count_current?: number | null
+          viewer_count_peak?: number | null
+          report_count?: number | null
+          message_count?: number | null
+          created_at?: string
+          updated_at?: string
+          livekit_room_name?: string | null
+          livekit_room_sid?: string | null
+          stream_key_id?: string | null
+          scheduled_at?: string | null
+          actual_start_at?: string | null
+          actual_end_at?: string | null
+          max_viewers?: number
+          total_viewers?: number
+          avg_watch_duration_sec?: number
+          replay_url?: string | null
+          replay_thumbnail_url?: string | null
+          is_replay_available?: boolean
+          is_mature_content?: boolean
+          language?: string
+          tags?: string[]
+          geo_restrictions?: string[]
+          ingest_protocol?: string
+          max_guests?: number | null
+          pinned_comment?: string | null
+        }
+        Relationships: []
       }
       media_objects: {
         Row: {
@@ -7462,6 +8038,39 @@ export type Database = {
         }
         Relationships: []
       }
+      reel_audios: {
+        Row: {
+          artist: string | null
+          audio_url: string
+          cover_url: string | null
+          created_at: string
+          duration_seconds: number
+          id: string
+          reels_count: number
+          title: string
+        }
+        Insert: {
+          artist?: string | null
+          audio_url: string
+          cover_url?: string | null
+          created_at?: string
+          duration_seconds?: number
+          id?: string
+          reels_count?: number
+          title: string
+        }
+        Update: {
+          artist?: string | null
+          audio_url?: string
+          cover_url?: string | null
+          created_at?: string
+          duration_seconds?: number
+          id?: string
+          reels_count?: number
+          title?: string
+        }
+        Relationships: []
+      }
       reel_audio_tracks: {
         Row: {
           audio_track_id: string
@@ -9105,6 +9714,342 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      story_countdown_subscribers: {
+        Row: {
+          countdown_id: string
+          created_at: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          countdown_id: string
+          created_at?: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          countdown_id?: string
+          created_at?: string
+          id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      story_countdowns: {
+        Row: {
+          created_at: string
+          end_time: string
+          id: string
+          story_id: string
+          title: string
+        }
+        Insert: {
+          created_at?: string
+          end_time: string
+          id?: string
+          story_id: string
+          title: string
+        }
+        Update: {
+          created_at?: string
+          end_time?: string
+          id?: string
+          story_id?: string
+          title?: string
+        }
+        Relationships: []
+      }
+      story_emoji_slider_votes: {
+        Row: {
+          created_at: string
+          slider_id: string
+          user_id: string
+          value: number
+        }
+        Insert: {
+          created_at?: string
+          slider_id: string
+          user_id: string
+          value?: number
+        }
+        Update: {
+          created_at?: string
+          slider_id?: string
+          user_id?: string
+          value?: number
+        }
+        Relationships: []
+      }
+      story_emoji_sliders: {
+        Row: {
+          created_at: string
+          emoji: string
+          id: string
+          prompt: string | null
+          story_id: string
+        }
+        Insert: {
+          created_at?: string
+          emoji?: string
+          id?: string
+          prompt?: string | null
+          story_id: string
+        }
+        Update: {
+          created_at?: string
+          emoji?: string
+          id?: string
+          prompt?: string | null
+          story_id?: string
+        }
+        Relationships: []
+      }
+      story_poll_votes: {
+        Row: {
+          created_at: string
+          id: string
+          option_index: number
+          poll_id: string
+          slider_value: number | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          option_index: number
+          poll_id: string
+          slider_value?: number | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          option_index?: number
+          poll_id?: string
+          slider_value?: number | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      story_polls: {
+        Row: {
+          allow_multiple: boolean
+          correct_option_index: number | null
+          created_at: string
+          id: string
+          options: Json
+          poll_type: string
+          question: string
+          story_id: string
+        }
+        Insert: {
+          allow_multiple?: boolean
+          correct_option_index?: number | null
+          created_at?: string
+          id?: string
+          options?: Json
+          poll_type?: string
+          question: string
+          story_id: string
+        }
+        Update: {
+          allow_multiple?: boolean
+          correct_option_index?: number | null
+          created_at?: string
+          id?: string
+          options?: Json
+          poll_type?: string
+          question?: string
+          story_id?: string
+        }
+        Relationships: []
+      }
+      story_question_answers: {
+        Row: {
+          answer_text: string
+          created_at: string
+          id: string
+          question_id: string
+          user_id: string
+        }
+        Insert: {
+          answer_text: string
+          created_at?: string
+          id?: string
+          question_id: string
+          user_id: string
+        }
+        Update: {
+          answer_text?: string
+          created_at?: string
+          id?: string
+          question_id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      story_questions: {
+        Row: {
+          created_at: string
+          id: string
+          is_anonymous: boolean
+          question_text: string
+          story_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_anonymous?: boolean
+          question_text: string
+          story_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_anonymous?: boolean
+          question_text?: string
+          story_id?: string
+        }
+        Relationships: []
+      }
+      story_quiz_answers: {
+        Row: {
+          created_at: string
+          quiz_id: string
+          selected_index: number
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          quiz_id: string
+          selected_index: number
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          quiz_id?: string
+          selected_index?: number
+          user_id?: string
+        }
+        Relationships: []
+      }
+      story_quizzes: {
+        Row: {
+          correct_index: number
+          created_at: string
+          id: string
+          options: Json
+          question: string
+          story_id: string
+        }
+        Insert: {
+          correct_index?: number
+          created_at?: string
+          id?: string
+          options?: Json
+          question: string
+          story_id: string
+        }
+        Update: {
+          correct_index?: number
+          created_at?: string
+          id?: string
+          options?: Json
+          question?: string
+          story_id?: string
+        }
+        Relationships: []
+      }
+      story_reactions: {
+        Row: {
+          created_at: string
+          id: string
+          reaction_type: string
+          story_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          reaction_type?: string
+          story_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          reaction_type?: string
+          story_id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      story_stickers: {
+        Row: {
+          created_at: string
+          data: Json
+          id: string
+          position_x: number
+          position_y: number
+          rotation: number
+          scale: number
+          story_id: string
+          type: string
+        }
+        Insert: {
+          created_at?: string
+          data?: Json
+          id?: string
+          position_x?: number
+          position_y?: number
+          rotation?: number
+          scale?: number
+          story_id: string
+          type: string
+        }
+        Update: {
+          created_at?: string
+          data?: Json
+          id?: string
+          position_x?: number
+          position_y?: number
+          rotation?: number
+          scale?: number
+          story_id?: string
+          type?: string
+        }
+        Relationships: []
+      }
+      post_collabs: {
+        Row: {
+          created_at: string
+          id: string
+          invitee_id: string
+          inviter_id: string
+          post_id: string
+          responded_at: string | null
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          invitee_id: string
+          inviter_id: string
+          post_id: string
+          responded_at?: string | null
+          status?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          invitee_id?: string
+          inviter_id?: string
+          post_id?: string
+          responded_at?: string | null
+          status?: string
+        }
+        Relationships: []
       }
       telemetry_events: {
         Row: {

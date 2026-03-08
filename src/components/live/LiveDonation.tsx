@@ -8,7 +8,6 @@ import { Star, Heart } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
-const db = supabase as any;
 
 interface Donation {
   id: string;
@@ -39,7 +38,7 @@ export function LiveDonation({ sessionId, streamerId, isStreamer = false }: Prop
   const [liveAnimation, setLiveAnimation] = useState<Donation | null>(null);
 
   const load = useCallback(async () => {
-    const { data } = await db
+    const { data } = await supabase
       .from("live_donations")
       .select("*")
       .eq("session_id", sessionId)
@@ -69,7 +68,7 @@ export function LiveDonation({ sessionId, streamerId, isStreamer = false }: Prop
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { toast.error("Войдите для доната"); return; }
-      const { error } = await db.from("live_donations").insert({
+      const { error } = await supabase.from("live_donations").insert({
         session_id: sessionId,
         donor_id: user.id,
         streamer_id: streamerId,

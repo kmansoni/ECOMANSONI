@@ -49,7 +49,7 @@ export function useHighlights(userId?: string) {
       setLoading(true);
       setError(null);
 
-      const { data, error: fetchError } = await (supabase as any)
+      const { data, error: fetchError } = await supabase
         .from('story_highlights')
         .select(`
           *,
@@ -71,13 +71,13 @@ export function useHighlights(userId?: string) {
       if (fetchError) throw fetchError;
 
       // Сортируем stories внутри каждого highlight
-      const highlightsWithSortedStories = (data || []).map(highlight => ({
+      const highlightsWithSortedStories = (data || []).map((highlight) => ({
         ...highlight,
-        stories: (highlight.highlight_stories || [])
-          .sort((a: any, b: any) => a.position - b.position)
+        stories: ((highlight as unknown as { highlight_stories: { position: number }[] }).highlight_stories || [])
+          .sort((a, b) => a.position - b.position),
       }));
 
-      setHighlights(highlightsWithSortedStories as any);
+      setHighlights(highlightsWithSortedStories as unknown as StoryHighlight[]);
     } catch (err) {
       console.error('Error fetching highlights:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch highlights');
@@ -93,14 +93,14 @@ export function useHighlights(userId?: string) {
   ) => {
     if (!user?.id) throw new Error('Not authenticated');
 
-    const { data, error } = await (supabase as any)
+    const { data, error } = await supabase
       .from('story_highlights')
       .insert({
         user_id: user.id,
         title,
         cover_url: coverUrl,
         privacy_level: privacyLevel,
-        position: highlights.length
+        position: highlights.length,
       })
       .select()
       .single();
@@ -115,11 +115,11 @@ export function useHighlights(userId?: string) {
     highlightId: string,
     updates: Partial<Pick<StoryHighlight, 'title' | 'cover_url' | 'privacy_level' | 'is_visible'>>
   ) => {
-    const { data, error } = await (supabase as any)
+    const { data, error } = await supabase
       .from('story_highlights')
       .update(updates)
       .eq('id', highlightId)
-      .eq('user_id', user?.id)
+      .eq('user_id', user?.id ?? '')
       .select()
       .single();
 
@@ -130,11 +130,11 @@ export function useHighlights(userId?: string) {
   }, [user?.id, fetchHighlights]);
 
   const deleteHighlight = useCallback(async (highlightId: string) => {
-    const { error } = await (supabase as any)
+    const { error } = await supabase
       .from('story_highlights')
       .delete()
       .eq('id', highlightId)
-      .eq('user_id', user?.id);
+      .eq('user_id', user?.id ?? '');
 
     if (error) throw error;
 
@@ -146,21 +146,21 @@ export function useHighlights(userId?: string) {
     storyId: string
   ) => {
     // Получаем текущее количество stories в highlight
-    const { data: existingStories } = await (supabase as any)
+    const { data: existingStories } = await supabase
       .from('highlight_stories')
       .select('position')
       .eq('highlight_id', highlightId)
       .order('position', { ascending: false })
       .limit(1);
 
-    const nextPosition = (existingStories?.[0]?.position ?? 0) + 1;
+    const nextPosition = ((existingStories?.[0] as { position?: number } | undefined)?.position ?? 0) + 1;
 
-    const { data, error } = await (supabase as any)
+    const { data, error } = await supabase
       .from('highlight_stories')
       .insert({
         highlight_id: highlightId,
         story_id: storyId,
-        position: nextPosition
+        position: nextPosition,
       })
       .select()
       .single();
@@ -175,7 +175,7 @@ export function useHighlights(userId?: string) {
     highlightId: string,
     storyId: string
   ) => {
-    const { error } = await (supabase as any)
+    const { error } = await supabase
       .from('highlight_stories')
       .delete()
       .eq('highlight_id', highlightId)
@@ -195,11 +195,11 @@ export function useHighlights(userId?: string) {
     }));
 
     for (const update of updates) {
-      await (supabase as any)
+      await supabase
         .from('story_highlights')
         .update({ position: update.position })
         .eq('id', update.id)
-        .eq('user_id', user?.id);
+        .eq('user_id', user?.id ?? '');
     }
 
     await fetchHighlights();

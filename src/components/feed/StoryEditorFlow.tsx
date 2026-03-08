@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { X, ChevronDown, Camera, Smile, Music, AtSign, ArrowRight, Eye, ImagePlus, Wand2, Loader2, Users, MapPin, SlidersHorizontal, ChevronRight, Type, Pencil, UserCheck } from "lucide-react";
+import { X, ChevronDown, Smile, AtSign, Eye, ImagePlus, Wand2, Loader2, Users, MapPin, SlidersHorizontal, ChevronRight, Type, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SimpleMediaEditor } from "@/components/editor";
 import { useAuth } from "@/hooks/useAuth";
@@ -17,18 +17,6 @@ interface StoryEditorFlowProps {
   initialFile?: File | null;
   initialUrl?: string | null;
 }
-
-// Mock gallery images (fallback when no device images)
-const mockGalleryImages = [
-  { id: "1", src: "https://images.unsplash.com/photo-1461749280684-dccba630e2f6?w=300&q=80", isVideo: true, views: 175 },
-  { id: "2", src: "https://images.unsplash.com/photo-1498050108023-c5249f4df085?w=300&q=80" },
-  { id: "3", src: "https://images.unsplash.com/photo-1517694712202-14dd9538aa97?w=300&q=80" },
-  { id: "4", src: "https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=300&q=80" },
-  { id: "5", src: "https://images.unsplash.com/photo-1542831371-29b0f74f9713?w=300&q=80" },
-  { id: "6", src: "https://images.unsplash.com/photo-1504639725590-34d0984388bd?w=300&q=80" },
-  { id: "7", src: "https://images.unsplash.com/photo-1512453979798-5ea266f8880c?w=300&q=80" },
-  { id: "8", src: "https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=300&q=80" },
-];
 
 type Step = "gallery" | "editor";
 
@@ -93,33 +81,13 @@ export function StoryEditorFlow({ isOpen, onClose, initialFile, initialUrl }: St
     setDeviceImages(prev => [...newImages, ...prev]);
   };
 
-  const allImages = deviceImages.length > 0 
-    ? deviceImages 
-    : mockGalleryImages;
   const [caption, setCaption] = useState("");
 
-  const handleSelectImage = async (src: string, file?: File) => {
+  const handleSelectImage = (src: string, file: File) => {
     setSelectedImage(src);
+    setSelectedFile(file);
     setEditedBlob(null);
     setStep("editor");
-    
-    // If we have a file, use it directly
-    if (file) {
-      setSelectedFile(file);
-      return;
-    }
-    
-    // For URL-based images (mock gallery), fetch as blob and convert to File
-    try {
-      const response = await fetch(src);
-      const blob = await response.blob();
-      const fileName = `gallery-${Date.now()}.${blob.type.split('/')[1] || 'jpg'}`;
-      const fetchedFile = new File([blob], fileName, { type: blob.type });
-      setSelectedFile(fetchedFile);
-    } catch (error) {
-      console.error("Error fetching image as file:", error);
-      setSelectedFile(null);
-    }
   };
 
   const handleBack = () => {
@@ -138,19 +106,8 @@ export function StoryEditorFlow({ isOpen, onClose, initialFile, initialUrl }: St
     setIsPublishing(true);
 
     try {
-      // Get the media to upload (edited or original)
-      let mediaToUpload: Blob | null = editedBlob;
-      
-      // If no edited blob, fetch the original image
-      if (!mediaToUpload && selectedImage) {
-        if (selectedFile) {
-          mediaToUpload = selectedFile;
-        } else {
-          // Fetch from URL (mock images)
-          const response = await fetch(selectedImage);
-          mediaToUpload = await response.blob();
-        }
-      }
+      // Get the media to upload (edited blob takes priority over original file)
+      const mediaToUpload: Blob | null = editedBlob ?? selectedFile;
 
       if (!mediaToUpload) {
         throw new Error("Нет медиа для загрузки");
@@ -254,38 +211,50 @@ export function StoryEditorFlow({ isOpen, onClose, initialFile, initialUrl }: St
 
           {/* Gallery Grid */}
           <div className="flex-1 overflow-y-auto">
-            <div className="grid grid-cols-4 gap-[1px]">
-              {/* Add from gallery button */}
-              <button 
-                className="aspect-square bg-muted flex flex-col items-center justify-center gap-1"
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <ImagePlus className="w-6 h-6 text-muted-foreground" strokeWidth={1.5} />
-                <span className="text-[10px] text-muted-foreground">Галерея</span>
-              </button>
-              
-              {allImages.map((img) => (
+            {deviceImages.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full gap-4 py-16 text-muted-foreground">
+                <ImagePlus className="w-12 h-12" strokeWidth={1} />
+                <p className="text-sm text-center px-8">
+                  Выберите файлы из галереи устройства
+                </p>
                 <button
-                  key={img.id}
-                  onClick={() => handleSelectImage(img.src, 'file' in img ? img.file : undefined)}
-                  className="aspect-square relative"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="px-6 py-2.5 rounded-full bg-primary text-primary-foreground text-sm font-medium"
                 >
-                  <img 
-                    src={img.src} 
-                    alt="" 
-                    className="w-full h-full object-cover"
-                  />
-                  {'isVideo' in img && (img as { isVideo?: boolean }).isVideo && (
-                    <div className="absolute bottom-1.5 left-1.5 flex items-center gap-1">
-                      <Eye className="w-3.5 h-3.5 text-white drop-shadow-lg" />
-                      <span className="text-white text-xs font-medium drop-shadow-lg">
-                        {'views' in img ? String((img as { views?: number }).views) : ''}
-                      </span>
-                    </div>
-                  )}
+                  Открыть галерею
                 </button>
-              ))}
-            </div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-4 gap-[1px]">
+                {/* Add more files button */}
+                <button
+                  className="aspect-square bg-muted flex flex-col items-center justify-center gap-1"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <ImagePlus className="w-6 h-6 text-muted-foreground" strokeWidth={1.5} />
+                  <span className="text-[10px] text-muted-foreground">Ещё</span>
+                </button>
+
+                {deviceImages.map((img) => (
+                  <button
+                    key={img.id}
+                    onClick={() => handleSelectImage(img.src, img.file)}
+                    className="aspect-square relative"
+                  >
+                    <img
+                      src={img.src}
+                      alt=""
+                      className="w-full h-full object-cover"
+                    />
+                    {img.file.type.startsWith('video/') && (
+                      <div className="absolute bottom-1.5 left-1.5 flex items-center gap-1">
+                        <Eye className="w-3.5 h-3.5 text-white drop-shadow-lg" />
+                      </div>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </>
       )}

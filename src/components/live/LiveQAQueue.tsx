@@ -7,7 +7,6 @@ import { cn } from "@/lib/utils";
 import { Pin, Check, MessageCircleQuestion } from "lucide-react";
 import { toast } from "sonner";
 
-const db = supabase as any;
 
 interface Question {
   id: string;
@@ -33,7 +32,7 @@ export function LiveQAQueue({ sessionId, isStreamer = false }: Props) {
   const [submitting, setSubmitting] = useState(false);
 
   const load = useCallback(async () => {
-    const { data } = await db
+    const { data } = await supabase
       .from("live_questions")
       .select("*")
       .eq("session_id", sessionId)
@@ -58,7 +57,7 @@ export function LiveQAQueue({ sessionId, isStreamer = false }: Props) {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { toast.error("Войдите для отправки вопроса"); return; }
-      await db.from("live_questions").insert({
+      await supabase.from("live_questions").insert({
         session_id: sessionId,
         user_id: user.id,
         question: newQuestion.trim(),
@@ -70,12 +69,12 @@ export function LiveQAQueue({ sessionId, isStreamer = false }: Props) {
   };
 
   const markAnswered = async (id: string) => {
-    await db.from("live_questions").update({ is_answered: true }).eq("id", id);
+    await supabase.from("live_questions").update({ is_answered: true }).eq("id", id);
     setQuestions((prev) => prev.map((q) => q.id === id ? { ...q, is_answered: true } : q));
   };
 
   const togglePin = async (id: string, pinned: boolean) => {
-    await db.from("live_questions").update({ is_pinned: !pinned }).eq("id", id);
+    await supabase.from("live_questions").update({ is_pinned: !pinned }).eq("id", id);
     await load();
   };
 

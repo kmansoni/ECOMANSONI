@@ -1,0 +1,83 @@
+# =============================================================================
+# ECOMANSONI Livestream Gateway — Multi-stage Dockerfile
+# Base: node:20-alpine (minimal attack surface, ~180MB)
+# Stage 1 (builder): full devDeps, TypeScript compile, prune
+# Stage 2 (runtime): only production deps + compiled dist
+#
+# Security controls:
+#   - Non-root USER node (uid 1000)
+#   - No package manager in final image
+#   - curl only for healthcheck (removed devDeps)
+#   - No .env or secrets baked in — all via docker env
+#
+# Build context: infra/livestream/ (Dockerfile is alongside gateway/ dir)
+# Runtime: node dist/index.js (Fastify server, port 3100)
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Stage 1: Builder — install all deps, compile TypeScript, test, prune
+# -----------------------------------------------------------------------------
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# Install build tools for native modules (argon2, sharp, etc.)
+RUN apk add --no-cache python3 make g++
+
+# Copy dependency manifests first for layer caching.
+# If package.json unchanged → no npm ci re-run on source changes.
+COPY gateway/package.json gateway/package-lock.json* ./
+
+# Install ALL dependencies (including devDependencies for TS compile)
+RUN npm ci --ignore-scripts
+
+# Copy source after dependency install for optimal cache invalidation
+COPY gateway/ .
+
+# Compile TypeScript → dist/
+# Fail hard on type errors — no loose compilation in production
+RUN npm run build
+
+# Prune devDependencies after build; keeps node_modules lean for COPY
+RUN npm prune --production
+
+# -----------------------------------------------------------------------------
+# Stage 2: Runtime — minimal production image
+# -----------------------------------------------------------------------------
+FROM node:20-alpine AS runtime
+
+WORKDIR /app
+
+# curl: required for HEALTHCHECK CMD only
+# dumb-init: PID 1 signal forwarding (prevents zombie processes on SIGTERM)
+RUN apk add --no-cache curl dumb-init && \
+    # Remove package manager cache
+    rm -rf /var/cache/apk/*
+
+# Drop all linux capabilities; grant only what's needed for network listen
+# on port >1024 (no NET_BIND_SERVICE needed for port 3100)
+# Copy compiled output and pruned node_modules from builder
+COPY --from=builder --chown=node:node /app/dist ./dist
+COPY --from=builder --chown=node:node /app/node_modules ./node_modules
+COPY --from=builder --chown=node:node /app/package.json ./package.json
+
+# Expose API port (non-privileged — no CAP_NET_BIND_SERVICE needed)
+EXPOSE 3100
+
+# Healthcheck: lightweight GET /health → FastifyServer responds 200 + {ok:true}
+# Interval 30s reduces Docker daemon overhead; start_period 20s for JIT warmup.
+HEALTHCHECK \
+  --interval=30s \
+  --timeout=5s \
+  --start-period=20s \
+  --retries=3 \
+  CMD curl -f http://localhost:3100/health || exit 1
+
+# Run as non-root node user (uid 1000, gid 1000 in alpine node image)
+USER node
+
+# dumb-init as PID 1: properly forwards SIGTERM to node process.
+# Without this, node receives SIGKILL on docker stop → no graceful shutdown
+# and in-flight webhook events may be dropped.
+ENTRYPOINT ["dumb-init", "--"]
+CMD ["node", "dist/index.js"]

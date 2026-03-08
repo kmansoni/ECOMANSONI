@@ -1,0 +1,135 @@
+# LiveKit Server Configuration — ECOMANSONI Livestream Platform
+# Version: 1.7
+# Security model: zero-trust — no room auto-creation; all rooms created by
+# authenticated gateway. API keys injected at runtime via LIVEKIT_KEYS env.
+# This file is mounted read-only into the container:
+#   ./livekit.yaml:/etc/livekit/livekit.yaml:ro
+
+# =============================================================================
+# HTTP API port — exposed only on internal livestream-net bridge.
+# Nginx reverse-proxies /rtc/ WebSocket to this port.
+# =============================================================================
+port: 7880
+
+# =============================================================================
+# RTC — WebRTC media plane configuration
+# port_range: 50000-60000 ensures enough ephemeral UDP ports for ~2000
+# concurrent publishers (each publisher uses ~5 ports with simulcast).
+# tcp_port: 7881 is the TURN/TCP relay fallback for symmetric-NAT clients.
+# use_external_ip: true — required when server is behind NAT (AWS/GCP/etc).
+# enable_loopback_candidate: false — never expose 127.0.0.1 to remote clients;
+#   this would cause ICE failure for all non-local viewers (security + bugs).
+# =============================================================================
+rtc:
+  port_range_start: 50000
+  port_range_end: 60000
+  tcp_port: 7881
+  use_external_ip: true
+  enable_loopback_candidate: false
+  # STUN — used by LiveKit server itself to discover its external IP.
+  # Fallback to Google STUN; replace with private STUN in air-gapped deployments.
+  stun_servers:
+    - host: stun.l.google.com
+      port: 19302
+    - host: stun1.l.google.com
+      port: 19302
+  # TURN TLS — co-located TURN on port 7882.
+  # For production at scale, deploy dedicated coturn cluster instead.
+  # Cert/key files mounted from livekit-certs volume.
+  turn:
+    enabled: true
+    domain: ${TURN_DOMAIN:-turn.yourdomain.com}
+    tls_port: 7882
+    cert_file: /etc/livekit/certs/turn.crt
+    key_file: /etc/livekit/certs/turn.key
+
+# =============================================================================
+# Redis — mandatory for LiveKit distributed room state.
+# All active room membership, participant tracks, and room metadata are
+# replicated through Redis. Without Redis, multi-node scaling is impossible.
+# Connection pool: LiveKit manages internally (default 10 connections).
+# =============================================================================
+redis:
+  address: redis:6379
+  # db: 0  # Use dedicated Redis DB or separate Redis instance in prod
+
+# =============================================================================
+# API Keys — injected from LIVEKIT_KEYS env var at container start.
+# Format: "key: secret" pairs.
+# NEVER commit real secrets here. The devkey below is overridden by env.
+# Key rotation: add new key here, deploy, wait for all clients to reconnect
+# (tokens are short-lived 4h), then remove old key.
+# =============================================================================
+keys:
+  devkey: secret
+
+# =============================================================================
+# Room defaults — enforced server-side regardless of client request.
+# auto_create: false — CRITICAL security control.
+#   If true, any valid API key holder can create arbitrary rooms.
+#   False ensures only the gateway (which validates eligibility) creates rooms.
+# max_participants: 200 WebRTC peers per room (memory + CPU bound).
+#   For >200 viewers use HLS egress path, not WebRTC.
+# empty_timeout: 300s — room destroyed 5 min after last participant leaves.
+#   Prevents ghost rooms consuming Redis state.
+# departure_timeout: 20s — participant marked disconnected after 20s of no
+#   heartbeat. Too short → false disconnects on mobile; too long → zombie state.
+# =============================================================================
+room:
+  auto_create: false
+  max_participants: 200
+  empty_timeout: 300
+  departure_timeout: 20
+  # Enable simulcast — critical for ABR (HIGH/MEDIUM/LOW layers)
+  # Streamer publishes all 3; LiveKit selects layer per viewer based on BWE.
+  enable_remote_unmute: false
+  max_metadata_size: 32768
+
+# =============================================================================
+# Webhook — LiveKit pushes signed events to our gateway.
+# Events: room_started, room_finished, participant_joined, participant_left,
+#         track_published, track_unpublished, egress_started, egress_ended,
+#         ingress_started, ingress_ended.
+# HMAC: LiveKit signs webhook body with SHA256-HMAC using the api_key secret.
+#        Gateway must verify before processing (replay attack prevention).
+# api_key: must match one of the keys[] entries above.
+# =============================================================================
+webhook:
+  urls:
+    - http://livestream-gateway:3100/api/v1/webhooks/livekit
+  api_key: devkey
+
+# =============================================================================
+# Logging — structured JSON for log aggregation (ELK / Loki / CloudWatch).
+# pion_level: warn — pion/webrtc is verbose at info; warn reduces noise.
+# =============================================================================
+logging:
+  level: info
+  pion_level: warn
+  sample: false
+
+# =============================================================================
+# Limits — DoS and resource consumption controls.
+# bytes_per_sec: 50MB/s per room = ~400Mbps max bitrate per room.
+#   Simulcast 3 layers × 2500kbps = 7.5Mbps per publisher.
+#   200 publishers × 7.5Mbps = 1.5Gbps — plan NIC capacity accordingly.
+# num_tracks: 50 tracks per participant (cameras + screen + audio).
+# =============================================================================
+limit:
+  num_tracks: 50
+  bytes_per_sec: 50000000
+
+# =============================================================================
+# TURN server config (for hosted TURN on same node).
+# In production high-scale: comment this out and use dedicated coturn cluster.
+# =============================================================================
+turn_auth_handler: builtin
+
+# =============================================================================
+# Ingress service configuration
+# rtmp_port / whip_port must match livekit-ingress container env.
+# These are informational for the server to coordinate with ingress service.
+# =============================================================================
+ingress:
+  rtmp_port: 1935
+  whip_port: 8080

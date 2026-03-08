@@ -46,21 +46,21 @@ export function useStoryPolls(storyId: string | null) {
   const fetchPolls = useCallback(async () => {
     if (!storyId) return;
     setLoading(true);
-    const { data: pollData } = await (supabase as any)
+    const { data: pollData } = await supabase
       .from('story_polls')
       .select('*')
       .eq('story_id', storyId);
 
     if (pollData) {
-      setPolls(pollData as StoryPoll[]);
+      setPolls(pollData as unknown as StoryPoll[]);
 
       const voteMap: Record<string, PollVote[]> = {};
       for (const poll of pollData) {
-        const { data: voteData } = await (supabase as any)
+        const { data: voteData } = await supabase
           .from('story_poll_votes')
           .select('*')
-          .eq('poll_id', poll.id);
-        voteMap[poll.id] = (voteData || []) as PollVote[];
+          .eq('poll_id', (poll as { id: string }).id);
+        voteMap[(poll as { id: string }).id] = (voteData || []) as unknown as PollVote[];
       }
       setVotes(voteMap);
     }
@@ -78,19 +78,19 @@ export function useStoryPolls(storyId: string | null) {
     type: PollType = 'binary',
     correctOptionIndex?: number
   ) => {
-    const { data, error } = await (supabase as any)
+    const { data, error } = await supabase
       .from('story_polls')
       .insert({
         story_id: sid,
         question,
-        options: options as any,
+        options: options as unknown as never,
         poll_type: type,
         correct_option_index: correctOptionIndex ?? null,
       })
       .select()
       .single();
     if (!error && data) {
-      setPolls(prev => [...prev, data as StoryPoll]);
+      setPolls(prev => [...prev, data as unknown as StoryPoll]);
     }
     return data;
   }, []);
@@ -114,7 +114,7 @@ export function useStoryPolls(storyId: string | null) {
       ],
     }));
 
-    const { error } = await (supabase as any)
+    const { error } = await supabase
       .from('story_poll_votes')
       .upsert({
         poll_id: pollId,

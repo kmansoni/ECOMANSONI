@@ -8,8 +8,6 @@ import { uploadMedia } from "@/lib/mediaUpload";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
-const db = supabase as any;
-
 interface Props {
   sessionId: string;
   stream: MediaStream | null;
@@ -65,7 +63,10 @@ export function LiveReplay({ sessionId, stream, onSaved }: Props) {
       const replayUrl = uploadResult.url;
 
       // Сохранить ссылку в live_sessions
-      await db.from("live_sessions").update({ replay_url: replayUrl }).eq("id", sessionId);
+      await supabase
+        .from("live_sessions")
+        .update({ replay_url: replayUrl })
+        .eq("id", parseInt(sessionId, 10));
 
       setSavedUrl(replayUrl);
       onSaved?.(replayUrl);

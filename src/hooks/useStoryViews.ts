@@ -20,7 +20,7 @@ export function useStoryViews(storyId?: string, authorId?: string) {
   const recordView = useCallback(async (sid: string) => {
     if (!user || !sid) return;
     try {
-      await (supabase as any)
+      await supabase
         .from("story_views")
         .upsert({ story_id: sid, viewer_id: user.id }, { onConflict: "story_id,viewer_id" });
     } catch {
@@ -35,14 +35,14 @@ export function useStoryViews(storyId?: string, authorId?: string) {
     const fetchViews = async () => {
       setLoading(true);
       try {
-        const { count } = await (supabase as any)
+        const { count } = await supabase
           .from("story_views")
           .select("*", { count: "exact", head: true })
           .eq("story_id", storyId);
         if (!cancelled) setViews(count ?? 0);
 
         if (isAuthor) {
-          const { data } = await (supabase as any)
+          const { data } = await supabase
             .from("story_views")
             .select("viewer_id, viewed_at")
             .eq("story_id", storyId)
@@ -50,15 +50,16 @@ export function useStoryViews(storyId?: string, authorId?: string) {
             .limit(100);
 
           if (!cancelled && data) {
-            const viewerIds = data.map((v: any) => v.viewer_id);
+            const viewerIds = data.map((v) => v.viewer_id);
             if (viewerIds.length > 0) {
               const { data: profiles } = await supabase
                 .from("profiles")
                 .select("user_id, display_name, avatar_url")
                 .in("user_id", viewerIds);
-              const profileMap = new Map((profiles || []).map((p: any) => [p.user_id, p]));
-              const enriched: StoryViewer[] = data.map((v: any) => ({
-                ...v,
+              const profileMap = new Map((profiles || []).map((p) => [p.user_id, p]));
+              const enriched: StoryViewer[] = data.map((v) => ({
+                viewer_id: v.viewer_id,
+                viewed_at: v.viewed_at ?? new Date().toISOString(),
                 display_name: profileMap.get(v.viewer_id)?.display_name ?? "Пользователь",
                 avatar_url: profileMap.get(v.viewer_id)?.avatar_url ?? null,
               }));

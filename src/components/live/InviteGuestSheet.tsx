@@ -1,178 +1,197 @@
-/**
- * InviteGuestSheet — приглашение гостя в эфир, split-screen UI
- */
-import React, { useState, useRef, useEffect } from "react";
-import { X, Search, UserPlus, Video, VideoOff } from "lucide-react";
-import { supabase } from "@/lib/supabase";
-import { toast } from "sonner";
-import { cn } from "@/lib/utils";
+import React, { useState } from 'react';
+import { Search, UserCheck, UserX, Clock } from 'lucide-react';
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
+import type { LiveGuest } from '@/types/livestream';
 
-const db = supabase as any;
+const STATUS_LABELS: Record<LiveGuest['status'], string> = {
+  invited: 'Приглашён',
+  accepted: 'Принял',
+  declined: 'Отказал',
+  joined: 'В эфире',
+  left: 'Ушёл',
+  kicked: 'Удалён',
+};
 
-interface UserResult {
+const STATUS_VARIANTS: Record<
+  LiveGuest['status'],
+  'default' | 'secondary' | 'destructive' | 'outline'
+> = {
+  invited: 'outline',
+  accepted: 'default',
+  declined: 'destructive',
+  joined: 'default',
+  left: 'secondary',
+  kicked: 'destructive',
+};
+
+interface FollowerUser {
   id: string;
   username: string;
   display_name: string;
   avatar_url?: string;
 }
 
-interface GuestStream {
-  userId: string;
-  username: string;
-  stream: MediaStream | null;
+interface InviteGuestSheetProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  guests: LiveGuest[];
+  followers?: FollowerUser[];
+  isSearching?: boolean;
+  onInvite: (userId: string) => Promise<void>;
+  onCancel?: (guestId: string) => Promise<void>;
+  onSearch?: (query: string) => void;
 }
 
-interface Props {
-  sessionId: string;
-  onClose: () => void;
-  hostStream: MediaStream | null;
-}
+const MAX_GUESTS = 3;
 
-export function InviteGuestSheet({ sessionId, onClose, hostStream }: Props) {
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState<UserResult[]>([]);
-  const [searching, setSearching] = useState(false);
-  const [inviting, setInviting] = useState(false);
-  const [guest, setGuest] = useState<GuestStream | null>(null);
-  const guestVideoRef = useRef<HTMLVideoElement>(null);
-  const hostVideoRef = useRef<HTMLVideoElement>(null);
+/**
+ * Bottom sheet for searching and inviting guest co-hosts.
+ * Shows current guest statuses and allows cancelling invitations.
+ */
+export function InviteGuestSheet({
+  open,
+  onOpenChange,
+  guests,
+  followers = [],
+  isSearching = false,
+  onInvite,
+  onCancel,
+  onSearch,
+}: InviteGuestSheetProps) {
+  const [query, setQuery] = useState('');
+  const [inviting, setInviting] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (hostStream && hostVideoRef.current) {
-      hostVideoRef.current.srcObject = hostStream;
-    }
-  }, [hostStream]);
+  const activeGuestCount = guests.filter(
+    (g) => g.status === 'invited' || g.status === 'accepted' || g.status === 'joined',
+  ).length;
 
-  useEffect(() => {
-    if (guest?.stream && guestVideoRef.current) {
-      guestVideoRef.current.srcObject = guest.stream;
-    }
-  }, [guest]);
+  const canInviteMore = activeGuestCount < MAX_GUESTS;
 
-  const searchUsers = async (q: string) => {
-    setQuery(q);
-    if (q.length < 2) { setResults([]); return; }
-    setSearching(true);
+  const handleQueryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setQuery(e.target.value);
+    onSearch?.(e.target.value);
+  };
+
+  const handleInvite = async (userId: string) => {
+    setInviting(userId);
     try {
-      const { data } = await db.from("profiles")
-        .select("id, username, display_name, avatar_url")
-        .ilike("username", `%${q}%`)
-        .limit(8);
-      setResults((data || []) as UserResult[]);
-    } finally { setSearching(false); }
+      await onInvite(userId);
+    } finally {
+      setInviting(null);
+    }
   };
 
-  const inviteGuest = async (u: UserResult) => {
-    setInviting(true);
-    try {
-      // Сохраняем приглашение в Supabase (упрощённо через live_chat_messages)
-      await db.from("live_chat_messages").insert({
-        session_id: sessionId,
-        sender_id: (await supabase.auth.getUser()).data.user?.id,
-        content: `__guest_invite__:${u.id}:${u.username}`,
-        is_creator_message: true,
-      });
-      toast.success(`Приглашение отправлено @${u.username}`);
-      setGuest({ userId: u.id, username: u.username, stream: null });
-      setQuery("");
-      setResults([]);
-    } catch { toast.error("Ошибка отправки приглашения"); }
-    finally { setInviting(false); }
-  };
-
-  const removeGuest = () => {
-    guest?.stream?.getTracks().forEach((t) => t.stop());
-    setGuest(null);
-  };
+  const alreadyInvitedIds = new Set(guests.map((g) => g.user_id));
 
   return (
-    <div className="fixed inset-0 z-50 bg-black flex flex-col">
-      {/* Split-screen */}
-      <div className="flex-1 flex flex-col md:flex-row gap-1 p-1">
-        {/* Хост */}
-        <div className="flex-1 relative bg-zinc-900 rounded-2xl overflow-hidden">
-          <video ref={hostVideoRef} autoPlay playsInline muted className="w-full h-full object-cover scale-x-[-1]" />
-          <div className="absolute bottom-2 left-2 bg-black/60 text-white text-xs px-2 py-1 rounded-full">Вы</div>
-        </div>
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent side="bottom" className="bg-zinc-900 text-white border-zinc-700 pb-safe max-h-[80vh] overflow-y-auto">
+        <SheetHeader>
+          <SheetTitle className="text-white">Пригласить гостя</SheetTitle>
+          <p className="text-xs text-zinc-400">
+            {activeGuestCount}/{MAX_GUESTS} гостей в эфире
+          </p>
+        </SheetHeader>
 
-        {/* Гость */}
-        <div className={cn(
-          "flex-1 relative bg-zinc-900 rounded-2xl overflow-hidden flex items-center justify-center",
-          !guest && "border-2 border-dashed border-white/20",
-        )}>
-          {guest ? (
-            <>
-              <video ref={guestVideoRef} autoPlay playsInline className="w-full h-full object-cover" />
-              <div className="absolute bottom-2 left-2 bg-black/60 text-white text-xs px-2 py-1 rounded-full">
-                @{guest.username}
-              </div>
-              <button
-                onClick={removeGuest}
-                className="absolute top-2 right-2 w-8 h-8 bg-red-600/80 rounded-full flex items-center justify-center"
-              >
-                <X className="w-4 h-4 text-white" />
-              </button>
-              {!guest.stream && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
-                  <VideoOff className="w-10 h-10 text-white/30" />
-                  <p className="text-white/50 text-sm">Ожидание @{guest.username}...</p>
-                </div>
-              )}
-            </>
-          ) : (
-            <div className="flex flex-col items-center gap-2 text-white/40">
-              <UserPlus className="w-10 h-10" />
-              <p className="text-sm">Пригласить гостя</p>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Поиск */}
-      {!guest && (
-        <div className="p-4 bg-zinc-900/90 backdrop-blur-sm border-t border-white/10">
-          <div className="flex items-center gap-2 bg-zinc-800 rounded-xl px-3 py-2 mb-3">
-            <Search className="w-4 h-4 text-white/40" />
-            <input
-              value={query}
-              onChange={(e) => searchUsers(e.target.value)}
-              placeholder="Найти пользователя для приглашения..."
-              className="flex-1 bg-transparent text-white text-sm outline-none placeholder:text-white/30"
-            />
-          </div>
-          {results.length > 0 && (
-            <div className="space-y-1 max-h-40 overflow-y-auto">
-              {results.map((u) => (
-                <button
-                  key={u.id}
-                  onClick={() => inviteGuest(u)}
-                  disabled={inviting}
-                  className="w-full flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-white/10 transition-colors text-left disabled:opacity-50"
-                >
-                  {u.avatar_url ? (
-                    <img src={u.avatar_url} alt="" className="w-9 h-9 rounded-full object-cover" />
-                  ) : (
-                    <div className="w-9 h-9 rounded-full bg-zinc-700 flex items-center justify-center">
-                      <span className="text-white/40 text-sm">{u.display_name[0]}</span>
-                    </div>
+        {/* Current guests */}
+        {guests.length > 0 && (
+          <div className="mt-4 space-y-2">
+            <h3 className="text-xs font-semibold text-zinc-400 uppercase tracking-wide">
+              Приглашённые
+            </h3>
+            {guests.map((guest) => {
+              const name = guest.user?.display_name || guest.user?.username || 'user';
+              return (
+                <div key={guest.id} className="flex items-center gap-3">
+                  <Avatar className="h-8 w-8">
+                    <AvatarImage src={guest.user?.avatar_url} alt={name} />
+                    <AvatarFallback>{name[0]?.toUpperCase()}</AvatarFallback>
+                  </Avatar>
+                  <span className="flex-1 text-sm text-white">{name}</span>
+                  <Badge variant={STATUS_VARIANTS[guest.status]} className="text-xs">
+                    {STATUS_LABELS[guest.status]}
+                  </Badge>
+                  {(guest.status === 'invited') && onCancel && (
+                    <button
+                      onClick={() => void onCancel(guest.id)}
+                      className="text-zinc-400 hover:text-white"
+                      aria-label="Cancel invitation"
+                    >
+                      <UserX className="h-4 w-4" />
+                    </button>
                   )}
-                  <div className="flex-1">
-                    <p className="text-sm text-white font-medium">{u.display_name}</p>
-                    <p className="text-xs text-white/50">@{u.username}</p>
-                  </div>
-                  <Video className="w-4 h-4 text-primary" />
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+                </div>
+              );
+            })}
+          </div>
+        )}
 
-      <div className="p-4">
-        <button onClick={onClose} className="w-full py-3 bg-zinc-800 text-white rounded-xl text-sm">
-          Закрыть
-        </button>
-      </div>
-    </div>
+        {/* Search */}
+        <div className="mt-4 relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" aria-hidden />
+          <Input
+            value={query}
+            onChange={handleQueryChange}
+            placeholder="Поиск по имени…"
+            className="pl-9 bg-zinc-800 border-zinc-600 text-white placeholder:text-zinc-500"
+            aria-label="Search followers to invite"
+          />
+        </div>
+
+        {/* Followers list */}
+        <div className="mt-3 space-y-2">
+          {isSearching && (
+            <div className="py-4 text-center text-xs text-zinc-400">Поиск…</div>
+          )}
+          {!isSearching && followers.length === 0 && query.length > 0 && (
+            <div className="py-4 text-center text-xs text-zinc-400">Пользователи не найдены</div>
+          )}
+          {followers.map((user) => {
+            const alreadyInvited = alreadyInvitedIds.has(user.id);
+            return (
+              <div key={user.id} className="flex items-center gap-3">
+                <Avatar className="h-9 w-9">
+                  <AvatarImage src={user.avatar_url} alt={user.display_name} />
+                  <AvatarFallback>{user.display_name[0]?.toUpperCase()}</AvatarFallback>
+                </Avatar>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-white truncate">{user.display_name}</p>
+                  <p className="text-xs text-zinc-400 truncate">@{user.username}</p>
+                </div>
+                <Button
+                  size="sm"
+                  variant={alreadyInvited ? 'secondary' : 'default'}
+                  disabled={alreadyInvited || !canInviteMore || inviting === user.id}
+                  onClick={() => void handleInvite(user.id)}
+                  className={cn(
+                    'shrink-0',
+                    !alreadyInvited && canInviteMore && 'bg-red-600 hover:bg-red-500 text-white',
+                  )}
+                  aria-label={`Invite ${user.display_name}`}
+                >
+                  {inviting === user.id ? (
+                    <Clock className="h-4 w-4 animate-spin" aria-hidden />
+                  ) : alreadyInvited ? (
+                    <UserCheck className="h-4 w-4" aria-hidden />
+                  ) : (
+                    'Пригласить'
+                  )}
+                </Button>
+              </div>
+            );
+          })}
+        </div>
+      </SheetContent>
+    </Sheet>
   );
 }

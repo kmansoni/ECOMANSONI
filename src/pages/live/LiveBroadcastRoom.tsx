@@ -59,10 +59,6 @@ function formatDuration(sec: number) {
 export function LiveBroadcastRoom() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
-  // Typed Supabase client — cast only where schema types are not yet generated
-  // for live_* tables. Remove once Supabase types include these tables.
-  const db = supabase as any; // TODO: replace with typed client after schema gen
-
   const [session, setSession] = useState<LiveSession | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [messageText, setMessageText] = useState("");
@@ -104,19 +100,21 @@ export function LiveBroadcastRoom() {
   // Загрузка данных сессии
   const loadSession = useCallback(async () => {
     try {
-      const { data, error } = await db
+      const { data, error } = await supabase
         .from("live_sessions")
         .select("*")
         .eq("id", sessionId)
         .single();
       if (error) throw error;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const row = data as any;
       const mapped: LiveSession = {
-        id: String(data?.id ?? sessionId ?? ""),
-        title: String(data?.title ?? "Прямой эфир"),
-        category: String(data?.category ?? "general"),
-        status: String(data?.status ?? "active"),
-        viewer_count_current: Number(data?.viewer_count_current ?? 0),
-        started_at: String(data?.started_at ?? new Date().toISOString()),
+        id: String(row?.id ?? sessionId ?? ""),
+        title: String(row?.title ?? "Прямой эфир"),
+        category: String(row?.category ?? "general"),
+        status: String(row?.status ?? "active"),
+        viewer_count_current: Number(row?.viewer_count_current ?? 0),
+        started_at: String(row?.started_at ?? new Date().toISOString()),
       };
       setSession(mapped);
       setViewerCount(mapped.viewer_count_current);
@@ -127,15 +125,15 @@ export function LiveBroadcastRoom() {
     } finally {
       setLoading(false);
     }
-  }, [sessionId, db]);
+  }, [sessionId]);
 
   // Загрузка сообщений
   const loadMessages = useCallback(async () => {
     try {
-      const { data, error } = await db
+      const { data, error } = await supabase
         .from("live_chat_messages")
         .select("*")
-        .eq("session_id", sessionId)
+        .eq("session_id", Number(sessionId))
         .order("created_at", { ascending: true })
         .limit(100);
       if (error) throw error;
@@ -148,7 +146,7 @@ export function LiveBroadcastRoom() {
         created_at: String(row.created_at ?? ""),
       })));
     } catch { /* игнорируем */ }
-  }, [sessionId, db]);
+  }, [sessionId]);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -223,8 +221,8 @@ export function LiveBroadcastRoom() {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Не авторизован");
-      const { error } = await db.from("live_chat_messages").insert({
-        session_id: sessionId,
+      const { error } = await supabase.from("live_chat_messages").insert({
+        session_id: Number(sessionId),
         sender_id: user.id,
         content: messageText.trim(),
         is_creator_message: true,
@@ -240,7 +238,7 @@ export function LiveBroadcastRoom() {
 
   const doEndBroadcast = async () => {
     try {
-      await db.from("live_sessions").update({
+      await supabase.from("live_sessions").update({
         status: "ended",
         ended_at: new Date().toISOString(),
       }).eq("id", sessionId);

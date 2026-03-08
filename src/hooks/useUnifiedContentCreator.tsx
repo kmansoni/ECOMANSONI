@@ -92,8 +92,8 @@ export function useUnifiedContentCreator(): UseUnifiedContentCreatorReturn {
 
         // Create story record
         const mediaType = file.type.startsWith('video/') ? 'video' : 'image';
-        const { data: story, error: storyError } = await (supabase
-          .from('stories' as any)
+        const { data: story, error: storyError } = await supabase
+          .from('stories')
           .insert({
             author_id: user.id,
             media_url: publicUrl,
@@ -101,7 +101,7 @@ export function useUnifiedContentCreator(): UseUnifiedContentCreatorReturn {
             caption: caption || null,
           })
           .select()
-          .single() as any);
+          .single();
 
         if (storyError) throw storyError;
 

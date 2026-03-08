@@ -7,6 +7,11 @@ import { toast } from "sonner";
 import { onNativeCallAction } from "@/lib/native/callBridge";
 import { supabase } from "@/integrations/supabase/client";
 import { CallsWsClient } from "@/calls-v2/wsClient";
+import {
+  getOrCreateIdentityKeyPair,
+  signIdentity,
+  exportPublicKey as exportEcdsaPublicKey,
+} from "@/calls-v2/ecdsaIdentity";
 import { SfuMediaManager } from "@/calls-v2/sfuMediaManager";
 import { CallKeyExchange } from "@/calls-v2/callKeyExchange";
 import { CallMediaEncryption } from "@/calls-v2/callMediaEncryption";
@@ -571,6 +576,24 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
 
             const senderPublicKey = await keyExchange.getPublicKeyBase64();
 
+            // Phase C: ECDSA identity binding.
+            // Sign (userId || ephemeralPubKey) with device identity key so the leader
+            // can verify this KEY_PACKAGE was originated by the authenticated user.
+            // The ephemeral ECDH public key is encoded as base64 in senderPublicKey.
+            const identityKeyPair = await getOrCreateIdentityKeyPair();
+            const ephemeralPubKeyBytes = Uint8Array.from(
+              atob(senderPublicKey),
+              (c) => c.charCodeAt(0),
+            );
+            const sigBytes = await signIdentity(
+              identityKeyPair.privateKey,
+              user?.id ?? "",
+              ephemeralPubKeyBytes.buffer,
+            );
+            // Export identity public key as JWK and embed in senderIdentity for peer verification
+            const identityPubKeyJwk = await exportEcdsaPublicKey(identityKeyPair.publicKey);
+            const sigB64 = btoa(String.fromCharCode(...new Uint8Array(sigBytes)));
+
             // Phase B: we don't know leader's ECDH public key yet, so we can't wrap
             // for them. We send our senderPublicKey so the leader can ECDH back to us.
             // ciphertext = our senderPublicKey again (discovery packet; no epoch key wrapped yet).
@@ -580,13 +603,20 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
               targetDeviceId: leaderDeviceId,
               epoch,
               ciphertext: senderPublicKey, // discovery: our public key as payload
-              sig: makeRandomB64(64),       // TODO Phase C: real ECDSA identity binding
+              sig: sigB64,                 // Phase C: real ECDSA P-256 identity binding
               senderPublicKey,
+              senderIdentity: {
+                userId: user?.id ?? "",
+                deviceId: getStableCallsDeviceId(),
+                sessionId: (callKeyExchangeRef.current as unknown as { identity?: { sessionId?: string } })?.identity?.sessionId ?? crypto.randomUUID(),
+                // identityPubKeyJwk is passed as part of senderIdentity for ECDSA verification
+                ...({ identityPubKeyJwk } as Record<string, unknown>),
+              },
             }).catch((error) => {
               console.warn("[VideoCallContext] KEY_PACKAGE send failed", error);
             });
 
-            console.info("[VideoCallContext] KEY_PACKAGE sent (Phase B ECDH discovery)", { epoch, roomId });
+            console.info("[VideoCallContext] KEY_PACKAGE sent (Phase C ECDSA+ECDH discovery)", { epoch, roomId });
           } catch (err) {
             console.warn("[VideoCallContext] KEY_PACKAGE async error", err);
           }
