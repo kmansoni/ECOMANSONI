@@ -21,6 +21,7 @@ DO $$
 DECLARE
   v_policy_name TEXT;
   v_bucket      TEXT;
+  v_count       BIGINT;
   v_buckets     TEXT[] := ARRAY[
     'media',
     'post-media',
@@ -114,21 +115,12 @@ BEGIN
   FOREACH v_bucket IN ARRAY v_buckets LOOP
     -- Имя политики детерминистично → идемпотентно
     EXECUTE format(
-      $policy$
-        DO $$
-        BEGIN
-          -- Удалить старую версию если есть
-          DROP POLICY IF EXISTS %I ON storage.objects;
-          -- Создать политику-запрет: authenticated не может загружать
-          CREATE POLICY %I ON storage.objects
-            FOR INSERT
-            TO authenticated
-            WITH CHECK (false);
-        EXCEPTION WHEN others THEN
-          NULL; -- Политика с таким именем уже может существовать с нужным телом
-        END $$;
-      $policy$,
-      format('deny_insert_%s_authenticated', v_bucket),
+      'DROP POLICY IF EXISTS %I ON storage.objects',
+      format('deny_insert_%s_authenticated', v_bucket)
+    );
+
+    EXECUTE format(
+      'CREATE POLICY %I ON storage.objects FOR INSERT TO authenticated WITH CHECK (false)',
       format('deny_insert_%s_authenticated', v_bucket)
     );
 
@@ -178,16 +170,26 @@ BEGIN
   -- =========================================================================
 
   -- Добавляем метку в metadata бакета (non-breaking change)
-  UPDATE storage.buckets
-  SET    metadata = COALESCE(metadata, '{}'::jsonb) ||
-                    jsonb_build_object(
-                      'migration_status', 'write_locked',
-                      'locked_at', now()::text
-                    )
-  WHERE  id = ANY(v_buckets);
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'storage'
+      AND table_name = 'buckets'
+      AND column_name = 'metadata'
+  ) THEN
+    UPDATE storage.buckets
+    SET    metadata = COALESCE(metadata, '{}'::jsonb) ||
+                      jsonb_build_object(
+                        'migration_status', 'write_locked',
+                        'locked_at', now()::text
+                      )
+    WHERE  id = ANY(v_buckets);
 
-  GET DIAGNOSTICS v_bucket = ROW_COUNT;  -- reuse variable for count
-  RAISE NOTICE '[lock_storage] Обновлена metadata %s бакетов (migration_status=write_locked)', v_bucket;
+    GET DIAGNOSTICS v_count = ROW_COUNT;
+    RAISE NOTICE '[lock_storage] Обновлена metadata %s бакетов (migration_status=write_locked)', v_count;
+  ELSE
+    RAISE NOTICE '[lock_storage] storage.buckets.metadata отсутствует, пропуск маркировки';
+  END IF;
 
   RAISE NOTICE '[lock_storage] ✅ Блокировка Storage завершена.';
   RAISE NOTICE '[lock_storage] ℹ️  SELECT-политики (чтение) сохранены для переходного периода.';

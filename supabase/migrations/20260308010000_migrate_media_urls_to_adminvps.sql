@@ -153,86 +153,146 @@ BEGIN
   -- -----------------------------------------------------------------------
   -- 10. properties.image_url
   -- -----------------------------------------------------------------------
-  UPDATE properties
-  SET    image_url = regexp_replace(
-           image_url,
-           'https://[^/]+\.supabase\.co/storage/v1/object/public/',
-           'https://media.mansoni.ru/',
-           'g'
-         )
-  WHERE  image_url LIKE '%supabase.co/storage/%';
-  GET DIAGNOSTICS v_count = ROW_COUNT;
-  RAISE NOTICE '[migrate_media_urls] properties.image_url: обновлено % строк', v_count;
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'properties'
+      AND column_name = 'image_url'
+  ) THEN
+    UPDATE properties
+    SET    image_url = regexp_replace(
+             image_url,
+             'https://[^/]+\.supabase\.co/storage/v1/object/public/',
+             'https://media.mansoni.ru/',
+             'g'
+           )
+    WHERE  image_url LIKE '%supabase.co/storage/%';
+    GET DIAGNOSTICS v_count = ROW_COUNT;
+    RAISE NOTICE '[migrate_media_urls] properties.image_url: обновлено % строк', v_count;
+  ELSE
+    RAISE NOTICE '[migrate_media_urls] properties.image_url: колонка отсутствует, пропуск';
+  END IF;
 
   -- -----------------------------------------------------------------------
   -- 11. live_sessions.thumbnail_url
   -- -----------------------------------------------------------------------
-  UPDATE live_sessions
-  SET    thumbnail_url = regexp_replace(
-           thumbnail_url,
-           'https://[^/]+\.supabase\.co/storage/v1/object/public/',
-           'https://media.mansoni.ru/',
-           'g'
-         )
-  WHERE  thumbnail_url LIKE '%supabase.co/storage/%';
-  GET DIAGNOSTICS v_count = ROW_COUNT;
-  RAISE NOTICE '[migrate_media_urls] live_sessions.thumbnail_url: обновлено % строк', v_count;
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'live_sessions'
+      AND column_name = 'thumbnail_url'
+  ) THEN
+    UPDATE live_sessions
+    SET    thumbnail_url = regexp_replace(
+             thumbnail_url,
+             'https://[^/]+\.supabase\.co/storage/v1/object/public/',
+             'https://media.mansoni.ru/',
+             'g'
+           )
+    WHERE  thumbnail_url LIKE '%supabase.co/storage/%';
+    GET DIAGNOSTICS v_count = ROW_COUNT;
+    RAISE NOTICE '[migrate_media_urls] live_sessions.thumbnail_url: обновлено % строк', v_count;
+  ELSE
+    RAISE NOTICE '[migrate_media_urls] live_sessions.thumbnail_url: колонка отсутствует, пропуск';
+  END IF;
 
   -- -----------------------------------------------------------------------
   -- 12. voice_messages.audio_url
   -- -----------------------------------------------------------------------
-  UPDATE voice_messages
-  SET    audio_url = regexp_replace(
-           audio_url,
-           'https://[^/]+\.supabase\.co/storage/v1/object/public/',
-           'https://media.mansoni.ru/',
-           'g'
-         )
-  WHERE  audio_url LIKE '%supabase.co/storage/%';
-  GET DIAGNOSTICS v_count = ROW_COUNT;
-  RAISE NOTICE '[migrate_media_urls] voice_messages.audio_url: обновлено % строк', v_count;
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'voice_messages'
+      AND column_name = 'audio_url'
+  ) THEN
+    UPDATE voice_messages
+    SET    audio_url = regexp_replace(
+             audio_url,
+             'https://[^/]+\.supabase\.co/storage/v1/object/public/',
+             'https://media.mansoni.ru/',
+             'g'
+           )
+    WHERE  audio_url LIKE '%supabase.co/storage/%';
+    GET DIAGNOSTICS v_count = ROW_COUNT;
+    RAISE NOTICE '[migrate_media_urls] voice_messages.audio_url: обновлено % строк', v_count;
+  ELSE
+    RAISE NOTICE '[migrate_media_urls] voice_messages.audio_url: колонка отсутствует, пропуск';
+  END IF;
 
   -- -----------------------------------------------------------------------
   -- 13. sticker_packs.thumbnail_url
   -- -----------------------------------------------------------------------
-  UPDATE sticker_packs
-  SET    thumbnail_url = regexp_replace(
-           thumbnail_url,
-           'https://[^/]+\.supabase\.co/storage/v1/object/public/',
-           'https://media.mansoni.ru/',
-           'g'
-         )
-  WHERE  thumbnail_url LIKE '%supabase.co/storage/%';
-  GET DIAGNOSTICS v_count = ROW_COUNT;
-  RAISE NOTICE '[migrate_media_urls] sticker_packs.thumbnail_url: обновлено % строк', v_count;
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'sticker_packs'
+      AND column_name = 'thumbnail_url'
+  ) THEN
+    UPDATE sticker_packs
+    SET    thumbnail_url = regexp_replace(
+             thumbnail_url,
+             'https://[^/]+\.supabase\.co/storage/v1/object/public/',
+             'https://media.mansoni.ru/',
+             'g'
+           )
+    WHERE  thumbnail_url LIKE '%supabase.co/storage/%';
+    GET DIAGNOSTICS v_count = ROW_COUNT;
+    RAISE NOTICE '[migrate_media_urls] sticker_packs.thumbnail_url: обновлено % строк', v_count;
+  ELSE
+    RAISE NOTICE '[migrate_media_urls] sticker_packs.thumbnail_url: колонка отсутствует, пропуск';
+  END IF;
 
   -- -----------------------------------------------------------------------
   -- 14. bots.avatar_url
   -- -----------------------------------------------------------------------
-  UPDATE bots
-  SET    avatar_url = regexp_replace(
-           avatar_url,
-           'https://[^/]+\.supabase\.co/storage/v1/object/public/',
-           'https://media.mansoni.ru/',
-           'g'
-         )
-  WHERE  avatar_url LIKE '%supabase.co/storage/%';
-  GET DIAGNOSTICS v_count = ROW_COUNT;
-  RAISE NOTICE '[migrate_media_urls] bots.avatar_url: обновлено % строк', v_count;
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'bots'
+      AND column_name = 'avatar_url'
+  ) THEN
+    UPDATE bots
+    SET    avatar_url = regexp_replace(
+             avatar_url,
+             'https://[^/]+\.supabase\.co/storage/v1/object/public/',
+             'https://media.mansoni.ru/',
+             'g'
+           )
+    WHERE  avatar_url LIKE '%supabase.co/storage/%';
+    GET DIAGNOSTICS v_count = ROW_COUNT;
+    RAISE NOTICE '[migrate_media_urls] bots.avatar_url: обновлено % строк', v_count;
+  ELSE
+    RAISE NOTICE '[migrate_media_urls] bots.avatar_url: колонка отсутствует, пропуск';
+  END IF;
 
   -- -----------------------------------------------------------------------
   -- 15. playlists.cover_url
   -- -----------------------------------------------------------------------
-  UPDATE playlists
-  SET    cover_url = regexp_replace(
-           cover_url,
-           'https://[^/]+\.supabase\.co/storage/v1/object/public/',
-           'https://media.mansoni.ru/',
-           'g'
-         )
-  WHERE  cover_url LIKE '%supabase.co/storage/%';
-  GET DIAGNOSTICS v_count = ROW_COUNT;
-  RAISE NOTICE '[migrate_media_urls] playlists.cover_url: обновлено % строк', v_count;
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'playlists'
+      AND column_name = 'cover_url'
+  ) THEN
+    UPDATE playlists
+    SET    cover_url = regexp_replace(
+             cover_url,
+             'https://[^/]+\.supabase\.co/storage/v1/object/public/',
+             'https://media.mansoni.ru/',
+             'g'
+           )
+    WHERE  cover_url LIKE '%supabase.co/storage/%';
+    GET DIAGNOSTICS v_count = ROW_COUNT;
+    RAISE NOTICE '[migrate_media_urls] playlists.cover_url: обновлено % строк', v_count;
+  ELSE
+    RAISE NOTICE '[migrate_media_urls] playlists.cover_url: колонка отсутствует, пропуск';
+  END IF;
 
   RAISE NOTICE '[migrate_media_urls] ✅ Миграция URL завершена успешно.';
 
