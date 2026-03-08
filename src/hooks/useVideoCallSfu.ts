@@ -129,6 +129,18 @@ class VideoCallMediaAccessError extends Error {
   }
 }
 
+class VideoCallStartError extends Error {
+  public readonly reason: string;
+  public readonly details?: unknown;
+
+  constructor(reason: string, details?: unknown, message = "call_start_failed") {
+    super(message);
+    this.name = "VideoCallStartError";
+    this.reason = reason;
+    this.details = details;
+  }
+}
+
 function toMediaAccessError(error: unknown): VideoCallMediaAccessError {
   const causeName =
     error && typeof error === "object" && "name" in error
@@ -296,9 +308,7 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
       })
       .select(
         `id, caller_id, callee_id, conversation_id, call_type, status,
-         created_at, started_at, ended_at,
-         caller_profile:profiles!caller_id(display_name, avatar_url),
-         callee_profile:profiles!callee_id(display_name, avatar_url)`
+         created_at, started_at, ended_at`
       )
       .single();
 
@@ -306,7 +316,7 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
       console.error("[useVideoCallSfu] startCall: DB insert failed", error);
       releaseLocalMedia();
       setStatus("idle");
-      return null;
+      throw new VideoCallStartError("db_insert_failed", error);
     }
 
     const call = callData as unknown as VideoCall;

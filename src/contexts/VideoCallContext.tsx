@@ -143,6 +143,35 @@ function getMediaPermissionToastPayload(error: unknown, callType: "video" | "aud
   };
 }
 
+function isMediaErrorForCall(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const name = "name" in error ? String((error as { name?: unknown }).name ?? "") : "";
+  const causeName = "causeName" in error ? String((error as { causeName?: unknown }).causeName ?? "") : "";
+  return (
+    name === "VideoCallMediaAccessError" ||
+    name === "NotAllowedError" ||
+    name === "SecurityError" ||
+    name === "NotFoundError" ||
+    name === "DevicesNotFoundError" ||
+    name === "NotReadableError" ||
+    name === "TrackStartError" ||
+    name === "AbortError" ||
+    name === "OverconstrainedError" ||
+    name === "NotSupportedError" ||
+    name === "NotSecureError" ||
+    causeName === "NotAllowedError" ||
+    causeName === "SecurityError" ||
+    causeName === "NotFoundError" ||
+    causeName === "DevicesNotFoundError" ||
+    causeName === "NotReadableError" ||
+    causeName === "TrackStartError" ||
+    causeName === "AbortError" ||
+    causeName === "OverconstrainedError" ||
+    causeName === "NotSupportedError" ||
+    causeName === "NotSecureError"
+  );
+}
+
 interface VideoCallContextType {
   // State
   status: VideoCallStatus;
@@ -1012,11 +1041,18 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       void bootstrapCallsV2Room(call, "callee");
     } catch (err) {
       console.error("[VideoCallContext] answerCall error:", err);
-      const toastPayload = getMediaPermissionToastPayload(err, call.call_type === "video" ? "video" : "audio");
-      toast.error(toastPayload.title, {
-        description: toastPayload.description,
-        duration: 5000,
-      });
+      if (isMediaErrorForCall(err)) {
+        const toastPayload = getMediaPermissionToastPayload(err, call.call_type === "video" ? "video" : "audio");
+        toast.error(toastPayload.title, {
+          description: toastPayload.description,
+          duration: 5000,
+        });
+      } else {
+        toast.error("Не удалось принять звонок", {
+          description: "Ошибка сети или сервиса звонков. Попробуйте еще раз",
+          duration: 5000,
+        });
+      }
       setIsCallUiActive(false); // Release UI-lock on error
     }
   }, [answerVideoCall, clearIncomingCall, bootstrapCallsV2Room]);
@@ -1080,11 +1116,18 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     } catch (err) {
       console.error("[VideoCallContext] startCall error:", err);
       setIsCallUiActive(false); // Release UI-lock on error
-      const toastPayload = getMediaPermissionToastPayload(err, callType);
-      toast.error(toastPayload.title, {
-        description: toastPayload.description,
-        duration: 4000,
-      });
+      if (isMediaErrorForCall(err)) {
+        const toastPayload = getMediaPermissionToastPayload(err, callType);
+        toast.error(toastPayload.title, {
+          description: toastPayload.description,
+          duration: 4000,
+        });
+      } else {
+        toast.error("Не удалось начать звонок", {
+          description: "Ошибка сети или сервиса звонков. Попробуйте еще раз",
+          duration: 5000,
+        });
+      }
       return null;
     }
   }, [user, startVideoCall, bootstrapCallsV2Room]);
