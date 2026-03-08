@@ -36,11 +36,39 @@ serve(async (req: Request) => {
 
     const supabase = createClient(supabaseUrl, serviceKey);
 
-    // O(1) direct lookup — replaces the old O(N) paginated listUsers scan.
+    // Best-effort lookup by email.
+    // Some Supabase JS runtimes expose admin.getUserByEmail, some do not.
+    // Keep a compatibility fallback via paginated listUsers.
     async function findUserByEmail(email: string) {
-      const { data, error } = await supabase.auth.admin.getUserByEmail(email);
-      if (error || !data?.user) return null;
-      return data.user;
+      const adminApi = supabase.auth.admin as unknown as {
+        getUserByEmail?: (email: string) => Promise<{ data?: { user?: unknown }; error?: { message?: string } | null }>;
+        listUsers: (params: { page: number; perPage: number }) => Promise<{ data?: { users?: Array<{ id: string; email?: string | null }> }; error?: { message?: string } | null }>;
+      };
+
+      if (typeof adminApi.getUserByEmail === "function") {
+        const { data, error } = await adminApi.getUserByEmail(email);
+        if (!error && data?.user) return data.user as { id: string };
+      }
+
+      // Compatibility path: iterate users by pages until match or end.
+      let page = 1;
+      const perPage = 200;
+      while (true) {
+        const { data, error } = await adminApi.listUsers({ page, perPage });
+        if (error) {
+          console.error("[phone-auth] listUsers error during lookup:", error.message);
+          return null;
+        }
+
+        const users = data?.users ?? [];
+        const found = users.find((u) => (u.email ?? "").toLowerCase() === email.toLowerCase());
+        if (found) return found;
+
+        if (users.length < perPage) break;
+        page += 1;
+      }
+
+      return null;
     }
 
     // ===================================================================
