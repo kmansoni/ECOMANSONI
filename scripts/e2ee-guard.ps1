@@ -57,6 +57,11 @@ $allowDestructiveEffective = $AllowDestructive -or $allowDestructiveByEnv
 foreach ($path in $filesToScan) {
   $name = [System.IO.Path]::GetFileName($path)
   $content = Get-Content -LiteralPath $path -Raw -Encoding UTF8
+  if ([string]::IsNullOrWhiteSpace($content)) {
+    # Some environments can return null/empty on transient file-read issues.
+    # Empty SQL cannot be destructive for E2EE tables, so skip safely.
+    continue
+  }
   $normalized = $content.ToLowerInvariant()
 
   $touchesE2EE = (
