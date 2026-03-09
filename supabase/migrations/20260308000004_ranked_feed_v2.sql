@@ -137,16 +137,16 @@ BEGIN
 
   -- ── 2. Affinity scores (0..1) ─────────────────────────────────────────────
   affinity AS (
-    SELECT author_id, LEAST(affinity_score, 1.0) AS score
-    FROM user_author_affinity
-    WHERE user_id = p_user_id
+    SELECT ua.author_id, LEAST(ua.affinity_score, 1.0) AS score
+    FROM user_author_affinity ua
+    WHERE ua.user_id = p_user_id
   ),
 
   -- ── 3. User interests ─────────────────────────────────────────────────────
   interests AS (
-    SELECT interest_tag, LEAST(weight, 1.0) AS weight
-    FROM user_interests
-    WHERE user_id = p_user_id
+    SELECT ui.interest_tag, LEAST(ui.weight, 1.0) AS weight
+    FROM user_interests ui
+    WHERE ui.user_id = p_user_id
   ),
 
   -- ── 4. Post tags ──────────────────────────────────────────────────────────
@@ -154,18 +154,18 @@ BEGIN
     SELECT pct.post_id, SUM(COALESCE(i.weight, 0)) AS relevance
     FROM post_content_tags pct
     LEFT JOIN interests i ON i.interest_tag = pct.tag
-    WHERE pct.post_id IN (SELECT id FROM candidates)
+    WHERE pct.post_id IN (SELECT c.id FROM candidates c)
     GROUP BY pct.post_id
   ),
 
   -- ── 5. Liked / saved by current user ─────────────────────────────────────
   user_likes AS (
-    SELECT post_id FROM post_likes WHERE user_id = p_user_id
-      AND post_id IN (SELECT id FROM candidates)
+    SELECT pl.post_id FROM post_likes pl WHERE pl.user_id = p_user_id
+      AND pl.post_id IN (SELECT c.id FROM candidates c)
   ),
   user_saves AS (
-    SELECT post_id FROM saved_posts WHERE user_id = p_user_id
-      AND post_id IN (SELECT id FROM candidates)
+    SELECT sp.post_id FROM saved_posts sp WHERE sp.user_id = p_user_id
+      AND sp.post_id IN (SELECT c.id FROM candidates c)
   ),
 
   -- ── 6. Author profiles ────────────────────────────────────────────────────
@@ -192,7 +192,7 @@ BEGIN
         ) ORDER BY pm.sort_order
       ) AS media
     FROM post_media pm
-    WHERE pm.post_id IN (SELECT id FROM candidates)
+    WHERE pm.post_id IN (SELECT c.id FROM candidates c)
     GROUP BY pm.post_id
   ),
 

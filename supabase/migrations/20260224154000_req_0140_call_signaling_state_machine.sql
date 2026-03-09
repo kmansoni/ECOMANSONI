@@ -358,10 +358,10 @@ declare
   v_count integer;
 begin
   with expired as (
-    select id
-    from public.calls
-    where state = 'ringing'
-      and expires_at < now()
+    select c.id
+    from public.calls c
+    where c.state = 'ringing'
+      and c.expires_at < now()
     for update skip locked
   )
   update public.calls c
@@ -375,9 +375,9 @@ begin
 
   -- Publish events for missed calls
   insert into public.delivery_outbox (topic, aggregate_id, event_type, payload)
-  select 'call', id, 'call.missed', jsonb_build_object('call_id', id, 'missed_at', now())
-  from public.calls
-  where state = 'missed' and ended_at >= now() - interval '5 seconds';
+  select 'call', c.id, 'call.missed', jsonb_build_object('call_id', c.id, 'missed_at', now())
+  from public.calls c
+  where c.state = 'missed' and c.ended_at >= now() - interval '5 seconds';
 
   return v_count;
 end;
