@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -37,14 +36,22 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
 
-# Импорт из текущего пакета
-sys.path.insert(0, str(Path(__file__).parent))
-from bpe_tokenizer import BPETokenizer
-from transformer_text_generator import (
-    GPTLanguageModel,
-    TextGenerator,
-    TransformerConfig,
-)
+# Детерминированный импорт: пакетный режим в составе ai_engine,
+# прямой импорт только при запуске файла как standalone script.
+if __package__:
+    from .bpe_tokenizer import BPETokenizer
+    from .transformer_text_generator import (
+        GPTLanguageModel,
+        TextGenerator,
+        TransformerConfig,
+    )
+else:
+    from bpe_tokenizer import BPETokenizer
+    from transformer_text_generator import (
+        GPTLanguageModel,
+        TextGenerator,
+        TransformerConfig,
+    )
 
 
 # ── Конфигурация ──────────────────────────────────────────────────────────────

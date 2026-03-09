@@ -11,10 +11,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import time
 import uuid
-from typing import AsyncGenerator, List, Optional, Literal
+from typing import Any, AsyncGenerator, Coroutine, List, Optional, Literal
 
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request, Depends
@@ -35,6 +36,8 @@ from ai_engine.learning.feedback_store import (
 )
 from ai_engine.learning.reward_model import RewardModel
 
+logger = logging.getLogger("aria")
+
 # ─── App ─────────────────────────────────────────────────────────────────────
 
 # ─── Lifespan (startup/shutdown) ─────────────────────────────────────────────
@@ -52,8 +55,8 @@ async def _lifespan(app: FastAPI):
     yield
     try:
         await scheduler.stop()
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("Background scheduler failed to stop: %s", exc)
 
 
 app = FastAPI(
@@ -63,9 +66,12 @@ app = FastAPI(
     lifespan=_lifespan,
 )
 
+_cors_origins_env = os.environ.get("ARIA_CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:5173")
+_cors_origins = [origin.strip() for origin in _cors_origins_env.split(",") if origin.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -73,7 +79,9 @@ app.add_middleware(
 
 # ─── Auth ─────────────────────────────────────────────────────────────────────
 
-API_KEY = os.environ.get("ARIA_API_KEY") or "local-dev-only-key"
+API_KEY = os.environ.get("ARIA_API_KEY")
+if not API_KEY:
+    raise RuntimeError("ARIA_API_KEY environment variable is required")
 
 
 def verify_api_key(request: Request) -> None:
@@ -187,9 +195,9 @@ def get_rag() -> RAGPipeline:
         if texts:
             try:
                 _rag.ingest(texts, sources)
-            except Exception:
+            except Exception as exc:
                 # Retrieval layer optional: failures must not break chat API
-                pass
+                logger.warning("RAG bootstrap ingest failed: %s", exc)
     return _rag
 
 
@@ -265,8 +273,8 @@ def aria_generate(prompt: str, max_tokens: int = 2048, temperature: float = 0.7)
             response = generator.generate(augmented_prompt)
         if response and len(response.strip()) > 10:
             return response.strip()
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("Transformer generation unavailable, using rule fallback: %s", exc)
 
     # Rule-based fallback for common patterns
     return _rule_based_response(prompt)
@@ -288,9 +296,10 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from datetime import datetime, timedelta
+import os
 from pydantic import BaseModel
 
-SECRET_KEY = "your-secret-key-min-32-chars"
+SECRET_KEY = os.environ["JWT_SECRET_KEY"]
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
@@ -530,6 +539,20 @@ async def stream_response(
     yield "data: [DONE]\n\n"
 
 
+def _fire_and_forget(coro: Coroutine[Any, Any, Any], task_name: str) -> asyncio.Task:
+    """Start a background task and ensure exceptions are logged."""
+    task = asyncio.create_task(coro)
+
+    def _on_done(done_task: asyncio.Task) -> None:
+        try:
+            done_task.result()
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Background task failed: %s (%s)", task_name, exc)
+
+    task.add_done_callback(_on_done)
+    return task
+
+
 # ─── Routes ───────────────────────────────────────────────────────────────────
 
 @app.get("/health")
@@ -699,7 +722,6 @@ async def submit_feedback(
 
     import time as _time
     ts = _time.time()
-    interaction_id = req.interaction_id or FeedbackRecord.__class__  # placeholder
     interaction_id = (
         req.interaction_id
         or FeedbackStore.make_interaction_id(user_hash, req.prompt, ts)
@@ -766,8 +788,8 @@ async def ingest_content(
     rag = get_rag()
     try:
         rag.ingest([req.text], [req.source_url or content_id])
-    except Exception:
-        pass  # RAG failure is non-blocking
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("RAG ingest failed for %s: %s", req.source_url or content_id, exc)
 
     return {
         "content_id": content_id,
@@ -797,8 +819,9 @@ async def trigger_crawl(
     from ai_engine.learning.web_crawler import WebCrawler, CrawlConfig
     from ai_engine.learning.data_pipeline import DataPipeline
 
-    asyncio.create_task(
+    _fire_and_forget(
         _run_crawl_background(req.seeds, req.max_pages, req.max_depth, req.allowed_langs),
+        "crawl",
     )
     return {
         "status": "started",
@@ -848,8 +871,8 @@ async def _run_crawl_background(
                 # Добавить в RAG
                 try:
                     get_rag().ingest([sample.text], [result.url])
-                except Exception:
-                    pass
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("RAG ingest failed for crawled url %s: %s", result.url, exc)
                 ingested += 1
 
         logger.info("Crawl completed: %d chunks ingested", ingested)
@@ -882,7 +905,7 @@ async def trigger_training(
     if _training_running:
         raise HTTPException(status_code=409, detail="Training already in progress")
 
-    asyncio.create_task(_run_training_background(req.min_pairs, req.epochs))
+    _fire_and_forget(_run_training_background(req.min_pairs, req.epochs), "train-trigger")
     return {"status": "started", "message": "Training triggered in background"}
 
 
@@ -949,7 +972,7 @@ async def _maybe_trigger_training() -> None:
     pairs = store.load_preference_pairs(limit=_AUTO_TRAIN_THRESHOLD + 1)
     if len(pairs) >= _AUTO_TRAIN_THRESHOLD:
         logger.info("Auto-triggering training: %d pairs accumulated", len(pairs))
-        asyncio.create_task(_run_training_background(min_pairs=10, epochs=3))
+        _fire_and_forget(_run_training_background(min_pairs=10, epochs=3), "auto-train")
 
 
 @app.get("/v1/learning/stats")
@@ -1089,7 +1112,7 @@ async def trigger_distillation(
         student_d_model=req.student_d_model,
         epochs=req.epochs,
     )
-    asyncio.create_task(_run_distillation_background(req.corpus_texts, config))
+    _fire_and_forget(_run_distillation_background(req.corpus_texts, config), "distill")
     return {
         "status":         "started",
         "corpus_size":    len(req.corpus_texts),

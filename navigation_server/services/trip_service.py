@@ -41,6 +41,7 @@ logger = structlog.get_logger(__name__)
 KAFKA_TOPIC_TRIPS = "nav.trips"
 
 CURRENCY = "RUB"
+MAX_USER_TRIPS_LIMIT = 100
 
 
 class TripService:
@@ -307,43 +308,25 @@ class TripService:
         offset: int = 0,
     ) -> list[TripResponse]:
         """Get trips where user is requester or driver, with optional status filter."""
-        limit = min(limit, 100)  # hard cap
-        if status is not None:
-            rows = await self.db.fetch_all(
-                """
-                SELECT t.*,
-                       ST_Y(t.pickup_location::geometry)  AS pickup_lat,
-                       ST_X(t.pickup_location::geometry)  AS pickup_lng,
-                       ST_Y(t.dropoff_location::geometry) AS dropoff_lat,
-                       ST_X(t.dropoff_location::geometry) AS dropoff_lng
-                FROM nav_trips t
-                WHERE (t.requester_id=$1 OR t.driver_id=$1)
-                  AND t.status=$2
-                ORDER BY t.created_at DESC
-                LIMIT $3 OFFSET $4
-                """,
-                user_id,
-                status,
-                limit,
-                offset,
-            )
-        else:
-            rows = await self.db.fetch_all(
-                """
-                SELECT t.*,
-                       ST_Y(t.pickup_location::geometry)  AS pickup_lat,
-                       ST_X(t.pickup_location::geometry)  AS pickup_lng,
-                       ST_Y(t.dropoff_location::geometry) AS dropoff_lat,
-                       ST_X(t.dropoff_location::geometry) AS dropoff_lng
-                FROM nav_trips t
-                WHERE (t.requester_id=$1 OR t.driver_id=$1)
-                ORDER BY t.created_at DESC
-                LIMIT $2 OFFSET $3
-                """,
-                user_id,
-                limit,
-                offset,
-            )
+        limit = min(limit, MAX_USER_TRIPS_LIMIT)
+        rows = await self.db.fetch_all(
+            """
+            SELECT t.*,
+                   ST_Y(t.pickup_location::geometry)  AS pickup_lat,
+                   ST_X(t.pickup_location::geometry)  AS pickup_lng,
+                   ST_Y(t.dropoff_location::geometry) AS dropoff_lat,
+                   ST_X(t.dropoff_location::geometry) AS dropoff_lng
+            FROM nav_trips t
+            WHERE (t.requester_id=$1 OR t.driver_id=$1)
+              AND ($2::text IS NULL OR t.status=$2)
+            ORDER BY t.created_at DESC
+            LIMIT $3 OFFSET $4
+            """,
+            user_id,
+            status,
+            limit,
+            offset,
+        )
         return [_row_to_trip_response(dict(r)) for r in rows]
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -397,7 +380,7 @@ class TripService:
         extra_params: list[Any] = []
 
         if timestamp_col:
-            extra_set = f", {timestamp_col}=$4"
+            extra_set = f", {timestamp_col}=$5"
             extra_params = [now]
 
         # Optimistic update — guard on current status to avoid race condition
@@ -405,12 +388,13 @@ class TripService:
             f"""
             UPDATE nav_trips
             SET status=$1, updated_at=$2 {extra_set}
-            WHERE id=$3 AND status='{current_status}'
+            WHERE id=$3 AND status=$4
             RETURNING id, status
             """,
             new_status,
             now,
             trip_id,
+            current_status,
             *extra_params,
         )
         if updated is None:

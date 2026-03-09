@@ -23,7 +23,7 @@ from __future__ import annotations
 from typing import Annotated, Literal
 
 import structlog
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -36,8 +36,6 @@ from services.h3_service import H3Service
 from services.presence_service import PresenceService
 from services.routing_service import RoutingService
 
-import httpx
-
 logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/api/v1/nav/dispatch", tags=["dispatch"])
@@ -45,13 +43,15 @@ router = APIRouter(prefix="/api/v1/nav/dispatch", tags=["dispatch"])
 _h3 = H3Service()
 
 
-def _get_dispatch_service() -> DispatchService:
+def _get_dispatch_service(request: Request) -> DispatchService:
     db = get_pool()
     redis = get_redis_client()
     kafka = get_kafka_producer()
     from config import get_settings
     settings = get_settings()
-    http_client = httpx.AsyncClient(timeout=settings.VALHALLA_TIMEOUT)
+    http_client = getattr(request.app.state, "http_client", None)
+    if http_client is None:
+        raise HTTPException(status_code=503, detail="HTTP client is not initialized")
     routing = RoutingService(valhalla_url=settings.VALHALLA_URL, http_client=http_client)
     presence = PresenceService(redis=redis, kafka_producer=kafka, h3_service=_h3)
     return DispatchService(
@@ -86,13 +86,13 @@ class AvailabilityBody(BaseModel):
     summary="Get pending offers for driver",
 )
 async def get_pending_offers(
-    user: Annotated[CurrentUser, Depends(get_current_user)] = None,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    svc: Annotated[DispatchService, Depends(_get_dispatch_service)],
 ) -> JSONResponse:
     """
     Return all non-expired pending dispatch offers for the authenticated driver.
     Includes trip details, pickup ETA, and offer expiry time.
     """
-    svc = _get_dispatch_service()
     offers = await svc.get_pending_offers(driver_id=user.user_id)
     logger.info("api.dispatch.offers_fetched", driver_id=user.user_id, count=len(offers))
     return JSONResponse(
@@ -107,7 +107,8 @@ async def get_pending_offers(
 async def respond_to_offer(
     offer_id: str,
     body: OfferRespondBody,
-    user: Annotated[CurrentUser, Depends(get_current_user)] = None,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    svc: Annotated[DispatchService, Depends(_get_dispatch_service)],
 ) -> JSONResponse:
     """
     Accept or reject a dispatch offer.
@@ -126,7 +127,6 @@ async def respond_to_offer(
     Concurrency: this endpoint is safe for parallel calls — exactly one
     driver wins the trip via DB-level locking.
     """
-    svc = _get_dispatch_service()
     result = await svc.respond_to_offer(
         driver_id=user.user_id,
         offer_id=offer_id,
@@ -148,7 +148,8 @@ async def respond_to_offer(
 )
 async def set_availability(
     body: AvailabilityBody,
-    user: Annotated[CurrentUser, Depends(get_current_user)] = None,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    svc: Annotated[DispatchService, Depends(_get_dispatch_service)],
 ) -> JSONResponse:
     """
     Set driver availability: online / offline / busy.
@@ -160,7 +161,6 @@ async def set_availability(
     Updates both Redis presence and nav_driver_profiles.is_active.
     Publishes nav.presence.changes Kafka event.
     """
-    svc = _get_dispatch_service()
     result = await svc.set_driver_availability(
         driver_id=user.user_id,
         availability=body.availability,
@@ -178,7 +178,8 @@ async def set_availability(
     summary="Driver statistics",
 )
 async def driver_stats(
-    user: Annotated[CurrentUser, Depends(get_current_user)] = None,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    svc: Annotated[DispatchService, Depends(_get_dispatch_service)],
 ) -> JSONResponse:
     """
     Return driver statistics: completed trips count, rating, acceptance rate,
@@ -187,6 +188,5 @@ async def driver_stats(
     Data is sourced from nav_driver_profiles with a joined aggregate
     over nav_trips — single query, server-side computed.
     """
-    svc = _get_dispatch_service()
     stats = await svc.get_driver_stats(driver_id=user.user_id)
     return JSONResponse(content={"ok": True, "data": stats})

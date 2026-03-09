@@ -1,5 +1,5 @@
 import { useState, useEffect, forwardRef, useRef, useCallback } from "react";
-import { Home, Search, Heart, FileText, LucideIcon, Check, ChevronDown, Camera, MessageCircle, User, AlertCircle, Bell, Plus, Film } from "lucide-react";
+import { Home, Search, Heart, FileText, LucideIcon, Check, ChevronDown, Camera, MessageCircle, User, AlertCircle, Bell, Plus, Film, Loader2 } from "lucide-react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useReelsContext } from "@/contexts/ReelsContext";
 import { cn } from "@/lib/utils";
@@ -62,7 +62,7 @@ export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function Bottom
   const navigate = useNavigate();
   const { unreadCount } = useUnreadChats();
   const { unreadCount: notifUnreadCount } = useNotifications();
-  const { accounts: maAccounts, activeAccountId, switchAccount } = useMultiAccount();
+  const { accounts: maAccounts, activeAccountId, switchAccount, switchingAccountId, isSwitchingAccount, isAccountOperationInProgress } = useMultiAccount();
   const [keyboardOpen, setKeyboardOpen] = useState(false);
   const [accountSwitcherOpen, setAccountSwitcherOpen] = useState(false);
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -423,16 +423,17 @@ export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function Bottom
               return (
               <button
                 key={account.accountId}
-                onClick={() => !needsReauth && handleSwitchAccount(account.accountId)}
-                disabled={needsReauth}
-                title={needsReauth ? "Требуется переаутентификация" : undefined}
+                onClick={() => !needsReauth && !isAccountOperationInProgress && !isActive && handleSwitchAccount(account.accountId)}
+                disabled={needsReauth || isAccountOperationInProgress}
+                title={needsReauth ? "Требуется переаутентификация" : (isAccountOperationInProgress ? "Выполняется операция с аккаунтом..." : undefined)}
                 className={cn(
                   "w-full flex items-center gap-3 p-3 rounded-xl transition-colors",
                   needsReauth 
                     ? "opacity-50 cursor-not-allowed bg-red-50 dark:bg-red-950/20" 
                     : (isActive 
                         ? "bg-primary/10" 
-                        : "hover:bg-muted")
+                        : "hover:bg-muted"),
+                  isAccountOperationInProgress && "opacity-70"
                 )}
               >
                 <img
@@ -447,6 +448,9 @@ export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function Bottom
                 {isActive && !needsReauth && (
                   <Check className="w-5 h-5 text-primary" />
                 )}
+                {!isActive && switchingAccountId === account.accountId && (
+                  <Loader2 className="w-5 h-5 text-primary animate-spin" aria-label="Переключаем аккаунт" />
+                )}
                 {needsReauth && (
                   <AlertCircle className="w-5 h-5 text-red-500" aria-label="Требуется переаутентификация" />
                 )}
@@ -458,7 +462,11 @@ export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function Bottom
             {/* Add Account Button */}
             <button
               onClick={handleAddAccount}
-              className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-muted transition-colors"
+              disabled={isAccountOperationInProgress}
+              className={cn(
+                "w-full flex items-center gap-3 p-3 rounded-xl transition-colors",
+                isAccountOperationInProgress ? "opacity-60 cursor-not-allowed" : "hover:bg-muted",
+              )}
             >
               <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center">
                 <span className="w-6 h-6 text-foreground text-xl leading-none flex items-center justify-center">+</span>

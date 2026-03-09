@@ -38,10 +38,13 @@ Decode(ids):
 from __future__ import annotations
 
 import json
+import logging
 import re
 from collections import defaultdict
 from pathlib import Path
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 # ── Special token IDs (зафиксированы, не смещаются при обучении) ─────────────
 PAD_ID = 0
@@ -151,9 +154,18 @@ class BPETokenizer:
             token_ids = _merge_pair(token_ids, best_pair, new_id)
 
             if (step + 1) % 100 == 0:
-                print(f"  [BPE] step {step + 1}/{num_merges} | vocab_size={len(self.vocab)}")
+                logger.info(
+                    "[BPE] step %d/%d | vocab_size=%d",
+                    step + 1,
+                    num_merges,
+                    len(self.vocab),
+                )
 
-        print(f"[BPE] Training complete: {len(self.merges)} merges, vocab_size={self.vocab_size}")
+        logger.info(
+            "[BPE] Training complete: merges=%d, vocab_size=%d",
+            len(self.merges),
+            self.vocab_size,
+        )
 
     # ─── Encode / Decode ──────────────────────────────────────────────────────
 
@@ -281,7 +293,12 @@ class BPETokenizer:
             "merges": [[a, b] for a, b in self.merges],
         }
         path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
-        print(f"[BPE] Saved to {path} (vocab_size={self.vocab_size}, merges={len(self.merges)})")
+        logger.info(
+            "[BPE] Saved to %s (vocab_size=%d, merges=%d)",
+            path,
+            self.vocab_size,
+            len(self.merges),
+        )
 
     @classmethod
     def load(cls, path: str | Path) -> "BPETokenizer":
@@ -304,7 +321,7 @@ class BPETokenizer:
             else _recompute_merged_id(tokenizer.vocab, a, b)
             for a, b in tokenizer.merges
         }
-        print(f"[BPE] Loaded from {path} (vocab_size={tokenizer.vocab_size})")
+        logger.info("[BPE] Loaded from %s (vocab_size=%d)", path, tokenizer.vocab_size)
         return tokenizer
 
     # ─── Приватные методы ─────────────────────────────────────────────────────

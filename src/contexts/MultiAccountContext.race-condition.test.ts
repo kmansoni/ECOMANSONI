@@ -35,6 +35,8 @@ class MockMultiAccountController {
   activeAccountId: string | null = null;
   appliedProfiles: Record<string, mockProfile> = {};
   staleProfilesIgnored: string[] = [];
+  requiresReauth: Record<string, boolean> = {};
+  switchingAccountId: string | null = null;
 
   async fetchProfile(
     accountId: string,
@@ -92,6 +94,55 @@ class MockMultiAccountController {
     } catch (e) {
       if (controller.signal.aborted) return;
       throw e;
+    }
+  }
+
+  async switchAccountFromExternalSignal(accountId: string) {
+    const prevActive = this.activeAccountId;
+    const seq = ++this.seqRef;
+    const controller = new AbortController();
+    this.abortControllers[accountId] = { seq, controller };
+
+    try {
+      const profile = await this.fetchProfile(accountId, controller.signal);
+      if (this.seqRef !== seq) return;
+
+      // Commit active selection only on successful profile/session activation.
+      this.activeAccountId = accountId;
+      if (profile) {
+        this.appliedProfiles[accountId] = profile;
+      }
+      this.requiresReauth[accountId] = false;
+    } catch {
+      // Keep previous active account unchanged on failure.
+      this.activeAccountId = prevActive;
+      this.requiresReauth[accountId] = true;
+    }
+  }
+
+  async switchAccountAtomic(accountId: string) {
+    const prevActive = this.activeAccountId;
+    this.switchingAccountId = accountId;
+
+    try {
+      const seq = ++this.seqRef;
+      const controller = new AbortController();
+      this.abortControllers[accountId] = { seq, controller };
+      const profile = await this.fetchProfile(accountId, controller.signal);
+      if (this.seqRef !== seq) return;
+
+      this.activeAccountId = accountId;
+      this.requiresReauth[accountId] = false;
+      if (profile) {
+        this.appliedProfiles[accountId] = profile;
+      }
+    } catch {
+      this.activeAccountId = prevActive;
+      this.requiresReauth[accountId] = true;
+    } finally {
+      if (this.switchingAccountId === accountId) {
+        this.switchingAccountId = null;
+      }
     }
   }
 }
@@ -272,5 +323,62 @@ describe('MultiAccountContext: Race Condition Protection', () => {
     expect(controller.abortControllers['A'].seq).toBe(1);
     expect(controller.abortControllers['B'].seq).toBe(2);
     expect(controller.abortControllers['C'].seq).toBe(3);
+  });
+
+  it('external switch failure does not change active account', async () => {
+    controller.activeAccountId = 'A';
+
+    controller.fetchProfile = async (id) => {
+      if (id === 'B') {
+        throw new Error('setSession_failed');
+      }
+      return { id, username: `user_${id}` };
+    };
+
+    await controller.switchAccountFromExternalSignal('B');
+
+    expect(controller.activeAccountId).toBe('A');
+    expect(controller.requiresReauth['B']).toBe(true);
+    expect(controller.appliedProfiles['B']).toBeUndefined();
+  });
+
+  it('external switch success commits active account', async () => {
+    controller.activeAccountId = 'A';
+
+    controller.fetchProfile = async (id) => ({ id, username: `user_${id}` });
+
+    await controller.switchAccountFromExternalSignal('B');
+
+    expect(controller.activeAccountId).toBe('B');
+    expect(controller.requiresReauth['B']).toBe(false);
+    expect(controller.appliedProfiles['B']?.username).toBe('user_B');
+  });
+
+  it('local atomic switch failure keeps previous active account', async () => {
+    controller.activeAccountId = 'A';
+
+    controller.fetchProfile = async (id) => {
+      if (id === 'B') {
+        throw new Error('setSession_failed');
+      }
+      return { id, username: `user_${id}` };
+    };
+
+    await controller.switchAccountAtomic('B');
+
+    expect(controller.activeAccountId).toBe('A');
+    expect(controller.requiresReauth['B']).toBe(true);
+    expect(controller.switchingAccountId).toBeNull();
+  });
+
+  it('local atomic switch success commits and clears switching state', async () => {
+    controller.activeAccountId = 'A';
+    controller.fetchProfile = async (id) => ({ id, username: `user_${id}` });
+
+    await controller.switchAccountAtomic('B');
+
+    expect(controller.activeAccountId).toBe('B');
+    expect(controller.requiresReauth['B']).toBe(false);
+    expect(controller.switchingAccountId).toBeNull();
   });
 });

@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "lib": ["deno.window", "deno.ns", "deno.unstable"],
+    "strict": true
+  },
+  "lint": {
+    "rules": {
+      "tags": ["recommended"]
+    }
+  },
+  "fmt": {
+    "semiColons": true,
+    "singleQuote": false,
+    "lineWidth": 100
+  }
+}

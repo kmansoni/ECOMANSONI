@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 import sqlite3
 import time
 import uuid
@@ -36,7 +37,7 @@ from dataclasses import dataclass, field
 from enum import IntEnum
 from pathlib import Path
 from threading import RLock
-from typing import Iterator, Optional, Sequence
+from typing import Any, Iterator, Optional, Sequence
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_DB_PATH = Path("aria_feedback.db")
 RETENTION_NON_CONSENT_SECS = 86_400          # 24 h
 RATE_LIMIT_RECORDS_PER_HOUR = 100
+RATE_LIMIT_WINDOW_SECONDS = 3600
 MAX_PROMPT_BYTES = 32_768                     # 32 KB — DoS cap
 MAX_RESPONSE_BYTES = 65_536                   # 64 KB
 
@@ -101,7 +103,7 @@ class PreferenceRecord:
 
 class FeedbackStore:
     """
-    Thread-safe SQLite-backed хранилище взаимодействий.
+    Thread-safe feedback store с SQLite и optional Redis rate limiting.
 
     Usage:
         store = FeedbackStore("/data/aria_feedback.db")
@@ -121,8 +123,37 @@ class FeedbackStore:
         self._db_path = Path(db_path)
         self._salt = user_id_salt
         self._lock = RLock()
-        self._rate_counters: dict[str, list[float]] = {}  # user_hash → [timestamps]
+        self._redis_client: Any | None = None
+        self._redis_rate_limit_enabled = False
+        self._init_redis_rate_limiter()
         self._init_db()
+
+    def _init_redis_rate_limiter(self) -> None:
+        """Best-effort Redis init for distributed rate limiting.
+
+        Environment:
+            ARIA_FEEDBACK_REDIS_URL, ARIA_REDIS_URL, REDIS_URL
+        """
+        redis_url = (
+            os.environ.get("ARIA_FEEDBACK_REDIS_URL")
+            or os.environ.get("ARIA_REDIS_URL")
+            or os.environ.get("REDIS_URL")
+            or ""
+        ).strip()
+        if not redis_url:
+            return
+
+        try:
+            import redis  # type: ignore[import-not-found]
+
+            client = redis.Redis.from_url(redis_url, decode_responses=True)
+            client.ping()
+            self._redis_client = client
+            self._redis_rate_limit_enabled = True
+            logger.info("FeedbackStore Redis rate limiting enabled")
+        except Exception as exc:  # noqa: BLE001
+            # Keep service functional with SQLite fallback.
+            logger.warning("FeedbackStore Redis init failed, using SQLite rate limiting: %s", exc)
 
     # ── Init ─────────────────────────────────────────────────────────────────
 
@@ -208,18 +239,46 @@ class FeedbackStore:
 
     # ── Rate limiting ─────────────────────────────────────────────────────────
 
-    def _check_rate_limit(self, user_hash: str) -> bool:
-        """True → запрос допустим. False → превышен лимит (100 записей/час)."""
-        now = time.time()
-        cutoff = now - 3600
-        with self._lock:
-            timestamps = self._rate_counters.get(user_hash, [])
-            timestamps = [t for t in timestamps if t > cutoff]
-            if len(timestamps) >= RATE_LIMIT_RECORDS_PER_HOUR:
-                logger.warning("Rate limit exceeded for user_hash %s…", user_hash[:8])
+    def _check_rate_limit_redis(self, user_hash: str) -> Optional[bool]:
+        """Return True/False when Redis is available, otherwise None."""
+        if not self._redis_rate_limit_enabled or self._redis_client is None:
+            return None
+
+        bucket = int(time.time() // RATE_LIMIT_WINDOW_SECONDS)
+        key = f"aria:feedback:rate:{user_hash}:{bucket}"
+        try:
+            # Atomic counter per rolling hour bucket.
+            current = int(self._redis_client.incr(key))
+            if current == 1:
+                self._redis_client.expire(key, RATE_LIMIT_WINDOW_SECONDS + 120)
+            if current > RATE_LIMIT_RECORDS_PER_HOUR:
+                logger.warning("Rate limit exceeded (redis) for user_hash %s…", user_hash[:8])
                 return False
-            timestamps.append(now)
-            self._rate_counters[user_hash] = timestamps
+            return True
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Redis rate-limit check failed, using SQLite fallback: %s", exc)
+            self._redis_rate_limit_enabled = False
+            return None
+
+    def _check_rate_limit(self, conn: sqlite3.Connection, user_hash: str) -> bool:
+        """True → запрос допустим. False → превышен лимит (100 записей/час)."""
+        redis_allowed = self._check_rate_limit_redis(user_hash)
+        if redis_allowed is not None:
+            return redis_allowed
+
+        cutoff = time.time() - RATE_LIMIT_WINDOW_SECONDS
+        row = conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM interactions
+            WHERE user_hash = ? AND timestamp > ?
+            """,
+            (user_hash, cutoff),
+        ).fetchone()
+        recent_count = int(row[0]) if row else 0
+        if recent_count >= RATE_LIMIT_RECORDS_PER_HOUR:
+            logger.warning("Rate limit exceeded for user_hash %s…", user_hash[:8])
+            return False
         return True
 
     # ── Write API ─────────────────────────────────────────────────────────────
@@ -239,10 +298,9 @@ class FeedbackStore:
         if len(feedback.response.encode()) > MAX_RESPONSE_BYTES:
             raise ValueError(f"response exceeds {MAX_RESPONSE_BYTES} bytes")
 
-        if not self._check_rate_limit(feedback.user_hash):
-            return False
-
         with self._lock, self._connect() as conn:
+            if not self._check_rate_limit(conn, feedback.user_hash):
+                return False
             try:
                 conn.execute(
                     """

@@ -28,6 +28,10 @@ type MultiAccountContextValue = {
   loading: boolean;
   accounts: AccountIndexEntry[];
   activeAccountId: AccountId | null;
+  switchingAccountId: AccountId | null;
+  isSwitchingAccount: boolean;
+  accountOperation: "switch" | "external-switch" | "add-password" | "otp-start" | "otp-verify" | "register-phone" | null;
+  isAccountOperationInProgress: boolean;
   switchAccount: (accountId: AccountId) => Promise<void>;
   addAccountWithPassword: (email: string, password: string) => Promise<{ error: Error | null }>;
   startAddAccountPhoneOtp: (phone: string) => Promise<{ error: Error | null }>;
@@ -262,7 +266,9 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
   const [loading, setLoading] = React.useState(true);
   const [accounts, setAccounts] = React.useState<AccountIndexEntry[]>(() => listAccountsIndex());
   const [activeAccountId, setActiveAccountState] = React.useState<AccountId | null>(() => getActiveAccountId());
-  const switchMutexRef = React.useRef<Promise<void> | null>(null);
+  const [switchingAccountId, setSwitchingAccountId] = React.useState<AccountId | null>(null);
+  const [accountOperation, setAccountOperation] = React.useState<MultiAccountContextValue["accountOperation"]>(null);
+  const accountOpMutexRef = React.useRef<Promise<void> | null>(null);
 
   // Multi-tab sync (Telegram-like): keep active account consistent across tabs.
   const instanceIdRef = React.useRef<string>(
@@ -271,7 +277,6 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
       : `inst_${Math.random().toString(16).slice(2)}_${Date.now().toString(16)}`,
   );
   const activeAccountIdRef = React.useRef<AccountId | null>(activeAccountId);
-  const switchAccountRef = React.useRef<((id: AccountId) => Promise<void>) | null>(null);
   const externalSwitchRef = React.useRef<((id: AccountId) => Promise<void>) | null>(null);
   const internalSessionTransitionRef = React.useRef(0);
   const lastAuthenticatedAccountRef = React.useRef<AccountId | null>(null);
@@ -302,6 +307,30 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
 
   const hardResetQueryClient = React.useCallback(() => {
     setQueryClient(createQueryClient());
+  }, []);
+
+  const runExclusiveAccountOp = React.useCallback(async <T,>(
+    operation: NonNullable<MultiAccountContextValue["accountOperation"]>,
+    runner: () => Promise<T>,
+  ): Promise<T> => {
+    if (accountOpMutexRef.current) {
+      await accountOpMutexRef.current;
+    }
+
+    const run = (async () => {
+      setAccountOperation(operation);
+      try {
+        return await runner();
+      } finally {
+        setAccountOperation((prev) => (prev === operation ? null : prev));
+      }
+    })();
+
+    accountOpMutexRef.current = run.then(() => undefined, () => undefined).finally(() => {
+      accountOpMutexRef.current = null;
+    });
+
+    return run;
   }, []);
 
   const activateSessionForAccount = React.useCallback(async (accountId: AccountId) => {
@@ -354,70 +383,42 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
 
   const switchAccount = React.useCallback(async (accountId: AccountId) => {
     if (!accountId) return;
-    if (switchMutexRef.current) {
-      await switchMutexRef.current;
-    }
+    if (activeAccountId === accountId) return;
 
-    const run = (async () => {
-      const prev = activeAccountId;
-
-      // Optimistic selection.
-      setActiveAccountState(accountId);
-      setActiveAccountId(accountId);
+    await runExclusiveAccountOp("switch", async () => {
+      setSwitchingAccountId(accountId);
 
       try {
         await withTimeout(activateSessionForAccount(accountId), 5000, "switchActivate");
       } catch (e) {
         setAccounts(upsertAccountIndex({ accountId, requiresReauth: true }));
-        if (prev) {
-          setActiveAccountState(prev);
-          setActiveAccountId(prev);
-        } else {
-          setActiveAccountState(null);
-          setActiveAccountId(null);
-        }
         toast.error("Нужен вход", { description: "Сессия этого аккаунта недоступна или истекла." });
         throw e;
+      } finally {
+        setSwitchingAccountId((prev) => (prev === accountId ? null : prev));
       }
-    })();
-
-    switchMutexRef.current = run.finally(() => {
-      switchMutexRef.current = null;
     });
-    await switchMutexRef.current;
-  }, [activeAccountId, activateSessionForAccount]);
+  }, [activeAccountId, activateSessionForAccount, runExclusiveAccountOp]);
 
-  // External (multi-tab) switch: keep active selection even if activation fails.
-  // Rationale: another tab may have switched; this tab must reflect the selection,
-  // but may need re-auth if tokens are missing/expired.
+  // External (multi-tab) switch: never commit active selection unless auth session
+  // is actually activated in this tab. This prevents UI/session desync.
   const switchAccountFromExternalSignal = React.useCallback(async (accountId: AccountId) => {
     if (!accountId) return;
-    if (switchMutexRef.current) {
-      await switchMutexRef.current;
-    }
+    if (activeAccountIdRef.current === accountId) return;
 
-    const run = (async () => {
-      // Always reflect selection.
-      setActiveAccountId(accountId);
-      setActiveAccountState(accountId);
-
+    await runExclusiveAccountOp("external-switch", async () => {
+      setSwitchingAccountId(accountId);
       try {
+        // activateSessionForAccount is the single authority that commits activeAccountId.
         await withTimeout(activateSessionForAccount(accountId), 5000, "externalSwitchActivate");
       } catch {
-        // Do not revert: keep selection, but mark as requiring reauth.
-        setAccounts(upsertAccountIndex({ accountId, requiresReauth: true, touchActive: true }));
+        // Keep current active account unchanged in this tab, mark target as requiring reauth.
+        setAccounts(upsertAccountIndex({ accountId, requiresReauth: true }));
+      } finally {
+        setSwitchingAccountId((prev) => (prev === accountId ? null : prev));
       }
-    })();
-
-    switchMutexRef.current = run.finally(() => {
-      switchMutexRef.current = null;
     });
-    await switchMutexRef.current;
-  }, [activateSessionForAccount]);
-
-  React.useEffect(() => {
-    switchAccountRef.current = switchAccount;
-  }, [switchAccount]);
+  }, [activateSessionForAccount, runExclusiveAccountOp]);
 
   React.useEffect(() => {
     externalSwitchRef.current = switchAccountFromExternalSignal;
@@ -431,7 +432,7 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
       if (!nextAccountId) return;
       if (activeAccountIdRef.current === nextAccountId) return;
 
-      // Switch locally using the external-safe path (never reverts selection).
+      // Switch locally using the external-safe path.
       await externalSwitchRef.current?.(nextAccountId);
     };
 
@@ -726,119 +727,19 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
   }, [beginProfileLoad, isCurrentProfileLoad]);
 
   const addAccountWithPassword = React.useCallback(async (email: string, password: string) => {
-    try {
-      const client = createEphemeralSupabaseClient();
-      const { data, error } = await client.auth.signInWithPassword({ email, password });
-      if (error) return { error: error as any };
-      const session = data.session;
-      if (!session || !session.user) return { error: new Error("no_session") };
-
-      const accountId = session.user.id as AccountId;
-      writeTokens(accountId, {
-        accessToken: session.access_token,
-        refreshToken: session.refresh_token,
-        expiresAt: typeof session.expires_at === "number" ? session.expires_at : null,
-      });
-      setAccounts(upsertAccountIndex({ accountId, requiresReauth: false, touchActive: true }));
-
-      await activateSessionForAccount(accountId);
-      const { seq, signal } = beginProfileLoad(accountId);
-      const profile = await fetchMyProfileSnapshot(accountId, signal);
-      if (profile && isCurrentProfileLoad(accountId, seq)) {
-        setAccounts(upsertAccountIndex({ accountId, profile }));
-      }
-      return { error: null };
-    } catch (e) {
-      return { error: e as Error };
-    }
-  }, [activateSessionForAccount, beginProfileLoad, isCurrentProfileLoad]);
-
-  const startAddAccountPhoneOtp = React.useCallback(async (phone: string) => {
-    try {
-      if (!USE_SUPABASE_PHONE_OTP) {
-        const digits = phone.replace(/\D/g, "");
-        const { data, error } = await supabase.functions.invoke("phone-auth", {
-          body: {
-            action: "register-or-login",
-            phone: `+${digits}`,
-            display_name: "User",
-            email: `user${digits}@placeholder.local`,
-          },
-        });
-        if (error) return { error: error as any };
-        if (!data?.ok || !data?.accessToken || !data?.refreshToken) {
-          return { error: new Error(data?.error || "phone-auth fallback failed") };
-        }
-        const { error: sessionError } = await supabase.auth.setSession({
-          access_token: data.accessToken,
-          refresh_token: data.refreshToken,
-        });
-        return { error: (sessionError as any) ?? null };
-      }
-
-      const client = createEphemeralSupabaseClient();
-      const { error } = await client.auth.signInWithOtp({ phone });
-      const code = String((error as any)?.code || "").toLowerCase();
-      const message = String((error as any)?.message || "").toLowerCase();
-      const providerDisabled = code === "phone_provider_disabled" || message.includes("unsupported phone provider");
-      if (providerDisabled) {
-        const digits = phone.replace(/\D/g, "");
-        const { data, error: fallbackError } = await supabase.functions.invoke("phone-auth", {
-          body: {
-            action: "register-or-login",
-            phone: `+${digits}`,
-            display_name: "User",
-            email: `user${digits}@placeholder.local`,
-          },
-        });
-        if (fallbackError) return { error: fallbackError as any };
-        if (!data?.ok || !data?.accessToken || !data?.refreshToken) {
-          return { error: new Error(data?.error || "phone-auth fallback failed") };
-        }
-        const { error: sessionError } = await supabase.auth.setSession({
-          access_token: data.accessToken,
-          refresh_token: data.refreshToken,
-        });
-        return { error: (sessionError as any) ?? null };
-      }
-      return { error: (error as any) ?? null };
-    } catch (e) {
-      return { error: e as Error };
-    }
-  }, []);
-
-  const verifyAddAccountPhoneOtp = React.useCallback(async (phone: string, token: string) => {
-    try {
-      if (!USE_SUPABASE_PHONE_OTP) {
-        const digits = phone.replace(/\D/g, "");
-        const { data: fallbackData, error: fallbackError } = await supabase.functions.invoke("phone-auth", {
-          body: {
-            action: "register-or-login",
-            phone: `+${digits}`,
-            display_name: "User",
-            email: `user${digits}@placeholder.local`,
-          },
-        });
-        if (fallbackError) return { error: fallbackError as any };
-        if (!fallbackData?.ok || !fallbackData?.accessToken || !fallbackData?.refreshToken) {
-          return { error: new Error(fallbackData?.error || "phone-auth fallback failed") };
-        }
-
+    return runExclusiveAccountOp("add-password", async () => {
+      try {
         const client = createEphemeralSupabaseClient();
-        const { error: setSessionError } = await client.auth.setSession({
-          access_token: fallbackData.accessToken,
-          refresh_token: fallbackData.refreshToken,
-        });
-        if (setSessionError) return { error: setSessionError as any };
-        const { data: sessionData } = await client.auth.getSession();
-        const directSession = sessionData.session;
-        if (!directSession || !directSession.user) return { error: new Error("no_session") };
+        const { data, error } = await client.auth.signInWithPassword({ email, password });
+        if (error) return { error: error as any };
+        const session = data.session;
+        if (!session || !session.user) return { error: new Error("no_session") };
 
-        const accountId = directSession.user.id as AccountId;
+        const accountId = session.user.id as AccountId;
         writeTokens(accountId, {
-          accessToken: directSession.access_token,
-          refreshToken: directSession.refresh_token,
-          expiresAt: typeof directSession.expires_at === "number" ? directSession.expires_at : null,
+          accessToken: session.access_token,
+          refreshToken: session.refresh_token,
+          expiresAt: typeof session.expires_at === "number" ? session.expires_at : null,
         });
         setAccounts(upsertAccountIndex({ accountId, requiresReauth: false, touchActive: true }));
 
@@ -849,60 +750,166 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
           setAccounts(upsertAccountIndex({ accountId, profile }));
         }
         return { error: null };
+      } catch (e) {
+        return { error: e as Error };
       }
+    });
+  }, [activateSessionForAccount, beginProfileLoad, isCurrentProfileLoad, runExclusiveAccountOp]);
 
-      const client = createEphemeralSupabaseClient();
-      const { data, error } = await client.auth.verifyOtp({ phone, token, type: "sms" });
-      let session = data.session;
-      if (error) {
+  const startAddAccountPhoneOtp = React.useCallback(async (phone: string) => {
+    return runExclusiveAccountOp("otp-start", async () => {
+      try {
+        if (!USE_SUPABASE_PHONE_OTP) {
+          const digits = phone.replace(/\D/g, "");
+          const { data, error } = await supabase.functions.invoke("phone-auth", {
+            body: {
+              action: "register-or-login",
+              phone: `+${digits}`,
+              display_name: "User",
+              email: `user${digits}@placeholder.local`,
+            },
+          });
+          if (error) return { error: error as any };
+          if (!data?.ok || !data?.accessToken || !data?.refreshToken) {
+            return { error: new Error(data?.error || "phone-auth fallback failed") };
+          }
+          const { error: sessionError } = await supabase.auth.setSession({
+            access_token: data.accessToken,
+            refresh_token: data.refreshToken,
+          });
+          return { error: (sessionError as any) ?? null };
+        }
+
+        const client = createEphemeralSupabaseClient();
+        const { error } = await client.auth.signInWithOtp({ phone });
         const code = String((error as any)?.code || "").toLowerCase();
         const message = String((error as any)?.message || "").toLowerCase();
         const providerDisabled = code === "phone_provider_disabled" || message.includes("unsupported phone provider");
-        if (!providerDisabled) return { error: error as any };
+        if (providerDisabled) {
+          const digits = phone.replace(/\D/g, "");
+          const { data, error: fallbackError } = await supabase.functions.invoke("phone-auth", {
+            body: {
+              action: "register-or-login",
+              phone: `+${digits}`,
+              display_name: "User",
+              email: `user${digits}@placeholder.local`,
+            },
+          });
+          if (fallbackError) return { error: fallbackError as any };
+          if (!data?.ok || !data?.accessToken || !data?.refreshToken) {
+            return { error: new Error(data?.error || "phone-auth fallback failed") };
+          }
+          const { error: sessionError } = await supabase.auth.setSession({
+            access_token: data.accessToken,
+            refresh_token: data.refreshToken,
+          });
+          return { error: (sessionError as any) ?? null };
+        }
+        return { error: (error as any) ?? null };
+      } catch (e) {
+        return { error: e as Error };
+      }
+    });
+  }, [runExclusiveAccountOp]);
 
-        const digits = phone.replace(/\D/g, "");
-        const { data: fallbackData, error: fallbackError } = await supabase.functions.invoke("phone-auth", {
-          body: {
-            action: "register-or-login",
-            phone: `+${digits}`,
-            display_name: "User",
-            email: `user${digits}@placeholder.local`,
-          },
-        });
-        if (fallbackError) return { error: fallbackError as any };
-        if (!fallbackData?.ok || !fallbackData?.accessToken || !fallbackData?.refreshToken) {
-          return { error: new Error(fallbackData?.error || "phone-auth fallback failed") };
+  const verifyAddAccountPhoneOtp = React.useCallback(async (phone: string, token: string) => {
+    return runExclusiveAccountOp("otp-verify", async () => {
+      try {
+        if (!USE_SUPABASE_PHONE_OTP) {
+          const digits = phone.replace(/\D/g, "");
+          const { data: fallbackData, error: fallbackError } = await supabase.functions.invoke("phone-auth", {
+            body: {
+              action: "register-or-login",
+              phone: `+${digits}`,
+              display_name: "User",
+              email: `user${digits}@placeholder.local`,
+            },
+          });
+          if (fallbackError) return { error: fallbackError as any };
+          if (!fallbackData?.ok || !fallbackData?.accessToken || !fallbackData?.refreshToken) {
+            return { error: new Error(fallbackData?.error || "phone-auth fallback failed") };
+          }
+
+          const client = createEphemeralSupabaseClient();
+          const { error: setSessionError } = await client.auth.setSession({
+            access_token: fallbackData.accessToken,
+            refresh_token: fallbackData.refreshToken,
+          });
+          if (setSessionError) return { error: setSessionError as any };
+          const { data: sessionData } = await client.auth.getSession();
+          const directSession = sessionData.session;
+          if (!directSession || !directSession.user) return { error: new Error("no_session") };
+
+          const accountId = directSession.user.id as AccountId;
+          writeTokens(accountId, {
+            accessToken: directSession.access_token,
+            refreshToken: directSession.refresh_token,
+            expiresAt: typeof directSession.expires_at === "number" ? directSession.expires_at : null,
+          });
+          setAccounts(upsertAccountIndex({ accountId, requiresReauth: false, touchActive: true }));
+
+          await activateSessionForAccount(accountId);
+          const { seq, signal } = beginProfileLoad(accountId);
+          const profile = await fetchMyProfileSnapshot(accountId, signal);
+          if (profile && isCurrentProfileLoad(accountId, seq)) {
+            setAccounts(upsertAccountIndex({ accountId, profile }));
+          }
+          return { error: null };
         }
 
-        const { error: setSessionError } = await client.auth.setSession({
-          access_token: fallbackData.accessToken,
-          refresh_token: fallbackData.refreshToken,
+        const client = createEphemeralSupabaseClient();
+        const { data, error } = await client.auth.verifyOtp({ phone, token, type: "sms" });
+        let session = data.session;
+        if (error) {
+          const code = String((error as any)?.code || "").toLowerCase();
+          const message = String((error as any)?.message || "").toLowerCase();
+          const providerDisabled = code === "phone_provider_disabled" || message.includes("unsupported phone provider");
+          if (!providerDisabled) return { error: error as any };
+
+          const digits = phone.replace(/\D/g, "");
+          const { data: fallbackData, error: fallbackError } = await supabase.functions.invoke("phone-auth", {
+            body: {
+              action: "register-or-login",
+              phone: `+${digits}`,
+              display_name: "User",
+              email: `user${digits}@placeholder.local`,
+            },
+          });
+          if (fallbackError) return { error: fallbackError as any };
+          if (!fallbackData?.ok || !fallbackData?.accessToken || !fallbackData?.refreshToken) {
+            return { error: new Error(fallbackData?.error || "phone-auth fallback failed") };
+          }
+
+          const { error: setSessionError } = await client.auth.setSession({
+            access_token: fallbackData.accessToken,
+            refresh_token: fallbackData.refreshToken,
+          });
+          if (setSessionError) return { error: setSessionError as any };
+          const { data: sessionData } = await client.auth.getSession();
+          session = sessionData.session;
+        }
+        if (!session || !session.user) return { error: new Error("no_session") };
+
+        const accountId = session.user.id as AccountId;
+        writeTokens(accountId, {
+          accessToken: session.access_token,
+          refreshToken: session.refresh_token,
+          expiresAt: typeof session.expires_at === "number" ? session.expires_at : null,
         });
-        if (setSessionError) return { error: setSessionError as any };
-        const { data: sessionData } = await client.auth.getSession();
-        session = sessionData.session;
-      }
-      if (!session || !session.user) return { error: new Error("no_session") };
+        setAccounts(upsertAccountIndex({ accountId, requiresReauth: false, touchActive: true }));
 
-      const accountId = session.user.id as AccountId;
-      writeTokens(accountId, {
-        accessToken: session.access_token,
-        refreshToken: session.refresh_token,
-        expiresAt: typeof session.expires_at === "number" ? session.expires_at : null,
-      });
-      setAccounts(upsertAccountIndex({ accountId, requiresReauth: false, touchActive: true }));
-
-      await activateSessionForAccount(accountId);
-      const { seq, signal } = beginProfileLoad(accountId);
-      const profile = await fetchMyProfileSnapshot(accountId, signal);
-      if (profile && isCurrentProfileLoad(accountId, seq)) {
-        setAccounts(upsertAccountIndex({ accountId, profile }));
+        await activateSessionForAccount(accountId);
+        const { seq, signal } = beginProfileLoad(accountId);
+        const profile = await fetchMyProfileSnapshot(accountId, signal);
+        if (profile && isCurrentProfileLoad(accountId, seq)) {
+          setAccounts(upsertAccountIndex({ accountId, profile }));
+        }
+        return { error: null };
+      } catch (e) {
+        return { error: e as Error };
       }
-      return { error: null };
-    } catch (e) {
-      return { error: e as Error };
-    }
-  }, [activateSessionForAccount, beginProfileLoad, isCurrentProfileLoad]);
+    });
+  }, [activateSessionForAccount, beginProfileLoad, isCurrentProfileLoad, runExclusiveAccountOp]);
 
   const registerPhoneAccount = React.useCallback(async (input: {
     phoneDigits: string;
@@ -914,11 +921,12 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
     gender: string;
     entityType: string;
   }) => {
-    try {
-      const digits = input.phoneDigits;
-      const authEmail = `user.${digits}@phoneauth.app`;
-      const password = `ph_${digits}_secure`;
-      const client = createEphemeralSupabaseClient();
+    return runExclusiveAccountOp("register-phone", async () => {
+      try {
+        const digits = input.phoneDigits;
+        const authEmail = `user.${digits}@phoneauth.app`;
+        const password = `ph_${digits}_secure`;
+        const client = createEphemeralSupabaseClient();
 
       const { data: signUpData, error: signUpError } = await client.auth.signUp({
         email: authEmail,
@@ -979,22 +987,27 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
       if (profile && isCurrentProfileLoad(accountId, seq)) {
         setAccounts(upsertAccountIndex({ accountId, profile }));
       }
-      return { error: null };
-    } catch (e) {
-      return { error: e as Error };
-    }
-  }, [activateSessionForAccount, beginProfileLoad, isCurrentProfileLoad]);
+        return { error: null };
+      } catch (e) {
+        return { error: e as Error };
+      }
+    });
+  }, [activateSessionForAccount, beginProfileLoad, isCurrentProfileLoad, runExclusiveAccountOp]);
 
   const value = React.useMemo<MultiAccountContextValue>(() => ({
     loading,
     accounts,
     activeAccountId,
+    switchingAccountId,
+    isSwitchingAccount: switchingAccountId !== null,
+    accountOperation,
+    isAccountOperationInProgress: accountOperation !== null,
     switchAccount,
     addAccountWithPassword,
     startAddAccountPhoneOtp,
     verifyAddAccountPhoneOtp,
     registerPhoneAccount,
-  }), [accounts, activeAccountId, addAccountWithPassword, loading, registerPhoneAccount, startAddAccountPhoneOtp, switchAccount, verifyAddAccountPhoneOtp]);
+  }), [accountOperation, accounts, activeAccountId, addAccountWithPassword, loading, registerPhoneAccount, startAddAccountPhoneOtp, switchAccount, switchingAccountId, verifyAddAccountPhoneOtp]);
 
   return (
     <MultiAccountContext.Provider value={value}>

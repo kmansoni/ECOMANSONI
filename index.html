@@ -124,8 +124,37 @@
     <script type="module" src="/src/main.tsx"></script>
     <script>
       // Service Worker registration — sw.js (media cache + push)
+      // Never keep SW active in localhost dev: stale shell can block React boot and HMR.
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', function () {
+          var isLocalhost =
+            window.location.hostname === 'localhost' ||
+            window.location.hostname === '127.0.0.1' ||
+            window.location.hostname === '[::1]';
+
+          if (isLocalhost) {
+            navigator.serviceWorker.getRegistrations()
+              .then(function (registrations) {
+                registrations.forEach(function (registration) {
+                  registration.unregister();
+                });
+              })
+              .catch(function (err) {
+                console.warn('[SW] Failed to unregister in localhost:', err);
+              });
+
+            if ('caches' in window) {
+              caches.keys()
+                .then(function (keys) {
+                  return Promise.all(keys.map(function (key) { return caches.delete(key); }));
+                })
+                .catch(function (err) {
+                  console.warn('[SW] Failed to clear caches in localhost:', err);
+                });
+            }
+            return;
+          }
+
           navigator.serviceWorker.register('/sw.js', { scope: '/' })
             .then(function (registration) {
               // Проверяем обновление SW при каждой загрузке страницы

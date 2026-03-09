@@ -271,13 +271,28 @@ class DispatchService:
                 f"Invalid availability: {availability!r}",
                 detail={"valid": list(valid)},
             )
-        is_active = availability == "online"
-        await self.db.execute_query(
-            "UPDATE nav_driver_profiles SET is_active=$1 WHERE id=$2",
-            is_active,
+        profile = await self.db.fetch_one(
+            "SELECT id, is_verified FROM nav_driver_profiles WHERE id=$1",
             driver_id,
         )
-        return {"driver_id": driver_id, "availability": availability}
+        if profile is None:
+            raise NotFoundError("Driver profile not found", detail={"driver_id": driver_id})
+
+        if availability == "online" and not bool(profile["is_verified"]):
+            raise ForbiddenError(
+                "Driver must be verified before going online",
+                detail={"driver_id": driver_id},
+            )
+
+        row = await self.db.fetch_one(
+            "SELECT driver_id, availability, is_active FROM public.nav_set_driver_availability($1, $2)",
+            driver_id,
+            availability,
+        )
+
+        if row is None:
+            raise NotFoundError("Driver profile not found", detail={"driver_id": driver_id})
+        return dict(row)
 
     async def get_pending_offers(self, driver_id: str) -> list[dict]:
         """Return non-expired pending offers for a driver."""

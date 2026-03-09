@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X, User, Mail, Calendar, Users } from "lucide-react";
+import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -7,7 +7,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { getPhoneAuthHeaders } from "@/lib/auth/backendEndpoints";
-import { useSearchParams } from "react-router-dom";
 
 interface RegistrationModalProps {
   isOpen: boolean;
@@ -42,6 +41,7 @@ export function RegistrationModal({ isOpen, onClose, phone, onSuccess }: Registr
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loading) return;
     
     if (!firstName.trim() || !lastName.trim() || !email.trim() || !birthDate || !gender || !entityType) {
       toast.error("Заполните все поля");
@@ -131,7 +131,10 @@ export function RegistrationModal({ isOpen, onClose, phone, onSuccess }: Registr
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-xl font-bold">Завершите регистрацию</h2>
           <button
-            onClick={onClose}
+            onClick={() => {
+              if (!loading) onClose();
+            }}
+            disabled={loading}
             className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
           >
             <X className="w-5 h-5" />

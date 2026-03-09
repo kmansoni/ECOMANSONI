@@ -35,7 +35,7 @@ class Settings(BaseSettings):
 
     # ── Database ─────────────────────────────────────────────────────────────
     database_url: PostgresDsn = Field(
-        default="postgresql+asyncpg://postgres:secret@localhost:5432/taskdb",
+        ...,
         description="Async PostgreSQL DSN",
     )
     db_pool_min_size: int = Field(default=5, ge=1, le=50)
@@ -44,7 +44,7 @@ class Settings(BaseSettings):
 
     # ── JWT ───────────────────────────────────────────────────────────────────
     jwt_secret_key: str = Field(
-        default="CHANGE_ME_IN_PRODUCTION_USE_256BIT_RANDOM_KEY",
+        ...,
         min_length=32,
         description="HS256 signing secret; use RS256 private key path in production",
     )
@@ -71,11 +71,14 @@ class Settings(BaseSettings):
     @field_validator("jwt_secret_key")
     @classmethod
     def warn_insecure_secret(cls, value: str) -> str:
-        """Reject obviously weak secrets in production environments."""
-        if value == "CHANGE_ME_IN_PRODUCTION_USE_256BIT_RANDOM_KEY":
-            import os
-            if os.getenv("ENVIRONMENT", "development") == "production":
-                raise ValueError("JWT secret key must be changed in production")
+        """Reject obviously weak secrets."""
+        weak_values = {
+            "your-secret-key",
+            "your-secret-key-min-32-chars",
+            "CHANGE_ME_IN_PRODUCTION_USE_256BIT_RANDOM_KEY",
+        }
+        if value in weak_values:
+            raise ValueError("JWT secret key must be set to a strong random value")
         return value
 
 

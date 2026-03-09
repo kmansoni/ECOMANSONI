@@ -323,7 +323,8 @@ class BackgroundTaskScheduler:
             while self._running:
                 await asyncio.sleep(60)
         except asyncio.CancelledError:
-            pass
+            logger.info("[SCHEDULER] run_forever cancelled")
+            raise
         finally:
             await self.stop()
 

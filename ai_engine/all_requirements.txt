@@ -10,4 +10,4 @@ transformers>=4.35.0
 
 # Существующие зависимости
 # (из ai_engine/requirements.txt)
-# (пусто — добавьте если были)
+redis>=5.0.0

@@ -114,7 +114,7 @@ class ComposeConfig:
         return compose
 
     def render_yaml(self) -> str:
-        return yaml.dump(self.to_dict(), default_flow_style=False, sort_keys=True)
+        return yaml.safe_dump(self.to_dict(), default_flow_style=False, sort_keys=True)
 
 
 def build_production_compose() -> ComposeConfig:

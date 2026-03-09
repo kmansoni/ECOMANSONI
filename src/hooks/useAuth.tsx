@@ -8,6 +8,8 @@ interface AuthContextType {
   user: User | null;
   session: Session | null;
   loading: boolean;
+  authOperation: "sign-in" | "sign-up" | "phone-sign-in" | "verify-otp" | "sign-out" | null;
+  isAuthOperationInProgress: boolean;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signUp: (email: string, password: string, displayName?: string) => Promise<{ error: Error | null }>;
   signInWithPhone: (phone: string) => Promise<{ error: any | null }>;
@@ -91,8 +93,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [authOperation, setAuthOperation] = useState<AuthContextType["authOperation"]>(null);
+  const authOpMutexRef = useRef<Promise<void> | null>(null);
 
   const lastAuthMetaSyncRef = useRef<{ userId: string; key: string } | null>(null);
+
+  const runExclusiveAuthOp = async <T,>(
+    operation: NonNullable<AuthContextType["authOperation"]>,
+    runner: () => Promise<T>,
+  ): Promise<T> => {
+    if (authOpMutexRef.current) {
+      await authOpMutexRef.current;
+    }
+
+    const run = (async () => {
+      setAuthOperation(operation);
+      try {
+        return await runner();
+      } finally {
+        setAuthOperation((prev) => (prev === operation ? null : prev));
+      }
+    })();
+
+    authOpMutexRef.current = run.then(() => undefined, () => undefined).finally(() => {
+      authOpMutexRef.current = null;
+    });
+
+    return run;
+  };
 
   // Ensure profile exists for the user
   const ensureProfile = async (authUser: User) => {
@@ -218,84 +246,105 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [userId]);
 
   const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
+    return runExclusiveAuthOp("sign-in", async () => {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      return { error: error as Error | null };
     });
-    return { error: error as Error | null };
   };
 
   const signUp = async (email: string, password: string, displayName?: string) => {
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        emailRedirectTo: window.location.origin,
-        data: {
-          full_name: displayName,
+    return runExclusiveAuthOp("sign-up", async () => {
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          emailRedirectTo: window.location.origin,
+          data: {
+            full_name: displayName,
+          },
         },
-      },
+      });
+      return { error: error as Error | null };
     });
-    return { error: error as Error | null };
   };
 
   const signInWithPhone = async (phone: string) => {
-    if (!USE_SUPABASE_PHONE_OTP) {
-      return await signInWithPhoneAuthFallback(phone);
-    }
-
-    const { error } = await supabase.auth.signInWithOtp({ phone });
-    if (error) {
-      console.error("[Auth] signInWithOtp(phone) failed", {
-        message: (error as any)?.message,
-        code: (error as any)?.code,
-        status: (error as any)?.status,
-        name: (error as any)?.name,
-      });
-      if (isPhoneProviderDisabled(error)) {
-        console.warn("[Auth] Falling back to phone-auth flow because phone provider is disabled");
+    return runExclusiveAuthOp("phone-sign-in", async () => {
+      if (!USE_SUPABASE_PHONE_OTP) {
         return await signInWithPhoneAuthFallback(phone);
       }
-    }
-    return { error: (error as any) ?? null };
+
+      const { error } = await supabase.auth.signInWithOtp({ phone });
+      if (error) {
+        console.error("[Auth] signInWithOtp(phone) failed", {
+          message: (error as any)?.message,
+          code: (error as any)?.code,
+          status: (error as any)?.status,
+          name: (error as any)?.name,
+        });
+        if (isPhoneProviderDisabled(error)) {
+          console.warn("[Auth] Falling back to phone-auth flow because phone provider is disabled");
+          return await signInWithPhoneAuthFallback(phone);
+        }
+      }
+      return { error: (error as any) ?? null };
+    });
   };
 
   const verifyOtp = async (phone: string, token: string) => {
-    if (!USE_SUPABASE_PHONE_OTP) {
-      return await signInWithPhoneAuthFallback(phone);
-    }
-
-    const { error } = await supabase.auth.verifyOtp({ phone, token, type: 'sms' });
-    if (error) {
-      console.error("[Auth] verifyOtp(phone,sms) failed", {
-        message: (error as any)?.message,
-        code: (error as any)?.code,
-        status: (error as any)?.status,
-        name: (error as any)?.name,
-      });
-      if (isPhoneProviderDisabled(error)) {
-        console.warn("[Auth] Falling back to phone-auth flow in verifyOtp because phone provider is disabled");
+    return runExclusiveAuthOp("verify-otp", async () => {
+      if (!USE_SUPABASE_PHONE_OTP) {
         return await signInWithPhoneAuthFallback(phone);
       }
-    }
-    return { error: (error as any) ?? null };
+
+      const { error } = await supabase.auth.verifyOtp({ phone, token, type: 'sms' });
+      if (error) {
+        console.error("[Auth] verifyOtp(phone,sms) failed", {
+          message: (error as any)?.message,
+          code: (error as any)?.code,
+          status: (error as any)?.status,
+          name: (error as any)?.name,
+        });
+        if (isPhoneProviderDisabled(error)) {
+          console.warn("[Auth] Falling back to phone-auth flow in verifyOtp because phone provider is disabled");
+          return await signInWithPhoneAuthFallback(phone);
+        }
+      }
+      return { error: (error as any) ?? null };
+    });
   };
 
   const signOut = async () => {
-    // Очищаем ВСЕ SW-кэши перед выходом, чтобы персональные данные
-    // (сообщения, профили) не оставались в Cache Storage.
-    // Gracefully degraded: если SW недоступен — ничего страшного.
-    try {
-      const { mediaCache } = await import("@/lib/mediaCache");
-      await mediaCache.clearAll();
-    } catch {
-      // ignore — кэш недоступен или SW не зарегистрирован
-    }
-    await supabase.auth.signOut();
+    return runExclusiveAuthOp("sign-out", async () => {
+      // Очищаем ВСЕ SW-кэши перед выходом, чтобы персональные данные
+      // (сообщения, профили) не оставались в Cache Storage.
+      // Gracefully degraded: если SW недоступен — ничего страшного.
+      try {
+        const { mediaCache } = await import("@/lib/mediaCache");
+        await mediaCache.clearAll();
+      } catch {
+        // ignore — кэш недоступен или SW не зарегистрирован
+      }
+      await supabase.auth.signOut();
+    });
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, loading, signIn, signUp, signInWithPhone, verifyOtp, signOut }}>
+    <AuthContext.Provider value={{
+      user,
+      session,
+      loading,
+      authOperation,
+      isAuthOperationInProgress: authOperation !== null,
+      signIn,
+      signUp,
+      signInWithPhone,
+      verifyOtp,
+      signOut,
+    }}>
       {children}
     </AuthContext.Provider>
   );

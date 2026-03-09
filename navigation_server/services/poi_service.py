@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 import structlog
 
 from config import get_settings
-from exceptions import NotFoundError
+from exceptions import NotFoundError, ValidationError
 from models.common import GeoJSONPoint
 from models.poi import POI, OpeningHours, POICreateRequest, POIUpdateRequest
 from services.h3_service import H3Service
@@ -278,6 +278,7 @@ class POIService:
             "phone": request.phone,
             "website": request.website,
         }
+        allowed_columns = set(field_map.keys()) | {"opening_hours", "tags", "updated_at"}
         for col, val in field_map.items():
             if val is not None:
                 set_parts.append(f"{col} = ${idx}")
@@ -302,6 +303,12 @@ class POIService:
             # Only updated_at changed — nothing meaningful to update
             return existing
 
+        # Defensive guard: reject any unexpected SQL fragment in dynamic SET clause.
+        for part in set_parts:
+            col_name = part.split("=", 1)[0].strip()
+            if col_name not in allowed_columns:
+                raise ValidationError(f"Unsupported POI field update attempted: {col_name}")
+
         sql = f"UPDATE nav_pois SET {', '.join(set_parts)} WHERE id = $1"
         await self._db.execute(sql, uuid.UUID(poi_id), *params)
 
@@ -324,8 +331,8 @@ class POIService:
                     else json.loads(row["opening_hours"])
                 )
                 opening_hours = OpeningHours.model_validate(oh_data)
-            except Exception:
-                pass
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("poi.opening_hours_parse_failed", error=str(exc))
 
         tags = {}
         if row["tags"]:
@@ -335,8 +342,8 @@ class POIService:
                     if isinstance(row["tags"], dict)
                     else json.loads(row["tags"])
                 )
-            except Exception:
-                pass
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("poi.tags_parse_failed", error=str(exc))
 
         return POI(
             id=str(row["id"]),

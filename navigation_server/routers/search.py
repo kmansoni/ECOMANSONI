@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 
 from auth import CurrentUser, get_current_user
 from database import fetch_all, fetch_one, execute_query
+from exceptions import ValidationError
 from models.common import APIResponse, GeoJSONPoint
 from models.geocoding import AutocompleteResult
 from models.poi import POI
@@ -109,6 +110,14 @@ async def unified_search(
     """
     trace_id = str(uuid.uuid4())
     results: list[UnifiedSearchResult] = []
+    sanitized_q = q.strip()
+    if len(sanitized_q) > 128:
+        raise ValidationError("Search query too long", detail={"max_length": 128})
+
+    # Escape wildcard metacharacters to keep user input as a literal prefix.
+    ilike_prefix = (
+        sanitized_q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+    )
 
     # Saved places
     saved_rows = await fetch_all(
@@ -116,10 +125,10 @@ async def unified_search(
         SELECT id::text, name, address,
                ST_Y(location::geometry) AS lat, ST_X(location::geometry) AS lng
         FROM nav_saved_places
-        WHERE user_id = $1 AND name ILIKE $2
+        WHERE user_id = $1 AND name ILIKE $2 ESCAPE '\\'
         ORDER BY created_at DESC LIMIT 3
         """,
-        user.user_id, f"{q}%",
+        user.user_id, ilike_prefix,
     )
     for row in saved_rows:
         results.append(UnifiedSearchResult(
@@ -136,10 +145,10 @@ async def unified_search(
         """
         SELECT DISTINCT ON (place_name) id::text, place_name, place_lat, place_lng
         FROM nav_search_history
-        WHERE user_id = $1 AND place_name ILIKE $2
+        WHERE user_id = $1 AND place_name ILIKE $2 ESCAPE '\\'
         ORDER BY place_name, searched_at DESC LIMIT 3
         """,
-        user.user_id, f"{q}%",
+        user.user_id, ilike_prefix,
     )
     for row in recent_rows:
         results.append(UnifiedSearchResult(
@@ -154,7 +163,7 @@ async def unified_search(
         ))
 
     # POI full-text
-    pois = await poi_svc.search_by_text(query=q, lat=lat, lng=lng, limit=5)
+    pois = await poi_svc.search_by_text(query=sanitized_q, lat=lat, lng=lng, limit=5)
     for poi in pois:
         results.append(UnifiedSearchResult(
             type="poi",
@@ -166,7 +175,7 @@ async def unified_search(
         ))
 
     # Geocoding
-    geo_results = await geo_svc.forward(query=q, lat=lat, lng=lng, limit=5)
+    geo_results = await geo_svc.forward(query=sanitized_q, lat=lat, lng=lng, limit=5)
     for gr in geo_results:
         results.append(UnifiedSearchResult(
             type="geocode",

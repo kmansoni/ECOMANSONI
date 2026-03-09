@@ -207,36 +207,90 @@ class RewardModel:
         self._backend = "heuristic"
         self._score_ema = 0.5       # exponential moving average для нормализации
         self._ema_alpha = 0.01
+        self._allow_unsafe_pickle = (
+            os.environ.get("ARIA_ALLOW_UNSAFE_PICKLE_CHECKPOINT", "false").strip().lower()
+            in {"1", "true", "yes", "on"}
+        )
 
         self._load_checkpoint()
 
     # ── Checkpoint ────────────────────────────────────────────────────────────
 
+    def _load_json_checkpoint(self, path: Path) -> bool:
+        """Load safe metadata checkpoint from JSON path."""
+        if not path.exists():
+            return False
+        with open(path, "r", encoding="utf-8") as f:
+            state = json.load(f)
+        self._backend = state.get("backend", "heuristic")
+        self._score_ema = float(state.get("score_ema", 0.5))
+        # Safe JSON checkpoint stores metadata only.
+        self._model = None
+        logger.info("RewardModel metadata loaded from %s (backend=%s)", path, self._backend)
+        return True
+
     def _load_checkpoint(self) -> None:
+        json_fallback = self._ckpt if self._ckpt.suffix.lower() == ".json" else self._ckpt.with_suffix(".json")
+
         if not self._ckpt.exists():
+            if self._load_json_checkpoint(json_fallback):
+                return
             logger.info("RewardModel: no checkpoint found, using heuristic backend")
             return
         try:
+            if self._ckpt.suffix.lower() == ".json":
+                self._load_json_checkpoint(self._ckpt)
+                return
+
+            if not self._allow_unsafe_pickle:
+                if self._load_json_checkpoint(json_fallback):
+                    return
+                logger.warning(
+                    "RewardModel checkpoint %s skipped: pickle loading is disabled by default. "
+                    "Set ARIA_ALLOW_UNSAFE_PICKLE_CHECKPOINT=true only for trusted files.",
+                    self._ckpt,
+                )
+                return
+
             with open(self._ckpt, "rb") as f:
                 state = pickle.load(f)
-            self._model = state["model"]
+            if not isinstance(state, dict):
+                raise ValueError("Invalid reward checkpoint format")
+            self._model = state.get("model")
             self._backend = state.get("backend", "heuristic")
-            self._score_ema = state.get("score_ema", 0.5)
-            logger.info("RewardModel loaded from %s (backend=%s)", self._ckpt, self._backend)
+            self._score_ema = float(state.get("score_ema", 0.5))
+            logger.warning("RewardModel loaded from pickle checkpoint %s (trusted mode)", self._ckpt)
         except Exception as exc:
             logger.warning("RewardModel checkpoint load failed: %s", exc)
 
     def _save_checkpoint(self) -> None:
         try:
             state = {
-                "model": self._model,
                 "backend": self._backend,
                 "score_ema": self._score_ema,
                 "saved_at": time.time(),
             }
-            with open(self._ckpt, "wb") as f:
-                pickle.dump(state, f)
-            logger.info("RewardModel saved to %s", self._ckpt)
+
+            if self._ckpt.suffix.lower() == ".json":
+                with open(self._ckpt, "w", encoding="utf-8") as f:
+                    json.dump(state, f, ensure_ascii=False)
+                logger.info("RewardModel metadata saved to %s", self._ckpt)
+                return
+
+            if self._allow_unsafe_pickle:
+                trusted_state = {**state, "model": self._model}
+                with open(self._ckpt, "wb") as f:
+                    pickle.dump(trusted_state, f)
+                logger.warning("RewardModel saved to pickle checkpoint %s (trusted mode)", self._ckpt)
+                return
+
+            safe_path = self._ckpt.with_suffix(".json")
+            with open(safe_path, "w", encoding="utf-8") as f:
+                json.dump(state, f, ensure_ascii=False)
+            logger.info(
+                "RewardModel metadata saved to %s; pickle serialization is disabled by default",
+                safe_path,
+            )
         except Exception as exc:
             logger.warning("RewardModel checkpoint save failed: %s", exc)
 

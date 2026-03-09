@@ -515,16 +515,8 @@ class CrowdsourceService:
                 detail={"valid": sorted(VALID_REPORT_TYPES)},
             )
 
-        type_filter = "AND report_type = $5" if report_type else ""
-        params: list[Any] = [
-            bbox.min_lng, bbox.min_lat,
-            bbox.max_lng, bbox.max_lat,
-        ]
-        if report_type:
-            params.append(report_type)
-
         rows = await self.db.fetch_all(
-            f"""
+            """
             SELECT
                 h3_index_r9,
                 count(*) AS report_count
@@ -535,12 +527,16 @@ class CrowdsourceService:
             )
               AND status IN ('submitted', 'verified', 'active')
               AND (expires_at IS NULL OR expires_at > now())
-              {type_filter}
+                            AND ($5::text IS NULL OR report_type = $5::text)
             GROUP BY h3_index_r9
             ORDER BY report_count DESC
             LIMIT 500
             """,
-            *params,
+                        bbox.min_lng,
+                        bbox.min_lat,
+                        bbox.max_lng,
+                        bbox.max_lat,
+                        report_type,
         )
 
         result = []
@@ -549,9 +545,17 @@ class CrowdsourceService:
             try:
                 parent_cell = self.h3.parent(h3_r9, resolution)
                 centroid_lat, centroid_lng = self.h3.h3_to_latlng(parent_cell)
-            except Exception:  # noqa: BLE001
-                centroid_lat, centroid_lng = 0.0, 0.0
+            except Exception as exc:  # noqa: BLE001
+                # Fallback to bbox center to avoid persisting/returning NULL-island coordinates.
+                centroid_lat = (bbox.min_lat + bbox.max_lat) / 2
+                centroid_lng = (bbox.min_lng + bbox.max_lng) / 2
                 parent_cell = h3_r9
+                logger.warning(
+                    "crowdsource.heatmap_h3_parent_failed",
+                    h3_index_r9=h3_r9,
+                    resolution=resolution,
+                    error=str(exc),
+                )
 
             result.append({
                 "h3_index": parent_cell,

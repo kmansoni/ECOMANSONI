@@ -25,7 +25,7 @@ from __future__ import annotations
 from typing import Annotated
 
 import structlog
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
 
 from auth import CurrentUser, get_current_user
@@ -41,8 +41,6 @@ from services.presence_service import PresenceService
 from services.routing_service import RoutingService
 from services.trip_service import TripService
 
-import httpx
-
 logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/api/v1/nav/trips", tags=["trips"])
@@ -51,13 +49,15 @@ router = APIRouter(prefix="/api/v1/nav/trips", tags=["trips"])
 _h3 = H3Service()
 
 
-def _get_trip_service() -> TripService:
+def _get_trip_service(request: Request) -> TripService:
     db = get_pool()
     redis = get_redis_client()
     kafka = get_kafka_producer()
     from config import get_settings
     settings = get_settings()
-    http_client = httpx.AsyncClient(timeout=settings.VALHALLA_TIMEOUT)
+    http_client = getattr(request.app.state, "http_client", None)
+    if http_client is None:
+        raise HTTPException(status_code=503, detail="HTTP client is not initialized")
     routing = RoutingService(valhalla_url=settings.VALHALLA_URL, http_client=http_client)
     presence = PresenceService(redis=redis, kafka_producer=kafka, h3_service=_h3)
     dispatch = DispatchService(
@@ -90,6 +90,7 @@ def _get_trip_service() -> TripService:
 async def create_trip(
     request: TripCreateRequest,
     user: Annotated[CurrentUser, Depends(get_current_user)],
+    svc: Annotated[TripService, Depends(_get_trip_service)],
 ) -> TripResponse:
     """
     Create a new trip request. Triggers dispatch pipeline asynchronously.
@@ -97,7 +98,6 @@ async def create_trip(
     Idempotent: duplicate requests with the same `idempotency_key` return
     the existing trip without side effects.
     """
-    svc = _get_trip_service()
     trip = await svc.create_trip(user_id=user.user_id, request=request)
     logger.info("api.trip_created", trip_id=trip.trip_id, user_id=user.user_id)
     return trip
@@ -108,18 +108,18 @@ async def create_trip(
     summary="Price estimate",
 )
 async def price_estimate(
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    svc: Annotated[TripService, Depends(_get_trip_service)],
     pickup_lat: float = Query(..., ge=-90, le=90),
     pickup_lng: float = Query(..., ge=-180, le=180),
     dropoff_lat: float = Query(..., ge=-90, le=90),
     dropoff_lng: float = Query(..., ge=-180, le=180),
     service_type: str = Query("standard"),
-    user: Annotated[CurrentUser, Depends(get_current_user)] = None,
 ) -> JSONResponse:
     """
     Quick price estimate without creating a trip.
     Returns distance, duration, price breakdown, and surge multiplier.
     """
-    svc = _get_trip_service()
     pickup = LatLng(lat=pickup_lat, lng=pickup_lng)
     dropoff = LatLng(lat=dropoff_lat, lng=dropoff_lng)
     estimate = await svc.get_price_estimate(
@@ -133,16 +133,16 @@ async def price_estimate(
     summary="List user trips",
 )
 async def list_trips(
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    svc: Annotated[TripService, Depends(_get_trip_service)],
     status: str | None = Query(default=None),
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
-    user: Annotated[CurrentUser, Depends(get_current_user)] = None,
 ) -> JSONResponse:
     """
     List trips where the authenticated user is requester or assigned driver.
     Supports optional status filter and pagination.
     """
-    svc = _get_trip_service()
     trips = await svc.get_user_trips(
         user_id=user.user_id, status=status, limit=limit, offset=offset
     )
@@ -162,13 +162,13 @@ async def list_trips(
 )
 async def get_trip(
     trip_id: str,
-    user: Annotated[CurrentUser, Depends(get_current_user)] = None,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    svc: Annotated[TripService, Depends(_get_trip_service)],
 ) -> TripResponse:
     """
     Get trip by ID.
     Only the requester or the assigned driver can access the trip.
     """
-    svc = _get_trip_service()
     return await svc.get_trip(trip_id=trip_id, user_id=user.user_id)
 
 
@@ -178,9 +178,10 @@ async def get_trip(
     summary="Cancel trip",
 )
 async def cancel_trip(
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    svc: Annotated[TripService, Depends(_get_trip_service)],
     trip_id: str,
     reason: str | None = Query(default=None, max_length=256),
-    user: Annotated[CurrentUser, Depends(get_current_user)] = None,
 ) -> TripResponse:
     """
     Cancel a trip.
@@ -189,7 +190,6 @@ async def cancel_trip(
     Cancellation fee may apply if driver is already assigned/enroute.
     Cannot cancel an in-progress trip.
     """
-    svc = _get_trip_service()
     return await svc.cancel_trip(
         trip_id=trip_id, user_id=user.user_id, reason=reason
     )
@@ -203,7 +203,8 @@ async def cancel_trip(
 async def update_status(
     trip_id: str,
     body: TripStatusUpdate,
-    user: Annotated[CurrentUser, Depends(get_current_user)] = None,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    svc: Annotated[TripService, Depends(_get_trip_service)],
 ) -> TripResponse:
     """
     Advance trip FSM state.
@@ -214,7 +215,6 @@ async def update_status(
     Metadata can carry actual_distance_m, actual_duration_s for final price
     calculation on completion.
     """
-    svc = _get_trip_service()
     return await svc.update_trip_status(
         trip_id=trip_id,
         new_status=body.status,
@@ -228,17 +228,17 @@ async def update_status(
     summary="Rate completed trip",
 )
 async def rate_trip(
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    svc: Annotated[TripService, Depends(_get_trip_service)],
     trip_id: str,
     rating: int = Query(..., ge=1, le=5),
     comment: str | None = Query(default=None, max_length=512),
-    user: Annotated[CurrentUser, Depends(get_current_user)] = None,
 ) -> JSONResponse:
     """
     Rate a completed trip (1–5 stars).
     Rider rates driver; driver rates rider.
     Each participant can rate only once per trip.
     """
-    svc = _get_trip_service()
     result = await svc.rate_trip(
         trip_id=trip_id,
         user_id=user.user_id,

@@ -86,8 +86,12 @@ const MAX_PAGE_SIZE = 30;
 const DEFAULT_PAGE_SIZE = 20;
 
 const ALLOWED_ORIGINS = [
+  "http://localhost:8080",
   "http://localhost:5173",
   "http://localhost:5174",
+  "http://127.0.0.1:8080",
+  "http://127.0.0.1:5173",
+  "http://127.0.0.1:5174",
   "https://mansoni.ru",
   "https://www.mansoni.ru",
   "https://app.mansoni.ru",
@@ -95,7 +99,7 @@ const ALLOWED_ORIGINS = [
 
 function getCorsHeaders(req: Request): Record<string, string> {
   const origin = req.headers.get("Origin") ?? "";
-  const allowedOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  const allowedOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : "null";
   return {
     "Access-Control-Allow-Origin": allowedOrigin,
     "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",

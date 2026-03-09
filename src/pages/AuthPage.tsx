@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -57,11 +57,37 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 
 export function AuthPage() {
   const navigate = useNavigate();
-  const [loading, setLoading] = useState(false);
+  const [authPageOperation, setAuthPageOperation] = useState<"login" | "guest" | null>(null);
+  const authPageOpMutexRef = useRef<Promise<void> | null>(null);
   const [mode, setMode] = useState<AuthMode>("select");
   const [phone, setPhone] = useState("");
   const [showRegistrationModal, setShowRegistrationModal] = useState(false);
   const [showRecommendations, setShowRecommendations] = useState(false);
+  const loading = authPageOperation !== null;
+
+  const runExclusiveAuthPageOp = async (
+    operation: NonNullable<typeof authPageOperation>,
+    runner: () => Promise<void>,
+  ) => {
+    if (authPageOpMutexRef.current) {
+      return;
+    }
+
+    const run = (async () => {
+      setAuthPageOperation(operation);
+      try {
+        await runner();
+      } finally {
+        setAuthPageOperation((prev) => (prev === operation ? null : prev));
+      }
+    })();
+
+    authPageOpMutexRef.current = run.finally(() => {
+      authPageOpMutexRef.current = null;
+    });
+
+    await authPageOpMutexRef.current;
+  };
 
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -73,9 +99,8 @@ export function AuthPage() {
       return;
     }
     
-    setLoading(true);
-
-    try {
+    await runExclusiveAuthPageOp("login", async () => {
+      try {
       // Any explicit login disables guest mode
       setGuestMode(false);
 
@@ -168,14 +193,13 @@ export function AuthPage() {
       toast.error("Ошибка входа", {
         description: errorMsg,
       });
-    } finally {
-      setLoading(false);
-    }
+      }
+    });
   };
 
   const handleGuestAccess = async () => {
-    setLoading(true);
-    try {
+    await runExclusiveAuthPageOp("guest", async () => {
+      try {
       const functionUrls = getPhoneAuthFunctionUrls();
       if (functionUrls.length === 0) {
         toast.error("Не настроен endpoint авторизации");
@@ -243,13 +267,13 @@ export function AuthPage() {
       toast.error("Не удалось войти как гость", {
         description: err instanceof Error ? err.message : String(err),
       });
-    } finally {
-      setLoading(false);
-    }
+      }
+    });
   };
 
   const handleRegisterClick = (e: React.FormEvent) => {
     e.preventDefault();
+    if (loading) return;
     
     const digits = phone.replace(/\D/g, '');
     if (digits.length < 10) {
@@ -265,6 +289,7 @@ export function AuthPage() {
   };
 
   const handleBack = () => {
+    if (loading) return;
     if (mode === "select") {
       navigate(-1);
     } else {
@@ -460,6 +485,7 @@ export function AuthPage() {
                   
                   <Button 
                     onClick={() => setMode("register")}
+                    disabled={loading}
                     className="w-full h-14 rounded-2xl text-base font-semibold bg-white/90 hover:bg-white text-slate-800 shadow-xl shadow-black/20 transition-all hover:shadow-2xl hover:scale-[1.02] active:scale-[0.98]"
                   >
                     Регистрация
@@ -467,6 +493,7 @@ export function AuthPage() {
                   
                   <Button 
                     onClick={() => setMode("login")}
+                    disabled={loading}
                     variant="outline"
                     className="w-full h-14 rounded-2xl text-base font-semibold bg-transparent border-white/30 text-white hover:bg-white/10 hover:text-white transition-all hover:scale-[1.02] active:scale-[0.98]"
                   >
@@ -529,6 +556,7 @@ export function AuthPage() {
                 Нет аккаунта?{" "}
                 <button 
                   onClick={() => setMode("register")} 
+                  disabled={loading}
                   className="text-white/80 underline hover:text-white"
                 >
                   Зарегистрируйтесь
@@ -562,6 +590,7 @@ export function AuthPage() {
 
                   <Button 
                     type="submit" 
+                    disabled={loading}
                     className="w-full h-14 rounded-2xl text-base font-semibold bg-white/90 hover:bg-white text-slate-800 shadow-xl shadow-black/20 transition-all hover:shadow-2xl hover:scale-[1.02] active:scale-[0.98]"
                   >
                     Зарегистрироваться
@@ -573,6 +602,7 @@ export function AuthPage() {
                 Уже есть аккаунт?{" "}
                 <button 
                   onClick={() => setMode("login")} 
+                  disabled={loading}
                   className="text-white/80 underline hover:text-white"
                 >
                   Войти
@@ -589,7 +619,9 @@ export function AuthPage() {
       {/* Registration Modal */}
       <RegistrationModal 
         isOpen={showRegistrationModal}
-        onClose={() => setShowRegistrationModal(false)}
+        onClose={() => {
+          if (!loading) setShowRegistrationModal(false);
+        }}
         phone={phone}
         onSuccess={handleRegistrationSuccess}
       />

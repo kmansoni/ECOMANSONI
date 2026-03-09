@@ -355,8 +355,8 @@ class RiskService:
         }
         try:
             await self.redis.set_json(cache_key, result, ttl=REDIS_RISK_TTL_S)
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("risk.cache_set_failed", cache_key=cache_key, error=str(exc))
         return result
 
     async def check_enforcement(self, actor_id: str) -> dict:
@@ -418,8 +418,8 @@ class RiskService:
 
         try:
             await self.redis.set_json(cache_key, result, ttl=REDIS_ENF_TTL_S)
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("risk.cache_set_failed", cache_key=cache_key, error=str(exc))
         return result
 
     async def enforce(

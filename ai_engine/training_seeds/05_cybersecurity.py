@@ -279,7 +279,7 @@ if __name__ == "__main__":
     limiter = SlidingWindowRateLimiter(max_requests=10, window_seconds=60)
 
     print("=== Password Hashing ===")
-    pwd = "MySecure!Pass123"
+    pwd = os.environ.get("CYBERSEED_DEMO_PASSWORD") or secrets.token_urlsafe(18)
     hashed = hash_password(pwd)
     print(f"Hash: {hashed[:30]}...")
     print(f"Verify correct: {verify_password(pwd, hashed)}")
