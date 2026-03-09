@@ -69,3 +69,7 @@ test-results/
 playwright-report/
 
 # Local vendor leftovers (should not be committed)
+
+# Python cache artifacts
+__pycache__/
+*.py[cod]
