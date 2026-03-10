@@ -8,6 +8,7 @@ import { Loader2, Send, Flag, Users, UserPlus, Heart, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { fetchUserBriefMap, resolveUserBrief } from "@/lib/users/userBriefs";
 import {
   Drawer,
   DrawerContent,
@@ -86,11 +87,8 @@ export function LiveViewerRoom() {
       // Загрузка профиля стримера
       const creatorId = String(data.creator_id ?? data.author_id ?? "");
       if (creatorId) {
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("user_id, display_name, avatar_url")
-          .eq("user_id", creatorId)
-          .single();
+        const briefMap = await fetchUserBriefMap([creatorId], supabase as any);
+        const profile = resolveUserBrief(creatorId, briefMap);
         if (profile) {
           setCreator({
             user_id: String(profile.user_id),

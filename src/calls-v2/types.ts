@@ -260,7 +260,7 @@ export interface IceCandidatePayload {
 // ----------- E2EE payloads -----------
 
 export interface E2EECapsPayload {
-  roomId: string;
+  roomId?: string;
   insertableStreams: boolean;
   sframe?: boolean;
   supportedCipherSuites?: string[];

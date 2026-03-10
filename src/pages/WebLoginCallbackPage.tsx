@@ -13,7 +13,7 @@
  * 5. On "Deny" → marks session denied → posts null → closes popup
  */
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -59,7 +59,19 @@ const SCOPE_LABELS: Record<string, { label: string; icon: typeof User }> = {
 
 export function WebLoginCallbackPage() {
   const [searchParams] = useSearchParams();
-  const { user, profile } = useAuth() as any;
+  const { user } = useAuth();
+
+  const metaFullName = typeof user?.user_metadata?.full_name === "string"
+    ? user.user_metadata.full_name.trim()
+    : "";
+  const metaUsername = typeof user?.user_metadata?.username === "string"
+    ? user.user_metadata.username.trim()
+    : "";
+  const metaAvatarUrl = typeof user?.user_metadata?.avatar_url === "string"
+    ? user.user_metadata.avatar_url.trim()
+    : "";
+  const fallbackName = metaFullName || user?.email?.split("@")[0] || "User";
+  const initials = fallbackName.slice(0, 2).toUpperCase();
 
   const sessionId = searchParams.get("session_id");
   const botId = searchParams.get("bot_id");
@@ -71,6 +83,58 @@ export function WebLoginCallbackPage() {
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+
+  /**
+   * Post auth result to the opener window.
+   *
+   * Security: targetOrigin is restricted to the registered redirect_url's origin
+   * (or our own origin if sessionInfo is not yet loaded) so that the auth token
+   * (hash field) is only delivered to the requesting site — not to any page that
+   * happens to have opened the popup.
+   *
+   * Using "*" here would allow any opener to receive the HMAC-signed user data,
+   * which is equivalent to leaking the session token.
+   */
+  /**
+   * Post auth result to the opener window.
+   *
+   * Security: targetOrigin is restricted to the registered redirect_url's origin
+   * (or our own origin if sessionInfo is not yet loaded) so that the auth token
+   * (hash field) is only delivered to the requesting site — not to any page that
+   * happens to have opened the popup.
+   *
+   * Using "*" here would allow any opener to receive the HMAC-signed user data,
+   * which is equivalent to leaking the session token.
+   *
+   * Implementation note: we use a useRef+useCallback pair so that the init effect
+   * below can always call the *latest* version of sendToParent (with up-to-date
+   * sessionInfo) without listing it as a reactive dependency — preventing an
+   * infinite re-run loop that would otherwise occur when sessionInfo is set.
+   */
+  const sendToParent = useCallback((authData: AuthUser | null, redirectUrlOverride?: string, stateOverride?: string) => {
+    if (window.opener) {
+      let targetOrigin = window.location.origin; // safe fallback = same origin
+      const resolvedRedirectUrl = redirectUrlOverride ?? sessionInfo?.redirect_url;
+      if (resolvedRedirectUrl) {
+        try {
+          targetOrigin = new URL(resolvedRedirectUrl).origin;
+        } catch {
+          // malformed redirect_url — fall back to same-origin
+        }
+      }
+      // Include the state value so the opener can verify CSRF state matches.
+      window.opener.postMessage(
+        { type: "messenger_auth", user: authData, state: stateOverride ?? sessionInfo?.state ?? "" },
+        targetOrigin
+      );
+    }
+    setTimeout(() => window.close(), 300);
+  }, [sessionInfo?.redirect_url, sessionInfo?.state]);
+
+  // Always-fresh ref so the init effect below can call sendToParent without
+  // including it in the deps array (which would trigger an infinite loop).
+  const sendToParentRef = useRef(sendToParent);
+  sendToParentRef.current = sendToParent;
 
   // Resolve session info
   useEffect(() => {
@@ -96,7 +160,7 @@ export function WebLoginCallbackPage() {
         }
         // For pre-authorized sessions, just close with data
         if (data.status === "authorized" && data.auth_data) {
-          sendToParent(data.auth_data);
+          sendToParentRef.current(data.auth_data, data.redirect_url ?? redirectUrl ?? undefined, data.state ?? state);
           setDone(true);
           setLoading(false);
           return;
@@ -142,36 +206,6 @@ export function WebLoginCallbackPage() {
 
     init();
   }, [sessionId, botId, redirectUrl, state]);
-
-  /**
-   * Post auth result to the opener window.
-   *
-   * Security: targetOrigin is restricted to the registered redirect_url's origin
-   * (or our own origin if sessionInfo is not yet loaded) so that the auth token
-   * (hash field) is only delivered to the requesting site — not to any page that
-   * happens to have opened the popup.
-   *
-   * Using "*" here would allow any opener to receive the HMAC-signed user data,
-   * which is equivalent to leaking the session token.
-   */
-  const sendToParent = (authData: AuthUser | null) => {
-    if (window.opener) {
-      let targetOrigin = window.location.origin; // safe fallback = same origin
-      if (sessionInfo?.redirect_url) {
-        try {
-          targetOrigin = new URL(sessionInfo.redirect_url).origin;
-        } catch {
-          // malformed redirect_url — fall back to same-origin
-        }
-      }
-      // Include the state value so the opener can verify CSRF state matches.
-      window.opener.postMessage(
-        { type: "messenger_auth", user: authData, state: sessionInfo?.state ?? "" },
-        targetOrigin
-      );
-    }
-    setTimeout(() => window.close(), 300);
-  };
 
   const handleAllow = async () => {
     if (!user || !sessionInfo) return;
@@ -294,9 +328,9 @@ export function WebLoginCallbackPage() {
             )}
             <span className="text-gray-400 text-lg">→</span>
             <Avatar className="w-10 h-10">
-              <AvatarImage src={profile?.avatar_url ?? undefined} />
+              <AvatarImage src={metaAvatarUrl || undefined} />
               <AvatarFallback className="bg-blue-900 text-blue-200 text-sm">
-                {(profile?.full_name ?? user.email ?? "U").slice(0, 2).toUpperCase()}
+                {initials}
               </AvatarFallback>
             </Avatar>
           </div>
@@ -348,17 +382,17 @@ export function WebLoginCallbackPage() {
         {/* User info */}
         <div className="mx-5 mb-4 p-3 rounded-xl bg-gray-800/50 flex items-center gap-3">
           <Avatar className="w-8 h-8">
-            <AvatarImage src={profile?.avatar_url ?? undefined} />
+            <AvatarImage src={metaAvatarUrl || undefined} />
             <AvatarFallback className="bg-gray-700 text-gray-300 text-xs">
-              {(profile?.full_name ?? "").slice(0, 2).toUpperCase() || "U"}
+              {initials || "U"}
             </AvatarFallback>
           </Avatar>
           <div className="flex-1 min-w-0">
             <p className="text-sm text-gray-200 font-medium truncate">
-              {profile?.full_name ?? "—"}
+              {fallbackName}
             </p>
-            {profile?.username && (
-              <p className="text-xs text-gray-500">@{profile.username}</p>
+            {metaUsername && (
+              <p className="text-xs text-gray-500">@{metaUsername}</p>
             )}
           </div>
         </div>

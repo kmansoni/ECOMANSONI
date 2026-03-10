@@ -80,6 +80,7 @@ import {
   useMentions,
   type MentionUser,
 } from "@/hooks/useMentions";
+import { fetchUserBriefMap, resolveUserBrief } from "@/lib/users/userBriefs";
 
 interface ChannelConversationProps {
   channel: Channel;
@@ -246,17 +247,22 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
           .limit(200);
         const ids = ((memberRows ?? []) as any[]).map((r) => r.user_id as string).filter(Boolean);
         if (!ids.length) return;
-        const { data: profileRows } = await supabase
-          .from("profiles")
-          .select("user_id, display_name, username, avatar_url")
-          .in("user_id", ids);
+        const briefMap = await fetchUserBriefMap(ids, supabase as any);
         if (cancelled) return;
-        setMentionParticipants(((profileRows ?? []) as any[]).map((r) => ({
-          user_id: r.user_id,
-          display_name: r.display_name ?? null,
-          username: r.username ?? null,
-          avatar_url: r.avatar_url ?? null,
-        })));
+        setMentionParticipants(
+          ids
+            .map((memberId) => {
+              const brief = resolveUserBrief(memberId, briefMap);
+              if (!brief) return null;
+              return {
+                user_id: memberId,
+                display_name: brief.display_name,
+                username: brief.username,
+                avatar_url: brief.avatar_url,
+              } as MentionUser;
+            })
+            .filter(Boolean) as MentionUser[]
+        );
       } catch { /* non-fatal */ }
     })();
     return () => { cancelled = true; };
@@ -533,25 +539,12 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
       }
 
       const ids = Array.from(adminIds);
-      const { data: profs, error: profErr } = await supabase
-        .from("profiles")
-        .select("user_id, display_name, avatar_url")
-        .in("user_id", ids);
-      if (profErr) throw profErr;
-
-      const map: Record<string, { display_name: string | null; avatar_url: string | null }> = {};
-      (profs || []).forEach((p: any) => {
-        if (!p?.user_id) return;
-        map[String(p.user_id)] = {
-          display_name: p.display_name ?? null,
-          avatar_url: p.avatar_url ?? null,
-        };
-      });
+      const briefMap = await fetchUserBriefMap(ids, supabase as any);
 
       const out = ids.map((id) => ({
         user_id: id,
-        display_name: map[id]?.display_name ?? null,
-        avatar_url: map[id]?.avatar_url ?? null,
+        display_name: resolveUserBrief(id, briefMap)?.display_name ?? null,
+        avatar_url: resolveUserBrief(id, briefMap)?.avatar_url ?? null,
         role: id === String(channel.owner_id) ? "owner" : "admin",
       }));
       setAdmins(out);
@@ -586,20 +579,7 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
         return;
       }
 
-      const { data: profs, error: profErr } = await supabase
-        .from("profiles")
-        .select("user_id, display_name, avatar_url")
-        .in("user_id", ids);
-      if (profErr) throw profErr;
-
-      const map: Record<string, { display_name: string | null; avatar_url: string | null }> = {};
-      (profs || []).forEach((p: any) => {
-        if (!p?.user_id) return;
-        map[String(p.user_id)] = {
-          display_name: p.display_name ?? null,
-          avatar_url: p.avatar_url ?? null,
-        };
-      });
+      const briefMap = await fetchUserBriefMap(ids, supabase as any);
 
       const roleById: Record<string, string> = {};
       (rows || []).forEach((r: any) => {
@@ -610,8 +590,8 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
       setSubscribers(
         ids.map((id) => ({
           user_id: id,
-          display_name: map[id]?.display_name ?? null,
-          avatar_url: map[id]?.avatar_url ?? null,
+          display_name: resolveUserBrief(id, briefMap)?.display_name ?? null,
+          avatar_url: resolveUserBrief(id, briefMap)?.avatar_url ?? null,
           role: roleById[id] || "member",
         })),
       );
@@ -2036,6 +2016,7 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
                     showPicker={false}
                     onPickerClose={() => {}}
                     onReactionChange={() => {}}
+                    onToggle={(mid, emoji) => toggleReaction(mid, emoji)}
                   />
                 </div>
               )}

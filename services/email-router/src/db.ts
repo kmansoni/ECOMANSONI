@@ -191,7 +191,9 @@ export class EmailDb {
           headers: { Prefer: "return=representation" },
         },
       );
-
+      if (!inserted[0]) {
+        throw new Error("ensure thread create failed: empty insert response");
+      }
       return inserted[0];
     }
 
@@ -282,6 +284,9 @@ export class EmailDb {
             headers: { Prefer: "return=representation" },
           },
         );
+        if (!inserted[0]) {
+          throw new Error("enqueue failed: empty insert response");
+        }
         await this.touchThread(resolvedThreadId);
         return inserted[0];
       } catch (error) {
@@ -357,6 +362,9 @@ export class EmailDb {
             headers: { Prefer: "return=representation" },
           },
         );
+        if (!inserted[0]) {
+          throw new Error("ingest inbound failed: empty insert response");
+        }
         await this.touchThread(resolvedThreadId, payload.received_at);
         return inserted[0];
       } catch (error) {

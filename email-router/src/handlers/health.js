@@ -24,6 +24,7 @@ export async function handleHealth(_req, res) {
   // Security: host/port/lastError MUST NOT appear in the public response —
   // they would disclose internal SMTP infrastructure to unauthenticated callers.
   const body = {
+    ok: smtpProbe.connected,
     status,
     uptime: Math.floor(process.uptime()),
     smtp: {

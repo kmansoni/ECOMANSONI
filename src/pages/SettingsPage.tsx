@@ -1,3 +1,31 @@
+/**
+ * src/pages/SettingsPage.tsx
+ *
+ * MIGRATION IN PROGRESS — see src/pages/settings/
+ * =====================================================
+ * This file is being refactored into sub-page section components.
+ * Extracted so far (Phase 1):
+ *   ✓  SettingsHelpSection        → src/pages/settings/SettingsHelpSection.tsx
+ *   ✓  SettingsAboutSection       → src/pages/settings/SettingsAboutSection.tsx
+ *   ✓  SettingsSavedSection       → src/pages/settings/SettingsSavedSection.tsx
+ *   ✓  SettingsArchiveSection     → src/pages/settings/SettingsArchiveSection.tsx
+ *   ✓  SettingsActivitySection    → src/pages/settings/SettingsActivitySection.tsx
+ *   ✓  SettingsPrivacySection     → src/pages/settings/SettingsPrivacySection.tsx
+ *   ✓  SettingsAppearanceSection  → src/pages/settings/SettingsAppearanceSection.tsx
+ *   ✓  SettingsCallsSection       → src/pages/settings/SettingsCallsSection.tsx
+ *   ✓  SettingsDataStorageSection → src/pages/settings/SettingsDataStorageSection.tsx
+ *
+ * Shared utilities:
+ *   •  src/pages/settings/types.ts   — Screen type, data types, SectionProps
+ *   •  src/pages/settings/helpers.tsx — rendering helpers
+ *   •  src/pages/settings/index.ts   — barrel exports
+ *
+ * Backward compatibility: App.tsx imports `SettingsPage` from this file
+ * via lazy loading, which still works unchanged.
+ *
+ * Phase 2 will move the remaining inline sections into separate files
+ * and reduce this file to a thin orchestrator.
+ */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { X, Moon, Bell, Lock, HelpCircle, Info, LogOut, ChevronRight, ChevronLeft, Shield, Heart, Archive, Clock, Bookmark, Eye, UserX, MessageCircle, Share2, Users, Smartphone, Key, Mail, Database, Download, FileText, Video, AlertCircle, BarChart3, Accessibility, Globe, BadgeCheck, Smile, Phone, Volume2, RefreshCw, UserPlus } from "lucide-react";

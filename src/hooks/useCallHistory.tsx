@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { fetchUserBriefMap, resolveUserBrief } from "@/lib/users/userBriefs";
 
 export type CallRecord = {
   id: string;
@@ -57,16 +58,16 @@ export function useCallHistory() {
       );
 
       if (otherIds.length) {
-        const { data: prof, error: profError } = await supabase
-          .from("profiles")
-          .select("user_id, display_name, avatar_url")
-          .in("user_id", otherIds);
-        if (profError) throw profError;
-
+        const briefMap = await fetchUserBriefMap(otherIds, supabase as any);
         const map: Record<string, CallProfile> = {};
-        for (const p of prof ?? []) {
-          const row = p as CallProfile;
-          map[row.user_id] = row;
+        for (const userId of otherIds) {
+          const brief = resolveUserBrief(userId, briefMap);
+          if (!brief) continue;
+          map[userId] = {
+            user_id: userId,
+            display_name: brief.display_name,
+            avatar_url: brief.avatar_url,
+          };
         }
         setProfilesById(map);
       } else {

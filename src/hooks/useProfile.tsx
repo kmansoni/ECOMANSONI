@@ -12,6 +12,7 @@ export interface Verification {
 export interface Profile {
   id: string;
   user_id: string;
+  username?: string | null;
   display_name: string | null;
   avatar_url: string | null;
   bio: string | null;
@@ -37,6 +38,43 @@ export interface ProfileWithStats extends Profile {
   isOwnProfile: boolean;
 }
 
+async function getArchivedPostIdsForUser(userId: string): Promise<string[]> {
+  const { data, error } = await (supabase as any)
+    .from('archived_posts')
+    .select('post_id')
+    .eq('user_id', userId);
+
+  if (error) throw error;
+  return (data || []).map((row: any) => String(row.post_id)).filter(Boolean);
+}
+
+async function getVisiblePostsCount(targetUserId: string, currentUserId?: string): Promise<number> {
+  const { count: totalPublished, error: totalError } = await supabase
+    .from('posts')
+    .select('*', { count: 'exact', head: true })
+    .eq('author_id', targetUserId)
+    .eq('is_published', true);
+
+  if (totalError) throw totalError;
+
+  const total = totalPublished || 0;
+  if (!currentUserId || currentUserId !== targetUserId || total === 0) return total;
+
+  const archivedPostIds = await getArchivedPostIdsForUser(targetUserId);
+  if (archivedPostIds.length === 0) return total;
+
+  const { count: archivedPublishedCount, error: archivedError } = await supabase
+    .from('posts')
+    .select('*', { count: 'exact', head: true })
+    .eq('author_id', targetUserId)
+    .eq('is_published', true)
+    .in('id', archivedPostIds);
+
+  if (archivedError) throw archivedError;
+
+  return Math.max(0, total - (archivedPublishedCount || 0));
+}
+
 export function useProfile(userId?: string) {
   const { user } = useAuth();
   const [profile, setProfile] = useState<ProfileWithStats | null>(null);
@@ -60,7 +98,7 @@ export function useProfile(userId?: string) {
         .from('profiles')
         .select('*')
         .eq('user_id', targetUserId)
-        .single();
+        .maybeSingle();
 
       if (profileError) throw profileError;
 
@@ -77,11 +115,7 @@ export function useProfile(userId?: string) {
         verified_at: v.verified_at,
       }));
 
-      // Fetch posts count
-      const { count: postsCount } = await supabase
-        .from('posts')
-        .select('*', { count: 'exact', head: true })
-        .eq('author_id', targetUserId);
+      const postsCount = await getVisiblePostsCount(targetUserId, user?.id);
 
       // Fetch followers count (using any for new table)
       const { count: followersCount } = await (supabase as any)
@@ -108,12 +142,29 @@ export function useProfile(userId?: string) {
         isFollowing = !!followData;
       }
 
-      // Cast profileData to include new fields
-      const extendedProfile = profileData as any;
+      // Some legacy users may not have a profiles row yet. Keep screen functional with auth fallback.
+      const fallbackDisplayName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User';
+      const fallbackAvatar = user?.user_metadata?.avatar_url || null;
+      const extendedProfile = (profileData ?? {
+        id: `fallback-${targetUserId}`,
+        user_id: targetUserId,
+        username: null,
+        display_name: fallbackDisplayName,
+        avatar_url: fallbackAvatar,
+        bio: null,
+        website: null,
+        phone: null,
+        verified: false,
+        status_emoji: null,
+        status_sticker_url: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }) as any;
 
       setProfile({
         id: extendedProfile.id,
         user_id: extendedProfile.user_id,
+        username: extendedProfile.username ?? null,
         display_name: extendedProfile.display_name,
         avatar_url: extendedProfile.avatar_url,
         bio: extendedProfile.bio ?? null,
@@ -274,17 +325,28 @@ export function useProfileByUsername(username?: string) {
         if (profileError) throw profileError;
         profileData = data;
       } else {
-        // Fetch profile by display_name (case-insensitive)
-        // Use limit(1) instead of maybeSingle() to handle duplicate names
-        const { data, error: profileError } = await supabase
+        // Prefer canonical username field first.
+        const { data: byUsername, error: byUsernameError } = await supabase
           .from('profiles')
           .select('*')
-          .ilike('display_name', username)
-          .order('created_at', { ascending: false })
-          .limit(1);
+          .eq('username', username)
+          .maybeSingle();
 
-        if (profileError) throw profileError;
-        profileData = data?.[0] || null;
+        if (byUsernameError) throw byUsernameError;
+        profileData = byUsername;
+
+        if (!profileData) {
+          // Backward compatibility: some routes still pass display_name.
+          const { data, error: profileError } = await supabase
+            .from('profiles')
+            .select('*')
+            .ilike('display_name', username)
+            .order('created_at', { ascending: false })
+            .limit(1);
+
+          if (profileError) throw profileError;
+          profileData = data?.[0] || null;
+        }
       }
       
       if (!profileData) {
@@ -293,11 +355,7 @@ export function useProfileByUsername(username?: string) {
 
       const targetUserId = profileData.user_id;
 
-      // Fetch posts count
-      const { count: postsCount } = await supabase
-        .from('posts')
-        .select('*', { count: 'exact', head: true })
-        .eq('author_id', targetUserId);
+      const postsCount = await getVisiblePostsCount(targetUserId, user?.id);
 
       // Fetch followers count
       const { count: followersCount } = await (supabase as any)
@@ -329,6 +387,7 @@ export function useProfileByUsername(username?: string) {
       setProfile({
         id: extendedProfile.id,
         user_id: extendedProfile.user_id,
+        username: extendedProfile.username ?? null,
         display_name: extendedProfile.display_name,
         avatar_url: extendedProfile.avatar_url,
         bio: extendedProfile.bio ?? null,
@@ -553,6 +612,10 @@ export function useUserPosts(userId?: string) {
 
     const fetchPosts = async () => {
       try {
+        const isOwnProfile = user?.id === targetUserId;
+        const archivedPostIds = isOwnProfile ? await getArchivedPostIdsForUser(targetUserId) : [];
+        const archivedSet = new Set(archivedPostIds);
+
         const { data: postsData, error } = await supabase
           .from('posts')
           .select(`
@@ -560,10 +623,55 @@ export function useUserPosts(userId?: string) {
             post_media (*)
           `)
           .eq('author_id', targetUserId)
+          .eq('is_published', true)
           .order('created_at', { ascending: false });
 
-        if (error) throw error;
-        setPosts(postsData || []);
+        if (!error) {
+          const visiblePosts = (postsData || []).filter((post: any) => !archivedSet.has(String(post.id)));
+          setPosts(visiblePosts);
+          return;
+        }
+
+        // Fallback when relation metadata is missing on remote DB.
+        // Load posts first, then post_media by post IDs.
+        const { data: plainPosts, error: postsError } = await supabase
+          .from('posts')
+          .select('*')
+          .eq('author_id', targetUserId)
+          .eq('is_published', true)
+          .order('created_at', { ascending: false });
+
+        if (postsError) throw postsError;
+
+        const postIds = (plainPosts || []).map((p: any) => p.id).filter(Boolean);
+        if (postIds.length === 0) {
+          setPosts([]);
+          return;
+        }
+
+        const { data: mediaRows, error: mediaError } = await supabase
+          .from('post_media')
+          .select('*')
+          .in('post_id', postIds)
+          .order('sort_order', { ascending: true });
+
+        if (mediaError) throw mediaError;
+
+        const mediaByPostId = new Map<string, any[]>();
+        for (const media of mediaRows || []) {
+          const key = String((media as any).post_id || '');
+          if (!key) continue;
+          const arr = mediaByPostId.get(key) || [];
+          arr.push(media);
+          mediaByPostId.set(key, arr);
+        }
+
+        const merged = (plainPosts || []).map((post: any) => ({
+          ...post,
+          post_media: mediaByPostId.get(String(post.id)) || [],
+        })).filter((post: any) => !archivedSet.has(String(post.id)));
+
+        setPosts(merged);
       } catch (err) {
         console.error('Failed to load posts:', err);
       } finally {

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { Car, ShoppingBag, Home, Shield, Briefcase, Building2, TrendingUp, Plane, Hotel, Film, Dumbbell, GraduationCap, Music, Truck, Users, Mail, Bot, Navigation, Bug, Radio } from "lucide-react";
+import { Car, ShoppingBag, Home, Shield, Briefcase, Building2, TrendingUp, Plane, Hotel, Film, Dumbbell, GraduationCap, Music, Truck, Users, Mail, Bot, Navigation, Bug, Radio, Clapperboard } from "lucide-react";
 import logoImage from "@/assets/logo.png";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
@@ -53,6 +53,7 @@ const services: ServiceItem[] = [
   { id: "crm", name: "CRM", icon: Users, route: "/crm", available: true },
   { id: "email", name: "Почта", icon: Mail, route: "/email", available: true },
   { id: "service-bugs", name: "Баги сервисов", icon: Bug, route: "/services/bugs", available: true },
+  { id: "video-editor", name: "Видеоредактор", icon: Clapperboard, route: "/editor", available: true },
   { id: "jobs", name: "Работа", icon: Briefcase, available: false },
   { id: "banking", name: "Банк", icon: Building2, available: false },
   { id: "investments", name: "Инвестиции", icon: TrendingUp, available: false },

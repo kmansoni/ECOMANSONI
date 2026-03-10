@@ -1,0 +1,165 @@
+/**
+ * src/pages/settings/SettingsPrivacySection.tsx
+ * Screens: "privacy" | "privacy_blocked" | "security_sites" |
+ *          "security_passcode" | "security_cloud_password" | "security_account_protection"
+ *
+ * All privacy sub-screens delegate to the existing PrivacySecurityCenter component.
+ */
+import { cn } from "@/lib/utils";
+import { PrivacySecurityCenter } from "@/components/settings/PrivacySecurityCenter";
+import { SettingsHeader } from "./helpers";
+import type { SectionProps } from "./types";
+// BlockedUsersPanel is inlined here to avoid circular imports
+import { useCallback, useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
+import { toast } from "@/hooks/use-toast";
+
+type PrivacyScreen =
+  | "privacy"
+  | "privacy_blocked"
+  | "security_sites"
+  | "security_passcode"
+  | "security_cloud_password"
+  | "security_account_protection";
+
+interface PrivacySectionProps extends SectionProps {
+  currentScreen: PrivacyScreen;
+}
+
+function BlockedUsersPanel({ isDark }: { isDark: boolean }) {
+  const { user } = useAuth();
+  const [loading, setLoading] = useState(false);
+  const [rows, setRows] = useState<Array<{ id: string; blocked_id: string; created_at: string }>>([]);
+  const [profilesById, setProfilesById] = useState<Record<string, any>>({});
+
+  const load = useCallback(async () => {
+    if (!user?.id) return;
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("blocked_users")
+        .select("id, blocked_id, created_at")
+        .eq("blocker_id", user.id)
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      const list = (data ?? []) as any[];
+      setRows(list);
+      const ids = list.map((r) => r.blocked_id).filter(Boolean);
+      if (ids.length) {
+        const { data: prof } = await supabase
+          .from("profiles")
+          .select("user_id, display_name, avatar_url")
+          .in("user_id", ids);
+        const map: Record<string, any> = {};
+        for (const p of prof ?? []) map[(p as any).user_id] = p;
+        setProfilesById(map);
+      } else {
+        setProfilesById({});
+      }
+    } catch (e) {
+      toast({ title: "Blocked Users", description: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setLoading(false);
+    }
+  }, [user?.id]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  return (
+    <div className={cn("backdrop-blur-xl rounded-2xl border overflow-hidden", isDark ? "settings-dark-card" : "bg-card/80 border-white/20")}>
+      <div className="px-5 py-4">
+        <p className="font-semibold">Block List</p>
+        <p className={cn("text-sm mt-1", isDark ? "text-white/60" : "text-white/70")}>
+          Blocked users cannot write to you or see your profile.
+        </p>
+      </div>
+      {loading ? (
+        <div className="px-5 pb-5">
+          <p className={cn("text-sm", isDark ? "text-white/60" : "text-white/70")}>Loading…</p>
+        </div>
+      ) : rows.length === 0 ? (
+        <div className="px-5 pb-5">
+          <p className={cn("text-sm", isDark ? "text-white/60" : "text-white/70")}>No one is in the block list.</p>
+        </div>
+      ) : (
+        <div className="px-5 pb-5 grid gap-2">
+          {rows.map((r) => {
+            const p = profilesById[r.blocked_id];
+            return (
+              <div key={r.id} className={cn("flex items-center justify-between gap-3 p-3 rounded-xl border", isDark ? "border-white/10" : "border-white/20")}>
+                <div className="min-w-0">
+                  <p className="font-medium truncate">{p?.display_name ?? r.blocked_id}</p>
+                  <p className={cn("text-xs", isDark ? "text-white/50" : "text-white/60")}>
+                    Blocked: {new Date(r.created_at).toLocaleDateString()}
+                  </p>
+                </div>
+                <Button
+                  variant="secondary"
+                  onClick={async () => {
+                    try {
+                      const { error } = await supabase.from("blocked_users").delete().eq("id", r.id);
+                      if (error) throw error;
+                      toast({ title: "Done", description: "User unblocked." });
+                    } catch (e) {
+                      toast({ title: "Unblock", description: e instanceof Error ? e.message : String(e) });
+                    }
+                  }}
+                >
+                  Unblock
+                </Button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function SettingsPrivacySection({ isDark, currentScreen, onNavigate, onBack }: PrivacySectionProps) {
+  const titles: Record<PrivacyScreen, string> = {
+    privacy: "Privacy",
+    privacy_blocked: "Blocked Users",
+    security_sites: "Sites",
+    security_passcode: "Passcode",
+    security_cloud_password: "Cloud Password",
+    security_account_protection: "Account Protection",
+  };
+
+  if (currentScreen === "privacy_blocked") {
+    return (
+      <>
+        <SettingsHeader title={titles.privacy_blocked} isDark={isDark} currentScreen="privacy_blocked" onBack={onBack} onClose={onBack} />
+        <div className="flex-1 overflow-y-auto native-scroll pb-8">
+          <div className="px-4">
+            <BlockedUsersPanel isDark={isDark} />
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  const modeMap: Record<PrivacyScreen, "privacy" | "sites" | "passcode" | "cloud_password" | "account_protection"> = {
+    privacy: "privacy",
+    security_sites: "sites",
+    security_passcode: "passcode",
+    security_cloud_password: "cloud_password",
+    security_account_protection: "account_protection",
+    privacy_blocked: "privacy", // fallback, handled above
+  };
+
+  return (
+    <>
+      <SettingsHeader title={titles[currentScreen]} isDark={isDark} currentScreen={currentScreen} onBack={onBack} onClose={onBack} />
+      <div className="flex-1 overflow-y-auto native-scroll pb-8">
+        <PrivacySecurityCenter
+          mode={modeMap[currentScreen]}
+          isDark={isDark}
+          onOpenBlocked={currentScreen === "privacy" ? () => onNavigate("privacy_blocked") : undefined}
+        />
+      </div>
+    </>
+  );
+}

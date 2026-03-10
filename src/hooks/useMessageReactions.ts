@@ -190,10 +190,30 @@ export function useMessageReactions(conversationId: string) {
     async (messageId: string, emoji: string) => {
       if (!user) return;
 
-      // Optimistic update
+      // Optimistic update — PK is (message_id, user_id), so a user can only
+      // have ONE emoji per message.  When switching emoji, we first remove
+      // the old reaction count and then add the new one.
       setReactionsMap((prev) => {
         const next = new Map(prev);
-        const existing = next.get(messageId) ?? [];
+        let existing = next.get(messageId) ?? [];
+
+        // Remove user's previous reaction (if any) regardless of emoji
+        const previousReaction = existing.find((r) => r.hasReacted);
+        if (previousReaction && previousReaction.emoji !== emoji) {
+          existing = existing
+            .map((r) =>
+              r.emoji === previousReaction.emoji
+                ? {
+                    ...r,
+                    count: Math.max(0, r.count - 1),
+                    hasReacted: false,
+                    userIds: r.userIds.filter((uid) => uid !== user.id),
+                  }
+                : r
+            )
+            .filter((r) => r.count > 0);
+        }
+
         const found = existing.find((r) => r.emoji === emoji);
         if (found) {
           next.set(
@@ -220,7 +240,11 @@ export function useMessageReactions(conversationId: string) {
           emoji,
         };
         if (canFilterByConversation) payload.conversation_id = conversationId;
-        const { error } = await db.from("message_reactions").insert(payload);
+        // Use upsert to handle PK(message_id, user_id) — allows changing emoji
+        // without a separate delete. ON CONFLICT updates the emoji column.
+        const { error } = await db
+          .from("message_reactions")
+          .upsert(payload, { onConflict: "message_id,user_id" });
         if (error) throw error;
       } catch (err) {
         if (isMissingConversationIdError(err)) {

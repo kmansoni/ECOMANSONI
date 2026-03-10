@@ -420,7 +420,6 @@
 			],
 			"isBackground": false
 		},
-
 		{
 			"label": "Supabase Deploy Secure Prompt",
 			"type": "shell",
@@ -574,6 +573,33 @@
 				"Bypass",
 				"-File",
 				"c:\\Users\\manso\\Desktop\\разработка\\your-ai-companion-main\\scripts\\apply-pending-migrations-via-api.ps1"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Deploy: Apply pending migrations via API",
+			"type": "shell",
+			"command": "pwsh",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				"c:\\Users\\manso\\Desktop\\разработка\\your-ai-companion-main\\scripts\\apply-pending-migrations-via-api.ps1"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Deploy: Apply pending migrations (retry)",
+			"type": "shell",
+			"command": "pwsh",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				"c:\\Users\\manso\\Desktop\\разработка\\your-ai-companion-main\\scripts\\apply-pending-migrations-via-api.ps1",
+				"-SkipE2EEGuard"
 			],
 			"isBackground": false
 		}

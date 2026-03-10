@@ -21,6 +21,7 @@ import { VerifiedBadge } from "@/components/ui/verified-badge";
 import { usePostLikes, type PostLiker } from "@/hooks/usePostLikes";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
+import { buildProfilePath } from "@/lib/users/profileLinks";
 import { cn } from "@/lib/utils";
 
 interface LikesSheetProps {
@@ -169,7 +170,7 @@ export function LikesSheet({ postId, likeCount, isOpen, onClose }: LikesSheetPro
   const handleNavigate = useCallback(
     (userId: string) => {
       onClose();
-      navigate(`/profile/${userId}`);
+      navigate(buildProfilePath({ userId }));
     },
     [navigate, onClose]
   );

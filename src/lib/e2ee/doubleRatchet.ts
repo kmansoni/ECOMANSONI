@@ -354,11 +354,21 @@ export class DoubleRatchet {
       // stored entries must use the old key to be found.
       if (state.receivingRatchetPublicKey && receivingChainKey) {
         const oldReceivingPubKeyB64 = await exportPublicKey(state.receivingRatchetPublicKey);
+        // Сохраняем пропущенные ключи из СТАРОЙ цепочки.
+        // startIdx = state.receiveMessageNumber — сколько сообщений из старой цепочки
+        // мы уже расшифровали. target = header.previousChainLength — сколько сообщений
+        // отправитель передал в старой цепочке до DH ratchet.
+        //
+        // ВАЖНО: возвращаемый advancedKey (advanced chain key старой цепочки)
+        // намеренно игнорируется — старая цепочка после DH ratchet больше не используется.
+        // state.receivingChainKey и state.receiveMessageNumber НЕ изменяются здесь —
+        // они будут явно выставлены ниже в блоке DH ratchet.
         await DoubleRatchet._skipMessageKeys(
           state,
           receivingChainKey,
-          oldReceivingPubKeyB64,  // ← was incorrectly senderPubKeyB64 (new key)
-          header.previousChainLength
+          oldReceivingPubKeyB64,
+          state.receiveMessageNumber,   // явный startIdx — сколько уже получено в старой цепочке
+          header.previousChainLength    // target — длина старой цепочки по утверждению отправителя
         );
       }
 
@@ -387,46 +397,65 @@ export class DoubleRatchet {
       throw new Error("DoubleRatchet: no receiving chain key after ratchet step");
     }
 
-    // 3. Skip to the target message number, storing keys
+    // 3. Пропускаем ключи для сообщений [state.receiveMessageNumber .. header.messageNumber).
+    //    Возвращённый advancedChainKey — chain key в позиции header.messageNumber.
     const pubKeyForSkip = await exportPublicKey(state.receivingRatchetPublicKey!);
-    await DoubleRatchet._skipMessageKeys(
+    const advancedChainKey = await DoubleRatchet._skipMessageKeys(
       state,
       receivingChainKey,
       pubKeyForSkip,
-      header.messageNumber
+      state.receiveMessageNumber,   // явный startIdx — текущая позиция в цепочке
+      header.messageNumber          // target — номер сообщения которое дешифруем
     );
+    // Явно обновляем state — _skipMessageKeys не мутирует счётчик и chain key.
+    state.receiveMessageNumber = header.messageNumber;
 
-    // 4. Derive and use the current message key
-    const { messageKey, nextChainKey } = await kdfCK(state.receivingChainKey!);
+    // 4. Дешифруем текущее сообщение с advancedChainKey (уже известен — не читаем из state).
+    //    state.receivingChainKey выставляем сразу в nextChainKey после kdfCK.
+    const { messageKey, nextChainKey } = await kdfCK(advancedChainKey);
     state.receivingChainKey = nextChainKey;
     state.receiveMessageNumber += 1;
 
     return DoubleRatchet._decryptWithKey(messageKey, ciphertext, header);
   }
 
-  /** Skip and store message keys up to target index */
+  /**
+   * Вычисляет и хранит message keys для сообщений [startIdx .. target).
+   *
+   * КОНТРАКТ (намеренно чистый относительно state):
+   * - Читает только `state.skippedMessageKeys` (для DoS guard).
+   * - Пишет только в `state.skippedMessageKeys`.
+   * - НЕ изменяет `state.receivingChainKey` и `state.receiveMessageNumber`.
+   *   Caller обязан явно обновить эти поля на основе возвращённого значения.
+   *
+   * Почему явный startIdx вместо state.receiveMessageNumber:
+   *   Функция вызывается дважды — для СТАРОЙ цепочки (при DH ratchet) и для
+   *   ТЕКУЩЕЙ цепочки. В случае старой цепочки state.receiveMessageNumber
+   *   относится к ДРУГОМУ контексту. Неявное чтение из state создаёт
+   *   скрытую зависимость от порядка вызовов, которая ломается при рефакторинге.
+   *
+   * @returns advancedChainKey — chain key в позиции target (для использования caller'ом)
+   */
   private static async _skipMessageKeys(
     state: RatchetState,
     chainKey: CryptoKey,
     pubKeyB64: string,
+    startIdx: number,
     target: number
-  ): Promise<void> {
+  ): Promise<CryptoKey> {
     let ck = chainKey;
-    let idx = state.receiveMessageNumber;
 
-    while (idx < target) {
+    for (let idx = startIdx; idx < target; idx++) {
       if (state.skippedMessageKeys.size >= MAX_SKIP) {
         throw new Error("DoubleRatchet: too many skipped messages (DoS guard)");
       }
       const { messageKey, nextChainKey } = await kdfCK(ck);
-      const skKey = `${pubKeyB64}:${idx}`;
-      state.skippedMessageKeys.set(skKey, messageKey);
+      state.skippedMessageKeys.set(`${pubKeyB64}:${idx}`, messageKey);
       ck = nextChainKey;
-      idx++;
     }
-    // Update the chain key reference in state
-    state.receivingChainKey = ck;
-    state.receiveMessageNumber = idx;
+
+    // Возвращаем chain key в позиции target — caller использует его для расшифровки
+    return ck;
   }
 
   private static async _decryptWithKey(
@@ -460,7 +489,7 @@ export class DoubleRatchet {
   }
 
   // DEAD CODE SENTINEL — the original serialize body below is unreachable and kept only for reference:
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   private static async _serializeUnreachable(state: RatchetState): Promise<string> {
     const exportHmacKey = async (k: CryptoKey): Promise<string> => {
       const raw = await crypto.subtle.exportKey("raw", k);

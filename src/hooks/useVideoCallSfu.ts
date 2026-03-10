@@ -33,7 +33,7 @@ import type { VideoCall, VideoCallStatus } from "@/hooks/useVideoCall";
 // ---------------------------------------------------------------------------
 
 /** Allowlist of valid `video_calls.status` values for call termination. */
-const VALID_END_STATUSES = ["ended", "declined", "missed", "failed", "busy"] as const;
+const VALID_END_STATUSES = ["ended", "declined", "missed"] as const;
 type EndCallStatus = typeof VALID_END_STATUSES[number];
 
 function toSafeEndStatus(reason: string): EndCallStatus {
@@ -375,7 +375,7 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
     setCurrentCall(answeredCall);
     setStatus("connected");
     setConnectionState("good");
-  }, [user]);
+  }, [releaseLocalMedia, user]);
 
   // ---------------------------------------------------------------------------
   // endCall
@@ -386,13 +386,16 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
 
     if (call) {
       try {
-        await supabase
+        const { error } = await supabase
           .from("video_calls")
           .update({
             status: toSafeEndStatus(reason),  // validate against allowlist before writing to DB
             ended_at: new Date().toISOString(),
           })
           .eq("id", call.id);
+        if (error) {
+          console.error("[useVideoCallSfu] endCall: DB update returned error", error);
+        }
       } catch (e) {
         console.error("[useVideoCallSfu] endCall: DB update failed", e);
       }

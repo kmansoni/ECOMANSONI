@@ -111,7 +111,7 @@ export function useLoginNotifications() {
 
   // ── Fetch login history (last 20 events) ──────────────────────────────────
   const fetchLoginEvents = useCallback(async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const { data, error: dbErr } = await (supabase as any)
       .from("login_events")
       .select("*")
@@ -126,7 +126,7 @@ export function useLoginNotifications() {
 
   // ── Fetch known devices ───────────────────────────────────────────────────
   const fetchKnownDevices = useCallback(async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const { data, error: dbErr } = await (supabase as any)
       .from("known_devices")
       .select("*")
@@ -181,7 +181,7 @@ export function useLoginNotifications() {
   // ── Revoke (delete) a known device ────────────────────────────────────────
   const revokeDevice = useCallback(
     async (id: string): Promise<boolean> => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       const { error: dbErr } = await (supabase as any)
         .from("known_devices")
         .delete()

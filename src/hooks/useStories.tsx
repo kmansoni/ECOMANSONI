@@ -4,6 +4,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { uploadMedia } from '@/lib/mediaUpload';
 import { isGuestMode } from '@/lib/demo/demoMode';
 import { getDemoBotsUsersWithStories, isDemoId } from '@/lib/demo/demoBots';
+import { fetchUserBriefMap, resolveUserBrief } from '@/lib/users/userBriefs';
 
 export interface Story {
   id: string;
@@ -42,8 +43,6 @@ interface StoryViewRow {
 
 interface ProfileRow {
   user_id: string;
-  display_name: string | null;
-  avatar_url: string | null;
   verified: boolean | null;
 }
 
@@ -72,16 +71,18 @@ export function useStories() {
       if (stories.length === 0) {
         // Return only own user placeholder if no stories
         if (user) {
+          const briefMap = await fetchUserBriefMap([user.id], supabase as any);
+          const ownBrief = resolveUserBrief(user.id, briefMap);
           const { data: profileData } = await supabase
             .from('profiles')
-            .select('user_id, display_name, avatar_url, verified')
+            .select('user_id, verified')
             .eq('user_id', user.id)
             .single();
 
           setUsersWithStories([{
             user_id: user.id,
-            display_name: profileData?.display_name || 'Вы',
-            avatar_url: profileData?.avatar_url,
+            display_name: ownBrief?.display_name || 'Вы',
+            avatar_url: ownBrief?.avatar_url ?? null,
             verified: profileData?.verified || false,
             stories: [],
             hasNew: false,
@@ -95,11 +96,12 @@ export function useStories() {
 
       // Get unique author IDs
       const authorIds = [...new Set(stories.map(s => s.author_id))];
+      const briefMap = await fetchUserBriefMap(authorIds, supabase as any);
 
-      // Fetch profiles for authors
+      // Fetch profile verification flags for authors
       const { data: profilesData, error: profilesError } = await supabase
         .from('profiles')
-        .select('user_id, display_name, avatar_url, verified')
+        .select('user_id, verified')
         .in('user_id', authorIds);
 
       if (profilesError) throw profilesError;
@@ -136,11 +138,12 @@ export function useStories() {
       if (user) {
         const ownStories = storiesByAuthor.get(user.id) || [];
         const profile = profilesMap.get(user.id);
+        const brief = resolveUserBrief(user.id, briefMap);
         
         users.push({
           user_id: user.id,
-          display_name: profile?.display_name || 'Вы',
-          avatar_url: profile?.avatar_url,
+          display_name: brief?.display_name || 'Вы',
+          avatar_url: brief?.avatar_url ?? null,
           verified: profile?.verified || false,
           stories: ownStories,
           hasNew: false, // Own stories don't show as "new"
@@ -154,12 +157,13 @@ export function useStories() {
       // Add other users with stories
       storiesByAuthor.forEach((userStories, authorId) => {
         const profile = profilesMap.get(authorId);
+        const brief = resolveUserBrief(authorId, briefMap);
         const hasUnviewedStories = userStories.some(s => !viewedStoryIds.has(s.id));
 
         users.push({
           user_id: authorId,
-          display_name: profile?.display_name || 'Пользователь',
-          avatar_url: profile?.avatar_url,
+          display_name: brief?.display_name || authorId.slice(0, 8),
+          avatar_url: brief?.avatar_url ?? null,
           verified: profile?.verified || false,
           stories: userStories,
           hasNew: hasUnviewedStories,

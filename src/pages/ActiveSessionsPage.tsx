@@ -171,7 +171,7 @@ export default function ActiveSessionsPage({ onClose }: ActiveSessionsPageProps)
     async (sessionId: string) => {
       setTerminatingId(sessionId);
       try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+         
         await (supabase as any)
           .from("user_sessions")
           .update({ revoked_at: new Date().toISOString() })
@@ -189,7 +189,7 @@ export default function ActiveSessionsPage({ onClose }: ActiveSessionsPageProps)
     if (!currentSession) return;
     setTerminatingAll(true);
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       await (supabase as any)
         .from("user_sessions")
         .update({ revoked_at: new Date().toISOString() })

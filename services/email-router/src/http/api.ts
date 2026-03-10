@@ -294,7 +294,10 @@ export function createApi(config: AppConfig, db: EmailDb) {
         return;
       }
 
-      const { threadId } = req.params;
+      const threadId = String(req.params.threadId ?? "").trim();
+      if (!threadId) {
+        return res.status(400).json({ ok: false, error: "threadId is required" });
+      }
       const query = threadMessagesQuerySchema.parse(req.query);
       const rows = await db.listThreadMessages(threadId, query.limit);
 
@@ -322,7 +325,10 @@ export function createApi(config: AppConfig, db: EmailDb) {
         return;
       }
 
-      const { id } = req.params;
+      const id = String(req.params.id ?? "").trim();
+      if (!id) {
+        return res.status(400).json({ ok: false, error: "id is required" });
+      }
       const payload = markReadBodySchema.parse(req.body ?? {});
       await db.markInboxRead(id, payload.read);
       return res.status(200).json({ ok: true, id, read: payload.read });
@@ -344,7 +350,10 @@ export function createApi(config: AppConfig, db: EmailDb) {
         return;
       }
 
-      const { id } = req.params;
+      const id = String(req.params.id ?? "").trim();
+      if (!id) {
+        return res.status(400).json({ ok: false, error: "id is required" });
+      }
       const payload = inboxFolderBodySchema.parse(req.body ?? {});
       await db.moveInboxFolder(id, payload.folder);
       return res.status(200).json({ ok: true, id, folder: payload.folder });
@@ -366,7 +375,10 @@ export function createApi(config: AppConfig, db: EmailDb) {
         return;
       }
 
-      const { id } = req.params;
+      const id = String(req.params.id ?? "").trim();
+      if (!id) {
+        return res.status(400).json({ ok: false, error: "id is required" });
+      }
       const payload = outboxFolderBodySchema.parse(req.body ?? {});
       await db.moveOutboxFolder(id, payload.folder);
       return res.status(200).json({ ok: true, id, folder: payload.folder });
@@ -422,7 +434,10 @@ export function createApi(config: AppConfig, db: EmailDb) {
         return;
       }
 
-      const { threadId } = req.params;
+      const threadId = String(req.params.threadId ?? "").trim();
+      if (!threadId) {
+        return res.status(400).json({ ok: false, error: "threadId is required" });
+      }
       const payload = replyBodySchema.parse(req.body ?? {});
 
       if (!payload.html && !payload.text) {

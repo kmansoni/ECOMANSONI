@@ -1,0 +1,252 @@
+# ┌──────────────────────────────────────────────────────
+# │ Email Platform — Docker Compose
+# │ Usage: cd infra/email && docker compose up -d
+# └──────────────────────────────────────────────────────
+version: "3.9"
+
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "3"
+    tag: "{{.Name}}"
+
+networks:
+  email-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+volumes:
+  pg-data:
+  redis-data:
+  postfix-spool:
+  opendkim-keys:
+  rspamd-data:
+  prometheus-data:
+  grafana-data:
+  loki-data:
+
+services:
+  # ─── Email Router (API) ─────────────────────
+  email-router:
+    build:
+      context: ../../services/email-router
+      dockerfile: Dockerfile
+    container_name: email-router
+    restart: unless-stopped
+    ports:
+      - "${EMAIL_ROUTER_PORT:-3100}:3100"
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - DATABASE_URL=postgresql://${PG_USER:-email}:${PG_PASSWORD:-email_pass}@postgres:5432/${PG_DB:-email_platform}
+      - REDIS_URL=redis://redis:6379
+      - SMTP_HOST=postfix
+      - SMTP_PORT=587
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      postfix:
+        condition: service_started
+    networks:
+      - email-net
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3100/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # ─── PostgreSQL ─────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: email-postgres
+    restart: unless-stopped
+    ports:
+      - "${PG_PORT:-5433}:5432"
+    environment:
+      POSTGRES_USER: ${PG_USER:-email}
+      POSTGRES_PASSWORD: ${PG_PASSWORD:-email_pass}
+      POSTGRES_DB: ${PG_DB:-email_platform}
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+      - ../../services/email-router/migrations/001_initial_schema.sql:/docker-entrypoint-initdb.d/001_initial_schema.sql:ro
+      - ../../services/email-router/migrations/002_seed_default_tenant.sql:/docker-entrypoint-initdb.d/002_seed_default_tenant.sql:ro
+    networks:
+      - email-net
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PG_USER:-email} -d ${PG_DB:-email_platform}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─── Redis ─────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: email-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6380}:6379"
+    command: >
+      redis-server
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --save 60 1000
+      --appendonly yes
+      --requirepass "${REDIS_PASSWORD:-}"
+    volumes:
+      - redis-data:/data
+    networks:
+      - email-net
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ─── Postfix (SMTP Relay) ─────────────────────
+  postfix:
+    image: boky/postfix:latest
+    container_name: email-postfix
+    restart: unless-stopped
+    hostname: mail.mansoni.ru
+    ports:
+      - "25:25"
+      - "587:587"
+    environment:
+      - ALLOWED_SENDER_DOMAINS=mansoni.ru
+      - HOSTNAME=mail.mansoni.ru
+    volumes:
+      - ./postfix/main.cf:/etc/postfix/main.cf:ro
+      - ./postfix/master.cf:/etc/postfix/master.cf:ro
+      - postfix-spool:/var/spool/postfix
+      # TLS certificates (mount your certs here)
+      # - ./certs/mail.mansoni.ru.pem:/etc/ssl/certs/mail.mansoni.ru.pem:ro
+      # - ./certs/mail.mansoni.ru.key:/etc/ssl/private/mail.mansoni.ru.key:ro
+    networks:
+      - email-net
+    logging: *default-logging
+
+  # ─── OpenDKIM ─────────────────────
+  opendkim:
+    image: instrumentisto/opendkim:latest
+    container_name: email-opendkim
+    restart: unless-stopped
+    volumes:
+      - ./opendkim/opendkim.conf:/etc/opendkim/opendkim.conf:ro
+      - ./opendkim/KeyTable:/etc/opendkim/KeyTable:ro
+      - ./opendkim/SigningTable:/etc/opendkim/SigningTable:ro
+      - ./opendkim/TrustedHosts:/etc/opendkim/TrustedHosts:ro
+      - opendkim-keys:/etc/opendkim/keys
+    networks:
+      - email-net
+    logging: *default-logging
+
+  # ─── OpenDMARC ─────────────────────
+  opendmarc:
+    image: instrumentisto/opendmarc:latest
+    container_name: email-opendmarc
+    restart: unless-stopped
+    volumes:
+      - ./opendmarc/opendmarc.conf:/etc/opendmarc.conf:ro
+      - ./opendmarc/ignore.hosts:/etc/opendmarc/ignore.hosts:ro
+    networks:
+      - email-net
+    logging: *default-logging
+
+  # ─── Rspamd (Anti-Spam) ─────────────────────
+  rspamd:
+    image: rspamd/rspamd:latest
+    container_name: email-rspamd
+    restart: unless-stopped
+    ports:
+      - "${RSPAMD_UI_PORT:-11334}:11334"
+    volumes:
+      - ./rspamd/local.d:/etc/rspamd/local.d:ro
+      - rspamd-data:/var/lib/rspamd
+    depends_on:
+      - redis
+    networks:
+      - email-net
+    logging: *default-logging
+
+  # ─── Prometheus ─────────────────────
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: email-prometheus
+    restart: unless-stopped
+    ports:
+      - "${PROMETHEUS_PORT:-9099}:9090"
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
+    networks:
+      - email-net
+    logging: *default-logging
+
+  # ─── Grafana ─────────────────────
+  grafana:
+    image: grafana/grafana:11.0.0
+    container_name: email-grafana
+    restart: unless-stopped
+    ports:
+      - "${GRAFANA_PORT:-3200}:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+      - loki
+    networks:
+      - email-net
+    logging: *default-logging
+
+  # ─── Loki (Log Aggregation) ─────────────────────
+  loki:
+    image: grafana/loki:3.0.0
+    container_name: email-loki
+    restart: unless-stopped
+    ports:
+      - "${LOKI_PORT:-3101}:3100"
+    volumes:
+      - ./observability/loki/loki-config.yml:/etc/loki/local-config.yaml:ro
+      - loki-data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - email-net
+    logging: *default-logging
+
+  # ─── Promtail (Log Shipper) ─────────────────────
+  promtail:
+    image: grafana/promtail:3.0.0
+    container_name: email-promtail
+    restart: unless-stopped
+    volumes:
+      - ./observability/promtail/promtail-config.yml:/etc/promtail/config.yml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      - loki
+    networks:
+      - email-net
+    logging: *default-logging

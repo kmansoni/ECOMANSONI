@@ -4,6 +4,27 @@ import { enforceCors, getCorsHeaders, handleCors } from "../_shared/utils.ts";
 
 const MAX_ATTEMPTS = 5;
 
+/**
+ * Derive the same HMAC-based password that phone-auth uses.
+ * This ensures verify-sms-otp creates users / signs in with
+ * the exact same credentials as the direct phone-auth flow.
+ */
+async function derivePassword(normalizedPhone: string, secret: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const signature = await crypto.subtle.sign("HMAC", keyMaterial, encoder.encode(normalizedPhone));
+  const hexHmac = Array.from(new Uint8Array(signature))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+  return `v1:${hexHmac}`;
+}
+
 serve(async (req) => {
   const cors = handleCors(req);
   if (cors) return cors;
@@ -17,8 +38,8 @@ serve(async (req) => {
 
     if (!phone || !code) {
       return new Response(
-        JSON.stringify({ error: "Phone and code are required" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        JSON.stringify({ error: "Телефон и код обязательны" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
 
@@ -27,9 +48,26 @@ serve(async (req) => {
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const phoneAuthSecret = Deno.env.get("PHONE_AUTH_SECRET");
+
+    if (!supabaseUrl || !supabaseServiceKey) {
+      console.error("[verify-sms-otp] Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
+      return new Response(
+        JSON.stringify({ error: "Server not configured" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+    if (!phoneAuthSecret) {
+      console.error("[verify-sms-otp] PHONE_AUTH_SECRET env var is not set");
+      return new Response(
+        JSON.stringify({ error: "Server misconfiguration" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Get OTP record
+    // ── Look up the OTP record in DB ──────────────────────────────────────
     const { data: otpRecord, error: fetchError } = await supabase
       .from("phone_otps")
       .select("*")
@@ -38,17 +76,17 @@ serve(async (req) => {
 
     if (fetchError || !otpRecord) {
       return new Response(
-        JSON.stringify({ error: "No verification code found. Please request a new one." }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        JSON.stringify({ error: "Код подтверждения не найден. Запросите новый." }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
 
-    // Check if expired
+    // Check expiry
     if (new Date(otpRecord.expires_at) < new Date()) {
       await supabase.from("phone_otps").delete().eq("phone", normalizedPhone);
       return new Response(
-        JSON.stringify({ error: "Verification code has expired. Please request a new one." }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        JSON.stringify({ error: "Код истёк. Запросите новый." }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
 
@@ -56,13 +94,12 @@ serve(async (req) => {
     if (otpRecord.attempts >= MAX_ATTEMPTS) {
       await supabase.from("phone_otps").delete().eq("phone", normalizedPhone);
       return new Response(
-        JSON.stringify({ error: "Too many failed attempts. Please request a new code." }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        JSON.stringify({ error: "Слишком много попыток. Запросите новый код." }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
 
-    // Verify code using timing-safe comparison to prevent timing attacks.
-    // Plain string !== comparison leaks timing info digit-by-digit.
+    // Timing-safe comparison
     function timingSafeEqual(a: string, b: string): boolean {
       const aBytes = new TextEncoder().encode(a);
       const bBytes = new TextEncoder().encode(b);
@@ -73,164 +110,129 @@ serve(async (req) => {
     }
 
     if (!timingSafeEqual(otpRecord.code, normalizedCode)) {
-      // Increment attempts
       await supabase
         .from("phone_otps")
         .update({ attempts: otpRecord.attempts + 1 })
         .eq("phone", normalizedPhone);
 
-      const remainingAttempts = MAX_ATTEMPTS - otpRecord.attempts - 1;
+      const remaining = MAX_ATTEMPTS - otpRecord.attempts - 1;
       return new Response(
-        JSON.stringify({ 
-          error: `Invalid code. ${remainingAttempts} attempts remaining.`,
-          remainingAttempts 
+        JSON.stringify({
+          error: `Неверный код. Осталось попыток: ${remaining}.`,
+          remainingAttempts: remaining,
         }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
 
-    // Code is valid! Delete OTP record
+    // ── OTP is valid — delete it and create/sign-in user ─────────────────
     await supabase.from("phone_otps").delete().eq("phone", normalizedPhone);
 
-    // Create or get user using phone-based email.
-    // MUST match the pattern used by phone-auth: user{phone}@placeholder.local
-    const fakeEmail = `user${normalizedPhone}@placeholder.local`;
-    const password = `ph_${normalizedPhone}`;
+    // Use the same email+password pattern as phone-auth so accounts are shared.
+    const fakeEmail = `user.${normalizedPhone}@phoneauth.app`;
+    const fakePassword = await derivePassword(normalizedPhone, phoneAuthSecret);
 
-    // O(1) direct lookup — replaces the old O(N) listUsers scan.
+    const anonKey =
+      req.headers.get("apikey") || Deno.env.get("SUPABASE_ANON_KEY") || "";
+
+    // Try to find existing user
+    let userId: string;
+    let isNewUser = false;
+
     const { data: existingUserData } = await supabase.auth.admin.getUserByEmail(fakeEmail);
     const existingUser = existingUserData?.user ?? null;
 
-    let userId: string;
-    let accessToken: string;
-    let refreshToken: string;
-
-    if (existingUser) {
-      // User exists - generate new session
-      const { data: sessionData, error: sessionError } = await supabase.auth.admin.generateLink({
-        type: "magiclink",
-        email: fakeEmail,
-      });
-
-      if (sessionError) {
-        console.error("Failed to generate session:", sessionError);
-        return new Response(
-          JSON.stringify({ error: "Authentication failed" }),
-          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      // Sign in using the magic link token
-      const { data: verifyData, error: verifyError } = await supabase.auth.verifyOtp({
-        token_hash: sessionData.properties?.hashed_token || "",
-        type: "magiclink",
-      });
-
-      if (verifyError || !verifyData.session) {
-        // Fallback: create a new session directly
-        const { data: adminSession, error: adminError } = await supabase.auth.admin.createUser({
-          email: fakeEmail,
-          email_confirm: true,
-          user_metadata: { full_name: displayName || normalizedPhone },
-        });
-
-        if (adminError && !adminError.message.includes("already been registered")) {
-          console.error("Failed to create user session:", adminError);
-          return new Response(
-            JSON.stringify({ error: "Authentication failed" }),
-            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-          );
-        }
-      }
-
-      userId = existingUser.id;
-      
-      // Generate session tokens for existing user
-      const { data: tokenData, error: tokenError } = await supabase.auth.admin.generateLink({
-        type: "magiclink", 
-        email: fakeEmail,
-      });
-
-      if (tokenError) {
-        return new Response(
-          JSON.stringify({ error: "Failed to create session" }),
-          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      // Return magic link for client to verify
-      return new Response(
-        JSON.stringify({
-          success: true,
-          userId: existingUser.id,
-          email: fakeEmail,
-          isNewUser: false,
-          magicLinkToken: tokenData.properties?.hashed_token,
-        }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-
-    } else {
+    if (!existingUser) {
       // Create new user
-      const { data: newUser, error: createError } = await supabase.auth.admin.createUser({
+      const { data: newUserData, error: createError } = await supabase.auth.admin.createUser({
         email: fakeEmail,
-        password: password,
+        password: fakePassword,
         email_confirm: true,
-        user_metadata: { 
-          full_name: displayName || normalizedPhone,
+        user_metadata: {
           phone: normalizedPhone,
+          display_name: displayName || normalizedPhone,
         },
       });
 
       if (createError) {
-        console.error("Failed to create user:", createError);
-        return new Response(
-          JSON.stringify({ error: "Failed to create account" }),
-          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
+        // Race condition — try lookup again
+        const { data: fallbackData } = await supabase.auth.admin.getUserByEmail(fakeEmail);
+        if (!fallbackData?.user) {
+          console.error("[verify-sms-otp] Create user error:", createError.message);
+          return new Response(
+            JSON.stringify({ error: "Не удалось создать аккаунт" }),
+            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
+        }
+        userId = fallbackData.user.id;
+      } else {
+        userId = newUserData.user.id;
+        isNewUser = true;
 
-      userId = newUser.user.id;
-
-      // Create profile
-      await supabase
-        .from("profiles")
-        .upsert({
+        // Create profile
+        const { error: profileError } = await supabase.from("profiles").insert({
           user_id: userId,
           phone: normalizedPhone,
           display_name: displayName || normalizedPhone,
-        }, { onConflict: "user_id" });
+        });
+        if (profileError) {
+          console.error("[verify-sms-otp] Profile insert error:", profileError.message);
+        }
+      }
+    } else {
+      userId = existingUser.id;
 
-      // Generate magic link for new user
-      const { data: tokenData, error: tokenError } = await supabase.auth.admin.generateLink({
-        type: "magiclink",
-        email: fakeEmail,
+      // Ensure password matches the latest HMAC derivation
+      const { error: resetPwdError } = await supabase.auth.admin.updateUserById(userId, {
+        password: fakePassword,
+        user_metadata: {
+          ...((existingUser as any).user_metadata ?? {}),
+          phone: normalizedPhone,
+          display_name:
+            displayName ||
+            ((existingUser as any).user_metadata as Record<string, unknown>)?.display_name ||
+            normalizedPhone,
+        },
       });
-
-      if (tokenError) {
+      if (resetPwdError) {
+        console.error("[verify-sms-otp] Reset password error:", resetPwdError.message);
         return new Response(
-          JSON.stringify({ error: "Failed to create session" }),
-          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          JSON.stringify({ error: "Ошибка аутентификации" }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
         );
       }
+    }
 
+    // Sign in with email+password to get real JWT tokens
+    const anon = createClient(supabaseUrl, anonKey);
+    const { data: authData, error: authError } = await anon.auth.signInWithPassword({
+      email: fakeEmail,
+      password: fakePassword,
+    });
+
+    if (authError || !authData?.session) {
+      console.error("[verify-sms-otp] signInWithPassword error:", authError?.message);
       return new Response(
-        JSON.stringify({
-          success: true,
-          userId: userId,
-          email: fakeEmail,
-          password: password, // For client to sign in
-          isNewUser: true,
-        }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        JSON.stringify({ error: "Не удалось выполнить вход" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
 
-  } catch (error) {
-    console.error("Error in verify-sms-otp:", error);
     return new Response(
-      JSON.stringify({ error: "Internal server error" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      JSON.stringify({
+        ok: true,
+        userId,
+        isNewUser,
+        accessToken: authData.session.access_token,
+        refreshToken: authData.session.refresh_token,
+      }),
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
+  } catch (error) {
+    console.error("[verify-sms-otp] Error:", error);
+    return new Response(
+      JSON.stringify({ error: "Внутренняя ошибка сервера" }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   }
 });

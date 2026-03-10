@@ -25,6 +25,7 @@ import { createPortal } from "react-dom";
 // Constants
 // ---------------------------------------------------------------------------
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const QUICK_REACTIONS = ["❤️", "😂", "😮", "😢", "😡", "👍"] as const;
 export type QuickReaction = (typeof QUICK_REACTIONS)[number];
 
@@ -178,6 +179,7 @@ export interface UseLongPressOptions {
   onTap?: () => void;
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useLongPress({ delay = 500, onLongPress, onTap }: UseLongPressOptions) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const firedRef = useRef(false);

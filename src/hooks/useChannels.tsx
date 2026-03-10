@@ -6,6 +6,7 @@ import type { RealtimeChannel } from "@supabase/supabase-js";
 import { checkChannelCapabilityViaRpc } from "@/lib/channel-capabilities";
 import { checkHashtagsAllowedForText } from "@/lib/hashtagModeration";
 import { removeRealtimeMessage, upsertRealtimeMessage } from "@/lib/chat/realtimeMessageReducer";
+import { fetchUserBriefMap, resolveUserBrief } from "@/lib/users/userBriefs";
 
 function isSchemaMissingError(error: unknown): boolean {
   const msg = String((error as any)?.message ?? error).toLowerCase();
@@ -368,16 +369,12 @@ export function useChannelMessages(channelId: string | null): {
     if (!profileInFlightRef.current[senderId]) {
       profileInFlightRef.current[senderId] = (async () => {
         try {
-          const { data: profile } = await supabase
-            .from("profiles")
-            .select("display_name, avatar_url")
-            .eq("user_id", senderId)
-            .single();
-
-          const normalized = profile
+          const briefMap = await fetchUserBriefMap([senderId], supabase as any);
+          const brief = resolveUserBrief(senderId, briefMap);
+          const normalized = brief
             ? {
-                display_name: profile.display_name,
-                avatar_url: profile.avatar_url,
+                display_name: brief.display_name,
+                avatar_url: brief.avatar_url,
               }
             : undefined;
 
@@ -412,15 +409,16 @@ export function useChannelMessages(channelId: string | null): {
 
       // Fetch sender profiles
       const senderIds = [...new Set((data || []).map(m => m.sender_id))];
-      const { data: profiles } = await supabase
-        .from("profiles")
-        .select("user_id, display_name, avatar_url")
-        .in("user_id", senderIds);
-
-      const profileMap: Record<string, { display_name: string | null; avatar_url: string | null }> = {};
-      (profiles || []).forEach(p => {
-        profileMap[p.user_id] = { display_name: p.display_name, avatar_url: p.avatar_url };
-        setCachedProfile(p.user_id, profileMap[p.user_id]);
+      const briefMap = await fetchUserBriefMap(senderIds, supabase as any);
+      const profileMap: Record<string, SenderProfile> = {};
+      senderIds.forEach((senderId) => {
+        const brief = resolveUserBrief(senderId, briefMap);
+        if (!brief) return;
+        profileMap[senderId] = {
+          display_name: brief.display_name,
+          avatar_url: brief.avatar_url,
+        };
+        setCachedProfile(senderId, profileMap[senderId]);
       });
 
       const messagesWithSenders = (data || []).map(msg => ({

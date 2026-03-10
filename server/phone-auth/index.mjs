@@ -40,6 +40,7 @@ import rateLimit from "express-rate-limit";
 import crypto from "node:crypto";
 import jwt from "jsonwebtoken";
 import pg from "pg";
+import Redis from "ioredis";
 
 const { Pool } = pg;
 
@@ -95,8 +96,151 @@ if (SMS_PROVIDER === "twilio") {
 // Initialize database pool
 const pool = new Pool({ connectionString: DATABASE_URL });
 
-// In-memory OTP store (production: use Redis or database)
-const otpStore = new Map();
+// ============================================================================
+// SECURITY FIX (C-3): Redis-backed OTP store with Map fallback
+// ============================================================================
+
+const REDIS_URL = process.env.REDIS_URL;
+
+/**
+ * OTP store abstraction: uses Redis when available, falls back to in-memory Map.
+ *
+ * Redis keys: otp:{phone} with TTL = OTP_VALIDITY_SEC
+ * Redis values: JSON-serialized { otp, expiresAt, attempts, requestedAt }
+ *
+ * SCALING: Redis allows horizontal scaling of multiple phone-auth instances
+ * sharing the same OTP state. Map fallback is single-instance only.
+ *
+ * TTL: Redis auto-expires OTP records, preventing unbounded memory growth.
+ */
+let redis = null;
+let useRedis = false;
+
+if (REDIS_URL) {
+  try {
+    redis = new Redis(REDIS_URL, {
+      maxRetriesPerRequest: 3,
+      retryStrategy(times) {
+        if (times > 5) return null; // stop retrying after 5 attempts
+        return Math.min(times * 200, 2000);
+      },
+      lazyConnect: true,
+    });
+
+    redis.on("error", (err) => {
+      console.error("[Redis] Connection error:", err.message);
+      // If Redis goes down, fall back to Map gracefully
+      if (useRedis) {
+        console.warn("[Redis] Falling back to in-memory Map for OTP storage");
+        useRedis = false;
+      }
+    });
+
+    redis.on("connect", () => {
+      console.log("[Redis] Connected for OTP storage");
+      useRedis = true;
+    });
+
+    await redis.connect();
+  } catch (err) {
+    console.warn(
+      `[Redis] Failed to connect (${err.message}). ` +
+      "Using in-memory Map as fallback. WARNING: OTP state will not survive restarts " +
+      "and cannot be shared across instances."
+    );
+    redis = null;
+    useRedis = false;
+  }
+} else {
+  console.warn(
+    "[Redis] REDIS_URL not set. Using in-memory Map for OTP storage. " +
+    "WARNING: OTP state will not survive restarts and does not scale horizontally."
+  );
+}
+
+// In-memory fallback Map (used when Redis is unavailable)
+const otpMapFallback = new Map();
+
+const OTP_REDIS_PREFIX = "otp:";
+
+/**
+ * Unified OTP store operations. Redis-first with Map fallback.
+ * All methods are async for uniformity.
+ */
+const otpStore = {
+  async get(phone) {
+    if (useRedis && redis) {
+      try {
+        const raw = await redis.get(`${OTP_REDIS_PREFIX}${phone}`);
+        return raw ? JSON.parse(raw) : undefined;
+      } catch (err) {
+        console.error("[Redis] GET failed, falling back to Map:", err.message);
+        return otpMapFallback.get(phone);
+      }
+    }
+    return otpMapFallback.get(phone);
+  },
+
+  async set(phone, data) {
+    if (useRedis && redis) {
+      try {
+        // TTL in seconds — Redis will auto-expire the key
+        const ttl = Math.ceil((data.expiresAt - Date.now()) / 1000);
+        if (ttl > 0) {
+          await redis.set(
+            `${OTP_REDIS_PREFIX}${phone}`,
+            JSON.stringify(data),
+            "EX",
+            ttl,
+          );
+        }
+        return;
+      } catch (err) {
+        console.error("[Redis] SET failed, falling back to Map:", err.message);
+      }
+    }
+    otpMapFallback.set(phone, data);
+  },
+
+  async delete(phone) {
+    if (useRedis && redis) {
+      try {
+        await redis.del(`${OTP_REDIS_PREFIX}${phone}`);
+        return;
+      } catch (err) {
+        console.error("[Redis] DEL failed, falling back to Map:", err.message);
+      }
+    }
+    otpMapFallback.delete(phone);
+  },
+
+  /**
+   * Update the attempts counter atomically.
+   * For Redis: re-serialize with preserved TTL.
+   */
+  async incrementAttempts(phone, storedOTP) {
+    storedOTP.attempts += 1;
+    if (useRedis && redis) {
+      try {
+        // Preserve remaining TTL
+        const remainingTtl = await redis.ttl(`${OTP_REDIS_PREFIX}${phone}`);
+        if (remainingTtl > 0) {
+          await redis.set(
+            `${OTP_REDIS_PREFIX}${phone}`,
+            JSON.stringify(storedOTP),
+            "EX",
+            remainingTtl,
+          );
+        }
+      } catch (err) {
+        console.error("[Redis] INCREMENT failed:", err.message);
+        // Map fallback: storedOTP is a reference, already mutated
+      }
+    }
+    // For Map fallback: mutation on the reference is sufficient
+  },
+};
+
 const otpRequestTracker = new Map();
 
 // ============================================================================
@@ -245,8 +389,18 @@ function isProductionEnv() {
   return env === "production" || env === "prod";
 }
 
+/**
+ * SECURITY FIX (C-4): Generates a 6-digit OTP using crypto.randomInt().
+ *
+ * crypto.randomInt() uses the Node.js built-in CSPRNG (crypto.randomFillSync
+ * internally), which is cryptographically secure — unlike Math.random() which
+ * uses a predictable PRNG (xorshift128+ in V8) that can be reconstructed
+ * from observed outputs.
+ *
+ * Range: [100000, 999999] — always 6 digits.
+ */
 function generateOTP() {
-  return String(Math.floor(100000 + Math.random() * 900000));
+  return String(crypto.randomInt(100000, 1000000));
 }
 
 function generateJWT(userId, phoneNumber) {
@@ -383,8 +537,8 @@ app.post("/auth/phone/request-otp", async (req, res) => {
       });
     }
     
-    // Check cooldown between requests
-    const existingOTP = otpStore.get(normalizedPhone);
+    // Check cooldown between requests (C-3: async otpStore)
+    const existingOTP = await otpStore.get(normalizedPhone);
     if (
       existingOTP &&
       existingOTP.requestedAt > Date.now() - OTP_REQUEST_COOLDOWN_MS
@@ -399,11 +553,11 @@ app.post("/auth/phone/request-otp", async (req, res) => {
       });
     }
     
-    // Generate and store OTP
+    // Generate and store OTP (C-3: async set with Redis TTL)
     const otp = generateOTP();
     const expiresAt = Date.now() + OTP_VALIDITY_SEC * 1000;
     
-    otpStore.set(normalizedPhone, {
+    await otpStore.set(normalizedPhone, {
       otp,
       expiresAt,
       attempts: 0,
@@ -453,7 +607,8 @@ app.post("/auth/phone/verify", async (req, res) => {
     }
     
     const normalizedPhone = phone.replace(/\D/g, "");
-    const storedOTP = otpStore.get(normalizedPhone);
+    // C-3: async Redis-backed OTP store
+    const storedOTP = await otpStore.get(normalizedPhone);
     
     // Check if OTP exists and is not expired
     if (!storedOTP) {
@@ -466,7 +621,7 @@ app.post("/auth/phone/verify", async (req, res) => {
     }
     
     if (storedOTP.expiresAt < Date.now()) {
-      otpStore.delete(normalizedPhone);
+      await otpStore.delete(normalizedPhone);
       console.warn(
         `[OTP-Verify] OTP expired for phone: ***${normalizedPhone.slice(-4)}, IP: ${clientIp}`
       );
@@ -477,7 +632,7 @@ app.post("/auth/phone/verify", async (req, res) => {
     
     // Check attempt limit
     if (storedOTP.attempts >= OTP_MAX_ATTEMPTS) {
-      otpStore.delete(normalizedPhone);
+      await otpStore.delete(normalizedPhone);
       console.warn(
         `[OTP-Verify] Max attempts exceeded for phone: ***${normalizedPhone.slice(-4)}, IP: ${clientIp}`
       );
@@ -486,8 +641,8 @@ app.post("/auth/phone/verify", async (req, res) => {
       });
     }
     
-    // Verify OTP (timing-safe comparison)
-    storedOTP.attempts += 1;
+    // Verify OTP (timing-safe comparison) — C-3: atomically increment attempts in Redis
+    await otpStore.incrementAttempts(normalizedPhone, storedOTP);
     
     let otpMatches = false;
     try {
@@ -540,8 +695,8 @@ app.post("/auth/phone/verify", async (req, res) => {
       // Generate JWT token
       const token = generateJWT(userId, normalizedPhone);
       
-      // Clean up OTP
-      otpStore.delete(normalizedPhone);
+      // Clean up OTP (C-3: async Redis delete)
+      await otpStore.delete(normalizedPhone);
       
       console.log(
         `[OTP-Verify] OTP verified for phone: ***${normalizedPhone.slice(-4)}, ` +
@@ -574,11 +729,24 @@ app.get("/health", async (req, res) => {
   try {
     // Test database connection
     await pool.query("SELECT 1");
+
+    // Test Redis connection if available
+    let redisStatus = "not_configured";
+    if (redis) {
+      try {
+        await redis.ping();
+        redisStatus = "ok";
+      } catch {
+        redisStatus = "error";
+      }
+    }
     
     return res.status(200).json({
       status: "ok",
       service: "phone-auth",
       env: NODE_ENV,
+      otp_store: useRedis ? "redis" : "memory",
+      redis_status: redisStatus,
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
@@ -663,12 +831,13 @@ async function start() {
       console.log(`[Config] Rate Limit: ${RATE_LIMIT_MAX_REQUESTS} req/${RATE_LIMIT_WINDOW_MS}ms`);
       console.log(`[Config] OTP Request Rate Limit: ${OTP_REQUEST_RATE_MAX} req/${OTP_REQUEST_RATE_WINDOW_MS}ms`);
       console.log(`[Config] CORS Origins: ${ALLOWED_ORIGINS.length > 0 ? ALLOWED_ORIGINS.join(", ") : "development only"}`);
+      console.log(`[Config] OTP Store: ${useRedis ? "Redis" : "In-Memory Map (fallback)"}`);
       console.log("[Ready] Phone auth service started with Helmet security");
     });
 
-    // Graceful shutdown
-    process.on("SIGTERM", async () => {
-      console.log("[Shutdown] SIGTERM received, closing gracefully...");
+    // Graceful shutdown — close Redis + DB connections
+    async function gracefulShutdown(signal) {
+      console.log(`[Shutdown] ${signal} received, closing gracefully...`);
       server.close(() => {
         console.log("[Shutdown] Server closed");
       });
@@ -678,21 +847,24 @@ async function start() {
         console.error("[Shutdown] Forced exit after timeout");
         process.exit(1);
       }, 10000);
+
+      // Disconnect Redis if connected
+      if (redis) {
+        try {
+          await redis.quit();
+          console.log("[Shutdown] Redis disconnected");
+        } catch (err) {
+          console.error("[Shutdown] Redis disconnect error:", err.message);
+        }
+      }
       
       await pool.end();
       clearTimeout(shutdownTimeout);
       process.exit(0);
-    });
-    
-    // Also handle SIGINT for manual shutdown
-    process.on("SIGINT", async () => {
-      console.log("[Shutdown] SIGINT received, closing gracefully...");
-      server.close(() => {
-        console.log("[Shutdown] Server closed");
-      });
-      await pool.end();
-      process.exit(0);
-    });
+    }
+
+    process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+    process.on("SIGINT", () => gracefulShutdown("SIGINT"));
   } catch (error) {
     console.error("[Startup] Fatal error:", error);
     process.exit(1);

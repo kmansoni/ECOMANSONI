@@ -1,0 +1,30 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  scrape_timeout: 10s
+
+rule_files:
+  - "alerts.yml"
+
+scrape_configs:
+  - job_name: "email-router"
+    static_configs:
+      - targets: ["email-router:3100"]
+    metrics_path: /metrics
+    scrape_interval: 10s
+
+  - job_name: "rspamd"
+    static_configs:
+      - targets: ["rspamd:11334"]
+    metrics_path: /stat
+    scrape_interval: 30s
+
+  - job_name: "postgres-exporter"
+    static_configs:
+      - targets: ["postgres-exporter:9187"]
+    scrape_interval: 30s
+
+  - job_name: "redis-exporter"
+    static_configs:
+      - targets: ["redis-exporter:9121"]
+    scrape_interval: 30s

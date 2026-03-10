@@ -1,0 +1,349 @@
+# =============================================================================
+# Prometheus Alert Rules — ECOMANSONI Navigation Platform
+# Loaded by Prometheus from /etc/prometheus/rules/alerts.yml
+#
+# Severity taxonomy:
+#   critical — immediate action required, PagerDuty / on-call escalation
+#   warning  — investigate within business hours, Slack notification
+#
+# All "for" durations account for scrape_interval=15s jitter:
+#   use multiples of 15s to avoid false positives from single missed scrape.
+# =============================================================================
+
+groups:
+
+  # ---------------------------------------------------------------------------
+  # Navigation API — FastAPI/Express service health & performance
+  # Metrics source: job="navigation-api" on navigation-api:8000/metrics
+  # ---------------------------------------------------------------------------
+  - name: navigation-api
+    interval: 30s
+    rules:
+
+      # p99 latency > 2s sustained for 5 minutes
+      # Attack vector: unbounded DB/Valhalla query fan-out; check trace IDs.
+      - alert: NavigationAPIHighLatency
+        expr: |
+          histogram_quantile(0.99,
+            sum(rate(request_duration_seconds_bucket{job="navigation-api"}[5m])) by (le, handler)
+          ) > 2
+        for: 5m
+        labels:
+          severity: warning
+          team: navigation
+        annotations:
+          summary: "Navigation API p99 latency > 2s on {{ $labels.handler }}"
+          description: >
+            Handler {{ $labels.handler }} p99={{ $value | humanizeDuration }}.
+            Investigate: Valhalla routing timeout, PostGIS query plan regression,
+            Redis round-trip latency, or downstream overload.
+          runbook: "https://wiki.internal/nav/runbooks/high-latency"
+
+      # 5xx error rate > 5% over 5-minute window
+      # Critical at 15% — indicates systemic failure, not isolated errors.
+      - alert: NavigationAPIHighErrorRate
+        expr: |
+          (
+            sum(rate(http_requests_total{job="navigation-api", status=~"5.."}[5m])) by (handler)
+            /
+            sum(rate(http_requests_total{job="navigation-api"}[5m])) by (handler)
+          ) > 0.05
+        for: 3m
+        labels:
+          severity: warning
+          team: navigation
+        annotations:
+          summary: "Navigation API error rate > 5% on {{ $labels.handler }}"
+          description: >
+            Error rate {{ $value | humanizePercentage }} on handler {{ $labels.handler }}.
+            Check: upstream dependency failures (Valhalla, Redis, ClickHouse),
+            OOM kills, or deployment regression.
+          runbook: "https://wiki.internal/nav/runbooks/high-error-rate"
+
+      - alert: NavigationAPICriticalErrorRate
+        expr: |
+          (
+            sum(rate(http_requests_total{job="navigation-api", status=~"5.."}[5m]))
+            /
+            sum(rate(http_requests_total{job="navigation-api"}[5m]))
+          ) > 0.15
+        for: 2m
+        labels:
+          severity: critical
+          team: navigation
+        annotations:
+          summary: "Navigation API error rate > 15% — potential outage"
+          description: >
+            Aggregate error rate is {{ $value | humanizePercentage }}.
+            Declare incident. Route traffic to fallback region if available.
+          runbook: "https://wiki.internal/nav/runbooks/outage"
+
+      # Scrape target disappears — instance crashed or network partition.
+      # 1m grace period accounts for container restart backoff.
+      - alert: NavigationAPIDown
+        expr: up{job="navigation-api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: navigation
+        annotations:
+          summary: "Navigation API instance {{ $labels.instance }} is DOWN"
+          description: >
+            Prometheus cannot scrape {{ $labels.instance }}.
+            Check container health, OOM kill, or pod eviction.
+          runbook: "https://wiki.internal/nav/runbooks/service-down"
+
+      # WebSocket connection pool exhaustion — driver app connectivity degraded
+      - alert: NavigationAPIWebSocketSaturation
+        expr: |
+          active_websocket_connections{job="navigation-api"}
+          / on() group_left()
+          websocket_connections_max{job="navigation-api"} > 0.85
+        for: 5m
+        labels:
+          severity: warning
+          team: navigation
+        annotations:
+          summary: "WebSocket connection pool > 85% saturated"
+          description: >
+            {{ $value | humanizePercentage }} of max WebSocket capacity in use.
+            Scale horizontally or investigate connection leaks (missing close frames,
+            zombie clients not honouring ping/pong TTL).
+
+  # ---------------------------------------------------------------------------
+  # Navigation Infrastructure — routing, tile serving, cache, streaming, OLAP
+  # ---------------------------------------------------------------------------
+  - name: navigation-infrastructure
+    interval: 30s
+    rules:
+
+      # --- Valhalla Routing Engine -------------------------------------------
+
+      - alert: ValhallaDown
+        expr: up{job="valhalla"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          team: navigation
+        annotations:
+          summary: "Valhalla routing engine {{ $labels.instance }} is DOWN"
+          description: >
+            All route calculation requests will fail.
+            Check tile data integrity (/custom_files/valhalla.json),
+            memory limit (4G), and mmap availability.
+          runbook: "https://wiki.internal/nav/runbooks/valhalla-down"
+
+      # Valhalla sustained high latency — indicates tile cache thrashing
+      # or large routing graph traversal (long-haul routes)
+      - alert: ValhallaHighRouteLatency
+        expr: |
+          histogram_quantile(0.95,
+            rate(route_duration_seconds_bucket{job="valhalla"}[5m])
+          ) > 5
+        for: 5m
+        labels:
+          severity: warning
+          team: navigation
+        annotations:
+          summary: "Valhalla p95 route latency > 5s"
+          description: >
+            Route calculations taking {{ $value | humanizeDuration }} at p95.
+            Investigate: long-distance routes, costing configuration,
+            tile data fragmentation, or insufficient memory for mmap.
+
+      # --- Martin Tile Server ------------------------------------------------
+
+      - alert: MartinDown
+        expr: up{job="martin"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          team: navigation
+        annotations:
+          summary: "Martin tile server {{ $labels.instance }} is DOWN"
+          description: >
+            Map tiles unavailable. Navigation UI will show blank map.
+            Check PostGIS connectivity, config at /config/martin.yaml,
+            and DB connection pool exhaustion.
+          runbook: "https://wiki.internal/nav/runbooks/martin-down"
+
+      # Tile cache hit ratio < 60% — high PostGIS pressure, potential cascade
+      - alert: MartinLowCacheHitRatio
+        expr: |
+          (
+            rate(tile_cache_hits_total{job="martin"}[10m])
+            /
+            (rate(tile_cache_hits_total{job="martin"}[10m]) + rate(tile_cache_misses_total{job="martin"}[10m]))
+          ) < 0.60
+        for: 10m
+        labels:
+          severity: warning
+          team: navigation
+        annotations:
+          summary: "Martin tile cache hit ratio below 60%"
+          description: >
+            Cache hit ratio is {{ $value | humanizePercentage }}.
+            Every miss triggers a PostGIS query — at scale this causes DB overload.
+            Increase in-memory cache size or pre-warm popular zoom level tiles.
+
+      # --- Redis (nav cache, geo presence, rate limiting) --------------------
+
+      - alert: RedisDown
+        expr: up{job="redis-nav"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: navigation
+        annotations:
+          summary: "Redis (redis-nav) exporter cannot reach {{ $labels.instance }}"
+          description: >
+            Navigation state cache is unavailable.
+            Driver presence detection, rate limiting, and session cache
+            will all degrade. Check redis-exporter sidecar health.
+          runbook: "https://wiki.internal/nav/runbooks/redis-down"
+
+      # Memory utilisation > 80% — approaching maxmemory=2gb, evictions starting
+      # allkeys-lru eviction will silently discard keys; monitor evicted_keys delta.
+      - alert: RedisHighMemoryUsage
+        expr: |
+          redis_memory_used_bytes{job="redis-nav"}
+          / redis_memory_max_bytes{job="redis-nav"} > 0.80
+        for: 5m
+        labels:
+          severity: warning
+          team: navigation
+        annotations:
+          summary: "Redis memory usage > 80% ({{ $value | humanizePercentage }})"
+          description: >
+            Redis is using {{ $value | humanizePercentage }} of its 2GB limit.
+            Evictions may begin causing cache misses.
+            Investigate: TTL misconfiguration, GEOADD key accumulation,
+            or rate-limiter key explosion. Consider vertical scale or key audit.
+
+      # Replication lag — only fires if replica is configured
+      - alert: RedisReplicationLag
+        expr: redis_connected_slaves{job="redis-nav"} == 0
+        for: 5m
+        labels:
+          severity: warning
+          team: navigation
+        annotations:
+          summary: "Redis has no connected replicas"
+          description: >
+            Redis primary has no connected replicas for 5+ minutes.
+            HA is compromised. Check replica health and network connectivity.
+
+      # --- Redpanda / Kafka streaming -----------------------------------------
+
+      # Consumer group falling behind — location events not being processed
+      # Threshold: 10k messages = ~2.5 minutes of 4k msg/s throughput at risk
+      - alert: RedpandaHighConsumerLag
+        expr: kafka_consumer_group_lag{job="redpanda"} > 10000
+        for: 10m
+        labels:
+          severity: warning
+          team: navigation
+        annotations:
+          summary: "Redpanda consumer lag > 10k on group {{ $labels.consumergroup }}"
+          description: >
+            Consumer group {{ $labels.consumergroup }} on topic {{ $labels.topic }}
+            has lag of {{ $value }} messages.
+            Investigate: consumer service crash, slow processing, or topic partition
+            imbalance. Scale consumer horizontally if CPU-bound.
+
+      - alert: RedpandaCriticalConsumerLag
+        expr: kafka_consumer_group_lag{job="redpanda"} > 100000
+        for: 5m
+        labels:
+          severity: critical
+          team: navigation
+        annotations:
+          summary: "Redpanda consumer lag CRITICAL > 100k — data freshness SLA breached"
+          description: >
+            Consumer group {{ $labels.consumergroup }} lag is {{ $value }}.
+            Real-time navigation data is severely delayed.
+            Immediate investigation required.
+
+      - alert: RedpandaDown
+        expr: up{job="redpanda"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          team: navigation
+        annotations:
+          summary: "Redpanda broker {{ $labels.instance }} is DOWN"
+          description: >
+            All streaming pipelines (location events, dispatch, traffic) are halted.
+            Check broker logs, storage availability, and cluster health via rpk.
+          runbook: "https://wiki.internal/nav/runbooks/redpanda-down"
+
+      # --- ClickHouse OLAP ---------------------------------------------------
+
+      - alert: ClickHouseDown
+        expr: up{job="clickhouse"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          team: navigation
+        annotations:
+          summary: "ClickHouse {{ $labels.instance }} is DOWN"
+          description: >
+            Analytics queries (trip history, heatmaps, traffic aggregations)
+            will fail. GPS event inserts via Redpanda → ClickHouse MV pipeline
+            are also halted. Check storage (4G limit), init.sql idempotency,
+            and /var/lib/clickhouse disk usage.
+          runbook: "https://wiki.internal/nav/runbooks/clickhouse-down"
+
+      # ClickHouse merge queue backlog — MergeTree deferred merge accumulation
+      # Large merge queues indicate write amplification pressure
+      - alert: ClickHouseMergeQueueHigh
+        expr: ClickHouseMetrics_BackgroundMergesAndMutationsPoolTask{job="clickhouse"} > 50
+        for: 15m
+        labels:
+          severity: warning
+          team: navigation
+        annotations:
+          summary: "ClickHouse merge queue depth > 50 ({{ $value }} tasks)"
+          description: >
+            High merge queue depth indicates sustained write pressure exceeding
+            MergeTree background merge throughput. Risk: SELECT performance
+            degradation and eventual "Too many parts" error.
+            Consider: batch insert size tuning, async_insert mode, or vertical scale.
+
+      # --- Node / Host disk space -------------------------------------------
+      # Fires when any filesystem on any navigation target has < 15% free space.
+      # Critical at < 5% — ClickHouse and Redpanda will halt writes.
+
+      - alert: HighDiskUsage
+        expr: |
+          (
+            node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|devtmpfs"}
+            / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|devtmpfs"}
+          ) < 0.15
+        for: 10m
+        labels:
+          severity: warning
+          team: navigation
+        annotations:
+          summary: "Disk usage > 85% on {{ $labels.instance }}:{{ $labels.mountpoint }}"
+          description: >
+            Only {{ $value | humanizePercentage }} free on {{ $labels.mountpoint }}.
+            Risk: ClickHouse halts inserts at ~95%, Redpanda log truncation,
+            Valhalla tile corruption on OOM writes.
+            Prune old segments or expand volume.
+
+      - alert: CriticalDiskUsage
+        expr: |
+          (
+            node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|devtmpfs"}
+            / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|devtmpfs"}
+          ) < 0.05
+        for: 5m
+        labels:
+          severity: critical
+          team: navigation
+        annotations:
+          summary: "DISK FULL (<5% free) on {{ $labels.instance }}:{{ $labels.mountpoint }}"
+          description: >
+            Disk is at {{ printf \"%.1f%%\" (mul (sub 1.0 $value) 100.0) }} usage.
+            Immediate intervention required. Services will begin failing.

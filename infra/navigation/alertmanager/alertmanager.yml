@@ -1,0 +1,157 @@
+# =============================================================================
+# Alertmanager Configuration — ECOMANSONI Navigation Platform
+# Version: Alertmanager v0.27.0
+#
+# Security note: webhook URLs and credentials MUST be injected via
+# environment variables or secrets manager in production — never hardcoded.
+#
+# Routing design:
+#   - All alerts → 'default' receiver (webhook to navigation-api)
+#   - severity=critical → 'critical' receiver with aggressive repeat interval
+#   - Inhibition: a firing critical suppresses matching warning to reduce noise
+#
+# Deduplication is handled by group_by: identical fingerprints within a
+# group_interval window are deduplicated before notification.
+# =============================================================================
+
+global:
+  # How long to wait before declaring an alert "resolved" if it stops firing.
+  # 5m is safe for services that recover quickly (Redis restart, pod restart).
+  resolve_timeout: 5m
+
+  # HTTP client settings for webhook receivers
+  http_config:
+    follow_redirects: true
+
+# =============================================================================
+# Routing tree
+# Evaluated top-down; first match wins (unless continue: true is set).
+# =============================================================================
+route:
+  # Group alerts by alertname + severity to avoid per-instance notification flood.
+  # Adding 'job' allows separate groups for different infrastructure components.
+  group_by: ['alertname', 'severity', 'job']
+
+  # Wait this long to collect alerts into a group before first notification.
+  # 30s balances latency vs. batching — enough time for cascading alerts to group.
+  group_wait: 30s
+
+  # After sending first notification, wait this long before sending updates
+  # for new alerts added to an existing group.
+  group_interval: 5m
+
+  # How long to wait before resending a notification for the same group.
+  # Aggressive for critical (1h), relaxed for warning/default (4h).
+  repeat_interval: 4h
+
+  # Default fallthrough receiver
+  receiver: 'default'
+
+  routes:
+    # Critical alerts: short repeat to ensure on-call is re-paged if unacked
+    - matchers:
+        - severity = "critical"
+      receiver: 'critical'
+      group_wait: 10s
+      group_interval: 1m
+      repeat_interval: 1h
+      continue: false
+
+    # Warning alerts: standard timing, grouped loosely
+    - matchers:
+        - severity = "warning"
+      receiver: 'default'
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 4h
+      continue: false
+
+# =============================================================================
+# Receivers
+# In production, replace webhook URL with environment-variable reference or
+# use Alertmanager's built-in env expansion: ${WEBHOOK_URL}
+# =============================================================================
+receivers:
+
+  # Default receiver — receives warning-severity and unmatched alerts.
+  # navigation-api /webhooks/alerts endpoint should be idempotent
+  # and accept Alertmanager v2 JSON payload.
+  - name: 'default'
+    webhook_configs:
+      - url: 'http://navigation-api:8000/webhooks/alerts'
+        send_resolved: true
+        # Maximum time to wait for webhook response before retry
+        http_config:
+          follow_redirects: false
+        # Configures retry: 3 retries with exponential backoff
+        max_alerts: 50
+
+  # Critical receiver — same endpoint, potentially forwarded to PagerDuty/Telegram.
+  # To add Telegram: uncomment and configure telegram_configs block below.
+  - name: 'critical'
+    webhook_configs:
+      - url: 'http://navigation-api:8000/webhooks/alerts'
+        send_resolved: true
+        max_alerts: 10
+
+    # --- Telegram integration (enable in production) ---
+    # telegram_configs:
+    #   - bot_token: '${TELEGRAM_BOT_TOKEN}'
+    #     chat_id: ${TELEGRAM_ONCALL_CHAT_ID}
+    #     message: |
+    #       🔴 *CRITICAL* — {{ .GroupLabels.alertname }}
+    #       {{ range .Alerts }}• {{ .Annotations.summary }}
+    #       {{ end }}
+    #     parse_mode: 'Markdown'
+    #     send_resolved: true
+
+    # --- PagerDuty integration (enable in production) ---
+    # pagerduty_configs:
+    #   - routing_key: '${PAGERDUTY_ROUTING_KEY}'
+    #     severity: critical
+    #     description: '{{ .GroupLabels.alertname }}: {{ .CommonAnnotations.summary }}'
+    #     send_resolved: true
+
+# =============================================================================
+# Inhibition rules
+# Prevents notification storms by suppressing lower-severity alerts when a
+# matching higher-severity alert is already firing for the same alertname.
+#
+# Example: NavigationAPIDown (critical) suppresses NavigationAPIHighLatency
+# (warning) for the same instance — latency alert is irrelevant if it's down.
+# =============================================================================
+inhibit_rules:
+
+  # A firing critical alert suppresses matching warning alerts for same alertname.
+  # 'equal' ensures inhibition is scoped to the same service instance, not global.
+  - source_matchers:
+      - severity = "critical"
+    target_matchers:
+      - severity = "warning"
+    equal:
+      - alertname
+      - job
+
+  # If the entire navigation-api is down, suppress latency/error-rate warnings
+  # (they are consequences of the outage, not independent root causes).
+  - source_matchers:
+      - alertname = "NavigationAPIDown"
+    target_matchers:
+      - job = "navigation-api"
+      - severity = "warning"
+    equal:
+      - instance
+
+  # If Redpanda is down, suppress consumer lag alerts (lag grows because broker is down)
+  - source_matchers:
+      - alertname = "RedpandaDown"
+    target_matchers:
+      - alertname = "RedpandaHighConsumerLag"
+    equal: []
+
+  # If ClickHouse is down, suppress merge queue alert
+  - source_matchers:
+      - alertname = "ClickHouseDown"
+    target_matchers:
+      - alertname = "ClickHouseMergeQueueHigh"
+    equal: []

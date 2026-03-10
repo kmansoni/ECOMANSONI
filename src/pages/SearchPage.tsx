@@ -303,7 +303,7 @@ export function SearchPage() {
                   <div className="flex gap-3">
                     {freshCreators.slice(0, 14).map((c: any) => {
                       const userId = String(c?.user_id ?? "");
-                      const name = String(c?.display_name ?? "Пользователь");
+                      const name = String(c?.display_name ?? (userId ? userId.slice(0, 8) : "User"));
                       const avatarUrl = c?.avatar_url ? String(c.avatar_url) : "";
                       return (
                         <button

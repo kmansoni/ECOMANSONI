@@ -74,7 +74,7 @@ export function useBotPayments(): UseBotPaymentsReturn {
     let cancelled = false;
 
     const load = async () => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       const { data, error: qErr } = await (supabase as any)
         .from("payment_invoices")
         .select("*")

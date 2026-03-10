@@ -9,7 +9,7 @@
  * Безопасность: channelId берётся из useParams — серверная RLS проверяет admin-доступ.
  */
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, TrendingUp, TrendingDown, Eye, Share2, Heart, Users, RefreshCw, Loader2 } from "lucide-react";
 import { useChannelAnalytics, type DailyStat, type AnalyticsPeriod } from "@/hooks/useChannelAnalytics";
@@ -37,13 +37,16 @@ function LineChart({ data, labels, color = "#3b82f6", height = 80 }: LineChartPr
   const max = hasSufficientData ? Math.max(...data) : 1;
   const range = max - min || 1;
 
-  const points = hasSufficientData
-    ? data.map((v, i) => ({
-        x: (i / (data.length - 1)) * WIDTH,
-        y: height - ((v - min) / range) * (height - 10) - 5,
-        v,
-      }))
-    : [];
+  const points = useMemo(
+    () => (hasSufficientData
+      ? data.map((v, i) => ({
+          x: (i / (data.length - 1)) * WIDTH,
+          y: height - ((v - min) / range) * (height - 10) - 5,
+          v,
+        }))
+      : []),
+    [WIDTH, data, hasSufficientData, height, min, range],
+  );
 
   // useCallback must be called before any early return (Rules of Hooks)
   const handleMouseMove = useCallback(

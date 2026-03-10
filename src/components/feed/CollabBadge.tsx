@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom';
+import { buildProfilePath } from '@/lib/users/profileLinks';
 
 interface CollabAuthor {
   id: string;
@@ -17,7 +18,7 @@ export function CollabBadge({ collaborator, primaryAuthor }: CollabBadgeProps) {
 
   return (
     <button
-      onClick={() => navigate(`/profile/${collaborator.id}`)}
+      onClick={() => navigate(buildProfilePath({ userId: collaborator.id }))}
       className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-white transition-colors mt-1"
     >
       {/* Double avatar stack */}

@@ -1,24 +1,29 @@
-import { useRef, useState, useEffect, useCallback } from "react";
+import { useRef, useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { PhoneInput } from "@/components/ui/phone-input";
+import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import logo from "@/assets/logo.png";
 import { RegistrationModal } from "@/components/auth/RegistrationModal";
 import { supabase } from "@/lib/supabase";
 import { RecommendedUsersModal } from "@/components/profile/RecommendedUsersModal";
 import { setGuestMode } from "@/lib/demo/demoMode";
-import { getPhoneAuthFunctionUrls, getPhoneAuthHeaders } from "@/lib/auth/backendEndpoints";
+import { getPhoneAuthFunctionUrls, getPhoneAuthHeaders, getSendEmailOtpUrl, getVerifyEmailOtpUrl, getAnonHeaders } from "@/lib/auth/backendEndpoints";
 
 const DEMO_GUEST_PHONE = "+70000000000";
 
+/**
+ * Auth modes:
+ *  select   — choose login / register
+ *  login    — phone input → lookup user → send OTP to stored email
+ *  register — phone + email → send OTP to given email
+ *  otp      — enter 6-digit code from email
+ */
 type AuthMode = "select" | "login" | "register" | "otp";
 
-/** Cooldown between SMS re-sends, in seconds */
-const OTP_RESEND_COOLDOWN_SEC = 120;
-
-const PHONE_AUTH_TIMEOUT_MS = 12_000;
+const OTP_RESEND_COOLDOWN_SEC = 60;
+const AUTH_TIMEOUT_MS = 12_000;
 
 async function fetchJsonWithTimeout(
   input: RequestInfo | URL,
@@ -64,10 +69,16 @@ export function AuthPage() {
   const authPageOpMutexRef = useRef<Promise<void> | null>(null);
   const [mode, setMode] = useState<AuthMode>("select");
   const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+  /** The real email used for OTP (may come from server lookup) */
+  const [otpEmail, setOtpEmail] = useState("");
+  /** Masked email shown to user (e.g. "u***@example.com") */
+  const [maskedEmail, setMaskedEmail] = useState("");
   const [otpCode, setOtpCode] = useState("");
   const [otpCountdown, setOtpCountdown] = useState(0);
   const [showRegistrationModal, setShowRegistrationModal] = useState(false);
   const [showRecommendations, setShowRecommendations] = useState(false);
+  const isRegisterFlowRef = useRef(false);
   const loading = authPageOperation !== null;
 
   // Countdown timer for OTP resend
@@ -104,75 +115,51 @@ export function AuthPage() {
   };
 
   /**
-   * Build Edge Function URL for a given function name.
-   * Re-uses the same base URL logic as phone-auth endpoints.
-   */
-  const getSmsOtpUrl = useCallback((funcName: string): string => {
-    const phoneAuthUrls = getPhoneAuthFunctionUrls();
-    if (phoneAuthUrls.length === 0) return "";
-    // phone-auth URL ends with /functions/v1/phone-auth — swap the last segment
-    return phoneAuthUrls[0].replace(/\/phone-auth\/?$/, `/${funcName}`);
-  }, []);
-
-  /**
-   * Step 1: Send SMS OTP to the phone number.
-   */
-  const sendSmsOtp = useCallback(async (phoneDigits: string) => {
-    const url = getSmsOtpUrl("send-sms-otp");
-    if (!url) {
-      toast.error("Не настроен endpoint отправки SMS");
-      return false;
-    }
-
-    const result = await fetchJsonWithTimeout(
-      url,
-      {
-        method: "POST",
-        headers: getPhoneAuthHeaders(),
-        body: JSON.stringify({ phone: `+${phoneDigits}` }),
-      },
-      PHONE_AUTH_TIMEOUT_MS,
-      "send-sms-otp",
-    );
-
-    if (!result.response.ok) {
-      const errMsg = result.data?.error || `HTTP ${result.response.status}`;
-      // 429 = rate-limited, show retry-after
-      if (result.response.status === 429) {
-        const retryAfter = result.data?.retryAfter || Number(result.response.headers.get("Retry-After") || 60);
-        toast.error("Подождите перед повторной отправкой", {
-          description: `Попробуйте через ${retryAfter} сек.`,
-        });
-        setOtpCountdown(retryAfter);
-      } else {
-        toast.error("Не удалось отправить SMS", { description: errMsg });
-      }
-      return false;
-    }
-
-    return true;
-  }, [getSmsOtpUrl]);
-
-  /**
-   * Step 1 handler: user submits phone → we send OTP → switch to OTP input screen.
+   * Login: user enters phone → server looks up email → sends OTP.
    */
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    const digits = phone.replace(/\D/g, '');
-    if (digits.length < 10) {
+    const trimmedPhone = phone.trim();
+    if (!trimmedPhone || trimmedPhone.replace(/\D/g, "").length < 10) {
       toast.error("Введите корректный номер телефона");
       return;
     }
-    
+
     await runExclusiveAuthPageOp("login", async () => {
       try {
         setGuestMode(false);
+        isRegisterFlowRef.current = false;
 
-        const sent = await sendSmsOtp(digits);
-        if (!sent) return;
+        const { response, data } = await fetchJsonWithTimeout(
+          getSendEmailOtpUrl(),
+          {
+            method: "POST",
+            headers: getAnonHeaders(),
+            body: JSON.stringify({ phone: trimmedPhone }),
+          },
+          AUTH_TIMEOUT_MS,
+          "send-email-otp",
+        );
 
-        toast.success("Код отправлен по SMS");
+        if (response.status === 404 && data?.error === "not_found") {
+          toast.error("Аккаунт не найден", { description: "Пройдите регистрацию для создания аккаунта" });
+          setMode("register");
+          return;
+        }
+
+        if (!response.ok) {
+          const errMsg = data?.error || `HTTP ${response.status}`;
+          toast.error("Не удалось отправить код", { description: errMsg });
+          return;
+        }
+
+        // Server returns { success, maskedEmail, email }
+        const serverEmail = data?.email || "";
+        const masked = data?.maskedEmail || "";
+
+        setOtpEmail(serverEmail);
+        setMaskedEmail(masked);
+        toast.success(`Код отправлен на ${masked || "почту"}`);
         setOtpCode("");
         setOtpCountdown(OTP_RESEND_COOLDOWN_SEC);
         setMode("otp");
@@ -185,66 +172,60 @@ export function AuthPage() {
   };
 
   /**
-   * Step 2: user enters OTP code → verify → get session tokens.
+   * Step 2: user enters OTP code → verify with the email used for sending.
    */
   const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
 
     const trimmedCode = otpCode.trim();
     if (trimmedCode.length !== 6) {
-      toast.error("Введите 6-значный код из SMS");
+      toast.error("Введите 6-значный код из письма");
       return;
     }
 
-    const digits = phone.replace(/\D/g, '');
+    // Use otpEmail (from server lookup or registration email)
+    const verifyEmail = otpEmail || email.trim().toLowerCase();
 
     await runExclusiveAuthPageOp("otp", async () => {
       try {
-        const url = getSmsOtpUrl("verify-sms-otp");
-        if (!url) {
-          toast.error("Не настроен endpoint верификации");
-          return;
-        }
-
-        const result = await fetchJsonWithTimeout(
-          url,
+        const { response, data } = await fetchJsonWithTimeout(
+          getVerifyEmailOtpUrl(),
           {
             method: "POST",
-            headers: getPhoneAuthHeaders(),
-            body: JSON.stringify({
-              phone: `+${digits}`,
-              code: trimmedCode,
-              displayName: "User",
-            }),
+            headers: getAnonHeaders(),
+            body: JSON.stringify({ email: verifyEmail, code: trimmedCode }),
           },
-          PHONE_AUTH_TIMEOUT_MS,
-          "verify-sms-otp",
+          AUTH_TIMEOUT_MS,
+          "verify-email-otp",
         );
 
-        if (!result.response.ok || !result.data?.ok) {
-          const errMsg = result.data?.error || `HTTP ${result.response.status}`;
-          toast.error(errMsg);
+        if (!response.ok || !data?.ok) {
+          const errMsg = data?.error || `HTTP ${response.status}`;
+          console.error("🔴 [AuthPage] verify-email-otp error:", errMsg);
+          toast.error("Неверный или просроченный код", { description: errMsg });
           return;
         }
 
-        // Set Supabase session with the returned tokens
-        const { error: signInError } = await withTimeout(
+        // Set session from server-returned tokens
+        const { error: sessionError } = await withTimeout(
           supabase.auth.setSession({
-            access_token: result.data.accessToken,
-            refresh_token: result.data.refreshToken,
+            access_token: data.accessToken,
+            refresh_token: data.refreshToken,
           }),
           8000,
           "setSession",
         );
 
-        if (signInError) {
-          console.error("🔴 [AuthPage] Sign-in error:", signInError);
-          toast.error("Ошибка входа");
+        if (sessionError) {
+          console.error("🔴 [AuthPage] setSession error:", sessionError);
+          toast.error("Не удалось создать сессию");
           return;
         }
 
-        if (result.data.isNewUser) {
-          toast.success("Аккаунт создан, заполните профиль!");
+        const isNewUser = data.isNewUser || isRegisterFlowRef.current;
+
+        if (isNewUser) {
+          toast.success("Заполните профиль для завершения регистрации");
           setShowRegistrationModal(true);
         } else {
           toast.success("Добро пожаловать!");
@@ -259,20 +240,40 @@ export function AuthPage() {
   };
 
   /**
-   * Resend OTP (if cooldown expired).
+   * Resend OTP to the same email.
    */
   const handleResendOtp = async () => {
     if (otpCountdown > 0) return;
-    const digits = phone.replace(/\D/g, '');
+    const resendEmail = otpEmail || email.trim().toLowerCase();
 
     await runExclusiveAuthPageOp("login", async () => {
       try {
-        const sent = await sendSmsOtp(digits);
-        if (sent) {
-          toast.success("Код отправлен повторно");
-          setOtpCode("");
-          setOtpCountdown(OTP_RESEND_COOLDOWN_SEC);
+        // For login flow (phone-based), re-send by phone
+        // For register flow, re-send by email
+        const payload = isRegisterFlowRef.current
+          ? { email: resendEmail }
+          : phone.trim()
+            ? { phone: phone.trim() }
+            : { email: resendEmail };
+
+        const { response, data } = await fetchJsonWithTimeout(
+          getSendEmailOtpUrl(),
+          {
+            method: "POST",
+            headers: getAnonHeaders(),
+            body: JSON.stringify(payload),
+          },
+          AUTH_TIMEOUT_MS,
+          "resend-email-otp",
+        );
+        if (!response.ok) {
+          const errMsg = data?.error || `HTTP ${response.status}`;
+          toast.error("Не удалось переотправить код", { description: errMsg });
+          return;
         }
+        toast.success("Код отправлен повторно");
+        setOtpCode("");
+        setOtpCountdown(OTP_RESEND_COOLDOWN_SEC);
       } catch (error) {
         console.error("🔴 [AuthPage] Resend OTP error:", error);
         toast.error("Не удалось переотправить код");
@@ -308,7 +309,7 @@ export function AuthPage() {
               headers: getPhoneAuthHeaders(),
               body: JSON.stringify(body),
             },
-            PHONE_AUTH_TIMEOUT_MS,
+            AUTH_TIMEOUT_MS,
             "guest-phone-auth",
           );
           response = result.response;
@@ -354,24 +355,50 @@ export function AuthPage() {
     });
   };
 
+  /**
+   * Register: phone + email → send OTP to given email → verify → registration modal.
+   */
   const handleRegisterClick = async (e: React.FormEvent) => {
     e.preventDefault();
     if (loading) return;
-    
-    const digits = phone.replace(/\D/g, '');
-    if (digits.length < 10) {
+
+    const trimmedPhone = phone.trim();
+    const trimmedEmail = email.trim().toLowerCase();
+
+    if (!trimmedPhone || trimmedPhone.replace(/\D/g, "").length < 10) {
       toast.error("Введите корректный номер телефона");
       return;
     }
-    
-    // Send OTP first, then show OTP screen → after verify → registration modal
+    if (!trimmedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      toast.error("Введите корректный email");
+      return;
+    }
+
     await runExclusiveAuthPageOp("login", async () => {
       try {
         setGuestMode(false);
-        const sent = await sendSmsOtp(digits);
-        if (!sent) return;
+        isRegisterFlowRef.current = true;
 
-        toast.success("Код отправлен по SMS");
+        const { response, data } = await fetchJsonWithTimeout(
+          getSendEmailOtpUrl(),
+          {
+            method: "POST",
+            headers: getAnonHeaders(),
+            body: JSON.stringify({ email: trimmedEmail, phone: trimmedPhone }),
+          },
+          AUTH_TIMEOUT_MS,
+          "register-send-email-otp",
+        );
+
+        if (!response.ok) {
+          const errMsg = data?.error || `HTTP ${response.status}`;
+          toast.error("Не удалось отправить код", { description: errMsg });
+          return;
+        }
+
+        setOtpEmail(trimmedEmail);
+        setMaskedEmail(null);
+        toast.success("Код отправлен на " + trimmedEmail);
         setOtpCode("");
         setOtpCountdown(OTP_RESEND_COOLDOWN_SEC);
         setMode("otp");
@@ -389,9 +416,17 @@ export function AuthPage() {
   const handleBack = () => {
     if (loading) return;
     if (mode === "otp") {
-      // Go back to phone input, keep the entered phone
-      setMode("login");
+      // Go back to whatever mode we came from
+      setMode(isRegisterFlowRef.current ? "register" : "login");
       setOtpCode("");
+      setOtpEmail(null);
+      setMaskedEmail(null);
+      return;
+    }
+    if (mode === "register") {
+      setMode("login");
+      setEmail("");
+      isRegisterFlowRef.current = false;
       return;
     }
     if (mode === "select") {
@@ -570,8 +605,8 @@ export function AuthPage() {
             <p className="text-white/80 text-base">
               {mode === "select" && "Выберите действие для продолжения"}
               {mode === "login" && "Введите номер телефона"}
-              {mode === "otp" && `SMS-код отправлен на +${phone.replace(/\D/g, "").slice(0, 1)}***${phone.replace(/\D/g, "").slice(-4)}`}
-              {mode === "register" && "Введите номер телефона для регистрации"}
+              {mode === "otp" && `Код отправлен на ${maskedEmail || otpEmail || email.trim()}`}
+              {mode === "register" && "Укажите телефон и почту"}
             </p>
           </div>
 
@@ -624,10 +659,15 @@ export function AuthPage() {
                   
                   <div className="relative group">
                     <div className="absolute inset-0 bg-white/5 rounded-2xl group-focus-within:bg-white/10 transition-colors" />
-                    <PhoneInput
+                    <Input
+                      type="tel"
+                      inputMode="tel"
+                      autoComplete="tel"
                       value={phone}
-                      onChange={setPhone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      placeholder="+7 (___) ___-__-__"
                       required
+                      className="relative h-14 rounded-2xl bg-transparent text-white placeholder:text-white/30 px-4 outline-none border-0 focus-visible:ring-2 focus-visible:ring-white/30 text-base"
                     />
                   </div>
 
@@ -639,7 +679,7 @@ export function AuthPage() {
                     {loading ? (
                       <div className="flex items-center gap-2">
                         <div className="w-5 h-5 border-2 border-slate-800/30 border-t-slate-800 rounded-full animate-spin" />
-                        <span>Вход...</span>
+                        <span>Отправка...</span>
                       </div>
                     ) : (
                       "Войти"
@@ -692,7 +732,7 @@ export function AuthPage() {
                       maxLength={6}
                       value={otpCode}
                       onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                      placeholder="Введите 6-значный код"
+                      placeholder="Введите 6-значный код из письма"
                       className="relative w-full h-14 rounded-2xl bg-transparent text-white text-center text-2xl tracking-[0.5em] font-mono placeholder:text-white/30 placeholder:text-base placeholder:tracking-normal px-4 outline-none focus:ring-2 focus:ring-white/30 transition-all"
                       autoFocus
                     />
@@ -733,16 +773,16 @@ export function AuthPage() {
               </div>
 
               <button
-                onClick={() => { setMode("login"); setOtpCode(""); }}
+                onClick={handleBack}
                 disabled={loading}
                 className="text-center text-white/50 text-sm hover:text-white/70 transition-colors"
               >
-                Изменить номер телефона
+                Назад
               </button>
             </>
           )}
 
-          {/* Register form - just phone, then modal */}
+          {/* Register form - phone + email, then OTP → registration modal */}
           {mode === "register" && (
             <>
               <div className="relative">
@@ -756,10 +796,29 @@ export function AuthPage() {
                   
                   <div className="relative group">
                     <div className="absolute inset-0 bg-white/5 rounded-2xl group-focus-within:bg-white/10 transition-colors" />
-                    <PhoneInput
+                    <Input
+                      type="tel"
+                      inputMode="tel"
+                      autoComplete="tel"
                       value={phone}
-                      onChange={setPhone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      placeholder="+7 (___) ___-__-__"
                       required
+                      className="relative h-14 rounded-2xl bg-transparent text-white placeholder:text-white/30 px-4 outline-none border-0 focus-visible:ring-2 focus-visible:ring-white/30 text-base"
+                    />
+                  </div>
+
+                  <div className="relative group">
+                    <div className="absolute inset-0 bg-white/5 rounded-2xl group-focus-within:bg-white/10 transition-colors" />
+                    <Input
+                      type="email"
+                      inputMode="email"
+                      autoComplete="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="you@example.com"
+                      required
+                      className="relative h-14 rounded-2xl bg-transparent text-white placeholder:text-white/30 px-4 outline-none border-0 focus-visible:ring-2 focus-visible:ring-white/30 text-base"
                     />
                   </div>
 
@@ -768,7 +827,14 @@ export function AuthPage() {
                     disabled={loading}
                     className="w-full h-14 rounded-2xl text-base font-semibold bg-white/90 hover:bg-white text-slate-800 shadow-xl shadow-black/20 transition-all hover:shadow-2xl hover:scale-[1.02] active:scale-[0.98]"
                   >
-                    Зарегистрироваться
+                    {loading ? (
+                      <div className="flex items-center gap-2">
+                        <div className="w-5 h-5 border-2 border-slate-800/30 border-t-slate-800 rounded-full animate-spin" />
+                        <span>Отправка...</span>
+                      </div>
+                    ) : (
+                      "Зарегистрироваться"
+                    )}
                   </Button>
                 </form>
               </div>
@@ -798,6 +864,7 @@ export function AuthPage() {
           if (!loading) setShowRegistrationModal(false);
         }}
         phone={phone}
+        email={otpEmail || email}
         onSuccess={handleRegistrationSuccess}
       />
 

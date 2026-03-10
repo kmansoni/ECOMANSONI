@@ -2,27 +2,29 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Share2, Link, Flag, UserX, Settings, Archive, Bookmark, Users, Trash2, Briefcase, MapPin } from "lucide-react";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
+import { buildProfileUrl } from "@/lib/users/profileLinks";
 
 interface ProfileMenuProps {
   isOpen: boolean;
   onClose: () => void;
   isOwnProfile: boolean;
   username?: string;
+  userId?: string;
   onBlock?: () => void;
   onArchive?: () => void;
   onSettings?: () => void;
 }
 
-export function ProfileMenu({ isOpen, onClose, isOwnProfile, username, onBlock, onArchive, onSettings }: ProfileMenuProps) {
+export function ProfileMenu({ isOpen, onClose, isOwnProfile, username, userId, onBlock, onArchive, onSettings }: ProfileMenuProps) {
   const navigate = useNavigate();
   const copyLink = () => {
-    const url = `https://mansoni.ru/profile/${username || ""}`;
+    const url = buildProfileUrl({ username, userId });
     navigator.clipboard.writeText(url).then(() => toast.success("Ссылка скопирована"));
     onClose();
   };
 
   const share = () => {
-    const url = `https://mansoni.ru/profile/${username || ""}`;
+    const url = buildProfileUrl({ username, userId });
     if (navigator.share) {
       navigator.share({ url });
     } else {

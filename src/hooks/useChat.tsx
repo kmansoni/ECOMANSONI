@@ -22,6 +22,7 @@ import { ChatV11RecoveryService } from "@/lib/chat/recoveryV11";
 import { getChatV11RecoveryPolicyConfig } from "@/lib/chat/recoveryPolicyV11";
 import { resolveChatV11RecoveryAction } from "@/lib/chat/rpcErrorPolicyV11";
 import { checkHashtagsAllowedForText } from "@/lib/hashtagModeration";
+import { fetchUserBriefMap, resolveUserBrief, type UserBrief } from "@/lib/users/userBriefs";
 
 function getErrorMessage(err: unknown): string {
   if (!err) return "Unknown error";
@@ -162,6 +163,23 @@ export function useConversations() {
     }
   };
 
+  const toParticipantProfile = useCallback(
+    (
+      participantUserId: string,
+      briefMap: ReadonlyMap<string, UserBrief>,
+      embedded?: { display_name?: string | null; avatar_url?: string | null; username?: string | null } | null
+    ) => {
+      const brief = resolveUserBrief(participantUserId, briefMap, embedded);
+      return brief
+        ? {
+            display_name: brief.display_name,
+            avatar_url: brief.avatar_url,
+          }
+        : undefined;
+    },
+    []
+  );
+
   const fetchConversations = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -226,20 +244,7 @@ export function useConversations() {
         const allParticipants = allPartRes.data || [];
 
         const userIds = [...new Set(allParticipants.map((p) => p.user_id))];
-        const profilesRes =
-          userIds.length > 0
-            ? await withTimeout(
-                "profiles_v11",
-                supabase.from("profiles").select("user_id, display_name, avatar_url").in("user_id", userIds),
-                20000
-              )
-            : { data: [], error: null };
-        if ((profilesRes as any).error) throw (profilesRes as any).error;
-        const profiles = (((profilesRes as any).data || []) as any[]).map((p) => ({
-          user_id: p.user_id as string,
-          display_name: (p.display_name ?? null) as string | null,
-          avatar_url: (p.avatar_url ?? null) as string | null,
-        }));
+        const briefMap = await fetchUserBriefMap(userIds, supabase as any);
 
         const convs: Conversation[] = rows
           .map((row: any) => {
@@ -251,7 +256,7 @@ export function useConversations() {
               .filter((p) => p.conversation_id === id)
               .map((p) => ({
                 user_id: p.user_id,
-                profile: profiles.find((pr) => pr.user_id === p.user_id),
+                profile: toParticipantProfile(p.user_id, briefMap),
               }));
 
             const activitySeq = Number(row.activity_seq || 0);
@@ -337,14 +342,23 @@ export function useConversations() {
         }
       }
 
-      const convs: Conversation[] = rows.map((r: any) => {
+      const participantIds = [...new Set(rows.flatMap((r: any) => {
+        const participantsRaw = Array.isArray(r?.participants) ? r.participants : [];
+        return participantsRaw
+          .map((p: any) => String(p?.user_id || ""))
+          .filter(Boolean);
+      }))];
+      const participantBriefMap = await fetchUserBriefMap(participantIds, supabase as any);
+
+      const mappedConversations: Conversation[] = rows.map((r: any) => {
         const participantsRaw = Array.isArray(r?.participants) ? r.participants : [];
         const participants = participantsRaw.map((p: any) => ({
           user_id: String(p?.user_id || ""),
-          profile: {
+          profile: toParticipantProfile(String(p?.user_id || ""), participantBriefMap, {
             display_name: (p?.profile?.display_name ?? null) as string | null,
             avatar_url: (p?.profile?.avatar_url ?? null) as string | null,
-          },
+            username: (p?.profile?.username ?? null) as string | null,
+          }),
         }));
 
         const lastMessageId = r?.last_message_id ? String(r.last_message_id) : "";
@@ -377,7 +391,7 @@ export function useConversations() {
         };
       });
 
-      setConversations(convs);
+      setConversations(mappedConversations);
     } catch (error) {
       console.error("Error fetching conversations:", error);
       const msg = getErrorMessage(error);

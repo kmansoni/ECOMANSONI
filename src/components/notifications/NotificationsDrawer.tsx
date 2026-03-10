@@ -22,6 +22,11 @@ interface NotificationsDrawerProps {
   onOpenChange: (open: boolean) => void;
 }
 
+function fallbackNameFromUserId(userId: string | undefined): string {
+  const id = String(userId || "").trim();
+  return id ? id.slice(0, 8) : "User";
+}
+
 const notificationIcons: Record<string, typeof Heart> = {
   like: Heart,
   comment: MessageCircle,
@@ -143,7 +148,7 @@ export function NotificationsDrawer({ open, onOpenChange }: NotificationsDrawerP
                     <div className="flex-1 min-w-0">
                       <p className="text-sm">
                         <span className="font-semibold">
-                          {notification.actor?.display_name || "Пользователь"}
+                          {notification.actor?.display_name || fallbackNameFromUserId(notification.actor_id)}
                         </span>{" "}
                         {notificationText[notification.type]}
                       </p>

@@ -105,6 +105,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { resolveChatMediaDownloadPrefs } from "@/lib/chat/mediaSettings";
+import { fetchUserBriefMap, resolveUserBrief } from "@/lib/users/userBriefs";
 
 interface ChatConversationProps {
   conversationId: string;
@@ -495,17 +496,20 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
           .eq("conversation_id", conversationId);
         const ids = (partRows ?? []).map((r: any) => r.user_id as string).filter(Boolean);
         if (!ids.length) return;
-        const { data: profileRows } = await supabase
-          .from("profiles")
-          .select("user_id, display_name, username, avatar_url")
-          .in("user_id", ids);
+        const briefMap = await fetchUserBriefMap(ids, supabase as any);
         if (cancelled) return;
-        const participants: MentionUser[] = (profileRows ?? []).map((r: any) => ({
-          user_id: r.user_id,
-          display_name: r.display_name ?? null,
-          username: r.username ?? null,
-          avatar_url: r.avatar_url ?? null,
-        }));
+        const participants: MentionUser[] = ids
+          .map((participantId) => {
+            const brief = resolveUserBrief(participantId, briefMap);
+            if (!brief) return null;
+            return {
+              user_id: participantId,
+              display_name: brief.display_name,
+              username: brief.username,
+              avatar_url: brief.avatar_url,
+            } as MentionUser;
+          })
+          .filter(Boolean) as MentionUser[];
         setMentionParticipants(participants);
       } catch {
         // non-fatal
@@ -532,18 +536,15 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
     let cancelled = false;
     void (async () => {
       try {
-        const { data, error } = await supabase
-          .from("profiles")
-          .select("user_id, display_name, avatar_url")
-          .in("user_id", senderIds);
-        if (error) throw error;
+        const briefMap = await fetchUserBriefMap(senderIds, supabase as any);
         if (cancelled) return;
         const next: Record<string, { display_name: string | null; avatar_url: string | null }> = {};
-        for (const row of data ?? []) {
-          const userId = (row as any).user_id as string;
+        for (const userId of senderIds) {
+          const brief = resolveUserBrief(userId, briefMap);
+          if (!brief) continue;
           next[userId] = {
-            display_name: ((row as any).display_name ?? null) as string | null,
-            avatar_url: ((row as any).avatar_url ?? null) as string | null,
+            display_name: brief.display_name,
+            avatar_url: brief.avatar_url,
           };
         }
         setSenderProfiles(next);
@@ -1513,7 +1514,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
         {renderMessages.map((message, index) => {
           const isOwn = message.sender_id === user?.id;
           const senderProfile = senderProfiles[message.sender_id];
-          const senderName = senderProfile?.display_name?.trim() || "Пользователь";
+          const senderName = senderProfile?.display_name?.trim() || String(message.sender_id || "").slice(0, 8);
           const senderAvatar = senderProfile?.avatar_url || chatAvatar;
           const isVoice = message.media_type === 'voice';
           const isVideoCircle = message.media_type === 'video_circle';
@@ -1864,6 +1865,12 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
                   </div>
                 </div>
               ) : (
+                <DoubleTapReaction
+                  messageId={message.id}
+                  onToggleReaction={handleMessageReaction}
+                  disabled={selectionMode}
+                  hasReaction={getReactions(message.id).some(r => r.emoji === '❤️' && r.hasReacted)}
+                >
                 <div className={`flex flex-col flex-1 min-w-0 ${isOwn ? "items-end" : "items-start"}`}>
                   <div
                     className={`chat-bubble relative inline-block max-w-[min(75%,560px)] rounded-2xl px-3 py-2 select-none backdrop-blur-xl border border-white/10 ${
@@ -1976,6 +1983,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
                         showPicker={false}
                         onPickerClose={() => {}}
                         onReactionChange={() => {}}
+                        onToggle={handleMessageReaction}
                       />
                     ) : null;
                   })()}
@@ -2000,6 +2008,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
                     )}
                   </div>
                 </div>
+                </DoubleTapReaction>
               )}
             </div>
             </SwipeableMessage>

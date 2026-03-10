@@ -1,0 +1,90 @@
+/**
+ * Domain-split VideoCall context types.
+ *
+ * Architecture:
+ *  - VideoCallSignalingContextType  — WebRTC/call lifecycle: status, currentCall, incomingCall,
+ *                                     connectionState, and all call-lifecycle actions.
+ *  - VideoCallMediaContextType      — Media state: local/remote streams, mute/video toggles.
+ *  - VideoCallUIContextType         — UI-lock flag that persists through permission prompts.
+ *  - VideoCallContextType           — Backward-compatible merged type (all three combined).
+ *
+ * Security note: Types are pure interfaces with no runtime side-effects.
+ * No credential or key material is ever present in context values — those live in refs
+ * inside VideoCallProvider and are never exposed to consumers.
+ */
+
+export type { VideoCall, VideoCallStatus } from "@/hooks/useVideoCallSfu";
+import type { VideoCall, VideoCallStatus } from "@/hooks/useVideoCallSfu";
+
+// ─── Signaling domain ──────────────────────────────────────────────────────────
+export interface VideoCallSignalingContextType {
+  /** Current call lifecycle state machine position. */
+  status: VideoCallStatus;
+  /** Active call object (caller or callee, after negotiation). */
+  currentCall: VideoCall | null;
+  /** Pending incoming call waiting to be accepted or declined. */
+  incomingCall: VideoCall | null;
+  /** RTCPeerConnection / SFU transport connection state string. */
+  connectionState: string;
+
+  /**
+   * Initiate an outbound call.
+   * Activates UI-lock BEFORE getUserMedia to prevent UI flash during permission prompts.
+   * Returns the created VideoCall on success, null on error (error already toasted).
+   */
+  startCall: (
+    calleeId: string,
+    conversationId: string | null,
+    callType: "video" | "audio"
+  ) => Promise<VideoCall | null>;
+
+  /**
+   * Accept an incoming call.
+   * Activates UI-lock BEFORE getUserMedia.
+   */
+  answerCall: (call: VideoCall) => Promise<void>;
+
+  /** Decline the current incoming call (updates DB to "declined"). */
+  declineCall: () => Promise<void>;
+
+  /** End the active call or decline the pending incoming call. */
+  endCall: () => Promise<void>;
+
+  /** Force ICE restart / new TURN credential fetch without ending the call. */
+  retryConnection: () => Promise<void>;
+}
+
+// ─── Media domain ──────────────────────────────────────────────────────────────
+export interface VideoCallMediaContextType {
+  /** Local camera/mic MediaStream. Null when no call is active. */
+  localStream: MediaStream | null;
+  /** Remote peer MediaStream assembled from SFU consumers. Null when no remote tracks. */
+  remoteStream: MediaStream | null;
+  /** Whether local audio track is muted. */
+  isMuted: boolean;
+  /** Whether local video track is disabled. */
+  isVideoOff: boolean;
+  /** Toggle microphone mute state. */
+  toggleMute: () => void;
+  /** Toggle camera on/off state. */
+  toggleVideo: () => void;
+}
+
+// ─── UI domain ─────────────────────────────────────────────────────────────────
+export interface VideoCallUIContextType {
+  /**
+   * UI-lock flag: true while a call is active or in setup phase (including during
+   * browser permission prompts). Keeps call UI visible through transient status gaps.
+   */
+  isCallUiActive: boolean;
+}
+
+// ─── Backward-compatible merged type ──────────────────────────────────────────
+/**
+ * Full merged interface — identical to the original VideoCallContextType.
+ * Used by useVideoCallContext() for backward compatibility.
+ */
+export type VideoCallContextType =
+  VideoCallSignalingContextType &
+  VideoCallMediaContextType &
+  VideoCallUIContextType;

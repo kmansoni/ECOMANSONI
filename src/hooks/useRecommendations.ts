@@ -155,7 +155,7 @@ export function useRecommendations() {
       if (!user) return [];
 
       const { data: following } = await (supabase as any)
-        .from('follows')
+        .from('followers')
         .select('following_id')
         .eq('follower_id', user.id);
       const followingIds = new Set<string>((following ?? []).map((f: any) => f.following_id as string));

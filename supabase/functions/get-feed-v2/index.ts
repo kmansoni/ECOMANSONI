@@ -29,6 +29,8 @@
  *   - No user-controlled SQL injection surface (all params are typed)
  */
 
+/// <reference path="../_shared/edge-runtime-types.d.ts" />
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 

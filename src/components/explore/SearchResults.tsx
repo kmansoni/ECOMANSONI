@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Hash, MapPin, UserPlus, Check } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import type { SearchResults as SearchResultsType } from '@/hooks/useExploreSearch';
+import { buildProfilePath } from '@/lib/users/profileLinks';
 
 interface SearchResultsProps {
   results: SearchResultsType;
@@ -27,9 +28,9 @@ function FollowButton({ userId }: { userId: string }) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
     if (following) {
-      await (supabase as any).from('follows').delete().match({ follower_id: user.id, following_id: userId });
+      await (supabase as any).from('followers').delete().match({ follower_id: user.id, following_id: userId });
     } else {
-      await (supabase as any).from('follows').insert({ follower_id: user.id, following_id: userId });
+      await (supabase as any).from('followers').insert({ follower_id: user.id, following_id: userId });
     }
     setFollowing(f => !f);
   };
@@ -147,7 +148,7 @@ function UserRow({ user, navigate, showFollow }: { user: any; navigate: any; sho
   return (
     <div
       className="flex items-center gap-3 px-4 py-3 active:bg-neutral-900 cursor-pointer"
-      onClick={() => navigate(`/profile/${user.username}`)}
+      onClick={() => navigate(buildProfilePath({ username: user.username, userId: user.id }))}
     >
       <div className="w-11 h-11 rounded-full overflow-hidden bg-neutral-800 shrink-0">
         {user.avatar_url ? (

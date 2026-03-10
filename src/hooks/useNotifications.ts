@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
+import { fetchUserBriefMap, resolveUserBrief } from "@/lib/users/userBriefs";
 
 export interface Notification {
   id: string;
@@ -46,20 +47,11 @@ export function useNotifications() {
 
   const fetchActors = async (items: any[]): Promise<Notification[]> => {
     const actorIds = [...new Set(items.map((n: any) => n.actor_id).filter(Boolean))] as string[];
-    const { data: profiles } = actorIds.length
-      ? await supabase
-          .from("profiles")
-          .select("user_id, display_name, avatar_url, username")
-          .in("user_id", actorIds)
-      : { data: [] as any[] };
-
-    const profileMap = new Map((profiles || []).map((p: any) => [p.user_id, p]));
+    const briefMap = await fetchUserBriefMap(actorIds, supabase as any);
 
     return items.map((n: any) => ({
       ...n,
-      actor: n.actor_id
-        ? profileMap.get(n.actor_id) || { display_name: "Пользователь", avatar_url: null }
-        : undefined,
+      actor: n.actor_id ? resolveUserBrief(String(n.actor_id), briefMap) : undefined,
     }));
   };
 

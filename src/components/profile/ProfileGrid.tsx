@@ -1,4 +1,5 @@
-import { Grid3X3, Bookmark, Play, AtSign, Loader2 } from "lucide-react";
+import { useState } from "react";
+import { Grid3X3, Bookmark, Play, AtSign } from "lucide-react";
 import { motion } from "framer-motion";
 
 interface ProfileGridProps {
@@ -16,6 +17,53 @@ const emptyMessage: Record<string, { icon: any; title: string; desc: string }> =
 };
 
 export function ProfileGrid({ items, loading, type, onItemClick }: ProfileGridProps) {
+  const [failedVariantByKey, setFailedVariantByKey] = useState<Record<string, number>>({});
+
+  const selectPreviewVariant = (item: any, index: number) => {
+    const key = String(item?.id ?? index);
+    const isReel = type === "reels";
+
+    const reelCandidates = [item?.thumbnail_url].filter((u: unknown): u is string => typeof u === "string" && u.trim().length > 0);
+    const postMedia = Array.isArray(item?.post_media) ? item.post_media : [];
+    const postCandidates = postMedia
+      .map((m: any) => ({
+        url: typeof m?.media_url === "string" ? m.media_url.trim() : "",
+        mediaType: typeof m?.media_type === "string" ? m.media_type : null,
+      }))
+      .filter((m: { url: string }) => m.url.length > 0);
+
+    const orderedPostCandidates = [
+      ...postCandidates.filter((m: { mediaType: string | null }) => m.mediaType !== "video"),
+      ...postCandidates.filter((m: { mediaType: string | null }) => m.mediaType === "video"),
+    ];
+
+    const variants = isReel
+      ? reelCandidates.map((url: string) => ({ url, mediaType: "video" }))
+      : orderedPostCandidates;
+
+    const failedIndex = failedVariantByKey[key] ?? 0;
+    const candidate = failedIndex >= 0 ? variants[failedIndex] : undefined;
+
+    return {
+      key,
+      imageUrl: candidate?.url ?? "",
+      isReel,
+      isVideo: !isReel && (candidate?.mediaType === "video" || item?.post_media?.[0]?.media_type === "video"),
+      multiMedia: !isReel && (item?.post_media?.length || 0) > 1,
+      variantsCount: variants.length,
+      failedIndex,
+    };
+  };
+
+  const rotateToNextVariant = (key: string, variantsCount: number, failedIndex: number) => {
+    setFailedVariantByKey((prev) => {
+      if (variantsCount <= 1 || failedIndex >= variantsCount - 1) {
+        return { ...prev, [key]: -1 };
+      }
+      return { ...prev, [key]: failedIndex + 1 };
+    });
+  };
+
   if (loading && items.length === 0) {
     return (
       <div className="grid grid-cols-3 gap-1">
@@ -46,27 +94,25 @@ export function ProfileGrid({ items, loading, type, onItemClick }: ProfileGridPr
   return (
     <div className="grid grid-cols-3 gap-[1px]">
       {items.map((item, i) => {
-        const isReel = type === "reels";
-        const imageUrl = isReel
-          ? item.thumbnail_url
-          : item.post_media?.[0]?.media_url;
-        const isVideo = !isReel && item.post_media?.[0]?.media_type === "video";
-        const multiMedia = !isReel && (item.post_media?.length || 0) > 1;
+        const { key, imageUrl, isReel, isVideo, multiMedia, variantsCount, failedIndex } = selectPreviewVariant(item, i);
 
         return (
           <motion.button
-            key={item.id || i}
+            key={key}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: i * 0.02 }}
+            type="button"
             onClick={() => onItemClick?.(item)}
-            className="relative aspect-square overflow-hidden bg-muted group"
+            disabled={!onItemClick}
+            className="relative aspect-square overflow-hidden bg-muted group disabled:cursor-default"
           >
             {imageUrl ? (
               <img
                 src={imageUrl}
                 alt=""
                 loading="lazy"
+                onError={() => rotateToNextVariant(key, variantsCount, failedIndex)}
                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
               />
             ) : (

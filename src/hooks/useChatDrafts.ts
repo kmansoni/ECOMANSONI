@@ -1,6 +1,8 @@
 import { useState, useCallback, useEffect } from "react";
+import { useAuth } from "@/hooks/useAuth";
 
-const DRAFT_KEY_PREFIX = "chat_draft_v1:";
+const LEGACY_DRAFT_KEY_PREFIX = "chat_draft_v1:";
+const DRAFT_KEY_PREFIX = "chat_draft_v2:";
 const DRAFT_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 export interface ChatDraft {
@@ -16,19 +18,40 @@ export interface UseChatDraftsReturn {
   hasDraft: (conversationId: string) => boolean;
 }
 
-function buildKey(conversationId: string): string {
-  return `${DRAFT_KEY_PREFIX}${conversationId}`;
+function buildLegacyKey(conversationId: string): string {
+  return `${LEGACY_DRAFT_KEY_PREFIX}${conversationId}`;
 }
 
-function readDraftFromStorage(conversationId: string): ChatDraft | null {
+function buildKey(userId: string | null | undefined, conversationId: string): string {
+  if (!userId) return buildLegacyKey(conversationId);
+  return `${DRAFT_KEY_PREFIX}${userId}:${conversationId}`;
+}
+
+function parseDraft(raw: string | null): ChatDraft | null {
+  if (!raw) return null;
+  const parsed = JSON.parse(raw) as ChatDraft;
+  if (!parsed || typeof parsed.text !== "string" || typeof parsed.savedAt !== "number") return null;
+  return parsed;
+}
+
+function readDraftFromStorage(userId: string | null | undefined, conversationId: string): ChatDraft | null {
   try {
-    const raw = localStorage.getItem(buildKey(conversationId));
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as ChatDraft;
-    if (!parsed || typeof parsed.text !== "string" || typeof parsed.savedAt !== "number") return null;
+    const scopedKey = buildKey(userId, conversationId);
+    const scopedRaw = localStorage.getItem(scopedKey);
+    const parsedScoped = parseDraft(scopedRaw);
+    const parsed = parsedScoped ?? parseDraft(localStorage.getItem(buildLegacyKey(conversationId)));
+    if (!parsed) return null;
+
+    // One-time migration from legacy key into user-scoped namespace.
+    if (userId && !parsedScoped) {
+      localStorage.setItem(scopedKey, JSON.stringify(parsed));
+      localStorage.removeItem(buildLegacyKey(conversationId));
+    }
+
     // TTL check
     if (Date.now() - parsed.savedAt > DRAFT_TTL_MS) {
-      localStorage.removeItem(buildKey(conversationId));
+      localStorage.removeItem(scopedKey);
+      localStorage.removeItem(buildLegacyKey(conversationId));
       return null;
     }
     return parsed;
@@ -37,14 +60,15 @@ function readDraftFromStorage(conversationId: string): ChatDraft | null {
   }
 }
 
-function loadAllDraftsFromStorage(): Map<string, ChatDraft> {
+function loadAllDraftsFromStorage(userId: string | null | undefined): Map<string, ChatDraft> {
   const result = new Map<string, ChatDraft>();
   try {
+    const scopedPrefix = userId ? `${DRAFT_KEY_PREFIX}${userId}:` : LEGACY_DRAFT_KEY_PREFIX;
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (!key || !key.startsWith(DRAFT_KEY_PREFIX)) continue;
-      const conversationId = key.slice(DRAFT_KEY_PREFIX.length);
-      const draft = readDraftFromStorage(conversationId);
+      if (!key || !key.startsWith(scopedPrefix)) continue;
+      const conversationId = key.slice(scopedPrefix.length);
+      const draft = readDraftFromStorage(userId, conversationId);
       if (draft && draft.text) {
         result.set(conversationId, draft);
       }
@@ -56,23 +80,30 @@ function loadAllDraftsFromStorage(): Map<string, ChatDraft> {
 }
 
 export function useChatDrafts(): UseChatDraftsReturn {
-  const [draftsMap, setDraftsMap] = useState<Map<string, ChatDraft>>(() => loadAllDraftsFromStorage());
+  const { user } = useAuth();
+  const userId = user?.id ?? null;
+
+  const [draftsMap, setDraftsMap] = useState<Map<string, ChatDraft>>(() => loadAllDraftsFromStorage(userId));
 
   // Sync once on mount to pick up any drafts persisted in previous sessions
   useEffect(() => {
-    setDraftsMap(loadAllDraftsFromStorage());
-  }, []);
+    setDraftsMap(loadAllDraftsFromStorage(userId));
+  }, [userId]);
 
   const getDraft = useCallback((conversationId: string): string | null => {
-    const draft = readDraftFromStorage(conversationId);
+    const draft = readDraftFromStorage(userId, conversationId);
     return draft?.text ?? null;
-  }, []);
+  }, [userId]);
 
   const saveDraft = useCallback((conversationId: string, text: string): void => {
+    const scopedKey = buildKey(userId, conversationId);
+    const legacyKey = buildLegacyKey(conversationId);
+
     if (!text.trim()) {
       // Empty text → remove draft
       try {
-        localStorage.removeItem(buildKey(conversationId));
+        localStorage.removeItem(scopedKey);
+        localStorage.removeItem(legacyKey);
       } catch { /* noop */ }
       setDraftsMap((prev) => {
         const next = new Map(prev);
@@ -84,7 +115,10 @@ export function useChatDrafts(): UseChatDraftsReturn {
 
     const draft: ChatDraft = { text, savedAt: Date.now() };
     try {
-      localStorage.setItem(buildKey(conversationId), JSON.stringify(draft));
+      localStorage.setItem(scopedKey, JSON.stringify(draft));
+      if (userId) {
+        localStorage.removeItem(legacyKey);
+      }
     } catch { /* Storage full or unavailable */ }
 
     setDraftsMap((prev) => {
@@ -92,22 +126,23 @@ export function useChatDrafts(): UseChatDraftsReturn {
       next.set(conversationId, draft);
       return next;
     });
-  }, []);
+  }, [userId]);
 
   const clearDraft = useCallback((conversationId: string): void => {
     try {
-      localStorage.removeItem(buildKey(conversationId));
+      localStorage.removeItem(buildKey(userId, conversationId));
+      localStorage.removeItem(buildLegacyKey(conversationId));
     } catch { /* noop */ }
     setDraftsMap((prev) => {
       const next = new Map(prev);
       next.delete(conversationId);
       return next;
     });
-  }, []);
+  }, [userId]);
 
   const getAllDrafts = useCallback((): Map<string, ChatDraft> => {
-    return loadAllDraftsFromStorage();
-  }, []);
+    return loadAllDraftsFromStorage(userId);
+  }, [userId]);
 
   const hasDraft = useCallback((conversationId: string): boolean => {
     const draft = draftsMap.get(conversationId);

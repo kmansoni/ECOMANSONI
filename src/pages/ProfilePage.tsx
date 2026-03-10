@@ -28,6 +28,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 import type { ContentType } from "@/hooks/useMediaEditor";
 import { toast } from "sonner";
+import { buildProfileUrl } from "@/lib/users/profileLinks";
 
 function formatNumber(n: number): string {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, "") + "M";
@@ -346,7 +347,7 @@ export function ProfilePage() {
               </button>
               <button
                 onClick={() => {
-                  const url = `https://mansoni.ru/user/${user?.id}`;
+                  const url = buildProfileUrl({ username: displayProfile?.username, userId: user?.id });
                   navigator.clipboard.writeText(url).then(() => toast.success("Ссылка скопирована"));
                 }}
                 className="flex-1 py-2 bg-muted rounded-xl text-sm font-semibold text-foreground hover:bg-muted/80 transition-colors"
@@ -523,7 +524,8 @@ export function ProfilePage() {
         isOpen={showMenu}
         onClose={() => setShowMenu(false)}
         isOwnProfile={isOwnProfile}
-        username={displayProfile?.display_name || undefined}
+        username={displayProfile?.username || undefined}
+        userId={targetUserId}
         onBlock={handleBlock}
         onArchive={() => { setShowMenu(false); setShowArchive(true); }}
         onSettings={() => { setShowMenu(false); navigate("/settings"); }}
@@ -543,7 +545,7 @@ export function ProfilePage() {
         <ProfileQRCode
           isOpen={showQR}
           onClose={() => setShowQR(false)}
-          username={displayProfile.display_name || user.id}
+          username={displayProfile.username || user.id}
           userId={user.id}
           avatarUrl={displayProfile.avatar_url || undefined}
         />

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
+import { fetchUserBriefMap, resolveUserBrief } from "@/lib/users/userBriefs";
 
 export interface StoryViewer {
   viewer_id: string;
@@ -52,16 +53,12 @@ export function useStoryViews(storyId?: string, authorId?: string) {
           if (!cancelled && data) {
             const viewerIds = data.map((v) => v.viewer_id);
             if (viewerIds.length > 0) {
-              const { data: profiles } = await supabase
-                .from("profiles")
-                .select("user_id, display_name, avatar_url")
-                .in("user_id", viewerIds);
-              const profileMap = new Map((profiles || []).map((p) => [p.user_id, p]));
+              const briefMap = await fetchUserBriefMap(viewerIds, supabase as any);
               const enriched: StoryViewer[] = data.map((v) => ({
                 viewer_id: v.viewer_id,
                 viewed_at: v.viewed_at ?? new Date().toISOString(),
-                display_name: profileMap.get(v.viewer_id)?.display_name ?? "Пользователь",
-                avatar_url: profileMap.get(v.viewer_id)?.avatar_url ?? null,
+                display_name: resolveUserBrief(v.viewer_id, briefMap)?.display_name,
+                avatar_url: resolveUserBrief(v.viewer_id, briefMap)?.avatar_url ?? null,
               }));
               setViewers(enriched);
             }

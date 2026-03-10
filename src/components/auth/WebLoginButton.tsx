@@ -87,6 +87,13 @@ export function WebLoginButton({
     stateRef.current = crypto.randomUUID();
 
     const baseUrl = appUrl ?? window.location.origin;
+    const trustedOrigin = (() => {
+      try {
+        return new URL(baseUrl).origin;
+      } catch {
+        return window.location.origin;
+      }
+    })();
     const params = new URLSearchParams({
       bot_id: botId,
       redirect_url: redirectUrl,
@@ -114,7 +121,7 @@ export function WebLoginButton({
     // Listen for auth result
     const handler = (event: MessageEvent) => {
       // Origin validation: must come from our app
-      if (event.origin !== baseUrl) return;
+      if (event.origin !== trustedOrigin) return;
       if (!event.data || event.data.type !== "messenger_auth") return;
 
       // CSRF guard: verify state echoed back from popup matches what we sent.

@@ -142,6 +142,7 @@ export function ReelsProvider({ children }: ReelsProviderProps): JSX.Element {
  * const { isMuted, toggleMute } = useReelsContext();
  * ```
  */
+// eslint-disable-next-line react-refresh/only-export-components
 export function useReelsContext(): ReelsGlobalConfig {
   const ctx = useContext(ReelsContext);
   if (ctx === null) {

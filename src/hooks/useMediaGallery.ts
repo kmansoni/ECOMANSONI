@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 import { ru } from 'date-fns/locale';
+import { fetchUserBriefMap, resolveUserBrief } from '@/lib/users/userBriefs';
 
 export type MediaFilterType = 'all' | 'photos' | 'videos' | 'files' | 'voice' | 'links';
 
@@ -107,17 +108,17 @@ export function useMediaGallery(conversationId: string) {
         if (error) throw error;
 
         // Получаем имена отправителей для голосовых
-        let profileMap = new Map<string, string>();
+        let senderNameMap = new Map<string, string>();
         const rows = data ?? [];
         if (filterType === 'voice' || filterType === 'all') {
           const senderIds = [...new Set(rows.map((r) => r.sender_id as string).filter(Boolean))];
           if (senderIds.length > 0) {
-            const { data: profiles } = await supabase
-              .from('profiles')
-              .select('user_id, display_name')
-              .in('user_id', senderIds);
-            profileMap = new Map(
-              (profiles ?? []).map((p) => [p.user_id as string, p.display_name as string])
+            const briefMap = await fetchUserBriefMap(senderIds, supabase as any);
+            senderNameMap = new Map(
+              senderIds.map((senderId) => {
+                const brief = resolveUserBrief(senderId, briefMap);
+                return [senderId, brief?.display_name ?? senderId] as const;
+              })
             );
           }
         }
@@ -135,7 +136,7 @@ export function useMediaGallery(conversationId: string) {
             filename: mediaType === 'file' ? filename : undefined,
             duration: mediaType === 'voice' ? ((row.duration_seconds as number) ?? 0) : undefined,
             sender_name: mediaType === 'voice'
-              ? (profileMap.get(row.sender_id as string) ?? 'Пользователь')
+              ? senderNameMap.get(row.sender_id as string)
               : undefined,
             message_id: row.id as string,
           };

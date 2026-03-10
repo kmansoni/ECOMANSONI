@@ -9,6 +9,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useUserSettings } from "@/contexts/UserSettingsContext";
 import { pbkdf2Hash } from "@/lib/passcode";
 import { supabase } from "@/integrations/supabase/client";
+import { fetchUserBriefMap, resolveUserBrief } from "@/lib/users/userBriefs";
 import {
   getOrCreatePrivacyRules,
   updatePrivacyRule,
@@ -133,13 +134,13 @@ export function PrivacySecurityCenter({ mode, isDark, onOpenBlocked }: Props) {
         setProfilesById({});
         return;
       }
-      const { data: profiles, error } = await supabase
-        .from("profiles")
-        .select("user_id, display_name, avatar_url")
-        .in("user_id", ids);
-      if (error) throw error;
+      const briefMap = await fetchUserBriefMap(ids, supabase as any);
       const map: Record<string, { display_name: string | null; avatar_url: string | null }> = {};
-      for (const p of profiles ?? []) map[(p as any).user_id] = { display_name: (p as any).display_name, avatar_url: (p as any).avatar_url };
+      for (const id of ids) {
+        const brief = resolveUserBrief(id, briefMap);
+        if (!brief) continue;
+        map[id] = { display_name: brief.display_name, avatar_url: brief.avatar_url };
+      }
       setProfilesById(map);
     } catch (e) {
       toast({ title: "Исключения", description: e instanceof Error ? e.message : String(e) });

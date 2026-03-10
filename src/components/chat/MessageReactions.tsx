@@ -17,6 +17,13 @@ interface MessageReactionsProps {
   showPicker: boolean;
   onPickerClose: () => void;
   onReactionChange: () => void;
+  /**
+   * When provided, the component delegates reaction toggling to this callback
+   * instead of making direct Supabase calls. The parent (typically the
+   * useMessageReactions hook) handles persistence, optimistic updates,
+   * localStorage fallback and realtime reconciliation.
+   */
+  onToggle?: (messageId: string, emoji: string) => void;
 }
 
 export function MessageReactions({
@@ -25,12 +32,22 @@ export function MessageReactions({
   showPicker,
   onPickerClose,
   onReactionChange,
+  onToggle,
 }: MessageReactionsProps) {
   const { user } = useAuth();
 
   const toggleReaction = useCallback(
     async (emoji: string) => {
       if (!user) return;
+
+      // ── Delegated mode: let the parent hook handle persistence ──────────
+      if (onToggle) {
+        onToggle(messageId, emoji);
+        onPickerClose();
+        return;
+      }
+
+      // ── Legacy fallback: direct Supabase calls ─────────────────────────
       const existing = reactions.find((r) => r.emoji === emoji);
 
       if (existing?.hasReacted) {
@@ -55,7 +72,7 @@ export function MessageReactions({
       onPickerClose();
       onReactionChange();
     },
-    [user, messageId, reactions, onPickerClose, onReactionChange]
+    [user, messageId, reactions, onPickerClose, onReactionChange, onToggle]
   );
 
   return (

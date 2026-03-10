@@ -50,7 +50,7 @@ export function SuggestedUsers({ className = '' }: SuggestedUsersProps) {
   async function handleFollow(userId: string) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
-    await (supabase as any).from('follows').upsert({ follower_id: user.id, following_id: userId });
+    await (supabase as any).from('followers').upsert({ follower_id: user.id, following_id: userId });
     tracker.trackFollow(userId);
     setFollowedIds((prev) => new Set([...prev, userId]));
   }

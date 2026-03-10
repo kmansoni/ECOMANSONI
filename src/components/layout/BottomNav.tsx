@@ -52,16 +52,18 @@ const insuranceNavItems: NavItem[] = [
 
 interface BottomNavProps {
   hidden?: boolean;
+  disableHideAnimation?: boolean;
   /** Callback called when user taps the central "+" create button */
   onCreateClick?: () => void;
 }
 
-export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function BottomNav({ hidden = false, onCreateClick }, ref) {
+export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function BottomNav({ hidden = false, disableHideAnimation = false, onCreateClick }, ref) {
   const { isReelsPage } = useReelsContext();
   const location = useLocation();
   const navigate = useNavigate();
   const { unreadCount } = useUnreadChats();
   const { unreadCount: notifUnreadCount } = useNotifications();
+  const multiAccountEnabled = import.meta.env.VITE_ENABLE_MULTI_ACCOUNT === "true";
   const { accounts: maAccounts, activeAccountId, switchAccount, switchingAccountId, isSwitchingAccount, isAccountOperationInProgress } = useMultiAccount();
   const [keyboardOpen, setKeyboardOpen] = useState(false);
   const [accountSwitcherOpen, setAccountSwitcherOpen] = useState(false);
@@ -176,8 +178,12 @@ export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function Bottom
           transform: (keyboardOpen || hidden || isReelsPage) ? 'translate3d(0, 100%, 0)' : 'translate3d(0, 0, 0)',
           WebkitTransform: (keyboardOpen || hidden || isReelsPage) ? 'translate3d(0, 100%, 0)' : 'translate3d(0, 0, 0)',
           opacity: (hidden || isReelsPage) ? 0 : 1,
-          transition: 'transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease',
-          WebkitTransition: '-webkit-transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease',
+          transition: disableHideAnimation
+            ? 'none'
+            : 'transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease',
+          WebkitTransition: disableHideAnimation
+            ? 'none'
+            : '-webkit-transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease',
           willChange: 'transform, opacity',
           WebkitBackfaceVisibility: 'hidden',
           backfaceVisibility: 'hidden',

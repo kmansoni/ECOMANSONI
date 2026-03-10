@@ -7,6 +7,7 @@ import {
   stopRingtone,
 } from "@/lib/platform/callWakeStrategy";
 import type { WakeLockHandle } from "@/lib/platform/wakelock";
+import { fetchUserBriefMap, resolveUserBrief } from "@/lib/users/userBriefs";
 
 interface UseIncomingCallsOptions {
   onIncomingCall?: (call: VideoCall) => void;
@@ -111,17 +112,18 @@ export function useIncomingCalls(options: UseIncomingCallsOptions = {}) {
     console.log("[IncomingCalls] Processing incoming call:", call.id.slice(0, 8), "type:", call.call_type);
     notifiedCallsRef.current.add(call.id);
 
-    // Fetch caller profile
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("display_name, avatar_url")
-      .eq("user_id", call.caller_id)
-      .single();
+    const briefMap = await fetchUserBriefMap([call.caller_id], supabase as any);
+    const callerBrief = resolveUserBrief(call.caller_id, briefMap);
 
     const callWithProfile: VideoCall = {
       ...call,
       call_type: call.call_type as "video" | "audio",
-      caller_profile: profile || undefined,
+      caller_profile: callerBrief
+        ? {
+            display_name: callerBrief.display_name,
+            avatar_url: callerBrief.avatar_url,
+          }
+        : undefined,
     };
 
     const alertPolicy = await resolveIncomingCallAlertPolicy(callWithProfile);

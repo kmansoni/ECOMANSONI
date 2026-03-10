@@ -180,7 +180,7 @@ export function usePeopleNearby(): UsePeopleNearbyReturn {
         }).catch(() => {});
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [isSharing]);
 
   return {

@@ -93,7 +93,7 @@ export const PaymentSheet = ({
     const loadData = async () => {
       // Stars balance
       if (invoice.currency === "XTR") {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+         
         const { data } = await (supabase as any)
           .from("user_stars")
           .select("balance")
@@ -103,7 +103,7 @@ export const PaymentSheet = ({
       }
 
       // Bot info
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       const { data: bot } = await (supabase as any)
         .from("bots")
         .select("id, name, username, avatar_url")

@@ -13,18 +13,23 @@ global:
     environment: 'production'
 
 # =============================================================================
-# Alerting (configure Alertmanager endpoint if available)
+# Alerting — Alertmanager endpoint (internal Docker network)
+# Alertmanager handles routing, deduplication, silencing and notifications.
 # =============================================================================
-# alerting:
-#   alertmanagers:
-#     - static_configs:
-#         - targets: ['alertmanager:9093']
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+      timeout: 10s
+      api_version: v2
 
 # =============================================================================
-# Rule files (load alert/recording rules from separate files)
+# Rule files — alert & recording rules loaded from /etc/prometheus/rules/
+# All *.yml files in that directory are loaded at startup and on /-/reload
 # =============================================================================
-# rule_files:
-#   - /etc/prometheus/rules/*.yml
+rule_files:
+  - /etc/prometheus/rules/*.yml
 
 # =============================================================================
 # Scrape Configs

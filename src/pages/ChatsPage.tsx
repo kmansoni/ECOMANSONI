@@ -47,6 +47,12 @@ interface LocationState {
   chatAction?: "settings" | "timer" | "scheduled";
 }
 
+function fallbackNameFromUserId(userId: string | null | undefined, fallback = "User"): string {
+  const normalized = String(userId || "").trim();
+  if (!normalized) return fallback;
+  return normalized.slice(0, 8);
+}
+
 // Animation constants
 const HEADER_BASE_HEIGHT = 56;
 const PRIMARY_TABS_HEIGHT = 40;
@@ -492,7 +498,7 @@ export function ChatsPage() {
     const other = participants.find((p: any) => p?.user_id !== user?.id);
     return {
       user_id: other?.user_id || "",
-      ...(other?.profile || { display_name: "Пользователь", avatar_url: null })
+      ...(other?.profile || { display_name: fallbackNameFromUserId(other?.user_id), avatar_url: null })
     };
   };
 
@@ -504,7 +510,7 @@ export function ChatsPage() {
         ? [{
             user_id: locationState.otherUserId,
             profile: {
-              display_name: locationState.otherDisplayName || "Пользователь",
+              display_name: locationState.otherDisplayName || fallbackNameFromUserId(locationState.otherUserId),
               avatar_url: locationState.otherAvatarUrl || null
             }
           }]
@@ -854,7 +860,7 @@ export function ChatsPage() {
     return (
       <ChatConversation
         conversationId={selectedConversation.id}
-        chatName={other.display_name || "Пользователь"}
+        chatName={other.display_name || fallbackNameFromUserId(other.user_id)}
         chatAvatar={other.avatar_url ?? null}
         otherUserId={other.user_id}
         initialOpenPanelAction={initialPanelAction ?? undefined}
@@ -1128,7 +1134,7 @@ export function ChatsPage() {
                 {activeCalls.map((call) => {
                   const otherId = call.caller_id === user?.id ? call.callee_id : call.caller_id;
                   const profile = otherId ? profilesById[otherId] : null;
-                  const name = profile?.display_name || "Пользователь";
+                  const name = profile?.display_name || fallbackNameFromUserId(otherId);
                   const isIncoming = call.callee_id === user?.id;
                   const isMissed = call.status === "missed" || call.status === "declined";
                   const callType = call.call_type === "audio" ? "audio" : "video";
@@ -1547,7 +1553,7 @@ export function ChatsPage() {
                         <div className="flex items-center justify-between mb-0.5">
                           <span className="font-medium text-foreground dark:text-white truncate flex items-center gap-1.5">
                             {pinned && <Pin className="w-3 h-3 text-cyan-400 flex-shrink-0" />}
-                            {other.display_name || "Пользователь"}
+                            {other.display_name || fallbackNameFromUserId(other.user_id)}
                           </span>
                           <span className="text-xs text-muted-foreground/70 dark:text-white/40 flex-shrink-0 ml-2">
                             {formatTime(lastMessage?.created_at || conv.updated_at)}

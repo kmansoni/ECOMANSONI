@@ -5,6 +5,8 @@ interface DoubleTapReactionProps {
   messageId: string;
   onToggleReaction: (messageId: string, emoji: string) => void;
   hasReaction?: boolean;
+  /** When true, double-tap detection is suppressed (e.g. during selection mode). */
+  disabled?: boolean;
   children: ReactNode;
 }
 
@@ -14,12 +16,14 @@ export function DoubleTapReaction({
   messageId,
   onToggleReaction,
   hasReaction = false,
+  disabled = false,
   children,
 }: DoubleTapReactionProps) {
   const lastTap = useRef(0);
   const [showHeart, setShowHeart] = useState(false);
 
   const handleTap = useCallback(() => {
+    if (disabled) return;
     const now = Date.now();
     if (now - lastTap.current < DOUBLE_TAP_DELAY) {
       navigator.vibrate?.(10);
@@ -30,7 +34,7 @@ export function DoubleTapReaction({
       }
     }
     lastTap.current = now;
-  }, [messageId, onToggleReaction, hasReaction]);
+  }, [messageId, onToggleReaction, hasReaction, disabled]);
 
   return (
     <div onClick={handleTap} className="relative select-none">

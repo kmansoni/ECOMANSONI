@@ -106,7 +106,7 @@ export function LiveBroadcastRoom() {
         .eq("id", sessionId)
         .single();
       if (error) throw error;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       const row = data as any;
       const mapped: LiveSession = {
         id: String(row?.id ?? sessionId ?? ""),

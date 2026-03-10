@@ -51,7 +51,7 @@ export function GroupCallInviteSheet({ groupId, currentParticipantIds, onInvite,
           profiles: { id: string; display_name: string; avatar_url: string | null } | null;
         };
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+         
         const { data, error } = await (supabase as any)
           .from("group_members")
           .select(`

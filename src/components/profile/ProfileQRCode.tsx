@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { Download, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import QRCode from "qrcode";
+import { buildProfileUrl } from "@/lib/users/profileLinks";
 
 interface ProfileQRCodeProps {
   isOpen: boolean;
@@ -14,7 +15,9 @@ interface ProfileQRCodeProps {
 export function ProfileQRCode({ isOpen, onClose, username, userId, avatarUrl }: ProfileQRCodeProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const dayStamp = new Date().toISOString().slice(0, 10);
-  const profileUrl = `https://mansoni.ru/user/${userId}?qr_day=${dayStamp}`;
+  const qrUrl = new URL(buildProfileUrl({ username, userId }));
+  qrUrl.searchParams.set("qr_day", dayStamp);
+  const profileUrl = qrUrl.toString();
 
   useEffect(() => {
     if (!isOpen || !canvasRef.current) return;

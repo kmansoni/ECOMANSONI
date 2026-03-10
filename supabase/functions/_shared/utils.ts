@@ -7,8 +7,10 @@
 
 const LOCALHOST_ORIGINS = [
   "http://localhost:5173",
+  "http://localhost:8080",
   "http://localhost:3000",
   "http://127.0.0.1:5173",
+  "http://127.0.0.1:8080",
   "http://127.0.0.1:3000",
 ];
 
@@ -47,6 +49,8 @@ function getAllowedOrigins(): string[] {
 function isOriginAllowed(origin: string | null): boolean {
   if (!origin) return true; // Non-browser clients
   const normalized = origin.replace(/\/$/, "");
+  // Always allow local browser origins so remote edge functions can be tested from localhost.
+  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(normalized)) return true;
   const allowed = getAllowedOrigins();
   if (allowed.length === 0) return false;
   return allowed.includes(normalized);

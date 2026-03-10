@@ -245,6 +245,29 @@ services:
       start_period: 30s
 
   # =========================================================================
+  # ALERTMANAGER — Alert routing, deduplication, silencing & notifications
+  # Receives alerts from Prometheus, routes to webhooks/Telegram/PagerDuty
+  # =========================================================================
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager-data:/alertmanager
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+      - --web.listen-address=0.0.0.0:9093
+      - --cluster.listen-address=""
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9093/-/healthy"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # =========================================================================
   # PROMETHEUS — Metrics scraping & alerting
   # Scrapes: navigation-api, valhalla, martin, redis, redpanda, clickhouse
   # =========================================================================
@@ -254,12 +277,15 @@ services:
       - "9090:9090"
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/rules:/etc/prometheus/rules:ro
       - prometheus-data:/prometheus
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
       - --storage.tsdb.retention.time=30d
       - --web.enable-lifecycle
+    depends_on:
+      - alertmanager
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
@@ -309,6 +335,8 @@ volumes:
   redpanda-data:
     driver: local
   clickhouse-data:
+    driver: local
+  alertmanager-data:
     driver: local
   prometheus-data:
     driver: local

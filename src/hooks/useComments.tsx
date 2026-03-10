@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { checkHashtagsAllowedForText } from "@/lib/hashtagModeration";
+import { fetchUserBriefMap, resolveUserBrief } from "@/lib/users/userBriefs";
 
 export interface Comment {
   id: string;
@@ -74,17 +75,18 @@ export function useComments(postId: string) {
 
       // Get unique author IDs
       const authorIds = [...new Set(typedComments.map((c) => c.author_id))];
+      const briefMap = await fetchUserBriefMap(authorIds, supabase as any);
 
-      // Fetch author profiles
+      // Fetch author verification flags only
       const { data: profiles, error: profilesError } = await supabase
         .from("profiles")
-        .select("user_id, display_name, avatar_url, verified")
+        .select("user_id, verified")
         .in("user_id", authorIds);
 
       if (profilesError) throw profilesError;
 
-      const profilesMap = new Map(
-        profiles?.map((p) => [p.user_id, p]) || []
+      const verifiedMap = new Map(
+        profiles?.map((p) => [p.user_id, Boolean(p.verified)]) || []
       );
 
       // Check which comments the current user has liked
@@ -107,14 +109,14 @@ export function useComments(postId: string) {
 
       // Build comments with author and like info
       const enrichedComments: Comment[] = typedComments.map((comment) => {
-        const profile = profilesMap.get(comment.author_id);
+        const brief = resolveUserBrief(comment.author_id, briefMap);
         return {
           ...comment,
           author: {
-            display_name: profile?.display_name || "Пользователь",
-            avatar_url: profile?.avatar_url || null,
+            display_name: brief?.display_name || comment.author_id.slice(0, 8),
+            avatar_url: brief?.avatar_url || null,
             user_id: comment.author_id,
-            verified: profile?.verified || false,
+            verified: verifiedMap.get(comment.author_id) || false,
           },
           liked_by_user: likedCommentIds.has(comment.id),
         };

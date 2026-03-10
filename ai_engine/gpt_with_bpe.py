@@ -23,18 +23,38 @@
     text = pipeline.generate("The transformer", max_new_tokens=200)
 """
 
+# pyright: reportMissingImports=false
+
 from __future__ import annotations
 
 import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Any, Optional
 
-import torch
-import torch.nn as nn
-import torch.optim as optim
-from torch.utils.data import DataLoader, Dataset
+_TORCH_IMPORT_ERROR: ModuleNotFoundError | None = None
+try:
+    import torch
+    import torch.nn as nn
+    import torch.optim as optim
+    from torch.utils.data import DataLoader, Dataset
+except ModuleNotFoundError as exc:  # pragma: no cover - depends on local env
+    _TORCH_IMPORT_ERROR = exc
+    torch = None  # type: ignore[assignment]
+    nn = None  # type: ignore[assignment]
+    optim = None  # type: ignore[assignment]
+    DataLoader = None  # type: ignore[assignment]
+    Dataset = object  # type: ignore[assignment,misc]
+
+if TYPE_CHECKING:
+    from torch import Tensor
+    from torch.optim import Optimizer
+    from torch.optim.lr_scheduler import LambdaLR
+else:
+    Tensor = Any
+    Optimizer = Any
+    LambdaLR = Any
 
 # Детерминированный импорт: пакетный режим в составе ai_engine,
 # прямой импорт только при запуске файла как standalone script.
@@ -104,7 +124,7 @@ class BPETextDataset(Dataset):
             return 0
         return (len(self.data) - self.seq_len - 1) // self.stride + 1
 
-    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
+    def __getitem__(self, idx: int) -> tuple[Tensor, Tensor]:
         start = idx * self.stride
         end = start + self.seq_len
         x = self.data[start:end]
@@ -130,11 +150,21 @@ class BPEGPTPipeline:
         bpe_config: Optional[BPETrainConfig] = None,
         gpt_config: Optional[TransformerConfig] = None,
     ) -> None:
+        self._ensure_torch_available()
         self.bpe_config = bpe_config or BPETrainConfig()
         self.tokenizer = BPETokenizer()
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model: Optional[GPTLanguageModel] = None
         self.gpt_config: Optional[TransformerConfig] = gpt_config
+
+    @staticmethod
+    def _ensure_torch_available() -> None:
+        if _TORCH_IMPORT_ERROR is None:
+            return
+        raise RuntimeError(
+            "[BPEGPTPipeline] Missing optional dependency 'torch'. "
+            "Install with: pip install torch"
+        ) from _TORCH_IMPORT_ERROR
 
     def train_bpe(self, corpus: str) -> None:
         """Обучить BPE токенизатор на корпусе.
@@ -370,10 +400,10 @@ class BPEGPTPipeline:
 # ── Вспомогательные функции ────────────────────────────────────────────────────
 
 def _build_lr_scheduler(
-    optimizer: optim.Optimizer,
+    optimizer: Optimizer,
     warmup_steps: int,
     total_steps: int,
-) -> optim.lr_scheduler.LambdaLR:
+) -> LambdaLR:
     """Cosine LR schedule с linear warmup.
 
     lr(t) = lr_peak × min(t/warmup, 0.5×(1+cos(π×(t-warmup)/(total-warmup))))

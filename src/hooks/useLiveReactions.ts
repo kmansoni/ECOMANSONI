@@ -44,6 +44,8 @@ export function useLiveReactions(sessionId: number | null): UseLiveReactionsRetu
 
   // ── Subscription ──────────────────────────────────────────────────────────
   useEffect(() => {
+    const timerMap = timerMapRef.current;
+
     if (sessionId == null) {
       setReactions([]);
       setReactionCounts({ ...EMPTY_COUNTS });
@@ -65,21 +67,21 @@ export function useLiveReactions(sessionId: number | null): UseLiveReactionsRetu
         }));
 
         // Schedule auto-removal for animation cleanup
-        const existing = timerMapRef.current.get(reaction.id);
+        const existing = timerMap.get(reaction.id);
         if (existing) clearTimeout(existing);
         const timer = setTimeout(() => {
           setReactions((prev) => prev.filter((r) => r.id !== reaction.id));
-          timerMapRef.current.delete(reaction.id);
+          timerMap.delete(reaction.id);
         }, AUTO_REMOVE_MS);
-        timerMapRef.current.set(reaction.id, timer);
+        timerMap.set(reaction.id, timer);
       })
       .subscribe();
     channelRef.current = channel;
 
     return () => {
       // Clear all pending removal timers
-      timerMapRef.current.forEach((t) => clearTimeout(t));
-      timerMapRef.current.clear();
+      timerMap.forEach((t) => clearTimeout(t));
+      timerMap.clear();
       channelRef.current = null;
       void supabase.removeChannel(channel);
     };

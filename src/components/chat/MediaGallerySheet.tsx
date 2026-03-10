@@ -4,6 +4,7 @@ import { format } from "date-fns";
 import { ru } from "date-fns/locale";
 import { supabase } from "@/integrations/supabase/client";
 import { ImageViewer } from "./ImageViewer";
+import { fetchUserBriefMap, resolveUserBrief } from "@/lib/users/userBriefs";
 
 interface MediaItem {
   id: string;
@@ -99,12 +100,16 @@ export function MediaGallerySheet({ isOpen, onClose, conversationId, userId, tit
           if (messages && messages.length > 0) {
             // Get sender profiles for voice messages
             const senderIds = [...new Set(messages.map(m => m.sender_id))];
-            const { data: profiles } = await supabase
-              .from('profiles')
-              .select('user_id, display_name')
-              .in('user_id', senderIds);
-            
-            const profileMap = new Map(profiles?.map(p => [p.user_id, p.display_name]) || []);
+            const briefMap = await fetchUserBriefMap(senderIds as string[], supabase as any);
+            const senderNameMap = new Map(
+              senderIds
+                .filter(Boolean)
+                .map((senderId) => {
+                  const id = String(senderId);
+                  const brief = resolveUserBrief(id, briefMap);
+                  return [id, brief?.display_name ?? id.slice(0, 8)] as const;
+                })
+            );
             
             const grouped: Record<string, MediaItem[]> = {};
             messages.forEach(msg => {
@@ -123,7 +128,7 @@ export function MediaGallerySheet({ isOpen, onClose, conversationId, userId, tit
                 created_at: msg.created_at,
                 filename: type === 'files' ? filename : undefined,
                 duration: type === 'voice' ? (msg.duration_seconds || 0) : undefined,
-                sender_name: type === 'voice' ? (profileMap.get(msg.sender_id) || 'Пользователь') : undefined,
+                sender_name: type === 'voice' ? senderNameMap.get(String(msg.sender_id || '')) : undefined,
               });
             });
             setMedia(Object.entries(grouped).map(([month, items]) => ({ month, items })));

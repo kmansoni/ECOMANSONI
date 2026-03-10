@@ -1,0 +1,33 @@
+; ┌──────────────────────────────────────────────────────
+; │ DNS Zone Records for mansoni.ru email platform
+; │ Apply these at your DNS provider (Cloudflare/Route53/etc.)
+; └──────────────────────────────────────────────────────
+
+; ─── MX Record ─────────────────────
+@                IN    MX    10    mail.mansoni.ru.
+
+; ─── A/AAAA для mail server ─────────────────────
+mail             IN    A     YOUR_SERVER_IPv4
+mail             IN    AAAA  YOUR_SERVER_IPv6
+
+; ─── SPF ─────────────────────
+@                IN    TXT   "v=spf1 ip4:YOUR_SERVER_IPv4 ip6:YOUR_SERVER_IPv6 mx -all"
+
+; ─── DKIM ─────────────────────
+; Публичный ключ генерируется: opendkim-genkey -D /etc/opendkim/keys/mansoni.ru -d mansoni.ru -s mail
+mail._domainkey  IN    TXT   "v=DKIM1; h=sha256; k=rsa; p=YOUR_DKIM_PUBLIC_KEY"
+
+; ─── DMARC ─────────────────────
+_dmarc           IN    TXT   "v=DMARC1; p=quarantine; sp=quarantine; rua=mailto:dmarc-reports@mansoni.ru; ruf=mailto:dmarc-forensic@mansoni.ru; pct=100; adkim=r; aspf=r; fo=1"
+
+; ─── MTA-STS ─────────────────────
+_mta-sts         IN    TXT   "v=STSv1; id=20260309"
+
+; ─── TLS-RPT ─────────────────────
+_smtp._tls       IN    TXT   "v=TLSRPTv1; rua=mailto:tls-reports@mansoni.ru"
+
+; ─── PTR/rDNS (настраивается у хостера) ─────────
+; YOUR_SERVER_IPv4 → mail.mansoni.ru
+
+; ─── BIMI (optional, requires VMC) ─────────
+; default._bimi   IN    TXT   "v=BIMI1; l=https://mansoni.ru/bimi/logo.svg; a=https://mansoni.ru/bimi/cert.pem"

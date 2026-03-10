@@ -11,25 +11,18 @@ export type SendMessageV1Input = {
   body: string;
 };
 
-function unwrapRow(data: any): any {
-  if (Array.isArray(data)) return data[0] ?? null;
-  return data ?? null;
-}
-
 export async function sendMessageV1(input: SendMessageV1Input): Promise<SendMessageV1Result> {
-  const res = await (supabase as any).rpc("send_message_v1", {
+  const { data, error } = await supabase.rpc("send_message_v1", {
     conversation_id: input.conversationId,
     client_msg_id: input.clientMsgId,
     body: input.body,
   });
 
-  const error = (res as any)?.error;
-  const row = unwrapRow((res as any)?.data);
-
   if (error) {
     throw error;
   }
 
+  const row = Array.isArray(data) ? data[0] ?? null : data ?? null;
   const messageId = row?.message_id ? String(row.message_id) : "";
   const seqRaw = row?.seq;
   const seq = typeof seqRaw === "number" ? seqRaw : Number(seqRaw);

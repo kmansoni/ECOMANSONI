@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "./useAuth";
 import { checkHashtagsAllowedForText } from "@/lib/hashtagModeration";
+import { fetchUserBriefMap, resolveUserBrief } from "@/lib/users/userBriefs";
 
 export interface ReelComment {
   id: string;
@@ -67,14 +68,15 @@ export function useReelComments(reelId: string) {
 
       // Fetch author profiles
       const authorIds = [...new Set(commentRows.map((c) => c.author_id))];
+      const briefMap = await fetchUserBriefMap(authorIds, supabase as any);
       const { data: profilesData } = await supabase
         .from("profiles")
-        .select("user_id, display_name, avatar_url, verified")
+        .select("user_id, verified")
         .in("user_id", authorIds);
 
-      const profilesMap: Record<string, { display_name: string; avatar_url: string | null; verified: boolean }> = {};
+      const verifiedMap: Record<string, boolean> = {};
       (profilesData || []).forEach((p: any) => {
-        profilesMap[p.user_id] = { display_name: p.display_name || "Пользователь", avatar_url: p.avatar_url, verified: p.verified || false };
+        verifiedMap[String(p.user_id)] = Boolean(p.verified);
       });
 
       // Fetch likes by current user
@@ -100,9 +102,9 @@ export function useReelComments(reelId: string) {
         created_at: c.created_at,
         author: {
           user_id: c.author_id,
-          display_name: profilesMap[c.author_id]?.display_name || "Пользователь",
-          avatar_url: profilesMap[c.author_id]?.avatar_url || null,
-          verified: profilesMap[c.author_id]?.verified || false,
+          display_name: resolveUserBrief(c.author_id, briefMap)?.display_name || c.author_id.slice(0, 8),
+          avatar_url: resolveUserBrief(c.author_id, briefMap)?.avatar_url || null,
+          verified: verifiedMap[c.author_id] || false,
         },
         liked_by_user: userLikes.has(c.id),
       }));

@@ -42,16 +42,21 @@ type ReelsFeedMode = 'for_you' | 'following';
 
 const REELS_MODE_KEY = 'reels_feed_mode';
 
-function readReelsMode(): ReelsFeedMode {
+function getReelsModeKey(accountId: string | null | undefined): string {
+  return accountId ? `${REELS_MODE_KEY}:${accountId}` : REELS_MODE_KEY;
+}
+
+function readReelsMode(accountId?: string | null): ReelsFeedMode {
   try {
-    const v = localStorage.getItem(REELS_MODE_KEY);
+    const scoped = localStorage.getItem(getReelsModeKey(accountId));
+    const v = scoped ?? localStorage.getItem(REELS_MODE_KEY);
     if (v === 'for_you' || v === 'following') return v;
   } catch { /* ignore */ }
   return 'for_you';
 }
 
-function writeReelsMode(mode: ReelsFeedMode): void {
-  try { localStorage.setItem(REELS_MODE_KEY, mode); } catch { /* ignore */ }
+function writeReelsMode(mode: ReelsFeedMode, accountId?: string | null): void {
+  try { localStorage.setItem(getReelsModeKey(accountId), mode); } catch { /* ignore */ }
 }
 
 // ---------------------------------------------------------------------------
@@ -75,13 +80,13 @@ const PREFETCH_AHEAD = 2;
  * Гарантии:
  *  - Никогда не выбрасывает исключение (все поля nullable обрабатываются gracefully)
  *  - Все числовые счётчики ≥ 0
- *  - `author.id` совпадает с `author_id` для навигации `/profile/:id`
+ *  - `author.id` совпадает с `author_id` для навигации `/user/:slug`
  */
 function mapToFeedItem(reel: Reel, index: number): ReelFeedItem {
   const author: ReelAuthor = {
     id: reel.author_id,
     username: reel.author_id, // username недоступен в useReels — используем id как fallback
-    display_name: reel.author?.display_name ?? 'Пользователь',
+    display_name: reel.author?.display_name ?? String(reel.author_id || '').slice(0, 8),
     avatar_url: reel.author?.avatar_url ?? null,
     is_verified: reel.author?.verified ?? false,
     is_following: false, // состояние подписки не хранится в useReels
@@ -193,14 +198,18 @@ export default function ReelsPage(): JSX.Element {
   const { user } = useAuth();
 
   // Feed mode: "for_you" (ML-ranked) | "following" (chronological, followed authors)
-  const [feedMode, setFeedModeState] = useState<ReelsFeedMode>(readReelsMode);
+  const [feedMode, setFeedModeState] = useState<ReelsFeedMode>('for_you');
+
+  useEffect(() => {
+    setFeedModeState(readReelsMode(user?.id ?? null));
+  }, [user?.id]);
 
   const setFeedMode = useCallback((mode: ReelsFeedMode) => {
     setFeedModeState(mode);
-    writeReelsMode(mode);
+    writeReelsMode(mode, user?.id ?? null);
     // Reset scroll to top when switching tabs
     scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'instant' });
-  }, []);
+  }, [user?.id]);
 
   // Local follow-state cache: authorId → isFollowing (optimistic)
   const [followMap, setFollowMap] = useState<Record<string, boolean>>({});
@@ -436,7 +445,7 @@ export default function ReelsPage(): JSX.Element {
   }, []);
 
   const handleAuthorPress = useCallback(
-    (authorId: string) => navigate(`/profile/${authorId}`),
+    (authorId: string) => navigate(`/user/${encodeURIComponent(authorId)}`),
     [navigate],
   );
 

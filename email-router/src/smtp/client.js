@@ -49,7 +49,7 @@ function encodeSubject(subject) {
 }
 
 // ─── MIME multipart/alternative message builder ───────────────────────────────
-function buildMessage({ from, to, subject, html, text, replyTo, messageId, domain }) {
+function buildMessage({ from, to, subject, html, text, replyTo, inReplyTo, references, messageId, domain }) {
   const boundary = `----=_Part_${crypto.randomBytes(12).toString('hex')}`;
   const date = new Date().toUTCString();
   const safeTo = sanitizeSmtpParam(to);
@@ -68,6 +68,9 @@ function buildMessage({ from, to, subject, html, text, replyTo, messageId, domai
   ];
 
   if (safeReplyTo) lines.push(`Reply-To: ${safeReplyTo}`);
+  // RFC 2822 threading headers — critical for Gmail/Outlook to group replies correctly
+  if (inReplyTo) lines.push(`In-Reply-To: <${sanitizeSmtpParam(inReplyTo)}>`);
+  if (references) lines.push(`References: <${sanitizeSmtpParam(references)}>`);
 
   if (html && text) {
     lines.push(`Content-Type: multipart/alternative; boundary="${boundary}"`);
@@ -168,14 +171,40 @@ function parseCapabilities(ehloResp) {
 // ─── Main sendMail function ───────────────────────────────────────────────────
 
 /**
- * @param {{ from: string, to: string, subject: string, html?: string, text?: string, replyTo?: string }} mail
+ * @typedef {{ host: string, port: number, user: string, pass: string, secure: boolean, from?: string, domain?: string }} SmtpOverride
+ *
+ * @param {{ from: string, to: string, subject: string, html?: string, text?: string, replyTo?: string, inReplyTo?: string, references?: string, fromName?: string }} mail
+ * @param {SmtpOverride|null} [smtpOverride]  — per-request SMTP credentials (user SMTP settings)
  * @returns {Promise<{ messageId: string, response: string }>}
  */
-export async function sendMail(mail) {
+export async function sendMail(mail, smtpOverride = null) {
   const cfg = getConfig();
-  const { host, port, user, pass, secure } = cfg.smtp;
 
-  const messageId = `er-${Date.now()}-${crypto.randomBytes(4).toString('hex')}@${cfg.domain}`;
+  // Per-request SMTP override — allows per-user Gmail/Yandex/Outlook credentials
+  // Security: smtpOverride is injected ONLY from the Supabase Edge Function proxy
+  // after decrypting from Vault. It never comes from the client directly.
+  const smtpCfg = smtpOverride ? {
+    host: sanitizeSmtpParam(smtpOverride.host),
+    port: Number(smtpOverride.port) || 587,
+    user: sanitizeSmtpParam(smtpOverride.user),
+    pass: smtpOverride.pass, // NOT sanitized — password is opaque binary
+    secure: smtpOverride.secure ?? false,
+    from: smtpOverride.from ? sanitizeSmtpParam(smtpOverride.from) : null,
+    domain: smtpOverride.domain ?? cfg.domain,
+  } : {
+    host: cfg.smtp.host,
+    port: cfg.smtp.port,
+    user: cfg.smtp.user,
+    pass: cfg.smtp.pass,
+    secure: cfg.smtp.secure,
+    from: cfg.smtp.from,
+    domain: cfg.domain,
+  };
+
+  const { host, port, user, pass, secure } = smtpCfg;
+  const messageDomain = smtpCfg.domain;
+
+  const messageId = `er-${Date.now()}-${crypto.randomBytes(4).toString('hex')}@${messageDomain}`;
 
   logger.info('smtp.session.start', { to: mail.to, messageId, host, port });
 
@@ -201,7 +230,7 @@ export async function sendMail(mail) {
       throw new SmtpError(parseInt(banner.slice(0, 3), 10), `Unexpected banner: ${banner}`);
     }
 
-    const hostname = `email-router.${cfg.domain}`;
+    const hostname = `email-router.${messageDomain}`;
 
     // ── 3. EHLO ─────────────────────────────────────────────────────────────
     let { code, resp } = await command(socket, `EHLO ${hostname}`, T.EHLO);
@@ -241,7 +270,11 @@ export async function sendMail(mail) {
     }
 
     // ── 6. MAIL FROM ─────────────────────────────────────────────────────────
-    const from = sanitizeSmtpParam(mail.from || cfg.smtp.from);
+    const from = sanitizeSmtpParam(mail.from || smtpCfg.from || cfg.smtp.from);
+    // Build "From Name" header: "Display Name <email>" if fromName provided
+    const fromHeader = mail.fromName
+      ? `${sanitizeSmtpParam(mail.fromName)} <${from}>`
+      : from;
     const mf = await command(socket, `MAIL FROM:<${from}>`, T.MAIL_FROM);
     if (mf.code !== 250) throw new SmtpError(mf.code, mf.resp);
 
@@ -255,14 +288,16 @@ export async function sendMail(mail) {
     if (di.code !== 354) throw new SmtpError(di.code, di.resp);
 
     const rawMessage = buildMessage({
-      from,
+      from: fromHeader,
       to,
       subject: mail.subject,
       html: mail.html,
       text: mail.text,
       replyTo: mail.replyTo,
+      inReplyTo: mail.inReplyTo,
+      references: mail.references,
       messageId,
-      domain: cfg.domain,
+      domain: messageDomain,
     });
 
     const stuffed = dotStuff(rawMessage);

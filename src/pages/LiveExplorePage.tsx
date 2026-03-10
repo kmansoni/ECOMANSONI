@@ -24,6 +24,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { buildProfilePath } from '@/lib/users/profileLinks';
 import { cn } from '@/lib/utils';
 
 // ---------------------------------------------------------------------------
@@ -380,7 +381,7 @@ function RecommendedStreamerCard({ streamer }: { streamer: RecommendedStreamer }
   const name = streamer.display_name || streamer.username;
   return (
     <button
-      onClick={() => navigate(`/profile/${streamer.username}`)}
+      onClick={() => navigate(buildProfilePath({ username: streamer.username }))}
       className="flex shrink-0 flex-col items-center gap-1.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 rounded-xl p-2"
       aria-label={`Профиль ${name}`}
     >

@@ -187,11 +187,13 @@ export function useDeliveryStatus(conversationId: string | null): {
   // ── Cleanup ───────────────────────────────────────────────────────────────
 
   useEffect(() => {
+    const pendingReadIds = pendingReadIdsRef.current;
+
     return () => {
       if (debounceTimerRef.current != null) {
         window.clearTimeout(debounceTimerRef.current);
         // Flush синхронно при unmount, если есть незафиксированные receipts
-        const pending = Array.from(pendingReadIdsRef.current);
+        const pending = Array.from(pendingReadIds);
         if (pending.length > 0 && user) {
           const now = new Date().toISOString();
           const rows = pending.map((id) => ({

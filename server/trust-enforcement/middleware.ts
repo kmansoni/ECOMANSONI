@@ -84,10 +84,19 @@ export function createTrustMiddleware(config: TrustMiddlewareConfig = {}) {
         });
       }
 
-      // 4. Check rate limits (get action from route or query param)
-      const action =
-        (req.query.action as string) ||
-        `${req.method.toLowerCase()}:${req.baseUrl}`; // default action
+      // 4. Определяем ключ действия для rate-limiting.
+      //
+      // SECURITY: action НЕ берётся из req.query, req.body или любых
+      // client-controlled источников. Атакующий мог бы передать
+      // ?action=get:health чтобы использовать "лёгкий" bucket вместо
+      // реального — и отправлять сколько угодно запросов к чувствительным
+      // endpoints.
+      //
+      // Вместо этого action формируется только из метаданных маршрута:
+      //   routeKey = "METHOD:basePath" (например "post:/api/messages")
+      // Вызывающий может передать свою getRateLimitConfig(action) исходя из
+      // этого формата.
+      const action = `${req.method.toLowerCase()}:${req.baseUrl || req.path}`;
 
       if (config.getRateLimitConfig) {
         const rateLimitConfig = config.getRateLimitConfig(action);
@@ -107,14 +116,14 @@ export function createTrustMiddleware(config: TrustMiddlewareConfig = {}) {
                 `[TrustMiddleware] Rate limit exceeded: ${actor.type}:${actor.id} - ${action}`
               );
             }
-            // Return 429 Too Many Requests
-            res.status(429).json({
+            // Заголовок должен быть установлен ДО отправки тела ответа
+            const retryAfterSec = decision.wait_ms ? Math.ceil(decision.wait_ms / 1000) : 60;
+            res.setHeader('Retry-After', String(retryAfterSec));
+            return res.status(429).json({
               error: 'rate_limit_exceeded',
               message: 'Too many requests. Please try again later.',
-              retry_after: decision.wait_ms ? Math.ceil(decision.wait_ms / 1000) : undefined,
+              retry_after: retryAfterSec,
             });
-            res.setHeader('Retry-After', decision.wait_ms ? Math.ceil(decision.wait_ms / 1000) : '60');
-            return;
           }
 
           // Add decision info to request for logging
@@ -129,9 +138,38 @@ export function createTrustMiddleware(config: TrustMiddlewareConfig = {}) {
 
       next();
     } catch (err) {
-      console.error('[TrustMiddleware] Error:', err);
-      // Fail open: allow on service error
-      next();
+      /**
+       * SECURITY FIX (C-5): Fail-CLOSED instead of fail-open.
+       *
+       * BEFORE: On internal error, middleware called next() — allowing the
+       * request through without any trust/rate-limit checks. This is a
+       * classic fail-open vulnerability: an attacker who can trigger errors
+       * in the trust service (e.g., Redis down, DB timeout) bypasses ALL
+       * enforcement.
+       *
+       * AFTER: Return 503 Service Unavailable. The request is NOT forwarded
+       * to downstream handlers. This ensures zero-trust: if we can't verify
+       * trust, we deny access.
+       *
+       * TRADE-OFF: Brief availability degradation during trust-service outages
+       * vs. allowing potentially malicious traffic through unchecked.
+       * For a security-critical system, denial is the correct default.
+       */
+      console.error(
+        '[TrustMiddleware] FAIL-CLOSED: Trust enforcement error, denying request.',
+        {
+          error: err instanceof Error ? err.message : String(err),
+          stack: err instanceof Error ? err.stack : undefined,
+          path: req.path,
+          method: req.method,
+          ip: req.ip,
+          timestamp: new Date().toISOString(),
+        },
+      );
+      return res.status(503).json({
+        error: 'service_unavailable',
+        message: 'Trust enforcement service is temporarily unavailable. Please retry later.',
+      });
     }
   };
 }

@@ -6,24 +6,26 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
-import { getPhoneAuthHeaders } from "@/lib/auth/backendEndpoints";
+import logo from "@/assets/logo.png";
 
 interface RegistrationModalProps {
   isOpen: boolean;
   onClose: () => void;
   phone: string;
+  email?: string;
   onSuccess: () => void;
 }
 
 type EntityType = "individual" | "legal_entity" | "entrepreneur";
 type Gender = "male" | "female";
 
-export function RegistrationModal({ isOpen, onClose, phone, onSuccess }: RegistrationModalProps) {
+export function RegistrationModal({ isOpen, onClose, phone, email: initialEmail, onSuccess }: RegistrationModalProps) {
   const [loading, setLoading] = useState(false);
   
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
-  const [email, setEmail] = useState("");
+  const [emailField, setEmailField] = useState(initialEmail || "");
+  const [phoneField, setPhoneField] = useState(phone || "");
   const [birthDate, setBirthDate] = useState("");
   const [gender, setGender] = useState<Gender | "">("");
   const [entityType, setEntityType] = useState<EntityType | "">("");
@@ -43,7 +45,7 @@ export function RegistrationModal({ isOpen, onClose, phone, onSuccess }: Registr
     e.preventDefault();
     if (loading) return;
     
-    if (!firstName.trim() || !lastName.trim() || !email.trim() || !birthDate || !gender || !entityType) {
+    if (!firstName.trim() || !lastName.trim() || !emailField.trim() || !birthDate || !gender || !entityType) {
       toast.error("Заполните все поля");
       return;
     }
@@ -57,53 +59,40 @@ export function RegistrationModal({ isOpen, onClose, phone, onSuccess }: Registr
     setLoading(true);
 
     try {
-      const digits = phone.replace(/\D/g, '');
       const displayName = `${firstName} ${lastName}`;
+      const digits = phoneField.replace(/\D/g, '');
 
-      // Call phone-auth function via supabase.functions.invoke
-      const { data, error } = await supabase.functions.invoke('phone-auth', {
-        headers: getPhoneAuthHeaders(),
-        body: {
-          action: "register-or-login",
-          phone: `+${digits}`,
-          display_name: displayName,
-          email: email,
+      // Get current session — user is already logged in via email OTP
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) {
+        toast.error("Сессия истекла, войдите снова");
+        return;
+      }
+
+      // Update Supabase Auth user metadata
+      await supabase.auth.updateUser({
+        data: {
+          full_name: displayName,
+          phone: digits || undefined,
         },
       });
 
-      if (error || !data?.ok) {
-        toast.error("Не удалось создать аккаунт", { description: error?.message || data?.error || "Unknown error" });
-        return;
-      }
-
-      // Sign in with the access token and refresh token
-      const { error: signInError } = await supabase.auth.setSession({
-        access_token: data.accessToken,
-        refresh_token: data.refreshToken,
-      });
-
-      if (signInError) {
-        console.error("Sign-in error:", signInError);
-        toast.error("Ошибка входа");
-        return;
-      }
-
       // Update profile with full information
-      const profilePatch: any = {
+      const profilePatch: Record<string, unknown> = {
         display_name: displayName,
         first_name: firstName,
         last_name: lastName,
-        email,
-        phone: digits,
+        email: emailField,
         birth_date: birthDate,
         age: calculateAge(birthDate),
         gender,
         entity_type: entityType,
       };
+      if (digits) profilePatch.phone = digits;
 
       const { error: updateError } = await supabase
         .from("profiles")
-        .upsert({ user_id: data.userId, ...profilePatch }, { onConflict: "user_id" });
+        .upsert({ user_id: session.user.id, ...profilePatch }, { onConflict: "user_id" });
 
       if (updateError) {
         console.error("[RegistrationModal] profile upsert failed:", updateError.message);
@@ -129,7 +118,10 @@ export function RegistrationModal({ isOpen, onClose, phone, onSuccess }: Registr
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div className="bg-white dark:bg-slate-900 rounded-lg p-6 max-w-md w-full mx-4 shadow-lg">
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-bold">Завершите регистрацию</h2>
+          <div className="flex items-center gap-3">
+            <img src={logo} alt="Logo" className="w-8 h-8 object-contain" />
+            <h2 className="text-xl font-bold">Завершите регистрацию</h2>
+          </div>
           <button
             onClick={() => {
               if (!loading) onClose();
@@ -144,7 +136,7 @@ export function RegistrationModal({ isOpen, onClose, phone, onSuccess }: Registr
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="bg-slate-100 dark:bg-slate-800 p-3 rounded text-sm">
             <p className="text-gray-600 dark:text-gray-400">
-              Номер: <span className="font-semibold text-gray-900 dark:text-white">{phone}</span>
+              Email: <span className="font-semibold text-gray-900 dark:text-white">{emailField || initialEmail || '—'}</span>
             </p>
           </div>
 
@@ -177,8 +169,20 @@ export function RegistrationModal({ isOpen, onClose, phone, onSuccess }: Registr
               id="email"
               type="email"
               placeholder="mail@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              value={emailField}
+              onChange={(e) => setEmailField(e.target.value)}
+              disabled={loading || !!initialEmail}
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="phone" className="text-sm">Телефон</Label>
+            <Input
+              id="phone"
+              type="tel"
+              placeholder="+7 (999) 123-45-67"
+              value={phoneField}
+              onChange={(e) => setPhoneField(e.target.value)}
               disabled={loading}
             />
           </div>

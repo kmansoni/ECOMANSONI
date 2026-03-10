@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { Heart, MessageCircle, ChevronRight, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { fetchUserBriefMap, resolveUserBrief } from "@/lib/users/userBriefs";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -57,12 +58,9 @@ export function SharedPostCard({ postId, isOwn, messageId, onDelete }: SharedPos
 
         if (postError) throw postError;
 
-        // Fetch author profile
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("display_name, avatar_url")
-          .eq("user_id", postData.author_id)
-          .single();
+        const authorId = String((postData as any).author_id || "");
+        const briefMap = await fetchUserBriefMap([authorId], supabase as any);
+        const profile = resolveUserBrief(authorId, briefMap);
 
         // Fetch post media (first image only for preview)
         const { data: media } = await supabase
@@ -74,7 +72,9 @@ export function SharedPostCard({ postId, isOwn, messageId, onDelete }: SharedPos
 
         setPost({
           ...postData,
-          author: profile || undefined,
+          author: profile
+            ? { display_name: profile.display_name, avatar_url: profile.avatar_url }
+            : undefined,
           media: media || [],
         });
       } catch (error) {
@@ -149,7 +149,7 @@ export function SharedPostCard({ postId, isOwn, messageId, onDelete }: SharedPos
   }
 
   const imageUrl = post.media?.[0]?.media_url;
-  const authorName = post.author?.display_name || "Пользователь";
+  const authorName = post.author?.display_name || String(post.author_id || "").slice(0, 8);
   const contentPreview = post.content
     ? post.content.slice(0, 80) + (post.content.length > 80 ? "..." : "")
     : "";

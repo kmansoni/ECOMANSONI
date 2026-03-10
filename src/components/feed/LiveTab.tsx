@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Loader2, Radio } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { fetchUserBriefMap, resolveUserBrief } from "@/lib/users/userBriefs";
 
 interface LiveSession {
   id: string;
@@ -49,25 +50,13 @@ export function LiveTab() {
 
       // Загрузить аватары создателей
       const creatorIds = [...new Set(rows.map((r) => r.creator_id).filter(Boolean))];
-      let profileMap: Record<string, { display_name: string; avatar_url: string | null }> = {};
-      if (creatorIds.length > 0) {
-        const { data: profiles } = await supabase
-          .from("profiles")
-          .select("user_id, display_name, avatar_url")
-          .in("user_id", creatorIds);
-        for (const p of profiles || []) {
-          profileMap[String((p as any).user_id)] = {
-            display_name: String((p as any).display_name ?? ""),
-            avatar_url: (p as any).avatar_url ?? null,
-          };
-        }
-      }
+      const briefMap = await fetchUserBriefMap(creatorIds, supabase as any);
 
       setSessions(
         rows.map((r) => ({
           ...r,
-          creator_name: profileMap[r.creator_id]?.display_name ?? "Стример",
-          creator_avatar: profileMap[r.creator_id]?.avatar_url ?? undefined,
+          creator_name: resolveUserBrief(r.creator_id, briefMap)?.display_name ?? "Стример",
+          creator_avatar: resolveUserBrief(r.creator_id, briefMap)?.avatar_url ?? undefined,
         })),
       );
     } catch (err) {

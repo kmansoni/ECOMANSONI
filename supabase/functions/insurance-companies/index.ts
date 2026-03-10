@@ -65,6 +65,13 @@ serve(async (req) => {
     return new Response("ok", { headers: corsHeaders });
   }
 
+  if (req.method !== "GET") {
+    return new Response(
+      JSON.stringify({ error: { code: "METHOD_NOT_ALLOWED", message: "Use GET" } }),
+      { status: 405, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+
   try {
     const url = new URL(req.url);
     const category = url.searchParams.get("category");
@@ -72,11 +79,12 @@ serve(async (req) => {
     const sortBy = url.searchParams.get("sort_by") ?? "rating";
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
-    const supabaseServiceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
     let companies: CompanyOutput[] = [...fallbackCompanies];
 
-    if (supabaseUrl && supabaseServiceRoleKey) {
-      const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
+    // Public endpoint: never use service role key here.
+    if (supabaseUrl && supabaseAnonKey) {
+      const supabase = createClient(supabaseUrl, supabaseAnonKey);
       const { data, error } = await supabase
         .from("insurance_companies")
         .select("id,name,rating,reviews_count,founded_year,license_number,categories,description,logo_url,is_partner,api_available,avg_claim_days,claim_approval_rate,premium_start")

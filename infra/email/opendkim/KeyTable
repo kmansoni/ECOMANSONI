@@ -1,0 +1,1 @@
+mail._domainkey.mansoni.ru mansoni.ru:mail:/etc/opendkim/keys/mansoni.ru/mail.private

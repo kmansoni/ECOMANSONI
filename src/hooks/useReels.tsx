@@ -4,6 +4,7 @@ import { useAuth } from "./useAuth";
 import { isGuestMode } from "@/lib/demo/demoMode";
 import { getDemoBotsReels, isDemoId } from "@/lib/demo/demoBots";
 import { trackAnalyticsEvent } from "@/lib/analytics/firehose";
+import { fetchUserBriefMap, resolveUserBrief } from "@/lib/users/userBriefs";
 
 function safeRandomUUID(): string {
   try {
@@ -273,18 +274,19 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
 
       const feedReelIds = normalizedRows.map((r: any) => r.id) as string[];
       const authorIds = [...new Set(normalizedRows.map((r: any) => r.author_id))] as string[];
+        const briefMap = await fetchUserBriefMap(authorIds, supabase as any);
 
-      let profiles: any[] = [];
+      let profiles: Array<{ user_id: string; verified?: boolean | null }> = [];
       if (authorIds.length) {
         const profilesResWithVerified = await supabase
           .from("profiles")
-          .select("user_id, display_name, avatar_url, verified")
+          .select("user_id, verified")
           .in("user_id", authorIds);
 
         if (profilesResWithVerified.error && isMissingColumnError(profilesResWithVerified.error, "verified")) {
           const profilesResWithoutVerified = await supabase
             .from("profiles")
-            .select("user_id, display_name, avatar_url")
+            .select("user_id")
             .in("user_id", authorIds);
           if (profilesResWithoutVerified.error) throw profilesResWithoutVerified.error;
           profiles = profilesResWithoutVerified.data || [];
@@ -294,7 +296,7 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
         }
       }
 
-      const profileMap = new Map((profiles || []).map((p) => [p.user_id, p]));
+      const verifiedMap = new Map((profiles || []).map((p) => [p.user_id, Boolean(p.verified)]));
 
       let userLikedReels: string[] = [];
       let userSavedReels: string[] = [];
@@ -311,12 +313,14 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
       }
 
       const reelsWithAuthors: Reel[] = normalizedRows.map((r: any) => {
+        const brief = resolveUserBrief(r.author_id, briefMap);
         return {
           ...r,
-          author: profileMap.get(r.author_id) || {
-            display_name: "Пользователь",
-            avatar_url: null,
-            verified: false,
+          author: {
+            display_name: brief?.display_name ?? null,
+            avatar_url: brief?.avatar_url ?? null,
+            username: brief?.username ?? null,
+            verified: verifiedMap.get(r.author_id) ?? false,
           },
           isLiked: userLikedReels.includes(r.id),
           isSaved: user ? userSavedReels.includes(r.id) : false,

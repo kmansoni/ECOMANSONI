@@ -12,6 +12,7 @@ import { useSearch, type SearchUser } from "@/hooks/useSearch";
 import { supabase } from "@/lib/supabase";
 import { buildChatBodyEnvelope, sendMessageV1 } from "@/lib/chat/sendMessageV1";
 import { GradientAvatar } from "@/components/ui/gradient-avatar";
+import { fetchUserBriefMap, resolveUserBrief } from "@/lib/users/userBriefs";
 
 interface ForwardMessageSheetProps {
   open: boolean;
@@ -35,7 +36,7 @@ function messagePreview(message: ChatMessage) {
 
 function getOtherParticipantTitle(conversation: any, currentUserId: string) {
   const other = (conversation.participants || []).find((p: any) => p.user_id !== currentUserId);
-  return other?.profile?.display_name || "Пользователь";
+  return other?.profile?.display_name || String(other?.user_id || "").slice(0, 8);
 }
 
 function guessMyName(user: { email?: string | null; user_metadata?: any } | null): string {
@@ -99,12 +100,8 @@ export function ForwardMessageSheet({ open, onOpenChange, message }: ForwardMess
 
     (async () => {
       try {
-        const { data } = await supabase
-          .from("profiles")
-          .select("display_name")
-          .eq("user_id", user.id)
-          .single();
-        const name = (data?.display_name || "").trim();
+        const briefMap = await fetchUserBriefMap([user.id], supabase as any);
+        const name = (resolveUserBrief(user.id, briefMap)?.display_name || "").trim();
         if (name) setSenderName(name);
       } catch {
         // ignore

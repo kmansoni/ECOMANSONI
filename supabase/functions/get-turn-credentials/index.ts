@@ -23,6 +23,8 @@
  *   realm=mansoni.ru
  */
 
+/// <reference path="../_shared/edge-runtime-types.d.ts" />
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { handleCors, enforceCors } from "../_shared/utils.ts";
@@ -124,25 +126,29 @@ async function resolveUserId(req: Request): Promise<string | null> {
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
-  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  const publishableKey = Deno.env.get("SUPABASE_PUBLISHABLE_KEY");
 
   if (!supabaseUrl) return null;
 
-  // Prefer service-role key for token validation (avoids RLS policy blocking)
-  const clientKey = serviceKey ?? anonKey;
-  if (!clientKey) {
-    console.error("[get-turn-credentials] Missing SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY");
+  const authKeys = [anonKey ?? "", publishableKey ?? ""]
+    .map((v) => v.trim())
+    .filter((v, i, arr) => !!v && arr.indexOf(v) === i);
+
+  if (authKeys.length === 0) {
+    console.error("[get-turn-credentials] Missing SUPABASE_ANON_KEY / SUPABASE_PUBLISHABLE_KEY");
     return null;
   }
 
-  try {
-    const supabase = createClient(supabaseUrl, clientKey, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
-    const { data, error } = await supabase.auth.getUser(token);
-    if (!error && data?.user?.id) return data.user.id;
-  } catch (err) {
-    console.warn("[get-turn-credentials] JWT validation error", err);
+  for (const key of authKeys) {
+    try {
+      const supabase = createClient(supabaseUrl, key, {
+        auth: { persistSession: false, autoRefreshToken: false },
+      });
+      const { data, error } = await supabase.auth.getUser(token);
+      if (!error && data?.user?.id) return data.user.id;
+    } catch (err) {
+      console.warn("[get-turn-credentials] JWT validation error", err);
+    }
   }
 
   return null;
@@ -178,7 +184,15 @@ async function enforceRateLimit(userId: string, clientIp: string): Promise<Respo
     const admin = createClient(supabaseUrl, serviceKey, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
-    const { data, error } = await (admin as ReturnType<typeof createClient>).rpc(
+    // The workspace Supabase TS client types don't include this custom function.
+    // We use a local interface to retain as much safety as the untyped binding allows:
+    // p_user_id and p_client_ip are always passed as UUID/text respectively, and the
+    // return value shape is documented here rather than via the generated Database type.
+    interface RlResult { allowed: boolean; remaining: number }
+    const rpcAdmin = admin as unknown as {
+      rpc: (fn: string, args: Record<string, string>) => Promise<{ data: RlResult | null; error: { message: string } | null }>
+    };
+    const { data, error } = await rpcAdmin.rpc(
       "turn_issuance_rl_hit_v1",
       { p_user_id: userId, p_client_ip: clientIp },
     );
@@ -188,7 +202,7 @@ async function enforceRateLimit(userId: string, clientIp: string): Promise<Respo
       return null;
     }
 
-    if (data && (data as { allowed?: boolean }).allowed === false) {
+    if (data && data.allowed === false) {
       return new Response(
         JSON.stringify({ error: "rate_limited", retryAfterSeconds: 60 }),
         { status: 429, headers: { "Content-Type": "application/json", "Retry-After": "60" } },

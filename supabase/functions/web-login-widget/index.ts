@@ -36,6 +36,13 @@ const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const APP_NAME = Deno.env.get("APP_NAME") ?? "Messenger";
 // Public app URL for callback page
 const APP_PUBLIC_URL = Deno.env.get("APP_PUBLIC_URL") ?? "https://app.example.com";
+const APP_PUBLIC_ORIGIN = (() => {
+  try {
+    return new URL(APP_PUBLIC_URL).origin;
+  } catch {
+    return APP_PUBLIC_URL;
+  }
+})();
 // Session TTL in seconds
 const SESSION_TTL_SECONDS = 300;
 // Max auth_date drift allowed (seconds)
@@ -202,15 +209,16 @@ async function authorizeSession(
   // Fetch user profile
   const { data: profile } = await supabase
     .from("profiles")
-    .select("username, full_name, avatar_url")
-    .eq("id", userId)
+    .select("username, display_name, avatar_url")
+    .eq("user_id", userId)
     .single();
 
   const { data: authUser } = await supabase.auth.admin.getUserById(userId);
   if (!authUser.user) throw new Error("user_not_found");
 
   const authDate = Math.floor(Date.now() / 1000);
-  const nameParts = (profile?.full_name ?? "").split(" ");
+  const fullName = (profile?.display_name ?? authUser.user.user_metadata?.full_name ?? "").trim();
+  const nameParts = fullName.split(" ").filter(Boolean);
 
   const baseData: Omit<AuthData, "hash"> = {
     id: userId,
@@ -282,7 +290,7 @@ function handleScriptRequest(req: Request): Response {
     );
     
     var handler = function(e) {
-      if (e.origin !== '${APP_PUBLIC_URL}') return;
+      if (e.origin !== '${APP_PUBLIC_ORIGIN}') return;
       if (e.data && e.data.type === 'messenger_auth') {
         window.removeEventListener('message', handler);
         if (typeof window.onMessengerAuth === 'function') {

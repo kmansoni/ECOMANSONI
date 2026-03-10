@@ -65,6 +65,7 @@ export function AppLayout() {
 
       <BottomNav
         hidden={shouldHideBottomNav}
+        disableHideAnimation={isCreatingContent}
         onCreateClick={() => setCreateOpen(true)}
       />
       {/* Call UI is now handled globally by GlobalCallOverlay in App.tsx */}

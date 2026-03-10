@@ -4,10 +4,16 @@
  * Generates a 6-digit OTP, stores in email_otp_codes table, sends via
  * the deployed email-router (/v1/email/send).
  *
+ * Accepts either:
+ *  - { email }          — send OTP directly to given email
+ *  - { phone }          — lookup profile by phone, send OTP to stored email
+ *  - { phone, email }   — registration flow: send OTP to given email
+ *
  * Required secrets:
  *  - SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY (auto-set)
  *  - EMAIL_ROUTER_URL            — e.g. http://155.212.245.89:8090
- *  - EMAIL_ROUTER_INGEST_KEY     — x-ingest-key header value
+ *  - EMAIL_ROUTER_INGEST_KEY     — preferred x-ingest-key header value for VPS email-router
+ *  - EMAIL_ROUTER_API_KEY        — legacy alias supported for compatibility
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
@@ -27,6 +33,24 @@ function generateOTP(): string {
   return String(buf[0] % 1_000_000).padStart(6, "0");
 }
 
+/** Mask email: "user@example.com" → "u***@example.com" */
+function maskEmail(email: string): string {
+  const [local, domain] = email.split("@");
+  if (!domain) return "***";
+  if (local.length <= 2) return `${local[0]}***@${domain}`;
+  return `${local[0]}${local[1]}${"*".repeat(Math.min(local.length - 2, 6))}@${domain}`;
+}
+
+/** Normalize phone to digits only, ensure starts with country code */
+function normalizePhone(raw: string): string {
+  let digits = raw.replace(/\D/g, "");
+  // Russian numbers: 8xxx → 7xxx
+  if (digits.length === 11 && digits.startsWith("8")) {
+    digits = "7" + digits.slice(1);
+  }
+  return digits;
+}
+
 Deno.serve(async (req: Request) => {
   // CORS preflight
   const corsResp = handleCors(req);
@@ -40,25 +64,28 @@ Deno.serve(async (req: Request) => {
 
   // Parse body
   let email: string;
+  let phone: string | undefined;
+  let maskedEmailForResponse: string | undefined;
   try {
     const body = await req.json();
     email = (body.email ?? "").trim().toLowerCase();
+    phone = body.phone ? String(body.phone).trim() : undefined;
   } catch {
     return jsonResp(origin, { error: "Invalid JSON" }, 400);
   }
-
-  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return jsonResp(origin, { error: "Invalid email" }, 400);
-  }
-
-  // IP-based burst protection: max 5 OTP requests per IP per 10 min
-  const clientIp = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
 
   // Env vars
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   const emailRouterUrl = Deno.env.get("EMAIL_ROUTER_URL");
-  const emailRouterIngestKey = Deno.env.get("EMAIL_ROUTER_INGEST_KEY");
+  const preferredEmailRouterKey = Deno.env.get("EMAIL_ROUTER_INGEST_KEY");
+  const legacyEmailRouterKey = Deno.env.get("EMAIL_ROUTER_API_KEY");
+  const emailRouterIngestKey = preferredEmailRouterKey ?? legacyEmailRouterKey;
+  const emailRouterKeySource = preferredEmailRouterKey
+    ? "EMAIL_ROUTER_INGEST_KEY"
+    : legacyEmailRouterKey
+      ? "EMAIL_ROUTER_API_KEY"
+      : null;
 
   if (!supabaseUrl || !serviceRoleKey) {
     console.error("[send-email-otp] Missing SUPABASE env vars");
@@ -72,6 +99,34 @@ Deno.serve(async (req: Request) => {
   const supabase = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false },
   });
+
+  // ── Phone-based login: look up email from profiles ──────────────────────
+  if (phone && !email) {
+    const digits = normalizePhone(phone);
+    if (digits.length < 10) {
+      return jsonResp(origin, { error: "Invalid phone number" }, 400);
+    }
+
+    // Search profiles by phone (try multiple formats)
+    const phoneCandidates = [digits, `+${digits}`, `+7${digits.slice(1)}`];
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("email, phone")
+      .or(phoneCandidates.map((p) => `phone.eq.${p}`).join(","))
+      .limit(1)
+      .maybeSingle();
+
+    if (!profile?.email) {
+      return jsonResp(origin, { error: "not_found", message: "Аккаунт не найден. Пройдите регистрацию." }, 404);
+    }
+
+    email = profile.email.trim().toLowerCase();
+    maskedEmailForResponse = maskEmail(email);
+  }
+
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return jsonResp(origin, { error: "Invalid email" }, 400);
+  }
 
   // ── DB-based cooldown: 60 sec between sends per email ───────────────────
   const COOLDOWN_SEC = 60;
@@ -113,7 +168,12 @@ Deno.serve(async (req: Request) => {
     return jsonResp(origin, { error: "Failed to generate code" }, 500);
   }
 
-  // ── Send email via email-router (/v1/email/send) ────────────────────────
+  // ── Send email via email-router ─────────────────────────────────────────
+  //
+  // Production VPS currently serves the TypeScript router build and accepts:
+  //   POST /v1/email/send
+  //
+  // Keep the route explicit here so OTP flow matches the deployed router.
   try {
     const sendUrl = `${emailRouterUrl.replace(/\/$/, "")}/v1/email/send`;
     const emailPayload = {
@@ -138,6 +198,13 @@ Deno.serve(async (req: Request) => {
       headers["x-ingest-key"] = emailRouterIngestKey;
     }
 
+    console.info("[send-email-otp] Sending OTP email", {
+      recipient: maskEmail(email),
+      sendUrl,
+      hasIngestKey: Boolean(emailRouterIngestKey),
+      keySource: emailRouterKeySource,
+    });
+
     const upstream = await fetch(sendUrl, {
       method: "POST",
       headers,
@@ -147,13 +214,32 @@ Deno.serve(async (req: Request) => {
 
     if (!upstream.ok) {
       const errText = await upstream.text().catch(() => "");
-      console.error("[send-email-otp] email-router error:", upstream.status, errText);
-      // Still return success — code is in DB, user can retry
+      console.error("[send-email-otp] email-router error:", {
+        status: upstream.status,
+        sendUrl,
+        body: errText,
+      });
+    } else {
+      console.info("[send-email-otp] email-router accepted request", {
+        status: upstream.status,
+        sendUrl,
+        recipient: maskEmail(email),
+      });
     }
   } catch (err) {
     console.error("[send-email-otp] email-router fetch failed:", err);
-    // Same — don't reveal delivery status
   }
 
-  return jsonResp(origin, { success: true }, 200);
+  const resp: Record<string, unknown> = { success: true };
+  if (maskedEmailForResponse) {
+    resp.maskedEmail = maskedEmailForResponse;
+  }
+  // Also return the actual email so verify-email-otp can use it
+  // (only when phone-based login — the frontend needs it for verify call)
+  if (phone && !maskedEmailForResponse) {
+    // email was provided directly (registration flow) — don't expose
+  } else if (phone) {
+    resp.email = email;
+  }
+  return jsonResp(origin, resp, 200);
 });

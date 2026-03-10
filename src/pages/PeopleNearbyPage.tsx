@@ -198,6 +198,12 @@ export function PeopleNearbyPage() {
   // Toggle sharing
   // ---------------------------------------------------------------------------
 
+  const doStartSharing = useCallback(async () => {
+    await startSharing();
+    setPrivacyConfirmed(true);
+    startWatchingPosition();
+  }, [startSharing, startWatchingPosition]);
+
   const handleToggleSharing = useCallback(async () => {
     if (isSharing) {
       await stopSharing();
@@ -217,13 +223,7 @@ export function PeopleNearbyPage() {
     }
 
     await doStartSharing();
-  }, [isSharing, privacyConfirmed, stopSharing]);
-
-  const doStartSharing = useCallback(async () => {
-    await startSharing();
-    setPrivacyConfirmed(true);
-    startWatchingPosition();
-  }, [startSharing, startWatchingPosition]);
+  }, [doStartSharing, isSharing, privacyConfirmed, stopSharing]);
 
   const handlePrivacyConfirm = useCallback(async () => {
     setShowPrivacyWarning(false);

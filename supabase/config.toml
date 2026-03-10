@@ -10,6 +10,12 @@ verify_jwt = false
 [functions.verify-sms-otp]
 verify_jwt = false
 
+[functions.send-email-otp]
+verify_jwt = false
+
+[functions.verify-email-otp]
+verify_jwt = false
+
 # ─── External webhooks (called by 3rd-party services, no JWT) ─
 [functions.vk-webhook]
 verify_jwt = false

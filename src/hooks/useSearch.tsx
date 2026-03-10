@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
+import { fetchUserBriefMap, resolveUserBrief } from "@/lib/users/userBriefs";
 
 export interface SearchUser {
   user_id: string;
@@ -172,12 +173,13 @@ export function useSearch() {
       const postsWithMedia = (data || [])
         .filter((p: any) => p.post_media && p.post_media.length > 0);
       
-      // Fetch author profiles
+      // Fetch author identity + verification
       const authorIds = [...new Set(postsWithMedia.map((p: any) => p.author_id))];
+      const briefMap = await fetchUserBriefMap(authorIds, supabase as any);
       const postIds = postsWithMedia.map((p: any) => p.id);
       const { data: profiles } = await supabase
         .from("profiles")
-        .select("user_id, display_name, avatar_url, verified")
+        .select("user_id, verified")
         .in("user_id", authorIds);
 
       // Fetch real engagement rows so Explore counters match Home feed behavior.
@@ -228,9 +230,10 @@ export function useSearch() {
         likedIds = new Set((likes || []).map((l: any) => String(l.post_id)));
       }
       
-      const profilesMap = new Map(profiles?.map(p => [p.user_id, p]) || []);
+      const verifiedMap = new Map((profiles || []).map((p: any) => [String(p.user_id), Boolean(p.verified)]));
       
       const enrichedPosts: ExplorePost[] = postsWithMedia.map((p: any) => {
+        const brief = resolveUserBrief(p.author_id, briefMap);
         const likesCount = Math.max(0, likesCountMap.get(String(p.id)) ?? p.likes_count ?? 0);
         const commentsCount = Math.max(0, commentsCountMap.get(String(p.id)) ?? p.comments_count ?? 0);
         const savesCount = includesSavesColumn
@@ -249,7 +252,13 @@ export function useSearch() {
           shares_count: sharesCount,
           views_count: viewsCount,
           created_at: p.created_at,
-          profile: profilesMap.get(p.author_id) || undefined,
+          profile: brief
+            ? {
+                display_name: brief.display_name,
+                avatar_url: brief.avatar_url,
+                verified: verifiedMap.get(String(p.author_id)) ?? false,
+              }
+            : undefined,
           media: p.post_media,
           is_liked: likedIds.has(String(p.id)),
         };

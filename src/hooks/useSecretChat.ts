@@ -39,6 +39,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { X3DH, type PreKeyBundle } from "@/lib/e2ee/x3dh";
 import { DoubleRatchetE2E, type RatchetState, type RatchetHeader } from "@/lib/e2ee/doubleRatchet";
 import { toBase64, fromBase64 } from "@/lib/e2ee/utils";
+import { encryptForStorage, decryptFromStorage } from "@/auth/localStorageCrypto";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -93,11 +94,17 @@ async function getOrCreateIdentityKeys(userId: string): Promise<{
 }> {
   const stored = localStorage.getItem(IK_STORAGE_KEY(userId));
   if (stored) {
-    const s: StoredIdentityKeys = JSON.parse(stored);
-    const identityEcdhKeyPair = await X3DH.importEcdhKeyPair(s.ecdhPublic, s.ecdhPrivate);
-    const identityEcdsaKeyPair = await X3DH.importEcdsaKeyPair(s.ecdsaPublic, s.ecdsaPrivate);
-    const signedPreKeyPair = await X3DH.importEcdhKeyPair(s.spkPublic, s.spkPrivate);
-    return { identityEcdhKeyPair, identityEcdsaKeyPair, signedPreKeyPair, isNew: false };
+    try {
+      const decrypted = await decryptFromStorage(stored);
+      const s: StoredIdentityKeys = JSON.parse(decrypted);
+      const identityEcdhKeyPair = await X3DH.importEcdhKeyPair(s.ecdhPublic, s.ecdhPrivate);
+      const identityEcdsaKeyPair = await X3DH.importEcdsaKeyPair(s.ecdsaPublic, s.ecdsaPrivate);
+      const signedPreKeyPair = await X3DH.importEcdhKeyPair(s.spkPublic, s.spkPrivate);
+      return { identityEcdhKeyPair, identityEcdsaKeyPair, signedPreKeyPair, isNew: false };
+    } catch {
+      // Legacy plaintext storage or decryption failure — regenerate keys
+      localStorage.removeItem(IK_STORAGE_KEY(userId));
+    }
   }
 
   // Generate new bundle
@@ -115,7 +122,8 @@ async function getOrCreateIdentityKeys(userId: string): Promise<{
     spkPublic: spkExp.publicKey,
     spkSignature: bundle.serverBundle.signedPreKeySignature,
   };
-  localStorage.setItem(IK_STORAGE_KEY(userId), JSON.stringify(toStore));
+  const encrypted = await encryptForStorage(JSON.stringify(toStore));
+  localStorage.setItem(IK_STORAGE_KEY(userId), encrypted);
 
   return {
     identityEcdhKeyPair: bundle.identityEcdhKeyPair,
@@ -125,77 +133,36 @@ async function getOrCreateIdentityKeys(userId: string): Promise<{
   };
 }
 
-/** Encrypt ratchet state with AES-256-GCM using a key derived from userId + convId */
-async function encryptRatchetState(raw: string, userId: string, convId: string): Promise<string> {
-  const keyMaterial = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(userId + convId),
-    { name: "PBKDF2" },
-    false,
-    ["deriveBits", "deriveKey"]
-  );
-  const encKey = await crypto.subtle.deriveKey(
-    {
-      name: "PBKDF2",
-      salt: new TextEncoder().encode("dr_state_salt_v1"),
-      iterations: 100000,
-      hash: "SHA-256",
-    },
-    keyMaterial,
-    { name: "AES-GCM", length: 256 },
-    false,
-    ["encrypt"]
-  );
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const enc = await crypto.subtle.encrypt(
-    { name: "AES-GCM", iv },
-    encKey,
-    new TextEncoder().encode(raw)
-  );
-  const packed = new Uint8Array(12 + enc.byteLength);
-  packed.set(iv, 0);
-  packed.set(new Uint8Array(enc), 12);
-  return toBase64(packed);
+/**
+ * Encrypt ratchet state using localStorageCrypto:
+ * AES-256-GCM, PBKDF2/200k iterations, random salt per record, browser fingerprint.
+ * Replaces the previous scheme that used a static salt + non-secret key material.
+ */
+async function encryptRatchetState(raw: string): Promise<string> {
+  return encryptForStorage(raw);
 }
 
-async function decryptRatchetState(blob: string, userId: string, convId: string): Promise<string> {
-  const keyMaterial = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(userId + convId),
-    { name: "PBKDF2" },
-    false,
-    ["deriveBits", "deriveKey"]
-  );
-  const encKey = await crypto.subtle.deriveKey(
-    {
-      name: "PBKDF2",
-      salt: new TextEncoder().encode("dr_state_salt_v1"),
-      iterations: 100000,
-      hash: "SHA-256",
-    },
-    keyMaterial,
-    { name: "AES-GCM", length: 256 },
-    false,
-    ["decrypt"]
-  );
-  const packed = fromBase64(blob);
-  const iv = packed.slice(0, 12);
-  const data = packed.slice(12);
-  const dec = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, encKey, data);
-  return new TextDecoder().decode(dec);
+async function decryptRatchetState(blob: string): Promise<string> {
+  return decryptFromStorage(blob);
 }
 
 async function saveRatchetState(state: RatchetState, userId: string, convId: string): Promise<void> {
   const serialized = await DoubleRatchetE2E.serialize(state);
-  const encrypted = await encryptRatchetState(serialized, userId, convId);
+  const encrypted = await encryptRatchetState(serialized);
   localStorage.setItem(DR_STATE_KEY(userId, convId), encrypted);
 }
 
 async function loadRatchetState(userId: string, convId: string): Promise<RatchetState | null> {
   const blob = localStorage.getItem(DR_STATE_KEY(userId, convId));
   if (!blob) return null;
-  const serialized = await decryptRatchetState(blob, userId, convId);
-  return DoubleRatchetE2E.deserialize(serialized);
+  try {
+    const serialized = await decryptRatchetState(blob);
+    return DoubleRatchetE2E.deserialize(serialized);
+  } catch {
+    // Stored blob may be legacy format (old static-salt scheme) — drop and re-init
+    localStorage.removeItem(DR_STATE_KEY(userId, convId));
+    return null;
+  }
 }
 
 // ── Hook ───────────────────────────────────────────────────────────────────
@@ -245,7 +212,7 @@ export function useSecretChat(conversationId: string | null) {
         if (!cancelled) setRatchetReady(false);
       });
     return () => { cancelled = true; };
-  }, [secretChat?.status, secretChat?.conversation_id, user]);
+  }, [secretChat, user]);
 
   // Realtime subscription
   useEffect(() => {

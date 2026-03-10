@@ -2,15 +2,21 @@
 // Ensures a row exists in public.profiles for the authenticated user.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.90.1";
-
-const corsHeaders: Record<string, string> = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { enforceCors, getCorsHeaders, handleCors } from "../_shared/utils.ts";
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+  const cors = handleCors(req);
+  if (cors) return cors;
+  const corsBlock = enforceCors(req);
+  if (corsBlock) return corsBlock;
+  const origin = req.headers.get("origin");
+  const corsHeaders = getCorsHeaders(origin);
+
+  if (req.method !== "POST") {
+    return new Response(JSON.stringify({ error: "Method not allowed" }), {
+      status: 405,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 
   try {
@@ -40,10 +46,13 @@ Deno.serve(async (req) => {
     }
 
     const user = userData.user;
-    const body = req.method === "POST" ? await req.json().catch(() => ({})) : {};
+    const body = await req.json().catch(() => ({}));
+    const inputDisplayName = typeof body?.display_name === "string"
+      ? body.display_name.trim()
+      : "";
 
     const displayName =
-      body?.display_name ||
+      (inputDisplayName && inputDisplayName.length <= 80 ? inputDisplayName : "") ||
       user.user_metadata?.full_name ||
       user.user_metadata?.display_name ||
       user.email;

@@ -1,0 +1,91 @@
+version: '3.8'
+
+services:
+  editor-api:
+    build:
+      context: ../../editor-api
+      dockerfile: Dockerfile
+    ports:
+      - "${EDITOR_API_PORT:-3002}:3002"
+    environment:
+      - PORT=3002
+      - HOST=0.0.0.0
+      - DATABASE_URL=${DATABASE_URL}
+      - JWT_SECRET=${JWT_SECRET}
+      - REDIS_URL=redis://redis:6379
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT:-minio}
+      - MINIO_PORT=${MINIO_PORT:-9000}
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
+      - MINIO_USE_SSL=${MINIO_USE_SSL:-false}
+      - MINIO_BUCKET_PREFIX=${MINIO_BUCKET_PREFIX:-}
+      - MEDIA_DOMAIN=${MEDIA_DOMAIN:-http://localhost:9000}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3002/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      - editor-network
+
+  editor-worker:
+    build:
+      context: ../../editor-api
+      dockerfile: Dockerfile
+    command: ["node", "dist/worker/index.js"]
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - JWT_SECRET=${JWT_SECRET}
+      - REDIS_URL=redis://redis:6379
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT:-minio}
+      - MINIO_PORT=${MINIO_PORT:-9000}
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
+      - MINIO_USE_SSL=${MINIO_USE_SSL:-false}
+      - MINIO_BUCKET_PREFIX=${MINIO_BUCKET_PREFIX:-}
+      - MEDIA_DOMAIN=${MEDIA_DOMAIN:-http://localhost:9000}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - RENDER_CONCURRENCY=${RENDER_CONCURRENCY:-2}
+      - RENDER_TIMEOUT_MS=${RENDER_TIMEOUT_MS:-1800000}
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    # GPU access for hardware-accelerated encoding (optional)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - capabilities: [gpu]
+    volumes:
+      - render-tmp:/tmp/editor-render
+    networks:
+      - editor-network
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${REDIS_PORT:-6380}:6379"
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - editor-network
+
+volumes:
+  redis-data:
+  render-tmp:
+
+networks:
+  editor-network:
+    driver: bridge

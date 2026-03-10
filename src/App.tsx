@@ -4,7 +4,7 @@ import { SwipeBackGesture } from "@/components/layout/SwipeBackGesture";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import { Suspense, lazy, useEffect } from "react";
 import { ChatsPage } from "@/pages/ChatsPage";
 import { useDeepLinks } from "@/hooks/useDeepLinks";
@@ -17,9 +17,11 @@ import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { GlobalCallOverlay } from "@/components/chat/GlobalCallOverlay";
 import { initErrorTracking } from "@/lib/sentry";
+import { initAnalytics, trackPageView } from "@/lib/analytics";
 import { Loader2 } from "lucide-react";
 import { UserSettingsProvider } from "@/contexts/UserSettingsContext";
 import { MultiAccountProvider } from "@/contexts/MultiAccountContext";
+import { AccountContainerProvider } from "@/contexts/AccountContainerContext";
 import { ReelsProvider } from "@/contexts/ReelsContext";
 import { AdminProtectedRoute } from "@/components/admin/AdminProtectedRoute";
 import { AppearanceRuntimeProvider } from "@/contexts/AppearanceRuntimeContext";
@@ -38,6 +40,9 @@ const AudioTrackPage = lazy(() => import("@/pages/AudioTrackPage"));
 
 // Initialize error tracking
 initErrorTracking();
+
+// Initialize external analytics counters (YM + GA4) — async, non-blocking
+void initAnalytics();
 
 // QueryClient is created per active account inside MultiAccountProvider.
 
@@ -92,6 +97,7 @@ const SettingsPage = lazy(() => import("@/pages/SettingsPage").then(m => ({ defa
 const CRMPage = lazy(() => import("@/pages/CRMPage").then(m => ({ default: m.CRMPage })));
 const CRMDashboard = lazy(() => import("@/pages/CRMDashboard").then(m => ({ default: m.CRMDashboard })));
 const EmailPage = lazy(() => import("@/pages/EmailPage").then(m => ({ default: m.EmailPage })));
+const EmailSettingsPage = lazy(() => import("@/pages/EmailSettingsPage").then(m => ({ default: m.EmailSettingsPage })));
 const CommandPalette = lazy(() => import("@/components/CommandPalette").then(m => ({ default: m.CommandPalette })));
 const ARPage = lazy(() => import("@/pages/ARPage").then(m => ({ default: m.ARPage })));
 const AudioRoomsPage = lazy(() => import("@/pages/AudioRoomsPage").then(m => ({ default: m.AudioRoomsPage })));
@@ -102,7 +108,7 @@ const ReelsPage = lazy(() => import("./pages/ReelsPage"));
 const GoLivePage = lazy(() => import("./pages/GoLivePage"));
 const LiveViewerPage = lazy(() => import("./pages/LiveViewerPage"));
 const LiveExplorePage = lazy(() => import("./pages/LiveExplorePage"));
-const PeopleNearbyPage = lazy(() => import("./pages/PeopleNearbyPage"));
+const PeopleNearbyPage = lazy(() => import("./pages/PeopleNearbyPage").then(m => ({ default: m.PeopleNearbyPage })));
 const BusinessAccountPage = lazy(() => import("./pages/BusinessAccountPage"));
 const OrderDetailPage = lazy(() => import("@/pages/OrderDetailPage"));
 const AIAssistantPage = lazy(() => import("@/pages/AIAssistantPage"));
@@ -118,6 +124,10 @@ const StorageSettingsPage = lazy(() => import("@/pages/StorageSettingsPage").the
 const TaxiHomePage = lazy(() => import("./pages/taxi/TaxiHomePage"));
 const TaxiHistoryPage = lazy(() => import("./pages/taxi/TaxiHistoryPage"));
 const TaxiSettingsPage = lazy(() => import("./pages/taxi/TaxiSettingsPage"));
+
+// Video Editor module (lazy)
+const EditorProjectsPage = lazy(() => import("@/pages/EditorProjectsPage"));
+const EditorPage = lazy(() => import("@/pages/EditorPage"));
 
 const NotificationsPage = lazy(() => import("@/pages/NotificationsPage").then(m => ({ default: m.NotificationsPage })));
 const NotificationSettingsPage = lazy(() => import("@/pages/NotificationSettingsPage").then(m => ({ default: m.NotificationSettingsPage })));
@@ -140,6 +150,19 @@ const AppealsPage = lazy(() => import("@/pages/admin/AppealsPage").then(m => ({ 
 // Deep link handler — must be inside BrowserRouter
 function DeepLinkHandler() {
   useDeepLinks();
+  return null;
+}
+
+// Analytics router — tracks SPA page views on every location change.
+// Must be rendered inside <BrowserRouter>.
+function AnalyticsRouteTracker() {
+  const location = useLocation();
+  useEffect(() => {
+    trackPageView({
+      url: window.location.href,
+      title: document.title,
+    });
+  }, [location.pathname, location.search]);
   return null;
 }
 
@@ -181,6 +204,7 @@ const App = () => {
 
   return (
     <AppErrorBoundary>
+<AccountContainerProvider>
 <MultiAccountProvider>
 <AuthProvider>
 <UserSettingsProvider>
@@ -209,6 +233,7 @@ const App = () => {
                     <CommandPalette />
                   </Suspense>
                   <DeepLinkHandler />
+                  <AnalyticsRouteTracker />
                   <OfflineIndicator />
                   <SwipeBackGesture>
                   <div style={{ position: "relative", height: "100%", overflow: "hidden" }}>
@@ -633,6 +658,11 @@ const App = () => {
                         <CRMDashboard />
                       </Suspense>
                     } />
+                    <Route path="/email/settings" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <EmailSettingsPage />
+                      </Suspense>
+                    } />
                     <Route path="/email" element={
                       <Suspense fallback={<PageLoader />}>
                         <EmailPage />
@@ -691,7 +721,21 @@ const App = () => {
                         <LiveViewerPage />
                       </Suspense>
                     } />
+
+                    {/* ─── Video Editor Module ────────────── */}
+                    <Route path="/editor" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <EditorProjectsPage />
+                      </Suspense>
+                    } />
                   </Route>
+
+                  {/* Video Editor — fullscreen, outside AppLayout */}
+                  <Route path="/editor/:projectId" element={
+                    <Suspense fallback={<PageLoader />}>
+                      <EditorPage />
+                    </Suspense>
+                  } />
                 </Route>
                 
                 {/* Dev Panel - public route with its own auth */}
@@ -727,6 +771,7 @@ const App = () => {
           </UserSettingsProvider>
         </AuthProvider>
       </MultiAccountProvider>
+          </AccountContainerProvider>
     </AppErrorBoundary>
   );
 };

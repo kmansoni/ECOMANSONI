@@ -61,7 +61,7 @@ export function useTOTP() {
   const [isEnabled, setIsEnabled] = useState<boolean>(false);
 
   const checkEnabled = useCallback(async (): Promise<boolean> => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const { data, error: dbErr } = await (supabase as any)
       .from("user_totp_secrets")
       .select("is_enabled")

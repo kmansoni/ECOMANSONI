@@ -8,6 +8,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { VerifiedBadge } from "@/components/ui/verified-badge";
+import { fetchUserBriefMap, resolveUserBrief } from "@/lib/users/userBriefs";
 
 interface FollowUser {
   id: string;
@@ -60,16 +61,19 @@ export function FollowersSheet({ isOpen, onClose, userId, type, title }: Followe
         userIds = (followingData || []).map((f: any) => f.following_id);
       }
 
+      userIds = Array.from(new Set(userIds.filter(Boolean)));
+
       if (userIds.length === 0) {
         setUsers([]);
         setLoading(false);
         return;
       }
 
-      // Fetch profiles
+      const briefMap = await fetchUserBriefMap(userIds, supabase as any);
+
       const { data: profiles, error: profilesError } = await supabase
         .from("profiles")
-        .select("id, user_id, display_name, avatar_url, verified")
+        .select("id, user_id, verified")
         .in("user_id", userIds);
 
       if (profilesError) throw profilesError;
@@ -85,14 +89,25 @@ export function FollowersSheet({ isOpen, onClose, userId, type, title }: Followe
         currentUserFollowing = (followingData || []).map((f: any) => f.following_id);
       }
 
-      const usersWithStatus = (profiles || []).map((p: any) => ({
-        id: p.id,
-        user_id: p.user_id,
-        display_name: p.display_name,
-        avatar_url: p.avatar_url,
-        verified: p.verified || false,
-        isFollowing: currentUserFollowing.includes(p.user_id),
-      }));
+      const profileByUserId = new Map<string, any>();
+      for (const p of profiles || []) {
+        if (p?.user_id) {
+          profileByUserId.set(String(p.user_id), p);
+        }
+      }
+
+      const usersWithStatus = userIds.map((uid) => {
+        const p = profileByUserId.get(String(uid));
+        const brief = resolveUserBrief(String(uid), briefMap);
+        return {
+          id: p?.id || `missing-profile-${uid}`,
+          user_id: String(uid),
+          display_name: brief?.display_name ?? null,
+          avatar_url: brief?.avatar_url ?? null,
+          verified: Boolean(p?.verified),
+          isFollowing: currentUserFollowing.includes(String(uid)),
+        };
+      });
 
       setUsers(usersWithStatus);
     } catch (error) {
