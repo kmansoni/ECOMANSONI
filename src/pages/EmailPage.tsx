@@ -218,7 +218,11 @@ function emailReducer(state: EmailState, action: EmailAction): EmailState {
       return { ...state, selectedThreadId: action.threadId, checkedIds: new Set() };
     case "TOGGLE_CHECK": {
       const next = new Set(state.checkedIds);
-      next.has(action.id) ? next.delete(action.id) : next.add(action.id);
+      if (next.has(action.id)) {
+        next.delete(action.id);
+      } else {
+        next.add(action.id);
+      }
       return { ...state, checkedIds: next };
     }
     case "CHECK_ALL":
@@ -911,7 +915,11 @@ function MessageDetail({ thread, state, dispatch, onReply, onMove, onDelete, onM
   const toggleExpand = (id: string) => {
     setExpandedIds((prev) => {
       const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
       return next;
     });
   };
@@ -1936,15 +1944,19 @@ export function EmailPage() {
                     selected={state.selectedThreadId === thread.id}
                     onCheck={() => {
                       const ids = thread.messages.map((m) => m.id);
-                      anyChecked
-                        ? ids.forEach((id) => {
-                            const next = new Set(state.checkedIds);
-                            next.delete(id);
+                      if (anyChecked) {
+                        ids.forEach((id) => {
+                          if (state.checkedIds.has(id)) {
                             dispatch({ type: "TOGGLE_CHECK", id });
-                          })
-                        : ids.forEach((id) => {
-                            if (!state.checkedIds.has(id)) dispatch({ type: "TOGGLE_CHECK", id });
-                          });
+                          }
+                        });
+                      } else {
+                        ids.forEach((id) => {
+                          if (!state.checkedIds.has(id)) {
+                            dispatch({ type: "TOGGLE_CHECK", id });
+                          }
+                        });
+                      }
                     }}
                     onSelect={() => {
                       dispatch({ type: "SELECT_THREAD", threadId: thread.id });
