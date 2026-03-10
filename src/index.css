@@ -32,6 +32,34 @@ All colors MUST be HSL.
   --safe-right:  env(safe-area-inset-right,  0px);
 }
 
+/* ── Global scrollbar visibility policy ──────────────────────
+   Hide visible scrollbar rails across app screens while keeping scroll behavior.
+*/
+html,
+body,
+#root,
+.platform-content,
+.platform-sidebar,
+.platform-nav-rail,
+.overflow-auto,
+.overflow-y-auto {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar,
+#root::-webkit-scrollbar,
+.platform-content::-webkit-scrollbar,
+.platform-sidebar::-webkit-scrollbar,
+.platform-nav-rail::-webkit-scrollbar,
+.overflow-auto::-webkit-scrollbar,
+.overflow-y-auto::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
 /* ── PlatformLayout root ───────────────────────────────────── */
 .platform-root {
   display: flex;
@@ -68,8 +96,6 @@ All colors MUST be HSL.
   height: 100%;
   overflow: hidden;
   overflow-y: auto;
-  /* Scrollbar gutter prevents layout shift when scrollbar appears */
-  scrollbar-gutter: stable;
 }
 
 /* ── Phone: full-screen single column ───────────────────────── */
