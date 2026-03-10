@@ -83,6 +83,24 @@ All colors MUST be HSL.
   padding-bottom: var(--safe-bottom);
   padding-left: var(--safe-left);
   padding-right: var(--safe-right);
+  /* Keep vertical scroll but hide the visible side scrollbar strip */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.platform-root--phone .platform-content::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+[data-form-factor="tablet"] .platform-content {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+[data-form-factor="tablet"] .platform-content::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 /* ── iOS-specific adjustments ───────────────────────────────── */
