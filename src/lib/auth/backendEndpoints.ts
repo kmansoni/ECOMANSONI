@@ -92,3 +92,37 @@ export function isSupabaseConfigured(): boolean {
   const supabaseKey = normalizeEnv(runtimeConfig.supabasePublishableKey);
   return Boolean(supabaseUrl && supabaseKey);
 }
+
+// ── Email OTP helpers ─────────────────────────────────────────────────────
+
+function getEdgeFunctionUrl(fnName: string): string {
+  const runtimeConfig = getSupabaseRuntimeConfig();
+  const supabaseUrl = stripTrailingSlash(normalizeEnv(runtimeConfig.supabaseUrl));
+  if (supabaseUrl) {
+    return `${supabaseUrl}/functions/v1/${fnName}`;
+  }
+  return `https://lfkbgnbjxskspsownvjm.supabase.co/functions/v1/${fnName}`;
+}
+
+export function getSendEmailOtpUrl(): string {
+  return getEdgeFunctionUrl("send-email-otp");
+}
+
+export function getVerifyEmailOtpUrl(): string {
+  return getEdgeFunctionUrl("verify-email-otp");
+}
+
+export function getAnonHeaders(): Record<string, string> {
+  const runtimeConfig = getSupabaseRuntimeConfig();
+  const supabaseKey = normalizeEnv(runtimeConfig.supabasePublishableKey);
+
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+
+  if (supabaseKey) {
+    headers.apikey = supabaseKey;
+  }
+
+  return headers;
+}

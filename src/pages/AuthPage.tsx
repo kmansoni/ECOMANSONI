@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,10 @@ import { getPhoneAuthFunctionUrls, getPhoneAuthHeaders } from "@/lib/auth/backen
 
 const DEMO_GUEST_PHONE = "+70000000000";
 
-type AuthMode = "select" | "login" | "register";
+type AuthMode = "select" | "login" | "register" | "otp";
+
+/** Cooldown between SMS re-sends, in seconds */
+const OTP_RESEND_COOLDOWN_SEC = 120;
 
 const PHONE_AUTH_TIMEOUT_MS = 12_000;
 
@@ -57,13 +60,24 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 
 export function AuthPage() {
   const navigate = useNavigate();
-  const [authPageOperation, setAuthPageOperation] = useState<"login" | "guest" | null>(null);
+  const [authPageOperation, setAuthPageOperation] = useState<"login" | "guest" | "otp" | null>(null);
   const authPageOpMutexRef = useRef<Promise<void> | null>(null);
   const [mode, setMode] = useState<AuthMode>("select");
   const [phone, setPhone] = useState("");
+  const [otpCode, setOtpCode] = useState("");
+  const [otpCountdown, setOtpCountdown] = useState(0);
   const [showRegistrationModal, setShowRegistrationModal] = useState(false);
   const [showRecommendations, setShowRecommendations] = useState(false);
   const loading = authPageOperation !== null;
+
+  // Countdown timer for OTP resend
+  useEffect(() => {
+    if (otpCountdown <= 0) return;
+    const timer = window.setInterval(() => {
+      setOtpCountdown((prev) => (prev <= 1 ? 0 : prev - 1));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [otpCountdown]);
 
   const runExclusiveAuthPageOp = async (
     operation: NonNullable<typeof authPageOperation>,
@@ -89,7 +103,59 @@ export function AuthPage() {
     await authPageOpMutexRef.current;
   };
 
+  /**
+   * Build Edge Function URL for a given function name.
+   * Re-uses the same base URL logic as phone-auth endpoints.
+   */
+  const getSmsOtpUrl = useCallback((funcName: string): string => {
+    const phoneAuthUrls = getPhoneAuthFunctionUrls();
+    if (phoneAuthUrls.length === 0) return "";
+    // phone-auth URL ends with /functions/v1/phone-auth — swap the last segment
+    return phoneAuthUrls[0].replace(/\/phone-auth\/?$/, `/${funcName}`);
+  }, []);
 
+  /**
+   * Step 1: Send SMS OTP to the phone number.
+   */
+  const sendSmsOtp = useCallback(async (phoneDigits: string) => {
+    const url = getSmsOtpUrl("send-sms-otp");
+    if (!url) {
+      toast.error("Не настроен endpoint отправки SMS");
+      return false;
+    }
+
+    const result = await fetchJsonWithTimeout(
+      url,
+      {
+        method: "POST",
+        headers: getPhoneAuthHeaders(),
+        body: JSON.stringify({ phone: `+${phoneDigits}` }),
+      },
+      PHONE_AUTH_TIMEOUT_MS,
+      "send-sms-otp",
+    );
+
+    if (!result.response.ok) {
+      const errMsg = result.data?.error || `HTTP ${result.response.status}`;
+      // 429 = rate-limited, show retry-after
+      if (result.response.status === 429) {
+        const retryAfter = result.data?.retryAfter || Number(result.response.headers.get("Retry-After") || 60);
+        toast.error("Подождите перед повторной отправкой", {
+          description: `Попробуйте через ${retryAfter} сек.`,
+        });
+        setOtpCountdown(retryAfter);
+      } else {
+        toast.error("Не удалось отправить SMS", { description: errMsg });
+      }
+      return false;
+    }
+
+    return true;
+  }, [getSmsOtpUrl]);
+
+  /**
+   * Step 1 handler: user submits phone → we send OTP → switch to OTP input screen.
+   */
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -101,98 +167,115 @@ export function AuthPage() {
     
     await runExclusiveAuthPageOp("login", async () => {
       try {
-      // Any explicit login disables guest mode
-      setGuestMode(false);
+        setGuestMode(false);
 
-      const functionUrls = getPhoneAuthFunctionUrls();
-      if (functionUrls.length === 0) {
-        toast.error("Не настроен endpoint авторизации");
-        return;
+        const sent = await sendSmsOtp(digits);
+        if (!sent) return;
+
+        toast.success("Код отправлен по SMS");
+        setOtpCode("");
+        setOtpCountdown(OTP_RESEND_COOLDOWN_SEC);
+        setMode("otp");
+      } catch (error) {
+        console.error("🔴 [AuthPage] Send OTP error:", error);
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        toast.error("Ошибка отправки кода", { description: errorMsg });
       }
+    });
+  };
 
-      const body = {
-        action: "register-or-login",
-        phone: `+${digits}`,
-        display_name: "User",
-        email: `user${digits}@placeholder.local`,
-      };
+  /**
+   * Step 2: user enters OTP code → verify → get session tokens.
+   */
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
 
-      let response: Response | null = null;
-      let data: any | null = null;
-      let lastAuthError: any = null;
+    const trimmedCode = otpCode.trim();
+    if (trimmedCode.length !== 6) {
+      toast.error("Введите 6-значный код из SMS");
+      return;
+    }
 
-      for (const functionUrl of functionUrls) {
-        try {
-          const result = await fetchJsonWithTimeout(
-            functionUrl,
-            {
-              method: "POST",
-              headers: getPhoneAuthHeaders(),
-              body: JSON.stringify(body),
-            },
-            PHONE_AUTH_TIMEOUT_MS,
-            "phone-auth",
-          );
+    const digits = phone.replace(/\D/g, '');
 
-          response = result.response;
-          data = result.data;
-          if (response.ok && data?.ok) break;
-          lastAuthError = data?.error || `HTTP ${response.status}`;
-        } catch (err) {
-          lastAuthError = err;
+    await runExclusiveAuthPageOp("otp", async () => {
+      try {
+        const url = getSmsOtpUrl("verify-sms-otp");
+        if (!url) {
+          toast.error("Не настроен endpoint верификации");
+          return;
         }
+
+        const result = await fetchJsonWithTimeout(
+          url,
+          {
+            method: "POST",
+            headers: getPhoneAuthHeaders(),
+            body: JSON.stringify({
+              phone: `+${digits}`,
+              code: trimmedCode,
+              displayName: "User",
+            }),
+          },
+          PHONE_AUTH_TIMEOUT_MS,
+          "verify-sms-otp",
+        );
+
+        if (!result.response.ok || !result.data?.ok) {
+          const errMsg = result.data?.error || `HTTP ${result.response.status}`;
+          toast.error(errMsg);
+          return;
+        }
+
+        // Set Supabase session with the returned tokens
+        const { error: signInError } = await withTimeout(
+          supabase.auth.setSession({
+            access_token: result.data.accessToken,
+            refresh_token: result.data.refreshToken,
+          }),
+          8000,
+          "setSession",
+        );
+
+        if (signInError) {
+          console.error("🔴 [AuthPage] Sign-in error:", signInError);
+          toast.error("Ошибка входа");
+          return;
+        }
+
+        if (result.data.isNewUser) {
+          toast.success("Аккаунт создан, заполните профиль!");
+          setShowRegistrationModal(true);
+        } else {
+          toast.success("Добро пожаловать!");
+          navigate("/");
+        }
+      } catch (error) {
+        console.error("🔴 [AuthPage] Verify OTP error:", error);
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        toast.error("Ошибка проверки кода", { description: errorMsg });
       }
+    });
+  };
 
-      if (!response) {
-        throw (lastAuthError || new Error("Failed to fetch phone-auth"));
-      }
+  /**
+   * Resend OTP (if cooldown expired).
+   */
+  const handleResendOtp = async () => {
+    if (otpCountdown > 0) return;
+    const digits = phone.replace(/\D/g, '');
 
-      if (!response.ok || !data?.ok) {
-        console.error("🔴 [AuthPage] Function returned error or not ok:", { 
-          status: response.status, 
-          data 
-        });
-        toast.error("Не удалось выполнить вход", { 
-          description: data?.error || (lastAuthError instanceof Error ? lastAuthError.message : String(lastAuthError || `HTTP ${response.status}`)) 
-        });
-        return;
-      }
-
-      // Sign in with the access token and refresh token
-      const { error: signInError } = await withTimeout(
-        supabase.auth.setSession({
-          access_token: data.accessToken,
-          refresh_token: data.refreshToken,
-        }),
-        8000,
-        "setSession",
-      );
-
-      if (signInError) {
-        console.error("🔴 [AuthPage] Sign-in error:", signInError);
-        toast.error("Ошибка входа");
-        return;
-      }
-
-      // Handle new vs existing users
-      if (data.isNewUser) {
-        toast.success("Аккаунт создан, заполните профиль!");
-        setShowRegistrationModal(true);
-      } else {
-        toast.success("Добро пожаловать!");
-        navigate("/");
-      }
-
-    } catch (error) {
-      console.error("🔴 [AuthPage] Login error:", error);
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      console.error("🔴 [AuthPage] Error details:", { 
-        type: error?.constructor?.name,
-        message: errorMsg 
-      });
-      toast.error("Ошибка входа", {
-        description: errorMsg,
-      });
+    await runExclusiveAuthPageOp("login", async () => {
+      try {
+        const sent = await sendSmsOtp(digits);
+        if (sent) {
+          toast.success("Код отправлен повторно");
+          setOtpCode("");
+          setOtpCountdown(OTP_RESEND_COOLDOWN_SEC);
+        }
+      } catch (error) {
+        console.error("🔴 [AuthPage] Resend OTP error:", error);
+        toast.error("Не удалось переотправить код");
       }
     });
   };
@@ -271,7 +354,7 @@ export function AuthPage() {
     });
   };
 
-  const handleRegisterClick = (e: React.FormEvent) => {
+  const handleRegisterClick = async (e: React.FormEvent) => {
     e.preventDefault();
     if (loading) return;
     
@@ -281,7 +364,22 @@ export function AuthPage() {
       return;
     }
     
-    setShowRegistrationModal(true);
+    // Send OTP first, then show OTP screen → after verify → registration modal
+    await runExclusiveAuthPageOp("login", async () => {
+      try {
+        setGuestMode(false);
+        const sent = await sendSmsOtp(digits);
+        if (!sent) return;
+
+        toast.success("Код отправлен по SMS");
+        setOtpCode("");
+        setOtpCountdown(OTP_RESEND_COOLDOWN_SEC);
+        setMode("otp");
+      } catch (error) {
+        console.error("🔴 [AuthPage] Register send OTP error:", error);
+        toast.error("Не удалось отправить код");
+      }
+    });
   };
 
   const handleDevGuestMode = () => {
@@ -290,6 +388,12 @@ export function AuthPage() {
 
   const handleBack = () => {
     if (loading) return;
+    if (mode === "otp") {
+      // Go back to phone input, keep the entered phone
+      setMode("login");
+      setOtpCode("");
+      return;
+    }
     if (mode === "select") {
       navigate(-1);
     } else {
@@ -362,7 +466,7 @@ export function AuthPage() {
       />
 
       {/* Back button */}
-      {mode !== "select" && (
+      {(mode !== "select") && (
         <div className="relative z-20 p-4 safe-area-top">
           <Button 
             variant="ghost" 
@@ -460,11 +564,13 @@ export function AuthPage() {
             <h1 className="text-3xl font-semibold text-white drop-shadow-lg">
               {mode === "select" && "Добро пожаловать"}
               {mode === "login" && "Вход"}
+              {mode === "otp" && "Код подтверждения"}
               {mode === "register" && "Регистрация"}
             </h1>
             <p className="text-white/80 text-base">
               {mode === "select" && "Выберите действие для продолжения"}
               {mode === "login" && "Введите номер телефона"}
+              {mode === "otp" && `SMS-код отправлен на +${phone.replace(/\D/g, "").slice(0, 1)}***${phone.replace(/\D/g, "").slice(-4)}`}
               {mode === "register" && "Введите номер телефона для регистрации"}
             </p>
           </div>
@@ -565,7 +671,76 @@ export function AuthPage() {
             </>
           )}
 
-          {/* OTP verify section removed - using phone-auth now */}
+          {/* OTP verify step */}
+          {mode === "otp" && (
+            <>
+              <div className="relative">
+                <div className="absolute -inset-1 bg-white/10 rounded-3xl blur-xl" />
+                
+                <form 
+                  onSubmit={handleVerifyOtp} 
+                  className="relative bg-white/10 backdrop-blur-2xl rounded-3xl p-6 space-y-4 border border-white/20 shadow-2xl"
+                >
+                  <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/50 to-transparent" />
+                  
+                  <div className="relative group">
+                    <div className="absolute inset-0 bg-white/5 rounded-2xl group-focus-within:bg-white/10 transition-colors" />
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      maxLength={6}
+                      value={otpCode}
+                      onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                      placeholder="Введите 6-значный код"
+                      className="relative w-full h-14 rounded-2xl bg-transparent text-white text-center text-2xl tracking-[0.5em] font-mono placeholder:text-white/30 placeholder:text-base placeholder:tracking-normal px-4 outline-none focus:ring-2 focus:ring-white/30 transition-all"
+                      autoFocus
+                    />
+                  </div>
+
+                  <Button 
+                    type="submit" 
+                    className="w-full h-14 rounded-2xl text-base font-semibold bg-white/90 hover:bg-white text-slate-800 shadow-xl shadow-black/20 transition-all hover:shadow-2xl hover:scale-[1.02] active:scale-[0.98]"
+                    disabled={loading || otpCode.length !== 6}
+                  >
+                    {authPageOperation === "otp" ? (
+                      <div className="flex items-center gap-2">
+                        <div className="w-5 h-5 border-2 border-slate-800/30 border-t-slate-800 rounded-full animate-spin" />
+                        <span>Проверка...</span>
+                      </div>
+                    ) : (
+                      "Подтвердить"
+                    )}
+                  </Button>
+
+                  <div className="text-center">
+                    {otpCountdown > 0 ? (
+                      <p className="text-white/50 text-sm">
+                        Отправить повторно через {Math.floor(otpCountdown / 60)}:{String(otpCountdown % 60).padStart(2, "0")}
+                      </p>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleResendOtp}
+                        disabled={loading}
+                        className="text-white/70 text-sm underline hover:text-white transition-colors"
+                      >
+                        Отправить код повторно
+                      </button>
+                    )}
+                  </div>
+                </form>
+              </div>
+
+              <button
+                onClick={() => { setMode("login"); setOtpCode(""); }}
+                disabled={loading}
+                className="text-center text-white/50 text-sm hover:text-white/70 transition-colors"
+              >
+                Изменить номер телефона
+              </button>
+            </>
+          )}
 
           {/* Register form - just phone, then modal */}
           {mode === "register" && (

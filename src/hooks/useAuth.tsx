@@ -1,93 +1,22 @@
 import { useState, useEffect, useRef, createContext, useContext, ReactNode } from "react";
 import { User, Session } from "@supabase/supabase-js";
-import { supabase, SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/supabase";
+import { supabase } from "@/lib/supabase";
 import { startAutoPushTokenRegistration } from "@/lib/push/autoRegister";
-import { getPhoneAuthFunctionUrls, getPhoneAuthHeaders } from "@/lib/auth/backendEndpoints";
 
 interface AuthContextType {
   user: User | null;
   session: Session | null;
   loading: boolean;
-  authOperation: "sign-in" | "sign-up" | "phone-sign-in" | "verify-otp" | "sign-out" | null;
+  authOperation: "sign-in" | "sign-up" | "email-otp" | "verify-otp" | "sign-out" | null;
   isAuthOperationInProgress: boolean;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signUp: (email: string, password: string, displayName?: string) => Promise<{ error: Error | null }>;
-  signInWithPhone: (phone: string) => Promise<{ error: any | null }>;
-  verifyOtp: (phone: string, token: string) => Promise<{ error: any | null }>;
+  sendEmailOtp: (email: string) => Promise<{ error: any | null }>;
+  verifyEmailOtp: (email: string, token: string) => Promise<{ error: any | null }>;
   signOut: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-const USE_SUPABASE_PHONE_OTP = import.meta.env.VITE_USE_SUPABASE_PHONE_OTP === "true";
-
-function isPhoneProviderDisabled(err: any): boolean {
-  const code = String(err?.code || "").toLowerCase();
-  const message = String(err?.message || "").toLowerCase();
-  return code === "phone_provider_disabled" || message.includes("unsupported phone provider");
-}
-
-async function signInWithPhoneAuthFallback(phone: string): Promise<{ error: any | null }> {
-  const digits = phone.replace(/\D/g, "");
-  if (digits.length < 10) {
-    return { error: new Error("Invalid phone number") };
-  }
-
-  const functionUrls = getPhoneAuthFunctionUrls();
-  if (functionUrls.length === 0) {
-    return { error: new Error("Phone auth endpoint is not configured") };
-  }
-
-  const body = {
-    action: "register-or-login",
-    phone: `+${digits}`,
-    display_name: "User",
-    email: `user${digits}@placeholder.local`,
-  };
-
-  let lastError: any = null;
-  for (const functionUrl of functionUrls) {
-    try {
-      const response = await fetch(functionUrl, {
-        method: "POST",
-        headers: getPhoneAuthHeaders(),
-        body: JSON.stringify(body),
-      });
-
-      const text = await response.text();
-      let data: any = null;
-      try {
-        data = text ? JSON.parse(text) : null;
-      } catch {
-        data = null;
-      }
-
-      if (!response.ok || !data?.ok) {
-        lastError = {
-          message: data?.error || `HTTP ${response.status}`,
-          status: response.status,
-          code: data?.code || "phone_auth_failed",
-        };
-        continue;
-      }
-
-      if (!data.accessToken || !data.refreshToken) {
-        lastError = new Error("phone-auth did not return session tokens");
-        continue;
-      }
-
-      const { error: sessionError } = await supabase.auth.setSession({
-        access_token: data.accessToken,
-        refresh_token: data.refreshToken,
-      });
-
-      return { error: (sessionError as any) ?? null };
-    } catch (err) {
-      lastError = err as any;
-    }
-  }
-
-  return { error: lastError ?? new Error("Phone auth failed") };
-}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -271,48 +200,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
   };
 
-  const signInWithPhone = async (phone: string) => {
-    return runExclusiveAuthOp("phone-sign-in", async () => {
-      if (!USE_SUPABASE_PHONE_OTP) {
-        return await signInWithPhoneAuthFallback(phone);
+  const sendEmailOtp = async (email: string) => {
+    return runExclusiveAuthOp("email-otp", async () => {
+      const trimmed = email.trim().toLowerCase();
+      if (!trimmed) {
+        return { error: new Error("Email is required") };
       }
 
-      const { error } = await supabase.auth.signInWithOtp({ phone });
-      if (error) {
-        console.error("[Auth] signInWithOtp(phone) failed", {
-          message: (error as any)?.message,
-          code: (error as any)?.code,
-          status: (error as any)?.status,
-          name: (error as any)?.name,
-        });
-        if (isPhoneProviderDisabled(error)) {
-          console.warn("[Auth] Falling back to phone-auth flow because phone provider is disabled");
-          return await signInWithPhoneAuthFallback(phone);
-        }
-      }
+      const { error } = await supabase.auth.signInWithOtp({
+        email: trimmed,
+        options: { shouldCreateUser: true },
+      });
       return { error: (error as any) ?? null };
     });
   };
 
-  const verifyOtp = async (phone: string, token: string) => {
+  const verifyEmailOtp = async (email: string, token: string) => {
     return runExclusiveAuthOp("verify-otp", async () => {
-      if (!USE_SUPABASE_PHONE_OTP) {
-        return await signInWithPhoneAuthFallback(phone);
-      }
+      const trimmed = email.trim().toLowerCase();
 
-      const { error } = await supabase.auth.verifyOtp({ phone, token, type: 'sms' });
-      if (error) {
-        console.error("[Auth] verifyOtp(phone,sms) failed", {
-          message: (error as any)?.message,
-          code: (error as any)?.code,
-          status: (error as any)?.status,
-          name: (error as any)?.name,
-        });
-        if (isPhoneProviderDisabled(error)) {
-          console.warn("[Auth] Falling back to phone-auth flow in verifyOtp because phone provider is disabled");
-          return await signInWithPhoneAuthFallback(phone);
-        }
-      }
+      const { error } = await supabase.auth.verifyOtp({
+        email: trimmed,
+        token,
+        type: "email",
+      });
       return { error: (error as any) ?? null };
     });
   };
@@ -341,8 +252,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isAuthOperationInProgress: authOperation !== null,
       signIn,
       signUp,
-      signInWithPhone,
-      verifyOtp,
+      sendEmailOtp,
+      verifyEmailOtp,
       signOut,
     }}>
       {children}

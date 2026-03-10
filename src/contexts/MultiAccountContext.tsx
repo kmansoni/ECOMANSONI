@@ -6,21 +6,18 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { createQueryClient } from "@/lib/queryClient";
 import { createEphemeralSupabaseClient } from "@/lib/multiAccount/supabaseEphemeral";
+import { useAccountContainerContext } from "@/contexts/AccountContainerContext";
+import { loadOrCreateDeviceIdentity } from "@/auth/deviceIdentity";
 import {
-  clearTokens,
-  deriveUsernameFromDisplayName,
   getActiveAccountId,
   getOrCreateDeviceId,
   listAccountsIndex,
   pruneAccountsIndex,
-  readTokens,
   setActiveAccountId,
   upsertAccountIndex,
-  writeTokens,
   type AccountId,
   type AccountIndexEntry,
   type AccountProfileSnapshot,
-  type StoredSessionTokens,
 } from "@/lib/multiAccount/vault";
 import { setGuestMode } from "@/lib/demo/demoMode";
 
@@ -30,26 +27,54 @@ type MultiAccountContextValue = {
   activeAccountId: AccountId | null;
   switchingAccountId: AccountId | null;
   isSwitchingAccount: boolean;
-  accountOperation: "switch" | "external-switch" | "add-password" | "otp-start" | "otp-verify" | "register-phone" | null;
+  accountOperation: "switch" | "external-switch" | "add-password" | "otp-start" | "otp-verify" | "register-email" | null;
   isAccountOperationInProgress: boolean;
   switchAccount: (accountId: AccountId) => Promise<void>;
   addAccountWithPassword: (email: string, password: string) => Promise<{ error: Error | null }>;
-  startAddAccountPhoneOtp: (phone: string) => Promise<{ error: Error | null }>;
-  verifyAddAccountPhoneOtp: (phone: string, token: string) => Promise<{ error: Error | null }>;
-  registerPhoneAccount: (input: {
-    phoneDigits: string;
-    firstName: string;
-    lastName: string;
-    email: string;
-    birthDate: string;
-    age: number;
-    gender: string;
-    entityType: string;
-  }) => Promise<{ error: Error | null }>;
+  startAddAccountEmailOtp: (email: string) => Promise<{ error: Error | null }>;
+  verifyAddAccountEmailOtp: (email: string, token: string) => Promise<{ error: Error | null }>;
 };
 
 const MultiAccountContext = React.createContext<MultiAccountContextValue | null>(null);
-const USE_SUPABASE_PHONE_OTP = import.meta.env.VITE_USE_SUPABASE_PHONE_OTP === "true";
+const AUTH_SERVICE_BASE_URL = (import.meta.env.VITE_AUTH_SERVICE_BASE_URL as string | undefined)?.trim() || "";
+
+type ActivatedSessionPayload = {
+  account_id: string;
+  session_id: string;
+  access_token: string;
+  refresh_token: string;
+  refresh_expires_at: string;
+};
+
+async function activateSessionBySessionId(sessionId: string): Promise<ActivatedSessionPayload> {
+  if (!AUTH_SERVICE_BASE_URL) {
+    throw new Error("AUTH_SERVICE_NOT_CONFIGURED");
+  }
+
+  const device = loadOrCreateDeviceIdentity();
+  const response = await fetch(`${AUTH_SERVICE_BASE_URL.replace(/\/$/, "")}/v1/device/activate-session`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      session_id: sessionId,
+      device_uid: device.device_uid,
+      device_secret: device.device_secret,
+    }),
+  });
+
+  if (!response.ok) {
+    let reason = "ACTIVATE_FAILED";
+    try {
+      const body = (await response.json()) as { error?: string };
+      reason = body.error || reason;
+    } catch {
+      // ignore parse failure
+    }
+    throw new Error(reason);
+  }
+
+  return (await response.json()) as ActivatedSessionPayload;
+}
 
 // IRON RULE 4.1: Debug logging gated by FLAG_DEBUG
 const FLAG_DEBUG = import.meta.env.VITE_DEBUG_MULTI_ACCOUNT === 'true';
@@ -189,23 +214,23 @@ async function fetchMyProfileSnapshot(
 
 async function fetchMyProfileSnapshotWithTokens(
   accountId: AccountId,
-  tokens: StoredSessionTokens,
+  refreshToken: string,
   signal?: AbortSignal,
 ): Promise<{ profile: AccountProfileSnapshot | null; requiresReauth: boolean }> {
   try {
-    if (signal?.aborted) return null;
+    if (signal?.aborted) return { profile: null, requiresReauth: false };
 
     const client = createEphemeralSupabaseClient();
-    const { error: sessionError } = await client.auth.setSession({
-      access_token: tokens.accessToken,
-      refresh_token: tokens.refreshToken,
+    const { data: refreshed, error: sessionError } = await client.auth.refreshSession({
+      refresh_token: refreshToken,
     });
     if (sessionError) {
-      logDebug(`fetchMyProfileSnapshotWithTokens: setSession failed for ${accountId}: ${sessionError.message}`);
+      logDebug(`fetchMyProfileSnapshotWithTokens: refreshSession failed for ${accountId}: ${sessionError.message}`);
       return { profile: null, requiresReauth: true };
     }
+    if (!refreshed?.session) return { profile: null, requiresReauth: true };
 
-    if (signal?.aborted) return null;
+    if (signal?.aborted) return { profile: null, requiresReauth: false };
 
     const { data, error } = await (client as any)
       .from("profiles")
@@ -213,7 +238,7 @@ async function fetchMyProfileSnapshotWithTokens(
       .eq("user_id", accountId)
       .maybeSingle();
 
-    if (signal?.aborted) return null;
+    if (signal?.aborted) return { profile: null, requiresReauth: false };
     if (error || !data) {
       logDebug(`fetchMyProfileSnapshotWithTokens: no profile for ${accountId}: ${error?.message ?? 'no_data'}`);
       return { profile: null, requiresReauth: false };
@@ -221,7 +246,7 @@ async function fetchMyProfileSnapshotWithTokens(
 
     return { profile: snapshotFromProfileRow(accountId, data), requiresReauth: false };
   } catch (err) {
-    if (signal?.aborted) return null;
+    if (signal?.aborted) return { profile: null, requiresReauth: false };
     logDebug(`fetchMyProfileSnapshotWithTokens: error for ${accountId}: ${err instanceof Error ? err.message : String(err)}`);
     return { profile: null, requiresReauth: false };
   }
@@ -263,6 +288,7 @@ async function fetchDeviceAccountsFromDb(deviceId: string): Promise<Array<{
 }
 
 export function MultiAccountProvider({ children }: { children: React.ReactNode }) {
+  const accountContainer = useAccountContainerContext();
   const [loading, setLoading] = React.useState(true);
   const [accounts, setAccounts] = React.useState<AccountIndexEntry[]>(() => listAccountsIndex());
   const [activeAccountId, setActiveAccountState] = React.useState<AccountId | null>(() => getActiveAccountId());
@@ -280,6 +306,8 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
   const externalSwitchRef = React.useRef<((id: AccountId) => Promise<void>) | null>(null);
   const internalSessionTransitionRef = React.useRef(0);
   const lastAuthenticatedAccountRef = React.useRef<AccountId | null>(null);
+  // Runtime-only per-account refresh tokens (never persisted)
+  const runtimeRefreshTokensRef = React.useRef<Record<AccountId, string>>({});
 
   React.useEffect(() => {
     activeAccountIdRef.current = activeAccountId;
@@ -334,23 +362,49 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
   }, []);
 
   const activateSessionForAccount = React.useCallback(async (accountId: AccountId) => {
-    const tokens = readTokens(accountId);
-    if (!tokens) {
+    let refreshToken = runtimeRefreshTokensRef.current[accountId];
+
+    // If we don't have runtime token (for example after page reload),
+    // try to activate by server-side session_id using auth service.
+    if (!refreshToken) {
+      const sessionId = accountContainer.getAccount(accountId)?.session_id;
+      if (sessionId) {
+        const activated = await withTimeout(
+          activateSessionBySessionId(sessionId),
+          5000,
+          "activateBySessionId",
+        );
+        const { error: setSessionError } = await withTimeout(
+          supabase.auth.setSession({
+            access_token: activated.access_token,
+            refresh_token: activated.refresh_token,
+          }),
+          4000,
+          "setSessionFromActivation",
+        );
+        if (setSessionError) throw setSessionError;
+        refreshToken = activated.refresh_token;
+      }
+    }
+
+    if (!refreshToken) {
       throw new Error("missing_tokens");
     }
 
     internalSessionTransitionRef.current += 1;
-    const { error } = await withTimeout(
-      supabase.auth.setSession({
-        access_token: tokens.accessToken,
-        refresh_token: tokens.refreshToken,
+    const { data, error } = await withTimeout(
+      supabase.auth.refreshSession({
+        refresh_token: refreshToken,
       }),
       4000,
-      "setSession",
+      "refreshSession",
     ).finally(() => {
       internalSessionTransitionRef.current = Math.max(0, internalSessionTransitionRef.current - 1);
     });
     if (error) throw error;
+    if (!data?.session) throw new Error("missing_session");
+
+    runtimeRefreshTokensRef.current[accountId] = data.session.refresh_token;
 
     setActiveAccountId(accountId);
     setActiveAccountState(accountId);
@@ -379,7 +433,7 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
     }
 
     hardResetQueryClient();
-  }, [hardResetQueryClient]);
+  }, [accountContainer, hardResetQueryClient]);
 
   const switchAccount = React.useCallback(async (accountId: AccountId) => {
     if (!accountId) return;
@@ -497,12 +551,12 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
         if (cancelled) return;
         if (entry.profile) continue;
 
-        const tokens = readTokens(entry.accountId);
-        if (!tokens) continue;
+        const refreshToken = runtimeRefreshTokensRef.current[entry.accountId];
+        if (!refreshToken) continue;
         if (entry.requiresReauth) continue;
 
         const { seq, signal } = beginProfileLoad(entry.accountId);
-        const result = await fetchMyProfileSnapshotWithTokens(entry.accountId, tokens, signal);
+        const result = await fetchMyProfileSnapshotWithTokens(entry.accountId, refreshToken, signal);
         if (cancelled) return;
         if (result?.requiresReauth) {
           setAccounts(upsertAccountIndex({
@@ -616,11 +670,7 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
         logDebug(`onAuthStateChange: session active, setting up account...`);
         
         void upsertDeviceAccountLink(accountId);
-        writeTokens(accountId, {
-          accessToken: session.access_token,
-          refreshToken: session.refresh_token,
-          expiresAt: typeof session.expires_at === "number" ? session.expires_at : null,
-        });
+        runtimeRefreshTokensRef.current[accountId] = session.refresh_token;
 
         setActiveAccountId(accountId);
         setActiveAccountState(accountId);
@@ -701,7 +751,7 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
         const prev = lastAuthenticatedAccountRef.current ?? getActiveAccountId();
         lastAuthenticatedAccountRef.current = null;
         if (prev) {
-          clearTokens(prev);
+          delete runtimeRefreshTokensRef.current[prev];
           setAccounts(upsertAccountIndex({ accountId: prev, requiresReauth: true }));
 
           // Broadcast sign-out so other tabs can mark this account as requiring reauth.
@@ -736,11 +786,7 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
         if (!session || !session.user) return { error: new Error("no_session") };
 
         const accountId = session.user.id as AccountId;
-        writeTokens(accountId, {
-          accessToken: session.access_token,
-          refreshToken: session.refresh_token,
-          expiresAt: typeof session.expires_at === "number" ? session.expires_at : null,
-        });
+        runtimeRefreshTokensRef.current[accountId] = session.refresh_token;
         setAccounts(upsertAccountIndex({ accountId, requiresReauth: false, touchActive: true }));
 
         await activateSessionForAccount(accountId);
@@ -756,55 +802,17 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
     });
   }, [activateSessionForAccount, beginProfileLoad, isCurrentProfileLoad, runExclusiveAccountOp]);
 
-  const startAddAccountPhoneOtp = React.useCallback(async (phone: string) => {
+  const startAddAccountEmailOtp = React.useCallback(async (email: string) => {
     return runExclusiveAccountOp("otp-start", async () => {
       try {
-        if (!USE_SUPABASE_PHONE_OTP) {
-          const digits = phone.replace(/\D/g, "");
-          const { data, error } = await supabase.functions.invoke("phone-auth", {
-            body: {
-              action: "register-or-login",
-              phone: `+${digits}`,
-              display_name: "User",
-              email: `user${digits}@placeholder.local`,
-            },
-          });
-          if (error) return { error: error as any };
-          if (!data?.ok || !data?.accessToken || !data?.refreshToken) {
-            return { error: new Error(data?.error || "phone-auth fallback failed") };
-          }
-          const { error: sessionError } = await supabase.auth.setSession({
-            access_token: data.accessToken,
-            refresh_token: data.refreshToken,
-          });
-          return { error: (sessionError as any) ?? null };
-        }
+        const trimmed = email.trim().toLowerCase();
+        if (!trimmed) return { error: new Error("Email is required") };
 
         const client = createEphemeralSupabaseClient();
-        const { error } = await client.auth.signInWithOtp({ phone });
-        const code = String((error as any)?.code || "").toLowerCase();
-        const message = String((error as any)?.message || "").toLowerCase();
-        const providerDisabled = code === "phone_provider_disabled" || message.includes("unsupported phone provider");
-        if (providerDisabled) {
-          const digits = phone.replace(/\D/g, "");
-          const { data, error: fallbackError } = await supabase.functions.invoke("phone-auth", {
-            body: {
-              action: "register-or-login",
-              phone: `+${digits}`,
-              display_name: "User",
-              email: `user${digits}@placeholder.local`,
-            },
-          });
-          if (fallbackError) return { error: fallbackError as any };
-          if (!data?.ok || !data?.accessToken || !data?.refreshToken) {
-            return { error: new Error(data?.error || "phone-auth fallback failed") };
-          }
-          const { error: sessionError } = await supabase.auth.setSession({
-            access_token: data.accessToken,
-            refresh_token: data.refreshToken,
-          });
-          return { error: (sessionError as any) ?? null };
-        }
+        const { error } = await client.auth.signInWithOtp({
+          email: trimmed,
+          options: { shouldCreateUser: true },
+        });
         return { error: (error as any) ?? null };
       } catch (e) {
         return { error: e as Error };
@@ -812,90 +820,24 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
     });
   }, [runExclusiveAccountOp]);
 
-  const verifyAddAccountPhoneOtp = React.useCallback(async (phone: string, token: string) => {
+  const verifyAddAccountEmailOtp = React.useCallback(async (email: string, token: string) => {
     return runExclusiveAccountOp("otp-verify", async () => {
       try {
-        if (!USE_SUPABASE_PHONE_OTP) {
-          const digits = phone.replace(/\D/g, "");
-          const { data: fallbackData, error: fallbackError } = await supabase.functions.invoke("phone-auth", {
-            body: {
-              action: "register-or-login",
-              phone: `+${digits}`,
-              display_name: "User",
-              email: `user${digits}@placeholder.local`,
-            },
-          });
-          if (fallbackError) return { error: fallbackError as any };
-          if (!fallbackData?.ok || !fallbackData?.accessToken || !fallbackData?.refreshToken) {
-            return { error: new Error(fallbackData?.error || "phone-auth fallback failed") };
-          }
-
-          const client = createEphemeralSupabaseClient();
-          const { error: setSessionError } = await client.auth.setSession({
-            access_token: fallbackData.accessToken,
-            refresh_token: fallbackData.refreshToken,
-          });
-          if (setSessionError) return { error: setSessionError as any };
-          const { data: sessionData } = await client.auth.getSession();
-          const directSession = sessionData.session;
-          if (!directSession || !directSession.user) return { error: new Error("no_session") };
-
-          const accountId = directSession.user.id as AccountId;
-          writeTokens(accountId, {
-            accessToken: directSession.access_token,
-            refreshToken: directSession.refresh_token,
-            expiresAt: typeof directSession.expires_at === "number" ? directSession.expires_at : null,
-          });
-          setAccounts(upsertAccountIndex({ accountId, requiresReauth: false, touchActive: true }));
-
-          await activateSessionForAccount(accountId);
-          const { seq, signal } = beginProfileLoad(accountId);
-          const profile = await fetchMyProfileSnapshot(accountId, signal);
-          if (profile && isCurrentProfileLoad(accountId, seq)) {
-            setAccounts(upsertAccountIndex({ accountId, profile }));
-          }
-          return { error: null };
-        }
+        const trimmed = email.trim().toLowerCase();
 
         const client = createEphemeralSupabaseClient();
-        const { data, error } = await client.auth.verifyOtp({ phone, token, type: "sms" });
-        let session = data.session;
-        if (error) {
-          const code = String((error as any)?.code || "").toLowerCase();
-          const message = String((error as any)?.message || "").toLowerCase();
-          const providerDisabled = code === "phone_provider_disabled" || message.includes("unsupported phone provider");
-          if (!providerDisabled) return { error: error as any };
+        const { data, error } = await client.auth.verifyOtp({
+          email: trimmed,
+          token,
+          type: "email",
+        });
+        if (error) return { error: error as any };
 
-          const digits = phone.replace(/\D/g, "");
-          const { data: fallbackData, error: fallbackError } = await supabase.functions.invoke("phone-auth", {
-            body: {
-              action: "register-or-login",
-              phone: `+${digits}`,
-              display_name: "User",
-              email: `user${digits}@placeholder.local`,
-            },
-          });
-          if (fallbackError) return { error: fallbackError as any };
-          if (!fallbackData?.ok || !fallbackData?.accessToken || !fallbackData?.refreshToken) {
-            return { error: new Error(fallbackData?.error || "phone-auth fallback failed") };
-          }
-
-          const { error: setSessionError } = await client.auth.setSession({
-            access_token: fallbackData.accessToken,
-            refresh_token: fallbackData.refreshToken,
-          });
-          if (setSessionError) return { error: setSessionError as any };
-          const { data: sessionData } = await client.auth.getSession();
-          session = sessionData.session;
-        }
+        const session = data.session;
         if (!session || !session.user) return { error: new Error("no_session") };
 
         const accountId = session.user.id as AccountId;
-        writeTokens(accountId, {
-          accessToken: session.access_token,
-          refreshToken: session.refresh_token,
-          expiresAt: typeof session.expires_at === "number" ? session.expires_at : null,
-        });
+        runtimeRefreshTokensRef.current[accountId] = session.refresh_token;
         setAccounts(upsertAccountIndex({ accountId, requiresReauth: false, touchActive: true }));
 
         await activateSessionForAccount(accountId);
@@ -904,89 +846,6 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
         if (profile && isCurrentProfileLoad(accountId, seq)) {
           setAccounts(upsertAccountIndex({ accountId, profile }));
         }
-        return { error: null };
-      } catch (e) {
-        return { error: e as Error };
-      }
-    });
-  }, [activateSessionForAccount, beginProfileLoad, isCurrentProfileLoad, runExclusiveAccountOp]);
-
-  const registerPhoneAccount = React.useCallback(async (input: {
-    phoneDigits: string;
-    firstName: string;
-    lastName: string;
-    email: string;
-    birthDate: string;
-    age: number;
-    gender: string;
-    entityType: string;
-  }) => {
-    return runExclusiveAccountOp("register-phone", async () => {
-      try {
-        const digits = input.phoneDigits;
-        const authEmail = `user.${digits}@phoneauth.app`;
-        const password = `ph_${digits}_secure`;
-        const client = createEphemeralSupabaseClient();
-
-      const { data: signUpData, error: signUpError } = await client.auth.signUp({
-        email: authEmail,
-        password,
-        options: {
-          emailRedirectTo: window.location.origin,
-          data: {
-            full_name: `${input.firstName} ${input.lastName}`,
-            phone: digits,
-          },
-        },
-      });
-      if (signUpError) return { error: signUpError as any };
-
-      let session: Session | null = (signUpData as any).session ?? null;
-      if (!session) {
-        const { data: signInData, error: signInError } = await client.auth.signInWithPassword({
-          email: authEmail,
-          password,
-        });
-        if (signInError) return { error: signInError as any };
-        session = signInData.session;
-      }
-      if (!session || !session.user) return { error: new Error("no_session") };
-
-      try {
-        await client
-          .from("profiles")
-          .upsert(
-            {
-              user_id: session.user.id,
-              display_name: `${input.firstName} ${input.lastName}`,
-              first_name: input.firstName,
-              last_name: input.lastName,
-              email: input.email,
-              phone: digits,
-              birth_date: input.birthDate,
-              age: input.age,
-              gender: input.gender,
-              entity_type: input.entityType,
-            } as any,
-            { onConflict: "user_id" },
-          );
-      } catch {
-        // best effort
-      }
-
-      const accountId = session.user.id as AccountId;
-      writeTokens(accountId, {
-        accessToken: session.access_token,
-        refreshToken: session.refresh_token,
-        expiresAt: typeof session.expires_at === "number" ? session.expires_at : null,
-      });
-      setAccounts(upsertAccountIndex({ accountId, requiresReauth: false, touchActive: true }));
-      await activateSessionForAccount(accountId);
-      const { seq, signal } = beginProfileLoad(accountId);
-      const profile = await fetchMyProfileSnapshot(accountId, signal);
-      if (profile && isCurrentProfileLoad(accountId, seq)) {
-        setAccounts(upsertAccountIndex({ accountId, profile }));
-      }
         return { error: null };
       } catch (e) {
         return { error: e as Error };
@@ -1004,10 +863,9 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
     isAccountOperationInProgress: accountOperation !== null,
     switchAccount,
     addAccountWithPassword,
-    startAddAccountPhoneOtp,
-    verifyAddAccountPhoneOtp,
-    registerPhoneAccount,
-  }), [accountOperation, accounts, activeAccountId, addAccountWithPassword, loading, registerPhoneAccount, startAddAccountPhoneOtp, switchAccount, switchingAccountId, verifyAddAccountPhoneOtp]);
+    startAddAccountEmailOtp,
+    verifyAddAccountEmailOtp,
+  }), [accountOperation, accounts, activeAccountId, addAccountWithPassword, loading, startAddAccountEmailOtp, switchAccount, switchingAccountId, verifyAddAccountEmailOtp]);
 
   return (
     <MultiAccountContext.Provider value={value}>
