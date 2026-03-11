@@ -128,8 +128,11 @@ Deno.serve(async (req: Request) => {
     return jsonResp(origin, { error: "Invalid email" }, 400);
   }
 
-  // ── DB-based cooldown: 60 sec between sends per email ───────────────────
-  const COOLDOWN_SEC = 60;
+  // ── DB-based cooldown between sends per email (configurable) ────────────
+  const cooldownSecRaw = Number(Deno.env.get("EMAIL_OTP_COOLDOWN_SEC") ?? "30");
+  const COOLDOWN_SEC = Number.isFinite(cooldownSecRaw) && cooldownSecRaw >= 10 && cooldownSecRaw <= 300
+    ? Math.floor(cooldownSecRaw)
+    : 30;
   const { data: existing } = await supabase
     .from("email_otp_codes")
     .select("created_at")
@@ -182,9 +185,15 @@ Deno.serve(async (req: Request) => {
   // Keep the route explicit here so OTP flow matches the deployed router.
   try {
     const sendUrl = `${emailRouterUrl.replace(/\/$/, "")}/v1/email/send`;
+    const maxAttemptsRaw = Number(Deno.env.get("EMAIL_OTP_MAX_ATTEMPTS") ?? "8");
+    const otpMaxAttempts = Number.isFinite(maxAttemptsRaw) && maxAttemptsRaw >= 3 && maxAttemptsRaw <= 20
+      ? Math.floor(maxAttemptsRaw)
+      : 8;
+
     const emailPayload = {
       to: email,
       subject: `Код подтверждения: ${code}`,
+      maxAttempts: otpMaxAttempts,
       html: `
         <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px 24px;">
           <h2 style="color: #1a1a1a; margin-bottom: 8px;">Код подтверждения</h2>
@@ -195,6 +204,7 @@ Deno.serve(async (req: Request) => {
           <p style="color: #999; font-size: 13px;">Код действителен ${otpTtlMinutes} минут. Если вы не запрашивали код — просто проигнорируйте это письмо.</p>
         </div>
       `,
+      text: `Ваш код подтверждения: ${code}. Код действителен ${otpTtlMinutes} минут.`,
     };
 
     const headers: Record<string, string> = {
