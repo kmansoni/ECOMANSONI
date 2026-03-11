@@ -1179,7 +1179,10 @@ export function ChatsPage() {
                       <button
                         onClick={async () => {
                           if (!otherId) return;
-                          await startCall(otherId, call.conversation_id, callType);
+                          await startCall(otherId, call.conversation_id, callType, {
+                            display_name: name,
+                            avatar_url: profile?.avatar_url,
+                          });
                         }}
                         className="w-9 h-9 flex items-center justify-center rounded-full bg-black/5 dark:bg-white/10 backdrop-blur-xl border border-border/50 dark:border-white/20 hover:bg-black/10 dark:hover:bg-white/20 transition-colors"
                       >

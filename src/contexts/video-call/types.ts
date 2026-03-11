@@ -17,6 +17,13 @@ export type { VideoCall, VideoCallStatus } from "@/hooks/useVideoCallSfu";
 import type { VideoCall, VideoCallStatus } from "@/hooks/useVideoCallSfu";
 
 // ─── Signaling domain ──────────────────────────────────────────────────────────
+
+/** Minimal profile info shown on the call screen before the call record is loaded from DB. */
+export interface CalleeProfile {
+  display_name: string;
+  avatar_url?: string | null;
+}
+
 export interface VideoCallSignalingContextType {
   /** Current call lifecycle state machine position. */
   status: VideoCallStatus;
@@ -26,6 +33,11 @@ export interface VideoCallSignalingContextType {
   incomingCall: VideoCall | null;
   /** RTCPeerConnection / SFU transport connection state string. */
   connectionState: string;
+  /**
+   * Profile of the callee set immediately when startCall is invoked.
+   * Used to display the correct name/avatar BEFORE the call record is loaded from DB.
+   */
+  pendingCalleeProfile: CalleeProfile | null;
 
   /**
    * Initiate an outbound call.
@@ -35,7 +47,8 @@ export interface VideoCallSignalingContextType {
   startCall: (
     calleeId: string,
     conversationId: string | null,
-    callType: "video" | "audio"
+    callType: "video" | "audio",
+    calleeProfile?: CalleeProfile
   ) => Promise<VideoCall | null>;
 
   /**

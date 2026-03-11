@@ -80,6 +80,7 @@ function StatusIndicator({ status, connectionState }: { status: string, connecti
   );
 }
 import type { VideoCall, VideoCallStatus } from "@/contexts/VideoCallContext";
+import type { CalleeProfile } from "@/contexts/video-call/types";
 import { useAuth } from "@/hooks/useAuth";
 import { GradientAvatar } from "@/components/ui/gradient-avatar";
 
@@ -136,6 +137,7 @@ function CallBackground() {
 
 interface VideoCallScreenProps {
   call: VideoCall | null;
+  pendingCalleeProfile?: CalleeProfile | null;
   status: VideoCallStatus;
   localStream: MediaStream | null;
   remoteStream: MediaStream | null;
@@ -150,6 +152,7 @@ interface VideoCallScreenProps {
 
 export function VideoCallScreen({
   call,
+  pendingCalleeProfile,
   status,
   localStream,
   remoteStream,
@@ -182,8 +185,8 @@ export function VideoCallScreen({
   // Handle null call during state transitions
   const isInitiator = call ? call.caller_id === user?.id : true;
   const otherProfile = call ? (isInitiator ? call.callee_profile : call.caller_profile) : null;
-  const otherName = otherProfile?.display_name || "Собеседник";
-  const otherAvatar = otherProfile?.avatar_url;
+  const otherName = otherProfile?.display_name || pendingCalleeProfile?.display_name || "Собеседник";
+  const otherAvatar = otherProfile?.avatar_url ?? pendingCalleeProfile?.avatar_url;
   const isVideoCall = call ? call.call_type === "video" : true;
   const isConnected = status === "connected" && connectionState === "connected";
 

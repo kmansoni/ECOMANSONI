@@ -19,6 +19,7 @@ export function GlobalCallOverlay() {
     isVideoOff,
     connectionState,
     isCallUiActive,
+    pendingCalleeProfile,
     answerCall,
     declineCall,
     endCall,
@@ -44,6 +45,7 @@ export function GlobalCallOverlay() {
     const callScreen = (
       <VideoCallScreen
         call={currentCall}
+        pendingCalleeProfile={pendingCalleeProfile}
         status={status}
         localStream={localStream}
         remoteStream={remoteStream}

@@ -155,13 +155,19 @@ export function ContactProfilePage() {
 
   const handleCall = async () => {
     if (userId && state?.conversationId) {
-      await startCall(userId, state.conversationId, 'audio');
+      await startCall(userId, state.conversationId, 'audio', {
+        display_name: profile?.display_name || 'Собеседник',
+        avatar_url: profile?.avatar_url,
+      });
     }
   };
 
   const handleVideoCall = async () => {
     if (userId && state?.conversationId) {
-      await startCall(userId, state.conversationId, 'video');
+      await startCall(userId, state.conversationId, 'video', {
+        display_name: profile?.display_name || 'Собеседник',
+        avatar_url: profile?.avatar_url,
+      });
     }
   };
 

@@ -1127,11 +1127,11 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
   };
 
   const handleStartAudioCall = async () => {
-    await startCall(otherUserId, conversationId, "audio");
+    await startCall(otherUserId, conversationId, "audio", { display_name: chatName, avatar_url: chatAvatar });
   };
 
   const handleStartVideoCall = async () => {
-    await startCall(otherUserId, conversationId, "video");
+    await startCall(otherUserId, conversationId, "video", { display_name: chatName, avatar_url: chatAvatar });
   };
 
   // Hold-to-record handlers for dynamic mic/video button

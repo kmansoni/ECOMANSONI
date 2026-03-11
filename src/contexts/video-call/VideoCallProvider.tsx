@@ -58,6 +58,7 @@ import type {
   VideoCallSignalingContextType,
   VideoCallMediaContextType,
   VideoCallUIContextType,
+  CalleeProfile,
 } from "./types";
 
 // ─── Environment constants ─────────────────────────────────────────────────────
@@ -263,6 +264,9 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
   const [isCallUiActive, setIsCallUiActive] = useState(false);
   const isCallUiActiveRef = useRef(false);
 
+  // Profile of the callee shown immediately on the call screen before the call record loads from DB
+  const [pendingCalleeProfile, setPendingCalleeProfile] = useState<CalleeProfile | null>(null);
+
   // Sync ref with state for callbacks
   useEffect(() => {
     isCallUiActiveRef.current = isCallUiActive;
@@ -294,6 +298,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         callsWsRecvTransportRef.current = null;
       }
       setPendingIncomingCall(null);
+      setPendingCalleeProfile(null);
       setIsCallUiActive(false); // Release UI-lock on call end
     },
   });
@@ -1383,17 +1388,20 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
   const startCall = useCallback(async (
     calleeId: string,
     conversationId: string | null,
-    callType: "video" | "audio"
+    callType: "video" | "audio",
+    calleeProfile?: CalleeProfile
   ) => {
     if (!user) return null;
 
     console.log("[VideoCallContext] startCall: Activating UI-lock BEFORE startVideoCall");
+    if (calleeProfile) setPendingCalleeProfile(calleeProfile);
     setIsCallUiActive(true); // Activate UI-lock BEFORE getUserMedia (happens inside startVideoCall)
 
     try {
       const result = await startVideoCall(calleeId, conversationId, callType);
       if (!result) {
         console.error("[VideoCallContext] startVideoCall returned null unexpectedly — releasing UI-lock");
+        setPendingCalleeProfile(null);
         setIsCallUiActive(false);
         toast.error("Не удалось начать звонок", {
           description: "Проверьте сеть и попробуйте снова",
@@ -1409,6 +1417,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       return result;
     } catch (err) {
       console.error("[VideoCallContext] startCall error:", err);
+      setPendingCalleeProfile(null);
       setIsCallUiActive(false); // Release UI-lock on error
       if (isMediaErrorForCall(err)) {
         const toastPayload = getMediaPermissionToastPayload(err, callType);
@@ -1479,6 +1488,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     currentCall,
     incomingCall,
     connectionState,
+    pendingCalleeProfile,
     startCall,
     answerCall,
     declineCall,
