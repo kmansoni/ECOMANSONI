@@ -1,0 +1,16 @@
+{
+  "deno.enable": false,
+  "deno.enablePaths": ["supabase/functions"],
+  "deno.importMap": "./supabase/functions/deno.json",
+  "[typescript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "typescript.preferences.importModuleSpecifier": "shortest",
+  "files.associations": {
+    "**/supabase/migrations/*.sql": "pgsql",
+    "**/supabase/seed.sql": "pgsql"
+  },
+  "mssql.enableSqlAuthenticationProvider": false,
+  "mssql.connections": []
+}

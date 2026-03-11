@@ -14,8 +14,8 @@ import { RateLimiter, getRateLimiter } from './rate-limiter.service';
 import type {
   ActorType,
   TrustContext,
-  RateLimitConfig,
 } from './types';
+import type { RateLimitConfig } from './rate-limiter.service';
 
 export interface TrustMiddlewareConfig {
   trustService?: TrustService;
@@ -29,7 +29,7 @@ export interface TrustMiddlewareConfig {
  * Default actor context extractor: uses authenticated user ID
  */
 function defaultGetActorContext(req: Request): { type: ActorType; id: string } | null {
-  const userId = req.user?.id || (req as any).auth?.uid;
+  const userId = (req as any).user?.id || (req as any).auth?.uid;
   if (!userId) {
     return null;
   }

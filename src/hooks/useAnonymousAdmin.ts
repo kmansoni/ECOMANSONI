@@ -127,7 +127,7 @@ export function useAnonymousAdmin() {
           action_type: actionType,
           target_user_id: targetUserId ?? null,
           target_message_id: targetMessageId ?? null,
-          metadata: metadata ?? {},
+          metadata: (metadata ?? {}) as any,
         });
 
         if (dbError) throw dbError;
