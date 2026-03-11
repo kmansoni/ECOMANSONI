@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PhoneInput } from "@/components/ui/phone-input";
 import { toast } from "sonner";
 import logo from "@/assets/logo.png";
 import { RegistrationModal } from "@/components/auth/RegistrationModal";
@@ -659,15 +660,12 @@ export function AuthPage() {
                   
                   <div className="relative group">
                     <div className="absolute inset-0 bg-white/5 rounded-2xl group-focus-within:bg-white/10 transition-colors" />
-                    <Input
-                      type="tel"
-                      inputMode="tel"
-                      autoComplete="tel"
+                    <PhoneInput
                       value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
+                      onChange={setPhone}
                       placeholder="+7 (___) ___-__-__"
                       required
-                      className="relative h-14 rounded-2xl bg-transparent text-white placeholder:text-white/30 px-4 outline-none border-0 focus-visible:ring-2 focus-visible:ring-white/30 text-base"
+                      className="relative"
                     />
                   </div>
 
@@ -796,15 +794,12 @@ export function AuthPage() {
                   
                   <div className="relative group">
                     <div className="absolute inset-0 bg-white/5 rounded-2xl group-focus-within:bg-white/10 transition-colors" />
-                    <Input
-                      type="tel"
-                      inputMode="tel"
-                      autoComplete="tel"
+                    <PhoneInput
                       value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
+                      onChange={setPhone}
                       placeholder="+7 (___) ___-__-__"
                       required
-                      className="relative h-14 rounded-2xl bg-transparent text-white placeholder:text-white/30 px-4 outline-none border-0 focus-visible:ring-2 focus-visible:ring-white/30 text-base"
+                      className="relative"
                     />
                   </div>
 

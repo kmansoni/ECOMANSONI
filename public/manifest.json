@@ -1,0 +1,46 @@
+{
+  "name": "mansoni",
+  "short_name": "mansoni",
+  "description": "ÃÃÃÂ¾ÃÃÃÂ¸ÃÃÂ°ÃÃÂ»ÃÃÃÂ½ÃÃÂ°Ã ÃÃÃÂµÃÃ mansoni",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a1628",
+  "theme_color": "#0a1628",
+  "orientation": "portrait",
+  "lang": "ru",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "any",
+      "type": "image/x-icon"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "ÃÃÃÂ¾ÃÃÂ²ÃÃÂ¾ÃÃÂµ ÃÃÂ¾ÃÃÂ±ÃÃÃÂµÃÃÂ½ÃÃÂ¸ÃÃÂµ",
+      "short_name": "ÃÃÃÂ°ÃÃÂ¿ÃÃÂ¸ÃÃÂ°ÃÃ",
+      "description": "ÃÃÃÂ°ÃÃÂ¿ÃÃÂ¸ÃÃÂ°ÃÃ ÃÃÂ½ÃÃÂ¾ÃÃÂ²ÃÃÂ¾ÃÃÂµ ÃÃÂ¾ÃÃÂ±ÃÃÃÂµÃÃÂ½ÃÃÂ¸ÃÃÂµ",
+      "url": "/chats?action=new",
+      "icons": [
+        {
+          "src": "/icons/compose-96.png",
+          "sizes": "96x96",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "AI ÃÃÃÃÂµÃÃÂ½ÃÃ",
+      "short_name": "AI",
+      "description": "ÃÃÃÂ¾ÃÃÂ³ÃÃÃÂ¾ÃÃÂ²ÃÃÂ¾ÃÃÂ¸ÃÃ ÃÃÂ¾ÃÃÂ± AI ÃÃÃÃÂµÃÃÂ½ÃÃÃÂ¾ÃÃÂ¼",
+      "url": "/chats?action=ai",
+      "icons": [
+        {
+          "src": "/icons/bot-96.png",
+          "sizes": "96x96",
+          "type": "image/png"
+        }
+      ]
+    }
+  ]
+}
