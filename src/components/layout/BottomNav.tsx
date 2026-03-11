@@ -1,5 +1,5 @@
 import { useState, useEffect, forwardRef, useRef, useCallback } from "react";
-import { Home, Search, Heart, FileText, LucideIcon, Check, ChevronDown, Camera, MessageCircle, User, AlertCircle, Bell, Plus, Film, Loader2 } from "lucide-react";
+import { Home, Search, Heart, FileText, LucideIcon, Check, ChevronDown, Camera, MessageCircle, User, AlertCircle, Bell, Film, Loader2 } from "lucide-react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useReelsContext } from "@/contexts/ReelsContext";
 import { cn } from "@/lib/utils";
@@ -314,26 +314,7 @@ export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function Bottom
             })}
           </nav>
 
-          {/* Central "+" create-content button (only on default nav) */}
-          {navItems === defaultNavItems && onCreateClick && (
-            <button
-              onClick={onCreateClick}
-              aria-label="Создать контент"
-              className={cn(
-                "flex items-center justify-center",
-                "w-14 h-14 rounded-full shrink-0",
-                "bg-primary text-primary-foreground",
-                "shadow-lg shadow-primary/30",
-                "active:scale-95 transition-transform duration-100"
-              )}
-              style={{
-                WebkitTapHighlightColor: 'transparent',
-                touchAction: 'manipulation',
-              }}
-            >
-              <Plus className="w-7 h-7" strokeWidth={2.2} />
-            </button>
-          )}
+
 
           {/* Separate circular button for the last item (Profile) */}
           {(() => {
