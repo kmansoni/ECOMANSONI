@@ -19,6 +19,7 @@
     "req:dashboard": "node ./scripts/requirements/dashboard.mjs",
     "req:check": "node ./scripts/requirements/check.mjs",
     "calls:validate": "node ./scripts/calls/validate-ws-contracts.mjs",
+    "calls:env:probe": "node ./scripts/calls/prod-env-probe.mjs",
     "calls:mediasoup:smoke": "node ./scripts/calls-mediasoup-smoke.mjs",
     "calls:chaos:gate": "node ./scripts/calls-chaos-gate.mjs",
     "calls:ws:dev": "node ./server/calls-ws/index.mjs",
