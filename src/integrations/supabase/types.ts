@@ -11527,6 +11527,189 @@ export type Database = {
           },
         ]
       }
+      ai_chat_messages: {
+        Row: {
+          id: string
+          user_id: string
+          conversation_id: string | null
+          role: string
+          content: string
+          tokens_used: number | null
+          model: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          conversation_id?: string | null
+          role: string
+          content: string
+          tokens_used?: number | null
+          model?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          conversation_id?: string | null
+          role?: string
+          content?: string
+          tokens_used?: number | null
+          model?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      ai_usage_limits: {
+        Row: {
+          user_id: string
+          daily_messages_used: number | null
+          daily_reset_at: string | null
+          total_tokens_used: number | null
+          is_premium: boolean | null
+          updated_at: string | null
+        }
+        Insert: {
+          user_id: string
+          daily_messages_used?: number | null
+          daily_reset_at?: string | null
+          total_tokens_used?: number | null
+          is_premium?: boolean | null
+          updated_at?: string | null
+        }
+        Update: {
+          user_id?: string
+          daily_messages_used?: number | null
+          daily_reset_at?: string | null
+          total_tokens_used?: number | null
+          is_premium?: boolean | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      recovery_emails: {
+        Row: {
+          user_id: string
+          email: string
+          verified: boolean | null
+          verification_code: string | null
+          code_expires_at: string | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          user_id: string
+          email: string
+          verified?: boolean | null
+          verification_code?: string | null
+          code_expires_at?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          user_id?: string
+          email?: string
+          verified?: boolean | null
+          verification_code?: string | null
+          code_expires_at?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      group_members: {
+        Row: {
+          id: string
+          group_id: string
+          user_id: string
+          role: string
+          is_anonymous: boolean | null
+          joined_at: string | null
+        }
+        Insert: {
+          id?: string
+          group_id: string
+          user_id: string
+          role?: string
+          is_anonymous?: boolean | null
+          joined_at?: string | null
+        }
+        Update: {
+          id?: string
+          group_id?: string
+          user_id?: string
+          role?: string
+          is_anonymous?: boolean | null
+          joined_at?: string | null
+        }
+        Relationships: []
+      }
+      anonymous_admin_actions: {
+        Row: {
+          id: string
+          group_id: string
+          admin_user_id: string
+          action_type: string
+          target_user_id: string | null
+          target_message_id: string | null
+          metadata: Json | null
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          group_id: string
+          admin_user_id: string
+          action_type: string
+          target_user_id?: string | null
+          target_message_id?: string | null
+          metadata?: Json | null
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          group_id?: string
+          admin_user_id?: string
+          action_type?: string
+          target_user_id?: string | null
+          target_message_id?: string | null
+          metadata?: Json | null
+          created_at?: string | null
+        }
+        Relationships: []
+      }
+      chat_shortcuts: {
+        Row: {
+          id: string
+          user_id: string
+          chat_id: string
+          chat_type: string
+          label: string
+          icon_url: string | null
+          sort_order: number | null
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          chat_id: string
+          chat_type: string
+          label: string
+          icon_url?: string | null
+          sort_order?: number | null
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          chat_id?: string
+          chat_type?: string
+          label?: string
+          icon_url?: string | null
+          sort_order?: number | null
+          created_at?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       chat_v11_health_last_15m: {

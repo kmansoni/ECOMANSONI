@@ -51,6 +51,14 @@ function normalizePhone(raw: string): string {
   return digits;
 }
 
+function emailDomain(email: string): string {
+  return email.split("@")[1]?.toLowerCase() ?? "";
+}
+
+function isGmailOrIcloudDomain(domain: string): boolean {
+  return domain === "gmail.com" || domain === "googlemail.com" || domain === "icloud.com" || domain === "me.com" || domain === "mac.com";
+}
+
 Deno.serve(async (req: Request) => {
   // CORS preflight
   const corsResp = handleCors(req);
@@ -185,26 +193,36 @@ Deno.serve(async (req: Request) => {
   // Keep the route explicit here so OTP flow matches the deployed router.
   try {
     const sendUrl = `${emailRouterUrl.replace(/\/$/, "")}/v1/email/send`;
+    const recipientDomain = emailDomain(email);
+    const isPriorityMailbox = isGmailOrIcloudDomain(recipientDomain);
     const maxAttemptsRaw = Number(Deno.env.get("EMAIL_OTP_MAX_ATTEMPTS") ?? "8");
-    const otpMaxAttempts = Number.isFinite(maxAttemptsRaw) && maxAttemptsRaw >= 3 && maxAttemptsRaw <= 20
+    const otpMaxAttemptsBase = Number.isFinite(maxAttemptsRaw) && maxAttemptsRaw >= 3 && maxAttemptsRaw <= 20
       ? Math.floor(maxAttemptsRaw)
       : 8;
+    const otpMaxAttempts = isPriorityMailbox ? Math.min(20, Math.max(otpMaxAttemptsBase, 10)) : otpMaxAttemptsBase;
+
+    const shortCode = code.slice(0, 3) + " " + code.slice(3);
 
     const emailPayload = {
       to: email,
-      subject: `Код подтверждения: ${code}`,
+      subject: `Mansoni verification code: ${shortCode}`,
       maxAttempts: otpMaxAttempts,
+      priority: 1,
+      headers: {
+        "Auto-Submitted": "auto-generated",
+        "X-Auto-Response-Suppress": "All",
+      },
       html: `
         <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px 24px;">
-          <h2 style="color: #1a1a1a; margin-bottom: 8px;">Код подтверждения</h2>
-          <p style="color: #666; font-size: 15px; margin-bottom: 24px;">Используйте этот код для входа в приложение:</p>
+          <h2 style="color: #1a1a1a; margin-bottom: 8px;">Mansoni verification code</h2>
+          <p style="color: #666; font-size: 15px; margin-bottom: 24px;">Use this one-time code to sign in:</p>
           <div style="background: #f4f4f5; border-radius: 12px; padding: 20px; text-align: center; margin-bottom: 24px;">
-            <span style="font-size: 32px; font-weight: 700; letter-spacing: 6px; color: #18181b;">${code}</span>
+            <span style="font-size: 32px; font-weight: 700; letter-spacing: 6px; color: #18181b;">${shortCode}</span>
           </div>
-          <p style="color: #999; font-size: 13px;">Код действителен ${otpTtlMinutes} минут. Если вы не запрашивали код — просто проигнорируйте это письмо.</p>
+          <p style="color: #999; font-size: 13px;">Code expires in ${otpTtlMinutes} minutes. If this wasn't you, you can ignore this email.</p>
         </div>
       `,
-      text: `Ваш код подтверждения: ${code}. Код действителен ${otpTtlMinutes} минут.`,
+      text: `Mansoni verification code: ${shortCode}. Expires in ${otpTtlMinutes} minutes. If you did not request this code, ignore this email.`,
     };
 
     const headers: Record<string, string> = {
@@ -216,6 +234,9 @@ Deno.serve(async (req: Request) => {
 
     console.info("[send-email-otp] Sending OTP email", {
       recipient: maskEmail(email),
+      recipientDomain,
+      isPriorityMailbox,
+      otpMaxAttempts,
       sendUrl,
       hasIngestKey: Boolean(emailRouterIngestKey),
       keySource: emailRouterKeySource,

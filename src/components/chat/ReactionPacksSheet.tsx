@@ -26,18 +26,18 @@ import {
   type ReactionPackItem,
 } from "@/hooks/useReactionPacks";
 
-// âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ─────────────────────────────────────────────────────────────────────────────
 // Props
-// âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ─────────────────────────────────────────────────────────────────────────────
 
 interface ReactionPacksSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
-// âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ─────────────────────────────────────────────────────────────────────────────
 // Sub-component: Pack card shown in the Catalogue tab
-// âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ─────────────────────────────────────────────────────────────────────────────
 
 interface PackCardProps {
   pack: ReactionPack;
@@ -97,7 +97,7 @@ function PackCard({ pack, items, onInstall, onUninstall, actionLoading }: PackCa
             pack.installed ? onUninstall(pack.id) : onInstall(pack.id)
           }
         >
-          {pack.installed ? "Ð£Ð´Ð°Ð»Ð¸ÑÑ" : "Ð£ÑÑÐ°Ð½Ð¾Ð²Ð¸ÑÑ"}
+          {pack.installed ? "Удалить" : "Установить"}
         </Button>
       </div>
 
@@ -134,9 +134,9 @@ function PackCard({ pack, items, onInstall, onUninstall, actionLoading }: PackCa
   );
 }
 
-// âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
-// Sub-component: Installed pack row with ââ reorder buttons
-// âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ─────────────────────────────────────────────────────────────────────────────
+// Sub-component: Installed pack row with ↑↓ reorder buttons
+// ─────────────────────────────────────────────────────────────────────────────
 
 interface InstalledRowProps {
   pack: ReactionPack;
@@ -174,7 +174,7 @@ function InstalledRow({
           <span className="font-medium text-sm text-white truncate block">
             {pack.name}
           </span>
-          <span className="text-xs text-white/40">{items.length} ÑÐµÐ°ÐºÑÐ¸Ð¹</span>
+          <span className="text-xs text-white/40">{items.length} реакций</span>
         </div>
 
         {/* Reorder buttons */}
@@ -237,9 +237,9 @@ function InstalledRow({
   );
 }
 
-// âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ─────────────────────────────────────────────────────────────────────────────
 // Main component
-// âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ─────────────────────────────────────────────────────────────────────────────
 
 export function ReactionPacksSheet({ open, onOpenChange }: ReactionPacksSheetProps) {
   const {
@@ -256,7 +256,7 @@ export function ReactionPacksSheet({ open, onOpenChange }: ReactionPacksSheetPro
   const [search, setSearch] = useState("");
   const [catalogPacks, setCatalogPacks] = useState<ReactionPack[]>([]);
   const [installedPacks, setInstalledPacks] = useState<ReactionPack[]>([]);
-  // packId â items
+  // packId → items
   const [itemsCache, setItemsCache] = useState<Record<string, ReactionPackItem[]>>({});
   const [actionLoading, setActionLoading] = useState(false);
 
@@ -307,7 +307,7 @@ export function ReactionPacksSheet({ open, onOpenChange }: ReactionPacksSheetPro
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search, open, tab]);
 
-  // âââ Install handler âââââââââââââââââââââââââââââââââââââââââââââââââââââ
+  // ─── Install handler ─────────────────────────────────────────────────────
 
   const handleInstall = useCallback(
     async (packId: string) => {
@@ -321,7 +321,7 @@ export function ReactionPacksSheet({ open, onOpenChange }: ReactionPacksSheetPro
     [installPack, refreshInstalled, refreshCatalog]
   );
 
-  // âââ Uninstall handler âââââââââââââââââââââââââââââââââââââââââââââââââââ
+  // ─── Uninstall handler ───────────────────────────────────────────────────
 
   const handleUninstall = useCallback(
     async (packId: string) => {
@@ -335,7 +335,7 @@ export function ReactionPacksSheet({ open, onOpenChange }: ReactionPacksSheetPro
     [uninstallPack, refreshInstalled, refreshCatalog]
   );
 
-  // âââ Reorder (move up) âââââââââââââââââââââââââââââââââââââââââââââââââââ
+  // ─── Reorder (move up) ───────────────────────────────────────────────────
 
   const handleMoveUp = useCallback(
     (index: number) => {
@@ -350,7 +350,7 @@ export function ReactionPacksSheet({ open, onOpenChange }: ReactionPacksSheetPro
     []
   );
 
-  // âââ Reorder (move down) âââââââââââââââââââââââââââââââââââââââââââââââââ
+  // ─── Reorder (move down) ─────────────────────────────────────────────────
 
   const handleMoveDown = useCallback(
     (index: number) => {
@@ -365,7 +365,7 @@ export function ReactionPacksSheet({ open, onOpenChange }: ReactionPacksSheetPro
     []
   );
 
-  // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+  // ─────────────────────────────────────────────────────────────────────────
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -376,7 +376,7 @@ export function ReactionPacksSheet({ open, onOpenChange }: ReactionPacksSheetPro
         <SheetHeader className="px-4 pt-4 pb-2 flex-shrink-0">
           <SheetTitle className="text-white flex items-center gap-2">
             <Package className="w-5 h-5 text-blue-400" />
-            ÐÐ°Ð±Ð¾ÑÑ ÑÐµÐ°ÐºÑÐ¸Ð¹
+            Наборы реакций
           </SheetTitle>
         </SheetHeader>
 
@@ -387,19 +387,19 @@ export function ReactionPacksSheet({ open, onOpenChange }: ReactionPacksSheetPro
         >
           <TabsList className="mx-4 bg-white/5 border border-white/10 flex-shrink-0">
             <TabsTrigger value="installed" className="flex-1 data-[state=active]:bg-blue-600">
-              Ð£ÑÑÐ°Ð½Ð¾Ð²Ð»ÐµÐ½Ð½ÑÐµ ({installedPacks.length})
+              Установленные ({installedPacks.length})
             </TabsTrigger>
             <TabsTrigger value="catalog" className="flex-1 data-[state=active]:bg-blue-600">
-              ÐÐ°ÑÐ°Ð»Ð¾Ð³
+              Каталог
             </TabsTrigger>
           </TabsList>
 
-          {/* ââ Installed tab âââââââââââââââââââââââââââââââââââââââââââââââ */}
+          {/* ── Installed tab ─────────────────────────────────────────────── */}
           <TabsContent value="installed" className="flex-1 overflow-hidden m-0 mt-2">
             <ScrollArea className="h-full px-4 pb-4">
               {loading && installedPacks.length === 0 ? (
                 <div className="flex items-center justify-center h-32 text-white/40 text-sm">
-                  ÐÐ°Ð³ÑÑÐ·ÐºÐ°...
+                  Загрузка...
                 </div>
               ) : installedPacks.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-32 gap-2 text-white/40">
@@ -411,7 +411,7 @@ export function ReactionPacksSheet({ open, onOpenChange }: ReactionPacksSheetPro
                     className="text-blue-400 text-xs"
                     onClick={() => setTab("catalog")}
                   >
-                    ÐÐµÑÐµÐ¹ÑÐ¸ Ð² ÐºÐ°ÑÐ°Ð»Ð¾Ð³
+                    Перейти в каталог
                   </Button>
                 </div>
               ) : (
@@ -434,14 +434,14 @@ export function ReactionPacksSheet({ open, onOpenChange }: ReactionPacksSheetPro
             </ScrollArea>
           </TabsContent>
 
-          {/* ââ Catalog tab âââââââââââââââââââââââââââââââââââââââââââââââââ */}
+          {/* ── Catalog tab ───────────────────────────────────────────────── */}
           <TabsContent value="catalog" className="flex-1 overflow-hidden m-0 mt-2 flex flex-col">
             {/* Search */}
             <div className="px-4 pb-2 flex-shrink-0">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" />
                 <Input
-                  placeholder="ÐÐ¾Ð¸ÑÐº Ð½Ð°Ð±Ð¾ÑÐ¾Ð²..."
+                  placeholder="Поиск наборов..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   className="pl-9 bg-white/5 border-white/10 text-white placeholder:text-white/30"
@@ -452,13 +452,13 @@ export function ReactionPacksSheet({ open, onOpenChange }: ReactionPacksSheetPro
             <ScrollArea className="flex-1 px-4 pb-4">
               {loading && catalogPacks.length === 0 ? (
                 <div className="flex items-center justify-center h-32 text-white/40 text-sm">
-                  ÐÐ°Ð³ÑÑÐ·ÐºÐ°...
+                  Загрузка...
                 </div>
               ) : catalogPacks.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-32 gap-2 text-white/40">
                   <Star className="w-8 h-8 opacity-30" />
                   <span className="text-sm">
-                    {search ? "ÐÐ¸ÑÐµÐ³Ð¾ Ð½Ðµ Ð½Ð°Ð¹Ð´ÐµÐ½Ð¾" : "ÐÐ°ÑÐ°Ð»Ð¾Ð³ Ð¿ÑÑÑ"}
+                    {search ? "Ничего не найдено" : "Каталог пуст"}
                   </span>
                 </div>
               ) : (

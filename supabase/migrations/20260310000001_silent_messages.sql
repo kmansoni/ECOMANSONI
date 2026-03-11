@@ -134,7 +134,7 @@ BEGIN
       final_duration := NULLIF((payload->>'duration_seconds')::int, 0);
 
       IF final_content = '' THEN
-        final_content := 'ð';
+        final_content := '📎';
       END IF;
 
       IF final_media_type NOT IN ('image','video','voice','video_circle') THEN
@@ -147,11 +147,11 @@ BEGIN
 
     ELSIF kind = 'share_post' THEN
       final_shared_post := (payload->>'post_id')::uuid;
-      final_content := btrim(coalesce(payload->>'text', 'ð ÐÐ¾ÑÑ'));
+      final_content := btrim(coalesce(payload->>'text', '📌 Пост'));
 
     ELSIF kind = 'share_reel' THEN
       final_shared_reel := (payload->>'reel_id')::uuid;
-      final_content := btrim(coalesce(payload->>'text', 'ð¬ Ð Ð¸Ð»Ñ'));
+      final_content := btrim(coalesce(payload->>'text', '🎬 Рилс'));
 
     END IF;
 
