@@ -102,6 +102,42 @@ function isLocalEndpoint(endpoint: string): boolean {
   }
 }
 
+function getCallsConfigIssue(): string | null {
+  if (!CALLS_V2_ENABLED) {
+    return "Calls V2 disabled";
+  }
+
+  const endpoints = [CALLS_V2_WS_URL, ...CALLS_V2_WS_URLS]
+    .map((value) => normalizeWsEndpoint(value))
+    .filter(Boolean);
+
+  if (endpoints.length === 0) {
+    return "Calls WS endpoint is not configured";
+  }
+
+  if (typeof window !== "undefined" && window.location.protocol === "https:") {
+    const insecureRemoteEndpoint = endpoints.find((endpoint) => endpoint.startsWith("ws://") && !isLocalEndpoint(endpoint));
+    if (insecureRemoteEndpoint) {
+      return `Insecure calls endpoint on HTTPS page: ${insecureRemoteEndpoint}`;
+    }
+  }
+
+  return null;
+}
+
+function getCallsConfigToastDescription(issue: string): string {
+  if (issue === "Calls V2 disabled") {
+    return "Сервис звонков отключен конфигурацией сборки. Нужны VITE_CALLS_V2_ENABLED=true и рабочий WS endpoint.";
+  }
+  if (issue === "Calls WS endpoint is not configured") {
+    return "Не задан VITE_CALLS_V2_WS_URL или VITE_CALLS_V2_WS_URLS. Сборка фронта не знает, куда подключать SFU.";
+  }
+  if (issue.startsWith("Insecure calls endpoint on HTTPS page:")) {
+    return "На HTTPS-странице нельзя использовать внешний ws:// endpoint. Нужен только wss:// адрес для сервиса звонков.";
+  }
+  return "Конфигурация сервиса звонков неполная. Проверьте env для Calls V2, TURN и SFU.";
+}
+
 function hasInsertableStreamsSupport(): boolean {
   try {
     return typeof RTCRtpSender !== "undefined" && "createEncodedStreams" in RTCRtpSender.prototype;
@@ -271,6 +307,17 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     isCallUiActiveRef.current = isCallUiActive;
   }, [isCallUiActive]);
+
+  useEffect(() => {
+    const issue = getCallsConfigIssue();
+    console.info("[VideoCallContext] calls-v2 config", {
+      enabled: CALLS_V2_ENABLED,
+      endpointCount: [CALLS_V2_WS_URL, ...CALLS_V2_WS_URLS].filter(Boolean).length,
+      frameE2eeAdvertiseSframe: FRAME_E2EE_ADVERTISE_SFRAME,
+      hasInsertableStreams: hasInsertableStreamsSupport(),
+      issue,
+    });
+  }, []);
 
   const {
     status,
@@ -1295,6 +1342,16 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
   });
 
   const answerCall = useCallback(async (call: VideoCall) => {
+    const configIssue = getCallsConfigIssue();
+    if (configIssue) {
+      console.error("[VideoCallContext] answerCall blocked by config:", configIssue);
+      toast.error("Звонок недоступен", {
+        description: getCallsConfigToastDescription(configIssue),
+        duration: 6000,
+      });
+      return;
+    }
+
     console.log("[VideoCallContext] answerCall: Activating UI-lock BEFORE getUserMedia");
     setIsCallUiActive(true); // Activate UI-lock BEFORE getUserMedia
     setPendingIncomingCall(null);
@@ -1393,6 +1450,16 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
   ) => {
     if (!user) return null;
 
+    const configIssue = getCallsConfigIssue();
+    if (configIssue) {
+      console.error("[VideoCallContext] startCall blocked by config:", configIssue);
+      toast.error("Не удалось начать звонок", {
+        description: getCallsConfigToastDescription(configIssue),
+        duration: 6000,
+      });
+      return null;
+    }
+
     console.log("[VideoCallContext] startCall: Activating UI-lock BEFORE startVideoCall");
     if (calleeProfile) setPendingCalleeProfile(calleeProfile);
     setIsCallUiActive(true); // Activate UI-lock BEFORE getUserMedia (happens inside startVideoCall)
@@ -1436,6 +1503,15 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
   }, [user, startVideoCall, bootstrapCallsV2Room, endVideoCall]);
 
   const retryConnection = useCallback(async () => {
+    const configIssue = getCallsConfigIssue();
+    if (configIssue) {
+      console.error("[VideoCallContext] retryConnection blocked by config:", configIssue);
+      toast.error("Повторное подключение недоступно", {
+        description: getCallsConfigToastDescription(configIssue),
+        duration: 6000,
+      });
+      return;
+    }
     await retryWithFreshCredentials();
   }, [retryWithFreshCredentials]);
 
