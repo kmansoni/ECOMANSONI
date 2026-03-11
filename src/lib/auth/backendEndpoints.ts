@@ -104,12 +104,32 @@ function getEdgeFunctionUrl(fnName: string): string {
   return `https://lfkbgnbjxskspsownvjm.supabase.co/functions/v1/${fnName}`;
 }
 
+function getEdgeFunctionUrls(fnName: string): string[] {
+  const urls: string[] = [];
+  const runtimeConfig = getSupabaseRuntimeConfig();
+  const runtimeUrl = stripTrailingSlash(normalizeEnv(runtimeConfig.supabaseUrl));
+  if (runtimeUrl) {
+    pushUnique(urls, `${runtimeUrl}/functions/v1/${fnName}`);
+  }
+  // Emergency fallback for current primary project ref.
+  pushUnique(urls, `https://lfkbgnbjxskspsownvjm.supabase.co/functions/v1/${fnName}`);
+  return urls;
+}
+
 export function getSendEmailOtpUrl(): string {
   return getEdgeFunctionUrl("send-email-otp");
 }
 
+export function getSendEmailOtpUrls(): string[] {
+  return getEdgeFunctionUrls("send-email-otp");
+}
+
 export function getVerifyEmailOtpUrl(): string {
   return getEdgeFunctionUrl("verify-email-otp");
+}
+
+export function getVerifyEmailOtpUrls(): string[] {
+  return getEdgeFunctionUrls("verify-email-otp");
 }
 
 export function getAnonHeaders(): Record<string, string> {

@@ -48,125 +48,133 @@ async function derivePassword(email: string, secret: string): Promise<string> {
 }
 
 Deno.serve(async (req: Request) => {
-  const corsResp = handleCors(req);
-  if (corsResp) return corsResp;
-
   const origin = req.headers.get("origin");
-
-  if (req.method !== "POST") {
-    return jsonResp(origin, { error: "Method not allowed" }, 405);
-  }
-
-  let email: string, code: string;
   try {
-    const body = await req.json();
-    email = (body.email ?? "").trim().toLowerCase();
-    code = (body.code ?? "").trim();
-  } catch {
-    return jsonResp(origin, { error: "Invalid JSON" }, 400);
-  }
+    const corsResp = handleCors(req);
+    if (corsResp) return corsResp;
 
-  if (!email || !code) {
-    return jsonResp(origin, { error: "email and code required" }, 400);
-  }
+    if (req.method !== "POST") {
+      return jsonResp(origin, { error: "Method not allowed" }, 405);
+    }
 
-  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-  const emailAuthSecret = Deno.env.get("EMAIL_AUTH_SECRET");
+    let email: string, code: string;
+    try {
+      const body = await req.json();
+      email = (body.email ?? "").trim().toLowerCase();
+      code = (body.code ?? "").trim();
+    } catch {
+      return jsonResp(origin, { error: "Invalid JSON" }, 400);
+    }
 
-  if (!emailAuthSecret) {
-    console.error("[verify-email-otp] Missing EMAIL_AUTH_SECRET");
-    return jsonResp(origin, { error: "Server not configured" }, 500);
-  }
+    if (!email || !code) {
+      return jsonResp(origin, { error: "email and code required" }, 400);
+    }
 
-  const supabase = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { persistSession: false },
-  });
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    const emailAuthSecret = Deno.env.get("EMAIL_AUTH_SECRET");
 
-  // ── Fetch OTP record ────────────────────────────────────────────────────
-  const { data: otp, error: fetchError } = await supabase
-    .from("email_otp_codes")
-    .select("*")
-    .eq("email", email)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    if (!supabaseUrl || !serviceRoleKey || !emailAuthSecret) {
+      console.error("[verify-email-otp] Missing required environment variables", {
+        hasSupabaseUrl: Boolean(supabaseUrl),
+        hasServiceRoleKey: Boolean(serviceRoleKey),
+        hasEmailAuthSecret: Boolean(emailAuthSecret),
+      });
+      return jsonResp(origin, { error: "Server not configured" }, 500);
+    }
 
-  if (fetchError || !otp) {
-    return jsonResp(origin, { error: "No verification code found. Please request a new one." }, 404);
-  }
+    const supabase = createClient(supabaseUrl, serviceRoleKey, {
+      auth: { persistSession: false },
+    });
 
-  // Expired?
-  if (new Date(otp.expires_at) < new Date()) {
+    // ── Fetch OTP record ────────────────────────────────────────────────────
+    const { data: otp, error: fetchError } = await supabase
+      .from("email_otp_codes")
+      .select("*")
+      .eq("email", email)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (fetchError || !otp) {
+      return jsonResp(origin, { error: "No verification code found. Please request a new one." }, 404);
+    }
+
+    // Expired?
+    if (new Date(otp.expires_at) < new Date()) {
+      await supabase.from("email_otp_codes").delete().eq("id", otp.id);
+      return jsonResp(origin, { error: "Code expired. Please request a new one." }, 410);
+    }
+
+    // Max attempts reached?
+    const MAX_ATTEMPTS = 5;
+    if (otp.attempts >= MAX_ATTEMPTS) {
+      await supabase.from("email_otp_codes").delete().eq("id", otp.id);
+      return jsonResp(origin, { error: "Too many attempts. Please request a new code." }, 429);
+    }
+
+    // Increment attempts
+    await supabase
+      .from("email_otp_codes")
+      .update({ attempts: otp.attempts + 1 })
+      .eq("id", otp.id);
+
+    // Timing-safe comparison
+    if (!timingSafeEqual(code, otp.code)) {
+      const remaining = MAX_ATTEMPTS - (otp.attempts + 1);
+      return jsonResp(origin, { error: `Invalid code. ${remaining} attempt(s) remaining.` }, 401);
+    }
+
+    // ── Code valid — delete it ──────────────────────────────────────────────
     await supabase.from("email_otp_codes").delete().eq("id", otp.id);
-    return jsonResp(origin, { error: "Code expired. Please request a new one." }, 410);
-  }
 
-  // Max attempts reached?
-  const MAX_ATTEMPTS = 5;
-  if (otp.attempts >= MAX_ATTEMPTS) {
-    await supabase.from("email_otp_codes").delete().eq("id", otp.id);
-    return jsonResp(origin, { error: "Too many attempts. Please request a new code." }, 429);
-  }
+    // ── Create or sign-in user ──────────────────────────────────────────────
+    const password = await derivePassword(email, emailAuthSecret);
+    let isNewUser = false;
 
-  // Increment attempts
-  await supabase
-    .from("email_otp_codes")
-    .update({ attempts: otp.attempts + 1 })
-    .eq("id", otp.id);
+    // Try to find user by email via admin API
+    const { data: userLookup } = await supabase.auth.admin.listUsers();
+    const existingUser = userLookup?.users?.find(
+      (u) => u.email?.toLowerCase() === email,
+    );
 
-  // Timing-safe comparison
-  if (!timingSafeEqual(code, otp.code)) {
-    const remaining = MAX_ATTEMPTS - (otp.attempts + 1);
-    return jsonResp(origin, { error: `Invalid code. ${remaining} attempt(s) remaining.` }, 401);
-  }
+    if (!existingUser) {
+      // Create new user
+      const { error: createErr } = await supabase.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true,
+      });
+      if (createErr) {
+        console.error("[verify-email-otp] createUser error:", createErr);
+        return jsonResp(origin, { error: "Failed to create account" }, 500);
+      }
+      isNewUser = true;
+    } else {
+      // Update password to current derived value (in case secret rotated)
+      await supabase.auth.admin.updateUser(existingUser.id, { password });
+    }
 
-  // ── Code valid — delete it ──────────────────────────────────────────────
-  await supabase.from("email_otp_codes").delete().eq("id", otp.id);
-
-  // ── Create or sign-in user ──────────────────────────────────────────────
-  const password = await derivePassword(email, emailAuthSecret);
-  let isNewUser = false;
-
-  // Try to find user by email via admin API
-  const { data: userLookup } = await supabase.auth.admin.listUsers();
-  const existingUser = userLookup?.users?.find(
-    (u) => u.email?.toLowerCase() === email,
-  );
-
-  if (!existingUser) {
-    // Create new user
-    const { data: newUser, error: createErr } = await supabase.auth.admin.createUser({
+    // Sign in to get tokens
+    const { data: session, error: signInErr } = await supabase.auth.signInWithPassword({
       email,
       password,
-      email_confirm: true,
     });
-    if (createErr) {
-      console.error("[verify-email-otp] createUser error:", createErr);
-      return jsonResp(origin, { error: "Failed to create account" }, 500);
+
+    if (signInErr || !session?.session) {
+      console.error("[verify-email-otp] signIn error:", signInErr);
+      return jsonResp(origin, { error: "Authentication failed" }, 500);
     }
-    isNewUser = true;
-  } else {
-    // Update password to current derived value (in case secret rotated)
-    await supabase.auth.admin.updateUser(existingUser.id, { password });
+
+    return jsonResp(origin, {
+      ok: true,
+      userId: session.session.user.id,
+      isNewUser,
+      accessToken: session.session.access_token,
+      refreshToken: session.session.refresh_token,
+    });
+  } catch (error) {
+    console.error("[verify-email-otp] Unhandled error:", error);
+    return jsonResp(origin, { error: "Internal server error" }, 500);
   }
-
-  // Sign in to get tokens
-  const { data: session, error: signInErr } = await supabase.auth.signInWithPassword({
-    email,
-    password,
-  });
-
-  if (signInErr || !session?.session) {
-    console.error("[verify-email-otp] signIn error:", signInErr);
-    return jsonResp(origin, { error: "Authentication failed" }, 500);
-  }
-
-  return jsonResp(origin, {
-    ok: true,
-    userId: session.session.user.id,
-    isNewUser,
-    accessToken: session.session.access_token,
-    refreshToken: session.session.refresh_token,
-  });
 });

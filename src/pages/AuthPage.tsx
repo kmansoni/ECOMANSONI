@@ -10,7 +10,7 @@ import { RegistrationModal } from "@/components/auth/RegistrationModal";
 import { supabase } from "@/lib/supabase";
 import { RecommendedUsersModal } from "@/components/profile/RecommendedUsersModal";
 import { setGuestMode } from "@/lib/demo/demoMode";
-import { getPhoneAuthFunctionUrls, getPhoneAuthHeaders, getSendEmailOtpUrl, getVerifyEmailOtpUrl, getAnonHeaders } from "@/lib/auth/backendEndpoints";
+import { getPhoneAuthFunctionUrls, getPhoneAuthHeaders, getVerifyEmailOtpUrls, getSendEmailOtpUrls, getAnonHeaders } from "@/lib/auth/backendEndpoints";
 
 const DEMO_GUEST_PHONE = "+70000000000";
 
@@ -64,6 +64,27 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   });
 }
 
+function getReadableAuthErrorMessage(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error);
+  const normalized = raw.toLowerCase();
+  if (normalized.includes("failed to fetch")) {
+    return "Сетевой сбой при обращении к серверу подтверждения. Проверьте интернет/VPN и повторите.";
+  }
+  if (normalized.startsWith("timeout:")) {
+    return "Сервер отвечает слишком долго. Повторите попытку.";
+  }
+  return raw;
+}
+
+function toVerifyOtpUrl(sendOtpUrl: string): string {
+  return sendOtpUrl.replace(/\/send-email-otp$/i, "/verify-email-otp");
+}
+
+function pushUniqueUrl(list: string[], url: string) {
+  if (!url) return;
+  if (!list.includes(url)) list.push(url);
+}
+
 export function AuthPage() {
   const navigate = useNavigate();
   const [authPageOperation, setAuthPageOperation] = useState<"login" | "guest" | "otp" | null>(null);
@@ -80,6 +101,7 @@ export function AuthPage() {
   const [showRegistrationModal, setShowRegistrationModal] = useState(false);
   const [showRecommendations, setShowRecommendations] = useState(false);
   const isRegisterFlowRef = useRef(false);
+  const otpSendUrlRef = useRef<string>("");
   const loading = authPageOperation !== null;
 
   // Countdown timer for OTP resend
@@ -131,16 +153,41 @@ export function AuthPage() {
         setGuestMode(false);
         isRegisterFlowRef.current = false;
 
-        const { response, data } = await fetchJsonWithTimeout(
-          getSendEmailOtpUrl(),
-          {
-            method: "POST",
-            headers: getAnonHeaders(),
-            body: JSON.stringify({ phone: trimmedPhone }),
-          },
-          AUTH_TIMEOUT_MS,
-          "send-email-otp",
-        );
+        const sendUrls = getSendEmailOtpUrls();
+        let response: Response | null = null;
+        let data: any | null = null;
+        let lastError: unknown = null;
+
+        for (const sendUrl of sendUrls) {
+          try {
+            const result = await fetchJsonWithTimeout(
+              sendUrl,
+              {
+                method: "POST",
+                headers: getAnonHeaders(),
+                body: JSON.stringify({ phone: trimmedPhone }),
+              },
+              AUTH_TIMEOUT_MS,
+              "send-email-otp",
+            );
+
+            if (result.response.ok) {
+              response = result.response;
+              data = result.data;
+              otpSendUrlRef.current = sendUrl;
+              break;
+            }
+
+            response = result.response;
+            data = result.data;
+          } catch (err) {
+            lastError = err;
+          }
+        }
+
+        if (!response) {
+          throw (lastError || new Error("Failed to reach send-email-otp endpoint"));
+        }
 
         if (response.status === 404 && data?.error === "not_found") {
           toast.error("Аккаунт не найден", { description: "Пройдите регистрацию для создания аккаунта" });
@@ -189,16 +236,41 @@ export function AuthPage() {
 
     await runExclusiveAuthPageOp("otp", async () => {
       try {
-        const { response, data } = await fetchJsonWithTimeout(
-          getVerifyEmailOtpUrl(),
-          {
-            method: "POST",
-            headers: getAnonHeaders(),
-            body: JSON.stringify({ email: verifyEmail, code: trimmedCode }),
-          },
-          AUTH_TIMEOUT_MS,
-          "verify-email-otp",
-        );
+        const verifyUrls: string[] = [];
+        if (otpSendUrlRef.current) {
+          pushUniqueUrl(verifyUrls, toVerifyOtpUrl(otpSendUrlRef.current));
+        } else {
+          for (const url of getVerifyEmailOtpUrls()) {
+            pushUniqueUrl(verifyUrls, url);
+          }
+        }
+        let response: Response | null = null;
+        let data: any | null = null;
+        let lastError: unknown = null;
+
+        for (const verifyUrl of verifyUrls) {
+          try {
+            const result = await fetchJsonWithTimeout(
+              verifyUrl,
+              {
+                method: "POST",
+                headers: getAnonHeaders(),
+                body: JSON.stringify({ email: verifyEmail, code: trimmedCode }),
+              },
+              AUTH_TIMEOUT_MS,
+              "verify-email-otp",
+            );
+            response = result.response;
+            data = result.data;
+            break;
+          } catch (err) {
+            lastError = err;
+          }
+        }
+
+        if (!response) {
+          throw (lastError || new Error("Failed to reach verify-email-otp endpoint"));
+        }
 
         if (!response.ok || !data?.ok) {
           const errMsg = data?.error || `HTTP ${response.status}`;
@@ -234,7 +306,7 @@ export function AuthPage() {
         }
       } catch (error) {
         console.error("🔴 [AuthPage] Verify OTP error:", error);
-        const errorMsg = error instanceof Error ? error.message : String(error);
+        const errorMsg = getReadableAuthErrorMessage(error);
         toast.error("Ошибка проверки кода", { description: errorMsg });
       }
     });
@@ -257,16 +329,41 @@ export function AuthPage() {
             ? { phone: phone.trim() }
             : { email: resendEmail };
 
-        const { response, data } = await fetchJsonWithTimeout(
-          getSendEmailOtpUrl(),
-          {
-            method: "POST",
-            headers: getAnonHeaders(),
-            body: JSON.stringify(payload),
-          },
-          AUTH_TIMEOUT_MS,
-          "resend-email-otp",
-        );
+        const sendUrls = getSendEmailOtpUrls();
+        let response: Response | null = null;
+        let data: any | null = null;
+        let lastError: unknown = null;
+
+        for (const sendUrl of sendUrls) {
+          try {
+            const result = await fetchJsonWithTimeout(
+              sendUrl,
+              {
+                method: "POST",
+                headers: getAnonHeaders(),
+                body: JSON.stringify(payload),
+              },
+              AUTH_TIMEOUT_MS,
+              "resend-email-otp",
+            );
+            if (result.response.ok) {
+              response = result.response;
+              data = result.data;
+              otpSendUrlRef.current = sendUrl;
+              break;
+            }
+
+            response = result.response;
+            data = result.data;
+          } catch (err) {
+            lastError = err;
+          }
+        }
+
+        if (!response) {
+          throw (lastError || new Error("Failed to reach send-email-otp endpoint"));
+        }
+
         if (!response.ok) {
           const errMsg = data?.error || `HTTP ${response.status}`;
           toast.error("Не удалось переотправить код", { description: errMsg });
@@ -277,7 +374,9 @@ export function AuthPage() {
         setOtpCountdown(OTP_RESEND_COOLDOWN_SEC);
       } catch (error) {
         console.error("🔴 [AuthPage] Resend OTP error:", error);
-        toast.error("Не удалось переотправить код");
+        toast.error("Не удалось переотправить код", {
+          description: getReadableAuthErrorMessage(error),
+        });
       }
     });
   };
@@ -380,16 +479,41 @@ export function AuthPage() {
         setGuestMode(false);
         isRegisterFlowRef.current = true;
 
-        const { response, data } = await fetchJsonWithTimeout(
-          getSendEmailOtpUrl(),
-          {
-            method: "POST",
-            headers: getAnonHeaders(),
-            body: JSON.stringify({ email: trimmedEmail, phone: trimmedPhone }),
-          },
-          AUTH_TIMEOUT_MS,
-          "register-send-email-otp",
-        );
+        const sendUrls = getSendEmailOtpUrls();
+        let response: Response | null = null;
+        let data: any | null = null;
+        let lastError: unknown = null;
+
+        for (const sendUrl of sendUrls) {
+          try {
+            const result = await fetchJsonWithTimeout(
+              sendUrl,
+              {
+                method: "POST",
+                headers: getAnonHeaders(),
+                body: JSON.stringify({ email: trimmedEmail, phone: trimmedPhone }),
+              },
+              AUTH_TIMEOUT_MS,
+              "register-send-email-otp",
+            );
+
+            if (result.response.ok) {
+              response = result.response;
+              data = result.data;
+              otpSendUrlRef.current = sendUrl;
+              break;
+            }
+
+            response = result.response;
+            data = result.data;
+          } catch (err) {
+            lastError = err;
+          }
+        }
+
+        if (!response) {
+          throw (lastError || new Error("Failed to reach send-email-otp endpoint"));
+        }
 
         if (!response.ok) {
           const errMsg = data?.error || `HTTP ${response.status}`;
@@ -422,6 +546,7 @@ export function AuthPage() {
       setOtpCode("");
       setOtpEmail(null);
       setMaskedEmail(null);
+      otpSendUrlRef.current = "";
       return;
     }
     if (mode === "register") {
