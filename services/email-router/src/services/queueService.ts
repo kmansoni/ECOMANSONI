@@ -25,7 +25,6 @@
 import { Queue, Worker, Job } from 'bullmq';
 import type { Redis } from 'ioredis';
 import type { Pool } from 'pg';
-import { getEnv } from '../config/env.js';
 import { getLogger } from '../lib/logger.js';
 import type { SendEmailJob, BounceProcessJob } from '../types/index.js';
 
