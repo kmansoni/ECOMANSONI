@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { useChatOpen } from '@/contexts/ChatOpenContext';
 import type { ContentType } from '@/hooks/useMediaEditor';
 import { useUnifiedContentCreator } from '@/hooks/useUnifiedContentCreator';
 import { CameraHost, type CameraHostHandle, type CaptureMode } from '@/components/camera/CameraHost';
@@ -34,6 +35,7 @@ const TABS: Array<{ id: TabType; label: string; icon: any; contentType: ContentT
 const ZOOM_LEVELS = [0.5, 1, 2, 3] as const;
 
 export function CreateContentModal({ isOpen, onClose, onSuccess }: CreateContentModalProps) {
+  const { setIsCreatingContent } = useChatOpen();
   const {
     isLoading,
     error,
@@ -69,6 +71,14 @@ export function CreateContentModal({ isOpen, onClose, onSuccess }: CreateContent
       if (previewUrl) URL.revokeObjectURL(previewUrl);
     };
   }, [previewUrl]);
+
+  useEffect(() => {
+    setIsCreatingContent(isOpen);
+
+    return () => {
+      setIsCreatingContent(false);
+    };
+  }, [isOpen, setIsCreatingContent]);
 
   // Lock body scroll when modal open
   useEffect(() => {
