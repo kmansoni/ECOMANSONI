@@ -14,6 +14,12 @@ jobs:
       VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
       VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
       VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+      VITE_CALLS_V2_ENABLED: ${{ vars.VITE_CALLS_V2_ENABLED }}
+      VITE_CALLS_V2_WS_URL: ${{ vars.VITE_CALLS_V2_WS_URL }}
+      VITE_CALLS_V2_WS_URLS: ${{ vars.VITE_CALLS_V2_WS_URLS }}
+      VITE_CALLS_V2_REKEY_INTERVAL_MS: ${{ vars.VITE_CALLS_V2_REKEY_INTERVAL_MS }}
+      VITE_CALLS_FRAME_E2EE_ADVERTISE_SFRAME: ${{ vars.VITE_CALLS_FRAME_E2EE_ADVERTISE_SFRAME }}
+      VITE_TURN_CREDENTIALS_URL: ${{ vars.VITE_TURN_CREDENTIALS_URL }}
       VITE_EXPECTED_SUPABASE_PROJECT_REF: ${{ secrets.VITE_EXPECTED_SUPABASE_PROJECT_REF }}
       VITE_API_URL: ${{ secrets.VITE_API_URL }}
       VITE_API_KEY: ${{ secrets.VITE_API_KEY }}
@@ -88,6 +94,12 @@ jobs:
           script: |
             echo "VITE_API_URL=http://5.42.99.76" > /var/www/mansoni/.env.production
             echo "VITE_API_KEY=${{ env.VITE_API_KEY }}" >> /var/www/mansoni/.env.production
+            echo "VITE_CALLS_V2_ENABLED=${{ env.VITE_CALLS_V2_ENABLED }}" >> /var/www/mansoni/.env.production
+            echo "VITE_CALLS_V2_WS_URL=${{ env.VITE_CALLS_V2_WS_URL }}" >> /var/www/mansoni/.env.production
+            echo "VITE_CALLS_V2_WS_URLS=${{ env.VITE_CALLS_V2_WS_URLS }}" >> /var/www/mansoni/.env.production
+            echo "VITE_CALLS_V2_REKEY_INTERVAL_MS=${{ env.VITE_CALLS_V2_REKEY_INTERVAL_MS }}" >> /var/www/mansoni/.env.production
+            echo "VITE_CALLS_FRAME_E2EE_ADVERTISE_SFRAME=${{ env.VITE_CALLS_FRAME_E2EE_ADVERTISE_SFRAME }}" >> /var/www/mansoni/.env.production
+            echo "VITE_TURN_CREDENTIALS_URL=${{ env.VITE_TURN_CREDENTIALS_URL }}" >> /var/www/mansoni/.env.production
 
       - name: Restart Mansoni API
         uses: appleboy/ssh-action@v0.1.7
