@@ -23,8 +23,10 @@ jobs:
       VITE_EXPECTED_SUPABASE_PROJECT_REF: ${{ secrets.VITE_EXPECTED_SUPABASE_PROJECT_REF }}
       VITE_API_URL: ${{ secrets.VITE_API_URL }}
       VITE_API_KEY: ${{ secrets.VITE_API_KEY }}
-      SERVER_HOST: ${{ secrets.MANSONI_SERVER_HOST }}
-      SERVER_USER: ${{ secrets.MANSONI_SERVER_USER }}
+      SERVER_HOST: ${{ secrets.ADMINVPS_HOST }}
+      SERVER_USER: ${{ secrets.ADMINVPS_USER }}
+      SERVER_SSH_KEY: ${{ secrets.ADMINVPS_SSH_KEY }}
+      SERVER_APP_DIR: ${{ secrets.ADMINVPS_APP_DIR }}
       SERVER_DB_PASS: ${{ secrets.MANSONI_DB_PASS }}
 
     steps:
@@ -39,6 +41,16 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Calls env probe (prod-grade)
+        run: npm run calls:env:probe
+        env:
+          REQUIRE_CALLS_ENV_PROBE: "1"
+          VITE_CALLS_V2_ENABLED: ${{ vars.VITE_CALLS_V2_ENABLED }}
+          VITE_CALLS_V2_WS_URL: ${{ vars.VITE_CALLS_V2_WS_URL }}
+          VITE_CALLS_V2_WS_URLS: ${{ vars.VITE_CALLS_V2_WS_URLS }}
+          VITE_CALLS_V2_REKEY_INTERVAL_MS: ${{ vars.VITE_CALLS_V2_REKEY_INTERVAL_MS }}
+          VITE_TURN_CREDENTIALS_URL: ${{ vars.VITE_TURN_CREDENTIALS_URL }}
+
       - name: Build frontend
         run: npm run build
 
@@ -47,10 +59,10 @@ jobs:
         with:
           host: ${{ env.SERVER_HOST }}
           username: ${{ env.SERVER_USER }}
-          password: ${{ env.SERVER_DB_PASS }}
+          key: ${{ env.SERVER_SSH_KEY }}
           port: 22
           source: "dist/*"
-          target: "/var/www/mansoni/dist/"
+          target: "${{ env.SERVER_APP_DIR }}/dist/"
 
       - name: Deploy Supabase
         run: |
@@ -65,17 +77,18 @@ jobs:
         with:
           host: ${{ env.SERVER_HOST }}
           username: ${{ env.SERVER_USER }}
-          password: ${{ env.SERVER_DB_PASS }}
+          key: ${{ env.SERVER_SSH_KEY }}
           port: 22
           source: "all-migrations.tar.gz"
           target: "/tmp/"
 
       - name: Apply migrations on mansoni.ru
+        if: ${{ env.SERVER_DB_PASS != '' }}
         uses: appleboy/ssh-action@v0.1.7
         with:
           host: ${{ env.SERVER_HOST }}
           username: ${{ env.SERVER_USER }}
-          password: ${{ env.SERVER_DB_PASS }}
+          key: ${{ env.SERVER_SSH_KEY }}
           port: 22
           script: |
             cd /tmp
@@ -89,24 +102,24 @@ jobs:
         with:
           host: ${{ env.SERVER_HOST }}
           username: ${{ env.SERVER_USER }}
-          password: ${{ env.SERVER_DB_PASS }}
+          key: ${{ env.SERVER_SSH_KEY }}
           port: 22
           script: |
-            echo "VITE_API_URL=http://5.42.99.76" > /var/www/mansoni/.env.production
-            echo "VITE_API_KEY=${{ env.VITE_API_KEY }}" >> /var/www/mansoni/.env.production
-            echo "VITE_CALLS_V2_ENABLED=${{ env.VITE_CALLS_V2_ENABLED }}" >> /var/www/mansoni/.env.production
-            echo "VITE_CALLS_V2_WS_URL=${{ env.VITE_CALLS_V2_WS_URL }}" >> /var/www/mansoni/.env.production
-            echo "VITE_CALLS_V2_WS_URLS=${{ env.VITE_CALLS_V2_WS_URLS }}" >> /var/www/mansoni/.env.production
-            echo "VITE_CALLS_V2_REKEY_INTERVAL_MS=${{ env.VITE_CALLS_V2_REKEY_INTERVAL_MS }}" >> /var/www/mansoni/.env.production
-            echo "VITE_CALLS_FRAME_E2EE_ADVERTISE_SFRAME=${{ env.VITE_CALLS_FRAME_E2EE_ADVERTISE_SFRAME }}" >> /var/www/mansoni/.env.production
-            echo "VITE_TURN_CREDENTIALS_URL=${{ env.VITE_TURN_CREDENTIALS_URL }}" >> /var/www/mansoni/.env.production
+            echo "VITE_API_URL=http://5.42.99.76" > ${{ env.SERVER_APP_DIR }}/.env.production
+            echo "VITE_API_KEY=${{ env.VITE_API_KEY }}" >> ${{ env.SERVER_APP_DIR }}/.env.production
+            echo "VITE_CALLS_V2_ENABLED=${{ env.VITE_CALLS_V2_ENABLED }}" >> ${{ env.SERVER_APP_DIR }}/.env.production
+            echo "VITE_CALLS_V2_WS_URL=${{ env.VITE_CALLS_V2_WS_URL }}" >> ${{ env.SERVER_APP_DIR }}/.env.production
+            echo "VITE_CALLS_V2_WS_URLS=${{ env.VITE_CALLS_V2_WS_URLS }}" >> ${{ env.SERVER_APP_DIR }}/.env.production
+            echo "VITE_CALLS_V2_REKEY_INTERVAL_MS=${{ env.VITE_CALLS_V2_REKEY_INTERVAL_MS }}" >> ${{ env.SERVER_APP_DIR }}/.env.production
+            echo "VITE_CALLS_FRAME_E2EE_ADVERTISE_SFRAME=${{ env.VITE_CALLS_FRAME_E2EE_ADVERTISE_SFRAME }}" >> ${{ env.SERVER_APP_DIR }}/.env.production
+            echo "VITE_TURN_CREDENTIALS_URL=${{ env.VITE_TURN_CREDENTIALS_URL }}" >> ${{ env.SERVER_APP_DIR }}/.env.production
 
       - name: Restart Mansoni API
         uses: appleboy/ssh-action@v0.1.7
         with:
           host: ${{ env.SERVER_HOST }}
           username: ${{ env.SERVER_USER }}
-          password: ${{ env.SERVER_DB_PASS }}
+          key: ${{ env.SERVER_SSH_KEY }}
           port: 22
           script: |
             sudo systemctl restart postgrest-mansoni
