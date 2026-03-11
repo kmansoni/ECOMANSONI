@@ -153,8 +153,14 @@ Deno.serve(async (req: Request) => {
   await supabase.from("email_otp_codes").delete().eq("email", email);
 
   // ── Generate & store new OTP ────────────────────────────────────────────
+  // Keep TTL configurable but bounded to avoid extreme values from env.
+  const ttlMinutesRaw = Number(Deno.env.get("EMAIL_OTP_TTL_MIN") ?? "15");
+  const otpTtlMinutes = Number.isFinite(ttlMinutesRaw) && ttlMinutesRaw >= 5 && ttlMinutesRaw <= 30
+    ? Math.floor(ttlMinutesRaw)
+    : 15;
+
   const code = generateOTP();
-  const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 min
+  const expiresAt = new Date(Date.now() + otpTtlMinutes * 60 * 1000);
 
   const { error: insertError } = await supabase.from("email_otp_codes").insert({
     email,
@@ -186,7 +192,7 @@ Deno.serve(async (req: Request) => {
           <div style="background: #f4f4f5; border-radius: 12px; padding: 20px; text-align: center; margin-bottom: 24px;">
             <span style="font-size: 32px; font-weight: 700; letter-spacing: 6px; color: #18181b;">${code}</span>
           </div>
-          <p style="color: #999; font-size: 13px;">Код действителен 10 минут. Если вы не запрашивали код — просто проигнорируйте это письмо.</p>
+          <p style="color: #999; font-size: 13px;">Код действителен ${otpTtlMinutes} минут. Если вы не запрашивали код — просто проигнорируйте это письмо.</p>
         </div>
       `,
     };
@@ -219,6 +225,12 @@ Deno.serve(async (req: Request) => {
         sendUrl,
         body: errText,
       });
+      // Delivery was not accepted — remove OTP so user can retry immediately.
+      await supabase.from("email_otp_codes").delete().eq("email", email);
+      return jsonResp(origin, {
+        error: "OTP_DELIVERY_FAILED",
+        message: "Не удалось отправить код. Попробуйте еще раз.",
+      }, 502);
     } else {
       console.info("[send-email-otp] email-router accepted request", {
         status: upstream.status,
@@ -228,6 +240,12 @@ Deno.serve(async (req: Request) => {
     }
   } catch (err) {
     console.error("[send-email-otp] email-router fetch failed:", err);
+    // Delivery was not attempted successfully — remove OTP so user can retry.
+    await supabase.from("email_otp_codes").delete().eq("email", email);
+    return jsonResp(origin, {
+      error: "OTP_DELIVERY_FAILED",
+      message: "Сервис отправки недоступен. Попробуйте еще раз.",
+    }, 503);
   }
 
   const resp: Record<string, unknown> = { success: true };
