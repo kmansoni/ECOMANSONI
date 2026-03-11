@@ -404,7 +404,7 @@ export function ReactionPacksSheet({ open, onOpenChange }: ReactionPacksSheetPro
               ) : installedPacks.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-32 gap-2 text-white/40">
                   <Package className="w-8 h-8 opacity-30" />
-                  <span className="text-sm">ÐÐµÑ ÑÑÑÐ°Ð½Ð¾Ð²Ð»ÐµÐ½Ð½ÑÑ Ð½Ð°Ð±Ð¾ÑÐ¾Ð²</span>
+                  <span className="text-sm">No installed packs</span>
                   <Button
                     variant="ghost"
                     size="sm"
