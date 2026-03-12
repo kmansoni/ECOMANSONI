@@ -13,10 +13,11 @@
  * - `pointer-events: none` — сердце не перехватывает touch-события.
  */
 
-import React, { memo } from 'react';
+import React, { memo, useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Heart } from 'lucide-react';
 import type { TapPosition } from '@/types/reels';
+import { Haptics } from '@/lib/haptics';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -66,6 +67,13 @@ const DURATION_S = 0.8;
  */
 const ReelDoubleTapHeart = memo<ReelDoubleTapHeartProps>(
   ({ position, onAnimationComplete }) => {
+    // Haptic feedback при double-tap лайке
+    useEffect(() => {
+      if (position !== null) {
+        Haptics.doubleTap();
+      }
+    }, [position]);
+
     return (
       <AnimatePresence>
         {position !== null && (
