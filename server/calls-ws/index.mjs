@@ -1,9 +1,12 @@
 import http from "node:http";
 import crypto from "node:crypto";
+import { safeParseInt } from "./utils.mjs";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 import WebSocket, { WebSocketServer } from "ws";
 import { createStoreFromEnv } from "./store/index.mjs";
+import { createRateLimiter, DEFAULT_RATE_LIMITS } from "./rateLimit.mjs";
+import { createJwtGuard } from "./jwtGuard.mjs";
 
 const PORT = Number(process.env.CALLS_WS_PORT ?? "8787");
 const NODE_ENV = String(process.env.NODE_ENV ?? "").toLowerCase();
@@ -15,6 +18,39 @@ if (CALLS_DEV_INSECURE_AUTH && IS_PROD_LIKE) {
 }
 if (CALLS_DEV_INSECURE_AUTH) {
   console.warn("[SECURITY] WARNING: CALLS_DEV_INSECURE_AUTH is enabled — DO NOT USE IN PRODUCTION");
+}
+
+const MAX_PAYLOAD_BYTES = safeParseInt(process.env.CALLS_WS_MAX_PAYLOAD_BYTES, 65536);
+const JWT_REVALIDATE_SEC = safeParseInt(process.env.CALLS_WS_JWT_REVALIDATE_SEC, 60);
+const MAX_CONNECTIONS_PER_IP = safeParseInt(process.env.CALLS_WS_MAX_CONNECTIONS_PER_IP, 10);
+
+// C-2: Trusted proxy list for x-forwarded-for validation.
+// Format: comma-separated exact IP addresses (IPv4 or IPv6, no CIDR needed).
+// Empty string (default) = no trusted proxies → always use socket.remoteAddress.
+const TRUSTED_PROXIES = new Set(
+  (process.env.CALLS_WS_TRUSTED_PROXIES || "").split(",").map((s) => s.trim()).filter(Boolean)
+);
+
+/**
+ * C-2: Resolve the real client IP from the request.
+ * x-forwarded-for is ONLY trusted when the direct socket peer is in TRUSTED_PROXIES.
+ * This prevents a malicious client from spoofing their IP to bypass per-IP limits.
+ *
+ * IPv6-mapped IPv4 addresses (::ffff:x.x.x.x) are normalised to plain IPv4
+ * so proxy list entries do not need to list both forms.
+ *
+ * @param {import("node:http").IncomingMessage} req
+ * @returns {string}
+ */
+function getClientIp(req) {
+  const remoteAddr = req.socket?.remoteAddress ?? "unknown";
+  // Normalise ::ffff:127.0.0.1 → 127.0.0.1
+  const normalizedRemote = remoteAddr.replace(/^::ffff:/i, "");
+  if (TRUSTED_PROXIES.has(normalizedRemote)) {
+    const xff = (req.headers["x-forwarded-for"] || "").split(",")[0].trim();
+    return xff || normalizedRemote;
+  }
+  return normalizedRemote;
 }
 const CALLS_JOIN_TOKEN_TTL_SEC = Math.max(30, Number(process.env.CALLS_JOIN_TOKEN_TTL_SEC ?? "600"));
 const KEY_TTL_MS = Math.max(15_000, Number(process.env.CALLS_KEY_TTL_MS ?? "120000"));
@@ -229,12 +265,19 @@ async function validateSupabaseAccessToken(accessToken) {
     return { ok: false, userId: null, reason: "missing_supabase_env" };
   }
   try {
+    // H-3: AbortSignal.timeout(5000) prevents fetch from hanging indefinitely.
+    // #8: AbortSignal.timeout is Node.js 17.3+. Guard for older runtimes — if
+    // unavailable, the request may hang, but it won't crash the process.
+    const abortSignal = typeof AbortSignal.timeout === "function"
+      ? AbortSignal.timeout(5000)
+      : undefined;
     const res = await fetch(`${supabaseUrl}/auth/v1/user`, {
       method: "GET",
       headers: {
         apikey: supabaseAnonKey,
         Authorization: `Bearer ${accessToken}`,
       },
+      signal: abortSignal,
     });
     if (!res.ok) {
       return { ok: false, userId: null, reason: `auth_api_status_${res.status}` };
@@ -303,9 +346,30 @@ server.on("request", (req, res) => {
     return;
   }
 });
-const wss = new WebSocketServer({ server });
+const wss = new WebSocketServer({ server, maxPayload: MAX_PAYLOAD_BYTES });
 
-wss.on("connection", (ws) => {
+// Per-IP connection counter — prevents single source exhausting file descriptors
+const ipConnectionCounts = new Map(); // ip -> number
+
+const jwtGuard = createJwtGuard({
+  revalidateIntervalMs: JWT_REVALIDATE_SEC * 1000,
+  validateFn: validateSupabaseAccessToken,
+});
+
+wss.on("connection", (ws, req) => {
+  // --- Per-IP connection limit ---
+  // C-2: Use getClientIp() which enforces trusted-proxy validation.
+  const clientIp = getClientIp(req);
+
+  const ipCount = (ipConnectionCounts.get(clientIp) ?? 0) + 1;
+  ipConnectionCounts.set(clientIp, ipCount);
+
+  if (ipCount > MAX_CONNECTIONS_PER_IP) {
+    ipConnectionCounts.set(clientIp, ipCount - 1); // rollback pre-increment
+    ws.close(4029, "TOO_MANY_CONNECTIONS");
+    return;
+  }
+
   const conn = {
     authenticated: false,
     userId: null,
@@ -313,9 +377,45 @@ wss.on("connection", (ws) => {
     expectedSeq: 1,
     seenMsgIds: new Map(),
     resumeToken: uuid(),
+    // Rate limiter — per-connection sliding window
+    rateLimiter: createRateLimiter(DEFAULT_RATE_LIMITS),
+    // JWT guard state
+    accessToken: null,
+    authVerifiedAt: null,
+    jwtCheckInterval: null,
+    // #4: Explicitly initialise jwtGuard internal fields to avoid implicit undefined checks
+    // in needsRevalidation() and revalidate(). Prevents subtle bugs with strict linters.
+    _revalidating: false,
+    _consecutiveAuthFailures: 0,
+    // For IP cleanup
+    _clientIp: clientIp,
   };
 
   ws.on("message", async (data) => {
+    // --- Global rate limit (before JSON.parse to avoid CPU waste) ---
+    const globalCheck = conn.rateLimiter.checkGlobal();
+    if (!globalCheck.allowed) {
+      if (globalCheck.reason === "RATE_EXCEEDED_DISCONNECT") {
+        ws.close(4029, "RATE_LIMITED");
+      } else {
+        // M-5: Best-effort error frame so the client knows the message was dropped.
+        // We deliberately do NOT parse the frame here — that would defeat the purpose
+        // of rejecting before JSON.parse under flood conditions. msgId is null.
+        try {
+          ws.send(JSON.stringify({
+            v: 1,
+            type: "error",
+            msgId: null,
+            ts: Date.now(),
+            payload: { code: "RATE_LIMITED", message: "Global rate limit exceeded" },
+          }));
+        } catch (_) {
+          // Ignore send errors during flood; socket may already be closing.
+        }
+      }
+      return;
+    }
+
     let frame;
     try {
       frame = JSON.parse(data.toString());
@@ -345,6 +445,23 @@ wss.on("connection", (ws) => {
         return;
       }
       conn.expectedSeq++;
+    }
+
+    // --- Per-type rate limit ---
+    const typeCheck = conn.rateLimiter.check(frame.type);
+    if (!typeCheck.allowed) {
+      if (typeCheck.reason === "RATE_EXCEEDED_DISCONNECT") {
+        ws.close(4029, "RATE_LIMITED");
+        return;
+      }
+      ack(ws, frame.msgId, false, wsError("RATE_LIMITED", `Rate limit exceeded for ${frame.type}`, {}, true));
+      return;
+    }
+
+    // --- JWT revalidation (authenticated connections only) ---
+    if (conn.authenticated && jwtGuard.needsRevalidation(conn)) {
+      const valid = await jwtGuard.revalidate(conn, ws, send);
+      if (!valid) return; // connection closed by jwtGuard
     }
 
     // Handle types
@@ -381,6 +498,10 @@ wss.on("connection", (ws) => {
         }
         conn.authenticated = true;
         conn.userId = authResult.userId;
+        conn.accessToken = accessToken;
+        conn.authVerifiedAt = Date.now();
+        // #6: Reset consecutive failure counter on fresh AUTH — new token starts clean.
+        conn._consecutiveAuthFailures = 0;
         if (conn.deviceId) deviceSockets.set(conn.deviceId, ws);
         send(ws, {
           v: 1,
@@ -393,6 +514,14 @@ wss.on("connection", (ws) => {
 
         // Advertise gateway mode/features immediately after auth
         sendGwHello(ws, conn.expectedSeq++);
+        // #5: Stop existing interval before starting a new one — prevents interval
+        // leak when client sends a second AUTH frame (e.g. token refresh).
+        if (conn.jwtCheckInterval != null) {
+          jwtGuard.stopPeriodicCheck(conn.jwtCheckInterval);
+          conn.jwtCheckInterval = null;
+        }
+        // Start periodic JWT revalidation for idle connections
+        conn.jwtCheckInterval = jwtGuard.startPeriodicCheck(conn, ws, send);
         return ack(ws, frame.msgId, true);
       }
 
@@ -887,6 +1016,17 @@ wss.on("connection", (ws) => {
   });
 
   ws.on("close", () => {
+    // Clean up per-IP counter
+    const prevCount = ipConnectionCounts.get(conn._clientIp) ?? 0;
+    if (prevCount <= 1) {
+      ipConnectionCounts.delete(conn._clientIp);
+    } else {
+      ipConnectionCounts.set(conn._clientIp, prevCount - 1);
+    }
+
+    // Stop JWT revalidation interval
+    if (conn.jwtCheckInterval) jwtGuard.stopPeriodicCheck(conn.jwtCheckInterval);
+
     if (conn.deviceId && deviceSockets.get(conn.deviceId) === ws) {
       deviceSockets.delete(conn.deviceId);
     }
