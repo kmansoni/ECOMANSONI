@@ -42,7 +42,7 @@ export interface RatchetHeader {
 }
 
 interface RatchetState {
-  rootKey: CryptoKey;
+  rootKey: ArrayBuffer;
   sendingChainKey: CryptoKey | null;
   receivingChainKey: CryptoKey | null;
   sendingRatchetKey: CryptoKeyPair;
@@ -92,21 +92,17 @@ async function hkdf(
   );
 }
 
+function cloneBuffer(input: ArrayBuffer): ArrayBuffer {
+  return input.slice(0);
+}
+
 /** Derive new root key + chain key from root key + DH output */
 async function kdfRK(
-  rootKey: CryptoKey,
+  rootKey: ArrayBuffer,
   dhOutput: ArrayBuffer
-): Promise<{ newRootKey: CryptoKey; newChainKey: CryptoKey }> {
-  // Export root key as salt
-  const rootKeyBytes = await crypto.subtle.exportKey("raw", rootKey);
-  const derived = await hkdf(dhOutput, rootKeyBytes, "WhisperRatchet", 64);
-  const newRootKey = await crypto.subtle.importKey(
-    "raw",
-    derived.slice(0, 32),
-    { name: "HKDF" },
-    false,
-    ["deriveBits"]
-  );
+): Promise<{ newRootKey: ArrayBuffer; newChainKey: CryptoKey }> {
+  const derived = await hkdf(dhOutput, rootKey, "WhisperRatchet", 64);
+  const newRootKey = derived.slice(0, 32);
   const newChainKey = await crypto.subtle.importKey(
     "raw",
     derived.slice(32, 64),
@@ -216,14 +212,7 @@ export class DoubleRatchet {
     sharedSecret: ArrayBuffer,
     bobPublicKey: CryptoKey
   ): Promise<RatchetState> {
-    // Import shared secret as initial root key
-    const initialRootKey = await crypto.subtle.importKey(
-      "raw",
-      sharedSecret,
-      { name: "HKDF" },
-      false,
-      ["deriveBits"]
-    );
+    const initialRootKey = cloneBuffer(sharedSecret);
 
     // Alice generates her initial ratchet key pair
     const sendingRatchetKey = await generateDHKeyPair();
@@ -250,13 +239,7 @@ export class DoubleRatchet {
    * Bob waits for Alice's first message to perform DH ratchet.
    */
   static async initBob(sharedSecret: ArrayBuffer): Promise<RatchetState> {
-    const rootKey = await crypto.subtle.importKey(
-      "raw",
-      sharedSecret,
-      { name: "HKDF" },
-      false,
-      ["deriveBits"]
-    );
+    const rootKey = cloneBuffer(sharedSecret);
 
     const sendingRatchetKey = await generateDHKeyPair();
 
@@ -498,6 +481,7 @@ export class DoubleRatchet {
 
     const serial: SerializedState = {
       rootKey: await exportHkdfKey(state.rootKey),
+
       sendingChainKey: state.sendingChainKey
         ? await exportHmacKey(state.sendingChainKey)
         : null,
@@ -525,7 +509,7 @@ export class DoubleRatchet {
   static async deserialize(data: string): Promise<RatchetState> {
     const s: SerializedState = JSON.parse(data);
 
-    const rootKey = await importHkdfKey(s.rootKey);
+    const rootKey = cloneBuffer(fromBase64(s.rootKey));
     const sendingChainKey = s.sendingChainKey
       ? await importHmacKey(s.sendingChainKey)
       : null;
@@ -575,32 +559,8 @@ export class DoubleRatchet {
 
 // ── Key import/export helpers ──────────────────────────────────────────────
 
-async function exportHkdfKey(key: CryptoKey): Promise<string> {
-  // HKDF keys cannot be exported directly — we stored them as raw on import
-  // Re-derive raw via a known pattern or keep a side-channel copy.
-  // Architecture note: we import HKDF keys from raw; to serialize we need
-  // the raw bytes. We work around this by re-exporting via AES-GCM wrapping,
-  // but the simplest compliant approach for non-extractable is to make them
-  // extractable during creation for serialization path only.
-  // Here we made them extractable=false for in-memory security,
-  // so for serialization we track root key material as a raw ArrayBuffer
-  // alongside the CryptoKey. Since Web Crypto doesn't allow export of
-  // non-extractable keys, we re-import as extractable here.
-  // This is acceptable: the serialized blob is encrypted by the caller.
-  throw new Error(
-    "exportHkdfKey: HKDF keys must be created as extractable for serialization"
-  );
-}
-
-// Override: create root keys as extractable so they can be serialized
-async function importHkdfKey(b64: string): Promise<CryptoKey> {
-  return crypto.subtle.importKey(
-    "raw",
-    fromBase64(b64),
-    { name: "HKDF" },
-    true, // extractable for serialization
-    ["deriveBits"]
-  );
+async function exportHkdfKey(key: ArrayBuffer): Promise<string> {
+  return toBase64(new Uint8Array(key));
 }
 
 async function importHmacKey(b64: string): Promise<CryptoKey> {
@@ -635,18 +595,11 @@ async function importEcdhPrivate(b64: string): Promise<CryptoKey> {
 
 // Patch: kdfRK creates extractable root keys for serialization
 export async function kdfRKExtractable(
-  rootKey: CryptoKey,
+  rootKey: ArrayBuffer,
   dhOutput: ArrayBuffer
-): Promise<{ newRootKey: CryptoKey; newChainKey: CryptoKey }> {
-  const rootKeyBytes = await crypto.subtle.exportKey("raw", rootKey);
-  const derived = await hkdf(dhOutput, rootKeyBytes, "WhisperRatchet", 64);
-  const newRootKey = await crypto.subtle.importKey(
-    "raw",
-    derived.slice(0, 32),
-    { name: "HKDF" },
-    true, // extractable
-    ["deriveBits"]
-  );
+): Promise<{ newRootKey: ArrayBuffer; newChainKey: CryptoKey }> {
+  const derived = await hkdf(dhOutput, rootKey, "WhisperRatchet", 64);
+  const newRootKey = derived.slice(0, 32);
   const newChainKey = await crypto.subtle.importKey(
     "raw",
     derived.slice(32, 64),
@@ -666,13 +619,7 @@ export class DoubleRatchetE2E {
     sharedSecret: ArrayBuffer,
     bobPublicKey: CryptoKey
   ): Promise<RatchetState> {
-    const initialRootKey = await crypto.subtle.importKey(
-      "raw",
-      sharedSecret,
-      { name: "HKDF" },
-      true,
-      ["deriveBits"]
-    );
+    const initialRootKey = cloneBuffer(sharedSecret);
 
     const sendingRatchetKey = await generateDHKeyPair();
     const dhOut = await dh(sendingRatchetKey.privateKey, bobPublicKey);
@@ -692,13 +639,7 @@ export class DoubleRatchetE2E {
   }
 
   static async initBob(sharedSecret: ArrayBuffer): Promise<RatchetState> {
-    const rootKey = await crypto.subtle.importKey(
-      "raw",
-      sharedSecret,
-      { name: "HKDF" },
-      true,
-      ["deriveBits"]
-    );
+    const rootKey = cloneBuffer(sharedSecret);
     const sendingRatchetKey = await generateDHKeyPair();
     return {
       rootKey,
@@ -722,10 +663,8 @@ export class DoubleRatchetE2E {
       return toBase64(new Uint8Array(raw));
     };
 
-    const rootRaw = await crypto.subtle.exportKey("raw", state.rootKey);
-
     const serial: SerializedState = {
-      rootKey: toBase64(new Uint8Array(rootRaw)),
+      rootKey: toBase64(new Uint8Array(state.rootKey)),
       sendingChainKey: state.sendingChainKey ? await exportRaw(state.sendingChainKey) : null,
       receivingChainKey: state.receivingChainKey ? await exportRaw(state.receivingChainKey) : null,
       sendingRatchetPrivate: await exportEcdhPrivate(state.sendingRatchetKey.privateKey),
@@ -767,13 +706,7 @@ export class DoubleRatchetE2E {
       throw new Error('DoubleRatchet: corrupted state — invalid message numbers');
     }
 
-    const rootKey = await crypto.subtle.importKey(
-      "raw",
-      fromBase64(s.rootKey),
-      { name: "HKDF" },
-      true,
-      ["deriveBits"]
-    );
+    const rootKey = cloneBuffer(fromBase64(s.rootKey));
 
     const importHmac = async (b64: string) =>
       crypto.subtle.importKey(

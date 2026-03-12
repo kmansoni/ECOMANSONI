@@ -60,6 +60,8 @@ export interface SecretChat {
   initiator_identity_key?: string | null;
   /** ID of the OPK used (for server cleanup) */
   used_opk_id?: string | null;
+  /** Public key of the OPK used in this session, if any */
+  initiator_used_one_time_prekey_public?: string | null;
 }
 
 export interface DrEncryptedMessage {
@@ -84,12 +86,14 @@ interface StoredIdentityKeys {
   spkPrivate: string;    // signed prekey pkcs8
   spkPublic: string;     // signed prekey spki
   spkSignature: string;  // base64
+  oneTimePreKeys?: Array<{ publicKey: string; privateKey: string }>;
 }
 
 async function getOrCreateIdentityKeys(userId: string): Promise<{
   identityEcdhKeyPair: CryptoKeyPair;
   identityEcdsaKeyPair: CryptoKeyPair;
   signedPreKeyPair: CryptoKeyPair;
+  oneTimePreKeyPairs: CryptoKeyPair[];
   isNew: boolean;
   /** Present only when isNew=true — the server-ready public bundle for upsert */
   serverBundle?: Awaited<ReturnType<typeof X3DH.generateFullIdentityBundle>>["serverBundle"];
@@ -102,6 +106,9 @@ async function getOrCreateIdentityKeys(userId: string): Promise<{
       const identityEcdhKeyPair = await X3DH.importEcdhKeyPair(s.ecdhPublic, s.ecdhPrivate);
       const identityEcdsaKeyPair = await X3DH.importEcdsaKeyPair(s.ecdsaPublic, s.ecdsaPrivate);
       const signedPreKeyPair = await X3DH.importEcdhKeyPair(s.spkPublic, s.spkPrivate);
+      const oneTimePreKeyPairs = await Promise.all(
+        (s.oneTimePreKeys ?? []).map((entry) => X3DH.importEcdhKeyPair(entry.publicKey, entry.privateKey))
+      );
 
       // Security: decryptFromStorage returns the raw string as-is for legacy plaintext
       // (no envelope "v"/"ct" fields).  If that happened, the private key material is
@@ -113,7 +120,7 @@ async function getOrCreateIdentityKeys(userId: string): Promise<{
         localStorage.setItem(IK_STORAGE_KEY(userId), reEncrypted);
       }
 
-      return { identityEcdhKeyPair, identityEcdsaKeyPair, signedPreKeyPair, isNew: false };
+      return { identityEcdhKeyPair, identityEcdsaKeyPair, signedPreKeyPair, oneTimePreKeyPairs, isNew: false };
     } catch {
       // Legacy plaintext storage or decryption failure — regenerate keys
       localStorage.removeItem(IK_STORAGE_KEY(userId));
@@ -125,6 +132,7 @@ async function getOrCreateIdentityKeys(userId: string): Promise<{
   const ecdhExp = await X3DH.exportKeyPair(bundle.identityEcdhKeyPair);
   const ecdsaExp = await X3DH.exportKeyPair(bundle.identityEcdsaKeyPair);
   const spkExp = await X3DH.exportKeyPair(bundle.signedPreKeyPair);
+  const opkExp = await Promise.all(bundle.oneTimePreKeyPairs.map((kp) => X3DH.exportKeyPair(kp)));
 
   const toStore: StoredIdentityKeys = {
     ecdhPrivate: ecdhExp.privateKey,
@@ -134,6 +142,7 @@ async function getOrCreateIdentityKeys(userId: string): Promise<{
     spkPrivate: spkExp.privateKey,
     spkPublic: spkExp.publicKey,
     spkSignature: bundle.serverBundle.signedPreKeySignature,
+    oneTimePreKeys: opkExp.map((entry) => ({ publicKey: entry.publicKey, privateKey: entry.privateKey })),
   };
   // Encrypt before writing — private key material must never appear in localStorage plaintext
   const encrypted = await encryptForStorage(JSON.stringify(toStore));
@@ -143,14 +152,33 @@ async function getOrCreateIdentityKeys(userId: string): Promise<{
   ecdhExp.privateKey = "";
   ecdsaExp.privateKey = "";
   spkExp.privateKey = "";
+  for (const entry of opkExp) {
+    entry.privateKey = "";
+  }
 
   return {
     identityEcdhKeyPair: bundle.identityEcdhKeyPair,
     identityEcdsaKeyPair: bundle.identityEcdsaKeyPair,
     signedPreKeyPair: bundle.signedPreKeyPair,
+    oneTimePreKeyPairs: bundle.oneTimePreKeyPairs,
     isNew: true,
     serverBundle: bundle.serverBundle,
   };
+}
+
+async function findStoredOneTimePreKeyPair(userId: string, publicKey: string): Promise<CryptoKeyPair | null> {
+  const stored = localStorage.getItem(IK_STORAGE_KEY(userId));
+  if (!stored) return null;
+
+  try {
+    const decrypted = await decryptFromStorage(stored);
+    const parsed = JSON.parse(decrypted) as StoredIdentityKeys;
+    const match = (parsed.oneTimePreKeys ?? []).find((entry) => entry.publicKey === publicKey);
+    if (!match) return null;
+    return X3DH.importEcdhKeyPair(match.publicKey, match.privateKey);
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -329,12 +357,14 @@ export function useSecretChat(conversationId: string | null) {
       const oneTimePreKeyPublic: string | undefined = opkData ?? undefined;
 
       // 4. X3DH key agreement
-      const bundle: PreKeyBundle = {
-        identityKeyPublic: bobBundle.identity_key_public,
-        signedPreKeyPublic: bobBundle.signed_prekey_public,
-        signedPreKeySignature: bobBundle.signed_prekey_signature,
+      const bundle: PreKeyBundle = X3DH.createSessionBundle({
+        bundle: {
+          identityKeyPublic: bobBundle.identity_key_public,
+          signedPreKeyPublic: bobBundle.signed_prekey_public,
+          signedPreKeySignature: bobBundle.signed_prekey_signature,
+        },
         oneTimePreKeyPublic,
-      };
+      });
 
       let initiatorResult;
       try {
@@ -388,6 +418,7 @@ export function useSecretChat(conversationId: string | null) {
           status: "pending",
           initiator_ephemeral_key: initiatorResult.ephemeralPublicKey,
           initiator_identity_key: initiatorResult.identityPublicKey,
+          initiator_used_one_time_prekey_public: initiatorResult.oneTimePreKeyPublic ?? null,
         })
         .select("*")
         .single();
@@ -416,11 +447,17 @@ export function useSecretChat(conversationId: string | null) {
 
     // 2. Check if we have ephemeral key from Alice
     if (secretChat.initiator_ephemeral_key && secretChat.initiator_identity_key) {
+      const usedOpkPublic = secretChat.initiator_used_one_time_prekey_public ?? null;
+      const oneTimePreKeyPair = usedOpkPublic
+        ? await findStoredOneTimePreKeyPair(user.id, usedOpkPublic)
+        : null;
+
       // 3. X3DH responder
       const sharedSecret = await X3DH.responderKeyAgreement({
         identityKeyPair: identityEcdhKeyPair,
         signedPreKeyPair,
-        oneTimePreKeyPair: null, // OPK was consumed; we don't re-use it
+        oneTimePreKeyPair,
+        oneTimePreKeyWasUsed: Boolean(usedOpkPublic),
         ephemeralPublicKey: secretChat.initiator_ephemeral_key,
         initiatorIdentityPublicKey: secretChat.initiator_identity_key,
       });

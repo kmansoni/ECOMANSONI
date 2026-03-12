@@ -53,12 +53,12 @@ describe("multiAccount/vault", () => {
     expect(listAccountsIndex()).toEqual([]);
   });
 
-  it("stores and clears tokens", () => {
-    expect(readTokens("u1")).toBeNull();
-    writeTokens("u1", { accessToken: "a", refreshToken: "r", expiresAt: 123 });
-    expect(readTokens("u1")).toEqual({ accessToken: "a", refreshToken: "r", expiresAt: 123 });
+  it("stores and clears tokens", async () => {
+    expect(await readTokens("u1")).toBeNull();
+    await writeTokens("u1", { accessToken: "a", refreshToken: "r", expiresAt: 123 });
+    expect(await readTokens("u1")).toEqual({ accessToken: "a", refreshToken: "r", expiresAt: 123 });
     clearTokens("u1");
-    expect(readTokens("u1")).toBeNull();
+    expect(await readTokens("u1")).toBeNull();
   });
 
   it("normalizes malformed index entries", () => {

@@ -60,6 +60,8 @@ export interface InitiatorResult {
   identityPublicKey: string;
   /** OPK ID used, if any — server must mark consumed */
   oneTimePreKeyId?: string;
+  /** OPK public key used for this session, if any */
+  oneTimePreKeyPublic?: string;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -159,6 +161,22 @@ function concatBuffers(...bufs: ArrayBuffer[]): ArrayBuffer {
 // ── X3DH class ─────────────────────────────────────────────────────────────
 
 export class X3DH {
+  /**
+   * Convert a published pre-key bundle into a concrete session bundle.
+   * This makes the chosen OPK explicit so both sides derive over the same DH set.
+   */
+  static createSessionBundle(params: {
+    bundle: Omit<PreKeyBundle, "oneTimePreKeyPublic" | "oneTimePreKeyId">;
+    oneTimePreKeyPublic?: string;
+    oneTimePreKeyId?: string;
+  }): PreKeyBundle {
+    return {
+      ...params.bundle,
+      ...(params.oneTimePreKeyPublic ? { oneTimePreKeyPublic: params.oneTimePreKeyPublic } : {}),
+      ...(params.oneTimePreKeyId ? { oneTimePreKeyId: params.oneTimePreKeyId } : {}),
+    };
+  }
+
   /**
    * Generate a long-term identity key pair (ECDH P-256).
    * Must be persisted securely (encrypted in localStorage / secure storage).
@@ -325,6 +343,7 @@ export class X3DH {
       ephemeralPublicKey: await exportSpki(ephemeralKeyPair.publicKey),
       identityPublicKey: await exportSpki(initiatorIdentityKeyPair.publicKey),
       oneTimePreKeyId: bundle.oneTimePreKeyId,
+      oneTimePreKeyPublic: bundle.oneTimePreKeyPublic,
     };
   }
 
@@ -339,9 +358,17 @@ export class X3DH {
     identityKeyPair: CryptoKeyPair;
     signedPreKeyPair: CryptoKeyPair;
     oneTimePreKeyPair: CryptoKeyPair | null;
+    oneTimePreKeyWasUsed?: boolean;
     ephemeralPublicKey: string;
     initiatorIdentityPublicKey: string;
   }): Promise<ArrayBuffer> {
+    if (params.oneTimePreKeyWasUsed === true && !params.oneTimePreKeyPair) {
+      throw new Error("X3DH: responder missing consumed OPK private key for this session");
+    }
+    if (params.oneTimePreKeyWasUsed === false && params.oneTimePreKeyPair) {
+      throw new Error("X3DH: responder received OPK private key for a session that did not use OPK");
+    }
+
     const aliceIK = await importEcdhPublic(params.initiatorIdentityPublicKey);
     const aliceEK = await importEcdhPublic(params.ephemeralPublicKey);
 
