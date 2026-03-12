@@ -177,6 +177,15 @@ async function loadRatchetState(userId: string, convId: string): Promise<Ratchet
   if (!blob) return null;
   try {
     const serialized = await decryptRatchetState(blob);
+    if (!serialized) return null;
+
+    // Legacy plaintext migration: decryptFromStorage returns raw string for
+    // old unencrypted records. Re-encrypt immediately to remove plaintext at rest.
+    if (serialized === blob) {
+      const reEncrypted = await encryptRatchetState(serialized);
+      localStorage.setItem(DR_STATE_KEY(userId, convId), reEncrypted);
+    }
+
     return DoubleRatchetE2E.deserialize(serialized);
   } catch {
     // Stored blob may be legacy format (old static-salt scheme) — drop and re-init

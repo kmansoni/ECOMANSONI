@@ -122,7 +122,9 @@ export function PhotoLayoutCollage({ onExport, onCancel }: PhotoLayoutCollagePro
       try {
         const img = await loadImage(files[i]);
         newPhotos[activeSlotRef.current + i] = img;
-      } catch {}
+      } catch {
+        // Skip unreadable image and continue with remaining files.
+      }
     }
     setPhotos(newPhotos);
     e.target.value = "";

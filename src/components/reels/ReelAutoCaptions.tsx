@@ -257,15 +257,25 @@ export function useLiveCaptions(isRecording: boolean) {
       setTranscript(final || interim);
     };
 
-    recognition.onerror = () => {};
+    recognition.onerror = () => {
+      // Keep current transcript and stop silently on speech API errors.
+      setIsRecording(false);
+    };
 
     try {
       recognition.start();
       recognitionRef.current = recognition;
-    } catch {}
+    } catch {
+      // Speech API can throw if called before user gesture / unsupported browser.
+      setIsRecording(false);
+    }
 
     return () => {
-      try { recognition.stop(); } catch {}
+      try {
+        recognition.stop();
+      } catch {
+        // Ignore stop race when recognition is already stopped.
+      }
     };
   }, [isRecording]);
 

@@ -83,7 +83,9 @@ export function SlowMotionCapture({ onCapture, onClose }: SlowMotionCaptureProps
           const settings = track.getSettings();
           actualFps = settings.frameRate ?? fps;
           break;
-        } catch {}
+        } catch {
+          // Try next fps profile.
+        }
       }
 
       if (!stream) throw new Error("Камера недоступна");
@@ -214,9 +216,17 @@ export function SlowMotionCapture({ onCapture, onClose }: SlowMotionCaptureProps
 
   const handleRecord = () => {
     if (isRecording) {
-      mode === "slow_motion" ? stopSlowMotion() : stopTimeLapse();
+      if (mode === "slow_motion") {
+        stopSlowMotion();
+      } else {
+        stopTimeLapse();
+      }
     } else {
-      mode === "slow_motion" ? startSlowMotion() : startTimeLapse();
+      if (mode === "slow_motion") {
+        startSlowMotion();
+      } else {
+        startTimeLapse();
+      }
     }
   };
 

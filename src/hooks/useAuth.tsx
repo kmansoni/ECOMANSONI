@@ -239,6 +239,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } catch {
         // ignore — кэш недоступен или SW не зарегистрирован
       }
+
+      // E2EE hygiene on logout: remove local key material for this principal.
+      // Best-effort only: auth sign-out must still proceed even if cleanup fails.
+      try {
+        const currentUserId = user?.id;
+        const { E2EEKeyStore } = await import("@/lib/e2ee/keyStore");
+
+        const stores = [
+          new E2EEKeyStore({ dbName: "e2ee-keystore-v2" }),
+          new E2EEKeyStore({ dbName: "e2ee-keystore" }),
+        ];
+
+        for (const store of stores) {
+          try {
+            await store.init();
+            await store.clearAll();
+          } catch {
+            // ignore per-store failure
+          } finally {
+            store.close();
+          }
+        }
+
+        if (currentUserId && typeof localStorage !== "undefined") {
+          const prefixes = [`ik_bundle_${currentUserId}`, `dr_state_${currentUserId}_`];
+          const toDelete: string[] = [];
+          for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i);
+            if (!k) continue;
+            if (prefixes.some((p) => k.startsWith(p))) {
+              toDelete.push(k);
+            }
+          }
+          for (const k of toDelete) localStorage.removeItem(k);
+        }
+      } catch {
+        // ignore — cleanup failure must not block sign-out
+      }
+
       await supabase.auth.signOut();
     });
   };
