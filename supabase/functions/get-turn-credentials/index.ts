@@ -186,15 +186,16 @@ async function enforceRateLimit(userId: string, clientIp: string): Promise<Respo
     });
     // The workspace Supabase TS client types don't include this custom function.
     // We use a local interface to retain as much safety as the untyped binding allows:
-    // p_user_id and p_client_ip are always passed as UUID/text respectively, and the
+    // p_user_id, p_ip, p_max are always passed as UUID/text/int respectively, and the
     // return value shape is documented here rather than via the generated Database type.
     interface RlResult { allowed: boolean; remaining: number }
     const rpcAdmin = admin as unknown as {
-      rpc: (fn: string, args: Record<string, string>) => Promise<{ data: RlResult | null; error: { message: string } | null }>
+      rpc: (fn: string, args: Record<string, unknown>) => Promise<{ data: RlResult | null; error: { message: string } | null }>
     };
+    const rlMax = Number(Deno.env.get("TURN_RATE_MAX_PER_MINUTE") ?? "60");
     const { data, error } = await rpcAdmin.rpc(
       "turn_issuance_rl_hit_v1",
-      { p_user_id: userId, p_client_ip: clientIp },
+      { p_user_id: userId, p_ip: clientIp, p_max: rlMax },
     );
 
     if (error) {

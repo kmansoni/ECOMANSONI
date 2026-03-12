@@ -6,11 +6,15 @@ const DEFAULT_TURN_TTL_SECONDS = 3600;
 const MIN_TURN_TTL_SECONDS = 60;
 const MAX_TURN_TTL_SECONDS = 3600;
 const TURN_RATE_MAX_PER_WINDOW = Math.max(1, Number(Deno.env.get("TURN_RATE_MAX_PER_MINUTE") ?? "10"));
+const TURN_RATE_HARD_CAP_PER_WINDOW = Math.max(1, Number(Deno.env.get("TURN_RATE_HARD_CAP_PER_MINUTE") ?? "120"));
+const TURN_LOCAL_RL_WINDOW_MS = 60_000;
 const TURN_NO_STORE_HEADERS = {
   "Content-Type": "application/json",
   "Cache-Control": "no-store",
   Pragma: "no-cache",
 };
+
+const localTurnRateLimitBuckets = new Map<string, { bucket: number; cnt: number }>();
 
 function parseUrls(raw: string | undefined | null): string[] {
   if (!raw) return [];
@@ -91,6 +95,21 @@ async function enforceTurnIssueRateLimit(
   ip: string,
   corsHeaders: Record<string, string>
 ): Promise<Response | null> {
+  const rateScopeKey = userId;
+  const localKey = rateScopeKey;
+  const localBucket = Math.floor(Date.now() / TURN_LOCAL_RL_WINDOW_MS);
+  const localState = localTurnRateLimitBuckets.get(localKey);
+  const localCount = localState && localState.bucket === localBucket ? localState.cnt + 1 : 1;
+  const effectiveLocalMax = Math.min(TURN_RATE_MAX_PER_WINDOW, TURN_RATE_HARD_CAP_PER_WINDOW);
+  localTurnRateLimitBuckets.set(localKey, { bucket: localBucket, cnt: localCount });
+
+  if (localCount > effectiveLocalMax) {
+    return new Response(
+      JSON.stringify({ error: "rate_limited" }),
+      { status: 429, headers: { ...corsHeaders, ...TURN_NO_STORE_HEADERS } },
+    );
+  }
+
   if (!isUuid(userId)) {
     // Dev-only anonymous mode returns a non-UUID (e.g. "dev-anon").
     // In production, this must never happen.
@@ -124,8 +143,8 @@ async function enforceTurnIssueRateLimit(
 
   const { data, error } = await (admin as any).rpc("turn_issuance_rl_hit_v1", {
     p_user_id: userId,
-    p_ip: ip,
-    p_max: TURN_RATE_MAX_PER_WINDOW,
+    p_ip: rateScopeKey,
+    p_max: effectiveLocalMax,
   });
 
   if (error) {
@@ -139,7 +158,8 @@ async function enforceTurnIssueRateLimit(
     return null;
   }
 
-  if (data && data.allowed === false) {
+  const rlRow = Array.isArray(data) ? data[0] : data;
+  if (rlRow && rlRow.allowed === false) {
     return new Response(
       JSON.stringify({ error: "rate_limited" }),
       { status: 429, headers: { ...corsHeaders, ...TURN_NO_STORE_HEADERS } },
