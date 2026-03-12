@@ -25,6 +25,16 @@ import {
   GROUP_KEY_EXPIRES_OFFSET_MS,
   MITMDetectedError,
 } from '@/lib/e2ee/keyDistribution';
+import {
+  generateSenderKey,
+  getSenderKeyState,
+  buildSenderKeyMessage,
+  processSenderKeyMessage,
+  encryptGroupMessage,
+  decryptGroupMessage,
+  type EncryptedGroupMessage,
+  type SenderKeyMessage,
+} from '@/lib/e2ee/senderKeys';
 import { e2eeDb } from '@/lib/e2ee/db-types';
 
 // ─── Публичные типы ───────────────────────────────────────────────────────────
@@ -67,9 +77,12 @@ export function useE2EEncryption(conversationId: string | null): UseE2EEncryptio
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentKeyVersion, setCurrentKeyVersion] = useState<number | null>(null);
+  const [isGroupConversation, setIsGroupConversation] = useState(false);
 
   // Кеш расшифрованных групповых ключей: version → CryptoKey (forward secrecy)
   const groupKeyCacheRef = useRef<Map<number, CryptoKey>>(new Map());
+  // Sender-key envelope is used only for 3+ participant conversations.
+  const senderKeyEnvelopeEnabledRef = useRef(false);
   // Lazy-init E2EEKeyStore (singleton per hook instance)
   const keyStoreRef = useRef<E2EEKeyStore | null>(null);
 
@@ -143,6 +156,35 @@ export function useE2EEncryption(conversationId: string | null): UseE2EEncryptio
     void load();
     return () => { cancelled = true; };
   }, [conversationId]);
+
+  // ─── Group conversation detection (for Sender Keys path) ─────────────────
+
+  useEffect(() => {
+    if (!conversationId || !user?.id) {
+      setIsGroupConversation(false);
+      senderKeyEnvelopeEnabledRef.current = false;
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      const { data, error: pErr } = await e2eeDb.conversationParticipants.selectByConversationId(conversationId);
+      if (cancelled || pErr || !Array.isArray(data)) return;
+      const isGroup = data.length >= 3;
+      setIsGroupConversation(isGroup);
+      senderKeyEnvelopeEnabledRef.current = isGroup;
+    })().catch(() => {
+      // Keep legacy mode on lookup failure.
+      if (!cancelled) {
+        setIsGroupConversation(false);
+        senderKeyEnvelopeEnabledRef.current = false;
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [conversationId, user?.id]);
 
   // ─── Получение/кеширование identity key pair ─────────────────────────────
 
@@ -437,7 +479,32 @@ export function useE2EEncryption(conversationId: string | null): UseE2EEncryptio
     }
 
     try {
-      return await encryptWithAAD(groupKey, content, {
+      let plaintextForOuterLayer = content;
+
+      // Sender Keys runtime integration for group conversations.
+      // We keep existing outer group-key encryption for compatibility and transport stability.
+      if (senderKeyEnvelopeEnabledRef.current) {
+        let senderState = getSenderKeyState(conversationId, user.id);
+        if (!senderState) {
+          senderState = await generateSenderKey(conversationId, user.id);
+        }
+
+        const senderKeyMessage = await buildSenderKeyMessage(senderState);
+        const encryptedInner = await encryptGroupMessage(
+          conversationId,
+          user.id,
+          new TextEncoder().encode(content)
+        );
+
+        plaintextForOuterLayer = JSON.stringify({
+          v: 1,
+          mode: 'sender-key-envelope',
+          senderKeyMessage,
+          payload: encryptedInner,
+        });
+      }
+
+      return await encryptWithAAD(groupKey, plaintextForOuterLayer, {
         conversationId,
         keyVersion: currentKeyVersion,
         senderId: user.id,
@@ -459,11 +526,39 @@ export function useE2EEncryption(conversationId: string | null): UseE2EEncryptio
       const groupKey = await getGroupKey(version);
       if (!groupKey) return null;
 
-      return await decryptWithAAD(groupKey, payload, {
+      const outerPlaintext = await decryptWithAAD(groupKey, payload, {
         conversationId,
         keyVersion: version,
         senderId,
       });
+
+      // Backward compatible path: plain text messages from legacy flow
+      if (!senderKeyEnvelopeEnabledRef.current) {
+        return outerPlaintext;
+      }
+
+      // Sender-key envelope decode (if present). If parsing fails, treat as legacy plaintext.
+      try {
+        const parsed = JSON.parse(outerPlaintext) as {
+          v?: number;
+          mode?: string;
+          senderKeyMessage?: SenderKeyMessage;
+          payload?: EncryptedGroupMessage;
+        };
+
+        if (parsed?.v !== 1 || parsed?.mode !== 'sender-key-envelope' || !parsed.payload) {
+          return outerPlaintext;
+        }
+
+        if (parsed.senderKeyMessage) {
+          await processSenderKeyMessage(parsed.senderKeyMessage);
+        }
+
+        const inner = await decryptGroupMessage(parsed.payload);
+        return new TextDecoder().decode(inner);
+      } catch {
+        return outerPlaintext;
+      }
     } catch (err) {
       if (err instanceof MITMDetectedError) {
         setError(`⚠️ Предупреждение безопасности: ${err.message}`);
