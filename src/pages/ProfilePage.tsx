@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -36,6 +36,14 @@ function formatNumber(n: number): string {
   return String(n);
 }
 
+function formatBioForDisplay(rawBio: string): string {
+  return rawBio
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^(\s*\d+)\.(\S)/, "$1. $2"))
+    .join("\n")
+    .trim();
+}
+
 const TABS = [
   { id: "posts", icon: Grid3X3, label: "Публикации" },
   { id: "reels", icon: Play, label: "Reels" },
@@ -56,6 +64,16 @@ export function ProfilePage() {
   const { profile, loading: profileLoading, follow, unfollow, updateProfile, refetch } = useProfile(targetUserId);
   const { posts, loading: postsLoading } = useUserPosts(targetUserId);
   const { savedPosts, fetchSavedPosts, loading: savedLoading } = useSavedPosts();
+
+  const mediaPosts = useMemo(
+    () =>
+      posts.filter(
+        (post) =>
+          Array.isArray(post?.post_media) &&
+          post.post_media.some((m: any) => typeof m?.media_url === "string" && m.media_url.trim().length > 0),
+      ),
+    [posts],
+  );
 
   const [activeTab, setActiveTab] = useState<TabId>("posts");
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -281,7 +299,9 @@ export function ProfilePage() {
             )}
             <div className="flex items-center gap-5">
               <div className="text-center">
-                <p className="font-bold text-foreground text-sm">{displayProfile?.stats?.postsCount ?? 0}</p>
+                <p className="font-bold text-foreground text-sm">
+                  {postsLoading ? (displayProfile?.stats?.postsCount ?? 0) : mediaPosts.length}
+                </p>
                 <p className="text-xs text-muted-foreground">публикации</p>
               </div>
               <button onClick={() => setShowFollowers(true)} className="text-center">
@@ -300,7 +320,7 @@ export function ProfilePage() {
         {(displayProfile?.bio || displayProfile?.website) && (
           <div className="mt-3 space-y-0.5">
             {displayProfile?.bio && (
-              <p className="text-sm text-foreground whitespace-pre-line">{displayProfile.bio}</p>
+              <p className="text-sm text-foreground whitespace-pre-line">{formatBioForDisplay(displayProfile.bio)}</p>
             )}
             {displayProfile?.website && (
               <a
@@ -454,11 +474,24 @@ export function ProfilePage() {
           transition={{ duration: 0.15 }}
         >
           {activeTab === "posts" && (
-            <ProfileGrid items={posts} loading={postsLoading} type="posts" />
+            <ProfileGrid
+              items={mediaPosts}
+              loading={postsLoading}
+              type="posts"
+              onItemClick={(item) => {
+                if (!item?.id) return;
+                navigate(`/post/${item.id}`);
+              }}
+            />
           )}
           {activeTab === "reels" && (
             <>
-              <ProfileGrid items={myReels} loading={myReelsLoading && myReels.length === 0} type="reels" />
+              <ProfileGrid
+                items={myReels}
+                loading={myReelsLoading && myReels.length === 0}
+                type="reels"
+                onItemClick={() => navigate("/reels")}
+              />
               {myReels.length > 0 && myReelsHasMore && (
                 <div className="flex justify-center py-4">
                   <Button variant="outline" onClick={() => void loadMyReels()} disabled={myReelsLoading}>
