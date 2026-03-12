@@ -27,7 +27,7 @@ import {
 } from '@/lib/e2ee/keyDistribution';
 import {
   generateSenderKey,
-  getSenderKeyState,
+  getOrLoadSenderKeyState,
   buildSenderKeyMessage,
   processSenderKeyMessage,
   encryptGroupMessage,
@@ -484,7 +484,7 @@ export function useE2EEncryption(conversationId: string | null): UseE2EEncryptio
       // Sender Keys runtime integration for group conversations.
       // We keep existing outer group-key encryption for compatibility and transport stability.
       if (senderKeyEnvelopeEnabledRef.current) {
-        let senderState = getSenderKeyState(conversationId, user.id);
+        let senderState = await getOrLoadSenderKeyState(conversationId, user.id);
         if (!senderState) {
           senderState = await generateSenderKey(conversationId, user.id);
         }

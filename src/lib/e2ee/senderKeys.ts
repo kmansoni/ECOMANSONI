@@ -29,6 +29,21 @@
 
 import { toBase64, fromBase64 } from './utils';
 
+const SENDER_KEY_DB = 'e2ee-sender-keys-v1';
+const SENDER_KEY_STORE = 'sender_keys';
+
+interface PersistedSenderKeyState {
+  id: string;
+  conversationId: string;
+  senderId: string;
+  keyId: number;
+  iteration: number;
+  chainKey: string;
+  signingPublicKeySpki: string;
+  signingPrivateKeyPkcs8?: string;
+  createdAt: number;
+}
+
 // ─── Типы ────────────────────────────────────────────────────────────────────
 
 export interface SenderKeyState {
@@ -62,6 +77,140 @@ export interface EncryptedGroupMessage {
 
 // Map: `${conversationId}:${senderId}:${keyId}` → SenderKeyState
 const _senderKeyStore = new Map<string, SenderKeyState>();
+
+function openSenderKeyDb(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(SENDER_KEY_DB, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(SENDER_KEY_STORE)) {
+        db.createObjectStore(SENDER_KEY_STORE, { keyPath: 'id' });
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+    req.onblocked = () => reject(new Error('IndexedDB blocked'));
+  });
+}
+
+async function _persistState(state: SenderKeyState): Promise<void> {
+  try {
+    const db = await openSenderKeyDb();
+    const signingPublicKeySpki = toBase64(await crypto.subtle.exportKey('spki', state.signingKeyPair.publicKey));
+    let signingPrivateKeyPkcs8: string | undefined;
+    try {
+      if (state.signingKeyPair.privateKey) {
+        const pkcs8 = await crypto.subtle.exportKey('pkcs8', state.signingKeyPair.privateKey);
+        signingPrivateKeyPkcs8 = toBase64(pkcs8);
+      }
+    } catch {
+      signingPrivateKeyPkcs8 = undefined;
+    }
+
+    const record: PersistedSenderKeyState = {
+      id: _storeKey(state.conversationId, state.senderId, state.keyId),
+      conversationId: state.conversationId,
+      senderId: state.senderId,
+      keyId: state.keyId,
+      iteration: state.iteration,
+      chainKey: toBase64(state.chainKey),
+      signingPublicKeySpki,
+      signingPrivateKeyPkcs8,
+      createdAt: state.createdAt,
+    };
+
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(SENDER_KEY_STORE, 'readwrite');
+      const store = tx.objectStore(SENDER_KEY_STORE);
+      const req = store.put(record);
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    });
+    db.close();
+  } catch {
+    // no-op: memory store remains source of truth for current session
+  }
+}
+
+async function _loadLatestState(conversationId: string, senderId: string): Promise<SenderKeyState | null> {
+  try {
+    const db = await openSenderKeyDb();
+    const rows = await new Promise<PersistedSenderKeyState[]>((resolve, reject) => {
+      const tx = db.transaction(SENDER_KEY_STORE, 'readonly');
+      const store = tx.objectStore(SENDER_KEY_STORE);
+      const req = store.getAll();
+      req.onsuccess = () => resolve((req.result as PersistedSenderKeyState[]) ?? []);
+      req.onerror = () => reject(req.error);
+    });
+    db.close();
+
+    const filtered = rows.filter((r) => r.conversationId === conversationId && r.senderId === senderId);
+    if (filtered.length === 0) return null;
+    filtered.sort((a, b) => b.keyId - a.keyId);
+    const latest = filtered[0];
+
+    const publicKey = await crypto.subtle.importKey(
+      'spki',
+      fromBase64(latest.signingPublicKeySpki),
+      { name: 'ECDSA', namedCurve: 'P-256' },
+      false,
+      ['verify']
+    );
+
+    let privateKey: CryptoKey;
+    if (latest.signingPrivateKeyPkcs8) {
+      privateKey = await crypto.subtle.importKey(
+        'pkcs8',
+        fromBase64(latest.signingPrivateKeyPkcs8),
+        { name: 'ECDSA', namedCurve: 'P-256' },
+        false,
+        ['sign']
+      );
+    } else {
+      privateKey = null as unknown as CryptoKey;
+    }
+
+    return {
+      conversationId: latest.conversationId,
+      senderId: latest.senderId,
+      keyId: latest.keyId,
+      iteration: latest.iteration,
+      chainKey: fromBase64(latest.chainKey),
+      signingKeyPair: { publicKey, privateKey },
+      createdAt: latest.createdAt,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function _deleteStates(conversationId: string, senderId: string): Promise<void> {
+  try {
+    const db = await openSenderKeyDb();
+    const rows = await new Promise<PersistedSenderKeyState[]>((resolve, reject) => {
+      const tx = db.transaction(SENDER_KEY_STORE, 'readonly');
+      const store = tx.objectStore(SENDER_KEY_STORE);
+      const req = store.getAll();
+      req.onsuccess = () => resolve((req.result as PersistedSenderKeyState[]) ?? []);
+      req.onerror = () => reject(req.error);
+    });
+
+    const ids = rows
+      .filter((r) => r.conversationId === conversationId && r.senderId === senderId)
+      .map((r) => r.id);
+
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(SENDER_KEY_STORE, 'readwrite');
+      const store = tx.objectStore(SENDER_KEY_STORE);
+      for (const id of ids) store.delete(id);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  } catch {
+    // no-op
+  }
+}
 
 // ─── HMAC ratchet helpers ─────────────────────────────────────────────────────
 
@@ -129,6 +278,7 @@ export async function generateSenderKey(
   };
 
   _senderKeyStore.set(_storeKey(conversationId, senderId, keyId), state);
+  await _persistState(state);
   return state;
 }
 
@@ -168,7 +318,7 @@ export async function buildSenderKeyMessage(
   const signatureBuf = await crypto.subtle.sign(
     { name: 'ECDSA', hash: 'SHA-256' },
     state.signingKeyPair.privateKey,
-    signedData,
+    signedData as unknown as BufferSource,
   );
 
   return {
@@ -209,7 +359,7 @@ export async function processSenderKeyMessage(msg: SenderKeyMessage): Promise<vo
     { name: 'ECDSA', hash: 'SHA-256' },
     sigPubKey,
     fromBase64(msg.signature),
-    signedData,
+    signedData as unknown as BufferSource,
   );
 
   if (!valid) {
@@ -243,6 +393,7 @@ export async function processSenderKeyMessage(msg: SenderKeyMessage): Promise<vo
   };
 
   _senderKeyStore.set(_storeKey(msg.conversationId, msg.senderId, msg.keyId), state);
+  await _persistState(state);
 }
 
 // ─── Encryption ───────────────────────────────────────────────────────────────
@@ -267,6 +418,7 @@ export async function encryptGroupMessage(
   // Update state — mutation in place (Map reference)
   stateEntry.chainKey = nextChainKey;
   stateEntry.iteration++;
+  await _persistState(stateEntry);
 
   const iv = new Uint8Array(12);
   crypto.getRandomValues(iv);
@@ -274,7 +426,7 @@ export async function encryptGroupMessage(
   const ciphertextBuf = await crypto.subtle.encrypt(
     { name: 'AES-GCM', iv },
     messageKey,
-    plaintext,
+    plaintext as unknown as BufferSource,
   );
 
   return {
@@ -331,6 +483,7 @@ export async function decryptGroupMessage(
   // Update stored state to latest position
   state.chainKey = chainKey;
   state.iteration = msg.iteration + 1;
+  await _persistState(state);
 
   const iv = fromBase64(msg.iv);
   const ciphertext = fromBase64(msg.ciphertext);
@@ -370,6 +523,23 @@ export function getSenderKeyState(
 }
 
 /**
+ * Возвращает текущий SenderKeyState, подгружая его из IndexedDB при холодном старте.
+ */
+export async function getOrLoadSenderKeyState(
+  conversationId: string,
+  senderId: string,
+): Promise<SenderKeyState | null> {
+  const current = _findCurrentState(conversationId, senderId);
+  if (current) return current;
+
+  const loaded = await _loadLatestState(conversationId, senderId);
+  if (loaded) {
+    _senderKeyStore.set(_storeKey(loaded.conversationId, loaded.senderId, loaded.keyId), loaded);
+  }
+  return loaded;
+}
+
+/**
  * Удаляет все sender keys для conversation (при выходе из группы).
  */
 export function deleteSenderKeys(conversationId: string, senderId: string): void {
@@ -378,6 +548,7 @@ export function deleteSenderKeys(conversationId: string, senderId: string): void
       _senderKeyStore.delete(key);
     }
   }
+  void _deleteStates(conversationId, senderId);
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
