@@ -1,47 +1,42 @@
-name: Deploy Mansoni
+name: Deploy Mansoni → mansoni.ru
 
 on:
   push:
     branches:
       - main
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-mansoni
+  cancel-in-progress: false   # никогда не отменять деплой на лету
+
+permissions:
+  contents: read
 
 jobs:
-  build-and-deploy:
+  # ─────────────────────────────────────────────
+  # 1. BUILD
+  # ─────────────────────────────────────────────
+  build:
+    name: Build frontend
     runs-on: ubuntu-latest
-    env:
-      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-      SYNC_GUARD_MIRROR_PATH: ${{ secrets.SYNC_GUARD_MIRROR_PATH }}
-      VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-      VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
-      VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
-      VITE_CALLS_V2_ENABLED: ${{ vars.VITE_CALLS_V2_ENABLED }}
-      VITE_CALLS_V2_WS_URL: ${{ vars.VITE_CALLS_V2_WS_URL }}
-      VITE_CALLS_V2_WS_URLS: ${{ vars.VITE_CALLS_V2_WS_URLS }}
-      VITE_CALLS_V2_REKEY_INTERVAL_MS: ${{ vars.VITE_CALLS_V2_REKEY_INTERVAL_MS }}
-      VITE_CALLS_FRAME_E2EE_ADVERTISE_SFRAME: ${{ vars.VITE_CALLS_FRAME_E2EE_ADVERTISE_SFRAME }}
-      VITE_TURN_CREDENTIALS_URL: ${{ vars.VITE_TURN_CREDENTIALS_URL }}
-      VITE_EXPECTED_SUPABASE_PROJECT_REF: ${{ secrets.VITE_EXPECTED_SUPABASE_PROJECT_REF }}
-      VITE_API_URL: ${{ secrets.VITE_API_URL }}
-      VITE_API_KEY: ${{ secrets.VITE_API_KEY }}
-      SERVER_HOST: ${{ secrets.ADMINVPS_HOST }}
-      SERVER_USER: ${{ secrets.ADMINVPS_USER }}
-      SERVER_SSH_KEY: ${{ secrets.ADMINVPS_SSH_KEY }}
-      SERVER_APP_DIR: ${{ secrets.ADMINVPS_APP_DIR }}
-      SERVER_DB_PASS: ${{ secrets.MANSONI_DB_PASS }}
+    outputs:
+      artifact-name: dist-${{ github.sha }}
 
     steps:
-      - name: Checkout repo
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Setup Node 20
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
+          cache: npm
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Calls env probe (prod-grade)
+      - name: Calls env probe (prod-grade gate)
         run: npm run calls:env:probe
         env:
           REQUIRE_CALLS_ENV_PROBE: "1"
@@ -51,84 +46,134 @@ jobs:
           VITE_CALLS_V2_REKEY_INTERVAL_MS: ${{ vars.VITE_CALLS_V2_REKEY_INTERVAL_MS }}
           VITE_TURN_CREDENTIALS_URL: ${{ vars.VITE_TURN_CREDENTIALS_URL }}
 
-      - name: Build frontend
-        run: npm run build
+      - name: Lint
+        run: npm run lint
 
-      - name: Deploy frontend to mansoni.ru
+      - name: Backend safety (migrations)
+        run: npm run check:backend
+
+      - name: Build
+        run: npm run build
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          VITE_CALLS_V2_ENABLED: ${{ vars.VITE_CALLS_V2_ENABLED }}
+          VITE_CALLS_V2_WS_URL: ${{ vars.VITE_CALLS_V2_WS_URL }}
+          VITE_CALLS_V2_WS_URLS: ${{ vars.VITE_CALLS_V2_WS_URLS }}
+          VITE_CALLS_V2_REKEY_INTERVAL_MS: ${{ vars.VITE_CALLS_V2_REKEY_INTERVAL_MS }}
+          VITE_CALLS_FRAME_E2EE_ADVERTISE_SFRAME: ${{ vars.VITE_CALLS_FRAME_E2EE_ADVERTISE_SFRAME }}
+          VITE_TURN_CREDENTIALS_URL: ${{ vars.VITE_TURN_CREDENTIALS_URL }}
+          VITE_API_URL: ${{ secrets.VITE_API_URL }}
+          VITE_API_KEY: ${{ secrets.VITE_API_KEY }}
+          VITE_EXPECTED_SUPABASE_PROJECT_REF: ${{ secrets.VITE_EXPECTED_SUPABASE_PROJECT_REF }}
+          REQUIRE_CHAT_SCHEMA_PROBE: "1"
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          CHAT_SCHEMA_EXPECTED_VERSION: "2"
+
+      - name: Upload dist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ github.sha }}
+          path: dist/
+          retention-days: 1
+
+  # ─────────────────────────────────────────────
+  # 2. SUPABASE (migrations + edge functions)
+  # ─────────────────────────────────────────────
+  supabase:
+    name: Supabase deploy
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Deploy Supabase (migrations + functions)
+        shell: pwsh
+        run: |
+          scripts/supabase-deploy.ps1
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          VITE_EXPECTED_SUPABASE_PROJECT_REF: ${{ secrets.VITE_EXPECTED_SUPABASE_PROJECT_REF }}
+
+  # ─────────────────────────────────────────────
+  # 3. DEPLOY FRONTEND → VPS mansoni.ru
+  # ─────────────────────────────────────────────
+  deploy-frontend:
+    name: Deploy frontend → mansoni.ru
+    runs-on: ubuntu-latest
+    needs: [build, supabase]
+    steps:
+      - name: Download dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-${{ github.sha }}
+          path: dist/
+
+      - name: SCP dist → VPS
         uses: appleboy/scp-action@v0.1.7
         with:
-          host: ${{ env.SERVER_HOST }}
-          username: ${{ env.SERVER_USER }}
-          key: ${{ env.SERVER_SSH_KEY }}
+          host: ${{ secrets.ADMINVPS_HOST }}
+          username: ${{ secrets.ADMINVPS_USER }}
+          key: ${{ secrets.ADMINVPS_SSH_KEY }}
           port: 22
           source: "dist/*"
-          target: "${{ env.SERVER_APP_DIR }}/dist/"
+          target: "${{ secrets.ADMINVPS_APP_DIR }}/dist/"
+          strip_components: 1
 
-      - name: Deploy Supabase
-        run: |
-          pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/supabase-deploy.ps1
-
-      - name: Package migrations
-        run: |
-          tar -czf all-migrations.tar.gz supabase/migrations/*.sql
-
-      - name: Deploy to mansoni.ru
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ env.SERVER_HOST }}
-          username: ${{ env.SERVER_USER }}
-          key: ${{ env.SERVER_SSH_KEY }}
-          port: 22
-          source: "all-migrations.tar.gz"
-          target: "/tmp/"
-
-      - name: Apply migrations on mansoni.ru
-        if: ${{ env.SERVER_DB_PASS != '' }}
+      - name: Write .env.production on VPS
         uses: appleboy/ssh-action@v0.1.7
         with:
-          host: ${{ env.SERVER_HOST }}
-          username: ${{ env.SERVER_USER }}
-          key: ${{ env.SERVER_SSH_KEY }}
+          host: ${{ secrets.ADMINVPS_HOST }}
+          username: ${{ secrets.ADMINVPS_USER }}
+          key: ${{ secrets.ADMINVPS_SSH_KEY }}
           port: 22
           script: |
-            cd /tmp
-            tar -xzf all-migrations.tar.gz
-            export PGPASSWORD="${{ env.SERVER_DB_PASS }}"
-            psql -U mansoni_app -d mansoni -f /tmp/all-migrations.sql
-            curl http://localhost:3000/
+            set -euo pipefail
+            ENV_FILE="${{ secrets.ADMINVPS_APP_DIR }}/.env.production"
+            cat > "$ENV_FILE" <<'ENVEOF'
+            VITE_API_URL=${{ secrets.VITE_API_URL }}
+            VITE_API_KEY=${{ secrets.VITE_API_KEY }}
+            VITE_CALLS_V2_ENABLED=${{ vars.VITE_CALLS_V2_ENABLED }}
+            VITE_CALLS_V2_WS_URL=${{ vars.VITE_CALLS_V2_WS_URL }}
+            VITE_CALLS_V2_WS_URLS=${{ vars.VITE_CALLS_V2_WS_URLS }}
+            VITE_CALLS_V2_REKEY_INTERVAL_MS=${{ vars.VITE_CALLS_V2_REKEY_INTERVAL_MS }}
+            VITE_CALLS_FRAME_E2EE_ADVERTISE_SFRAME=${{ vars.VITE_CALLS_FRAME_E2EE_ADVERTISE_SFRAME }}
+            VITE_TURN_CREDENTIALS_URL=${{ vars.VITE_TURN_CREDENTIALS_URL }}
+            ENVEOF
+            chmod 600 "$ENV_FILE"
 
-      - name: Update .env.production
+      - name: Reload nginx (zero-downtime)
         uses: appleboy/ssh-action@v0.1.7
         with:
-          host: ${{ env.SERVER_HOST }}
-          username: ${{ env.SERVER_USER }}
-          key: ${{ env.SERVER_SSH_KEY }}
+          host: ${{ secrets.ADMINVPS_HOST }}
+          username: ${{ secrets.ADMINVPS_USER }}
+          key: ${{ secrets.ADMINVPS_SSH_KEY }}
           port: 22
           script: |
-            echo "VITE_API_URL=http://5.42.99.76" > ${{ env.SERVER_APP_DIR }}/.env.production
-            echo "VITE_API_KEY=${{ env.VITE_API_KEY }}" >> ${{ env.SERVER_APP_DIR }}/.env.production
-            echo "VITE_CALLS_V2_ENABLED=${{ env.VITE_CALLS_V2_ENABLED }}" >> ${{ env.SERVER_APP_DIR }}/.env.production
-            echo "VITE_CALLS_V2_WS_URL=${{ env.VITE_CALLS_V2_WS_URL }}" >> ${{ env.SERVER_APP_DIR }}/.env.production
-            echo "VITE_CALLS_V2_WS_URLS=${{ env.VITE_CALLS_V2_WS_URLS }}" >> ${{ env.SERVER_APP_DIR }}/.env.production
-            echo "VITE_CALLS_V2_REKEY_INTERVAL_MS=${{ env.VITE_CALLS_V2_REKEY_INTERVAL_MS }}" >> ${{ env.SERVER_APP_DIR }}/.env.production
-            echo "VITE_CALLS_FRAME_E2EE_ADVERTISE_SFRAME=${{ env.VITE_CALLS_FRAME_E2EE_ADVERTISE_SFRAME }}" >> ${{ env.SERVER_APP_DIR }}/.env.production
-            echo "VITE_TURN_CREDENTIALS_URL=${{ env.VITE_TURN_CREDENTIALS_URL }}" >> ${{ env.SERVER_APP_DIR }}/.env.production
+            set -euo pipefail
+            sudo nginx -t
+            sudo systemctl reload nginx
 
-      - name: Restart Mansoni API
-        uses: appleboy/ssh-action@v0.1.7
-        with:
-          host: ${{ env.SERVER_HOST }}
-          username: ${{ env.SERVER_USER }}
-          key: ${{ env.SERVER_SSH_KEY }}
-          port: 22
-          script: |
-            sudo systemctl restart postgrest-mansoni
-            sudo systemctl restart nginx
-
-      - name: Verify deployment
+      - name: Smoke test mansoni.ru
         run: |
-          curl http://5.42.99.76/
-          curl http://mansoni.ru/
-
-      - name: Done
-        run: echo "Deployment complete!"
+          sleep 5
+          HTTP=$(curl -o /dev/null -s -w "%{http_code}" --max-time 15 https://mansoni.ru/)
+          echo "HTTP status: $HTTP"
+          if [ "$HTTP" != "200" ] && [ "$HTTP" != "301" ] && [ "$HTTP" != "302" ]; then
+            echo "::error::mansoni.ru returned $HTTP — deployment may have failed"
+            exit 1
+          fi

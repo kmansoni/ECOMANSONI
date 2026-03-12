@@ -111,8 +111,22 @@ const RATE_LIMIT_MAX_REQUESTS = 60; // 60 requests per minute
  * Check rate limit for a given key (usually IP or user ID)
  * Returns true if request should be allowed
  */
-export function checkRateLimit(key: string): { allowed: boolean; remaining: number; resetIn: number } {
+export function checkRateLimit(
+  key: string,
+  maxRequests: number = RATE_LIMIT_MAX_REQUESTS,
+): { allowed: boolean; remaining: number; resetIn: number } {
   const now = Date.now();
+  
+  // Cleanup: periodically remove expired entries to prevent unbounded memory growth.
+  // Only clean every Nth call to avoid CPU waste; 1 in 100 requests triggers cleanup.
+  if (Math.random() < 0.01) {
+    for (const [k, e] of rateLimitMap.entries()) {
+      if (now > e.resetTime) {
+        rateLimitMap.delete(k);
+      }
+    }
+  }
+  
   const entry = rateLimitMap.get(key);
 
   if (!entry || now > entry.resetTime) {
@@ -121,10 +135,10 @@ export function checkRateLimit(key: string): { allowed: boolean; remaining: numb
       count: 1,
       resetTime: now + RATE_LIMIT_WINDOW,
     });
-    return { allowed: true, remaining: RATE_LIMIT_MAX_REQUESTS - 1, resetIn: RATE_LIMIT_WINDOW };
+    return { allowed: true, remaining: maxRequests - 1, resetIn: RATE_LIMIT_WINDOW };
   }
 
-  if (entry.count >= RATE_LIMIT_MAX_REQUESTS) {
+  if (entry.count >= maxRequests) {
     return { 
       allowed: false, 
       remaining: 0, 
@@ -135,7 +149,7 @@ export function checkRateLimit(key: string): { allowed: boolean; remaining: numb
   entry.count++;
   return { 
     allowed: true, 
-    remaining: RATE_LIMIT_MAX_REQUESTS - entry.count, 
+    remaining: maxRequests - entry.count, 
     resetIn: entry.resetTime - now 
   };
 }

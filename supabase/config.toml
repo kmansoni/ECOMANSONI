@@ -29,7 +29,7 @@ verify_jwt = false
 
 # ─── Authenticated endpoints ───────────────────────────────────
 [functions.turn-credentials]
-verify_jwt = true
+verify_jwt = false
 
 [functions.ensure-profile]
 verify_jwt = true

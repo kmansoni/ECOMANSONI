@@ -105,6 +105,51 @@ function isIpv6Literal(host: string): boolean {
   return host.replace(/^\[|\]$/g, "").includes(":");
 }
 
+// Blocked internal/corporate TLD suffixes
+const BLOCKED_SUFFIXES = [
+  ".internal",       // GCP metadata, Azure
+  ".corp",           // Corporate networks
+  ".cluster.local",  // Kubernetes
+  ".svc.local",      // Kubernetes services
+  ".pod.local",      // Kubernetes pods
+  ".consul",         // HashiCorp Consul
+  ".node",           // Internal naming
+  ".intranet",       // Corporate intranets
+  ".lan",            // Local area networks
+  ".home.arpa",      // Home networks (RFC 8375)
+];
+
+// Exact match blocked hosts
+const BLOCKED_HOSTS = new Set([
+  "metadata",
+  "metadata.google",
+  "metadata.google.internal",
+  "instance-data.ec2.internal",
+  "kubernetes",
+  "kubernetes.default",
+  "kubernetes.default.svc",
+  "kubernetes.default.svc.cluster.local",
+  "wpad",    // Web Proxy Auto-Discovery
+  "isatap",  // ISATAP tunnel
+]);
+
+// Wildcard DNS services that resolve to embedded IP
+const WILDCARD_DNS_PATTERNS = [
+  /\.nip\.io$/i,
+  /\.sslip\.io$/i,
+  /\.xip\.io$/i,
+  /\.localtest\.me$/i,
+  /\.vcap\.me$/i,
+  /\.lvh\.me$/i,
+  /\.lacolhost\.com$/i,
+  /\.fuf\.me$/i,
+  /\.traefik\.me$/i,
+  /\.127\.0\.0\.1\.?/i,  // embedded IP patterns — trailing dot optional (DEFECT-8)
+  /\.0\.0\.0\.0\.?/i,
+  /\.127\.0\.0\.1$/i,    // trailing match without dot
+  /\.0\.0\.0\.0$/i,
+];
+
 function assertSafeHost(host: string): void {
   const normalized = host.trim().replace(/\.+$/g, "").toLowerCase();
   if (!normalized || normalized.length > 253) {
@@ -120,9 +165,146 @@ function assertSafeHost(host: string): void {
   ) {
     throw new Error("host_not_allowed");
   }
+  if (BLOCKED_HOSTS.has(normalized)) {
+    throw new Error(`Blocked host: ${normalized}`);
+  }
+  if (BLOCKED_SUFFIXES.some((s) => normalized.endsWith(s))) {
+    throw new Error(`Blocked internal TLD: ${normalized}`);
+  }
+  if (WILDCARD_DNS_PATTERNS.some((p) => p.test(normalized))) {
+    throw new Error(`Blocked wildcard DNS: ${normalized}`);
+  }
 }
 
-function normalizeUrl(rawUrl: string): string {
+/** IPv4 private/reserved ranges as [networkInt, maskInt] */
+const PRIVATE_RANGES_V4: Array<[number, number]> = [
+  [0x7F000000, 0xFF000000], // 127.0.0.0/8    loopback
+  [0x0A000000, 0xFF000000], // 10.0.0.0/8     RFC 1918
+  [0xAC100000, 0xFFF00000], // 172.16.0.0/12  RFC 1918
+  [0xC0A80000, 0xFFFF0000], // 192.168.0.0/16 RFC 1918
+  [0xA9FE0000, 0xFFFF0000], // 169.254.0.0/16 link-local (AWS metadata!)
+  [0x00000000, 0xFF000000], // 0.0.0.0/8      "this" network
+  [0xC0000000, 0xFFFFFFF8], // 192.0.0.0/29   IETF protocol assignments
+  [0xC0000200, 0xFFFFFF00], // 192.0.2.0/24   TEST-NET-1
+  [0xC6336400, 0xFFFFFF00], // 198.51.100.0/24 TEST-NET-2
+  [0xCB007100, 0xFFFFFF00], // 203.0.113.0/24 TEST-NET-3
+  [0xC6120000, 0xFFFE0000], // 198.18.0.0/15  benchmarking
+  [0xE0000000, 0xF0000000], // 224.0.0.0/4    multicast
+  [0xF0000000, 0xF0000000], // 240.0.0.0/4    reserved
+  [0x64400000, 0xFFC00000], // 100.64.0.0/10  carrier-grade NAT
+  [0xC0586300, 0xFFFFFF00], // 192.88.99.0/24 deprecated 6to4 relay (RFC 7526) — DEFECT-12
+];
+
+function ipv4ToInt(ip: string): number {
+  const p = ip.split(".").map(Number);
+  return ((p[0] << 24) | (p[1] << 16) | (p[2] << 8) | p[3]) >>> 0;
+}
+
+function isPrivateIpv4(ip: string): boolean {
+  const num = ipv4ToInt(ip);
+  // DEFECT-1: >>> 0 forces unsigned 32-bit comparison — without it signed overflow
+  // causes (0xA9FE0001 & 0xFFFF0000) = -1442840576 !== 2852126720 (169.254.x.x passes!)
+  return PRIVATE_RANGES_V4.some(([range, mask]) => ((num & mask) >>> 0) === (range >>> 0));
+}
+
+function isPrivateIpv6(ip: string): boolean {
+  const lower = ip.toLowerCase();
+  if (lower === "::1" || lower === "::") return true;                    // loopback / unspecified
+  // DEFECT-6: fe80::/10 = fe80..febf — prefix check must cover fe81–febf
+  if (/^fe[89ab][0-9a-f]:/.test(lower)) return true;                    // link-local /10
+  if (lower.startsWith("fc") || lower.startsWith("fd")) return true;    // ULA
+  // DEFECT-9: 6to4 (2002::/16) embeds IPv4 in bits 16–47
+  if (lower.startsWith("2002:")) {
+    const parts = lower.split(":");
+    if (parts.length >= 3 && parts[1]) {
+      const high = parseInt(parts[1], 16);
+      const low = parseInt(parts[2] || "0", 16);
+      const ipStr = `${(high >> 8) & 0xff}.${high & 0xff}.${(low >> 8) & 0xff}.${low & 0xff}`;
+      return isPrivateIpv4(ipStr);
+    }
+  }
+  // DEFECT-9: NAT64 64:ff9b::/96 translates to IPv4 — block entire prefix
+  if (lower.startsWith("64:ff9b:")) return true;
+  // IPv6-mapped IPv4 dotted-decimal: ::ffff:192.168.1.1
+  const v4match = lower.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+  if (v4match) return isPrivateIpv4(v4match[1]);
+  // DEFECT-5: IPv6-mapped IPv4 hex notation: ::ffff:c0a8:0101 (= 192.168.1.1)
+  const hexV4Match = lower.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+  if (hexV4Match) {
+    const high = parseInt(hexV4Match[1], 16);
+    const low = parseInt(hexV4Match[2], 16);
+    const ipStr = `${(high >> 8) & 0xff}.${high & 0xff}.${(low >> 8) & 0xff}.${low & 0xff}`;
+    return isPrivateIpv4(ipStr);
+  }
+  return false;
+}
+
+// DEFECT-11: DNS calls wrapped in timeout to prevent indefinite hang
+async function dnsResolveWithTimeout(
+  hostname: string,
+  type: "A" | "AAAA",
+  timeoutMs = 3000,
+): Promise<string[]> {
+  // deno-lint-ignore no-explicit-any
+  const denoGlobal = Deno as any;
+  return Promise.race([
+    denoGlobal.resolveDns(hostname, type) as Promise<string[]>,
+    new Promise<string[]>((_, reject) =>
+      setTimeout(() => reject(new Error("dns_timeout")), timeoutMs)
+    ),
+  ]);
+}
+
+/**
+ * Resolve hostname DNS and verify all resolved IPs are public.
+ * Falls back gracefully if Deno.resolveDns is unavailable (Deno Deploy).
+ * DEFECT-10: dnsChecked flag — if DNS was completely unavailable we log a warning
+ * rather than silently falling through (which could mask misconfigurations).
+ */
+async function assertSafeResolvedIp(hostname: string): Promise<void> {
+  // Skip for direct IP literals — already caught by assertSafeHost
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(hostname) || hostname.includes(":")) return;
+
+  // Check if Deno.resolveDns is available (not on all Deno Deploy regions)
+  if (typeof (Deno as { resolveDns?: unknown })?.resolveDns !== "function") return;
+
+  let dnsChecked = false;
+
+  try {
+    const aRecords = await dnsResolveWithTimeout(hostname, "A");
+    dnsChecked = true;
+    for (const ip of aRecords) {
+      if (isPrivateIpv4(ip)) {
+        throw new Error(`DNS resolved to private IPv4: ${ip}`);
+      }
+    }
+  } catch (e: unknown) {
+    if (e instanceof Error && e.message.startsWith("DNS resolved to")) throw e;
+    // dns_timeout or resolution error — continue
+  }
+
+  try {
+    const aaaaRecords = await dnsResolveWithTimeout(hostname, "AAAA");
+    dnsChecked = true;
+    for (const ip of aaaaRecords) {
+      if (isPrivateIpv6(ip)) {
+        throw new Error(`DNS resolved to private IPv6: ${ip}`);
+      }
+    }
+  } catch (e: unknown) {
+    if (e instanceof Error && e.message.startsWith("DNS resolved to")) throw e;
+    // dns_timeout or resolution error — continue
+  }
+
+  // DEFECT-10: explicit observability when DNS was entirely unavailable
+  if (!dnsChecked) {
+    console.warn(
+      `[link-preview] DNS resolution unavailable for ${hostname}, relying on hostname blocklist only`,
+    );
+  }
+}
+
+async function normalizeUrl(rawUrl: string): Promise<string> {
   const trimmed = rawUrl.trim();
   if (!trimmed || trimmed.length > 2048) {
     throw new Error("invalid_url");
@@ -135,6 +317,7 @@ function normalizeUrl(rawUrl: string): string {
     throw new Error("credentials_in_url_not_allowed");
   }
   assertSafeHost(parsed.hostname);
+  await assertSafeResolvedIp(parsed.hostname);
   parsed.hash = "";
   return parsed.toString();
 }
@@ -215,12 +398,12 @@ function extractLinkHref(html: string, relNeedle: string): string | null {
  * он может быть использован как src в <img> или <a href>, что приведёт к XSS.
  *
  * Разрешаем ТОЛЬКО http: и https: схемы.
- * Дополнительно: блокируем те же хосты что и assertSafeHost (private ranges).
+ * Дополнительно: блокируем те же хосты что и assertSafeHost (private ranges) + DNS check.
  */
-function resolveUrl(
+async function resolveUrl(
   candidate: string | null,
   baseUrl: string,
-): string | null {
+): Promise<string | null> {
   if (!candidate) return null;
   try {
     const resolved = new URL(candidate, baseUrl);
@@ -236,6 +419,7 @@ function resolveUrl(
     // (Хотя Deno Deploy блокирует это на уровне сети, defence-in-depth важен)
     try {
       assertSafeHost(resolved.hostname);
+      await assertSafeResolvedIp(resolved.hostname);
     } catch {
       return null;
     }
@@ -246,10 +430,10 @@ function resolveUrl(
   }
 }
 
-function extractPreview(
+async function extractPreview(
   html: string,
   sourceUrl: string,
-): Omit<PreviewPayload, "url" | "fetchedAt" | "cached" | "stale"> {
+): Promise<Omit<PreviewPayload, "url" | "fetchedAt" | "cached" | "stale">> {
   const titleTagMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
   const domain = parseDomain(sourceUrl);
   const title = truncate(
@@ -257,9 +441,9 @@ function extractPreview(
     120,
   );
   const description = truncate(extractMeta(html, "description"), 300);
-  const image = resolveUrl(extractMeta(html, "image"), sourceUrl);
+  const image = await resolveUrl(extractMeta(html, "image"), sourceUrl);
   const favicon =
-    resolveUrl(extractLinkHref(html, "icon"), sourceUrl) ??
+    (await resolveUrl(extractLinkHref(html, "icon"), sourceUrl)) ??
     (parseDefaultFavicon(sourceUrl) || null);
 
   return { domain, title, description, image, favicon };
@@ -315,6 +499,7 @@ async function fetchHtml(
       if (!location) throw new Error("redirect_without_location");
       current = new URL(location, current);
       assertSafeHost(current.hostname);
+      await assertSafeResolvedIp(current.hostname);
       continue;
     }
     if (!response.ok) throw new Error(`upstream_${response.status}`);
@@ -426,9 +611,21 @@ serve(async (req) => {
 
   let normalizedUrl: string;
   try {
-    normalizedUrl = normalizeUrl(rawUrl);
+    normalizedUrl = await normalizeUrl(rawUrl);
   } catch (error) {
-    const reason = error instanceof Error ? error.message : "invalid_url";
+    // DEFECT-4: do NOT leak internal SSRF probe results to caller.
+    // Errors like "DNS resolved to private IPv4: 10.0.0.1" or
+    // "Blocked host: metadata.google.internal" allow reconnaissance.
+    // Only a fixed allowlist of safe reason codes is forwarded.
+    const SAFE_ERROR_CODES = new Set([
+      "invalid_url",
+      "unsupported_protocol",
+      "credentials_in_url_not_allowed",
+      "url_required",
+      "url_too_long",
+    ]);
+    const rawReason = error instanceof Error ? error.message : "invalid_url";
+    const reason = SAFE_ERROR_CODES.has(rawReason) ? rawReason : "invalid_url";
     return errorResponse(reason, 400, origin);
   }
 
@@ -460,7 +657,7 @@ serve(async (req) => {
   // Fetch from upstream
   try {
     const { html, finalUrl } = await fetchHtml(normalizedUrl);
-    const extracted = extractPreview(html, finalUrl);
+    const extracted = await extractPreview(html, finalUrl);
     const now = new Date();
     const expiresAt = new Date(now.getTime() + CACHE_TTL_MS);
 

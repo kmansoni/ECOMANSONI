@@ -1,157 +1,110 @@
 /**
- * useLongPress — production-grade long press detection hook.
+ * @file src/hooks/useLongPress.ts
+ * @description Long-press хук для контекстных меню — Instagram стиль.
  *
- * Behaviour mirrors Telegram/WhatsApp:
- *   - Fires `onLongPress` after `delay` ms of continuous press.
- *   - Fires haptic feedback at trigger point.
- *   - Cancels if pointer moves more than `moveThreshold` px.
- *   - Cancels on pointer up / context menu.
- *   - Prevents default context menu on mobile (overrides browser hold-to-select).
- *   - Returns `isPressed` state for visual feedback (highlight, scale).
+ * Архитектура:
+ * - Pointer Events API (touch + mouse)
+ * - Threshold: 500ms (Instagram default)
+ * - Отмена: если pointer moved > 10px → не long press
+ * - Haptic feedback при срабатывании
+ * - Возвращает handlers для элемента
+ * - Поддержка iOS Safari (touchstart/touchend fallback)
  *
- * Supports both touch and mouse (desktop).
- *
- * Usage:
- *   const { handlers, isPressed } = useLongPress(() => openContextMenu(msg));
- *   <div {...handlers} style={{ opacity: isPressed ? 0.7 : 1 }}>...</div>
+ * Использование:
+ * ```tsx
+ * const longPressHandlers = useLongPress(() => setShowContextMenu(true));
+ * <div {...longPressHandlers}>...</div>
+ * ```
  */
 
-import { useRef, useState, useCallback, useEffect } from 'react';
+import { useCallback, useRef } from "react";
+import { Haptics } from "@/lib/haptics";
 
-export interface UseLongPressOptions {
-  /** Milliseconds to hold before triggering. Default: 500 */
-  delay?: number;
-  /** Pixels of movement that cancels the press. Default: 10 */
-  moveThreshold?: number;
-  /** Called when long press fires */
-  onLongPress: (event: React.TouchEvent | React.MouseEvent) => void;
-  /** Called on short tap (press + release < delay) */
-  onTap?: (event: React.TouchEvent | React.MouseEvent) => void;
-  /** Whether the gesture is active */
-  enabled?: boolean;
+interface LongPressOptions {
+  threshold?: number;      // ms, default 500
+  moveThreshold?: number;  // px, default 10
+  onStart?: () => void;
+  onCancel?: () => void;
 }
 
-export interface UseLongPressResult {
-  handlers: {
-    onTouchStart: (e: React.TouchEvent) => void;
-    onTouchMove: (e: React.TouchEvent) => void;
-    onTouchEnd: (e: React.TouchEvent) => void;
-    onMouseDown: (e: React.MouseEvent) => void;
-    onMouseMove: (e: React.MouseEvent) => void;
-    onMouseUp: (e: React.MouseEvent) => void;
-    onContextMenu: (e: React.MouseEvent) => void;
-  };
-  isPressed: boolean;
+interface LongPressHandlers {
+  onPointerDown: (e: React.PointerEvent) => void;
+  onPointerUp: (e: React.PointerEvent) => void;
+  onPointerMove: (e: React.PointerEvent) => void;
+  onPointerLeave: (e: React.PointerEvent) => void;
+  onContextMenu: (e: React.MouseEvent) => void;
 }
 
-export function useLongPress(options: UseLongPressOptions): UseLongPressResult {
+export function useLongPress(
+  callback: (e: React.PointerEvent) => void,
+  options: LongPressOptions = {}
+): LongPressHandlers {
   const {
-    delay = 500,
+    threshold = 500,
     moveThreshold = 10,
-    onLongPress,
-    onTap,
-    enabled = true,
+    onStart,
+    onCancel,
   } = options;
 
-  const [isPressed, setIsPressed] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const startXRef = useRef(0);
-  const startYRef = useRef(0);
-  const firedRef = useRef(false); // did long press fire this gesture?
-  const eventRef = useRef<React.TouchEvent | React.MouseEvent | null>(null);
+  const startPosRef = useRef<{ x: number; y: number } | null>(null);
+  const firedRef = useRef(false);
+  const eventRef = useRef<React.PointerEvent | null>(null);
 
-  // Cleanup timer on unmount
-  useEffect(() => {
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
+  const start = useCallback((e: React.PointerEvent) => {
+    firedRef.current = false;
+    startPosRef.current = { x: e.clientX, y: e.clientY };
+    eventRef.current = e;
+    onStart?.();
+
+    timerRef.current = setTimeout(() => {
+      if (startPosRef.current === null) return;
+      firedRef.current = true;
+      Haptics.tap();
+      callback(eventRef.current!);
+    }, threshold);
+  }, [callback, threshold, onStart]);
+
+  const cancel = useCallback(() => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    startPosRef.current = null;
+    if (!firedRef.current) onCancel?.();
+  }, [onCancel]);
+
+  const onPointerDown = useCallback((e: React.PointerEvent) => {
+    start(e);
+  }, [start]);
+
+  const onPointerUp = useCallback((e: React.PointerEvent) => {
+    cancel();
+  }, [cancel]);
+
+  const onPointerMove = useCallback((e: React.PointerEvent) => {
+    if (!startPosRef.current) return;
+    const dx = e.clientX - startPosRef.current.x;
+    const dy = e.clientY - startPosRef.current.y;
+    if (Math.sqrt(dx * dx + dy * dy) > moveThreshold) {
+      cancel();
+    }
+  }, [cancel, moveThreshold]);
+
+  const onPointerLeave = useCallback(() => {
+    cancel();
+  }, [cancel]);
+
+  // Предотвращаем нативное контекстное меню на мобильных
+  const onContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
   }, []);
 
-  const start = useCallback(
-    (e: React.TouchEvent | React.MouseEvent) => {
-      if (!enabled) return;
-
-      const { clientX, clientY } =
-        'touches' in e ? e.touches[0] : e;
-
-      startXRef.current = clientX;
-      startYRef.current = clientY;
-      firedRef.current = false;
-      eventRef.current = e;
-      setIsPressed(true);
-
-      timerRef.current = setTimeout(() => {
-        firedRef.current = true;
-        setIsPressed(false);
-        // Haptic feedback — navigator.vibrate is available on Android
-        if (typeof navigator !== 'undefined' && navigator.vibrate) {
-          navigator.vibrate(25);
-        }
-        onLongPress(eventRef.current!);
-      }, delay);
-    },
-    [enabled, delay, onLongPress],
-  );
-
-  const move = useCallback(
-    (e: React.TouchEvent | React.MouseEvent) => {
-      if (!enabled || !timerRef.current) return;
-
-      const { clientX, clientY } =
-        'touches' in e ? e.touches[0] : e;
-
-      const dx = Math.abs(clientX - startXRef.current);
-      const dy = Math.abs(clientY - startYRef.current);
-
-      if (dx > moveThreshold || dy > moveThreshold) {
-        // Movement too large — cancel long press
-        if (timerRef.current) {
-          clearTimeout(timerRef.current);
-          timerRef.current = null;
-        }
-        setIsPressed(false);
-      }
-    },
-    [enabled, moveThreshold],
-  );
-
-  const end = useCallback(
-    (e: React.TouchEvent | React.MouseEvent) => {
-      if (!enabled) return;
-
-      const wasFired = firedRef.current;
-
-      if (timerRef.current) {
-        clearTimeout(timerRef.current);
-        timerRef.current = null;
-      }
-      setIsPressed(false);
-
-      if (!wasFired && onTap) {
-        onTap(e);
-      }
-    },
-    [enabled, onTap],
-  );
-
-  const cancelContext = useCallback((e: React.MouseEvent) => {
-    // On mobile, long press triggers context menu — we want to suppress it
-    // so that our custom action sheet shows instead.
-    if (enabled) {
-      e.preventDefault();
-    }
-  }, [enabled]);
-
   return {
-    handlers: {
-      onTouchStart: start as (e: React.TouchEvent) => void,
-      onTouchMove: move as (e: React.TouchEvent) => void,
-      onTouchEnd: end as (e: React.TouchEvent) => void,
-      onMouseDown: start as (e: React.MouseEvent) => void,
-      onMouseMove: move as (e: React.MouseEvent) => void,
-      onMouseUp: end as (e: React.MouseEvent) => void,
-      onContextMenu: cancelContext,
-    },
-    isPressed,
+    onPointerDown,
+    onPointerUp,
+    onPointerMove,
+    onPointerLeave,
+    onContextMenu,
   };
 }

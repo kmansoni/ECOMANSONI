@@ -91,6 +91,8 @@ async function getOrCreateIdentityKeys(userId: string): Promise<{
   identityEcdsaKeyPair: CryptoKeyPair;
   signedPreKeyPair: CryptoKeyPair;
   isNew: boolean;
+  /** Present only when isNew=true — the server-ready public bundle for upsert */
+  serverBundle?: Awaited<ReturnType<typeof X3DH.generateFullIdentityBundle>>["serverBundle"];
 }> {
   const stored = localStorage.getItem(IK_STORAGE_KEY(userId));
   if (stored) {
@@ -100,6 +102,17 @@ async function getOrCreateIdentityKeys(userId: string): Promise<{
       const identityEcdhKeyPair = await X3DH.importEcdhKeyPair(s.ecdhPublic, s.ecdhPrivate);
       const identityEcdsaKeyPair = await X3DH.importEcdsaKeyPair(s.ecdsaPublic, s.ecdsaPrivate);
       const signedPreKeyPair = await X3DH.importEcdhKeyPair(s.spkPublic, s.spkPrivate);
+
+      // Security: decryptFromStorage returns the raw string as-is for legacy plaintext
+      // (no envelope "v"/"ct" fields).  If that happened, the private key material is
+      // still sitting in localStorage unencrypted.  Re-encrypt immediately so the
+      // obligation stated in localStorageCrypto.ts ("caller must re-encrypt on next write")
+      // is actually fulfilled here on the read path.
+      if (decrypted === stored) {
+        const reEncrypted = await encryptForStorage(stored);
+        localStorage.setItem(IK_STORAGE_KEY(userId), reEncrypted);
+      }
+
       return { identityEcdhKeyPair, identityEcdsaKeyPair, signedPreKeyPair, isNew: false };
     } catch {
       // Legacy plaintext storage or decryption failure — regenerate keys
@@ -107,7 +120,7 @@ async function getOrCreateIdentityKeys(userId: string): Promise<{
     }
   }
 
-  // Generate new bundle
+  // Generate new bundle — single authoritative call; keys are saved encrypted immediately
   const bundle = await X3DH.generateFullIdentityBundle(10);
   const ecdhExp = await X3DH.exportKeyPair(bundle.identityEcdhKeyPair);
   const ecdsaExp = await X3DH.exportKeyPair(bundle.identityEcdsaKeyPair);
@@ -122,14 +135,21 @@ async function getOrCreateIdentityKeys(userId: string): Promise<{
     spkPublic: spkExp.publicKey,
     spkSignature: bundle.serverBundle.signedPreKeySignature,
   };
+  // Encrypt before writing — private key material must never appear in localStorage plaintext
   const encrypted = await encryptForStorage(JSON.stringify(toStore));
   localStorage.setItem(IK_STORAGE_KEY(userId), encrypted);
+
+  // Zero exported private key strings to minimise in-memory exposure after storage
+  ecdhExp.privateKey = "";
+  ecdsaExp.privateKey = "";
+  spkExp.privateKey = "";
 
   return {
     identityEcdhKeyPair: bundle.identityEcdhKeyPair,
     identityEcdsaKeyPair: bundle.identityEcdsaKeyPair,
     signedPreKeyPair: bundle.signedPreKeyPair,
     isNew: true,
+    serverBundle: bundle.serverBundle,
   };
 }
 
@@ -245,39 +265,31 @@ export function useSecretChat(conversationId: string | null) {
    */
   const registerPreKeyBundle = useCallback(async () => {
     if (!user) return { error: "not_authenticated" };
-    const { isNew, identityEcdhKeyPair, identityEcdsaKeyPair, signedPreKeyPair } =
-      await getOrCreateIdentityKeys(user.id);
 
+    // getOrCreateIdentityKeys either loads existing keys (isNew=false) or generates a
+    // new bundle, saves it AES-GCM-encrypted, and returns serverBundle (isNew=true).
+    // We must NOT call generateFullIdentityBundle() again — that would create different
+    // key material, overwriting the freshly-stored encrypted blob with unrelated keys.
+    const { isNew, serverBundle } = await getOrCreateIdentityKeys(user.id);
+
+    // Keys already existed and are registered — nothing to do
     if (!isNew) return { ok: true, skipped: true };
 
-    const bundle = await X3DH.generateFullIdentityBundle(10);
+    // serverBundle is guaranteed present when isNew=true (see getOrCreateIdentityKeys)
+    if (!serverBundle) return { error: "bundle_missing_after_keygen" };
 
-    // Upsert to server
+    // Upsert public key material only — private keys remain in encrypted localStorage
     const { error } = await (supabase as any)
       .from("user_prekey_bundles")
       .upsert({
         user_id: user.id,
-        identity_key_public: bundle.serverBundle.identityKeyPublic,
-        identity_signing_public: bundle.serverBundle.identitySigningPublic,
-        signed_prekey_public: bundle.serverBundle.signedPreKeyPublic,
-        signed_prekey_signature: bundle.serverBundle.signedPreKeySignature,
-        one_time_prekeys: bundle.serverBundle.oneTimePreKeyPublics,
+        identity_key_public: serverBundle.identityKeyPublic,
+        identity_signing_public: serverBundle.identitySigningPublic,
+        signed_prekey_public: serverBundle.signedPreKeyPublic,
+        signed_prekey_signature: serverBundle.signedPreKeySignature,
+        one_time_prekeys: serverBundle.oneTimePreKeyPublics,
         signed_prekey_created_at: new Date().toISOString(),
       });
-
-    // Overwrite local keys with this new bundle
-    const ecdhExp = await X3DH.exportKeyPair(bundle.identityEcdhKeyPair);
-    const ecdsaExp = await X3DH.exportKeyPair(bundle.identityEcdsaKeyPair);
-    const spkExp = await X3DH.exportKeyPair(bundle.signedPreKeyPair);
-    localStorage.setItem(IK_STORAGE_KEY(user.id), JSON.stringify({
-      ecdhPrivate: ecdhExp.privateKey,
-      ecdhPublic: ecdhExp.publicKey,
-      ecdsaPrivate: ecdsaExp.privateKey,
-      ecdsaPublic: ecdsaExp.publicKey,
-      spkPrivate: spkExp.privateKey,
-      spkPublic: spkExp.publicKey,
-      spkSignature: bundle.serverBundle.signedPreKeySignature,
-    } satisfies StoredIdentityKeys));
 
     return error ? { error: error.message } : { ok: true };
   }, [user]);

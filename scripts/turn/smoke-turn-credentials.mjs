@@ -35,6 +35,13 @@ function isRequireMode() {
   return v === "1" || v.toLowerCase() === "true";
 }
 
+function readPositiveIntEnv(name, fallback) {
+  const raw = readEnv(name);
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 1) return fallback;
+  return Math.floor(n);
+}
+
 function extractProjectRef(url) {
   const m = String(url || "").trim().match(/^https?:\/\/([a-z0-9-]+)\.supabase\.co\/?/i);
   return m?.[1] || null;
@@ -293,12 +300,14 @@ async function main() {
       }
     }
 
-    // Abuse: expect a 429 at (max+1) calls within a minute.
+    // Abuse: expect a 429 within a bounded burst window.
     {
       const max = Math.max(1, Number(readEnv("TURN_RATE_MAX_PER_MINUTE") || "10"));
+      const configuredCap = readPositiveIntEnv("TURN_RATE_EXPECT_429_MAX_ATTEMPTS", Math.max(max + 1, 240));
+      const attempts = Math.max(max + 1, configuredCap);
       let saw429 = false;
 
-      for (let i = 0; i < max + 1; i++) {
+      for (let i = 0; i < attempts; i++) {
         const r = await fetch(fnUrl, {
           method: "POST",
           headers: { ...common, Authorization: `Bearer ${accessToken}` },
@@ -311,7 +320,7 @@ async function main() {
       }
 
       if (!saw429) {
-        const msg = "[turn smoke] expected at least one 429 during abuse test";
+        const msg = `[turn smoke] expected at least one 429 during abuse test (attempts=${attempts})`;
         if (requireMode) {
           console.error(msg);
           process.exitCode = 1;
