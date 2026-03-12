@@ -13,6 +13,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { X3DH } from '../lib/e2ee/x3dh';
 import { safeEqualBytes } from '../lib/e2ee/constantTime';
 import { DoubleRatchet, DoubleRatchetE2E, type RatchetState, type RatchetHeader } from '../lib/e2ee/doubleRatchet';
+import { fromBase64, toBase64 } from '../lib/e2ee/utils';
 
 describe('E2EE Security Edge Cases', () => {
   const initialSecret = new Uint8Array(32);
@@ -666,8 +667,8 @@ describe('E2EE Security Edge Cases', () => {
       expect(user2.sendingRatchetKey).toBeTruthy();
       expect(user3.sendingRatchetKey).toBeTruthy();
 
-      // NOTE: Полноценный group chat требует реализации Sender Keys
-      // Это симуляция базовой работоспособности
+      // NOTE: Sender Keys уже реализованы отдельно.
+      // Эта проверка остаётся базовой симуляцией изолированного ratchet-состояния.
     });
   });
 
@@ -801,12 +802,13 @@ describe('E2EE Security Edge Cases', () => {
       const { ciphertext } = await DoubleRatchetE2E.encrypt(aliceState, 'message');
 
       // Tamper with ciphertext
-      const tamperedCiphertext = new Uint8Array(ciphertext);
+      const tamperedCiphertext = fromBase64(ciphertext);
       tamperedCiphertext[0] = tamperedCiphertext[0] ^ 0xFF;
+      const tamperedCiphertextB64 = toBase64(tamperedCiphertext);
 
       // Should reject tampered ciphertext
       await expect(
-        DoubleRatchet.decrypt(bobState, tamperedCiphertext, { publicKey: '', previousChainLength: 0, messageNumber: 0 })
+        DoubleRatchet.decrypt(bobState, tamperedCiphertextB64, { publicKey: '', previousChainLength: 0, messageNumber: 0 })
       ).rejects.toThrow();
     });
 

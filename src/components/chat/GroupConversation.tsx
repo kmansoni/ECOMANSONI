@@ -27,6 +27,7 @@ import { useChatOpen } from "@/contexts/ChatOpenContext";
 import { supabase } from "@/lib/supabase";
 import { GradientAvatar } from "@/components/ui/gradient-avatar";
 import { InviteQrDialog } from "@/components/chat/InviteQrDialog";
+import { rotateGroupMembershipAfterRemoval } from "@/lib/e2ee/groupMembershipRotation";
 
 interface GroupConversationProps {
   group: GroupChat;
@@ -113,6 +114,10 @@ export function GroupConversation({ group, onBack, onLeave }: GroupConversationP
         .eq("group_id", group.id)
         .eq("user_id", user?.id);
       if (error) throw error;
+
+      // Best-effort E2EE rekey after membership change.
+      await rotateGroupMembershipAfterRemoval(group.id, user?.id);
+
       toast.success("Вы покинули группу");
       onLeave?.();
       onBack();
