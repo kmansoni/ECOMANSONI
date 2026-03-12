@@ -17,8 +17,22 @@ interface ImportMetaEnv {
   // Livestream Gateway
   readonly VITE_LIVESTREAM_GATEWAY_URL: string;
   readonly VITE_LIVEKIT_PUBLIC_URL: string;
+  readonly VITE_APP_NAME?: string;
+  readonly VITE_APP_VERSION?: string;
+  readonly VITE_APP_COMMIT_SHA?: string;
+  readonly VITE_APP_BUILD_TIME?: string;
 }
 
 interface ImportMeta {
   readonly env: ImportMetaEnv;
+}
+
+interface Window {
+  __APP_BUILD__?: {
+    name: string;
+    version: string;
+    commit: string;
+    buildTime: string;
+    mode: string;
+  };
 }

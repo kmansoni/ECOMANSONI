@@ -14,6 +14,8 @@ interface ImportMetaEnv {
   // App Configuration
   readonly VITE_APP_NAME?: string;
   readonly VITE_APP_VERSION?: string;
+  readonly VITE_APP_COMMIT_SHA?: string;
+  readonly VITE_APP_BUILD_TIME?: string;
   readonly MODE: 'development' | 'production';
   readonly DEV: boolean;
   readonly PROD: boolean;
@@ -39,6 +41,8 @@ export const ENV = {
   // App Configuration
   appName: import.meta.env.VITE_APP_NAME || 'ECOMANSONI',
   appVersion: import.meta.env.VITE_APP_VERSION || '0.0.0',
+  appCommitSha: (import.meta as any).env?.VITE_APP_COMMIT_SHA || 'unknown',
+  appBuildTime: (import.meta as any).env?.VITE_APP_BUILD_TIME || 'unknown',
   isDevelopment: import.meta.env.DEV,
   isProduction: import.meta.env.PROD,
   mode: import.meta.env.MODE,
@@ -89,6 +93,9 @@ export function logEnvironment(): void {
   console.log('Phone Auth Function:', ENV.phoneAuthFunctionUrl || '(derived)');
   console.log('Supabase URL:', ENV.supabaseUrl);
   console.log('Environment:', ENV.mode);
+  console.log('App version:', ENV.appVersion);
+  console.log('App commit:', ENV.appCommitSha);
+  console.log('Build time:', ENV.appBuildTime);
   console.log('Development:', ENV.isDevelopment);
   console.groupEnd();
 }

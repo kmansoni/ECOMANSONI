@@ -6,6 +6,7 @@ import { initTelegramMiniApp } from "@/lib/telegramWebApp";
 import { initIceCacheAutoInvalidation } from "@/lib/webrtc-config";
 import { detectDevice } from "@/lib/platform/device";
 import { applyPlatformAttributes } from "@/hooks/usePlatform";
+import { ENV } from "@/lib/env";
 
 const CHUNK_RELOAD_ONCE_KEY = "app.chunk_reload_once";
 
@@ -72,6 +73,22 @@ window.addEventListener("vite:preloadError", (event: Event) => {
   const detail = customEvent.detail as { payload?: unknown; error?: unknown } | undefined;
   reloadOnChunkFailureOnce(detail?.payload || detail?.error || detail);
 });
+
+window.__APP_BUILD__ = {
+  name: ENV.appName,
+  version: ENV.appVersion,
+  commit: ENV.appCommitSha,
+  buildTime: ENV.appBuildTime,
+  mode: ENV.mode,
+};
+
+console.info(
+  "[build]",
+  `${window.__APP_BUILD__.name} v${window.__APP_BUILD__.version}`,
+  `commit=${window.__APP_BUILD__.commit}`,
+  `built=${window.__APP_BUILD__.buildTime}`,
+  `mode=${window.__APP_BUILD__.mode}`
+);
 
 createRoot(document.getElementById("root")!).render(
   <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
