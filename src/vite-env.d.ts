@@ -17,6 +17,7 @@ interface ImportMetaEnv {
   // Livestream Gateway
   readonly VITE_LIVESTREAM_GATEWAY_URL: string;
   readonly VITE_LIVEKIT_PUBLIC_URL: string;
+  readonly VITE_E2EE_REQUIRE_WEBAUTHN?: string;
   readonly VITE_APP_NAME?: string;
   readonly VITE_APP_VERSION?: string;
   readonly VITE_APP_COMMIT_SHA?: string;

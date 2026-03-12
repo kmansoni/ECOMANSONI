@@ -40,6 +40,7 @@ import { X3DH, type PreKeyBundle } from "@/lib/e2ee/x3dh";
 import { DoubleRatchetE2E, type RatchetState, type RatchetHeader } from "@/lib/e2ee/doubleRatchet";
 import { toBase64, fromBase64 } from "@/lib/e2ee/utils";
 import { encryptForStorage, decryptFromStorage } from "@/auth/localStorageCrypto";
+import { isWebAuthnPRFSupported, loadWebAuthnRecord } from "@/lib/e2ee/webAuthnBinding";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -79,6 +80,7 @@ const DR_STATE_KEY = (userId: string, convId: string) => `dr_state_${userId}_${c
 // Secret chat encrypted blob storage (IndexedDB)
 const SECRET_CHAT_DB = "secret-chat-e2ee-v1";
 const SECRET_CHAT_STORE = "kv";
+const REQUIRE_WEBAUTHN_IN_PROD = ((import.meta as any).env?.VITE_E2EE_REQUIRE_WEBAUTHN ?? "true") === "true";
 
 function openSecretChatDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -165,6 +167,23 @@ async function deleteSecretBlob(id: string): Promise<void> {
   }
 }
 
+async function assertHardwareBackedSecretChatReady(userId: string): Promise<void> {
+  if (!import.meta.env.PROD || !REQUIRE_WEBAUTHN_IN_PROD) return;
+
+  if (!isWebAuthnPRFSupported()) {
+    throw new Error(
+      "Secret Chat blocked in production: WebAuthn PRF is required on this device/browser."
+    );
+  }
+
+  const record = await loadWebAuthnRecord(userId);
+  if (!record) {
+    throw new Error(
+      "Secret Chat blocked in production: no WebAuthn key binding found. Please enable WebAuthn first."
+    );
+  }
+}
+
 // ── Identity key management ────────────────────────────────────────────────
 
 interface StoredIdentityKeys {
@@ -187,6 +206,8 @@ async function getOrCreateIdentityKeys(userId: string): Promise<{
   /** Present only when isNew=true — the server-ready public bundle for upsert */
   serverBundle?: Awaited<ReturnType<typeof X3DH.generateFullIdentityBundle>>["serverBundle"];
 }> {
+  await assertHardwareBackedSecretChatReady(userId);
+
   const stored = await readSecretBlob(IK_STORAGE_KEY(userId));
   if (stored) {
     try {
