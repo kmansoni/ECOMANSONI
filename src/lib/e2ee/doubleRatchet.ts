@@ -316,6 +316,16 @@ export class DoubleRatchet {
     ciphertext: string,
     header: RatchetHeader
   ): Promise<string> {
+    if (!Number.isSafeInteger(header.messageNumber)) {
+      throw new Error('DoubleRatchet: unsafe messageNumber');
+    }
+    if (header.messageNumber < 0) {
+      throw new Error('DoubleRatchet: negative messageNumber');
+    }
+    if (header.messageNumber > Number.MAX_SAFE_INTEGER - 1) {
+      throw new Error('DoubleRatchet: messageNumber overflow');
+    }
+
     // 1. Check skipped message keys
     const skipKey = `${header.publicKey}:${header.messageNumber}`;
     const skippedMsgKey = state.skippedMessageKeys.get(skipKey);

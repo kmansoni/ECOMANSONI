@@ -7,6 +7,7 @@
 
 import { generateIdentityKeyPair, exportPublicKey } from './crypto';
 import { toBase64, fromBase64 } from './utils';
+import { authenticateWithBiometric } from './biometricUnlock';
 
 // ─── Типы ────────────────────────────────────────────────────────────────────
 
@@ -461,5 +462,374 @@ export class E2EEKeyStore {
       this.db.close();
       this.db = null;
     }
+  }
+}
+
+export interface SecureKeyStoreConfig {
+  dbName?: string;
+  keyStoreName?: string;
+  metaStoreName?: string;
+  autoLockMs?: number;
+}
+
+export interface SecureWrappedKeyRecord {
+  id: string;
+  type: 'identity' | 'session' | 'group' | 'master';
+  format: KeyFormat;
+  wrappedKey: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+interface SecureMetaRecord {
+  id: string;
+  value: string;
+}
+
+/**
+ * SecureKeyStore - IndexedDB with AES-KW encryption-at-rest.
+ *
+ * - Master key: PBKDF2(passphrase + device fingerprint, 600k rounds, 32-byte salt)
+ * - All keys at rest are wrapped via AES-KW
+ * - Auto-lock after inactivity
+ * - WebAuthn biometric gate for unlock flow
+ */
+export class SecureKeyStore {
+  private db: IDBDatabase | null = null;
+  private initPromise: Promise<void> | null = null;
+  private masterKey: CryptoKey | null = null;
+  private lastActivity = 0;
+  private autoLockTimer: ReturnType<typeof setInterval> | null = null;
+  private useMemoryFallback = false;
+  private readonly memoryWrapped = new Map<string, SecureWrappedKeyRecord>();
+  private readonly memoryMeta = new Map<string, string>();
+
+  private readonly dbName: string;
+  private readonly keyStoreName: string;
+  private readonly metaStoreName: string;
+  private readonly autoLockMs: number;
+
+  constructor(config: SecureKeyStoreConfig = {}) {
+    this.dbName = config.dbName ?? 'e2ee-secure-keystore-v1';
+    this.keyStoreName = config.keyStoreName ?? 'wrapped_keys';
+    this.metaStoreName = config.metaStoreName ?? 'meta';
+    this.autoLockMs = config.autoLockMs ?? 5 * 60 * 1000;
+  }
+
+  async init(): Promise<void> {
+    if (!this.initPromise) {
+      this.initPromise = this.openDb().catch(() => {
+        this.useMemoryFallback = true;
+      });
+    }
+    return this.initPromise;
+  }
+
+  async unlockWithPassphrase(passphrase: string, deviceFingerprint = 'web-default-device'): Promise<void> {
+    await this.init();
+
+    let saltB64 = await this.getMeta('salt');
+    if (!saltB64) {
+      const salt = new Uint8Array(32);
+      crypto.getRandomValues(salt);
+      saltB64 = toBase64(salt.buffer as ArrayBuffer);
+      await this.setMeta('salt', saltB64);
+    }
+
+    const derived = await this.deriveMasterKey(passphrase, deviceFingerprint, fromBase64(saltB64));
+    this.masterKey = derived;
+    this.touchActivity();
+    this.ensureAutoLockTimer();
+  }
+
+  async unlockWithBiometric(
+    getPassphrase: () => Promise<string>,
+    deviceFingerprint = 'web-default-device',
+    timeoutMs = 30_000,
+  ): Promise<boolean> {
+    await this.init();
+
+    const credIdB64 = await this.getMeta('webauthn_credential_id');
+    const credId = credIdB64 ? fromBase64(credIdB64) : undefined;
+    const auth = await authenticateWithBiometric(credId, { timeoutMs, userVerification: 'required' });
+    if (!auth.ok) return false;
+
+    const passphrase = await getPassphrase();
+    await this.unlockWithPassphrase(passphrase, deviceFingerprint);
+    return true;
+  }
+
+  async registerBiometricCredential(userId: string): Promise<boolean> {
+    await this.init();
+    if (typeof navigator === 'undefined' || !navigator.credentials || typeof PublicKeyCredential === 'undefined') {
+      return false;
+    }
+
+    const challenge = new Uint8Array(32);
+    crypto.getRandomValues(challenge);
+
+    const userBytes = new TextEncoder().encode(userId);
+    const publicKey: PublicKeyCredentialCreationOptions = {
+      challenge,
+      rp: { name: 'Mansoni E2EE' },
+      user: {
+        id: userBytes,
+        name: userId,
+        displayName: userId,
+      },
+      pubKeyCredParams: [{ type: 'public-key', alg: -7 }],
+      timeout: 30_000,
+      authenticatorSelection: {
+        userVerification: 'required',
+        residentKey: 'preferred',
+      },
+    };
+
+    const created = await navigator.credentials.create({ publicKey }).catch(() => null);
+    if (!created) return false;
+
+    const credential = created as PublicKeyCredential;
+    await this.setMeta('webauthn_credential_id', toBase64(credential.rawId));
+    return true;
+  }
+
+  lock(): void {
+    this.masterKey = null;
+    this.lastActivity = 0;
+  }
+
+  isLocked(): boolean {
+    return this.masterKey === null;
+  }
+
+  async storeWrappedKey(
+    id: string,
+    key: CryptoKey,
+    format: KeyFormat,
+    type: SecureWrappedKeyRecord['type'],
+  ): Promise<void> {
+    await this.ensureUnlocked();
+
+    const wrapped = await crypto.subtle.wrapKey(
+      format,
+      key,
+      this.masterKey!,
+      'AES-KW',
+    );
+
+    const now = Date.now();
+    const record: SecureWrappedKeyRecord = {
+      id,
+      type,
+      format,
+      wrappedKey: toBase64(wrapped),
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    if (this.useMemoryFallback) {
+      this.memoryWrapped.set(id, record);
+      this.touchActivity();
+      return;
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      const tx = this.db!.transaction(this.keyStoreName, 'readwrite');
+      const store = tx.objectStore(this.keyStoreName);
+      const req = store.put(record);
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    });
+
+    this.touchActivity();
+  }
+
+  async unwrapKey(
+    id: string,
+    algorithm: AlgorithmIdentifier | RsaHashedImportParams | EcKeyImportParams | AesKeyAlgorithm,
+    extractable: boolean,
+    keyUsages: KeyUsage[],
+  ): Promise<CryptoKey | null> {
+    await this.ensureUnlocked();
+
+    const record = await this.getWrappedKeyRecord(id);
+    if (!record) return null;
+
+    const key = await crypto.subtle.unwrapKey(
+      record.format,
+      fromBase64(record.wrappedKey),
+      this.masterKey!,
+      'AES-KW',
+      algorithm,
+      extractable,
+      keyUsages,
+    );
+
+    this.touchActivity();
+    return key;
+  }
+
+  async deleteWrappedKey(id: string): Promise<void> {
+    await this.init();
+    if (this.useMemoryFallback) {
+      this.memoryWrapped.delete(id);
+      return;
+    }
+    await new Promise<void>((resolve, reject) => {
+      const tx = this.db!.transaction(this.keyStoreName, 'readwrite');
+      const store = tx.objectStore(this.keyStoreName);
+      const req = store.delete(id);
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  async clearAll(): Promise<void> {
+    await this.init();
+    if (this.useMemoryFallback) {
+      this.memoryWrapped.clear();
+      this.memoryMeta.clear();
+      this.lock();
+      return;
+    }
+    await new Promise<void>((resolve, reject) => {
+      const tx = this.db!.transaction([this.keyStoreName, this.metaStoreName], 'readwrite');
+      const keyStore = tx.objectStore(this.keyStoreName);
+      const metaStore = tx.objectStore(this.metaStoreName);
+      keyStore.clear();
+      metaStore.clear();
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    this.lock();
+  }
+
+  close(): void {
+    if (this.autoLockTimer !== null) {
+      clearInterval(this.autoLockTimer);
+      this.autoLockTimer = null;
+    }
+    if (this.db) {
+      this.db.close();
+      this.db = null;
+    }
+    this.masterKey = null;
+    this.initPromise = null;
+  }
+
+  private async deriveMasterKey(passphrase: string, deviceFingerprint: string, salt: ArrayBuffer): Promise<CryptoKey> {
+    const material = new TextEncoder().encode(`${passphrase}:${deviceFingerprint}`);
+    const passphraseKey = await crypto.subtle.importKey('raw', material, 'PBKDF2', false, ['deriveKey']);
+
+    return crypto.subtle.deriveKey(
+      {
+        name: 'PBKDF2',
+        salt,
+        iterations: 600_000,
+        hash: 'SHA-256',
+      },
+      passphraseKey,
+      { name: 'AES-KW', length: 256 },
+      false,
+      ['wrapKey', 'unwrapKey'],
+    );
+  }
+
+  private touchActivity(): void {
+    this.lastActivity = Date.now();
+  }
+
+  private ensureAutoLockTimer(): void {
+    if (this.autoLockTimer !== null) return;
+    this.autoLockTimer = setInterval(() => {
+      if (this.masterKey && Date.now() - this.lastActivity >= this.autoLockMs) {
+        this.lock();
+      }
+    }, 5_000);
+  }
+
+  private async ensureUnlocked(): Promise<void> {
+    await this.init();
+    if (!this.masterKey) {
+      throw new Error('SecureKeyStore is locked');
+    }
+    if (Date.now() - this.lastActivity >= this.autoLockMs) {
+      this.lock();
+      throw new Error('SecureKeyStore auto-locked due to inactivity');
+    }
+    this.touchActivity();
+  }
+
+  private async getWrappedKeyRecord(id: string): Promise<SecureWrappedKeyRecord | null> {
+    await this.init();
+    if (this.useMemoryFallback) {
+      return this.memoryWrapped.get(id) ?? null;
+    }
+    return new Promise((resolve, reject) => {
+      const tx = this.db!.transaction(this.keyStoreName, 'readonly');
+      const store = tx.objectStore(this.keyStoreName);
+      const req = store.get(id);
+      req.onsuccess = () => resolve((req.result as SecureWrappedKeyRecord | undefined) ?? null);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  private async getMeta(id: string): Promise<string | null> {
+    await this.init();
+    if (this.useMemoryFallback) {
+      return this.memoryMeta.get(id) ?? null;
+    }
+    return new Promise((resolve, reject) => {
+      const tx = this.db!.transaction(this.metaStoreName, 'readonly');
+      const store = tx.objectStore(this.metaStoreName);
+      const req = store.get(id);
+      req.onsuccess = () => {
+        const row = req.result as SecureMetaRecord | undefined;
+        resolve(row?.value ?? null);
+      };
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  private async setMeta(id: string, value: string): Promise<void> {
+    await this.init();
+    if (this.useMemoryFallback) {
+      this.memoryMeta.set(id, value);
+      return;
+    }
+    await new Promise<void>((resolve, reject) => {
+      const tx = this.db!.transaction(this.metaStoreName, 'readwrite');
+      const store = tx.objectStore(this.metaStoreName);
+      const req = store.put({ id, value } as SecureMetaRecord);
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  private openDb(): Promise<void> {
+    if (typeof indexedDB === 'undefined') {
+      return Promise.reject(new Error('IndexedDB unavailable'));
+    }
+
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open(this.dbName, 1);
+
+      request.onupgradeneeded = () => {
+        const db = request.result;
+        if (!db.objectStoreNames.contains(this.keyStoreName)) {
+          db.createObjectStore(this.keyStoreName, { keyPath: 'id' });
+        }
+        if (!db.objectStoreNames.contains(this.metaStoreName)) {
+          db.createObjectStore(this.metaStoreName, { keyPath: 'id' });
+        }
+      };
+
+      request.onsuccess = () => {
+        this.db = request.result;
+        resolve();
+      };
+      request.onerror = () => reject(request.error);
+      request.onblocked = () => reject(new Error('IndexedDB blocked'));
+    });
   }
 }

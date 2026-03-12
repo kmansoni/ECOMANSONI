@@ -265,7 +265,8 @@ export async function generateSenderKey(
     ['sign', 'verify'],
   );
 
-  const keyId = (Date.now() & 0xffffffff) >>> 0; // 32-bit timestamp as key ID
+  const sigPubRaw = await crypto.subtle.exportKey('spki', signingKeyPair.publicKey);
+  const keyId = await deriveSenderKeyId(new Uint8Array(sigPubRaw));
 
   const state: SenderKeyState = {
     conversationId,
@@ -280,6 +281,20 @@ export async function generateSenderKey(
   _senderKeyStore.set(_storeKey(conversationId, senderId, keyId), state);
   await _persistState(state);
   return state;
+}
+
+/**
+ * Sender key ID = SHA-256(first 8 bytes of sender public key), truncated to uint32.
+ */
+export async function deriveSenderKeyId(senderPublicKeyBytes: Uint8Array): Promise<number> {
+  // SPKI has ASN.1 prefix; derive from actual EC public point bytes instead.
+  const keyMaterial = senderPublicKeyBytes.length > 65
+    ? senderPublicKeyBytes.slice(senderPublicKeyBytes.length - 65)
+    : senderPublicKeyBytes;
+  const firstEight = keyMaterial.slice(0, 8);
+  const digest = await crypto.subtle.digest('SHA-256', firstEight);
+  const view = new DataView(digest);
+  return view.getUint32(0, false);
 }
 
 function _storeKey(conversationId: string, senderId: string, keyId: number): string {
@@ -510,6 +525,56 @@ export async function rotateSenderKey(
   senderId: string,
 ): Promise<SenderKeyState> {
   return generateSenderKey(conversationId, senderId);
+}
+
+/**
+ * Distribute current sender key to participants through provided encrypt callback.
+ */
+export async function distributeSenderKey(
+  groupId: string,
+  participants: string[],
+  senderId: string,
+  encryptForRecipient: (recipientId: string, payload: string) => Promise<string>,
+): Promise<Array<{ recipientId: string; encryptedPayload: string }>> {
+  const state = await getOrLoadSenderKeyState(groupId, senderId) ?? await generateSenderKey(groupId, senderId);
+  const message = await buildSenderKeyMessage(state);
+  const payload = JSON.stringify(message);
+
+  const deliveries: Array<{ recipientId: string; encryptedPayload: string }> = [];
+  for (const recipientId of participants) {
+    if (recipientId === senderId) continue;
+    const encryptedPayload = await encryptForRecipient(recipientId, payload);
+    deliveries.push({ recipientId, encryptedPayload });
+  }
+  return deliveries;
+}
+
+/**
+ * Compatibility API requested by security hardening plan.
+ */
+export async function encryptSenderKeyMessage(
+  plaintext: Uint8Array,
+  senderKeyId: number,
+): Promise<EncryptedGroupMessage> {
+  const state = Array.from(_senderKeyStore.values()).find((s) => s.keyId === senderKeyId);
+  if (!state) {
+    throw new Error(`Sender key id ${senderKeyId} not found`);
+  }
+  return encryptGroupMessage(state.conversationId, state.senderId, plaintext);
+}
+
+/**
+ * Rotate sender key after membership change and optionally tag excluded member.
+ */
+export async function rotateSenderKeyOnMemberLeave(
+  groupId: string,
+  senderId: string,
+  excludeMemberId: string,
+): Promise<SenderKeyState> {
+  const next = await generateSenderKey(groupId, senderId);
+  // Marker for audit/integration hooks; distribution layer may use it.
+  void excludeMemberId;
+  return next;
 }
 
 /**
