@@ -602,6 +602,21 @@
 				"-SkipE2EEGuard"
 			],
 			"isBackground": false
+		},
+		{
+			"label": "Verify invite functions via API",
+			"type": "shell",
+			"command": "pwsh",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				"c:\\Users\\manso\\Desktop\\разработка\\your-ai-companion-main\\scripts\\apply-migration-via-api.ps1",
+				"-MigrationFile",
+				"c:\\Users\\manso\\Desktop\\разработка\\your-ai-companion-main\\scripts\\.temp\\verify-invite-functions.sql"
+			],
+			"isBackground": false
 		}
 	]
 }

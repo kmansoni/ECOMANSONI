@@ -269,4 +269,3 @@ export function __resetForTesting(): void {
   _initialized = false;
   _pendingWrite = null;
 }
-

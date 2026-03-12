@@ -58,6 +58,7 @@ export class SfuMediaManager {
       iceParameters: mediasoupTypes.IceParameters;
       iceCandidates: mediasoupTypes.IceCandidate[];
       dtlsParameters: mediasoupTypes.DtlsParameters;
+      iceServers?: RTCIceServer[];
     },
     onConnect: (dtlsParameters: mediasoupTypes.DtlsParameters) => Promise<void>,
     onProduce: (params: {
@@ -71,6 +72,7 @@ export class SfuMediaManager {
       iceParameters: options.iceParameters,
       iceCandidates: options.iceCandidates,
       dtlsParameters: options.dtlsParameters,
+      ...(options.iceServers && options.iceServers.length > 0 ? { iceServers: options.iceServers } : {}),
     });
 
     this.sendTransport.on('connect', ({ dtlsParameters }, callback, errback) => {
@@ -106,6 +108,7 @@ export class SfuMediaManager {
       iceParameters: mediasoupTypes.IceParameters;
       iceCandidates: mediasoupTypes.IceCandidate[];
       dtlsParameters: mediasoupTypes.DtlsParameters;
+      iceServers?: RTCIceServer[];
     },
     onConnect: (dtlsParameters: mediasoupTypes.DtlsParameters) => Promise<void>
   ): mediasoupTypes.Transport {
@@ -114,6 +117,7 @@ export class SfuMediaManager {
       iceParameters: options.iceParameters,
       iceCandidates: options.iceCandidates,
       dtlsParameters: options.dtlsParameters,
+      ...(options.iceServers && options.iceServers.length > 0 ? { iceServers: options.iceServers } : {}),
     });
 
     this.recvTransport.on('connect', ({ dtlsParameters }, callback, errback) => {

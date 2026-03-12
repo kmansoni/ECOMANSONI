@@ -88,6 +88,8 @@ const ShopDiscoveryPage = lazy(() => import("@/pages/ShopDiscoveryPage"));
 const ContentPreferencesPage = lazy(() => import("@/pages/ContentPreferencesPage"));
 const ARFilterGalleryPage = lazy(() => import("@/pages/ARFilterGalleryPage"));
 const CreatorFundPage = lazy(() => import("@/pages/CreatorFundPage"));
+const CreatorSubscriptionsPage = lazy(() => import("@/pages/CreatorSubscriptionsPage"));
+const StoryArchivePage = lazy(() => import("@/pages/StoryArchivePage"));
 const ExploreFeedPage = lazy(() => import("@/pages/ExploreFeedPage").then(m => ({ default: m.ExploreFeedPage })));
 const PostDetailPage = lazy(() => import("@/pages/PostDetailPage").then(m => ({ default: m.PostDetailPage })));
 const AuthPage = lazy(() => import("@/pages/AuthPage").then(m => ({ default: m.AuthPage })));
@@ -96,6 +98,9 @@ const DevPanelPage = lazy(() => import("@/pages/DevPanelPage"));
 const SettingsPage = lazy(() => import("@/pages/SettingsPage").then(m => ({ default: m.SettingsPage })));
 const CRMPage = lazy(() => import("@/pages/CRMPage").then(m => ({ default: m.CRMPage })));
 const CRMDashboard = lazy(() => import("@/pages/CRMDashboard").then(m => ({ default: m.CRMDashboard })));
+const CRMHRDashboard = lazy(() => import("@/pages/CRMHRDashboard").then(m => ({ default: m.CRMHRDashboard })));
+const CRMAutoDashboard = lazy(() => import("@/pages/CRMAutoDashboard").then(m => ({ default: m.CRMAutoDashboard })));
+const CRMRealEstateDashboard = lazy(() => import("@/pages/CRMRealEstateDashboard").then(m => ({ default: m.CRMRealEstateDashboard })));
 const EmailPage = lazy(() => import("@/pages/EmailPage").then(m => ({ default: m.EmailPage })));
 const EmailSettingsPage = lazy(() => import("@/pages/EmailSettingsPage").then(m => ({ default: m.EmailSettingsPage })));
 const CommandPalette = lazy(() => import("@/components/CommandPalette").then(m => ({ default: m.CommandPalette })));
@@ -466,6 +471,21 @@ const App = () => {
                         <CreatorFundPage />
                       </Suspense>
                     } />
+                    <Route path="/creator-subscriptions" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <CreatorSubscriptionsPage />
+                      </Suspense>
+                    } />
+                    <Route path="/creator-subscriptions/:creatorId" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <CreatorSubscriptionsPage />
+                      </Suspense>
+                    } />
+                    <Route path="/story-archive" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <StoryArchivePage />
+                      </Suspense>
+                    } />
                     <Route path="/settings" element={
                       <Suspense fallback={<PageLoader />}>
                         <SettingsPage />
@@ -656,6 +676,21 @@ const App = () => {
                     <Route path="/crm/dashboard" element={
                       <Suspense fallback={<PageLoader />}>
                         <CRMDashboard />
+                      </Suspense>
+                    } />
+                    <Route path="/crm/hr" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <CRMHRDashboard />
+                      </Suspense>
+                    } />
+                    <Route path="/crm/auto" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <CRMAutoDashboard />
+                      </Suspense>
+                    } />
+                    <Route path="/crm/realestate" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <CRMRealEstateDashboard />
                       </Suspense>
                     } />
                     <Route path="/email/settings" element={

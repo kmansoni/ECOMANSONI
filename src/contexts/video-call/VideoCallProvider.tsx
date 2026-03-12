@@ -62,7 +62,10 @@ import type {
 } from "./types";
 
 // ─── Environment constants ─────────────────────────────────────────────────────
-const CALLS_V2_ENABLED = import.meta.env.VITE_CALLS_V2_ENABLED === "true";
+const CALLS_V2_ENABLED_RAW = String(import.meta.env.VITE_CALLS_V2_ENABLED ?? "").trim().toLowerCase();
+// Fail-safe default: calls are enabled unless explicitly disabled.
+// This prevents accidental outages when deploy env injection omits VITE_CALLS_V2_ENABLED.
+const CALLS_V2_ENABLED = CALLS_V2_ENABLED_RAW === "" ? true : CALLS_V2_ENABLED_RAW === "true";
 const CALLS_V2_WS_URL = (import.meta.env.VITE_CALLS_V2_WS_URL ?? "").trim();
 /** URL Edge Function get-turn-credentials. Если задан — используется вместо встроенного turn-credentials. */
 const TURN_CREDENTIALS_EDGE_FN = "get-turn-credentials";
@@ -127,7 +130,7 @@ function getCallsConfigIssue(): string | null {
 
 function getCallsConfigToastDescription(issue: string): string {
   if (issue === "Calls V2 disabled") {
-    return "Сервис звонков отключен конфигурацией сборки. Нужны VITE_CALLS_V2_ENABLED=true и рабочий WS endpoint.";
+    return "Сервис звонков отключен конфигурацией сборки. Установите VITE_CALLS_V2_ENABLED=true или удалите флаг, и задайте рабочий WS endpoint.";
   }
   if (issue === "Calls WS endpoint is not configured") {
     return "Не задан VITE_CALLS_V2_WS_URL или VITE_CALLS_V2_WS_URLS. Сборка фронта не знает, куда подключать SFU.";
@@ -1145,28 +1148,10 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         }
         const sfuManager = sfuManagerRef.current;
 
-        // ── TURN credentials injection ────────────────────────────────────────
-        const iceServersSnapshot = turnIceServersRef.current;
+        // ── TURN credentials ──────────────────────────────────────────────────
+        const iceServersSnapshot = turnIceServersRef.current ?? undefined;
         if (iceServersSnapshot && iceServersSnapshot.length > 0) {
-          const sfuManagerAny = sfuManager as unknown as {
-            device?: {
-              createSendTransport: (...args: unknown[]) => unknown;
-              createRecvTransport: (...args: unknown[]) => unknown;
-            };
-          };
-          if (sfuManagerAny.device) {
-            const origSend = sfuManagerAny.device.createSendTransport.bind(sfuManagerAny.device);
-            sfuManagerAny.device.createSendTransport = (opts: unknown, ...rest: unknown[]) => {
-              return origSend({ ...(opts as object), iceServers: iceServersSnapshot }, ...rest);
-            };
-            const origRecv = sfuManagerAny.device.createRecvTransport.bind(sfuManagerAny.device);
-            sfuManagerAny.device.createRecvTransport = (opts: unknown, ...rest: unknown[]) => {
-              return origRecv({ ...(opts as object), iceServers: iceServersSnapshot }, ...rest);
-            };
-            console.info("[VideoCallContext] SFU device patched with TURN iceServers", {
-              count: iceServersSnapshot.length,
-            });
-          }
+          console.info("[VideoCallContext] TURN iceServers ready for SFU transports", { count: iceServersSnapshot.length });
         } else {
           console.warn("[VideoCallContext] No TURN ice servers available — SFU will use STUN only (may fail behind strict NAT)");
         }
@@ -1195,6 +1180,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
             iceParameters: sendParams.iceParameters as import('mediasoup-client').types.IceParameters,
             iceCandidates: sendParams.iceCandidates as import('mediasoup-client').types.IceCandidate[],
             dtlsParameters: sendParams.dtlsParameters as import('mediasoup-client').types.DtlsParameters,
+            iceServers: iceServersSnapshot,
           },
           async (dtlsParameters) => {
             await client.transportConnect({
@@ -1248,6 +1234,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
             iceParameters: recvParams.iceParameters as import('mediasoup-client').types.IceParameters,
             iceCandidates: recvParams.iceCandidates as import('mediasoup-client').types.IceCandidate[],
             dtlsParameters: recvParams.dtlsParameters as import('mediasoup-client').types.DtlsParameters,
+            iceServers: iceServersSnapshot,
           },
           async (dtlsParameters) => {
             await client.transportConnect({

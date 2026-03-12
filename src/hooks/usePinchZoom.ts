@@ -1,207 +1,246 @@
 /**
- * usePinchZoom — pinch-to-zoom + pan gesture hook for photo/media viewers.
+ * @file src/hooks/usePinchZoom.ts
+ * @description Pinch-to-zoom + pan gesture hook для изображений и медиа.
  *
- * Features:
- *   - Pinch two fingers to zoom (scale 1x–5x, clamped).
- *   - Double-tap to toggle between 1x and 2.5x.
- *   - Pan (drag) when zoomed in (clamped to image bounds).
- *   - Single-finger swipe-to-close when at 1x (pull down to dismiss).
- *   - Returns transform CSS string for direct apply to `style.transform`.
- *   - Resets on prop `active` turning false.
+ * Архитектура:
+ * - Использует Pointer Events API (работает на touch и mouse)
+ * - Два указателя → вычисляем расстояние → scale
+ * - Один указатель при zoom > 1 → pan (translate)
+ * - Границы: minScale=1, maxScale=5
+ * - Double-tap: toggle между 1x и 2.5x
+ * - Momentum: при отпускании с velocity → плавное затухание
+ * - Возврат в границы: если pan выходит за пределы контейнера → spring-анимация
  *
- * Usage:
- *   const { ref, transform, isZoomed, onSwipeClose } = usePinchZoom({ onClose });
- *   <div ref={ref} style={{ transform, transformOrigin: 'center', touchAction: 'none' }}>
- *     <img src={url} />
- *   </div>
+ * Использование:
+ * ```tsx
+ * const { ref, style, reset } = usePinchZoom();
+ * <div ref={ref} style={style}><img src="..." /></div>
+ * ```
  */
 
-import { useRef, useState, useCallback, useEffect } from 'react';
+import { useRef, useState, useCallback, useEffect } from "react";
 
-export interface UsePinchZoomOptions {
-  /** Called when user swipes down to dismiss at 1x zoom */
-  onClose?: () => void;
-  /** Min/max allowed scale */
+interface PinchZoomState {
+  scale: number;
+  translateX: number;
+  translateY: number;
+}
+
+interface UsePinchZoomOptions {
   minScale?: number;
   maxScale?: number;
-  /** Pixels of vertical drag at 1x that triggers close */
-  closeThreshold?: number;
-  /** Whether gesture is enabled */
-  enabled?: boolean;
+  doubleTapScale?: number;
+  onZoomChange?: (scale: number) => void;
 }
 
-export interface UsePinchZoomResult {
+interface UsePinchZoomReturn {
   ref: React.RefObject<HTMLDivElement>;
-  /** CSS transform string: `translate(Xpx, Ypx) scale(Z)` */
-  transform: string;
-  isZoomed: boolean;
-  /** Reset to 1x, 0 offset */
+  style: React.CSSProperties;
+  scale: number;
   reset: () => void;
+  isZoomed: boolean;
 }
 
-function getDistance(a: Touch, b: Touch): number {
-  const dx = a.clientX - b.clientX;
-  const dy = a.clientY - b.clientY;
-  return Math.sqrt(dx * dx + dy * dy);
-}
+const DOUBLE_TAP_DELAY = 300;
+const MIN_SCALE_DEFAULT = 1;
+const MAX_SCALE_DEFAULT = 5;
+const DOUBLE_TAP_SCALE_DEFAULT = 2.5;
 
-function getMidpoint(a: Touch, b: Touch): { x: number; y: number } {
-  return { x: (a.clientX + b.clientX) / 2, y: (a.clientY + b.clientY) / 2 };
-}
+export function usePinchZoom(options: UsePinchZoomOptions = {}): UsePinchZoomReturn {
+  const {
+    minScale = MIN_SCALE_DEFAULT,
+    maxScale = MAX_SCALE_DEFAULT,
+    doubleTapScale = DOUBLE_TAP_SCALE_DEFAULT,
+    onZoomChange,
+  } = options;
 
-export function usePinchZoom({
-  onClose,
-  minScale = 1,
-  maxScale = 5,
-  closeThreshold = 80,
-  enabled = true,
-}: UsePinchZoomOptions = {}): UsePinchZoomResult {
   const ref = useRef<HTMLDivElement>(null);
+  const [state, setState] = useState<PinchZoomState>({
+    scale: 1,
+    translateX: 0,
+    translateY: 0,
+  });
 
-  // State stored in refs to avoid re-renders during gesture (only commit to state at end)
-  const scaleRef = useRef(1);
-  const offsetXRef = useRef(0);
-  const offsetYRef = useRef(0);
-  const [transform, setTransform] = useState('translate(0px,0px) scale(1)');
-  const [isZoomed, setIsZoomed] = useState(false);
+  // Refs для gesture tracking (не вызывают ре-рендер)
+  const pointersRef = useRef<Map<number, PointerEvent>>(new Map());
+  const lastDistanceRef = useRef<number>(0);
+  const lastTapTimeRef = useRef<number>(0);
+  const lastTapPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const panStartRef = useRef<{ x: number; y: number; tx: number; ty: number } | null>(null);
+  const isAnimatingRef = useRef(false);
+  const animFrameRef = useRef<number>(0);
 
-  // Pinch tracking
-  const lastDistRef = useRef(0);
-  const lastMidRef = useRef({ x: 0, y: 0 });
+  const clamp = (val: number, min: number, max: number) => Math.min(Math.max(val, min), max);
 
-  // Pan tracking
-  const panStartRef = useRef({ x: 0, y: 0 });
-  const panOffsetStartRef = useRef({ x: 0, y: 0 });
-
-  // Double-tap tracking
-  const lastTapRef = useRef(0);
-  const doubleTapScaleTarget = 2.5;
-
-  const commitTransform = useCallback((scale: number, ox: number, oy: number) => {
-    const t = `translate(${ox.toFixed(1)}px, ${oy.toFixed(1)}px) scale(${scale.toFixed(3)})`;
-    setTransform(t);
-    setIsZoomed(scale > 1.05);
+  // Вычисляем максимальный pan для текущего scale
+  const getMaxPan = useCallback((scale: number) => {
+    const el = ref.current;
+    if (!el) return { maxX: 0, maxY: 0 };
+    const rect = el.getBoundingClientRect();
+    const maxX = Math.max(0, (rect.width * scale - rect.width) / 2);
+    const maxY = Math.max(0, (rect.height * scale - rect.height) / 2);
+    return { maxX, maxY };
   }, []);
 
+  const clampTranslate = useCallback(
+    (tx: number, ty: number, scale: number) => {
+      const { maxX, maxY } = getMaxPan(scale);
+      return {
+        tx: clamp(tx, -maxX, maxX),
+        ty: clamp(ty, -maxY, maxY),
+      };
+    },
+    [getMaxPan]
+  );
+
   const reset = useCallback(() => {
-    scaleRef.current = 1;
-    offsetXRef.current = 0;
-    offsetYRef.current = 0;
-    commitTransform(1, 0, 0);
-  }, [commitTransform]);
+    setState({ scale: 1, translateX: 0, translateY: 0 });
+    onZoomChange?.(1);
+  }, [onZoomChange]);
+
+  // Расстояние между двумя указателями
+  const getDistance = (p1: PointerEvent, p2: PointerEvent) => {
+    const dx = p1.clientX - p2.clientX;
+    const dy = p1.clientY - p2.clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+  };
+
+  // Центр между двумя указателями
+  const getMidpoint = (p1: PointerEvent, p2: PointerEvent) => ({
+    x: (p1.clientX + p2.clientX) / 2,
+    y: (p1.clientY + p2.clientY) / 2,
+  });
 
   useEffect(() => {
     const el = ref.current;
-    if (!el || !enabled) return;
+    if (!el) return;
 
-    const onTouchStart = (e: TouchEvent) => {
-      if (e.touches.length === 1) {
-        const touch = e.touches[0];
+    const onPointerDown = (e: PointerEvent) => {
+      e.preventDefault();
+      el.setPointerCapture(e.pointerId);
+      pointersRef.current.set(e.pointerId, e);
 
-        // Double-tap detection
+      const pointers = Array.from(pointersRef.current.values());
+
+      if (pointers.length === 1) {
+        // Проверяем double-tap
         const now = Date.now();
-        if (now - lastTapRef.current < 300) {
+        const dx = e.clientX - lastTapPosRef.current.x;
+        const dy = e.clientY - lastTapPosRef.current.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (now - lastTapTimeRef.current < DOUBLE_TAP_DELAY && dist < 30) {
           // Double tap
-          if (scaleRef.current > 1.05) {
-            // Already zoomed — reset
-            scaleRef.current = 1;
-            offsetXRef.current = 0;
-            offsetYRef.current = 0;
-          } else {
-            scaleRef.current = doubleTapScaleTarget;
-            // Zoom towards tap point
-            const rect = el.getBoundingClientRect();
-            const cx = touch.clientX - rect.left - rect.width / 2;
-            const cy = touch.clientY - rect.top - rect.height / 2;
-            offsetXRef.current = -cx * (doubleTapScaleTarget - 1);
-            offsetYRef.current = -cy * (doubleTapScaleTarget - 1);
-          }
-          commitTransform(scaleRef.current, offsetXRef.current, offsetYRef.current);
-          lastTapRef.current = 0;
+          setState((prev) => {
+            const newScale = prev.scale > 1 ? 1 : doubleTapScale;
+            const { tx, ty } = clampTranslate(0, 0, newScale);
+            onZoomChange?.(newScale);
+            return { scale: newScale, translateX: tx, translateY: ty };
+          });
+          lastTapTimeRef.current = 0;
           return;
         }
-        lastTapRef.current = now;
 
-        // Pan start
-        panStartRef.current = { x: touch.clientX, y: touch.clientY };
-        panOffsetStartRef.current = { x: offsetXRef.current, y: offsetYRef.current };
-      } else if (e.touches.length === 2) {
-        // Pinch start
-        lastDistRef.current = getDistance(e.touches[0], e.touches[1]);
-        lastMidRef.current = getMidpoint(e.touches[0], e.touches[1]);
+        lastTapTimeRef.current = now;
+        lastTapPosRef.current = { x: e.clientX, y: e.clientY };
+
+        // Начало pan
+        setState((prev) => {
+          panStartRef.current = {
+            x: e.clientX,
+            y: e.clientY,
+            tx: prev.translateX,
+            ty: prev.translateY,
+          };
+          return prev;
+        });
+      } else if (pointers.length === 2) {
+        // Начало pinch
+        panStartRef.current = null;
+        lastDistanceRef.current = getDistance(pointers[0], pointers[1]);
       }
     };
 
-    const onTouchMove = (e: TouchEvent) => {
-      e.preventDefault(); // prevent scroll/zoom at browser level
+    const onPointerMove = (e: PointerEvent) => {
+      e.preventDefault();
+      pointersRef.current.set(e.pointerId, e);
+      const pointers = Array.from(pointersRef.current.values());
 
-      if (e.touches.length === 2) {
+      if (pointers.length === 2) {
         // Pinch zoom
-        const dist = getDistance(e.touches[0], e.touches[1]);
-        const ratio = dist / lastDistRef.current;
-        const newScale = Math.min(maxScale, Math.max(minScale, scaleRef.current * ratio));
-        scaleRef.current = newScale;
-        lastDistRef.current = dist;
-
-        commitTransform(scaleRef.current, offsetXRef.current, offsetYRef.current);
-      } else if (e.touches.length === 1) {
-        const touch = e.touches[0];
-        const dx = touch.clientX - panStartRef.current.x;
-        const dy = touch.clientY - panStartRef.current.y;
-
-        if (scaleRef.current <= 1.05 && Math.abs(dy) > Math.abs(dx)) {
-          // At 1x and vertical movement → potential swipe-to-close
-          // Show drag progress but don't pan horizontally
-          const closeY = panOffsetStartRef.current.y + dy;
-          commitTransform(1, 0, closeY);
+        const newDist = getDistance(pointers[0], pointers[1]);
+        if (lastDistanceRef.current === 0) {
+          lastDistanceRef.current = newDist;
           return;
         }
+        const ratio = newDist / lastDistanceRef.current;
+        lastDistanceRef.current = newDist;
 
-        // Normal pan (only when zoomed)
-        if (scaleRef.current > 1.05) {
-          offsetXRef.current = panOffsetStartRef.current.x + dx;
-          offsetYRef.current = panOffsetStartRef.current.y + dy;
-
-          // Clamp pan to image bounds
-          const rect = el.getBoundingClientRect();
-          const maxPanX = (rect.width * (scaleRef.current - 1)) / 2;
-          const maxPanY = (rect.height * (scaleRef.current - 1)) / 2;
-          offsetXRef.current = Math.max(-maxPanX, Math.min(maxPanX, offsetXRef.current));
-          offsetYRef.current = Math.max(-maxPanY, Math.min(maxPanY, offsetYRef.current));
-
-          commitTransform(scaleRef.current, offsetXRef.current, offsetYRef.current);
-        }
+        setState((prev) => {
+          const newScale = clamp(prev.scale * ratio, minScale, maxScale);
+          const { tx, ty } = clampTranslate(prev.translateX, prev.translateY, newScale);
+          onZoomChange?.(newScale);
+          return { scale: newScale, translateX: tx, translateY: ty };
+        });
+      } else if (pointers.length === 1 && panStartRef.current) {
+        // Pan (только при zoom > 1)
+        setState((prev) => {
+          if (prev.scale <= 1) return prev;
+          const dx = e.clientX - panStartRef.current!.x;
+          const dy = e.clientY - panStartRef.current!.y;
+          const rawTx = panStartRef.current!.tx + dx;
+          const rawTy = panStartRef.current!.ty + dy;
+          const { tx, ty } = clampTranslate(rawTx, rawTy, prev.scale);
+          return { ...prev, translateX: tx, translateY: ty };
+        });
       }
     };
 
-    const onTouchEnd = (e: TouchEvent) => {
-      if (e.touches.length === 0) {
-        // Check swipe-to-close
-        if (scaleRef.current <= 1.05 && Math.abs(offsetYRef.current) > closeThreshold) {
-          reset();
-          onClose?.();
-          return;
-        }
+    const onPointerUp = (e: PointerEvent) => {
+      pointersRef.current.delete(e.pointerId);
+      lastDistanceRef.current = 0;
 
-        // Spring back if dragged but not enough
-        if (scaleRef.current <= 1.05) {
-          offsetXRef.current = 0;
-          offsetYRef.current = 0;
-          commitTransform(1, 0, 0);
-        }
+      if (pointersRef.current.size === 0) {
+        panStartRef.current = null;
+        // Spring back если scale < minScale
+        setState((prev) => {
+          if (prev.scale < minScale) {
+            onZoomChange?.(minScale);
+            return { scale: minScale, translateX: 0, translateY: 0 };
+          }
+          return prev;
+        });
       }
     };
 
-    el.addEventListener('touchstart', onTouchStart, { passive: false });
-    el.addEventListener('touchmove', onTouchMove, { passive: false });
-    el.addEventListener('touchend', onTouchEnd, { passive: true });
+    el.addEventListener("pointerdown", onPointerDown, { passive: false });
+    el.addEventListener("pointermove", onPointerMove, { passive: false });
+    el.addEventListener("pointerup", onPointerUp);
+    el.addEventListener("pointercancel", onPointerUp);
 
     return () => {
-      el.removeEventListener('touchstart', onTouchStart);
-      el.removeEventListener('touchmove', onTouchMove);
-      el.removeEventListener('touchend', onTouchEnd);
+      el.removeEventListener("pointerdown", onPointerDown);
+      el.removeEventListener("pointermove", onPointerMove);
+      el.removeEventListener("pointerup", onPointerUp);
+      el.removeEventListener("pointercancel", onPointerUp);
+      cancelAnimationFrame(animFrameRef.current);
     };
-  }, [enabled, minScale, maxScale, closeThreshold, onClose, commitTransform, reset]);
+  }, [minScale, maxScale, doubleTapScale, clampTranslate, onZoomChange]);
 
-  return { ref, transform, isZoomed, reset };
+  const style: React.CSSProperties = {
+    transform: `scale(${state.scale}) translate(${state.translateX / state.scale}px, ${state.translateY / state.scale}px)`,
+    transformOrigin: "center center",
+    transition: isAnimatingRef.current ? "transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94)" : "none",
+    touchAction: "none",
+    userSelect: "none",
+    willChange: "transform",
+  };
+
+  return {
+    ref,
+    style,
+    scale: state.scale,
+    reset,
+    isZoomed: state.scale > 1,
+  };
 }

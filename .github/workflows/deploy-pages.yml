@@ -39,6 +39,16 @@ jobs:
       - name: Backend safety (migrations)
         run: npm run check:backend
 
+      - name: Calls env probe (prod-grade)
+        run: npm run calls:env:probe
+        env:
+          REQUIRE_CALLS_ENV_PROBE: "1"
+          VITE_CALLS_V2_ENABLED: ${{ vars.VITE_CALLS_V2_ENABLED }}
+          VITE_CALLS_V2_WS_URL: ${{ vars.VITE_CALLS_V2_WS_URL }}
+          VITE_CALLS_V2_WS_URLS: ${{ vars.VITE_CALLS_V2_WS_URLS }}
+          VITE_CALLS_V2_REKEY_INTERVAL_MS: ${{ vars.VITE_CALLS_V2_REKEY_INTERVAL_MS }}
+          VITE_TURN_CREDENTIALS_URL: ${{ vars.VITE_TURN_CREDENTIALS_URL }}
+
       - name: Test
         continue-on-error: true
         run: npm test

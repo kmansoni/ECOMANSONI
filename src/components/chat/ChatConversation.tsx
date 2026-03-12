@@ -54,6 +54,7 @@ import { StickerGifPicker } from "./StickerGifPicker";
 import { StickerMessage } from "./StickerMessage";
 import { GifMessage } from "./GifMessage";
 import { buildChatBodyEnvelope, sendMessageV1 } from "@/lib/chat/sendMessageV1";
+import { sendStaticLocation, getCurrentPosition, geoErrorToKey } from "@/lib/chat/sendLocation";
 import { MessageContextMenu } from "./MessageContextMenu";
 import { SwipeableMessage } from "./SwipeableMessage";
 import { DoubleTapReaction } from "./DoubleTapReaction";
@@ -1117,12 +1118,38 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
     setShowVideoRecorder(false);
   };
 
-  const handleAttachment = async (file: File, type: "image" | "video") => {
+  const handleAttachment = async (file: File, type: "image" | "video" | "document") => {
     if (type === "image") {
       await sendMediaMessage(file, 'image');
+    } else if (type === "document") {
+      await sendMediaMessage(file, 'document' as any);
     } else {
-      // For video files, we can add a 'video' type or reuse 'video_circle'
       await sendMediaMessage(file, 'video' as any);
+    }
+  };
+
+  const handleLocationSelect = async () => {
+    if (isSending) return;
+    setIsSending(true);
+    try {
+      const coords = await getCurrentPosition();
+      const clientMsgId = crypto.randomUUID();
+      await sendStaticLocation({ conversationId, clientMsgId, coords });
+    } catch (err: unknown) {
+      if (err && typeof err === "object" && "code" in err) {
+        const key = geoErrorToKey(err as GeolocationPositionError);
+        toast.error(
+          key === "geo_permission_denied"
+            ? "Доступ к геолокации запрещён. Разрешите в настройках браузера."
+            : key === "geo_timeout"
+            ? "Геолокация не получена: истек таймаут."
+            : "Не удалось определить местоположение.",
+        );
+      } else {
+        toast.error("Не удалось отправить геолокацию.");
+      }
+    } finally {
+      setIsSending(false);
     }
   };
 
@@ -2408,6 +2435,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
         open={showAttachmentSheet}
         onOpenChange={setShowAttachmentSheet}
         onSelectFile={handleAttachment}
+        onSelectLocation={handleLocationSelect}
         onOpenCamera={() => {
           setShowCameraSheet(true);
         }}
