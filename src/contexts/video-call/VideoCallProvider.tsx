@@ -143,7 +143,11 @@ function getCallsConfigToastDescription(issue: string): string {
 
 function hasInsertableStreamsSupport(): boolean {
   try {
-    return typeof RTCRtpSender !== "undefined" && "createEncodedStreams" in RTCRtpSender.prototype;
+    const hasEncodedStreams =
+      typeof RTCRtpSender !== "undefined" &&
+      "createEncodedStreams" in RTCRtpSender.prototype;
+    const hasScriptTransform = typeof (globalThis as any).RTCRtpScriptTransform !== "undefined";
+    return hasEncodedStreams || hasScriptTransform;
   } catch {
     return false;
   }
