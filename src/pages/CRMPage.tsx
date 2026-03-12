@@ -56,7 +56,21 @@ export function CRMPage() {
 
   const handleProfessionSelect = (professionId: string) => {
     setSelectedProfession(professionId);
-    // Navigate to the CRM dashboard with the selected profession
+    // HR profession gets a dedicated ATS dashboard (full hh.ru / SuperJob feature set)
+    if (professionId === 'hr') {
+      navigate('/crm/hr');
+      return;
+    }
+    // Auto profession gets dedicated Automotive CRM (auto.ru / Avito / AutoTrader UK feature set)
+    if (professionId === 'auto') {
+      navigate('/crm/auto');
+      return;
+    }
+    // Real estate gets dedicated RE CRM (Bitrix24 RE + TopN Lab + ReBPM + Follow Up Boss feature set)
+    if (professionId === 'realestate') {
+      navigate('/crm/realestate');
+      return;
+    }
     navigate(`/crm/dashboard?profession=${professionId}`);
   };
 
