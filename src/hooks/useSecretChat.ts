@@ -4,11 +4,11 @@
  * Protocol flow:
  *
  * INITIATION (Alice):
- *   1. Load own identity keys from localStorage (or generate + register first time)
+ *   1. Load own identity keys from IndexedDB (or generate + register first time)
  *   2. Fetch Bob's PreKeyBundle from server (identity_key_public, signed_prekey_public, etc.)
  *   3. X3DH.initiatorKeyAgreement() → sharedSecret + ephemeralPublicKey
  *   4. DoubleRatchetE2E.initAlice(sharedSecret, bobRatchetPublicKey) → ratchetState
- *   5. Persist encrypted ratchetState to localStorage
+ *   5. Persist encrypted ratchetState to IndexedDB
  *   6. Store ephemeralPublicKey + identityPublicKey in secret_chats record (for Bob)
  *   7. Server marks OPK as consumed
  *
@@ -27,7 +27,7 @@
  *   State automatically advances (forward secrecy)
  *
  * STATE STORAGE:
- *   localStorage key: `dr_state_${userId}_${conversationId}`
+ *   IndexedDB key: `dr_state_${userId}_${conversationId}`
  *   Value: AES-256-GCM encrypted JSON of serialized RatchetState
  *   Encryption key: PBKDF2 from user passcode (if set) or session token hash
  *   Without passcode: state encrypted with session-derived key (weaker but functional)
@@ -71,10 +71,99 @@ export interface DrEncryptedMessage {
   header: string;
 }
 
-// LocalStorage key for identity keys
+// Storage key for identity keys
 const IK_STORAGE_KEY = (userId: string) => `x3dh_ik_${userId}`;
-// LocalStorage key for ratchet state per conversation
+// Storage key for ratchet state per conversation
 const DR_STATE_KEY = (userId: string, convId: string) => `dr_state_${userId}_${convId}`;
+
+// Secret chat encrypted blob storage (IndexedDB)
+const SECRET_CHAT_DB = "secret-chat-e2ee-v1";
+const SECRET_CHAT_STORE = "kv";
+
+function openSecretChatDb(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(SECRET_CHAT_DB, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(SECRET_CHAT_STORE)) {
+        db.createObjectStore(SECRET_CHAT_STORE, { keyPath: "id" });
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+    req.onblocked = () => reject(new Error("IndexedDB blocked"));
+  });
+}
+
+async function readSecretBlob(id: string): Promise<string | null> {
+  // 1) Primary storage: IndexedDB
+  try {
+    const db = await openSecretChatDb();
+    const value = await new Promise<string | null>((resolve, reject) => {
+      const tx = db.transaction(SECRET_CHAT_STORE, "readonly");
+      const store = tx.objectStore(SECRET_CHAT_STORE);
+      const req = store.get(id);
+      req.onsuccess = () => {
+        const row = req.result as { id: string; value: string } | undefined;
+        resolve(row?.value ?? null);
+      };
+      req.onerror = () => reject(req.error);
+    });
+    db.close();
+    if (value) return value;
+  } catch {
+    // Fall back to legacy source below.
+  }
+
+  // 2) Legacy fallback + one-time migration from localStorage
+  try {
+    const legacy = localStorage.getItem(id);
+    if (!legacy) return null;
+    await writeSecretBlob(id, legacy);
+    localStorage.removeItem(id);
+    return legacy;
+  } catch {
+    return null;
+  }
+}
+
+async function writeSecretBlob(id: string, value: string): Promise<void> {
+  const db = await openSecretChatDb();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(SECRET_CHAT_STORE, "readwrite");
+    const store = tx.objectStore(SECRET_CHAT_STORE);
+    const req = store.put({ id, value });
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+  });
+  db.close();
+  try {
+    localStorage.removeItem(id); // remove stale legacy copy if any
+  } catch {
+    // no-op
+  }
+}
+
+async function deleteSecretBlob(id: string): Promise<void> {
+  try {
+    const db = await openSecretChatDb();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(SECRET_CHAT_STORE, "readwrite");
+      const store = tx.objectStore(SECRET_CHAT_STORE);
+      const req = store.delete(id);
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    });
+    db.close();
+  } catch {
+    // no-op
+  }
+  try {
+    localStorage.removeItem(id);
+  } catch {
+    // no-op
+  }
+}
 
 // ── Identity key management ────────────────────────────────────────────────
 
@@ -98,7 +187,7 @@ async function getOrCreateIdentityKeys(userId: string): Promise<{
   /** Present only when isNew=true — the server-ready public bundle for upsert */
   serverBundle?: Awaited<ReturnType<typeof X3DH.generateFullIdentityBundle>>["serverBundle"];
 }> {
-  const stored = localStorage.getItem(IK_STORAGE_KEY(userId));
+  const stored = await readSecretBlob(IK_STORAGE_KEY(userId));
   if (stored) {
     try {
       const decrypted = await decryptFromStorage(stored);
@@ -112,18 +201,18 @@ async function getOrCreateIdentityKeys(userId: string): Promise<{
 
       // Security: decryptFromStorage returns the raw string as-is for legacy plaintext
       // (no envelope "v"/"ct" fields).  If that happened, the private key material is
-      // still sitting in localStorage unencrypted.  Re-encrypt immediately so the
+      // still sitting in storage unencrypted. Re-encrypt immediately so the
       // obligation stated in localStorageCrypto.ts ("caller must re-encrypt on next write")
       // is actually fulfilled here on the read path.
       if (decrypted === stored) {
         const reEncrypted = await encryptForStorage(stored);
-        localStorage.setItem(IK_STORAGE_KEY(userId), reEncrypted);
+        await writeSecretBlob(IK_STORAGE_KEY(userId), reEncrypted);
       }
 
       return { identityEcdhKeyPair, identityEcdsaKeyPair, signedPreKeyPair, oneTimePreKeyPairs, isNew: false };
     } catch {
       // Legacy plaintext storage or decryption failure — regenerate keys
-      localStorage.removeItem(IK_STORAGE_KEY(userId));
+      await deleteSecretBlob(IK_STORAGE_KEY(userId));
     }
   }
 
@@ -146,7 +235,7 @@ async function getOrCreateIdentityKeys(userId: string): Promise<{
   };
   // Encrypt before writing — private key material must never appear in localStorage plaintext
   const encrypted = await encryptForStorage(JSON.stringify(toStore));
-  localStorage.setItem(IK_STORAGE_KEY(userId), encrypted);
+  await writeSecretBlob(IK_STORAGE_KEY(userId), encrypted);
 
   // Zero exported private key strings to minimise in-memory exposure after storage
   ecdhExp.privateKey = "";
@@ -167,7 +256,7 @@ async function getOrCreateIdentityKeys(userId: string): Promise<{
 }
 
 async function findStoredOneTimePreKeyPair(userId: string, publicKey: string): Promise<CryptoKeyPair | null> {
-  const stored = localStorage.getItem(IK_STORAGE_KEY(userId));
+  const stored = await readSecretBlob(IK_STORAGE_KEY(userId));
   if (!stored) return null;
 
   try {
@@ -197,11 +286,11 @@ async function decryptRatchetState(blob: string): Promise<string> {
 async function saveRatchetState(state: RatchetState, userId: string, convId: string): Promise<void> {
   const serialized = await DoubleRatchetE2E.serialize(state);
   const encrypted = await encryptRatchetState(serialized);
-  localStorage.setItem(DR_STATE_KEY(userId, convId), encrypted);
+  await writeSecretBlob(DR_STATE_KEY(userId, convId), encrypted);
 }
 
 async function loadRatchetState(userId: string, convId: string): Promise<RatchetState | null> {
-  const blob = localStorage.getItem(DR_STATE_KEY(userId, convId));
+  const blob = await readSecretBlob(DR_STATE_KEY(userId, convId));
   if (!blob) return null;
   try {
     const serialized = await decryptRatchetState(blob);
@@ -211,13 +300,13 @@ async function loadRatchetState(userId: string, convId: string): Promise<Ratchet
     // old unencrypted records. Re-encrypt immediately to remove plaintext at rest.
     if (serialized === blob) {
       const reEncrypted = await encryptRatchetState(serialized);
-      localStorage.setItem(DR_STATE_KEY(userId, convId), reEncrypted);
+      await writeSecretBlob(DR_STATE_KEY(userId, convId), reEncrypted);
     }
 
     return DoubleRatchetE2E.deserialize(serialized);
   } catch {
     // Stored blob may be legacy format (old static-salt scheme) — drop and re-init
-    localStorage.removeItem(DR_STATE_KEY(userId, convId));
+    await deleteSecretBlob(DR_STATE_KEY(userId, convId));
     return null;
   }
 }
@@ -529,7 +618,7 @@ export function useSecretChat(conversationId: string | null) {
       .update({ status: "closed", closed_at: new Date().toISOString() })
       .eq("id", secretChat.id);
     // Clear ratchet state on close — no recovery after close
-    localStorage.removeItem(DR_STATE_KEY(user.id, secretChat.conversation_id));
+    await deleteSecretBlob(DR_STATE_KEY(user.id, secretChat.conversation_id));
     ratchetStateRef.current = null;
     setRatchetReady(false);
   }, [secretChat, user]);
