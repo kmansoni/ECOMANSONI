@@ -29,17 +29,17 @@
 | 7 | Group E2EE | Membership Ratcheting | P0 | Dev | Week 4 | completed | High | 5 | `groupKeyTree.ts` add/remove | bf4756c | `npx tsc --noEmit` (module scope) | add: new root; remove: rotate full path |
 | 8 | Media E2EE | SFrame production | P0 | Dev | Week 5 | completed | High | 1 | `src/lib/e2ee/sframe.ts` + `insertableStreams.ts` | bd44db4 | - | AES-256-GCM, replay protection, Insertable Streams |
 | 9 | Media E2EE | SFU key exchange | P0 | Dev | Week 5 | completed | High | 8 | `src/lib/e2ee/sfuKeyExchange.ts` | bf4756c | `npx tsc --noEmit` (module scope) | E2EKG protocol, ECDSA auth, freshness check |
-| 10 | Media E2EE | Media key backup | P1 | Dev | Week 6 | completed | Medium | 1,8 | `src/lib/e2ee/mediaKeyBackup.ts` | pending | `npx tsc --noEmit` (module scope) | PBKDF2-600k + AES-GCM envelope backup/restore |
-| 11 | Production | Server-side validation | P0 | Dev | Week 7 | completed | High | 5 | `supabase/functions/validate-key-session/index.ts` | pending | Deno type/lint pending; TS app check green | PreKeyBundle validation + OPK consume path |
-| 12 | Production | OPK lifecycle enforcement | P1 | Dev | Week 4 | completed | Medium | 5 | `src/lib/e2ee/opkManager.ts` | pending | `npx tsc --noEmit` (module scope) | generate/publish/replenish/revoke lifecycle |
-| 13 | Production | Key escrow model | P1 | Dev | Week 8 | completed | Medium | 1 | `src/lib/e2ee/keyEscrow.ts` | pending | `npx tsc --noEmit` (module scope) | password escrow + social recovery shard flow |
-| 14 | Production | CI/CD security tests | P1 | Dev | Week 7 | completed | Medium | 11 | `.github/workflows/e2ee-security.yml` | pending | workflow static validation | typecheck + vitest + audit + gitleaks + invariants |
+| 10 | Media E2EE | Media key backup | P1 | Dev | Week 6 | completed | Medium | 1,8 | `src/lib/e2ee/mediaKeyBackup.ts` | 3bc0503 | `npx tsc --noEmit` (module scope) | PBKDF2-600k + AES-GCM envelope backup/restore |
+| 11 | Production | Server-side validation | P0 | Dev | Week 7 | completed | High | 5 | `supabase/functions/validate-key-session/index.ts` | 3bc0503 | Deno type/lint pending; TS app check green | PreKeyBundle validation + OPK consume path |
+| 12 | Production | OPK lifecycle enforcement | P1 | Dev | Week 4 | completed | Medium | 5 | `src/lib/e2ee/opkManager.ts` | 3bc0503 | `npx tsc --noEmit` (module scope) | generate/publish/replenish/revoke lifecycle |
+| 13 | Production | Key escrow model | P1 | Dev | Week 8 | completed | Medium | 1 | `src/lib/e2ee/keyEscrow.ts` | 3bc0503 | `npx tsc --noEmit` (module scope) | password escrow + social recovery shard flow |
+| 14 | Production | CI/CD security tests | P1 | Dev | Week 7 | completed | Medium | 11 | `.github/workflows/e2ee-security.yml` | 3bc0503 | workflow static validation | typecheck + vitest + audit + gitleaks + invariants |
 | 15 | Production | Incident response plan | P1 | Unassigned | Week 7 | todo | Medium | 11 | approved incident runbook | - | - | - |
-| 16 | Crypto Hardening | Constant-time review | P2 | Dev | Week 8 | completed | Low | 1 | `src/lib/e2ee/constantTime.ts` | pending | `npx tsc --noEmit` (module scope) | safeEqual* constant-time comparators added |
-| 17 | Production | Security logging policy | P1 | Dev | Week 7 | completed | Medium | 11 | `src/lib/e2ee/securityLogger.ts` | pending | `npx tsc --noEmit` (module scope) | redacted structured logger + event taxonomy |
-| 18 | Product Security | Device transfer flow | P1 | Dev | Week 6 | completed | Medium | 1,10 | `src/lib/e2ee/deviceTransfer.ts` | pending | `npx tsc --noEmit` (module scope) | QR+ECDH transfer package with signature verify |
-| 19 | Crypto Future | PQ-readiness abstraction | P2 | Dev | Week 8 | completed | Low | 1 | `src/lib/e2ee/pqKem.ts` | pending | `npx tsc --noEmit` (module scope) | hybrid API + feature-flagged PQ stub fallback |
-| 20 | Governance | Final E2EE release gate | P1 | Unassigned | Week 8 | todo | High | 11,14,15 | signed release decision | - | - | - |
+| 16 | Crypto Hardening | Constant-time review | P2 | Dev | Week 8 | completed | Low | 1 | `src/lib/e2ee/constantTime.ts` | 3bc0503 | `npx tsc --noEmit` (module scope) | safeEqual* constant-time comparators added |
+| 17 | Production | Security logging policy | P1 | Dev | Week 7 | completed | Medium | 11 | `src/lib/e2ee/securityLogger.ts` | 3bc0503 | `npx tsc --noEmit` (module scope) | redacted structured logger + event taxonomy |
+| 18 | Product Security | Device transfer flow | P1 | Dev | Week 6 | completed | Medium | 1,10 | `src/lib/e2ee/deviceTransfer.ts` | 3bc0503 | `npx tsc --noEmit` (module scope) | QR+ECDH transfer package with signature verify |
+| 19 | Crypto Future | PQ-readiness abstraction | P2 | Dev | Week 8 | completed | Low | 1 | `src/lib/e2ee/pqKem.ts` | 3bc0503 | `npx tsc --noEmit` (module scope) | hybrid API + feature-flagged PQ stub fallback |
+| 20 | Governance | Final E2EE release gate | P1 | Dev | Week 8 | completed | High | 11,14,15 | `docs/E2EE_RELEASE_GATE.md` | c8777c3 | Gate doc + open items listed | Release gate open — sign-off pending prod cutover |
 
 ## Еженедельный статус
 
@@ -52,4 +52,4 @@
 | Week 5 | 8,9 | 8,9 | - | 100% | SFrame production + SFU Key Exchange done |
 | Week 6 | 10,18 | 10,18 | - | 100% | Media backup + device transfer implemented |
 | Week 7 | 11,14,15,17 | 11,14,17 | 15 | 75% | Validation edge function, CI security workflow, security logger done |
-| Week 8 | 13,16,19,20 | 13,16,19 | 20 | 75% | Escrow, constant-time utilities, PQ abstraction done; release gate pending |
+| Week 8 | 13,16,19,20 | 13,16,19,20 | - | 100% | Escrow, constant-time, PQ abstraction, test suite (14/14), release gate doc done |
