@@ -58,6 +58,9 @@ export function useMessageReactions(conversationId: string) {
   const [reactionsMap, setReactionsMap] = useState<ReactionsMap>(new Map());
   const [canFilterByConversation, setCanFilterByConversation] = useState(true);
   const channelRef = useRef<RealtimeChannel | null>(null);
+  const reactionsMapRef = useRef<ReactionsMap>(new Map());
+  const mutationVersionRef = useRef(0);
+  const fetchRequestIdRef = useRef(0);
   const lsKey = `${LS_KEY_PREFIX}${conversationId}`;
 
   const isMissingConversationIdError = useCallback((err: any) => {
@@ -90,7 +93,23 @@ export function useMessageReactions(conversationId: string) {
     }
   }, [lsKey]);
 
-  const fetchByMessageIds = useCallback(async () => {
+  const commitReactionsMap = useCallback((updater: (prev: ReactionsMap) => ReactionsMap) => {
+    const next = updater(reactionsMapRef.current);
+    reactionsMapRef.current = next;
+    setReactionsMap(next);
+    return next;
+  }, []);
+
+  const replaceReactionsMap = useCallback((next: ReactionsMap) => {
+    reactionsMapRef.current = next;
+    setReactionsMap(next);
+  }, []);
+
+  const canApplyFetchResult = useCallback((requestId: number, mutationVersionAtStart: number) => {
+    return requestId === fetchRequestIdRef.current && mutationVersionAtStart === mutationVersionRef.current;
+  }, []);
+
+  const fetchByMessageIds = useCallback(async (requestId: number, mutationVersionAtStart: number) => {
     const { data: msgRows, error: msgErr } = await db
       .from("messages")
       .select("id")
@@ -99,7 +118,8 @@ export function useMessageReactions(conversationId: string) {
 
     const ids = (msgRows ?? []).map((m: any) => String(m.id)).filter(Boolean);
     if (ids.length === 0) {
-      setReactionsMap(new Map());
+      if (!canApplyFetchResult(requestId, mutationVersionAtStart)) return;
+      replaceReactionsMap(new Map());
       persistToLS([]);
       return;
     }
@@ -112,13 +132,17 @@ export function useMessageReactions(conversationId: string) {
     if (error) throw error;
 
     const rows = (data ?? []) as { message_id: string; user_id: string; emoji: string }[];
+    if (!canApplyFetchResult(requestId, mutationVersionAtStart)) return;
     persistToLS(rows);
-    setReactionsMap(mergeReactionRows(rows, user?.id));
-  }, [conversationId, persistToLS, user?.id]);
+    replaceReactionsMap(mergeReactionRows(rows, user?.id));
+  }, [canApplyFetchResult, conversationId, persistToLS, replaceReactionsMap, user?.id]);
 
   // ── Fetch all reactions for the conversation ─────────────────────────────
 
   const fetchReactions = useCallback(async () => {
+    const requestId = ++fetchRequestIdRef.current;
+    const mutationVersionAtStart = mutationVersionRef.current;
+
     try {
       if (canFilterByConversation) {
         const { data, error } = await db
@@ -129,25 +153,27 @@ export function useMessageReactions(conversationId: string) {
         if (error) {
           if (isMissingConversationIdError(error)) {
             setCanFilterByConversation(false);
-            await fetchByMessageIds();
+            await fetchByMessageIds(requestId, mutationVersionAtStart);
             return;
           }
           throw error;
         }
 
         const rows = (data ?? []) as { message_id: string; user_id: string; emoji: string }[];
+        if (!canApplyFetchResult(requestId, mutationVersionAtStart)) return;
         persistToLS(rows);
-        setReactionsMap(mergeReactionRows(rows, user?.id));
+        replaceReactionsMap(mergeReactionRows(rows, user?.id));
         return;
       }
 
-      await fetchByMessageIds();
+      await fetchByMessageIds(requestId, mutationVersionAtStart);
     } catch (err) {
       console.warn("[useMessageReactions] Supabase fetch failed, falling back to LS", err);
       const rows = loadFromLS();
-      setReactionsMap(mergeReactionRows(rows, user?.id));
+      if (!canApplyFetchResult(requestId, mutationVersionAtStart)) return;
+      replaceReactionsMap(mergeReactionRows(rows, user?.id));
     }
-  }, [canFilterByConversation, conversationId, user?.id, persistToLS, loadFromLS, isMissingConversationIdError, fetchByMessageIds]);
+  }, [canApplyFetchResult, canFilterByConversation, conversationId, user?.id, persistToLS, loadFromLS, isMissingConversationIdError, fetchByMessageIds, replaceReactionsMap]);
 
   // ── Realtime subscription ────────────────────────────────────────────────
 
@@ -189,11 +215,12 @@ export function useMessageReactions(conversationId: string) {
   const addReaction = useCallback(
     async (messageId: string, emoji: string) => {
       if (!user) return;
+      mutationVersionRef.current += 1;
 
       // Optimistic update — PK is (message_id, user_id), so a user can only
       // have ONE emoji per message.  When switching emoji, we first remove
       // the old reaction count and then add the new one.
-      setReactionsMap((prev) => {
+      commitReactionsMap((prev) => {
         const next = new Map(prev);
         let existing = next.get(messageId) ?? [];
 
@@ -255,15 +282,16 @@ export function useMessageReactions(conversationId: string) {
         fetchReactions();
       }
     },
-    [user, conversationId, fetchReactions, canFilterByConversation, isMissingConversationIdError]
+    [user, conversationId, fetchReactions, canFilterByConversation, isMissingConversationIdError, commitReactionsMap]
   );
 
   const removeReaction = useCallback(
     async (messageId: string, emoji: string) => {
       if (!user) return;
+      mutationVersionRef.current += 1;
 
       // Optimistic update
-      setReactionsMap((prev) => {
+      commitReactionsMap((prev) => {
         const next = new Map(prev);
         const existing = next.get(messageId) ?? [];
         next.set(
@@ -297,12 +325,12 @@ export function useMessageReactions(conversationId: string) {
         fetchReactions();
       }
     },
-    [user, fetchReactions]
+    [user, fetchReactions, commitReactionsMap]
   );
 
   const toggleReaction = useCallback(
     async (messageId: string, emoji: string) => {
-      const reactions = reactionsMap.get(messageId) ?? [];
+      const reactions = reactionsMapRef.current.get(messageId) ?? [];
       const existing = reactions.find((r) => r.emoji === emoji);
       if (existing?.hasReacted) {
         await removeReaction(messageId, emoji);
@@ -310,7 +338,7 @@ export function useMessageReactions(conversationId: string) {
         await addReaction(messageId, emoji);
       }
     },
-    [reactionsMap, addReaction, removeReaction]
+    [addReaction, removeReaction]
   );
 
   const getReactions = useCallback(
