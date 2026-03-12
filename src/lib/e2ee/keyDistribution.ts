@@ -72,6 +72,7 @@ export interface KeyDistributionResult {
 
 const PUBLIC_KEY_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const publicKeyCache = new Map<string, { key: CryptoKey; raw: string; fingerprint: string; cachedAt: number }>();
+export const IDENTITY_KEY_RETRY_DELAYS_MS = [0, 80, 200] as const;
 
 // ─── Утилиты ─────────────────────────────────────────────────────────────────
 
@@ -114,6 +115,25 @@ async function deriveWrappingKey(
     false,
     ['wrapKey', 'unwrapKey'],
   );
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export async function fetchIdentityKeyWithRetry(userId: string) {
+  for (const delayMs of IDENTITY_KEY_RETRY_DELAYS_MS) {
+    if (delayMs > 0) {
+      await sleep(delayMs);
+    }
+
+    const { data, error } = await e2eeDb.userEncryptionKeys.selectByUserId(userId);
+    if (!error && data) {
+      return data;
+    }
+  }
+
+  return null;
 }
 
 // ─── Публичные функции ────────────────────────────────────────────────────────
@@ -340,9 +360,9 @@ export async function receiveGroupKey(
     } else {
       // 2. Кеш пуст — загружаем авторитетный ключ из user_encryption_keys (identity store)
       //    и сверяем fingerprint с тем, что пришёл в chat_encryption_keys.
-      const { data: identityData, error: identityErr } = await e2eeDb.userEncryptionKeys.selectByUserId(keyData.sender_id);
+      const identityData = await fetchIdentityKeyWithRetry(keyData.sender_id);
 
-      if (!identityErr && identityData) {
+      if (identityData) {
         if (identityData.fingerprint !== receivedFingerprint) {
           throw new MITMDetectedError(
             `[keyDistribution] MITM detected: sender_public_key_raw fingerprint mismatch for ${keyData.sender_id}. ` +

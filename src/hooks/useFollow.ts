@@ -22,7 +22,7 @@
  *     N > 50 (rare).
  */
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
@@ -38,6 +38,12 @@ export function useFollow(targetUserId: string | null | undefined): UseFollowRet
   const { user } = useAuth();
   const [isFollowing, setIsFollowing] = useState(false);
   const [loading, setLoading] = useState(false);
+  const isFollowingRef = useRef(false);
+  const inFlightRef = useRef(false);
+
+  useEffect(() => {
+    isFollowingRef.current = isFollowing;
+  }, [isFollowing]);
 
   // ── Load initial follow state ─────────────────────────────────────────
 
@@ -71,9 +77,13 @@ export function useFollow(targetUserId: string | null | undefined): UseFollowRet
     if (!user?.id || !targetUserId) return;
     // Prevent self-follow
     if (targetUserId === user.id) return;
+    // Ignore re-entrant toggles while a request is in-flight.
+    if (inFlightRef.current) return;
 
-    const wasFollowing = isFollowing;
+    const wasFollowing = isFollowingRef.current;
+    inFlightRef.current = true;
     // Optimistic update
+    isFollowingRef.current = !wasFollowing;
     setIsFollowing(!wasFollowing);
     setLoading(true);
 
@@ -97,12 +107,14 @@ export function useFollow(targetUserId: string | null | undefined): UseFollowRet
       }
     } catch (err) {
       // Rollback
+      isFollowingRef.current = wasFollowing;
       setIsFollowing(wasFollowing);
       toast.error(wasFollowing ? "Не удалось отписаться" : "Не удалось подписаться");
     } finally {
+      inFlightRef.current = false;
       setLoading(false);
     }
-  }, [user?.id, targetUserId, isFollowing]);
+  }, [user?.id, targetUserId]);
 
   return { isFollowing, loading, toggle };
 }
