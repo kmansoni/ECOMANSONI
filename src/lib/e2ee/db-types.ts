@@ -45,6 +45,13 @@ export interface ConversationParticipantRow {
   conversation_id: string;
 }
 
+export interface OneTimePreKeyRow {
+  id: string;
+  user_id: string;
+  public_key_spki: string;
+  created_at?: string;
+}
+
 export interface ConversationRow {
   id: string;
   encryption_enabled: boolean | null;
@@ -223,6 +230,37 @@ export const e2eeDb = {
         p_conversation_id: conversationId,
         p_key_version: keyVersion,
       }) as QueryResult<EnableConversationEncryptionResult>;
+    },
+  },
+
+  /**
+   * one_time_prekeys — X3DH one-time pre-key storage.
+   */
+  oneTimePrekeys: {
+    insert(rows: OneTimePreKeyRow[]): MutationResult {
+      return db.from('one_time_prekeys').insert(rows) as MutationResult;
+    },
+
+    countByUserId(userId: string): Promise<{ count: number | null; error: { message: string } | null }> {
+      return db
+        .from('one_time_prekeys')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', userId) as Promise<{ count: number | null; error: { message: string } | null }>;
+    },
+
+    deleteByIds(userId: string, ids: string[]): MutationResult {
+      return db
+        .from('one_time_prekeys')
+        .delete()
+        .eq('user_id', userId)
+        .in('id', ids) as MutationResult;
+    },
+
+    deleteAllByUserId(userId: string): Promise<{ count: number | null; error: { message: string } | null }> {
+      return db
+        .from('one_time_prekeys')
+        .delete()
+        .eq('user_id', userId) as Promise<{ count: number | null; error: { message: string } | null }>;
     },
   },
 };

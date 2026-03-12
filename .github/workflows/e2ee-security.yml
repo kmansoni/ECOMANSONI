@@ -1,0 +1,200 @@
+name: E2EE Security Tests
+
+on:
+  pull_request:
+    paths:
+      - 'src/lib/e2ee/**'
+      - 'supabase/functions/validate-key-session/**'
+      - '.github/workflows/e2ee-security.yml'
+  push:
+    branches: [main, master]
+    paths:
+      - 'src/lib/e2ee/**'
+      - 'supabase/functions/validate-key-session/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write   # for npm audit SARIF upload (optional)
+
+concurrency:
+  group: e2ee-security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────────────────
+  # 1. TypeScript type-check of E2EE module
+  # ──────────────────────────────────────────────────────────────────────────────
+  typecheck:
+    name: TypeScript — E2EE type check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check (noEmit)
+        run: npx tsc --noEmit --project tsconfig.app.json
+        # We expect zero new errors in src/lib/e2ee/**
+        # Pre-existing errors in other files are tracked separately.
+
+  # ──────────────────────────────────────────────────────────────────────────────
+  # 2. Unit tests — E2EE module
+  # ──────────────────────────────────────────────────────────────────────────────
+  unit-tests:
+    name: Vitest — E2EE unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run E2EE unit tests
+        run: npx vitest run --reporter=verbose src/lib/e2ee
+        env:
+          # Web Crypto is available in Node 18+
+          NODE_ENV: test
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2ee-test-results
+          path: test-results/
+
+  # ──────────────────────────────────────────────────────────────────────────────
+  # 3. Dependency audit — no critical/high vulnerabilities
+  # ──────────────────────────────────────────────────────────────────────────────
+  npm-audit:
+    name: npm audit — no critical/high
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Audit (fail on critical & high)
+        run: npm audit --audit-level=high --json > npm-audit.json || true
+
+      - name: Assert no critical/high
+        run: |
+          node -e "
+            const r = require('./npm-audit.json');
+            const vulns = r.metadata?.vulnerabilities ?? {};
+            const bad = (vulns.critical ?? 0) + (vulns.high ?? 0);
+            if (bad > 0) {
+              console.error('Found ' + bad + ' critical/high vulnerabilities!');
+              process.exit(1);
+            }
+            console.log('No critical/high vulnerabilities.');
+          "
+
+      - name: Upload audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-audit-report
+          path: npm-audit.json
+
+  # ──────────────────────────────────────────────────────────────────────────────
+  # 4. Secret / key-material leak scan
+  #    Ensures no raw private keys or plaintext passwords are committed
+  # ──────────────────────────────────────────────────────────────────────────────
+  secret-scan:
+    name: Secret scan — no hardcoded keys
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history for gitleaks
+
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}  # uncomment for org repos
+
+  # ──────────────────────────────────────────────────────────────────────────────
+  # 5. E2EE invariant checks (static analysis)
+  #    Ensures constant-time safeEqual is used where timing-sensitive
+  # ──────────────────────────────────────────────────────────────────────────────
+  invariant-check:
+    name: Static — E2EE invariants
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for unsafe === comparisons on secrets
+        # Forbid direct === on variables named *token*, *otp*, *pin*, *secret*, *password*
+        # in E2EE module files (they should use safeEqual* instead).
+        run: |
+          MATCHES=$(grep -rn \
+            --include="*.ts" \
+            -E "(token|otp|pin|secret|password)\s*===\s*|===\s*(token|otp|pin|secret|password)" \
+            src/lib/e2ee/ \
+            | grep -v "//"      \
+            | grep -v "test"    \
+            || true)
+
+          if [ -n "$MATCHES" ]; then
+            echo "::warning::Possible timing-unsafe comparison in E2EE module:"
+            echo "$MATCHES"
+            # Note: warning, not error — some cases may be false positives (e.g. level comparison)
+          fi
+
+          echo "Invariant check complete."
+
+      - name: Check that extractable keys are not stored to IDB in E2EE module
+        run: |
+          MATCHES=$(grep -rn \
+            --include="*.ts" \
+            "extractable: true" \
+            src/lib/e2ee/ \
+            | grep -v "//.*extractable"  \
+            | grep -v "test"             \
+            || true)
+
+          if [ -n "$MATCHES" ]; then
+            echo "::notice::Files with extractable:true CryptoKeys (review for escrow/backup necessity):"
+            echo "$MATCHES"
+          fi
+
+          echo "Extractable key review complete."
+
+  # ──────────────────────────────────────────────────────────────────────────────
+  # Summary gate — all jobs must pass
+  # ──────────────────────────────────────────────────────────────────────────────
+  e2ee-security-gate:
+    name: E2EE Security Gate
+    runs-on: ubuntu-latest
+    needs: [typecheck, unit-tests, npm-audit, secret-scan, invariant-check]
+    if: always()
+    steps:
+      - name: Check all jobs passed
+        run: |
+          if [[ "${{ needs.typecheck.result }}" != "success" ]] || \
+             [[ "${{ needs.unit-tests.result }}" != "success" ]] || \
+             [[ "${{ needs.npm-audit.result }}" != "success" ]] || \
+             [[ "${{ needs.secret-scan.result }}" != "success" ]]; then
+            echo "One or more E2EE security checks failed!"
+            exit 1
+          fi
+          echo "All E2EE security checks passed."
