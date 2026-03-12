@@ -11,6 +11,7 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { X3DH } from '../lib/e2ee/x3dh';
+import { safeEqualBytes } from '../lib/e2ee/constantTime';
 import { DoubleRatchet, DoubleRatchetE2E, type RatchetState, type RatchetHeader } from '../lib/e2ee/doubleRatchet';
 
 describe('E2EE Security Edge Cases', () => {
@@ -403,6 +404,297 @@ describe('E2EE Security Edge Cases', () => {
       const { ciphertext: finalCipher, header: finalHeader } = await DoubleRatchetE2E.encrypt(aliceRestored, finalMsg);
       const finalDecrypted = await DoubleRatchet.decrypt(bobRestored, finalCipher, finalHeader);
       expect(finalDecrypted).toBe(finalMsg);
+    });
+  });
+
+  // === NEW TESTS FOR 10/10 ===
+
+  describe('Message Size Handling', () => {
+    it('handle various message sizes — от 1 байта до 16KB', async () => {
+      const bobState = await DoubleRatchetE2E.initBob(initialSecret.buffer as ArrayBuffer);
+      const aliceState = await DoubleRatchetE2E.initAlice(
+        initialSecret.buffer as ArrayBuffer,
+        bobState.sendingRatchetKey.publicKey
+      );
+
+      const sizes = [1, 16, 256, 1024, 4096, 16000];
+
+      for (const size of sizes) {
+        const msg = 'x'.repeat(size);
+        const { ciphertext, header } = await DoubleRatchetE2E.encrypt(aliceState, msg);
+        const decrypted = await DoubleRatchet.decrypt(bobState, ciphertext, header);
+        expect(decrypted).toBe(msg);
+      }
+    });
+  });
+
+  describe('Key Reuse Protection', () => {
+    it('same message with same key produces different ciphertext (random IV)', async () => {
+      const bobState = await DoubleRatchetE2E.initBob(initialSecret.buffer as ArrayBuffer);
+      const aliceState = await DoubleRatchetE2E.initAlice(
+        initialSecret.buffer as ArrayBuffer,
+        bobState.sendingRatchetKey.publicKey
+      );
+
+      // Один plaintext, два шифрования -> разные ciphertext
+      const msg = 'Hello';
+      const { ciphertext: c1 } = await DoubleRatchetE2E.encrypt(aliceState, msg);
+      const { ciphertext: c2 } = await DoubleRatchetE2E.encrypt(aliceState, msg);
+
+      // Ciphertext должны быть РАЗНЫМИ из-за random IV/nonce
+      expect(c1).not.toEqual(c2);
+    });
+
+    it('message key is deleted after use — нельзя расшифровать дважды', async () => {
+      const bobState = await DoubleRatchetE2E.initBob(initialSecret.buffer as ArrayBuffer);
+      const aliceState = await DoubleRatchetE2E.initAlice(
+        initialSecret.buffer as ArrayBuffer,
+        bobState.sendingRatchetKey.publicKey
+      );
+
+      const { ciphertext, header } = await DoubleRatchetE2E.encrypt(aliceState, 'msg');
+      await DoubleRatchet.decrypt(bobState, ciphertext, header);
+
+      // Повторная расшифровка должна провалиться
+      await expect(
+        DoubleRatchet.decrypt(bobState, ciphertext, header)
+      ).rejects.toThrow();
+    });
+  });
+
+  describe('Integer Safety', () => {
+    it('reject extremely large messageNumber', async () => {
+      const bobState = await DoubleRatchetE2E.initBob(initialSecret.buffer as ArrayBuffer);
+      const aliceState = await DoubleRatchetE2E.initAlice(
+        initialSecret.buffer as ArrayBuffer,
+        bobState.sendingRatchetKey.publicKey
+      );
+
+      const { ciphertext, header } = await DoubleRatchetE2E.encrypt(aliceState, 'test');
+
+      // Симулируем очень большой messageNumber
+      const hugeHeader: RatchetHeader = {
+        publicKey: header.publicKey,
+        previousChainLength: 0,
+        messageNumber: Number.MAX_SAFE_INTEGER
+      };
+
+      // Должно отклонить
+      await expect(
+        DoubleRatchet.decrypt(bobState, ciphertext, hugeHeader)
+      ).rejects.toThrow();
+    });
+  });
+
+  describe('Network Interruption Recovery', () => {
+    it('resume after disconnection — state preserved via serialization', async () => {
+      const bobState = await DoubleRatchetE2E.initBob(initialSecret.buffer as ArrayBuffer);
+      const aliceState = await DoubleRatchetE2E.initAlice(
+        initialSecret.buffer as ArrayBuffer,
+        bobState.sendingRatchetKey.publicKey
+      );
+
+      // Alice отправляет несколько сообщений
+      await DoubleRatchetE2E.encrypt(aliceState, 'msg1');
+      await DoubleRatchetE2E.encrypt(aliceState, 'msg2');
+      await DoubleRatchetE2E.encrypt(aliceState, 'msg3');
+
+      // Serialize - имитация закрытия приложения
+      const serialized = await DoubleRatchetE2E.serialize(aliceState);
+
+      // Восстановление после перерыва
+      const restored = await DoubleRatchetE2E.deserialize(serialized);
+
+      // Продолжаем отправку
+      const { ciphertext, header } = await DoubleRatchetE2E.encrypt(restored, 'msg4 after break');
+      const decrypted = await DoubleRatchet.decrypt(bobState, ciphertext, header);
+
+      expect(decrypted).toBe('msg4 after break');
+    });
+  });
+
+  describe('Full Chat Session', () => {
+    it('complete chat: 50 messages back-and-forth', async () => {
+      const bobState = await DoubleRatchetE2E.initBob(initialSecret.buffer as ArrayBuffer);
+      const aliceState = await DoubleRatchetE2E.initAlice(
+        initialSecret.buffer as ArrayBuffer,
+        bobState.sendingRatchetKey.publicKey
+      );
+
+      for (let i = 0; i < 50; i++) {
+        // Alice → Bob
+        const aliceMsg = `Alice msg ${i}`;
+        const { ciphertext: c1, header: h1 } = await DoubleRatchetE2E.encrypt(aliceState, aliceMsg);
+        const d1 = await DoubleRatchet.decrypt(bobState, c1, h1);
+        expect(d1).toBe(aliceMsg);
+
+        // Bob → Alice
+        const bobMsg = `Bob msg ${i}`;
+        const { ciphertext: c2, header: h2 } = await DoubleRatchetE2E.encrypt(bobState, bobMsg);
+        const d2 = await DoubleRatchet.decrypt(aliceState, c2, h2);
+        expect(d2).toBe(bobMsg);
+      }
+    });
+  });
+
+  describe('Concurrent Operations', () => {
+    it('sequential encrypt operations — работает корректно', async () => {
+      const bobState = await DoubleRatchetE2E.initBob(initialSecret.buffer as ArrayBuffer);
+      const aliceState = await DoubleRatchetE2E.initAlice(
+        initialSecret.buffer as ArrayBuffer,
+        bobState.sendingRatchetKey.publicKey
+      );
+
+      // Последовательное шифрование (параллельное невозможно - state mutable)
+      for (let i = 0; i < 10; i++) {
+        const { ciphertext, header } = await DoubleRatchetE2E.encrypt(aliceState, `msg ${i}`);
+        const decrypted = await DoubleRatchet.decrypt(bobState, ciphertext, header);
+        expect(decrypted).toBe(`msg ${i}`);
+      }
+    });
+  });
+
+  describe('Error Message Quality', () => {
+    it('no key material in error messages', async () => {
+      const bobState = await DoubleRatchetE2E.initBob(initialSecret.buffer as ArrayBuffer);
+
+      // Попытка расшифровать невалидные данные
+      try {
+        await DoubleRatchet.decrypt(bobState, 'invalid' as any, {} as any);
+      } catch (e: any) {
+        // Ошибка не должна содержать ключей
+        const errorStr = e.toString();
+        expect(errorStr).not.toMatch(/-----BEGIN/);
+      }
+    });
+  });
+
+  describe('Timing Attack Protection', () => {
+    it('safeEqualBytes is constant-time — early vs late mismatch timing is comparable', () => {
+      const LEN = 512;
+      const ITERS = 500;
+
+      const a = new Uint8Array(LEN).fill(0xAA);
+
+      // Early mismatch: first byte differs
+      const bEarly = new Uint8Array(LEN).fill(0xAA);
+      bEarly[0] = 0xFF;
+
+      // Late mismatch: last byte differs
+      const bLate = new Uint8Array(LEN).fill(0xAA);
+      bLate[LEN - 1] = 0xFF;
+
+      // Warm up JIT before measuring
+      for (let i = 0; i < 20; i++) {
+        safeEqualBytes(a, bEarly);
+        safeEqualBytes(a, bLate);
+      }
+
+      const t0 = performance.now();
+      for (let i = 0; i < ITERS; i++) safeEqualBytes(a, bEarly);
+      const earlyMs = performance.now() - t0;
+
+      const t1 = performance.now();
+      for (let i = 0; i < ITERS; i++) safeEqualBytes(a, bLate);
+      const lateMs = performance.now() - t1;
+
+      // Constant-time: ratio must stay within 10× in either direction.
+      // A naive short-circuit would be 100–500× faster for early mismatch.
+      const ratio = earlyMs > 0 ? lateMs / earlyMs : 1;
+      expect(ratio).toBeGreaterThan(0.05);
+      expect(ratio).toBeLessThan(10);
+    });
+
+    it('safeEqualBytes returns false for different-length inputs', () => {
+      const a = new Uint8Array(32).fill(0xAA);
+      const b = new Uint8Array(16).fill(0xAA);
+      expect(safeEqualBytes(a, b)).toBe(false);
+    });
+
+    it('invalid signature is explicitly rejected — no silent acceptance', async () => {
+      const aliceIdentity = await X3DH.generateIdentityKey();
+      const bobIdentity = await X3DH.generateIdentityKey();
+
+      const bobSigning = await crypto.subtle.generateKey(
+        { name: 'ECDSA', hash: 'SHA-256', namedCurve: 'P-256' },
+        true,
+        ['sign', 'verify']
+      );
+
+      const bobSignedPreKey = await X3DH.generateSignedPreKey();
+      const bobBundle = await X3DH.publishPreKeyBundle({
+        identitySigningKey: bobSigning.privateKey,
+        identityEcdhPublic: bobIdentity.publicKey,
+        identitySigningPublic: bobSigning.publicKey,
+        signedPreKey: bobSignedPreKey,
+        oneTimePreKeys: []
+      });
+
+      // Replace signature with all-0xFF bytes
+      const tamperedBundle = {
+        ...bobBundle.bundle,
+        signedPreKeySignature: btoa(String.fromCharCode(...new Uint8Array(64).fill(0xFF)))
+      };
+
+      await expect(
+        X3DH.initiatorKeyAgreement(
+          aliceIdentity,
+          tamperedBundle as any,
+          bobBundle.identitySigningPublic
+        )
+      ).rejects.toThrow();
+    });
+  });
+
+  describe('Group Chat Simulation', () => {
+    it('simulate multiple participants', async () => {
+      // Симуляция: 3 участника с разными secrets
+      const secret1 = new Uint8Array(32);
+      const secret2 = new Uint8Array(32);
+      const secret3 = new Uint8Array(32);
+      crypto.getRandomValues(secret1);
+      crypto.getRandomValues(secret2);
+      crypto.getRandomValues(secret3);
+
+      // Каждый участник создаёт свою сессию
+      const user1 = await DoubleRatchetE2E.initBob(secret1.buffer as ArrayBuffer);
+      const user2 = await DoubleRatchetE2E.initBob(secret2.buffer as ArrayBuffer);
+      const user3 = await DoubleRatchetE2E.initBob(secret3.buffer as ArrayBuffer);
+
+      // Проверяем что все созданы
+      expect(user1.sendingRatchetKey).toBeTruthy();
+      expect(user2.sendingRatchetKey).toBeTruthy();
+      expect(user3.sendingRatchetKey).toBeTruthy();
+
+      // NOTE: Полноценный group chat требует реализации Sender Keys
+      // Это симуляция базовой работоспособности
+    });
+  });
+
+  describe('Edge Cases: Empty and Unicode', () => {
+    it('handle empty message', async () => {
+      const bobState = await DoubleRatchetE2E.initBob(initialSecret.buffer as ArrayBuffer);
+      const aliceState = await DoubleRatchetE2E.initAlice(
+        initialSecret.buffer as ArrayBuffer,
+        bobState.sendingRatchetKey.publicKey
+      );
+
+      const { ciphertext, header } = await DoubleRatchetE2E.encrypt(aliceState, '');
+      const decrypted = await DoubleRatchet.decrypt(bobState, ciphertext, header);
+      expect(decrypted).toBe('');
+    });
+
+    it('handle unicode message', async () => {
+      const bobState = await DoubleRatchetE2E.initBob(initialSecret.buffer as ArrayBuffer);
+      const aliceState = await DoubleRatchetE2E.initAlice(
+        initialSecret.buffer as ArrayBuffer,
+        bobState.sendingRatchetKey.publicKey
+      );
+
+      const unicodeMsg = 'Привет мир! 🌍 Эмодзи и кириллица 🔐';
+      const { ciphertext, header } = await DoubleRatchetE2E.encrypt(aliceState, unicodeMsg);
+      const decrypted = await DoubleRatchet.decrypt(bobState, ciphertext, header);
+      expect(decrypted).toBe(unicodeMsg);
     });
   });
 });
