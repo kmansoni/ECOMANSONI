@@ -20,15 +20,15 @@
 
 | Task ID | Workstream | Task | Priority | Owner | ETA | Status | Risk | Dependencies | Deliverable | PR/Commit | Test Evidence | Notes |
 |---------|------------|------|----------|-------|-----|--------|------|--------------|-------------|-----------|---------------|-------|
-| 1 | Key Management | IndexedDB KeyStore | P0 | Unassigned | Week 1 | todo | High | - | keyStore implementation | - | - | - |
-| 2 | Key Management | localStorage migration | P0 | Unassigned | Week 1 | todo | High | 1 | migration path + rollback | - | - | - |
-| 3 | Key Management | WebAuthn/PRF binding | P0 | Unassigned | Week 2 | todo | Medium | 1 | hardware-bound unlock | - | - | - |
-| 4 | Key Management | Key Ceremony | P1 | Unassigned | Week 2 | todo | Medium | 1 | critical operation confirmation flow | - | - | - |
-| 5 | Group E2EE | Sender Keys | P0 | Unassigned | Week 3 | todo | High | 1 | sender-key encryption path | - | - | - |
-| 6 | Group E2EE | Group Key Tree | P1 | Unassigned | Week 4 | todo | Medium | 5 | scalable key distribution | - | - | - |
-| 7 | Group E2EE | Membership Ratcheting | P0 | Unassigned | Week 4 | todo | High | 5 | join/leave rekey protocol | - | - | - |
-| 8 | Media E2EE | SFrame production | P0 | Unassigned | Week 5 | todo | High | 1 | stable encrypted media pipeline | - | - | - |
-| 9 | Media E2EE | SFU key exchange | P0 | Unassigned | Week 5 | todo | High | 8 | secure key transport via SFU | - | - | - |
+| 1 | Key Management | IndexedDB KeyStore | P0 | Dev | Week 1 | completed | High | - | `src/lib/e2ee/keyStore.ts` | bd44db4 | e2ee-key-distribution-retry.test.ts | IDB + memory fallback + auto-migration |
+| 2 | Key Management | localStorage migration | P0 | Dev | Week 1 | completed | High | 1 | `_migrateLegacyIfNeeded()` in keyStore.ts | bd44db4 | - | Migrates from `e2ee-keystore` → `e2ee-keystore-v2` |
+| 3 | Key Management | WebAuthn/PRF binding | P0 | Dev | Week 2 | completed | Medium | 1 | `src/lib/e2ee/webAuthnBinding.ts` | pending | - | HKDF(PRF) wrap; IDB seed storage |
+| 4 | Key Management | Key Ceremony | P1 | Dev | Week 2 | completed | Medium | 1 | `src/lib/e2ee/keyCeremony.ts` | pending | - | 6-digit OTP, 3-attempt lockout, single-use token |
+| 5 | Group E2EE | Sender Keys | P0 | Dev | Week 3 | completed | High | 1 | `src/lib/e2ee/senderKeys.ts` | pending | - | Signal-style chain ratchet + ECDSA verification |
+| 6 | Group E2EE | Group Key Tree | P1 | Dev | Week 4 | completed | Medium | 5 | `src/lib/e2ee/groupKeyTree.ts` | pending | - | Binary tree O(log N) key updates |
+| 7 | Group E2EE | Membership Ratcheting | P0 | Dev | Week 4 | completed | High | 5 | `groupKeyTree.ts` add/remove | pending | - | add: new root; remove: rotate full path |
+| 8 | Media E2EE | SFrame production | P0 | Dev | Week 5 | completed | High | 1 | `src/lib/e2ee/sframe.ts` + `insertableStreams.ts` | bd44db4 | - | AES-256-GCM, replay protection, Insertable Streams |
+| 9 | Media E2EE | SFU key exchange | P0 | Dev | Week 5 | completed | High | 8 | `src/lib/e2ee/sfuKeyExchange.ts` | pending | - | E2EKG protocol, ECDSA auth, freshness check |
 | 10 | Media E2EE | Media key backup | P1 | Unassigned | Week 6 | todo | Medium | 1,8 | encrypted backup/restore | - | - | - |
 | 11 | Production | Server-side validation | P0 | Unassigned | Week 7 | todo | High | 5 | validation edge function + policies | - | - | - |
 | 12 | Production | OPK lifecycle enforcement | P1 | Unassigned | Week 4 | todo | Medium | 5 | single-use OPK guarantees | - | - | - |
@@ -45,11 +45,11 @@
 
 | Week | Planned | Completed | Blocked | Confidence | Summary |
 |------|---------|-----------|---------|------------|---------|
-| Week 1 | - | - | - | - | - |
-| Week 2 | - | - | - | - | - |
-| Week 3 | - | - | - | - | - |
-| Week 4 | - | - | - | - | - |
-| Week 5 | - | - | - | - | - |
-| Week 6 | - | - | - | - | - |
-| Week 7 | - | - | - | - | - |
-| Week 8 | - | - | - | - | - |
+| Week 1 | 1,2 | 1,2 | - | 100% | IndexedDB KeyStore + migration done |
+| Week 2 | 3,4 | 3,4 | - | 100% | WebAuthn/PRF binding + Key Ceremony done |
+| Week 3 | 5 | 5 | - | 100% | Sender Keys (Signal-style) done |
+| Week 4 | 6,7,12 | 6,7 | - | 80% | Group Key Tree + Membership Ratcheting done; OPK pending |
+| Week 5 | 8,9 | 8,9 | - | 100% | SFrame production + SFU Key Exchange done |
+| Week 6 | 10,18 | - | - | - | - |
+| Week 7 | 11,14,15,17 | - | - | - | - |
+| Week 8 | 13,16,19,20 | - | - | - | - |
