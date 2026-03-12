@@ -1,0 +1,5 @@
+#!/usr/bin/env sh
+set -eu
+
+echo "[pre-push] E2EE critical guard"
+node ./scripts/security/e2ee-critical-guard.mjs --mode=push

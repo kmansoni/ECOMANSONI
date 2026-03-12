@@ -10,3 +10,14 @@
 # Calls: Supabase Edge Functions
 /supabase/functions/turn-credentials/ @kmansoni
 /supabase/functions/sip-credentials/ @kmansoni
+
+# E2EE: critical crypto storage / transport / ratchet paths
+/src/lib/e2ee/keyStore.ts @kmansoni
+/src/lib/e2ee/hardwareKeyStorage.ts @kmansoni
+/src/lib/e2ee/biometricUnlock.ts @kmansoni
+/src/lib/e2ee/senderKeys.ts @kmansoni
+/src/lib/e2ee/sframeMedia.ts @kmansoni
+/src/lib/e2ee/nonceManager.ts @kmansoni
+/src/lib/e2ee/doubleRatchet.ts @kmansoni
+/src/lib/e2ee/index.ts @kmansoni
+/src/test/e2ee-key-storage.test.ts @kmansoni

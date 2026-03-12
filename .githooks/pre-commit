@@ -4,5 +4,8 @@ set -eu
 echo "[pre-commit] BOM guard"
 node ./scripts/encoding/check-bom.mjs
 
+echo "[pre-commit] E2EE critical guard"
+node ./scripts/security/e2ee-critical-guard.mjs
+
 echo "[pre-commit] Supabase db push policy guard"
 pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/supabase-db-push-policy-guard.ps1

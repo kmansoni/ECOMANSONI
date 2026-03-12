@@ -1,0 +1,72 @@
+name: E2EE Critical Guard
+
+on:
+  pull_request:
+  push:
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect critical E2EE file changes
+        id: diff
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+            HEAD="${{ github.event.pull_request.head.sha }}"
+          else
+            BASE="${{ github.event.before }}"
+            HEAD="${{ github.sha }}"
+          fi
+
+          echo "BASE=$BASE"
+          echo "HEAD=$HEAD"
+
+          CHANGED="$(git diff --name-only "$BASE" "$HEAD" || true)"
+          echo "$CHANGED"
+
+          if [[ -z "$CHANGED" ]]; then
+            echo "critical_changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if echo "$CHANGED" | grep -F -f scripts/security/e2ee-critical-files.txt >/dev/null; then
+            echo "critical_changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "critical_changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Enforce explicit override token
+        if: steps.diff.outputs.critical_changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          TOKEN='[E2EE-ALLOW]'
+
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            TITLE='${{ github.event.pull_request.title }}'
+            BODY='${{ github.event.pull_request.body }}'
+            if echo "$TITLE" | grep -F "$TOKEN" >/dev/null || echo "$BODY" | grep -F "$TOKEN" >/dev/null; then
+              echo "Override token found in PR metadata."
+              exit 0
+            fi
+          else
+            BASE="${{ github.event.before }}"
+            HEAD="${{ github.sha }}"
+            if git log --format=%B "$BASE..$HEAD" | grep -F "$TOKEN" >/dev/null; then
+              echo "Override token found in commit messages."
+              exit 0
+            fi
+          fi
+
+          echo "ERROR: Critical E2EE files were changed without explicit override token $TOKEN"
+          echo "Add $TOKEN to PR title/body (or commit message for push) to proceed."
+          exit 1

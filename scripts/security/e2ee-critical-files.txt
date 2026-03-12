@@ -1,0 +1,9 @@
+src/lib/e2ee/keyStore.ts
+src/lib/e2ee/hardwareKeyStorage.ts
+src/lib/e2ee/biometricUnlock.ts
+src/lib/e2ee/senderKeys.ts
+src/lib/e2ee/sframeMedia.ts
+src/lib/e2ee/nonceManager.ts
+src/lib/e2ee/doubleRatchet.ts
+src/lib/e2ee/index.ts
+src/test/e2ee-key-storage.test.ts
