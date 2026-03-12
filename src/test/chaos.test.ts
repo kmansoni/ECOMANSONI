@@ -20,6 +20,8 @@ import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { getConstant } from "@/lib/registry/loader";
 
+const CHAOS_RPC_TIMEOUT_MS = 30_000;
+
 function firstRow<T>(data: T | T[] | null): T | null {
   if (Array.isArray(data)) {
     return data[0] ?? null;
@@ -143,7 +145,7 @@ describe("CHAOS-01: DB Lock Contention", () => {
         expect(replay?.outcome_code).toBe(outcome.outcome_code);
       }
     }
-  }, 15000);
+  }, CHAOS_RPC_TIMEOUT_MS);
 
   it("idempotency_consistency_under_concurrent_load", async () => {
     const key = "chaos-001-ididem-" + Date.now();

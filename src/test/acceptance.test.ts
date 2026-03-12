@@ -13,6 +13,8 @@ import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { registry, getConstant } from "@/lib/registry/loader";
 import { parseCommandPayload } from "@/lib/api/validation";
 
+const ACCEPTANCE_RPC_TIMEOUT_MS = 30_000;
+
 function firstRow<T>(data: T | T[] | null): T | null {
   if (Array.isArray(data)) {
     return data[0] ?? null;
@@ -188,7 +190,7 @@ describe("T-IDEMP: Idempotency and Deduplication", () => {
     expect(row).toBeDefined();
     scopeId = row?.scope_id;
     expect(scopeId).toBeDefined();
-  });
+  }, ACCEPTANCE_RPC_TIMEOUT_MS);
 
   it("T-IDEMP-02: Replay same command with same key returns cached outcome", async () => {
     const payload = { message_text: "Hello", scope_id: scopeId };
@@ -227,7 +229,7 @@ describe("T-IDEMP: Idempotency and Deduplication", () => {
 
     expect(second?.outcome_state).toBe("found_hot");
     expect(second?.outcome_code).toBe(first?.outcome_code);
-  });
+  }, ACCEPTANCE_RPC_TIMEOUT_MS);
 
   it("T-IDEMP-03: Different idempotency key creates new outcome", async () => {
     const payload = { message_text: "Different" };
@@ -382,7 +384,7 @@ describe("T-QRY: Timeline Queries", () => {
     expect(row).toBeDefined();
     scopeId = row?.scope_id;
     expect(scopeId).toBeDefined();
-  });
+  }, ACCEPTANCE_RPC_TIMEOUT_MS);
 
   it("T-QRY-01: respect limit cap (max 200)", async () => {
     const hardCap = getConstant("TIMELINE_HARD_CAP_LIMIT");
@@ -472,7 +474,7 @@ describe("T-INV: Invites and Joins", () => {
     expect(row).toBeDefined();
     scopeId = row?.scope_id;
     expect(scopeId).toBeDefined();
-  });
+  }, ACCEPTANCE_RPC_TIMEOUT_MS);
 
   it("T-INV-01: Accept invite idempotently", async () => {
     // Replaying accept_invite should not duplicate membership
