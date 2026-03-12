@@ -10,9 +10,7 @@ import { RegistrationModal } from "@/components/auth/RegistrationModal";
 import { supabase } from "@/lib/supabase";
 import { RecommendedUsersModal } from "@/components/profile/RecommendedUsersModal";
 import { setGuestMode } from "@/lib/demo/demoMode";
-import { getPhoneAuthFunctionUrls, getPhoneAuthHeaders, getVerifyEmailOtpUrls, getSendEmailOtpUrls, getAnonHeaders } from "@/lib/auth/backendEndpoints";
-
-const DEMO_GUEST_PHONE = "+70000000000";
+import { getVerifyEmailOtpUrls, getSendEmailOtpUrls, getAnonHeaders } from "@/lib/auth/backendEndpoints";
 
 /**
  * Auth modes:
@@ -87,7 +85,7 @@ function pushUniqueUrl(list: string[], url: string) {
 
 export function AuthPage() {
   const navigate = useNavigate();
-  const [authPageOperation, setAuthPageOperation] = useState<"login" | "guest" | "otp" | null>(null);
+  const [authPageOperation, setAuthPageOperation] = useState<"login" | "otp" | null>(null);
   const authPageOpMutexRef = useRef<Promise<void> | null>(null);
   const [mode, setMode] = useState<AuthMode>("select");
   const [phone, setPhone] = useState("");
@@ -381,80 +379,6 @@ export function AuthPage() {
     });
   };
 
-  const handleGuestAccess = async () => {
-    await runExclusiveAuthPageOp("guest", async () => {
-      try {
-      const functionUrls = getPhoneAuthFunctionUrls();
-      if (functionUrls.length === 0) {
-        toast.error("Не настроен endpoint авторизации");
-        return;
-      }
-      const body = {
-        action: "register-or-login",
-        phone: DEMO_GUEST_PHONE,
-        display_name: "Гость",
-        email: "guest@placeholder.local",
-      };
-
-      let response: Response | null = null;
-      let data: any | null = null;
-      let lastAuthError: any = null;
-
-      for (const functionUrl of functionUrls) {
-        try {
-          const result = await fetchJsonWithTimeout(
-            functionUrl,
-            {
-              method: "POST",
-              headers: getPhoneAuthHeaders(),
-              body: JSON.stringify(body),
-            },
-            AUTH_TIMEOUT_MS,
-            "guest-phone-auth",
-          );
-          response = result.response;
-          data = result.data;
-          if (response.ok && data?.ok) break;
-          lastAuthError = data?.error || `HTTP ${response.status}`;
-        } catch (err) {
-          lastAuthError = err;
-        }
-      }
-
-      if (!response) {
-        throw (lastAuthError || new Error("Failed to fetch guest phone-auth"));
-      }
-      if (!response.ok || !data?.ok) {
-        toast.error("Не удалось войти как гость", { description: data?.error || (lastAuthError instanceof Error ? lastAuthError.message : String(lastAuthError || `HTTP ${response.status}`)) });
-        return;
-      }
-
-      const { error: signInError } = await withTimeout(
-        supabase.auth.setSession({
-          access_token: data.accessToken,
-          refresh_token: data.refreshToken,
-        }),
-        8000,
-        "guestSetSession",
-      );
-      if (signInError) {
-        console.error("🔴 [AuthPage] Guest sign-in error:", signInError);
-        toast.error("Не удалось войти как гость");
-        return;
-      }
-
-      setGuestMode(true);
-      toast.success("Вход без регистрации");
-      navigate("/");
-    } catch (err) {
-      console.error("🔴 [AuthPage] Guest access error:", err);
-      toast.error("Не удалось войти как гость", {
-        description: err instanceof Error ? err.message : String(err),
-      });
-      }
-    });
-  };
-
   /**
    * Register: phone + email → send OTP to given email → verify → registration modal.
    */
@@ -532,10 +456,6 @@ export function AuthPage() {
         toast.error("Не удалось отправить код");
       }
     });
-  };
-
-  const handleDevGuestMode = () => {
-    void handleGuestAccess();
   };
 
   const handleBack = () => {
@@ -809,15 +729,6 @@ export function AuthPage() {
                     )}
                   </Button>
 
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    className="w-full h-12 rounded-2xl text-sm font-medium text-white/60 hover:text-white/80 hover:bg-white/5"
-                    onClick={handleDevGuestMode}
-                    disabled={loading}
-                  >
-                    Продолжить без регистрации
-                  </Button>
                 </form>
               </div>
 

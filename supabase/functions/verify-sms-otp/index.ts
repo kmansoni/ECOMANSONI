@@ -4,10 +4,21 @@ import { enforceCors, getCorsHeaders, handleCors } from "../_shared/utils.ts";
 
 const MAX_ATTEMPTS = 5;
 
+type AdminLookupClient = {
+  auth: {
+    admin: {
+      listUsers(params: { page: number; perPage: number }): Promise<{
+        data?: { users?: Array<{ id: string; email?: string | null }> };
+        error?: { message: string } | null;
+      }>;
+    };
+  };
+};
+
 /**
- * Derive the same HMAC-based password that phone-auth uses.
+ * Derive the deterministic HMAC-based password for the SMS OTP auth path.
  * This ensures verify-sms-otp creates users / signs in with
- * the exact same credentials as the direct phone-auth flow.
+ * the exact same credentials on repeated verifications.
  */
 async function derivePassword(normalizedPhone: string, secret: string): Promise<string> {
   const encoder = new TextEncoder();
@@ -25,7 +36,14 @@ async function derivePassword(normalizedPhone: string, secret: string): Promise<
   return `v1:${hexHmac}`;
 }
 
-serve(async (req) => {
+async function findAuthUserByEmail(adminClient: AdminLookupClient, email: string) {
+  const { data, error } = await adminClient.auth.admin.listUsers({ page: 1, perPage: 200 });
+  if (error) return { user: null, error };
+  const user = (data?.users ?? []).find((entry) => String(entry.email ?? "").toLowerCase() === email.toLowerCase()) ?? null;
+  return { user, error: null };
+}
+
+serve(async (req: Request) => {
   const cors = handleCors(req);
   if (cors) return cors;
   const corsBlock = enforceCors(req);
@@ -34,7 +52,7 @@ serve(async (req) => {
   const corsHeaders = getCorsHeaders(origin);
 
   try {
-    const { phone, code, displayName } = await req.json();
+    const { phone, code, challenge_id, displayName } = await req.json();
 
     if (!phone || !code) {
       return new Response(
@@ -68,11 +86,16 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     // ── Look up the OTP record in DB ──────────────────────────────────────
-    const { data: otpRecord, error: fetchError } = await supabase
+    let otpLookup = supabase
       .from("phone_otps")
       .select("*")
-      .eq("phone", normalizedPhone)
-      .single();
+      .eq("phone", normalizedPhone);
+
+    if (challenge_id) {
+      otpLookup = otpLookup.eq("id", challenge_id);
+    }
+
+    const { data: otpRecord, error: fetchError } = await otpLookup.single();
 
     if (fetchError || !otpRecord) {
       return new Response(
@@ -83,7 +106,11 @@ serve(async (req) => {
 
     // Check expiry
     if (new Date(otpRecord.expires_at) < new Date()) {
-      await supabase.from("phone_otps").delete().eq("phone", normalizedPhone);
+      let deleteExpired = supabase.from("phone_otps").delete().eq("phone", normalizedPhone);
+      if (challenge_id) {
+        deleteExpired = deleteExpired.eq("id", challenge_id);
+      }
+      await deleteExpired;
       return new Response(
         JSON.stringify({ error: "Код истёк. Запросите новый." }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
@@ -92,7 +119,11 @@ serve(async (req) => {
 
     // Check attempts
     if (otpRecord.attempts >= MAX_ATTEMPTS) {
-      await supabase.from("phone_otps").delete().eq("phone", normalizedPhone);
+      let deleteAttempts = supabase.from("phone_otps").delete().eq("phone", normalizedPhone);
+      if (challenge_id) {
+        deleteAttempts = deleteAttempts.eq("id", challenge_id);
+      }
+      await deleteAttempts;
       return new Response(
         JSON.stringify({ error: "Слишком много попыток. Запросите новый код." }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
@@ -103,17 +134,23 @@ serve(async (req) => {
     function timingSafeEqual(a: string, b: string): boolean {
       const aBytes = new TextEncoder().encode(a);
       const bBytes = new TextEncoder().encode(b);
-      if (aBytes.length !== bBytes.length) return false;
-      let diff = 0;
-      for (let i = 0; i < aBytes.length; i++) diff |= aBytes[i] ^ bBytes[i];
+      const maxLen = Math.max(aBytes.length, bBytes.length);
+      let diff = aBytes.length ^ bBytes.length;
+      for (let i = 0; i < maxLen; i++) {
+        diff |= (aBytes[i] ?? 0) ^ (bBytes[i] ?? 0);
+      }
       return diff === 0;
     }
 
     if (!timingSafeEqual(otpRecord.code, normalizedCode)) {
-      await supabase
+      let updateAttempts = supabase
         .from("phone_otps")
         .update({ attempts: otpRecord.attempts + 1 })
         .eq("phone", normalizedPhone);
+      if (challenge_id) {
+        updateAttempts = updateAttempts.eq("id", challenge_id);
+      }
+      await updateAttempts;
 
       const remaining = MAX_ATTEMPTS - otpRecord.attempts - 1;
       return new Response(
@@ -126,9 +163,13 @@ serve(async (req) => {
     }
 
     // ── OTP is valid — delete it and create/sign-in user ─────────────────
-    await supabase.from("phone_otps").delete().eq("phone", normalizedPhone);
+    let deleteValid = supabase.from("phone_otps").delete().eq("phone", normalizedPhone);
+    if (challenge_id) {
+      deleteValid = deleteValid.eq("id", challenge_id);
+    }
+    await deleteValid;
 
-    // Use the same email+password pattern as phone-auth so accounts are shared.
+    // Use the deterministic email+password pattern so repeated SMS OTP logins share one account.
     const fakeEmail = `user.${normalizedPhone}@phoneauth.app`;
     const fakePassword = await derivePassword(normalizedPhone, phoneAuthSecret);
 
@@ -139,8 +180,14 @@ serve(async (req) => {
     let userId: string;
     let isNewUser = false;
 
-    const { data: existingUserData } = await supabase.auth.admin.getUserByEmail(fakeEmail);
-    const existingUser = existingUserData?.user ?? null;
+    const { user: existingUser, error: existingUserLookupError } = await findAuthUserByEmail(supabase, fakeEmail);
+    if (existingUserLookupError) {
+      console.error("[verify-sms-otp] Existing user lookup error:", existingUserLookupError.message);
+      return new Response(
+        JSON.stringify({ error: "Не удалось проверить существующий аккаунт" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
 
     if (!existingUser) {
       // Create new user
@@ -156,15 +203,15 @@ serve(async (req) => {
 
       if (createError) {
         // Race condition — try lookup again
-        const { data: fallbackData } = await supabase.auth.admin.getUserByEmail(fakeEmail);
-        if (!fallbackData?.user) {
+        const { user: fallbackUser } = await findAuthUserByEmail(supabase, fakeEmail);
+        if (!fallbackUser) {
           console.error("[verify-sms-otp] Create user error:", createError.message);
           return new Response(
             JSON.stringify({ error: "Не удалось создать аккаунт" }),
             { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
           );
         }
-        userId = fallbackData.user.id;
+        userId = fallbackUser.id;
       } else {
         userId = newUserData.user.id;
         isNewUser = true;

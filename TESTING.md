@@ -1,93 +1,46 @@
-# Testing Phone-Auth Flow (No SMS)
+# Testing Authentication Flows
 
-## Updated Flow
+## Current Auth Flows
 
-The system now uses **phone-auth** Edge Function instead of SMS-based OTP:
-- ✅ No SMS code required
-- ✅ Direct login/registration
-- ✅ Works in development
+- Primary: `send-email-otp` + `verify-email-otp`
+- Optional: `send-sms-otp` + `verify-sms-otp`
+- Legacy `phone-auth` removed
 
-## Test Login
+## Manual Test: Email OTP (Primary)
 
-### 1. Owner Account (khan@mansoni.ru)
+1. Open `/auth`
+2. Start login/registration with phone + email
+3. Trigger OTP send to email
+4. Enter OTP code from email
+5. Verify successful session creation and redirect
 
-**URL:** http://localhost:5173
+Expected:
 
-1. Click "Регистрация" (Register)
-2. Enter phone: `+79333222922`
-3. Wait for completion (no SMS code!)
-4. Fill profile:
-   - Имя: **Джехангир**
-   - Фамилия: **Мансуров**
-   - Email: **khan@mansoni.ru**
-   - Дата рождения: **1995** (any date 18+)
-   - Пол: **Мужской**
-   - Тип: **Физ. лицо**
-5. Click "Создать аккаунт"
-6. Should redirect to Home page with "Добро пожаловать!" message
+- User is authenticated
+- Profile/session data is loaded
+- Protected pages are accessible
 
-### 2. Test User
+## Manual Test: SMS OTP (Optional)
 
-Repeat with:
-- Phone: `+79999999999`
-- Name: Test User
-- Email: test@example.com
+1. Call `send-sms-otp`
+2. Capture `challenge_id` from response
+3. Call `verify-sms-otp` with `phone`, `code`, and `challenge_id`
+4. Verify successful sign-in/sign-up behavior
 
-## Login Test
+Expected:
 
-After registration:
-
-1. Click "Вход" (Login)
-2. Enter phone: `+79333222922` (or test user phone)
-3. Wait - **should authenticate immediately without SMS**
-4. Redirect to Home page
-
-## Verification Badges
-
-After Owner creation (manual via Supabase):
-
-```sql
-INSERT INTO user_verifications (user_id, verification_type, is_active, verified_by_admin_id, reason)
-VALUES 
-  ((SELECT user_id FROM profiles WHERE email = 'khan@mansoni.ru'), 'owner', true, '00000000-0000-0000-0000-000000000000', 'Owner initialization');
-```
-
-Owner should see **👑 Владелец** badge on their profile card.
-
-## Admin Console Access
-
-After Owner creation, Owner can access:
-- **URL:** /admin (add to any page)
-- Login required: Owner's phone (+79333222922)
-- Verify selection: Owner
-
-Admin features:
-- View users
-- Kill switch
-- JIT escalation
-- Audit logs
-- Approval queue
+- Wrong code increments attempts
+- Expired code is rejected
+- Valid code consumes OTP record
 
 ## Troubleshooting
 
-| Error | Cause | Fix |
+| Error | Cause | Action |
 |---|---|---|
-| "Missing authorization header" | Edge Function auth issue | Should work now with `supabase.functions.invoke()` |
-| "Invalid JWT" | Auth token invalid | Ensure phone-auth returns valid accessToken |
-| SMS code prompt (old flow) | Browser cached old code | Hard refresh: `Ctrl+Shift+R` |
-| Blank page after register | Missing profile update | Check browser console for errors |
+| `JWT` / `auth` errors | Invalid or expired session | Re-login and retry |
+| `does not exist` for OTP function | Missing migration/deployment | Deploy corresponding edge function/migrations |
+| OTP accepted but no session | Verify env keys in edge functions | Check `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, OTP secrets |
 
-## Code Changes
+## Notes
 
-- `src/pages/AuthPage.tsx` - Remove OTP mode, use `supabase.functions.invoke()`
-- `src/components/auth/RegistrationModal.tsx` - Remove SMS flow, use `supabase.functions.invoke()`
-- `supabase/functions/phone-auth/index.ts` - No SMS required (already updated)
-
-## Next Steps
-
-1. ✅ Test login/registration in browser
-2. Create Owner account with full profile
-3. Add verification badge for Owner
-4. Test admin console access
-5. Create test user via same phone-auth
-6. Verify JIT escalation works
+- This file was updated after removing deprecated `phone-auth` implementation.

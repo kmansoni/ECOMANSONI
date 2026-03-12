@@ -5,6 +5,7 @@ type ReadinessInputBase = {
 
 type DmReadinessInput = ReadinessInputBase & {
   conversationId: string | null | undefined;
+  expectV11?: boolean;
 };
 
 type ChannelReadinessInput = ReadinessInputBase & {
@@ -51,8 +52,31 @@ function mapDbError(table: string, error: any): string {
   return `Ошибка БД при доступе к ${table}${code ? ` (${code})` : ""}.`;
 }
 
+function mapRpcError(functionName: string, error: any): string {
+  const code = String(error?.code || "");
+  const msg = String(error?.message || "");
+  const details = String(error?.details || "");
+  const full = `${msg} ${details}`.toLowerCase();
+
+  if (code === "42883" || full.includes("does not exist") || full.includes("schema cache")) {
+    return `На сервере отсутствует RPC ${functionName}. Примените миграции чата.`;
+  }
+  if (code === "42501" || full.includes("permission denied") || full.includes("row-level security")) {
+    return `Нет прав на выполнение RPC ${functionName}. Проверьте GRANT EXECUTE.`;
+  }
+  if (full.includes("jwt") || full.includes("auth")) {
+    return "Сессия авторизации недействительна или отсутствует.";
+  }
+  return `Ошибка RPC ${functionName}${code ? ` (${code})` : ""}.`;
+}
+
+function isSafeRpcValidationError(error: any): boolean {
+  const code = String(error?.code || "");
+  return code === "22023";
+}
+
 export async function diagnoseDmSendReadiness(input: DmReadinessInput): Promise<string | null> {
-  const { supabase, userId, conversationId } = input;
+  const { supabase, userId, conversationId, expectV11 } = input;
   if (!userId) return "Пользователь не авторизован.";
   if (!conversationId) return "Диалог не выбран.";
 
@@ -77,6 +101,17 @@ export async function diagnoseDmSendReadiness(input: DmReadinessInput): Promise<
         .limit(1)
     );
     if (probe?.error) return mapDbError("messages", probe.error);
+
+    if (expectV11) {
+      const v11Probe = await withTimeout<QueryResult>(
+        supabase.rpc("chat_status_write_v11", {
+          p_device_id: "00000000-0000-0000-0000-000000000000",
+          p_client_write_seq: -1,
+        })
+      );
+      if (v11Probe?.error) return mapRpcError("chat_status_write_v11", v11Probe.error);
+    }
+
     return null;
   } catch (error) {
     if (error instanceof Error && error.message === "READINESS_TIMEOUT") {
@@ -111,6 +146,21 @@ export async function diagnoseChannelSendReadiness(input: ChannelReadinessInput)
         .limit(1)
     );
     if (probe?.error) return mapDbError("channel_messages", probe.error);
+
+    const rpcProbe = await withTimeout<QueryResult>(
+      supabase.rpc("send_channel_message_v1", {
+        p_channel_id: null,
+        p_content: "",
+        p_silent: false,
+        p_media_url: null,
+        p_media_type: null,
+        p_duration_seconds: null,
+      })
+    );
+    if (rpcProbe?.error && !isSafeRpcValidationError(rpcProbe.error)) {
+      return mapRpcError("send_channel_message_v1", rpcProbe.error);
+    }
+
     return null;
   } catch (error) {
     if (error instanceof Error && error.message === "READINESS_TIMEOUT") {
@@ -145,6 +195,19 @@ export async function diagnoseGroupSendReadiness(input: GroupReadinessInput): Pr
         .limit(1)
     );
     if (probe?.error) return mapDbError("group_chat_messages", probe.error);
+
+    const rpcProbe = await withTimeout<QueryResult>(
+      supabase.rpc("send_group_message_v1", {
+        p_group_id: null,
+        p_content: "",
+        p_media_url: null,
+        p_media_type: null,
+      })
+    );
+    if (rpcProbe?.error && !isSafeRpcValidationError(rpcProbe.error)) {
+      return mapRpcError("send_group_message_v1", rpcProbe.error);
+    }
+
     return null;
   } catch (error) {
     if (error instanceof Error && error.message === "READINESS_TIMEOUT") {

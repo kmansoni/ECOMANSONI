@@ -32,7 +32,7 @@
 | WebRTC Signalling | `server/calls-ws/` — Node.js WebSocket + Redis pub/sub |
 | Media Relay (SFU) | `server/sfu/` — Node.js |
 | Video Feed Arbiter | `server/reels-arbiter/` — Node.js |
-| Phone Auth | `server/phone-auth/` — Node.js |
+| Auth Edge Functions | `supabase/functions/send-email-otp`, `supabase/functions/verify-email-otp`, `supabase/functions/send-sms-otp`, `supabase/functions/verify-sms-otp` |
 | Email Router | `services/email-router/` — Node.js / TypeScript |
 | Notification Router | `services/notification-router/` — Node.js / TypeScript |
 | Analytics Ingest | `server/analytics-ingest/` + `server/analytics-consumer/` |

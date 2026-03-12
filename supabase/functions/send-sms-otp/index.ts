@@ -93,16 +93,18 @@ serve(async (req) => {
       .eq("phone", normalizedPhone);
 
     // Insert new OTP
-    const { error: insertError } = await supabase
+    const { data: insertedOtp, error: insertError } = await supabase
       .from("phone_otps")
       .insert({
         phone: normalizedPhone,
         code: code,
         expires_at: expiresAt.toISOString(),
         attempts: 0,
-      });
+      })
+      .select("id")
+      .single();
 
-    if (insertError) {
+    if (insertError || !insertedOtp?.id) {
       console.error("Failed to store OTP:", insertError);
       return new Response(
         JSON.stringify({ error: "Failed to generate verification code" }),
@@ -169,6 +171,7 @@ serve(async (req) => {
       JSON.stringify({ 
         success: true, 
         message: "Verification code sent",
+        challenge_id: insertedOtp.id,
         // Don't expose the code in production!
         // code: code, // Only for testing
       }),

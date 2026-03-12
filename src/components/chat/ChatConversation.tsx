@@ -34,6 +34,7 @@ import { Button } from "@/components/ui/button";
 import { useMessages } from "@/hooks/useChat";
 import { useMessageReactions } from "@/hooks/useMessageReactions";
 import { sanitizeReceivedText } from "@/lib/text-encoding";
+import { repairBrokenLineWrapArtifacts } from "@/lib/chat/textPipeline";
 import { useAuth } from "@/hooks/useAuth";
 import { useMarkConversationRead } from "@/hooks/useMarkConversationRead";
 import { useVideoCallContext } from "@/contexts/VideoCallContext";
@@ -91,6 +92,7 @@ import { cn } from "@/lib/utils";
 import { GradientAvatar } from "@/components/ui/gradient-avatar";
 import { useAppearanceRuntime } from "@/contexts/AppearanceRuntimeContext";
 import { diagnoseDmSendReadiness } from "@/lib/chat/readiness";
+import { isChatProtocolV11EnabledForUser } from "@/lib/chat/protocolV11";
 import {
   getOrCreateUserQuickReaction,
   listQuickReactionCatalog,
@@ -839,28 +841,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
   };
 
   const normalizeBrokenVerticalText = useCallback((text: string) => {
-    // Validate that text is properly encoded (basic UTF-8 sanity check)
-    try {
-      // If text contains mojibake patterns (high-bit chars that don't form valid UTF-8),
-      // it may indicate encoding issues. For Cyrillic, ensure it's valid UTF-8.
-      const encoded = new TextEncoder().encode(text);
-      const decoded = new TextDecoder('utf-8', { fatal: false }).decode(encoded);
-      if (!decoded || decoded.length === 0) {
-        return text; // Fallback if decoding fails
-      }
-    } catch {
-      return text; // If encoding/decoding fails, return original text
-    }
-
-    const lines = text.split(/\r\n|\r|\n|\u2028|\u2029/);
-    const nonEmpty = lines.map((line) => line.trim()).filter(Boolean);
-    const isSingleGlyph = (s: string) => Array.from(s).length === 1;
-    // Fix mojibake-style payloads where each symbol was saved as a separate line.
-    // Use 2+ to also fix short cases like "О\nК".
-    if (nonEmpty.length >= 2 && nonEmpty.length <= 64 && nonEmpty.every(isSingleGlyph)) {
-      return nonEmpty.join("");
-    }
-    return text;
+    return repairBrokenLineWrapArtifacts(text);
   }, []);
 
   const renderMessages = useMemo(() => {
@@ -983,6 +964,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
           supabase,
           userId: user?.id,
           conversationId,
+          expectV11: isChatProtocolV11EnabledForUser(user?.id),
         });
         toast.error("Не удалось отправить сообщение", {
           description: diagnostic ?? undefined,

@@ -6,12 +6,14 @@ import type { RealtimeChannel } from "@supabase/supabase-js";
 import { checkChannelCapabilityViaRpc } from "@/lib/channel-capabilities";
 import { checkHashtagsAllowedForText } from "@/lib/hashtagModeration";
 import { removeRealtimeMessage, upsertRealtimeMessage } from "@/lib/chat/realtimeMessageReducer";
+import { canonicalizeOutgoingChatText } from "@/lib/chat/textPipeline";
 import { fetchUserBriefMap, resolveUserBrief } from "@/lib/users/userBriefs";
 
 function isSchemaMissingError(error: unknown): boolean {
   const msg = String((error as any)?.message ?? error).toLowerCase();
   const code = String((error as any)?.code ?? "");
   return (
+    code === "PGRST202" ||
     code === "42P01" ||
     code === "42883" ||
     msg.includes("does not exist") ||
@@ -529,52 +531,67 @@ export function useChannelMessages(channelId: string | null): {
   }, [channelId, fetchMessages]);
 
   const sendMessage = async (content: string, options?: { silent?: boolean }) => {
-    if (!channelId || !user || !content.trim()) {
+    const normalizedContent = canonicalizeOutgoingChatText(content);
+
+    if (!channelId || !user || !normalizedContent) {
       if (!user) throw new Error("CHANNEL_NOT_AUTHENTICATED");
       if (!channelId) throw new Error("CHANNEL_NOT_SELECTED");
       throw new Error("CHANNEL_EMPTY_MESSAGE");
     }
 
     try {
-      const hashtagVerdict = await checkHashtagsAllowedForText(String(content || "").trim());
+      const hashtagVerdict = await checkHashtagsAllowedForText(normalizedContent);
       if (!hashtagVerdict.ok) {
         throw new Error(`HASHTAG_BLOCKED:${("blockedTags" in hashtagVerdict ? hashtagVerdict.blockedTags : []).join(", ")}`);
       }
-
-      let canPost = true;
-      try {
-        canPost = await checkChannelCapabilityViaRpc(channelId, user.id, "channel.posts.create");
-      } catch (err) {
-        if (!isSchemaMissingError(err)) throw err;
-      }
-      if (!canPost) {
-        throw new Error("No permission to publish in this channel");
-      }
-
-      const basePayload = {
-        channel_id: channelId,
-        sender_id: user.id,
-        content: content.trim(),
-      };
-
-      let { error } = await supabase.from("channel_messages").insert({
-        ...basePayload,
-        silent: Boolean(options?.silent),
+      const rpc = await (supabase as any).rpc("send_channel_message_v1", {
+        p_channel_id: channelId,
+        p_content: normalizedContent,
+        p_silent: Boolean(options?.silent),
+        p_media_url: null,
+        p_media_type: null,
+        p_duration_seconds: null,
       });
 
-      // Backward compatibility: environments without `silent` column.
-      if (error && isMissingSilentColumnError(error)) {
-        const retry = await supabase.from("channel_messages").insert(basePayload);
-        error = retry.error;
+      if (rpc.error && !isSchemaMissingError(rpc.error)) {
+        throw rpc.error;
       }
 
-      if (error) throw error;
+      if (rpc.error && isSchemaMissingError(rpc.error)) {
+        let canPost = true;
+        try {
+          canPost = await checkChannelCapabilityViaRpc(channelId, user.id, "channel.posts.create");
+        } catch (err) {
+          if (!isSchemaMissingError(err)) throw err;
+        }
+        if (!canPost) {
+          throw new Error("No permission to publish in this channel");
+        }
 
-      // Update channel updated_at
-      await supabase
-        .from("channels")
-        .update({ updated_at: new Date().toISOString() })
-        .eq("id", channelId);
+        const basePayload = {
+          channel_id: channelId,
+          sender_id: user.id,
+          content: normalizedContent,
+        };
+
+        let { error } = await supabase.from("channel_messages").insert({
+          ...basePayload,
+          silent: Boolean(options?.silent),
+        });
+
+        // Backward compatibility: environments without `silent` column.
+        if (error && isMissingSilentColumnError(error)) {
+          const retry = await supabase.from("channel_messages").insert(basePayload);
+          error = retry.error;
+        }
+
+        if (error) throw error;
+
+        await supabase
+          .from("channels")
+          .update({ updated_at: new Date().toISOString() })
+          .eq("id", channelId);
+      }
     } catch (error) {
       console.error("Error sending channel message:", error);
       throw error;
@@ -589,16 +606,6 @@ export function useChannelMessages(channelId: string | null): {
     if (!channelId || !user) return;
 
     try {
-      let canPost = true;
-      try {
-        canPost = await checkChannelCapabilityViaRpc(channelId, user.id, "channel.posts.create");
-      } catch (err) {
-        if (!isSchemaMissingError(err)) throw err;
-      }
-      if (!canPost) {
-        throw new Error("No permission to publish in this channel");
-      }
-
       const mime = String(file.type || "").toLowerCase();
       const fileExt =
         file.name.split(".").pop() ||
@@ -625,32 +632,57 @@ export function useChannelMessages(channelId: string | null): {
                 ? "🎤 Голосовое сообщение"
                 : "📎 Документ";
 
-      const basePayload = {
-        channel_id: channelId,
-        sender_id: user.id,
-        content: contentLabel,
-        media_url: publicUrl,
-        media_type: mediaType,
-        duration_seconds: options?.durationSeconds ?? null,
-      };
-
-      let { error } = await supabase.from("channel_messages").insert({
-        ...basePayload,
-        silent: Boolean(options?.silent),
+      const rpc = await (supabase as any).rpc("send_channel_message_v1", {
+        p_channel_id: channelId,
+        p_content: contentLabel,
+        p_silent: Boolean(options?.silent),
+        p_media_url: publicUrl,
+        p_media_type: mediaType,
+        p_duration_seconds: options?.durationSeconds ?? null,
       });
 
-      // Backward compatibility: environments without `silent` column.
-      if (error && isMissingSilentColumnError(error)) {
-        const retry = await supabase.from("channel_messages").insert(basePayload);
-        error = retry.error;
+      if (rpc.error && !isSchemaMissingError(rpc.error)) {
+        throw rpc.error;
       }
 
-      if (error) throw error;
+      if (rpc.error && isSchemaMissingError(rpc.error)) {
+        let canPost = true;
+        try {
+          canPost = await checkChannelCapabilityViaRpc(channelId, user.id, "channel.posts.create");
+        } catch (err) {
+          if (!isSchemaMissingError(err)) throw err;
+        }
+        if (!canPost) {
+          throw new Error("No permission to publish in this channel");
+        }
 
-      await supabase
-        .from("channels")
-        .update({ updated_at: new Date().toISOString() })
-        .eq("id", channelId);
+        const basePayload = {
+          channel_id: channelId,
+          sender_id: user.id,
+          content: contentLabel,
+          media_url: publicUrl,
+          media_type: mediaType,
+          duration_seconds: options?.durationSeconds ?? null,
+        };
+
+        let { error } = await supabase.from("channel_messages").insert({
+          ...basePayload,
+          silent: Boolean(options?.silent),
+        });
+
+        // Backward compatibility: environments without `silent` column.
+        if (error && isMissingSilentColumnError(error)) {
+          const retry = await supabase.from("channel_messages").insert(basePayload);
+          error = retry.error;
+        }
+
+        if (error) throw error;
+
+        await supabase
+          .from("channels")
+          .update({ updated_at: new Date().toISOString() })
+          .eq("id", channelId);
+      }
     } catch (error) {
       console.error("Error sending channel media message:", error);
       throw error;

@@ -100,7 +100,8 @@ React Router 6 with lazy-loaded page components. Routes are split into:
 | Function | Purpose |
 |---|---|
 | `insurance-assistant` | Streams AI responses for the Insurance Chat (SSE) |
-| `phone-auth` | Phone-number authentication (no SMS) |
+| `send-email-otp` / `verify-email-otp` | Primary authentication flow via email OTP |
+| `send-sms-otp` / `verify-sms-otp` | Optional SMS OTP flow (edge functions) |
 
 ### calls-ws (`server/calls-ws/`)
 
@@ -127,7 +128,7 @@ Control-plane service for short-video distribution:
 ### Authentication Flow
 
 ```
-User → AuthPage → Supabase phone-auth Edge Function
+User → AuthPage → Supabase send-email-otp / verify-email-otp
                         │
                         ▼
                    Supabase Auth

@@ -12,6 +12,24 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { getCorsHeaders, handleCors, checkRateLimit } from "../_shared/utils.ts";
 
+type AdminLookupClient = {
+  auth: {
+    admin: {
+      listUsers(params: { page: number; perPage: number }): Promise<{
+        data?: { users?: Array<{ id: string; email?: string | null }> };
+        error?: { message?: string; status?: number } | null;
+      }>;
+    };
+  };
+};
+
+async function findAuthUserByEmail(adminClient: AdminLookupClient, email: string) {
+  const { data, error } = await adminClient.auth.admin.listUsers({ page: 1, perPage: 200 });
+  if (error) return { user: null, error };
+  const user = (data?.users ?? []).find((entry) => String(entry.email ?? "").toLowerCase() === email.toLowerCase()) ?? null;
+  return { user, error: null };
+}
+
 function jsonResp(origin: string | null, body: Record<string, unknown>, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -370,14 +388,12 @@ Deno.serve(async (req: Request) => {
 
       // Existing account but sign-in failed with current derived password (e.g. secret rotation).
       // Recover by finding the user id and forcing password sync.
-      const { data: userLookupData, error: listErr } = await supabase.auth.admin.getUserByEmail(email);
-      if (listErr || !userLookupData?.user) {
+      const { user: existingUser, error: listErr } = await findAuthUserByEmail(supabase, email);
+      if (listErr || !existingUser) {
         const errorSafe = listErr ? { message: String(listErr.message ?? ""), status: listErr.status } : null;
-        console.error("[verify-email-otp] getUserByEmail error:", errorSafe);
+        console.error("[verify-email-otp] findAuthUserByEmail error:", errorSafe);
         return jsonResp(origin, { error: "Account exists but cannot be recovered now. Try again." }, 500);
       }
-
-      const existingUser = userLookupData.user;
 
       if (
         !existingUser.id ||

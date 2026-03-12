@@ -5,7 +5,21 @@ import type { RealtimeChannel } from "@supabase/supabase-js";
 import { getErrorMessage } from "@/lib/utils";
 import { checkHashtagsAllowedForText } from "@/lib/hashtagModeration";
 import { removeRealtimeMessage, upsertRealtimeMessage } from "@/lib/chat/realtimeMessageReducer";
+import { canonicalizeOutgoingChatText } from "@/lib/chat/textPipeline";
 import { fetchUserBriefMap, resolveUserBrief } from "@/lib/users/userBriefs";
+
+function isSchemaMissingError(error: unknown): boolean {
+  const msg = String((error as any)?.message ?? error).toLowerCase();
+  const code = String((error as any)?.code ?? "");
+  return (
+    code === "PGRST202" ||
+    code === "42P01" ||
+    code === "42883" ||
+    msg.includes("does not exist") ||
+    msg.includes("function") ||
+    msg.includes("relation")
+  );
+}
 
 export interface GroupChat {
   id: string;
@@ -493,31 +507,46 @@ export function useGroupMessages(groupId: string | null) {
   }, [groupId, fetchMessages]);
 
   const sendMessage = async (content: string) => {
-    if (!groupId || !user || !content.trim()) {
+    const normalizedContent = canonicalizeOutgoingChatText(content);
+
+    if (!groupId || !user || !normalizedContent) {
       if (!user) throw new Error("GROUP_NOT_AUTHENTICATED");
       if (!groupId) throw new Error("GROUP_NOT_SELECTED");
       throw new Error("GROUP_EMPTY_MESSAGE");
     }
 
     try {
-      const hashtagVerdict = await checkHashtagsAllowedForText(String(content || "").trim());
+      const hashtagVerdict = await checkHashtagsAllowedForText(normalizedContent);
       if (!hashtagVerdict.ok) {
         throw new Error(`HASHTAG_BLOCKED:${("blockedTags" in hashtagVerdict ? hashtagVerdict.blockedTags : []).join(", ")}`);
       }
 
-      const { error } = await supabase.from("group_chat_messages").insert({
-        group_id: groupId,
-        sender_id: user.id,
-        content: content.trim(),
+      const rpc = await (supabase as any).rpc("send_group_message_v1", {
+        p_group_id: groupId,
+        p_content: normalizedContent,
+        p_media_url: null,
+        p_media_type: null,
       });
 
-      if (error) throw error;
+      if (rpc.error && !isSchemaMissingError(rpc.error)) {
+        throw rpc.error;
+      }
 
-      // Обновляем updated_at группы
-      await supabase
-        .from("group_chats")
-        .update({ updated_at: new Date().toISOString() })
-        .eq("id", groupId);
+      if (rpc.error && isSchemaMissingError(rpc.error)) {
+        const { error } = await supabase.from("group_chat_messages").insert({
+          group_id: groupId,
+          sender_id: user.id,
+          content: normalizedContent,
+        });
+
+        if (error) throw error;
+
+        // Обновляем updated_at группы
+        await supabase
+          .from("group_chats")
+          .update({ updated_at: new Date().toISOString() })
+          .eq("id", groupId);
+      }
     } catch (error) {
       console.error("Error sending group message:", error);
       throw error;

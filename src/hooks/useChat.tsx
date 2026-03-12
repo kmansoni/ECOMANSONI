@@ -10,7 +10,8 @@ import { toast } from "sonner";
 import { getLastChatSchemaProbe } from "@/lib/chat/schemaProbe";
 import { uploadMedia } from "@/lib/mediaUpload";
 import { buildChatBodyEnvelope, sendMessageV1 } from "@/lib/chat/sendMessageV1";
-import { sanitizeReceivedText, sanitizeTextForTransport } from "@/lib/text-encoding";
+import { sanitizeReceivedText } from "@/lib/text-encoding";
+import { canonicalizeOutgoingChatText, repairBrokenLineWrapArtifacts } from "@/lib/chat/textPipeline";
 import {
   bumpChatMetric,
   getOrCreateChatDeviceId,
@@ -57,29 +58,22 @@ function isBlockedDmError(err: unknown): boolean {
   );
 }
 
-function normalizeBrokenVerticalText(text: string): string {
-  // Validate that text is properly encoded (basic UTF-8 sanity check)
-  try {
-    // If text contains mojibake patterns (high-bit chars that don't form valid UTF-8),
-    // it may indicate encoding issues. For Cyrillic, ensure it's valid UTF-8.
-    const encoded = new TextEncoder().encode(text);
-    const decoded = new TextDecoder('utf-8', { fatal: false }).decode(encoded);
-    if (!decoded || decoded.length === 0) {
-      return text; // Fallback if decoding fails
-    }
-  } catch {
-    return text; // If encoding/decoding fails, return original text
-  }
+function shouldFallbackToLegacySend(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const anyErr = err as any;
+  const code = typeof anyErr.code === "string" ? anyErr.code : "";
+  const full = `${String(anyErr.message || "")} ${String(anyErr.details || "")}`.toLowerCase();
 
-  const lines = text.split(/\r\n|\r|\n|\u2028|\u2029/);
-  const nonEmpty = lines.map((line) => line.trim()).filter(Boolean);
-  const isSingleGlyph = (s: string) => Array.from(s).length === 1;
-  // If payload became "one symbol per line", stitch it back.
-  // Use 2+ to also fix short cases like "О\nК".
-  if (nonEmpty.length >= 2 && nonEmpty.length <= 64 && nonEmpty.every(isSingleGlyph)) {
-    return nonEmpty.join("");
-  }
-  return text;
+  // Fallback only on v11 infra/config issues; business rejections should remain explicit.
+  if (code === "42883" || code === "PGRST202" || code === "PGRST301") return true;
+  if (full.includes("chat_send_message_v11") && (full.includes("does not exist") || full.includes("schema cache"))) return true;
+  if (full.includes("permission denied") && full.includes("chat_send_message_v11")) return true;
+
+  return false;
+}
+
+function normalizeBrokenVerticalText(text: string): string {
+  return repairBrokenLineWrapArtifacts(text);
 }
 
 export interface ChatMessage {
@@ -1027,9 +1021,7 @@ export function useMessages(conversationId: string | null) {
   }, [user]);
 
   const sendMessage = async (content: string, opts?: { clientMsgId?: string; is_silent?: boolean; [key: string]: unknown }) => {
-    let normalizedContent = normalizeBrokenVerticalText(content).trim();
-    // Ensure proper UTF-8 encoding for Cyrillic and other Unicode text
-    normalizedContent = sanitizeTextForTransport(normalizedContent);
+    const normalizedContent = canonicalizeOutgoingChatText(content);
 
     if (!conversationId || !user || !normalizedContent) {
       if (!user) throw new Error("CHAT_NOT_AUTHENTICATED");
@@ -1088,7 +1080,32 @@ export function useMessages(conversationId: string | null) {
           p_content: normalizedContent,
           p_client_sent_at: new Date().toISOString(),
         });
-        if (ackErr) throw ackErr;
+        if (ackErr) {
+          if (shouldFallbackToLegacySend(ackErr)) {
+            clearPendingReceiptWatch(clientWriteSeq);
+            v11ClientWriteSeq = null;
+            bumpChatMetric("v11_fallback_to_v1_count", 1);
+
+            const { messageId } = await sendMessageV1({
+              conversationId,
+              clientMsgId,
+              body: normalizedContent,
+            });
+            const { data: msgRow, error: msgErr } = await supabase.from("messages").select("*").eq("id", messageId).maybeSingle();
+            if (msgErr) throw msgErr;
+            if (!msgRow) throw new Error("SEND_MESSAGE_V1_FETCH_FAILED");
+
+            const returned = msgRow as unknown as ChatMessage;
+            pendingLocalByClientIdRef.current.delete(clientMsgId);
+            setMessages((prev) => {
+              const withoutLocal = prev.filter((m) => !(m.id.startsWith("local:") && m.client_msg_id === clientMsgId));
+              if (withoutLocal.some((m) => m.id === returned.id)) return withoutLocal;
+              return sortMessages([...withoutLocal, returned]);
+            });
+            return;
+          }
+          throw ackErr;
+        }
 
         const ack = (Array.isArray(ackRows) ? ackRows[0] : null) as any;
         const ackStatus = String(ack?.ack_status || "");

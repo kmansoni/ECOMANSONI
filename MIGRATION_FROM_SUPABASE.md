@@ -248,7 +248,8 @@ r2 cp ./avatars r2://your-bucket/avatars
 | `admin-api` | Admin panel API | High |
 | `bot-api` | Bot integrations | Medium |
 | `turn-credentials` | WebRTC TURN tokens | Low |
-| `phone-auth` | Phone OTP | Medium |
+| `send-email-otp` / `verify-email-otp` | Primary auth OTP flow | Medium |
+| `send-sms-otp` / `verify-sms-otp` | Optional SMS OTP flow | Medium |
 | `insurance-*` | Insurance module (6 functions) | Medium |
 | `reels-feed` | Reels algorithm | High |
 | `trends-worker` | Background jobs | High |

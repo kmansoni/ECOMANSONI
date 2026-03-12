@@ -101,10 +101,10 @@
 |---|-----------|------|----------|-------------|
 | C-1 | Токены в localStorage без шифрования | `src/auth/sessionStore.ts` | access_token/refresh_token в открытом виде. XSS = полный доступ | Перейти на HttpOnly Secure SameSite=Strict cookies |
 | C-2 | Device secret в localStorage | `src/auth/deviceIdentity.ts` | device_uid + device_secret в JSON. XSS = компрометация identity | Шифровать через Web Crypto перед сохранением |
-| C-3 | OTP store в памяти (Map) | `server/phone-auth/index.mjs` | При рестарте все OTP теряются. Не масштабируется | Перевести на Redis с TTL |
-| C-4 | Math.random() для OTP | `server/phone-auth/index.mjs:248` | Не криптографически безопасен | Заменить на crypto.randomInt(100000, 999999) |
+| C-3 | Legacy phone-auth OTP store в памяти (Map) | Удалённый legacy стек (`server/phone-auth/`) | Риск относился к удалённой реализации | N/A (стек удалён из репозитория) |
+| C-4 | Legacy Math.random() для OTP | Удалённый legacy стек (`server/phone-auth/`) | Риск относился к удалённой реализации | N/A (стек удалён из репозитория) |
 | C-5 | Fail-open в trust enforcement | `server/trust-enforcement/middleware.ts` | При ошибке сервиса — middleware пропускает запрос | Возвращать 503, а не next() |
-| C-6 | account_id: "unknown" в JWT | `services/auth/src/index.ts:162` | При refresh token ротации JWT без привязки к аккаунту | Извлекать account_id из сессии БД |
+| C-6 | account_id: "unknown" в JWT (legacy auth-service) | Удалённый legacy стек (`services/auth/`) | Риск относился к удалённой реализации | N/A (стек удалён из репозитория) |
 
 ### 3.2 🟠 Высокие (P1)
 
@@ -115,7 +115,7 @@
 | H-3 | Redis race condition | `server/trust-enforcement/rate-limiter.service.ts:163` | fetch→compute→set без атомарности |
 | H-4 | NSFW проверка только на клиенте | `src/lib/moderation/imageFilter.ts` | Модифицированный клиент обходит проверку |
 | H-5 | Текстовый фильтр легко обходим | `src/lib/moderation/textFilter.ts` | lowerText.includes(word) — обходится юникодом |
-| H-6 | JWT 7 дней без ротации | `server/phone-auth/index.mjs:258` | Длинный lifetime в legacy endpoint |
+| H-6 | JWT 7 дней без ротации (legacy endpoint) | Удалённый legacy стек (`server/phone-auth/`) | Риск относился к удалённой реализации |
 | H-7 | Cloud password как SHA-256 без salt | `src/lib/passcode.ts` | Уязвим к rainbow tables. Нужен Argon2id/PBKDF2+salt |
 
 ### 3.3 🟡 Средние (P2)
