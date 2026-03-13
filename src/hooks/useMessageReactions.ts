@@ -66,6 +66,7 @@ export function useMessageReactions(conversationId: string) {
   const [reactionsMap, setReactionsMap] = useState<ReactionsMap>(new Map());
   const [canFilterByConversation, setCanFilterByConversation] = useState(true);
   const channelRef = useRef<RealtimeChannel | null>(null);
+  const tableUnavailableRef = useRef(false);
   const reactionsMapRef = useRef<ReactionsMap>(new Map());
   const mutationVersionRef = useRef(0);
   const fetchRequestIdRef = useRef(0);
@@ -74,6 +75,21 @@ export function useMessageReactions(conversationId: string) {
   const isMissingConversationIdError = useCallback((err: any) => {
     const msg = String(err?.message ?? "");
     return err?.code === "42703" || msg.includes("message_reactions.conversation_id") || msg.includes("conversation_id does not exist");
+  }, []);
+
+  const isMissingReactionsTableError = useCallback((err: any) => {
+    const msg = String(err?.message ?? "").toLowerCase();
+    const details = String(err?.details ?? "").toLowerCase();
+    const code = String(err?.code ?? "");
+    const status = Number(err?.status ?? 0);
+    return (
+      code === "42P01" ||
+      code === "PGRST205" ||
+      code === "PGRST204" ||
+      msg.includes("message_reactions") && (msg.includes("does not exist") || msg.includes("could not find the table") || msg.includes("schema cache")) ||
+      details.includes("message_reactions") && details.includes("schema cache") ||
+      status === 404
+    );
   }, []);
 
   // ── localStorage helpers ─────────────────────────────────────────────────
@@ -149,6 +165,11 @@ export function useMessageReactions(conversationId: string) {
   // ── Fetch all reactions for the conversation ─────────────────────────────
 
   const fetchReactions = useCallback(async () => {
+    if (tableUnavailableRef.current) {
+      const rows = loadFromLS();
+      replaceReactionsMap(mergeReactionRows(rows, user?.id));
+      return;
+    }
     const requestId = ++fetchRequestIdRef.current;
     const mutationVersionAtStart = mutationVersionRef.current;
 
@@ -177,19 +198,22 @@ export function useMessageReactions(conversationId: string) {
 
       await fetchByMessageIds(requestId, mutationVersionAtStart);
     } catch (err) {
+      if (isMissingReactionsTableError(err)) {
+        tableUnavailableRef.current = true;
+      }
       logger.warn("message_reactions.fetch_fallback_ls", { error: err, conversationId });
       const rows = loadFromLS();
       if (!canApplyFetchResult(requestId, mutationVersionAtStart)) return;
       replaceReactionsMap(mergeReactionRows(rows, user?.id));
     }
-  }, [canApplyFetchResult, canFilterByConversation, conversationId, user?.id, persistToLS, loadFromLS, isMissingConversationIdError, fetchByMessageIds, replaceReactionsMap]);
+  }, [canApplyFetchResult, canFilterByConversation, conversationId, user?.id, persistToLS, loadFromLS, isMissingConversationIdError, isMissingReactionsTableError, fetchByMessageIds, replaceReactionsMap]);
 
   // ── Realtime subscription ────────────────────────────────────────────────
 
   useEffect(() => {
     fetchReactions();
 
-    if (!canFilterByConversation) {
+    if (!canFilterByConversation || tableUnavailableRef.current) {
       return () => {};
     }
 
@@ -270,6 +294,9 @@ export function useMessageReactions(conversationId: string) {
       });
 
       try {
+        if (tableUnavailableRef.current) {
+          return;
+        }
         const payload: any = {
           message_id: messageId,
           user_id: user.id,
@@ -283,6 +310,10 @@ export function useMessageReactions(conversationId: string) {
           .upsert(payload, { onConflict: "message_id,user_id" });
         if (error) throw error;
       } catch (err) {
+        if (isMissingReactionsTableError(err)) {
+          tableUnavailableRef.current = true;
+          return;
+        }
         if (isMissingConversationIdError(err)) {
           setCanFilterByConversation(false);
         }
@@ -291,7 +322,7 @@ export function useMessageReactions(conversationId: string) {
         fetchReactions();
       }
     },
-    [user, conversationId, fetchReactions, canFilterByConversation, isMissingConversationIdError, commitReactionsMap]
+    [user, conversationId, fetchReactions, canFilterByConversation, isMissingConversationIdError, isMissingReactionsTableError, commitReactionsMap]
   );
 
   const removeReaction = useCallback(
@@ -322,6 +353,9 @@ export function useMessageReactions(conversationId: string) {
       });
 
       try {
+        if (tableUnavailableRef.current) {
+          return;
+        }
         const { error } = await db
           .from("message_reactions")
           .delete()
@@ -330,11 +364,15 @@ export function useMessageReactions(conversationId: string) {
           .eq("emoji", emoji);
         if (error) throw error;
       } catch (err) {
+        if (isMissingReactionsTableError(err)) {
+          tableUnavailableRef.current = true;
+          return;
+        }
         logger.error("message_reactions.remove_failed", { error: err, conversationId, messageId, emoji });
         fetchReactions();
       }
     },
-    [user, fetchReactions, commitReactionsMap]
+    [user, fetchReactions, commitReactionsMap, isMissingReactionsTableError]
   );
 
   const toggleReaction = useCallback(

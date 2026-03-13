@@ -77,6 +77,43 @@ type CachedSenderProfile = {
 const LIST_REFRESH_DEBOUNCE_MS = 300;
 const PROFILE_CACHE_TTL_MS = 5 * 60 * 1000;
 const PROFILE_CACHE_MAX_ENTRIES = 200;
+const CHANNEL_MEMBERS_READABLE_LS_KEY = "channel_members.readable.v1";
+
+function isExpectedChannelMembersReadError(error: unknown): boolean {
+  const code = String((error as any)?.code ?? "");
+  const status = Number((error as any)?.status ?? 0);
+  const message = String((error as any)?.message ?? "").toLowerCase();
+  const details = String((error as any)?.details ?? "").toLowerCase();
+  return (
+    code === "42501" ||
+    code === "42P01" ||
+    code === "PGRST204" ||
+    code === "PGRST205" ||
+    status === 403 ||
+    status === 404 ||
+    (message.includes("channel_members") && (message.includes("permission") || message.includes("does not exist") || message.includes("schema cache"))) ||
+    (details.includes("channel_members") && details.includes("schema cache"))
+  );
+}
+
+function isChannelMembersReadDisabled(): boolean {
+  try {
+    const v = localStorage.getItem(CHANNEL_MEMBERS_READABLE_LS_KEY);
+    if (v === "0") return true;
+    if (import.meta.env.DEV && v !== "1") return true;
+    return false;
+  } catch {
+    return import.meta.env.DEV;
+  }
+}
+
+function disableChannelMembersRead(): void {
+  try {
+    localStorage.setItem(CHANNEL_MEMBERS_READABLE_LS_KEY, "0");
+  } catch {
+    // best-effort cache only
+  }
+}
 
 export function useChannels() {
   const { user } = useAuth();
@@ -124,17 +161,25 @@ export function useChannels() {
       // If user is logged in, check which channels they're a member of
       let memberChannelIds: string[] = [];
       const memberRoleByChannelId: Record<string, string> = {};
-      if (user) {
-        const { data: memberData } = await supabase
+      if (user && !isChannelMembersReadDisabled()) {
+        const { data: memberData, error: memberError } = await supabase
           .from("channel_members")
           .select("channel_id, role")
           .eq("user_id", user.id);
 
-        memberChannelIds = (memberData || []).map((m: any) => m.channel_id);
-        (memberData || []).forEach((m: any) => {
-          if (!m?.channel_id) return;
-          memberRoleByChannelId[String(m.channel_id)] = String(m?.role ?? "member");
-        });
+        if (memberError) {
+          if (isExpectedChannelMembersReadError(memberError)) {
+            disableChannelMembersRead();
+          } else {
+            console.warn("Unexpected channel_members read error:", memberError);
+          }
+        } else {
+          memberChannelIds = (memberData || []).map((m: any) => m.channel_id);
+          (memberData || []).forEach((m: any) => {
+            if (!m?.channel_id) return;
+            memberRoleByChannelId[String(m.channel_id)] = String(m?.role ?? "member");
+          });
+        }
       }
 
       // Fetch last message per channel (correctness > one global limit)

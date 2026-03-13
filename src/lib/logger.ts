@@ -128,21 +128,39 @@ function emit(
     ...(ctx ? { context: ctx } : {}),
   };
 
+  const c = (globalThis as any)?.console;
+
+  const safeWrite = (method: "debug" | "info" | "warn" | "error" | "log") => {
+    try {
+      const fn = c?.[method] ?? c?.log;
+      if (typeof fn === "function") {
+        // Some WebViews require console methods to be called with console as `this`.
+        fn.call(c, payload);
+      }
+    } catch {
+      // Logging must never crash application runtime.
+    }
+  };
+
   switch (level) {
-    case "debug":
-      console.debug(payload);
+    case "debug": {
+      safeWrite("debug");
       break;
-    case "info":
-      console.info(payload);
+    }
+    case "info": {
+      safeWrite("info");
       break;
-    case "warn":
-      console.warn(payload);
+    }
+    case "warn": {
+      safeWrite("warn");
       trySentryCapture("warn", message, context);
       break;
-    case "error":
-      console.error(payload);
+    }
+    case "error": {
+      safeWrite("error");
       trySentryCapture("error", message, context);
       break;
+    }
   }
 }
 

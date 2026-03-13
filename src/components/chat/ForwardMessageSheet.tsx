@@ -13,6 +13,7 @@ import { supabase } from "@/lib/supabase";
 import { buildChatBodyEnvelope, sendMessageV1 } from "@/lib/chat/sendMessageV1";
 import { GradientAvatar } from "@/components/ui/gradient-avatar";
 import { fetchUserBriefMap, resolveUserBrief } from "@/lib/users/userBriefs";
+import { logger } from "@/lib/logger";
 
 interface ForwardMessageSheetProps {
   open: boolean;
@@ -103,8 +104,8 @@ export function ForwardMessageSheet({ open, onOpenChange, message }: ForwardMess
         const briefMap = await fetchUserBriefMap([user.id], supabase as any);
         const name = (resolveUserBrief(user.id, briefMap)?.display_name || "").trim();
         if (name) setSenderName(name);
-      } catch {
-        // ignore
+      } catch (error) {
+        logger.debug("forward: failed to resolve sender display name", { error });
       }
     })();
   }, [open, user]);
@@ -183,9 +184,12 @@ export function ForwardMessageSheet({ open, onOpenChange, message }: ForwardMess
           .from("messages")
           .update({ forward_hide_sender: true })
           .eq("id", result.messageId);
-      } catch {
+      } catch (error) {
         // Non-critical: log but don't re-throw — message was already delivered.
-        console.warn("[forward] failed to set forward_hide_sender on DM message", result.messageId);
+        logger.warn("forward: failed to set forward_hide_sender on DM message", {
+          messageId: result.messageId,
+          error,
+        });
       }
     }
   };
@@ -267,7 +271,7 @@ export function ForwardMessageSheet({ open, onOpenChange, message }: ForwardMess
       toast.success("Переслано");
       close();
     } catch (e) {
-      console.error("[forward] error", e);
+      logger.error("forward: forwarding failed", { error: e });
       toast.error("Не удалось переслать");
     }
   };

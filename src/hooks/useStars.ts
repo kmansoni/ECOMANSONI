@@ -24,23 +24,49 @@ export function useStars() {
   const [transactions, setTransactions] = useState<StarTransaction[]>([]);
   const [canClaimDaily, setCanClaimDaily] = useState(false);
   const [dailyNextAt, setDailyNextAt] = useState<Date | null>(null);
+  const [starsUnavailable, setStarsUnavailable] = useState(false);
+
+  const isOptionalStarsError = (error: any): boolean => {
+    const code = String(error?.code ?? "");
+    const status = Number(error?.status ?? 0);
+    const message = String(error?.message ?? "").toLowerCase();
+    const details = String(error?.details ?? "").toLowerCase();
+    return (
+      code === "42P01" ||
+      code === "PGRST204" ||
+      code === "PGRST205" ||
+      code === "42501" ||
+      status === 403 ||
+      status === 404 ||
+      message.includes("user_stars") ||
+      details.includes("user_stars")
+    );
+  };
 
   const fetchBalance = useCallback(async () => {
-    if (!user) return;
+    if (!user || starsUnavailable) return;
     try {
-      const { data } = await (supabase as any)
+      const { data, error } = await (supabase as any)
         .from("user_stars")
         .select("balance")
         .eq("user_id", user.id)
-        .single();
+        .maybeSingle();
+      if (error) {
+        if (isOptionalStarsError(error)) {
+          setStarsUnavailable(true);
+          setBalance(0);
+          return;
+        }
+        throw error;
+      }
       setBalance(data?.balance ?? 0);
     } catch {
       setBalance(0);
     }
-  }, [user]);
+  }, [user, starsUnavailable]);
 
   const fetchTransactions = useCallback(async () => {
-    if (!user) return;
+    if (!user || starsUnavailable) return;
     try {
       const { data } = await (supabase as any)
         .from("star_transactions")
@@ -52,7 +78,7 @@ export function useStars() {
     } catch {
       setTransactions([]);
     }
-  }, [user]);
+  }, [user, starsUnavailable]);
 
   const checkDailyBonus = useCallback(() => {
     const lastClaimed = localStorage.getItem(DAILY_BONUS_KEY);
@@ -82,7 +108,7 @@ export function useStars() {
   }, [user, fetchBalance, fetchTransactions, checkDailyBonus]);
 
   const addStars = useCallback(async (amount: number, description = "Пополнение баланса") => {
-    if (!user) return;
+    if (!user || starsUnavailable) return;
     try {
       // Upsert user_stars
       await (supabase as any)
@@ -107,7 +133,7 @@ export function useStars() {
           .from("user_stars")
           .select("balance, total_earned")
           .eq("user_id", user.id)
-          .single();
+          .maybeSingle();
 
         if (existing) {
           await (supabase as any)
@@ -141,16 +167,16 @@ export function useStars() {
       console.error("addStars error", e);
       toast.error("Не удалось пополнить баланс");
     }
-  }, [user, fetchBalance, fetchTransactions]);
+  }, [user, fetchBalance, fetchTransactions, starsUnavailable]);
 
   const claimDailyBonus = useCallback(async () => {
-    if (!user || !canClaimDaily) return;
+    if (!user || !canClaimDaily || starsUnavailable) return;
     try {
       const { data: existing } = await (supabase as any)
         .from("user_stars")
         .select("balance, total_earned")
         .eq("user_id", user.id)
-        .single();
+        .maybeSingle();
 
       if (existing) {
         await (supabase as any)
@@ -187,7 +213,7 @@ export function useStars() {
       console.error("claimDailyBonus error", e);
       toast.error("Не удалось получить бонус");
     }
-  }, [user, canClaimDaily, fetchBalance, fetchTransactions]);
+  }, [user, canClaimDaily, fetchBalance, fetchTransactions, starsUnavailable]);
 
   return {
     balance,
@@ -198,6 +224,7 @@ export function useStars() {
     addStars,
     claimDailyBonus,
     refetch: () => {
+      if (starsUnavailable) return;
       fetchBalance();
       fetchTransactions();
     },

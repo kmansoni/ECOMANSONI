@@ -81,6 +81,7 @@ import {
   type MentionUser,
 } from "@/hooks/useMentions";
 import { fetchUserBriefMap, resolveUserBrief } from "@/lib/users/userBriefs";
+import { logger } from "@/lib/logger";
 
 interface ChannelConversationProps {
   channel: Channel;
@@ -124,6 +125,23 @@ const stableIntInRange = (seed: string, minInclusive: number, maxInclusive: numb
   return min + (stableHash32(seed) % span);
 };
 
+const isExpectedChannelMembersAccessError = (error: any): boolean => {
+  const code = String(error?.code ?? "");
+  const status = Number(error?.status ?? 0);
+  const message = String(error?.message ?? "").toLowerCase();
+  const details = String(error?.details ?? "").toLowerCase();
+  return (
+    code === "42501" ||
+    code === "42P01" ||
+    code === "PGRST204" ||
+    code === "PGRST205" ||
+    status === 403 ||
+    status === 404 ||
+    (message.includes("channel_members") && (message.includes("permission") || message.includes("does not exist") || message.includes("schema cache"))) ||
+    (details.includes("channel_members") && details.includes("schema cache"))
+  );
+};
+
 export function ChannelConversation({ channel, onBack, onLeave }: ChannelConversationProps) {
   const { user } = useAuth();
   const { setIsChatOpen } = useChatOpen();
@@ -161,7 +179,8 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
   const [notifySubscribers, setNotifySubscribers] = useState<boolean>(() => {
     try {
       return localStorage.getItem(`channel.notify.${channel.id}`) !== "0";
-    } catch {
+    } catch (error) {
+      logger.debug("[ChannelConversation] Failed to read notify preference", { channelId: channel.id, error });
       return true;
     }
   });
@@ -201,7 +220,8 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
   const [liveMode, setLiveMode] = useState<boolean>(() => {
     try {
       return localStorage.getItem(`channel.live_mode.${channel.id}`) === "1";
-    } catch {
+    } catch (error) {
+      logger.debug("[ChannelConversation] Failed to read live mode", { channelId: channel.id, error });
       return false;
     }
   });
@@ -236,7 +256,7 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
 
   // ─── Load channel member participants for @mentions ────────────────────────
   useEffect(() => {
-    if (!channel.id || !user) return;
+    if (!channel.id || !user || !canCreatePosts) return;
     let cancelled = false;
     void (async () => {
       try {
@@ -263,10 +283,16 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
             })
             .filter(Boolean) as MentionUser[]
         );
-      } catch { /* non-fatal */ }
+      } catch (error) {
+        if (isExpectedChannelMembersAccessError(error)) {
+          logger.debug("[ChannelConversation] Mention participants unavailable for current user", { channelId: channel.id, error });
+        } else {
+          logger.warn("[ChannelConversation] Failed to load mention participants", { channelId: channel.id, error });
+        }
+      }
     })();
     return () => { cancelled = true; };
-  }, [channel.id, user]);
+  }, [channel.id, user, canCreatePosts]);
 
   const { renderText } = useMentions(mentionParticipants);
 
@@ -288,8 +314,9 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
         if (error) throw error;
         if (cancelled) return;
         setPinnedMessageId(data?.message_id ? String(data.message_id) : null);
-      } catch {
+      } catch (error) {
         if (cancelled) return;
+        logger.warn("[ChannelConversation] Failed to load pinned message", { channelId: channel.id, error });
         setPinnedMessageId(null);
       } finally {
         if (!cancelled) setPinnedLoaded(true);
@@ -301,9 +328,8 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
     const channelPins = supabase
       .channel(`channel-pins:${channel.id}`)
       .on(
-        "postgres_changes",
+        "postgres_changes" as any,
         {
-          event: "*",
           schema: "public",
           table: "channel_pins",
           filter: `channel_id=eq.${channel.id}`,
@@ -328,8 +354,8 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
   useEffect(() => {
     try {
       localStorage.setItem(`channel.notify.${channel.id}`, notifySubscribers ? "1" : "0");
-    } catch {
-      // ignore
+    } catch (error) {
+      logger.debug("[ChannelConversation] Failed to persist notify preference", { channelId: channel.id, error });
     }
   }, [channel.id, notifySubscribers]);
 
@@ -371,7 +397,7 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
         setRecordingTime((prev) => prev + 1);
       }, 1000);
     } catch (err) {
-      console.error("Failed to start voice recording:", err);
+      logger.error("[ChannelConversation] Failed to start voice recording", { channelId: channel.id, error: err });
       toast.error("Не удалось начать запись");
     }
   };
@@ -407,7 +433,7 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
             await sendMediaMessage(file, "voice", { durationSeconds: duration, silent: silentPublish });
           }
         } catch (e) {
-          console.error("Failed to send voice:", e);
+          logger.error("[ChannelConversation] Failed to send voice", { channelId: channel.id, error: e });
           toast.error("Не удалось отправить голосовое");
         } finally {
           if (recordingIntervalRef.current) {
@@ -432,7 +458,7 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
       const file = new File([videoBlob], `video_circle_${Date.now()}.webm`, { type: "video/webm" });
       await sendMediaMessage(file, "video_circle", { durationSeconds: duration, silent: silentPublish });
     } catch (e) {
-      console.error("Failed to send video circle:", e);
+      logger.error("[ChannelConversation] Failed to send video circle", { channelId: channel.id, error: e });
       toast.error("Не удалось отправить видео-кружок");
     } finally {
       setShowVideoRecorder(false);
@@ -500,8 +526,8 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
     setLiveMode(next);
     try {
       localStorage.setItem(liveStorageKey, next ? "1" : "0");
-    } catch {
-      // ignore
+    } catch (error) {
+      logger.debug("[ChannelConversation] Failed to persist live mode", { channelId: channel.id, next, error });
     }
   };
 
@@ -549,8 +575,12 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
       }));
       setAdmins(out);
     } catch (e) {
-      console.error("Failed to load admins:", e);
-      toast.error("Не удалось загрузить администраторов");
+      if (isExpectedChannelMembersAccessError(e)) {
+        logger.debug("[ChannelConversation] Admin list unavailable for current user", { channelId: channel.id, error: e });
+      } else {
+        logger.error("[ChannelConversation] Failed to load admins", { channelId: channel.id, error: e });
+        toast.error("Не удалось загрузить администраторов");
+      }
       setAdmins([]);
     } finally {
       setAdminsLoading(false);
@@ -596,8 +626,12 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
         })),
       );
     } catch (e) {
-      console.error("Failed to load subscribers:", e);
-      toast.error("Не удалось загрузить подписчиков");
+      if (isExpectedChannelMembersAccessError(e)) {
+        logger.debug("[ChannelConversation] Subscribers list unavailable for current user", { channelId: channel.id, error: e });
+      } else {
+        logger.error("[ChannelConversation] Failed to load subscribers", { channelId: channel.id, error: e });
+        toast.error("Не удалось загрузить подписчиков");
+      }
       setSubscribers([]);
     } finally {
       setSubsLoading(false);
@@ -626,7 +660,7 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
       const v = Number((data as any)?.auto_delete_seconds ?? 0) || 0;
       setAutoDeleteSecondsLocal(v);
     } catch (e) {
-      console.warn("loadAutoDeleteSeconds failed:", e);
+      logger.warn("[ChannelConversation] loadAutoDeleteSeconds failed", { channelId: channel.id, error: e });
     } finally {
       setAutoDeleteLoading(false);
     }
@@ -738,7 +772,7 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
       setPinnedMessageId(null);
       toast.success("Закрепление снято");
     } catch (e) {
-      console.error("Failed to unpin message:", e);
+      logger.error("[ChannelConversation] Failed to unpin message", { channelId: channel.id, error: e });
       toast.error("Не удалось снять закрепление");
     }
   };
@@ -769,7 +803,7 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
       setPinnedMessageId(messageId);
       toast.success("Сообщение закреплено");
     } catch (e) {
-      console.error("Failed to pin message:", e);
+      logger.error("[ChannelConversation] Failed to pin message", { channelId: channel.id, messageId, error: e });
       toast.error("Не удалось закрепить сообщение");
     }
   };
@@ -825,7 +859,7 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
       setDraftPost("");
       toast.success("Пост опубликован");
     } catch (err) {
-      console.error("Failed to publish post:", err);
+      logger.error("[ChannelConversation] Failed to publish post", { channelId: channel.id, error: err });
       const payload = getHashtagBlockedToastPayload(err);
       if (payload) toast.error(payload.title, { description: payload.description });
       else {
@@ -863,7 +897,7 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
       await sendMediaMessage(file, type, { silent: silentPublish });
       toast.success(type === "document" ? "Документ отправлен" : "Медиа опубликовано");
     } catch (e) {
-      console.error("Failed to send channel media:", e);
+      logger.error("[ChannelConversation] Failed to send channel media", { channelId: channel.id, type, error: e });
       toast.error("Не удалось отправить вложение");
     } finally {
       setSendingPost(false);
@@ -887,7 +921,7 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
       await sendMessage(sticker, { silent: silentPublish });
       setShowStickerPicker(false);
     } catch (e) {
-      console.error("Failed to send sticker:", e);
+      logger.error("[ChannelConversation] Failed to send sticker", { channelId: channel.id, error: e });
       toast.error("Не удалось отправить стикер");
     } finally {
       setSendingPost(false);
@@ -910,7 +944,7 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
       await navigator.clipboard.writeText(url);
       toast.success("Ссылка-приглашение скопирована");
     } catch (err) {
-      console.error("Failed to create channel invite:", err);
+      logger.error("[ChannelConversation] Failed to create channel invite", { channelId: channel.id, error: err });
       toast.error("Не удалось создать приглашение");
     }
   };
@@ -922,7 +956,7 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
       setInviteQrUrl(url);
       setInviteQrOpen(true);
     } catch (err) {
-      console.error("Failed to prepare channel invite QR:", err);
+      logger.error("[ChannelConversation] Failed to prepare channel invite QR", { channelId: channel.id, error: err });
       toast.error("Не удалось подготовить QR-приглашение");
     }
   };
@@ -943,7 +977,7 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
       toast.success("Автоудаление обновлено");
       setAutoDeleteSecondsLocal(v);
     } catch (e) {
-      console.error("Failed to update auto-delete:", e);
+      logger.error("[ChannelConversation] Failed to update auto-delete", { channelId: channel.id, seconds, error: e });
       toast.error("Не удалось обновить автоудаление");
     }
   };
@@ -971,7 +1005,7 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
       setSelectedIds(new Set());
       setSelectMode(false);
     } catch (e) {
-      console.error("Bulk delete failed:", e);
+      logger.error("[ChannelConversation] Bulk delete failed", { channelId: channel.id, selectedCount: ids.length, error: e });
       toast.error("Не удалось удалить сообщения");
     }
   };
@@ -990,7 +1024,7 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
       onLeave?.();
       onBack();
     } catch (e) {
-      console.error("Delete channel failed:", e);
+      logger.error("[ChannelConversation] Delete channel failed", { channelId: channel.id, error: e });
       toast.error("Не удалось удалить канал");
     }
   };
@@ -1015,7 +1049,7 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
       toast.success(nextRole === "admin" ? "Назначен администратор" : "Роль обновлена");
       await Promise.all([loadAdmins(), loadSubscribers()]);
     } catch (e) {
-      console.error("updateMemberRole failed:", e);
+      logger.error("[ChannelConversation] updateMemberRole failed", { channelId: channel.id, userId, nextRole, error: e });
       toast.error("Не удалось обновить роль");
     }
   };
@@ -1051,7 +1085,7 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
       toast.success("Участник удалён");
       await Promise.all([loadAdmins(), loadSubscribers()]);
     } catch (e) {
-      console.error("removeMember failed:", e);
+      logger.error("[ChannelConversation] removeMember failed", { channelId: channel.id, userId, error: e });
       toast.error("Не удалось удалить участника");
     }
   };
@@ -1059,7 +1093,7 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
   const formatTime = (dateStr: string) => {
     try {
       return format(new Date(dateStr), "HH:mm");
-    } catch {
+    } catch (_error) {
       return "";
     }
   };
@@ -1152,7 +1186,7 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
                   await setMuted(!muted);
                   toast.success(!muted ? "Уведомления выключены" : "Уведомления включены");
                 } catch (e) {
-                  console.error("Mute toggle failed:", e);
+                  logger.error("[ChannelConversation] Mute toggle failed", { channelId: channel.id, error: e });
                   toast.error("Не удалось обновить уведомления");
                 }
               }}
@@ -1533,8 +1567,11 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
                             await loadSubscribers();
                             setInfoView("subscribers");
                             toast.message("Выберите участника и назначьте админом");
-                          } catch {
-                            // ignore
+                          } catch (error) {
+                            logger.warn("[ChannelConversation] Failed to open subscribers from admins pane", {
+                              channelId: channel.id,
+                              error,
+                            });
                           }
                         }}
                         className="w-full flex items-center justify-between p-3 rounded-2xl bg-card border border-border/60 hover:bg-muted/40"
@@ -1653,7 +1690,11 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
                           try {
                             await setMuted(!checked);
                           } catch (e) {
-                            console.error("Mute toggle failed:", e);
+                            logger.error("[ChannelConversation] Mute toggle failed", {
+                              channelId: channel.id,
+                              checked,
+                              error: e,
+                            });
                             toast.error("Не удалось обновить уведомления");
                           }
                         }}

@@ -5,6 +5,7 @@ import { createNote, deleteNote, getNotes, sendNoteReaction, deleteNoteReaction,
 import type { StatusNote } from "@/hooks/useNotes";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
+import { logger } from "@/lib/logger";
 
 // Quick-reaction emoji set (Instagram-style)
 const QUICK_REACTIONS = ["❤️", "😂", "😮", "😢", "😡", "👏", "🔥", "💯"];
@@ -51,11 +52,32 @@ export function NotesBar({ chatUserIds }: NotesBarProps) {
     if (prev === emoji) {
       setMyReactions(r => { const next = { ...r }; delete next[noteOwnerId]; return next; });
       try { await deleteNoteReaction(user.id, noteOwnerId); }
-      catch { setMyReactions(r => ({ ...r, [noteOwnerId]: prev })); toast.error("Ошибка"); }
+      catch (error) {
+        logger.warn("notes-bar: failed to delete note reaction", {
+          noteOwnerId,
+          emoji,
+          error,
+        });
+        setMyReactions(r => ({ ...r, [noteOwnerId]: prev }));
+        toast.error("Ошибка");
+      }
     } else {
       setMyReactions(r => ({ ...r, [noteOwnerId]: emoji }));
       try { await sendNoteReaction(user.id, noteOwnerId, emoji); }
-      catch { setMyReactions(r => { const next = { ...r }; if (prev) next[noteOwnerId] = prev; else delete next[noteOwnerId]; return next; }); toast.error("Ошибка"); }
+      catch (error) {
+        logger.warn("notes-bar: failed to send note reaction", {
+          noteOwnerId,
+          emoji,
+          error,
+        });
+        setMyReactions(r => {
+          const next = { ...r };
+          if (prev) next[noteOwnerId] = prev;
+          else delete next[noteOwnerId];
+          return next;
+        });
+        toast.error("Ошибка");
+      }
     }
   }, [user, myReactions]);
 
@@ -75,7 +97,8 @@ export function NotesBar({ chatUserIds }: NotesBarProps) {
       setNoteEmoji("");
       setShowCreate(false);
       toast.success("Заметка создана на 24 часа");
-    } catch {
+    } catch (error) {
+      logger.error("notes-bar: failed to create note", { error });
       toast.error("Не удалось создать заметку");
     }
   };
@@ -86,7 +109,8 @@ export function NotesBar({ chatUserIds }: NotesBarProps) {
       await deleteNote(user.id);
       setMyNote(null);
       toast.success("Заметка удалена");
-    } catch {
+    } catch (error) {
+      logger.error("notes-bar: failed to delete note", { error });
       toast.error("Ошибка");
     }
   };

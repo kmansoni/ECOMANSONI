@@ -3,6 +3,7 @@ import { X, Clock } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { format, setHours, setMinutes, addDays } from 'date-fns';
 import { ru } from 'date-fns/locale';
+import { logger } from '@/lib/logger';
 
 interface ScheduleMessagePickerProps {
   open: boolean;
@@ -53,7 +54,12 @@ export function ScheduleMessagePicker({
   if (customDate && customTime) {
     try {
       customPreview = format(new Date(`${customDate}T${customTime}`), 'd MMMM, HH:mm', { locale: ru });
-    } catch {
+    } catch (error) {
+      logger.debug('schedule-picker: invalid custom date/time preview', {
+        customDate,
+        customTime,
+        error,
+      });
       customPreview = null;
     }
   }

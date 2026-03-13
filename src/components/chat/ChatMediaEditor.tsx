@@ -4,6 +4,7 @@ import { useChatMediaEditor, EditorTool } from '../../hooks/useChatMediaEditor';
 import { DrawingCanvas, DrawingToolbar } from './DrawingCanvas';
 import { TextOverlay } from './TextOverlay';
 import { PhotoFilters } from './PhotoFilters';
+import { logger } from '@/lib/logger';
 
 export interface ChatMediaEditorProps {
   imageFile: File;
@@ -61,7 +62,7 @@ export function ChatMediaEditor({ imageFile, onSend, onCancel }: ChatMediaEditor
       const blob = await editor.exportImage(imageRef.current, canvas, null);
       onSend(blob, caption);
     } catch (err) {
-      console.error('Export error:', err);
+      logger.error('chat-media-editor: export failed', { error: err });
     } finally {
       setIsExporting(false);
     }

@@ -71,6 +71,8 @@ export function getAnonHeaders(): Record<string, string> {
 
   if (supabaseKey) {
     headers.apikey = supabaseKey;
+    // Edge Functions with JWT verification enabled expect Bearer JWT.
+    headers.Authorization = `Bearer ${supabaseKey}`;
   }
 
   return headers;

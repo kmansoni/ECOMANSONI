@@ -16,6 +16,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { GradientAvatar } from "@/components/ui/gradient-avatar";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { logger } from "@/lib/logger";
 
 interface GroupMember {
   id: string;
@@ -77,7 +78,7 @@ export function GroupCallInviteSheet({ groupId, currentParticipantIds, onInvite,
 
         setMembers(mapped);
       } catch (err) {
-        console.error("[GroupCallInviteSheet] load error", err);
+        logger.error("group-call-invite: failed to load members", { groupId, error: err });
         toast.error("Не удалось загрузить список участников");
       } finally {
         if (!cancelled) setIsLoading(false);

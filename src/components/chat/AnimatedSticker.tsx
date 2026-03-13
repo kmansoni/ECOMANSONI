@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, memo } from "react";
 import { type StickerSize } from "./stickerModel";
+import { logger } from "@/lib/logger";
 
 const SIZE_MAP: Record<StickerSize, number> = {
   small: 100,
@@ -151,7 +152,8 @@ function LottieSticker({
           animationData: animData,
         });
         animRef.current = anim;
-      } catch {
+      } catch (error) {
+        logger.warn("animated-sticker: failed to load lottie", { url, error });
         if (!cancelled) setFallback(true);
       }
     })();

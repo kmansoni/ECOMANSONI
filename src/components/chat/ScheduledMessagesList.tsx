@@ -4,6 +4,7 @@ import { X, Clock, Send, Pencil, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState } from 'react';
 import type { ScheduledMessage } from '@/hooks/useScheduledMessages';
+import { logger } from '@/lib/logger';
 
 interface ScheduledMessagesListProps {
   open: boolean;
@@ -17,7 +18,8 @@ interface ScheduledMessagesListProps {
 function formatScheduledTime(dateStr: string): string {
   try {
     return format(new Date(dateStr), "d MMM, HH:mm", { locale: ru });
-  } catch {
+  } catch (error) {
+    logger.debug('scheduled-messages: failed to format scheduled time', { dateStr, error });
     return dateStr;
   }
 }

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { Reply, Copy, Pin, Forward, Trash2, CheckSquare, Bookmark, BookmarkMinus, Pencil, Languages, Flag } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { logger } from "@/lib/logger";
 
 interface MessageContextMenuProps {
   isOpen: boolean;
@@ -69,7 +70,10 @@ export function MessageContextMenu({
     try {
       await navigator.clipboard.writeText(messageContent);
     } catch (err) {
-      console.error("Failed to copy:", err);
+      logger.warn("message-context-menu: failed to copy message", {
+        messageId,
+        error: err,
+      });
     }
     onClose();
   };

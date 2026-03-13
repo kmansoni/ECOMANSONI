@@ -2,6 +2,7 @@ import { createPortal } from "react-dom";
 import { useVideoCallContext } from "@/contexts/VideoCallContext";
 import { VideoCallScreen } from "./VideoCallScreen";
 import { IncomingVideoCallSheet } from "./IncomingVideoCallSheet";
+import { logger } from "@/lib/logger";
 
 /**
  * Global overlay for video calls - renders call UI on top of everything.
@@ -27,7 +28,7 @@ export function GlobalCallOverlay() {
     retryConnection,
   } = useVideoCallContext();
 
-  console.log("[GlobalCallOverlay] Render:", { 
+  logger.debug("[GlobalCallOverlay] Render", {
     status, 
     hasCurrentCall: !!currentCall, 
     hasIncomingCall: !!incomingCall,
@@ -39,7 +40,7 @@ export function GlobalCallOverlay() {
   // 2. OR status is not idle (actual call in progress)
   // This prevents the modal from closing during iOS/Telegram permission prompts
   if (isCallUiActive || status !== "idle") {
-    console.log("[GlobalCallOverlay] Showing call screen, isCallUiActive:", isCallUiActive, "status:", status);
+    logger.debug("[GlobalCallOverlay] Showing call screen", { isCallUiActive, status });
     
     const callScreen = (
       <VideoCallScreen
@@ -68,7 +69,7 @@ export function GlobalCallOverlay() {
   // Show incoming call sheet for unanswered incoming calls
   // Only when UI-lock is NOT active (to prevent flicker between screens)
   if (incomingCall && status === "idle" && !isCallUiActive) {
-    console.log("[GlobalCallOverlay] Showing incoming call sheet");
+    logger.debug("[GlobalCallOverlay] Showing incoming call sheet");
     
     const incomingSheet = (
       <IncomingVideoCallSheet

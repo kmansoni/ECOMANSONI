@@ -1,6 +1,7 @@
 import { ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 import { CHAT_WALLPAPERS } from './chatWallpapers';
+import { logger } from '@/lib/logger';
 
 interface ChatBackgroundProps {
   wallpaper?: string;
@@ -33,7 +34,8 @@ function isTrustedCustomWallpaper(wallpaper: string): boolean {
     const supabaseHost = new URL(supabaseUrl).hostname;
     const isSupabaseStoragePath = parsed.pathname.includes('/storage/v1/object/public/');
     return parsed.hostname === supabaseHost && isSupabaseStoragePath;
-  } catch {
+  } catch (error) {
+    logger.warn('chat-background: invalid wallpaper url', { wallpaper, error });
     return false;
   }
 }

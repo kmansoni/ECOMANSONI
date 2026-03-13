@@ -10,6 +10,7 @@ import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Bot, Image, FileText, MapPin, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { logger } from "@/lib/logger";
 
 export interface InlineBotResult {
   id: string;
@@ -76,7 +77,11 @@ export function InlineBotResults({ botUsername, query, onSelectResult, onDismiss
 
       if (rpcError) {
         // Bot API is unavailable; avoid fake placeholder results.
-        console.warn("[InlineBot] RPC not available:", rpcError);
+        logger.warn("inline-bot: rpc is unavailable", {
+          botUsername,
+          query,
+          error: rpcError,
+        });
         setResults([]);
         setError("Inline-бот временно недоступен");
         setRpcUnavailable(true);
@@ -84,7 +89,12 @@ export function InlineBotResults({ botUsername, query, onSelectResult, onDismiss
       }
 
       setResults((data ?? []) as InlineBotResult[]);
-    } catch {
+    } catch (error) {
+      logger.error("inline-bot: failed to fetch results", {
+        botUsername,
+        query,
+        error,
+      });
       setError("Не удалось загрузить результаты");
     } finally {
       setLoading(false);

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { logger } from "@/lib/logger";
 // Simple ringtone player component
 function RingtonePlayer({ play }: { play: boolean }) {
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -196,7 +197,7 @@ export function VideoCallScreen({
   // Attach local stream - re-run when layout changes (hasRemoteVideo)
   useEffect(() => {
     if (localVideoRef.current && localStream) {
-      console.log("[VideoCallScreen] Attaching local stream, hasRemoteVideo:", hasRemoteVideo);
+      logger.debug("video-call-screen: attaching local stream", { hasRemoteVideo });
       localVideoRef.current.srcObject = localStream;
     }
   }, [localStream, hasRemoteVideo]);
@@ -204,7 +205,9 @@ export function VideoCallScreen({
   // Attach remote stream - re-run when layout changes or stream updates
   useEffect(() => {
     if (remoteVideoRef.current && remoteStream) {
-      console.log("[VideoCallScreen] Attaching remote stream, tracks:", remoteStream.getTracks().map(t => `${t.kind}:${t.readyState}`).join(", "));
+      logger.debug("video-call-screen: attaching remote stream", {
+        tracks: remoteStream.getTracks().map(t => `${t.kind}:${t.readyState}`).join(", "),
+      });
       remoteVideoRef.current.srcObject = remoteStream;
     }
   }, [remoteStream, hasRemoteVideo]);

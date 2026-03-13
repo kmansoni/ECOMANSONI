@@ -77,13 +77,15 @@ export function useStories() {
             .from('profiles')
             .select('user_id, verified')
             .eq('user_id', user.id)
-            .single();
+            .limit(1);
+
+          const ownProfile = Array.isArray(profileData) ? profileData[0] : null;
 
           setUsersWithStories([{
             user_id: user.id,
             display_name: ownBrief?.display_name || 'Вы',
             avatar_url: ownBrief?.avatar_url ?? null,
-            verified: profileData?.verified || false,
+            verified: ownProfile?.verified || false,
             stories: [],
             hasNew: false,
             isOwn: true

@@ -1337,6 +1337,17 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     isCallUiActive,
   });
 
+  const isExpectedCallsBootstrapFailure = (error: unknown): boolean => {
+    const message = String((error as any)?.message ?? error ?? "").toLowerCase();
+    return (
+      message.includes("calls_v2_room_bootstrap_failed") ||
+      message.includes("ws connection error") ||
+      message.includes("websocket") ||
+      message.includes("network") ||
+      message.includes("timed out")
+    );
+  };
+
   const answerCall = useCallback(async (call: VideoCall) => {
     const configIssue = getCallsConfigIssue();
     if (configIssue) {
@@ -1385,10 +1396,19 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       const roomBootstrapOk = await bootstrapCallsV2Room(resolvedCall, "callee");
       if (!roomBootstrapOk) {
         await endVideoCall("ended");
-        throw new Error("calls_v2_room_bootstrap_failed");
+        setIsCallUiActive(false);
+        toast.error("Сервер звонков недоступен", {
+          description: "Не удалось подключиться к серверу звонков (SFU/WebSocket). Попробуйте позже или смените сеть.",
+          duration: 5000,
+        });
+        return;
       }
     } catch (err) {
-      logger.error("[VideoCallContext] answerCall error:", err);
+      if (isExpectedCallsBootstrapFailure(err)) {
+        logger.warn("[VideoCallContext] answerCall bootstrap/connect failed", err);
+      } else {
+        logger.error("[VideoCallContext] answerCall error:", err);
+      }
       if (isMediaErrorForCall(err)) {
         const toastPayload = getMediaPermissionToastPayload(err, call.call_type === "video" ? "video" : "audio");
         toast.error(toastPayload.title, {
@@ -1475,11 +1495,21 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       const roomBootstrapOk = await bootstrapCallsV2Room(result, "caller");
       if (!roomBootstrapOk) {
         await endVideoCall("ended");
-        throw new Error("calls_v2_room_bootstrap_failed");
+        setPendingCalleeProfile(null);
+        setIsCallUiActive(false);
+        toast.error("Сервер звонков недоступен", {
+          description: "Не удалось подключиться к серверу звонков (SFU/WebSocket). Попробуйте позже или смените сеть.",
+          duration: 5000,
+        });
+        return null;
       }
       return result;
     } catch (err) {
-      logger.error("[VideoCallContext] startCall error:", err);
+      if (isExpectedCallsBootstrapFailure(err)) {
+        logger.warn("[VideoCallContext] startCall bootstrap/connect failed", err);
+      } else {
+        logger.error("[VideoCallContext] startCall error:", err);
+      }
       setPendingCalleeProfile(null);
       setIsCallUiActive(false); // Release UI-lock on error
       if (isMediaErrorForCall(err)) {

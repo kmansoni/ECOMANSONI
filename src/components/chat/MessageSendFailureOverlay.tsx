@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { AlertCircle, RotateCcw, Loader2 } from 'lucide-react';
 import { useOfflineStatus } from '@/hooks/useOfflineStatus';
 import { cn } from '@/lib/utils';
+import { logger } from '@/lib/logger';
 
 type FailureState = 'failed' | 'retrying' | 'success';
 
@@ -50,10 +51,11 @@ export function MessageSendFailureOverlay({
     try {
       await onRetry();
       if (isMounted.current) setState('success');
-    } catch {
+    } catch (error) {
+      logger.warn('message-send-failure: retry failed', { messageId, error });
       if (isMounted.current) setState('failed');
     }
-  }, [state, onRetry]);
+  }, [state, onRetry, messageId]);
 
   // Auto-retry при восстановлении сети
   useEffect(() => {

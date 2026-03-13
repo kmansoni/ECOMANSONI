@@ -1,0 +1,6 @@
+# One schema.table per line that is intentionally exempt from RLS.
+# Format example:
+# public.some_system_table
+#
+# Leave empty to enable RLS for every public table detected without RLS.
+public.spatial_ref_sys

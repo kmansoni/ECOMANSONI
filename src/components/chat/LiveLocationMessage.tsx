@@ -16,6 +16,7 @@ import { useState, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { MapPin, Navigation, Timer, Square } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { logger } from "@/lib/logger";
 
 interface LiveLocationMessageProps {
   /** Message ID for realtime subscription */
@@ -103,11 +104,19 @@ export function LiveLocationMessage({
                 updated_at: new Date().toISOString(),
               });
           } catch (err) {
-            console.warn("[LiveLocationMessage] Failed to push position update:", err);
+            logger.warn("live-location: failed to push position update", {
+              messageId,
+              lat: newLat,
+              lng: newLng,
+              error: err,
+            });
           }
         },
         (err) => {
-          console.warn("[LiveLocationMessage] Geolocation error:", err.message);
+          logger.warn("live-location: geolocation error", {
+            messageId,
+            error: err?.message ?? String(err),
+          });
           // Keep last known position — do not crash
         },
         { enableHighAccuracy: true, maximumAge: 5000 }

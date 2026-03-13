@@ -2,14 +2,14 @@ param(
   [switch]$DryRun,
   [switch]$Yes,
   [switch]$PromptDbPassword,
-  [switch]$UseLinkedDbUrl = $true,
-  [switch]$UseApiApplyFallback = $true,
+  [switch]$UseLinkedDbUrl,
+  [switch]$UseApiApplyFallback,
   [string]$SupabaseExePath = "C:\\Users\\manso\\AppData\\Local\\supabase-cli\\v2.75.0\\supabase.exe"
 )
 
 $ErrorActionPreference = 'Stop'
 
-function Normalize-Secret([string]$value) {
+function ConvertTo-NormalizedSecret([string]$value) {
   if ($null -eq $value) { return $null }
   $s = $value.Trim()
   if ($s.Length -ge 2) {
@@ -26,8 +26,21 @@ function Normalize-Secret([string]$value) {
   return $s
 }
 
-function Build-DbUrlWithPassword([string]$repoRoot, [string]$password) {
-  if ([string]::IsNullOrWhiteSpace($repoRoot) -or [string]::IsNullOrWhiteSpace($password)) {
+function ConvertFrom-SecureStringToPlainText([Security.SecureString]$SecureValue) {
+  if ($null -eq $SecureValue) {
+    return $null
+  }
+
+  $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($SecureValue)
+  try {
+    return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
+  } finally {
+    [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+  }
+}
+
+function Build-DbUrlWithPassword([string]$repoRoot, [Security.SecureString]$password) {
+  if ([string]::IsNullOrWhiteSpace($repoRoot) -or $null -eq $password) {
     return $null
   }
 
@@ -56,10 +69,15 @@ function Build-DbUrlWithPassword([string]$repoRoot, [string]$password) {
     return $null
   }
 
+  $plainPassword = ConvertFrom-SecureStringToPlainText -SecureValue $password
+  if ([string]::IsNullOrWhiteSpace($plainPassword)) {
+    return $null
+  }
+
   $builder = [System.UriBuilder]::new($uri)
   $builder.UserName = $username
   # UriBuilder will handle escaping for userinfo as needed.
-  $builder.Password = $password
+  $builder.Password = $plainPassword
 
   # Ensure TLS for remote pooled connection.
   if ([string]::IsNullOrWhiteSpace($builder.Query)) {
@@ -70,6 +88,17 @@ function Build-DbUrlWithPassword([string]$repoRoot, [string]$password) {
   }
 
   return $builder.Uri.AbsoluteUri
+}
+
+function Format-OutputLine([string]$line) {
+  if ($null -eq $line) { return $line }
+
+  $s = [string]$line
+  # Redact Supabase access tokens if they appear in any output.
+  $s = [System.Text.RegularExpressions.Regex]::Replace($s, 'sbp_[A-Za-z0-9]+', 'sbp_<redacted>')
+  # Redact any accidental "-p <password>" fragments that might slip into output.
+  $s = [System.Text.RegularExpressions.Regex]::Replace($s, '(-p\s+)([^\s]+)', '$1<redacted>')
+  return $s
 }
 
 function Resolve-ProjectRefFromRepo([string]$repoRoot) {
@@ -112,8 +141,55 @@ function Get-PendingMigrationsViaApi([string]$repoRoot, [string]$token) {
 
   try {
     $body = @{ query = "select version from supabase_migrations.schema_migrations order by version;" } | ConvertTo-Json -Compress
-    $resp = Invoke-WebRequest -Uri $api -Method Post -Headers $headers -Body $body -ErrorAction Stop
-    $rows = $resp.Content | ConvertFrom-Json
+    $attempt = 0
+    while ($true) {
+      $attempt++
+      try {
+        $resp = Invoke-WebRequest -Uri $api -Method Post -Headers $headers -Body $body -ErrorAction Stop
+        $rows = $resp.Content | ConvertFrom-Json
+        break
+      } catch {
+        $msg = $_.Exception.Message
+        $apiBody = $null
+        try {
+          $response = $_.Exception.Response
+          if ($response -and $response.GetResponseStream) {
+            $stream = $response.GetResponseStream()
+            if ($stream) {
+              $reader = New-Object System.IO.StreamReader($stream)
+              $apiBody = $reader.ReadToEnd()
+              $reader.Dispose()
+              $stream.Dispose()
+            }
+          }
+        } catch {
+        }
+
+        if ([string]::IsNullOrWhiteSpace($apiBody) -and -not [string]::IsNullOrWhiteSpace($_.ErrorDetails.Message)) {
+          $apiBody = $_.ErrorDetails.Message
+        }
+
+        if (-not [string]::IsNullOrWhiteSpace($apiBody)) {
+          $msg = "$msg`n$apiBody"
+        }
+
+        $isTransient =
+          $msg -match 'unexpected EOF' -or
+          $msg -match 'timed out' -or
+          $msg -match 'temporar' -or
+          $msg -match 'transport stream' -or
+          $msg -match 'SSL connection could not be established'
+
+        if ($isTransient -and $attempt -lt 4) {
+          $delay = [Math]::Pow(2, $attempt)
+          Write-Host "Transient API error, retrying in ${delay}s (attempt $attempt/4)..." -ForegroundColor DarkYellow
+          Start-Sleep -Seconds $delay
+          continue
+        }
+
+        throw [System.Exception]::new($msg, $_.Exception)
+      }
+    }
 
     $applied = New-Object 'System.Collections.Generic.HashSet[string]'
     foreach ($row in @($rows)) {
@@ -172,6 +248,16 @@ if (-not (Test-Path -LiteralPath $SupabaseExePath)) {
   throw "Supabase CLI not found at: $SupabaseExePath"
 }
 
+$useLinkedDbUrlEnabled = $true
+if ($PSBoundParameters.ContainsKey('UseLinkedDbUrl')) {
+  $useLinkedDbUrlEnabled = [bool]$UseLinkedDbUrl
+}
+
+$useApiApplyFallbackEnabled = $true
+if ($PSBoundParameters.ContainsKey('UseApiApplyFallback')) {
+  $useApiApplyFallbackEnabled = [bool]$UseApiApplyFallback
+}
+
 $previousToken = $env:SUPABASE_ACCESS_TOKEN
 $tokenWasSet = [string]::IsNullOrWhiteSpace($previousToken) -eq $false
 $previousPgPassword = $env:PGPASSWORD
@@ -191,7 +277,6 @@ if (-not $tokenWasSet) {
 }
 
 $DbPasswordSecure = $null
-$dbPasswordWasSet = $false
 
 try {
   if (-not $tokenWasSet) {
@@ -201,9 +286,9 @@ try {
 
   $dbPasswordPlain = $null
   if (-not [string]::IsNullOrWhiteSpace($env:SUPABASE_DB_PASSWORD)) {
-    $dbPasswordPlain = Normalize-Secret $env:SUPABASE_DB_PASSWORD
+    $dbPasswordPlain = ConvertTo-NormalizedSecret $env:SUPABASE_DB_PASSWORD
   } elseif (-not [string]::IsNullOrWhiteSpace($env:PGPASSWORD)) {
-    $dbPasswordPlain = Normalize-Secret $env:PGPASSWORD
+    $dbPasswordPlain = ConvertTo-NormalizedSecret $env:PGPASSWORD
   } else {
     $userDbPassword = [Environment]::GetEnvironmentVariable('SUPABASE_DB_PASSWORD', 'User')
     $machineDbPassword = [Environment]::GetEnvironmentVariable('SUPABASE_DB_PASSWORD', 'Machine')
@@ -211,13 +296,13 @@ try {
     $machinePgPassword = [Environment]::GetEnvironmentVariable('PGPASSWORD', 'Machine')
 
     if (-not [string]::IsNullOrWhiteSpace($userDbPassword)) {
-      $dbPasswordPlain = Normalize-Secret $userDbPassword
+      $dbPasswordPlain = ConvertTo-NormalizedSecret $userDbPassword
     } elseif (-not [string]::IsNullOrWhiteSpace($machineDbPassword)) {
-      $dbPasswordPlain = Normalize-Secret $machineDbPassword
+      $dbPasswordPlain = ConvertTo-NormalizedSecret $machineDbPassword
     } elseif (-not [string]::IsNullOrWhiteSpace($userPgPassword)) {
-      $dbPasswordPlain = Normalize-Secret $userPgPassword
+      $dbPasswordPlain = ConvertTo-NormalizedSecret $userPgPassword
     } elseif (-not [string]::IsNullOrWhiteSpace($machinePgPassword)) {
-      $dbPasswordPlain = Normalize-Secret $machinePgPassword
+      $dbPasswordPlain = ConvertTo-NormalizedSecret $machinePgPassword
     }
   }
 
@@ -228,18 +313,12 @@ try {
     if ($null -eq $DbPasswordSecure) {
       throw "Database password is empty."
     }
-    $dbPasswordWasSet = $true
   }
 
   if ([string]::IsNullOrWhiteSpace($dbPasswordPlain) -and $null -ne $DbPasswordSecure) {
-    $bstrPw = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($DbPasswordSecure)
-    try {
-      $dbPasswordPlain = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstrPw)
-    } finally {
-      [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstrPw)
-    }
+    $dbPasswordPlain = ConvertFrom-SecureStringToPlainText -SecureValue $DbPasswordSecure
     if (-not $PromptDbPassword) {
-      $dbPasswordPlain = Normalize-Secret $dbPasswordPlain
+      $dbPasswordPlain = ConvertTo-NormalizedSecret $dbPasswordPlain
     }
     if ([string]::IsNullOrWhiteSpace($dbPasswordPlain)) {
       throw "Database password is empty."
@@ -257,7 +336,11 @@ try {
 
   $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 
-  if ([string]::IsNullOrWhiteSpace($dbPasswordPlain) -and $UseApiApplyFallback) {
+  if ($null -eq $DbPasswordSecure -and -not [string]::IsNullOrWhiteSpace($dbPasswordPlain)) {
+    $DbPasswordSecure = ConvertTo-SecureString -String $dbPasswordPlain -AsPlainText -Force
+  }
+
+  if ([string]::IsNullOrWhiteSpace($dbPasswordPlain) -and $useApiApplyFallbackEnabled) {
     if ($DryRun) {
       Write-Host "No DB password provided; using Management API dry-run fallback." -ForegroundColor Yellow
       $apiFallbackNoPw = Get-PendingMigrationsViaApi -repoRoot $repoRoot -token $env:SUPABASE_ACCESS_TOKEN
@@ -301,8 +384,8 @@ try {
   }
 
   $dbUrl = $null
-  if ($UseLinkedDbUrl -and -not [string]::IsNullOrWhiteSpace($dbPasswordPlain)) {
-    $dbUrl = Build-DbUrlWithPassword -repoRoot $repoRoot -password $dbPasswordPlain
+  if ($useLinkedDbUrlEnabled -and $null -ne $DbPasswordSecure) {
+    $dbUrl = Build-DbUrlWithPassword -repoRoot $repoRoot -password $DbPasswordSecure
   }
 
   if (-not [string]::IsNullOrWhiteSpace($dbUrl)) {
@@ -339,7 +422,7 @@ try {
     }
   }
 
-  if ($exitCode -ne 0 -and -not $DryRun -and $UseApiApplyFallback -and $joined -match 'SQLSTATE 28P01|password authentication failed') {
+  if ($exitCode -ne 0 -and -not $DryRun -and $useApiApplyFallbackEnabled -and $joined -match 'SQLSTATE 28P01|password authentication failed') {
     Write-Host "DB push auth failed; falling back to Management API apply." -ForegroundColor Yellow
     $applyFallback = Invoke-ApiApplyFallback -repoRoot $repoRoot
     $output = @($output) + @('') + @('[fallback] management-api apply') + @($applyFallback.lines)
@@ -355,18 +438,7 @@ try {
   $stamp = (Get-Date).ToString('s')
   $header = "[$stamp] supabase $($pushArgsForLog -join ' ') (exit=$exitCode)"
 
-  function Sanitize-Line([string]$line) {
-    if ($null -eq $line) { return $line }
-
-    $s = [string]$line
-    # Redact Supabase access tokens if they appear in any output.
-    $s = [System.Text.RegularExpressions.Regex]::Replace($s, 'sbp_[A-Za-z0-9]+', 'sbp_<redacted>')
-    # Redact any accidental "-p <password>" fragments that might slip into output.
-    $s = [System.Text.RegularExpressions.Regex]::Replace($s, '(-p\s+)([^\s]+)', '$1<redacted>')
-    return $s
-  }
-
-  $toWrite = @($header) + ($output | ForEach-Object { Sanitize-Line "$($_)" })
+  $toWrite = @($header) + ($output | ForEach-Object { Format-OutputLine "$($_)" })
   $toWrite | Set-Content -LiteralPath $logPath -Encoding UTF8
 
   if ($exitCode -ne 0) {

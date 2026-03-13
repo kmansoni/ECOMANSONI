@@ -33,6 +33,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { getCorsHeaders, handleCors, enforceCors } from "../_shared/utils.ts";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -87,38 +88,17 @@ interface FeedResponse {
 const MAX_PAGE_SIZE = 30;
 const DEFAULT_PAGE_SIZE = 20;
 
-const ALLOWED_ORIGINS = [
-  "http://localhost:8080",
-  "http://localhost:5173",
-  "http://localhost:5174",
-  "http://127.0.0.1:8080",
-  "http://127.0.0.1:5173",
-  "http://127.0.0.1:5174",
-  "https://mansoni.ru",
-  "https://www.mansoni.ru",
-  "https://app.mansoni.ru",
-];
-
-function getCorsHeaders(req: Request): Record<string, string> {
-  const origin = req.headers.get("Origin") ?? "";
-  const allowedOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : "null";
-  return {
-    "Access-Control-Allow-Origin": allowedOrigin,
-    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Vary": "Origin",
-  };
-}
-
 // ---------------------------------------------------------------------------
 // Handler
 // ---------------------------------------------------------------------------
 
 serve(async (req: Request): Promise<Response> => {
-  // CORS preflight
-  if (req.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: getCorsHeaders(req) });
-  }
+  // Shared CORS policy keeps all Edge Functions aligned (localhost/127.0.0.1 + configured origins).
+  const corsPreflight = handleCors(req);
+  if (corsPreflight) return corsPreflight;
+
+  const corsDenied = enforceCors(req);
+  if (corsDenied) return corsDenied;
 
   if (req.method !== "POST") {
     return json({ error: "Method not allowed" }, 405, req);
@@ -208,8 +188,9 @@ serve(async (req: Request): Promise<Response> => {
 // ---------------------------------------------------------------------------
 
 function json(body: unknown, status: number, req: Request): Response {
+  const origin = req.headers.get("origin");
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+    headers: { ...getCorsHeaders(origin), "Content-Type": "application/json" },
   });
 }

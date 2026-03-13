@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { ArrowUp, Pause, Play, Camera, Zap, ZapOff } from "lucide-react";
+import { logger } from "@/lib/logger";
 
 interface VideoCircleRecorderProps {
   onRecord: (videoBlob: Blob, duration: number) => void;
@@ -68,12 +69,12 @@ export function VideoCircleRecorder({ onRecord, onCancel, autoRecord = true }: V
           await (videoTrack as any).applyConstraints({
             advanced: [{ torch: true }],
           });
-        } catch {
-          console.log("Torch not supported");
+        } catch (error) {
+          logger.debug("video-circle: torch not supported", { facingMode, error });
         }
       }
     } catch (err) {
-      console.error("Error accessing camera:", err);
+      logger.error("video-circle: failed to access camera", { facingMode, error: err });
       setHasPermission(false);
     }
   }, [facingMode, flashEnabled]);
@@ -184,7 +185,11 @@ export function VideoCircleRecorder({ onRecord, onCancel, autoRecord = true }: V
           advanced: [{ torch: !flashEnabled }]
         });
       } catch (e) {
-        console.log("Torch not supported");
+        logger.debug("video-circle: torch toggle unsupported", {
+          facingMode,
+          nextTorchEnabled: !flashEnabled,
+          error: e,
+        });
       }
     }
   };

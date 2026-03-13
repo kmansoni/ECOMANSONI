@@ -18,6 +18,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { logger } from "@/lib/logger";
 
 const BUBBLE_SIZE = 200;
 const MAX_DURATION_MS = 60_000;
@@ -79,7 +80,9 @@ export function VideoMessageBubble({
       (entries) => {
         const entry = entries[0];
         if (entry.isIntersecting && videoRef.current) {
-          videoRef.current.play().catch(() => {});
+          videoRef.current.play().catch((error) => {
+            logger.debug("video-message-bubble: autoplay blocked", { messageId, error });
+          });
         } else if (videoRef.current) {
           videoRef.current.pause();
         }
@@ -97,13 +100,14 @@ export function VideoMessageBubble({
       setIsLoading(true);
       try {
         await video.play();
-      } catch {
+      } catch (error) {
+        logger.warn("video-message-bubble: play failed", { messageId, error });
         setIsLoading(false);
       }
     } else {
       video.pause();
     }
-  }, []);
+  }, [messageId]);
 
   // Отметить как просмотренное
   const markViewed = useCallback(async () => {

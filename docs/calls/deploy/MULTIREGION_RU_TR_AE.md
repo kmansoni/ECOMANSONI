@@ -35,9 +35,9 @@ Global:
 
 ## DNS
 
-- `call.mansoni.com` (global)
-- `sfu-ru.mansoni.com`, `sfu-tr.mansoni.com`, `sfu-ae.mansoni.com`
-- `turn-ru.mansoni.com`, `turn-tr.mansoni.com`, `turn-ae.mansoni.com`
+- `call.mansoni.ru` (global)
+- `sfu-ru.mansoni.ru`, `sfu-tr.mansoni.ru`, `sfu-ae.mansoni.ru`
+- `turn-ru.mansoni.ru`, `turn-tr.mansoni.ru`, `turn-ae.mansoni.ru`
 
 ## Observability (must-have)
 

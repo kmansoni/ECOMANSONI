@@ -4,6 +4,7 @@ import { ru } from 'date-fns/locale';
 import { X, Trash2, GripVertical } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { PinnedMessage } from '@/hooks/usePinnedMessages';
+import { logger } from '@/lib/logger';
 
 interface PinnedMessagesSheetProps {
   open: boolean;
@@ -29,7 +30,8 @@ export function PinnedMessagesSheet({
     if (!dateStr) return '';
     try {
       return format(new Date(dateStr), 'd MMM, HH:mm', { locale: ru });
-    } catch {
+    } catch (error) {
+      logger.debug('pinned-messages: failed to format pin date', { dateStr, error });
       return '';
     }
   };

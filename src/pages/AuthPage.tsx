@@ -259,9 +259,14 @@ export function AuthPage() {
               AUTH_TIMEOUT_MS,
               "verify-email-otp",
             );
+            if (result.response.ok) {
+              response = result.response;
+              data = result.data;
+              break;
+            }
+
             response = result.response;
             data = result.data;
-            break;
           } catch (err) {
             lastError = err;
           }

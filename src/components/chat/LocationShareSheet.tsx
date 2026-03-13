@@ -4,6 +4,7 @@ import { MapPin, X, Loader2, Navigation } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
+import { logger } from "@/lib/logger";
 
 interface LocationShareSheetProps {
   isOpen: boolean;
@@ -80,7 +81,12 @@ export function LocationShareSheet({ isOpen, onClose, conversationId, onSent }: 
       toast.success("Геолокация отправлена");
       onSent?.();
       onClose();
-    } catch {
+    } catch (error) {
+      logger.error("location-share: failed to send location", {
+        conversationId,
+        location,
+        error,
+      });
       toast.error("Ошибка отправки");
     } finally {
       setLoading(false);

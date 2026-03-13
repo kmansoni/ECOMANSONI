@@ -93,13 +93,33 @@ export const PaymentSheet = ({
     const loadData = async () => {
       // Stars balance
       if (invoice.currency === "XTR") {
-         
-        const { data } = await (supabase as any)
+        const { data, error } = await (supabase as any)
           .from("user_stars")
           .select("balance")
           .eq("user_id", invoice.user_id)
-          .single();
-        setStarsBalance((data as { balance: number } | null)?.balance ?? 0);
+          .maybeSingle();
+
+        if (error) {
+          const code = String((error as any)?.code ?? "");
+          const status = Number((error as any)?.status ?? 0);
+          const message = String((error as any)?.message ?? "").toLowerCase();
+          const details = String((error as any)?.details ?? "").toLowerCase();
+          const isOptionalStarsUnavailable =
+            code === "42P01" ||
+            code === "PGRST204" ||
+            code === "PGRST205" ||
+            code === "42501" ||
+            status === 403 ||
+            status === 404 ||
+            message.includes("user_stars") ||
+            details.includes("user_stars");
+
+          if (isOptionalStarsUnavailable) {
+            setStarsBalance(0);
+          }
+        } else {
+          setStarsBalance((data as { balance: number } | null)?.balance ?? 0);
+        }
       }
 
       // Bot info
@@ -108,7 +128,7 @@ export const PaymentSheet = ({
         .from("bots")
         .select("id, name, username, avatar_url")
         .eq("id", invoice.bot_id)
-        .single();
+        .maybeSingle();
       setBotInfo(bot ?? null);
     };
 

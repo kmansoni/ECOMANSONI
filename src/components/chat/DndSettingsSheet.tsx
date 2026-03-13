@@ -24,6 +24,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useDndStatus, type DndSettings } from "@/hooks/useDndStatus";
+import { logger } from "@/lib/logger";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -149,7 +150,7 @@ export function DndSettingsSheet({ open, onOpenChange }: DndSettingsSheetProps) 
       onOpenChange(false);
     } catch (e) {
       toast.error("Не удалось сохранить настройки");
-      console.error("[DndSettingsSheet] apply error", e);
+      logger.error("dnd-settings: failed to apply settings", { error: e });
     } finally {
       setSaving(false);
     }

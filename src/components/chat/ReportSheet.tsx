@@ -14,6 +14,7 @@ import { motion } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
+import { logger } from "@/lib/logger";
 
 export type ReportTarget = "message" | "user" | "group" | "channel";
 
@@ -61,7 +62,12 @@ export function ReportSheet({ open, onOpenChange, targetType, targetId, messageP
 
       if (error) {
         // Table may not exist — fallback to console
-        console.error("[Report] Supabase insert failed:", error);
+        logger.error("report-sheet: supabase insert failed", {
+          targetType,
+          targetId,
+          reason: selectedReason,
+          error,
+        });
         // Still show success to user (report logged client-side)
       }
 
@@ -69,7 +75,13 @@ export function ReportSheet({ open, onOpenChange, targetType, targetId, messageP
       onOpenChange(false);
       setSelectedReason(null);
       setDetails("");
-    } catch {
+    } catch (error) {
+      logger.error("report-sheet: submit failed", {
+        targetType,
+        targetId,
+        reason: selectedReason,
+        error,
+      });
       toast.error("Не удалось отправить жалобу");
     } finally {
       setSubmitting(false);

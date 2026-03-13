@@ -31,3 +31,23 @@ _smtp._tls       IN    TXT   "v=TLSRPTv1; rua=mailto:tls-reports@mansoni.ru"
 
 ; ─── BIMI (optional, requires VMC) ─────────
 ; default._bimi   IN    TXT   "v=BIMI1; l=https://mansoni.ru/bimi/logo.svg; a=https://mansoni.ru/bimi/cert.pem"
+
+; ─── Calls/SFU/TURN (multi-region) ─────────────────────
+; WebSocket gateway (optional global entry)
+call             IN    CNAME call-gw.mansoni.ru.
+
+; SFU endpoints used by frontend env (VITE_CALLS_V2_WS_URLS)
+sfu-ru           IN    A     YOUR_SFU_RU_IPv4
+sfu-tr           IN    A     YOUR_SFU_TR_IPv4
+sfu-ae           IN    A     YOUR_SFU_AE_IPv4
+; sfu-ru         IN    AAAA  YOUR_SFU_RU_IPv6
+; sfu-tr         IN    AAAA  YOUR_SFU_TR_IPv6
+; sfu-ae         IN    AAAA  YOUR_SFU_AE_IPv6
+
+; TURN endpoints (coturn)
+turn-ru          IN    A     YOUR_TURN_RU_IPv4
+turn-tr          IN    A     YOUR_TURN_TR_IPv4
+turn-ae          IN    A     YOUR_TURN_AE_IPv4
+; turn-ru        IN    AAAA  YOUR_TURN_RU_IPv6
+; turn-tr        IN    AAAA  YOUR_TURN_TR_IPv6
+; turn-ae        IN    AAAA  YOUR_TURN_AE_IPv6

@@ -12,6 +12,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { Lock } from "lucide-react";
+import { logger } from "@/lib/logger";
 
 interface CustomEmojiProps {
   /** Emoji pack ID + emoji ID */
@@ -63,7 +64,12 @@ export function CustomEmoji({
         });
 
         lottieInstance.addEventListener("DOMLoaded", () => setLoaded(true));
-      } catch {
+      } catch (error) {
+        logger.warn("custom-emoji: failed to load animated emoji", {
+          emojiId,
+          src,
+          error,
+        });
         setError(true);
       }
     })();

@@ -5,6 +5,8 @@ param(
   [switch]$SkipFunctions,
   [switch]$SkipSyncGuard,
   [switch]$SkipE2EEChecks,
+  [switch]$RunCriticalSecurityAudit,
+  [switch]$EnforceCriticalSecurityGate,
   [string]$MirrorRepoPath = "",
   [switch]$PromptToken,
   [string[]]$Functions = @("vk-webhook", "turn-credentials", "aria-chat", "insurance-assistant", "property-assistant")
@@ -112,6 +114,22 @@ try {
   $resolvedProjectRef = Resolve-ProjectRef $ProjectRef
 
   Invoke-DbPushPolicyGuard -repoRootPath $repoRoot
+
+  if ($RunCriticalSecurityAudit -or $EnforceCriticalSecurityGate) {
+    $criticalAuditRunner = Join-Path $PSScriptRoot "security\supabase-critical-hardening-runner.ps1"
+    if (-not (Test-Path -LiteralPath $criticalAuditRunner)) {
+      throw "Critical security audit runner not found: $criticalAuditRunner"
+    }
+
+    Write-Host "==> Critical Supabase security audit" -ForegroundColor Cyan
+    if ($EnforceCriticalSecurityGate) {
+      & $criticalAuditRunner -ProjectRef $resolvedProjectRef -FailOnCritical
+      Assert-LastExitCode "critical security gate"
+    } else {
+      & $criticalAuditRunner -ProjectRef $resolvedProjectRef
+      Assert-LastExitCode "critical security audit"
+    }
+  }
 
   if (-not $SkipE2EEChecks) {
     $e2eeGuardScript = Join-Path $PSScriptRoot "e2ee-guard.ps1"

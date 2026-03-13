@@ -56,7 +56,7 @@ if (import.meta.env.DEV) {
   });
 }
 
-if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
+if ((!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) && !runtimeConfig.usedFallback) {
   console.error("[Supabase] Missing VITE_SUPABASE_URL or VITE_SUPABASE_PUBLISHABLE_KEY");
 }
 

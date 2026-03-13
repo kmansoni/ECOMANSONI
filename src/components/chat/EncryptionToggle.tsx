@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Lock, LockOpen, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
+import { logger } from "@/lib/logger";
 
 interface EncryptionToggleProps {
   enabled: boolean;
@@ -36,7 +37,7 @@ export function EncryptionToggle({
       }
     } catch (e) {
       toast.error("Ошибка при изменении шифрования");
-      console.error("[EncryptionToggle]", e);
+      logger.error("encryption-toggle: failed to toggle encryption", { enabled, error: e });
     } finally {
       setBusy(false);
     }

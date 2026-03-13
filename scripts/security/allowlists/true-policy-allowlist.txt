@@ -1,0 +1,86 @@
+# Auto-seeded from critical audit: likely intentional public-read true policies.
+# Review each entry before production apply.
+# One schema.table.policy_name per line.
+
+crm_re.district_analytics.re_district_read
+public.ab_experiments.Anyone reads experiments
+public.add_yours_chains.Anyone reads chains
+public.audio_room_participants.Anyone can read participants
+public.audio_rooms.Anyone can read audio rooms
+public.audio_tracks.Public read audio_tracks
+public.bot_commands.Bot commands readable
+public.bot_conversations.Bot conversations readable
+public.bot_inline_keyboards.Bot keyboards readable
+public.bots.Bots readable by all
+public.business_accounts.business_account_public_select
+public.channel_capability_catalog.capability_catalog_read_all
+public.channel_message_reactions.reactions_select_public
+public.channel_role_capabilities.role_caps_read_authenticated
+public.comment_likes.Anyone can view comment likes
+public.comments.Anyone can view comments
+public.followers.Anyone can view followers
+public.gift_catalog.Gift catalog readable by all
+public.group_topics.Topics readable by group members
+public.guardrails_config.guardrails_config_read
+public.guide_items.Anyone reads guide items
+public.guides.Anyone reads guides
+public.hashtags.Public read hashtags
+public.highlight_stories.Anyone reads highlight stories
+public.highlights.Anyone reads highlights
+public.insurance_companies.Anyone can view insurance companies
+public.insurance_products.Anyone can view insurance products
+public.live_donations.Anyone reads donations
+public.live_questions.Anyone reads live questions
+public.locations.Anyone reads locations
+public.message_polls.Polls readable in conversations
+public.message_reactions.Anyone reads reactions
+public.metrics_registry.metrics_registry_read
+public.music_playlist_tracks.Anyone can read playlist tracks
+public.music_playlists.Anyone can read playlists
+public.music_tracks.Anyone can read music
+public.poll_options.Poll options readable
+public.post_collabs.Anyone can read collabs
+public.post_comments.Anyone can read comments
+public.post_content_tags.Anyone can read post tags
+public.post_likes.Anyone can read likes
+public.post_likes.Anyone can view likes
+public.post_media.Anyone can view post media
+public.post_people_tags.Anyone reads people tags
+public.post_user_tags.Anyone reads tags
+public.post_views.Anyone can view post views
+public.posts.Anyone can read posts
+public.product_reviews.Anyone can read reviews
+public.product_tags.Anyone can read product tags
+public.property_images.Anyone can view property images
+public.reel_audio_tracks.Public read reel_audio_tracks
+public.reel_audios.Anyone reads audios
+public.reel_comment_likes.Anyone can view reel comment likes
+public.reel_comments.Anyone can view reel comments
+public.reel_hashtags.Public read reel_hashtags
+public.reel_likes.Anyone can view reel likes
+public.reel_reposts.Anyone can view reel reposts
+public.reel_saves.Anyone can view reel saves
+public.reel_shares.Anyone can view reel shares
+public.reel_views.Anyone can view reel views
+public.reels.Anyone can view reels
+public.scope_definitions.scope_definitions_read_all
+public.shared_locations.Users read shared locations
+public.shop_products.Anyone can read products
+public.shops.Anyone can read shops
+public.sticker_packs.Sticker packs readable by all
+public.stickers.Stickers readable by all
+public.story_countdowns.Anyone can read countdowns
+public.story_emoji_sliders.Anyone reads sliders
+public.story_music.Anyone can read story music
+public.story_poll_votes.Anyone can read poll votes
+public.story_polls.Anyone can read polls
+public.story_questions.Anyone can read questions
+public.story_quizzes.Anyone reads quizzes
+public.story_reactions.Anyone can read story reactions
+public.story_stickers.Anyone reads stickers
+public.story_views.Anyone can read story views
+public.trending_hashtags.Anyone reads trending
+public.trending_topics.Public read trending_topics
+public.user_prekey_bundles.prekey_bundle_public_read
+public.user_status_notes.Anyone reads status notes
+public.voice_messages.Users read voice messages

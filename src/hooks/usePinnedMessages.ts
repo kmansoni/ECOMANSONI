@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from './useAuth';
 import { toast } from 'sonner';
+import { logger } from '@/lib/logger';
 
 export interface PinnedMessage {
   id: string;
@@ -25,6 +26,7 @@ export function usePinnedMessages(conversationId: string | null) {
   const [pinnedMessages, setPinnedMessages] = useState<PinnedMessage[]>([]);
   const [loading, setLoading] = useState(false);
   const supportsJoinRef = useRef(true);
+  const tableUnavailableRef = useRef(false);
 
   const mapRows = useCallback((rows: any[], messagesById?: Map<string, any>) => {
     return (rows ?? []).map((row: any) => {
@@ -47,6 +49,21 @@ export function usePinnedMessages(conversationId: string | null) {
   const isMissingJoinError = useCallback((error: any) => {
     const msg = String(error?.message ?? '');
     return error?.code === 'PGRST200' || msg.includes('Could not find a relationship');
+  }, []);
+
+  const isMissingPinnedMessagesTableError = useCallback((error: any) => {
+    const msg = String(error?.message ?? '').toLowerCase();
+    const details = String(error?.details ?? '').toLowerCase();
+    const code = String(error?.code ?? '');
+    const status = Number(error?.status ?? 0);
+    return (
+      code === '42P01' ||
+      code === 'PGRST205' ||
+      code === 'PGRST204' ||
+      msg.includes('pinned_messages') && (msg.includes('does not exist') || msg.includes('could not find the table') || msg.includes('schema cache')) ||
+      details.includes('pinned_messages') && details.includes('schema cache') ||
+      status === 404
+    );
   }, []);
 
   const fetchWithoutJoin = useCallback(async () => {
@@ -80,6 +97,10 @@ export function usePinnedMessages(conversationId: string | null) {
       setPinnedMessages([]);
       return;
     }
+    if (tableUnavailableRef.current) {
+      setPinnedMessages([]);
+      return;
+    }
     setLoading(true);
     try {
       if (supportsJoinRef.current) {
@@ -103,6 +124,11 @@ export function usePinnedMessages(conversationId: string | null) {
           .order('pin_position', { ascending: true });
 
         if (error) {
+          if (isMissingPinnedMessagesTableError(error)) {
+            tableUnavailableRef.current = true;
+            setPinnedMessages([]);
+            return;
+          }
           if (isMissingJoinError(error)) {
             supportsJoinRef.current = false;
             await fetchWithoutJoin();
@@ -117,11 +143,16 @@ export function usePinnedMessages(conversationId: string | null) {
 
       await fetchWithoutJoin();
     } catch (err) {
-      console.error('[usePinnedMessages] fetch error:', err);
+      if (isMissingPinnedMessagesTableError(err)) {
+        tableUnavailableRef.current = true;
+        setPinnedMessages([]);
+        return;
+      }
+      logger.warn('[usePinnedMessages] fetch error', { conversationId, error: err });
     } finally {
       setLoading(false);
     }
-  }, [conversationId, user, fetchWithoutJoin, isMissingJoinError, mapRows]);
+  }, [conversationId, user, fetchWithoutJoin, isMissingJoinError, isMissingPinnedMessagesTableError, mapRows]);
 
   useEffect(() => {
     void fetchPinned();
@@ -129,7 +160,7 @@ export function usePinnedMessages(conversationId: string | null) {
 
   // Realtime подписка
   useEffect(() => {
-    if (!conversationId) return;
+    if (!conversationId || tableUnavailableRef.current) return;
 
     const channel = supabase
       .channel(`pinned-messages:${conversationId}`)
@@ -155,6 +186,10 @@ export function usePinnedMessages(conversationId: string | null) {
   const pinMessage = useCallback(
     async (messageId: string) => {
       if (!conversationId || !user) return;
+      if (tableUnavailableRef.current) {
+        toast.info('Закрепления недоступны в текущей конфигурации чата');
+        return;
+      }
 
       if (pinnedMessages.length >= MAX_PINS) {
         toast.error(`Максимум ${MAX_PINS} закреплённых сообщений`);
@@ -180,16 +215,23 @@ export function usePinnedMessages(conversationId: string | null) {
         toast.success('Сообщение закреплено');
         await fetchPinned();
       } catch (err) {
-        console.error('[usePinnedMessages] pin error:', err);
+        if (isMissingPinnedMessagesTableError(err)) {
+          tableUnavailableRef.current = true;
+          setPinnedMessages([]);
+          toast.info('Закрепления недоступны в текущей конфигурации чата');
+          return;
+        }
+        logger.warn('[usePinnedMessages] pin error', { conversationId, messageId, error: err });
         toast.error('Не удалось закрепить сообщение');
       }
     },
-    [conversationId, user, pinnedMessages.length, fetchPinned]
+    [conversationId, user, pinnedMessages.length, fetchPinned, isMissingPinnedMessagesTableError]
   );
 
   const unpinMessage = useCallback(
     async (messageId: string) => {
       if (!conversationId) return;
+      if (tableUnavailableRef.current) return;
 
       try {
         const { error } = await supabaseAny
@@ -202,16 +244,22 @@ export function usePinnedMessages(conversationId: string | null) {
         toast.success('Закрепление снято');
         await fetchPinned();
       } catch (err) {
-        console.error('[usePinnedMessages] unpin error:', err);
+        if (isMissingPinnedMessagesTableError(err)) {
+          tableUnavailableRef.current = true;
+          setPinnedMessages([]);
+          return;
+        }
+        logger.warn('[usePinnedMessages] unpin error', { conversationId, messageId, error: err });
         toast.error('Не удалось снять закрепление');
       }
     },
-    [conversationId, fetchPinned]
+    [conversationId, fetchPinned, isMissingPinnedMessagesTableError]
   );
 
   const reorderPins = useCallback(
     async (orderedIds: string[]) => {
       if (!conversationId) return;
+      if (tableUnavailableRef.current) return;
       try {
         const updates = orderedIds.map((messageId, idx) => ({
           message_id: messageId,
@@ -229,10 +277,15 @@ export function usePinnedMessages(conversationId: string | null) {
 
         await fetchPinned();
       } catch (err) {
-        console.error('[usePinnedMessages] reorder error:', err);
+        if (isMissingPinnedMessagesTableError(err)) {
+          tableUnavailableRef.current = true;
+          setPinnedMessages([]);
+          return;
+        }
+        logger.warn('[usePinnedMessages] reorder error', { conversationId, count: orderedIds.length, error: err });
       }
     },
-    [conversationId, fetchPinned]
+    [conversationId, fetchPinned, isMissingPinnedMessagesTableError]
   );
 
   const isPinned = useCallback(

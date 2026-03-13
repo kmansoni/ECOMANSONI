@@ -111,6 +111,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { resolveChatMediaDownloadPrefs } from "@/lib/chat/mediaSettings";
 import { fetchUserBriefMap, resolveUserBrief } from "@/lib/users/userBriefs";
+import { logger } from "@/lib/logger";
 
 interface ChatConversationProps {
   conversationId: string;
@@ -141,10 +142,35 @@ function parseEncryptedPayload(content: unknown): EncryptedPayload | null {
     ) {
       return parsed as EncryptedPayload;
     }
-  } catch {
+  } catch (error) {
+    logger.debug("chat: parse encrypted payload failed", { error });
     return null;
   }
   return null;
+}
+
+function toCompactErrorDetails(error: unknown): { code: string; message: string; status: number | null } {
+  if (error instanceof Error) {
+    return {
+      code: "",
+      message: String(error.message || "Unknown error"),
+      status: null,
+    };
+  }
+
+  if (error && typeof error === "object") {
+    const anyErr = error as any;
+    const code = typeof anyErr.code === "string" ? anyErr.code : "";
+    const status = Number.isFinite(Number(anyErr.status)) ? Number(anyErr.status) : null;
+    const message = String(anyErr.message ?? anyErr.details ?? anyErr.error_description ?? "Unknown error");
+    return { code, message, status };
+  }
+
+  return {
+    code: "",
+    message: typeof error === "string" ? error : String(error ?? "Unknown error"),
+    status: null,
+  };
 }
 
 export function ChatConversation({ conversationId, chatName, chatAvatar, otherUserId, onBack, participantCount, isGroup, totalUnreadCount, onRefetch, initialOpenPanelAction, onInitialPanelHandled }: ChatConversationProps) {
@@ -371,7 +397,8 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
       const parsed = JSON.parse(raw) as unknown;
       if (!Array.isArray(parsed)) return;
       setHiddenIds(new Set(parsed.filter((x) => typeof x === "string")));
-    } catch {
+    } catch (error) {
+      logger.warn("chat: failed to restore hidden message ids", { hiddenKey, error });
       setHiddenIds(new Set());
     }
   }, [hiddenKey]);
@@ -424,17 +451,17 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
           const plain = await decryptContent(payload, m.sender_id);
           if (!cancelled) setDecryptedCache((prev) => ({ ...prev, [m.id]: plain }));
         } catch (err) {
-          console.error("[decrypt] failed for message", m.id, err);
+          logger.warn("chat: failed to decrypt message", { messageId: m.id, error: err });
           if (!cancelled) setDecryptedCache((prev) => ({ ...prev, [m.id]: null }));
         } finally {
           decryptInProgressRef.current.delete(m.id);
         }
       }),
-    ).catch((err) => console.error("[decrypt] unexpected error:", err));
+    ).catch((err) => logger.error("chat: unexpected decrypt pipeline error", { conversationId, error: err }));
     return () => {
       cancelled = true;
     };
-  }, [encryptedUndecrypted, decryptContent]);
+  }, [encryptedUndecrypted, decryptContent, conversationId]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -448,7 +475,11 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
         if (cancelled) return;
         const next = [saved.emoji, ...catalog.filter((item) => item !== saved.emoji)].slice(0, 8);
         setQuickReactions(next);
-      } catch {
+      } catch (error) {
+        logger.debug("chat: failed to load quick reactions, using defaults", {
+          conversationId,
+          error,
+        });
         // keep defaults
       }
     })();
@@ -462,7 +493,8 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
       if (!hiddenKey) return;
       try {
         localStorage.setItem(hiddenKey, JSON.stringify([...next]));
-      } catch {
+      } catch (error) {
+        logger.warn("chat: failed to persist hidden message ids", { hiddenKey, error });
         // ignore
       }
     },
@@ -518,7 +550,8 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
           })
           .filter(Boolean) as MentionUser[];
         setMentionParticipants(participants);
-      } catch {
+      } catch (error) {
+        logger.warn("chat: failed to load mention participants", { conversationId, error });
         // non-fatal
       }
     })();
@@ -555,7 +588,8 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
           };
         }
         setSenderProfiles(next);
-      } catch {
+      } catch (error) {
+        logger.warn("chat: failed to resolve sender profiles", { conversationId, error });
         if (!cancelled) setSenderProfiles({});
       }
     })();
@@ -761,16 +795,16 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
         oscillator.onended = () => {
           void audioCtx.close();
         };
-      } catch {
-        // Ignore autoplay / audio-context errors silently
+      } catch (error) {
+        logger.debug("chat: sound playback unavailable", { conversationId, error });
       }
     }
 
     if (globalSettings.in_app_vibrate && chatSettings.notification_vibration && typeof navigator !== "undefined" && "vibrate" in navigator) {
       try {
         navigator.vibrate(30);
-      } catch {
-        // no-op
+      } catch (error) {
+        logger.debug("chat: vibration unavailable", { conversationId, error });
       }
     }
   }, [messages, user?.id, chatSettings.notifications_enabled, chatSettings.notification_sound, chatSettings.notification_vibration, globalSettings.in_app_sounds, globalSettings.in_app_vibrate]);
@@ -839,7 +873,8 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
   const formatMessageTime = (dateStr: string) => {
     try {
       return format(new Date(dateStr), "HH:mm");
-    } catch {
+    } catch (error) {
+      logger.debug("chat: failed to format message time", { conversationId, dateStr, error });
       return "";
     }
   };
@@ -941,7 +976,14 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
         inputRef.current?.focus();
       });
     } catch (error) {
-      console.error("[handleSendMessage] error:", error);
+      const compactErr = toCompactErrorDetails(error);
+      logger.error("chat: handleSendMessage failed", {
+        conversationId,
+        error,
+        errorCode: compactErr.code || undefined,
+        errorStatus: compactErr.status ?? undefined,
+        errorMessage: compactErr.message,
+      });
       const payload = getHashtagBlockedToastPayload(error);
       if (payload) {
         setInputText(trimmed);
@@ -970,8 +1012,15 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
           conversationId,
           expectV11: isChatProtocolV11EnabledForUser(user?.id),
         });
+        const reasonHint = [
+          compactErr.code ? `code=${compactErr.code}` : null,
+          compactErr.status != null ? `status=${compactErr.status}` : null,
+          compactErr.message ? compactErr.message : null,
+        ]
+          .filter(Boolean)
+          .join("; ");
         toast.error("Не удалось отправить сообщение", {
-          description: diagnostic ?? undefined,
+          description: diagnostic || reasonHint || undefined,
         });
       }
     } finally {
@@ -1011,7 +1060,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
       setIsRecording(true);
       sendTyping(true, "recording_voice");
     } catch (err) {
-      console.error('Failed to start recording:', err);
+      logger.warn("chat: failed to start recording", { conversationId, error: err });
     }
   }, [sendTyping]);
 
@@ -1066,14 +1115,14 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
           const audio = new Audio(mediaUrl);
           audio.onended = () => setPlayingVoice(null);
           audio.onerror = (e) => {
-            console.error('Audio playback error:', e);
+            logger.warn("chat: audio playback error", { conversationId, messageId, error: e });
             setPlayingVoice(null);
           };
           await audio.play();
           audioRef.current = audio;
           setPlayingVoice(messageId);
         } catch (error) {
-          console.error('Failed to play audio:', error);
+          logger.warn("chat: failed to play audio", { conversationId, messageId, error });
           setPlayingVoice(null);
         }
       }
@@ -1157,8 +1206,8 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
     activePointerIdRef.current = e.pointerId;
     try {
       e.currentTarget.setPointerCapture(e.pointerId);
-    } catch {
-      // ignore
+    } catch (error) {
+      logger.debug("chat: pointer capture not available", { conversationId, error });
     }
     isHoldingRef.current = false;
     holdStartedRef.current = true;
@@ -1352,7 +1401,12 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
     try {
       await navigator.clipboard.writeText(parts.join("\n\n"));
       toast.success("Скопировано");
-    } catch {
+    } catch (error) {
+      logger.warn("chat: failed to copy selected messages", {
+        conversationId,
+        count: selectedIds.size,
+        error,
+      });
       toast.error("Не удалось скопировать");
     }
   };
@@ -1747,7 +1801,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
               ) : isGift ? (
                 (() => {
                   let giftData: any = {};
-                  try { giftData = JSON.parse(message.content || "{}"); } catch { /* invalid gift JSON payload */ }
+                  try { giftData = JSON.parse(message.content || "{}"); } catch (error) { logger.warn("chat: invalid gift payload", { conversationId, messageId: message.id, error }); }
                   return (
                     <div className="flex-1 min-w-0">
                       <GiftMessage
@@ -1917,7 +1971,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
                 >
                 <div className={`flex flex-col flex-1 min-w-0 ${isOwn ? "items-end" : "items-start"}`}>
                   <div
-                    className={`chat-bubble relative inline-block max-w-[min(75%,560px)] rounded-2xl px-3 py-2 select-none backdrop-blur-xl border border-white/10 ${
+                    className={`chat-bubble relative inline-block min-w-[64px] max-w-[min(75%,560px)] rounded-2xl px-3 py-2 select-none backdrop-blur-xl border border-white/10 ${
                       isOwn
                         ? `${bubbleClass} text-white ${bubbleTailClass}`
                         : `bg-white/5 text-white ${bubbleTailClass}`
@@ -1987,7 +2041,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
                     </p>
                   ) : (
                     <>
-                    <p className={`${textSizeClass} leading-[1.4] whitespace-pre-wrap break-words max-h-[60vh] overflow-auto`}>
+                    <p className={`${textSizeClass} leading-[1.4] whitespace-pre-wrap break-normal max-h-[60vh] overflow-auto`}>
                       {shouldTreatAsEncrypted
                         ? hasDecryptedEntry
                           ? <>
@@ -2411,7 +2465,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
             try {
               await sendMessageV1({ conversationId, clientMsgId, body: envelope });
             } catch (e) {
-              console.error('sendSticker error', e);
+              logger.error("chat: send sticker failed", { conversationId, error: e });
             }
           }}
           onGifSelect={async (gif) => {
@@ -2427,7 +2481,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
             try {
               await sendMessageV1({ conversationId, clientMsgId, body: envelope });
             } catch (e) {
-              console.error('sendGif error', e);
+              logger.error("chat: send gif failed", { conversationId, error: e });
             }
           }}
         />
@@ -2517,7 +2571,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
             try {
               await sendMessageV1({ conversationId, clientMsgId, body: envelope });
             } catch (e) {
-              console.error('sendGiftMessage error', e);
+              logger.error("chat: send gift message failed", { conversationId, error: e });
             }
           }}
         />
@@ -2605,7 +2659,12 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
         onSendNow={async (id) => {
           try {
             await sendScheduledNow(id);
-          } catch {
+          } catch (error) {
+            logger.warn("chat: failed to send scheduled message now", {
+              conversationId,
+              scheduledMessageId: id,
+              error,
+            });
             toast.error('Не удалось отправить сообщение');
           }
         }}
@@ -2617,7 +2676,12 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
         onDelete={async (id) => {
           try {
             await deleteScheduledMessage(id);
-          } catch {
+          } catch (error) {
+            logger.warn("chat: failed to delete scheduled message", {
+              conversationId,
+              scheduledMessageId: id,
+              error,
+            });
             toast.error('Не удалось удалить запланированное сообщение');
           }
         }}
@@ -2639,7 +2703,8 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
             setInputText('');
             setPendingScheduleContent('');
             toast.success('Сообщение запланировано');
-          } catch {
+          } catch (error) {
+            logger.warn("chat: failed to schedule message", { conversationId, error });
             toast.error('Не удалось запланировать сообщение');
           }
         }}
@@ -2673,7 +2738,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
             try {
               await sendMessageV1({ conversationId, clientMsgId, body: envelope as any });
             } catch (e) {
-              console.error('sendPoll error', e);
+              logger.error("chat: send poll failed", { conversationId, error: e });
             }
           }}
         />

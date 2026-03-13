@@ -445,7 +445,6 @@ export function ChatsPage() {
   }, [combinedItems, archivedChatIds]);
 
   const visibleItems = useMemo(() => {
-          logger.error("[ChatsPage] Failed to create conversation", { error });
     if (showArchive) return archivedItems;
 
     // Base filter: exclude archived

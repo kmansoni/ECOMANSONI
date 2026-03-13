@@ -5,6 +5,7 @@ import { useStickers, type Sticker } from "@/hooks/useStickers";
 import { useSavedGifs } from "@/hooks/useSavedGifs";
 import { searchGifs, getTrendingGifs, type GifItem } from "@/lib/chat/gifService";
 import { Heart } from "lucide-react";
+import { logger } from "@/lib/logger";
 
 type Tab = "stickers" | "gif" | "emoji";
 
@@ -143,7 +144,8 @@ export function StickerGifPicker({
     try {
       const result = await getTrendingGifs(20);
       setGifResults(result.results);
-    } catch {
+    } catch (error) {
+      logger.warn("sticker-gif-picker: failed to load trending gifs", { error });
       setGifResults([]);
     } finally {
       setGifLoading(false);
@@ -165,7 +167,8 @@ export function StickerGifPicker({
       try {
         const result = await searchGifs(gifSearch, 20);
         setGifResults(result.results);
-      } catch {
+      } catch (error) {
+        logger.warn("sticker-gif-picker: gif search failed", { gifSearch, error });
         setGifResults([]);
       } finally {
         setGifLoading(false);

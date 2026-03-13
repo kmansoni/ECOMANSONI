@@ -3,6 +3,7 @@ import { supabase } from "@/lib/supabase";
 import { Heart, MessageCircle, ChevronRight, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { fetchUserBriefMap, resolveUserBrief } from "@/lib/users/userBriefs";
+import { logger } from "@/lib/logger";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -54,9 +55,13 @@ export function SharedPostCard({ postId, isOwn, messageId, onDelete }: SharedPos
           .from("posts")
           .select("id, content, author_id, likes_count, comments_count")
           .eq("id", postId)
-          .single();
+          .maybeSingle();
 
         if (postError) throw postError;
+        if (!postData) {
+          setPost(null);
+          return;
+        }
 
         const authorId = String((postData as any).author_id || "");
         const briefMap = await fetchUserBriefMap([authorId], supabase as any);
@@ -78,7 +83,7 @@ export function SharedPostCard({ postId, isOwn, messageId, onDelete }: SharedPos
           media: media || [],
         });
       } catch (error) {
-        console.error("Error fetching shared post:", error);
+        logger.error("shared-post-card: failed to fetch shared post", { postId, error });
       } finally {
         setLoading(false);
       }

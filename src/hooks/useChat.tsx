@@ -63,14 +63,28 @@ function shouldFallbackToLegacySend(err: unknown): boolean {
   if (!err || typeof err !== "object") return false;
   const anyErr = err as any;
   const code = typeof anyErr.code === "string" ? anyErr.code : "";
+  const status = Number(anyErr.status ?? 0);
   const full = `${String(anyErr.message || "")} ${String(anyErr.details || "")}`.toLowerCase();
 
   // Fallback only on v11 infra/config issues; business rejections should remain explicit.
   if (code === "42883" || code === "PGRST202" || code === "PGRST301") return true;
+  if (code === "42P01" || code === "42703" || code === "PGRST204" || code === "PGRST205") return true;
+  if (status === 404 && (full.includes("chat_send_message_v11") || full.includes("schema cache"))) return true;
+  if (status === 400 && full.includes("chat_send_message_v11") && (full.includes("schema") || full.includes("column") || full.includes("relation"))) return true;
   if (full.includes("chat_send_message_v11") && (full.includes("does not exist") || full.includes("schema cache"))) return true;
   if (full.includes("permission denied") && full.includes("chat_send_message_v11")) return true;
 
   return false;
+}
+
+function shouldFallbackRejectedV11Ack(errorCode: unknown): boolean {
+  const code = String(errorCode ?? "").toUpperCase();
+  if (!code) return true;
+  // Do not mask real authorization/business denials.
+  if (code === "ERR_FORBIDDEN" || code === "ERR_UNAUTHORIZED") return false;
+  // Invalid-argument / protocol mismatches should degrade to v1.
+  if (code === "ERR_INVALID_ARGUMENT") return true;
+  return true;
 }
 
 function normalizeBrokenVerticalText(text: string): string {
@@ -1032,7 +1046,9 @@ export function useMessages(conversationId: string | null) {
 
     const probe = getLastChatSchemaProbe();
     if (probe && probe.ok === false) {
-      throw new Error("CHAT_MAINTENANCE_MODE");
+      logger.warn("[Chat] schema probe reported not-ok; continuing send with fallback paths", {
+        reason: probe.reason,
+      });
     }
 
     const clientMsgId = opts?.clientMsgId || crypto.randomUUID();
@@ -1091,10 +1107,18 @@ export function useMessages(conversationId: string | null) {
               conversationId,
               clientMsgId,
               body: normalizedContent,
+              isSilent: !!opts?.is_silent,
             });
             const { data: msgRow, error: msgErr } = await supabase.from("messages").select("*").eq("id", messageId).maybeSingle();
-            if (msgErr) throw msgErr;
-            if (!msgRow) throw new Error("SEND_MESSAGE_V1_FETCH_FAILED");
+            if (msgErr || !msgRow) {
+              logger.warn("chat: post-send fetch failed after v11 fallback; keeping optimistic message", {
+                conversationId,
+                clientMsgId,
+                messageId,
+                error: msgErr,
+              });
+              return;
+            }
 
             const returned = msgRow as unknown as ChatMessage;
             pendingLocalByClientIdRef.current.delete(clientMsgId);
@@ -1115,7 +1139,15 @@ export function useMessages(conversationId: string | null) {
           const ackMsgId = ack?.msg_id ? String(ack.msg_id) : null;
           if (ackMsgId) {
             const { data: msgRow, error: msgErr } = await supabase.from("messages").select("*").eq("id", ackMsgId).maybeSingle();
-            if (msgErr) throw msgErr;
+            if (msgErr) {
+              logger.warn("chat: ack fetch failed; keeping optimistic message", {
+                conversationId,
+                clientMsgId,
+                ackMsgId,
+                error: msgErr,
+              });
+              return;
+            }
             if (msgRow) {
               const returned = msgRow as unknown as ChatMessage;
               pendingLocalByClientIdRef.current.delete(clientMsgId);
@@ -1132,7 +1164,42 @@ export function useMessages(conversationId: string | null) {
           return;
         }
 
-        throw new Error(`CHAT_V11_SEND_REJECTED:${ack?.error_code || ackStatus || "unknown"}`);
+        const rejectedCode = String(ack?.error_code || ackStatus || "unknown");
+        if (shouldFallbackRejectedV11Ack(rejectedCode)) {
+          clearPendingReceiptWatch(clientWriteSeq);
+          v11ClientWriteSeq = null;
+          bumpChatMetric("v11_fallback_to_v1_count", 1);
+
+          const { messageId } = await sendMessageV1({
+            conversationId,
+            clientMsgId,
+            body: normalizedContent,
+            isSilent: !!opts?.is_silent,
+          });
+
+          const { data: msgRow, error: msgErr } = await supabase.from("messages").select("*").eq("id", messageId).maybeSingle();
+          if (msgErr || !msgRow) {
+            logger.warn("chat: post-send fetch failed after v11 rejected fallback; keeping optimistic message", {
+              conversationId,
+              clientMsgId,
+              messageId,
+              rejectedCode,
+              error: msgErr,
+            });
+            return;
+          }
+
+          const returned = msgRow as unknown as ChatMessage;
+          pendingLocalByClientIdRef.current.delete(clientMsgId);
+          setMessages((prev) => {
+            const withoutLocal = prev.filter((m) => !(m.id.startsWith("local:") && m.client_msg_id === clientMsgId));
+            if (withoutLocal.some((m) => m.id === returned.id)) return withoutLocal;
+            return sortMessages([...withoutLocal, returned]);
+          });
+          return;
+        }
+
+        throw new Error(`CHAT_V11_SEND_REJECTED:${rejectedCode}`);
       }
 
       // falling back to legacy
@@ -1140,11 +1207,19 @@ export function useMessages(conversationId: string | null) {
         conversationId,
         clientMsgId,
         body: normalizedContent,
+        isSilent: !!opts?.is_silent,
       });
 
       const { data: msgRow, error: msgErr } = await supabase.from("messages").select("*").eq("id", messageId).maybeSingle();
-      if (msgErr) throw msgErr;
-      if (!msgRow) throw new Error("SEND_MESSAGE_V1_FETCH_FAILED");
+      if (msgErr || !msgRow) {
+        logger.warn("chat: post-send fetch failed; keeping optimistic message", {
+          conversationId,
+          clientMsgId,
+          messageId,
+          error: msgErr,
+        });
+        return;
+      }
 
       const returned = msgRow as unknown as ChatMessage;
       pendingLocalByClientIdRef.current.delete(clientMsgId);

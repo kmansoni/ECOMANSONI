@@ -8,10 +8,29 @@ import { supabase } from "@/lib/supabase";
 
 let _available: boolean | null = null;
 let _probeAt = 0;
-const PROBE_TTL_MS = 60_000; // re-probe every 60 seconds after failure
+const PROBE_TTL_OK_MS = 60_000;
+const PROBE_TTL_FAIL_MS = 30 * 60_000;
+
+function isExpectedOptionalSettingsError(error: any): boolean {
+  const code = String(error?.code ?? "");
+  const status = Number(error?.status ?? 0);
+  const message = String(error?.message ?? "").toLowerCase();
+  const details = String(error?.details ?? "").toLowerCase();
+  return (
+    code === "42501" ||
+    code === "42P01" ||
+    code === "PGRST204" ||
+    code === "PGRST205" ||
+    status === 403 ||
+    status === 404 ||
+    (message.includes("chat_user_settings") && (message.includes("does not exist") || message.includes("schema cache") || message.includes("permission"))) ||
+    (details.includes("chat_user_settings") && details.includes("schema cache"))
+  );
+}
 
 export async function probeSupabase(): Promise<boolean> {
-  if (_available !== null && Date.now() - _probeAt < PROBE_TTL_MS) {
+  const ttl = _available === false ? PROBE_TTL_FAIL_MS : PROBE_TTL_OK_MS;
+  if (_available !== null && Date.now() - _probeAt < ttl) {
     return _available;
   }
   try {
@@ -19,7 +38,13 @@ export async function probeSupabase(): Promise<boolean> {
       .from("chat_user_settings")
       .select("conversation_id")
       .limit(1);
-    _available = !error || error.code === "PGRST116";
+    if (!error || error.code === "PGRST116") {
+      _available = true;
+    } else if (isExpectedOptionalSettingsError(error)) {
+      _available = false;
+    } else {
+      _available = false;
+    }
   } catch {
     _available = false;
   }

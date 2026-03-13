@@ -1,6 +1,7 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { RefreshCw } from 'lucide-react';
 import type { DeliveryStatus } from '@/hooks/useReadReceipts';
+import { logger } from '@/lib/logger';
 import {
   Tooltip,
   TooltipContent,
@@ -26,7 +27,8 @@ function formatTime(iso?: string): string {
       day: "numeric",
       month: "short",
     }).format(new Date(iso));
-  } catch {
+  } catch (error) {
+    logger.debug('message-status: failed to format time', { iso, error });
     return iso;
   }
 }

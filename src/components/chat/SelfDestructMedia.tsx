@@ -25,6 +25,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Eye, Timer, Flame } from "lucide-react";
+import { logger } from "@/lib/logger";
 
 interface SelfDestructMediaProps {
   mediaUrl: string;
@@ -89,7 +90,10 @@ export function SelfDestructMedia({
     const handler = () => {
       if (document.visibilityState === "hidden" && revealed) {
         // User switched away — could be screenshot
-        console.warn("[SelfDestructMedia] Tab hidden during reveal — possible screenshot");
+        logger.warn("self-destruct-media: tab hidden during reveal", {
+          mediaType,
+          ttlSeconds,
+        });
       }
     };
     document.addEventListener("visibilitychange", handler);

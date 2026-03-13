@@ -28,6 +28,7 @@ import { supabase } from "@/lib/supabase";
 import { GradientAvatar } from "@/components/ui/gradient-avatar";
 import { InviteQrDialog } from "@/components/chat/InviteQrDialog";
 import { rotateGroupMembershipAfterRemoval } from "@/lib/e2ee/groupMembershipRotation";
+import { logger } from "@/lib/logger";
 
 interface GroupConversationProps {
   group: GroupChat;
@@ -74,7 +75,12 @@ export function GroupConversation({ group, onBack, onLeave }: GroupConversationP
   const formatMessageTime = (dateStr: string) => {
     try {
       return format(new Date(dateStr), "HH:mm");
-    } catch {
+    } catch (error) {
+      logger.debug("group-chat: failed to format message time", {
+        groupId: group.id,
+        dateStr,
+        error,
+      });
       return "";
     }
   };
@@ -121,7 +127,8 @@ export function GroupConversation({ group, onBack, onLeave }: GroupConversationP
       toast.success("Вы покинули группу");
       onLeave?.();
       onBack();
-    } catch {
+    } catch (error) {
+      logger.error("group-chat: leave group failed", { groupId: group.id, error });
       toast.error("Не удалось покинуть группу");
     }
   };
@@ -147,12 +154,16 @@ export function GroupConversation({ group, onBack, onLeave }: GroupConversationP
             .update({ is_general: true })
             .eq("id", general.id);
           if (topicError) {
-            console.warn("[handleToggleTopics] is_general not persisted:", topicError);
+            logger.warn("group-chat: is_general not persisted", {
+              groupId: group.id,
+              topicId: general.id,
+              error: topicError,
+            });
           }
         }
       }
     } catch (err) {
-      console.error("[handleToggleTopics] failed:", err);
+      logger.error("group-chat: toggle topics failed", { groupId: group.id, error: err });
       toast.error("Не удалось изменить настройки тем");
     }
   };
@@ -173,7 +184,7 @@ export function GroupConversation({ group, onBack, onLeave }: GroupConversationP
       await navigator.clipboard.writeText(url);
       toast.success("Ссылка-приглашение в группу скопирована");
     } catch (error) {
-      console.error("Failed to create group invite:", error);
+      logger.error("group-chat: create invite link failed", { groupId: group.id, error });
       toast.error("Не удалось создать приглашение");
     }
   };
@@ -185,7 +196,7 @@ export function GroupConversation({ group, onBack, onLeave }: GroupConversationP
       setInviteQrUrl(url);
       setInviteQrOpen(true);
     } catch (error) {
-      console.error("Failed to create group invite QR:", error);
+      logger.error("group-chat: create invite QR failed", { groupId: group.id, error });
       toast.error("Не удалось подготовить QR-приглашение");
     }
   };

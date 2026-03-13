@@ -5,6 +5,7 @@ import { ru } from "date-fns/locale";
 import { supabase } from "@/integrations/supabase/client";
 import { ImageViewer } from "./ImageViewer";
 import { fetchUserBriefMap, resolveUserBrief } from "@/lib/users/userBriefs";
+import { logger } from "@/lib/logger";
 
 interface MediaItem {
   id: string;
@@ -176,7 +177,11 @@ export function MediaGallerySheet({ isOpen, onClose, conversationId, userId, tit
           }
         }
       } catch (err) {
-        console.error('Error fetching media:', err);
+        logger.error('media-gallery: failed to fetch media', {
+          conversationId,
+          type,
+          error: err,
+        });
         setMedia([]);
       } finally {
         setLoading(false);

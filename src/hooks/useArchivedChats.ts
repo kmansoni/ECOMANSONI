@@ -70,8 +70,18 @@ export function useArchivedChats(): UseArchivedChatsReturn {
   const [useLS, setUseLS] = useState(false);
 
   const isMissingSettingsTableError = useCallback((error: any) => {
-    const msg = String(error?.message ?? "");
-    return error?.code === "42P01" || error?.code === "PGRST205" || msg.includes("Could not find the table") || msg.includes("does not exist");
+    const msg = String(error?.message ?? "").toLowerCase();
+    const details = String(error?.details ?? "").toLowerCase();
+    const code = String(error?.code ?? "");
+    const status = Number(error?.status ?? 0);
+    return (
+      code === "42P01" ||
+      code === "PGRST205" ||
+      code === "PGRST204" ||
+      msg.includes("chat_user_settings") && (msg.includes("could not find the table") || msg.includes("does not exist") || msg.includes("schema cache")) ||
+      details.includes("chat_user_settings") && details.includes("schema cache") ||
+      status === 404
+    );
   }, []);
 
   // ── Load ──────────────────────────────────────────────────────────────────

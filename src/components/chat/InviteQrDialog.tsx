@@ -4,6 +4,7 @@ import QRCode from "qrcode";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { logger } from "@/lib/logger";
 
 interface InviteQrDialogProps {
   open: boolean;
@@ -39,7 +40,8 @@ export function InviteQrDialog({
     try {
       await navigator.clipboard.writeText(inviteUrl);
       toast.success("Ссылка скопирована");
-    } catch {
+    } catch (error) {
+      logger.warn("invite-qr: failed to copy invite url", { inviteUrl, error });
       toast.error("Не удалось скопировать ссылку");
     }
   };
@@ -51,7 +53,8 @@ export function InviteQrDialog({
         return;
       }
       await handleCopy();
-    } catch {
+    } catch (error) {
+      logger.debug("invite-qr: share dismissed or failed", { title, inviteUrl, error });
       // Share can be canceled by user; keep silent.
     }
   };
