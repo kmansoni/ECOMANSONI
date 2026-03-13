@@ -60,6 +60,10 @@ function randomHex(bytes = 16) {
   return out;
 }
 
+function makeNonce(prefix = "turn-smoke") {
+  return `${prefix}-${Date.now()}-${randomHex(8)}`;
+}
+
 async function createEphemeralUser({ base, serviceRoleKey }) {
   const email = `turn-smoke+${Date.now()}-${randomHex(6)}@example.com`;
   const password = `S3cure-${randomHex(16)}!`;
@@ -171,7 +175,11 @@ async function main() {
 
   // 1) No auth -> 401
   {
-    const { res, json } = await fetchJson(fnUrl, { method: "POST", headers: common, body: "{}" });
+    const { res, json } = await fetchJson(fnUrl, {
+      method: "POST",
+      headers: { ...common, "x-turn-nonce": makeNonce("noauth") },
+      body: "{}",
+    });
     if (res.status !== 401) {
       console.error("[turn smoke] expected 401 (no auth)", { projectRef, status: res.status, body: json });
       process.exitCode = 1;
@@ -183,7 +191,11 @@ async function main() {
   {
     const { res } = await fetchJson(fnUrl, {
       method: "POST",
-      headers: { ...common, Authorization: `Bearer ${anonKey}` },
+      headers: {
+        ...common,
+        Authorization: `Bearer ${anonKey}`,
+        "x-turn-nonce": makeNonce("anonbearer"),
+      },
       body: "{}",
     });
     if (res.status !== 401) {
@@ -232,7 +244,7 @@ async function main() {
     // 5) Authenticated -> 200
     const okRes = await fetchJson(fnUrl, {
       method: "POST",
-      headers: { ...common, Authorization: `Bearer ${accessToken}` },
+      headers: { ...common, Authorization: `Bearer ${accessToken}`, "x-turn-nonce": makeNonce("jwt-ok") },
       body: "{}",
     });
 
@@ -240,6 +252,77 @@ async function main() {
       console.error("[turn smoke] expected 200 (user JWT)", { projectRef, status: okRes.res.status, body: okRes.json });
       process.exitCode = 1;
       return;
+    }
+
+    // 6) Replay protection: same nonce twice => second call must be 409
+    {
+      const replayNonce = makeNonce("jwt-replay");
+      const first = await fetchJson(fnUrl, {
+        method: "POST",
+        headers: { ...common, Authorization: `Bearer ${accessToken}`, "x-turn-nonce": replayNonce },
+        body: "{}",
+      });
+
+      if (first.res.status !== 200) {
+        console.error("[turn smoke] replay precondition failed (first call not 200)", {
+          projectRef,
+          status: first.res.status,
+          body: first.json,
+        });
+        process.exitCode = 1;
+        return;
+      }
+
+      const second = await fetchJson(fnUrl, {
+        method: "POST",
+        headers: { ...common, Authorization: `Bearer ${accessToken}`, "x-turn-nonce": replayNonce },
+        body: "{}",
+      });
+
+      if (second.res.status !== 409 || second.json?.error !== "replay_detected") {
+        console.error("[turn smoke] expected replay_detected (409)", {
+          projectRef,
+          status: second.res.status,
+          body: second.json,
+        });
+        process.exitCode = 1;
+        return;
+      }
+
+      console.log("[turn smoke] replay guard OK (409 replay_detected observed)");
+    }
+
+    // 7) API key mode (optional): when TURN_CREDENTIALS_API_KEY is provided locally,
+    // function should accept x-turn-api-key auth and return 200.
+    {
+      const apiKey = readEnv("TURN_CREDENTIALS_API_KEY") || readEnv("TURN_API_KEY");
+      if (!apiKey) {
+        const msg = "[turn smoke] api key auth check skipped: TURN_CREDENTIALS_API_KEY not set locally";
+        if (requireMode) {
+          console.warn(msg);
+        }
+      } else {
+        const apiRes = await fetchJson(fnUrl, {
+          method: "POST",
+          headers: {
+            ...common,
+            "x-turn-api-key": apiKey,
+            "x-turn-nonce": makeNonce("apikey-ok"),
+          },
+          body: "{}",
+        });
+
+        if (apiRes.res.status !== 200) {
+          console.error("[turn smoke] expected 200 (api key auth)", {
+            projectRef,
+            status: apiRes.res.status,
+            body: apiRes.json,
+          });
+          process.exitCode = 1;
+          return;
+        }
+        console.log("[turn smoke] api key auth OK");
+      }
     }
 
     const iceServers = okRes.json?.iceServers;
@@ -310,7 +393,11 @@ async function main() {
       for (let i = 0; i < attempts; i++) {
         const r = await fetch(fnUrl, {
           method: "POST",
-          headers: { ...common, Authorization: `Bearer ${accessToken}` },
+          headers: {
+            ...common,
+            Authorization: `Bearer ${accessToken}`,
+            "x-turn-nonce": makeNonce("rl"),
+          },
           body: "{}",
         });
         if (r.status === 429) {
