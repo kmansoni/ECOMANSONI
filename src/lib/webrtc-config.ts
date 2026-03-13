@@ -51,6 +51,11 @@ const DEFAULT_CACHE_TTL_MS = 25 * 60 * 1000; // 25 minutes
 const FALLBACK_CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutes
 const MIN_CACHE_TTL_MS = 2 * 60 * 1000;
 const MAX_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour cap
+const TURN_FETCH_FAILURE_THRESHOLD = 3;
+const TURN_FETCH_CIRCUIT_COOLDOWN_MS = 60 * 1000;
+
+let turnFetchFailures = 0;
+let turnFetchCircuitOpenUntil = 0;
 
 interface TurnCredentialsResponse {
   iceServers?: RTCIceServer[];
@@ -66,6 +71,12 @@ function hasTurnServer(iceServers: RTCIceServer[]): boolean {
 }
 
 async function fetchTurnCredentials(): Promise<{ iceServers: RTCIceServer[] | null; ttlMs: number }> {
+  const now = Date.now();
+  if (turnFetchCircuitOpenUntil > now) {
+    console.warn("[WebRTC Config] TURN fetch circuit is open; skipping remote call");
+    return { iceServers: null, ttlMs: FALLBACK_CACHE_TTL_MS };
+  }
+
   try {
     console.log("[WebRTC Config] Fetching TURN credentials...");
 
@@ -75,6 +86,8 @@ async function fetchTurnCredentials(): Promise<{ iceServers: RTCIceServer[] | nu
         const parsed = (data ?? {}) as TurnCredentialsResponse;
         const parsedResult = parseTurnResponse(parsed);
         if (parsedResult.iceServers && parsedResult.iceServers.length > 0) {
+          turnFetchFailures = 0;
+          turnFetchCircuitOpenUntil = 0;
           return parsedResult;
         }
         console.warn("[WebRTC Config] TURN endpoint returned no ICE servers, falling back to Supabase function");
@@ -92,11 +105,33 @@ async function fetchTurnCredentials(): Promise<{ iceServers: RTCIceServer[] | nu
     }
 
     const parsed = (data ?? {}) as TurnCredentialsResponse;
-    return parseTurnResponse(parsed);
+    const result = parseTurnResponse(parsed);
+    if (result.iceServers && result.iceServers.length > 0) {
+      turnFetchFailures = 0;
+      turnFetchCircuitOpenUntil = 0;
+    }
+    return result;
   } catch (err) {
     console.error("[WebRTC Config] Failed to fetch TURN credentials:", err);
+    turnFetchFailures += 1;
+    if (turnFetchFailures >= TURN_FETCH_FAILURE_THRESHOLD) {
+      turnFetchCircuitOpenUntil = Date.now() + TURN_FETCH_CIRCUIT_COOLDOWN_MS;
+      console.warn("[WebRTC Config] TURN fetch circuit opened due to consecutive failures");
+    }
     return { iceServers: null, ttlMs: FALLBACK_CACHE_TTL_MS };
   }
+}
+
+function computeCacheTtl(ttlFromServerMs: number): number {
+  if (ttlFromServerMs <= 0) return DEFAULT_CACHE_TTL_MS;
+
+  // Prefer caching until "credential TTL - 1h" when possible.
+  if (ttlFromServerMs > 60 * 60 * 1000) {
+    return Math.max(MIN_CACHE_TTL_MS, ttlFromServerMs - 60 * 60 * 1000);
+  }
+
+  // For <=1h credentials, keep conservative refresh cadence.
+  return Math.max(MIN_CACHE_TTL_MS, Math.floor(ttlFromServerMs * 0.5));
 }
 
 function parseTurnResponse(parsed: TurnCredentialsResponse): { iceServers: RTCIceServer[] | null; ttlMs: number } {
@@ -108,16 +143,14 @@ function parseTurnResponse(parsed: TurnCredentialsResponse): { iceServers: RTCIc
     ? Math.max(0, parsed.ttlSeconds) * 1000
     : 0;
 
-  // Keep cache below half of server TTL, capped at MAX_CACHE_TTL_MS (1 hour).
+  // Cache policy: TTL-1h (when TTL > 1h), otherwise 50% of TTL.
   const ttlMs = Math.max(
     MIN_CACHE_TTL_MS,
     Math.min(
       MAX_CACHE_TTL_MS,
       Math.min(
         DEFAULT_CACHE_TTL_MS,
-        ttlFromServerMs > 0
-          ? Math.max(0, Math.min(ttlFromServerMs / 2, ttlFromServerMs - 60 * 1000))
-          : DEFAULT_CACHE_TTL_MS,
+        computeCacheTtl(ttlFromServerMs),
       ),
     ),
   );
@@ -235,6 +268,8 @@ export async function getIceServers(
 export function clearIceServerCache(): void {
   cachedIceServers = null;
   cacheExpiry = 0;
+  turnFetchFailures = 0;
+  turnFetchCircuitOpenUntil = 0;
   console.log("[WebRTC Config] ICE server cache cleared");
 }
 

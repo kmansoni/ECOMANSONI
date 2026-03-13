@@ -3,18 +3,51 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { enforceCors, getCorsHeaders, handleCors } from "../_shared/utils.ts";
 
 const DEFAULT_TURN_TTL_SECONDS = 3600;
-const MIN_TURN_TTL_SECONDS = 60;
-const MAX_TURN_TTL_SECONDS = 3600;
-const TURN_RATE_MAX_PER_WINDOW = Math.max(1, Number(Deno.env.get("TURN_RATE_MAX_PER_MINUTE") ?? "10"));
-const TURN_RATE_HARD_CAP_PER_WINDOW = Math.max(1, Number(Deno.env.get("TURN_RATE_HARD_CAP_PER_MINUTE") ?? "120"));
+const MIN_TURN_TTL_SECONDS = 3600;
+const MAX_TURN_TTL_SECONDS = 24 * 3600;
+
+const TURN_RATE_MAX_PER_WINDOW = Math.max(1, Number(Deno.env.get("TURN_RATE_MAX_PER_MINUTE") ?? "20"));
+const TURN_RATE_HARD_CAP_PER_WINDOW = Math.max(1, Number(Deno.env.get("TURN_RATE_HARD_CAP_PER_MINUTE") ?? "200"));
 const TURN_LOCAL_RL_WINDOW_MS = 60_000;
+
+const TURN_REPLAY_WINDOW_MS = Math.max(1_000, Number(Deno.env.get("TURN_REPLAY_WINDOW_MS") ?? "300000"));
+const TURN_METRICS_WINDOW_MS = Math.max(60_000, Number(Deno.env.get("TURN_METRICS_WINDOW_MS") ?? "3600000"));
+
 const TURN_NO_STORE_HEADERS = {
   "Content-Type": "application/json",
   "Cache-Control": "no-store",
   Pragma: "no-cache",
 };
 
-const localTurnRateLimitBuckets = new Map<string, { bucket: number; cnt: number }>();
+type LocalRateState = { bucket: number; cnt: number };
+const localUserRateBuckets = new Map<string, LocalRateState>();
+const localIpRateBuckets = new Map<string, LocalRateState>();
+const replayNonceBuckets = new Map<string, number>();
+
+const metrics = {
+  startedAt: Date.now(),
+  requests: 0,
+  success: 0,
+  unauthorized: 0,
+  replayRejected: 0,
+  rateLimited: 0,
+  errors: 0,
+  sumLatencyMs: 0,
+  maxLatencyMs: 0,
+};
+
+function nowMs(): number {
+  return Date.now();
+}
+
+function logEvent(event: string, payload: Record<string, unknown>): void {
+  console.log(JSON.stringify({
+    service: "turn-credentials",
+    event,
+    ts: new Date().toISOString(),
+    ...payload,
+  }));
+}
 
 function parseUrls(raw: string | undefined | null): string[] {
   if (!raw) return [];
@@ -24,39 +57,33 @@ function parseUrls(raw: string | undefined | null): string[] {
     .filter(Boolean);
 }
 
-function base64FromArrayBuffer(buf: ArrayBuffer): string {
-  const bytes = new Uint8Array(buf);
-  let binary = "";
-  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-  return btoa(binary);
+function parseSecrets(raw: string | undefined | null): string[] {
+  if (!raw) return [];
+  return raw
+    .split(/[\s,]+/g)
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
-async function hmacSha1Base64(secret: string, message: string): Promise<string> {
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(secret),
-    { name: "HMAC", hash: "SHA-1" },
-    false,
-    ["sign"]
-  );
-  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(message));
-  return base64FromArrayBuffer(sig);
+function parseApiKeys(): string[] {
+  const keys = [
+    ...parseSecrets(Deno.env.get("TURN_API_KEYS")),
+    ...parseSecrets(Deno.env.get("TURN_CREDENTIALS_API_KEY")),
+  ];
+  return [...new Set(keys)];
 }
 
-async function hmacSha256Base64(secret: string, message: string): Promise<string> {
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"]
-  );
-  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(message));
-  return base64FromArrayBuffer(sig);
+function parseBool(raw: string | undefined | null, defaultValue: boolean): boolean {
+  if (!raw) return defaultValue;
+  const v = raw.trim().toLowerCase();
+  if (v === "1" || v === "true" || v === "yes") return true;
+  if (v === "0" || v === "false" || v === "no") return false;
+  return defaultValue;
 }
 
-function toBase64Url(raw: string): string {
-  return raw.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+function normalizeEnv(value: unknown): string {
+  if (typeof value !== "string") return "";
+  return value.trim().replace(/^['\"]+|['\"]+$/g, "");
 }
 
 function isProductionEnv(): boolean {
@@ -68,17 +95,52 @@ function isProductionEnv(): boolean {
   ).toLowerCase();
   if (env === "prod" || env === "production") return true;
 
-  // Safety heuristic: if Supabase URL is non-local, treat as production-like.
   const supabaseUrl = (Deno.env.get("SUPABASE_URL") ?? "").toLowerCase();
   if (!supabaseUrl) return true;
   if (supabaseUrl.includes("localhost") || supabaseUrl.includes("127.0.0.1")) return false;
   return true;
 }
 
+function base64FromArrayBuffer(buf: ArrayBuffer): string {
+  const bytes = new Uint8Array(buf);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary);
+}
+
+function toBase64Url(raw: string): string {
+  return raw.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+async function hmacSha1Base64(secret: string, message: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-1" },
+    false,
+    ["sign"],
+  );
+  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(message));
+  return base64FromArrayBuffer(sig);
+}
+
+async function hmacSha256Base64(secret: string, message: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(message));
+  return base64FromArrayBuffer(sig);
+}
+
 function getClientIp(req: Request): string {
   const xff = req.headers.get("x-forwarded-for") ?? "";
   const first = xff.split(",").map((s) => s.trim()).find(Boolean);
-  return first || req.headers.get("x-real-ip") || "unknown";
+  const ip = first || req.headers.get("x-real-ip") || "unknown";
+  return ip.replace(/^::ffff:/i, "");
 }
 
 function isUuid(value: string): boolean {
@@ -90,36 +152,122 @@ function shouldFailHardOnRateLimitMisconfig(): boolean {
   return raw === "1" || raw === "true";
 }
 
+function parseRequestedTtlSeconds(body: unknown): number {
+  const record = (body && typeof body === "object") ? body as Record<string, unknown> : {};
+  const requested = Number(record.ttlSeconds ?? Deno.env.get("TURN_TTL_SECONDS") ?? `${DEFAULT_TURN_TTL_SECONDS}`);
+  const ttl = Number.isFinite(requested) ? Math.floor(requested) : DEFAULT_TURN_TTL_SECONDS;
+  return Math.max(MIN_TURN_TTL_SECONDS, Math.min(MAX_TURN_TTL_SECONDS, ttl));
+}
+
+function safeJsonParse(raw: string): unknown {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
+}
+
+async function parseRequestBody(req: Request): Promise<Record<string, unknown>> {
+  const method = req.method.toUpperCase();
+  if (method !== "POST") return {};
+
+  const contentType = req.headers.get("content-type") ?? "";
+  if (!contentType.toLowerCase().includes("application/json")) return {};
+
+  const text = await req.text();
+  if (!text) return {};
+  return (safeJsonParse(text) as Record<string, unknown>) || {};
+}
+
+function makeJsonResponse(
+  corsHeaders: Record<string, string>,
+  status: number,
+  payload: Record<string, unknown>,
+): Response {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: { ...corsHeaders, ...TURN_NO_STORE_HEADERS },
+  });
+}
+
+function cleanupWindowedMaps(): void {
+  const now = nowMs();
+  const minMetricWindow = now - TURN_METRICS_WINDOW_MS;
+
+  for (const [k, v] of localUserRateBuckets.entries()) {
+    if (v.bucket * TURN_LOCAL_RL_WINDOW_MS < minMetricWindow) localUserRateBuckets.delete(k);
+  }
+  for (const [k, v] of localIpRateBuckets.entries()) {
+    if (v.bucket * TURN_LOCAL_RL_WINDOW_MS < minMetricWindow) localIpRateBuckets.delete(k);
+  }
+  for (const [k, expiresAt] of replayNonceBuckets.entries()) {
+    if (expiresAt <= now) replayNonceBuckets.delete(k);
+  }
+}
+
+function extractNonce(req: Request, body: Record<string, unknown>): string {
+  const headerNonce = normalizeEnv(req.headers.get("x-turn-nonce") ?? req.headers.get("x-request-id") ?? "");
+  if (headerNonce) return headerNonce.slice(0, 120);
+  const bodyNonce = normalizeEnv(String(body.nonce ?? body.requestId ?? ""));
+  return bodyNonce.slice(0, 120);
+}
+
+function enforceReplayProtection(
+  userKey: string,
+  nonce: string,
+  corsHeaders: Record<string, string>,
+): Response | null {
+  const requireNonce = parseBool(Deno.env.get("TURN_REQUIRE_NONCE"), isProductionEnv());
+
+  if (!nonce) {
+    if (!requireNonce) return null;
+    return makeJsonResponse(corsHeaders, 400, { error: "invalid_request" });
+  }
+
+  const replayKey = `${userKey}:${nonce}`;
+  const now = nowMs();
+  const seenUntil = replayNonceBuckets.get(replayKey);
+  if (seenUntil && seenUntil > now) {
+    metrics.replayRejected += 1;
+    return makeJsonResponse(corsHeaders, 409, { error: "replay_detected" });
+  }
+
+  replayNonceBuckets.set(replayKey, now + TURN_REPLAY_WINDOW_MS);
+  return null;
+}
+
+async function hashRateScope(scope: string): Promise<string> {
+  const secret = Deno.env.get("TURN_RL_SCOPE_HASH_SECRET") ?? Deno.env.get("TURN_USER_HASH_SECRET") ?? Deno.env.get("TURN_SHARED_SECRET") ?? "turn-rl";
+  const digest = await hmacSha256Base64(secret, scope);
+  return toBase64Url(digest).slice(0, 32);
+}
+
 async function enforceTurnIssueRateLimit(
   userId: string,
   ip: string,
-  corsHeaders: Record<string, string>
+  corsHeaders: Record<string, string>,
 ): Promise<Response | null> {
-  const rateScopeKey = userId;
-  const localKey = rateScopeKey;
-  const localBucket = Math.floor(Date.now() / TURN_LOCAL_RL_WINDOW_MS);
-  const localState = localTurnRateLimitBuckets.get(localKey);
-  const localCount = localState && localState.bucket === localBucket ? localState.cnt + 1 : 1;
+  const localBucket = Math.floor(nowMs() / TURN_LOCAL_RL_WINDOW_MS);
   const effectiveLocalMax = Math.min(TURN_RATE_MAX_PER_WINDOW, TURN_RATE_HARD_CAP_PER_WINDOW);
-  localTurnRateLimitBuckets.set(localKey, { bucket: localBucket, cnt: localCount });
 
-  if (localCount > effectiveLocalMax) {
-    return new Response(
-      JSON.stringify({ error: "rate_limited" }),
-      { status: 429, headers: { ...corsHeaders, ...TURN_NO_STORE_HEADERS } },
-    );
+  const userState = localUserRateBuckets.get(userId);
+  const userCount = userState && userState.bucket === localBucket ? userState.cnt + 1 : 1;
+  localUserRateBuckets.set(userId, { bucket: localBucket, cnt: userCount });
+
+  const ipState = localIpRateBuckets.get(ip);
+  const ipCount = ipState && ipState.bucket === localBucket ? ipState.cnt + 1 : 1;
+  localIpRateBuckets.set(ip, { bucket: localBucket, cnt: ipCount });
+
+  if (userCount > effectiveLocalMax || ipCount > TURN_RATE_HARD_CAP_PER_WINDOW) {
+    metrics.rateLimited += 1;
+    return makeJsonResponse(corsHeaders, 429, { error: "rate_limited" });
   }
 
   if (!isUuid(userId)) {
-    // Dev-only anonymous mode returns a non-UUID (e.g. "dev-anon").
-    // In production, this must never happen.
     if (isProductionEnv()) {
-      return new Response(
-        JSON.stringify({ error: "misconfigured" }),
-        { status: 500, headers: { ...corsHeaders, ...TURN_NO_STORE_HEADERS } },
-      );
+      return makeJsonResponse(corsHeaders, 500, { error: "misconfigured" });
     }
-    console.warn("[TURN] Rate limit skipped (non-UUID userId)");
+    logEvent("turn.rl.skipped.non_uuid", {});
     return null;
   }
 
@@ -128,74 +276,70 @@ async function enforceTurnIssueRateLimit(
 
   if (!supabaseUrl || !serviceKey) {
     if (isProductionEnv() && shouldFailHardOnRateLimitMisconfig()) {
-      return new Response(
-        JSON.stringify({ error: "misconfigured" }),
-        { status: 500, headers: { ...corsHeaders, ...TURN_NO_STORE_HEADERS } },
-      );
+      return makeJsonResponse(corsHeaders, 500, { error: "misconfigured" });
     }
-    console.warn("[TURN] Rate limit skipped (missing SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY)");
+    logEvent("turn.rl.skipped.no_service_key", {});
     return null;
   }
 
-  const admin = createClient(supabaseUrl, serviceKey, {
-    auth: { persistSession: false },
-  });
+  const admin = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
+  const ipScope = await hashRateScope(ip);
 
   const { data, error } = await (admin as any).rpc("turn_issuance_rl_hit_v1", {
     p_user_id: userId,
-    p_ip: rateScopeKey,
+    p_ip: ipScope,
     p_max: effectiveLocalMax,
   });
 
   if (error) {
-    console.error("[TURN] Rate limit RPC failed:", error);
+    logEvent("turn.rl.rpc_error", { code: error.code ?? null, message: error.message ?? null });
     if (isProductionEnv() && shouldFailHardOnRateLimitMisconfig()) {
-      return new Response(
-        JSON.stringify({ error: "misconfigured" }),
-        { status: 500, headers: { ...corsHeaders, ...TURN_NO_STORE_HEADERS } },
-      );
+      return makeJsonResponse(corsHeaders, 500, { error: "misconfigured" });
     }
     return null;
   }
 
-  const rlRow = Array.isArray(data) ? data[0] : data;
-  if (rlRow && rlRow.allowed === false) {
-    return new Response(
-      JSON.stringify({ error: "rate_limited" }),
-      { status: 429, headers: { ...corsHeaders, ...TURN_NO_STORE_HEADERS } },
-    );
+  const row = Array.isArray(data) ? data[0] : data;
+  if (row && row.allowed === false) {
+    metrics.rateLimited += 1;
+    return makeJsonResponse(corsHeaders, 429, { error: "rate_limited" });
   }
 
   return null;
 }
 
-async function getAuthenticatedUserId(req: Request): Promise<string | null> {
-  const allowAnon = Deno.env.get("TURN_ALLOW_ANON_DEV") === "1";
-  if (allowAnon && isProductionEnv()) return null;
-  if (allowAnon) return "dev-anon";
+type AuthResult = { userId: string; authType: "jwt" | "api_key" };
 
-  const authHeader = req.headers.get("Authorization") ?? req.headers.get("authorization") ?? "";
+async function authenticateRequest(req: Request): Promise<AuthResult | null> {
+  const apiKeys = parseApiKeys();
+  const presentedApiKey = normalizeEnv(
+    req.headers.get("x-turn-api-key") ??
+    req.headers.get("x-api-key") ??
+    req.headers.get("apikey") ??
+    "",
+  );
+
+  if (presentedApiKey && apiKeys.includes(presentedApiKey)) {
+    const keyHash = toBase64Url(await hmacSha256Base64("turn-api-key", presentedApiKey)).slice(0, 24);
+    return { userId: `apikey:${keyHash}`, authType: "api_key" };
+  }
+
+  const allowAnon = Deno.env.get("TURN_ALLOW_ANON_DEV") === "1";
+  if (allowAnon && !isProductionEnv()) {
+    return { userId: "dev-anon", authType: "jwt" };
+  }
+
+  const authHeader = req.headers.get("authorization") ?? req.headers.get("Authorization") ?? "";
   const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
   if (!token) return null;
 
-  const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  if (!supabaseUrl) return null;
-
-  // SECURITY FIX: Removed SUPABASE_SERVICE_ROLE_KEY from auth key candidates.
-  // The service role key bypasses RLS and must never be used in externally-reachable
-  // endpoints. A compromised TURN credential request could leverage it to read/write
-  // arbitrary rows across the entire database. User JWTs are validated against anon
-  // and publishable keys only.
+  const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
   const authKeys = [
     Deno.env.get("SUPABASE_ANON_KEY") ?? "",
     Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? "",
-    // REMOVED: SUPABASE_SERVICE_ROLE_KEY — must not be exposed in external-facing endpoints
   ].map((v) => v.trim()).filter((v, i, arr) => !!v && arr.indexOf(v) === i);
 
-  if (authKeys.length === 0) {
-    console.error("[TURN] Missing auth keys for token validation");
-    return null;
-  }
+  if (!supabaseUrl || authKeys.length === 0) return null;
 
   for (const key of authKeys) {
     try {
@@ -204,14 +348,32 @@ async function getAuthenticatedUserId(req: Request): Promise<string | null> {
         auth: { persistSession: false, autoRefreshToken: false },
       });
       const { data, error } = await supabase.auth.getUser(token);
-      if (!error && data?.user?.id) return data.user.id;
+      if (!error && data?.user?.id) return { userId: data.user.id, authType: "jwt" };
     } catch {
       // try next key
     }
   }
 
-  console.warn("[TURN] Token validation failed for all configured keys");
   return null;
+}
+
+async function buildTurnCredentials(userId: string, ttlSeconds: number): Promise<{ username: string; credential: string; expiresAt: string }> {
+  const secret = normalizeEnv(Deno.env.get("TURN_SHARED_SECRET") ?? "");
+  if (!secret) {
+    throw new Error("turn_shared_secret_missing");
+  }
+
+  const expiry = Math.floor(Date.now() / 1000) + ttlSeconds;
+  const userHashSecret = Deno.env.get("TURN_USER_HASH_SECRET") ?? secret;
+  const userHash = toBase64Url(await hmacSha256Base64(userHashSecret, userId)).slice(0, 20);
+  const username = `${expiry}:u_${userHash}`;
+  const credential = await hmacSha1Base64(secret, username);
+
+  return {
+    username,
+    credential,
+    expiresAt: new Date(expiry * 1000).toISOString(),
+  };
 }
 
 function splitIceServersByUrl(server: { urls: string | string[]; username?: string; credential?: string }) {
@@ -225,125 +387,224 @@ function splitIceServersByUrl(server: { urls: string | string[]; username?: stri
   return out;
 }
 
-serve(async (req) => {
-  const cors = handleCors(req);
-  if (cors) return cors;
-  const corsBlock = enforceCors(req);
-  if (corsBlock) return corsBlock;
-  const origin = req.headers.get("origin");
-  const corsHeaders = getCorsHeaders(origin);
-  if (Deno.env.get("TURN_ALLOW_ANON_DEV") === "1" && isProductionEnv()) {
-    return new Response(
-      JSON.stringify({ error: "misconfigured" }),
-      { status: 500, headers: { ...corsHeaders, ...TURN_NO_STORE_HEADERS } },
-    );
-  }
+function getTurnUrls(): string[] {
+  const v4 = parseUrls(Deno.env.get("TURN_URLS"));
+  const v6 = parseUrls(Deno.env.get("TURN_URLS_V6"));
+  return [...new Set([...v4, ...v6])];
+}
 
-  const userId = await getAuthenticatedUserId(req);
-  if (!userId) {
-    return new Response(
-      JSON.stringify({ error: "unauthorized" }),
-      { status: 401, headers: { ...corsHeaders, ...TURN_NO_STORE_HEADERS } },
-    );
-  }
-  const clientIp = getClientIp(req);
-  const rl = await enforceTurnIssueRateLimit(userId, clientIp, corsHeaders);
-  if (rl) return rl;
+function getStunUrls(): string[] {
+  const envStun = parseUrls(Deno.env.get("STUN_URLS"));
+  if (envStun.length > 0) return envStun;
+  return [
+    "stun:stun.l.google.com:19302",
+    "stun:stun1.l.google.com:19302",
+  ];
+}
 
-  const ttlSeconds = Math.max(
-    MIN_TURN_TTL_SECONDS,
-    Math.min(
-      MAX_TURN_TTL_SECONDS,
-      Number(Deno.env.get("TURN_TTL_SECONDS") ?? `${DEFAULT_TURN_TTL_SECONDS}`),
-    ),
-  );
+async function writeAuditLog(payload: Record<string, unknown>): Promise<void> {
+  if (!parseBool(Deno.env.get("TURN_AUDIT_LOG_ENABLED"), true)) return;
+
+  const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+  if (!supabaseUrl || !serviceKey) return;
 
   try {
-    // Provider priority:
-    // 1) Self-host / any TURN provider via TURN_URLS + (TURN_SHARED_SECRET or TURN_USERNAME+TURN_CREDENTIAL)
-    // 2) STUN-only fallback
+    const admin = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
+    await admin.from("turn_issuance_audit").insert(payload as never);
+  } catch {
+    // best effort only
+  }
+}
 
-    const turnUrls = parseUrls(Deno.env.get("TURN_URLS"));
-    const turnSharedSecret = Deno.env.get("TURN_SHARED_SECRET");
-    const turnUsername = Deno.env.get("TURN_USERNAME");
-    const turnCredential = Deno.env.get("TURN_CREDENTIAL");
+function maybeHandleMetrics(req: Request, corsHeaders: Record<string, string>): Response | null {
+  const url = new URL(req.url);
+  if (req.method.toUpperCase() !== "GET" || url.pathname !== "/metrics") return null;
 
-    if (turnUrls.length > 0) {
-      console.log("[TURN] Using TURN_URLS from secrets (provider-agnostic)");
+  const metricsKey = normalizeEnv(Deno.env.get("TURN_METRICS_KEY") ?? "");
+  if (!metricsKey) return makeJsonResponse(corsHeaders, 404, { error: "not_found" });
 
-      if (turnSharedSecret) {
-        // coturn REST auth: username is expiry timestamp
-        const expiry = Math.floor(Date.now() / 1000) + ttlSeconds;
-        const userHashSecret = Deno.env.get("TURN_USER_HASH_SECRET") ?? turnSharedSecret;
-        const userHash = toBase64Url(await hmacSha256Base64(userHashSecret, userId)).slice(0, 12);
-        const authUser = `${expiry}:u_${userHash}`;
-        const authPass = await hmacSha1Base64(turnSharedSecret, authUser);
+  const provided = normalizeEnv(req.headers.get("x-turn-metrics-key") ?? "");
+  if (!provided || provided !== metricsKey) return makeJsonResponse(corsHeaders, 403, { error: "forbidden" });
 
-        const iceServers = [
-          { urls: "stun:stun.l.google.com:19302" },
-          ...splitIceServersByUrl({ urls: turnUrls, username: authUser, credential: authPass }),
-        ];
+  const avgLatency = metrics.success + metrics.errors + metrics.rateLimited + metrics.unauthorized + metrics.replayRejected > 0
+    ? Math.round(metrics.sumLatencyMs / Math.max(1, metrics.requests))
+    : 0;
 
-        return new Response(JSON.stringify({ iceServers, ttlSeconds }), {
-          status: 200,
-          headers: { ...corsHeaders, ...TURN_NO_STORE_HEADERS },
-        });
-      }
+  return makeJsonResponse(corsHeaders, 200, {
+    service: "turn-credentials",
+    uptimeMs: nowMs() - metrics.startedAt,
+    requests: metrics.requests,
+    success: metrics.success,
+    unauthorized: metrics.unauthorized,
+    replayRejected: metrics.replayRejected,
+    rateLimited: metrics.rateLimited,
+    errors: metrics.errors,
+    avgLatencyMs: avgLatency,
+    maxLatencyMs: metrics.maxLatencyMs,
+    localReplayCacheSize: replayNonceBuckets.size,
+    localUserRlCacheSize: localUserRateBuckets.size,
+    localIpRlCacheSize: localIpRateBuckets.size,
+  });
+}
 
-      if (turnUsername && turnCredential) {
-        const iceServers = [
-          { urls: "stun:stun.l.google.com:19302" },
-          ...splitIceServersByUrl({ urls: turnUrls, username: turnUsername, credential: turnCredential }),
-        ];
+serve(async (req) => {
+  cleanupWindowedMaps();
 
-        return new Response(JSON.stringify({ iceServers, ttlSeconds }), {
-          status: 200,
-          headers: { ...corsHeaders, ...TURN_NO_STORE_HEADERS },
-        });
-      }
+  const cors = handleCors(req);
+  if (cors) return cors;
 
-      console.warn("[TURN] TURN_URLS set but missing TURN_SHARED_SECRET or TURN_USERNAME/TURN_CREDENTIAL");
-      return new Response(
-        JSON.stringify({
-          error: "turn_config_incomplete",
-          ttlSeconds,
-          iceServers: [
-            { urls: "stun:stun.l.google.com:19302" },
-            { urls: "stun:stun1.l.google.com:19302" },
-          ],
-        }),
-        { status: 200, headers: { ...corsHeaders, ...TURN_NO_STORE_HEADERS } }
-      );
+  const corsBlock = enforceCors(req);
+  if (corsBlock) return corsBlock;
+
+  const origin = req.headers.get("origin");
+  const corsHeaders = getCorsHeaders(origin);
+
+  const metricsResponse = maybeHandleMetrics(req, corsHeaders);
+  if (metricsResponse) return metricsResponse;
+
+  const requestId = normalizeEnv(req.headers.get("x-request-id") ?? crypto.randomUUID());
+  const startedAt = nowMs();
+  metrics.requests += 1;
+
+  if (req.method.toUpperCase() !== "POST") {
+    return makeJsonResponse(corsHeaders, 405, { error: "method_not_allowed" });
+  }
+
+  const body = await parseRequestBody(req);
+  const ttlSeconds = parseRequestedTtlSeconds(body);
+
+  const auth = await authenticateRequest(req);
+  if (!auth) {
+    metrics.unauthorized += 1;
+    return makeJsonResponse(corsHeaders, 401, { error: "unauthorized", requestId });
+  }
+
+  const clientIp = getClientIp(req);
+  const nonce = extractNonce(req, body);
+  const replay = enforceReplayProtection(auth.userId, nonce, corsHeaders);
+  if (replay) {
+    const latencyMs = Math.max(1, nowMs() - startedAt);
+    metrics.sumLatencyMs += latencyMs;
+    metrics.maxLatencyMs = Math.max(metrics.maxLatencyMs, latencyMs);
+    return replay;
+  }
+
+  const rl = await enforceTurnIssueRateLimit(auth.userId, clientIp, corsHeaders);
+  if (rl) {
+    const latencyMs = Math.max(1, nowMs() - startedAt);
+    metrics.sumLatencyMs += latencyMs;
+    metrics.maxLatencyMs = Math.max(metrics.maxLatencyMs, latencyMs);
+    return rl;
+  }
+
+  try {
+    const turnUrls = getTurnUrls();
+    const stunUrls = getStunUrls();
+
+    if (turnUrls.length === 0) {
+      logEvent("turn.issue.no_turn_urls", { requestId });
+      const latencyMs = Math.max(1, nowMs() - startedAt);
+      metrics.success += 1;
+      metrics.sumLatencyMs += latencyMs;
+      metrics.maxLatencyMs = Math.max(metrics.maxLatencyMs, latencyMs);
+
+      await writeAuditLog({
+        request_id: requestId,
+        auth_type: auth.authType,
+        user_hash: toBase64Url(await hmacSha256Base64("turn-audit-user", auth.userId)).slice(0, 32),
+        ip_hash: await hashRateScope(clientIp),
+        outcome: "stun_only",
+        status_code: 200,
+        latency_ms: latencyMs,
+        ttl_seconds: ttlSeconds,
+        error_code: "turn_not_configured",
+        region_hint: normalizeEnv(Deno.env.get("TURN_REGION") ?? "global"),
+      });
+
+      return makeJsonResponse(corsHeaders, 200, {
+        requestId,
+        ttlSeconds,
+        expiresAt: new Date(Date.now() + ttlSeconds * 1000).toISOString(),
+        error: "turn_not_configured",
+        iceServers: stunUrls.map((u) => ({ urls: u })),
+      });
     }
 
-    console.error(
-      "[TURN] Missing TURN config. Set TURN_URLS + TURN_SHARED_SECRET (or TURN_USERNAME/TURN_CREDENTIAL)."
-    );
-    return new Response(
-      JSON.stringify({
-        error: "turn_not_configured",
-        ttlSeconds,
-        iceServers: [
-          { urls: "stun:stun.l.google.com:19302" },
-          { urls: "stun:stun1.l.google.com:19302" },
-        ],
-      }),
-      { status: 200, headers: { ...corsHeaders, ...TURN_NO_STORE_HEADERS } }
-    );
-  } catch (error: unknown) {
-    console.error("[TURN] Exception:", error);
+    const creds = await buildTurnCredentials(auth.userId, ttlSeconds);
+    const iceServers = [
+      ...stunUrls.map((u) => ({ urls: u })),
+      ...splitIceServersByUrl({ urls: turnUrls, username: creds.username, credential: creds.credential }),
+    ];
 
-    // Return fallback on exception
-    return new Response(
-      JSON.stringify({ 
-        error: "turn_credentials_unavailable",
-        ttlSeconds,
-        iceServers: [
-          { urls: "stun:stun.l.google.com:19302" },
-          { urls: "stun:stun1.l.google.com:19302" },
-        ]
-      }),
-      { status: 200, headers: { ...corsHeaders, ...TURN_NO_STORE_HEADERS } }
-    );
+    const latencyMs = Math.max(1, nowMs() - startedAt);
+    metrics.success += 1;
+    metrics.sumLatencyMs += latencyMs;
+    metrics.maxLatencyMs = Math.max(metrics.maxLatencyMs, latencyMs);
+
+    await writeAuditLog({
+      request_id: requestId,
+      auth_type: auth.authType,
+      user_hash: toBase64Url(await hmacSha256Base64("turn-audit-user", auth.userId)).slice(0, 32),
+      ip_hash: await hashRateScope(clientIp),
+      outcome: "ok",
+      status_code: 200,
+      latency_ms: latencyMs,
+      ttl_seconds: ttlSeconds,
+      error_code: null,
+      region_hint: normalizeEnv(Deno.env.get("TURN_REGION") ?? "global"),
+    });
+
+    logEvent("turn.issue.ok", {
+      requestId,
+      authType: auth.authType,
+      ttlSeconds,
+      latencyMs,
+      turnCount: turnUrls.length,
+    });
+
+    return makeJsonResponse(corsHeaders, 200, {
+      requestId,
+      ttlSeconds,
+      expiresAt: creds.expiresAt,
+      username: creds.username,
+      credentialType: "hmac-sha1",
+      iceServers,
+      region: normalizeEnv(Deno.env.get("TURN_REGION") ?? "global"),
+    });
+  } catch (error) {
+    const latencyMs = Math.max(1, nowMs() - startedAt);
+    metrics.errors += 1;
+    metrics.sumLatencyMs += latencyMs;
+    metrics.maxLatencyMs = Math.max(metrics.maxLatencyMs, latencyMs);
+
+    const stunUrls = getStunUrls();
+
+    await writeAuditLog({
+      request_id: requestId,
+      auth_type: auth.authType,
+      user_hash: toBase64Url(await hmacSha256Base64("turn-audit-user", auth.userId)).slice(0, 32),
+      ip_hash: await hashRateScope(clientIp),
+      outcome: "error_fallback_stun",
+      status_code: 200,
+      latency_ms: latencyMs,
+      ttl_seconds: ttlSeconds,
+      error_code: "turn_credentials_unavailable",
+      region_hint: normalizeEnv(Deno.env.get("TURN_REGION") ?? "global"),
+    });
+
+    logEvent("turn.issue.error", {
+      requestId,
+      latencyMs,
+      error: error instanceof Error ? error.message : String(error),
+    });
+
+    return makeJsonResponse(corsHeaders, 200, {
+      requestId,
+      ttlSeconds,
+      expiresAt: new Date(Date.now() + ttlSeconds * 1000).toISOString(),
+      error: "turn_credentials_unavailable",
+      iceServers: stunUrls.map((u) => ({ urls: u })),
+    });
   }
 });
