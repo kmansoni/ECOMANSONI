@@ -36,6 +36,7 @@ import { useE2EEncryption } from "@/hooks/useE2EEncryption";
 import type { EncryptedPayload } from "@/hooks/useE2EEncryption";
 import { motion, AnimatePresence } from "framer-motion";
 import { clearHandledChatsQueryParams, parseChatsQueryActions } from "@/lib/chat/deepLinkQuery";
+import { logger } from "@/lib/logger";
 
 
 interface LocationState {
@@ -75,9 +76,9 @@ function parseEncryptedPayload(content: unknown): EncryptedPayload | null {
       typeof parsed.epoch === "number" &&
       typeof parsed.kid === "string"
     );
-    return isValid ? (parsed as EncryptedPayload) : null;
-  } catch {
-    return null;
+      return isValid ? (parsed as EncryptedPayload) : null;
+  } catch (_parseError) {
+      return null;
   }
 }
 
@@ -346,15 +347,15 @@ export function ChatsPage() {
       didDragRef.current = true;
       try {
         navigator.vibrate?.(10);
-      } catch {
-        // ignore
+      } catch (error) {
+        logger.debug("[ChatsPage] Vibration API unavailable", { error });
       }
     }, 220);
 
     try {
       e.currentTarget.setPointerCapture(e.pointerId);
-    } catch {
-      // ignore
+    } catch (error) {
+      logger.debug("[ChatsPage] setPointerCapture failed", { error });
     }
   };
 
@@ -444,7 +445,7 @@ export function ChatsPage() {
   }, [combinedItems, archivedChatIds]);
 
   const visibleItems = useMemo(() => {
-    // In archive view — show archived
+          logger.error("[ChatsPage] Failed to create conversation", { error });
     if (showArchive) return archivedItems;
 
     // Base filter: exclude archived
@@ -597,15 +598,16 @@ export function ChatsPage() {
           toast.success("Вы присоединились к каналу по приглашению");
           await refetchChannels();
           return;
-        } catch {
-          // ignore and try group flow
+        } catch (error) {
+          logger.warn("[ChatsPage] Channel invite join failed, trying group flow", { invite, error });
         }
 
         try {
           await joinGroupByInviteToken(invite);
           toast.success("Вы присоединились к группе по приглашению");
           await refetchGroups();
-        } catch {
+        } catch (error) {
+          logger.warn("[ChatsPage] Group invite join failed", { invite, error });
           toast.error("Приглашение недействительно или истекло");
         }
       })();
@@ -665,7 +667,7 @@ export function ChatsPage() {
   const formatTime = (dateStr: string) => {
     try {
       return formatDistanceToNow(new Date(dateStr), { addSuffix: false, locale: ru });
-    } catch {
+    } catch (_error) {
       return "";
     }
   };
@@ -801,7 +803,7 @@ export function ChatsPage() {
         setSelectedConversation(newConv);
       }
     } catch (error) {
-      console.error("Failed to create conversation:", error);
+      logger.error("[ChatsPage] Failed to create conversation", { error, userId: searchUser.user_id });
     }
   };
 
@@ -816,7 +818,7 @@ export function ChatsPage() {
           return;
         }
       } catch (e) {
-        console.warn("handleChannelCreated: failed to fetch new channel", e);
+        logger.warn("[ChatsPage] Failed to fetch newly created channel", { error: e, channelId });
       }
 
       // Fallback: if state already updated by refetch, pick it from list.
@@ -1029,7 +1031,8 @@ export function ChatsPage() {
                               next.add(t.id);
                               return next;
                             });
-                          } catch {
+                          } catch (error) {
+                            logger.warn("[ChatsPage] Tab passcode verification failed", { tabId: t.id, error });
                             toast.error("Не удалось проверить пароль");
                             return;
                           }

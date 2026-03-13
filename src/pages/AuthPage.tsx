@@ -11,6 +11,7 @@ import { supabase } from "@/lib/supabase";
 import { RecommendedUsersModal } from "@/components/profile/RecommendedUsersModal";
 import { setGuestMode } from "@/lib/demo/demoMode";
 import { getVerifyEmailOtpUrls, getSendEmailOtpUrls, getAnonHeaders } from "@/lib/auth/backendEndpoints";
+import { logger } from "@/lib/logger";
 
 /**
  * Auth modes:
@@ -38,7 +39,7 @@ async function fetchJsonWithTimeout(
     let data: any | null = null;
     try {
       data = text ? JSON.parse(text) : null;
-    } catch {
+    } catch (_parseError) {
       data = null;
     }
     return { response, data };
@@ -210,7 +211,7 @@ export function AuthPage() {
         setOtpCountdown(OTP_RESEND_COOLDOWN_SEC);
         setMode("otp");
       } catch (error) {
-        console.error("🔴 [AuthPage] Send OTP error:", error);
+        logger.error("[AuthPage] Send OTP error", { error, phone: trimmedPhone });
         const errorMsg = error instanceof Error ? error.message : String(error);
         toast.error("Ошибка отправки кода", { description: errorMsg });
       }
@@ -272,7 +273,7 @@ export function AuthPage() {
 
         if (!response.ok || !data?.ok) {
           const errMsg = data?.error || `HTTP ${response.status}`;
-          console.error("🔴 [AuthPage] verify-email-otp error:", errMsg);
+          logger.error("[AuthPage] verify-email-otp failed", { error: errMsg, email: verifyEmail });
           toast.error("Неверный или просроченный код", { description: errMsg });
           return;
         }
@@ -288,7 +289,7 @@ export function AuthPage() {
         );
 
         if (sessionError) {
-          console.error("🔴 [AuthPage] setSession error:", sessionError);
+          logger.error("[AuthPage] setSession error", { error: sessionError });
           toast.error("Не удалось создать сессию");
           return;
         }
@@ -303,7 +304,7 @@ export function AuthPage() {
           navigate("/");
         }
       } catch (error) {
-        console.error("🔴 [AuthPage] Verify OTP error:", error);
+        logger.error("[AuthPage] Verify OTP error", { error, email: verifyEmail });
         const errorMsg = getReadableAuthErrorMessage(error);
         toast.error("Ошибка проверки кода", { description: errorMsg });
       }
@@ -371,7 +372,7 @@ export function AuthPage() {
         setOtpCode("");
         setOtpCountdown(OTP_RESEND_COOLDOWN_SEC);
       } catch (error) {
-        console.error("🔴 [AuthPage] Resend OTP error:", error);
+        logger.error("[AuthPage] Resend OTP error", { error });
         toast.error("Не удалось переотправить код", {
           description: getReadableAuthErrorMessage(error),
         });
@@ -452,7 +453,7 @@ export function AuthPage() {
         setOtpCountdown(OTP_RESEND_COOLDOWN_SEC);
         setMode("otp");
       } catch (error) {
-        console.error("🔴 [AuthPage] Register send OTP error:", error);
+        logger.error("[AuthPage] Register send OTP error", { error, email: trimmedEmail, phone: trimmedPhone });
         toast.error("Не удалось отправить код");
       }
     });
