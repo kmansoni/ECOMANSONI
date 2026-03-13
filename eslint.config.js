@@ -33,6 +33,15 @@ export default tseslint.config(
       "@typescript-eslint/no-explicit-any": "off",
       "@typescript-eslint/no-empty-object-type": "off",
       "prefer-const": "off",
+      "no-console": ["warn", { allow: ["warn", "error"] }],
+      "no-empty": ["warn", { allowEmptyCatch: false }],
+      "no-restricted-syntax": [
+        "warn",
+        {
+          selector: "CatchClause[param=null]",
+          message: "Silent catch is disallowed. Capture error and log via logger with context.",
+        },
+      ],
     },
   },
 );

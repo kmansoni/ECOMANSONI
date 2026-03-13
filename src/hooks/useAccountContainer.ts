@@ -21,6 +21,7 @@
  */
 
 import { useState, useCallback, useEffect } from 'react';
+import { logger } from '@/lib/logger';
 
 export type StoredAccount = {
   user_id: string;
@@ -54,8 +55,8 @@ function getOrCreateDeviceId(): string {
   id = crypto.randomUUID?.() || `dev_${Date.now()}_${Math.random().toString(36).slice(2)}`;
   try {
     localStorage.setItem(DEVICE_ID_KEY, id);
-  } catch {
-    // ignore quota exceeded
+  } catch (error) {
+    logger.warn('account_container.device_id_persist_failed', { error });
   }
   return id;
 }
@@ -75,7 +76,8 @@ function loadAccountsFromStorage(): StoredAccount[] {
         typeof (account as any).user_id === 'string' &&
         typeof (account as any).session_id === 'string',
     ) as StoredAccount[];
-  } catch {
+  } catch (error) {
+    logger.warn('account_container.load_accounts_failed', { error });
     return [];
   }
 }
@@ -86,8 +88,8 @@ function loadAccountsFromStorage(): StoredAccount[] {
 function saveAccountsToStorage(accounts: StoredAccount[]): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(accounts));
-  } catch {
-    // ignore quota exceeded
+  } catch (error) {
+    logger.warn('account_container.save_accounts_failed', { error, count: accounts.length });
   }
 }
 
@@ -131,8 +133,8 @@ export function useAccountContainer() {
       try {
         localStorage.setItem(ACTIVE_ACCOUNT_KEY, userId);
         saveAccountsToStorage(nextState.accounts);
-      } catch {
-        // ignore
+      } catch (error) {
+        logger.warn('account_container.switch_persist_failed', { error, userId });
       }
 
       return nextState;
@@ -203,8 +205,8 @@ export function useAccountContainer() {
         } else {
           localStorage.removeItem(ACTIVE_ACCOUNT_KEY);
         }
-      } catch {
-        // ignore
+      } catch (error) {
+        logger.warn('account_container.remove_persist_failed', { error, userId });
       }
 
       return {

@@ -24,6 +24,7 @@ import { getChatV11RecoveryPolicyConfig } from "@/lib/chat/recoveryPolicyV11";
 import { resolveChatV11RecoveryAction } from "@/lib/chat/rpcErrorPolicyV11";
 import { checkHashtagsAllowedForText } from "@/lib/hashtagModeration";
 import { fetchUserBriefMap, resolveUserBrief, type UserBrief } from "@/lib/users/userBriefs";
+import { logger } from "@/lib/logger";
 
 function getErrorMessage(err: unknown): string {
   if (!err) return "Unknown error";
@@ -37,7 +38,7 @@ function getErrorMessage(err: unknown): string {
     if (typeof anyErr.details === "string") return anyErr.details;
     try {
       return JSON.stringify(anyErr);
-    } catch {
+    } catch (_error) {
       return String(anyErr);
     }
   }
@@ -387,7 +388,7 @@ export function useConversations() {
 
       setConversations(mappedConversations);
     } catch (error) {
-      console.error("Error fetching conversations:", error);
+      logger.error("Error fetching conversations:", error);
       const msg = getErrorMessage(error);
       // Helpful hint when the external project does not have the expected schema
       if (msg.includes("schema cache") || msg.includes("Could not find the table")) {
@@ -500,8 +501,8 @@ export function useMessages(conversationId: string | null) {
               p_conversation_id: conversationId,
               p_up_to_seq: upTo,
             });
-          } catch {
-            // best-effort
+          } catch (error) {
+            logger.warn("chat.ack_delivered_failed", { error, conversationId, upTo });
           }
         })();
       }, 600);
@@ -591,7 +592,7 @@ export function useMessages(conversationId: string | null) {
 
       setMessages(sortMessages(merged));
     } catch (error) {
-      console.error("Error fetching messages:", error);
+      logger.error("Error fetching messages:", error);
     } finally {
       setLoading(false);
     }
@@ -1218,7 +1219,7 @@ export function useMessages(conversationId: string | null) {
 
       return { error: null };
     } catch (error) {
-      console.error("Error sending media message:", error);
+      logger.error("Error sending media message:", error);
       return { error: error instanceof Error ? error.message : 'Failed to send media' };
     }
   };
@@ -1240,7 +1241,7 @@ export function useMessages(conversationId: string | null) {
 
       return { error: null };
     } catch (error) {
-      console.error("Error deleting message:", error);
+      logger.error("Error deleting message:", error);
       return { error: error instanceof Error ? error.message : 'Failed to delete message' };
     }
   };
@@ -1286,7 +1287,7 @@ export function useMessages(conversationId: string | null) {
 
       return { error: null };
     } catch (error) {
-      console.error("Error editing message:", error);
+      logger.error("Error editing message:", error);
       return { error: error instanceof Error ? error.message : 'Failed to edit message' };
     }
   };
@@ -1344,14 +1345,14 @@ export function useCreateConversation() {
         return null;
       }
 
-      console.error("[Chat] get_or_create_dm unavailable or returned empty result", {
+      logger.error("[Chat] get_or_create_dm unavailable or returned empty result", {
         error: rpcError,
         dataType: Array.isArray(rpcData) ? "array" : typeof rpcData,
       });
       toast.error("Chat service misconfigured: DM creation unavailable.");
       return null;
     } catch (error) {
-      console.error("Error creating conversation:", error);
+      logger.error("Error creating conversation:", error);
 
       if (isBlockedDmError(error)) {
         toast.error("Чат недоступен: пользователь в блокировке.");
@@ -1366,3 +1367,4 @@ export function useCreateConversation() {
 
   return { createConversation };
 }
+

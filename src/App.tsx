@@ -29,6 +29,7 @@ import { runChatSchemaProbeOnce } from "@/lib/chat/schemaProbe";
 import { initOutbox } from "@/lib/chat/messageOutbox";
 import { toast } from "sonner";
 import { AppErrorBoundary } from "@/components/system/AppErrorBoundary";
+import { RouteErrorBoundary } from "@/components/system/RouteErrorBoundary";
 
 const HashtagPage = lazy(() => import("@/pages/HashtagPage").then(m => ({ default: m.HashtagPage })));
 const ExplorePage = lazy(() => import("@/pages/ExplorePage"));
@@ -372,19 +373,25 @@ const App = () => {
                       </Suspense>
                     } />
                     <Route path="/chats" element={
-                      <Suspense fallback={<PageLoader />}>
-                        <ChatsPage />
-                      </Suspense>
+                      <RouteErrorBoundary>
+                        <Suspense fallback={<PageLoader />}>
+                          <ChatsPage />
+                        </Suspense>
+                      </RouteErrorBoundary>
                     } />
                     <Route path="/saved-messages" element={
-                      <Suspense fallback={<PageLoader />}>
-                        <SavedMessagesPage />
-                      </Suspense>
+                      <RouteErrorBoundary>
+                        <Suspense fallback={<PageLoader />}>
+                          <SavedMessagesPage />
+                        </Suspense>
+                      </RouteErrorBoundary>
                     } />
                     <Route path="/profile" element={
-                      <Suspense fallback={<PageLoader />}>
-                        <ProfilePage />
-                      </Suspense>
+                      <RouteErrorBoundary>
+                        <Suspense fallback={<PageLoader />}>
+                          <ProfilePage />
+                        </Suspense>
+                      </RouteErrorBoundary>
                     } />
                     <Route path="/delete-account" element={
                       <Suspense fallback={<PageLoader />}>
@@ -735,9 +742,11 @@ const App = () => {
                       </Suspense>
                     } />
                     <Route path="/reels" element={
-                      <Suspense fallback={<PageLoader />}>
-                        <ReelsPage />
-                      </Suspense>
+                      <RouteErrorBoundary>
+                        <Suspense fallback={<PageLoader />}>
+                          <ReelsPage />
+                        </Suspense>
+                      </RouteErrorBoundary>
                     } />
 
                     {/* ─── Livestream Module ────────────────── */}

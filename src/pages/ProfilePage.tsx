@@ -29,6 +29,7 @@ import { cn } from "@/lib/utils";
 import type { ContentType } from "@/hooks/useMediaEditor";
 import { toast } from "sonner";
 import { buildProfileUrl } from "@/lib/users/profileLinks";
+import { logger } from "@/lib/logger";
 
 function formatNumber(n: number): string {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, "") + "M";
@@ -99,8 +100,8 @@ export function ProfilePage() {
     try {
       const data = await getHighlights(targetUserId);
       setHighlights(data);
-    } catch {
-      // ignore
+    } catch (error) {
+      logger.warn("profile.load_highlights_failed", { error, targetUserId });
     } finally {
       setHighlightsLoading(false);
     }
@@ -132,8 +133,8 @@ export function ProfilePage() {
       }));
       setMyReels(prev => (reset ? rows : [...prev, ...rows]));
       setMyReelsHasMore(rows.length >= limit);
-    } catch {
-      // ignore
+    } catch (error) {
+      logger.warn("profile.load_my_reels_failed", { error, targetUserId, reset });
     } finally {
       setMyReelsLoading(false);
     }
@@ -155,7 +156,8 @@ export function ProfilePage() {
       await deleteHighlight(id);
       setHighlights(prev => prev.filter(h => h.id !== id));
       toast.success("Подборка удалена");
-    } catch {
+    } catch (error) {
+      logger.error("profile.delete_highlight_failed", { error, highlightId: id });
       toast.error("Не удалось удалить подборку");
     }
   };
@@ -166,7 +168,8 @@ export function ProfilePage() {
       await blockUser(user.id, targetUserId);
       toast.success("Пользователь заблокирован");
       navigate(-1);
-    } catch {
+    } catch (error) {
+      logger.error("profile.block_user_failed", { error, targetUserId, actorId: user.id });
       toast.error("Не удалось заблокировать");
     }
   };
@@ -180,7 +183,8 @@ export function ProfilePage() {
         await follow();
         toast.success("Вы подписались");
       }
-    } catch {
+    } catch (error) {
+      logger.error("profile.follow_toggle_failed", { error, targetUserId, isFollowing: profile?.isFollowing ?? null });
       toast.error("Не удалось выполнить действие");
     }
   };

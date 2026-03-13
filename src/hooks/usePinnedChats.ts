@@ -15,6 +15,7 @@ import { supabase } from "@/lib/supabase";
 import { probeSupabase } from "@/lib/supabaseProbe";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
+import { logger } from "@/lib/logger";
 
 export const MAX_PINNED_CHATS = 5;
 
@@ -31,7 +32,8 @@ function lsLoad(userId: string): PinnedRecord[] {
   try {
     const raw = localStorage.getItem(LS_KEY(userId));
     return raw ? (JSON.parse(raw) as PinnedRecord[]) : [];
-  } catch {
+  } catch (error) {
+    logger.warn("pinned_chats.ls_load_failed", { error, userId });
     return [];
   }
 }
@@ -39,8 +41,8 @@ function lsLoad(userId: string): PinnedRecord[] {
 function lsSave(userId: string, records: PinnedRecord[]): void {
   try {
     localStorage.setItem(LS_KEY(userId), JSON.stringify(records));
-  } catch {
-    // quota exceeded — silent
+  } catch (error) {
+    logger.warn("pinned_chats.ls_save_failed", { error, userId, count: records.length });
   }
 }
 
@@ -94,7 +96,7 @@ export function usePinnedChats(): UsePinnedChatsReturn {
           );
           return;
         }
-        console.error("usePinnedChats load:", error);
+        logger.error("pinned_chats.load_failed", { error, userId });
         const ls = lsLoad(userId);
         setPinnedOrder(ls.sort((a, b) => a.order - b.order).map((r) => r.id));
         return;
@@ -209,7 +211,7 @@ export function usePinnedChats(): UsePinnedChatsReturn {
         // Revert
         setPinnedOrder(pinnedOrder);
         toast.error("Не удалось закрепить чат");
-        console.error("pinChat:", error);
+        logger.error("pinned_chats.pin_failed", { error, userId, conversationId });
         return;
       }
 

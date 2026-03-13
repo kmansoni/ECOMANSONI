@@ -34,6 +34,7 @@ import { useVideoCallSfu, type VideoCall, type VideoCallStatus } from "@/hooks/u
 import { useIncomingCalls } from "@/hooks/useIncomingCalls";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
+import { logger } from "@/lib/logger";
 import { onNativeCallAction } from "@/lib/native/callBridge";
 import { supabase } from "@/integrations/supabase/client";
 import { CallsWsClient } from "@/calls-v2/wsClient";
@@ -100,7 +101,8 @@ function isLocalEndpoint(endpoint: string): boolean {
     const url = new URL(endpoint);
     const h = url.hostname.toLowerCase();
     return h === "localhost" || h === "127.0.0.1" || h === "::1";
-  } catch {
+  } catch (error) {
+    logger.warn("video_call_context.endpoint_parse_failed", { error, endpoint });
     return false;
   }
 }
@@ -148,7 +150,8 @@ function hasInsertableStreamsSupport(): boolean {
       "createEncodedStreams" in RTCRtpSender.prototype;
     const hasScriptTransform = typeof (globalThis as any).RTCRtpScriptTransform !== "undefined";
     return hasEncodedStreams || hasScriptTransform;
-  } catch {
+  } catch (error) {
+    logger.warn("video_call_context.insertable_streams_check_failed", { error });
     return false;
   }
 }
@@ -317,7 +320,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const issue = getCallsConfigIssue();
-    console.info("[VideoCallContext] calls-v2 config", {
+    logger.info("[VideoCallContext] calls-v2 config", {
       enabled: CALLS_V2_ENABLED,
       endpointCount: [CALLS_V2_WS_URL, ...CALLS_V2_WS_URLS].filter(Boolean).length,
       frameE2eeAdvertiseSframe: FRAME_E2EE_ADVERTISE_SFRAME,
@@ -343,7 +346,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     setRemoteStream: setRemoteMediaStream,
   } = useVideoCallSfu({
     onCallEnded: (call) => {
-      console.log("[VideoCallContext] Call ended:", call.id.slice(0, 8));
+      logger.info("[VideoCallContext] Call ended:", call.id.slice(0, 8));
       if (callsWsCallIdRef.current === call.id) {
         callsWsCallIdRef.current = null;
         callsWsRoomRef.current = null;
@@ -422,7 +425,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       const { data, error } = await supabase.functions.invoke(TURN_CREDENTIALS_EDGE_FN);
 
       if (error) {
-        console.warn("[VideoCallContext] get-turn-credentials error (STUN-only fallback):", error);
+        logger.warn("[VideoCallContext] get-turn-credentials error (STUN-only fallback):", error);
         return null;
       }
 
@@ -434,12 +437,12 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       } | null;
 
       if (parsed?.error) {
-        console.warn("[VideoCallContext] get-turn-credentials server error:", parsed.error);
+        logger.warn("[VideoCallContext] get-turn-credentials server error:", parsed.error);
         return null;
       }
 
       if (!Array.isArray(parsed?.iceServers) || parsed.iceServers.length === 0) {
-        console.warn("[VideoCallContext] get-turn-credentials returned empty iceServers");
+        logger.warn("[VideoCallContext] get-turn-credentials returned empty iceServers");
         return null;
       }
 
@@ -449,14 +452,14 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         ? parsed.expiresAt
         : nowSec + (typeof parsed.ttl === "number" ? parsed.ttl : 86_400);
 
-      console.info(
+      logger.info(
         "[VideoCallContext] TURN credentials refreshed",
         { count: parsed.iceServers.length, expiresAt: turnIceExpiryRef.current }
       );
 
       return parsed.iceServers;
     } catch (err) {
-      console.warn("[VideoCallContext] get-turn-credentials fetch exception (STUN-only fallback):", err);
+      logger.warn("[VideoCallContext] get-turn-credentials fetch exception (STUN-only fallback):", err);
       return null;
     }
   }, []);
@@ -464,7 +467,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
   const ensureCallsV2Connected = useCallback(async (): Promise<CallsWsClient | null> => {
     if (!CALLS_V2_ENABLED || !user) return null;
     if (!CALLS_V2_WS_URL && CALLS_V2_WS_URLS.length === 0) {
-      console.warn("[VideoCallContext] calls-v2 disabled: no WS endpoint configured");
+      logger.warn("[VideoCallContext] calls-v2 disabled: no WS endpoint configured");
       return null;
     }
     if (callsWsRef.current) return callsWsRef.current;
@@ -474,7 +477,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       .map(normalizeWsEndpoint)
       .filter((v, i, arr) => !!v && arr.indexOf(v) === i);
     if (endpoints.length === 0) {
-      console.warn("[VideoCallContext] calls-v2 disabled: WS endpoints normalized to empty", { rawEndpoints });
+      logger.warn("[VideoCallContext] calls-v2 disabled: WS endpoints normalized to empty", { rawEndpoints });
       return null;
     }
 
@@ -483,7 +486,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     await fetchTurnIceServers();
 
     const requireWss = !import.meta.env.DEV && !endpoints.some(isLocalEndpoint);
-    console.info("[VideoCallContext] calls-v2 connect:start", {
+    logger.info("[VideoCallContext] calls-v2 connect:start", {
       endpointCount: endpoints.length,
       firstEndpoint: endpoints[0],
       requireWss,
@@ -499,15 +502,15 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
 
     try {
       const offState = client.onConnectionStateChange((state) => {
-        console.info("[VideoCallContext] calls-v2 ws-state", { state });
+        logger.info("[VideoCallContext] calls-v2 ws-state", { state });
       });
       await client.connect();
-      console.info("[VideoCallContext] calls-v2 connect:ok", { state: client.connectionState });
+      logger.info("[VideoCallContext] calls-v2 connect:ok", { state: client.connectionState });
 
       const { data } = await supabase.auth.getSession();
       const accessToken = data.session?.access_token;
       if (!accessToken) {
-        console.warn("[VideoCallContext] calls-v2 auth:skip no access token");
+        logger.warn("[VideoCallContext] calls-v2 auth:skip no access token");
         client.close();
         return null;
       }
@@ -520,14 +523,14 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
           deviceId,
         },
       });
-      console.info("[VideoCallContext] calls-v2 hello:ok", { deviceId });
+      logger.info("[VideoCallContext] calls-v2 hello:ok", { deviceId });
       await client.auth({ accessToken });
-      console.info("[VideoCallContext] calls-v2 auth:ok");
+      logger.info("[VideoCallContext] calls-v2 auth:ok");
       await client.e2eeCaps({
         insertableStreams: hasInsertableStreamsSupport(),
         sframe: FRAME_E2EE_ADVERTISE_SFRAME && hasInsertableStreamsSupport(),
       });
-      console.info("[VideoCallContext] calls-v2 e2ee_caps:ok");
+      logger.info("[VideoCallContext] calls-v2 e2ee_caps:ok");
 
       // Initialize CallKeyExchange + CallMediaEncryption for this WS session.
       // Re-initialize on each new connection (ephemeral keys per session).
@@ -540,11 +543,11 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         const kx = new CallKeyExchange(identity);
         await kx.initialize();
         callKeyExchangeRef.current = kx;
-        console.info("[VideoCallContext] calls-v2 CallKeyExchange initialized");
+        logger.info("[VideoCallContext] calls-v2 CallKeyExchange initialized");
       }
       if (!callMediaEncryptionRef.current) {
         callMediaEncryptionRef.current = new CallMediaEncryption();
-        console.info("[VideoCallContext] calls-v2 CallMediaEncryption initialized");
+        logger.info("[VideoCallContext] calls-v2 CallMediaEncryption initialized");
       }
 
       // Initialize RekeyStateMachine + EpochGuard for this WS session
@@ -558,14 +561,14 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
 
       // Wire rekey state machine events
       rekeyMachineRef.current.onEvent((event: RekeyEvent) => {
-        console.log(`[Rekey] ${event.type} epoch=${event.epoch}`, event.reason ?? '');
+        logger.info(`[Rekey] ${event.type} epoch=${event.epoch}`, event.reason ?? '');
 
         if (event.type === 'QUORUM_REACHED') {
           // All active peers ACK'd → send REKEY_COMMIT to server
           const activeRoomId = callsWsRoomRef.current;
           if (activeRoomId) {
             void client.rekeyCommit({ roomId: activeRoomId, epoch: event.epoch }).catch((err) => {
-              console.warn('[VideoCallContext] rekeyCommit failed', err);
+              logger.warn('[VideoCallContext] rekeyCommit failed', err);
             });
           }
         }
@@ -579,17 +582,17 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         }
 
         if (event.type === 'REKEY_ABORTED' || event.type === 'DEADLINE_EXCEEDED') {
-          console.error(`[Rekey] Aborted epoch=${event.epoch}: ${event.reason}`);
+          logger.error(`[Rekey] Aborted epoch=${event.epoch}: ${event.reason}`);
           // Keep current epoch active; do NOT advance guard
         }
       });
 
       client.on("AUTH_FAIL", (frame) => {
-        console.warn("[VideoCallContext] calls-v2 auth-fail", { payload: frame.payload });
+        logger.warn("[VideoCallContext] calls-v2 auth-fail", { payload: frame.payload });
       });
 
       client.on("ERROR", (frame) => {
-        console.warn("[VideoCallContext] calls-v2 server-error", {
+        logger.warn("[VideoCallContext] calls-v2 server-error", {
           type: frame.type,
           payload: frame.payload,
           ack: frame.ack,
@@ -597,7 +600,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       });
 
       client.on("ROOM_LEFT", (frame) => {
-        console.warn("[VideoCallContext] calls-v2 room-left", { payload: frame.payload });
+        logger.warn("[VideoCallContext] calls-v2 room-left", { payload: frame.payload });
       });
 
       // SECURITY FIX: Unsubscribe connection state handler after setup to prevent
@@ -649,7 +652,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         const mediaEncryption = callMediaEncryptionRef.current;
 
         if (!keyExchange || !mediaEncryption) {
-          console.warn("[VideoCallContext] KEY_PACKAGE: key exchange not initialized, skipping");
+          logger.warn("[VideoCallContext] KEY_PACKAGE: key exchange not initialized, skipping");
           return;
         }
 
@@ -698,12 +701,12 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
                 ...({ identityPubKeyJwk } as Record<string, unknown>),
               },
             }).catch((error) => {
-              console.warn("[VideoCallContext] KEY_PACKAGE send failed", error);
+              logger.warn("[VideoCallContext] KEY_PACKAGE send failed", error);
             });
 
-            console.info("[VideoCallContext] KEY_PACKAGE sent (Phase C ECDSA+ECDH discovery)", { epoch, roomId });
+            logger.info("[VideoCallContext] KEY_PACKAGE sent (Phase C ECDSA+ECDH discovery)", { epoch, roomId });
           } catch (err) {
-            console.warn("[VideoCallContext] KEY_PACKAGE async error", err);
+            logger.warn("[VideoCallContext] KEY_PACKAGE async error", err);
           }
         })();
       });
@@ -730,7 +733,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         const msgId = (frame.payload as Record<string, unknown> | undefined)?.messageId as string | undefined;
         const isValidPkg = rekeyMachineRef.current?.validateKeyPackage(epoch, msgId);
         if (isValidPkg === false) {
-          console.warn("[VideoCallContext] KEY_PACKAGE rejected: anti-replay or stale epoch", { epoch, msgId });
+          logger.warn("[VideoCallContext] KEY_PACKAGE rejected: anti-replay or stale epoch", { epoch, msgId });
           return;
         }
 
@@ -770,13 +773,14 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
               try {
                 const peerEpochKey = await keyExchange.processKeyPackage(pkgData);
                 await mediaEncryption.setDecryptionKey(senderUserId, peerEpochKey);
-                console.info("[VideoCallContext] KEY_PACKAGE: processKeyPackage OK", { epoch, senderUserId });
-              } catch {
+                logger.info("[VideoCallContext] KEY_PACKAGE: processKeyPackage OK", { epoch, senderUserId });
+              } catch (error) {
+                logger.warn("video_call_context.key_package_process_failed", { error, epoch, senderUserId });
                 // Sender sent discovery packet (ciphertext = their public key, not wrapped epoch key).
                 // If we are the leader → create epoch key and respond with wrapped KEY_PACKAGE.
                 const leaderDeviceId = e2eeLeaderDeviceRef.current;
                 if (leaderDeviceId === myDeviceId && senderDeviceId) {
-                  console.info("[VideoCallContext] KEY_PACKAGE: leader responding with wrapped epoch key", { epoch, senderDeviceId });
+                  logger.info("[VideoCallContext] KEY_PACKAGE: leader responding with wrapped epoch key", { epoch, senderDeviceId });
                   void (async () => {
                     try {
                       // Get or create epoch key for this epoch
@@ -800,10 +804,10 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
                           sessionId: (callKeyExchangeRef.current as unknown as { identity?: { sessionId?: string } })?.identity?.sessionId ?? crypto.randomUUID(),
                         },
                       }).catch((err) => {
-                        console.warn("[VideoCallContext] leader KEY_PACKAGE response failed", err);
+                        logger.warn("[VideoCallContext] leader KEY_PACKAGE response failed", err);
                       });
                     } catch (e2) {
-                      console.warn("[VideoCallContext] leader KEY_PACKAGE creation failed", e2);
+                      logger.warn("[VideoCallContext] leader KEY_PACKAGE creation failed", e2);
                     }
                   })();
                 }
@@ -816,7 +820,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
               epoch,
               fromDeviceId: myDeviceId,
             }).catch((error) => {
-              console.warn("[VideoCallContext] KEY_ACK send failed", error);
+              logger.warn("[VideoCallContext] KEY_ACK send failed", error);
             });
           }
         })();
@@ -837,7 +841,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
           const activeRoomId = callsWsRoomRef.current;
           if (activeRoomId) {
             void client.e2eeReady({ roomId: activeRoomId, epoch: nextEpoch }).catch((err) => {
-              console.warn("[VideoCallContext] E2EE_READY after REKEY_COMMIT failed", err);
+              logger.warn("[VideoCallContext] E2EE_READY after REKEY_COMMIT failed", err);
             });
           }
         }
@@ -871,7 +875,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       callsWsRef.current = client;
       return client;
     } catch (err) {
-      console.warn("[VideoCallContext] calls-v2 connect/bootstrap failed", err);
+      logger.warn("[VideoCallContext] calls-v2 connect/bootstrap failed", err);
       client.close();
       return null;
     }
@@ -884,7 +888,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
 
       const callId = call.id;
       if (callsWsCallIdRef.current === callId && callsWsRoomRef.current) return true;
-      console.info("[VideoCallContext] calls-v2 room-bootstrap:start", { callId, role });
+      logger.info("[VideoCallContext] calls-v2 room-bootstrap:start", { callId, role });
 
       const client = await ensureCallsV2Connected();
       if (!client) return false;
@@ -898,7 +902,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
             callId,
             preferredRegion: "tr",
           });
-          console.info("[VideoCallContext] calls-v2 room-create:sent", { callId });
+          logger.info("[VideoCallContext] calls-v2 room-create:sent", { callId });
 
           const createdFrame = await client.waitFor(
             "ROOM_CREATED",
@@ -909,7 +913,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
             { timeoutMs: 5000, acceptRecent: true }
           );
           roomId = (createdFrame.payload as { roomId?: string } | undefined)?.roomId as string;
-          console.info("[VideoCallContext] calls-v2 room-created:ok", { callId, roomId });
+          logger.info("[VideoCallContext] calls-v2 room-created:ok", { callId, roomId });
 
           try {
             const secretFrame = await client.waitFor(
@@ -921,11 +925,12 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
               { timeoutMs: 1200, acceptRecent: true }
             );
             joinToken = (secretFrame.payload as { joinToken?: string } | undefined)?.joinToken as string;
-            console.info("[VideoCallContext] calls-v2 room-join-secret:ok", { roomId });
-          } catch {
+            logger.info("[VideoCallContext] calls-v2 room-join-secret:ok", { roomId });
+          } catch (error) {
+            logger.warn("video_call_context.room_join_secret_wait_failed", { error, roomId });
             // SFU mode: join token is optional and ROOM_JOIN_SECRET is not emitted.
             joinToken = undefined;
-            console.info("[VideoCallContext] calls-v2 room-join-secret:skip (sfu mode)", { roomId });
+            logger.info("[VideoCallContext] calls-v2 room-join-secret:skip (sfu mode)", { roomId });
           }
 
           // Persist room bootstrap hints for callee-side answer flow.
@@ -937,7 +942,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
             } as never)
             .eq("id", callId);
           if (persistRoomError) {
-            console.warn("[VideoCallContext] calls-v2 room hints persist failed", {
+            logger.warn("[VideoCallContext] calls-v2 room hints persist failed", {
               callId,
               roomId,
               error: persistRoomError.message,
@@ -950,7 +955,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
             ?? (call as VideoCall & { join_token?: string }).join_token;
 
           if (!hintedRoomId) {
-            console.warn("[VideoCallContext] calls-v2 callee bootstrap skipped: missing room/join token", {
+            logger.warn("[VideoCallContext] calls-v2 callee bootstrap skipped: missing room/join token", {
               callId,
               hasRoomId: !!hintedRoomId,
               hasJoinToken: !!hintedJoinToken,
@@ -960,7 +965,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
 
           roomId = hintedRoomId;
           joinToken = hintedJoinToken;
-          console.info("[VideoCallContext] calls-v2 callee-room-hint:ok", {
+          logger.info("[VideoCallContext] calls-v2 callee-room-hint:ok", {
             callId,
             roomId,
             hasJoinToken: !!joinToken,
@@ -973,7 +978,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
           deviceId: getStableCallsDeviceId(),
           preferredRegion: "tr",
         });
-        console.info("[VideoCallContext] calls-v2 room-join:ok", { callId, roomId, role });
+        logger.info("[VideoCallContext] calls-v2 room-join:ok", { callId, roomId, role });
         const joinedFrame = await client.waitFor(
           "ROOM_JOIN_OK",
           (frame) => {
@@ -993,13 +998,13 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         const joinCaps = extractRouterCapsFromJoinPayload(joinedPayload);
         if (joinCaps) {
           sfuRouterRtpCapabilitiesRef.current = joinCaps;
-          console.info("[VideoCallContext] calls-v2 routerRtpCapabilities captured from ROOM_JOIN_OK", { roomId });
+          logger.info("[VideoCallContext] calls-v2 routerRtpCapabilities captured from ROOM_JOIN_OK", { roomId });
         }
         // Inform epoch guard that we have joined
         epochGuardRef.current?.markRoomJoined(e2eeEpochRef.current);
         await client.e2eeReady({ roomId, epoch: e2eeEpochRef.current });
         epochGuardRef.current?.markE2eeReady(e2eeEpochRef.current);
-        console.info("[VideoCallContext] calls-v2 e2ee-ready:ok", { roomId, epoch: e2eeEpochRef.current });
+        logger.info("[VideoCallContext] calls-v2 e2ee-ready:ok", { roomId, epoch: e2eeEpochRef.current });
 
         // Backward compatibility: some deployments may still emit ROOM_JOINED.
         const joinedUnsub = client.on("ROOM_JOINED", (frame) => {
@@ -1008,7 +1013,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
           const caps = extractRouterCapsFromJoinPayload(payload);
           if (caps) {
             sfuRouterRtpCapabilitiesRef.current = caps;
-            console.info("[VideoCallContext] calls-v2 routerRtpCapabilities captured", { roomId });
+            logger.info("[VideoCallContext] calls-v2 routerRtpCapabilities captured", { roomId });
           }
           joinedUnsub();
         });
@@ -1023,11 +1028,11 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
             sfuManagerRef.current?.rtpCapabilities ??
             sfuRouterRtpCapabilitiesRef.current;
           if (!rtpCapabilities) {
-            console.warn("[VideoCallContext] calls-v2 consume skipped: rtpCapabilities not ready", { roomId, producerId });
+            logger.warn("[VideoCallContext] calls-v2 consume skipped: rtpCapabilities not ready", { roomId, producerId });
             return;
           }
           void client.consume({ roomId, producerId, rtpCapabilities }).catch((err) => {
-            console.warn("[VideoCallContext] calls-v2 consume failed", err);
+            logger.warn("[VideoCallContext] calls-v2 consume failed", err);
           });
         });
 
@@ -1037,7 +1042,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
 
         callsWsCallIdRef.current = callId;
         callsWsRoomRef.current = roomId;
-        console.info("[VideoCallContext] calls-v2 room-bootstrap:done", { callId, roomId });
+        logger.info("[VideoCallContext] calls-v2 room-bootstrap:done", { callId, roomId });
 
         if (rekeyTimerRef.current) {
           window.clearInterval(rekeyTimerRef.current);
@@ -1069,9 +1074,9 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
               await activeClient.rekeyBegin({ roomId: activeRoomId, epoch: newEpoch });
               // Transition machine to KEY_DELIVERY; starts deadline timer
               machine.onRekeyBeginAcked(newEpoch);
-              console.info("[VideoCallContext] calls-v2 rekey:begin sent", { epoch: newEpoch });
+              logger.info("[VideoCallContext] calls-v2 rekey:begin sent", { epoch: newEpoch });
             } catch (err) {
-              console.error("[VideoCallContext] calls-v2 rekey:begin failed, aborting", err);
+              logger.error("[VideoCallContext] calls-v2 rekey:begin failed, aborting", err);
               machine.abortRekey(String(err));
               // Restore previous epoch in guard on abort
               epochGuardRef.current?.markE2eeReady(e2eeEpochRef.current);
@@ -1080,7 +1085,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         }, REKEY_INTERVAL_MS);
         return true;
       } catch (err) {
-        console.warn("[VideoCallContext] calls-v2 room bootstrap failed", err);
+        logger.warn("[VideoCallContext] calls-v2 room bootstrap failed", err);
         return false;
       }
     },
@@ -1113,7 +1118,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         : (hintedRoomId ?? null);
 
       if (!roomId) {
-        console.warn("[VideoCallContext] calls-v2 media-bootstrap skipped: room unresolved", {
+        logger.warn("[VideoCallContext] calls-v2 media-bootstrap skipped: room unresolved", {
           callId,
           mappedCallId: callsWsCallIdRef.current,
           mappedRoomId: callsWsRoomRef.current,
@@ -1129,20 +1134,20 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       if (!client) return;
 
       try {
-        console.info("[VideoCallContext] calls-v2 media-bootstrap:start", { callId, roomId });
+        logger.info("[VideoCallContext] calls-v2 media-bootstrap:start", { callId, roomId });
 
         // Phase C: Fail-closed epoch guard — no media without E2EE_READY
         try {
           epochGuardRef.current?.assertMediaAllowed('PRODUCE');
         } catch (e) {
-          console.error('[VideoCallContext] [EpochGuard] Cannot bootstrap media:', e);
+          logger.error('[VideoCallContext] [EpochGuard] Cannot bootstrap media:', e);
           return;
         }
 
         // --- SFU Device initialization ---
         const routerRtpCapabilities = sfuRouterRtpCapabilitiesRef.current;
         if (!routerRtpCapabilities) {
-          console.warn("[VideoCallContext] calls-v2 media-bootstrap skipped: routerRtpCapabilities not ready. Waiting for ROOM_JOINED event.", { roomId });
+          logger.warn("[VideoCallContext] calls-v2 media-bootstrap skipped: routerRtpCapabilities not ready. Waiting for ROOM_JOINED event.", { roomId });
           return;
         }
 
@@ -1155,9 +1160,9 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         // ── TURN credentials ──────────────────────────────────────────────────
         const iceServersSnapshot = turnIceServersRef.current ?? undefined;
         if (iceServersSnapshot && iceServersSnapshot.length > 0) {
-          console.info("[VideoCallContext] TURN iceServers ready for SFU transports", { count: iceServersSnapshot.length });
+          logger.info("[VideoCallContext] TURN iceServers ready for SFU transports", { count: iceServersSnapshot.length });
         } else {
-          console.warn("[VideoCallContext] No TURN ice servers available — SFU will use STUN only (may fail behind strict NAT)");
+          logger.warn("[VideoCallContext] No TURN ice servers available — SFU will use STUN only (may fail behind strict NAT)");
         }
         // ─────────────────────────────────────────────────────────────────────
 
@@ -1176,7 +1181,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         );
         const sendParams = sendCreated.payload as import('@/calls-v2/types').TransportCreatedPayload | undefined;
         if (!sendParams?.transportId) return;
-        console.info("[VideoCallContext] calls-v2 transport-created:send", { roomId, transportId: sendParams.transportId });
+        logger.info("[VideoCallContext] calls-v2 transport-created:send", { roomId, transportId: sendParams.transportId });
 
         sfuManager.createSendTransport(
           {
@@ -1192,7 +1197,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
               transportId: sendParams.transportId,
               dtlsParameters: dtlsParameters as import('@/calls-v2/types').DtlsParameters,
             });
-            console.info("[VideoCallContext] calls-v2 transport-connect:send:ok", { roomId });
+            logger.info("[VideoCallContext] calls-v2 transport-connect:send:ok", { roomId });
           },
           async ({ kind, rtpParameters, appData }) => {
             await client.produce({
@@ -1212,7 +1217,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
             );
             const producerId = (producedFrame.payload as { producerId?: string })?.producerId;
             if (!producerId) throw new Error("PRODUCED event missing producerId");
-            console.info("[VideoCallContext] calls-v2 produce:ok", { roomId, kind, producerId });
+            logger.info("[VideoCallContext] calls-v2 produce:ok", { roomId, kind, producerId });
             return producerId;
           }
         );
@@ -1230,7 +1235,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         );
         const recvParams = recvCreated.payload as import('@/calls-v2/types').TransportCreatedPayload | undefined;
         if (!recvParams?.transportId) return;
-        console.info("[VideoCallContext] calls-v2 transport-created:recv", { roomId, transportId: recvParams.transportId });
+        logger.info("[VideoCallContext] calls-v2 transport-created:recv", { roomId, transportId: recvParams.transportId });
 
         sfuManager.createRecvTransport(
           {
@@ -1246,7 +1251,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
               transportId: recvParams.transportId,
               dtlsParameters: dtlsParameters as import('@/calls-v2/types').DtlsParameters,
             });
-            console.info("[VideoCallContext] calls-v2 transport-connect:recv:ok", { roomId });
+            logger.info("[VideoCallContext] calls-v2 transport-connect:recv:ok", { roomId });
           }
         );
         callsWsRecvTransportRef.current = recvParams.transportId;
@@ -1266,7 +1271,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
             kind: p.kind as import('mediasoup-client').types.MediaKind,
             rtpParameters: p.rtpParameters as import('mediasoup-client').types.RtpParameters,
           }).then((consumer) => {
-            console.info("[VideoCallContext] calls-v2 consumer:created", { roomId, consumerId: consumer.id, kind: consumer.kind });
+            logger.info("[VideoCallContext] calls-v2 consumer:created", { roomId, consumerId: consumer.id, kind: consumer.kind });
             // Attach E2EE receiver transform (Insertable Streams) — fail-closed: frames dropped without key
             if (CallMediaEncryption.isSupported()) {
               const receiver = sfuManagerRef.current?.getConsumerReceiver(consumer.id);
@@ -1279,7 +1284,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
               rebuildRemoteStream();
             });
           }).catch((err) => {
-            console.warn("[VideoCallContext] calls-v2 consume/resume failed", err);
+            logger.warn("[VideoCallContext] calls-v2 consume/resume failed", err);
           });
         });
 
@@ -1299,9 +1304,9 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         rebuildRemoteStream();
 
         callsWsMediaRoomRef.current = roomId;
-        console.info("[VideoCallContext] calls-v2 media-bootstrap:done", { roomId, trackCount: tracks.length });
+        logger.info("[VideoCallContext] calls-v2 media-bootstrap:done", { roomId, trackCount: tracks.length });
       } catch (err) {
-        console.warn("[VideoCallContext] calls-v2 media bootstrap failed", err);
+        logger.warn("[VideoCallContext] calls-v2 media bootstrap failed", err);
       }
     },
     [ensureCallsV2Connected, rebuildRemoteStream, user]
@@ -1311,10 +1316,10 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     onIncomingCall: (call) => {
       // Don't show incoming call if we're already in a call or UI-lock is active
       if (status !== "idle" || isCallUiActiveRef.current) {
-        console.log("[VideoCallContext] Already in call or UI active, ignoring incoming");
+        logger.info("[VideoCallContext] Already in call or UI active, ignoring incoming");
         return;
       }
-      console.log("[VideoCallContext] Setting pending incoming call:", call.id.slice(0, 8));
+      logger.info("[VideoCallContext] Setting pending incoming call:", call.id.slice(0, 8));
       setPendingIncomingCall(call);
     },
   });
@@ -1324,7 +1329,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
   const incomingCall = (status === "idle" && !isCallUiActive) ? pendingIncomingCall : null;
 
   // Debug logging
-  console.log("[VideoCallContext] State:", {
+  logger.info("[VideoCallContext] State:", {
     status,
     hasCurrentCall: !!currentCall,
     hasPendingIncoming: !!pendingIncomingCall,
@@ -1335,7 +1340,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
   const answerCall = useCallback(async (call: VideoCall) => {
     const configIssue = getCallsConfigIssue();
     if (configIssue) {
-      console.error("[VideoCallContext] answerCall blocked by config:", configIssue);
+      logger.error("[VideoCallContext] answerCall blocked by config:", configIssue);
       toast.error("Звонок недоступен", {
         description: getCallsConfigToastDescription(configIssue),
         duration: 6000,
@@ -1343,7 +1348,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    console.log("[VideoCallContext] answerCall: Activating UI-lock BEFORE getUserMedia");
+    logger.info("[VideoCallContext] answerCall: Activating UI-lock BEFORE getUserMedia");
     setIsCallUiActive(true); // Activate UI-lock BEFORE getUserMedia
     setPendingIncomingCall(null);
     clearIncomingCall();
@@ -1374,7 +1379,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
           };
         }
       } catch (roomHintError) {
-        console.warn("[VideoCallContext] answerCall room-hints refresh failed", roomHintError);
+        logger.warn("[VideoCallContext] answerCall room-hints refresh failed", roomHintError);
       }
 
       const roomBootstrapOk = await bootstrapCallsV2Room(resolvedCall, "callee");
@@ -1383,7 +1388,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         throw new Error("calls_v2_room_bootstrap_failed");
       }
     } catch (err) {
-      console.error("[VideoCallContext] answerCall error:", err);
+      logger.error("[VideoCallContext] answerCall error:", err);
       if (isMediaErrorForCall(err)) {
         const toastPayload = getMediaPermissionToastPayload(err, call.call_type === "video" ? "video" : "audio");
         toast.error(toastPayload.title, {
@@ -1413,7 +1418,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         })
         .eq("id", callToDecline.id);
       if (error) {
-        console.error("[VideoCallContext] declineCall update failed", error);
+        logger.error("[VideoCallContext] declineCall update failed", error);
       }
 
       setPendingIncomingCall(null);
@@ -1423,7 +1428,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
   }, [incomingCall, pendingIncomingCall, clearIncomingCall]);
 
   const endCall = useCallback(async () => {
-    console.log("[VideoCallContext] endCall called");
+    logger.info("[VideoCallContext] endCall called");
     if (currentCall) {
       await endVideoCall("ended");
     } else if (incomingCall || pendingIncomingCall) {
@@ -1443,7 +1448,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
 
     const configIssue = getCallsConfigIssue();
     if (configIssue) {
-      console.error("[VideoCallContext] startCall blocked by config:", configIssue);
+      logger.error("[VideoCallContext] startCall blocked by config:", configIssue);
       toast.error("Не удалось начать звонок", {
         description: getCallsConfigToastDescription(configIssue),
         duration: 6000,
@@ -1451,14 +1456,14 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       return null;
     }
 
-    console.log("[VideoCallContext] startCall: Activating UI-lock BEFORE startVideoCall");
+    logger.info("[VideoCallContext] startCall: Activating UI-lock BEFORE startVideoCall");
     if (calleeProfile) setPendingCalleeProfile(calleeProfile);
     setIsCallUiActive(true); // Activate UI-lock BEFORE getUserMedia (happens inside startVideoCall)
 
     try {
       const result = await startVideoCall(calleeId, conversationId, callType);
       if (!result) {
-        console.error("[VideoCallContext] startVideoCall returned null unexpectedly — releasing UI-lock");
+        logger.error("[VideoCallContext] startVideoCall returned null unexpectedly — releasing UI-lock");
         setPendingCalleeProfile(null);
         setIsCallUiActive(false);
         toast.error("Не удалось начать звонок", {
@@ -1474,7 +1479,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       }
       return result;
     } catch (err) {
-      console.error("[VideoCallContext] startCall error:", err);
+      logger.error("[VideoCallContext] startCall error:", err);
       setPendingCalleeProfile(null);
       setIsCallUiActive(false); // Release UI-lock on error
       if (isMediaErrorForCall(err)) {
@@ -1496,7 +1501,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
   const retryConnection = useCallback(async () => {
     const configIssue = getCallsConfigIssue();
     if (configIssue) {
-      console.error("[VideoCallContext] retryConnection blocked by config:", configIssue);
+      logger.error("[VideoCallContext] retryConnection blocked by config:", configIssue);
       toast.error("Повторное подключение недоступно", {
         description: getCallsConfigToastDescription(configIssue),
         duration: 6000,
@@ -1529,7 +1534,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       }
 
       if ((actionType === "end" || actionType === "disconnect") && matchesCurrent) {
-        console.log("[VideoCallContext] Ignoring native end/disconnect action to avoid false DB ended status", {
+        logger.info("[VideoCallContext] Ignoring native end/disconnect action to avoid false DB ended status", {
           callId: action.callId,
           actionType,
           status,
@@ -1587,3 +1592,4 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     </VideoCallSignalingContext.Provider>
   );
 }
+
