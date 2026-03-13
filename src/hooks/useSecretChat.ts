@@ -41,6 +41,7 @@ import { DoubleRatchetE2E, type RatchetState, type RatchetHeader } from "@/lib/e
 import { toBase64, fromBase64 } from "@/lib/e2ee/utils";
 import { encryptForStorage, decryptFromStorage } from "@/auth/localStorageCrypto";
 import { isWebAuthnPRFSupported, loadWebAuthnRecord } from "@/lib/e2ee/webAuthnBinding";
+import { logger } from "@/lib/logger";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -113,8 +114,8 @@ async function readSecretBlob(id: string): Promise<string | null> {
     });
     db.close();
     if (value) return value;
-  } catch {
-    // Fall back to legacy source below.
+  } catch (error) {
+    logger.debug("[useSecretChat] IndexedDB read failed, falling back to localStorage", { id, error });
   }
 
   // 2) Legacy fallback + one-time migration from localStorage
@@ -124,7 +125,8 @@ async function readSecretBlob(id: string): Promise<string | null> {
     await writeSecretBlob(id, legacy);
     localStorage.removeItem(id);
     return legacy;
-  } catch {
+  } catch (error) {
+    logger.warn("[useSecretChat] Failed to read legacy localStorage blob", { id, error });
     return null;
   }
 }
@@ -141,8 +143,8 @@ async function writeSecretBlob(id: string, value: string): Promise<void> {
   db.close();
   try {
     localStorage.removeItem(id); // remove stale legacy copy if any
-  } catch {
-    // no-op
+  } catch (error) {
+    logger.debug("[useSecretChat] Failed to remove stale legacy localStorage blob", { id, error });
   }
 }
 
@@ -157,13 +159,13 @@ async function deleteSecretBlob(id: string): Promise<void> {
       req.onerror = () => reject(req.error);
     });
     db.close();
-  } catch {
-    // no-op
+  } catch (error) {
+    logger.debug("[useSecretChat] IndexedDB delete failed", { id, error });
   }
   try {
     localStorage.removeItem(id);
-  } catch {
-    // no-op
+  } catch (error) {
+    logger.debug("[useSecretChat] localStorage delete failed", { id, error });
   }
 }
 
@@ -231,7 +233,8 @@ async function getOrCreateIdentityKeys(userId: string): Promise<{
       }
 
       return { identityEcdhKeyPair, identityEcdsaKeyPair, signedPreKeyPair, oneTimePreKeyPairs, isNew: false };
-    } catch {
+    } catch (error) {
+      logger.warn("[useSecretChat] Failed to decrypt/import stored identity keys; regenerating", { userId, error });
       // Legacy plaintext storage or decryption failure — regenerate keys
       await deleteSecretBlob(IK_STORAGE_KEY(userId));
     }
@@ -286,7 +289,8 @@ async function findStoredOneTimePreKeyPair(userId: string, publicKey: string): P
     const match = (parsed.oneTimePreKeys ?? []).find((entry) => entry.publicKey === publicKey);
     if (!match) return null;
     return X3DH.importEcdhKeyPair(match.publicKey, match.privateKey);
-  } catch {
+  } catch (error) {
+    logger.warn("[useSecretChat] Failed to load one-time prekey pair", { userId, error });
     return null;
   }
 }
@@ -325,7 +329,12 @@ async function loadRatchetState(userId: string, convId: string): Promise<Ratchet
     }
 
     return DoubleRatchetE2E.deserialize(serialized);
-  } catch {
+  } catch (error) {
+    logger.warn("[useSecretChat] Failed to decrypt/deserialize ratchet state; deleting corrupted state", {
+      userId,
+      convId,
+      error,
+    });
     // Stored blob may be legacy format (old static-salt scheme) — drop and re-init
     await deleteSecretBlob(DR_STATE_KEY(userId, convId));
     return null;
@@ -375,7 +384,12 @@ export function useSecretChat(conversationId: string | null) {
         ratchetStateRef.current = state;
         setRatchetReady(!!state);
       })
-      .catch(() => {
+      .catch((error) => {
+        logger.warn("[useSecretChat] Failed to load ratchet state", {
+          conversationId: secretChat.conversation_id,
+          userId: user.id,
+          error,
+        });
         if (!cancelled) setRatchetReady(false);
       });
     return () => { cancelled = true; };

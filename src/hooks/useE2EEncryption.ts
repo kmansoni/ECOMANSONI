@@ -36,6 +36,7 @@ import {
   type SenderKeyMessage,
 } from '@/lib/e2ee/senderKeys';
 import { e2eeDb } from '@/lib/e2ee/db-types';
+import { logger } from '@/lib/logger';
 
 // ─── Публичные типы ───────────────────────────────────────────────────────────
 
@@ -99,7 +100,7 @@ export function useE2EEncryption(conversationId: string | null): UseE2EEncryptio
     let cancelled = false;
     const ks = getKeyStore();
     ks.init().catch((err) => {
-      if (!cancelled) console.warn('[useE2EEncryption] keyStore init error:', err);
+      if (!cancelled) logger.warn('[useE2EEncryption] keyStore init error', { error: err });
     });
     return () => {
       cancelled = true;
@@ -316,9 +317,11 @@ export function useE2EEncryption(conversationId: string | null): UseE2EEncryptio
 
       if (verifyKey && verifyKey.sender_id !== user.id) {
         // Другой участник создал ключ раньше — откатываем свой и принимаем его
-        console.warn(
-          `[useE2EEncryption] Race detected: key v${keyVersion} created by ${verifyKey.sender_id}, not us. Accepting theirs.`,
-        );
+        logger.warn('[useE2EEncryption] Race detected on key creation; accepting foreign key', {
+          keyVersion,
+          verifyKeySenderId: verifyKey.sender_id,
+          currentUserId: user.id,
+        });
         groupKeyCacheRef.current.delete(keyVersion);
         const foreignGroupKey = await getGroupKey(keyVersion);
         if (foreignGroupKey) {
@@ -340,10 +343,11 @@ export function useE2EEncryption(conversationId: string | null): UseE2EEncryptio
       }
 
       if (distResult.failed.length > 0) {
-        console.warn(
-          `[useE2EEncryption] Key distribution partial failure: ${distResult.failed.length} failed, ${distResult.distributed.length} succeeded`,
-          distResult.errors,
-        );
+        logger.warn('[useE2EEncryption] Key distribution partial failure', {
+          failedCount: distResult.failed.length,
+          distributedCount: distResult.distributed.length,
+          errors: distResult.errors,
+        });
         // Уведомляем пользователя о частичном сбое (но продолжаем включение)
         setError(
           `Шифрование включено, но ${distResult.failed.length} участник(ов) не получили ключ. ` +
@@ -556,14 +560,17 @@ export function useE2EEncryption(conversationId: string | null): UseE2EEncryptio
 
         const inner = await decryptGroupMessage(parsed.payload);
         return new TextDecoder().decode(inner);
-      } catch {
+      } catch (error) {
+        logger.debug('[useE2EEncryption] Sender-key envelope parse/decrypt failed; returning legacy plaintext', {
+          error,
+        });
         return outerPlaintext;
       }
     } catch (err) {
       if (err instanceof MITMDetectedError) {
         setError(`⚠️ Предупреждение безопасности: ${err.message}`);
       }
-      console.error('[useE2EEncryption] decryptContent error:', err);
+      logger.error('[useE2EEncryption] decryptContent error', { error: err });
       return null;
     }
   }, [conversationId, user?.id, getGroupKey]);
@@ -589,7 +596,7 @@ export function useE2EEncryption(conversationId: string | null): UseE2EEncryptio
         remoteUserId,
       );
     } catch (err) {
-      console.error('[useE2EEncryption] getSafetyNumber error:', err);
+      logger.error('[useE2EEncryption] getSafetyNumber error', { error: err, remoteUserId });
       return null;
     }
   }, [user?.id, getIdentityKeyPair]);
@@ -601,7 +608,8 @@ export function useE2EEncryption(conversationId: string | null): UseE2EEncryptio
       const identityKP = await getIdentityKeyPair();
       if (!identityKP) return null;
       return identityKP.fingerprint;
-    } catch {
+    } catch (error) {
+      logger.warn('[useE2EEncryption] getFingerprint failed', { error });
       return null;
     }
   }, [getIdentityKeyPair]);
