@@ -18,6 +18,7 @@ import { useReadReceipts } from "@/hooks/useReadReceipts";
 import { usePinnedMessages } from "@/hooks/usePinnedMessages";
 import { useScheduledMessages } from "@/hooks/useScheduledMessages";
 import { useSavedMessages } from "@/hooks/useSavedMessages";
+import { useMessageTranslation } from "@/hooks/useMessageTranslation";
 import { MessageStatus } from "./MessageStatus";
 import { PinnedMessageBar } from "./PinnedMessageBar";
 import { PinnedMessagesSheet } from "./PinnedMessagesSheet";
@@ -162,6 +163,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
   const { getMessageStatus, markAsRead } = useReadReceipts(conversationId);
   const { pinnedMessages, pinMessage, unpinMessage } = usePinnedMessages(conversationId);
   const { saveMessage: saveToSavedMessages, removeSavedByOriginalId, isSaved } = useSavedMessages();
+  const { translate } = useMessageTranslation();
   const {
     scheduledMessages,
     scheduleMessage,
@@ -1305,6 +1307,20 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
 
   const handleMessageUnsave = async (messageId: string) => {
     await removeSavedByOriginalId(messageId);
+  };
+
+  const handleMessageTranslate = async (messageId: string, text: string) => {
+    const source = text.trim();
+    if (!source) return;
+    const result = await translate(messageId, source, "ru");
+    if (!result?.translatedText) {
+      toast.error("Не удалось перевести сообщение");
+      return;
+    }
+    const preview = result.translatedText.length > 140
+      ? `${result.translatedText.slice(0, 140)}...`
+      : result.translatedText;
+    toast.success(preview);
   };
 
   const toggleSelected = (messageId: string) => {
@@ -2564,6 +2580,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
           onSave={handleMessageSave}
           onUnsave={handleMessageUnsave}
           isSaved={isSaved(contextMenuMessage.id)}
+          onTranslate={handleMessageTranslate}
           onEdit={handleMessageEdit}
         />
       )}
