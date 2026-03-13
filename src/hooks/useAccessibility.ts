@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { announceToScreenReader } from '@/lib/accessibility/a11y';
+import { logger } from '@/lib/logger';
 
 export type FontSize = 'sm' | 'md' | 'lg' | 'xl';
 export type ColorFilter = 'none' | 'protanopia' | 'deuteranopia' | 'tritanopia';
@@ -27,8 +28,8 @@ function loadFromStorage(): AccessibilitySettings {
   try {
     const raw = localStorage.getItem(LS_KEY);
     if (raw) return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
-  } catch {
-    // Ignore malformed localStorage and fall back to defaults.
+  } catch (error) {
+    logger.warn('[useAccessibility] Failed to read settings from storage', { error });
   }
   return { ...DEFAULT_SETTINGS };
 }
@@ -92,8 +93,8 @@ export function useAccessibility() {
           .upsert({ user_id: user.id, accessibility: { ...loadFromStorage(), ...partial } })
           .eq('user_id', user.id);
       }
-    } catch {
-      // Non-critical sync failure: keep local settings applied.
+    } catch (error) {
+      logger.warn('[useAccessibility] Failed to sync settings to Supabase', { error });
     }
   }, []);
 

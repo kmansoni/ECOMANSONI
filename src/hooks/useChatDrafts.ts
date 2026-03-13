@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from "react";
 import { useAuth } from "@/hooks/useAuth";
+import { logger } from "@/lib/logger";
 
 const LEGACY_DRAFT_KEY_PREFIX = "chat_draft_v1:";
 const DRAFT_KEY_PREFIX = "chat_draft_v2:";
@@ -55,7 +56,8 @@ function readDraftFromStorage(userId: string | null | undefined, conversationId:
       return null;
     }
     return parsed;
-  } catch {
+  } catch (error) {
+    logger.warn("[useChatDrafts] Failed to read draft from storage", { userId, conversationId, error });
     return null;
   }
 }
@@ -73,8 +75,8 @@ function loadAllDraftsFromStorage(userId: string | null | undefined): Map<string
         result.set(conversationId, draft);
       }
     }
-  } catch {
-    // localStorage may be unavailable in some environments
+  } catch (error) {
+    logger.warn("[useChatDrafts] Failed to load drafts from storage", { userId, error });
   }
   return result;
 }
@@ -104,7 +106,9 @@ export function useChatDrafts(): UseChatDraftsReturn {
       try {
         localStorage.removeItem(scopedKey);
         localStorage.removeItem(legacyKey);
-      } catch { /* noop */ }
+      } catch (error) {
+        logger.warn("[useChatDrafts] Failed to remove empty draft", { userId, conversationId, error });
+      }
       setDraftsMap((prev) => {
         const next = new Map(prev);
         next.delete(conversationId);
@@ -119,7 +123,9 @@ export function useChatDrafts(): UseChatDraftsReturn {
       if (userId) {
         localStorage.removeItem(legacyKey);
       }
-    } catch { /* Storage full or unavailable */ }
+    } catch (error) {
+      logger.warn("[useChatDrafts] Failed to persist draft", { userId, conversationId, error });
+    }
 
     setDraftsMap((prev) => {
       const next = new Map(prev);
@@ -132,7 +138,9 @@ export function useChatDrafts(): UseChatDraftsReturn {
     try {
       localStorage.removeItem(buildKey(userId, conversationId));
       localStorage.removeItem(buildLegacyKey(conversationId));
-    } catch { /* noop */ }
+    } catch (error) {
+      logger.warn("[useChatDrafts] Failed to clear draft", { userId, conversationId, error });
+    }
     setDraftsMap((prev) => {
       const next = new Map(prev);
       next.delete(conversationId);

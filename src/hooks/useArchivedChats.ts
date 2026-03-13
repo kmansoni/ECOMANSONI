@@ -13,6 +13,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import { probeSupabase } from "@/lib/supabaseProbe";
 import { useAuth } from "@/hooks/useAuth";
+import { logger } from "@/lib/logger";
 import { toast } from "sonner";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -31,7 +32,8 @@ function lsLoad(userId: string): Set<string> {
   try {
     const raw = localStorage.getItem(LS_KEY(userId));
     return raw ? new Set(JSON.parse(raw) as string[]) : new Set();
-  } catch {
+  } catch (error) {
+    logger.warn("[useArchivedChats] Failed to load local archive state", { userId, error });
     return new Set();
   }
 }
@@ -39,8 +41,12 @@ function lsLoad(userId: string): Set<string> {
 function lsSave(userId: string, ids: Set<string>): void {
   try {
     localStorage.setItem(LS_KEY(userId), JSON.stringify([...ids]));
-  } catch {
-    // quota exceeded — silent
+  } catch (error) {
+    logger.warn("[useArchivedChats] Failed to save local archive state", {
+      userId,
+      count: ids.size,
+      error,
+    });
   }
 }
 
@@ -87,7 +93,7 @@ export function useArchivedChats(): UseArchivedChatsReturn {
           setArchivedChatIds(lsLoad(userId));
           return;
         }
-        console.error("useArchivedChats load:", error);
+        logger.error("[useArchivedChats] Failed to load archived chats", { userId, error });
         setArchivedChatIds(lsLoad(userId));
         return;
       }
@@ -193,7 +199,7 @@ export function useArchivedChats(): UseArchivedChatsReturn {
           return next;
         });
         toast.error("Не удалось архивировать чат");
-        console.error("archiveChat:", error);
+        logger.error("[useArchivedChats] archiveChat failed", { userId, conversationId, error });
         return;
       }
 
@@ -251,7 +257,7 @@ export function useArchivedChats(): UseArchivedChatsReturn {
           return next;
         });
         toast.error("Не удалось разархивировать чат");
-        console.error("unarchiveChat:", error);
+        logger.error("[useArchivedChats] unarchiveChat failed", { userId, conversationId, error });
         return;
       }
 
