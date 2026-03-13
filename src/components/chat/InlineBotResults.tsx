@@ -68,17 +68,10 @@ export function InlineBotResults({ botUsername, query, onSelectResult, onDismiss
       });
 
       if (rpcError) {
-        // Bot API not available — show placeholder results
+        // Bot API is unavailable; avoid fake placeholder results.
         console.warn("[InlineBot] RPC not available:", rpcError);
-        setResults([
-          {
-            id: "placeholder-1",
-            type: "article",
-            title: `Результат для "${query}"`,
-            description: `Inline-бот @${botUsername} пока не подключён`,
-            sendContent: { text: query },
-          },
-        ]);
+        setResults([]);
+        setError("Inline-бот временно недоступен");
         return;
       }
 

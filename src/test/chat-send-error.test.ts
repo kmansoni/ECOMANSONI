@@ -37,4 +37,24 @@ describe("chat send error mapping", () => {
 
     expect(payload?.title).toContain("Группа");
   });
+
+  it("maps direct slow mode wait code", () => {
+    const payload = getChatSendErrorToast({
+      message: "SLOW_MODE_WAIT:17",
+    });
+
+    expect(payload?.title).toContain("Медленный режим");
+    expect(payload?.description).toContain("17с");
+  });
+
+  it("maps slow mode wait from full error text", () => {
+    const payload = getChatSendErrorToast({
+      code: "P0001",
+      message: "send_group_message_v1 failed",
+      details: "SLOW_MODE_WAIT:9",
+    });
+
+    expect(payload?.title).toContain("Медленный режим");
+    expect(payload?.description).toContain("9с");
+  });
 });
