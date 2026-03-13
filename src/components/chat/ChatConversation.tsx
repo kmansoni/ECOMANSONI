@@ -17,6 +17,7 @@ import { PollMessage } from "./PollMessage";
 import { useReadReceipts } from "@/hooks/useReadReceipts";
 import { usePinnedMessages } from "@/hooks/usePinnedMessages";
 import { useScheduledMessages } from "@/hooks/useScheduledMessages";
+import { useSavedMessages } from "@/hooks/useSavedMessages";
 import { MessageStatus } from "./MessageStatus";
 import { PinnedMessageBar } from "./PinnedMessageBar";
 import { PinnedMessagesSheet } from "./PinnedMessagesSheet";
@@ -160,6 +161,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
   const { markConversationRead } = useMarkConversationRead();
   const { getMessageStatus, markAsRead } = useReadReceipts(conversationId);
   const { pinnedMessages, pinMessage, unpinMessage } = usePinnedMessages(conversationId);
+  const { saveMessage: saveToSavedMessages, removeSavedByOriginalId, isSaved } = useSavedMessages();
   const {
     scheduledMessages,
     scheduleMessage,
@@ -1286,6 +1288,23 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
       next.add(messageId);
       return next;
     });
+  };
+
+  const handleMessageSave = async (messageId: string) => {
+    const msg = messages.find((m) => m.id === messageId);
+    if (!msg) return;
+
+    await saveToSavedMessages({
+      original_message_id: msg.id,
+      content: msg.content ?? "",
+      media_url: msg.media_url ?? null,
+      media_type: msg.media_type ?? null,
+      original_chat_id: conversationId,
+    });
+  };
+
+  const handleMessageUnsave = async (messageId: string) => {
+    await removeSavedByOriginalId(messageId);
   };
 
   const toggleSelected = (messageId: string) => {
@@ -2542,6 +2561,9 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
           onReply={handleMessageReply}
           onForward={handleMessageForward}
           onSelect={handleMessageSelect}
+          onSave={handleMessageSave}
+          onUnsave={handleMessageUnsave}
+          isSaved={isSaved(contextMenuMessage.id)}
           onEdit={handleMessageEdit}
         />
       )}
