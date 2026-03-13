@@ -40,6 +40,18 @@ export function getChatSendErrorToast(error: unknown): SendErrorToast | null {
   const direct = byCode[message];
   if (direct) return direct;
 
+  if (message.startsWith("SLOW_MODE_WAIT:")) {
+    const raw = message.split(":")[1] ?? "";
+    const waitSeconds = Number.parseInt(raw, 10);
+    if (Number.isFinite(waitSeconds) && waitSeconds > 0) {
+      return {
+        title: "Медленный режим",
+        description: `Подождите ${waitSeconds}с перед отправкой следующего сообщения.`,
+      };
+    }
+    return { title: "Медленный режим", description: "Подождите немного перед следующей отправкой." };
+  }
+
   if (message.startsWith("CHAT_V11_SEND_REJECTED:")) {
     return { title: "Сообщение отклонено сервером", description: "Попробуйте отправить снова через несколько секунд." };
   }
@@ -59,6 +71,17 @@ export function getChatSendErrorToast(error: unknown): SendErrorToast | null {
   }
   if (full.includes("send_group_message_v1") && (full.includes("does not exist") || full.includes("schema cache"))) {
     return { title: "Группа временно недоступна", description: "На сервере не применены миграции группы." };
+  }
+  if (full.includes("slow_mode_wait:")) {
+    const m = full.match(/slow_mode_wait:(\d+)/);
+    const waitSeconds = m?.[1] ? Number.parseInt(m[1], 10) : NaN;
+    if (Number.isFinite(waitSeconds) && waitSeconds > 0) {
+      return {
+        title: "Медленный режим",
+        description: `Подождите ${waitSeconds}с перед отправкой следующего сообщения.`,
+      };
+    }
+    return { title: "Медленный режим", description: "Подождите немного перед следующей отправкой." };
   }
 
   return null;
