@@ -33,6 +33,7 @@ import { ReelItem } from '@/components/reels/ReelItem';
 import { ReelCommentsSheet } from '@/components/reels/ReelCommentsSheet';
 import { ReelShareSheet } from '@/components/reels/ReelShareSheet';
 import type { ReelFeedItem, ReelAuthor, ReelMetrics } from '@/types/reels';
+import { logger } from '@/lib/logger';
 
 // ---------------------------------------------------------------------------
 // Reels feed mode
@@ -51,12 +52,18 @@ function readReelsMode(accountId?: string | null): ReelsFeedMode {
     const scoped = localStorage.getItem(getReelsModeKey(accountId));
     const v = scoped ?? localStorage.getItem(REELS_MODE_KEY);
     if (v === 'for_you' || v === 'following') return v;
-  } catch { /* ignore */ }
+  } catch (error) {
+    logger.warn('[ReelsPage] Failed to read feed mode from storage', { accountId, error });
+  }
   return 'for_you';
 }
 
 function writeReelsMode(mode: ReelsFeedMode, accountId?: string | null): void {
-  try { localStorage.setItem(getReelsModeKey(accountId), mode); } catch { /* ignore */ }
+  try {
+    localStorage.setItem(getReelsModeKey(accountId), mode);
+  } catch (error) {
+    logger.warn('[ReelsPage] Failed to persist feed mode to storage', { mode, accountId, error });
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -488,8 +495,14 @@ export default function ReelsPage(): JSX.Element {
         if (error) throw error;
         toast.success("Вы подписались");
       }
-    } catch {
+    } catch (error) {
       // Rollback on failure
+      logger.warn('[ReelsPage] Follow action failed, rolling back optimistic state', {
+        error,
+        authorId,
+        wasFollowing,
+        userId: user.id,
+      });
       setFollowMap((prev) => ({ ...prev, [authorId]: wasFollowing }));
       toast.error(wasFollowing ? "Не удалось отписаться" : "Не удалось подписаться");
     }

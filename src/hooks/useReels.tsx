@@ -5,14 +5,15 @@ import { isGuestMode } from "@/lib/demo/demoMode";
 import { getDemoBotsReels, isDemoId } from "@/lib/demo/demoBots";
 import { trackAnalyticsEvent } from "@/lib/analytics/firehose";
 import { fetchUserBriefMap, resolveUserBrief } from "@/lib/users/userBriefs";
+import { logger } from "@/lib/logger";
 
 function safeRandomUUID(): string {
   try {
     if (typeof crypto !== "undefined" && typeof (crypto as any).randomUUID === "function") {
       return (crypto as any).randomUUID();
     }
-  } catch {
-    // ignore
+  } catch (error) {
+    logger.warn("[useReels] randomUUID unavailable, using fallback", { error });
   }
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
@@ -166,17 +167,17 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
           });
 
           if (error) {
-            console.warn("reels-feed edge fallback failed:", error);
+            logger.warn("[useReels] reels-feed edge fallback failed", { error, feedMode, offset, limit });
             return [] as any[];
           }
           if (!data || (data as any).ok !== true) {
-            console.warn("reels-feed edge fallback returned not-ok:", data);
+            logger.warn("[useReels] reels-feed edge fallback returned not-ok", { data, feedMode, offset, limit });
             return [] as any[];
           }
           const rawRows = ((data as any).data ?? []) as any[];
           return rawRows;
         } catch (e) {
-          console.warn("reels-feed edge fallback exception:", e);
+          logger.warn("[useReels] reels-feed edge fallback exception", { error: e, feedMode, offset, limit });
           return [] as any[];
         }
       };
@@ -237,7 +238,7 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
         }
 
         if (rpc.error) {
-          console.warn("get_reels_feed_v2 failed, using fallback:", rpc.error);
+          logger.warn("[useReels] get_reels_feed_v2 failed, using fallback", { error: rpc.error, offset, limit });
           let data = await fetchReelsFallback();
           if ((data?.length || 0) === 0) data = await fetchReelsViaEdgeFallback();
           return data;
@@ -346,8 +347,8 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
         storageSyncOnceRef.current = true;
         try {
           await supabase.functions.invoke("reels-feed", { body: { limit: PAGE_SIZE, offset: 0 } });
-        } catch {
-          // ignore (network/env may not allow functions)
+        } catch (error) {
+          logger.warn("[useReels] reels-feed storage sync invoke failed", { error });
         }
       }
 
@@ -376,7 +377,7 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
         setReels(enriched.reels);
       }
     } catch (error) {
-      console.error("Error fetching reels:", error);
+      logger.error("[useReels] Error fetching reels", { error, feedMode, userId: user?.id ?? null });
     } finally {
       setLoading(false);
     }
@@ -414,11 +415,11 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
         setHasMore(false);
       }
     } catch (e) {
-      console.error("Error loading more reels:", e);
+      logger.error("[useReels] Error loading more reels", { error: e, feedMode, userId: user?.id ?? null, offset: reels.length });
     } finally {
       setLoadingMore(false);
     }
-  }, [enrichRows, fetchRawBatch, getFollowedAuthorIdsIfNeeded, hasMore, loading, loadingMore, reels.length]);
+  }, [enrichRows, fetchRawBatch, feedMode, getFollowedAuthorIdsIfNeeded, hasMore, loading, loadingMore, reels.length, user?.id]);
 
   const resolveReelOwnerId = useCallback(
     (reelId: string): string | null => {
@@ -489,7 +490,7 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
         );
       }
     } catch (error) {
-      console.error("Error toggling like:", error);
+      logger.error("[useReels] Error toggling like", { error, reelId, userId: user?.id ?? null });
     }
   }, [user, likedReels]);
 
@@ -555,7 +556,7 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
           );
         }
       } catch (error) {
-        console.error("Error toggling save:", error);
+        logger.error("[useReels] Error toggling save", { error, reelId, userId: user?.id ?? null });
       }
     },
     [user, savedReels],
@@ -623,7 +624,7 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
           );
         }
       } catch (error) {
-        console.error("Error toggling repost:", error);
+        logger.error("[useReels] Error toggling repost", { error, reelId, userId: user?.id ?? null });
       }
     },
     [user, repostedReels],
@@ -663,7 +664,13 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
           });
         }
       } catch (error) {
-        console.error("Error recording share:", error);
+        logger.error("[useReels] Error recording share", {
+          error,
+          reelId,
+          targetType,
+          targetId,
+          userId: user?.id ?? null,
+        });
       }
     },
     [resolveReelOwnerId, user],
@@ -678,7 +685,7 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
         p_session_id: sessionId,
       });
     } catch (error) {
-      console.error("Error recording view:", error);
+      logger.error("[useReels] Error recording view", { error, reelId, userId: user?.id ?? null });
     }
   }, [user]);
 
@@ -725,7 +732,7 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
           });
         }
       } catch (error) {
-        console.error("Error recording impression:", error);
+        logger.error("[useReels] Error recording impression", { error, reelId, userId: user?.id ?? null, params });
       }
     },
     [resolveReelOwnerId, user],
@@ -757,7 +764,13 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
           });
         }
       } catch (error) {
-        console.error("Error recording viewed:", error);
+        logger.error("[useReels] Error recording viewed", {
+          error,
+          reelId,
+          watchDurationSeconds,
+          reelDurationSeconds,
+          userId: user?.id ?? null,
+        });
       }
     },
     [resolveReelOwnerId, user],
@@ -791,7 +804,13 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
           });
         }
       } catch (error) {
-        console.error("Error recording watched:", error);
+        logger.error("[useReels] Error recording watched", {
+          error,
+          reelId,
+          watchDurationSeconds,
+          reelDurationSeconds,
+          userId: user?.id ?? null,
+        });
       }
     },
     [resolveReelOwnerId, user],
@@ -835,7 +854,13 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
           });
         }
       } catch (error) {
-        console.error("Error recording skip:", error);
+        logger.error("[useReels] Error recording skip", {
+          error,
+          reelId,
+          skippedAtSecond,
+          reelDurationSeconds,
+          userId: user?.id ?? null,
+        });
       }
     },
     [resolveReelOwnerId, user],
@@ -852,7 +877,7 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
           p_session_id: sessionId,
         });
       } catch (error) {
-        console.error("Error setting reel feedback:", error);
+        logger.error("[useReels] Error setting reel feedback", { error, reelId, feedback, userId: user?.id ?? null });
       }
     },
     [user],
