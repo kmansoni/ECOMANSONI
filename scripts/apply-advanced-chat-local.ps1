@@ -26,6 +26,10 @@ VITE_CHAT_PROTOCOL_V11_ROLLOUT_PERCENT="100"
 
 # Keep Calls V2 enabled locally
 VITE_CALLS_V2_ENABLED="true"
+
+# SFU WebSocket endpoints (multi-region)
+VITE_CALLS_V2_WS_URL="wss://sfu-ru.mansoni.com/ws"
+VITE_CALLS_V2_WS_URLS="wss://sfu-ru.mansoni.com/ws,wss://sfu-tr.mansoni.com/ws,wss://sfu-ae.mansoni.com/ws"
 '@
 
 Set-Content -Path $envPath -Value $content -Encoding UTF8
