@@ -13,6 +13,7 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { getIceServers, getMediaConstraints, clearIceServerCache } from "@/lib/webrtc-config";
+import { logger } from "@/lib/logger";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 
 export type VideoCallStatus = "idle" | "calling" | "ringing" | "connected" | "ended";
@@ -85,11 +86,11 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
   const answerInFlightRef = useRef(false);
 
   const log = useCallback((msg: string, ...args: any[]) => {
-    console.log(`[VideoCall] ${msg}`, ...args);
+    logger.info("video_call.info", { msg, args });
   }, []);
 
   const warn = useCallback((msg: string, ...args: any[]) => {
-    console.warn(`[VideoCall] ${msg}`, ...args);
+    logger.warn("video_call.warn", { msg, args });
   }, []);
 
   const sanitizeDebugPayload = useCallback((payload: Record<string, any>) => {
@@ -128,8 +129,8 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
             ...sanitizeDebugPayload(payload),
           },
         });
-      } catch {
-        // never throw from debug
+      } catch (error) {
+        logger.debug("video_call.debug_event_persist_failed", { error, callId, stage });
       }
     },
     [sanitizeDebugPayload, user]
@@ -555,8 +556,8 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
                 .from("video_call_signals")
                 .update({ processed: true })
                 .eq("id", signal.id);
-            } catch {
-              // ignore
+            } catch (error) {
+              logger.warn("video_call.signal_mark_processed_failed", { error, signalId: signal.id });
             }
           }
         }
@@ -1199,8 +1200,8 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
           reconnect_proxy_ice_restart_count: iceRestartCountRef.current,
           connection_state: peerConnectionRef.current?.connectionState ?? "unknown",
         });
-      } catch {
-        // best effort only
+      } catch (error) {
+        logger.debug("video_call.slo_sample_failed", { error, callId: currentCall.id });
       }
     };
 
@@ -1274,8 +1275,8 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
           log("Poll detected call ended:", data.status);
           handleCallStatusUpdate(data.status);
         }
-      } catch {
-        // Silent fail
+      } catch (error) {
+        logger.warn("video_call.status_poll_failed", { error, callId: currentCall.id });
       }
     }, 2000);
 

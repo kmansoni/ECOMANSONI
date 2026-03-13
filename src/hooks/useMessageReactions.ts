@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
+import { logger } from "@/lib/logger";
 // TODO: Regenerate Supabase types with `supabase gen types` to include message_reactions table.
 // Using type assertion as temporary measure until types are regenerated.
 const db = supabase as any;
@@ -17,6 +18,13 @@ export interface MessageReaction {
 export type ReactionsMap = Map<string, MessageReaction[]>;
 
 const LS_KEY_PREFIX = "msg_reactions_v1_";
+const loggedLsErrors = new Set<string>();
+
+function logOnce(key: string, message: string, context?: unknown): void {
+  if (loggedLsErrors.has(key)) return;
+  loggedLsErrors.add(key);
+  logger.warn(message, context);
+}
 
 function mergeReactionRows(
   rows: { message_id: string; user_id: string; emoji: string }[],
@@ -74,8 +82,8 @@ export function useMessageReactions(conversationId: string) {
     (rows: { message_id: string; user_id: string; emoji: string }[]) => {
       try {
         localStorage.setItem(lsKey, JSON.stringify(rows));
-      } catch {
-        // storage quota — ignore silently
+      } catch (error) {
+        logOnce(`persist:${lsKey}`, "message_reactions.persist_to_ls_failed", { error, lsKey });
       }
     },
     [lsKey]
@@ -88,7 +96,8 @@ export function useMessageReactions(conversationId: string) {
       const parsed = JSON.parse(raw);
       if (!Array.isArray(parsed)) return [];
       return parsed;
-    } catch {
+    } catch (error) {
+      logOnce(`load:${lsKey}`, "message_reactions.load_from_ls_failed", { error, lsKey });
       return [];
     }
   }, [lsKey]);
@@ -168,7 +177,7 @@ export function useMessageReactions(conversationId: string) {
 
       await fetchByMessageIds(requestId, mutationVersionAtStart);
     } catch (err) {
-      console.warn("[useMessageReactions] Supabase fetch failed, falling back to LS", err);
+      logger.warn("message_reactions.fetch_fallback_ls", { error: err, conversationId });
       const rows = loadFromLS();
       if (!canApplyFetchResult(requestId, mutationVersionAtStart)) return;
       replaceReactionsMap(mergeReactionRows(rows, user?.id));
@@ -277,7 +286,7 @@ export function useMessageReactions(conversationId: string) {
         if (isMissingConversationIdError(err)) {
           setCanFilterByConversation(false);
         }
-        console.error("[useMessageReactions] addReaction error:", err);
+        logger.error("message_reactions.add_failed", { error: err, conversationId, messageId, emoji });
         // Revert optimistic — refetch
         fetchReactions();
       }
@@ -321,7 +330,7 @@ export function useMessageReactions(conversationId: string) {
           .eq("emoji", emoji);
         if (error) throw error;
       } catch (err) {
-        console.error("[useMessageReactions] removeReaction error:", err);
+        logger.error("message_reactions.remove_failed", { error: err, conversationId, messageId, emoji });
         fetchReactions();
       }
     },

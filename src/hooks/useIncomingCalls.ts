@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import type { VideoCall } from "./useVideoCall";
+import { logger } from "@/lib/logger";
 import {
   activateForegroundCallWake,
   stopRingtone,
@@ -26,14 +27,22 @@ export function useIncomingCalls(options: UseIncomingCallsOptions = {}) {
   // Track which calls we've already notified about
   const notifiedCallsRef = useRef<Set<string>>(new Set());
   const wakeLockHandleRef = useRef<WakeLockHandle | null>(null);
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   const releaseCallWake = useCallback(async () => {
     stopRingtone();
     if (!wakeLockHandleRef.current) return;
     try {
       await wakeLockHandleRef.current.release();
-    } catch {
-      // ignore release errors
+    } catch (error) {
+      logger.warn("incoming_calls.wake_release_failed", { error });
     } finally {
       wakeLockHandleRef.current = null;
     }
@@ -97,8 +106,10 @@ export function useIncomingCalls(options: UseIncomingCallsOptions = {}) {
   }, [user]);
 
   const clearIncomingCall = useCallback(() => {
-    console.log("[IncomingCalls] Clearing incoming call");
-    setIncomingCall(null);
+    logger.info("incoming_calls.clear");
+    if (isMountedRef.current) {
+      setIncomingCall(null);
+    }
     void releaseCallWake();
   }, [releaseCallWake]);
 
@@ -109,7 +120,7 @@ export function useIncomingCalls(options: UseIncomingCallsOptions = {}) {
       return;
     }
     
-    console.log("[IncomingCalls] Processing incoming call:", call.id.slice(0, 8), "type:", call.call_type);
+    logger.info("incoming_calls.process", { callId: call.id, callType: call.call_type });
     notifiedCallsRef.current.add(call.id);
 
     const briefMap = await fetchUserBriefMap([call.caller_id], supabase as any);
@@ -142,13 +153,15 @@ export function useIncomingCalls(options: UseIncomingCallsOptions = {}) {
             vibrate: alertPolicy.vibrationEnabled,
           }
         );
-      } catch {
-        // ignore wake/sound errors (autoplay restrictions etc.)
+      } catch (error) {
+        logger.warn("incoming_calls.wake_activation_failed", { error, callId: call.id });
       }
     }
 
-    setIncomingCall(callWithProfile);
-    onIncomingCallRef.current?.(callWithProfile);
+    if (isMountedRef.current) {
+      setIncomingCall(callWithProfile);
+      onIncomingCallRef.current?.(callWithProfile);
+    }
   }, [resolveIncomingCallAlertPolicy, releaseCallWake]);
 
   // Cleanup stale ringing calls on mount
@@ -166,9 +179,9 @@ export function useIncomingCalls(options: UseIncomingCallsOptions = {}) {
         .lt("created_at", cutoff);
       
       if (error) {
-        console.log("[IncomingCalls] Cleanup error:", error.message);
+        logger.warn("incoming_calls.cleanup_stale_failed", { error: error.message });
       } else {
-        console.log("[IncomingCalls] Cleaned up stale ringing calls");
+        logger.info("incoming_calls.cleanup_stale_ok");
       }
     };
 
@@ -180,7 +193,7 @@ export function useIncomingCalls(options: UseIncomingCallsOptions = {}) {
 
     const notifiedCalls = notifiedCallsRef.current;
 
-    console.log("[IncomingCalls] Setting up for user:", user.id.slice(0, 8));
+    logger.info("incoming_calls.setup", { userId: user.id });
 
     // === REALTIME SUBSCRIPTION (primary) ===
     const channel = supabase
@@ -198,10 +211,14 @@ export function useIncomingCalls(options: UseIncomingCallsOptions = {}) {
           // Check call age - ignore calls older than 60 seconds
           const callAge = Date.now() - new Date(call.created_at).getTime();
           if (callAge > 60000 || call.status !== "ringing") {
-            console.log("[IncomingCalls] Ignoring stale/non-ringing call:", call.id.slice(0, 8), "age:", Math.round(callAge / 1000), "s");
+            logger.debug("incoming_calls.realtime_ignored", {
+              callId: call.id,
+              ageSec: Math.round(callAge / 1000),
+              status: call.status,
+            });
             return;
           }
-          console.log("[IncomingCalls] Realtime INSERT detected:", call.id.slice(0, 8));
+          logger.info("incoming_calls.realtime_insert", { callId: call.id });
           await processIncomingCall(call);
         }
       )
@@ -218,20 +235,22 @@ export function useIncomingCalls(options: UseIncomingCallsOptions = {}) {
           
           // Clear incoming call if it was answered, declined, ended, or missed
           if (["answered", "declined", "ended", "missed"].includes(updated.status)) {
-            console.log("[IncomingCalls] Call status changed to:", updated.status);
+            logger.info("incoming_calls.status_changed", { callId: updated.id, status: updated.status });
             notifiedCalls.delete(updated.id);
             void releaseCallWake();
-            setIncomingCall((current) => {
-              if (current?.id === updated.id) {
-                return null;
-              }
-              return current;
-            });
+            if (isMountedRef.current) {
+              setIncomingCall((current) => {
+                if (current?.id === updated.id) {
+                  return null;
+                }
+                return current;
+              });
+            }
           }
         }
       )
       .subscribe((status) => {
-        console.log("[IncomingCalls] Realtime subscription status:", status);
+        logger.info("incoming_calls.realtime_status", { status });
       });
 
     // === POLLING FALLBACK ===
@@ -252,17 +271,17 @@ export function useIncomingCalls(options: UseIncomingCallsOptions = {}) {
           const call = ringingCalls[0] as VideoCall;
           // Only process if not already notified
           if (!notifiedCalls.has(call.id)) {
-            console.log("[IncomingCalls] Poll fallback found ringing call:", call.id.slice(0, 8));
+            logger.info("incoming_calls.poll_found", { callId: call.id });
             await processIncomingCall(call);
           }
         }
       } catch (err) {
-        // Silent fail for polling
+        logger.warn("incoming_calls.poll_failed", { error: err });
       }
     }, POLL_INTERVAL_MS);
 
     return () => {
-      console.log("[IncomingCalls] Cleaning up");
+      logger.info("incoming_calls.cleanup");
       supabase.removeChannel(channel);
       clearInterval(pollInterval);
       notifiedCalls.clear();

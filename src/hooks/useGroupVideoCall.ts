@@ -18,6 +18,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { logger } from "@/lib/logger";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -110,8 +111,8 @@ class VoiceActivityDetector {
     try {
       this.source.disconnect();
       this.audioCtx.close();
-    } catch (_) {
-      // ignore cleanup errors
+    } catch (error) {
+      logger.warn("group_call.vad_cleanup_failed", { error });
     }
   }
 }
@@ -317,8 +318,8 @@ export function useGroupVideoCall(roomId: string) {
               // В реальной mediasoup интеграции тут consumer.track → MediaStream
               break;
           }
-        } catch (_) {
-          // ignore malformed messages
+        } catch (error) {
+          logger.warn("group_call.ws_message_malformed", { error });
         }
       };
 

@@ -1,4 +1,5 @@
 import React from "react";
+import { logger } from "@/lib/logger";
 
 type State = {
   hasError: boolean;
@@ -12,7 +13,7 @@ export class AppErrorBoundary extends React.Component<React.PropsWithChildren, S
   }
 
   componentDidCatch(error: unknown) {
-    console.error("[AppErrorBoundary] Runtime error:", error);
+    logger.error("app.error_boundary.runtime_error", { error });
   }
 
   private handleReload = () => {

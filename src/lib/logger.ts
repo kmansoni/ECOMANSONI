@@ -27,6 +27,8 @@
 
 type LogLevel = "debug" | "info" | "warn" | "error";
 
+type LogContext = Record<string, unknown> | undefined;
+
 const LEVEL_RANK: Record<LogLevel, number> = {
   debug: 0,
   info: 1,
@@ -41,6 +43,44 @@ function resolveMinLevel(): LogLevel {
 }
 
 const MIN_LEVEL = LEVEL_RANK[resolveMinLevel()];
+
+function resolveSampleRate(level: LogLevel): number {
+  const byLevel = (import.meta as any)?.env?.[`VITE_LOG_SAMPLE_${level.toUpperCase()}`];
+  const global = (import.meta as any)?.env?.VITE_LOG_SAMPLE_RATE;
+  const raw = byLevel ?? global;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return 1;
+  return Math.max(0, Math.min(1, parsed));
+}
+
+function shouldSample(level: LogLevel): boolean {
+  if (level === "warn" || level === "error") return true;
+  const rate = resolveSampleRate(level);
+  if (rate >= 1) return true;
+  if (rate <= 0) return false;
+  return Math.random() <= rate;
+}
+
+let sessionCorrelationId: string | null = null;
+
+function getSessionCorrelationId(): string {
+  if (sessionCorrelationId) return sessionCorrelationId;
+  sessionCorrelationId = globalThis.crypto?.randomUUID?.() ?? `corr_${Date.now()}`;
+  return sessionCorrelationId;
+}
+
+function toSafeContext(context: unknown): Record<string, unknown> | undefined {
+  if (!context) return undefined;
+  if (typeof context !== "object") return { value: context };
+  if (context instanceof Error) {
+    return {
+      errorName: context.name,
+      errorMessage: context.message,
+      errorStack: context.stack,
+    };
+  }
+  return { ...(context as Record<string, unknown>) };
+}
 
 // Lazy Sentry capture — avoids importing Sentry at module level
 function trySentryCapture(level: "warn" | "error", message: string, context?: unknown): void {
@@ -67,38 +107,40 @@ function emit(
   context?: unknown
 ): void {
   if (LEVEL_RANK[level] < MIN_LEVEL) return;
+  if (!shouldSample(level)) return;
 
-  const prefix = `[${level.toUpperCase()}]`;
+  const ctx = toSafeContext(context);
+  const requestId =
+    typeof ctx?.requestId === "string" && ctx.requestId
+      ? ctx.requestId
+      : globalThis.crypto?.randomUUID?.() ?? `req_${Date.now()}`;
+  const correlationId =
+    typeof ctx?.correlationId === "string" && ctx.correlationId
+      ? ctx.correlationId
+      : getSessionCorrelationId();
+
+  const payload = {
+    ts: new Date().toISOString(),
+    level,
+    message,
+    requestId,
+    correlationId,
+    ...(ctx ? { context: ctx } : {}),
+  };
 
   switch (level) {
     case "debug":
-      if (context !== undefined) {
-        console.debug(prefix, message, context);
-      } else {
-        console.debug(prefix, message);
-      }
+      console.debug(payload);
       break;
     case "info":
-      if (context !== undefined) {
-        console.info(prefix, message, context);
-      } else {
-        console.info(prefix, message);
-      }
+      console.info(payload);
       break;
     case "warn":
-      if (context !== undefined) {
-        console.warn(prefix, message, context);
-      } else {
-        console.warn(prefix, message);
-      }
+      console.warn(payload);
       trySentryCapture("warn", message, context);
       break;
     case "error":
-      if (context !== undefined) {
-        console.error(prefix, message, context);
-      } else {
-        console.error(prefix, message);
-      }
+      console.error(payload);
       trySentryCapture("error", message, context);
       break;
   }
