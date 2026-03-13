@@ -33,6 +33,7 @@ import {
 import { CRMClientForm } from "@/components/crm/CRMClientForm";
 import { CRMDealForm } from "@/components/crm/CRMDealForm";
 import { CRMPropertyForm } from "@/components/crm/CRMPropertyForm";
+import { logger } from "@/lib/logger";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -160,7 +161,7 @@ export function CRMDashboard() {
         setShowings(shows);
       }
     } catch (err) {
-      console.error('CRM load error:', err);
+      logger.error('[CRMDashboard] CRM load error', { error: err, profession });
       if (!silent) toast.error('Ошибка загрузки CRM');
     } finally {
       setLoading(false);
@@ -178,7 +179,10 @@ export function CRMDashboard() {
       await crm.deleteClient(id);
       setClients(prev => prev.filter(c => c.id !== id));
       toast.success('Клиент удалён');
-    } catch { toast.error('Ошибка удаления'); }
+    } catch (error) {
+      logger.warn('[CRMDashboard] Failed to delete client', { error, id });
+      toast.error('Ошибка удаления');
+    }
   };
 
   const handleDeleteDeal = async (id: string) => {
@@ -187,7 +191,10 @@ export function CRMDashboard() {
       await crm.deleteDeal(id);
       setDeals(prev => prev.filter(d => d.id !== id));
       toast.success('Сделка удалена');
-    } catch { toast.error('Ошибка удаления'); }
+    } catch (error) {
+      logger.warn('[CRMDashboard] Failed to delete deal', { error, id });
+      toast.error('Ошибка удаления');
+    }
   };
 
   const handleMoveDeal = async (dealId: string, newStage: string) => {
@@ -199,7 +206,10 @@ export function CRMDashboard() {
       });
       setDeals(prev => prev.map(d => d.id === dealId ? updated : d));
       toast.success(`Сделка перемещена: ${STAGE_NAMES[newStage] ?? newStage}`);
-    } catch { toast.error('Ошибка обновления сделки'); }
+    } catch (error) {
+      logger.warn('[CRMDashboard] Failed to move deal', { error, dealId, newStage });
+      toast.error('Ошибка обновления сделки');
+    }
   };
 
   const handleCompleteTask = async (id: string) => {
@@ -207,7 +217,10 @@ export function CRMDashboard() {
       const updated = await crm.completeTask(id);
       setTasks(prev => prev.map(t => t.id === id ? updated : t));
       toast.success('Задача выполнена ✓');
-    } catch { toast.error('Ошибка обновления задачи'); }
+    } catch (error) {
+      logger.warn('[CRMDashboard] Failed to complete task', { error, id });
+      toast.error('Ошибка обновления задачи');
+    }
   };
 
   const handleDeleteTask = async (id: string) => {
@@ -216,7 +229,10 @@ export function CRMDashboard() {
       await crm.deleteTask(id);
       setTasks(prev => prev.filter(t => t.id !== id));
       toast.success('Задача удалена');
-    } catch { toast.error('Ошибка удаления'); }
+    } catch (error) {
+      logger.warn('[CRMDashboard] Failed to delete task', { error, id });
+      toast.error('Ошибка удаления');
+    }
   };
 
   const handleSaveTask = async () => {
@@ -246,7 +262,10 @@ export function CRMDashboard() {
       setTaskFormOpen(false);
       setEditingTask(null);
       setTaskForm({ title: '', priority: 'medium', due_date: '', client_id: '' });
-    } catch { toast.error('Ошибка сохранения задачи'); }
+    } catch (error) {
+      logger.warn('[CRMDashboard] Failed to save task', { error, editingTaskId: editingTask?.id ?? null });
+      toast.error('Ошибка сохранения задачи');
+    }
   };
 
   const handleDeleteProperty = async (id: string) => {
@@ -255,7 +274,10 @@ export function CRMDashboard() {
       await crm.deleteProperty(id);
       setProperties(prev => prev.filter(p => p.id !== id));
       toast.success('Объект удалён');
-    } catch { toast.error('Ошибка удаления'); }
+    } catch (error) {
+      logger.warn('[CRMDashboard] Failed to delete property', { error, id });
+      toast.error('Ошибка удаления');
+    }
   };
 
   // ─── Computed ──────────────────────────────────────────────────────────────

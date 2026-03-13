@@ -49,6 +49,7 @@ import {
   AUTO_ENGINE_TYPES, AUTO_TRANSMISSIONS, AUTO_BODY_TYPES,
   AUTO_LOST_REASONS, AUTO_PROMO_PACKAGES,
 } from "@/lib/crm";
+import { logger } from "@/lib/logger";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Tab = 'dashboard' | 'inventory' | 'leads' | 'deals' | 'valuations' | 'test_drives';
@@ -211,7 +212,7 @@ export function CRMAutoDashboard() {
       setLeads(leadsData);
       setTestDrives(tdsData);
     } catch (err) {
-      console.error('Auto CRM load error:', err);
+      logger.error('[CRMAutoDashboard] Auto CRM load error', { error: err });
       if (!silent) toast.error('Ошибка загрузки данных');
     } finally {
       setLoading(false);
@@ -249,7 +250,10 @@ export function CRMAutoDashboard() {
       });
       toast.success(editingVehicle ? 'Объявление обновлено' : 'Объявление создано');
       setShowVehicleForm(false); setEditingVehicle(null);
-    } catch { toast.error('Ошибка сохранения'); }
+    } catch (error) {
+      logger.warn('[CRMAutoDashboard] Failed to save vehicle', { error, editingVehicleId: editingVehicle?.id ?? null });
+      toast.error('Ошибка сохранения');
+    }
   };
 
   const handleStatusChange = async () => {
@@ -262,7 +266,14 @@ export function CRMAutoDashboard() {
       setVehicles(prev => prev.map(v => v.id === updated.id ? updated : v));
       toast.success(`Статус изменён: ${VEHICLE_STATUS_LABELS[newStatus]}`);
       setStatusChangeVehicle(null); setNewStatus(''); setNewPrice('');
-    } catch { toast.error('Ошибка обновления статуса'); }
+    } catch (error) {
+      logger.warn('[CRMAutoDashboard] Failed to change vehicle status', {
+        error,
+        vehicleId: statusChangeVehicle.id,
+        newStatus,
+      });
+      toast.error('Ошибка обновления статуса');
+    }
   };
 
   const handleSaveLead = async () => {
@@ -281,7 +292,10 @@ export function CRMAutoDashboard() {
       toast.success('Лид добавлен');
       setShowLeadForm(false);
       setLeadName(''); setLeadPhone(''); setLeadEmail(''); setLeadVehicleId(''); setLeadMessage('');
-    } catch { toast.error('Ошибка создания лида'); }
+    } catch (error) {
+      logger.warn('[CRMAutoDashboard] Failed to create lead', { error });
+      toast.error('Ошибка создания лида');
+    }
   };
 
   const handleMoveLead = async () => {
@@ -291,7 +305,10 @@ export function CRMAutoDashboard() {
       setLeads(prev => prev.map(l => l.id === updated.id ? updated : l));
       toast.success(`Стадия: ${AUTO_LEAD_STAGES.find(s => s.value === moveStage)?.label ?? moveStage}`);
       setMovingLead(null); setMoveStage(''); setMoveNotes(''); setMoveLostReason('');
-    } catch { toast.error('Ошибка'); }
+    } catch (error) {
+      logger.warn('[CRMAutoDashboard] Failed to move lead stage', { error, leadId: movingLead.id, moveStage });
+      toast.error('Ошибка');
+    }
   };
 
   const handleComputeValuation = async () => {
@@ -307,7 +324,10 @@ export function CRMAutoDashboard() {
       setValuations(prev => [val, ...prev]);
       setLatestValuation(val);
       toast.success(`Оценка: ${fmtPrice(val.value_mid)} (уверенность ${val.confidence_pct}%)`);
-    } catch { toast.error('Ошибка оценки'); }
+    } catch (error) {
+      logger.warn('[CRMAutoDashboard] Failed to compute valuation', { error, valVehicleId });
+      toast.error('Ошибка оценки');
+    }
   };
 
   const handleSaveTestDrive = async () => {
@@ -325,7 +345,10 @@ export function CRMAutoDashboard() {
       toast.success('Тест-драйв запланирован');
       setShowTDForm(false);
       setTDClientName(''); setTDClientPhone(''); setTDScheduledAt(''); setTDVehicleId(''); setTDLeadId('');
-    } catch { toast.error('Ошибка'); }
+    } catch (error) {
+      logger.warn('[CRMAutoDashboard] Failed to save test drive', { error, tdVehicleId, tdLeadId });
+      toast.error('Ошибка');
+    }
   };
 
   const handleApplyPromo = async () => {
@@ -405,7 +428,7 @@ export function CRMAutoDashboard() {
       }
 
     } catch (err) {
-      console.error('VIN check error:', err);
+      logger.error('[CRMAutoDashboard] VIN check error', { error: err, vehicleId, vin });
       toast.error('Ошибка VIN-проверки. Проверьте подключение.');
     } finally {
       setVinCheckingId(null);
@@ -418,7 +441,10 @@ export function CRMAutoDashboard() {
       setVehicles(prev => prev.map(v => v.id === vehicleId ? { ...v, status: 'active', promo_package: pkg } : v));
       const p = AUTO_PROMO_PACKAGES.find(p => p.value === pkg);
       toast.success(`Продвижение: ${p?.label ?? pkg}${p?.price ? ` — ${fmtPrice(p.price)}/день` : ''}`);
-    } catch { toast.error('Ошибка'); }
+    } catch (error) {
+      logger.warn('[CRMAutoDashboard] Failed to apply promotion', { error, vehicleId, pkg });
+      toast.error('Ошибка');
+    }
   };
 
   // ─── Computed ────────────────────────────────────────────────────────────────
