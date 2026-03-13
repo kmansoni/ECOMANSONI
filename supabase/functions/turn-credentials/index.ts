@@ -152,6 +152,13 @@ function shouldFailHardOnRateLimitMisconfig(): boolean {
   return raw === "1" || raw === "true";
 }
 
+function shouldFailHardOnReplayMisconfig(): boolean {
+  const raw = (Deno.env.get("TURN_REQUIRE_DURABLE_REPLAY") ?? "").trim().toLowerCase();
+  if (raw === "1" || raw === "true") return true;
+  if (raw === "0" || raw === "false") return false;
+  return isProductionEnv();
+}
+
 function parseRequestedTtlSeconds(body: unknown): number {
   const record = (body && typeof body === "object") ? body as Record<string, unknown> : {};
   const requested = Number(record.ttlSeconds ?? Deno.env.get("TURN_TTL_SECONDS") ?? `${DEFAULT_TURN_TTL_SECONDS}`);
@@ -212,11 +219,11 @@ function extractNonce(req: Request, body: Record<string, unknown>): string {
   return bodyNonce.slice(0, 120);
 }
 
-function enforceReplayProtection(
+async function enforceReplayProtection(
   userKey: string,
   nonce: string,
   corsHeaders: Record<string, string>,
-): Response | null {
+): Promise<Response | null> {
   const requireNonce = parseBool(Deno.env.get("TURN_REQUIRE_NONCE"), isProductionEnv());
 
   if (!nonce) {
@@ -230,6 +237,57 @@ function enforceReplayProtection(
   if (seenUntil && seenUntil > now) {
     metrics.replayRejected += 1;
     return makeJsonResponse(corsHeaders, 409, { error: "replay_detected" });
+  }
+
+  const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+  if (!supabaseUrl || !serviceKey) {
+    if (shouldFailHardOnReplayMisconfig()) {
+      return makeJsonResponse(corsHeaders, 500, { error: "misconfigured" });
+    }
+    replayNonceBuckets.set(replayKey, now + TURN_REPLAY_WINDOW_MS);
+    logEvent("turn.replay.local_fallback", {});
+    return null;
+  }
+
+  try {
+    const admin = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
+    const userScope = await hashRateScope(`replay:${userKey}`);
+    const nonceHashSecret = Deno.env.get("TURN_REPLAY_NONCE_HASH_SECRET") ??
+      Deno.env.get("TURN_RL_SCOPE_HASH_SECRET") ??
+      Deno.env.get("TURN_SHARED_SECRET") ??
+      "turn-replay";
+    const nonceHash = toBase64Url(await hmacSha256Base64(nonceHashSecret, nonce)).slice(0, 48);
+
+    const { data, error } = await (admin as any).rpc("turn_replay_guard_hit_v1", {
+      p_user_scope: userScope,
+      p_nonce_hash: nonceHash,
+      p_window_ms: TURN_REPLAY_WINDOW_MS,
+    });
+
+    if (error) {
+      logEvent("turn.replay.rpc_error", { code: error.code ?? null, message: error.message ?? null });
+      if (shouldFailHardOnReplayMisconfig()) {
+        return makeJsonResponse(corsHeaders, 500, { error: "misconfigured" });
+      }
+      replayNonceBuckets.set(replayKey, now + TURN_REPLAY_WINDOW_MS);
+      logEvent("turn.replay.local_fallback", { reason: "rpc_error" });
+      return null;
+    }
+
+    const row = Array.isArray(data) ? data[0] : data;
+    if (row && row.allowed === false) {
+      metrics.replayRejected += 1;
+      replayNonceBuckets.set(replayKey, now + TURN_REPLAY_WINDOW_MS);
+      return makeJsonResponse(corsHeaders, 409, { error: "replay_detected" });
+    }
+  } catch {
+    if (shouldFailHardOnReplayMisconfig()) {
+      return makeJsonResponse(corsHeaders, 500, { error: "misconfigured" });
+    }
+    replayNonceBuckets.set(replayKey, now + TURN_REPLAY_WINDOW_MS);
+    logEvent("turn.replay.local_fallback", { reason: "exception" });
+    return null;
   }
 
   replayNonceBuckets.set(replayKey, now + TURN_REPLAY_WINDOW_MS);
@@ -482,7 +540,7 @@ serve(async (req) => {
 
   const clientIp = getClientIp(req);
   const nonce = extractNonce(req, body);
-  const replay = enforceReplayProtection(auth.userId, nonce, corsHeaders);
+  const replay = await enforceReplayProtection(auth.userId, nonce, corsHeaders);
   if (replay) {
     const latencyMs = Math.max(1, nowMs() - startedAt);
     metrics.sumLatencyMs += latencyMs;
