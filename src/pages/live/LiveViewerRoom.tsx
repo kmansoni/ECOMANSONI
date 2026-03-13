@@ -9,6 +9,7 @@ import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { fetchUserBriefMap, resolveUserBrief } from "@/lib/users/userBriefs";
+import { logger } from "@/lib/logger";
 import {
   Drawer,
   DrawerContent,
@@ -103,7 +104,8 @@ export function LiveViewerRoom() {
         .from("live_sessions")
         .update({ viewer_count_current: (data.viewer_count_current ?? 0) + 1 })
         .eq("id", sessionId);
-    } catch {
+    } catch (error) {
+      logger.warn("[LiveViewerRoom] Failed to load live session", { sessionId, error });
       toast.error("Эфир не найден");
     } finally {
       setLoading(false);
@@ -127,7 +129,7 @@ export function LiveViewerRoom() {
         created_at: String(row.created_at ?? ""),
       })));
     } catch (error) {
-      console.warn("[LiveViewerRoom] Failed to load messages", error);
+      logger.warn("[LiveViewerRoom] Failed to load messages", { sessionId, error });
     }
   }, [sessionId, supabaseUnsafe]);
 
@@ -190,7 +192,8 @@ export function LiveViewerRoom() {
       });
       if (error) throw error;
       setMessageText("");
-    } catch {
+    } catch (error) {
+      logger.warn("[LiveViewerRoom] Failed to send chat message", { sessionId, error });
       toast.error("Ошибка отправки");
     } finally {
       setSubmitting(false);
@@ -210,7 +213,12 @@ export function LiveViewerRoom() {
         await supabaseUnsafe.from("follows").delete().eq("follower_id", user.id).eq("following_id", creator.user_id);
         setFollowed(false);
       }
-    } catch {
+    } catch (error) {
+      logger.warn("[LiveViewerRoom] Failed to follow/unfollow creator", {
+        creatorId: creator.user_id,
+        sessionId,
+        error,
+      });
       toast.error("Ошибка");
     }
   };
@@ -229,7 +237,8 @@ export function LiveViewerRoom() {
       toast.success("Жалоба отправлена. Спасибо!");
       setShowReport(false);
       setSelectedReason("");
-    } catch {
+    } catch (error) {
+      logger.warn("[LiveViewerRoom] Failed to submit report", { sessionId, selectedReason, error });
       toast.error("Ошибка отправки жалобы");
     } finally {
       setReportSubmitting(false);

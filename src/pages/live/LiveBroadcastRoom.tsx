@@ -25,6 +25,7 @@ import { LiveQAQueue } from "@/components/live/LiveQAQueue";
 import { LiveDonation } from "@/components/live/LiveDonation";
 import { LiveReplay } from "@/components/live/LiveReplay";
 import { InviteGuestSheet } from "@/components/live/InviteGuestSheet";
+import { logger } from "@/lib/logger";
 
 interface LiveSession {
   id: string;
@@ -93,9 +94,10 @@ export function LiveBroadcastRoom() {
       stream.getAudioTracks().forEach((t) => { t.enabled = !muted; });
       stream.getVideoTracks().forEach((t) => { t.enabled = !cameraOff; });
     } catch (err) {
+      logger.warn("[LiveBroadcastRoom] Failed to start camera", { sessionId, facingMode, error: err });
       toast.error("Нет доступа к камере или микрофону");
     }
-  }, [muted, cameraOff]);
+  }, [muted, cameraOff, sessionId]);
 
   // Загрузка данных сессии
   const loadSession = useCallback(async () => {
@@ -120,7 +122,8 @@ export function LiveBroadcastRoom() {
       setViewerCount(mapped.viewer_count_current);
       const startTime = new Date(mapped.started_at).getTime();
       setElapsedSeconds(Math.floor((Date.now() - startTime) / 1000));
-    } catch {
+    } catch (error) {
+      logger.warn("[LiveBroadcastRoom] Failed to load live session", { sessionId, error });
       toast.error("Сессия не найдена");
     } finally {
       setLoading(false);
@@ -145,7 +148,9 @@ export function LiveBroadcastRoom() {
         is_creator_message: Boolean(row.is_creator_message),
         created_at: String(row.created_at ?? ""),
       })));
-    } catch { /* игнорируем */ }
+    } catch (error) {
+      logger.warn("[LiveBroadcastRoom] Failed to load chat messages", { sessionId, error });
+    }
   }, [sessionId]);
 
   useEffect(() => {
@@ -229,7 +234,8 @@ export function LiveBroadcastRoom() {
       });
       if (error) throw error;
       setMessageText("");
-    } catch {
+    } catch (error) {
+      logger.warn("[LiveBroadcastRoom] Failed to send creator message", { sessionId, error });
       toast.error("Ошибка отправки");
     } finally {
       setSubmitting(false);
@@ -245,7 +251,8 @@ export function LiveBroadcastRoom() {
       streamRef.current?.getTracks().forEach((t) => t.stop());
       toast.success("Эфир завершён");
       navigate(-1);
-    } catch {
+    } catch (error) {
+      logger.warn("[LiveBroadcastRoom] Failed to end broadcast", { sessionId, error });
       toast.error("Ошибка завершения эфира");
     }
   };
