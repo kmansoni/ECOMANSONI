@@ -49,10 +49,17 @@ export function InlineBotResults({ botUsername, query, onSelectResult, onDismiss
   const [results, setResults] = useState<InlineBotResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [rpcUnavailable, setRpcUnavailable] = useState(false);
 
   const fetchResults = useCallback(async () => {
     if (!query.trim()) {
       setResults([]);
+      return;
+    }
+
+    if (rpcUnavailable) {
+      setResults([]);
+      setError("Inline-бот временно недоступен");
       return;
     }
 
@@ -72,6 +79,7 @@ export function InlineBotResults({ botUsername, query, onSelectResult, onDismiss
         console.warn("[InlineBot] RPC not available:", rpcError);
         setResults([]);
         setError("Inline-бот временно недоступен");
+        setRpcUnavailable(true);
         return;
       }
 
@@ -82,6 +90,11 @@ export function InlineBotResults({ botUsername, query, onSelectResult, onDismiss
       setLoading(false);
     }
   }, [botUsername, query]);
+
+  useEffect(() => {
+    // Reset sticky RPC-unavailable state when user targets another bot.
+    setRpcUnavailable(false);
+  }, [botUsername]);
 
   // Debounced fetch
   useEffect(() => {
