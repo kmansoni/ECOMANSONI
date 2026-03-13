@@ -8,6 +8,7 @@
  */
 
 import { useState, useCallback } from "react";
+import { logger } from "@/lib/logger";
 
 const CACHE_PREFIX = "msg_translate_v1:";
 const API_URL = "https://api.mymemory.translated.net/get";
@@ -26,14 +27,17 @@ function cacheKey(text: string, targetLang: string): string {
 function readCache(text: string, targetLang: string): string | null {
   try {
     return sessionStorage.getItem(cacheKey(text, targetLang));
-  } catch { return null; }
+  } catch (error) {
+    logger.warn("[useMessageTranslation] Failed to read cache", { targetLang, error });
+    return null;
+  }
 }
 
 function writeCache(text: string, targetLang: string, translated: string): void {
   try {
     sessionStorage.setItem(cacheKey(text, targetLang), translated);
-  } catch {
-    // Cache write is optional; keep flow working without storage.
+  } catch (error) {
+    logger.warn("[useMessageTranslation] Failed to write cache", { targetLang, error });
   }
 }
 
@@ -92,6 +96,11 @@ export function useMessageTranslation() {
       setTranslations(prev => new Map(prev).set(messageId, result));
       return result;
     } catch (err) {
+      logger.warn("[useMessageTranslation] Translation request failed", {
+        error: err,
+        targetLang,
+        textLength: text.length,
+      });
       setError("Не удалось перевести сообщение");
       return null;
     } finally {

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { mediaCache, CacheStats } from '@/lib/mediaCache';
+import { logger } from '@/lib/logger';
 
 const STORAGE_KEY = 'mansoni:storage-settings:v1';
 
@@ -22,7 +23,8 @@ function loadSettings(): StorageSettings {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return { ...DEFAULT_SETTINGS };
     return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
-  } catch {
+  } catch (error) {
+    logger.warn('[useStorageSettings] Failed to load settings from localStorage', { error });
     return { ...DEFAULT_SETTINGS };
   }
 }
@@ -30,8 +32,8 @@ function loadSettings(): StorageSettings {
 function saveSettings(s: StorageSettings): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
-  } catch {
-    // localStorage может быть заблокирован (private mode, quota exceeded)
+  } catch (error) {
+    logger.warn('[useStorageSettings] Failed to persist settings to localStorage', { error });
   }
 }
 
@@ -58,8 +60,8 @@ export function useStorageSettings(): StorageSettingsHook {
         sizeMB: parseFloat((stats.estimatedSizeBytes / (1024 * 1024)).toFixed(1)),
         count: stats.mediaCount,
       });
-    } catch {
-      // SW недоступен
+    } catch (error) {
+      logger.warn('[useStorageSettings] Failed to refresh media cache stats', { error });
     }
   }, []);
 

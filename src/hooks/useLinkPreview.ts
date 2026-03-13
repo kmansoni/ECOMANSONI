@@ -9,6 +9,8 @@
  * - No credentials/cookies forwarded; SSRF surface is browser-constrained.
  */
 
+import { logger } from "@/lib/logger";
+
 const CACHE_KEY_PREFIX = "lp_v1:";
 const CACHE_TTL_MS = 30 * 60 * 1000; // 30 min
 
@@ -56,7 +58,8 @@ function readCache(url: string): LinkPreviewData | null {
       return null;
     }
     return data;
-  } catch {
+  } catch (error) {
+    logger.warn("[useLinkPreview] Failed to read cache", { url, error });
     return null;
   }
 }
@@ -64,15 +67,15 @@ function readCache(url: string): LinkPreviewData | null {
 function writeCache(data: LinkPreviewData): void {
   try {
     sessionStorage.setItem(cacheKey(data.url), JSON.stringify(data));
-  } catch {
-    // sessionStorage may be full or disabled; best-effort.
+  } catch (error) {
+    logger.warn("[useLinkPreview] Failed to write cache", { url: data.url, error });
   }
 }
 
 function parseDomain(url: string): string {
   try {
     return new URL(url).hostname.replace(/^www\./, "");
-  } catch {
+  } catch (_error) {
     return url;
   }
 }
@@ -81,7 +84,7 @@ function parseFavicon(url: string): string {
   try {
     const { protocol, host } = new URL(url);
     return `${protocol}//${host}/favicon.ico`;
-  } catch {
+  } catch (_error) {
     return "";
   }
 }
@@ -134,7 +137,8 @@ function parseOGFromHTML(
   if (image && !image.startsWith("http")) {
     try {
       resolvedImage = new URL(image, url).href;
-    } catch {
+    } catch (error) {
+      logger.warn("[useLinkPreview] Failed to resolve relative OG image", { url, image, error });
       resolvedImage = null;
     }
   }
@@ -178,7 +182,8 @@ export async function fetchPreview(url: string): Promise<LinkPreviewData> {
       const data: LinkPreviewData = { ...parsed, fetchedAt: Date.now() };
       writeCache(data);
       return data;
-    } catch {
+    } catch (error) {
+      logger.warn("[useLinkPreview] fetchPreview fallback activated", { url, error });
       // Fallback: domain + favicon only — never throw, graceful degradation.
       const fallback: LinkPreviewData = {
         url,
