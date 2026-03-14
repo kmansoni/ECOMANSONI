@@ -68,8 +68,12 @@ const CALLS_V2_ENABLED_RAW = String(import.meta.env.VITE_CALLS_V2_ENABLED ?? "")
 // This prevents accidental outages when deploy env injection omits VITE_CALLS_V2_ENABLED.
 const CALLS_V2_ENABLED = CALLS_V2_ENABLED_RAW === "" ? true : CALLS_V2_ENABLED_RAW === "true";
 const CALLS_V2_WS_URL = (import.meta.env.VITE_CALLS_V2_WS_URL ?? "").trim();
-/** URL Edge Function get-turn-credentials. Если задан — используется вместо встроенного turn-credentials. */
-const TURN_CREDENTIALS_EDGE_FN = "get-turn-credentials";
+/**
+ * TURN credentials edge functions ordered by priority.
+ * Production deploy pipeline guarantees `turn-credentials`; legacy environments
+ * may still expose `get-turn-credentials`.
+ */
+const TURN_CREDENTIALS_EDGE_FNS = ["turn-credentials", "get-turn-credentials"] as const;
 /** Сколько секунд до истечения credentials начинать экстренное обновление (30 минут). */
 const TURN_REFRESH_BEFORE_EXPIRY_SEC = 30 * 60;
 const CALLS_V2_WS_URLS = (import.meta.env.VITE_CALLS_V2_WS_URLS ?? "")
@@ -436,7 +440,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
   }, [setRemoteMediaStream]);
 
   /**
-   * Fetch time-limited TURN credentials from Edge Function `get-turn-credentials`.
+   * Fetch time-limited TURN credentials from Edge Function.
    *
    * Security:
    *  - Credentials are HMAC-SHA1 per RFC 5766 §9.2, TTL from server (default 24 h)
@@ -460,10 +464,22 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      const { data, error } = await supabase.functions.invoke(TURN_CREDENTIALS_EDGE_FN);
+      let data: unknown = null;
+      let invokeError: unknown = null;
 
-      if (error) {
-        logger.warn("[VideoCallContext] get-turn-credentials error (STUN-only fallback):", error);
+      for (const fn of TURN_CREDENTIALS_EDGE_FNS) {
+        const result = await supabase.functions.invoke(fn);
+        if (!result.error) {
+          data = result.data;
+          invokeError = null;
+          break;
+        }
+        invokeError = result.error;
+        logger.warn("[VideoCallContext] TURN credentials edge function failed", { fn, error: result.error });
+      }
+
+      if (invokeError) {
+        logger.warn("[VideoCallContext] TURN credentials fetch failed (STUN-only fallback):", invokeError);
         return null;
       }
 
