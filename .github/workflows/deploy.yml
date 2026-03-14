@@ -138,6 +138,8 @@ jobs:
           source: "dist/*"
           target: "${{ secrets.ADMINVPS_APP_DIR }}/dist/"
           strip_components: 1
+          overwrite: true
+          rm: true
 
       - name: Write .env.production on VPS
         uses: appleboy/ssh-action@v0.1.7
