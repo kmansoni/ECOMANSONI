@@ -24,7 +24,12 @@
  *   - Signals expire after 24h (TTL enforced by DB scheduled cleanup).
  */
 
-import { supabase } from "@/lib/supabase";
+import { supabase as _supabase } from "@/lib/supabase";
+
+// emergency_signals migration is newer than generated Supabase types.
+// Keep the escape hatch scoped to this service until types are regenerated.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const supabase = _supabase as any;
 
 // ── Enums ─────────────────────────────────────────────────────────────────────
 
@@ -267,9 +272,16 @@ export async function fetchActiveSignals(): Promise<EmergencySignal[]> {
  * Used to prevent duplicate SOS broadcasts.
  */
 export async function getMyActiveSignal(): Promise<EmergencySignal | null> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) return null;
+
   const { data, error } = await supabase
     .from("emergency_signals")
     .select("*")
+    .eq("user_id", user.id)
     .eq("is_active", true)
     .order("created_at", { ascending: false })
     .limit(1);

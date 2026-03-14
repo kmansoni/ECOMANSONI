@@ -130,6 +130,7 @@ const StorageSettingsPage = lazy(() => import("@/pages/StorageSettingsPage").the
 const TaxiHomePage = lazy(() => import("./pages/taxi/TaxiHomePage"));
 const TaxiHistoryPage = lazy(() => import("./pages/taxi/TaxiHistoryPage"));
 const TaxiSettingsPage = lazy(() => import("./pages/taxi/TaxiSettingsPage"));
+const TaxiDriverPage = lazy(() => import("./pages/taxi/TaxiDriverPage"));
 
 // Video Editor module (lazy)
 const EditorProjectsPage = lazy(() => import("@/pages/EditorProjectsPage"));
@@ -729,6 +730,11 @@ const App = () => {
                     <Route path="/taxi/settings" element={
                       <Suspense fallback={<PageLoader />}>
                         <TaxiSettingsPage />
+                      </Suspense>
+                    } />
+                    <Route path="/taxi/driver" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <TaxiDriverPage />
                       </Suspense>
                     } />
                     <Route path="/ai-assistant" element={

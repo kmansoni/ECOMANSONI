@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef, useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { Search, Check, CheckCheck, LogIn, MessageCircle, Megaphone, Users, Phone, Bookmark, Archive, Pin, PinOff, ArchiveRestore } from "lucide-react";
+import { Search, Check, CheckCheck, LogIn, MessageCircle, Megaphone, Users, Phone, Bookmark, Archive, Pin, PinOff, ArchiveRestore, AlertTriangle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { GradientAvatar } from "@/components/ui/gradient-avatar";
@@ -37,6 +37,7 @@ import type { EncryptedPayload } from "@/hooks/useE2EEncryption";
 import { motion, AnimatePresence } from "framer-motion";
 import { clearHandledChatsQueryParams, parseChatsQueryActions } from "@/lib/chat/deepLinkQuery";
 import { logger } from "@/lib/logger";
+import { EmergencySOSSheet } from "@/components/chat/EmergencySOSSheet";
 
 
 interface LocationState {
@@ -182,6 +183,7 @@ export function ChatsPage() {
   const [selectedChannel, setSelectedChannel] = useState<Channel | null>(null);
   const [selectedGroup, setSelectedGroup] = useState<GroupChat | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [emergencyOpen, setEmergencyOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [pendingNewMessageText, setPendingNewMessageText] = useState<string | null>(null);
   const [primaryTab, setPrimaryTab] = useState<"chats" | "calls">("chats");
@@ -909,6 +911,10 @@ export function ChatsPage() {
   const primaryTabsHeight = showCallsTab ? PRIMARY_TABS_HEIGHT : 0;
   const filtersHeight = primaryTab === "chats" ? FILTERS_HEIGHT : 0;
   const headerHeight = HEADER_BASE_HEIGHT + primaryTabsHeight + filtersHeight + (STORIES_ROW_HEIGHT * effectiveExpandProgress);
+  const currentUserName =
+    (typeof user?.user_metadata?.full_name === "string" && user.user_metadata.full_name.trim()) ||
+    user?.email?.split("@")[0] ||
+    "Пользователь";
 
   return (
     <ScrollContainerProvider value={chatListRef}>
@@ -955,6 +961,13 @@ export function ChatsPage() {
             {/* Actions: Search */}
             {primaryTab === "chats" && (
               <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setEmergencyOpen(true)}
+                  className="w-9 h-9 flex items-center justify-center rounded-full bg-red-500/10 backdrop-blur-xl border border-red-500/20 hover:bg-red-500/15 transition-colors"
+                  aria-label="Открыть SOS-центр"
+                >
+                  <AlertTriangle className="w-5 h-5 text-red-500" />
+                </button>
                 <button 
                   onClick={() => setSearchOpen(true)}
                   className="w-9 h-9 flex items-center justify-center rounded-full bg-black/5 dark:bg-white/10 backdrop-blur-xl border border-border/50 dark:border-white/20 hover:bg-black/10 dark:hover:bg-white/20 transition-colors"
@@ -1620,6 +1633,16 @@ export function ChatsPage() {
           existingUserIds={conversationUserIds}
           currentUserId={user?.id}
         />
+
+        {user?.id && (
+          <EmergencySOSSheet
+            open={emergencyOpen}
+            onClose={() => setEmergencyOpen(false)}
+            currentUserId={user.id}
+            currentUserName={currentUserName}
+            initialType="sos"
+          />
+        )}
 
         {/* Create Chat Sheet */}
         <CreateChatSheet

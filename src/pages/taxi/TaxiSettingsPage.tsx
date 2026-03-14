@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Home, Briefcase, MapPin, CreditCard, Wallet,
-  Smartphone, Building, Edit2, Check, X
+  Smartphone, Building, Edit2, Check, X, Car
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -203,6 +203,18 @@ export default function TaxiSettingsPage() {
             className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-muted/50 border border-border hover:bg-muted transition-colors"
           >
             <span className="text-sm font-medium">История поездок</span>
+            <ArrowLeft className="h-4 w-4 rotate-180 text-muted-foreground" />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => navigate('/taxi/driver')}
+            className="w-full mt-2 flex items-center justify-between p-3.5 rounded-2xl bg-muted/50 border border-border hover:bg-muted transition-colors"
+          >
+            <span className="text-sm font-medium flex items-center gap-2">
+              <Car className="h-4 w-4" />
+              Режим водителя
+            </span>
             <ArrowLeft className="h-4 w-4 rotate-180 text-muted-foreground" />
           </button>
         </section>

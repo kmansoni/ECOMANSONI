@@ -1,9 +1,11 @@
-import { useState } from 'react';
-import { Shield, Share2, Phone, AlertTriangle, X, Check } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { Shield, Share2, Phone, AlertTriangle, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
-import { shareTrip, sendSos } from '@/lib/taxi/api';
+import { shareTrip } from '@/lib/taxi/api';
+import { EmergencySOSSheet } from '@/components/chat/EmergencySOSSheet';
+import { useAuth } from '@/hooks/useAuth';
 
 interface SafetyPanelProps {
   orderId: string;
@@ -11,21 +13,19 @@ interface SafetyPanelProps {
 }
 
 export function SafetyPanel({ orderId, className }: SafetyPanelProps) {
+  const { user } = useAuth();
   const [sosDialogOpen, setSosDialogOpen] = useState(false);
+  const [sosSheetOpen, setSosSheetOpen] = useState(false);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [shareLink, setShareLink] = useState('');
-  const [sosSent, setSosSent] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
 
-  // ─── Отправить SOS ────────────────────────────────────────────────────────
-  const handleSos = async () => {
-    try {
-      await sendSos(orderId);
-      setSosSent(true);
-    } catch {
-      // Показать ошибку
-    }
-  };
+  const currentUserName = useMemo(() => {
+    const fullName = typeof user?.user_metadata?.full_name === 'string'
+      ? user.user_metadata.full_name.trim()
+      : '';
+    return fullName || user?.email?.split('@')[0] || 'Пользователь';
+  }, [user?.email, user?.user_metadata]);
 
   // ─── Поделиться поездкой ──────────────────────────────────────────────────
   const handleShare = async () => {
@@ -89,53 +89,53 @@ export function SafetyPanel({ orderId, className }: SafetyPanelProps) {
       {/* SOS Dialog */}
       <Dialog open={sosDialogOpen} onOpenChange={setSosDialogOpen}>
         <DialogContent className="max-w-sm mx-auto rounded-2xl">
-          <DialogTitle className="text-center">
-            {sosSent ? '✅ Сигнал SOS отправлен' : '🚨 Экстренная помощь'}
-          </DialogTitle>
+          <DialogTitle className="text-center">🚨 Экстренная помощь</DialogTitle>
           <DialogDescription className="text-center">
-            {sosSent
-              ? 'Служба безопасности получила ваш сигнал. Помощь уже в пути.'
-              : 'Вызвать экстренную помощь? Ваше местоположение будет автоматически передано.'}
+            Вызвать экстренную помощь? Ваше местоположение и контекст поездки будут переданы в SOS-центр.
           </DialogDescription>
 
-          {!sosSent ? (
-            <div className="flex flex-col gap-3 mt-2">
-              <Button
-                variant="destructive"
-                className="h-12 text-base font-semibold rounded-xl"
-                onClick={handleSos}
-              >
-                <AlertTriangle className="h-5 w-5 mr-2" />
-                Вызвать помощь
-              </Button>
-              <a
-                href="tel:112"
-                className="flex items-center justify-center gap-2 h-12 rounded-xl border-2 border-border text-base font-semibold"
-              >
-                <Phone className="h-5 w-5 text-red-500" />
-                Позвонить 112
-              </a>
-              <Button
-                variant="ghost"
-                className="text-muted-foreground"
-                onClick={() => setSosDialogOpen(false)}
-              >
-                Отмена
-              </Button>
-            </div>
-          ) : (
+          <div className="flex flex-col gap-3 mt-2">
             <Button
-              className="mt-2 w-full h-12 rounded-xl"
+              variant="destructive"
+              className="h-12 text-base font-semibold rounded-xl"
               onClick={() => {
                 setSosDialogOpen(false);
-                setSosSent(false);
+                setSosSheetOpen(true);
               }}
             >
-              Понятно
+              <AlertTriangle className="h-5 w-5 mr-2" />
+              Открыть SOS-центр
             </Button>
-          )}
+            <a
+              href="tel:112"
+              className="flex items-center justify-center gap-2 h-12 rounded-xl border-2 border-border text-base font-semibold"
+            >
+              <Phone className="h-5 w-5 text-red-500" />
+              Позвонить 112
+            </a>
+            <Button
+              variant="ghost"
+              className="text-muted-foreground"
+              onClick={() => setSosDialogOpen(false)}
+            >
+              Отмена
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
+
+      {user?.id && (
+        <EmergencySOSSheet
+          open={sosSheetOpen}
+          onClose={() => setSosSheetOpen(false)}
+          currentUserId={user.id}
+          currentUserName={currentUserName}
+          initialType="danger"
+          prefilledMessage={`Экстренный сигнал из поездки ${orderId}`}
+          emergencyCallHref="tel:112"
+          emergencyCallLabel="Позвонить 112"
+        />
+      )}
 
       {/* Share Dialog */}
       <Dialog open={shareDialogOpen} onOpenChange={setShareDialogOpen}>

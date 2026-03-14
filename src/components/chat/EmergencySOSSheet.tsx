@@ -64,6 +64,10 @@ interface EmergencySOSSheetProps {
   onClose: () => void;
   currentUserId: string;
   currentUserName: string;
+  initialType?: EmergencySignalType | null;
+  prefilledMessage?: string;
+  emergencyCallHref?: string;
+  emergencyCallLabel?: string;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -73,6 +77,10 @@ export function EmergencySOSSheet({
   onClose,
   currentUserId,
   currentUserName,
+  initialType = null,
+  prefilledMessage = "",
+  emergencyCallHref,
+  emergencyCallLabel,
 }: EmergencySOSSheetProps) {
   const { signals, mySignal, loading, error, broadcast, resolve, refresh } =
     useEmergencySignals();
@@ -88,6 +96,14 @@ export function EmergencySOSSheet({
   useEffect(() => {
     if (open) void refresh();
   }, [open, refresh]);
+
+  useEffect(() => {
+    if (!open) return;
+    setSelectedType(initialType);
+    setCustomMessage(prefilledMessage);
+    setCoords(null);
+    setTab("send");
+  }, [open, initialType, prefilledMessage]);
 
   const requestLocation = useCallback(() => {
     if (!navigator.geolocation) return;
@@ -307,6 +323,15 @@ export function EmergencySOSSheet({
                   ? "Отправка..."
                   : "ОТПРАВИТЬ ЭКСТРЕННЫЙ СИГНАЛ"}
               </Button>
+
+              {emergencyCallHref && emergencyCallLabel && (
+                <a
+                  href={emergencyCallHref}
+                  className="flex items-center justify-center w-full rounded-md border border-zinc-700 bg-zinc-900 px-4 py-3 text-sm font-semibold text-zinc-200 transition-colors hover:bg-zinc-800"
+                >
+                  {emergencyCallLabel}
+                </a>
+              )}
             </div>
           )}
 

@@ -1,6 +1,6 @@
 import { useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { History, Settings, ArrowLeft } from 'lucide-react';
+import { History, Settings, ArrowLeft, Car } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTaxiOrder } from '@/hooks/taxi/useTaxiOrder';
 import { useTaxiMap } from '@/hooks/taxi/useTaxiMap';
@@ -176,6 +176,17 @@ export default function TaxiHomePage() {
 
         {/* Правые кнопки */}
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => navigate('/taxi/driver')}
+            className={cn(
+              'w-10 h-10 rounded-full bg-white shadow-lg border border-gray-100',
+              'flex items-center justify-center',
+              'transition-transform active:scale-95'
+            )}
+            aria-label="Режим водителя"
+          >
+            <Car className="h-5 w-5 text-gray-700" />
+          </button>
           <button
             onClick={() => navigate('/taxi/history')}
             className={cn(

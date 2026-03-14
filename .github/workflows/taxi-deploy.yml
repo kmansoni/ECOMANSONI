@@ -1,0 +1,120 @@
+name: Taxi Module — Deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/migrations/202603140000*_taxi*.sql'
+      - 'supabase/functions/taxi-dispatch/**'
+      - 'supabase/functions/taxi-notifications/**'
+      - 'src/lib/taxi/**'
+      - 'src/components/taxi/**'
+
+  workflow_dispatch:
+    inputs:
+      run_migrations:
+        description: 'Run Supabase migrations'
+        type: boolean
+        default: true
+      deploy_functions:
+        description: 'Deploy Edge Functions'
+        type: boolean
+        default: true
+
+jobs:
+  # ── TypeScript check ────────────────────────────────────────────────────────
+  typecheck:
+    name: TypeScript
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm' }
+      - run: npm ci
+      - run: npx tsc --noEmit
+
+  # ── Supabase DB migrations ──────────────────────────────────────────────────
+  migrate:
+    name: DB Migrations
+    needs: typecheck
+    runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'workflow_dispatch' && inputs.run_migrations ||
+      github.event_name == 'push'
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with: { version: latest }
+      - name: Run migrations
+        run: |
+          supabase db push \
+            --db-url "${{ secrets.SUPABASE_DB_URL }}" \
+            --include-all
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+  # ── Deploy Edge Functions ───────────────────────────────────────────────────
+  deploy-functions:
+    name: Edge Functions
+    needs: migrate
+    runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'workflow_dispatch' && inputs.deploy_functions ||
+      github.event_name == 'push'
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with: { version: latest }
+
+      - name: Deploy taxi-dispatch
+        run: |
+          supabase functions deploy taxi-dispatch \
+            --project-ref "${{ secrets.SUPABASE_PROJECT_REF }}"
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+      - name: Deploy taxi-notifications
+        run: |
+          supabase functions deploy taxi-notifications \
+            --project-ref "${{ secrets.SUPABASE_PROJECT_REF }}"
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+  # ── Frontend build verification ─────────────────────────────────────────────
+  build:
+    name: Frontend Build
+    needs: typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm' }
+      - run: npm ci
+      - run: npm run build
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+
+      - name: Upload dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: dist/
+          retention-days: 7
+
+  # ── Deploy to Cloudflare Pages ───────────────────────────────────────────────
+  deploy-frontend:
+    name: Deploy Frontend (Cloudflare Pages)
+    needs: [build, migrate]
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { name: frontend-dist, path: dist }
+
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          command: pages deploy dist --project-name=mansoni-app --branch=main
