@@ -229,7 +229,7 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
   const [status, setStatus] = useState<VideoCallStatus>("idle");
   const [currentCall, setCurrentCall] = useState<VideoCall | null>(null);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
-  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+  const [remoteStreamState, setRemoteStreamState] = useState<MediaStream | null>(null);
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
   const [connectionState, setConnectionState] = useState<string>("unknown");
@@ -240,6 +240,16 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
   // Keep refs in sync for use inside callbacks
   useEffect(() => { localStreamRef.current = localStream; }, [localStream]);
   useEffect(() => { currentCallRef.current = currentCall; }, [currentCall]);
+
+  const setRemoteStream = useCallback((stream: MediaStream | null) => {
+    setRemoteStreamState(stream);
+
+    const hasLiveRemoteTracks = !!stream && stream.getTracks().some((track) => track.readyState === "live");
+    if (hasLiveRemoteTracks) {
+      setStatus((prev) => (prev === "idle" ? prev : "connected"));
+      setConnectionState("connected");
+    }
+  }, []);
 
   // ---------------------------------------------------------------------------
   // Internal helpers
@@ -256,6 +266,7 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
 
   const resetState = useCallback(() => {
     releaseLocalMedia();
+    setRemoteStreamState(null);
     setStatus("idle");
     setConnectionState("unknown");
     setIsMuted(false);
@@ -331,7 +342,7 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
       ended_at: null,
     };
     setCurrentCall(call);
-    setConnectionState("good");
+    setConnectionState("connecting");
     return call;
   }, [user, releaseLocalMedia]);
 
@@ -374,8 +385,48 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
     const answeredCall: VideoCall = { ...call, status: "answered" };
     setCurrentCall(answeredCall);
     setStatus("connected");
-    setConnectionState("good");
+    setConnectionState("connecting");
   }, [releaseLocalMedia, user]);
+
+  useEffect(() => {
+    if (!currentCall?.id || !user?.id) return;
+
+    const channel = supabase
+      .channel(`video-call-state-${currentCall.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "video_calls",
+          filter: `id=eq.${currentCall.id}`,
+        },
+        (payload) => {
+          const updated = payload.new as VideoCall;
+          if (!updated || updated.id !== currentCall.id) return;
+
+          setCurrentCall(updated);
+
+          if (updated.status === "answered") {
+            setStatus("connected");
+            setConnectionState((prev) => (prev === "connected" ? prev : "connecting"));
+            return;
+          }
+
+          if (["declined", "ended", "missed"].includes(updated.status)) {
+            onCallEndedRef.current?.(updated);
+            setStatus("ended");
+            setCurrentCall(null);
+            resetState();
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [currentCall?.id, resetState, user?.id]);
 
   // ---------------------------------------------------------------------------
   // endCall
@@ -451,7 +502,7 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
     status,
     currentCall,
     localStream,
-    remoteStream,
+    remoteStream: remoteStreamState,
     setRemoteStream,
     isMuted,
     isVideoOff,
