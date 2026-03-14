@@ -69,6 +69,8 @@ test-results/
 playwright-report/
 
 # Local vendor leftovers (should not be committed)
+columba/
+crisis-mesh-messenger/
 
 # Python cache artifacts
 __pycache__/
