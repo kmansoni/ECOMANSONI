@@ -48,7 +48,11 @@ jobs:
         with: { version: latest }
       - name: Link project
         run: |
-          supabase link --project-ref "${{ secrets.SUPABASE_PROJECT_REF }}"
+          PROJECT_REF="${{ secrets.SUPABASE_PROJECT_REF }}"
+          if [[ -z "$PROJECT_REF" ]]; then
+            PROJECT_REF="lfkbgnbjxskspsownvjm"
+          fi
+          supabase link --project-ref "$PROJECT_REF"
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       - name: Run migrations
@@ -80,15 +84,23 @@ jobs:
 
       - name: Deploy taxi-dispatch
         run: |
+          PROJECT_REF="${{ secrets.SUPABASE_PROJECT_REF }}"
+          if [[ -z "$PROJECT_REF" ]]; then
+            PROJECT_REF="lfkbgnbjxskspsownvjm"
+          fi
           supabase functions deploy taxi-dispatch \
-            --project-ref "${{ secrets.SUPABASE_PROJECT_REF }}"
+            --project-ref "$PROJECT_REF"
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
       - name: Deploy taxi-notifications
         run: |
+          PROJECT_REF="${{ secrets.SUPABASE_PROJECT_REF }}"
+          if [[ -z "$PROJECT_REF" ]]; then
+            PROJECT_REF="lfkbgnbjxskspsownvjm"
+          fi
           supabase functions deploy taxi-notifications \
-            --project-ref "${{ secrets.SUPABASE_PROJECT_REF }}"
+            --project-ref "$PROJECT_REF"
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
