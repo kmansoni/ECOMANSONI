@@ -487,18 +487,10 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData.session?.access_token;
 
-      const invokeHeaders: Record<string, string> = {
-        "x-request-id": requestId,
-        "x-turn-nonce": requestId,
-      };
-      if (accessToken) {
-        invokeHeaders.Authorization = `Bearer ${accessToken}`;
-      }
-
       for (const fn of TURN_CREDENTIALS_EDGE_FNS) {
         const result = await supabase.functions.invoke(fn, {
           body: { requestId, nonce: requestId },
-          headers: invokeHeaders,
+          headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
         });
         if (!result.error) {
           data = result.data;
