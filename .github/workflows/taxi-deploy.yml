@@ -126,18 +126,3 @@ jobs:
           path: dist/
           retention-days: 7
 
-  # ── Deploy to Cloudflare Pages ───────────────────────────────────────────────
-  deploy-frontend:
-    name: Deploy Frontend (Cloudflare Pages)
-    needs: [build, migrate]
-    if: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
-    runs-on: ubuntu-latest
-    environment: production
-    steps:
-      - uses: actions/download-artifact@v4
-        with: { name: frontend-dist, path: dist }
-
-      - uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          command: pages deploy dist --project-name=mansoni-app --branch=main
