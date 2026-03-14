@@ -483,9 +483,23 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     try {
       let data: unknown = null;
       let invokeError: unknown = null;
+      const requestId = crypto.randomUUID();
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
+
+      const invokeHeaders: Record<string, string> = {
+        "x-request-id": requestId,
+        "x-turn-nonce": requestId,
+      };
+      if (accessToken) {
+        invokeHeaders.Authorization = `Bearer ${accessToken}`;
+      }
 
       for (const fn of TURN_CREDENTIALS_EDGE_FNS) {
-        const result = await supabase.functions.invoke(fn);
+        const result = await supabase.functions.invoke(fn, {
+          body: { requestId, nonce: requestId },
+          headers: invokeHeaders,
+        });
         if (!result.error) {
           data = result.data;
           invokeError = null;
@@ -577,7 +591,15 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       logger.info("[VideoCallContext] calls-v2 connect:ok", { state: client.connectionState });
 
       const { data } = await supabase.auth.getSession();
-      const accessToken = data.session?.access_token;
+      let accessToken = data.session?.access_token;
+      if (!accessToken) {
+        // Session may be present but token stale/missing in memory; try one forced refresh.
+        const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession();
+        accessToken = refreshed.session?.access_token;
+        if (refreshError) {
+          logger.warn("[VideoCallContext] calls-v2 auth refresh failed", refreshError);
+        }
+      }
       if (!accessToken) {
         logger.warn("[VideoCallContext] calls-v2 auth:skip no access token");
         client.close();
