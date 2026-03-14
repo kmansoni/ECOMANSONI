@@ -28,6 +28,7 @@ import type {
   RekeyCommitPayload,
   KeyPackagePayload,
   KeyAckPayload,
+  GetRouterRtpCapabilitiesPayload,
 } from "./types";
 
 function nowMs() {
@@ -283,6 +284,11 @@ export class CallsWsClient {
 
   async roomJoin(payload: RoomJoinPayload) {
     return this._send('ROOM_JOIN', payload);
+  }
+
+  async getRouterRtpCapabilities(roomId: string) {
+    const payload: GetRouterRtpCapabilitiesPayload = { roomId };
+    return this._send('GET_ROUTER_RTP_CAPABILITIES', payload);
   }
 
   async roomLeave(payload: RoomLeavePayload) {

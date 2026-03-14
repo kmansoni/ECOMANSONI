@@ -224,7 +224,16 @@ function extractRouterCapsFromJoinPayload(payload: unknown): RtpCapabilities | n
   if (!payload || typeof payload !== "object") return null;
   const p = payload as { routerRtpCapabilities?: RtpCapabilities; mediasoup?: { routerRtpCapabilities?: RtpCapabilities } };
   const caps = p.routerRtpCapabilities ?? p.mediasoup?.routerRtpCapabilities ?? null;
-  if (!caps || !Array.isArray(caps.codecs) || caps.codecs.length === 0) return null;
+  if (!caps) return null;
+  if (!Array.isArray(caps.codecs) || caps.codecs.length === 0) {
+    // Server sent capabilities but codecs array is empty/missing —  diagnostic hint.
+    logger.warn("[VideoCallContext] ROOM_JOIN_OK/ROOM_JOINED routerRtpCapabilities received but codecs is empty", {
+      hasCodecs: Array.isArray(caps.codecs),
+      codeсsLength: Array.isArray(caps.codecs) ? caps.codecs.length : "n/a",
+      hasHeaderExtensions: Array.isArray((caps as Record<string, unknown>).headerExtensions),
+    });
+    return null;
+  }
   return caps;
 }
 
@@ -1165,6 +1174,17 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         if (joinCaps) {
           sfuRouterRtpCapabilitiesRef.current = joinCaps;
           logger.info("[VideoCallContext] calls-v2 routerRtpCapabilities captured from ROOM_JOIN_OK", { roomId });
+        } else {
+          logger.warn("[VideoCallContext] calls-v2 ROOM_JOIN_OK payload missing routerRtpCapabilities — will retry in media-bootstrap", {
+            roomId,
+            payloadKeys: joinedPayload ? Object.keys(joinedPayload) : [],
+          });
+        }
+        // Try to seed TURN iceServers from ROOM_JOIN_OK payload if available (server schema: payload.turn.iceServers)
+        const joinedTurn = (joinedPayload as Record<string, unknown> | undefined)?.turn as { iceServers?: RTCIceServer[] } | undefined;
+        if (Array.isArray(joinedTurn?.iceServers) && joinedTurn!.iceServers!.length > 0 && !turnIceServersRef.current?.length) {
+          turnIceServersRef.current = joinedTurn!.iceServers!;
+          logger.info("[VideoCallContext] calls-v2 TURN iceServers seeded from ROOM_JOIN_OK", { count: joinedTurn!.iceServers!.length });
         }
         // Inform epoch guard that we have joined
         epochGuardRef.current?.markRoomJoined(e2eeEpochRef.current);
@@ -1403,6 +1423,30 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
               roomId,
               error,
             });
+          }
+        }
+
+        // Fallback: explicitly request routerRtpCapabilities from the server if not yet captured.
+        // Some SFU deployments support GET_ROUTER_RTP_CAPABILITIES / ROUTER_RTP_CAPABILITIES exchange.
+        if (!routerRtpCapabilities) {
+          try {
+            await client.getRouterRtpCapabilities(roomId);
+            const rtpCapsFrame = await client.waitFor(
+              "ROUTER_RTP_CAPABILITIES",
+              (frame) => {
+                const p = frame.payload as { roomId?: string } | undefined;
+                return p?.roomId === roomId;
+              },
+              { timeoutMs: 3000, acceptRecent: false }
+            );
+            const rtpCaps = extractRouterCapsFromJoinPayload(rtpCapsFrame.payload as Record<string, unknown> | undefined);
+            if (rtpCaps) {
+              sfuRouterRtpCapabilitiesRef.current = rtpCaps;
+              routerRtpCapabilities = rtpCaps;
+              logger.info("[VideoCallContext] calls-v2 routerRtpCapabilities obtained via GET_ROUTER_RTP_CAPABILITIES fallback", { roomId });
+            }
+          } catch (error) {
+            logger.debug("video_call_context.get_router_rtp_capabilities_not_supported", { roomId, error });
           }
         }
 

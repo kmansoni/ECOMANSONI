@@ -90,7 +90,8 @@ export type CallsWsEvent =
   | 'REKEY_COMMIT'
   | 'KEY_PACKAGE'
   | 'KEY_ACK'
-  | 'E2EE_READY_ACK';
+  | 'E2EE_READY_ACK'
+  | 'ROUTER_RTP_CAPABILITIES';
 
 // ----------- Payload types для клиентских сообщений -----------
 
@@ -386,6 +387,15 @@ export interface ErrorPayload {
 }
 
 // ----------- Client message type map -----------
+export interface GetRouterRtpCapabilitiesPayload {
+  roomId: string;
+}
+
+export interface RouterRtpCapabilitiesPayload {
+  roomId: string;
+  routerRtpCapabilities: RtpCapabilities;
+}
+
 export interface ClientMessageMap {
   HELLO: HelloPayload;
   AUTH: AuthPayload;
@@ -407,6 +417,7 @@ export interface ClientMessageMap {
   REKEY_COMMIT: RekeyCommitPayload;
   KEY_PACKAGE: KeyPackagePayload;
   KEY_ACK: KeyAckPayload;
+  GET_ROUTER_RTP_CAPABILITIES: GetRouterRtpCapabilitiesPayload;
   PING: Record<string, never>;
 }
 
