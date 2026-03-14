@@ -56,7 +56,9 @@ describe("VideoCallScreen", () => {
       />,
     );
 
-    expect(screen.getByText(/Подключение/)).toBeInTheDocument();
+    expect(screen.getByText("Подключение")).toBeInTheDocument();
+    expect(screen.getByText(/Настраиваем аудио и видео/)).toBeInTheDocument();
+    expect(screen.queryByText("Соединение")).not.toBeInTheDocument();
     expect(screen.queryByText("Повторить")).not.toBeInTheDocument();
   });
 

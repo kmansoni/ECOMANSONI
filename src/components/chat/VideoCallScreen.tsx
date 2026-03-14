@@ -46,6 +46,11 @@ function StatusIndicator({ status, connectionState }: { status: string, connecti
       color = "text-red-500";
       label = "Ошибка";
       break;
+    case connectionState === "connecting":
+      icon = <Loader2 className="w-6 h-6 animate-spin" />;
+      color = "text-blue-400";
+      label = "Подключение";
+      break;
     case status === "connected":
       icon = <CheckCircle className="w-6 h-6" />;
       color = "text-green-400";
@@ -62,11 +67,6 @@ function StatusIndicator({ status, connectionState }: { status: string, connecti
       color = "text-yellow-400";
       label = "Звонок";
       pulse = true;
-      break;
-    case connectionState === "connecting":
-      icon = <Loader2 className="w-6 h-6 animate-spin" />;
-      color = "text-blue-400";
-      label = "Подключение";
       break;
     default:
       icon = <PhoneCall className="w-6 h-6" />;
@@ -238,7 +238,7 @@ export function VideoCallScreen({
       case "ringing": return "Звонок";
     }
     switch (connectionState) {
-      case "connecting": return "Подключение";
+      case "connecting": return "Настраиваем аудио и видео";
       case "new": return "Инициализация";
       default: return "Соединение";
     }
