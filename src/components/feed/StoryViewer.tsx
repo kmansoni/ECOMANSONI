@@ -63,6 +63,7 @@ function StoryWidgetsLayer({ storyId, currentUser }: { storyId: string; currentU
 
   const linkStickers = stickers.filter((s) => s.type === 'link');
   const mentionStickers = stickers.filter((s) => s.type === 'mention');
+  const gifStickers = stickers.filter((s) => s.type === 'gif');
 
   return (
     <div className="absolute left-0 right-0 z-20 px-4 flex flex-col gap-3" style={{ bottom: '80px' }}>
@@ -114,6 +115,39 @@ function StoryWidgetsLayer({ storyId, currentUser }: { storyId: string; currentU
           <StoryMention userId={s.data.userId} username={s.data.username || 'user'} avatarUrl={s.data.avatarUrl} />
         </div>
       ))}
+      {gifStickers.map(s => {
+        const url = String(s.data?.url || '');
+        const previewUrl = String(s.data?.previewUrl || url);
+        if (!url) return null;
+        const isVideo = url.endsWith('.mp4') || url.endsWith('.webm');
+
+        return (
+          <div
+            key={s.id}
+            style={{
+              position: 'absolute',
+              left: `${s.position_x * 100}%`,
+              top: `${s.position_y * 100 - 200}px`,
+              transform: 'translate(-50%, -50%)',
+              width: `${Math.max(80, Math.min(180, 120 * Number(s.scale || 1)))}px`,
+            }}
+          >
+            {isVideo ? (
+              <video
+                src={url}
+                poster={previewUrl}
+                autoPlay
+                loop
+                muted
+                playsInline
+                className="w-full h-auto rounded-xl shadow-md"
+              />
+            ) : (
+              <img src={previewUrl} alt="GIF sticker" className="w-full h-auto rounded-xl shadow-md" />
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

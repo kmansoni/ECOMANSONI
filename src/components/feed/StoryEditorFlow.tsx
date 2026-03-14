@@ -7,9 +7,11 @@ import { supabase } from "@/integrations/supabase/client";
 import { uploadMedia } from "@/lib/mediaUpload";
 import { toast } from "sonner";
 import { StoryStickerPicker, type StickerType } from "./StoryStickerPicker";
+import { StoryGifPicker } from "./StoryGifPicker";
 import { StoryTextTool } from "./StoryTextTool";
 import { type TextLayer } from "./storyTextModel";
 import { StoryDrawingTool } from "./StoryDrawingTool";
+import type { GifItem } from "@/lib/chat/gifService";
 
 interface StoryEditorFlowProps {
   isOpen: boolean;
@@ -19,6 +21,15 @@ interface StoryEditorFlowProps {
 }
 
 type Step = "gallery" | "editor";
+
+interface PendingStorySticker {
+  type: StickerType;
+  data: Record<string, unknown>;
+  positionX: number;
+  positionY: number;
+  scale?: number;
+  rotation?: number;
+}
 
 export function StoryEditorFlow({ isOpen, onClose, initialFile, initialUrl }: StoryEditorFlowProps) {
   const { user } = useAuth();
@@ -30,9 +41,11 @@ export function StoryEditorFlow({ isOpen, onClose, initialFile, initialUrl }: St
   const [isPublishing, setIsPublishing] = useState(false);
   const [showAdvancedEditor, setShowAdvancedEditor] = useState(false);
   const [showStickerPicker, setShowStickerPicker] = useState(false);
+  const [showGifPicker, setShowGifPicker] = useState(false);
   const [showTextTool, setShowTextTool] = useState(false);
   const [showDrawingTool, setShowDrawingTool] = useState(false);
   const [textLayers, setTextLayers] = useState<TextLayer[]>([]);
+  const [stickers, setStickers] = useState<PendingStorySticker[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const seededOnceRef = useRef(false);
   const seededObjectUrlRef = useRef<string | null>(null);
@@ -121,16 +134,39 @@ export function StoryEditorFlow({ isOpen, onClose, initialFile, initialUrl }: St
       const uploadResult = await uploadMedia(mediaToUpload, { bucket: 'stories-media' });
 
       // Create story record
-      const { error: insertError } = await supabase
+      const { data: insertedStory, error: insertError } = await supabase
         .from("stories")
         .insert({
           author_id: user.id,
           media_url: uploadResult.url,
           media_type: isVideo ? "video" : "image",
           caption: caption.trim() || null,
-        });
+        })
+        .select("id")
+        .single();
 
       if (insertError) throw insertError;
+
+      if (insertedStory?.id && stickers.length > 0) {
+        const stickerRows = stickers.map((sticker) => ({
+          story_id: insertedStory.id,
+          type: sticker.type,
+          data: sticker.data,
+          position_x: sticker.positionX,
+          position_y: sticker.positionY,
+          scale: sticker.scale ?? 1,
+          rotation: sticker.rotation ?? 0,
+        }));
+
+        const { error: stickersError } = await (supabase as any)
+          .from("story_stickers")
+          .insert(stickerRows);
+
+        if (stickersError) {
+          console.error("Failed to save story stickers", stickersError);
+          toast.warning("История опубликована, но часть стикеров не сохранена");
+        }
+      }
 
       toast.success("История опубликована!");
       handleClose();
@@ -160,6 +196,7 @@ export function StoryEditorFlow({ isOpen, onClose, initialFile, initialUrl }: St
     setSelectedFile(null);
     setEditedBlob(null);
     setCaption("");
+    setStickers([]);
     // Clean up object URLs
     deviceImages.forEach(img => URL.revokeObjectURL(img.src));
     setDeviceImages([]);
@@ -338,6 +375,44 @@ export function StoryEditorFlow({ isOpen, onClose, initialFile, initialUrl }: St
               </div>
             ))}
 
+            {/* Sticker layers overlay */}
+            {stickers.map((sticker, index) => {
+              if (sticker.type !== "gif") return null;
+              const url = String(sticker.data.url ?? "");
+              const previewUrl = String(sticker.data.previewUrl ?? url);
+              if (!url) return null;
+
+              const isVideo = url.endsWith(".mp4") || url.endsWith(".webm");
+
+              return (
+                <div
+                  key={`${sticker.type}-${index}`}
+                  style={{
+                    position: "absolute",
+                    left: `${sticker.positionX * 100}%`,
+                    top: `${sticker.positionY * 100}%`,
+                    transform: "translate(-50%, -50%)",
+                    width: 120,
+                    pointerEvents: "none",
+                  }}
+                >
+                  {isVideo ? (
+                    <video
+                      src={url}
+                      poster={previewUrl}
+                      autoPlay
+                      loop
+                      muted
+                      playsInline
+                      className="w-full h-auto rounded-xl shadow-lg"
+                    />
+                  ) : (
+                    <img src={previewUrl} alt="GIF sticker" className="w-full h-auto rounded-xl shadow-lg" />
+                  )}
+                </div>
+              );
+            })}
+
             {/* Edited badge */}
             {editedBlob && (
               <div className="absolute top-4 right-16 px-3 py-1 bg-primary/90 rounded-full text-xs text-primary-foreground font-medium safe-area-top">
@@ -411,9 +486,37 @@ export function StoryEditorFlow({ isOpen, onClose, initialFile, initialUrl }: St
       <StoryStickerPicker
         isOpen={showStickerPicker}
         onClose={() => setShowStickerPicker(false)}
-        onSelect={(_type: StickerType) => {
-          // handle sticker selection per type
+        onSelect={(type: StickerType) => {
+          if (type === "gif") {
+            setShowGifPicker(true);
+          } else {
+            toast.info("Этот стикер будет доступен в следующем этапе");
+          }
           setShowStickerPicker(false);
+        }}
+      />
+
+      <StoryGifPicker
+        isOpen={showGifPicker}
+        onClose={() => setShowGifPicker(false)}
+        onSelect={(gif: GifItem) => {
+          setStickers((prev) => [
+            ...prev,
+            {
+              type: "gif",
+              data: {
+                gifId: gif.id,
+                url: gif.url,
+                previewUrl: gif.previewUrl,
+              },
+              positionX: 0.5,
+              positionY: 0.5,
+              scale: 1,
+              rotation: 0,
+            },
+          ]);
+          setShowGifPicker(false);
+          toast.success("GIF добавлен");
         }}
       />
 
