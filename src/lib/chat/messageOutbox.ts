@@ -43,6 +43,17 @@ export interface OutboxEntry {
   replyToId?: string | null;
   mediaUrls?: string[];
   messageType: "text" | "image" | "video" | "audio" | "document" | "sticker" | "gif" | "voice";
+  /**
+   * Mesh relay metadata — inspired by Crisis Mesh Messenger hop model.
+   * hopCount: how many relay nodes this message already passed through.
+   * routePath: ordered list of device/node IDs that relayed this message.
+   * maxHops: TTL — maximum allowed hops before the message is discarded (default 10).
+   * For standard online delivery these stay at defaults (0 / [] / 10).
+   * In offline/mesh relay scenarios they are incremented at each relay node.
+   */
+  hopCount?: number;
+  maxHops?: number;
+  routePath?: string[];
   status: OutboxStatus;
   retries: number;
   createdAt: number;   // Date.now()

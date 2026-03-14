@@ -212,3 +212,89 @@ export interface SurgeZone {
   multiplier: number;
   label: string;
 }
+
+// === Статус водителя ===
+export type DriverStatus =
+  | 'offline'       // не работает
+  | 'available'     // онлайн, ждёт заказа
+  | 'busy'          // везёт пассажира
+  | 'arriving'      // едет к пассажиру
+  | 'on_break';     // перерыв
+
+// === Профиль водителя (расширяет Driver) ===
+export interface DriverProfile {
+  userId: string;       // Supabase auth.uid()
+  driverId: string;
+  name: string;
+  phone: string;
+  photo?: string;
+  rating: number;
+  tripsCount: number;
+  acceptanceRate: number; // % принятых заказов
+  yearsOnPlatform: number;
+  car: Vehicle;
+  status: DriverStatus;
+  currentLocation?: LatLng;
+  /** Баланс заработка за текущий сдвиг, руб */
+  shiftEarnings: number;
+  /** Заказов на текущем сдвиге */
+  shiftTrips: number;
+  onlineAt?: string;      // ISO 8601 — когда вышел онлайн
+}
+
+// === Входящий запрос заказа для водителя ===
+export interface IncomingOrderRequest {
+  orderId: string;
+  passengerName: string;
+  passengerRating: number;
+  pickup: TaxiAddress;
+  destination: TaxiAddress;
+  estimatedPrice: number;
+  estimatedDistance: number;
+  estimatedDuration: number;
+  tariff: VehicleClass;
+  paymentMethod: PaymentMethod;
+  /** Секунды на принятие до auto-expire */
+  timeoutSeconds: number;
+  /** Расстояние от водителя до точки подачи, км */
+  distanceToPickup: number;
+  createdAt: string;
+  /** Пассажир вводит PIN для подтверждения посадки */
+  pinCode: string;
+}
+
+// === Счётчик ожидания ===
+export interface WaitingMeter {
+  orderId: string;
+  arrivedAt: string;    // ISO 8601 — время прибытия водителя
+  freeMinutes: number;  // бесплатное ожидание (FREE_WAITING_MINUTES)
+  ratePerMin: number;   // стоимость ожидания сверх лимита, руб/мин
+  /** Текущая сумма за ожидание, руб */
+  currentCharge: number;
+  /** Идёт ли платное ожидание */
+  isChargeable: boolean;
+}
+
+// === Предзаказ (scheduled ride) ===
+export interface ScheduledRide {
+  id: string;
+  pickup: TaxiAddress;
+  destination: TaxiAddress;
+  tariff: VehicleClass;
+  paymentMethod: PaymentMethod;
+  scheduledAt: string;  // ISO 8601 — время подачи
+  createdAt: string;
+  status: 'pending' | 'assigned' | 'cancelled';
+  driver?: Driver;
+  estimatedPrice: number;
+}
+
+// === Оценка от водителя (bidirectional rating) ===
+export interface DriverRating {
+  orderId: string;
+  driverId: string;
+  passengerId: string;
+  rating: number;       // 1–5
+  comment?: string;
+  createdAt: string;
+}
