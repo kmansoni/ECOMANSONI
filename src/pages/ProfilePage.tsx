@@ -69,6 +69,22 @@ export function ProfilePage() {
   const { pinnedPosts, refresh: refreshPinnedPosts } = usePinnedPosts(targetUserId);
   const { savedPosts, fetchSavedPosts, loading: savedLoading } = useSavedPosts();
 
+  useEffect(() => {
+    const avatarUrl = profile?.avatar_url?.trim();
+    if (!avatarUrl) return;
+
+    const preload = document.createElement("link");
+    preload.rel = "preload";
+    preload.as = "image";
+    preload.href = avatarUrl;
+    preload.crossOrigin = "anonymous";
+    document.head.appendChild(preload);
+
+    return () => {
+      document.head.removeChild(preload);
+    };
+  }, [profile?.avatar_url]);
+
   const mediaPosts = useMemo(
     () =>
       posts.filter(
@@ -283,7 +299,13 @@ export function ProfilePage() {
             >
               <div className="w-20 h-20 rounded-full ring-2 ring-offset-2 ring-offset-background ring-gradient-to-tr from-yellow-400 via-pink-500 to-purple-600 p-0.5">
                 <Avatar className="w-full h-full">
-                  <AvatarImage src={displayProfile?.avatar_url || undefined} />
+                  <AvatarImage
+                    src={displayProfile?.avatar_url || undefined}
+                    alt={displayProfile?.display_name || "Профиль"}
+                    loading="eager"
+                    fetchPriority="high"
+                    decoding="async"
+                  />
                   <AvatarFallback className="bg-violet-500 text-white text-2xl font-semibold">
                     {displayProfile?.display_name?.charAt(0)?.toUpperCase() || <User className="w-8 h-8" />}
                   </AvatarFallback>

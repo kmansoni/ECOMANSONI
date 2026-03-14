@@ -60,6 +60,7 @@ const HEADER_BASE_HEIGHT = 56;
 const PRIMARY_TABS_HEIGHT = 40;
 const FILTERS_HEIGHT = 44;
 const STORIES_ROW_HEIGHT = 92;
+const CHAT_LIST_PLACEHOLDER_COUNT = 6;
 
 function parseEncryptedPayload(content: unknown): EncryptedPayload | null {
   if (typeof content !== "string") return null;
@@ -151,12 +152,13 @@ export function ChatsPage() {
   const { settings } = useUserSettings();
   const { calls, missedCalls, profilesById, loading: callsLoading } = useCallHistory();
   const { startCall } = useVideoCallContext();
-  const { messages: savedMessages } = useSavedMessages({ pageSize: 1 });
+  const { messages: savedMessages, loading: savedMessagesLoading } = useSavedMessages({ pageSize: 1 });
 
   // Archive & Pin
   const {
     archivedChatIds,
     archivedCount,
+    loading: archivedLoading,
     archiveChat,
     unarchiveChat,
     isArchived,
@@ -911,6 +913,7 @@ export function ChatsPage() {
   const primaryTabsHeight = showCallsTab ? PRIMARY_TABS_HEIGHT : 0;
   const filtersHeight = primaryTab === "chats" ? FILTERS_HEIGHT : 0;
   const headerHeight = HEADER_BASE_HEIGHT + primaryTabsHeight + filtersHeight + (STORIES_ROW_HEIGHT * effectiveExpandProgress);
+  const showChatListPlaceholders = primaryTab === "chats" && !showArchive && archivedLoading;
   const currentUserName =
     (typeof user?.user_metadata?.full_name === "string" && user.user_metadata.full_name.trim()) ||
     user?.email?.split("@")[0] ||
@@ -1275,7 +1278,7 @@ export function ChatsPage() {
               {!showArchive && (
                 <div
                   onClick={() => navigate("/saved-messages")}
-                  className="flex items-center gap-3 px-4 py-3 hover:bg-muted/60 active:bg-muted transition-colors cursor-pointer dark:hover:bg-white/5 dark:active:bg-white/10"
+                  className="flex min-h-[68px] items-center gap-3 px-4 py-3 hover:bg-muted/60 active:bg-muted transition-colors cursor-pointer dark:hover:bg-white/5 dark:active:bg-white/10"
                 >
                   <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-cyan-400 flex items-center justify-center flex-shrink-0">
                     <Bookmark className="w-5 h-5 text-white" />
@@ -1285,31 +1288,45 @@ export function ChatsPage() {
                       <span className="font-medium text-foreground dark:text-white truncate">
                         Избранное
                       </span>
-                      {savedMessages.length > 0 && savedMessages[0]?.saved_at && (
-                        <span className="text-xs text-muted-foreground/70 dark:text-white/40 flex-shrink-0 ml-2">
-                          {formatTime(savedMessages[0].saved_at)}
-                        </span>
-                      )}
+                      <span
+                        className={cn(
+                          "ml-2 inline-block w-[44px] text-right text-xs text-muted-foreground/70 dark:text-white/40 flex-shrink-0",
+                          !savedMessagesLoading && savedMessages.length > 0 && savedMessages[0]?.saved_at
+                            ? "opacity-100"
+                            : "opacity-0",
+                        )}
+                      >
+                        {!savedMessagesLoading && savedMessages.length > 0 && savedMessages[0]?.saved_at
+                          ? formatTime(savedMessages[0].saved_at)
+                          : "00:00"}
+                      </span>
                     </div>
                     <p className="text-sm text-muted-foreground dark:text-white/50 truncate">
-                      {savedMessages.length > 0
+                      {savedMessagesLoading
+                        ? "Загрузка…"
+                        : savedMessages.length > 0
                         ? savedMessages[0]?.content || "Медиафайл"
                         : "Сохраняйте сообщения здесь"}
                     </p>
                   </div>
-                  {savedMessages.length > 0 && (
-                    <span className="flex-shrink-0 min-w-[20px] h-5 px-1.5 rounded-full bg-blue-500 text-white text-xs font-medium flex items-center justify-center">
-                      {savedMessages.length}
-                    </span>
-                  )}
+                  <span
+                    className={cn(
+                      "flex-shrink-0 min-w-[20px] h-5 px-1.5 rounded-full text-xs font-medium flex items-center justify-center",
+                      !savedMessagesLoading && savedMessages.length > 0
+                        ? "bg-blue-500 text-white"
+                        : "bg-transparent text-transparent",
+                    )}
+                  >
+                    {!savedMessagesLoading && savedMessages.length > 0 ? savedMessages.length : "0"}
+                  </span>
                 </div>
               )}
 
               {/* Archive button (only in main view when archive not empty) */}
-              {!showArchive && archivedCount > 0 && (
+              {!showArchive && !archivedLoading && archivedCount > 0 && (
                 <div
                   onClick={() => setShowArchive(true)}
-                  className="flex items-center gap-3 px-4 py-3 hover:bg-muted/60 active:bg-muted transition-colors cursor-pointer dark:hover:bg-white/5 dark:active:bg-white/10"
+                  className="flex min-h-[68px] items-center gap-3 px-4 py-3 hover:bg-muted/60 active:bg-muted transition-colors cursor-pointer dark:hover:bg-white/5 dark:active:bg-white/10"
                 >
                   <div className="w-10 h-10 rounded-full bg-gradient-to-br from-slate-500 to-slate-600 flex items-center justify-center flex-shrink-0">
                     <Archive className="w-5 h-5 text-white" />
@@ -1328,7 +1345,24 @@ export function ChatsPage() {
                 </div>
               )}
 
-              {visibleItems.map((item) => {
+              {showChatListPlaceholders && Array.from({ length: CHAT_LIST_PLACEHOLDER_COUNT }).map((_, index) => (
+                <div
+                  key={`chat-list-skeleton-${index}`}
+                  className="flex min-h-[72px] items-center gap-3 px-4 py-3"
+                  aria-hidden="true"
+                >
+                  <div className="h-10 w-10 flex-shrink-0 rounded-full bg-muted/60 dark:bg-white/10 animate-pulse" />
+                  <div className="min-w-0 flex-1">
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                      <div className="h-4 w-28 rounded bg-muted/60 dark:bg-white/10 animate-pulse" />
+                      <div className="h-3 w-10 rounded bg-muted/40 dark:bg-white/5 animate-pulse" />
+                    </div>
+                    <div className="h-3 w-40 rounded bg-muted/40 dark:bg-white/5 animate-pulse" />
+                  </div>
+                </div>
+              ))}
+
+              {!showChatListPlaceholders && visibleItems.map((item) => {
                 const itemKey = `${item.kind}-${item.id}`;
                 const swipeOffset = swipeOffsets[itemKey] ?? 0;
                 // swipe left (-) = archive/delete actions; swipe right (+) = pin/unpin

@@ -50,6 +50,8 @@ const insuranceNavItems: NavItem[] = [
   { to: "/insurance/policies", icon: FileText, label: "Полисы" },
 ];
 
+const BOTTOM_NAV_BAR_HEIGHT_PX = 56;
+
 interface BottomNavProps {
   hidden?: boolean;
   disableHideAnimation?: boolean;
@@ -164,9 +166,11 @@ export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function Bottom
       <div 
         ref={ref as React.Ref<HTMLDivElement>}
         className={cn(
+          "fixed-nav",
           "fixed bottom-0 left-0 right-0 z-[100]",
           "touch-none select-none",
           "px-4",
+          keyboardOpen && "keyboard-open",
           (keyboardOpen || hidden || isReelsPage) && "pointer-events-none"
         )}
         style={{
@@ -201,8 +205,8 @@ export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function Bottom
               "shadow-lg shadow-black/5 dark:shadow-black/20"
             )}
             style={{
-              height: '56px',
-              minHeight: '56px',
+              height: `${BOTTOM_NAV_BAR_HEIGHT_PX}px`,
+              minHeight: `${BOTTOM_NAV_BAR_HEIGHT_PX}px`,
             }}
           >
             {/* Render all items except the last one */}

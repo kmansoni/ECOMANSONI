@@ -16,6 +16,19 @@ interface UseIncomingCallsOptions {
 
 const POLL_INTERVAL_MS = 2000; // Poll every 2 seconds as fallback
 
+const isSchemaCompatibilityError = (error: unknown): boolean => {
+  const code = String((error as { code?: unknown } | null)?.code ?? "").toUpperCase();
+  const message = String((error as { message?: unknown } | null)?.message ?? "").toLowerCase();
+  return (
+    code === "PGRST204" ||
+    code === "42703" ||
+    code === "42P01" ||
+    message.includes("column") ||
+    message.includes("could not find") ||
+    message.includes("does not exist")
+  );
+};
+
 export function useIncomingCalls(options: UseIncomingCallsOptions = {}) {
   const { user } = useAuth();
   const [incomingCall, setIncomingCall] = useState<VideoCall | null>(null);
@@ -69,31 +82,45 @@ export function useIncomingCalls(options: UseIncomingCallsOptions = {}) {
     }
 
     if (user && call.conversation_id) {
-      const { data: chatSettings } = await supabase
+      const { data: chatSettings, error: chatSettingsError } = await supabase
         .from("user_chat_settings" as never)
-        .select("notifications_enabled, notification_sound, notification_vibration, muted_until")
+        .select("notifications_enabled, muted_until")
         .eq("user_id", user.id)
         .eq("conversation_id", call.conversation_id)
         .maybeSingle();
 
-      if (chatSettings && typeof chatSettings === "object") {
-        const cs = chatSettings as {
-          notifications_enabled?: boolean | null;
-          notification_sound?: string | null;
-          notification_vibration?: boolean | null;
-          muted_until?: string | null;
-        };
+      let resolvedChatSettings: {
+        notifications_enabled?: boolean | null;
+        muted_until?: string | null;
+      } | null = chatSettings && typeof chatSettings === "object"
+        ? (chatSettings as {
+            notifications_enabled?: boolean | null;
+            muted_until?: string | null;
+          })
+        : null;
+
+      if (!resolvedChatSettings && chatSettingsError && isSchemaCompatibilityError(chatSettingsError)) {
+        const { data: compatChatSettings } = await supabase
+          .from("user_chat_settings" as never)
+          .select("notifications_enabled, muted_until")
+          .eq("user_id", user.id)
+          .eq("conversation_id", call.conversation_id)
+          .maybeSingle();
+
+        if (compatChatSettings && typeof compatChatSettings === "object") {
+          resolvedChatSettings = compatChatSettings as {
+            notifications_enabled?: boolean | null;
+            muted_until?: string | null;
+          };
+        }
+      }
+
+      if (resolvedChatSettings) {
+        const cs = resolvedChatSettings;
 
         const mutedUntil = cs.muted_until ? new Date(cs.muted_until) : null;
         const mutedByTime = !!mutedUntil && mutedUntil > now;
         notificationsEnabled = (cs.notifications_enabled ?? true) && !mutedByTime;
-
-        if ((cs.notification_sound ?? "default") === "none") {
-          soundEnabled = false;
-        }
-        if (cs.notification_vibration === false) {
-          vibrationEnabled = false;
-        }
       }
     }
 
@@ -234,7 +261,7 @@ export function useIncomingCalls(options: UseIncomingCallsOptions = {}) {
           const updated = payload.new as VideoCall;
           
           // Clear incoming call if it was answered, declined, ended, or missed
-          if (["answered", "declined", "ended", "missed"].includes(updated.status)) {
+          if (["answered", "active", "connected", "declined", "ended", "missed"].includes(updated.status)) {
             logger.info("incoming_calls.status_changed", { callId: updated.id, status: updated.status });
             notifiedCalls.delete(updated.id);
             void releaseCallWake();

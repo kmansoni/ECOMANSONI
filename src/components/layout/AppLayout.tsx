@@ -9,6 +9,9 @@ import { CreateContentModal } from "@/components/feed/CreateContentModal";
 import { toast } from "sonner";
 import type { ContentType } from "@/hooks/useMediaEditor";
 
+const BOTTOM_NAV_BAR_HEIGHT_PX = 56;
+const BOTTOM_NAV_OUTER_GAP_PX = 8;
+
 export function AppLayout() {
   usePresence();
 
@@ -52,14 +55,14 @@ export function AppLayout() {
           className={cn(
             "flex-1 overflow-x-hidden w-full native-scroll relative z-10",
             isFullWidthPage ? "max-w-none" : "max-w-lg mx-auto",
-            "overflow-y-auto",
-            "pb-20"
+            "overflow-y-auto"
           )}
           style={{
             WebkitOverflowScrolling: 'touch' as const,
             overscrollBehavior: 'contain',
             touchAction: 'pan-y',
             isolation: 'isolate',
+            paddingBottom: `calc(${BOTTOM_NAV_BAR_HEIGHT_PX + BOTTOM_NAV_OUTER_GAP_PX}px + env(safe-area-inset-bottom, 0px))`,
           }}
         >
           <Outlet />

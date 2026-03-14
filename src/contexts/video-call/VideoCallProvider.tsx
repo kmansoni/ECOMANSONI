@@ -223,7 +223,37 @@ function hasInsertableStreamsSupport(): boolean {
 function extractRouterCapsFromJoinPayload(payload: unknown): RtpCapabilities | null {
   if (!payload || typeof payload !== "object") return null;
   const p = payload as { routerRtpCapabilities?: RtpCapabilities; mediasoup?: { routerRtpCapabilities?: RtpCapabilities } };
-  return p.routerRtpCapabilities ?? p.mediasoup?.routerRtpCapabilities ?? null;
+  const caps = p.routerRtpCapabilities ?? p.mediasoup?.routerRtpCapabilities ?? null;
+  if (!caps || !Array.isArray(caps.codecs) || caps.codecs.length === 0) return null;
+  return caps;
+}
+
+function hasTransportFingerprints(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  const fingerprints = (value as { fingerprints?: unknown }).fingerprints;
+  return Array.isArray(fingerprints) && fingerprints.length > 0;
+}
+
+function isValidTransportCreatedPayload(
+  payload: import("@/calls-v2/types").TransportCreatedPayload | undefined
+): payload is import("@/calls-v2/types").TransportCreatedPayload {
+  if (!payload || typeof payload.transportId !== "string" || payload.transportId.length === 0) {
+    return false;
+  }
+
+  if (!payload.iceParameters || typeof payload.iceParameters !== "object") {
+    return false;
+  }
+
+  if (!Array.isArray(payload.iceCandidates)) {
+    return false;
+  }
+
+  if (!hasTransportFingerprints(payload.dtlsParameters)) {
+    return false;
+  }
+
+  return true;
 }
 
 function toBase64Utf8(value: string): string {
@@ -1381,7 +1411,14 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
           { timeoutMs: 5000, acceptRecent: true }
         );
         const sendParams = sendCreated.payload as import('@/calls-v2/types').TransportCreatedPayload | undefined;
-        if (!sendParams?.transportId) return;
+        if (!isValidTransportCreatedPayload(sendParams)) {
+          reportMediaBootstrapFailure(
+            roomId,
+            callId,
+            new Error("invalid send transport payload from SFU")
+          );
+          return;
+        }
         logger.info("[VideoCallContext] calls-v2 transport-created:send", { roomId, transportId: sendParams.transportId });
         markMediaBootstrapProgress("send_transport_created");
 
@@ -1436,7 +1473,14 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
           { timeoutMs: 5000, acceptRecent: true }
         );
         const recvParams = recvCreated.payload as import('@/calls-v2/types').TransportCreatedPayload | undefined;
-        if (!recvParams?.transportId) return;
+        if (!isValidTransportCreatedPayload(recvParams)) {
+          reportMediaBootstrapFailure(
+            roomId,
+            callId,
+            new Error("invalid recv transport payload from SFU")
+          );
+          return;
+        }
         logger.info("[VideoCallContext] calls-v2 transport-created:recv", { roomId, transportId: recvParams.transportId });
         markMediaBootstrapProgress("recv_transport_created");
 
