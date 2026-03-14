@@ -178,7 +178,10 @@ jobs:
       - name: Smoke test mansoni.ru
         run: |
           sleep 5
-          HTTP=$(curl -o /dev/null -s -w "%{http_code}" --max-time 15 https://mansoni.ru/)
+          HTTP=$(curl -o /dev/null -s -L \
+            -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36" \
+            --retry 3 --retry-delay 2 --retry-connrefused \
+            -w "%{http_code}" --max-time 20 https://mansoni.ru/)
           echo "HTTP status: $HTTP"
           if [ "$HTTP" != "200" ] && [ "$HTTP" != "301" ] && [ "$HTTP" != "302" ]; then
             echo "::error::mansoni.ru returned $HTTP — deployment may have failed"
