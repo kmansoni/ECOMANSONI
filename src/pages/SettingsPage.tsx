@@ -346,7 +346,7 @@ function BlockedUsersPanel({ isDark }: { isDark: boolean }) {
 export function SettingsPage() {
   const navigate = useNavigate();
   const { theme } = useTheme();
-  const { user } = useAuth();
+  const { user, signOut } = useAuth();
   const { settings, update: updateSettings } = useUserSettings();
   const [currentScreen, setCurrentScreen] = useState<Screen>("main");
   const [mounted, setMounted] = useState(false);
@@ -795,12 +795,11 @@ export function SettingsPage() {
   const handleLogout = async () => {
     setLogoutLoading(true);
     try {
-      const { error } = await supabase.auth.signOut();
-      if (error) throw error;
+      await signOut();
       // Close dialog before navigation — if navigate() throws for any reason
       // we don't want to leave a stale loading state.
       setLogoutDialog(false);
-      navigate('/auth');
+      navigate('/auth', { replace: true });
     } catch (e) {
       // Keep dialog open so user can retry or dismiss explicitly.
       toast({ title: "Выход", description: getErrorMessage(e) });

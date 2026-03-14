@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Users, Megaphone, Camera } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";
@@ -13,11 +13,18 @@ interface CreateChatSheetProps {
   onOpenChange: (open: boolean) => void;
   onChannelCreated?: (channelId: string) => void;
   onGroupCreated?: (groupId: string) => void;
+  initialMode?: CreateMode;
 }
 
 type CreateMode = "select" | "channel" | "group";
 
-export function CreateChatSheet({ open, onOpenChange, onChannelCreated, onGroupCreated }: CreateChatSheetProps) {
+export function CreateChatSheet({
+  open,
+  onOpenChange,
+  onChannelCreated,
+  onGroupCreated,
+  initialMode = "select",
+}: CreateChatSheetProps) {
   const [mode, setMode] = useState<CreateMode>("select");
   const [channelName, setChannelName] = useState("");
   const [channelDescription, setChannelDescription] = useState("");
@@ -26,6 +33,12 @@ export function CreateChatSheet({ open, onOpenChange, onChannelCreated, onGroupC
   
   const { createChannel } = useCreateChannel();
   const { createGroup } = useCreateGroup();
+
+  useEffect(() => {
+    if (open) {
+      setMode(initialMode);
+    }
+  }, [initialMode, open]);
 
   const handleClose = () => {
     setMode("select");

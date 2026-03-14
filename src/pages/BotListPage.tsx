@@ -5,7 +5,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { 
   Plus, 
   Settings, 
@@ -27,9 +27,25 @@ interface BotListPageProps {
 
 export function BotListPage({ className }: BotListPageProps) {
   const navigate = useNavigate();
+  const location = useLocation();
   const [bots, setBots] = useState<BotType[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const state = location.state as
+      | { createdBotId?: string; createdBotToken?: string; createdBotName?: string }
+      | null;
+
+    if (!state?.createdBotToken) return;
+
+    void navigator.clipboard.writeText(state.createdBotToken).then(
+      () => toast.success(`Бот «${state.createdBotName ?? 'Новый бот'}» создан. Токен скопирован в буфер обмена.`),
+      () => toast.success(`Бот «${state.createdBotName ?? 'Новый бот'}» создан. Сохраните токен из следующего шага настройки.`),
+    );
+
+    navigate(location.pathname, { replace: true, state: null });
+  }, [location.pathname, location.state, navigate]);
 
   useEffect(() => {
     loadBots();

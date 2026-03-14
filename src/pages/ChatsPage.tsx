@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef, useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { Search, Check, CheckCheck, LogIn, MessageCircle, Megaphone, Users, Phone, Bookmark, Archive, Pin, PinOff, ArchiveRestore, AlertTriangle } from "lucide-react";
+import { Search, Check, CheckCheck, LogIn, MessageCircle, Megaphone, Users, Phone, Bookmark, Archive, Pin, PinOff, ArchiveRestore, AlertTriangle, Bot } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { GradientAvatar } from "@/components/ui/gradient-avatar";
@@ -59,6 +59,7 @@ function fallbackNameFromUserId(userId: string | null | undefined, fallback = "U
 const HEADER_BASE_HEIGHT = 56;
 const PRIMARY_TABS_HEIGHT = 40;
 const FILTERS_HEIGHT = 44;
+const CREATE_ACTIONS_HEIGHT = 44;
 const STORIES_ROW_HEIGHT = 92;
 const CHAT_LIST_PLACEHOLDER_COUNT = 6;
 
@@ -187,6 +188,7 @@ export function ChatsPage() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [emergencyOpen, setEmergencyOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
+  const [createMode, setCreateMode] = useState<"select" | "channel" | "group">("select");
   const [pendingNewMessageText, setPendingNewMessageText] = useState<string | null>(null);
   const [primaryTab, setPrimaryTab] = useState<"chats" | "calls">("chats");
   const [callsFilter, setCallsFilter] = useState<"all" | "missed">("all");
@@ -834,6 +836,11 @@ export function ChatsPage() {
     refetchGroups();
   };
 
+  const openCreateSheet = (mode: "select" | "channel" | "group") => {
+    setCreateMode(mode);
+    setCreateOpen(true);
+  };
+
   // Show auth prompt if not logged in
   if (!authLoading && !user) {
     return (
@@ -912,7 +919,8 @@ export function ChatsPage() {
   // Calculate header height based on expand progress
   const primaryTabsHeight = showCallsTab ? PRIMARY_TABS_HEIGHT : 0;
   const filtersHeight = primaryTab === "chats" ? FILTERS_HEIGHT : 0;
-  const headerHeight = HEADER_BASE_HEIGHT + primaryTabsHeight + filtersHeight + (STORIES_ROW_HEIGHT * effectiveExpandProgress);
+  const createActionsHeight = primaryTab === "chats" ? CREATE_ACTIONS_HEIGHT : 0;
+  const headerHeight = HEADER_BASE_HEIGHT + primaryTabsHeight + filtersHeight + createActionsHeight + (STORIES_ROW_HEIGHT * effectiveExpandProgress);
   const showChatListPlaceholders = primaryTab === "chats" && !showArchive && archivedLoading;
   const currentUserName =
     (typeof user?.user_metadata?.full_name === "string" && user.user_metadata.full_name.trim()) ||
@@ -1074,6 +1082,32 @@ export function ChatsPage() {
                     </button>
                   );
                 })}
+            </div>
+          )}
+
+          {primaryTab === "chats" && (
+            <div className="flex items-center gap-2 px-4 h-11 overflow-x-auto no-scrollbar">
+              <button
+                onClick={() => openCreateSheet("group")}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-full bg-black/5 text-foreground hover:bg-black/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/20 transition-colors"
+              >
+                <Users className="w-4 h-4" />
+                Группа
+              </button>
+              <button
+                onClick={() => openCreateSheet("channel")}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-full bg-black/5 text-foreground hover:bg-black/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/20 transition-colors"
+              >
+                <Megaphone className="w-4 h-4" />
+                Канал
+              </button>
+              <button
+                onClick={() => navigate("/bots/new")}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-full bg-black/5 text-foreground hover:bg-black/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/20 transition-colors"
+              >
+                <Bot className="w-4 h-4" />
+                Чат-бот
+              </button>
             </div>
           )}
           
@@ -1682,6 +1716,7 @@ export function ChatsPage() {
         <CreateChatSheet
           open={createOpen}
           onOpenChange={setCreateOpen}
+          initialMode={createMode}
           onChannelCreated={handleChannelCreated}
           onGroupCreated={handleGroupCreated}
         />
