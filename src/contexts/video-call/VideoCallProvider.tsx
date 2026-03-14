@@ -67,7 +67,24 @@ const CALLS_V2_ENABLED_RAW = String(import.meta.env.VITE_CALLS_V2_ENABLED ?? "")
 // Fail-safe default: calls are enabled unless explicitly disabled.
 // This prevents accidental outages when deploy env injection omits VITE_CALLS_V2_ENABLED.
 const CALLS_V2_ENABLED = CALLS_V2_ENABLED_RAW === "" ? true : CALLS_V2_ENABLED_RAW === "true";
-const CALLS_V2_WS_URL = (import.meta.env.VITE_CALLS_V2_WS_URL ?? "").trim();
+const CALLS_V2_WS_URL_RAW = (import.meta.env.VITE_CALLS_V2_WS_URL ?? "").trim();
+const CALLS_V2_WS_URLS_RAW = (import.meta.env.VITE_CALLS_V2_WS_URLS ?? "")
+  .split(",")
+  .map((value) => value.trim())
+  .filter(Boolean);
+const DEFAULT_PROD_SFU_ENDPOINTS = [
+  "wss://sfu-ru.mansoni.ru/ws",
+  "wss://sfu-tr.mansoni.ru/ws",
+  "wss://sfu-ae.mansoni.ru/ws",
+] as const;
+const SHOULD_USE_PROD_SFU_DEFAULTS =
+  !CALLS_V2_WS_URL_RAW &&
+  CALLS_V2_WS_URLS_RAW.length === 0 &&
+  typeof window !== "undefined" &&
+  /(^|\.)mansoni\.ru$/i.test(window.location.hostname);
+const CALLS_V2_WS_URL = SHOULD_USE_PROD_SFU_DEFAULTS
+  ? DEFAULT_PROD_SFU_ENDPOINTS[0]
+  : CALLS_V2_WS_URL_RAW;
 /**
  * TURN credentials edge functions ordered by priority.
  * Production deploy pipeline guarantees `turn-credentials`; legacy environments
@@ -76,10 +93,9 @@ const CALLS_V2_WS_URL = (import.meta.env.VITE_CALLS_V2_WS_URL ?? "").trim();
 const TURN_CREDENTIALS_EDGE_FNS = ["turn-credentials", "get-turn-credentials"] as const;
 /** Сколько секунд до истечения credentials начинать экстренное обновление (30 минут). */
 const TURN_REFRESH_BEFORE_EXPIRY_SEC = 30 * 60;
-const CALLS_V2_WS_URLS = (import.meta.env.VITE_CALLS_V2_WS_URLS ?? "")
-  .split(",")
-  .map((value) => value.trim())
-  .filter(Boolean);
+const CALLS_V2_WS_URLS = SHOULD_USE_PROD_SFU_DEFAULTS
+  ? [...DEFAULT_PROD_SFU_ENDPOINTS]
+  : CALLS_V2_WS_URLS_RAW;
 const REKEY_INTERVAL_MS = Math.max(30_000, Number(import.meta.env.VITE_CALLS_V2_REKEY_INTERVAL_MS ?? "120000"));
 const FRAME_E2EE_ADVERTISE_SFRAME = import.meta.env.VITE_CALLS_FRAME_E2EE_ADVERTISE_SFRAME === "true";
 
@@ -367,6 +383,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       endpointCount: [CALLS_V2_WS_URL, ...CALLS_V2_WS_URLS].filter(Boolean).length,
       frameE2eeAdvertiseSframe: FRAME_E2EE_ADVERTISE_SFRAME,
       hasInsertableStreams: hasInsertableStreamsSupport(),
+      usingProdSfuDefaults: SHOULD_USE_PROD_SFU_DEFAULTS,
       issue,
     });
   }, []);
