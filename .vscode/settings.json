@@ -1,6 +1,7 @@
 {
   "deno.enable": false,
   "deno.enablePaths": ["supabase/functions"],
+  "deno.config": "./supabase/functions/deno.json",
   "deno.importMap": "./supabase/functions/deno.json",
   "[typescript]": {
     "editor.defaultFormatter": "esbenp.prettier-vscode"

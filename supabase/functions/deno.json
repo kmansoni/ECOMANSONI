@@ -1,7 +1,8 @@
 {
   "compilerOptions": {
     "lib": ["deno.window", "deno.ns", "deno.unstable"],
-    "strict": true
+    "strict": true,
+    "types": ["./_shared/edge-runtime-types.d.ts"]
   },
   "lint": {
     "rules": {

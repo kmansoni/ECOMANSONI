@@ -219,7 +219,7 @@ Deno.serve(async (req: Request) => {
       .maybeSingle();
 
     if (fetchError) {
-      const errorSafe = { message: String(fetchError.message ?? ""), status: fetchError.status };
+      const errorSafe = { message: String(fetchError.message ?? ""), code: fetchError.code };
       console.error("[verify-email-otp] DB error fetching OTP record:", errorSafe);
       return jsonResp(origin, { error: "Verification temporarily unavailable. Try again." }, 500);
     }
@@ -235,7 +235,7 @@ Deno.serve(async (req: Request) => {
       console.error("[verify-email-otp] OTP record has invalid expires_at", { otpId: otp.id });
       const { error: invalidExpiryDeleteErr } = await supabase.from("email_otp_codes").delete().eq("id", otp.id);
       if (invalidExpiryDeleteErr) {
-        console.error("[verify-email-otp] Failed to delete OTP with invalid expires_at:", { message: String(invalidExpiryDeleteErr.message ?? ""), status: invalidExpiryDeleteErr.status });
+        console.error("[verify-email-otp] Failed to delete OTP with invalid expires_at:", { message: String(invalidExpiryDeleteErr.message ?? ""), code: invalidExpiryDeleteErr.code });
       }
       return jsonResp(origin, { error: "Verification code is corrupted. Request a new one." }, 500);
     }
@@ -243,7 +243,7 @@ Deno.serve(async (req: Request) => {
     // Expired?
     if (expiresAtMs < Date.now()) {
       const { error: expiredDeleteErr } = await supabase.from("email_otp_codes").delete().eq("id", otp.id);
-      if (expiredDeleteErr) console.error("[verify-email-otp] Failed to delete expired OTP:", { message: String(expiredDeleteErr.message ?? ""), status: expiredDeleteErr.status });
+      if (expiredDeleteErr) console.error("[verify-email-otp] Failed to delete expired OTP:", { message: String(expiredDeleteErr.message ?? ""), code: expiredDeleteErr.code });
       return jsonResp(origin, { error: "Code expired. Please request a new one." }, 410);
     }
 
@@ -252,7 +252,7 @@ Deno.serve(async (req: Request) => {
       console.error("[verify-email-otp] OTP record has invalid attempts", { otpId: otp.id, attempts: otp.attempts });
       const { error: invalidAttemptsDeleteErr } = await supabase.from("email_otp_codes").delete().eq("id", otp.id);
       if (invalidAttemptsDeleteErr) {
-        console.error("[verify-email-otp] Failed to delete OTP with invalid attempts:", { message: String(invalidAttemptsDeleteErr.message ?? ""), status: invalidAttemptsDeleteErr.status });
+        console.error("[verify-email-otp] Failed to delete OTP with invalid attempts:", { message: String(invalidAttemptsDeleteErr.message ?? ""), code: invalidAttemptsDeleteErr.code });
       }
       return jsonResp(origin, { error: "Verification code is corrupted. Request a new one." }, 500);
     }
@@ -261,7 +261,7 @@ Deno.serve(async (req: Request) => {
     const MAX_ATTEMPTS = 5;
     if (attempts >= MAX_ATTEMPTS) {
       const { error: maxAttemptsDeleteErr } = await supabase.from("email_otp_codes").delete().eq("id", otp.id);
-      if (maxAttemptsDeleteErr) console.error("[verify-email-otp] Failed to delete exhausted OTP:", { message: String(maxAttemptsDeleteErr.message ?? ""), status: maxAttemptsDeleteErr.status });
+      if (maxAttemptsDeleteErr) console.error("[verify-email-otp] Failed to delete exhausted OTP:", { message: String(maxAttemptsDeleteErr.message ?? ""), code: maxAttemptsDeleteErr.code });
       return jsonResp(origin, { error: "Too many attempts. Please request a new code." }, 429);
     }
 
@@ -271,7 +271,7 @@ Deno.serve(async (req: Request) => {
       console.error("[verify-email-otp] OTP record has invalid code format", { otpId: otp.id });
       const { error: invalidCodeDeleteErr } = await supabase.from("email_otp_codes").delete().eq("id", otp.id);
       if (invalidCodeDeleteErr) {
-        console.error("[verify-email-otp] Failed to delete OTP with invalid code format:", { message: String(invalidCodeDeleteErr.message ?? ""), status: invalidCodeDeleteErr.status });
+        console.error("[verify-email-otp] Failed to delete OTP with invalid code format:", { message: String(invalidCodeDeleteErr.message ?? ""), code: invalidCodeDeleteErr.code });
       }
       return jsonResp(origin, { error: "Verification code is corrupted. Request a new one." }, 500);
     }
@@ -288,7 +288,7 @@ Deno.serve(async (req: Request) => {
       .maybeSingle();
 
     if (incrError) {
-      const errorSafe = { message: String(incrError.message ?? ""), status: incrError.status };
+      const errorSafe = { message: String(incrError.message ?? ""), code: incrError.code };
       console.error("[verify-email-otp] Failed to increment attempts counter:", errorSafe);
       return jsonResp(origin, { error: "Verification temporarily unavailable. Try again." }, 500);
     }
@@ -316,7 +316,7 @@ Deno.serve(async (req: Request) => {
       .select("id");
 
     if (deleteError) {
-      const errorSafe = { message: String(deleteError.message ?? ""), status: deleteError.status };
+      const errorSafe = { message: String(deleteError.message ?? ""), code: deleteError.code };
       console.error("[verify-email-otp] Failed to delete OTP record:", errorSafe);
       return jsonResp(origin, { error: "Verification failed. Try again." }, 500);
     }
