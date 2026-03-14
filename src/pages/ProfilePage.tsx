@@ -19,7 +19,9 @@ import { BusinessActionButtons } from "@/components/profile/BusinessActionButton
 import { TaggedPostsGrid } from "@/components/profile/TaggedPostsGrid";
 import { SavedCollections } from "@/components/profile/SavedCollections";
 import { ProfileQRCode } from "@/components/profile/ProfileQRCode";
+import { PinnedPosts } from "@/components/profile/PinnedPosts";
 import { useProfile, useUserPosts } from "@/hooks/useProfile";
+import { usePinnedPosts } from "@/hooks/usePinnedPosts";
 import { getHighlights, deleteHighlight, blockUser, Highlight } from "@/hooks/useProfile";
 import { useSavedPosts } from "@/hooks/useSavedPosts";
 import { useAuth } from "@/hooks/useAuth";
@@ -64,6 +66,7 @@ export function ProfilePage() {
 
   const { profile, loading: profileLoading, follow, unfollow, updateProfile, refetch } = useProfile(targetUserId);
   const { posts, loading: postsLoading } = useUserPosts(targetUserId);
+  const { pinnedPosts, refresh: refreshPinnedPosts } = usePinnedPosts(targetUserId);
   const { savedPosts, fetchSavedPosts, loading: savedLoading } = useSavedPosts();
 
   const mediaPosts = useMemo(
@@ -74,6 +77,16 @@ export function ProfilePage() {
           post.post_media.some((m: any) => typeof m?.media_url === "string" && m.media_url.trim().length > 0),
       ),
     [posts],
+  );
+
+  const pinnedPostIds = useMemo(
+    () => new Set(pinnedPosts.map((post) => post.post_id)),
+    [pinnedPosts],
+  );
+
+  const gridPosts = useMemo(
+    () => mediaPosts.filter((post) => !pinnedPostIds.has(String(post.id))),
+    [mediaPosts, pinnedPostIds],
   );
 
   const [activeTab, setActiveTab] = useState<TabId>("posts");
@@ -446,6 +459,18 @@ export function ProfilePage() {
         </div>
       </div>
 
+      {targetUserId && pinnedPosts.length > 0 && (
+        <PinnedPosts
+          userId={targetUserId}
+          isOwner={isOwnProfile}
+          pinnedPosts={pinnedPosts}
+          onPostPress={(postId) => navigate(`/post/${postId}`)}
+          onRefresh={() => {
+            void refreshPinnedPosts();
+          }}
+        />
+      )}
+
       {/* ── Tabs ── */}
       <div className="border-t border-border sticky top-0 z-10 bg-background">
         <div className="flex">
@@ -479,7 +504,7 @@ export function ProfilePage() {
         >
           {activeTab === "posts" && (
             <ProfileGrid
-              items={mediaPosts}
+              items={gridPosts}
               loading={postsLoading}
               type="posts"
               onItemClick={(item) => {

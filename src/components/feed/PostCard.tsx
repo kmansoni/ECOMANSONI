@@ -46,6 +46,7 @@ interface PostCardProps {
   altText?: string;
   isPaidPartnership?: boolean;
   pinPosition?: number | null;
+  onPinChanged?: () => void;
 }
 
 const clampCounter = (value: number) => Math.max(0, Number.isFinite(value) ? value : 0);
@@ -72,6 +73,7 @@ export function PostCard({
   altText,
   isPaidPartnership = false,
   pinPosition,
+  onPinChanged,
 }: PostCardProps) {
   const navigate = useNavigate();
   const { toggleLike } = usePostActions();
@@ -322,7 +324,7 @@ export function PostCard({
           </div>
           <div>
             <div className="flex items-center gap-1">
-              {pinPosition && <Pin className="w-3.5 h-3.5 text-muted-foreground" />}
+              {pinPosition !== null && pinPosition !== undefined && <Pin className="w-3.5 h-3.5 text-muted-foreground" />}
               <span
                 className="font-semibold text-foreground text-sm cursor-pointer hover:underline"
                 onClick={goToProfile}
@@ -563,6 +565,7 @@ export function PostCard({
               postId={id}
               authorId={authorId}
               authorUsername={author.username}
+              onPinChanged={onPinChanged}
             />
           )}
         </>

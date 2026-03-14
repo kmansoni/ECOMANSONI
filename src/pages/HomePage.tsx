@@ -5,6 +5,7 @@ import { PostCard } from "@/components/feed/PostCard";
 import { PullToRefresh } from "@/components/feed/PullToRefresh";
 import { SmartFeedToggle } from "@/components/feed/SmartFeedToggle";
 import { useSmartFeed } from "@/hooks/useSmartFeed";
+import { usePinnedPosts } from "@/hooks/usePinnedPosts";
 import { usePresence } from "@/hooks/usePresence";
 import { toast } from "sonner";
 import { AlertCircle, Loader2 } from "lucide-react";
@@ -13,6 +14,7 @@ import { ru } from "date-fns/locale";
 
 export function HomePage() {
   const { posts, loading, loadingMore, hasMore, mode, setMode, refetch, loadMore, error } = useSmartFeed();
+  const { pinnedPositions, refresh: refreshPinnedPosts } = usePinnedPosts();
   const [contentFilter, setContentFilter] = useState<ContentFilter>('all');
 
   // Initialize presence tracking
@@ -36,14 +38,32 @@ export function HomePage() {
 
   // Client-side filtering based on content type
   const filteredPosts = useMemo(() => {
+    const sortByPinned = (items: typeof posts) => {
+      if (pinnedPositions.size === 0) return items;
+
+      const pinned: typeof posts = [];
+      const regular: typeof posts = [];
+
+      for (const post of items) {
+        if (pinnedPositions.has(post.id)) {
+          pinned.push(post);
+        } else {
+          regular.push(post);
+        }
+      }
+
+      pinned.sort((a, b) => (pinnedPositions.get(a.id) ?? 0) - (pinnedPositions.get(b.id) ?? 0));
+      return [...pinned, ...regular];
+    };
+
     if (contentFilter === 'media') {
-      return posts.filter(p => (p.media?.length ?? 0) > 0);
+      return sortByPinned(posts.filter(p => (p.media?.length ?? 0) > 0));
     }
     if (contentFilter === 'text') {
-      return posts.filter(p => (p.media?.length ?? 0) === 0);
+      return sortByPinned(posts.filter(p => (p.media?.length ?? 0) === 0));
     }
-    return posts;
-  }, [posts, contentFilter]);
+    return sortByPinned(posts);
+  }, [posts, contentFilter, pinnedPositions]);
 
   // Infinite scroll
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -130,6 +150,10 @@ export function HomePage() {
                   saves={post.saves_count}
                   timeAgo={formatTimeAgo(post.created_at)}
                   isLiked={post.is_liked}
+                  pinPosition={pinnedPositions.get(post.id) ?? null}
+                  onPinChanged={() => {
+                    void refreshPinnedPosts();
+                  }}
                 />
               );
             })}
