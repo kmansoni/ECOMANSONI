@@ -7,7 +7,8 @@
  *   push events    → show notification
  */
 
-const CACHE_VERSION = 'v1';
+// Bump when caching behavior changes to force stale shell eviction.
+const CACHE_VERSION = 'v2';
 const MEDIA_CACHE = `media-${CACHE_VERSION}`;
 const STATIC_CACHE = `static-${CACHE_VERSION}`;
 const MAX_MEDIA_CACHE_ITEMS = 200;
@@ -71,22 +72,18 @@ self.addEventListener('fetch', (event) => {
   }
 
   // 3. Статические ресурсы приложения → Cache First
+  // HTML shell intentionally excluded to avoid stale chunk references after deploy.
   if (
-    url.pathname.match(/\.(js|css|woff2?|ttf|otf|eot|ico|png|svg|webp|jpg|jpeg|gif)$/) ||
-    url.pathname === '/' ||
-    url.pathname === '/index.html'
+    url.pathname.match(/\.(js|css|woff2?|ttf|otf|eot|ico|png|svg|webp|jpg|jpeg|gif)$/)
   ) {
     event.respondWith(cacheFirst(request, STATIC_CACHE));
     return;
   }
 
-  // 4. Навигационные запросы (SPA) → возвращаем index.html из кэша
+  // 4. Навигационные запросы (SPA) → Network First для свежего index.html.
+  // Это предотвращает ситуацию, когда старый shell ссылается на уже удаленные чанки.
   if (request.mode === 'navigate') {
-    event.respondWith(
-      caches.match('/index.html', { cacheName: STATIC_CACHE }).then((cached) => {
-        return cached || fetch(request);
-      })
-    );
+    event.respondWith(networkFirst(request));
     return;
   }
 
