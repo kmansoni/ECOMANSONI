@@ -12,8 +12,22 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { fetchUserBriefMap, resolveUserBrief } from "@/lib/users/userBriefs";
 
 // ── Types ──────────────────────────────────────────────────────────────────
+
+export type MemberRole = "owner" | "admin" | "member";
+
+export interface GroupMember {
+  user_id: string;
+  role: MemberRole;
+  joined_at: string;
+  profile?: {
+    display_name: string | null;
+    avatar_url: string | null;
+    username?: string | null;
+  };
+}
 
 export interface SupergroupSettings {
   conversation_id: string;
@@ -50,6 +64,9 @@ export interface UseSupergroup {
   settings: SupergroupSettings | null;
   joinRequests: JoinRequest[];
   membersCount: number;
+  members: GroupMember[];
+  membersLoading: boolean;
+  currentUserRole: MemberRole | null;
   isLoading: boolean;
   error: string | null;
   updateSettings: (patch: Partial<Omit<SupergroupSettings, "conversation_id" | "created_at" | "updated_at">>) => Promise<void>;
@@ -57,6 +74,9 @@ export interface UseSupergroup {
   rejectRequest: (requestId: string) => Promise<void>;
   requestToJoin: (message?: string) => Promise<void>;
   convertToSupergroup: () => Promise<void>;
+  loadMembers: () => Promise<void>;
+  updateMemberRole: (userId: string, role: MemberRole) => Promise<void>;
+  removeMember: (userId: string) => Promise<void>;
 }
 
 // ── Hook ───────────────────────────────────────────────────────────────────
@@ -66,6 +86,9 @@ export function useSupergroup(conversationId: string): UseSupergroup {
   const [settings, setSettings] = useState<SupergroupSettings | null>(null);
   const [joinRequests, setJoinRequests] = useState<JoinRequest[]>([]);
   const [membersCount, setMembersCount] = useState(0);
+  const [members, setMembers] = useState<GroupMember[]>([]);
+  const [membersLoading, setMembersLoading] = useState(false);
+  const [currentUserRole, setCurrentUserRole] = useState<MemberRole | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -103,13 +126,17 @@ export function useSupergroup(conversationId: string): UseSupergroup {
 
       if (!cancelled) setJoinRequests((requestsData as JoinRequest[]) ?? []);
 
-      // Member count
-      const { count } = await (supabase as any)
+      // Member count + current user role
+      const { data: participantRows, count } = await (supabase as any)
         .from("conversation_participants")
-        .select("user_id", { count: "exact", head: true })
+        .select("user_id, role", { count: "exact" })
         .eq("conversation_id", conversationId);
 
-      if (!cancelled) setMembersCount(count ?? 0);
+      if (!cancelled) {
+        setMembersCount(count ?? 0);
+        const myRow = (participantRows as any[])?.find((r: any) => r.user_id === user?.id);
+        setCurrentUserRole((myRow?.role as MemberRole) ?? null);
+      }
       if (!cancelled) setIsLoading(false);
     };
 
@@ -261,10 +288,86 @@ export function useSupergroup(conversationId: string): UseSupergroup {
     setSettings(data as SupergroupSettings);
   }, [conversationId]);
 
+  const loadMembers = useCallback(async () => {
+    if (!conversationId) return;
+    setMembersLoading(true);
+    try {
+      const { data, error: err } = await (supabase as any)
+        .from("conversation_participants")
+        .select("user_id, role, joined_at")
+        .eq("conversation_id", conversationId)
+        .order("joined_at", { ascending: true });
+
+      if (err) throw err;
+
+      const rows = (data as Array<{ user_id: string; role: MemberRole; joined_at: string }>) ?? [];
+      const userIds = rows.map(r => r.user_id);
+      const briefMap = userIds.length > 0 ? await fetchUserBriefMap(userIds, supabase as any) : {};
+
+      const result: GroupMember[] = rows.map(r => {
+        const brief = resolveUserBrief(r.user_id, briefMap);
+        return {
+          user_id: r.user_id,
+          role: r.role,
+          joined_at: r.joined_at,
+          profile: brief
+            ? { display_name: brief.display_name, avatar_url: brief.avatar_url, username: brief.username }
+            : undefined,
+        };
+      });
+
+      setMembers(result);
+    } catch (e) {
+      console.error("[useSupergroup] loadMembers failed", e);
+    } finally {
+      setMembersLoading(false);
+    }
+  }, [conversationId]);
+
+  const updateMemberRole = useCallback(
+    async (userId: string, role: MemberRole) => {
+      if (!conversationId) return;
+      const { error: err } = await (supabase as any)
+        .from("conversation_participants")
+        .update({ role })
+        .eq("conversation_id", conversationId)
+        .eq("user_id", userId);
+
+      if (err) {
+        setError(err.message);
+        throw new Error(err.message);
+      }
+      setMembers(prev => prev.map(m => m.user_id === userId ? { ...m, role } : m));
+    },
+    [conversationId]
+  );
+
+  const removeMember = useCallback(
+    async (userId: string) => {
+      if (!conversationId) return;
+      const { error: err } = await (supabase as any)
+        .from("conversation_participants")
+        .delete()
+        .eq("conversation_id", conversationId)
+        .eq("user_id", userId);
+
+      if (err) {
+        setError(err.message);
+        throw new Error(err.message);
+      }
+      setMembers(prev => prev.filter(m => m.user_id !== userId));
+      setMembersCount(c => Math.max(0, c - 1));
+    },
+    [conversationId]
+  );
+
   return {
     settings,
     joinRequests,
     membersCount,
+    members,
+    membersLoading,
+    currentUserRole,
     isLoading,
     error,
     updateSettings,
@@ -272,5 +375,8 @@ export function useSupergroup(conversationId: string): UseSupergroup {
     rejectRequest,
     requestToJoin,
     convertToSupergroup,
+    loadMembers,
+    updateMemberRole,
+    removeMember,
   };
 }

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -8,8 +8,9 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { CheckCircle2, XCircle, Users, Loader2, AlertTriangle } from "lucide-react";
-import { useSupergroup, type SupergroupSettings, type JoinRequest } from "@/hooks/useSupergroup";
+import { CheckCircle2, XCircle, Users, Loader2, AlertTriangle, Shield, ShieldOff, UserX, Crown, ChevronDown, ChevronUp } from "lucide-react";
+import { useSupergroup, type SupergroupSettings, type JoinRequest, type MemberRole, type GroupMember } from "@/hooks/useSupergroup";
+import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 
 interface SupergroupSettingsSheetProps {
@@ -26,20 +27,35 @@ export function SupergroupSettingsSheet({
   conversationId,
   isGroup = false,
 }: SupergroupSettingsSheetProps) {
+  const { user } = useAuth();
   const {
     settings,
     joinRequests,
     membersCount,
+    members,
+    membersLoading,
+    currentUserRole,
     isLoading,
     error,
     updateSettings,
     approveRequest,
     rejectRequest,
     convertToSupergroup,
+    loadMembers,
+    updateMemberRole,
+    removeMember,
   } = useSupergroup(conversationId);
 
   const [converting, setConverting] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
+  const [showMembers, setShowMembers] = useState(false);
+
+  // Load members when the members section is expanded
+  useEffect(() => {
+    if (showMembers && members.length === 0 && !membersLoading) {
+      void loadMembers();
+    }
+  }, [showMembers, members.length, membersLoading, loadMembers]);
 
   // Local draft state for settings form
   const [draft, setDraft] = useState<Partial<SupergroupSettings>>({});
@@ -289,6 +305,63 @@ export function SupergroupSettingsSheet({
               </>
             )}
 
+            {/* Members section (supergroup only) */}
+            {!isGroup && (currentUserRole === 'owner' || currentUserRole === 'admin') && (
+              <>
+                <Separator className="bg-gray-800" />
+                <div className="space-y-3">
+                  <button
+                    type="button"
+                    className="flex items-center justify-between w-full"
+                    onClick={() => setShowMembers(v => !v)}
+                  >
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                      Участники
+                    </p>
+                    {showMembers ? (
+                      <ChevronUp className="w-4 h-4 text-gray-500" />
+                    ) : (
+                      <ChevronDown className="w-4 h-4 text-gray-500" />
+                    )}
+                  </button>
+
+                  {showMembers && (
+                    <div className="space-y-2">
+                      {membersLoading && (
+                        <div className="flex justify-center py-4">
+                          <Loader2 className="w-5 h-5 animate-spin text-blue-400" />
+                        </div>
+                      )}
+                      {!membersLoading && members.map(member => (
+                        <MemberCard
+                          key={member.user_id}
+                          member={member}
+                          currentUserId={user?.id ?? ""}
+                          currentUserRole={currentUserRole}
+                          onUpdateRole={async (role) => {
+                            try {
+                              await updateMemberRole(member.user_id, role);
+                              toast.success(role === "admin" ? "Назначен администратором" : "Понижен до участника");
+                            } catch {
+                              toast.error("Не удалось изменить роль");
+                            }
+                          }}
+                          onKick={async () => {
+                            try {
+                              await removeMember(member.user_id);
+                              toast.success("Участник удалён");
+                            } catch {
+                              toast.error("Не удалось удалить участника");
+                            }
+                          }}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+
             {/* Join requests */}
             {joinRequests.length > 0 && (
               <>
@@ -410,6 +483,99 @@ function JoinRequestCard({ request, onApprove, onReject }: JoinRequestCardProps)
           )}
         </Button>
       </div>
+    </div>
+  );
+}
+
+// ── MemberCard ─────────────────────────────────────────────────────────────
+
+interface MemberCardProps {
+  member: GroupMember;
+  currentUserId: string;
+  currentUserRole: MemberRole | null;
+  onUpdateRole: (role: MemberRole) => Promise<void>;
+  onKick: () => Promise<void>;
+}
+
+function MemberCard({ member, currentUserId, currentUserRole, onUpdateRole, onKick }: MemberCardProps) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const isSelf = member.user_id === currentUserId;
+  const canManage = !isSelf && member.role !== 'owner' && (
+    currentUserRole === 'owner' ||
+    (currentUserRole === 'admin' && member.role === 'member')
+  );
+
+  const name = member.profile?.display_name || member.user_id.slice(0, 8);
+  const initials = name.slice(0, 2).toUpperCase();
+
+  const roleBadge: Record<MemberRole, { label: string; cls: string }> = {
+    owner: { label: "Владелец", cls: "bg-yellow-900/40 text-yellow-300 border-yellow-800" },
+    admin: { label: "Администратор", cls: "bg-blue-900/40 text-blue-300 border-blue-800" },
+    member: { label: "Участник", cls: "bg-gray-800 text-gray-400 border-gray-700" },
+  };
+  const badge = roleBadge[member.role];
+
+  const handle = async (action: string, fn: () => Promise<void>) => {
+    setBusy(action);
+    try { await fn(); } finally { setBusy(null); }
+  };
+
+  return (
+    <div className="flex items-center gap-3 p-2.5 rounded-xl bg-gray-900/50 border border-gray-800">
+      <Avatar className="w-8 h-8 flex-shrink-0">
+        <AvatarImage src={member.profile?.avatar_url ?? undefined} />
+        <AvatarFallback className="bg-gray-800 text-gray-300 text-xs">{initials}</AvatarFallback>
+      </Avatar>
+
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-gray-200 truncate">{name}</p>
+        {member.profile?.username && (
+          <p className="text-xs text-gray-500 truncate">@{member.profile.username}</p>
+        )}
+      </div>
+
+      <Badge variant="outline" className={`text-xs flex-shrink-0 ${badge.cls}`}>
+        {member.role === "owner" && <Crown className="w-2.5 h-2.5 mr-1" />}
+        {badge.label}
+      </Badge>
+
+      {canManage && (
+        <div className="flex gap-1 flex-shrink-0">
+          {member.role === "member" ? (
+            <Button
+              size="icon"
+              variant="ghost"
+              className="w-7 h-7 hover:bg-blue-900/30 hover:text-blue-400 text-gray-500"
+              title="Назначить администратором"
+              disabled={!!busy}
+              onClick={() => handle("promote", () => onUpdateRole("admin"))}
+            >
+              {busy === "promote" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Shield className="w-3.5 h-3.5" />}
+            </Button>
+          ) : (
+            <Button
+              size="icon"
+              variant="ghost"
+              className="w-7 h-7 hover:bg-gray-700 hover:text-gray-300 text-gray-500"
+              title="Понизить до участника"
+              disabled={!!busy}
+              onClick={() => handle("demote", () => onUpdateRole("member"))}
+            >
+              {busy === "demote" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldOff className="w-3.5 h-3.5" />}
+            </Button>
+          )}
+          <Button
+            size="icon"
+            variant="ghost"
+            className="w-7 h-7 hover:bg-red-900/30 hover:text-red-400 text-gray-500"
+            title="Удалить из группы"
+            disabled={!!busy}
+            onClick={() => handle("kick", onKick)}
+          >
+            {busy === "kick" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserX className="w-3.5 h-3.5" />}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
