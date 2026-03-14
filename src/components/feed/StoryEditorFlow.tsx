@@ -96,6 +96,30 @@ export function StoryEditorFlow({ isOpen, onClose, initialFile, initialUrl }: St
 
   const [caption, setCaption] = useState("");
 
+  const addAddYoursSticker = (prompt: string) => {
+    const normalizedPrompt = prompt.trim();
+    if (!normalizedPrompt) {
+      toast.error("Введите текст для стикера \"Добавь своё\"");
+      return;
+    }
+
+    setStickers((prev) => [
+      ...prev,
+      {
+        type: "add_yours",
+        data: {
+          prompt: normalizedPrompt,
+          participantsCount: 1,
+        },
+        positionX: 0.5,
+        positionY: 0.5,
+        scale: 1,
+        rotation: 0,
+      },
+    ]);
+    toast.success("Стикер \"Добавь своё\" добавлен");
+  };
+
   const handleSelectImage = (src: string, file: File) => {
     setSelectedImage(src);
     setSelectedFile(file);
@@ -148,7 +172,55 @@ export function StoryEditorFlow({ isOpen, onClose, initialFile, initialUrl }: St
       if (insertError) throw insertError;
 
       if (insertedStory?.id && stickers.length > 0) {
-        const stickerRows = stickers.map((sticker) => ({
+        const preparedStickers = await Promise.all(
+          stickers.map(async (sticker) => {
+            if (sticker.type !== "add_yours") return sticker;
+
+            const prompt = String(sticker.data.prompt ?? "").trim();
+            if (!prompt) return null;
+
+            const { data: createdChain, error: chainError } = await (supabase as any)
+              .from("add_yours_chains")
+              .insert({
+                prompt,
+                creator_id: user.id,
+                participants_count: 1,
+              })
+              .select("id")
+              .single();
+
+            if (chainError || !createdChain?.id) {
+              console.error("Failed to create add_yours chain", chainError);
+              return null;
+            }
+
+            const { error: entryError } = await (supabase as any)
+              .from("add_yours_entries")
+              .insert({
+                chain_id: createdChain.id,
+                story_id: insertedStory.id,
+                user_id: user.id,
+              });
+
+            if (entryError) {
+              console.error("Failed to add add_yours entry", entryError);
+            }
+
+            return {
+              ...sticker,
+              data: {
+                ...sticker.data,
+                prompt,
+                chainId: createdChain.id,
+                participantsCount: 1,
+              },
+            };
+          })
+        );
+
+        const stickerRows = preparedStickers
+          .filter((sticker): sticker is PendingStorySticker => Boolean(sticker))
+          .map((sticker) => ({
           story_id: insertedStory.id,
           type: sticker.type,
           data: sticker.data,
@@ -158,13 +230,15 @@ export function StoryEditorFlow({ isOpen, onClose, initialFile, initialUrl }: St
           rotation: sticker.rotation ?? 0,
         }));
 
-        const { error: stickersError } = await (supabase as any)
-          .from("story_stickers")
-          .insert(stickerRows);
+        if (stickerRows.length > 0) {
+          const { error: stickersError } = await (supabase as any)
+            .from("story_stickers")
+            .insert(stickerRows);
 
-        if (stickersError) {
-          console.error("Failed to save story stickers", stickersError);
-          toast.warning("История опубликована, но часть стикеров не сохранена");
+          if (stickersError) {
+            console.error("Failed to save story stickers", stickersError);
+            toast.warning("История опубликована, но часть стикеров не сохранена");
+          }
         }
       }
 
@@ -377,7 +451,32 @@ export function StoryEditorFlow({ isOpen, onClose, initialFile, initialUrl }: St
 
             {/* Sticker layers overlay */}
             {stickers.map((sticker, index) => {
+              if (sticker.type === "add_yours") {
+                const prompt = String(sticker.data.prompt ?? "");
+                if (!prompt) return null;
+
+                return (
+                  <div
+                    key={`${sticker.type}-${index}`}
+                    style={{
+                      position: "absolute",
+                      left: `${sticker.positionX * 100}%`,
+                      top: `${sticker.positionY * 100}%`,
+                      transform: "translate(-50%, -50%)",
+                      width: 220,
+                      pointerEvents: "none",
+                    }}
+                  >
+                    <div className="rounded-2xl border border-white/30 bg-black/45 backdrop-blur-md p-3 text-white shadow-lg">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-white/80">Добавь своё</p>
+                      <p className="mt-1 text-sm font-medium line-clamp-2">{prompt}</p>
+                    </div>
+                  </div>
+                );
+              }
+
               if (sticker.type !== "gif") return null;
+
               const url = String(sticker.data.url ?? "");
               const previewUrl = String(sticker.data.previewUrl ?? url);
               if (!url) return null;
@@ -489,6 +588,11 @@ export function StoryEditorFlow({ isOpen, onClose, initialFile, initialUrl }: St
         onSelect={(type: StickerType) => {
           if (type === "gif") {
             setShowGifPicker(true);
+          } else if (type === "add_yours") {
+            const prompt = window.prompt("Введите тему для стикера \"Добавь своё\"");
+            if (prompt) {
+              addAddYoursSticker(prompt);
+            }
           } else {
             toast.info("Этот стикер будет доступен в следующем этапе");
           }

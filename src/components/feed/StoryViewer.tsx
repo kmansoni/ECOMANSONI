@@ -23,6 +23,7 @@ import { StoryQuizWidget } from "./StoryQuizWidget";
 import { StoryEmojiSlider } from "./StoryEmojiSlider";
 import { StoryLinkSticker } from "./StoryLinkSticker";
 import { StoryMention } from "./StoryMention";
+import { AddYoursSticker } from "./AddYoursSticker";
 
 interface StoryViewerProps {
   usersWithStories: UserWithStories[];
@@ -64,6 +65,7 @@ function StoryWidgetsLayer({ storyId, currentUser }: { storyId: string; currentU
   const linkStickers = stickers.filter((s) => s.type === 'link');
   const mentionStickers = stickers.filter((s) => s.type === 'mention');
   const gifStickers = stickers.filter((s) => s.type === 'gif');
+  const addYoursStickers = stickers.filter((s) => s.type === 'add_yours');
 
   return (
     <div className="absolute left-0 right-0 z-20 px-4 flex flex-col gap-3" style={{ bottom: '80px' }}>
@@ -145,6 +147,30 @@ function StoryWidgetsLayer({ storyId, currentUser }: { storyId: string; currentU
             ) : (
               <img src={previewUrl} alt="GIF sticker" className="w-full h-auto rounded-xl shadow-md" />
             )}
+          </div>
+        );
+      })}
+      {addYoursStickers.map(s => {
+        const chainId = String(s.data?.chainId || '');
+        const prompt = String(s.data?.prompt || '').trim();
+        if (!chainId || !prompt) return null;
+
+        return (
+          <div
+            key={s.id}
+            style={{
+              position: 'absolute',
+              left: `${s.position_x * 100}%`,
+              top: `${s.position_y * 100 - 200}px`,
+              transform: 'translate(-50%, -50%)',
+            }}
+          >
+            <AddYoursSticker
+              chainId={chainId}
+              prompt={prompt}
+              participantsCount={Number(s.data?.participantsCount || 1)}
+              currentStoryId={storyId}
+            />
           </div>
         );
       })}
