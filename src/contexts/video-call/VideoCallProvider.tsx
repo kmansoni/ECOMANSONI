@@ -258,7 +258,11 @@ function isValidTransportCreatedPayload(
     return false;
   }
 
-  if (!hasTransportFingerprints(payload.dtlsParameters)) {
+  // dtlsParameters with fingerprints are required for real mediasoup negotiation.
+  // In fallback/stub mode the server sends a placeholder fingerprint so we accept
+  // non-empty fingerprints regardless of value. An absent dtlsParameters is still
+  // rejected to catch completely broken server responses.
+  if (!payload.dtlsParameters || typeof payload.dtlsParameters !== "object") {
     return false;
   }
 

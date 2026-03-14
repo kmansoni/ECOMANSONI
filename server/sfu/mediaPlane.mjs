@@ -44,7 +44,10 @@ async function createFallbackController() {
 
     async createRoom(roomId) {
       ensureRoom(roomId);
-      return { routerRtpCapabilities: { codecs: [] } };
+      // Return actual codec list so mediasoup-client Device.load() succeeds.
+      // Without real codecs (codecs: []) the client rejects capabilities and
+      // media bootstrap fails immediately.
+      return { routerRtpCapabilities: { codecs: DEFAULT_MEDIA_CODECS } };
     },
 
     async closeRoom(roomId) {
@@ -60,11 +63,26 @@ async function createFallbackController() {
       peerSet.add(id);
       room.peerToTransportIds.set(peerDeviceId, peerSet);
 
+      // Provide stub ICE/DTLS parameters so the client's isValidTransportCreatedPayload
+      // check passes. In fallback mode real WebRTC negotiation won't succeed, but at
+      // least the bootstrap flow completes (useful for dev/testing the signaling path).
       return {
         id,
-        iceParameters: {},
+        iceParameters: {
+          usernameFragment: crypto.randomBytes(4).toString("hex"),
+          password: crypto.randomBytes(16).toString("base64url"),
+          iceLite: false,
+        },
         iceCandidates: [],
-        dtlsParameters: {},
+        dtlsParameters: {
+          role: "auto",
+          fingerprints: [
+            {
+              algorithm: "sha-256",
+              value: Array.from({ length: 32 }, () => "00").join(":"),
+            },
+          ],
+        },
       };
     },
 

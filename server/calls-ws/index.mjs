@@ -26,6 +26,30 @@ const MAX_PAYLOAD_BYTES = safeParseInt(process.env.CALLS_WS_MAX_PAYLOAD_BYTES, 6
 const JWT_REVALIDATE_SEC = safeParseInt(process.env.CALLS_WS_JWT_REVALIDATE_SEC, 60);
 const MAX_CONNECTIONS_PER_IP = safeParseInt(process.env.CALLS_WS_MAX_CONNECTIONS_PER_IP, 10);
 
+// Default RTP codecs used in ROOM_JOIN_OK and GET_ROUTER_RTP_CAPABILITIES responses.
+// When a real mediasoup SFU is fronted by this gateway, the SFU should supply these
+// via its own ROOM_JOIN_OK. This gateway-level constant ensures the signaling-only
+// path also produces parseable capabilities so mediasoup-client Device.load() succeeds.
+const GATEWAY_DEFAULT_CODECS = [
+  { kind: "audio", mimeType: "audio/opus", clockRate: 48000, channels: 2,
+    preferredPayloadType: 100,
+    rtcpFeedback: [{ type: "transport-cc" }] },
+  { kind: "video", mimeType: "video/VP8", clockRate: 90000,
+    preferredPayloadType: 96,
+    parameters: { "x-google-start-bitrate": 1000 },
+    rtcpFeedback: [
+      { type: "goog-remb" }, { type: "transport-cc" },
+      { type: "ccm", parameter: "fir" }, { type: "nack" }, { type: "nack", parameter: "pli" }
+    ] },
+  { kind: "video", mimeType: "video/VP9", clockRate: 90000,
+    preferredPayloadType: 98,
+    parameters: { "profile-id": 2, "x-google-start-bitrate": 1000 },
+    rtcpFeedback: [
+      { type: "goog-remb" }, { type: "transport-cc" },
+      { type: "ccm", parameter: "fir" }, { type: "nack" }, { type: "nack", parameter: "pli" }
+    ] },
+];
+
 // C-2: Trusted proxy list for x-forwarded-for validation.
 // Format: comma-separated exact IP addresses (IPv4 or IPv6, no CIDR needed).
 // Empty string (default) = no trusted proxies → always use socket.remoteAddress.
@@ -762,7 +786,10 @@ wss.on("connection", (ws, req) => {
             epoch: room.epoch,
             memberSetVersion: room.memberSetVersion,
             mediasoup: {
-              routerRtpCapabilities: {},
+              // Provide real codecs so mediasoup-client Device.load() succeeds.
+              // In production the SFU populates this; the gateway uses the static
+              // default so signaling + key-exchange still bootstrap correctly.
+              routerRtpCapabilities: { codecs: GATEWAY_DEFAULT_CODECS },
               sendTransportOptions: {},
               recvTransportOptions: {}
             },
@@ -1067,6 +1094,160 @@ wss.on("connection", (ws, req) => {
           }
         }
 
+        return ack(ws, frame.msgId, true);
+      }
+
+      case "GET_ROUTER_RTP_CAPABILITIES": {
+        if (!conn.authenticated) {
+          ack(ws, frame.msgId, false, wsError("UNAUTHENTICATED", "AUTH required", {}, true));
+          return;
+        }
+        const roomId = frame.payload?.roomId;
+        send(ws, {
+          v: 1,
+          type: "ROUTER_RTP_CAPABILITIES",
+          msgId: uuid(),
+          ts: nowMs(),
+          seq: conn.expectedSeq++,
+          payload: { roomId, routerRtpCapabilities: { codecs: GATEWAY_DEFAULT_CODECS } },
+        });
+        return ack(ws, frame.msgId, true);
+      }
+
+      // ── SFU media transport stubs ──────────────────────────────────────────────
+      // calls-ws is a signaling gateway. When a client connects here directly
+      // (e.g. dev environment without a separate SFU), these stubs allow the
+      // bootstrap flow to complete without hanging on VALIDATION_FAILED.
+      // In production the client should point VITE_CALLS_V2_WS_URL to the
+      // mediasoup SFU endpoint (server/sfu/index.mjs) where real transport is done.
+      case "TRANSPORT_CREATE": {
+        if (!conn.authenticated) {
+          ack(ws, frame.msgId, false, wsError("UNAUTHENTICATED", "AUTH required", {}, true));
+          return;
+        }
+        const tcRoomId = frame.payload?.roomId;
+        const direction = frame.payload?.direction === "recv" ? "recv" : "send";
+        const transportId = `${direction}_${crypto.randomUUID().slice(0, 8)}`;
+        send(ws, {
+          v: 1,
+          type: "TRANSPORT_CREATED",
+          msgId: uuid(),
+          ts: nowMs(),
+          seq: conn.expectedSeq++,
+          payload: {
+            roomId: tcRoomId,
+            transportId,
+            direction,
+            iceParameters: {
+              usernameFragment: crypto.randomBytes(4).toString("hex"),
+              password: crypto.randomBytes(16).toString("base64url"),
+              iceLite: false,
+            },
+            iceCandidates: [],
+            dtlsParameters: {
+              role: "auto",
+              fingerprints: [{ algorithm: "sha-256", value: Array.from({ length: 32 }, () => "00").join(":") }],
+            },
+          },
+        });
+        return ack(ws, frame.msgId, true);
+      }
+
+      case "TRANSPORT_CONNECT": {
+        if (!conn.authenticated) {
+          ack(ws, frame.msgId, false, wsError("UNAUTHENTICATED", "AUTH required", {}, true));
+          return;
+        }
+        return ack(ws, frame.msgId, true);
+      }
+
+      case "PRODUCE": {
+        if (!conn.authenticated) {
+          ack(ws, frame.msgId, false, wsError("UNAUTHENTICATED", "AUTH required", {}, true));
+          return;
+        }
+        const pRoomId = frame.payload?.roomId;
+        const producerId = `pr_${crypto.randomUUID().slice(0, 8)}`;
+        const kind = frame.payload?.kind === "audio" ? "audio" : "video";
+        send(ws, {
+          v: 1,
+          type: "PRODUCED",
+          msgId: uuid(),
+          ts: nowMs(),
+          seq: conn.expectedSeq++,
+          payload: { roomId: pRoomId, producerId, kind },
+        });
+        return ack(ws, frame.msgId, true);
+      }
+
+      case "CONSUME": {
+        if (!conn.authenticated) {
+          ack(ws, frame.msgId, false, wsError("UNAUTHENTICATED", "AUTH required", {}, true));
+          return;
+        }
+        return ack(ws, frame.msgId, true);
+      }
+
+      case "CONSUMER_RESUME": {
+        if (!conn.authenticated) {
+          ack(ws, frame.msgId, false, wsError("UNAUTHENTICATED", "AUTH required", {}, true));
+          return;
+        }
+        return ack(ws, frame.msgId, true);
+      }
+
+      case "ROOM_LEAVE": {
+        if (!conn.authenticated) {
+          ack(ws, frame.msgId, false, wsError("UNAUTHENTICATED", "AUTH required", {}, true));
+          return;
+        }
+        const leaveRoomId = frame.payload?.roomId;
+        const room = leaveRoomId ? rooms.get(leaveRoomId) : null;
+        if (room && conn.deviceId && room.peers.has(conn.deviceId)) {
+          room.peers.delete(conn.deviceId);
+          room.memberSetVersion++;
+          // Notify remaining peers
+          for (const [pid, peer] of room.peers.entries()) {
+            const pws = deviceSockets.get(pid);
+            if (pws && pws.readyState === WebSocket.OPEN) {
+              send(pws, {
+                v: 1, type: "PEER_LEFT", msgId: uuid(), ts: nowMs(),
+                payload: { roomId: leaveRoomId, deviceId: conn.deviceId, userId: conn.userId },
+              });
+            }
+          }
+          if (room.peers.size === 0) rooms.delete(leaveRoomId);
+        }
+        send(ws, {
+          v: 1, type: "ROOM_LEFT", msgId: uuid(), ts: nowMs(),
+          seq: conn.expectedSeq++,
+          payload: { roomId: leaveRoomId },
+        });
+        return ack(ws, frame.msgId, true);
+      }
+
+      case "E2EE_READY": {
+        if (!conn.authenticated) {
+          ack(ws, frame.msgId, false, wsError("UNAUTHENTICATED", "AUTH required", {}, true));
+          return;
+        }
+        return ack(ws, frame.msgId, true);
+      }
+
+      case "ICE_RESTART": {
+        if (!conn.authenticated) {
+          ack(ws, frame.msgId, false, wsError("UNAUTHENTICATED", "AUTH required", {}, true));
+          return;
+        }
+        send(ws, {
+          v: 1, type: "ICE_RESTART_OK", msgId: uuid(), ts: nowMs(),
+          seq: conn.expectedSeq++,
+          payload: { roomId: frame.payload?.roomId, policy: "relay" },
+        });
+        return ack(ws, frame.msgId, true);
+      }
+
+      case "PING": {
         return ack(ws, frame.msgId, true);
       }
 

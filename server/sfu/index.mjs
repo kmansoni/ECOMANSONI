@@ -791,6 +791,22 @@ wss.on("connection", (ws) => {
         return;
       }
 
+      case "CONSUMER_RESUME": {
+        if (!ensureAuth()) return;
+        const room = rooms.get(frame.payload?.roomId ?? conn.roomId);
+        if (!room || !conn.deviceId || !room.peers.has(conn.deviceId)) {
+          ack(ws, frame.msgId, false, wsError("UNAUTHORIZED", "Not a room member", {}, false));
+          return;
+        }
+        // In mediasoup mode, resume the consumer. In fallback mode, no-op — just ack.
+        const consumerId = frame.payload?.consumerId;
+        if (mediaPlane.mode === "mediasoup" && consumerId && typeof mediaPlane.resumeConsumer === "function") {
+          await mediaPlane.resumeConsumer(room.roomId, consumerId).catch(() => {});
+        }
+        ack(ws, frame.msgId, true);
+        return;
+      }
+
       case "ICE_RESTART": {
         if (!ensureAuth()) return;
         send(ws, {
@@ -922,6 +938,61 @@ wss.on("connection", (ws) => {
       }
 
       case "PING": {
+        ack(ws, frame.msgId, true);
+        return;
+      }
+
+      case "GET_ROUTER_RTP_CAPABILITIES": {
+        if (!ensureAuth()) return;
+        const roomId = frame.payload?.roomId ?? conn.roomId;
+        const room = rooms.get(roomId);
+        const caps = room?.routerRtpCapabilities ?? { codecs: [] };
+        send(ws, {
+          v: 1,
+          type: "ROUTER_RTP_CAPABILITIES",
+          msgId: uuid(),
+          ts: nowMs(),
+          seq: conn.expectedSeq++,
+          payload: { roomId, routerRtpCapabilities: caps },
+        });
+        ack(ws, frame.msgId, true);
+        return;
+      }
+
+      case "ROOM_LEAVE": {
+        if (!ensureAuth()) return;
+        const roomId = frame.payload?.roomId ?? conn.roomId;
+        const room = rooms.get(roomId);
+        if (room && conn.deviceId && room.peers.has(conn.deviceId)) {
+          mediaPlane.removePeer(room.roomId, conn.deviceId).catch(() => {});
+          room.peers.delete(conn.deviceId);
+          room.memberSetVersion += 1;
+          for (const [producerId, producer] of room.producers.entries()) {
+            if (producer.peerDeviceId === conn.deviceId) {
+              room.producers.delete(producerId);
+            }
+          }
+          broadcastRoom(room, {
+            v: 1,
+            type: "PEER_LEFT",
+            msgId: uuid(),
+            ts: nowMs(),
+            payload: { roomId: room.roomId, userId: conn.userId, deviceId: conn.deviceId },
+          });
+          if (room.peers.size === 0) {
+            mediaPlane.closeRoom(room.roomId).catch(() => {});
+            rooms.delete(roomId);
+          }
+          conn.roomId = null;
+        }
+        send(ws, {
+          v: 1,
+          type: "ROOM_LEFT",
+          msgId: uuid(),
+          ts: nowMs(),
+          seq: conn.expectedSeq++,
+          payload: { roomId },
+        });
         ack(ws, frame.msgId, true);
         return;
       }
