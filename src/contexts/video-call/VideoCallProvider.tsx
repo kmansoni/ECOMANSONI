@@ -340,6 +340,30 @@ function getMediaPermissionToastPayload(error: unknown, callType: "video" | "aud
   };
 }
 
+function getCallsBootstrapToastPayload(error: unknown): { title: string; description: string } {
+  const message = String((error as { message?: unknown } | null | undefined)?.message ?? error ?? "").toLowerCase();
+
+  if (
+    message.includes("invalid accesstoken") ||
+    message.includes("unauthenticated") ||
+    message.includes("auth_fail") ||
+    message.includes("auth failed") ||
+    message.includes("no access token") ||
+    message.includes("missing_session") ||
+    message.includes("refresh")
+  ) {
+    return {
+      title: "Требуется повторный вход",
+      description: "Сессия входа устарела или недоступна. Обновите страницу и войдите снова, затем повторите звонок.",
+    };
+  }
+
+  return {
+    title: "Сервер звонков недоступен",
+    description: "Не удалось подключиться к серверу звонков (SFU/WebSocket). Попробуйте позже или смените сеть.",
+  };
+}
+
 function isMediaErrorForCall(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
   const name = "name" in error ? String((error as { name?: unknown }).name ?? "") : "";
@@ -398,6 +422,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
   const callMediaEncryptionRef = useRef<CallMediaEncryption | null>(null);
   const rekeyMachineRef = useRef<RekeyStateMachine | null>(null);
   const epochGuardRef = useRef<EpochGuard | null>(null);
+  const lastCallsBootstrapErrorRef = useRef<Error | null>(null);
   const consumerAddedUnsubRef = useRef<(() => void) | null>(null);
   const mediaBootstrapBlockedUntilRef = useRef<Map<string, number>>(new Map());
   const mediaBootstrapErrorLogAtRef = useRef<Map<string, number>>(new Map());
@@ -495,6 +520,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     callsWsRecvTransportRef.current = null;
     e2eeLeaderDeviceRef.current = null;
     keyPackageNonceRef.current.clear();
+    lastCallsBootstrapErrorRef.current = null;
     mediaBootstrapBlockedUntilRef.current.clear();
     mediaBootstrapErrorLogAtRef.current.clear();
     mediaBootstrapToastShownRef.current.clear();
@@ -643,6 +669,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       }
       if (!accessToken) {
         logger.warn("[VideoCallContext] calls-v2 auth:skip no access token");
+        lastCallsBootstrapErrorRef.current = new Error("calls_v2_auth_missing_session: no access token");
         client.close();
         return null;
       }
@@ -1005,9 +1032,11 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       });
 
       callsWsRef.current = client;
+      lastCallsBootstrapErrorRef.current = null;
       return client;
     } catch (err) {
       logger.warn("[VideoCallContext] calls-v2 connect/bootstrap failed", err);
+      lastCallsBootstrapErrorRef.current = err instanceof Error ? err : new Error(String(err));
       client.close();
       return null;
     }
@@ -1180,6 +1209,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         callsWsCallIdRef.current = callId;
         callsWsRoomRef.current = roomId;
         logger.info("[VideoCallContext] calls-v2 room-bootstrap:done", { callId, roomId });
+        lastCallsBootstrapErrorRef.current = null;
 
         if (rekeyTimerRef.current) {
           window.clearInterval(rekeyTimerRef.current);
@@ -1315,10 +1345,14 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         logger.info("[VideoCallContext] calls-v2 media-bootstrap:start", { callId, roomId });
 
         // Phase C: Fail-closed epoch guard — no media without E2EE_READY
-        try {
-          epochGuardRef.current?.assertMediaAllowed('PRODUCE');
-        } catch (e) {
-          logger.error('[VideoCallContext] [EpochGuard] Cannot bootstrap media:', e);
+        const epochGuard = epochGuardRef.current;
+        if (epochGuard && !epochGuard.isMediaAllowed()) {
+          logger.info("[VideoCallContext] calls-v2 media-bootstrap deferred by epoch guard", {
+            callId,
+            roomId,
+            reason: epochGuard.getMediaBlockReason(),
+            epoch: epochGuard.getEpoch(),
+          });
           return;
         }
 
@@ -1648,8 +1682,9 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       if (!roomBootstrapOk) {
         await endVideoCall("ended");
         setIsCallUiActive(false);
-        toast.error("Сервер звонков недоступен", {
-          description: "Не удалось подключиться к серверу звонков (SFU/WebSocket). Попробуйте позже или смените сеть.",
+        const toastPayload = getCallsBootstrapToastPayload(lastCallsBootstrapErrorRef.current);
+        toast.error(toastPayload.title, {
+          description: toastPayload.description,
           duration: 5000,
         });
         return;
@@ -1748,8 +1783,9 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         await endVideoCall("ended");
         setPendingCalleeProfile(null);
         setIsCallUiActive(false);
-        toast.error("Сервер звонков недоступен", {
-          description: "Не удалось подключиться к серверу звонков (SFU/WebSocket). Попробуйте позже или смените сеть.",
+        const toastPayload = getCallsBootstrapToastPayload(lastCallsBootstrapErrorRef.current);
+        toast.error(toastPayload.title, {
+          description: toastPayload.description,
           duration: 5000,
         });
         return null;
