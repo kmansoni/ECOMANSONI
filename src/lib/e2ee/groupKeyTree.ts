@@ -324,7 +324,7 @@ export async function encryptWithGroupTree(
   const ciphertextBuf = await crypto.subtle.encrypt(
     { name: 'AES-GCM', iv },
     groupKey,
-    plaintext,
+    plaintext as unknown as Uint8Array<ArrayBuffer>,
   );
 
   return {

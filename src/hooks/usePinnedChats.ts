@@ -3,7 +3,7 @@
  *
  * Архитектурные решения:
  * - Лимит: 5 закреплённых чатов (аналогично Telegram).
- * - Primary storage: Supabase таблица `chat_user_settings` (колонка `is_pinned`, `pin_order`).
+ * - Primary storage: Supabase таблица `user_chat_settings` (колонка `is_pinned`, `pin_order`).
  * - Fallback: localStorage при недоступности Supabase.
  * - Оптимистичный UI с revert при ошибке.
  * - Идемпотентность: upsert по (user_id, conversation_id).
@@ -72,12 +72,17 @@ export function usePinnedChats(): UsePinnedChatsReturn {
     const details = String(error?.details ?? "").toLowerCase();
     const code = String(error?.code ?? "");
     const status = Number(error?.status ?? 0);
+    const mentionsSettingsTable =
+      msg.includes("chat_user_settings") ||
+      msg.includes("user_chat_settings") ||
+      details.includes("chat_user_settings") ||
+      details.includes("user_chat_settings");
     return (
       code === "42P01" ||
       code === "PGRST205" ||
       code === "PGRST204" ||
-      msg.includes("chat_user_settings") && (msg.includes("could not find the table") || msg.includes("does not exist") || msg.includes("schema cache")) ||
-      details.includes("chat_user_settings") && details.includes("schema cache") ||
+      mentionsSettingsTable && (msg.includes("could not find the table") || msg.includes("does not exist") || msg.includes("schema cache")) ||
+      mentionsSettingsTable && details.includes("schema cache") ||
       status === 404
     );
   }, []);
@@ -91,7 +96,7 @@ export function usePinnedChats(): UsePinnedChatsReturn {
     setLoading(true);
     try {
       const { data, error } = await (supabase as any)
-        .from("chat_user_settings")
+        .from("user_chat_settings")
         .select("conversation_id, pin_order")
         .eq("user_id", userId)
         .eq("is_pinned", true)
@@ -151,7 +156,7 @@ export function usePinnedChats(): UsePinnedChatsReturn {
         {
           event: "*",
           schema: "public",
-          table: "chat_user_settings",
+          table: "user_chat_settings",
           filter: `user_id=eq.${userId}`,
         },
         () => void loadFromSupabase()
@@ -197,7 +202,7 @@ export function usePinnedChats(): UsePinnedChatsReturn {
       }
 
       const { error } = await (supabase as any)
-        .from("chat_user_settings")
+        .from("user_chat_settings")
         .upsert(
           {
             user_id: userId,
@@ -252,7 +257,7 @@ export function usePinnedChats(): UsePinnedChatsReturn {
       }
 
       const { error } = await (supabase as any)
-        .from("chat_user_settings")
+        .from("user_chat_settings")
         .upsert(
           {
             user_id: userId,
@@ -311,7 +316,7 @@ export function usePinnedChats(): UsePinnedChatsReturn {
       }));
 
       const { error } = await (supabase as any)
-        .from("chat_user_settings")
+        .from("user_chat_settings")
         .upsert(upserts, { onConflict: "user_id,conversation_id" });
 
       if (error) {

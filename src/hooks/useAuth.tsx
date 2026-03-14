@@ -26,6 +26,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const authOpMutexRef = useRef<Promise<void> | null>(null);
 
   const lastAuthMetaSyncRef = useRef<{ userId: string; key: string } | null>(null);
+  const profileUpsertBlockedRef = useRef(false);
 
   const runExclusiveAuthOp = async <T,>(
     operation: NonNullable<AuthContextType["authOperation"]>,
@@ -59,18 +60,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       // Profiles are also auto-created by DB trigger; this is a safety net for older users.
       // Important: do NOT overwrite existing profile fields here (we only insert if missing).
-      await supabase
-        .from("profiles")
-        .upsert(
-          {
-            user_id: authUser.id,
-            display_name: fallbackDisplayName,
-          },
-          {
-            onConflict: "user_id",
-            ignoreDuplicates: true,
-          },
-        );
+      if (!profileUpsertBlockedRef.current) {
+        const { error: upsertError } = await supabase
+          .from("profiles")
+          .upsert(
+            {
+              user_id: authUser.id,
+              display_name: fallbackDisplayName,
+            },
+            {
+              onConflict: "user_id",
+              ignoreDuplicates: true,
+            },
+          );
+
+        if (upsertError) {
+          const status = Number((upsertError as any)?.status ?? 0);
+          const code = String((upsertError as any)?.code ?? "");
+          if (status === 403 || code === "42501") {
+            profileUpsertBlockedRef.current = true;
+            console.warn("[AuthProvider] profiles upsert blocked by RLS, skipping further safety-net upserts");
+          } else {
+            throw upsertError;
+          }
+        }
+      }
 
       // Keep Supabase Auth user_metadata in sync with the canonical profile name/avatar.
       // This makes Dashboard -> Authentication -> Users reflect current profile updates.

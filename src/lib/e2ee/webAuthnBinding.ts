@@ -191,7 +191,7 @@ async function deriveAndWrap(
     false,
     ['encrypt', 'decrypt'],
   );
-  return crypto.subtle.encrypt({ name: 'AES-GCM', iv }, encKey, plaintext);
+  return crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv as unknown as Uint8Array<ArrayBuffer> }, encKey, plaintext);
 }
 
 /** Derive decryption key + decrypt */

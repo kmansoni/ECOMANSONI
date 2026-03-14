@@ -5,7 +5,7 @@
     "platforms": {
       "web": {
         "framework": "React + Vite",
-        "host": "Vercel / GitHub Pages",
+        "host": "VPS mansoni.ru / GitHub Pages",
         "build_time_sec": 45,
         "deploy_time_sec": 30,
         "rollback_time_sec": 60,

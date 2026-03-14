@@ -2,7 +2,7 @@
  * useArchivedChats — хук для архивирования чатов.
  *
  * Архитектурные решения:
- * - Primary storage: Supabase таблица `chat_user_settings` (колонка `is_archived`).
+ * - Primary storage: Supabase таблица `user_chat_settings` (колонка `is_archived`).
  * - Fallback: localStorage при недоступности Supabase / отсутствии таблицы.
  * - Оптимистичный UI: состояние мгновенно обновляется, reverts при ошибке.
  * - Zero-trust: user_id всегда берётся из auth контекста на сервере (RLS).
@@ -74,12 +74,17 @@ export function useArchivedChats(): UseArchivedChatsReturn {
     const details = String(error?.details ?? "").toLowerCase();
     const code = String(error?.code ?? "");
     const status = Number(error?.status ?? 0);
+    const mentionsSettingsTable =
+      msg.includes("chat_user_settings") ||
+      msg.includes("user_chat_settings") ||
+      details.includes("chat_user_settings") ||
+      details.includes("user_chat_settings");
     return (
       code === "42P01" ||
       code === "PGRST205" ||
       code === "PGRST204" ||
-      msg.includes("chat_user_settings") && (msg.includes("could not find the table") || msg.includes("does not exist") || msg.includes("schema cache")) ||
-      details.includes("chat_user_settings") && details.includes("schema cache") ||
+      mentionsSettingsTable && (msg.includes("could not find the table") || msg.includes("does not exist") || msg.includes("schema cache")) ||
+      mentionsSettingsTable && details.includes("schema cache") ||
       status === 404
     );
   }, []);
@@ -91,7 +96,7 @@ export function useArchivedChats(): UseArchivedChatsReturn {
     setLoading(true);
     try {
       const { data, error } = await (supabase as any)
-        .from("chat_user_settings")
+        .from("user_chat_settings")
         .select("conversation_id")
         .eq("user_id", userId)
         .eq("is_archived", true);
@@ -145,7 +150,7 @@ export function useArchivedChats(): UseArchivedChatsReturn {
         {
           event: "*",
           schema: "public",
-          table: "chat_user_settings",
+          table: "user_chat_settings",
           filter: `user_id=eq.${userId}`,
         },
         () => void loadFromSupabase()
@@ -182,7 +187,7 @@ export function useArchivedChats(): UseArchivedChatsReturn {
       }
 
       const { error } = await (supabase as any)
-        .from("chat_user_settings")
+        .from("user_chat_settings")
         .upsert(
           {
             user_id: userId,
@@ -240,7 +245,7 @@ export function useArchivedChats(): UseArchivedChatsReturn {
       }
 
       const { error } = await (supabase as any)
-        .from("chat_user_settings")
+        .from("user_chat_settings")
         .upsert(
           {
             user_id: userId,

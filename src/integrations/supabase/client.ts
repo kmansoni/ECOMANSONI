@@ -97,12 +97,27 @@ function isRetryableError(error: unknown): boolean {
   );
 }
 
+function withDefaultInvokeHeaders(options?: Record<string, unknown>): Record<string, unknown> | undefined {
+  if (!SUPABASE_PUBLISHABLE_KEY) return options;
+
+  const next: Record<string, unknown> = { ...(options ?? {}) };
+  const headers = new Headers((options?.headers as HeadersInit | undefined) ?? undefined);
+
+  if (!headers.has("apikey")) {
+    headers.set("apikey", SUPABASE_PUBLISHABLE_KEY);
+  }
+
+  next.headers = Object.fromEntries(headers.entries());
+  return next;
+}
+
 async function invokeWithRetry(fnName: string, options?: Record<string, unknown>) {
-  const first = await (baseSupabase.functions as any).invoke(fnName, options as any);
+  const preparedOptions = withDefaultInvokeHeaders(options);
+  const first = await (baseSupabase.functions as any).invoke(fnName, preparedOptions as any);
   if (!first?.error) return first;
   if (!isRetryableError(first.error)) return first;
 
-  const second = await (baseSupabase.functions as any).invoke(fnName, options as any);
+  const second = await (baseSupabase.functions as any).invoke(fnName, preparedOptions as any);
   if (second?.error && import.meta.env.DEV) {
     console.warn("[BackendBridge] functions.invoke failed after retry", {
       fnName,

@@ -1,4 +1,0 @@
-{
-  "buildCommand": "node scripts/chat/schema-probe-ci.mjs && npm run build",
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
-}

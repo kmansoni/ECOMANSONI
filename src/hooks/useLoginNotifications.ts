@@ -19,6 +19,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { getSupabaseRuntimeConfig } from "@/lib/supabaseRuntimeConfig";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -156,11 +157,14 @@ export function useLoginNotifications() {
       if (!session?.access_token) return;
 
       const supabaseUrl = (supabase as unknown as { supabaseUrl: string }).supabaseUrl;
+      const runtimeConfig = getSupabaseRuntimeConfig();
+      const apikey = String(runtimeConfig.supabasePublishableKey || "").trim();
 
       await fetch(`${supabaseUrl}/functions/v1/login-notify`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          ...(apikey ? { apikey } : {}),
           Authorization: `Bearer ${session.access_token}`,
         },
         body: JSON.stringify({

@@ -122,7 +122,7 @@ $sb = "$env:LOCALAPPDATA\supabase-cli\v2.75.0\supabase.exe"
 
 ## 2) Frontend hosting (site)
 
-Supabase is the backend; it doesn’t host a Vite SPA like Vercel/Netlify/GitHub Pages.
+Supabase is the backend; it doesn't host a Vite SPA like Netlify/GitHub Pages.
 
 ### Option A (recommended): GitHub Pages (already configured)
 
@@ -137,10 +137,10 @@ Steps:
 
 The workflow sets `VITE_BASE=/<repo>/` automatically.
 
-### Option B: Vercel
+### Option B: Netlify
 
-1. `npm i -g vercel`
-2. `vercel --prod`
-3. Add env vars in Vercel:
+1. Push to GitHub.
+2. Netlify → Add new site → Import from Git.
+3. Add env vars in Netlify:
    - `VITE_SUPABASE_URL`
    - `VITE_SUPABASE_PUBLISHABLE_KEY`

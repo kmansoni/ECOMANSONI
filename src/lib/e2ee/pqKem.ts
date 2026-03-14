@@ -148,7 +148,7 @@ async function _combineSecrets(
 
   const hkdfKey = await crypto.subtle.importKey(
     'raw',
-    combined,
+    combined as unknown as Uint8Array<ArrayBuffer>,
     'HKDF',
     false,
     ['deriveKey'],

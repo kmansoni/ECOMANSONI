@@ -32,6 +32,7 @@ import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { CheckCircle, XCircle, Loader2, Shield, Wifi, Settings, Eye, EyeOff } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { getSupabaseRuntimeConfig } from "@/lib/supabaseRuntimeConfig";
 import { cn } from "@/lib/utils";
 
 // ─── Preset configurations for popular providers ───────────────────────────────
@@ -150,11 +151,14 @@ async function callSmtpSettingsApi(
 
   const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL ?? "";
   const url = `${supabaseUrl.replace(/\/$/, "")}/functions/v1/email-smtp-settings${path}`;
+  const runtimeConfig = getSupabaseRuntimeConfig();
+  const apikey = String(runtimeConfig.supabasePublishableKey || "").trim();
 
   const resp = await fetch(url, {
     method,
     headers: {
       "Content-Type": "application/json",
+      ...(apikey ? { apikey } : {}),
       "Authorization": `Bearer ${session.access_token}`,
     },
     body: body !== undefined ? JSON.stringify(body) : undefined,

@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, ShieldCheck, Globe, User, AtSign, Image } from "lucide-react";
+import { getSupabaseRuntimeConfig } from "@/lib/supabaseRuntimeConfig";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -46,6 +47,7 @@ interface AuthUser {
 }
 
 const EDGE_FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/web-login-widget`;
+const EDGE_APIKEY = String(getSupabaseRuntimeConfig().supabasePublishableKey || "").trim();
 
 // ── Scope display ──────────────────────────────────────────────────────────
 
@@ -150,7 +152,12 @@ export function WebLoginCallbackPage() {
       if (sessionId) {
         const res = await fetch(
           `${EDGE_FUNCTION_URL}/callback?session_id=${encodeURIComponent(sessionId)}`,
-          { method: "GET" }
+          {
+            method: "GET",
+            headers: {
+              ...(EDGE_APIKEY ? { apikey: EDGE_APIKEY } : {}),
+            },
+          }
         );
         const data = await res.json();
         if (!res.ok || data.error) {

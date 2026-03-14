@@ -16,6 +16,11 @@ function isExpectedOptionalSettingsError(error: any): boolean {
   const status = Number(error?.status ?? 0);
   const message = String(error?.message ?? "").toLowerCase();
   const details = String(error?.details ?? "").toLowerCase();
+  const mentionsSettingsTable =
+    message.includes("chat_user_settings") ||
+    message.includes("user_chat_settings") ||
+    details.includes("chat_user_settings") ||
+    details.includes("user_chat_settings");
   return (
     code === "42501" ||
     code === "42P01" ||
@@ -23,8 +28,8 @@ function isExpectedOptionalSettingsError(error: any): boolean {
     code === "PGRST205" ||
     status === 403 ||
     status === 404 ||
-    (message.includes("chat_user_settings") && (message.includes("does not exist") || message.includes("schema cache") || message.includes("permission"))) ||
-    (details.includes("chat_user_settings") && details.includes("schema cache"))
+    (mentionsSettingsTable && (message.includes("does not exist") || message.includes("schema cache") || message.includes("permission"))) ||
+    (mentionsSettingsTable && details.includes("schema cache"))
   );
 }
 
@@ -35,7 +40,7 @@ export async function probeSupabase(): Promise<boolean> {
   }
   try {
     const { error } = await (supabase as any)
-      .from("chat_user_settings")
+      .from("user_chat_settings")
       .select("conversation_id")
       .limit(1);
     if (!error || error.code === "PGRST116") {

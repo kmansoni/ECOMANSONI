@@ -75,6 +75,26 @@ interface FeedResponse {
   next_cursor: FeedCursor | null;
 }
 
+interface PublicFeedRow {
+  id: string;
+  author_id: string;
+  content: string | null;
+  created_at: string;
+  likes_count: number | null;
+  comments_count: number | null;
+  saves_count: number | null;
+  shares_count: number | null;
+  views_count: number | null;
+  post_media?: FeedMedia[] | null;
+}
+
+interface PublicProfileRow {
+  user_id: string;
+  display_name: string | null;
+  avatar_url: string | null;
+  is_verified?: boolean | null;
+}
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -108,12 +128,101 @@ function writeStoredMode(mode: FeedMode): void {
   }
 }
 
+function isUnauthorizedFeedError(error: unknown): boolean {
+  const message = String((error as any)?.message ?? error ?? "").toLowerCase();
+  return (
+    message.includes("unauthorized") ||
+    message.includes("non-2xx") ||
+    message.includes("functionshttperror")
+  );
+}
+
+async function fetchPublicFeedPage(
+  cursor: FeedCursor | null,
+  pageSize: number,
+): Promise<FeedResponse> {
+  let query = (supabase as any)
+    .from("posts")
+    .select(
+      "id, author_id, content, created_at, likes_count, comments_count, saves_count, shares_count, views_count, post_media(id, media_url, media_type, sort_order)",
+    )
+    .eq("is_published", true)
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(pageSize);
+
+  if (cursor) {
+    query = query.or(
+      `created_at.lt.${cursor.created_at},and(created_at.eq.${cursor.created_at},id.lt.${cursor.id})`,
+    );
+  }
+
+  const { data: rawPosts, error: postsError } = await query;
+  if (postsError) {
+    throw postsError;
+  }
+
+  const postRows = ((rawPosts ?? []) as PublicFeedRow[]).map((row) => ({
+    ...row,
+    post_media: Array.isArray(row.post_media) ? row.post_media : [],
+  }));
+
+  const authorIds = Array.from(new Set(postRows.map((row) => row.author_id).filter(Boolean)));
+  let profilesByUserId = new Map<string, PublicProfileRow>();
+
+  if (authorIds.length > 0) {
+    const { data: profileRows, error: profilesError } = await (supabase as any)
+      .from("profiles")
+      .select("user_id, display_name, avatar_url, is_verified")
+      .in("user_id", authorIds);
+
+    if (!profilesError) {
+      profilesByUserId = new Map(
+        ((profileRows ?? []) as PublicProfileRow[]).map((row) => [row.user_id, row]),
+      );
+    }
+  }
+
+  const posts: FeedPost[] = postRows.map((row) => {
+    const profile = profilesByUserId.get(row.author_id);
+    return {
+      id: row.id,
+      author_id: row.author_id,
+      content: row.content,
+      created_at: row.created_at,
+      likes_count: Number(row.likes_count ?? 0),
+      comments_count: Number(row.comments_count ?? 0),
+      saves_count: Number(row.saves_count ?? 0),
+      shares_count: Number(row.shares_count ?? 0),
+      views_count: Number(row.views_count ?? 0),
+      score: 0,
+      is_liked: false,
+      is_saved: false,
+      author: {
+        id: row.author_id,
+        display_name: profile?.display_name ?? null,
+        avatar_url: profile?.avatar_url ?? null,
+        is_verified: Boolean(profile?.is_verified),
+      },
+      media: (row.post_media ?? []).slice().sort((a, b) => a.sort_order - b.sort_order),
+    };
+  });
+
+  const lastPost = posts[posts.length - 1] ?? null;
+
+  return {
+    posts,
+    has_more: posts.length === pageSize,
+    next_cursor: lastPost ? { created_at: lastPost.created_at, id: lastPost.id } : null,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Hook
 // ---------------------------------------------------------------------------
 
 export function useSmartFeed() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
 
   const [posts, setPosts] = useState<FeedPost[]>([]);
   const [loading, setLoading] = useState(true);
@@ -137,6 +246,7 @@ export function useSmartFeed() {
   const fetchPosts = useCallback(async (reset: boolean): Promise<void> => {
     if (fetchingRef.current) return;
     if (!reset && !hasMore) return;
+    if (authLoading) return;
 
     fetchingRef.current = true;
     setError(null);
@@ -151,28 +261,53 @@ export function useSmartFeed() {
 
     try {
       const cursor = cursorRef.current;
+      const effectiveMode = !user && mode === 'following' ? 'smart' : mode;
 
-      const { data, error: fnError } = await supabase.functions.invoke<FeedResponse>(
-        'get-feed-v2',
-        {
-          body: {
-            mode,
-            page_size: PAGE_SIZE,
-            cursor_created_at: cursor?.created_at ?? null,
-            cursor_id: cursor?.id ?? null,
-          },
-        },
-      );
+      let incoming: FeedPost[] = [];
+      let has_more = false;
+      let next_cursor: FeedCursor | null = null;
 
-      if (fnError) {
-        throw new Error(fnError.message ?? 'Feed unavailable');
+      if (user) {
+        try {
+          const { data, error: fnError } = await supabase.functions.invoke<FeedResponse>(
+            'get-feed-v2',
+            {
+              body: {
+                mode: effectiveMode,
+                page_size: PAGE_SIZE,
+                cursor_created_at: cursor?.created_at ?? null,
+                cursor_id: cursor?.id ?? null,
+              },
+            },
+          );
+
+          if (fnError) {
+            throw new Error(fnError.message ?? 'Feed unavailable');
+          }
+
+          if (!data) {
+            throw new Error('Empty response from feed function');
+          }
+
+          incoming = data.posts;
+          has_more = data.has_more;
+          next_cursor = data.next_cursor;
+        } catch (edgeError) {
+          if (!isUnauthorizedFeedError(edgeError)) {
+            throw edgeError;
+          }
+          console.warn('[useSmartFeed] edge feed unavailable, using public fallback', edgeError);
+          const fallback = await fetchPublicFeedPage(cursor, PAGE_SIZE);
+          incoming = fallback.posts;
+          has_more = fallback.has_more;
+          next_cursor = fallback.next_cursor;
+        }
+      } else {
+        const fallback = await fetchPublicFeedPage(cursor, PAGE_SIZE);
+        incoming = fallback.posts;
+        has_more = fallback.has_more;
+        next_cursor = fallback.next_cursor;
       }
-
-      if (!data) {
-        throw new Error('Empty response from feed function');
-      }
-
-      const { posts: incoming, has_more, next_cursor } = data;
 
       // Deduplicate against already-rendered posts
       const fresh = incoming.filter((p) => !seenIdsRef.current.has(p.id));
@@ -195,14 +330,15 @@ export function useSmartFeed() {
       setLoadingMore(false);
       fetchingRef.current = false;
     }
-  }, [mode, hasMore]);
+  }, [mode, hasMore, authLoading, user]);
 
   // Reset and reload when mode changes or user changes
   useEffect(() => {
+    if (authLoading) return;
     setHasMore(true);
     void fetchPosts(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, user?.id]);
+  }, [mode, user?.id, authLoading]);
 
   const refetch = useCallback((): Promise<void> => {
     setHasMore(true);

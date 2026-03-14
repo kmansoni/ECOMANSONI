@@ -111,36 +111,7 @@
     </div>
 
     <div class="card">
-        <h2>🌐 Вариант 2: Vercel (публичный URL)</h2>
-        
-        <div class="step">
-            <strong>1. Установите Vercel CLI:</strong>
-            <pre><code>npm install -g vercel</code></pre>
-        </div>
-        
-        <div class="step">
-            <strong>2. Деплой:</strong>
-            <pre><code>cd "C:\Users\manso\Desktop\разработка\your-ai-companion-main"
-vercel --prod</code></pre>
-            Следуйте инструкциям в терминале (логин через GitHub).
-        </div>
-        
-        <div class="url">
-            <strong>✅ Получите публичный URL вида:</strong><br>
-            <code>https://your-ai-companion-main-kmansoni.vercel.app</code>
-        </div>
-        
-        <div class="warning">
-            <strong>⚠️ Не забудьте добавить env в Vercel:</strong>
-            <ul>
-                <li><code>VITE_SUPABASE_URL</code> = https://lfkbgnbjxskspsownvjm.supabase.co</li>
-                <li><code>VITE_SUPABASE_PUBLISHABLE_KEY</code> = ваш anon key</li>
-            </ul>
-        </div>
-    </div>
-
-    <div class="card">
-        <h2>📦 Вариант 3: GitHub Pages (уже настроено)</h2>
+        <h2>📦 Вариант 2: GitHub Pages (уже настроено)</h2>
         
         <div class="step">
             <strong>1. Допушьте проект в GitHub</strong> (если ещё не запушен):
@@ -175,7 +146,7 @@ git push -u origin main --force</code></pre>
         <h2>🔑 Supabase Anon Key</h2>
         <p>Возьмите из Supabase Dashboard → Project Settings → API:</p>
         <pre><code>https://supabase.com/dashboard/project/lfkbgnbjxskspsownvjm/settings/api</code></pre>
-        <p>Скопируйте <strong>anon/public key</strong> и вставьте в <code>.env</code> или Vercel/GitHub Secrets.</p>
+        <p>Скопируйте <strong>anon/public key</strong> и вставьте в <code>.env</code> или GitHub Secrets.</p>
     </div>
 </body>
 </html>

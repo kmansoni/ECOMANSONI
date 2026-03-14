@@ -102,12 +102,31 @@ export function RegistrationModal({ isOpen, onClose, phone, email: initialEmail,
       };
       if (digits) profilePatch.phone = digits;
 
-      const { error: updateError } = await supabase
+      const { data: existingProfile, error: existingProfileError } = await supabase
         .from("profiles")
-        .upsert({ user_id: session.user.id, ...profilePatch }, { onConflict: "user_id" });
+        .select("user_id")
+        .eq("user_id", session.user.id)
+        .maybeSingle();
+
+      if (existingProfileError) {
+        console.error("[RegistrationModal] profile existence check failed:", existingProfileError.message);
+        toast.error("Ошибка проверки профиля: " + (existingProfileError.message || "Unknown error"));
+        return;
+      }
+
+      const profileMutation = existingProfile
+        ? await supabase
+            .from("profiles")
+            .update(profilePatch)
+            .eq("user_id", session.user.id)
+        : await supabase
+            .from("profiles")
+            .insert({ user_id: session.user.id, ...profilePatch });
+
+      const updateError = profileMutation.error;
 
       if (updateError) {
-        console.error("[RegistrationModal] profile upsert failed:", updateError.message);
+        console.error("[RegistrationModal] profile save failed:", updateError.message);
         toast.error("Ошибка обновления профиля: " + (updateError.message || "Unknown error"));
         return;
       }

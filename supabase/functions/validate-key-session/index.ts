@@ -16,7 +16,7 @@
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { corsHeaders } from '../_shared/utils.ts';
+import { getCorsHeaders } from '../_shared/utils.ts';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -78,10 +78,10 @@ async function sha256Fingerprint(spkiB64: string): Promise<string> {
 
 Deno.serve(async (req: Request): Promise<Response> => {
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders(req) });
+    return new Response('ok', { headers: getCorsHeaders(req.headers.get('origin')) });
   }
   if (req.method !== 'POST') {
-    return new Response('Method Not Allowed', { status: 405, headers: corsHeaders(req) });
+    return new Response('Method Not Allowed', { status: 405, headers: getCorsHeaders(req.headers.get('origin')) });
   }
 
   let body: ValidateRequest;
@@ -207,6 +207,6 @@ Deno.serve(async (req: Request): Promise<Response> => {
 function jsonResponse(body: ValidateResponse, status: number, req: Request): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders(req), 'Content-Type': 'application/json' },
+    headers: { ...getCorsHeaders(req.headers.get('origin')), 'Content-Type': 'application/json' },
   });
 }

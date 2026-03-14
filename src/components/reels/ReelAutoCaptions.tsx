@@ -259,7 +259,7 @@ export function useLiveCaptions(isRecording: boolean) {
 
     recognition.onerror = () => {
       // Keep current transcript and stop silently on speech API errors.
-      setIsRecording(false);
+      recognition.abort();
     };
 
     try {
@@ -267,7 +267,6 @@ export function useLiveCaptions(isRecording: boolean) {
       recognitionRef.current = recognition;
     } catch {
       // Speech API can throw if called before user gesture / unsupported browser.
-      setIsRecording(false);
     }
 
     return () => {

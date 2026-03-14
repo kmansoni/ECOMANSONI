@@ -59,7 +59,7 @@ A full-featured social and marketplace platform built with React, TypeScript, Vi
 
 ### CI / Deployment
 - **GitHub Actions** — lint, tests, build on every PR
-- **Vercel / Netlify / GitHub Pages** — static hosting (see `DEPLOY.md`)
+- **VPS mansoni.ru / GitHub Pages** — static hosting (see `DEPLOY.md`)
 - **Capacitor** — Android / iOS native wrapper
 
 ---
@@ -147,7 +147,7 @@ ESLint is configured in `eslint.config.js` with TypeScript-ESLint, react-hooks, 
 
 ## Deployment
 
-See [`DEPLOY.md`](./DEPLOY.md) for deployment instructions covering Vercel, Netlify, GitHub Pages, and manual hosting.
+See [`DEPLOY.md`](./DEPLOY.md) for deployment instructions covering GitHub Actions, GitHub Pages, and manual hosting.
 
 ---
 

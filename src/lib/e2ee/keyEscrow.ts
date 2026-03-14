@@ -212,7 +212,7 @@ export async function splitKeyForSocialRecovery(
     const encBuf = await crypto.subtle.encrypt(
       { name: 'AES-GCM', iv },
       aesKey,
-      randomShards[i],
+      randomShards[i] as unknown as Uint8Array<ArrayBuffer>,
     );
 
     shards.push({

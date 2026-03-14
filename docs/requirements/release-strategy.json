@@ -37,7 +37,7 @@
       ],
       "day_3_deploy": [
         "Tag commit with vX.Y.Z on GitHub",
-        "Web: auto-deploy to Vercel (production)",
+        "Web: auto-deploy via GitHub Actions → mansoni.ru (production)",
         "Android: submit to Google Play Console",
         "iOS: submit to App Store Connect",
         "Desktop: publish to GitHub Releases",
@@ -45,7 +45,7 @@
       ]
     },
     "rollback_plan": {
-      "web": "Instant (revert Vercel deployment)",
+      "web": "Instant (revert GitHub Actions deployment)",
       "mobile": "24–48 hours (app store review)",
       "desktop": "Instant (users get old version from releases)"
     },

@@ -139,7 +139,7 @@ export async function buildE2EKeyGroup(
   const sigBuf = await crypto.subtle.sign(
     { name: 'ECDSA', hash: 'SHA-256' },
     identitySignKey,
-    payload,
+    payload as unknown as Uint8Array<ArrayBuffer>,
   );
 
   return {
@@ -197,7 +197,7 @@ export async function processE2EKeyGroup(
       { name: 'ECDSA', hash: 'SHA-256' },
       identityVerifyKey,
       fromBase64(ekg.signature),
-      payload,
+      payload as unknown as Uint8Array<ArrayBuffer>,
     );
 
     if (!valid) {

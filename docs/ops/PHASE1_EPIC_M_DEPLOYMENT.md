@@ -127,7 +127,7 @@ DROP FUNCTION IF EXISTS cleanup_old_metric_samples_v1(INT);
 
 **Command:**
 ```bash
-# No deployment needed - frontend already deployed via Netlify/Vercel
+# No deployment needed - frontend already deployed via GitHub Actions → mansoni.ru
 # Files are bundled automatically on next deployment
 ```
 

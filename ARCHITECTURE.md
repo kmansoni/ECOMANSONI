@@ -211,7 +211,7 @@ Caller                      Callee
 ```
 Internet
    │
-   ├── Static SPA ──────────────────▶ Vercel / Netlify / GitHub Pages
+   ├── Static SPA ──────────────────▶ VPS mansoni.ru / GitHub Pages
    │                                   (Vite build → `dist/`)
    │
    ├── calls-ws  ────────────────────▶ VPS / Docker container

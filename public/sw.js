@@ -7,8 +7,8 @@
  *   push events    → show notification
  */
 
-// Bump when caching behavior changes to force stale shell eviction.
-const CACHE_VERSION = 'v2';
+// Bump when caching behavior changes or to evict stale deployed shells/chunks.
+const CACHE_VERSION = 'v3';
 const MEDIA_CACHE = `media-${CACHE_VERSION}`;
 const STATIC_CACHE = `static-${CACHE_VERSION}`;
 const MAX_MEDIA_CACHE_ITEMS = 200;

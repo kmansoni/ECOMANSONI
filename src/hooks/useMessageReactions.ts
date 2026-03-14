@@ -18,7 +18,27 @@ export interface MessageReaction {
 export type ReactionsMap = Map<string, MessageReaction[]>;
 
 const LS_KEY_PREFIX = "msg_reactions_v1_";
+const LS_CONV_FILTER_CAP_KEY = "msg_reactions_conv_filter_cap_v1";
 const loggedLsErrors = new Set<string>();
+
+function readConversationFilterCapability(): boolean {
+  try {
+    const raw = localStorage.getItem(LS_CONV_FILTER_CAP_KEY);
+    if (raw === "0") return false;
+    if (raw === "1") return true;
+    return true;
+  } catch {
+    return true;
+  }
+}
+
+function writeConversationFilterCapability(enabled: boolean): void {
+  try {
+    localStorage.setItem(LS_CONV_FILTER_CAP_KEY, enabled ? "1" : "0");
+  } catch {
+    // ignore storage failures
+  }
+}
 
 function logOnce(key: string, message: string, context?: unknown): void {
   if (loggedLsErrors.has(key)) return;
@@ -64,7 +84,7 @@ function mergeReactionRows(
 export function useMessageReactions(conversationId: string) {
   const { user } = useAuth();
   const [reactionsMap, setReactionsMap] = useState<ReactionsMap>(new Map());
-  const [canFilterByConversation, setCanFilterByConversation] = useState(true);
+  const [canFilterByConversation, setCanFilterByConversation] = useState<boolean>(() => readConversationFilterCapability());
   const channelRef = useRef<RealtimeChannel | null>(null);
   const tableUnavailableRef = useRef(false);
   const reactionsMapRef = useRef<ReactionsMap>(new Map());
@@ -182,6 +202,7 @@ export function useMessageReactions(conversationId: string) {
 
         if (error) {
           if (isMissingConversationIdError(error)) {
+            writeConversationFilterCapability(false);
             setCanFilterByConversation(false);
             await fetchByMessageIds(requestId, mutationVersionAtStart);
             return;
@@ -315,6 +336,7 @@ export function useMessageReactions(conversationId: string) {
           return;
         }
         if (isMissingConversationIdError(err)) {
+          writeConversationFilterCapability(false);
           setCanFilterByConversation(false);
         }
         logger.error("message_reactions.add_failed", { error: err, conversationId, messageId, emoji });
