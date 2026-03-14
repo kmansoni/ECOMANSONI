@@ -109,6 +109,7 @@ const ARPage = lazy(() => import("@/pages/ARPage").then(m => ({ default: m.ARPag
 const AudioRoomsPage = lazy(() => import("@/pages/AudioRoomsPage").then(m => ({ default: m.AudioRoomsPage })));
 const BotListPage = lazy(() => import("@/pages/BotListPage").then(m => ({ default: m.BotListPage })));
 const BotCreatePage = lazy(() => import("@/pages/BotCreatePage").then(m => ({ default: m.BotCreatePage })));
+const BotSettingsPage = lazy(() => import("@/pages/BotSettingsPage").then(m => ({ default: m.BotSettingsPage })));
 const MiniAppListPage = lazy(() => import("@/pages/MiniAppListPage").then(m => ({ default: m.MiniAppListPage })));
 const DeleteAccountPage = lazy(() => import("@/pages/DeleteAccountPage").then(m => ({ default: m.DeleteAccountPage })));
 const ReelsPage = lazy(() => import("./pages/ReelsPage"));
@@ -549,6 +550,11 @@ const App = () => {
                     <Route path="/bots/new" element={
                       <Suspense fallback={<PageLoader />}>
                         <BotCreatePage />
+                      </Suspense>
+                    } />
+                    <Route path="/bots/:id" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <BotSettingsPage />
                       </Suspense>
                     } />
                     <Route path="/mini-apps" element={
