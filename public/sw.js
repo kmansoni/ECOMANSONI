@@ -112,6 +112,14 @@ async function cacheFirst(request, cacheName) {
   }
 }
 
+function canStoreInCache(request, response) {
+  if (!response || !response.ok) return false;
+  if (response.status !== 200) return false;
+  if ((request.headers.get('range') || '').trim()) return false;
+  if ((response.headers.get('content-range') || '').trim()) return false;
+  return true;
+}
+
 /**
  * Stale While Revalidate: возвращаем кэш немедленно, фоново обновляем.
  * После обновления — LRU eviction по размеру и количеству.
@@ -121,7 +129,7 @@ async function staleWhileRevalidate(request, cacheName) {
   const cached = await cache.match(request);
 
   const fetchAndUpdate = fetch(request).then(async (response) => {
-    if (response.ok) {
+    if (canStoreInCache(request, response)) {
       await cache.put(request, response.clone());
       await evictMediaCache(cache);
     }
@@ -138,7 +146,7 @@ async function staleWhileRevalidate(request, cacheName) {
 async function networkFirst(request) {
   try {
     const response = await fetch(request);
-    if (response.ok) {
+    if (canStoreInCache(request, response)) {
       const cache = await caches.open(STATIC_CACHE);
       cache.put(request, response.clone());
     }
@@ -409,7 +417,7 @@ async function preloadUrls(urls) {
       const existing = await cache.match(url);
       if (existing) return; // уже в кэше
       const response = await fetch(url, { mode: 'cors' });
-      if (response.ok) {
+      if (response.ok && response.status === 200 && !(response.headers.get('content-range') || '').trim()) {
         await cache.put(url, response);
       }
     })
