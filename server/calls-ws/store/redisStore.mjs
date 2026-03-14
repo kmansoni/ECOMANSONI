@@ -6,11 +6,16 @@ export async function createRedisStore({
   redisUrl,
   dedupTtlSec = DEFAULT_DEDUP_TTL_SEC,
 } = {}) {
+  const connectTimeoutMs = Number(process.env.CALLS_REDIS_CONNECT_TIMEOUT_MS ?? "1500");
   const redis = new Redis(redisUrl, {
-    maxRetriesPerRequest: null,
+    lazyConnect: true,
+    maxRetriesPerRequest: 1,
     enableReadyCheck: true,
+    connectTimeout: Number.isFinite(connectTimeoutMs) && connectTimeoutMs > 0 ? connectTimeoutMs : 1500,
+    retryStrategy: () => null,
   });
 
+  await redis.connect();
   await redis.ping();
 
   function mbKey(deviceId) {

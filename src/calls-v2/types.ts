@@ -112,6 +112,7 @@ export interface RoomCreatePayload {
   preferredRegion?: string;
   maxPeers?: number;
   e2eeRequired?: boolean;
+  allowedUserIds?: string[];
 }
 
 export interface RoomJoinPayload {

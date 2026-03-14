@@ -37,6 +37,7 @@ import { toast } from "sonner";
 import { logger } from "@/lib/logger";
 import { onNativeCallAction } from "@/lib/native/callBridge";
 import { supabase } from "@/integrations/supabase/client";
+import { getSupabaseRuntimeConfig } from "@/lib/supabaseRuntimeConfig";
 import { CallsWsClient } from "@/calls-v2/wsClient";
 import {
   getOrCreateIdentityKeyPair,
@@ -486,11 +487,16 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       const requestId = crypto.randomUUID();
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData.session?.access_token;
+      const runtimeConfig = getSupabaseRuntimeConfig();
+      const publishableKey = String(runtimeConfig.supabasePublishableKey || "").trim();
 
       for (const fn of TURN_CREDENTIALS_EDGE_FNS) {
         const result = await supabase.functions.invoke(fn, {
           body: { requestId, nonce: requestId },
-          headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+          headers: {
+            ...(publishableKey ? { apikey: publishableKey } : {}),
+            ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+          },
         });
         if (!result.error) {
           data = result.data;
@@ -981,9 +987,14 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         let joinToken: string | undefined;
 
         if (role === "caller") {
+          const allowedUserIds = [call.caller_id, call.callee_id].filter(
+            (value, index, array): value is string => typeof value === "string" && value.length > 0 && array.indexOf(value) === index,
+          );
+
           await client.roomCreate({
             callId,
             preferredRegion: "tr",
+            allowedUserIds,
           });
           logger.info("[VideoCallContext] calls-v2 room-create:sent", { callId });
 
@@ -1228,9 +1239,53 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         }
 
         // --- SFU Device initialization ---
-        const routerRtpCapabilities = sfuRouterRtpCapabilitiesRef.current;
+        let routerRtpCapabilities = sfuRouterRtpCapabilitiesRef.current;
         if (!routerRtpCapabilities) {
-          logger.warn("[VideoCallContext] calls-v2 media-bootstrap skipped: routerRtpCapabilities not ready. Waiting for ROOM_JOINED event.", { roomId });
+          // SFU race guard: capabilities can arrive after first bootstrap attempt.
+          // Try to recover from recent ROOM_JOIN_OK / ROOM_JOINED frames before giving up.
+          try {
+            const joinOk = await client.waitFor(
+              "ROOM_JOIN_OK",
+              (frame) => {
+                const payload = frame.payload as { roomId?: string } | undefined;
+                return payload?.roomId === roomId;
+              },
+              { timeoutMs: 1200, acceptRecent: true }
+            );
+            const joinOkCaps = extractRouterCapsFromJoinPayload(joinOk.payload as Record<string, unknown> | undefined);
+            if (joinOkCaps) {
+              sfuRouterRtpCapabilitiesRef.current = joinOkCaps;
+              routerRtpCapabilities = joinOkCaps;
+            }
+          } catch {
+            // no-op, try ROOM_JOINED fallback below
+          }
+        }
+
+        if (!routerRtpCapabilities) {
+          try {
+            const joined = await client.waitFor(
+              "ROOM_JOINED",
+              (frame) => {
+                const payload = frame.payload as { roomId?: string } | undefined;
+                return payload?.roomId === roomId;
+              },
+              { timeoutMs: 1200, acceptRecent: true }
+            );
+            const joinedCaps = extractRouterCapsFromJoinPayload(joined.payload as Record<string, unknown> | undefined);
+            if (joinedCaps) {
+              sfuRouterRtpCapabilitiesRef.current = joinedCaps;
+              routerRtpCapabilities = joinedCaps;
+            }
+          } catch {
+            // no-op, handled by final guard below
+          }
+        }
+
+        if (!routerRtpCapabilities) {
+          logger.warn("[VideoCallContext] calls-v2 media-bootstrap skipped: routerRtpCapabilities unresolved", { roomId });
+          // DEBUG: Log why rtpCapabilities are missing
+          logger.error("[VideoCallContext] DEBUG rtpCapabilities missing", { callId, hasRtpCapsRef: !!sfuRouterRtpCapabilitiesRef.current });
           return;
         }
 
@@ -1388,8 +1443,18 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
 
         callsWsMediaRoomRef.current = roomId;
         logger.info("[VideoCallContext] calls-v2 media-bootstrap:done", { roomId, trackCount: tracks.length });
-      } catch (err) {
+        } catch (err) {
+        const iceServersSnapshot = turnIceServersRef.current ?? undefined;
         logger.warn("[VideoCallContext] calls-v2 media bootstrap failed", err);
+        // DEBUG: Force connectionState update to track the failure point
+        logger.error("[VideoCallContext] DEBUG media-bootstrap FAILED:", {
+          callId,
+          roomId,
+          error: err instanceof Error ? err.message : String(err),
+          hasSfuManager: !!sfuManagerRef.current,
+          hasClient: !!client,
+          hasIceServers: !!iceServersSnapshot,
+        });
       }
     },
     [ensureCallsV2Connected, rebuildRemoteStream, user]
@@ -1627,6 +1692,24 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!currentCall || !localStream) return;
     void bootstrapCallsV2Media(currentCall, localStream);
+  }, [currentCall, localStream, bootstrapCallsV2Media]);
+
+  useEffect(() => {
+    if (!currentCall || !localStream) return;
+
+    const retryTimer = window.setInterval(() => {
+      const call = currentCall;
+      const stream = localStream;
+      if (!call || !stream) return;
+      if (callsWsCallIdRef.current !== call.id) return;
+      if (!callsWsRoomRef.current) return;
+      if (callsWsMediaRoomRef.current === callsWsRoomRef.current) return;
+      void bootstrapCallsV2Media(call, stream);
+    }, 2000);
+
+    return () => {
+      window.clearInterval(retryTimer);
+    };
   }, [currentCall, localStream, bootstrapCallsV2Media]);
 
   useEffect(() => {

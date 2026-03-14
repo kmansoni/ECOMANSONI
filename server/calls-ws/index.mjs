@@ -1,5 +1,7 @@
 import http from "node:http";
 import crypto from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
 import { safeParseInt } from "./utils.mjs";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
@@ -30,6 +32,77 @@ const MAX_CONNECTIONS_PER_IP = safeParseInt(process.env.CALLS_WS_MAX_CONNECTIONS
 const TRUSTED_PROXIES = new Set(
   (process.env.CALLS_WS_TRUSTED_PROXIES || "").split(",").map((s) => s.trim()).filter(Boolean)
 );
+
+const EMERGENCY_SUPABASE_URL = "https://lfkbgnbjxskspsownvjm.supabase.co";
+const EMERGENCY_SUPABASE_PUBLISHABLE_KEY =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxma2JnbmJqeHNrc3Bzb3dudmptIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE0NDI0NTYsImV4cCI6MjA4NzAxODQ1Nn0.WNubMc1s9TA91aT_txY850x2rWJ1ayxiTs7Rq6Do21k";
+
+let cachedSupabaseEnv = null;
+
+function normalizeEnvValue(value) {
+  if (typeof value !== "string") return "";
+  return value.trim().replace(/^['"]+|['"]+$/g, "").trim();
+}
+
+function parseDotEnvFile(filePath) {
+  try {
+    if (!fs.existsSync(filePath)) return {};
+    const text = fs.readFileSync(filePath, "utf8");
+    const map = {};
+    for (const rawLine of text.split(/\r?\n/)) {
+      const line = rawLine.trim();
+      if (!line || line.startsWith("#")) continue;
+      const eq = line.indexOf("=");
+      if (eq <= 0) continue;
+      const key = line.slice(0, eq).trim();
+      const value = normalizeEnvValue(line.slice(eq + 1));
+      if (key) map[key] = value;
+    }
+    return map;
+  } catch {
+    return {};
+  }
+}
+
+function resolveSupabaseAuthEnv() {
+  if (cachedSupabaseEnv) return cachedSupabaseEnv;
+
+  const root = process.cwd();
+  const envFromFiles = {
+    ...parseDotEnvFile(path.join(root, ".env")),
+    ...parseDotEnvFile(path.join(root, ".env.local")),
+  };
+
+  const read = (...keys) => {
+    for (const key of keys) {
+      const envValue = normalizeEnvValue(process.env[key]);
+      if (envValue) return envValue;
+      const fileValue = normalizeEnvValue(envFromFiles[key]);
+      if (fileValue) return fileValue;
+    }
+    return "";
+  };
+
+  cachedSupabaseEnv = {
+    supabaseUrl: read("SUPABASE_URL", "VITE_SUPABASE_URL"),
+    supabaseAnonKey: read(
+      "SUPABASE_ANON_KEY",
+      "SUPABASE_PUBLISHABLE_KEY",
+      "VITE_SUPABASE_PUBLISHABLE_KEY",
+      "VITE_SUPABASE_ANON_KEY",
+    ),
+  };
+
+  if (!cachedSupabaseEnv.supabaseUrl || !cachedSupabaseEnv.supabaseAnonKey) {
+    cachedSupabaseEnv = {
+      supabaseUrl: cachedSupabaseEnv.supabaseUrl || EMERGENCY_SUPABASE_URL,
+      supabaseAnonKey: cachedSupabaseEnv.supabaseAnonKey || EMERGENCY_SUPABASE_PUBLISHABLE_KEY,
+    };
+    console.warn("[calls-ws] Missing Supabase auth env vars, using emergency fallback credentials");
+  }
+
+  return cachedSupabaseEnv;
+}
 
 /**
  * C-2: Resolve the real client IP from the request.
@@ -124,15 +197,6 @@ function wsError(code, message, details, retryable) {
 const rooms = new Map(); // roomId -> { callId, region, nodeId, epoch, memberSetVersion, peers: Map(deviceId -> {userId, role, e2eeReady}), producers: [] }
 
 const deviceSockets = new Map(); // deviceId -> ws
-const usedJoinTokenJtis = new Map(); // jti -> expMs
-
-const joinReplayGc = setInterval(() => {
-  const now = Date.now();
-  for (const [jti, expMs] of usedJoinTokenJtis.entries()) {
-    if (!Number.isFinite(expMs) || expMs <= now) usedJoinTokenJtis.delete(jti);
-  }
-}, 60_000);
-joinReplayGc.unref?.();
 
 function getTurnIceServersPublic() {
   const urls = String(process.env.CALLS_TURN_URLS ?? "")
@@ -179,11 +243,26 @@ function decodeBase64Url(raw) {
   return Buffer.from(padded, "base64").toString("utf8");
 }
 
-function issueJoinToken({ roomId, callId, userId }) {
+function normalizeAllowedUserIds(value, fallbackUserId) {
+  const input = Array.isArray(value) ? value : [];
+  const out = [];
+  for (const item of input) {
+    if (typeof item !== "string") continue;
+    const normalized = item.trim();
+    if (!normalized || out.includes(normalized)) continue;
+    out.push(normalized);
+  }
+  if (out.length === 0 && typeof fallbackUserId === "string" && fallbackUserId.trim()) {
+    out.push(fallbackUserId.trim());
+  }
+  return out;
+}
+
+function issueJoinToken({ roomId, callId, allowedUserIds }) {
   const payload = {
     roomId,
     callId,
-    userId,
+    allowedUserIds: normalizeAllowedUserIds(allowedUserIds),
     jti: uuid(),
     exp: Math.floor(Date.now() / 1000) + CALLS_JOIN_TOKEN_TTL_SEC,
   };
@@ -214,38 +293,16 @@ function verifyJoinToken(joinToken) {
     const expMs = Number(payload?.exp ?? 0) * 1000;
     if (!expMs || expMs <= Date.now()) return null;
     if (typeof payload?.jti !== "string" || payload.jti.length < 8) return null;
-    if (typeof payload?.roomId !== "string" || typeof payload?.callId !== "string" || typeof payload?.userId !== "string") {
+    if (typeof payload?.roomId !== "string" || typeof payload?.callId !== "string") {
       return null;
     }
-
-    // One-time token usage — checked via isJoinTokenUsed (may be Redis-backed).
-    // NOTE: verifyJoinToken remains sync; Redis check is done separately in ROOM_JOIN handler.
-    if (usedJoinTokenJtis.has(payload.jti)) return null;
-    usedJoinTokenJtis.set(payload.jti, expMs);
+    payload.allowedUserIds = normalizeAllowedUserIds(payload?.allowedUserIds, payload?.userId);
+    if (payload.allowedUserIds.length === 0) return null;
 
     return payload;
   } catch {
     return null;
   }
-}
-
-// Distributed join token replay protection (Redis-backed when available)
-async function isJoinTokenUsed(jti, expMs) {
-  // Try Redis first if available
-  if (store.redis) {
-    try {
-      const key = `join-token:${jti}`;
-      const ttlSec = Math.max(1, Math.ceil((expMs - Date.now()) / 1000) + 120);
-      const result = await store.redis.set(key, "1", "NX", "EX", ttlSec);
-      return result === null; // null = key already existed = token already used
-    } catch {
-      // Redis error — fall through to local check
-    }
-  }
-  // Fallback: verifyJoinToken already inserted jti into usedJoinTokenJtis,
-  // so the token uniqueness in this process is already guaranteed there.
-  // Do NOT re-check here — that would cause a false positive on first use.
-  return false;
 }
 
 function pruneSeenMsgIds(seenMsgIds) {
@@ -259,8 +316,7 @@ async function validateSupabaseAccessToken(accessToken) {
   if (CALLS_DEV_INSECURE_AUTH) {
     return { ok: true, userId: `dev_${String(accessToken).slice(0, 8)}` };
   }
-  const supabaseUrl = process.env.SUPABASE_URL;
-  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+  const { supabaseUrl, supabaseAnonKey } = resolveSupabaseAuthEnv();
   if (!supabaseUrl || !supabaseAnonKey) {
     return { ok: false, userId: null, reason: "missing_supabase_env" };
   }
@@ -611,7 +667,12 @@ wss.on("connection", (ws, req) => {
           region,
           nodeId,
           ownerUserId: conn.userId,
-          joinToken: issueJoinToken({ roomId, callId, userId: conn.userId }),
+          allowedUserIds: normalizeAllowedUserIds(frame.payload?.allowedUserIds, conn.userId),
+          joinToken: issueJoinToken({
+            roomId,
+            callId,
+            allowedUserIds: normalizeAllowedUserIds(frame.payload?.allowedUserIds, conn.userId),
+          }),
           epoch: 0,
           memberSetVersion: 0,
           peers: new Map(),
@@ -660,12 +721,12 @@ wss.on("connection", (ws, req) => {
           ack(ws, frame.msgId, false, wsError("UNAUTHORIZED", "Invalid join token", { roomId }, false));
           return;
         }
-        // Distributed replay protection (Redis-backed if available)
-        if (await isJoinTokenUsed(joinPayload.jti, (joinPayload.exp ?? 0) * 1000)) {
-          ack(ws, frame.msgId, false, wsError("UNAUTHORIZED", "Join token already used", { roomId }, false));
-          return;
-        }
-        if (joinPayload.roomId !== roomId || joinPayload.callId !== room.callId || joinPayload.userId !== conn.userId) {
+        const allowedUserIds = normalizeAllowedUserIds(joinPayload.allowedUserIds, joinPayload.userId);
+        if (
+          joinPayload.roomId !== roomId ||
+          joinPayload.callId !== room.callId ||
+          !allowedUserIds.includes(conn.userId)
+        ) {
           ack(ws, frame.msgId, false, wsError("UNAUTHORIZED", "Invalid join token", { roomId }, false));
           return;
         }
