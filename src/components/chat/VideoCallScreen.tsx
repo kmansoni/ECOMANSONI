@@ -46,6 +46,11 @@ function StatusIndicator({ status, connectionState }: { status: string, connecti
       color = "text-red-500";
       label = "Ошибка";
       break;
+    case status === "connected":
+      icon = <CheckCircle className="w-6 h-6" />;
+      color = "text-green-400";
+      label = "Соединение";
+      break;
     case status === "calling":
       icon = <PhoneOutgoing className="w-6 h-6 animate-pulse" />;
       color = "text-blue-400";
@@ -62,11 +67,6 @@ function StatusIndicator({ status, connectionState }: { status: string, connecti
       icon = <Loader2 className="w-6 h-6 animate-spin" />;
       color = "text-blue-400";
       label = "Подключение";
-      break;
-    case connectionState === "connected" && status === "connected":
-      icon = <CheckCircle className="w-6 h-6" />;
-      color = "text-green-400";
-      label = "Соединение";
       break;
     default:
       icon = <PhoneCall className="w-6 h-6" />;
@@ -244,8 +244,8 @@ export function VideoCallScreen({
     }
   };
 
-  const showWaitingUI = status !== "connected" || connectionState !== "connected";
   const showRetryButton = connectionState === "failed";
+  const showWaitingUI = !showRetryButton && !isConnected;
 
   // Video call - swap local/remote preview
   if (isVideoCall && localStream && !isVideoOff) {

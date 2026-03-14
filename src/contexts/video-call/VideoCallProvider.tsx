@@ -99,6 +99,7 @@ const CALLS_V2_WS_URLS = SHOULD_USE_PROD_SFU_DEFAULTS
   : CALLS_V2_WS_URLS_RAW;
 const REKEY_INTERVAL_MS = Math.max(30_000, Number(import.meta.env.VITE_CALLS_V2_REKEY_INTERVAL_MS ?? "120000"));
 const FRAME_E2EE_ADVERTISE_SFRAME = import.meta.env.VITE_CALLS_FRAME_E2EE_ADVERTISE_SFRAME === "true";
+const MEDIA_BOOTSTRAP_RETRY_BACKOFF_MS = 10_000;
 
 // ─── Pure utility functions ────────────────────────────────────────────────────
 function normalizeWsEndpoint(raw: string): string {
@@ -134,7 +135,11 @@ function canonicalizeSfuHost(endpoint: string): string {
     }
 
     return endpoint;
-  } catch {
+  } catch (error) {
+    logger.debug("video_call_context.sfu_host_canonicalize_failed", {
+      endpoint,
+      error,
+    });
     return endpoint;
   }
 }
@@ -364,6 +369,9 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
   const rekeyMachineRef = useRef<RekeyStateMachine | null>(null);
   const epochGuardRef = useRef<EpochGuard | null>(null);
   const consumerAddedUnsubRef = useRef<(() => void) | null>(null);
+  const mediaBootstrapBlockedUntilRef = useRef<Map<string, number>>(new Map());
+  const mediaBootstrapErrorLogAtRef = useRef<Map<string, number>>(new Map());
+  const mediaBootstrapToastShownRef = useRef<Set<string>>(new Set());
 
   // UI-lock: keeps call UI visible even during transient status changes (permission prompts, etc.)
   const [isCallUiActive, setIsCallUiActive] = useState(false);
@@ -403,6 +411,8 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     toggleMute,
     toggleVideo,
     retryWithFreshCredentials,
+    markMediaBootstrapFailed,
+    markMediaBootstrapProgress,
     setRemoteStream: setRemoteMediaStream,
   } = useVideoCallSfu({
     onCallEnded: (call) => {
@@ -455,6 +465,9 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     callsWsRecvTransportRef.current = null;
     e2eeLeaderDeviceRef.current = null;
     keyPackageNonceRef.current.clear();
+    mediaBootstrapBlockedUntilRef.current.clear();
+    mediaBootstrapErrorLogAtRef.current.clear();
+    mediaBootstrapToastShownRef.current.clear();
   }, [setRemoteMediaStream]);
 
   /**
@@ -1200,6 +1213,44 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     setRemoteMediaStream(new MediaStream(tracks));
   }, [setRemoteMediaStream]);
 
+  const reportMediaBootstrapFailure = useCallback(
+    (roomId: string, callId: string, error: unknown) => {
+      const now = Date.now();
+      const lastLogAt = mediaBootstrapErrorLogAtRef.current.get(roomId) ?? 0;
+      const shouldLog = now - lastLogAt >= MEDIA_BOOTSTRAP_RETRY_BACKOFF_MS;
+
+      mediaBootstrapBlockedUntilRef.current.set(roomId, now + MEDIA_BOOTSTRAP_RETRY_BACKOFF_MS);
+      mediaBootstrapErrorLogAtRef.current.set(roomId, now);
+
+      markMediaBootstrapFailed("calls_v2_media_bootstrap_failed", {
+        roomId,
+        callId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+
+      if (shouldLog) {
+        logger.error("[VideoCallContext] DEBUG media-bootstrap FAILED:", {
+          callId,
+          roomId,
+          error: error instanceof Error ? error.message : String(error),
+          hasSfuManager: !!sfuManagerRef.current,
+          hasClient: !!callsWsRef.current,
+          hasIceServers: !!(turnIceServersRef.current && turnIceServersRef.current.length > 0),
+          blockedForMs: MEDIA_BOOTSTRAP_RETRY_BACKOFF_MS,
+        });
+      }
+
+      if (!mediaBootstrapToastShownRef.current.has(roomId)) {
+        mediaBootstrapToastShownRef.current.add(roomId);
+        toast.error("Ошибка подключения медиа", {
+          description: "SFU не завершил создание медиа-транспортов. Повторите звонок или смените сеть.",
+          duration: 5000,
+        });
+      }
+    },
+    [markMediaBootstrapFailed]
+  );
+
   const bootstrapCallsV2Media = useCallback(
     async (call: VideoCall, stream: MediaStream | null) => {
       if (!CALLS_V2_ENABLED || !user || !stream) return;
@@ -1223,6 +1274,9 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
 
       if (callsWsRoomRef.current !== roomId) return;
       if (callsWsMediaRoomRef.current === roomId) return;
+
+  const blockedUntil = mediaBootstrapBlockedUntilRef.current.get(roomId) ?? 0;
+  if (Date.now() < blockedUntil) return;
 
       const client = callsWsRef.current ?? (await ensureCallsV2Connected());
       if (!client) return;
@@ -1257,8 +1311,11 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
               sfuRouterRtpCapabilitiesRef.current = joinOkCaps;
               routerRtpCapabilities = joinOkCaps;
             }
-          } catch {
-            // no-op, try ROOM_JOINED fallback below
+          } catch (error) {
+            logger.debug("video_call_context.room_join_ok_caps_not_available_yet", {
+              roomId,
+              error,
+            });
           }
         }
 
@@ -1277,15 +1334,21 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
               sfuRouterRtpCapabilitiesRef.current = joinedCaps;
               routerRtpCapabilities = joinedCaps;
             }
-          } catch {
-            // no-op, handled by final guard below
+          } catch (error) {
+            logger.debug("video_call_context.room_joined_caps_not_available_yet", {
+              roomId,
+              error,
+            });
           }
         }
 
         if (!routerRtpCapabilities) {
           logger.warn("[VideoCallContext] calls-v2 media-bootstrap skipped: routerRtpCapabilities unresolved", { roomId });
-          // DEBUG: Log why rtpCapabilities are missing
-          logger.error("[VideoCallContext] DEBUG rtpCapabilities missing", { callId, hasRtpCapsRef: !!sfuRouterRtpCapabilitiesRef.current });
+          reportMediaBootstrapFailure(
+            roomId,
+            callId,
+            new Error("routerRtpCapabilities missing in ROOM_JOIN_OK/ROOM_JOINED")
+          );
           return;
         }
 
@@ -1320,6 +1383,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         const sendParams = sendCreated.payload as import('@/calls-v2/types').TransportCreatedPayload | undefined;
         if (!sendParams?.transportId) return;
         logger.info("[VideoCallContext] calls-v2 transport-created:send", { roomId, transportId: sendParams.transportId });
+        markMediaBootstrapProgress("send_transport_created");
 
         sfuManager.createSendTransport(
           {
@@ -1374,6 +1438,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         const recvParams = recvCreated.payload as import('@/calls-v2/types').TransportCreatedPayload | undefined;
         if (!recvParams?.transportId) return;
         logger.info("[VideoCallContext] calls-v2 transport-created:recv", { roomId, transportId: recvParams.transportId });
+        markMediaBootstrapProgress("recv_transport_created");
 
         sfuManager.createRecvTransport(
           {
@@ -1442,22 +1507,16 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         rebuildRemoteStream();
 
         callsWsMediaRoomRef.current = roomId;
+        mediaBootstrapBlockedUntilRef.current.delete(roomId);
+        mediaBootstrapErrorLogAtRef.current.delete(roomId);
+        mediaBootstrapToastShownRef.current.delete(roomId);
         logger.info("[VideoCallContext] calls-v2 media-bootstrap:done", { roomId, trackCount: tracks.length });
-        } catch (err) {
-        const iceServersSnapshot = turnIceServersRef.current ?? undefined;
+      } catch (err) {
         logger.warn("[VideoCallContext] calls-v2 media bootstrap failed", err);
-        // DEBUG: Force connectionState update to track the failure point
-        logger.error("[VideoCallContext] DEBUG media-bootstrap FAILED:", {
-          callId,
-          roomId,
-          error: err instanceof Error ? err.message : String(err),
-          hasSfuManager: !!sfuManagerRef.current,
-          hasClient: !!client,
-          hasIceServers: !!iceServersSnapshot,
-        });
+        reportMediaBootstrapFailure(roomId, callId, err);
       }
     },
-    [ensureCallsV2Connected, rebuildRemoteStream, user]
+    [ensureCallsV2Connected, markMediaBootstrapProgress, rebuildRemoteStream, reportMediaBootstrapFailure, user]
   );
 
   const { incomingCall: detectedIncomingCall, clearIncomingCall } = useIncomingCalls({

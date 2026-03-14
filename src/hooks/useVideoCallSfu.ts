@@ -18,6 +18,7 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { getStableCallsDeviceId } from "@/lib/platform/device";
+import { logger } from "@/lib/logger";
 
 // Re-use the canonical VideoCall / VideoCallStatus types to stay DB-schema-aligned
 // and remain compatible with the rest of the codebase (VideoCallContext, useIncomingCalls, etc.)
@@ -102,10 +103,12 @@ async function acquireLocalMedia(isVideo: boolean): Promise<MediaStream> {
     if (isVideo) {
       try {
         return await request({ audio: baseAudio, video: hdVideo }, "video+audio(hd)");
-      } catch {
+      } catch (error) {
+        logger.warn("video_call_sfu.acquire_media_hd_failed", { error });
         try {
           return await request({ audio: baseAudio, video: safeVideo }, "video+audio(safe)");
-        } catch {
+        } catch (safeError) {
+          logger.warn("video_call_sfu.acquire_media_safe_failed", { error: safeError });
           // Graceful degradation: keep the call alive in audio-only mode.
           return await request({ audio: baseAudio, video: false }, "audio-only fallback");
         }
@@ -147,6 +150,21 @@ function toMediaAccessError(error: unknown): VideoCallMediaAccessError {
       ? String((error as { name?: unknown }).name ?? "UnknownError")
       : "UnknownError";
   return new VideoCallMediaAccessError(causeName);
+}
+
+function isConnectedCallStatus(status: string | null | undefined): boolean {
+  return status === "answered" || status === "active" || status === "connected";
+}
+
+function isStatusCompatibilityError(error: unknown): boolean {
+  const code = String((error as { code?: unknown } | null)?.code ?? "");
+  const message = String((error as { message?: unknown } | null)?.message ?? "").toLowerCase();
+  return (
+    code === "23514" ||
+    code === "PGRST116" ||
+    message.includes("check constraint") ||
+    message.includes("status")
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -204,6 +222,14 @@ export interface UseVideoCallSfuReturn {
    * Preserved for interface compatibility; callers can safely await it.
    */
   retryWithFreshCredentials: () => Promise<void>;
+  /**
+   * Marks media bootstrap as failed so UI can exit endless "connecting" state.
+   */
+  markMediaBootstrapFailed: (reason?: string, details?: unknown) => void;
+  /**
+   * Notifies hook about successful media bootstrap milestones (e.g. transports created).
+   */
+  markMediaBootstrapProgress: (signal: "send_transport_created" | "recv_transport_created") => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -236,6 +262,7 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
 
   const localStreamRef = useRef<MediaStream | null>(null);
   const currentCallRef = useRef<VideoCall | null>(null);
+  const mediaBootstrapSignalsRef = useRef<Set<string>>(new Set());
 
   // Keep refs in sync for use inside callbacks
   useEffect(() => { localStreamRef.current = localStream; }, [localStream]);
@@ -245,11 +272,56 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
     setRemoteStreamState(stream);
 
     const hasLiveRemoteTracks = !!stream && stream.getTracks().some((track) => track.readyState === "live");
+    logger.info("video_call_sfu.remote_stream_updated", {
+      hasLiveRemoteTracks,
+      trackCount: stream?.getTracks().length ?? 0,
+    });
     if (hasLiveRemoteTracks) {
       setStatus((prev) => (prev === "idle" ? prev : "connected"));
       setConnectionState("connected");
+      logger.info("video_call_sfu.connection_promoted_by_remote_tracks", {});
     }
   }, []);
+
+  const markMediaBootstrapFailed = useCallback((reason = "media_bootstrap_failed", details?: unknown) => {
+    console.error("[useVideoCallSfu] markMediaBootstrapFailed:", reason, details);
+    setConnectionState("failed");
+    setStatus((prev) => (prev === "idle" ? prev : "connected"));
+  }, []);
+
+  const markMediaBootstrapProgress = useCallback((signal: "send_transport_created" | "recv_transport_created") => {
+    mediaBootstrapSignalsRef.current.add(signal);
+    logger.info("video_call_sfu.media_bootstrap_progress", { signal });
+  }, []);
+
+  useEffect(() => {
+    if (status !== "connected") return;
+    if (connectionState === "connected" || connectionState === "failed") return;
+
+    // SFU media may arrive later than signaling. Promote state after grace period
+    // so UI does not stay forever in "connecting".
+    logger.info("video_call_sfu.fallback_timer_started", { connectionState });
+    const timer = window.setTimeout(() => {
+      setConnectionState((prev) => {
+        if (prev === "failed") return prev;
+        const hasSend = mediaBootstrapSignalsRef.current.has("send_transport_created");
+        const hasRecv = mediaBootstrapSignalsRef.current.has("recv_transport_created");
+        if (!hasSend || !hasRecv) {
+          console.warn("[useVideoCallSfu] 3500ms fallback skipped: missing media bootstrap signals", {
+            hasSend,
+            hasRecv,
+          });
+          return prev;
+        }
+        logger.info("video_call_sfu.fallback_promoted_connected", { previousState: prev });
+        return "connected";
+      });
+    }, 3500);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [status, connectionState]);
 
   // ---------------------------------------------------------------------------
   // Internal helpers
@@ -267,6 +339,7 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
   const resetState = useCallback(() => {
     releaseLocalMedia();
     setRemoteStreamState(null);
+    mediaBootstrapSignalsRef.current.clear();
     setStatus("idle");
     setConnectionState("unknown");
     setIsMuted(false);
@@ -342,7 +415,9 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
       ended_at: null,
     };
     setCurrentCall(call);
+    mediaBootstrapSignalsRef.current.clear();
     setConnectionState("connecting");
+    logger.info("video_call_sfu.start_call_connecting", { callId: call.id.slice(0, 8) });
     return call;
   }, [user, releaseLocalMedia]);
 
@@ -366,67 +441,120 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
 
     setLocalStream(stream);
 
-    // Update DB status — callee acknowledged
+    // Update DB status — callee acknowledged.
+    // Compatibility: some environments still use `active` instead of `answered`.
     const { error: answerError } = await supabase
       .from("video_calls")
       .update({
-        // DB enum/constraint accepts 'answered' (not 'connected').
         status: "answered",
         started_at: new Date().toISOString(),
       })
       .eq("id", call.id);
 
     if (answerError) {
-      releaseLocalMedia();
-      setStatus("idle");
-      throw new VideoCallStartError("db_answer_update_failed", answerError);
+      if (isStatusCompatibilityError(answerError)) {
+        const { error: fallbackError } = await supabase
+          .from("video_calls")
+          .update({
+            status: "active",
+            started_at: new Date().toISOString(),
+          })
+          .eq("id", call.id);
+
+        if (fallbackError) {
+          releaseLocalMedia();
+          setStatus("idle");
+          throw new VideoCallStartError("db_answer_update_failed", fallbackError);
+        }
+      } else {
+        releaseLocalMedia();
+        setStatus("idle");
+        throw new VideoCallStartError("db_answer_update_failed", answerError);
+      }
     }
 
     const answeredCall: VideoCall = { ...call, status: "answered" };
     setCurrentCall(answeredCall);
+    mediaBootstrapSignalsRef.current.clear();
     setStatus("connected");
+    // Keep call active, but do not report final media connectivity before SFU bootstrap succeeds.
     setConnectionState("connecting");
+    logger.info("video_call_sfu.answer_call_connecting", { callId: call.id.slice(0, 8) });
   }, [releaseLocalMedia, user]);
+
+  const applyCallRowUpdate = useCallback((updated: VideoCall) => {
+    if (!updated || !updated.id) return;
+
+    const active = currentCallRef.current;
+    if (!active || active.id !== updated.id) return;
+
+    setCurrentCall(updated);
+
+    if (isConnectedCallStatus(updated.status)) {
+      setStatus("connected");
+      // DB status can become "answered" before media transport is actually ready.
+      // Keep connecting state until remote tracks arrive or fallback timer promotes it.
+      setConnectionState((prev) => {
+        if (prev === "failed" || prev === "connected") return prev;
+        return "connecting";
+      });
+      return;
+    }
+
+    if (["declined", "ended", "missed"].includes(updated.status)) {
+      onCallEndedRef.current?.(updated);
+      setStatus("ended");
+      setCurrentCall(null);
+      resetState();
+    }
+  }, [resetState]);
 
   useEffect(() => {
     if (!currentCall?.id || !user?.id) return;
 
+    const activeCallId = currentCall.id;
+
     const channel = supabase
-      .channel(`video-call-state-${currentCall.id}`)
+      .channel(`video-call-state-${activeCallId}`)
       .on(
         "postgres_changes",
         {
           event: "UPDATE",
           schema: "public",
           table: "video_calls",
-          filter: `id=eq.${currentCall.id}`,
+          filter: `id=eq.${activeCallId}`,
         },
         (payload) => {
           const updated = payload.new as VideoCall;
-          if (!updated || updated.id !== currentCall.id) return;
-
-          setCurrentCall(updated);
-
-          if (updated.status === "answered") {
-            setStatus("connected");
-            setConnectionState((prev) => (prev === "connected" ? prev : "connecting"));
-            return;
-          }
-
-          if (["declined", "ended", "missed"].includes(updated.status)) {
-            onCallEndedRef.current?.(updated);
-            setStatus("ended");
-            setCurrentCall(null);
-            resetState();
-          }
+          if (!updated || updated.id !== activeCallId) return;
+          applyCallRowUpdate(updated);
         }
       )
       .subscribe();
 
+    // Fallback reconciliation in case Realtime event is dropped or delayed.
+    const pollTimer = window.setInterval(() => {
+      const active = currentCallRef.current;
+      if (!active || active.id !== activeCallId) return;
+
+      void (async () => {
+        const { data } = await supabase
+          .from("video_calls" as never)
+          .select("*" as never)
+          .eq("id", activeCallId)
+          .maybeSingle();
+
+        if (data && typeof data === "object") {
+          applyCallRowUpdate(data as VideoCall);
+        }
+      })();
+    }, 1500);
+
     return () => {
+      window.clearInterval(pollTimer);
       supabase.removeChannel(channel);
     };
-  }, [currentCall?.id, resetState, user?.id]);
+  }, [applyCallRowUpdate, currentCall?.id, user?.id]);
 
   // ---------------------------------------------------------------------------
   // endCall
@@ -485,7 +613,9 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
   // ---------------------------------------------------------------------------
 
   const retryWithFreshCredentials = useCallback(async (): Promise<void> => {
-    console.info("[useVideoCallSfu] retryWithFreshCredentials: SFU mode — no ICE renegotiation needed; reconnect via WS");
+    logger.info("video_call_sfu.retry_noop", {
+      reason: "SFU mode — no ICE renegotiation needed; reconnect via WS",
+    });
   }, []);
 
   // ---------------------------------------------------------------------------
@@ -513,5 +643,7 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
     toggleMute,
     toggleVideo,
     retryWithFreshCredentials,
+    markMediaBootstrapFailed,
+    markMediaBootstrapProgress,
   };
 }
