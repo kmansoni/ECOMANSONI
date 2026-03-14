@@ -130,6 +130,7 @@ jobs:
   deploy-frontend:
     name: Deploy Frontend (Cloudflare Pages)
     needs: [build, migrate]
+    if: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
     runs-on: ubuntu-latest
     environment: production
     steps:
