@@ -54,6 +54,13 @@ function validateWsEndpoints(endpoints) {
     if (url.protocol !== "wss:" && !(url.protocol === "ws:" && isLocalHost(url.hostname))) {
       errors.push(`insecure WS protocol (must be wss:// for remote): ${endpoint}`);
     }
+
+    // Production policy: SFU ingress is provisioned on mansoni.ru.
+    // Reject accidental .com values early to avoid WS 401/upgrade failures in runtime.
+    const host = url.hostname.toLowerCase();
+    if (/^sfu-[a-z0-9-]+\.mansoni\.com$/.test(host)) {
+      errors.push(`invalid SFU domain for production: ${endpoint} (expected *.mansoni.ru)`);
+    }
   }
   return errors;
 }

@@ -96,6 +96,46 @@ function normalizeWsEndpoint(raw: string): string {
   return `${scheme}://${value}`;
 }
 
+function canonicalizeSfuHost(endpoint: string): string {
+  try {
+    const parsed = new URL(endpoint);
+    const host = parsed.hostname.toLowerCase();
+
+    // Operational guardrail: some deploys accidentally publish *.mansoni.com
+    // while SFU ingress is bound to *.mansoni.ru.
+    if (/^sfu-[a-z0-9-]+\.mansoni\.com$/.test(host)) {
+      const fixed = endpoint.replace(/\.mansoni\.com(?=[:/?]|$)/i, ".mansoni.ru");
+      logger.warn("video_call_context.sfu_host_canonicalized", {
+        from: endpoint,
+        to: fixed,
+      });
+      return fixed;
+    }
+
+    return endpoint;
+  } catch {
+    return endpoint;
+  }
+}
+
+function expandWsEndpoints(rawEndpoints: string[]): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+
+  const pushUnique = (value: string) => {
+    const normalized = normalizeWsEndpoint(value);
+    if (!normalized) return;
+    const canonical = canonicalizeSfuHost(normalized);
+    const key = canonical.trim();
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    out.push(key);
+  };
+
+  rawEndpoints.forEach(pushUnique);
+  return out;
+}
+
 function isLocalEndpoint(endpoint: string): boolean {
   try {
     const url = new URL(endpoint);
@@ -112,9 +152,7 @@ function getCallsConfigIssue(): string | null {
     return "Calls V2 disabled";
   }
 
-  const endpoints = [CALLS_V2_WS_URL, ...CALLS_V2_WS_URLS]
-    .map((value) => normalizeWsEndpoint(value))
-    .filter(Boolean);
+  const endpoints = expandWsEndpoints([CALLS_V2_WS_URL, ...CALLS_V2_WS_URLS]);
 
   if (endpoints.length === 0) {
     return "Calls WS endpoint is not configured";
@@ -473,9 +511,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     if (callsWsRef.current) return callsWsRef.current;
 
     const rawEndpoints = CALLS_V2_WS_URLS.length > 0 ? CALLS_V2_WS_URLS : (CALLS_V2_WS_URL ? [CALLS_V2_WS_URL] : []);
-    const endpoints = rawEndpoints
-      .map(normalizeWsEndpoint)
-      .filter((v, i, arr) => !!v && arr.indexOf(v) === i);
+    const endpoints = expandWsEndpoints(rawEndpoints);
     if (endpoints.length === 0) {
       logger.warn("[VideoCallContext] calls-v2 disabled: WS endpoints normalized to empty", { rawEndpoints });
       return null;
