@@ -18,10 +18,18 @@ import { fetchUserBriefMap, resolveUserBrief } from "@/lib/users/userBriefs";
 
 export type MemberRole = "owner" | "admin" | "member";
 
+export interface MemberPermissions {
+  can_send_messages: boolean;
+  can_send_media: boolean;
+  can_send_links: boolean;
+  muted_until: string | null;
+}
+
 export interface GroupMember {
   user_id: string;
   role: MemberRole;
   joined_at: string;
+  permissions: MemberPermissions;
   profile?: {
     display_name: string | null;
     avatar_url: string | null;
@@ -76,6 +84,7 @@ export interface UseSupergroup {
   convertToSupergroup: () => Promise<void>;
   loadMembers: () => Promise<void>;
   updateMemberRole: (userId: string, role: MemberRole) => Promise<void>;
+  updateMemberPermissions: (userId: string, patch: Partial<MemberPermissions>) => Promise<void>;
   removeMember: (userId: string) => Promise<void>;
 }
 
@@ -91,6 +100,13 @@ export function useSupergroup(conversationId: string): UseSupergroup {
   const [currentUserRole, setCurrentUserRole] = useState<MemberRole | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const defaultPermissions: MemberPermissions = {
+    can_send_messages: true,
+    can_send_media: true,
+    can_send_links: true,
+    muted_until: null,
+  };
 
   // Load settings + join requests + member count
   useEffect(() => {
@@ -304,12 +320,31 @@ export function useSupergroup(conversationId: string): UseSupergroup {
       const userIds = rows.map(r => r.user_id);
       const briefMap = userIds.length > 0 ? await fetchUserBriefMap(userIds, supabase as any) : {};
 
+      const { data: permissionsRows, error: permissionsErr } = await (supabase as any)
+        .from("supergroup_member_permissions")
+        .select("user_id, can_send_messages, can_send_media, can_send_links, muted_until")
+        .eq("conversation_id", conversationId)
+        .in("user_id", userIds);
+
+      if (permissionsErr) throw permissionsErr;
+
+      const permissionsByUserId = new Map<string, MemberPermissions>();
+      ((permissionsRows || []) as Array<{ user_id: string; can_send_messages: boolean; can_send_media: boolean; can_send_links: boolean; muted_until: string | null }>).forEach((p) => {
+        permissionsByUserId.set(p.user_id, {
+          can_send_messages: p.can_send_messages,
+          can_send_media: p.can_send_media,
+          can_send_links: p.can_send_links,
+          muted_until: p.muted_until,
+        });
+      });
+
       const result: GroupMember[] = rows.map(r => {
         const brief = resolveUserBrief(r.user_id, briefMap);
         return {
           user_id: r.user_id,
           role: r.role,
           joined_at: r.joined_at,
+          permissions: permissionsByUserId.get(r.user_id) ?? defaultPermissions,
           profile: brief
             ? { display_name: brief.display_name, avatar_url: brief.avatar_url, username: brief.username }
             : undefined,
@@ -338,6 +373,42 @@ export function useSupergroup(conversationId: string): UseSupergroup {
         throw new Error(err.message);
       }
       setMembers(prev => prev.map(m => m.user_id === userId ? { ...m, role } : m));
+    },
+    [conversationId]
+  );
+
+  const updateMemberPermissions = useCallback(
+    async (userId: string, patch: Partial<MemberPermissions>) => {
+      if (!conversationId) return;
+      const payload: Record<string, unknown> = {
+        conversation_id: conversationId,
+        user_id: userId,
+      };
+
+      if (patch.can_send_messages !== undefined) payload.can_send_messages = patch.can_send_messages;
+      if (patch.can_send_media !== undefined) payload.can_send_media = patch.can_send_media;
+      if (patch.can_send_links !== undefined) payload.can_send_links = patch.can_send_links;
+      if (patch.muted_until !== undefined) payload.muted_until = patch.muted_until;
+
+      const { error: err } = await (supabase as any)
+        .from("supergroup_member_permissions")
+        .upsert(payload, { onConflict: "conversation_id,user_id" });
+
+      if (err) {
+        setError(err.message);
+        throw new Error(err.message);
+      }
+
+      setMembers(prev => prev.map((m) => {
+        if (m.user_id !== userId) return m;
+        return {
+          ...m,
+          permissions: {
+            ...m.permissions,
+            ...patch,
+          },
+        };
+      }));
     },
     [conversationId]
   );
@@ -377,6 +448,7 @@ export function useSupergroup(conversationId: string): UseSupergroup {
     convertToSupergroup,
     loadMembers,
     updateMemberRole,
+    updateMemberPermissions,
     removeMember,
   };
 }

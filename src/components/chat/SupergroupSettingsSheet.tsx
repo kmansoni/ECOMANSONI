@@ -8,8 +8,8 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { CheckCircle2, XCircle, Users, Loader2, AlertTriangle, Shield, ShieldOff, UserX, Crown, ChevronDown, ChevronUp } from "lucide-react";
-import { useSupergroup, type SupergroupSettings, type JoinRequest, type MemberRole, type GroupMember } from "@/hooks/useSupergroup";
+import { CheckCircle2, XCircle, Users, Loader2, AlertTriangle, Shield, ShieldOff, UserX, Crown, ChevronDown, ChevronUp, SlidersHorizontal } from "lucide-react";
+import { useSupergroup, type SupergroupSettings, type JoinRequest, type MemberRole, type GroupMember, type MemberPermissions } from "@/hooks/useSupergroup";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 
@@ -43,6 +43,7 @@ export function SupergroupSettingsSheet({
     convertToSupergroup,
     loadMembers,
     updateMemberRole,
+    updateMemberPermissions,
     removeMember,
   } = useSupergroup(conversationId);
 
@@ -354,6 +355,14 @@ export function SupergroupSettingsSheet({
                               toast.error("Не удалось удалить участника");
                             }
                           }}
+                          onUpdatePermissions={async (patch) => {
+                            try {
+                              await updateMemberPermissions(member.user_id, patch);
+                              toast.success("Ограничения обновлены");
+                            } catch {
+                              toast.error("Не удалось обновить ограничения");
+                            }
+                          }}
                         />
                       ))}
                     </div>
@@ -494,11 +503,13 @@ interface MemberCardProps {
   currentUserId: string;
   currentUserRole: MemberRole | null;
   onUpdateRole: (role: MemberRole) => Promise<void>;
+  onUpdatePermissions: (patch: Partial<MemberPermissions>) => Promise<void>;
   onKick: () => Promise<void>;
 }
 
-function MemberCard({ member, currentUserId, currentUserRole, onUpdateRole, onKick }: MemberCardProps) {
+function MemberCard({ member, currentUserId, currentUserRole, onUpdateRole, onUpdatePermissions, onKick }: MemberCardProps) {
   const [busy, setBusy] = useState<string | null>(null);
+  const [showPermissions, setShowPermissions] = useState(false);
   const isSelf = member.user_id === currentUserId;
   const canManage = !isSelf && member.role !== 'owner' && (
     currentUserRole === 'owner' ||
@@ -520,60 +531,139 @@ function MemberCard({ member, currentUserId, currentUserRole, onUpdateRole, onKi
     try { await fn(); } finally { setBusy(null); }
   };
 
-  return (
-    <div className="flex items-center gap-3 p-2.5 rounded-xl bg-gray-900/50 border border-gray-800">
-      <Avatar className="w-8 h-8 flex-shrink-0">
-        <AvatarImage src={member.profile?.avatar_url ?? undefined} />
-        <AvatarFallback className="bg-gray-800 text-gray-300 text-xs">{initials}</AvatarFallback>
-      </Avatar>
+  const now = Date.now();
+  const mutedUntilTs = member.permissions.muted_until ? Date.parse(member.permissions.muted_until) : NaN;
+  const isMuted = Number.isFinite(mutedUntilTs) && mutedUntilTs > now;
 
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-gray-200 truncate">{name}</p>
-        {member.profile?.username && (
-          <p className="text-xs text-gray-500 truncate">@{member.profile.username}</p>
+  return (
+    <div className="p-2.5 rounded-xl bg-gray-900/50 border border-gray-800 space-y-2">
+      <div className="flex items-center gap-3">
+        <Avatar className="w-8 h-8 flex-shrink-0">
+          <AvatarImage src={member.profile?.avatar_url ?? undefined} />
+          <AvatarFallback className="bg-gray-800 text-gray-300 text-xs">{initials}</AvatarFallback>
+        </Avatar>
+
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium text-gray-200 truncate">{name}</p>
+          {member.profile?.username && (
+            <p className="text-xs text-gray-500 truncate">@{member.profile.username}</p>
+          )}
+        </div>
+
+        <Badge variant="outline" className={`text-xs flex-shrink-0 ${badge.cls}`}>
+          {member.role === "owner" && <Crown className="w-2.5 h-2.5 mr-1" />}
+          {badge.label}
+        </Badge>
+
+        {canManage && (
+          <div className="flex gap-1 flex-shrink-0">
+            {member.role === "member" ? (
+              <Button
+                size="icon"
+                variant="ghost"
+                className="w-7 h-7 hover:bg-blue-900/30 hover:text-blue-400 text-gray-500"
+                title="Назначить администратором"
+                disabled={!!busy}
+                onClick={() => handle("promote", () => onUpdateRole("admin"))}
+              >
+                {busy === "promote" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Shield className="w-3.5 h-3.5" />}
+              </Button>
+            ) : (
+              <Button
+                size="icon"
+                variant="ghost"
+                className="w-7 h-7 hover:bg-gray-700 hover:text-gray-300 text-gray-500"
+                title="Понизить до участника"
+                disabled={!!busy}
+                onClick={() => handle("demote", () => onUpdateRole("member"))}
+              >
+                {busy === "demote" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldOff className="w-3.5 h-3.5" />}
+              </Button>
+            )}
+            <Button
+              size="icon"
+              variant="ghost"
+              className="w-7 h-7 hover:bg-indigo-900/30 hover:text-indigo-300 text-gray-500"
+              title="Ограничения"
+              disabled={!!busy}
+              onClick={() => setShowPermissions(v => !v)}
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="w-7 h-7 hover:bg-red-900/30 hover:text-red-400 text-gray-500"
+              title="Удалить из группы"
+              disabled={!!busy}
+              onClick={() => handle("kick", onKick)}
+            >
+              {busy === "kick" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserX className="w-3.5 h-3.5" />}
+            </Button>
+          </div>
         )}
       </div>
 
-      <Badge variant="outline" className={`text-xs flex-shrink-0 ${badge.cls}`}>
-        {member.role === "owner" && <Crown className="w-2.5 h-2.5 mr-1" />}
-        {badge.label}
-      </Badge>
-
-      {canManage && (
-        <div className="flex gap-1 flex-shrink-0">
-          {member.role === "member" ? (
-            <Button
-              size="icon"
-              variant="ghost"
-              className="w-7 h-7 hover:bg-blue-900/30 hover:text-blue-400 text-gray-500"
-              title="Назначить администратором"
+      {showPermissions && canManage && (
+        <div className="mt-1 border border-gray-800 rounded-lg p-2.5 space-y-2.5 bg-gray-950/40">
+          <div className="flex items-center justify-between">
+            <Label className="text-xs text-gray-300 cursor-pointer">Разрешить отправку сообщений</Label>
+            <Switch
+              checked={member.permissions.can_send_messages}
+              onCheckedChange={(v) => void handle("perm-msg", () => onUpdatePermissions({ can_send_messages: v }))}
               disabled={!!busy}
-              onClick={() => handle("promote", () => onUpdateRole("admin"))}
-            >
-              {busy === "promote" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Shield className="w-3.5 h-3.5" />}
-            </Button>
-          ) : (
-            <Button
-              size="icon"
-              variant="ghost"
-              className="w-7 h-7 hover:bg-gray-700 hover:text-gray-300 text-gray-500"
-              title="Понизить до участника"
+            />
+          </div>
+          <div className="flex items-center justify-between">
+            <Label className="text-xs text-gray-300 cursor-pointer">Разрешить медиа</Label>
+            <Switch
+              checked={member.permissions.can_send_media}
+              onCheckedChange={(v) => void handle("perm-media", () => onUpdatePermissions({ can_send_media: v }))}
               disabled={!!busy}
-              onClick={() => handle("demote", () => onUpdateRole("member"))}
-            >
-              {busy === "demote" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldOff className="w-3.5 h-3.5" />}
-            </Button>
-          )}
-          <Button
-            size="icon"
-            variant="ghost"
-            className="w-7 h-7 hover:bg-red-900/30 hover:text-red-400 text-gray-500"
-            title="Удалить из группы"
-            disabled={!!busy}
-            onClick={() => handle("kick", onKick)}
-          >
-            {busy === "kick" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserX className="w-3.5 h-3.5" />}
-          </Button>
+            />
+          </div>
+          <div className="flex items-center justify-between">
+            <Label className="text-xs text-gray-300 cursor-pointer">Разрешить ссылки</Label>
+            <Switch
+              checked={member.permissions.can_send_links}
+              onCheckedChange={(v) => void handle("perm-links", () => onUpdatePermissions({ can_send_links: v }))}
+              disabled={!!busy}
+            />
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-gray-400">
+              {isMuted ? `Мут до ${new Date(mutedUntilTs).toLocaleString("ru")}` : "Не замьючен"}
+            </span>
+            <div className="flex gap-1.5">
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 border-gray-700 text-xs"
+                disabled={!!busy}
+                onClick={() => void handle("mute-1h", () => onUpdatePermissions({ muted_until: new Date(Date.now() + 60 * 60 * 1000).toISOString() }))}
+              >
+                1ч
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 border-gray-700 text-xs"
+                disabled={!!busy}
+                onClick={() => void handle("mute-24h", () => onUpdatePermissions({ muted_until: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() }))}
+              >
+                24ч
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 border-gray-700 text-xs"
+                disabled={!!busy}
+                onClick={() => void handle("unmute", () => onUpdatePermissions({ muted_until: null }))}
+              >
+                Снять
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </div>
