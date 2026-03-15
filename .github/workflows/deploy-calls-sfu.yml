@@ -43,6 +43,7 @@ jobs:
             # -- 1. Sync code to latest main (hard reset, safe in CI) -----------
             cd "$APP_DIR"
             git config --global --add safe.directory "$APP_DIR"
+            rm -f .git/index.lock .git/MERGE_HEAD .git/rebase-merge .git/rebase-apply || true
             git fetch origin main
             git checkout main
             git reset --hard origin/main
@@ -109,6 +110,7 @@ jobs:
 
             cd "$APP_DIR"
             git config --global --add safe.directory "$APP_DIR"
+            rm -f .git/index.lock .git/MERGE_HEAD .git/rebase-merge .git/rebase-apply || true
             git fetch origin main
             git checkout main
             git reset --hard origin/main
@@ -168,6 +170,7 @@ jobs:
 
             cd "$APP_DIR"
             git config --global --add safe.directory "$APP_DIR"
+            rm -f .git/index.lock .git/MERGE_HEAD .git/rebase-merge .git/rebase-apply || true
             git fetch origin main
             git checkout main
             git reset --hard origin/main

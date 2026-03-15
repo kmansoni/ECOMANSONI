@@ -85,6 +85,8 @@ else
   cd "$APP_DIR"
   # Allow git to operate even if directory is owned by different user
   git config --global --add safe.directory "$APP_DIR"
+  # Remove stale lock files from previous interrupted operations
+  rm -f .git/index.lock .git/MERGE_HEAD || true
   git fetch origin main
   git checkout main
   git reset --hard origin/main
