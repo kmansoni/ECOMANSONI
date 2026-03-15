@@ -750,6 +750,9 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       }
       if (!callMediaEncryptionRef.current) {
         callMediaEncryptionRef.current = new CallMediaEncryption();
+        if (epochGuardRef.current) {
+          callMediaEncryptionRef.current.setEpochGuard(epochGuardRef.current);
+        }
         logger.info("[VideoCallContext] calls-v2 CallMediaEncryption initialized");
       }
 
@@ -1497,7 +1500,9 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
 
         // Lazy-init SfuMediaManager per call session
         if (!sfuManagerRef.current) {
-          sfuManagerRef.current = new SfuMediaManager();
+          sfuManagerRef.current = new SfuMediaManager({
+            requireSenderReceiverAccessForE2ee: CallMediaEncryption.isSupported(),
+          });
         }
         const sfuManager = sfuManagerRef.current;
 

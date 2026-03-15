@@ -44,7 +44,28 @@ function createFrameSender(ws) {
   };
 }
 
+function ensureFrameBuffer(ws) {
+  if (Array.isArray(ws.__callsSmokeFrames)) return ws.__callsSmokeFrames;
+  const frames = [];
+  ws.__callsSmokeFrames = frames;
+  ws.on("message", (raw) => {
+    try {
+      const parsed = JSON.parse(String(raw));
+      frames.push(parsed);
+      if (frames.length > 200) frames.shift();
+    } catch {
+      // Ignore malformed frames in smoke harness.
+    }
+  });
+  return frames;
+}
+
 function waitForFrame(ws, predicate, timeoutMs) {
+  const bufferedFrames = ensureFrameBuffer(ws);
+  const bufferedMatch = bufferedFrames.find(predicate);
+  if (bufferedMatch) {
+    return Promise.resolve(bufferedMatch);
+  }
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       cleanup();
@@ -124,14 +145,34 @@ async function runEndpointSmoke(endpoint) {
     });
   });
 
+  ensureFrameBuffer(ws);
   const send = createFrameSender(ws);
   const deviceId = `smoke_${crypto.randomUUID().slice(0, 8)}`;
+
+  const helloMsgId = send("HELLO", {
+    client: {
+      deviceId,
+      platform: "smoke",
+    },
+  });
+  await expectAckOk(ws, helloMsgId, STEP_TIMEOUT_MS);
+  await waitForFrame(
+    ws,
+    (frame) => frame?.type === "WELCOME",
+    STEP_TIMEOUT_MS,
+  );
 
   const authMsgId = send("AUTH", {
     accessToken,
     client: { deviceId },
   });
   await expectAckOk(ws, authMsgId, STEP_TIMEOUT_MS);
+
+  const e2eeCapsMsgId = send("E2EE_CAPS", {
+    insertableStreams: true,
+    sframe: false,
+  });
+  await expectAckOk(ws, e2eeCapsMsgId, STEP_TIMEOUT_MS);
 
   const createMsgId = send("ROOM_CREATE", {
     preferredRegion: "ru",
@@ -173,6 +214,13 @@ async function runEndpointSmoke(endpoint) {
     (frame) => frame?.type === "ROOM_JOIN_OK" && frame?.payload?.roomId === roomId,
     STEP_TIMEOUT_MS,
   );
+
+  const epoch = Number(joined?.payload?.epoch ?? 0);
+  const e2eeReadyMsgId = send("E2EE_READY", {
+    roomId,
+    epoch,
+  });
+  await expectAckOk(ws, e2eeReadyMsgId, STEP_TIMEOUT_MS);
 
   const caps = joined?.payload?.mediasoup?.routerRtpCapabilities;
   const hasCaps = isNonEmptyCapabilities(caps);

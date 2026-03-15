@@ -17,6 +17,7 @@ export class SfuMediaManager {
   private recvTransport: mediasoupTypes.Transport | null = null;
   private producers: Map<string, mediasoupTypes.Producer> = new Map();
   private consumers: Map<string, mediasoupTypes.Consumer> = new Map();
+  private readonly requireSenderReceiverAccessForE2ee: boolean;
   /**
    * C-3: Кешируем RTCRtpSender/Receiver при produce/consume, пока track доступен.
    * Заменяет ненадёжный доступ к internal _rtpSender/_rtpReceiver mediasoup-client.
@@ -24,8 +25,9 @@ export class SfuMediaManager {
   private producerSenders: Map<string, RTCRtpSender> = new Map();
   private consumerReceivers: Map<string, RTCRtpReceiver> = new Map();
 
-  constructor() {
+  constructor(options?: { requireSenderReceiverAccessForE2ee?: boolean }) {
     this.device = new Device();
+    this.requireSenderReceiverAccessForE2ee = options?.requireSenderReceiverAccessForE2ee ?? false;
   }
 
   get loaded(): boolean {
@@ -155,28 +157,36 @@ export class SfuMediaManager {
 
     this.producers.set(producer.id, producer);
 
-    // C-3: Cache RTCRtpSender while track is still accessible after produce()
-    // Accesses mediasoup-client internal _handler._pc (undocumented). If absent in a
-    // future mediasoup-client version, we throw immediately rather than continue
-    // without E2EE (fail-closed: no sender = no transform = plaintext media).
+    // C-3: Cache RTCRtpSender while track is still accessible after produce().
+    // This is required only when Insertable Streams E2EE is active.
     try {
       const pc = (this.sendTransport as any)._handler?._pc as RTCPeerConnection | undefined;
       if (!pc) {
-        throw new Error(
+        const error = new Error(
           `[SfuMediaManager] Cannot locate RTCPeerConnection for sendTransport — ` +
           `mediasoup-client internal API may have changed. Cannot apply E2EE transform.`
         );
+        if (this.requireSenderReceiverAccessForE2ee) throw error;
+        console.warn(error.message);
+        return producer;
       }
       const sender = pc.getSenders().find((s) => s.track === track);
       if (!sender) {
-        throw new Error(
+        const error = new Error(
           `[SfuMediaManager] RTCRtpSender not found for producer ${producer.id} after produce() — ` +
           `E2EE transform cannot be applied. Aborting produce to prevent plaintext media.`
         );
+        if (this.requireSenderReceiverAccessForE2ee) throw error;
+        console.warn(error.message);
+        return producer;
       }
       this.producerSenders.set(producer.id, sender);
     } catch (e) {
-      // Close producer immediately — fail-closed: do not transmit without E2EE
+      // Close producer immediately only in strict E2EE mode.
+      if (!this.requireSenderReceiverAccessForE2ee) {
+        console.warn('[SfuMediaManager] Sender cache unavailable; continuing without E2EE transform', e);
+        return producer;
+      }
       if (!producer.closed) producer.close();
       this.producers.delete(producer.id);
       throw e;
@@ -213,27 +223,36 @@ export class SfuMediaManager {
 
     this.consumers.set(consumer.id, consumer);
 
-    // C-3: Cache RTCRtpReceiver while track is still accessible after consume()
-    // SECURITY: fail-closed — if receiver cannot be found, close consumer and throw.
-    // Receiving plaintext from SFU without decrypt transform is a security violation.
+    // C-3: Cache RTCRtpReceiver while track is still accessible after consume().
+    // This is required only when Insertable Streams E2EE is active.
     try {
       const pc = (this.recvTransport as any)._handler?._pc as RTCPeerConnection | undefined;
       if (!pc) {
-        throw new Error(
+        const error = new Error(
           `[SfuMediaManager] Cannot locate RTCPeerConnection for recvTransport — ` +
           `mediasoup-client internal API may have changed. Cannot apply E2EE decrypt transform.`
         );
+        if (this.requireSenderReceiverAccessForE2ee) throw error;
+        console.warn(error.message);
+        return consumer;
       }
       const receiver = pc.getReceivers().find((r) => r.track === consumer.track);
       if (!receiver) {
-        throw new Error(
+        const error = new Error(
           `[SfuMediaManager] RTCRtpReceiver not found for consumer ${consumer.id} — ` +
           `E2EE decrypt transform cannot be applied. Aborting consume.`
         );
+        if (this.requireSenderReceiverAccessForE2ee) throw error;
+        console.warn(error.message);
+        return consumer;
       }
       this.consumerReceivers.set(consumer.id, receiver);
     } catch (e) {
-      // Close consumer — fail-closed: do not receive without E2EE decrypt
+      // Close consumer immediately only in strict E2EE mode.
+      if (!this.requireSenderReceiverAccessForE2ee) {
+        console.warn('[SfuMediaManager] Receiver cache unavailable; continuing without E2EE transform', e);
+        return consumer;
+      }
       if (!consumer.closed) consumer.close();
       this.consumers.delete(consumer.id);
       throw e;
