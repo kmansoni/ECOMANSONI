@@ -33,6 +33,7 @@ jobs:
       ADMINVPS_HEALTH_URL: ${{ secrets.ADMINVPS_HEALTH_URL }}
       ADMINVPS_CALLS_WS_COMPOSE_FILE: ${{ secrets.ADMINVPS_CALLS_WS_COMPOSE_FILE || 'infra/calls/docker-compose.prod.yml' }}
       ADMINVPS_CALLS_WS_SERVICE: ${{ secrets.ADMINVPS_CALLS_WS_SERVICE || 'calls-ws' }}
+      ADMINVPS_CALLS_WS_SYSTEMD_SERVICE: ${{ secrets.ADMINVPS_CALLS_WS_SYSTEMD_SERVICE || 'calls-ws' }}
       VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || secrets.SUPABASE_URL }}
       VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY || secrets.VITE_SUPABASE_ANON_KEY || secrets.SUPABASE_ANON_KEY }}
 
@@ -131,6 +132,7 @@ jobs:
             export VITE_SUPABASE_PUBLISHABLE_KEY="${{ env.VITE_SUPABASE_PUBLISHABLE_KEY }}"
             export CALLS_WS_COMPOSE_FILE="${{ env.ADMINVPS_CALLS_WS_COMPOSE_FILE }}"
             export CALLS_WS_SERVICE="${{ env.ADMINVPS_CALLS_WS_SERVICE }}"
+            export CALLS_WS_SYSTEMD_SERVICE="${{ env.ADMINVPS_CALLS_WS_SYSTEMD_SERVICE }}"
             cd "$APP_DIR"
             if [ -n "$(git status --porcelain)" ]; then
               git stash push -u -m "gha-auto-stash-$(date +%Y%m%d-%H%M%S)" >/dev/null || true
@@ -158,7 +160,11 @@ jobs:
               elif sudo docker-compose version >/dev/null 2>&1; then
                 sudo docker-compose -f "$CALLS_WS_COMPOSE_FILE" up -d --build "$CALLS_WS_SERVICE"
               else
-                echo "WARNING: neither docker compose nor docker-compose is available (with or without sudo); calls-ws was not restarted"
+                if sudo systemctl status "$CALLS_WS_SYSTEMD_SERVICE" >/dev/null 2>&1; then
+                  sudo systemctl restart "$CALLS_WS_SYSTEMD_SERVICE"
+                else
+                  echo "WARNING: neither docker compose/docker-compose nor systemd service '$CALLS_WS_SYSTEMD_SERVICE' is available; calls-ws was not restarted"
+                fi
               fi
             else
               echo "WARNING: compose file not found at '$CALLS_WS_COMPOSE_FILE'; calls-ws was not restarted"
