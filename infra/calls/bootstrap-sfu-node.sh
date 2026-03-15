@@ -86,14 +86,21 @@ else
   git fetch origin main
   git checkout main
   git pull --ff-only origin main
+  # Fix ownership in case previous install ran as root
+  chown -R mansoni:mansoni "$APP_DIR"
 fi
 
 # ── 5. npm install ───────────────────────────────────────────────────────────
 step "Installing npm dependencies"
 cd "$APP_DIR"
-# Run as non-root for security; node_modules lands in APP_DIR
-sudo -u mansoni npm ci --omit=dev --ignore-scripts 2>/dev/null \
-  || sudo -u mansoni npm install --omit=dev --ignore-scripts
+# Ensure mansoni owns the directory before install
+chown -R mansoni:mansoni "$APP_DIR"
+# Try as mansoni first; fall back to root if permissions still fail
+if ! sudo -u mansoni npm ci --omit=dev --ignore-scripts 2>&1; then
+  log "npm ci as mansoni failed, retrying as root..."
+  npm ci --omit=dev --ignore-scripts
+  chown -R mansoni:mansoni "$APP_DIR/node_modules" || true
+fi
 
 # ── 6. Systemd service ───────────────────────────────────────────────────────
 step "Installing systemd unit for $SERVICE"
