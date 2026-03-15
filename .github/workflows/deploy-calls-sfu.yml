@@ -40,11 +40,12 @@ jobs:
             SERVICE="${CALLS_SERVICE:-calls-ws}"
             REGION="ru"
 
-            # -- 1. Pull latest code ---------------------------------------------
+            # -- 1. Sync code to latest main (hard reset, safe in CI) -----------
             cd "$APP_DIR"
             git fetch origin main
             git checkout main
-            git pull --ff-only origin main
+            git reset --hard origin/main
+            git clean -fd
 
             # -- 2. Try to restart via Docker Compose ----------------------------
             _restart_docker() {
@@ -108,7 +109,8 @@ jobs:
             cd "$APP_DIR"
             git fetch origin main
             git checkout main
-            git pull --ff-only origin main
+            git reset --hard origin/main
+            git clean -fd
 
             _restart_docker() {
               local cmd="$1"
@@ -165,7 +167,8 @@ jobs:
             cd "$APP_DIR"
             git fetch origin main
             git checkout main
-            git pull --ff-only origin main
+            git reset --hard origin/main
+            git clean -fd
 
             _restart_docker() {
               local cmd="$1"
