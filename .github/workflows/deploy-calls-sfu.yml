@@ -49,6 +49,16 @@ jobs:
             git reset --hard origin/main
             git clean -fd
 
+            # -- 1.5 Evict any stale calls-ws process holding port 8787 ---------
+            # systemctl restart only kills its own PID; an old pm2/bare-node
+            # process may still hold the port, causing EADDRINUSE on the new one.
+            CALLS_WS_PORT="${CALLS_WS_PORT:-8787}"
+            pkill -f "server/calls-ws/index.mjs" 2>/dev/null || true
+            if command -v fuser >/dev/null 2>&1; then
+              fuser -k "${CALLS_WS_PORT}/tcp" 2>/dev/null || true
+            fi
+            sleep 1
+
             # -- 2. Try to restart via Docker Compose ----------------------------
             _restart_docker() {
               local cmd="$1"
@@ -78,6 +88,7 @@ jobs:
             # -- 4. Try systemd --------------------------------------------------
             elif systemctl list-units --type=service | grep -q "$SERVICE"; then
               sudo systemctl restart "$SERVICE"
+              sleep 3  # wait for new process to bind port
               echo "[RU] restarted via systemd"
 
             # -- 5. Bootstrap: install service from scratch ----------------------
@@ -116,6 +127,13 @@ jobs:
             git reset --hard origin/main
             git clean -fd
 
+            CALLS_WS_PORT="${CALLS_WS_PORT:-8787}"
+            pkill -f "server/calls-ws/index.mjs" 2>/dev/null || true
+            if command -v fuser >/dev/null 2>&1; then
+              fuser -k "${CALLS_WS_PORT}/tcp" 2>/dev/null || true
+            fi
+            sleep 1
+
             _restart_docker() {
               local cmd="$1"
               if $cmd version >/dev/null 2>&1; then
@@ -140,6 +158,7 @@ jobs:
               fi
             elif systemctl list-units --type=service | grep -q "$SERVICE"; then
               sudo systemctl restart "$SERVICE"
+              sleep 3
               echo "[TR] restarted via systemd"
             else
               echo "[TR] No runtime found -- running bootstrap"
@@ -176,6 +195,13 @@ jobs:
             git reset --hard origin/main
             git clean -fd
 
+            CALLS_WS_PORT="${CALLS_WS_PORT:-8787}"
+            pkill -f "server/calls-ws/index.mjs" 2>/dev/null || true
+            if command -v fuser >/dev/null 2>&1; then
+              fuser -k "${CALLS_WS_PORT}/tcp" 2>/dev/null || true
+            fi
+            sleep 1
+
             _restart_docker() {
               local cmd="$1"
               if $cmd version >/dev/null 2>&1; then
@@ -200,6 +226,7 @@ jobs:
               fi
             elif systemctl list-units --type=service | grep -q "$SERVICE"; then
               sudo systemctl restart "$SERVICE"
+              sleep 3
               echo "[AE] restarted via systemd"
             else
               echo "[AE] No runtime found -- running bootstrap"
