@@ -31,6 +31,8 @@ jobs:
       ADMINVPS_APP_DIR: ${{ secrets.ADMINVPS_APP_DIR }}
       ADMINVPS_SYSTEMD_SERVICES: ${{ secrets.ADMINVPS_SYSTEMD_SERVICES }}
       ADMINVPS_HEALTH_URL: ${{ secrets.ADMINVPS_HEALTH_URL }}
+      ADMINVPS_CALLS_WS_COMPOSE_FILE: ${{ secrets.ADMINVPS_CALLS_WS_COMPOSE_FILE || 'infra/calls/docker-compose.prod.yml' }}
+      ADMINVPS_CALLS_WS_SERVICE: ${{ secrets.ADMINVPS_CALLS_WS_SERVICE || 'calls-ws' }}
       VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || secrets.SUPABASE_URL }}
       VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY || secrets.VITE_SUPABASE_ANON_KEY || secrets.SUPABASE_ANON_KEY }}
 
@@ -127,6 +129,8 @@ jobs:
             export DRY_RUN="${{ env.DRY_RUN }}"
             export VITE_SUPABASE_URL="${{ env.VITE_SUPABASE_URL }}"
             export VITE_SUPABASE_PUBLISHABLE_KEY="${{ env.VITE_SUPABASE_PUBLISHABLE_KEY }}"
+            export CALLS_WS_COMPOSE_FILE="${{ env.ADMINVPS_CALLS_WS_COMPOSE_FILE }}"
+            export CALLS_WS_SERVICE="${{ env.ADMINVPS_CALLS_WS_SERVICE }}"
             cd "$APP_DIR"
             if [ -n "$(git status --porcelain)" ]; then
               git stash push -u -m "gha-auto-stash-$(date +%Y%m%d-%H%M%S)" >/dev/null || true
@@ -142,6 +146,20 @@ jobs:
                 sudo systemctl restart "$svc"
               done
             fi
+
+            # Ensure calls-ws runtime is redeployed alongside main branch updates.
+            if [ -f "$CALLS_WS_COMPOSE_FILE" ]; then
+              if docker compose version >/dev/null 2>&1; then
+                docker compose -f "$CALLS_WS_COMPOSE_FILE" up -d --build "$CALLS_WS_SERVICE"
+              elif command -v docker-compose >/dev/null 2>&1; then
+                docker-compose -f "$CALLS_WS_COMPOSE_FILE" up -d --build "$CALLS_WS_SERVICE"
+              else
+                echo "WARNING: neither 'docker compose' nor 'docker-compose' found; calls-ws was not restarted"
+              fi
+            else
+              echo "WARNING: compose file not found at '$CALLS_WS_COMPOSE_FILE'; calls-ws was not restarted"
+            fi
+
             if command -v nginx >/dev/null 2>&1 && [ -d /etc/nginx ]; then
               sudo mkdir -p /etc/nginx/snippets
               printf '%s\n' \
