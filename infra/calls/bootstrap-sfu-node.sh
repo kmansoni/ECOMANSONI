@@ -83,9 +83,12 @@ if [[ ! -d "$APP_DIR/.git" ]]; then
 else
   log "Repo exists — pulling latest"
   cd "$APP_DIR"
+  # Allow git to operate even if directory is owned by different user
+  git config --global --add safe.directory "$APP_DIR"
   git fetch origin main
   git checkout main
-  git pull --ff-only origin main
+  git reset --hard origin/main
+  git clean -fd
   # Fix ownership in case previous install ran as root
   chown -R mansoni:mansoni "$APP_DIR"
 fi
