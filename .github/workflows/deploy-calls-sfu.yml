@@ -53,7 +53,12 @@ jobs:
             # systemctl restart only kills its own PID; an old pm2/bare-node
             # process may still hold the port, causing EADDRINUSE on the new one.
             CALLS_WS_PORT="${CALLS_WS_PORT:-8787}"
-            pkill -f "server/calls-ws/index.mjs" 2>/dev/null || true
+            PIDS="$(ps -eo pid,args | grep -E '[n]ode( |.* )server/calls-ws/index\.mjs' | awk '{print $1}')"
+            if [ -n "$PIDS" ]; then
+              echo "$PIDS" | xargs -r kill -TERM || true
+              sleep 1
+              echo "$PIDS" | xargs -r kill -KILL || true
+            fi
             if command -v fuser >/dev/null 2>&1; then
               fuser -k "${CALLS_WS_PORT}/tcp" 2>/dev/null || true
             fi
@@ -128,7 +133,12 @@ jobs:
             git clean -fd
 
             CALLS_WS_PORT="${CALLS_WS_PORT:-8787}"
-            pkill -f "server/calls-ws/index.mjs" 2>/dev/null || true
+            PIDS="$(ps -eo pid,args | grep -E '[n]ode( |.* )server/calls-ws/index\.mjs' | awk '{print $1}')"
+            if [ -n "$PIDS" ]; then
+              echo "$PIDS" | xargs -r kill -TERM || true
+              sleep 1
+              echo "$PIDS" | xargs -r kill -KILL || true
+            fi
             if command -v fuser >/dev/null 2>&1; then
               fuser -k "${CALLS_WS_PORT}/tcp" 2>/dev/null || true
             fi
@@ -196,7 +206,12 @@ jobs:
             git clean -fd
 
             CALLS_WS_PORT="${CALLS_WS_PORT:-8787}"
-            pkill -f "server/calls-ws/index.mjs" 2>/dev/null || true
+            PIDS="$(ps -eo pid,args | grep -E '[n]ode( |.* )server/calls-ws/index\.mjs' | awk '{print $1}')"
+            if [ -n "$PIDS" ]; then
+              echo "$PIDS" | xargs -r kill -TERM || true
+              sleep 1
+              echo "$PIDS" | xargs -r kill -KILL || true
+            fi
             if command -v fuser >/dev/null 2>&1; then
               fuser -k "${CALLS_WS_PORT}/tcp" 2>/dev/null || true
             fi
