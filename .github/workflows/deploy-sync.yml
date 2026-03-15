@@ -151,10 +151,14 @@ jobs:
             if [ -f "$CALLS_WS_COMPOSE_FILE" ]; then
               if docker compose version >/dev/null 2>&1; then
                 docker compose -f "$CALLS_WS_COMPOSE_FILE" up -d --build "$CALLS_WS_SERVICE"
-              elif command -v docker-compose >/dev/null 2>&1; then
+              elif docker-compose version >/dev/null 2>&1; then
                 docker-compose -f "$CALLS_WS_COMPOSE_FILE" up -d --build "$CALLS_WS_SERVICE"
+              elif sudo docker compose version >/dev/null 2>&1; then
+                sudo docker compose -f "$CALLS_WS_COMPOSE_FILE" up -d --build "$CALLS_WS_SERVICE"
+              elif sudo docker-compose version >/dev/null 2>&1; then
+                sudo docker-compose -f "$CALLS_WS_COMPOSE_FILE" up -d --build "$CALLS_WS_SERVICE"
               else
-                echo "WARNING: neither 'docker compose' nor 'docker-compose' found; calls-ws was not restarted"
+                echo "WARNING: neither docker compose nor docker-compose is available (with or without sudo); calls-ws was not restarted"
               fi
             else
               echo "WARNING: compose file not found at '$CALLS_WS_COMPOSE_FILE'; calls-ws was not restarted"
