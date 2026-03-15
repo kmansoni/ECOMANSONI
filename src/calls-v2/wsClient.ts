@@ -58,6 +58,9 @@ export class CallsWsClient {
   private ws: WebSocket | null = null;
   private expectedSeq = 1;
   private lastServerSeq = 0;
+  private lastServerActivityAt = 0;
+  private awaitingHeartbeatAckMsgId: string | null = null;
+  private lastHeartbeatSentAt = 0;
   private readonly seenServerMsgIds = new Set<string>();
   private readonly seenServerMsgIdQueue: string[] = [];
   private heartbeatTimer: number | null = null;
@@ -161,6 +164,9 @@ export class CallsWsClient {
       ws.onopen = () => {
         settled = true;
         this.lastServerSeq = 0;
+        this.lastServerActivityAt = nowMs();
+        this.awaitingHeartbeatAckMsgId = null;
+        this.lastHeartbeatSentAt = 0;
         this.seenServerMsgIds.clear();
         this.seenServerMsgIdQueue.length = 0;
         this.startHeartbeat();
@@ -206,6 +212,9 @@ export class CallsWsClient {
       pending.reject(new Error("WS closed"));
     });
     this.pendingAcks.clear();
+    this.awaitingHeartbeatAckMsgId = null;
+    this.lastHeartbeatSentAt = 0;
+    this.lastServerActivityAt = 0;
     this.ws?.close();
     this.ws = null;
     this.setConnectionState('disconnected');
@@ -505,6 +514,10 @@ export class CallsWsClient {
       return;
     }
 
+    this.lastServerActivityAt = nowMs();
+    this.awaitingHeartbeatAckMsgId = null;
+    this.lastHeartbeatSentAt = 0;
+
     // ACK frame
     if (msg.ack?.ackOfMsgId) {
       const pending = this.pendingAcks.get(msg.ack.ackOfMsgId);
@@ -557,9 +570,22 @@ export class CallsWsClient {
   private startHeartbeat() {
     this.stopHeartbeat();
     const ms = this.config.heartbeatMs ?? 10_000;
+    const staleAfterMs = Math.max(ms * 2, 15_000);
     this.heartbeatTimer = window.setInterval(() => {
       if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
-      this.send({ v: 1, type: "PING", msgId: uuid(), ts: nowMs(), seq: this.expectedSeq++, payload: {} });
+
+      const currentTime = nowMs();
+      if (this.awaitingHeartbeatAckMsgId && this.lastHeartbeatSentAt > 0) {
+        if (currentTime - Math.max(this.lastHeartbeatSentAt, this.lastServerActivityAt) >= staleAfterMs) {
+          this.ws.close();
+        }
+        return;
+      }
+
+      const msgId = uuid();
+      this.awaitingHeartbeatAckMsgId = msgId;
+      this.lastHeartbeatSentAt = currentTime;
+      this.send({ v: 1, type: "PING", msgId, ts: currentTime, seq: this.expectedSeq++, payload: {} });
     }, ms);
   }
 

@@ -182,4 +182,28 @@ describe("CallsWsClient reliability", () => {
     off();
     client.close();
   });
+
+  it("closes stale socket and reconnects when heartbeat gets no server activity", async () => {
+    const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0);
+
+    const client = new CallsWsClient({
+      url: "wss://single/ws",
+      heartbeatMs: 8000,
+      reconnect: { enabled: true, baseDelayMs: 10, maxDelayMs: 10, maxAttempts: 2 },
+    });
+
+    await client.connect();
+    expect(MockWebSocket.instances.length).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(8000);
+    expect(MockWebSocket.instances[0].sent.length).toBe(1);
+    expect(JSON.parse(MockWebSocket.instances[0].sent[0]).type).toBe("PING");
+
+    await vi.advanceTimersByTimeAsync(16010);
+    expect(MockWebSocket.instances.length).toBe(2);
+    expect(MockWebSocket.instances[1].url).toBe("wss://single/ws");
+
+    client.close();
+    randomSpy.mockRestore();
+  });
 });

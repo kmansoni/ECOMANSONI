@@ -31,6 +31,7 @@
 import { ReactNode, useState, useCallback, useEffect, useRef } from "react";
 import { getStableCallsDeviceId } from "@/lib/platform/device";
 import { useVideoCallSfu, type VideoCall, type VideoCallStatus } from "@/hooks/useVideoCallSfu";
+import { useVideoCall as useLegacyP2pVideoCall } from "@/hooks/useVideoCall";
 import { useIncomingCalls } from "@/hooks/useIncomingCalls";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
@@ -482,6 +483,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     markMediaBootstrapFailed,
     markMediaBootstrapProgress,
     setRemoteStream: setRemoteMediaStream,
+    releaseMediaWithoutDbUpdate,
   } = useVideoCallSfu({
     onCallEnded: (call) => {
       logger.info("[VideoCallContext] Call ended:", call.id.slice(0, 8));
@@ -497,6 +499,35 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       setIsCallUiActive(false); // Release UI-lock on call end
     },
   });
+
+  // ─── Legacy P2P engine ─────────────────────────────────────────────────────
+  // Always instantiated (React hooks rules) but only active when SFU bootstrap fails.
+  const [legacyEngineActive, setLegacyEngineActive] = useState(false);
+
+  const {
+    status: legacyStatus,
+    currentCall: legacyCurrentCall,
+    localStream: legacyLocalStream,
+    remoteStream: legacyRemoteStream,
+    isMuted: legacyIsMuted,
+    isVideoOff: legacyIsVideoOff,
+    connectionState: legacyConnectionState,
+    startCall: legacyStartVideoCall,
+    answerCall: legacyAnswerVideoCall,
+    endCall: legacyEndVideoCall,
+    toggleMute: legacyToggleMute,
+    toggleVideo: legacyToggleVideo,
+    retryWithFreshCredentials: legacyRetryWithFreshCredentials,
+  } = useLegacyP2pVideoCall({
+    onCallEnded: (call) => {
+      logger.info("[VideoCallContext] Legacy P2P call ended:", call.id.slice(0, 8));
+      setPendingIncomingCall(null);
+      setPendingCalleeProfile(null);
+      setIsCallUiActive(false);
+      setLegacyEngineActive(false);
+    },
+  });
+  // ──────────────────────────────────────────────────────────────────────────
 
   const closeCallsV2 = useCallback(() => {
     if (rekeyTimerRef.current) {
@@ -1659,7 +1690,8 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
 
   // Sync incoming call state - prioritize pendingIncomingCall to avoid flicker
   // Only show incoming call when we're truly idle AND UI-lock is not active
-  const incomingCall = (status === "idle" && !isCallUiActive) ? pendingIncomingCall : null;
+  const activeStatus = legacyEngineActive ? legacyStatus : status;
+  const incomingCall = (activeStatus === "idle" && !isCallUiActive) ? pendingIncomingCall : null;
 
   // Debug logging
   logger.info("[VideoCallContext] State:", {
@@ -1728,6 +1760,36 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
 
       const roomBootstrapOk = await bootstrapCallsV2Room(resolvedCall, "callee");
       if (!roomBootstrapOk) {
+        // Detect whether the caller used legacy P2P (no SFU room hints were written).
+        // When calls_v2_room_id is absent the caller launched a P2P call — match the protocol.
+        const hasSfuRoomHints = !!resolvedCall.calls_v2_room_id;
+
+        if (!hasSfuRoomHints) {
+          logger.info("[VideoCallContext] Answering legacy P2P call (no SFU room hints)");
+          // Release SFU-acquired media before legacy hook re-acquires its own tracks.
+          releaseMediaWithoutDbUpdate();
+          closeCallsV2();
+          setLegacyEngineActive(true);
+          try {
+            await legacyAnswerVideoCall(call);
+          } catch (legacyErr) {
+            logger.error("[VideoCallContext] Legacy P2P answerCall failed", legacyErr);
+            setIsCallUiActive(false);
+            setLegacyEngineActive(false);
+            if (isMediaErrorForCall(legacyErr)) {
+              const toastPayload = getMediaPermissionToastPayload(legacyErr, call.call_type === "video" ? "video" : "audio");
+              toast.error(toastPayload.title, { description: toastPayload.description, duration: 5000 });
+            } else {
+              toast.error("Не удалось принять звонок", {
+                description: "Ошибка сети или сервиса звонков. Попробуйте еще раз",
+                duration: 5000,
+              });
+            }
+          }
+          return;
+        }
+
+        // SFU room hints exist but server rejected join → clean failure, no auto-recovery.
         await endVideoCall("ended");
         setIsCallUiActive(false);
         const toastPayload = getCallsBootstrapToastPayload(lastCallsBootstrapErrorRef.current);
@@ -1757,7 +1819,8 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       }
       setIsCallUiActive(false); // Release UI-lock on error
     }
-  }, [answerVideoCall, bootstrapCallsV2Room, clearIncomingCall, endVideoCall]);
+  }, [answerVideoCall, bootstrapCallsV2Room, clearIncomingCall, endVideoCall,
+    closeCallsV2, releaseMediaWithoutDbUpdate, legacyAnswerVideoCall]);
 
   const declineCall = useCallback(async () => {
     if (incomingCall || pendingIncomingCall) {
@@ -1783,14 +1846,23 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
 
   const endCall = useCallback(async () => {
     logger.info("[VideoCallContext] endCall called");
-    if (currentCall) {
-      await endVideoCall("ended");
-    } else if (incomingCall || pendingIncomingCall) {
-      await declineCall();
+    if (legacyEngineActive) {
+      if (legacyCurrentCall) {
+        await legacyEndVideoCall("ended");
+      } else if (incomingCall || pendingIncomingCall) {
+        await declineCall();
+      }
+      setLegacyEngineActive(false);
+    } else {
+      if (currentCall) {
+        await endVideoCall("ended");
+      } else if (incomingCall || pendingIncomingCall) {
+        await declineCall();
+      }
+      closeCallsV2();
     }
-    closeCallsV2();
     setIsCallUiActive(false); // Release UI-lock
-  }, [currentCall, incomingCall, pendingIncomingCall, endVideoCall, declineCall, closeCallsV2]);
+  }, [legacyEngineActive, currentCall, legacyCurrentCall, incomingCall, pendingIncomingCall, endVideoCall, legacyEndVideoCall, declineCall, closeCallsV2]);
 
   const startCall = useCallback(async (
     calleeId: string,
@@ -1828,15 +1900,43 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       }
       const roomBootstrapOk = await bootstrapCallsV2Room(result, "caller");
       if (!roomBootstrapOk) {
-        await endVideoCall("ended");
-        setPendingCalleeProfile(null);
-        setIsCallUiActive(false);
-        const toastPayload = getCallsBootstrapToastPayload(lastCallsBootstrapErrorRef.current);
-        toast.error(toastPayload.title, {
-          description: toastPayload.description,
-          duration: 5000,
-        });
-        return null;
+        // SFU room bootstrap failed — auto-retry via legacy P2P so the call can still connect.
+        logger.warn("[VideoCallContext] SFU bootstrap failed for caller, falling back to legacy P2P");
+        releaseMediaWithoutDbUpdate(); // Free getUserMedia acquired by SFU hook before legacy re-acquires
+        await endVideoCall("ended");  // Clean up SFU DB state
+        closeCallsV2();               // Tear down WS / SFU resources
+
+        setLegacyEngineActive(true);
+        try {
+          const legacyResult = await legacyStartVideoCall(calleeId, conversationId, callType);
+          if (!legacyResult) {
+            setPendingCalleeProfile(null);
+            setIsCallUiActive(false);
+            setLegacyEngineActive(false);
+            toast.error("Не удалось начать звонок", {
+              description: "SFU и P2P недоступны. Проверьте сеть.",
+              duration: 5000,
+            });
+            return null;
+          }
+          logger.info("[VideoCallContext] Legacy P2P call started as SFU fallback", { callId: legacyResult.id.slice(0, 8) });
+          return legacyResult;
+        } catch (legacyErr) {
+          logger.warn("[VideoCallContext] Legacy P2P startCall also failed", legacyErr);
+          setPendingCalleeProfile(null);
+          setIsCallUiActive(false);
+          setLegacyEngineActive(false);
+          if (isMediaErrorForCall(legacyErr)) {
+            const toastPayload = getMediaPermissionToastPayload(legacyErr, callType);
+            toast.error(toastPayload.title, { description: toastPayload.description, duration: 4000 });
+          } else {
+            toast.error("Не удалось начать звонок", {
+              description: "Ошибка сети или сервиса звонков. Попробуйте еще раз",
+              duration: 5000,
+            });
+          }
+          return null;
+        }
       }
       return result;
     } catch (err) {
@@ -1861,9 +1961,14 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       }
       return null;
     }
-  }, [user, startVideoCall, bootstrapCallsV2Room, endVideoCall]);
+  }, [user, startVideoCall, bootstrapCallsV2Room, endVideoCall, closeCallsV2,
+    releaseMediaWithoutDbUpdate, legacyStartVideoCall]);
 
   const retryConnection = useCallback(async () => {
+    if (legacyEngineActive) {
+      await legacyRetryWithFreshCredentials();
+      return;
+    }
     const configIssue = getCallsConfigIssue();
     if (configIssue) {
       logger.error("[VideoCallContext] retryConnection blocked by config:", configIssue);
@@ -1874,7 +1979,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       return;
     }
     await retryWithFreshCredentials();
-  }, [retryWithFreshCredentials]);
+  }, [legacyEngineActive, legacyRetryWithFreshCredentials, retryWithFreshCredentials]);
 
   useEffect(() => {
     if (!currentCall || !localStream) return;
@@ -1939,10 +2044,10 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
   // This ensures that unrelated context consumers do not re-render.
 
   const signalingValue: VideoCallSignalingContextType = {
-    status,
-    currentCall,
+    status: activeStatus,
+    currentCall: legacyEngineActive ? legacyCurrentCall : currentCall,
     incomingCall,
-    connectionState,
+    connectionState: legacyEngineActive ? legacyConnectionState : connectionState,
     pendingCalleeProfile,
     startCall,
     answerCall,
@@ -1952,12 +2057,12 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
   };
 
   const mediaValue: VideoCallMediaContextType = {
-    localStream,
-    remoteStream,
-    isMuted,
-    isVideoOff,
-    toggleMute,
-    toggleVideo,
+    localStream: legacyEngineActive ? legacyLocalStream : localStream,
+    remoteStream: legacyEngineActive ? legacyRemoteStream : remoteStream,
+    isMuted: legacyEngineActive ? legacyIsMuted : isMuted,
+    isVideoOff: legacyEngineActive ? legacyIsVideoOff : isVideoOff,
+    toggleMute: legacyEngineActive ? legacyToggleMute : toggleMute,
+    toggleVideo: legacyEngineActive ? legacyToggleVideo : toggleVideo,
   };
 
   const uiValue: VideoCallUIContextType = {

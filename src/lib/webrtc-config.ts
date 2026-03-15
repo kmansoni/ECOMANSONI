@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { logger } from "@/lib/logger";
 
 function normalizeEnv(value: unknown): string {
   if (typeof value !== "string") return "";
@@ -63,9 +64,31 @@ interface TurnCredentialsResponse {
   error?: string;
 }
 
+function normalizeIceServerUrls(urls: RTCIceServer["urls"]): string[] {
+  const values = Array.isArray(urls) ? urls : [urls];
+  return values.filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+}
+
+function sanitizeIceServers(iceServers: RTCIceServer[] | null | undefined): RTCIceServer[] {
+  if (!Array.isArray(iceServers)) return [];
+
+  return iceServers.flatMap((server) => {
+    const urls = normalizeIceServerUrls(server.urls);
+    if (urls.length === 0) return [];
+
+    const hasTurnUrl = urls.some((url) => /^turns?:/i.test(url));
+    if (hasTurnUrl && (!server.username || !server.credential)) {
+      logger.warn("webrtc_config.invalid_turn_server_skipped", { urls });
+      return [];
+    }
+
+    return [{ ...server, urls } satisfies RTCIceServer];
+  });
+}
+
 function hasTurnServer(iceServers: RTCIceServer[]): boolean {
   return iceServers.some((server) => {
-    const urls = Array.isArray(server.urls) ? server.urls : [server.urls];
+    const urls = normalizeIceServerUrls(server.urls);
     return urls.some((u) => typeof u === "string" && /^turns?:/i.test(u));
   });
 }
@@ -155,9 +178,16 @@ function parseTurnResponse(parsed: TurnCredentialsResponse): { iceServers: RTCIc
     ),
   );
 
+  const sanitizedIceServers = sanitizeIceServers(parsed.iceServers);
+  if (sanitizedIceServers.length > 0) {
+    console.log("[WebRTC Config] Got", sanitizedIceServers.length, "ICE servers");
+    return { iceServers: sanitizedIceServers, ttlMs };
+  }
+
   if (Array.isArray(parsed.iceServers) && parsed.iceServers.length > 0) {
-    console.log("[WebRTC Config] Got", parsed.iceServers.length, "ICE servers");
-    return { iceServers: parsed.iceServers, ttlMs };
+    logger.warn("webrtc_config.turn_response_invalid_ice_servers", {
+      received: parsed.iceServers.length,
+    });
   }
 
   return { iceServers: null, ttlMs: FALLBACK_CACHE_TTL_MS };
@@ -235,6 +265,17 @@ export async function getIceServers(
   const now = Date.now();
 
   if (cachedIceServers && cacheExpiry > now) {
+    const sanitizedCachedIceServers = sanitizeIceServers(cachedIceServers);
+    if (sanitizedCachedIceServers.length !== cachedIceServers.length) {
+      logger.warn("webrtc_config.cached_ice_servers_invalidated", {
+        cached: cachedIceServers.length,
+        valid: sanitizedCachedIceServers.length,
+      });
+      cachedIceServers = sanitizedCachedIceServers.length > 0 ? sanitizedCachedIceServers : null;
+      if (!cachedIceServers) cacheExpiry = 0;
+    }
+
+    if (cachedIceServers && cacheExpiry > now) {
     console.log("[WebRTC Config] Using cached ICE servers");
     const canRelay = hasTurnServer(cachedIceServers);
     return {
@@ -242,12 +283,13 @@ export async function getIceServers(
       iceCandidatePoolSize: 10,
       iceTransportPolicy: resolveIceTransportPolicy(options, canRelay),
     };
+    }
   }
 
   const { iceServers: turnServers, ttlMs } = await fetchTurnCredentials();
 
   if (turnServers && turnServers.length > 0) {
-    cachedIceServers = [...turnServers, ...FALLBACK_ICE_SERVERS];
+    cachedIceServers = sanitizeIceServers([...turnServers, ...FALLBACK_ICE_SERVERS]);
     cacheExpiry = now + ttlMs;
     console.log("[WebRTC Config] Cached", cachedIceServers.length, "ICE servers (ttlMs=", ttlMs, ")");
   } else {

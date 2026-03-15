@@ -230,6 +230,11 @@ export interface UseVideoCallSfuReturn {
    * Notifies hook about successful media bootstrap milestones (e.g. transports created).
    */
   markMediaBootstrapProgress: (signal: "send_transport_created" | "recv_transport_created") => void;
+  /**
+   * Release acquired local media without updating the DB call status.
+   * Used when handing off to the legacy P2P engine on SFU bootstrap failure.
+   */
+  releaseMediaWithoutDbUpdate: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -286,7 +291,8 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
   const markMediaBootstrapFailed = useCallback((reason = "media_bootstrap_failed", details?: unknown) => {
     console.error("[useVideoCallSfu] markMediaBootstrapFailed:", reason, details);
     setConnectionState("failed");
-    setStatus((prev) => (prev === "idle" ? prev : "connected"));
+    // Do NOT touch status here. status tracks DB/call lifecycle (idle/calling/ringing/connected/ended)
+    // and must not be artificially promoted to "connected" on a media failure.
   }, []);
 
   const markMediaBootstrapProgress = useCallback((signal: "send_transport_created" | "recv_transport_created") => {
@@ -335,6 +341,14 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
       localStreamRef.current = null;
     }
   }, []);
+
+  const releaseMediaWithoutDbUpdate = useCallback(() => {
+    releaseLocalMedia();
+    setRemoteStreamState(null);
+    mediaBootstrapSignalsRef.current.clear();
+    setConnectionState("unknown");
+    logger.info("video_call_sfu.media_released_for_engine_handoff", {});
+  }, [releaseLocalMedia]);
 
   const resetState = useCallback(() => {
     releaseLocalMedia();
@@ -645,5 +659,6 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
     retryWithFreshCredentials,
     markMediaBootstrapFailed,
     markMediaBootstrapProgress,
+    releaseMediaWithoutDbUpdate,
   };
 }
