@@ -1,4 +1,44 @@
 services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  calls-ws:
+    # Mansoni Calls WS Gateway — signaling + room coordination
+    # Build: docker build -t mansoni-calls-ws -f server/calls-ws/Dockerfile .
+    build:
+      context: ../..
+      dockerfile: server/calls-ws/Dockerfile
+    image: mansoni-calls-ws:latest
+    restart: unless-stopped
+    ports:
+      - "8787:8787"
+    environment:
+      - NODE_ENV=production
+      - ENV=production
+      - CALLS_WS_PORT=8787
+      - REDIS_URL=redis://redis:6379
+      - CALLS_WS_TRUSTED_PROXIES=
+    env_file:
+      - ../../.env.production
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8787/health 2>/dev/null | grep -q '\"ok\"' || wget -qO- http://localhost:8787/ 2>/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+
   coturn:
     image: coturn/coturn:4.6.3
     restart: unless-stopped
@@ -36,3 +76,6 @@ services:
       - REGION=primary
     env_file:
       - ../../server/sfu/.env.production
+
+volumes:
+  redis-data:

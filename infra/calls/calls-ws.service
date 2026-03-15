@@ -1,0 +1,49 @@
+[Unit]
+Description=Mansoni Calls WS Gateway
+Documentation=https://github.com/kmansoni/ECOMANSONI/tree/main/server/calls-ws
+After=network-online.target redis.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mansoni
+Group=mansoni
+WorkingDirectory=/opt/mansoni/app
+
+# Load secrets from .env.production if it exists (optional, won't fail if missing)
+EnvironmentFile=-/opt/mansoni/app/.env.production
+EnvironmentFile=-/opt/mansoni/app/.env
+
+# Base environment — can be overridden by EnvironmentFile above
+Environment=NODE_ENV=production
+Environment=ENV=production
+Environment=CALLS_WS_PORT=8787
+Environment=REDIS_URL=redis://127.0.0.1:6379
+Environment=CALLS_WS_TRUSTED_PROXIES=127.0.0.1
+
+ExecStart=/usr/bin/node server/calls-ws/index.mjs
+
+# Graceful reload: send SIGUSR2 (PM2-style), fallback is SIGTERM
+KillSignal=SIGTERM
+TimeoutStopSec=15s
+
+Restart=on-failure
+RestartSec=5s
+RestartPreventExitStatus=
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/opt/mansoni/app /var/log/mansoni
+ProtectHome=read-only
+
+# File descriptor limit for WebSocket connections
+LimitNOFILE=65536
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=calls-ws
+
+[Install]
+WantedBy=multi-user.target

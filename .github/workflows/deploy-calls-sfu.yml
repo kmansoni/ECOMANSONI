@@ -1,0 +1,229 @@
+name: Deploy Calls SFU (RU/TR/AE)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - server/calls-ws/**
+      - infra/calls/**
+      - .github/workflows/deploy-calls-sfu.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-calls-sfu
+  cancel-in-progress: false
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # RU node
+  # ---------------------------------------------------------------------------
+  deploy-sfu-ru:
+    name: Deploy SFU RU
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy & bootstrap calls-ws on RU node
+        continue-on-error: true            # soft-fail when SFU_RU_HOST secret is not yet set
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SFU_RU_HOST }}
+          port: ${{ secrets.SFU_RU_SSH_PORT || '22' }}
+          username: ${{ secrets.SFU_RU_USER }}
+          key: ${{ secrets.SFU_RU_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            APP_DIR="${CALLS_APP_DIR:-/opt/mansoni/app}"
+            COMPOSE_FILE="${CALLS_COMPOSE_FILE:-infra/calls/docker-compose.prod.yml}"
+            SERVICE="${CALLS_SERVICE:-calls-ws}"
+            REGION="ru"
+
+            # -- 1. Pull latest code ---------------------------------------------
+            cd "$APP_DIR"
+            git fetch origin main
+            git checkout main
+            git pull --ff-only origin main
+
+            # -- 2. Try to restart via Docker Compose ----------------------------
+            _restart_docker() {
+              local cmd="$1"
+              if $cmd version >/dev/null 2>&1; then
+                $cmd -f "$COMPOSE_FILE" up -d --build "$SERVICE"
+                return 0
+              fi
+              return 1
+            }
+
+            if   _restart_docker "docker compose"        ; then echo "[RU] restarted via docker compose"
+            elif _restart_docker "docker-compose"        ; then echo "[RU] restarted via docker-compose"
+            elif _restart_docker "sudo docker compose"   ; then echo "[RU] restarted via sudo docker compose"
+            elif _restart_docker "sudo docker-compose"   ; then echo "[RU] restarted via sudo docker-compose"
+
+            # -- 3. Try PM2 -------------------------------------------------------
+            elif command -v pm2 >/dev/null 2>&1; then
+              if pm2 list | grep -q "$SERVICE"; then
+                pm2 reload "$SERVICE" --update-env
+                echo "[RU] reloaded via pm2"
+              else
+                pm2 start "$APP_DIR/infra/calls/pm2.config.cjs" --env production
+                pm2 save
+                echo "[RU] started via pm2 (first run)"
+              fi
+
+            # -- 4. Try systemd --------------------------------------------------
+            elif systemctl list-units --type=service | grep -q "$SERVICE"; then
+              sudo systemctl restart "$SERVICE"
+              echo "[RU] restarted via systemd"
+
+            # -- 5. Bootstrap: install service from scratch ----------------------
+            else
+              echo "[RU] No runtime found -- running bootstrap"
+              bash "$APP_DIR/infra/calls/bootstrap-sfu-node.sh" "$APP_DIR" "$REGION"
+            fi
+
+  # ---------------------------------------------------------------------------
+  # TR node
+  # ---------------------------------------------------------------------------
+  deploy-sfu-tr:
+    name: Deploy SFU TR
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy & bootstrap calls-ws on TR node
+        continue-on-error: true
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SFU_TR_HOST }}
+          port: ${{ secrets.SFU_TR_SSH_PORT || '22' }}
+          username: ${{ secrets.SFU_TR_USER }}
+          key: ${{ secrets.SFU_TR_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            APP_DIR="${CALLS_APP_DIR:-/opt/mansoni/app}"
+            COMPOSE_FILE="${CALLS_COMPOSE_FILE:-infra/calls/docker-compose.prod.yml}"
+            SERVICE="${CALLS_SERVICE:-calls-ws}"
+            REGION="tr"
+
+            cd "$APP_DIR"
+            git fetch origin main
+            git checkout main
+            git pull --ff-only origin main
+
+            _restart_docker() {
+              local cmd="$1"
+              if $cmd version >/dev/null 2>&1; then
+                $cmd -f "$COMPOSE_FILE" up -d --build "$SERVICE"
+                return 0
+              fi
+              return 1
+            }
+
+            if   _restart_docker "docker compose"        ; then echo "[TR] restarted via docker compose"
+            elif _restart_docker "docker-compose"        ; then echo "[TR] restarted via docker-compose"
+            elif _restart_docker "sudo docker compose"   ; then echo "[TR] restarted via sudo docker compose"
+            elif _restart_docker "sudo docker-compose"   ; then echo "[TR] restarted via sudo docker-compose"
+            elif command -v pm2 >/dev/null 2>&1; then
+              if pm2 list | grep -q "$SERVICE"; then
+                pm2 reload "$SERVICE" --update-env
+                echo "[TR] reloaded via pm2"
+              else
+                pm2 start "$APP_DIR/infra/calls/pm2.config.cjs" --env production
+                pm2 save
+                echo "[TR] started via pm2 (first run)"
+              fi
+            elif systemctl list-units --type=service | grep -q "$SERVICE"; then
+              sudo systemctl restart "$SERVICE"
+              echo "[TR] restarted via systemd"
+            else
+              echo "[TR] No runtime found -- running bootstrap"
+              bash "$APP_DIR/infra/calls/bootstrap-sfu-node.sh" "$APP_DIR" "$REGION"
+            fi
+
+  # ---------------------------------------------------------------------------
+  # AE node
+  # ---------------------------------------------------------------------------
+  deploy-sfu-ae:
+    name: Deploy SFU AE
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy & bootstrap calls-ws on AE node
+        continue-on-error: true
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SFU_AE_HOST }}
+          port: ${{ secrets.SFU_AE_SSH_PORT || '22' }}
+          username: ${{ secrets.SFU_AE_USER }}
+          key: ${{ secrets.SFU_AE_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            APP_DIR="${CALLS_APP_DIR:-/opt/mansoni/app}"
+            COMPOSE_FILE="${CALLS_COMPOSE_FILE:-infra/calls/docker-compose.prod.yml}"
+            SERVICE="${CALLS_SERVICE:-calls-ws}"
+            REGION="ae"
+
+            cd "$APP_DIR"
+            git fetch origin main
+            git checkout main
+            git pull --ff-only origin main
+
+            _restart_docker() {
+              local cmd="$1"
+              if $cmd version >/dev/null 2>&1; then
+                $cmd -f "$COMPOSE_FILE" up -d --build "$SERVICE"
+                return 0
+              fi
+              return 1
+            }
+
+            if   _restart_docker "docker compose"        ; then echo "[AE] restarted via docker compose"
+            elif _restart_docker "docker-compose"        ; then echo "[AE] restarted via docker-compose"
+            elif _restart_docker "sudo docker compose"   ; then echo "[AE] restarted via sudo docker compose"
+            elif _restart_docker "sudo docker-compose"   ; then echo "[AE] restarted via sudo docker-compose"
+            elif command -v pm2 >/dev/null 2>&1; then
+              if pm2 list | grep -q "$SERVICE"; then
+                pm2 reload "$SERVICE" --update-env
+                echo "[AE] reloaded via pm2"
+              else
+                pm2 start "$APP_DIR/infra/calls/pm2.config.cjs" --env production
+                pm2 save
+                echo "[AE] started via pm2 (first run)"
+              fi
+            elif systemctl list-units --type=service | grep -q "$SERVICE"; then
+              sudo systemctl restart "$SERVICE"
+              echo "[AE] restarted via systemd"
+            else
+              echo "[AE] No runtime found -- running bootstrap"
+              bash "$APP_DIR/infra/calls/bootstrap-sfu-node.sh" "$APP_DIR" "$REGION"
+            fi
+
+  # ---------------------------------------------------------------------------
+  # Readiness verification -- runs even if region deploys soft-failed
+  # ---------------------------------------------------------------------------
+  verify-sfu:
+    name: Verify SFU endpoints
+    runs-on: ubuntu-latest
+    needs:
+      - deploy-sfu-ru
+      - deploy-sfu-tr
+      - deploy-sfu-ae
+    if: ${{ always() }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Readiness probe (RU/TR/AE)
+        env:
+          SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          CALLS_SMOKE_ENDPOINTS: wss://sfu-ru.mansoni.ru/ws,wss://sfu-tr.mansoni.ru/ws,wss://sfu-ae.mansoni.ru/ws
+        run: npm run calls:sfu:readiness
