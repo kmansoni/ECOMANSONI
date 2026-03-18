@@ -221,6 +221,7 @@ function wsError(code, message, details, retryable) {
 const rooms = new Map(); // roomId -> { callId, region, nodeId, epoch, memberSetVersion, peers: Map(deviceId -> {userId, role, e2eeReady}), producers: [] }
 
 const deviceSockets = new Map(); // deviceId -> ws
+let cachedJoinTokenSecret = null;
 
 function getTurnIceServersPublic() {
   const urls = String(process.env.CALLS_TURN_URLS ?? "")
@@ -235,21 +236,37 @@ function getTurnIceServersPublic() {
 }
 
 function getJoinTokenSecret() {
-  const explicit = process.env.CALLS_JOIN_TOKEN_SECRET;
-  if (explicit && explicit.length >= 32) return explicit;
+  if (cachedJoinTokenSecret) return cachedJoinTokenSecret;
 
-  if (IS_PROD_LIKE) {
-    throw new Error("Missing CALLS_JOIN_TOKEN_SECRET in production-like environment");
+  const explicit = process.env.CALLS_JOIN_TOKEN_SECRET;
+  if (explicit && explicit.length >= 32) {
+    cachedJoinTokenSecret = explicit;
+    return cachedJoinTokenSecret;
   }
 
   const supabaseJwtSecret = process.env.SUPABASE_JWT_SECRET;
   if (supabaseJwtSecret && supabaseJwtSecret.length >= 32) {
-    console.warn("[calls-ws] Using SUPABASE_JWT_SECRET fallback for join token signing in non-prod environment");
-    return supabaseJwtSecret;
+    if (IS_PROD_LIKE) {
+      console.warn("[calls-ws] Missing CALLS_JOIN_TOKEN_SECRET, using SUPABASE_JWT_SECRET fallback in production-like environment");
+    } else {
+      console.warn("[calls-ws] Using SUPABASE_JWT_SECRET fallback for join token signing in non-prod environment");
+    }
+    cachedJoinTokenSecret = supabaseJwtSecret;
+    return cachedJoinTokenSecret;
+  }
+
+  if (IS_PROD_LIKE) {
+    // Fallback keeps process alive; tokens issued before restart become invalid,
+    // but this is safer than crashing the signaling service.
+    const emergencySecret = crypto.randomBytes(48).toString("base64url");
+    console.error("[calls-ws] CRITICAL: Missing CALLS_JOIN_TOKEN_SECRET and SUPABASE_JWT_SECRET in production-like environment; using ephemeral in-memory join token secret");
+    cachedJoinTokenSecret = emergencySecret;
+    return cachedJoinTokenSecret;
   }
 
   console.warn("[calls-ws] Using development-only join token secret (non-prod only)");
-  return "dev-only-join-token-secret";
+  cachedJoinTokenSecret = "dev-only-join-token-secret";
+  return cachedJoinTokenSecret;
 }
 
 function encodeBase64Url(raw) {
