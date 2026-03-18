@@ -43,10 +43,9 @@ export function ChatSearchSheet({
     }
   }, [open]);
 
-  // Filter out users already in conversations
-  const newUsers = searchedUsers.filter(
-    u => !existingUserIds.has(u.user_id) && u.user_id !== currentUserId
-  );
+  // Do not hide users with existing chats: user expects search to find people.
+  // Existing chat can be reopened via onStartChat/createConversation flow.
+  const visibleUsers = searchedUsers.filter((u) => u.user_id !== currentUserId);
 
   const handleOpenProfile = (user: SearchUser) => {
     // In Telegram Mini App, navigation must be triggered directly from the tap handler.
@@ -108,13 +107,15 @@ export function ChatSearchSheet({
               </div>
             )}
 
-            {!loading && searchQuery.trim().length >= 2 && newUsers.length === 0 && (
+            {!loading && searchQuery.trim().length >= 2 && visibleUsers.length === 0 && (
               <div className="text-center py-8 text-white/60 text-sm">
                 Пользователи не найдены
               </div>
             )}
 
-            {newUsers.map((u) => (
+            {visibleUsers.map((u) => {
+              const hasExistingChat = existingUserIds.has(u.user_id);
+              return (
               <div
                 key={u.user_id}
                 onClick={() => handleOpenProfile(u)}
@@ -132,6 +133,11 @@ export function ChatSearchSheet({
                     <span className="font-medium text-white truncate">
                       {u.display_name}
                     </span>
+                    {hasExistingChat && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-white/10 text-white/70">
+                        Уже в чатах
+                      </span>
+                    )}
                     {u.verified && (
                       <span className="text-primary text-xs">✓</span>
                     )}
@@ -153,7 +159,8 @@ export function ChatSearchSheet({
                   <UserPlus className="w-5 h-5" />
                 </button>
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </SheetContent>

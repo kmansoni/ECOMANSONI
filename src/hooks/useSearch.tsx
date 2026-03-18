@@ -79,13 +79,49 @@ export function useSearch() {
 
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("user_id, display_name, avatar_url, bio, verified")
-        .ilike("display_name", `%${query}%`)
-        .limit(20);
+      const raw = query.trim();
+      const safeQuery = raw.replace(/[%_,()]/g, "");
+      let effectiveData: any[] = [];
 
-      if (error) throw error;
+      // Primary path: server-side RPC with SECURITY DEFINER.
+      // This keeps search working even when profiles RLS differs across environments.
+      const rpcResult = await (supabase as any).rpc("search_user_profiles", {
+        p_query: safeQuery,
+        p_limit: 20,
+      });
+
+      if (!rpcResult?.error && Array.isArray(rpcResult?.data)) {
+        effectiveData = rpcResult.data;
+      }
+
+      // Fallback path for environments where migration is not applied yet.
+      if (effectiveData.length === 0) {
+        const lowerQuery = safeQuery.toLocaleLowerCase("ru-RU");
+        const upperQuery = safeQuery.toLocaleUpperCase("ru-RU");
+        const titleQuery =
+          safeQuery.length > 0
+            ? `${safeQuery.charAt(0).toLocaleUpperCase("ru-RU")}${safeQuery.slice(1).toLocaleLowerCase("ru-RU")}`
+            : safeQuery;
+
+        const variants = Array.from(new Set([safeQuery, lowerQuery, upperQuery, titleQuery].filter(Boolean)));
+        const byFieldFilters = variants.flatMap((value) => [
+          `display_name.like.%${value}%`,
+          `username.like.%${value}%`,
+          `full_name.like.%${value}%`,
+          `first_name.like.%${value}%`,
+          `last_name.like.%${value}%`,
+        ]);
+
+        const fallback = await supabase
+          .from("profiles")
+          .select("user_id, display_name, username, full_name, first_name, last_name, avatar_url, bio, verified")
+          .or(byFieldFilters.join(","))
+          .limit(20);
+
+        if (!fallback.error && Array.isArray(fallback.data)) {
+          effectiveData = fallback.data;
+        }
+      }
 
       // Check if current user is following these users
       let followingIds: string[] = [];
@@ -97,10 +133,22 @@ export function useSearch() {
         followingIds = (following || []).map((f: any) => f.following_id);
       }
 
-      const usersWithFollowStatus = (data || []).map((u) => ({
-        ...u,
-        isFollowing: followingIds.includes(u.user_id),
-      }));
+      const usersWithFollowStatus = (effectiveData || [])
+        .map((u: any) => ({
+          user_id: String(u.user_id),
+          display_name: String(
+            u.display_name ||
+            u.full_name ||
+            [u.first_name, u.last_name].filter(Boolean).join(" ") ||
+            u.username ||
+            "Пользователь"
+          ),
+          avatar_url: String(u.avatar_url || ""),
+          bio: u.bio ? String(u.bio) : undefined,
+          verified: Boolean(u.verified),
+          isFollowing: followingIds.includes(u.user_id),
+        }))
+        .filter((u) => Boolean(u.user_id));
 
       setUsers(usersWithFollowStatus);
     } catch (error) {
