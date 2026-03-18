@@ -49,6 +49,14 @@ jobs:
             git reset --hard origin/main
             git clean -fd
 
+            # -- 1.2 Ensure runtime deps are present -----------------------------
+            # calls-ws imports ioredis at module load; if node_modules is stale
+            # or missing, systemd restart will fail with ERR_MODULE_NOT_FOUND.
+            if [ ! -f "$APP_DIR/node_modules/ioredis/package.json" ]; then
+              echo "[RU] Installing production dependencies"
+              npm ci --omit=dev --ignore-scripts
+            fi
+
             # -- 1.5 Evict any stale calls-ws process holding port 8787 ---------
             # systemctl restart only kills its own PID; an old pm2/bare-node
             # process may still hold the port, causing EADDRINUSE on the new one.
@@ -132,6 +140,11 @@ jobs:
             git reset --hard origin/main
             git clean -fd
 
+            if [ ! -f "$APP_DIR/node_modules/ioredis/package.json" ]; then
+              echo "[TR] Installing production dependencies"
+              npm ci --omit=dev --ignore-scripts
+            fi
+
             CALLS_WS_PORT="${CALLS_WS_PORT:-8787}"
             PIDS="$(ps -eo pid,args | grep -E '[n]ode( |.* )server/calls-ws/index\.mjs' | awk '{print $1}')"
             if [ -n "$PIDS" ]; then
@@ -204,6 +217,11 @@ jobs:
             git checkout main
             git reset --hard origin/main
             git clean -fd
+
+            if [ ! -f "$APP_DIR/node_modules/ioredis/package.json" ]; then
+              echo "[AE] Installing production dependencies"
+              npm ci --omit=dev --ignore-scripts
+            fi
 
             CALLS_WS_PORT="${CALLS_WS_PORT:-8787}"
             PIDS="$(ps -eo pid,args | grep -E '[n]ode( |.* )server/calls-ws/index\.mjs' | awk '{print $1}')"
