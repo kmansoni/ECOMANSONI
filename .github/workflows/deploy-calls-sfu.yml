@@ -112,6 +112,20 @@ jobs:
               bash "$APP_DIR/infra/calls/bootstrap-sfu-node.sh" "$APP_DIR" "$REGION"
             fi
 
+            # -- 6. Post-deploy diagnostics -------------------------------------
+            echo "[RU] diagnostics: git/head + listeners + service + journal"
+            git rev-parse --short HEAD || true
+            ps -eo pid,user,args | grep -E '[n]ode( |.* )server/calls-ws/index\.mjs' || true
+            ss -ltnp | grep ':8787' || true
+            systemctl status "$SERVICE" --no-pager -l | sed -n '1,40p' || true
+            journalctl -u "$SERVICE" -n 40 --no-pager || true
+            echo "[RU] diagnostics: gateway code markers"
+            grep -nE 'GATEWAY_DEFAULT_CODECS|ROOM_JOIN_OK|GET_ROUTER_RTP_CAPABILITIES|ROUTER_RTP_CAPABILITIES' "$APP_DIR/server/calls-ws/index.mjs" || true
+            if command -v nginx >/dev/null 2>&1; then
+              echo "[RU] diagnostics: nginx ws routing"
+              nginx -T 2>/dev/null | grep -nE 'server_name|location /ws|proxy_pass|upstream|sfu-ru\.mansoni\.ru' | sed -n '1,220p' || true
+            fi
+
   # ---------------------------------------------------------------------------
   # TR node
   # ---------------------------------------------------------------------------
@@ -192,6 +206,19 @@ jobs:
               bash "$APP_DIR/infra/calls/bootstrap-sfu-node.sh" "$APP_DIR" "$REGION"
             fi
 
+            echo "[TR] diagnostics: git/head + listeners + service + journal"
+            git rev-parse --short HEAD || true
+            ps -eo pid,user,args | grep -E '[n]ode( |.* )server/calls-ws/index\.mjs' || true
+            ss -ltnp | grep ':8787' || true
+            systemctl status "$SERVICE" --no-pager -l | sed -n '1,40p' || true
+            journalctl -u "$SERVICE" -n 40 --no-pager || true
+            echo "[TR] diagnostics: gateway code markers"
+            grep -nE 'GATEWAY_DEFAULT_CODECS|ROOM_JOIN_OK|GET_ROUTER_RTP_CAPABILITIES|ROUTER_RTP_CAPABILITIES' "$APP_DIR/server/calls-ws/index.mjs" || true
+            if command -v nginx >/dev/null 2>&1; then
+              echo "[TR] diagnostics: nginx ws routing"
+              nginx -T 2>/dev/null | grep -nE 'server_name|location /ws|proxy_pass|upstream|sfu-tr\.mansoni\.ru' | sed -n '1,220p' || true
+            fi
+
   # ---------------------------------------------------------------------------
   # AE node
   # ---------------------------------------------------------------------------
@@ -270,6 +297,19 @@ jobs:
             else
               echo "[AE] No runtime found -- running bootstrap"
               bash "$APP_DIR/infra/calls/bootstrap-sfu-node.sh" "$APP_DIR" "$REGION"
+            fi
+
+            echo "[AE] diagnostics: git/head + listeners + service + journal"
+            git rev-parse --short HEAD || true
+            ps -eo pid,user,args | grep -E '[n]ode( |.* )server/calls-ws/index\.mjs' || true
+            ss -ltnp | grep ':8787' || true
+            systemctl status "$SERVICE" --no-pager -l | sed -n '1,40p' || true
+            journalctl -u "$SERVICE" -n 40 --no-pager || true
+            echo "[AE] diagnostics: gateway code markers"
+            grep -nE 'GATEWAY_DEFAULT_CODECS|ROOM_JOIN_OK|GET_ROUTER_RTP_CAPABILITIES|ROUTER_RTP_CAPABILITIES' "$APP_DIR/server/calls-ws/index.mjs" || true
+            if command -v nginx >/dev/null 2>&1; then
+              echo "[AE] diagnostics: nginx ws routing"
+              nginx -T 2>/dev/null | grep -nE 'server_name|location /ws|proxy_pass|upstream|sfu-ae\.mansoni\.ru' | sed -n '1,220p' || true
             fi
 
   # ---------------------------------------------------------------------------
