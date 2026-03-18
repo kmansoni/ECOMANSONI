@@ -54,7 +54,7 @@ jobs:
             # -- 1.2 Ensure runtime deps are present -----------------------------
             # calls-ws imports ioredis at module load; if node_modules is stale
             # or missing, systemd restart will fail with ERR_MODULE_NOT_FOUND.
-            if [ ! -f "$APP_DIR/node_modules/ioredis/package.json" ]; then
+            if [ ! -f "$APP_DIR/node_modules/ioredis/package.json" ] || [ ! -f "$APP_DIR/node_modules/ajv/package.json" ] || [ ! -f "$APP_DIR/node_modules/ajv-formats/package.json" ]; then
               echo "[RU] Installing production dependencies"
               npm ci --omit=dev --ignore-scripts
             fi
@@ -159,7 +159,7 @@ jobs:
             git reset --hard origin/main
             git clean -fd
 
-            if [ ! -f "$APP_DIR/node_modules/ioredis/package.json" ]; then
+            if [ ! -f "$APP_DIR/node_modules/ioredis/package.json" ] || [ ! -f "$APP_DIR/node_modules/ajv/package.json" ] || [ ! -f "$APP_DIR/node_modules/ajv-formats/package.json" ]; then
               echo "[TR] Installing production dependencies"
               npm ci --omit=dev --ignore-scripts
             fi
@@ -253,7 +253,7 @@ jobs:
             git reset --hard origin/main
             git clean -fd
 
-            if [ ! -f "$APP_DIR/node_modules/ioredis/package.json" ]; then
+            if [ ! -f "$APP_DIR/node_modules/ioredis/package.json" ] || [ ! -f "$APP_DIR/node_modules/ajv/package.json" ] || [ ! -f "$APP_DIR/node_modules/ajv-formats/package.json" ]; then
               echo "[AE] Installing production dependencies"
               npm ci --omit=dev --ignore-scripts
             fi
