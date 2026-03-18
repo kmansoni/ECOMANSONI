@@ -455,6 +455,7 @@ wss.on("connection", (ws, req) => {
     userId: null,
     deviceId: null,
     expectedSeq: 1,
+    nextOutboundSeq: 1,
     seenMsgIds: new Map(),
     resumeToken: uuid(),
     // Rate limiter — per-connection sliding window
@@ -554,7 +555,7 @@ wss.on("connection", (ws, req) => {
           type: "WELCOME",
           msgId: uuid(),
           ts: nowMs(),
-          seq: conn.expectedSeq++,
+          seq: conn.nextOutboundSeq++,
           payload: {
             serverTime: nowMs(),
             heartbeatSec: 10,
@@ -588,12 +589,12 @@ wss.on("connection", (ws, req) => {
           type: "AUTH_OK",
           msgId: uuid(),
           ts: nowMs(),
-          seq: conn.expectedSeq++,
+          seq: conn.nextOutboundSeq++,
           payload: { userId: conn.userId, deviceId: conn.deviceId ?? "dev-device" }
         });
 
         // Advertise gateway mode/features immediately after auth
-        sendGwHello(ws, conn.expectedSeq++);
+        sendGwHello(ws, conn.nextOutboundSeq++);
         // #5: Stop existing interval before starting a new one — prevents interval
         // leak when client sends a second AUTH frame (e.g. token refresh).
         if (conn.jwtCheckInterval != null) {
@@ -621,7 +622,7 @@ wss.on("connection", (ws, req) => {
             type: "MAILBOX_BATCH",
             msgId: uuid(),
             ts: nowMs(),
-            seq: conn.expectedSeq++,
+            seq: conn.nextOutboundSeq++,
             payload: { deviceId, nextStreamId: frame.payload?.lastStreamId ?? "0-0", messages: [] },
           });
           ack(ws, frame.msgId, true);
@@ -640,7 +641,7 @@ wss.on("connection", (ws, req) => {
           type: "MAILBOX_BATCH",
           msgId: uuid(),
           ts: nowMs(),
-          seq: conn.expectedSeq++,
+          seq: conn.nextOutboundSeq++,
           payload: { deviceId, nextStreamId, messages },
         });
 
@@ -711,7 +712,7 @@ wss.on("connection", (ws, req) => {
           type: "ROOM_CREATED",
           msgId: uuid(),
           ts: nowMs(),
-          seq: conn.expectedSeq++,
+          seq: conn.nextOutboundSeq++,
           payload: { roomId, callId, region, nodeId, epoch: 0, memberSetVersion: 0 }
         });
 
@@ -720,7 +721,7 @@ wss.on("connection", (ws, req) => {
           type: "ROOM_JOIN_SECRET",
           msgId: uuid(),
           ts: nowMs(),
-          seq: conn.expectedSeq++,
+          seq: conn.nextOutboundSeq++,
           payload: { roomId, joinToken: rooms.get(roomId).joinToken }
         });
 
@@ -777,7 +778,7 @@ wss.on("connection", (ws, req) => {
           type: "ROOM_JOIN_OK",
           msgId: uuid(),
           ts: nowMs(),
-          seq: conn.expectedSeq++,
+          seq: conn.nextOutboundSeq++,
           payload: {
             roomId,
             callId: room.callId,
@@ -811,7 +812,7 @@ wss.on("connection", (ws, req) => {
             type: "ROOM_SNAPSHOT",
             msgId: uuid(),
             ts: nowMs(),
-            seq: conn.expectedSeq++,
+            seq: conn.nextOutboundSeq++,
             payload: snapshot
           });
         }
@@ -1108,7 +1109,7 @@ wss.on("connection", (ws, req) => {
           type: "ROUTER_RTP_CAPABILITIES",
           msgId: uuid(),
           ts: nowMs(),
-          seq: conn.expectedSeq++,
+          seq: conn.nextOutboundSeq++,
           payload: { roomId, routerRtpCapabilities: { codecs: GATEWAY_DEFAULT_CODECS } },
         });
         return ack(ws, frame.msgId, true);
@@ -1133,7 +1134,7 @@ wss.on("connection", (ws, req) => {
           type: "TRANSPORT_CREATED",
           msgId: uuid(),
           ts: nowMs(),
-          seq: conn.expectedSeq++,
+          seq: conn.nextOutboundSeq++,
           payload: {
             roomId: tcRoomId,
             transportId,
@@ -1174,7 +1175,7 @@ wss.on("connection", (ws, req) => {
           type: "PRODUCED",
           msgId: uuid(),
           ts: nowMs(),
-          seq: conn.expectedSeq++,
+          seq: conn.nextOutboundSeq++,
           payload: { roomId: pRoomId, producerId, kind },
         });
         return ack(ws, frame.msgId, true);
@@ -1220,7 +1221,7 @@ wss.on("connection", (ws, req) => {
         }
         send(ws, {
           v: 1, type: "ROOM_LEFT", msgId: uuid(), ts: nowMs(),
-          seq: conn.expectedSeq++,
+          seq: conn.nextOutboundSeq++,
           payload: { roomId: leaveRoomId },
         });
         return ack(ws, frame.msgId, true);
@@ -1241,7 +1242,7 @@ wss.on("connection", (ws, req) => {
         }
         send(ws, {
           v: 1, type: "ICE_RESTART_OK", msgId: uuid(), ts: nowMs(),
-          seq: conn.expectedSeq++,
+          seq: conn.nextOutboundSeq++,
           payload: { roomId: frame.payload?.roomId, policy: "relay" },
         });
         return ack(ws, frame.msgId, true);
