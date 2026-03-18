@@ -131,6 +131,7 @@ jobs:
   # ---------------------------------------------------------------------------
   deploy-sfu-tr:
     name: Deploy SFU TR
+    if: ${{ false }}
     runs-on: ubuntu-latest
     steps:
       - name: Deploy & bootstrap calls-ws on TR node
@@ -224,6 +225,7 @@ jobs:
   # ---------------------------------------------------------------------------
   deploy-sfu-ae:
     name: Deploy SFU AE
+    if: ${{ false }}
     runs-on: ubuntu-latest
     steps:
       - name: Deploy & bootstrap calls-ws on AE node
@@ -320,8 +322,6 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - deploy-sfu-ru
-      - deploy-sfu-tr
-      - deploy-sfu-ae
     if: ${{ always() }}
     steps:
       - name: Checkout
@@ -340,5 +340,5 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          CALLS_SMOKE_ENDPOINTS: wss://sfu-ru.mansoni.ru/ws,wss://sfu-tr.mansoni.ru/ws,wss://sfu-ae.mansoni.ru/ws
+          CALLS_SMOKE_ENDPOINTS: wss://sfu-ru.mansoni.ru/ws
         run: npm run calls:sfu:readiness
