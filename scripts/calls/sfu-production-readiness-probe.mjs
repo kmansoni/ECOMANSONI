@@ -71,7 +71,7 @@ async function createTempUserToken() {
 
 function makeClient(endpoint, name) {
   const ws = new WebSocket(endpoint);
-  const st = { ws, name, seq: 1, frames: [], waiters: [] };
+  const st = { ws, name, seq: 1, frames: [], waiters: [], closeInfo: null };
 
   ws.on("message", (raw) => {
     let frame;
@@ -89,10 +89,12 @@ function makeClient(endpoint, name) {
     }
   });
 
-  ws.on("close", () => {
+  ws.on("close", (code, reasonBuf) => {
+    const reason = typeof reasonBuf?.toString === "function" ? reasonBuf.toString() : "";
+    st.closeInfo = { code, reason };
     for (const waiter of [...st.waiters]) {
       clearTimeout(waiter.t);
-      waiter.j(new Error(`${name} socket closed`));
+      waiter.j(new Error(`${name} socket closed code=${code} reason=${reason || "-"}`));
     }
     st.waiters = [];
   });
@@ -154,7 +156,7 @@ function hasCaps(caps) {
   return !!caps && Array.isArray(caps.codecs) && caps.codecs.length > 0;
 }
 
-async function probeEndpoint(endpoint, token) {
+async function probeEndpoint(endpoint, tokenA, tokenB) {
   const stage = {};
   const startedAt = Date.now();
 
@@ -182,8 +184,8 @@ async function probeEndpoint(endpoint, token) {
 
     t = Date.now();
     await Promise.all([
-      sendAndAck(A, "AUTH", { accessToken: token }),
-      sendAndAck(B, "AUTH", { accessToken: token }),
+      sendAndAck(A, "AUTH", { accessToken: tokenA }),
+      sendAndAck(B, "AUTH", { accessToken: tokenB }),
     ]);
     const authA = await waitFor(A, (f) => f?.type === "AUTH_OK", STEP_TIMEOUT_MS);
     const authB = await waitFor(B, (f) => f?.type === "AUTH_OK", STEP_TIMEOUT_MS);
@@ -290,23 +292,44 @@ async function probeEndpoint(endpoint, token) {
         getRouterSupported: false,
         getRouterCapsOk: false,
       },
+      close: {
+        A: A.closeInfo,
+        B: B.closeInfo,
+      },
       totalMs: Date.now() - startedAt,
       error: error instanceof Error ? error.message : String(error),
     };
   }
 }
 
+async function probeEndpointWithRetry(endpoint, tokenA, tokenB, maxAttempts = 2) {
+  let last;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const result = await probeEndpoint(endpoint, tokenA, tokenB);
+    if (result.ok) return { ...result, attempt };
+    last = { ...result, attempt };
+    const errText = String(result.error || "").toLowerCase();
+    const isTransientSocketClose = errText.includes("socket closed") || errText.includes("open timeout");
+    if (!isTransientSocketClose || attempt >= maxAttempts) {
+      return last;
+    }
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  return last;
+}
+
 async function main() {
   requireEnv();
   const endpoints = parseEndpoints();
-  const { email, accessToken } = await createTempUserToken();
+  const a = await createTempUserToken();
+  const b = await createTempUserToken();
 
-  console.log(`[sfu-ready] temp user: ${email}`);
+  console.log(`[sfu-ready] temp users: A=${a.email} B=${b.email}`);
   const results = [];
   for (const endpoint of endpoints) {
-    const res = await probeEndpoint(endpoint, accessToken);
+    const res = await probeEndpointWithRetry(endpoint, a.accessToken, b.accessToken);
     results.push(res);
-    console.log(`[sfu-ready] ${endpoint} ok=${res.ok} totalMs=${res.totalMs} error=${res.error || "-"}`);
+    console.log(`[sfu-ready] ${endpoint} ok=${res.ok} attempt=${res.attempt || 1} totalMs=${res.totalMs} error=${res.error || "-"}`);
   }
 
   console.log("\n[sfu-ready] summary");
