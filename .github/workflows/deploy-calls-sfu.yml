@@ -27,11 +27,14 @@ jobs:
     steps:
       - name: Deploy & bootstrap calls-ws on RU node
         uses: appleboy/ssh-action@v1.2.0
+        env:
+          CALLS_JOIN_TOKEN_SECRET: ${{ secrets.CALLS_JOIN_TOKEN_SECRET }}
         with:
           host: ${{ secrets.SFU_RU_HOST }}
           port: ${{ secrets.SFU_RU_SSH_PORT || '22' }}
           username: ${{ secrets.SFU_RU_USER }}
           key: ${{ secrets.SFU_RU_SSH_KEY }}
+          envs: CALLS_JOIN_TOKEN_SECRET
           script: |
             set -euo pipefail
             APP_DIR="${CALLS_APP_DIR:-/opt/mansoni/app}"
@@ -50,6 +53,22 @@ jobs:
             git checkout main
             git reset --hard origin/main
             git clean -fd
+
+            # -- 1.1 Ensure join-token secret exists in environment ------------
+            # Keep secret in .env.production for systemd EnvironmentFile loading.
+            if [ -n "${CALLS_JOIN_TOKEN_SECRET:-}" ]; then
+              ENV_FILE="$APP_DIR/.env.production"
+              touch "$ENV_FILE"
+              chmod 600 "$ENV_FILE" || true
+              if grep -q '^CALLS_JOIN_TOKEN_SECRET=' "$ENV_FILE"; then
+                sed -i "s|^CALLS_JOIN_TOKEN_SECRET=.*|CALLS_JOIN_TOKEN_SECRET=${CALLS_JOIN_TOKEN_SECRET}|" "$ENV_FILE"
+              else
+                printf '\nCALLS_JOIN_TOKEN_SECRET=%s\n' "$CALLS_JOIN_TOKEN_SECRET" >> "$ENV_FILE"
+              fi
+              echo "[RU] CALLS_JOIN_TOKEN_SECRET synced to .env.production"
+            else
+              echo "[RU] WARNING: CALLS_JOIN_TOKEN_SECRET secret is not set in GitHub; runtime fallback may be used"
+            fi
 
             # -- 1.2 Ensure runtime deps are present -----------------------------
             # calls-ws imports ioredis at module load; if node_modules is stale
@@ -119,6 +138,7 @@ jobs:
             ss -ltnp | grep ':8787' || true
             systemctl status "$SERVICE" --no-pager -l | sed -n '1,40p' || true
             journalctl -u "$SERVICE" -n 40 --no-pager || true
+            grep -n '^CALLS_JOIN_TOKEN_SECRET=' "$APP_DIR/.env.production" >/dev/null 2>&1 && echo "[RU] join token secret present in .env.production" || echo "[RU] join token secret missing in .env.production"
             echo "[RU] diagnostics: gateway code markers"
             grep -nE 'GATEWAY_DEFAULT_CODECS|ROOM_JOIN_OK|GET_ROUTER_RTP_CAPABILITIES|ROUTER_RTP_CAPABILITIES' "$APP_DIR/server/calls-ws/index.mjs" || true
             if command -v nginx >/dev/null 2>&1; then
@@ -136,11 +156,14 @@ jobs:
     steps:
       - name: Deploy & bootstrap calls-ws on TR node
         uses: appleboy/ssh-action@v1.2.0
+        env:
+          CALLS_JOIN_TOKEN_SECRET: ${{ secrets.CALLS_JOIN_TOKEN_SECRET }}
         with:
           host: ${{ secrets.SFU_TR_HOST }}
           port: ${{ secrets.SFU_TR_SSH_PORT || '22' }}
           username: ${{ secrets.SFU_TR_USER }}
           key: ${{ secrets.SFU_TR_SSH_KEY }}
+          envs: CALLS_JOIN_TOKEN_SECRET
           script: |
             set -euo pipefail
             APP_DIR="${CALLS_APP_DIR:-/opt/mansoni/app}"
@@ -158,6 +181,19 @@ jobs:
             git checkout main
             git reset --hard origin/main
             git clean -fd
+
+            if [ -n "${CALLS_JOIN_TOKEN_SECRET:-}" ]; then
+              ENV_FILE="$APP_DIR/.env.production"
+              touch "$ENV_FILE"
+              chmod 600 "$ENV_FILE" || true
+              if grep -q '^CALLS_JOIN_TOKEN_SECRET=' "$ENV_FILE"; then
+                sed -i "s|^CALLS_JOIN_TOKEN_SECRET=.*|CALLS_JOIN_TOKEN_SECRET=${CALLS_JOIN_TOKEN_SECRET}|" "$ENV_FILE"
+              else
+                printf '\nCALLS_JOIN_TOKEN_SECRET=%s\n' "$CALLS_JOIN_TOKEN_SECRET" >> "$ENV_FILE"
+              fi
+            else
+              echo "[TR] WARNING: CALLS_JOIN_TOKEN_SECRET secret is not set in GitHub"
+            fi
 
             if [ ! -f "$APP_DIR/node_modules/ioredis/package.json" ] || [ ! -f "$APP_DIR/node_modules/ajv/package.json" ] || [ ! -f "$APP_DIR/node_modules/ajv-formats/package.json" ]; then
               echo "[TR] Installing production dependencies"
@@ -213,6 +249,7 @@ jobs:
             ss -ltnp | grep ':8787' || true
             systemctl status "$SERVICE" --no-pager -l | sed -n '1,40p' || true
             journalctl -u "$SERVICE" -n 40 --no-pager || true
+            grep -n '^CALLS_JOIN_TOKEN_SECRET=' "$APP_DIR/.env.production" >/dev/null 2>&1 && echo "[TR] join token secret present in .env.production" || echo "[TR] join token secret missing in .env.production"
             echo "[TR] diagnostics: gateway code markers"
             grep -nE 'GATEWAY_DEFAULT_CODECS|ROOM_JOIN_OK|GET_ROUTER_RTP_CAPABILITIES|ROUTER_RTP_CAPABILITIES' "$APP_DIR/server/calls-ws/index.mjs" || true
             if command -v nginx >/dev/null 2>&1; then
@@ -230,11 +267,14 @@ jobs:
     steps:
       - name: Deploy & bootstrap calls-ws on AE node
         uses: appleboy/ssh-action@v1.2.0
+        env:
+          CALLS_JOIN_TOKEN_SECRET: ${{ secrets.CALLS_JOIN_TOKEN_SECRET }}
         with:
           host: ${{ secrets.SFU_AE_HOST }}
           port: ${{ secrets.SFU_AE_SSH_PORT || '22' }}
           username: ${{ secrets.SFU_AE_USER }}
           key: ${{ secrets.SFU_AE_SSH_KEY }}
+          envs: CALLS_JOIN_TOKEN_SECRET
           script: |
             set -euo pipefail
             APP_DIR="${CALLS_APP_DIR:-/opt/mansoni/app}"
@@ -252,6 +292,19 @@ jobs:
             git checkout main
             git reset --hard origin/main
             git clean -fd
+
+            if [ -n "${CALLS_JOIN_TOKEN_SECRET:-}" ]; then
+              ENV_FILE="$APP_DIR/.env.production"
+              touch "$ENV_FILE"
+              chmod 600 "$ENV_FILE" || true
+              if grep -q '^CALLS_JOIN_TOKEN_SECRET=' "$ENV_FILE"; then
+                sed -i "s|^CALLS_JOIN_TOKEN_SECRET=.*|CALLS_JOIN_TOKEN_SECRET=${CALLS_JOIN_TOKEN_SECRET}|" "$ENV_FILE"
+              else
+                printf '\nCALLS_JOIN_TOKEN_SECRET=%s\n' "$CALLS_JOIN_TOKEN_SECRET" >> "$ENV_FILE"
+              fi
+            else
+              echo "[AE] WARNING: CALLS_JOIN_TOKEN_SECRET secret is not set in GitHub"
+            fi
 
             if [ ! -f "$APP_DIR/node_modules/ioredis/package.json" ] || [ ! -f "$APP_DIR/node_modules/ajv/package.json" ] || [ ! -f "$APP_DIR/node_modules/ajv-formats/package.json" ]; then
               echo "[AE] Installing production dependencies"
@@ -307,6 +360,7 @@ jobs:
             ss -ltnp | grep ':8787' || true
             systemctl status "$SERVICE" --no-pager -l | sed -n '1,40p' || true
             journalctl -u "$SERVICE" -n 40 --no-pager || true
+            grep -n '^CALLS_JOIN_TOKEN_SECRET=' "$APP_DIR/.env.production" >/dev/null 2>&1 && echo "[AE] join token secret present in .env.production" || echo "[AE] join token secret missing in .env.production"
             echo "[AE] diagnostics: gateway code markers"
             grep -nE 'GATEWAY_DEFAULT_CODECS|ROOM_JOIN_OK|GET_ROUTER_RTP_CAPABILITIES|ROUTER_RTP_CAPABILITIES' "$APP_DIR/server/calls-ws/index.mjs" || true
             if command -v nginx >/dev/null 2>&1; then
