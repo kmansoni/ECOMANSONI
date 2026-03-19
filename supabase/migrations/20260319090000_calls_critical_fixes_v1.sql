@@ -172,7 +172,8 @@ BEGIN
       ADD CONSTRAINT calls_caller_id_fkey
       FOREIGN KEY (caller_id)
       REFERENCES auth.users(id)
-      ON DELETE SET NULL;
+      ON DELETE SET NULL
+      NOT VALID;
   END IF;
 END $$;
 
@@ -188,7 +189,8 @@ BEGIN
       ADD CONSTRAINT calls_callee_id_fkey
       FOREIGN KEY (callee_id)
       REFERENCES auth.users(id)
-      ON DELETE SET NULL;
+      ON DELETE SET NULL
+      NOT VALID;
   END IF;
 END $$;
 
@@ -204,7 +206,8 @@ BEGIN
       ADD CONSTRAINT video_calls_caller_id_fkey
       FOREIGN KEY (caller_id)
       REFERENCES auth.users(id)
-      ON DELETE SET NULL;
+      ON DELETE SET NULL
+      NOT VALID;
   END IF;
 END $$;
 
@@ -220,7 +223,8 @@ BEGIN
       ADD CONSTRAINT video_calls_callee_id_fkey
       FOREIGN KEY (callee_id)
       REFERENCES auth.users(id)
-      ON DELETE SET NULL;
+      ON DELETE SET NULL
+      NOT VALID;
   END IF;
 END $$;
 
