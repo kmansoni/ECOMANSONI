@@ -66,13 +66,34 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 function getReadableAuthErrorMessage(error: unknown): string {
   const raw = error instanceof Error ? error.message : String(error);
   const normalized = raw.toLowerCase();
-  if (normalized.includes("failed to fetch")) {
+  if (
+    normalized.includes("failed to fetch") ||
+    normalized.includes("networkerror") ||
+    normalized.includes("err_connection_reset") ||
+    normalized.includes("connection reset")
+  ) {
     return "Сетевой сбой при обращении к серверу подтверждения. Проверьте интернет/VPN и повторите.";
   }
   if (normalized.startsWith("timeout:")) {
     return "Сервер отвечает слишком долго. Повторите попытку.";
   }
   return raw;
+}
+
+function isTransientSupabaseAvailabilityError(error: unknown): boolean {
+  const raw = error instanceof Error ? error.message : String(error ?? "");
+  const normalized = raw.toLowerCase();
+  return (
+    error instanceof TypeError ||
+    normalized.includes("failed to fetch") ||
+    normalized.includes("networkerror") ||
+    normalized.includes("err_connection_reset") ||
+    normalized.includes("connection reset") ||
+    normalized.includes("503") ||
+    normalized.includes("502") ||
+    normalized.includes("504") ||
+    normalized.startsWith("timeout:")
+  );
 }
 
 function toVerifyOtpUrl(sendOtpUrl: string): string {
@@ -211,8 +232,12 @@ export function AuthPage() {
         setOtpCountdown(OTP_RESEND_COOLDOWN_SEC);
         setMode("otp");
       } catch (error) {
-        logger.error("[AuthPage] Send OTP error", { error, phone: trimmedPhone });
-        const errorMsg = error instanceof Error ? error.message : String(error);
+        if (isTransientSupabaseAvailabilityError(error)) {
+          logger.warn("[AuthPage] Send OTP transient backend outage", { error, phone: trimmedPhone });
+        } else {
+          logger.error("[AuthPage] Send OTP error", { error, phone: trimmedPhone });
+        }
+        const errorMsg = getReadableAuthErrorMessage(error);
         toast.error("Ошибка отправки кода", { description: errorMsg });
       }
     });
@@ -309,7 +334,11 @@ export function AuthPage() {
           navigate("/");
         }
       } catch (error) {
-        logger.error("[AuthPage] Verify OTP error", { error, email: verifyEmail });
+        if (isTransientSupabaseAvailabilityError(error)) {
+          logger.warn("[AuthPage] Verify OTP transient backend outage", { error, email: verifyEmail });
+        } else {
+          logger.error("[AuthPage] Verify OTP error", { error, email: verifyEmail });
+        }
         const errorMsg = getReadableAuthErrorMessage(error);
         toast.error("Ошибка проверки кода", { description: errorMsg });
       }
@@ -377,7 +406,11 @@ export function AuthPage() {
         setOtpCode("");
         setOtpCountdown(OTP_RESEND_COOLDOWN_SEC);
       } catch (error) {
-        logger.error("[AuthPage] Resend OTP error", { error });
+        if (isTransientSupabaseAvailabilityError(error)) {
+          logger.warn("[AuthPage] Resend OTP transient backend outage", { error });
+        } else {
+          logger.error("[AuthPage] Resend OTP error", { error });
+        }
         toast.error("Не удалось переотправить код", {
           description: getReadableAuthErrorMessage(error),
         });
@@ -458,8 +491,16 @@ export function AuthPage() {
         setOtpCountdown(OTP_RESEND_COOLDOWN_SEC);
         setMode("otp");
       } catch (error) {
-        logger.error("[AuthPage] Register send OTP error", { error, email: trimmedEmail, phone: trimmedPhone });
-        toast.error("Не удалось отправить код");
+        if (isTransientSupabaseAvailabilityError(error)) {
+          logger.warn("[AuthPage] Register send OTP transient backend outage", {
+            error,
+            email: trimmedEmail,
+            phone: trimmedPhone,
+          });
+        } else {
+          logger.error("[AuthPage] Register send OTP error", { error, email: trimmedEmail, phone: trimmedPhone });
+        }
+        toast.error("Не удалось отправить код", { description: getReadableAuthErrorMessage(error) });
       }
     });
   };
