@@ -516,6 +516,9 @@ wss.on("connection", (ws, req) => {
   };
 
   ws.on("message", async (data) => {
+    // S-03: wrap entire handler so a Redis/store crash cannot propagate as an
+    // unhandled promise rejection and kill the process (Node ≥ 15 aborts on it).
+    try {
     // --- Global rate limit (before JSON.parse to avoid CPU waste) ---
     const globalCheck = conn.rateLimiter.checkGlobal();
     if (!globalCheck.allowed) {
@@ -595,8 +598,10 @@ wss.on("connection", (ws, req) => {
     // Handle types
     switch (frame.type) {
       case "HELLO": {
+        // S-02: store the claimed deviceId but do NOT register in deviceSockets yet.
+        // An unauthenticated connection must not be able to shadow an already-authed
+        // device and intercept its signaling frames. Registration happens in AUTH.
         conn.deviceId = frame.payload?.client?.deviceId ?? conn.deviceId;
-        if (conn.deviceId) deviceSockets.set(conn.deviceId, ws);
         send(ws, {
           v: 1,
           type: "WELCOME",
@@ -922,9 +927,15 @@ wss.on("connection", (ws, req) => {
       case "call.cancel":
       case "call.hangup":
       case "call.rekey": {
+        // S-01: was a no-op stub — now delivers the frame to the target device,
+        // mirroring the call.invite routing pattern.
         if (!conn.authenticated) {
           ack(ws, frame.msgId, false, wsError("UNAUTHENTICATED", "AUTH required", {}, true));
           return;
+        }
+        const callSigToDevice = frame.payload?.to_device ?? null;
+        if (callSigToDevice && deviceSockets.has(callSigToDevice)) {
+          send(deviceSockets.get(callSigToDevice), { ...frame, ts: nowMs() });
         }
         return ack(ws, frame.msgId, true);
       }
@@ -1335,6 +1346,11 @@ wss.on("connection", (ws, req) => {
       default:
         // Unknown or not implemented
         ack(ws, frame.msgId, false, wsError("VALIDATION_FAILED", `Unsupported type: ${frame.type}`, {}, false));
+    }
+    } catch (err) {
+      // S-03: isolate store/Redis errors — do not let them surface as unhandled
+      // promise rejections and crash the gateway process.
+      console.error("[calls-ws] Unhandled error in message handler:", err);
     }
   });
 
