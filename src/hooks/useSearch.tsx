@@ -183,12 +183,10 @@ export function useSearch() {
   // Автоповтор поиска после восстановления сессии.
   // Срабатывает на SIGNED_IN и TOKEN_REFRESHED — оба события означают наличие валидного токена.
   useEffect(() => {
-    const onAuthStateChange = (supabase as any)?.auth?.onAuthStateChange;
-    if (typeof onAuthStateChange !== "function") {
-      return;
-    }
-
-    const { data: { subscription } } = onAuthStateChange((event: string, session: any) => {
+    // NOTE: Must call as supabase.auth.onAuthStateChange() — not via destructuring.
+    // Destructuring loses `this` binding, causing GoTrueClient._debug() to throw
+    // "TypeError: Cannot read properties of undefined (reading '_debug')".
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event: string, session: any) => {
       if (
         (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") &&
         session &&

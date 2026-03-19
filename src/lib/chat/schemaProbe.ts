@@ -20,8 +20,19 @@ function isExpectedProbeError(error: any): boolean {
     code === "PGRST202" ||
     code === "PGRST204" ||
     code === "PGRST205" ||
+    // auth / permission failures
     status === 403 ||
     status === 404 ||
+    // transient server-side failures (Supabase temporarily unavailable)
+    status === 0 ||
+    status === 429 ||
+    status === 502 ||
+    status === 503 ||
+    status === 504 ||
+    message.includes("failed to fetch") ||
+    message.includes("networkerror") ||
+    message.includes("load failed") ||
+    message.includes("connection") ||
     message.includes("chat_schema_probe_v2") ||
     details.includes("chat_schema_probe_v2")
   );

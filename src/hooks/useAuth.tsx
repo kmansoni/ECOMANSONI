@@ -127,7 +127,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.warn("[AuthProvider] auth.updateUser metadata sync failed:", updateAuthError);
       }
     } catch (e) {
-      console.error("Error ensuring profile:", e);
+      // Distinguish transient network failures (Supabase temporarily unavailable)
+      // from real logic bugs: network errors are expected during outages and should
+      // not pollute the error console — they will self-resolve on reconnect.
+      const isNetworkError =
+        e instanceof TypeError ||
+        /failed to fetch|networkerror|load failed|connection/i.test(
+          String((e as any)?.message ?? ""),
+        ) ||
+        (e as any)?.status === 503 ||
+        (e as any)?.status === 0;
+      if (isNetworkError) {
+        console.warn(
+          "[AuthProvider] ensureProfile: Supabase temporarily unavailable, will retry on next auth event.",
+          (e as Error).message,
+        );
+      } else {
+        console.error("Error ensuring profile:", e);
+      }
     }
   };
 
@@ -158,7 +175,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(session?.user ?? null);
         if (session?.user) void ensureProfile(session.user);
       } catch (e) {
-        console.error("[AuthProvider] getSession failed:", e);
+        const isNetworkError =
+          e instanceof TypeError ||
+          /failed to fetch|networkerror|load failed|connection/i.test(
+            String((e as any)?.message ?? ""),
+          );
+        if (isNetworkError) {
+          console.warn(
+            "[AuthProvider] getSession: Supabase temporarily unavailable.",
+            (e as Error).message,
+          );
+        } else {
+          console.error("[AuthProvider] getSession failed:", e);
+        }
         if (cancelled) return;
         setSession(null);
         setUser(null);
