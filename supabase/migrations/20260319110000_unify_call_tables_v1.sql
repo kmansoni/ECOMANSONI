@@ -80,8 +80,14 @@ INSERT INTO public.calls (
 )
 SELECT
   vc.id,
-  vc.caller_id,
-  vc.callee_id,
+  CASE
+    WHEN EXISTS (SELECT 1 FROM auth.users u WHERE u.id = vc.caller_id) THEN vc.caller_id
+    ELSE NULL
+  END AS caller_id,
+  CASE
+    WHEN EXISTS (SELECT 1 FROM auth.users u WHERE u.id = vc.callee_id) THEN vc.callee_id
+    ELSE NULL
+  END AS callee_id,
   vc.conversation_id,
   CASE
     WHEN vc.call_type = 'voice' THEN 'voice'
