@@ -30,19 +30,19 @@ ALTER TABLE public.calls
   ADD COLUMN IF NOT EXISTS calls_v2_room_id   TEXT,
   ADD COLUMN IF NOT EXISTS calls_v2_join_token TEXT;
 
--- Расширяем CHECK-статус: добавляем 'answered' как синоним 'active' в status
+-- Расширяем CHECK-статус: добавляем 'answered' как синоним 'active' в state
 -- (видео-клиент пишет 'answered'; DB RPCs ожидают 'active' — сохраняем оба)
 DO $$
 BEGIN
-  ALTER TABLE public.calls DROP CONSTRAINT IF EXISTS calls_status_check;
+  ALTER TABLE public.calls DROP CONSTRAINT IF EXISTS calls_state_check;
 EXCEPTION WHEN undefined_object THEN NULL;
 END $$;
 
 DO $$
 BEGIN
   ALTER TABLE public.calls
-    ADD CONSTRAINT calls_status_check
-    CHECK (status IN ('calling', 'ringing', 'active', 'answered', 'ended', 'declined', 'missed'));
+    ADD CONSTRAINT calls_state_check
+    CHECK (state IN ('calling', 'ringing', 'active', 'answered', 'ended', 'declined', 'missed'));
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
@@ -73,7 +73,7 @@ END $$;
 
 INSERT INTO public.calls (
   id, caller_id, callee_id, conversation_id,
-  call_type, status,
+  call_type, state,
   started_at, ended_at, duration_seconds,
   ice_restart_count, created_at, updated_at,
   calls_v2_room_id, calls_v2_join_token
@@ -95,7 +95,7 @@ SELECT
     WHEN vc.status = 'ended'    THEN 'ended'
     WHEN vc.status = 'missed'   THEN 'missed'
     ELSE 'ended'
-  END AS status,
+  END AS state,
   vc.started_at,
   vc.ended_at,
   vc.duration_seconds,
@@ -140,7 +140,7 @@ SELECT
   c.callee_id,
   c.conversation_id,
   c.call_type,
-  c.status,
+  c.state AS status,
   c.started_at,
   c.ended_at,
   c.duration_seconds,
@@ -167,7 +167,7 @@ AS $$
 BEGIN
   INSERT INTO public.calls (
     id, caller_id, callee_id, conversation_id,
-    call_type, status,
+    call_type, state,
     started_at, ended_at, duration_seconds,
     ice_restart_count, updated_at,
     calls_v2_room_id, calls_v2_join_token, signaling_data
@@ -202,7 +202,7 @@ AS $$
 BEGIN
   UPDATE public.calls
   SET
-    status              = COALESCE(NEW.status, OLD.status),
+    state               = COALESCE(NEW.status, OLD.status),
     started_at          = COALESCE(NEW.started_at, OLD.started_at),
     ended_at            = COALESCE(NEW.ended_at, OLD.ended_at),
     duration_seconds    = COALESCE(NEW.duration_seconds, OLD.duration_seconds),
@@ -225,8 +225,8 @@ AS $$
 BEGIN
   -- Soft-delete: mark as ended instead of hard DELETE to preserve history
   UPDATE public.calls
-  SET status = 'ended', ended_at = COALESCE(ended_at, now()), updated_at = now()
-  WHERE id = OLD.id AND status NOT IN ('ended', 'missed', 'declined');
+  SET state = 'ended', ended_at = COALESCE(ended_at, now()), updated_at = now()
+  WHERE id = OLD.id AND state NOT IN ('ended', 'missed', 'declined');
   RETURN OLD;
 END;
 $$;
@@ -270,8 +270,8 @@ SET search_path = public
 AS $$
 BEGIN
   UPDATE public.calls
-  SET status = 'missed', ended_at = now(), updated_at = now()
-  WHERE status = 'ringing'
+  SET state = 'missed', ended_at = now(), updated_at = now()
+  WHERE state = 'ringing'
     AND created_at < now() - interval '60 seconds';
 END;
 $$;
