@@ -29,6 +29,11 @@
 
 import { toBase64, fromBase64 } from './utils';
 
+function toLocalBytesFromBase64(b64: string): Uint8Array {
+  const raw = fromBase64(b64);
+  return new Uint8Array(raw.slice(0));
+}
+
 const SENDER_KEY_DB = 'e2ee-sender-keys-v1';
 const SENDER_KEY_STORE = 'sender_keys';
 
@@ -151,7 +156,7 @@ async function _loadLatestState(conversationId: string, senderId: string): Promi
 
     const publicKey = await crypto.subtle.importKey(
       'spki',
-      fromBase64(latest.signingPublicKeySpki),
+      toLocalBytesFromBase64(latest.signingPublicKeySpki),
       { name: 'ECDSA', namedCurve: 'P-256' },
       false,
       ['verify']
@@ -161,7 +166,7 @@ async function _loadLatestState(conversationId: string, senderId: string): Promi
     if (latest.signingPrivateKeyPkcs8) {
       privateKey = await crypto.subtle.importKey(
         'pkcs8',
-        fromBase64(latest.signingPrivateKeyPkcs8),
+        toLocalBytesFromBase64(latest.signingPrivateKeyPkcs8),
         { name: 'ECDSA', namedCurve: 'P-256' },
         false,
         ['sign']
@@ -175,7 +180,7 @@ async function _loadLatestState(conversationId: string, senderId: string): Promi
       senderId: latest.senderId,
       keyId: latest.keyId,
       iteration: latest.iteration,
-      chainKey: fromBase64(latest.chainKey),
+      chainKey: toLocalBytesFromBase64(latest.chainKey).buffer,
       signingKeyPair: { publicKey, privateKey },
       createdAt: latest.createdAt,
     };

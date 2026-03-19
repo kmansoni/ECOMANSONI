@@ -196,7 +196,8 @@ async function deriveKey(
   }
 
   // ── Нет кеша (первый вызов) или decrypt-путь: derivation через PBKDF2 ───────
-  const usedSalt = salt ?? crypto.getRandomValues(new Uint8Array(16)).buffer;
+  const rawSalt = salt ?? crypto.getRandomValues(new Uint8Array(16)).buffer;
+  const usedSalt = new Uint8Array(rawSalt.slice(0));
 
   // Импортируем fingerprint как PBKDF2 key material
   const enc = new TextEncoder();
@@ -225,10 +226,10 @@ async function deriveKey(
   // Кешируем только для encrypt-пути (фиксируем соль на весь lifetime)
   if (isEncryptPath) {
     _cachedKey = key;
-    _cachedSalt = bufToB64(usedSalt);
+    _cachedSalt = bufToB64(usedSalt.buffer);
   }
 
-  return { key, salt: usedSalt };
+  return { key, salt: usedSalt.buffer };
 }
 
 // ─── Тип конверта ─────────────────────────────────────────────────────────────
