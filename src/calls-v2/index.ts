@@ -4,6 +4,12 @@ export { CallMediaEncryption } from './callMediaEncryption';
 export { CallsWsClient } from './wsClient';
 export { RekeyStateMachine, DEFAULT_REKEY_CONFIG } from './rekeyStateMachine';
 export { EpochGuard } from './epochGuard';
+export {
+  extractSelectedIcePair,
+  isRelaySelected,
+  extractRelayMetrics,
+  RelayStatsCollector,
+} from './relayStats';
 export type * from './types';
 export type { CallIdentity, EpochKeyMaterial, KeyPackageData } from './callKeyExchange';
 export type {
@@ -14,3 +20,10 @@ export type {
   RekeyEventHandler,
 } from './rekeyStateMachine';
 export type { EpochGuardState, ViolationHandler } from './epochGuard';
+export type {
+  SelectedIcePair,
+  IceCandidateType,
+  RelaySelectionEvent,
+  RelayStatsCollectorConfig,
+  RelayMetrics,
+} from './relayStats';
