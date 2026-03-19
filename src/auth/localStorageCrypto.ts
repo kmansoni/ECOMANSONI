@@ -322,13 +322,13 @@ export async function decryptFromStorage(stored: string): Promise<string | null>
 
   try {
     const salt = b64ToBuf(parsed.s);
-    const iv = b64ToBuf(parsed.iv);
-    const ct = b64ToBuf(parsed.ct);
+    const iv = new Uint8Array(b64ToBuf(parsed.iv).slice(0));
+    const ct = new Uint8Array(b64ToBuf(parsed.ct).slice(0));
 
     const { key } = await deriveKey(salt); // decrypt-путь: соль из конверта
 
     const plainBuf = await crypto.subtle.decrypt(
-      { name: "AES-GCM", iv: new Uint8Array(iv) },
+      { name: "AES-GCM", iv },
       key,
       ct,
     );

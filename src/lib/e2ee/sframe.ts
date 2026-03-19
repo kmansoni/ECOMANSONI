@@ -115,6 +115,7 @@ export class SFrameContext {
     const iv = buildIV(counter);
 
     // AAD = header bytes
+    const frameBytes = new Uint8Array(frame.slice(0));
     const encrypted = await crypto.subtle.encrypt(
       {
         name: 'AES-GCM',
@@ -123,7 +124,7 @@ export class SFrameContext {
         tagLength: 128,
       },
       this.key,
-      frame
+      frameBytes
     );
 
     // Собираем: header + encrypted (ciphertext + tag уже вместе)
@@ -169,7 +170,7 @@ export class SFrameContext {
     const headerBuf = frame.slice(0, headerLength);
 
     // Encrypted payload (ciphertext + tag)
-    const payloadBuf = frame.slice(headerLength);
+    const payloadBuf = new Uint8Array(frame.slice(headerLength));
 
     const decrypted = await crypto.subtle.decrypt(
       {

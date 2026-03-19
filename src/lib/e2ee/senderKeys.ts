@@ -359,7 +359,7 @@ export async function processSenderKeyMessage(msg: SenderKeyMessage): Promise<vo
   // Verify signature
   const sigPubKey = await crypto.subtle.importKey(
     'spki',
-    fromBase64(msg.signingPublicKey),
+    toLocalBytesFromBase64(msg.signingPublicKey),
     { name: 'ECDSA', namedCurve: 'P-256' },
     true,
     ['verify'],
@@ -378,7 +378,7 @@ export async function processSenderKeyMessage(msg: SenderKeyMessage): Promise<vo
   const valid = await crypto.subtle.verify(
     { name: 'ECDSA', hash: 'SHA-256' },
     sigPubKey,
-    fromBase64(msg.signature),
+    toLocalBytesFromBase64(msg.signature),
     signedData as unknown as BufferSource,
   );
 
@@ -392,7 +392,7 @@ export async function processSenderKeyMessage(msg: SenderKeyMessage): Promise<vo
   // Create a dummy signing key pair with just the public key for storage
   const signingPubCryptoKey = await crypto.subtle.importKey(
     'spki',
-    fromBase64(msg.signingPublicKey),
+    toLocalBytesFromBase64(msg.signingPublicKey),
     { name: 'ECDSA', namedCurve: 'P-256' },
     false,
     ['verify'],
@@ -404,7 +404,7 @@ export async function processSenderKeyMessage(msg: SenderKeyMessage): Promise<vo
     senderId: msg.senderId,
     keyId: msg.keyId,
     iteration: 0,
-    chainKey: fromBase64(msg.chainKeySeed),
+    chainKey: toLocalBytesFromBase64(msg.chainKeySeed).buffer,
     signingKeyPair: {
       publicKey: signingPubCryptoKey,
       privateKey: null as unknown as CryptoKey, // remote: no private key
@@ -505,8 +505,8 @@ export async function decryptGroupMessage(
   state.iteration = msg.iteration + 1;
   await _persistState(state);
 
-  const iv = fromBase64(msg.iv);
-  const ciphertext = fromBase64(msg.ciphertext);
+  const iv = toLocalBytesFromBase64(msg.iv);
+  const ciphertext = toLocalBytesFromBase64(msg.ciphertext);
 
   const plaintext = await crypto.subtle.decrypt(
     { name: 'AES-GCM', iv },
