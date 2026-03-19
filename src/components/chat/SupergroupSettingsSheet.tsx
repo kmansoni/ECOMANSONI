@@ -63,6 +63,58 @@ export function SupergroupSettingsSheet({
   // Merge draft over loaded settings for display
   const effective = { ...(settings ?? {}), ...draft } as SupergroupSettings;
 
+  const defaultPresets = [
+    {
+      key: "free",
+      label: "Свободно",
+      values: {
+        default_member_can_send_messages: true,
+        default_member_can_send_media: true,
+        default_member_can_send_links: true,
+      },
+    },
+    {
+      key: "text_only",
+      label: "Только текст",
+      values: {
+        default_member_can_send_messages: true,
+        default_member_can_send_media: false,
+        default_member_can_send_links: false,
+      },
+    },
+    {
+      key: "read_only",
+      label: "Read-only",
+      values: {
+        default_member_can_send_messages: false,
+        default_member_can_send_media: false,
+        default_member_can_send_links: false,
+      },
+    },
+    {
+      key: "media_only",
+      label: "Только медиа",
+      values: {
+        default_member_can_send_messages: true,
+        default_member_can_send_media: true,
+        default_member_can_send_links: false,
+      },
+    },
+  ] as const;
+
+  const activePreset =
+    defaultPresets.find((preset) =>
+      preset.values.default_member_can_send_messages === (effective.default_member_can_send_messages ?? true) &&
+      preset.values.default_member_can_send_media === (effective.default_member_can_send_media ?? true) &&
+      preset.values.default_member_can_send_links === (effective.default_member_can_send_links ?? true)
+    ) ?? null;
+
+  const applyDefaultPreset = (presetKey: (typeof defaultPresets)[number]["key"]) => {
+    const preset = defaultPresets.find((item) => item.key === presetKey);
+    if (!preset) return;
+    setDraft((prev) => ({ ...prev, ...preset.values }));
+  };
+
   const handleToggle = (key: keyof SupergroupSettings, value: boolean) => {
     setDraft(prev => ({ ...prev, [key]: value }));
   };
@@ -297,6 +349,28 @@ export function SupergroupSettingsSheet({
                   <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
                     Права новых участников
                   </p>
+
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-xs text-gray-500">Активный пресет</span>
+                    <Badge variant="outline" className="border-gray-700 text-gray-300">
+                      {activePreset?.label ?? "Кастом"}
+                    </Badge>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    {defaultPresets.map((preset) => (
+                      <Button
+                        key={preset.key}
+                        type="button"
+                        size="sm"
+                        variant={activePreset?.key === preset.key ? "default" : "outline"}
+                        className={activePreset?.key === preset.key ? "bg-blue-600 hover:bg-blue-700" : "border-gray-700 text-gray-300"}
+                        onClick={() => applyDefaultPreset(preset.key)}
+                      >
+                        {preset.label}
+                      </Button>
+                    ))}
+                  </div>
 
                   <div className="flex items-center justify-between">
                     <Label className="text-gray-300 text-sm cursor-pointer">
