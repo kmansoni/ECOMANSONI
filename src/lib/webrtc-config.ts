@@ -64,6 +64,13 @@ interface TurnCredentialsResponse {
   error?: string;
 }
 
+function buildTurnRequestMetadata(): { nonce: string; requestId: string } {
+  const fallback = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  const requestId = globalThis.crypto?.randomUUID?.() ?? fallback;
+  const nonce = requestId;
+  return { nonce, requestId };
+}
+
 function normalizeIceServerUrls(urls: RTCIceServer["urls"]): string[] {
   const values = Array.isArray(urls) ? urls : [urls];
   return values.filter((value): value is string => typeof value === "string" && value.trim().length > 0);
@@ -120,7 +127,14 @@ async function fetchTurnCredentials(): Promise<{ iceServers: RTCIceServer[] | nu
       }
     }
 
-    const { data, error } = await supabase.functions.invoke("turn-credentials");
+    const { nonce, requestId } = buildTurnRequestMetadata();
+    const { data, error } = await supabase.functions.invoke("turn-credentials", {
+      body: { nonce, requestId },
+      headers: {
+        "x-turn-nonce": nonce,
+        "x-request-id": requestId,
+      },
+    });
 
     if (error) {
       console.error("[WebRTC Config] Edge function error:", error);
@@ -195,10 +209,13 @@ function parseTurnResponse(parsed: TurnCredentialsResponse): { iceServers: RTCIc
 
 async function fetchTurnCredentialsFromUrl(): Promise<{ data: unknown | null; error: Error | null }> {
   try {
+    const { nonce, requestId } = buildTurnRequestMetadata();
     const session = await supabase.auth.getSession();
     const token = session.data.session?.access_token ?? "";
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
+      "x-turn-nonce": nonce,
+      "x-request-id": requestId,
     };
     if (token) headers.Authorization = `Bearer ${token}`;
     if (TURN_CREDENTIALS_API_KEY) headers.apikey = TURN_CREDENTIALS_API_KEY;
@@ -206,7 +223,7 @@ async function fetchTurnCredentialsFromUrl(): Promise<{ data: unknown | null; er
     const response = await fetch(TURN_CREDENTIALS_URL, {
       method: "POST",
       headers,
-      body: "{}",
+      body: JSON.stringify({ nonce, requestId }),
     });
 
     if (!response.ok) {

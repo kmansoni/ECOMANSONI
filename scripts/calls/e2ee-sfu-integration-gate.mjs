@@ -257,21 +257,27 @@ try {
 
 // ─── 10. .env.production содержит SFU_REQUIRE_MEDIASOUP=1 ────────────────────
 try {
-  const candidates = ['.env.production', '.env.prod'];
+  const candidates = [
+    '.env.production',
+    '.env.prod',
+    'server/sfu/.env.production',
+    'infra/calls/docker-compose.prod.yml',
+  ];
+
   let found = null;
   for (const f of candidates) {
-    if (existsSync(f)) { found = f; break; }
+    if (!existsSync(f)) continue;
+    const content = readFileSync(f, 'utf-8');
+    if (content.includes('SFU_REQUIRE_MEDIASOUP=1')) {
+      found = f;
+      break;
+    }
   }
 
-  if (!found) {
-    fail('.env.production содержит SFU_REQUIRE_MEDIASOUP=1', 'файл .env.production не найден');
+  if (found) {
+    pass(`SFU_REQUIRE_MEDIASOUP=1 зафиксирован (${found})`);
   } else {
-    const content = readFileSync(found, 'utf-8');
-    if (content.includes('SFU_REQUIRE_MEDIASOUP=1')) {
-      pass('.env.production содержит SFU_REQUIRE_MEDIASOUP=1');
-    } else {
-      fail('.env.production содержит SFU_REQUIRE_MEDIASOUP=1', 'переменная не найдена');
-    }
+    fail('SFU_REQUIRE_MEDIASOUP=1 зафиксирован', 'переменная не найдена в production-конфигах');
   }
 } catch (e) {
   fail('.env.production проверка', e.message);

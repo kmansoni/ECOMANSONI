@@ -18,6 +18,8 @@
    - Без Authorization → 401
    - Authorization=anon key → 401
    - Authorization=user access_token → 200 (iceServers содержит turn + short-lived creds)
+   - Без `x-turn-nonce` / `x-request-id` в production → 400 `invalid_request`
+   - С одинаковым nonce повторно → 409 `replay_detected`
 7) Rate limit:
    - > MAX выдач в минуту (user+ip и user-only корзины) → 429
    - После окна (60s) → снова 200
@@ -38,6 +40,10 @@
 
 ## Gate 6 — Client correctness (P1)
 11) Клиент всегда получает creds через edge function (`getIceServers()` → `turn-credentials`) и
+   в каждом запросе отправляет один и тот же `nonce/requestId` в headers и JSON body:
+   - `x-turn-nonce`
+   - `x-request-id`
+   - `{ nonce, requestId }`
     инвалидация ICE cache происходит автоматически на:
     - online/offline
     - connection change (если доступно)
@@ -52,3 +58,4 @@
 ## Как прогонять
 - `npm run turn:verify` (локально/CI)
 - `REQUIRE_TURN_SMOKE=1` делает smoke blocking (без env — fail, не skip)
+- Smoke обязан проверять 200 для валидного JWT + nonce и 409 для replay того же nonce

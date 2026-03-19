@@ -57,6 +57,8 @@
 File: `src/lib/webrtc-config.ts`
 
 - Dynamic TURN fetch before call setup
+- Every TURN request MUST send both `x-turn-nonce` and `x-request-id`
+- The JSON body MUST mirror the same values as `{ nonce, requestId }`
 - Circuit breaker for TURN endpoint failures
 - Cache with policy:
   - if TTL > 1h -> cache for TTL - 1h
@@ -104,10 +106,12 @@ File: `src/lib/webrtc-config.ts`
 
 ## Symptom A: Calls fail with relay-only policy
 1. Check `turn-credentials` response includes `turn:`/`turns:` URLs.
-2. Check TTL and `expiresAt` not expired.
-3. Verify coturn secret matches Supabase `TURN_SHARED_SECRET`.
-4. Confirm firewall for 3478/5349 + relay range.
-5. If still failing, temporarily switch to `all` policy (STUN+TURN) and inspect ICE candidate logs.
+2. Check the client request includes `x-turn-nonce` / `x-request-id` and JSON body `{ nonce, requestId }`.
+3. If the edge function returns `400 invalid_request`, treat it as client/server contract drift first, not TURN infra failure.
+4. Check TTL and `expiresAt` not expired.
+5. Verify coturn secret matches Supabase `TURN_SHARED_SECRET`.
+6. Confirm firewall for 3478/5349 + relay range.
+7. If still failing, temporarily switch to `all` policy (STUN+TURN) and inspect ICE candidate logs.
 
 ## Symptom B: `rate_limited` spikes
 1. Inspect `turn_issuance_audit` grouped by `ip_hash`/`user_hash`.

@@ -268,14 +268,11 @@
 		{
 			"label": "Supabase: Functions logs (vk-webhook)",
 			"type": "shell",
-			"command": "C:\\Users\\manso\\AppData\\Local\\supabase-cli\\v2.75.0\\supabase.exe",
+			"command": "pwsh",
 			"args": [
-				"functions",
-				"logs",
-				"--project-ref",
-				"lfkbgnbjxskspsownvjm",
-				"--function",
-				"vk-webhook"
+				"-NoProfile",
+				"-Command",
+				"$cli='C:\\Users\\manso\\AppData\\Local\\supabase-cli\\v2.75.0\\supabase.exe'; $help=& $cli functions --help 2>&1 | Out-String; if ($help -match 'logs') { Write-Host 'This CLI version reports logs support; run manually with your preferred syntax.'; exit 0 } Write-Host 'Supabase CLI v2.75.0 does not support functions logs in this workspace.'; Write-Host 'Use Dashboard logs for project lfkbgnbjxskspsownvjm:'; Write-Host 'https://supabase.com/dashboard/project/lfkbgnbjxskspsownvjm/functions'; exit 1"
 			],
 			"options": {
 				"cwd": "${workspaceFolder}",

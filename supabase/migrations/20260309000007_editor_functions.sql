@@ -228,9 +228,10 @@ BEGIN
     END IF;
 
     IF NOT EXISTS (
-        SELECT 1 FROM editor_projects
-        WHERE id = p_source_project_id
-          AND user_id = auth.uid()
+        SELECT 1
+        FROM editor_projects ep
+        WHERE ep.id = p_source_project_id
+          AND ep.user_id = auth.uid()
     ) THEN
         RAISE EXCEPTION 'Access denied: project % not found or you are not its owner',
             p_source_project_id
@@ -265,8 +266,8 @@ BEGIN
         fps,
         settings,
         thumbnail_url
-    FROM editor_projects
-    WHERE id = p_source_project_id
+    FROM editor_projects ep
+    WHERE ep.id = p_source_project_id
     RETURNING id INTO v_new_project_id;
 
     IF NOT FOUND THEN
