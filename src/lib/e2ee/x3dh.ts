@@ -36,6 +36,11 @@
 
 import { toBase64, fromBase64 } from "./utils";
 
+function toLocalBytesFromBase64(b64: string): Uint8Array {
+  const raw = fromBase64(b64);
+  return new Uint8Array(raw.slice(0));
+}
+
 // ── Public types ───────────────────────────────────────────────────────────
 
 export interface PreKeyBundle {
@@ -101,7 +106,7 @@ async function exportSpki(key: CryptoKey): Promise<string> {
 async function importEcdhPublic(b64: string): Promise<CryptoKey> {
   return crypto.subtle.importKey(
     "spki",
-    fromBase64(b64),
+    toLocalBytesFromBase64(b64),
     { name: "ECDH", namedCurve: "P-256" },
     true,
     []
@@ -111,7 +116,7 @@ async function importEcdhPublic(b64: string): Promise<CryptoKey> {
 async function importEcdsaPublic(b64: string): Promise<CryptoKey> {
   return crypto.subtle.importKey(
     "spki",
-    fromBase64(b64),
+    toLocalBytesFromBase64(b64),
     { name: "ECDSA", namedCurve: "P-256" },
     true,
     ["verify"]
@@ -239,7 +244,7 @@ export class X3DH {
     return crypto.subtle.verify(
       { name: "ECDSA", hash: "SHA-256" },
       verifyKey,
-      fromBase64(signature),
+      toLocalBytesFromBase64(signature),
       spkiBytes
     );
   }
@@ -409,7 +414,7 @@ export class X3DH {
     const publicKey = await importEcdhPublic(publicB64);
     const privateKey = await crypto.subtle.importKey(
       "pkcs8",
-      fromBase64(privateB64),
+      toLocalBytesFromBase64(privateB64),
       { name: "ECDH", namedCurve: "P-256" },
       true,
       ["deriveBits"]
@@ -424,7 +429,7 @@ export class X3DH {
     const publicKey = await importEcdsaPublic(publicB64);
     const privateKey = await crypto.subtle.importKey(
       "pkcs8",
-      fromBase64(privateB64),
+      toLocalBytesFromBase64(privateB64),
       { name: "ECDSA", namedCurve: "P-256" },
       true,
       ["sign"]

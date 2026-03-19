@@ -32,6 +32,11 @@
 
 import { toBase64, fromBase64 } from "./utils";
 
+function toLocalBytesFromBase64(b64: string): Uint8Array {
+  const raw = fromBase64(b64);
+  return new Uint8Array(raw.slice(0));
+}
+
 // ── Types ──────────────────────────────────────────────────────────────────
 
 export interface RatchetHeader {
@@ -181,7 +186,7 @@ async function exportPublicKey(key: CryptoKey): Promise<string> {
 async function importPublicKey(b64: string): Promise<CryptoKey> {
   return crypto.subtle.importKey(
     "spki",
-    fromBase64(b64),
+    toLocalBytesFromBase64(b64),
     { name: "ECDH", namedCurve: "P-256" },
     true,
     []
@@ -546,7 +551,7 @@ export class DoubleRatchet {
         s.skippedMessageKeys.map(async ([k, v]) => {
           const key = await crypto.subtle.importKey(
             "raw",
-            fromBase64(v),
+            toLocalBytesFromBase64(v),
             { name: "AES-GCM" },
             false,
             ["encrypt", "decrypt"]
@@ -579,7 +584,7 @@ async function exportHkdfKey(key: ArrayBuffer): Promise<string> {
 async function importHmacKey(b64: string): Promise<CryptoKey> {
   return crypto.subtle.importKey(
     "raw",
-    fromBase64(b64),
+    toLocalBytesFromBase64(b64),
     { name: "HMAC", hash: "SHA-256" },
     true,
     ["sign"]
@@ -594,7 +599,7 @@ async function exportEcdhPrivate(key: CryptoKey): Promise<string> {
 async function importEcdhPrivate(b64: string): Promise<CryptoKey> {
   return crypto.subtle.importKey(
     "pkcs8",
-    fromBase64(b64),
+    toLocalBytesFromBase64(b64),
     { name: "ECDH", namedCurve: "P-256" },
     true,
     ["deriveBits"]
@@ -724,7 +729,7 @@ export class DoubleRatchetE2E {
     const importHmac = async (b64: string) =>
       crypto.subtle.importKey(
         "raw",
-        fromBase64(b64),
+        toLocalBytesFromBase64(b64),
         { name: "HMAC", hash: "SHA-256" },
         true,
         ["sign"]
@@ -749,7 +754,7 @@ export class DoubleRatchetE2E {
         s.skippedMessageKeys.map(async ([k, v]) => {
           const key = await crypto.subtle.importKey(
             "raw",
-            fromBase64(v),
+            toLocalBytesFromBase64(v),
             { name: "AES-GCM" },
             false,
             ["encrypt", "decrypt"]
