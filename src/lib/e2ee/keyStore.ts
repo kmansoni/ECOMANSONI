@@ -719,12 +719,14 @@ export class SecureKeyStore {
 
   private async deriveMasterKey(passphrase: string, deviceFingerprint: string, salt: ArrayBuffer): Promise<CryptoKey> {
     const material = new TextEncoder().encode(`${passphrase}:${deviceFingerprint}`);
+    // Normalize to local TypedArray to avoid cross-realm BufferSource failures in Node/WebCrypto CI.
+    const saltBytes = new Uint8Array(salt.slice(0));
     const passphraseKey = await crypto.subtle.importKey('raw', material, 'PBKDF2', false, ['deriveKey']);
 
     return crypto.subtle.deriveKey(
       {
         name: 'PBKDF2',
-        salt,
+        salt: saltBytes,
         iterations: 600_000,
         hash: 'SHA-256',
       },

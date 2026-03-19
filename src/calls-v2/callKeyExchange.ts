@@ -269,12 +269,10 @@ export class CallKeyExchange {
    //    Он живёт только в стеке этой функции — не хранится в полях класса, не возвращается.
    //    WebCrypto spec §14.3.13: wrapKey('raw') требует extractable=true у источника.
    //    slice() обеспечивает ArrayBuffer (не SharedArrayBuffer) для WebCrypto совместимости.
+   const localWrapKeyRaw = new Uint8Array(this.currentEpochKey._rawBytes);
    const localWrapKey = await crypto.subtle.importKey(
      'raw',
-     this.currentEpochKey._rawBytes.buffer.slice(
-       this.currentEpochKey._rawBytes.byteOffset,
-       this.currentEpochKey._rawBytes.byteOffset + this.currentEpochKey._rawBytes.byteLength
-     ) as ArrayBuffer,
+     localWrapKeyRaw,
      { name: 'AES-GCM', length: 128 },
      true,  // extractable: необходимо ТОЛЬКО для wrapKey() — не хранится вне этой функции
      ['encrypt', 'decrypt']
@@ -501,7 +499,7 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-function base64ToBytes(b64: string): Uint8Array<ArrayBuffer> {
+function base64ToBytes(b64: string): Uint8Array {
   const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
   // Ensure buffer is ArrayBuffer (not SharedArrayBuffer) for WebCrypto compatibility
   return new Uint8Array(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);

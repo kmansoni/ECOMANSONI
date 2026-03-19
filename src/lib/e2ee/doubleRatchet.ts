@@ -72,9 +72,12 @@ async function hkdf(
   info: string,
   length: number = 64
 ): Promise<ArrayBuffer> {
+  // Normalize to local TypedArray to avoid cross-realm BufferSource issues in Node/WebCrypto CI.
+  const ikmBytes = new Uint8Array(ikm.slice(0));
+  const saltBytes = new Uint8Array(salt.slice(0));
   const ikmKey = await crypto.subtle.importKey(
     "raw",
-    ikm,
+    ikmBytes,
     { name: "HKDF" },
     false,
     ["deriveBits"]
@@ -84,7 +87,7 @@ async function hkdf(
     {
       name: "HKDF",
       hash: "SHA-256",
-      salt,
+      salt: saltBytes,
       info: infoBytes,
     },
     ikmKey,
