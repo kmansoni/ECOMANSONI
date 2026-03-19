@@ -256,7 +256,7 @@ export function AuthPage() {
         }
 
         if (!response.ok) {
-          const errMsg = data?.error || `HTTP ${response.status}`;
+          const errMsg = data?.message || data?.error || `HTTP ${response.status}`;
           toast.error("Не удалось отправить код", { description: errMsg });
           return;
         }
@@ -342,7 +342,7 @@ export function AuthPage() {
         }
 
         if (!response.ok || !data?.ok) {
-          const errMsg = data?.error || `HTTP ${response.status}`;
+          const errMsg = data?.message || data?.error || `HTTP ${response.status}`;
           logger.error("[AuthPage] verify-email-otp failed", { error: errMsg, email: verifyEmail });
           toast.error("Неверный или просроченный код", { description: errMsg });
           return;
@@ -438,7 +438,7 @@ export function AuthPage() {
         }
 
         if (!response.ok) {
-          const errMsg = data?.error || `HTTP ${response.status}`;
+          const errMsg = data?.message || data?.error || `HTTP ${response.status}`;
           toast.error("Не удалось переотправить код", { description: errMsg });
           return;
         }
@@ -519,7 +519,7 @@ export function AuthPage() {
         }
 
         if (!response.ok) {
-          const errMsg = data?.error || `HTTP ${response.status}`;
+          const errMsg = data?.message || data?.error || `HTTP ${response.status}`;
           toast.error("Не удалось отправить код", { description: errMsg });
           return;
         }

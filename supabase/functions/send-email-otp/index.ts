@@ -202,6 +202,10 @@ Deno.serve(async (req: Request) => {
     const otpMaxAttempts = isPriorityMailbox ? Math.min(20, Math.max(otpMaxAttemptsBase, 10)) : otpMaxAttemptsBase;
 
     const shortCode = code.slice(0, 3) + " " + code.slice(3);
+    const timeoutRaw = Number(Deno.env.get("EMAIL_ROUTER_TIMEOUT_MS") ?? "8000");
+    const emailRouterTimeoutMs = Number.isFinite(timeoutRaw) && timeoutRaw >= 3000 && timeoutRaw <= 12000
+      ? Math.floor(timeoutRaw)
+      : 8000;
 
     const emailPayload = {
       to: email,
@@ -237,6 +241,7 @@ Deno.serve(async (req: Request) => {
       recipientDomain,
       isPriorityMailbox,
       otpMaxAttempts,
+      emailRouterTimeoutMs,
       sendUrl,
       hasIngestKey: Boolean(emailRouterIngestKey),
       keySource: emailRouterKeySource,
@@ -246,7 +251,7 @@ Deno.serve(async (req: Request) => {
       method: "POST",
       headers,
       body: JSON.stringify(emailPayload),
-      signal: AbortSignal.timeout(15_000),
+      signal: AbortSignal.timeout(emailRouterTimeoutMs),
     });
 
     if (!upstream.ok) {
