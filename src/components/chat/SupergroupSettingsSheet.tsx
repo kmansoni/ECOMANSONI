@@ -291,6 +291,42 @@ export function SupergroupSettingsSheet({
                       className="bg-gray-900 border-gray-700 text-gray-100 h-9"
                     />
                   </div>
+
+                  <Separator className="bg-gray-800" />
+
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                    Права новых участников
+                  </p>
+
+                  <div className="flex items-center justify-between">
+                    <Label className="text-gray-300 text-sm cursor-pointer">
+                      Разрешить отправку сообщений
+                    </Label>
+                    <Switch
+                      checked={effective.default_member_can_send_messages ?? true}
+                      onCheckedChange={v => handleToggle("default_member_can_send_messages", v)}
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <Label className="text-gray-300 text-sm cursor-pointer">
+                      Разрешить отправку медиа
+                    </Label>
+                    <Switch
+                      checked={effective.default_member_can_send_media ?? true}
+                      onCheckedChange={v => handleToggle("default_member_can_send_media", v)}
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <Label className="text-gray-300 text-sm cursor-pointer">
+                      Разрешить отправку ссылок
+                    </Label>
+                    <Switch
+                      checked={effective.default_member_can_send_links ?? true}
+                      onCheckedChange={v => handleToggle("default_member_can_send_links", v)}
+                    />
+                  </div>
                 </div>
 
                 {Object.keys(draft).length > 0 && (

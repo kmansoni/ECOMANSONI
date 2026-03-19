@@ -47,6 +47,9 @@ export interface SupergroupSettings {
   linked_channel_id: string | null;
   forum_mode: boolean;
   slow_mode_seconds: number;
+  default_member_can_send_messages: boolean;
+  default_member_can_send_media: boolean;
+  default_member_can_send_links: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -338,13 +341,20 @@ export function useSupergroup(conversationId: string): UseSupergroup {
         });
       });
 
+      const defaultBySettings: MemberPermissions = {
+        can_send_messages: settings?.default_member_can_send_messages ?? defaultPermissions.can_send_messages,
+        can_send_media: settings?.default_member_can_send_media ?? defaultPermissions.can_send_media,
+        can_send_links: settings?.default_member_can_send_links ?? defaultPermissions.can_send_links,
+        muted_until: null,
+      };
+
       const result: GroupMember[] = rows.map(r => {
         const brief = resolveUserBrief(r.user_id, briefMap);
         return {
           user_id: r.user_id,
           role: r.role,
           joined_at: r.joined_at,
-          permissions: permissionsByUserId.get(r.user_id) ?? defaultPermissions,
+          permissions: permissionsByUserId.get(r.user_id) ?? defaultBySettings,
           profile: brief
             ? { display_name: brief.display_name, avatar_url: brief.avatar_url, username: brief.username }
             : undefined,
@@ -357,7 +367,7 @@ export function useSupergroup(conversationId: string): UseSupergroup {
     } finally {
       setMembersLoading(false);
     }
-  }, [conversationId]);
+  }, [conversationId, settings]);
 
   const updateMemberRole = useCallback(
     async (userId: string, role: MemberRole) => {
