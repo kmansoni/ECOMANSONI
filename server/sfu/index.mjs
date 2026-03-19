@@ -37,6 +37,10 @@ const TRUSTED_PROXIES = new Set(
 const SUPABASE_URL = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? "";
 const SUPABASE_AUTH_KEY = process.env.SUPABASE_PUBLISHABLE_KEY ?? process.env.SUPABASE_ANON_KEY ?? process.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? process.env.VITE_SUPABASE_ANON_KEY ?? "";
 const STARTED_AT = Date.now();
+const MAX_PARTICIPANTS_PER_ROOM = (() => {
+  const raw = Number(process.env.CALLS_MAX_PARTICIPANTS_PER_ROOM ?? "50");
+  return Number.isFinite(raw) && raw >= 2 ? Math.floor(raw) : 50;
+})();
 
 /**
  * E2EE rate limiting — per-process sliding window.
@@ -227,6 +231,7 @@ function ensureRoom(roomId, callId, preferredRegion = REGION) {
     callId,
     region: preferredRegion,
     nodeId: NODE_ID,
+    roomVersion: 0,
     epoch: 0,
     memberSetVersion: 0,
     peers: new Map(),
@@ -237,12 +242,17 @@ function ensureRoom(roomId, callId, preferredRegion = REGION) {
   return room;
 }
 
+function bumpRoomVersion(room) {
+  room.roomVersion = Number(room.roomVersion ?? 0) + 1;
+}
+
 function makeSnapshot(room) {
   return {
     roomId: room.roomId,
     callId: room.callId,
     region: room.region,
     nodeId: room.nodeId,
+    roomVersion: Number(room.roomVersion ?? 0),
     epoch: room.epoch,
     memberSetVersion: room.memberSetVersion,
     serverTime: nowMs(),
@@ -539,11 +549,16 @@ wss.on("connection", (ws, req) => {
         const room = ensureRoom(roomId, callId, frame.payload?.preferredRegion ?? REGION);
         const ensured = await mediaPlane.createRoom(roomId);
         room.routerRtpCapabilities = ensured?.routerRtpCapabilities ?? room.routerRtpCapabilities;
+        if (room.peers.size >= MAX_PARTICIPANTS_PER_ROOM) {
+          ack(ws, frame.msgId, false, wsError("ROOM_FULL", `Max participants exceeded (${MAX_PARTICIPANTS_PER_ROOM})`, { roomId }, false));
+          return;
+        }
         const deviceId = frame.payload?.deviceId ?? conn.deviceId ?? `dev_${uuid().slice(0, 8)}`;
         conn.deviceId = deviceId;
         conn.roomId = roomId;
 
         room.memberSetVersion += 1;
+        bumpRoomVersion(room);
         room.peers.set(deviceId, {
           userId: conn.userId,
           deviceId,
@@ -733,6 +748,7 @@ wss.on("connection", (ws, req) => {
           paused: false,
         };
         room.producers.set(producerId, producer);
+        bumpRoomVersion(room);
 
         // SFrame header validation for incoming media frames
         // SECURITY FIX: SFrame enforcement — producers sending only tiny frames
@@ -912,6 +928,7 @@ wss.on("connection", (ws, req) => {
               peer.e2eeEpoch = -1;
             }
           }
+          bumpRoomVersion(room);
         }
         broadcastRoom(room, { ...frame, msgId: uuid(), ts: nowMs() }, conn.deviceId);
         ack(ws, frame.msgId, true);
@@ -1027,6 +1044,7 @@ wss.on("connection", (ws, req) => {
           mediaPlane.removePeer(room.roomId, conn.deviceId).catch(() => {});
           room.peers.delete(conn.deviceId);
           room.memberSetVersion += 1;
+          bumpRoomVersion(room);
           for (const [producerId, producer] of room.producers.entries()) {
             if (producer.peerDeviceId === conn.deviceId) {
               room.producers.delete(producerId);
@@ -1075,6 +1093,7 @@ wss.on("connection", (ws, req) => {
         mediaPlane.removePeer(room.roomId, conn.deviceId).catch(() => {});
         room.peers.delete(conn.deviceId);
         room.memberSetVersion += 1;
+        bumpRoomVersion(room);
 
         for (const [producerId, producer] of room.producers.entries()) {
           if (producer.peerDeviceId === conn.deviceId) {

@@ -419,6 +419,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
   const sfuRouterRtpCapabilitiesRef = useRef<RtpCapabilities | null>(null);
   const callsWsCallIdRef = useRef<string | null>(null);
   const callsWsRoomRef = useRef<string | null>(null);
+  const lastSnapshotRoomVersionRef = useRef<number>(-1);
   const callsWsMediaRoomRef = useRef<string | null>(null);
   const callsWsSendTransportRef = useRef<string | null>(null);
   const callsWsRecvTransportRef = useRef<string | null>(null);
@@ -491,6 +492,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       if (callsWsCallIdRef.current === call.id) {
         callsWsCallIdRef.current = null;
         callsWsRoomRef.current = null;
+        lastSnapshotRoomVersionRef.current = -1;
         callsWsMediaRoomRef.current = null;
         callsWsSendTransportRef.current = null;
         callsWsRecvTransportRef.current = null;
@@ -560,6 +562,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     callsWsRef.current = null;
     callsWsCallIdRef.current = null;
     callsWsRoomRef.current = null;
+    lastSnapshotRoomVersionRef.current = -1;
     callsWsMediaRoomRef.current = null;
     callsWsSendTransportRef.current = null;
     callsWsRecvTransportRef.current = null;
@@ -821,7 +824,24 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       offState();
 
       client.on("ROOM_SNAPSHOT", (frame) => {
-        const snapshot = frame.payload as { e2ee?: { leaderDeviceId?: string }; peers?: Array<{ peerId?: string; deviceId?: string }> } | null;
+        const snapshot = frame.payload as {
+          roomVersion?: number | string;
+          e2ee?: { leaderDeviceId?: string };
+          peers?: Array<{ peerId?: string; deviceId?: string }>;
+        } | null;
+        const roomVersionRaw = snapshot?.roomVersion;
+        const roomVersion =
+          typeof roomVersionRaw === "number" ? roomVersionRaw : Number(roomVersionRaw);
+        if (!Number.isFinite(roomVersion) || roomVersion < 0) {
+          logger.warn("[VideoCallContext] ROOM_SNAPSHOT ignored: invalid roomVersion", {
+            roomVersion: roomVersionRaw,
+          });
+          return;
+        }
+        if (roomVersion <= lastSnapshotRoomVersionRef.current) {
+          return;
+        }
+        lastSnapshotRoomVersionRef.current = roomVersion;
         const leader = snapshot?.e2ee?.leaderDeviceId;
         if (typeof leader === "string" && leader.length > 0) {
           e2eeLeaderDeviceRef.current = leader;
@@ -1275,6 +1295,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         }, 10 * 60_000);
 
         callsWsCallIdRef.current = callId;
+        lastSnapshotRoomVersionRef.current = -1;
         callsWsRoomRef.current = roomId;
         logger.info("[VideoCallContext] calls-v2 room-bootstrap:done", { callId, roomId });
         lastCallsBootstrapErrorRef.current = null;

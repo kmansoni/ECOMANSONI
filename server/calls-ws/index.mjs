@@ -562,8 +562,12 @@ wss.on("connection", (ws, req) => {
     }
     conn.seenMsgIds.set(frame.msgId, nowMs());
 
-    // seq enforcement for non-ACK frames
-    if (!frame.ack && typeof frame.seq === "number") {
+    // seq enforcement for non-ACK frames (strict): seq is mandatory and must be monotonic.
+    if (!frame.ack) {
+      if (!Number.isInteger(frame.seq) || frame.seq <= 0) {
+        ack(ws, frame.msgId, false, wsError("VALIDATION_FAILED", "Missing or invalid seq", {}, false));
+        return;
+      }
       if (frame.seq !== conn.expectedSeq) {
         ack(ws, frame.msgId, false, wsError("SEQ_OUT_OF_ORDER", `Expected seq=${conn.expectedSeq} got ${frame.seq}`, {}, true));
         return;
