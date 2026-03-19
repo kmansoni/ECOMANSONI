@@ -183,6 +183,10 @@ export function useSearch() {
   // Автоповтор поиска после восстановления сессии.
   // Срабатывает на SIGNED_IN и TOKEN_REFRESHED — оба события означают наличие валидного токена.
   useEffect(() => {
+    if (!supabase?.auth || typeof supabase.auth.onAuthStateChange !== "function") {
+      return;
+    }
+
     // NOTE: Must call as supabase.auth.onAuthStateChange() — not via destructuring.
     // Destructuring loses `this` binding, causing GoTrueClient._debug() to throw
     // "TypeError: Cannot read properties of undefined (reading '_debug')".
@@ -198,7 +202,7 @@ export function useSearch() {
         searchUsers(query);
       }
     });
-    return () => subscription.unsubscribe();
+    return () => subscription?.unsubscribe?.();
   }, [searchUsers]);
 
   const fetchExplorePosts = useCallback(async () => {
