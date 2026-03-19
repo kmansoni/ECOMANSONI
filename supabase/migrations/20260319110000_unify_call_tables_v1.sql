@@ -80,14 +80,8 @@ INSERT INTO public.calls (
 )
 SELECT
   vc.id,
-  CASE
-    WHEN EXISTS (SELECT 1 FROM auth.users u WHERE u.id = vc.caller_id) THEN vc.caller_id
-    ELSE NULL
-  END AS caller_id,
-  CASE
-    WHEN EXISTS (SELECT 1 FROM auth.users u WHERE u.id = vc.callee_id) THEN vc.callee_id
-    ELSE NULL
-  END AS callee_id,
+  vc.caller_id,
+  vc.callee_id,
   vc.conversation_id,
   CASE
     WHEN vc.call_type = 'voice' THEN 'voice'
@@ -113,7 +107,9 @@ SELECT
 FROM public.video_calls vc
 WHERE NOT EXISTS (
   SELECT 1 FROM public.calls c WHERE c.id = vc.id
-);
+)
+AND EXISTS (SELECT 1 FROM auth.users u WHERE u.id = vc.caller_id)
+AND EXISTS (SELECT 1 FROM auth.users u WHERE u.id = vc.callee_id);
 
 -- ─── 3. Переименовать video_calls → video_calls_legacy ────────────────────────
 -- NOT DROP: таблица video_call_signals имеет FK на video_calls.
