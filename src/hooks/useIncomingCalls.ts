@@ -14,7 +14,7 @@ interface UseIncomingCallsOptions {
   onIncomingCall?: (call: VideoCall) => void;
 }
 
-const POLL_INTERVAL_MS = 2000; // Poll every 2 seconds as fallback
+const POLL_INTERVAL_MS = 2000; // kept for reference — polling removed (WS relay is primary)
 
 const isSchemaCompatibilityError = (error: unknown): boolean => {
   const code = String((error as { code?: unknown } | null)?.code ?? "").toUpperCase();
@@ -280,37 +280,14 @@ export function useIncomingCalls(options: UseIncomingCallsOptions = {}) {
         logger.info("incoming_calls.realtime_status", { status });
       });
 
-    // === POLLING FALLBACK ===
-    // This catches incoming calls if Realtime subscription is delayed or missed
-    const pollInterval = setInterval(async () => {
-      try {
-        const cutoff = new Date(Date.now() - 60000).toISOString();
-        const { data: ringingCalls } = await supabase
-          .from("video_calls")
-          .select("*")
-          .eq("callee_id", user.id)
-          .eq("status", "ringing")
-          .gt("created_at", cutoff) // Only calls from last 60 seconds
-          .order("created_at", { ascending: false })
-          .limit(1);
-
-        if (ringingCalls && ringingCalls.length > 0) {
-          const call = ringingCalls[0] as VideoCall;
-          // Only process if not already notified
-          if (!notifiedCalls.has(call.id)) {
-            logger.info("incoming_calls.poll_found", { callId: call.id });
-            await processIncomingCall(call);
-          }
-        }
-      } catch (err) {
-        logger.warn("incoming_calls.poll_failed", { error: err });
-      }
-    }, POLL_INTERVAL_MS);
+    // === Realtime is now fallback ===
+    // Primary delivery is via calls-ws WS relay (VideoCallProvider receives call.invite
+    // frames and calls setPendingIncomingCall directly). Realtime handles offline/reconnect cases.
+    void POLL_INTERVAL_MS; // suppress unused-var lint
 
     return () => {
       logger.info("incoming_calls.cleanup");
       supabase.removeChannel(channel);
-      clearInterval(pollInterval);
       notifiedCalls.clear();
       void releaseCallWake();
     };

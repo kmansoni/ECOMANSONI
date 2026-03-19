@@ -364,6 +364,28 @@ export class CallsWsClient {
     return this._send('KEY_ACK', payload);
   }
 
+  // ----------- Call signaling relay -----------
+
+  async callInvite(payload: import('./types').CallSignalInvitePayload) {
+    return this._send('call.invite' as never, payload as never);
+  }
+
+  async callAccept(payload: import('./types').CallSignalStatePayload) {
+    return this._send('call.accept' as never, payload as never);
+  }
+
+  async callDecline(payload: import('./types').CallSignalStatePayload) {
+    return this._send('call.decline' as never, payload as never);
+  }
+
+  async callCancel(payload: import('./types').CallSignalStatePayload) {
+    return this._send('call.cancel' as never, payload as never);
+  }
+
+  async callHangup(payload: import('./types').CallSignalStatePayload) {
+    return this._send('call.hangup' as never, payload as never);
+  }
+
   // ----------- Event subscription -----------
 
   on(event: CallsWsEvent, handler: CallsWsEventHandler): () => void {

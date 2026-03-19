@@ -1108,6 +1108,29 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         }
       });
 
+      // B: receive call.invite from the WS relay so incoming calls don't need
+      // Supabase Realtime / DB polling as the primary delivery channel.
+      client.on("call.invite" as never, (frame) => {
+        const p = (frame as { payload?: Record<string, unknown> }).payload ?? {};
+        const callId = p.callId as string | undefined;
+        const callType = (p.callType ?? p.call_type) as string | undefined;
+        if (!callId) return;
+        // Construct a minimal VideoCall-compatible shape so existing callee
+        // UI (banner + ringtone) works without a DB round-trip.
+        const syntheticCall = {
+          id: callId,
+          caller_id: p.from as string ?? "",
+          callee_id: user?.id ?? "",
+          call_type: (callType === "voice" ? "audio" : (callType ?? "audio")) as "audio" | "video",
+          status: "ringing" as const,
+          created_at: new Date().toISOString(),
+          calls_v2_room_id: (p.callsV2RoomId ?? null) as string | null,
+          calls_v2_join_token: (p.callsV2JoinToken ?? null) as string | null,
+        };
+        logger.info("[VideoCallContext] WS call.invite received", { callId: callId.slice(0, 8) });
+        setPendingIncomingCall(syntheticCall as never);
+      });
+
       callsWsRef.current = client;
       lastCallsBootstrapErrorRef.current = null;
       return client;
@@ -1764,6 +1787,12 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     setIsCallUiActive(true); // Activate UI-lock BEFORE getUserMedia
     setPendingIncomingCall(null);
     clearIncomingCall();
+    // B: notify caller via WS relay
+    const wsForAccept = callsWsRef.current;
+    if (wsForAccept && call?.caller_id) {
+      void wsForAccept.callAccept({ to: call.caller_id, callId: call.id })
+        .catch((e) => logger.warn("[VideoCallContext] callAccept WS send failed", e));
+    }
 
     try {
       await answerVideoCall(call);
@@ -1862,6 +1891,12 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     if (incomingCall || pendingIncomingCall) {
       const callToDecline = incomingCall || pendingIncomingCall;
       if (!callToDecline) return;
+      // B: notify caller via WS relay before DB update
+      const wsForDecline = callsWsRef.current;
+      if (wsForDecline && callToDecline.caller_id) {
+        void wsForDecline.callDecline({ to: callToDecline.caller_id, callId: callToDecline.id })
+          .catch((e) => logger.warn("[VideoCallContext] callDecline WS send failed", e));
+      }
 
       const { error } = await supabase
         .from("video_calls")
@@ -1882,6 +1917,16 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
 
   const endCall = useCallback(async () => {
     logger.info("[VideoCallContext] endCall called");
+    // B: send hangup via WS relay so the peer knows immediately
+    const callForHangup = currentCall ?? legacyCurrentCall;
+    const wsForHangup = callsWsRef.current;
+    if (wsForHangup && callForHangup) {
+      const peerId = callForHangup.caller_id === user?.id
+        ? callForHangup.callee_id
+        : callForHangup.caller_id;
+      void wsForHangup.callHangup({ to: peerId, callId: callForHangup.id })
+        .catch((e) => logger.warn("[VideoCallContext] callHangup WS send failed", e));
+    }
     if (legacyEngineActive) {
       if (legacyCurrentCall) {
         await legacyEndVideoCall("ended");
@@ -1933,6 +1978,16 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
           duration: 5000,
         });
         return null;
+      }
+      // B: deliver call.invite via WS relay so caller doesn't need DB polling
+      const ws = callsWsRef.current;
+      if (ws) {
+        void ws.callInvite({
+          to: calleeId,
+          callId: result.id,
+          callType,
+          conversationId: conversationId ?? undefined,
+        }).catch((e) => logger.warn("[VideoCallContext] callInvite WS send failed", e));
       }
       const roomBootstrapOk = await bootstrapCallsV2Room(result, "caller");
       if (!roomBootstrapOk) {

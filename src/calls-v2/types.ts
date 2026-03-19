@@ -91,7 +91,14 @@ export type CallsWsEvent =
   | 'KEY_PACKAGE'
   | 'KEY_ACK'
   | 'E2EE_READY_ACK'
-  | 'ROUTER_RTP_CAPABILITIES';
+  | 'ROUTER_RTP_CAPABILITIES'
+  // Call signaling relay events (server → client)
+  | 'call.invite'
+  | 'call.accept'
+  | 'call.decline'
+  | 'call.cancel'
+  | 'call.hangup'
+  | 'call.rekey';
 
 // ----------- Payload types для клиентских сообщений -----------
 
@@ -388,6 +395,25 @@ export interface ErrorPayload {
   details?: Record<string, unknown>;
 }
 
+// ----------- Call signaling payloads -----------
+/** Payload sent by the caller when initiating a call via WS (call.invite) */
+export interface CallSignalInvitePayload {
+  to: string;            // callee userId
+  to_device?: string;   // callee deviceId (if known)
+  callId: string;
+  callType: 'audio' | 'voice' | 'video';
+  conversationId?: string | null;
+  callsV2RoomId?: string | null;
+  callsV2JoinToken?: string | null;
+}
+
+/** Payload for call.accept / call.decline / call.cancel / call.hangup */
+export interface CallSignalStatePayload {
+  to: string;          // original caller userId
+  to_device?: string;  // original caller deviceId (if known)
+  callId: string;
+}
+
 // ----------- Client message type map -----------
 export interface GetRouterRtpCapabilitiesPayload {
   roomId: string;
@@ -421,6 +447,11 @@ export interface ClientMessageMap {
   KEY_ACK: KeyAckPayload;
   GET_ROUTER_RTP_CAPABILITIES: GetRouterRtpCapabilitiesPayload;
   PING: Record<string, never>;
+  'call.invite': CallSignalInvitePayload;
+  'call.accept': CallSignalStatePayload;
+  'call.decline': CallSignalStatePayload;
+  'call.cancel': CallSignalStatePayload;
+  'call.hangup': CallSignalStatePayload;
 }
 
 // ----------- Connection state -----------

@@ -91,6 +91,9 @@ function normalizeBrokenVerticalText(text: string): string {
   return repairBrokenLineWrapArtifacts(text);
 }
 
+const TELEGRAM_MAX_MESSAGE_CHARS = 4096;
+const TELEGRAM_MAX_FILE_BYTES = 2 * 1024 * 1024 * 1024;
+
 export interface ChatMessage {
   id: string;
   client_msg_id?: string | null;
@@ -1044,6 +1047,10 @@ export function useMessages(conversationId: string | null) {
       throw new Error("CHAT_EMPTY_MESSAGE");
     }
 
+    if (normalizedContent.length > TELEGRAM_MAX_MESSAGE_CHARS) {
+      throw new Error(`CHAT_MESSAGE_TOO_LONG:${normalizedContent.length}`);
+    }
+
     const probe = getLastChatSchemaProbe();
     if (probe && probe.ok === false) {
       logger.warn("[Chat] schema probe reported not-ok; continuing send with fallback paths", {
@@ -1244,6 +1251,14 @@ export function useMessages(conversationId: string | null) {
 
   const sendMediaMessage = async (file: File, mediaType: 'voice' | 'video_circle' | 'image' | 'video', durationSeconds?: number) => {
     if (!conversationId || !user) return { error: 'Not authenticated' };
+
+    if (file.size > TELEGRAM_MAX_FILE_BYTES) {
+      const error = 'CHAT_FILE_TOO_LARGE';
+      toast.error("Файл слишком большой", {
+        description: "Максимальный размер файла: 2 ГБ",
+      });
+      return { error };
+    }
 
     const probe = getLastChatSchemaProbe();
     if (probe && probe.ok === false) {

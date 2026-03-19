@@ -128,6 +128,8 @@ interface ChatConversationProps {
   onInitialPanelHandled?: () => void;
 }
 
+const TELEGRAM_MAX_MESSAGE_CHARS = 4096;
+
 function parseEncryptedPayload(content: unknown): EncryptedPayload | null {
   try {
     const parsed = JSON.parse(String(content ?? ""));
@@ -992,6 +994,14 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
         lastDraftTrimmedRef.current = trimmed;
         toast.error(payload.title, { description: payload.description });
       } else {
+        if (compactErr.message.startsWith("CHAT_MESSAGE_TOO_LONG:")) {
+          const current = Number(compactErr.message.split(":")[1] || 0);
+          toast.error("Сообщение слишком длинное", {
+            description: `Лимит: ${TELEGRAM_MAX_MESSAGE_CHARS} символов (сейчас ${current})`,
+          });
+          return;
+        }
+
         const sendPayload = getChatSendErrorToast(error);
         if (sendPayload) {
           setInputText(trimmed);
@@ -2279,6 +2289,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
                   ref={inputRef}
                   placeholder="Сообщение"
                   value={inputText}
+                  maxLength={TELEGRAM_MAX_MESSAGE_CHARS}
                   onChange={(e) => handleInputChange(e.target.value, (e.target as HTMLTextAreaElement).selectionStart ?? undefined)}
                   onSend={() => {
                     if (!isSending) void handleSendMessage();
