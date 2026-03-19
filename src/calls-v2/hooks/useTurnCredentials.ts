@@ -58,20 +58,25 @@ export function useTurnCredentials(): UseTurnCredentialsResult {
       const publishableKey = String(runtimeConfig.supabasePublishableKey || "").trim();
 
       for (const fn of TURN_CREDENTIALS_EDGE_FNS) {
-        const result = await supabase.functions.invoke(fn, {
-          body: { requestId, nonce: requestId },
-          headers: {
-            ...(publishableKey ? { apikey: publishableKey } : {}),
-            ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-          },
-        });
-        if (!result.error) {
-          data = result.data;
-          invokeError = null;
-          break;
+        try {
+          const result = await supabase.functions.invoke(fn, {
+            body: { requestId, nonce: requestId },
+            headers: {
+              ...(publishableKey ? { apikey: publishableKey } : {}),
+              ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+            },
+          });
+          if (!result.error) {
+            data = result.data;
+            invokeError = null;
+            break;
+          }
+          invokeError = result.error;
+          logger.warn("[useTurnCredentials] edge function failed", { fn, error: result.error });
+        } catch (fnError) {
+          invokeError = fnError;
+          logger.warn("[useTurnCredentials] edge function invoke exception", { fn, error: fnError });
         }
-        invokeError = result.error;
-        logger.warn("[useTurnCredentials] edge function failed", { fn, error: result.error });
       }
 
       if (invokeError) {

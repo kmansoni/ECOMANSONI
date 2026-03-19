@@ -11,6 +11,7 @@ function normalizeEnv(value: unknown): string {
 
 const TURN_CREDENTIALS_URL = normalizeEnv(import.meta.env.VITE_TURN_CREDENTIALS_URL);
 const TURN_CREDENTIALS_API_KEY = normalizeEnv(import.meta.env.VITE_TURN_CREDENTIALS_API_KEY);
+const TURN_CREDENTIALS_EDGE_FNS = ["turn-credentials", "get-turn-credentials"] as const;
 
 export interface IceServerConfig {
   iceServers: RTCIceServer[];
@@ -128,20 +129,38 @@ async function fetchTurnCredentials(): Promise<{ iceServers: RTCIceServer[] | nu
     }
 
     const { nonce, requestId } = buildTurnRequestMetadata();
-    const { data, error } = await supabase.functions.invoke("turn-credentials", {
-      body: { nonce, requestId },
-      headers: {
-        "x-turn-nonce": nonce,
-        "x-request-id": requestId,
-      },
-    });
+    let data: TurnCredentialsResponse | null = null;
+    let invokeError: unknown = null;
 
-    if (error) {
-      console.error("[WebRTC Config] Edge function error:", error);
+    for (const fn of TURN_CREDENTIALS_EDGE_FNS) {
+      try {
+        const result = await supabase.functions.invoke(fn, {
+          body: { nonce, requestId },
+          headers: {
+            "x-turn-nonce": nonce,
+            "x-request-id": requestId,
+          },
+        });
+
+        if (!result.error) {
+          data = (result.data ?? {}) as TurnCredentialsResponse;
+          invokeError = null;
+          break;
+        }
+
+        invokeError = result.error;
+        console.error("[WebRTC Config] Edge function error:", { fn, error: result.error });
+      } catch (fnError) {
+        invokeError = fnError;
+        console.error("[WebRTC Config] Edge function invoke exception:", { fn, error: fnError });
+      }
+    }
+
+    if (invokeError || !data) {
       return { iceServers: null, ttlMs: FALLBACK_CACHE_TTL_MS };
     }
 
-    const parsed = (data ?? {}) as TurnCredentialsResponse;
+    const parsed = data;
     const result = parseTurnResponse(parsed);
     if (result.iceServers && result.iceServers.length > 0) {
       turnFetchFailures = 0;
