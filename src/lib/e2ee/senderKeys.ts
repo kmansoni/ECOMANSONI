@@ -226,7 +226,8 @@ async function _deleteStates(conversationId: string, senderId: string): Promise<
  *   messageKey   = HMAC-SHA-256(chainKey, 0x01)
  */
 async function ratchet(chainKey: ArrayBuffer): Promise<{ nextChainKey: ArrayBuffer; messageKey: CryptoKey }> {
-  const ck = await crypto.subtle.importKey('raw', chainKey, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const chainKeyBytes = new Uint8Array(chainKey.slice(0));
+  const ck = await crypto.subtle.importKey('raw', chainKeyBytes, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
 
   const [msgKeyBytes, nextCKBytes] = await Promise.all([
     crypto.subtle.sign('HMAC', ck, new Uint8Array([0x01])),

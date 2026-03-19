@@ -24,7 +24,8 @@ export class SFrameMediaContext {
    * Ratchets media key per key-frame by deriving a fresh AES-128 key from current key material.
    */
   async ratchetForKeyFrame(baseKeyMaterial: ArrayBuffer, keyId: number): Promise<void> {
-    const ikm = await crypto.subtle.importKey('raw', baseKeyMaterial, 'HKDF', false, ['deriveKey']);
+    const baseKeyBytes = new Uint8Array(baseKeyMaterial.slice(0));
+    const ikm = await crypto.subtle.importKey('raw', baseKeyBytes, 'HKDF', false, ['deriveKey']);
     const nextKey = await crypto.subtle.deriveKey(
       {
         name: 'HKDF',
