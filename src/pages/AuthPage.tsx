@@ -23,7 +23,9 @@ import { logger } from "@/lib/logger";
 type AuthMode = "select" | "login" | "register" | "otp";
 
 const OTP_RESEND_COOLDOWN_SEC = 60;
-const AUTH_TIMEOUT_MS = 12_000;
+const AUTH_TIMEOUT_MS = 20_000;
+const AUTH_RETRY_ATTEMPTS = 2;
+const AUTH_RETRY_DELAY_MS = 700;
 
 async function fetchJsonWithTimeout(
   input: RequestInfo | URL,
@@ -51,6 +53,44 @@ async function fetchJsonWithTimeout(
   } finally {
     window.clearTimeout(timeoutId);
   }
+}
+
+function isRetryableAuthTransportError(error: unknown): boolean {
+  const raw = error instanceof Error ? error.message : String(error ?? "");
+  const normalized = raw.toLowerCase();
+  return (
+    normalized.startsWith("timeout:") ||
+    normalized.includes("failed to fetch") ||
+    normalized.includes("networkerror") ||
+    normalized.includes("err_connection_reset") ||
+    normalized.includes("connection reset") ||
+    normalized.includes("load failed")
+  );
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+async function fetchJsonWithRetry(
+  input: RequestInfo | URL,
+  init: RequestInit,
+  timeoutMs: number,
+  label: string,
+): Promise<{ response: Response; data: any | null }> {
+  let lastError: unknown = null;
+  for (let attempt = 1; attempt <= AUTH_RETRY_ATTEMPTS; attempt += 1) {
+    try {
+      return await fetchJsonWithTimeout(input, init, timeoutMs, `${label}:attempt-${attempt}`);
+    } catch (err) {
+      lastError = err;
+      if (!isRetryableAuthTransportError(err) || attempt >= AUTH_RETRY_ATTEMPTS) {
+        throw err;
+      }
+      await sleep(AUTH_RETRY_DELAY_MS * attempt);
+    }
+  }
+  throw (lastError || new Error(`Failed to fetch ${label}`));
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
@@ -180,7 +220,7 @@ export function AuthPage() {
 
         for (const sendUrl of sendUrls) {
           try {
-            const result = await fetchJsonWithTimeout(
+            const result = await fetchJsonWithRetry(
               sendUrl,
               {
                 method: "POST",
@@ -274,7 +314,7 @@ export function AuthPage() {
 
         for (const verifyUrl of verifyUrls) {
           try {
-            const result = await fetchJsonWithTimeout(
+            const result = await fetchJsonWithRetry(
               verifyUrl,
               {
                 method: "POST",
@@ -369,7 +409,7 @@ export function AuthPage() {
 
         for (const sendUrl of sendUrls) {
           try {
-            const result = await fetchJsonWithTimeout(
+            const result = await fetchJsonWithRetry(
               sendUrl,
               {
                 method: "POST",
@@ -449,7 +489,7 @@ export function AuthPage() {
 
         for (const sendUrl of sendUrls) {
           try {
-            const result = await fetchJsonWithTimeout(
+            const result = await fetchJsonWithRetry(
               sendUrl,
               {
                 method: "POST",
