@@ -282,16 +282,20 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
 
     // 2. Insert into DB (fallback)
     try {
-      await supabase.from("video_call_signals").insert({
+      const { error: insertError } = await supabase.from("video_call_signals").insert({
         call_id: callId,
         sender_id: user.id,
         processed: false,
         signal_type: signalType,
         signal_data: normalizedSignalData,
       });
-      log(`Saved ${signalType} to DB`);
+      if (insertError) {
+        warn("DB signal insert RLS/constraint error:", { error: insertError, callId, signalType, sender_id: user.id });
+      } else {
+        log(`Saved ${signalType} to DB`);
+      }
     } catch (err) {
-      warn("DB signal insert failed:", err);
+      warn("DB signal insert exception:", { error: err, callId, signalType });
     }
   }, [user, log, warn]);
 
@@ -805,8 +809,13 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
         .select()
         .single();
 
-      if (callError || !callData) {
-        throw new Error(callError?.message || "Failed to create call");
+      if (callError) {
+        warn("Call record creation error:", { error: callError, caller: user.id.slice(0, 8), callee: calleeId.slice(0, 8) });
+        throw new Error(callError.message || "Failed to create call");
+      }
+      if (!callData?.id) {
+        warn("Call record creation returned null data");
+        throw new Error("Failed to create call: no ID returned");
       }
       log("Call record created:", callData.id.slice(0, 8));
 
