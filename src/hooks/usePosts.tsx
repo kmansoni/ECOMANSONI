@@ -345,25 +345,18 @@ export function usePostActions() {
         return { error: `HASHTAG_BLOCKED:${("blockedTags" in hashtagVerdict ? hashtagVerdict.blockedTags : []).join(', ')}`, post: null };
       }
 
-      const { data: post, error: postError } = await supabase
-        .from('posts')
-        .insert({ author_id: user.id, content })
-        .select()
-        .single();
+      const mediaItems = (mediaUrls || []).map((url) => ({
+        url,
+        type: url.includes('.mp4') || url.includes('.webm') ? 'video' : 'image',
+      }));
+
+      const { data: post, error: postError } = await (supabase as any).rpc('create_post_v1', {
+        p_content: content,
+        p_visibility: 'public',
+        p_media: mediaItems,
+      });
 
       if (postError) throw postError;
-
-      // Add media if provided
-      if (mediaUrls && mediaUrls.length > 0) {
-        const mediaInserts = mediaUrls.map((url, index) => ({
-          post_id: post.id,
-          media_url: url,
-          media_type: url.includes('.mp4') || url.includes('.webm') ? 'video' : 'image',
-          sort_order: index
-        }));
-
-        await supabase.from('post_media').insert(mediaInserts);
-      }
 
       return { error: null, post };
     } catch (err) {

@@ -4,6 +4,7 @@ Source of truth for the Calls WebSocket protocol.
 
 - Human-readable spec: this document
 - Machine-readable artifacts: `docs/calls/schemas/*.schema.json` + `docs/calls/machines/*.yaml`
+- SFU requirements contract: `docs/calls/SFU_REQUIREMENTS.md` + `docs/calls/sfu-requirements.v1.json`
 
 ## 1) Envelope, guarantees, rules
 

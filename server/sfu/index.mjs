@@ -15,7 +15,25 @@ const HEARTBEAT_SEC = Math.max(5, Number(process.env.SFU_HEARTBEAT_SEC ?? "10"))
 const IS_PROD = process.env.NODE_ENV === "production";
 const CALLS_DEV_INSECURE_AUTH = !IS_PROD && process.env.CALLS_DEV_INSECURE_AUTH === "1";
 const REQUIRE_MEDIASOUP_IN_PROD = IS_PROD && process.env.SFU_REQUIRE_MEDIASOUP !== "0";
-const requireSFrame = process.env.SFU_REQUIRE_SFRAME === "1";
+const requireSFrame = (() => {
+  const raw = String(process.env.SFU_REQUIRE_SFRAME ?? "").trim().toLowerCase();
+  if (raw === "1" || raw === "true" || raw === "on") return true;
+  if (raw === "0" || raw === "false" || raw === "off") return false;
+  return IS_PROD;
+})();
+const requireDoubleRatchet = (() => {
+  const raw = String(process.env.SFU_REQUIRE_DOUBLE_RATCHET ?? "").trim().toLowerCase();
+  if (raw === "1" || raw === "true" || raw === "on") return true;
+  if (raw === "0" || raw === "false" || raw === "off") return false;
+  return IS_PROD;
+})();
+const REQUIRE_SECURE_WS = IS_PROD && process.env.SFU_REQUIRE_SECURE_WS !== "0";
+const TRUSTED_PROXIES = new Set(
+  (process.env.SFU_TRUSTED_PROXIES || "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean)
+);
 const SUPABASE_URL = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? "";
 const SUPABASE_AUTH_KEY = process.env.SUPABASE_PUBLISHABLE_KEY ?? process.env.SUPABASE_ANON_KEY ?? process.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? process.env.VITE_SUPABASE_ANON_KEY ?? "";
 const STARTED_AT = Date.now();
@@ -127,6 +145,24 @@ function hasNonEmptyObject(value) {
 
 function hasNonEmptyArray(value) {
   return Array.isArray(value) && value.length > 0;
+}
+
+function isSecureUpgradeRequest(req) {
+  if (req?.socket?.encrypted === true) return true;
+
+  const xForwardedProto = req?.headers?.["x-forwarded-proto"];
+  if (!xForwardedProto) return false;
+
+  const remoteAddress = (req?.socket?.remoteAddress ?? "").replace(/^::ffff:/i, "");
+  if (TRUSTED_PROXIES.size > 0 && !TRUSTED_PROXIES.has(remoteAddress)) {
+    return false;
+  }
+
+  const proto = String(Array.isArray(xForwardedProto) ? xForwardedProto[0] : xForwardedProto)
+    .split(",")[0]
+    .trim()
+    .toLowerCase();
+  return proto === "https" || proto === "wss";
 }
 
 function validateDtlsParameters(dtlsParameters) {
@@ -310,7 +346,12 @@ const server = http.createServer((req, res) => {
 
 const wss = new WebSocketServer({ server, path: "/ws" });
 
-wss.on("connection", (ws) => {
+wss.on("connection", (ws, req) => {
+  if (REQUIRE_SECURE_WS && !isSecureUpgradeRequest(req)) {
+    ws.close(4003, "SECURE_TRANSPORT_REQUIRED");
+    return;
+  }
+
   const conn = {
     authenticated: false,
     userId: null,
@@ -422,16 +463,31 @@ wss.on("connection", (ws) => {
         if (!ensureAuth()) return;
         const insertableStreams = frame.payload?.insertableStreams === true;
         const sframe = frame.payload?.sframe === true;
-        conn.e2eeCaps = { insertableStreams, sframe };
+        const doubleRatchet =
+          frame.payload?.doubleRatchet === true ||
+          (Array.isArray(frame.payload?.supportedCipherSuites) &&
+            frame.payload.supportedCipherSuites.some((suite) =>
+              suite === "DOUBLE_RATCHET_P256_AES128GCM" || suite === "DR_P256_HKDF_SHA256_AES128GCM"
+            ));
+        conn.e2eeCaps = { insertableStreams, sframe, doubleRatchet };
 
         if (E2EE_REQUIRED_DEFAULT && !insertableStreams) {
           ack(ws, frame.msgId, false, wsError("UNSUPPORTED_E2EE", "Insertable Streams capability is required", {}, false));
           return;
         }
-          if (requireSFrame && !sframe) {
-            ack(ws, frame.msgId, false, wsError("UNSUPPORTED_E2EE", "SFrame capability is required", {}, false));
-            return;
-          }
+        if (requireSFrame && (!insertableStreams || !sframe)) {
+          ack(ws, frame.msgId, false, wsError("UNSUPPORTED_E2EE", "SFrame + Insertable Streams capabilities are required", {
+            insertableStreams,
+            sframe,
+          }, false));
+          return;
+        }
+        if (requireDoubleRatchet && !doubleRatchet) {
+          ack(ws, frame.msgId, false, wsError("UNSUPPORTED_E2EE", "Double Ratchet capability is required", {
+            doubleRatchet,
+          }, false));
+          return;
+        }
 
         ack(ws, frame.msgId, true);
         return;
@@ -465,10 +521,14 @@ wss.on("connection", (ws) => {
           ack(ws, frame.msgId, false, wsError("UNSUPPORTED_E2EE", "E2EE_CAPS with insertableStreams=true required before ROOM_JOIN", {}, false));
           return;
         }
-          if (requireSFrame && !conn.e2eeCaps?.sframe) {
-            ack(ws, frame.msgId, false, wsError("UNSUPPORTED_E2EE", "SFrame capability is required before joining the room", {}, false));
-            return;
-          }
+        if (requireSFrame && (!conn.e2eeCaps?.insertableStreams || !conn.e2eeCaps?.sframe)) {
+          ack(ws, frame.msgId, false, wsError("UNSUPPORTED_E2EE", "SFrame + Insertable Streams capabilities are required before joining the room", {}, false));
+          return;
+        }
+        if (requireDoubleRatchet && !conn.e2eeCaps?.doubleRatchet) {
+          ack(ws, frame.msgId, false, wsError("UNSUPPORTED_E2EE", "Double Ratchet capability is required before joining the room", {}, false));
+          return;
+        }
         const roomId = frame.payload?.roomId;
         if (!roomId) {
           ack(ws, frame.msgId, false, wsError("VALIDATION_FAILED", "Missing roomId", {}, false));
@@ -678,7 +738,7 @@ wss.on("connection", (ws) => {
         // SECURITY FIX: SFrame enforcement — producers sending only tiny frames
         // (< 17 bytes, the minimum SFrame overhead) are blocked as they cannot
         // carry valid encrypted payloads and indicate a bypassed E2EE sender.
-        if (process.env.SFU_REQUIRE_SFRAME === "1" || process.env.SFU_E2EE_REQUIRED === "1") {
+        if (requireSFrame) {
           if (produced.observer && typeof produced.observer.on === "function") {
             // REQUIRED: mediasoup v3 does NOT emit "trace" events unless enableTrace() is called.
             // Without this the entire SFrame enforcement block is dead code.

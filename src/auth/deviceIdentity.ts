@@ -18,9 +18,10 @@
  * - initDeviceIdentity() MUST be called once at app startup.
  *
  * BACKWARD COMPATIBILITY:
- * - Legacy unencrypted JSON is read as-is, then re-encrypted on next write.
- * - If initDeviceIdentity() hasn't been called, loadOrCreateDeviceIdentity()
- *   falls back to raw localStorage read (works for legacy data).
+ * - Legacy unencrypted JSON is read once during init and immediately
+ *   re-encrypted.
+ * - If initDeviceIdentity() hasn't been called, sync reads do not parse
+ *   plaintext from localStorage (fail-closed).
  * ============================================================================
  */
 
@@ -94,13 +95,11 @@ function persistIdentityEncrypted(identity: DeviceIdentity): void {
       const encrypted = await encryptForStorage(snapshot);
       localStorage.setItem(DEVICE_KEY, encrypted);
     } catch (err) {
-      // Fallback to plaintext to avoid losing the identity entirely.
-      // This should only happen if WebCrypto is unavailable.
+      // FAIL-SECURE: do NOT write plaintext device_secret.
       console.error(
-        "[deviceIdentity] Encryption failed, falling back to plaintext:",
+        "[deviceIdentity] Encryption failed — identity NOT persisted to localStorage (fail-secure).",
         err,
       );
-      localStorage.setItem(DEVICE_KEY, snapshot);
     }
   })();
 }
@@ -131,7 +130,7 @@ export async function initDeviceIdentity(): Promise<DeviceIdentity> {
           _identityCache = parsed;
           _initialized = true;
 
-          // Re-encrypt legacy plaintext data on next tick
+          // Re-encrypt legacy plaintext data immediately
           // (decryptFromStorage returns raw string for legacy data,
           //  so if the raw string === decrypted, it was plaintext)
           if (raw === decrypted) {
@@ -144,6 +143,7 @@ export async function initDeviceIdentity(): Promise<DeviceIdentity> {
     } catch {
       // Corrupted data — will generate new identity below
       console.warn("[deviceIdentity] Corrupted identity data. Generating new identity.");
+      localStorage.removeItem(DEVICE_KEY);
     }
   }
 
@@ -159,29 +159,16 @@ export async function initDeviceIdentity(): Promise<DeviceIdentity> {
 // ---------------------------------------------------------------------------
 
 /**
- * Attempts to read identity from raw localStorage without decryption.
- * Used when initDeviceIdentity() hasn't been called yet.
+ * Strict sync fallback when init was not called yet.
+ * Never parses plaintext localStorage data.
  */
 function fallbackLoadRaw(): DeviceIdentity | null {
-  const raw = localStorage.getItem(DEVICE_KEY);
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw);
-    // Check if it's an encrypted envelope
-    if (parsed && typeof parsed === "object" && "v" in parsed && "ct" in parsed) {
-      console.warn(
-        "[deviceIdentity] Identity is encrypted but initDeviceIdentity() was not called. " +
-          "Call initDeviceIdentity() at app startup.",
-      );
-      return null;
-    }
-    if (parsed?.device_uid && parsed?.device_secret) {
-      return parsed as DeviceIdentity;
-    }
-    return null;
-  } catch {
-    return null;
+  if (localStorage.getItem(DEVICE_KEY)) {
+    console.warn(
+      "[deviceIdentity] initDeviceIdentity() was not called before loadOrCreateDeviceIdentity().",
+    );
   }
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -191,8 +178,8 @@ function fallbackLoadRaw(): DeviceIdentity | null {
 /**
  * Returns the device identity from cache, or creates a new one if none exists.
  *
- * IMPORTANT: For encrypted storage to work, call initDeviceIdentity() at
- * app startup. This function degrades gracefully for legacy/pre-init use.
+ * IMPORTANT: Call initDeviceIdentity() at app startup.
+ * Pre-init sync read intentionally does not load plaintext from storage.
  *
  * Sync return for backward compatibility with all callers.
  */
@@ -200,7 +187,7 @@ export function loadOrCreateDeviceIdentity(): DeviceIdentity {
   // Return from cache if initialized
   if (_identityCache) return _identityCache;
 
-  // Fallback: try raw localStorage (legacy unencrypted data)
+  // Fail-closed pre-init fallback.
   const legacy = fallbackLoadRaw();
   if (legacy) {
     _identityCache = legacy;

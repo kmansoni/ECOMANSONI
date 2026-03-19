@@ -27,6 +27,9 @@ npm run calls:sfu:dev
 - `SFU_NODE_ID` (default `local-sfu-1`)
 - `SFU_E2EE_REQUIRED` (`1` by default)
 - `SFU_REQUIRE_SFRAME` (`1` to require `sframe=true` capability in `E2EE_CAPS` before join)
+- `SFU_REQUIRE_DOUBLE_RATCHET` (`1` to require `doubleRatchet=true` capability in `E2EE_CAPS` before join)
+- `SFU_REQUIRE_SECURE_WS` (default `1` in production; rejects non-TLS WS upgrades)
+- `SFU_TRUSTED_PROXIES` (comma-separated proxy IPs trusted for `x-forwarded-proto`)
 - `SFU_HEARTBEAT_SEC` (default `10`)
 - `SFU_ENABLE_MEDIASOUP` (`1` to enable mediasoup mode, default disabled)
 - `SFU_REQUIRE_MEDIASOUP` (`1` by default in production; fail-closed if mediasoup is unavailable)
@@ -56,6 +59,7 @@ Client rollout envs (web):
 - `VITE_CALLS_V2_WS_URLS=wss://region-1.example.com/ws,wss://region-2.example.com/ws` (multi-region failover)
 - `VITE_CALLS_V2_REKEY_INTERVAL_MS=120000` (periodic E2EE epoch rotation)
 - `VITE_CALLS_FRAME_E2EE_ADVERTISE_SFRAME=true` (advertise `sframe=true` in `E2EE_CAPS` when Insertable Streams are supported)
+- client sends `doubleRatchet=true` in `E2EE_CAPS` for strict policy compliance
 
 ## Next phase (full SFU + E2EE)
 

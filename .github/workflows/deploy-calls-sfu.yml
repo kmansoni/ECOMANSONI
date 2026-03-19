@@ -29,12 +29,14 @@ jobs:
         uses: appleboy/ssh-action@v1.2.0
         env:
           CALLS_JOIN_TOKEN_SECRET: ${{ secrets.CALLS_JOIN_TOKEN_SECRET }}
+          CALLS_WS_TRUSTED_PROXIES: ${{ secrets.CALLS_WS_TRUSTED_PROXIES }}
+          SFU_TRUSTED_PROXIES: ${{ secrets.SFU_TRUSTED_PROXIES }}
         with:
           host: ${{ secrets.SFU_RU_HOST }}
           port: ${{ secrets.SFU_RU_SSH_PORT || '22' }}
           username: ${{ secrets.SFU_RU_USER }}
           key: ${{ secrets.SFU_RU_SSH_KEY }}
-          envs: CALLS_JOIN_TOKEN_SECRET
+          envs: CALLS_JOIN_TOKEN_SECRET,CALLS_WS_TRUSTED_PROXIES,SFU_TRUSTED_PROXIES
           script: |
             set -euo pipefail
             APP_DIR="${CALLS_APP_DIR:-/opt/mansoni/app}"
@@ -68,6 +70,35 @@ jobs:
               echo "[RU] CALLS_JOIN_TOKEN_SECRET synced to .env.production"
             else
               echo "[RU] WARNING: CALLS_JOIN_TOKEN_SECRET secret is not set in GitHub; runtime fallback may be used"
+            fi
+
+            if [ -n "${CALLS_WS_TRUSTED_PROXIES:-}" ]; then
+              ENV_FILE="$APP_DIR/.env.production"
+              touch "$ENV_FILE"
+              chmod 600 "$ENV_FILE" || true
+              if grep -q '^CALLS_WS_TRUSTED_PROXIES=' "$ENV_FILE"; then
+                sed -i "s|^CALLS_WS_TRUSTED_PROXIES=.*|CALLS_WS_TRUSTED_PROXIES=${CALLS_WS_TRUSTED_PROXIES}|" "$ENV_FILE"
+              else
+                printf '\nCALLS_WS_TRUSTED_PROXIES=%s\n' "$CALLS_WS_TRUSTED_PROXIES" >> "$ENV_FILE"
+              fi
+              echo "[RU] CALLS_WS_TRUSTED_PROXIES synced to .env.production"
+            else
+              echo "[RU] WARNING: CALLS_WS_TRUSTED_PROXIES secret is not set in GitHub"
+            fi
+
+            if [ -n "${SFU_TRUSTED_PROXIES:-}" ]; then
+              SFU_ENV_FILE="$APP_DIR/server/sfu/.env.production"
+              mkdir -p "$APP_DIR/server/sfu"
+              touch "$SFU_ENV_FILE"
+              chmod 600 "$SFU_ENV_FILE" || true
+              if grep -q '^SFU_TRUSTED_PROXIES=' "$SFU_ENV_FILE"; then
+                sed -i "s|^SFU_TRUSTED_PROXIES=.*|SFU_TRUSTED_PROXIES=${SFU_TRUSTED_PROXIES}|" "$SFU_ENV_FILE"
+              else
+                printf '\nSFU_TRUSTED_PROXIES=%s\n' "$SFU_TRUSTED_PROXIES" >> "$SFU_ENV_FILE"
+              fi
+              echo "[RU] SFU_TRUSTED_PROXIES synced to server/sfu/.env.production"
+            else
+              echo "[RU] WARNING: SFU_TRUSTED_PROXIES secret is not set in GitHub"
             fi
 
             # -- 1.2 Ensure runtime deps are present -----------------------------
@@ -139,6 +170,8 @@ jobs:
             systemctl status "$SERVICE" --no-pager -l | sed -n '1,40p' || true
             journalctl -u "$SERVICE" -n 40 --no-pager || true
             grep -n '^CALLS_JOIN_TOKEN_SECRET=' "$APP_DIR/.env.production" >/dev/null 2>&1 && echo "[RU] join token secret present in .env.production" || echo "[RU] join token secret missing in .env.production"
+            grep -n '^CALLS_WS_TRUSTED_PROXIES=' "$APP_DIR/.env.production" >/dev/null 2>&1 && echo "[RU] trusted proxies present in .env.production" || echo "[RU] trusted proxies missing in .env.production"
+            grep -n '^SFU_TRUSTED_PROXIES=' "$APP_DIR/server/sfu/.env.production" >/dev/null 2>&1 && echo "[RU] sfu trusted proxies present in server/sfu/.env.production" || echo "[RU] sfu trusted proxies missing in server/sfu/.env.production"
             echo "[RU] diagnostics: gateway code markers"
             grep -nE 'GATEWAY_DEFAULT_CODECS|ROOM_JOIN_OK|GET_ROUTER_RTP_CAPABILITIES|ROUTER_RTP_CAPABILITIES' "$APP_DIR/server/calls-ws/index.mjs" || true
             if command -v nginx >/dev/null 2>&1; then
@@ -158,12 +191,14 @@ jobs:
         uses: appleboy/ssh-action@v1.2.0
         env:
           CALLS_JOIN_TOKEN_SECRET: ${{ secrets.CALLS_JOIN_TOKEN_SECRET }}
+          CALLS_WS_TRUSTED_PROXIES: ${{ secrets.CALLS_WS_TRUSTED_PROXIES }}
+          SFU_TRUSTED_PROXIES: ${{ secrets.SFU_TRUSTED_PROXIES }}
         with:
           host: ${{ secrets.SFU_TR_HOST }}
           port: ${{ secrets.SFU_TR_SSH_PORT || '22' }}
           username: ${{ secrets.SFU_TR_USER }}
           key: ${{ secrets.SFU_TR_SSH_KEY }}
-          envs: CALLS_JOIN_TOKEN_SECRET
+          envs: CALLS_JOIN_TOKEN_SECRET,CALLS_WS_TRUSTED_PROXIES,SFU_TRUSTED_PROXIES
           script: |
             set -euo pipefail
             APP_DIR="${CALLS_APP_DIR:-/opt/mansoni/app}"
@@ -193,6 +228,35 @@ jobs:
               fi
             else
               echo "[TR] WARNING: CALLS_JOIN_TOKEN_SECRET secret is not set in GitHub"
+            fi
+
+            if [ -n "${CALLS_WS_TRUSTED_PROXIES:-}" ]; then
+              ENV_FILE="$APP_DIR/.env.production"
+              touch "$ENV_FILE"
+              chmod 600 "$ENV_FILE" || true
+              if grep -q '^CALLS_WS_TRUSTED_PROXIES=' "$ENV_FILE"; then
+                sed -i "s|^CALLS_WS_TRUSTED_PROXIES=.*|CALLS_WS_TRUSTED_PROXIES=${CALLS_WS_TRUSTED_PROXIES}|" "$ENV_FILE"
+              else
+                printf '\nCALLS_WS_TRUSTED_PROXIES=%s\n' "$CALLS_WS_TRUSTED_PROXIES" >> "$ENV_FILE"
+              fi
+              echo "[TR] CALLS_WS_TRUSTED_PROXIES synced to .env.production"
+            else
+              echo "[TR] WARNING: CALLS_WS_TRUSTED_PROXIES secret is not set in GitHub"
+            fi
+
+            if [ -n "${SFU_TRUSTED_PROXIES:-}" ]; then
+              SFU_ENV_FILE="$APP_DIR/server/sfu/.env.production"
+              mkdir -p "$APP_DIR/server/sfu"
+              touch "$SFU_ENV_FILE"
+              chmod 600 "$SFU_ENV_FILE" || true
+              if grep -q '^SFU_TRUSTED_PROXIES=' "$SFU_ENV_FILE"; then
+                sed -i "s|^SFU_TRUSTED_PROXIES=.*|SFU_TRUSTED_PROXIES=${SFU_TRUSTED_PROXIES}|" "$SFU_ENV_FILE"
+              else
+                printf '\nSFU_TRUSTED_PROXIES=%s\n' "$SFU_TRUSTED_PROXIES" >> "$SFU_ENV_FILE"
+              fi
+              echo "[TR] SFU_TRUSTED_PROXIES synced to server/sfu/.env.production"
+            else
+              echo "[TR] WARNING: SFU_TRUSTED_PROXIES secret is not set in GitHub"
             fi
 
             if [ ! -f "$APP_DIR/node_modules/ioredis/package.json" ] || [ ! -f "$APP_DIR/node_modules/ajv/package.json" ] || [ ! -f "$APP_DIR/node_modules/ajv-formats/package.json" ]; then
@@ -250,6 +314,8 @@ jobs:
             systemctl status "$SERVICE" --no-pager -l | sed -n '1,40p' || true
             journalctl -u "$SERVICE" -n 40 --no-pager || true
             grep -n '^CALLS_JOIN_TOKEN_SECRET=' "$APP_DIR/.env.production" >/dev/null 2>&1 && echo "[TR] join token secret present in .env.production" || echo "[TR] join token secret missing in .env.production"
+            grep -n '^CALLS_WS_TRUSTED_PROXIES=' "$APP_DIR/.env.production" >/dev/null 2>&1 && echo "[TR] trusted proxies present in .env.production" || echo "[TR] trusted proxies missing in .env.production"
+            grep -n '^SFU_TRUSTED_PROXIES=' "$APP_DIR/server/sfu/.env.production" >/dev/null 2>&1 && echo "[TR] sfu trusted proxies present in server/sfu/.env.production" || echo "[TR] sfu trusted proxies missing in server/sfu/.env.production"
             echo "[TR] diagnostics: gateway code markers"
             grep -nE 'GATEWAY_DEFAULT_CODECS|ROOM_JOIN_OK|GET_ROUTER_RTP_CAPABILITIES|ROUTER_RTP_CAPABILITIES' "$APP_DIR/server/calls-ws/index.mjs" || true
             if command -v nginx >/dev/null 2>&1; then
@@ -269,12 +335,14 @@ jobs:
         uses: appleboy/ssh-action@v1.2.0
         env:
           CALLS_JOIN_TOKEN_SECRET: ${{ secrets.CALLS_JOIN_TOKEN_SECRET }}
+          CALLS_WS_TRUSTED_PROXIES: ${{ secrets.CALLS_WS_TRUSTED_PROXIES }}
+          SFU_TRUSTED_PROXIES: ${{ secrets.SFU_TRUSTED_PROXIES }}
         with:
           host: ${{ secrets.SFU_AE_HOST }}
           port: ${{ secrets.SFU_AE_SSH_PORT || '22' }}
           username: ${{ secrets.SFU_AE_USER }}
           key: ${{ secrets.SFU_AE_SSH_KEY }}
-          envs: CALLS_JOIN_TOKEN_SECRET
+          envs: CALLS_JOIN_TOKEN_SECRET,CALLS_WS_TRUSTED_PROXIES,SFU_TRUSTED_PROXIES
           script: |
             set -euo pipefail
             APP_DIR="${CALLS_APP_DIR:-/opt/mansoni/app}"
@@ -304,6 +372,35 @@ jobs:
               fi
             else
               echo "[AE] WARNING: CALLS_JOIN_TOKEN_SECRET secret is not set in GitHub"
+            fi
+
+            if [ -n "${CALLS_WS_TRUSTED_PROXIES:-}" ]; then
+              ENV_FILE="$APP_DIR/.env.production"
+              touch "$ENV_FILE"
+              chmod 600 "$ENV_FILE" || true
+              if grep -q '^CALLS_WS_TRUSTED_PROXIES=' "$ENV_FILE"; then
+                sed -i "s|^CALLS_WS_TRUSTED_PROXIES=.*|CALLS_WS_TRUSTED_PROXIES=${CALLS_WS_TRUSTED_PROXIES}|" "$ENV_FILE"
+              else
+                printf '\nCALLS_WS_TRUSTED_PROXIES=%s\n' "$CALLS_WS_TRUSTED_PROXIES" >> "$ENV_FILE"
+              fi
+              echo "[AE] CALLS_WS_TRUSTED_PROXIES synced to .env.production"
+            else
+              echo "[AE] WARNING: CALLS_WS_TRUSTED_PROXIES secret is not set in GitHub"
+            fi
+
+            if [ -n "${SFU_TRUSTED_PROXIES:-}" ]; then
+              SFU_ENV_FILE="$APP_DIR/server/sfu/.env.production"
+              mkdir -p "$APP_DIR/server/sfu"
+              touch "$SFU_ENV_FILE"
+              chmod 600 "$SFU_ENV_FILE" || true
+              if grep -q '^SFU_TRUSTED_PROXIES=' "$SFU_ENV_FILE"; then
+                sed -i "s|^SFU_TRUSTED_PROXIES=.*|SFU_TRUSTED_PROXIES=${SFU_TRUSTED_PROXIES}|" "$SFU_ENV_FILE"
+              else
+                printf '\nSFU_TRUSTED_PROXIES=%s\n' "$SFU_TRUSTED_PROXIES" >> "$SFU_ENV_FILE"
+              fi
+              echo "[AE] SFU_TRUSTED_PROXIES synced to server/sfu/.env.production"
+            else
+              echo "[AE] WARNING: SFU_TRUSTED_PROXIES secret is not set in GitHub"
             fi
 
             if [ ! -f "$APP_DIR/node_modules/ioredis/package.json" ] || [ ! -f "$APP_DIR/node_modules/ajv/package.json" ] || [ ! -f "$APP_DIR/node_modules/ajv-formats/package.json" ]; then
@@ -361,6 +458,8 @@ jobs:
             systemctl status "$SERVICE" --no-pager -l | sed -n '1,40p' || true
             journalctl -u "$SERVICE" -n 40 --no-pager || true
             grep -n '^CALLS_JOIN_TOKEN_SECRET=' "$APP_DIR/.env.production" >/dev/null 2>&1 && echo "[AE] join token secret present in .env.production" || echo "[AE] join token secret missing in .env.production"
+            grep -n '^CALLS_WS_TRUSTED_PROXIES=' "$APP_DIR/.env.production" >/dev/null 2>&1 && echo "[AE] trusted proxies present in .env.production" || echo "[AE] trusted proxies missing in .env.production"
+            grep -n '^SFU_TRUSTED_PROXIES=' "$APP_DIR/server/sfu/.env.production" >/dev/null 2>&1 && echo "[AE] sfu trusted proxies present in server/sfu/.env.production" || echo "[AE] sfu trusted proxies missing in server/sfu/.env.production"
             echo "[AE] diagnostics: gateway code markers"
             grep -nE 'GATEWAY_DEFAULT_CODECS|ROOM_JOIN_OK|GET_ROUTER_RTP_CAPABILITIES|ROUTER_RTP_CAPABILITIES' "$APP_DIR/server/calls-ws/index.mjs" || true
             if command -v nginx >/dev/null 2>&1; then
@@ -390,9 +489,34 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Validate required deploy secrets
+        env:
+          CALLS_JOIN_TOKEN_SECRET: ${{ secrets.CALLS_JOIN_TOKEN_SECRET }}
+          CALLS_WS_TRUSTED_PROXIES: ${{ secrets.CALLS_WS_TRUSTED_PROXIES }}
+          SFU_TRUSTED_PROXIES: ${{ secrets.SFU_TRUSTED_PROXIES }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in CALLS_JOIN_TOKEN_SECRET CALLS_WS_TRUSTED_PROXIES SFU_TRUSTED_PROXIES VITE_SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY; do
+            value="${!name:-}"
+            if [ -z "$value" ]; then
+              echo "[verify-sfu] missing required secret: $name"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "[verify-sfu] one or more required deploy secrets are missing"
+            exit 1
+          fi
+
+      - name: Security policy smoke (calls-ws)
+        run: npm run test -- src/test/calls-ws-e2ee-caps-policy.test.ts
+
       - name: Readiness probe (RU/TR/AE)
         env:
           SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          CALLS_SMOKE_ENDPOINTS: wss://sfu-ru.mansoni.ru/ws
+          CALLS_SMOKE_ENDPOINTS: wss://sfu-ru.mansoni.ru/ws,wss://sfu-tr.mansoni.ru/ws,wss://sfu-ae.mansoni.ru/ws
         run: npm run calls:sfu:readiness

@@ -11,10 +11,10 @@
  * - initSessionStore() MUST be called once at app startup to decrypt existing data.
  *
  * BACKWARD COMPATIBILITY:
- * - If localStorage contains legacy unencrypted JSON, it is read as-is and
- *   re-encrypted transparently on the next write operation.
- * - If initSessionStore() hasn't been called, loadSessions() falls back to
- *   raw localStorage read (legacy behavior) for graceful degradation.
+ * - If localStorage contains legacy unencrypted JSON, it is read once during
+ *   init and immediately re-encrypted.
+ * - If initSessionStore() hasn't been called, loadSessions() returns empty
+ *   (fail-closed) instead of reading plaintext localStorage.
  * ============================================================================
  */
 
@@ -125,6 +125,12 @@ export async function initSessionStore(): Promise<void> {
     if (decrypted) {
       const parsed = JSON.parse(decrypted) as Record<string, AccountSession>;
       _sessionsCache = parsed ?? {};
+
+      // If the stored value was legacy plaintext JSON, re-encrypt immediately
+      // to remove at-rest plaintext exposure as soon as possible.
+      if (raw === decrypted) {
+        persistSessionsEncrypted(_sessionsCache);
+      }
     } else {
       // Decryption returned null — data corrupted or key changed.
       // Log warning and start fresh to avoid bricking the app.
@@ -133,11 +139,13 @@ export async function initSessionStore(): Promise<void> {
           "Starting with empty session store. User will need to re-authenticate.",
       );
       _sessionsCache = {};
+      localStorage.removeItem(SESSIONS_KEY);
     }
   } catch {
     // Parse error — corrupted data. Start fresh.
     console.warn("[sessionStore] Corrupted session data in localStorage. Resetting.");
     _sessionsCache = {};
+    localStorage.removeItem(SESSIONS_KEY);
   }
 
   _initialized = true;
@@ -148,28 +156,14 @@ export async function initSessionStore(): Promise<void> {
 // ---------------------------------------------------------------------------
 
 /**
- * Attempts to read sessions from raw localStorage without decryption.
- * Used as a fallback when initSessionStore() hasn't been called yet.
- * Returns empty object if the data is encrypted (can't read without async).
+ * Strict sync fallback when init was not called yet.
+ * Never reads plaintext localStorage to avoid accidental secret exposure.
  */
 function fallbackLoadRaw(): Record<string, AccountSession> {
-  const raw = localStorage.getItem(SESSIONS_KEY);
-  if (!raw) return {};
-  try {
-    const parsed = JSON.parse(raw);
-    // If it's an encrypted envelope (has 'v', 's', 'iv', 'ct' fields),
-    // we can't decrypt synchronously — return empty.
-    if (parsed && typeof parsed === "object" && "v" in parsed && "ct" in parsed) {
-      console.warn(
-        "[sessionStore] Sessions are encrypted but initSessionStore() was not called. " +
-          "Returning empty sessions. Call initSessionStore() at app startup.",
-      );
-      return {};
-    }
-    return (parsed as Record<string, AccountSession>) ?? {};
-  } catch {
-    return {};
-  }
+  console.warn(
+    "[sessionStore] initSessionStore() was not called before loadSessions(). Returning empty store.",
+  );
+  return {};
 }
 
 // ---------------------------------------------------------------------------
@@ -179,8 +173,7 @@ function fallbackLoadRaw(): Record<string, AccountSession> {
 /**
  * Returns all stored sessions. Synchronous read from in-memory cache.
  *
- * If initSessionStore() hasn't been called, falls back to raw localStorage
- * read (works for legacy unencrypted data, returns empty for encrypted data).
+ * If initSessionStore() hasn't been called, returns empty (fail-closed).
  */
 export function loadSessions(): Record<string, AccountSession> {
   if (_sessionsCache !== null) {

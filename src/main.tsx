@@ -7,6 +7,8 @@ import { initIceCacheAutoInvalidation } from "@/lib/webrtc-config";
 import { detectDevice } from "@/lib/platform/device";
 import { applyPlatformAttributes } from "@/hooks/usePlatform";
 import { ENV } from "@/lib/env";
+import { initSessionStore } from "@/auth/sessionStore";
+import { initDeviceIdentity } from "@/auth/deviceIdentity";
 
 const CHUNK_RELOAD_ONCE_KEY = "app.chunk_reload_once";
 
@@ -90,8 +92,18 @@ console.info(
   `mode=${window.__APP_BUILD__.mode}`
 );
 
-createRoot(document.getElementById("root")!).render(
-  <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
-    <App />
-  </ThemeProvider>
-);
+async function bootstrapApp(): Promise<void> {
+  try {
+    await Promise.all([initSessionStore(), initDeviceIdentity()]);
+  } catch (err) {
+    console.error("[bootstrap] Secure auth stores initialization failed", err);
+  }
+
+  createRoot(document.getElementById("root")!).render(
+    <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
+      <App />
+    </ThemeProvider>
+  );
+}
+
+void bootstrapApp();

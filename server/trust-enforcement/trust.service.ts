@@ -266,12 +266,12 @@ export class TrustService {
       };
     } catch (err) {
       console.error('[TrustService] Error making enforcement decision:', err);
-      // Fail open on error
+      // Fail-closed on error.
       return {
-        allowed: true,
-        tier: 'B',
+        allowed: false,
+        tier: 'E',
         enforced_at: new Date().toISOString(),
-        reason: 'Error checking profile, allowing access',
+        reason: 'Trust profile check failed',
       };
     }
   }

@@ -183,16 +183,16 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
       };
 
       const fetchReelsFallback = async () => {
-        const buildQuery = (withModerationFilter: boolean) => {
+        const buildQuery = () => {
           let query = (supabase as any)
             .from("reels")
             .select("*")
+            .neq("moderation_status", "blocked")
+            .eq("is_nsfw", false)
+            .eq("is_graphic_violence", false)
+            .eq("is_political_extremism", false)
             .order("created_at", { ascending: false })
             .range(offset, offset + limit - 1);
-
-          if (withModerationFilter) {
-            query = query.neq("moderation_status", "blocked");
-          }
 
           if (feedMode === "friends") {
             if (!followedAuthorIds || followedAuthorIds.length === 0) return null;
@@ -202,15 +202,10 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
           return query;
         };
 
-        const queryWithModeration = buildQuery(true);
+        const queryWithModeration = buildQuery();
         if (!queryWithModeration) return [] as any[];
 
-        let res = await queryWithModeration;
-        if (res.error && isMissingColumnError(res.error, "moderation_status")) {
-          const queryWithoutModeration = buildQuery(false);
-          if (!queryWithoutModeration) return [] as any[];
-          res = await queryWithoutModeration;
-        }
+        const res = await queryWithModeration;
         if (res.error) throw res.error;
         return (res.data || []) as any[];
       };

@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
 import { fetchUserBriefMap, resolveUserBrief } from "@/lib/users/userBriefs";
@@ -62,6 +62,10 @@ export interface ExplorePagePayload {
 
 export function useSearch() {
   const { user } = useAuth();
+  // Хранит запрос, который не удалось выполнить из-за отсутствия сессии.
+  // После восстановления сессии (SIGNED_IN / TOKEN_REFRESHED) поиск будет повторён автоматически.
+  const pendingAuthQuery = useRef<string | null>(null);
+
   const [users, setUsers] = useState<SearchUser[]>([]);
   const [explorePosts, setExplorePosts] = useState<ExplorePost[]>([]);
   const [trendingHashtags, setTrendingHashtags] = useState<TrendingHashtag[]>([]);
@@ -82,6 +86,19 @@ export function useSearch() {
       const raw = query.trim();
       const safeQuery = raw.replace(/[%_,()]/g, "");
       let effectiveData: any[] = [];
+
+      // Проверяем наличие активной сессии перед поиском.
+      // Если сессии нет — помечаем запрос для автоповтора и продолжаем попытку
+      // (RPC с SECURITY DEFINER может вернуть данные даже без uid, но fallback RLS-запрос — нет).
+      const { data: sessionCheck } = await supabase.auth.getSession();
+      const hasSession = Boolean(sessionCheck?.session?.access_token);
+      if (!hasSession) {
+        console.warn(
+          "[useSearch] Нет активной сессии — поиск может вернуть пусто. Запрос сохранён для автоповтора после восстановления сессии.",
+          { query: raw }
+        );
+        pendingAuthQuery.current = raw;
+      }
 
       // Primary path: server-side RPC with SECURITY DEFINER.
       // This keeps search working even when profiles RLS differs across environments.
@@ -123,6 +140,11 @@ export function useSearch() {
         }
       }
 
+      // Если результаты получены — снимаем пометку ожидания для этого запроса.
+      if (effectiveData.length > 0 && pendingAuthQuery.current === raw) {
+        pendingAuthQuery.current = null;
+      }
+
       // Check if current user is following these users
       let followingIds: string[] = [];
       if (user) {
@@ -157,6 +179,29 @@ export function useSearch() {
       setLoading(false);
     }
   }, [user]);
+
+  // Автоповтор поиска после восстановления сессии.
+  // Срабатывает на SIGNED_IN и TOKEN_REFRESHED — оба события означают наличие валидного токена.
+  useEffect(() => {
+    const onAuthStateChange = (supabase as any)?.auth?.onAuthStateChange;
+    if (typeof onAuthStateChange !== "function") {
+      return;
+    }
+
+    const { data: { subscription } } = onAuthStateChange((event: string, session: any) => {
+      if (
+        (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") &&
+        session &&
+        pendingAuthQuery.current
+      ) {
+        const query = pendingAuthQuery.current;
+        pendingAuthQuery.current = null;
+        console.info("[useSearch] Сессия восстановлена, повторяю поиск:", query);
+        searchUsers(query);
+      }
+    });
+    return () => subscription.unsubscribe();
+  }, [searchUsers]);
 
   const fetchExplorePosts = useCallback(async () => {
     setExploring(true);

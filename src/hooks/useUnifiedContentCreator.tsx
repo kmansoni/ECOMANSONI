@@ -4,6 +4,17 @@ import { useAuth } from '@/hooks/useAuth';
 import type { ContentType } from './useMediaEditor';
 import { uploadMedia } from '@/lib/mediaUpload';
 
+function safeRandomUUID(): string {
+  try {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+  } catch {
+    // Fall through.
+  }
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
 /**
  * Unified Content Creator Hook
  * Handles creation for Stories, Posts, Reels, and Lives
@@ -40,36 +51,18 @@ interface UseUnifiedContentCreatorReturn {
   error: string | null;
   activeContentType: ContentType;
   setActiveContentType: (type: ContentType) => void;
-  
-  // Generic methods
-  createContent: (options: ContentCreationOptions) => Promise<UnifiedContent | null>;
-  
-  // Type-specific upload handlers
-  uploadStoryMedia: (file: File, caption?: string) => Promise<UnifiedContent | null>;
-  uploadPostMedia: (file: File, caption?: string) => Promise<UnifiedContent | null>;
-  uploadReelMedia: (file: File, caption?: string) => Promise<UnifiedContent | null>;
-  createLiveSession: (title: string, category: string, thumbnailUrl?: string) => Promise<UnifiedContent | null>;
-  
-  // Utilities
-  getStorageBucket: (contentType: ContentType) => string;
 }
 
 export function useUnifiedContentCreator(): UseUnifiedContentCreatorReturn {
   const { user } = useAuth();
-  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [activeContentType, setActiveContentType] = useState<ContentType>('post');
+        const { data: post, error: postError } = await (supabase as any).rpc('create_post_v1', {
+          p_content: caption || null,
+          p_visibility: 'public',
+          p_media: [{ url: publicUrl, type: mediaType }],
+        });
 
-  const getStorageBucket = useCallback((contentType: ContentType): string => {
-    switch (contentType) {
-      case 'story':
-        return 'stories-media';
-      case 'post':
-        return 'post-media';
-      case 'reel':
-        return 'reels-media';
-      case 'live':
-        return 'live-media'; // For live thumbnails
+        if (postError) throw postError;
       default:
         return 'post-media';
     }
@@ -199,21 +192,21 @@ export function useUnifiedContentCreator(): UseUnifiedContentCreatorReturn {
       setError(null);
 
       try {
+        const clientPublishId = safeRandomUUID();
+        const ext = file.name.split('.').pop() ?? 'mp4';
+        const objectPath = `${user.id}/reels/${clientPublishId}/original.${ext.toLowerCase()}`;
+
         // Upload video to media server
-        const uploadResult = await uploadMedia(file, { bucket: 'reels-media' });
+        const uploadResult = await uploadMedia(file, { bucket: 'reels-media', path: objectPath });
         const publicUrl = uploadResult.url;
 
-        // Create reel record
-        const { data: reel, error: reelError } = await (supabase
-          .from('reels' as any)
-          .insert({
-            author_id: user.id,
-            video_url: publicUrl,
-            caption: caption || null,
-            is_published: true,
-          })
-          .select()
-          .single() as any);
+        const { data: reel, error: reelError } = await (supabase as any).rpc('create_reel_v1', {
+          p_client_publish_id: clientPublishId,
+          p_video_url: publicUrl,
+          p_thumbnail_url: null,
+          p_description: caption || null,
+          p_music_title: null,
+        });
 
         if (reelError) throw reelError;
 

@@ -265,6 +265,7 @@ export interface E2EECapsPayload {
   roomId?: string;
   insertableStreams: boolean;
   sframe?: boolean;
+  doubleRatchet?: boolean;
   supportedCipherSuites?: string[];
 }
 
@@ -303,6 +304,7 @@ export interface KeyAckPayload {
   roomId: string;
   epoch: number;
   fromDeviceId: string;
+  refId?: string;
 }
 
 // ----------- Server response payloads -----------

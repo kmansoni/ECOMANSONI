@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "version": "1.0.0",
+  "scope": "sfu",
+  "capacity": {
+    "maxParticipantsPerRoom": 50
+  },
+  "media": {
+    "requiredTypes": ["audio", "video"]
+  },
+  "e2ee": {
+    "frameEncryption": "SFrame",
+    "cipher": "AES-128-GCM",
+    "keyExchange": {
+      "algorithm": "ECDH",
+      "curve": "P-256"
+    },
+    "identitySignature": {
+      "algorithm": "ECDSA",
+      "curve": "P-256"
+    }
+  },
+  "slo": {
+    "successRateMin": 0.99,
+    "joinLatencyP95MaxMs": 5000,
+    "rekeyAbortRateMax": 0.005
+  }
+}

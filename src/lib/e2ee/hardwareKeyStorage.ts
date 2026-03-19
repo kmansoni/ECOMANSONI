@@ -21,6 +21,45 @@ export interface HardwareStoreRecord {
 }
 
 const SOFT_PREFIX = 'e2ee_hw_soft:';
+const softMemoryStore = new Map<string, string>();
+
+function softStoreSet(keyId: string, wrappedKeyB64: string): void {
+  softMemoryStore.set(keyId, wrappedKeyB64);
+  // Best-effort cleanup of legacy at-rest localStorage footprint.
+  try {
+    localStorage.removeItem(`${SOFT_PREFIX}${keyId}`);
+  } catch {
+    // Ignore storage unavailability.
+  }
+}
+
+function softStoreGet(keyId: string): string | null {
+  const inMemory = softMemoryStore.get(keyId);
+  if (inMemory) return inMemory;
+
+  // One-way migration from legacy localStorage to memory-only store.
+  try {
+    const legacy = localStorage.getItem(`${SOFT_PREFIX}${keyId}`);
+    if (legacy) {
+      softMemoryStore.set(keyId, legacy);
+      localStorage.removeItem(`${SOFT_PREFIX}${keyId}`);
+      return legacy;
+    }
+  } catch {
+    // Ignore storage unavailability.
+  }
+
+  return null;
+}
+
+function softStoreRemove(keyId: string): void {
+  softMemoryStore.delete(keyId);
+  try {
+    localStorage.removeItem(`${SOFT_PREFIX}${keyId}`);
+  } catch {
+    // Ignore storage unavailability.
+  }
+}
 
 async function tryLoadCapacitorPlugin(name: string): Promise<any | null> {
   try {
@@ -72,7 +111,7 @@ export class HardwareKeyStorage {
       }
     }
 
-    localStorage.setItem(`${SOFT_PREFIX}${record.keyId}`, record.wrappedKeyB64);
+    softStoreSet(record.keyId, record.wrappedKeyB64);
   }
 
   async get(keyId: string): Promise<HardwareStoreRecord | null> {
@@ -94,7 +133,7 @@ export class HardwareKeyStorage {
       }
     }
 
-    const soft = localStorage.getItem(`${SOFT_PREFIX}${keyId}`);
+    const soft = softStoreGet(keyId);
     if (!soft) return null;
     return { keyId, wrappedKeyB64: soft };
   }
@@ -116,7 +155,7 @@ export class HardwareKeyStorage {
       }
     }
 
-    localStorage.removeItem(`${SOFT_PREFIX}${keyId}`);
+    softStoreRemove(keyId);
   }
 
   async biometricGate(timeoutMs = 30_000): Promise<boolean> {

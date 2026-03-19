@@ -1247,7 +1247,9 @@ export function useMessages(conversationId: string | null) {
 
     const probe = getLastChatSchemaProbe();
     if (probe && probe.ok === false) {
-      return { error: 'Chat service misconfigured' };
+      logger.warn("[Chat] schema probe reported not-ok during media send; continuing", {
+        probe,
+      });
     }
 
     try {
@@ -1398,8 +1400,9 @@ export function useCreateConversation() {
 
     const probe = getLastChatSchemaProbe();
     if (probe && probe.ok === false) {
-      toast.error("Chat service misconfigured: DM creation unavailable.");
-      return null;
+      logger.warn("[Chat] schema probe reported not-ok during DM creation; continuing", {
+        probe,
+      });
     }
 
     try {

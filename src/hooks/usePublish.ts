@@ -10,14 +10,25 @@ export interface MediaItem {
   height?: number;
 }
 
+function safeRandomUUID(): string {
+  try {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return crypto.randomUUID();
+    }
+  } catch {
+    // Fall through to timestamp-based fallback.
+  }
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
 async function uploadFile(
   file: File,
   bucket: string,
-  _path: string,
+  path: string,
   onProgress?: (pct: number) => void,
 ): Promise<string> {
   onProgress?.(10);
-  const result = await uploadMedia(file, { bucket: bucket as MediaBucket });
+  const result = await uploadMedia(file, { bucket: bucket as MediaBucket, path });
   onProgress?.(100);
   return result.url;
 }
@@ -61,16 +72,13 @@ export function usePublish() {
       setProgress(80);
 
       const tags = hashtags ?? extractHashtags(content);
+      const normalizedContent = [content, ...tags.map((tag) => `#${tag}`)].filter(Boolean).join(" ").trim() || content;
 
-      const { data, error } = await (supabase as any).from("posts").insert({
-        author_id: user.id,
-        content,
-        media: mediaItems,
-        location: location ?? null,
-        tagged_users: taggedUsers ?? [],
-        hashtags: tags,
-        visibility,
-      }).select().single();
+      const { data, error } = await (supabase as any).rpc("create_post_v1", {
+        p_content: normalizedContent,
+        p_visibility: visibility,
+        p_media: mediaItems,
+      });
 
       if (error) throw error;
       setProgress(100);
@@ -132,20 +140,23 @@ export function usePublish() {
       if (!user) throw new Error("Не авторизован");
 
       const ext = videoFile.name.split(".").pop() ?? "mp4";
-      const path = `reels/${user.id}/${Date.now()}.${ext}`;
-      const videoUrl = await uploadFile(videoFile, "media", path, (p) => {
+      const clientPublishId = safeRandomUUID();
+      const path = `${user.id}/reels/${clientPublishId}/original.${ext.toLowerCase()}`;
+      const videoUrl = await uploadFile(videoFile, "reels-media", path, (p) => {
         setProgress(Math.round(p * 0.9));
       });
 
       const tags = hashtags ?? extractHashtags(description);
+      const normalizedDescription = [description, ...tags.map((tag) => `#${tag}`)].filter(Boolean).join(" ").trim() || description;
+      void coverTimestamp;
 
-      const { data, error } = await (supabase as any).from("reels").insert({
-        author_id: user.id,
-        video_url: videoUrl,
-        description,
-        hashtags: tags,
-        cover_timestamp: coverTimestamp ?? 0,
-      }).select().single();
+      const { data, error } = await (supabase as any).rpc("create_reel_v1", {
+        p_client_publish_id: clientPublishId,
+        p_video_url: videoUrl,
+        p_thumbnail_url: null,
+        p_description: normalizedDescription,
+        p_music_title: null,
+      });
 
       if (error) throw error;
       setProgress(100);

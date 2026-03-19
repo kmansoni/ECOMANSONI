@@ -29,7 +29,7 @@ import { usePullDownExpand } from "@/hooks/usePullDownExpand";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { sha256Hex } from "@/lib/passcode";
+import { pbkdf2Hash, verifyPasscodeHash } from "@/lib/passcode";
 import { useArchivedChats } from "@/hooks/useArchivedChats";
 import { usePinnedChats } from "@/hooks/usePinnedChats";
 import { useE2EEncryption } from "@/hooks/useE2EEncryption";
@@ -1044,11 +1044,28 @@ export function ChatsPage() {
                           const code = window.prompt("Введите пароль папки");
                           if (!code) return;
                           try {
-                            const hash = await sha256Hex(code);
-                            if (hash !== t.passcode_hash) {
+                            const verdict = await verifyPasscodeHash(code, user?.id ?? "", t.passcode_hash);
+                            if (!verdict.match) {
                               toast.error("Неверный пароль");
                               return;
                             }
+
+                            if (verdict.legacy && user?.id) {
+                              try {
+                                const upgradedHash = await pbkdf2Hash(code);
+                                await supabase
+                                  .from("chat_folders")
+                                  .update({ passcode_hash: upgradedHash })
+                                  .eq("id", t.id)
+                                  .eq("user_id", user.id);
+                              } catch (upgradeError) {
+                                logger.warn("[ChatsPage] Legacy folder passcode hash upgrade failed", {
+                                  tabId: t.id,
+                                  error: upgradeError,
+                                });
+                              }
+                            }
+
                             setUnlockedTabs((prev) => {
                               const next = new Set(prev);
                               next.add(t.id);

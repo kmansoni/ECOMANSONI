@@ -79,7 +79,7 @@ import { EmojiStickerPicker } from "@/components/chat/EmojiStickerPicker";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Slider } from "@/components/ui/slider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { sha256Hex } from "@/lib/passcode";
+import { pbkdf2Hash } from "@/lib/passcode";
 import { revokeOtherSessions, revokeSessionById } from "@/lib/sessions";
 import { useUserSessions } from "@/hooks/useUserSessions";
 import { useNotificationPreferences, type NotificationCategory } from "@/hooks/useNotificationPreferences";
@@ -706,7 +706,7 @@ export function SettingsPage() {
       let passcode_hash: string | null = existing?.passcode_hash ?? null;
       if (editingPasscodeEnabled) {
         if (editingPasscode.trim().length > 0) {
-          passcode_hash = await sha256Hex(editingPasscode.trim());
+          passcode_hash = await pbkdf2Hash(editingPasscode.trim());
         } else if (!editingHasExistingPasscode) {
           // enabled but no existing and no new code
           passcode_hash = null;

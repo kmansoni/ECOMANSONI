@@ -30,6 +30,43 @@ export class RateLimiter {
   private redis: Redis.Redis | null;
   private redisEnabled: boolean;
   private readonly REDIS_PREFIX = 'rate_limit:';
+  private readonly TOKEN_BUCKET_LUA = `
+local tokensKey = KEYS[1]
+local tsKey = KEYS[2]
+
+local now = tonumber(ARGV[1])
+local limitValue = tonumber(ARGV[2])
+local windowSeconds = tonumber(ARGV[3])
+local burst = tonumber(ARGV[4])
+local cost = tonumber(ARGV[5])
+
+local tokens = tonumber(redis.call('GET', tokensKey))
+local lastTs = tonumber(redis.call('GET', tsKey))
+
+if tokens == nil then
+  tokens = limitValue
+end
+if lastTs == nil then
+  lastTs = now
+end
+
+local refillRate = limitValue / windowSeconds
+local elapsed = math.max(0, now - lastTs)
+local refilled = elapsed * refillRate
+local current = math.min(tokens + refilled, burst)
+
+local allowed = 0
+local newTokens = current
+if current >= cost then
+  allowed = 1
+  newTokens = current - cost
+end
+
+redis.call('SETEX', tokensKey, windowSeconds, tostring(newTokens))
+redis.call('SETEX', tsKey, windowSeconds, tostring(now))
+
+return { allowed, tostring(current), tostring(newTokens), tostring(lastTs), tostring(refillRate) }
+`;
 
   constructor(
     supabaseUrl: string,
@@ -131,11 +168,12 @@ export class RateLimiter {
       );
     } catch (err) {
       console.error('[RateLimiter] Error checking rate limit:', err);
-      // Fail open: allow on error
+      // Fail-closed: deny when limiter is unavailable.
       return {
-        allowed: true,
-        tokens_available: config.limit_value,
+        allowed: false,
+        tokens_available: 0,
         tokens_required: costPerAction,
+        wait_ms: Math.max(1000, config.window_seconds * 1000),
       };
     }
   }
@@ -159,34 +197,26 @@ export class RateLimiter {
     const tokensKey = `${key}:tokens`;
     const tsKey = `${key}:ts`;
 
-    // Use Redis EVALSHA or Lua script for atomic operation
-    // For simplicity: fetch, compute, set (note: race condition possible)
-    const [tokensStr, lastTsStr] = await Promise.all([
-      this.redis!.get(tokensKey),
-      this.redis!.get(tsKey),
-    ]);
-
     const now = Date.now() / 1000; // unix seconds
-    const lastTs = lastTsStr ? parseFloat(lastTsStr) : now;
-    const elapsedSecs = now - lastTs;
+    const burst = config.burst || config.limit_value;
+    const result = (await this.redis!.eval(
+      this.TOKEN_BUCKET_LUA,
+      2,
+      tokensKey,
+      tsKey,
+      now.toString(),
+      config.limit_value.toString(),
+      config.window_seconds.toString(),
+      burst.toString(),
+      costPerAction.toString(),
+    )) as [number | string, string, string, string, string];
 
-    // Compute refilled tokens
-    const refillRate = config.limit_value / config.window_seconds;
-    const refilled = elapsedSecs * refillRate;
-    const currentTokens = Math.min(
-      (tokensStr ? parseFloat(tokensStr) : config.limit_value) + refilled,
-      config.burst || config.limit_value
-    );
-
-    const allowed = currentTokens >= costPerAction;
-    const newTokens = allowed ? currentTokens - costPerAction : currentTokens;
+    const allowed = Number(result[0]) === 1;
+    const currentTokens = Number(result[1]);
+    const newTokens = Number(result[2]);
+    const lastTs = Number(result[3]);
+    const refillRate = Number(result[4]);
     const remaining = Math.floor(newTokens);
-
-    // Update state with TTL window
-    await Promise.all([
-      this.redis!.setex(tokensKey, config.window_seconds, newTokens.toString()),
-      this.redis!.setex(tsKey, config.window_seconds, now.toString()),
-    ]);
 
     const resetAt = new Date(
       (lastTs + config.window_seconds) * 1000

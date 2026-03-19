@@ -26,7 +26,7 @@ services:
       - ENV=production
       - CALLS_WS_PORT=8787
       - REDIS_URL=redis://redis:6379
-      - CALLS_WS_TRUSTED_PROXIES=
+      - CALLS_WS_TRUSTED_PROXIES=${CALLS_WS_TRUSTED_PROXIES:-127.0.0.1}
     env_file:
       - ../../.env.production
     depends_on:
@@ -64,10 +64,12 @@ services:
       - SFU_ENABLE_MEDIASOUP=1
       - SFU_REQUIRE_MEDIASOUP=1
       - SFU_REQUIRE_SFRAME=1
+      - SFU_REQUIRE_SECURE_WS=1
       - SFU_E2EE_REQUIRED=1
       - E2EE_REQUIRED_DEFAULT=true
       - SFU_STRICT_VALIDATION=1
       - SFU_INSECURE_DEV_MODE=0
+      - SFU_TRUSTED_PROXIES=${SFU_TRUSTED_PROXIES:-127.0.0.1}
       - SFU_KEY_PACKAGE_RATE=50
       - SFU_REKEY_BEGIN_RATE=5
       - SFU_WORKER_COUNT=auto

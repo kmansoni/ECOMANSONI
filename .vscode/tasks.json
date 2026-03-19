@@ -617,6 +617,30 @@
 				"c:\\Users\\manso\\Desktop\\разработка\\your-ai-companion-main\\scripts\\.temp\\verify-invite-functions.sql"
 			],
 			"isBackground": false
+		},
+		{
+			"label": "Verify wsclient reliability",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"--no-deprecation",
+				"./node_modules/vitest/vitest.mjs",
+				"run",
+				"src/test/calls-v2-wsclient-reliability.test.ts"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Calls: trigger empty redeploy commit",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"commit",
+				"--allow-empty",
+				"-m",
+				"chore: trigger sfu redeploy"
+			],
+			"isBackground": false
 		}
 	]
 }

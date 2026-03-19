@@ -25,6 +25,10 @@ if (CALLS_DEV_INSECURE_AUTH) {
 const MAX_PAYLOAD_BYTES = safeParseInt(process.env.CALLS_WS_MAX_PAYLOAD_BYTES, 65536);
 const JWT_REVALIDATE_SEC = safeParseInt(process.env.CALLS_WS_JWT_REVALIDATE_SEC, 60);
 const MAX_CONNECTIONS_PER_IP = safeParseInt(process.env.CALLS_WS_MAX_CONNECTIONS_PER_IP, 10);
+const MAX_PARTICIPANTS_PER_ROOM = Math.max(2, safeParseInt(process.env.CALLS_MAX_PARTICIPANTS_PER_ROOM, 50));
+const REQUIRE_SFRAME_CAPS = process.env.CALLS_REQUIRE_SFRAME_CAPS !== "0";
+const REQUIRE_DOUBLE_RATCHET_CAPS = process.env.CALLS_REQUIRE_DOUBLE_RATCHET_CAPS !== "0";
+const REQUIRE_SECURE_TRANSPORT = IS_PROD_LIKE && process.env.CALLS_WS_REQUIRE_SECURE_TRANSPORT !== "0";
 
 // Default RTP codecs used in ROOM_JOIN_OK and GET_ROUTER_RTP_CAPABILITIES responses.
 // When a real mediasoup SFU is fronted by this gateway, the SFU should supply these
@@ -56,10 +60,6 @@ const GATEWAY_DEFAULT_CODECS = [
 const TRUSTED_PROXIES = new Set(
   (process.env.CALLS_WS_TRUSTED_PROXIES || "").split(",").map((s) => s.trim()).filter(Boolean)
 );
-
-const EMERGENCY_SUPABASE_URL = "https://lfkbgnbjxskspsownvjm.supabase.co";
-const EMERGENCY_SUPABASE_PUBLISHABLE_KEY =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxma2JnbmJqeHNrc3Bzb3dudmptIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE0NDI0NTYsImV4cCI6MjA4NzAxODQ1Nn0.WNubMc1s9TA91aT_txY850x2rWJ1ayxiTs7Rq6Do21k";
 
 let cachedSupabaseEnv = null;
 
@@ -118,11 +118,7 @@ function resolveSupabaseAuthEnv() {
   };
 
   if (!cachedSupabaseEnv.supabaseUrl || !cachedSupabaseEnv.supabaseAnonKey) {
-    cachedSupabaseEnv = {
-      supabaseUrl: cachedSupabaseEnv.supabaseUrl || EMERGENCY_SUPABASE_URL,
-      supabaseAnonKey: cachedSupabaseEnv.supabaseAnonKey || EMERGENCY_SUPABASE_PUBLISHABLE_KEY,
-    };
-    console.warn("[calls-ws] Missing Supabase auth env vars, using emergency fallback credentials");
+    console.error("[calls-ws] Missing Supabase auth env vars; auth validation is fail-closed");
   }
 
   return cachedSupabaseEnv;
@@ -148,6 +144,31 @@ function getClientIp(req) {
     return xff || normalizedRemote;
   }
   return normalizedRemote;
+}
+
+/**
+ * Requires TLS at the gateway boundary in production-like mode.
+ * Accepts either direct TLS socket or trusted x-forwarded-proto=https/wss.
+ *
+ * @param {import("node:http").IncomingMessage} req
+ * @returns {boolean}
+ */
+function isSecureTransport(req) {
+  if (req.socket?.encrypted === true) return true;
+
+  const remoteAddr = req.socket?.remoteAddress ?? "";
+  const normalizedRemote = remoteAddr.replace(/^::ffff:/i, "");
+  if (!TRUSTED_PROXIES.has(normalizedRemote)) {
+    return false;
+  }
+
+  const xfpRaw = req.headers["x-forwarded-proto"];
+  if (!xfpRaw) return false;
+  const proto = String(Array.isArray(xfpRaw) ? xfpRaw[0] : xfpRaw)
+    .split(",")[0]
+    .trim()
+    .toLowerCase();
+  return proto === "https" || proto === "wss";
 }
 const CALLS_JOIN_TOKEN_TTL_SEC = Math.max(30, Number(process.env.CALLS_JOIN_TOKEN_TTL_SEC ?? "600"));
 const KEY_TTL_MS = Math.max(15_000, Number(process.env.CALLS_KEY_TTL_MS ?? "120000"));
@@ -454,6 +475,11 @@ const jwtGuard = createJwtGuard({
 });
 
 wss.on("connection", (ws, req) => {
+  if (REQUIRE_SECURE_TRANSPORT && !isSecureTransport(req)) {
+    ws.close(4003, "SECURE_TRANSPORT_REQUIRED");
+    return;
+  }
+
   // --- Per-IP connection limit ---
   // C-2: Use getClientIp() which enforces trusted-proxy validation.
   const clientIp = getClientIp(req);
@@ -691,6 +717,27 @@ wss.on("connection", (ws, req) => {
           ack(ws, frame.msgId, false, wsError("UNAUTHENTICATED", "AUTH required", {}, true));
           return;
         }
+        const insertableStreams = frame.payload?.insertableStreams === true;
+        const sframe = frame.payload?.sframe === true;
+        const doubleRatchet =
+          frame.payload?.doubleRatchet === true ||
+          (Array.isArray(frame.payload?.supportedCipherSuites) &&
+            frame.payload.supportedCipherSuites.some((suite) =>
+              suite === "DOUBLE_RATCHET_P256_AES128GCM" || suite === "DR_P256_HKDF_SHA256_AES128GCM"
+            ));
+        if (REQUIRE_SFRAME_CAPS && (!insertableStreams || !sframe)) {
+          ack(ws, frame.msgId, false, wsError("E2EE_POLICY_VIOLATION", "SFrame + Insertable Streams required", {
+            insertableStreams,
+            sframe,
+          }, false));
+          return;
+        }
+        if (REQUIRE_DOUBLE_RATCHET_CAPS && !doubleRatchet) {
+          ack(ws, frame.msgId, false, wsError("E2EE_POLICY_VIOLATION", "Double Ratchet capability required", {
+            doubleRatchet,
+          }, false));
+          return;
+        }
         return ack(ws, frame.msgId, true);
       }
 
@@ -770,6 +817,18 @@ wss.on("connection", (ws, req) => {
           !allowedUserIds.includes(conn.userId)
         ) {
           ack(ws, frame.msgId, false, wsError("UNAUTHORIZED", "Invalid join token", { roomId }, false));
+          return;
+        }
+        const joinTokenExpMs = Number(joinPayload?.exp ?? 0) * 1000;
+        const marked = typeof store.markJoinTokenUsed === "function"
+          ? await store.markJoinTokenUsed(joinPayload.jti, joinTokenExpMs)
+          : true;
+        if (!marked) {
+          ack(ws, frame.msgId, false, wsError("REPLAY_DETECTED", "Join token replay detected", { roomId }, false));
+          return;
+        }
+        if (room.peers.size >= MAX_PARTICIPANTS_PER_ROOM) {
+          ack(ws, frame.msgId, false, wsError("ROOM_FULL", `Max participants exceeded (${MAX_PARTICIPANTS_PER_ROOM})`, { roomId }, false));
           return;
         }
         const deviceId = frame.payload?.deviceId ?? conn.deviceId ?? `dev_${uuid().slice(0, 6)}`;

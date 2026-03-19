@@ -23,6 +23,7 @@ export interface TrustMiddlewareConfig {
   getActorContext?: (req: Request) => { type: ActorType; id: string } | null;
   getRateLimitConfig?: (action: string) => RateLimitConfig | null;
   logDecisions?: boolean;
+  allowAnonymous?: boolean;
 }
 
 /**
@@ -44,14 +45,20 @@ export function createTrustMiddleware(config: TrustMiddlewareConfig = {}) {
   const rateLimiter = config.rateLimiter || getRateLimiter();
   const getActorContext = config.getActorContext || defaultGetActorContext;
   const logDecisions = config.logDecisions !== false;
+  const allowAnonymous = config.allowAnonymous === true;
 
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
       // 1. Extract actor context
       const actor = getActorContext(req);
       if (!actor) {
-        // No authenticated actor, skip enforcement
-        return next();
+        // SECURITY: fail-closed by default for protected endpoints.
+        // Public routes can explicitly opt out with allowAnonymous=true.
+        if (allowAnonymous) return next();
+        return res.status(401).json({
+          error: 'unauthorized',
+          message: 'Authentication is required.',
+        });
       }
 
       // 2. Build trust context

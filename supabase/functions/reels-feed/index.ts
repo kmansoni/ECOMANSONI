@@ -164,8 +164,8 @@ serve(async (req: Request) => {
     // This runs before the feed query so newly inserted rows can be returned.
     await syncStorageObjectsToReels();
 
-    // Best-effort moderation filter: if column exists, exclude blocked.
-    // We use SELECT * to stay compatible with evolving schema.
+    // Moderation is mandatory on the server read path. If the moderation
+    // columns are missing, fail closed instead of returning unfiltered reels.
     let query: any = supabase
       .from("reels")
       .select("*")
@@ -176,13 +176,11 @@ serve(async (req: Request) => {
       query = query.in("author_id", authorIds);
     }
 
-    // Try with moderation_status filter first; if column doesn't exist, retry without it.
-    const withModeration = query.neq("moderation_status", "blocked");
-    let res = await withModeration;
-
-    if (res.error && String(res.error.code ?? "") === "42703") {
-      res = await query;
-    }
+    const res = await query
+      .neq("moderation_status", "blocked")
+      .eq("is_nsfw", false)
+      .eq("is_graphic_violence", false)
+      .eq("is_political_extremism", false);
 
     if (res.error) {
       console.error("[reels-feed] query error:", res.error);

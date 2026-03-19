@@ -100,6 +100,7 @@ const CALLS_V2_WS_URLS = SHOULD_USE_PROD_SFU_DEFAULTS
   : CALLS_V2_WS_URLS_RAW;
 const REKEY_INTERVAL_MS = Math.max(30_000, Number(import.meta.env.VITE_CALLS_V2_REKEY_INTERVAL_MS ?? "120000"));
 const FRAME_E2EE_ADVERTISE_SFRAME = import.meta.env.VITE_CALLS_FRAME_E2EE_ADVERTISE_SFRAME === "true";
+const REQUIRE_SFRAME = import.meta.env.PROD || import.meta.env.VITE_CALLS_REQUIRE_SFRAME === "true";
 const MEDIA_BOOTSTRAP_RETRY_BACKOFF_MS = 10_000;
 
 // ─── Pure utility functions ────────────────────────────────────────────────────
@@ -729,9 +730,15 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       logger.info("[VideoCallContext] calls-v2 hello:ok", { deviceId });
       await client.auth({ accessToken });
       logger.info("[VideoCallContext] calls-v2 auth:ok");
+      const hasInsertableStreams = hasInsertableStreamsSupport();
+      if (REQUIRE_SFRAME && !hasInsertableStreams) {
+        throw new Error("calls_v2_e2ee_media_unsupported: Insertable Streams required for SFrame");
+      }
       await client.e2eeCaps({
-        insertableStreams: hasInsertableStreamsSupport(),
-        sframe: FRAME_E2EE_ADVERTISE_SFRAME && hasInsertableStreamsSupport(),
+        insertableStreams: hasInsertableStreams,
+        sframe: (REQUIRE_SFRAME || FRAME_E2EE_ADVERTISE_SFRAME) && hasInsertableStreams,
+        doubleRatchet: true,
+        supportedCipherSuites: ["DOUBLE_RATCHET_P256_AES128GCM"],
       });
       logger.info("[VideoCallContext] calls-v2 e2ee_caps:ok");
 
@@ -936,7 +943,9 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         if (!Number.isFinite(epoch) || epoch < 0) return;
 
         // Phase C: Anti-replay + epoch gating via RekeyStateMachine
-        const msgId = (frame.payload as Record<string, unknown> | undefined)?.messageId as string | undefined;
+        const msgId =
+          frame.msgId ??
+          ((frame.payload as Record<string, unknown> | undefined)?.messageId as string | undefined);
         const isValidPkg = rekeyMachineRef.current?.validateKeyPackage(epoch, msgId);
         if (isValidPkg === false) {
           logger.warn("[VideoCallContext] KEY_PACKAGE rejected: anti-replay or stale epoch", { epoch, msgId });
@@ -1025,6 +1034,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
               roomId,
               epoch,
               fromDeviceId: myDeviceId,
+              refId: frame.msgId,
             }).catch((error) => {
               logger.warn("[VideoCallContext] KEY_ACK send failed", error);
             });
@@ -1072,7 +1082,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         const fromDeviceId = payload?.fromDeviceId as string | undefined;
         const epochRaw = payload?.epoch;
         const epoch = typeof epochRaw === "number" ? epochRaw : Number(epochRaw ?? 0);
-        const msgId = payload?.messageId as string | undefined;
+        const msgId = frame.msgId ?? (payload?.messageId as string | undefined);
         if (fromDeviceId && Number.isFinite(epoch)) {
           rekeyMachineRef.current?.onKeyAckReceived(fromDeviceId, epoch, msgId);
         }

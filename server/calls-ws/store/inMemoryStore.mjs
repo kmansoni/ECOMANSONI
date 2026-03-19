@@ -1,6 +1,16 @@
 export function createInMemoryStore({ degraded = true } = {}) {
   const membersByCall = new Map(); // callId -> Set(deviceId)
   const roomVersionByCall = new Map(); // callId -> number
+  const usedJoinTokenJti = new Map(); // jti -> expMs
+
+  function pruneJoinTokenJti() {
+    const now = Date.now();
+    for (const [jti, expMs] of usedJoinTokenJti.entries()) {
+      if (!expMs || expMs <= now) {
+        usedJoinTokenJti.delete(jti);
+      }
+    }
+  }
 
   return {
     kind: "in-memory",
@@ -81,6 +91,14 @@ export function createInMemoryStore({ degraded = true } = {}) {
 
     async getRekeyBeginId() {
       return null;
+    },
+
+    async markJoinTokenUsed(jti, expMs) {
+      if (typeof jti !== "string" || jti.length < 8) return false;
+      pruneJoinTokenJti();
+      if (usedJoinTokenJti.has(jti)) return false;
+      usedJoinTokenJti.set(jti, Number(expMs) || Date.now() + 60_000);
+      return true;
     },
   };
 }

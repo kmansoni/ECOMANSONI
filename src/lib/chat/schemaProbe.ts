@@ -49,17 +49,21 @@ export async function runChatSchemaProbeOnce(): Promise<ChatSchemaProbeV2 | null
         if (import.meta.env.DEV) {
           console.warn("[ChatSchemaProbe] RPC unavailable for current env/session", error);
         }
+        // Expected probe errors are not a proven schema mismatch.
+        // Do not cache a hard failure because core chat RPCs may still be available.
+        return null;
       } else {
         console.error("[ChatSchemaProbe] RPC error", error);
+        // Unknown transport/runtime errors should not globally disable chat.
+        return null;
       }
-      lastProbe = { ok: false };
-      return lastProbe;
     }
 
     if (data && typeof data === "object") {
       lastProbe = data as ChatSchemaProbeV2;
     } else {
-      lastProbe = { ok: false };
+      // Malformed/empty payload is inconclusive; keep probe state neutral.
+      return null;
     }
 
     if (import.meta.env.DEV) {
@@ -71,7 +75,7 @@ export async function runChatSchemaProbeOnce(): Promise<ChatSchemaProbeV2 | null
     if (import.meta.env.DEV) {
       console.warn("[ChatSchemaProbe] exception", e);
     }
-    lastProbe = { ok: false };
-    return lastProbe;
+    // Exceptions (network, auth race, transient failures) must not disable chat.
+    return null;
   }
 }

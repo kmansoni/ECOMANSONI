@@ -203,7 +203,9 @@ const App = () => {
 
     void (async () => {
       const probe = await runChatSchemaProbeOnce();
-      if (probe && probe.ok === false) {
+      const isConfirmedSchemaMismatch =
+        probe?.ok === false && probe?.required_objects_present === false;
+      if (isConfirmedSchemaMismatch) {
         toast.error("Chat service misconfigured (schema probe failed).", {
           description: "Missing chat RPCs/migrations. Chats are disabled until fixed.",
         });

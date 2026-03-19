@@ -58,6 +58,10 @@ export async function createRedisStore({
     return `rekey:beginId:${callId}:${epoch}`;
   }
 
+  function joinTokenJtiKey(jti) {
+    return `join:jti:${jti}`;
+  }
+
   const deliverLua = `
     if redis.call("EXISTS", KEYS[1]) == 1 then
       return {0, "DUP"}
@@ -242,6 +246,15 @@ export async function createRedisStore({
 
     async getRekeyBeginId(callId, epoch) {
       return await redis.get(rekeyBeginIdKey(callId, epoch));
+    },
+
+    async markJoinTokenUsed(jti, expMs) {
+      if (typeof jti !== "string" || jti.length < 8) return false;
+      const now = Date.now();
+      const ttlSec = Math.max(1, Math.ceil((Number(expMs) - now) / 1000));
+      const key = joinTokenJtiKey(jti);
+      const res = await redis.set(key, "1", "EX", ttlSec, "NX");
+      return res === "OK";
     },
 
     async close() {
