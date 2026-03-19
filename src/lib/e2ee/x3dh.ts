@@ -240,7 +240,7 @@ export class X3DH {
     signature: string
   ): Promise<boolean> {
     const verifyKey = await importEcdsaPublic(identitySigningPublicKey);
-    const spkiBytes = fromBase64(signedPreKeyPublicB64);
+    const spkiBytes = toLocalBytesFromBase64(signedPreKeyPublicB64);
     return crypto.subtle.verify(
       { name: "ECDSA", hash: "SHA-256" },
       verifyKey,

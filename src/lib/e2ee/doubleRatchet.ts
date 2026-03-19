@@ -464,9 +464,9 @@ export class DoubleRatchet {
     ciphertext: string,
     header: RatchetHeader
   ): Promise<string> {
-    const packed = fromBase64(ciphertext);
-    const iv = packed.slice(0, 12);
-    const data = packed.slice(12);
+    const packed = toLocalBytesFromBase64(ciphertext);
+    const iv = new Uint8Array(packed.slice(0, 12));
+    const data = new Uint8Array(packed.slice(12));
     const aad = new TextEncoder().encode(JSON.stringify(header));
 
     const plainBuf = await crypto.subtle.decrypt(
