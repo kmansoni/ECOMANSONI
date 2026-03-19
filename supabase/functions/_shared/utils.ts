@@ -14,6 +14,29 @@ const LOCALHOST_ORIGINS = [
   "http://127.0.0.1:3000",
 ];
 
+const DEFAULT_ALLOWED_HEADERS = [
+  "authorization",
+  "x-client-info",
+  "apikey",
+  "content-type",
+  "x-turn-nonce",
+  "x-request-id",
+];
+
+function buildAllowedHeaders(requestHeaders: string | null): string {
+  const merged = new Set<string>(DEFAULT_ALLOWED_HEADERS);
+  if (requestHeaders) {
+    for (const raw of requestHeaders.split(",")) {
+      const header = raw.trim().toLowerCase();
+      if (!header) continue;
+      // Keep allowlist strict to valid token characters from RFC 7230.
+      if (!/^[a-z0-9-]+$/.test(header)) continue;
+      merged.add(header);
+    }
+  }
+  return Array.from(merged).join(", ");
+}
+
 function parseAllowedOrigins(): string[] {
   const raw = (Deno.env.get("CORS_ALLOWED_ORIGINS") ?? "").trim();
   if (!raw) return [];
@@ -51,6 +74,8 @@ function isOriginAllowed(origin: string | null): boolean {
   const normalized = origin.replace(/\/$/, "");
   // Always allow local browser origins so remote edge functions can be tested from localhost.
   if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(normalized)) return true;
+  // Production first-party domains are always allowed.
+  if (/^https?:\/\/([a-z0-9-]+\.)?mansoni\.ru(:\d+)?$/i.test(normalized)) return true;
   const allowed = getAllowedOrigins();
   if (allowed.length === 0) return false;
   return allowed.includes(normalized);
@@ -59,13 +84,13 @@ function isOriginAllowed(origin: string | null): boolean {
 /**
  * Get CORS headers for the request origin
  */
-export function getCorsHeaders(requestOrigin: string | null): Record<string, string> {
+export function getCorsHeaders(requestOrigin: string | null, requestHeaders: string | null = null): Record<string, string> {
   const originAllowed = isOriginAllowed(requestOrigin);
   const origin = originAllowed && requestOrigin ? requestOrigin : "null";
 
   return {
     "Access-Control-Allow-Origin": origin,
-    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Headers": buildAllowedHeaders(requestHeaders),
     "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
     "Access-Control-Max-Age": "86400",
     Vary: "Origin",
@@ -78,10 +103,11 @@ export function getCorsHeaders(requestOrigin: string | null): Record<string, str
 export function handleCors(req: Request): Response | null {
   if (req.method === "OPTIONS") {
     const origin = req.headers.get("origin");
+    const requestedHeaders = req.headers.get("access-control-request-headers");
     if (!isOriginAllowed(origin)) {
-      return new Response("forbidden", { status: 403, headers: getCorsHeaders(origin) });
+      return new Response("forbidden", { status: 403, headers: getCorsHeaders(origin, requestedHeaders) });
     }
-    return new Response(null, { status: 204, headers: getCorsHeaders(origin) });
+    return new Response(null, { status: 204, headers: getCorsHeaders(origin, requestedHeaders) });
   }
   return null;
 }

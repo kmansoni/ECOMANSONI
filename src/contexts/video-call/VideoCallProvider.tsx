@@ -423,6 +423,9 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
   const callsWsMediaRoomRef = useRef<string | null>(null);
   const callsWsSendTransportRef = useRef<string | null>(null);
   const callsWsRecvTransportRef = useRef<string | null>(null);
+  const relayMetricsTimerRef = useRef<number | null>(null);
+  const relayMetricsLastLogAtRef = useRef<number>(0);
+  const relayMetricsLastSignatureRef = useRef<string>("");
   const rekeyTimerRef = useRef<number | null>(null);
   const e2eeEpochRef = useRef<number>(0);
   /**
@@ -533,6 +536,12 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
   // ──────────────────────────────────────────────────────────────────────────
 
   const closeCallsV2 = useCallback(() => {
+    if (relayMetricsTimerRef.current) {
+      window.clearInterval(relayMetricsTimerRef.current);
+      relayMetricsTimerRef.current = null;
+    }
+    relayMetricsLastLogAtRef.current = 0;
+    relayMetricsLastSignatureRef.current = "";
     if (rekeyTimerRef.current) {
       window.clearInterval(rekeyTimerRef.current);
       rekeyTimerRef.current = null;
@@ -2099,6 +2108,61 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       window.clearInterval(retryTimer);
     };
   }, [currentCall, localStream, bootstrapCallsV2Media]);
+
+  useEffect(() => {
+    if (legacyEngineActive) return;
+    if (!currentCall?.id) return;
+
+    if (relayMetricsTimerRef.current) {
+      window.clearInterval(relayMetricsTimerRef.current);
+      relayMetricsTimerRef.current = null;
+    }
+
+    relayMetricsTimerRef.current = window.setInterval(() => {
+      const manager = sfuManagerRef.current;
+      if (!manager) return;
+
+      void manager.sampleRelayMetrics()
+        .then((snapshot) => {
+          if (!snapshot) return;
+
+          const now = Date.now();
+          const signature = [
+            snapshot.aggregate.relay_fallback_count,
+            snapshot.aggregate.total_samples,
+            snapshot.send?.isRelaySelected ? 1 : 0,
+            snapshot.recv?.isRelaySelected ? 1 : 0,
+          ].join(":");
+
+          if (
+            signature !== relayMetricsLastSignatureRef.current ||
+            now - relayMetricsLastLogAtRef.current > 15000
+          ) {
+            relayMetricsLastSignatureRef.current = signature;
+            relayMetricsLastLogAtRef.current = now;
+            logger.info("video_call_context.relay_metrics", {
+              callId: currentCall.id.slice(0, 8),
+              sendRelay: !!snapshot.send?.isRelaySelected,
+              recvRelay: !!snapshot.recv?.isRelaySelected,
+              relayUsageRate: snapshot.aggregate.relay_usage_rate,
+              relayFallbackCount: snapshot.aggregate.relay_fallback_count,
+              totalSamples: snapshot.aggregate.total_samples,
+              avgBytesOverRelay: snapshot.aggregate.avg_bytes_over_relay,
+            });
+          }
+        })
+        .catch((error) => {
+          logger.debug("video_call_context.relay_metrics_sample_failed", { error });
+        });
+    }, 5000);
+
+    return () => {
+      if (relayMetricsTimerRef.current) {
+        window.clearInterval(relayMetricsTimerRef.current);
+        relayMetricsTimerRef.current = null;
+      }
+    };
+  }, [legacyEngineActive, currentCall?.id]);
 
   useEffect(() => {
     return onNativeCallAction(async (action) => {

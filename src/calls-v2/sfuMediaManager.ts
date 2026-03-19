@@ -1,4 +1,10 @@
 import { Device, types as mediasoupTypes } from 'mediasoup-client';
+import {
+  RelayStatsCollector,
+  extractRelayMetrics,
+  type RelayMetrics,
+  type RelaySelectionEvent,
+} from './relayStats';
 
 /**
  * SFU Media Manager — управляет mediasoup-client Device lifecycle.
@@ -24,10 +30,67 @@ export class SfuMediaManager {
    */
   private producerSenders: Map<string, RTCRtpSender> = new Map();
   private consumerReceivers: Map<string, RTCRtpReceiver> = new Map();
+  private relayStatsCollector = new RelayStatsCollector({ maxHistorySize: 120 });
+  private lastRelayRoute: "none" | "p2p" | "relay" = "none";
 
   constructor(options?: { requireSenderReceiverAccessForE2ee?: boolean }) {
     this.device = new Device();
     this.requireSenderReceiverAccessForE2ee = options?.requireSenderReceiverAccessForE2ee ?? false;
+  }
+
+  private getTransportPeerConnection(
+    transport: mediasoupTypes.Transport | null,
+  ): RTCPeerConnection | null {
+    if (!transport) return null;
+    const maybePc = (transport as unknown as { _handler?: { _pc?: RTCPeerConnection } })._handler?._pc;
+    return maybePc ?? null;
+  }
+
+  private async collectRelaySampleFromTransport(
+    transport: mediasoupTypes.Transport | null,
+  ): Promise<RelaySelectionEvent | null> {
+    const pc = this.getTransportPeerConnection(transport);
+    if (!pc) return null;
+    try {
+      const stats = await pc.getStats();
+      const sample = extractRelayMetrics(stats as unknown as Iterable<[string, Record<string, unknown>]>);
+      if (sample) {
+        this.relayStatsCollector.recordSample(sample);
+      }
+      return sample;
+    } catch (error) {
+      console.warn('[SfuMediaManager] relay stats sample failed', error);
+      return null;
+    }
+  }
+
+  async sampleRelayMetrics(): Promise<{ send: RelaySelectionEvent | null; recv: RelaySelectionEvent | null; aggregate: RelayMetrics } | null> {
+    if (!this.sendTransport && !this.recvTransport) return null;
+
+    const [send, recv] = await Promise.all([
+      this.collectRelaySampleFromTransport(this.sendTransport),
+      this.collectRelaySampleFromTransport(this.recvTransport),
+    ]);
+
+    const aggregate = this.relayStatsCollector.getMetrics();
+    const usesRelay = !!send?.isRelaySelected || !!recv?.isRelaySelected;
+    const nextRoute = usesRelay ? "relay" : "p2p";
+
+    if (nextRoute !== this.lastRelayRoute) {
+      this.lastRelayRoute = nextRoute;
+      console.info('[SfuMediaManager] media route changed', {
+        route: nextRoute,
+        relayFallbackCount: aggregate.relay_fallback_count,
+        relayUsageRate: aggregate.relay_usage_rate,
+        totalSamples: aggregate.total_samples,
+      });
+    }
+
+    return { send, recv, aggregate };
+  }
+
+  getRelayMetrics(): RelayMetrics {
+    return this.relayStatsCollector.getMetrics();
   }
 
   get loaded(): boolean {
@@ -326,5 +389,8 @@ export class SfuMediaManager {
       this.recvTransport.close();
     }
     this.recvTransport = null;
+
+    this.relayStatsCollector.reset();
+    this.lastRelayRoute = "none";
   }
 }
