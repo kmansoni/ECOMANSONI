@@ -163,6 +163,12 @@ export class CallsWsClient {
 
       ws.onopen = () => {
         settled = true;
+        // BUG #1 FIX: Логирование для диагностики sequence issues при переподключении
+        console.log('[CallsWsClient] WebSocket connected', {
+          previousLastServerSeq: this.lastServerSeq,
+          wasReconnecting: this._connectionState === 'reconnecting',
+          timestamp: nowMs(),
+        });
         this.lastServerSeq = 0;
         this.lastServerActivityAt = nowMs();
         this.awaitingHeartbeatAckMsgId = null;
@@ -202,15 +208,36 @@ export class CallsWsClient {
 
   close() {
     this.manualClose = true;
+    // BUG #2 FIX: Логирование состояния перед закрытием
+    console.log('[CallsWsClient] close() called', {
+      pendingAcksCount: this.pendingAcks.size,
+      pendingAcksMsgIds: Array.from(this.pendingAcks.keys()),
+      awaitingHeartbeatAck: this.awaitingHeartbeatAckMsgId,
+      reconnectAttempts: this.reconnectAttempts,
+      timestamp: Date.now(),
+    });
+    
     if (this.reconnectTimer) {
       window.clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
     this.stopHeartbeat();
-    this.pendingAcks.forEach((pending) => {
+    
+    // BUG #2: Pending ACKs отклоняются, но нет механизма retry после переподключения
+    // Клиент может зависнуть навсегда
+    const rejectedAcks: string[] = [];
+    this.pendingAcks.forEach((pending, msgId) => {
       window.clearTimeout(pending.timer);
       pending.reject(new Error("WS closed"));
+      rejectedAcks.push(msgId);
     });
+    
+    console.log('[CallsWsClient] close() rejected pending ACKs', {
+      rejectedCount: rejectedAcks.length,
+      msgIds: rejectedAcks,
+      timestamp: Date.now(),
+    });
+    
     this.pendingAcks.clear();
     this.awaitingHeartbeatAckMsgId = null;
     this.lastHeartbeatSentAt = 0;

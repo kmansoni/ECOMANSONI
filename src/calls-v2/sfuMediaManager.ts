@@ -42,7 +42,25 @@ export class SfuMediaManager {
     transport: mediasoupTypes.Transport | null,
   ): RTCPeerConnection | null {
     if (!transport) return null;
-    const maybePc = (transport as unknown as { _handler?: { _pc?: RTCPeerConnection } })._handler?._pc;
+    // BUG #4: Используется приватное API mediasoup-client, которое может измениться
+    // Добавляем логирование для диагностики
+    const handler = (transport as unknown as { _handler?: { _pc?: RTCPeerConnection } })._handler;
+    if (!handler) {
+      console.warn('[SfuMediaManager] _handler not found on transport - mediasoup-client API may have changed', {
+        transportId: transport.id,
+        hasHandlerProperty: '_handler' in transport,
+        timestamp: Date.now(),
+      });
+      return null;
+    }
+    const maybePc = handler._pc;
+    if (!maybePc) {
+      console.warn('[SfuMediaManager] _pc not found in _handler - mediasoup-client API may have changed', {
+        transportId: transport.id,
+        handlerKeys: Object.keys(handler),
+        timestamp: Date.now(),
+      });
+    }
     return maybePc ?? null;
   }
 

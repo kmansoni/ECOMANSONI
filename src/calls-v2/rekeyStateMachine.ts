@@ -370,13 +370,30 @@ export class RekeyStateMachine {
   }
 
   destroy(): void {
+    console.log('[RekeyStateMachine] destroy() called', {
+      state: this.state,
+      currentEpoch: this.currentEpoch,
+      pendingEpoch: this.pendingEpoch,
+      activePeersCount: this.activePeers.size,
+      peerAcksCount: this.peerAcks.size,
+      hasDeadlineTimer: !!this.deadlineTimer,
+      hasCooldownTimer: !!this.cooldownTimer,
+      hasCleanupTimer: !!this.messageIdCleanupTimer,
+      timestamp: Date.now(),
+    });
+    
     this.clearDeadlineTimer();
     if (this.cooldownTimer) {
       clearTimeout(this.cooldownTimer);
       this.cooldownTimer = null;
     }
+    // BUG #12 FIX: Safe cleanup of messageIdCleanupTimer with null check
     if (this.messageIdCleanupTimer) {
-      clearInterval(this.messageIdCleanupTimer);
+      try {
+        clearInterval(this.messageIdCleanupTimer);
+      } catch (e) {
+        console.error('[RekeyStateMachine] Failed to clear cleanup timer:', e);
+      }
       this.messageIdCleanupTimer = null;
     }
     this.peerAcks.clear();
@@ -384,6 +401,8 @@ export class RekeyStateMachine {
     this.replayMap.clear();
     this.eventLog = [];
     this.eventHandler = null;
+    
+    console.log('[RekeyStateMachine] destroy() completed', { timestamp: Date.now() });
   }
 
   // ─── Private ───────────────────────────────────────────────────────────────

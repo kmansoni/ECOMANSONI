@@ -473,19 +473,44 @@ export class CallKeyExchange {
    * C-1: очищаем peerSigningKeys.
    */
   destroy(): void {
+    // BUG #8 FIX: Логирование состояния перед уничтожением
+    console.log('[CallKeyExchange] destroy() called', {
+      hasEphemeralKeyPair: !!this.ephemeralKeyPair,
+      hasSigningKeyPair: !!this.signingKeyPair,
+      hasCurrentEpochKey: !!this.currentEpochKey,
+      epochKeysCount: this.epochKeys.size,
+      peerPublicKeysCount: this.peerPublicKeys.size,
+      peerSigningKeysCount: this.peerSigningKeys.size,
+      currentEpoch: this.currentEpochKey?.epoch ?? 0,
+      timestamp: Date.now(),
+    });
+    
     // Fix-3: явная зачистка _rawBytes — уменьшает window XSS-атаки
+    // BUG #8 FIX: Очищаем ВСЕ epoch ключи, не только current
+    let clearedKeysCount = 0;
     for (const epochKey of this.epochKeys.values()) {
-      epochKey._rawBytes.fill(0);
+      if (epochKey._rawBytes && epochKey._rawBytes.length > 0) {
+        epochKey._rawBytes.fill(0);
+        clearedKeysCount++;
+      }
     }
     if (this.currentEpochKey) {
       this.currentEpochKey._rawBytes.fill(0);
     }
+    
+    console.log('[CallKeyExchange] destroy() keys cleared', {
+      epochKeysCleared: clearedKeysCount,
+      timestamp: Date.now(),
+    });
+    
     this.ephemeralKeyPair = null;
     this.signingKeyPair = null;
     this.currentEpochKey = null;
     this.peerPublicKeys.clear();
     this.epochKeys.clear();
     this.peerSigningKeys.clear(); // C-1: clear signing keys
+    
+    console.log('[CallKeyExchange] destroy() completed', { timestamp: Date.now() });
   }
 }
 

@@ -60,7 +60,7 @@ function decodeVarInt(data: Uint8Array, offset: number): [number, number] {
 }
 
 /** Строит IV для AES-GCM из counter (zero-padded до 12 байт) */
-function buildIV(counter: number): ArrayBuffer {
+function buildIV(counter: number): Uint8Array {
   const iv = new ArrayBuffer(12);
   const view = new DataView(iv);
   // counter как 32-bit big-endian в последних 4 байтах
@@ -68,7 +68,7 @@ function buildIV(counter: number): ArrayBuffer {
   if (counter > 0xffffffff) {
     view.setUint32(4, Math.floor(counter / 0x100000000) >>> 0, false);
   }
-  return iv;
+  return new Uint8Array(iv);
 }
 
 // ─── SFrameContext ────────────────────────────────────────────────────────────
