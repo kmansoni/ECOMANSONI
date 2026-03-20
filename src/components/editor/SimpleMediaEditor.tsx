@@ -25,6 +25,7 @@ const ASPECT_RATIOS: Record<ContentType, number> = {
   post: 1,        // 1:1
   story: 9 / 16,  // 9:16
   reel: 9 / 16,   // 9:16
+  live: 16 / 9,   // 16:9
 };
 
 // Filter presets

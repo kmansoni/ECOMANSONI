@@ -1,9 +1,9 @@
 const EMOJI_CORE_REGEX = /\p{Extended_Pictographic}/u;
 const LETTER_OR_NUMBER_REGEX = /[\p{L}\p{N}]/u;
 
-const graphemeSegmenter =
-  typeof Intl !== "undefined" && (Intl as any).Segmenter
-    ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
+const graphemeSegmenter: any =
+  typeof Intl !== "undefined" && "Segmenter" in Intl
+    ? new (Intl as any).Segmenter(undefined, { granularity: "grapheme" })
     : null;
 
 function splitGraphemes(input: string): string[] {
