@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Phase 1: L1.4 - Delegations with kid binding (P1 FIX)
 -- Telegram-grade: scopes validated, tokens bound to keys
 

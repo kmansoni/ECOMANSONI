@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Migration: settings_missing_features
 -- Created: 2026-03-08
 -- Adds: close_friends, mention_notifications, calls settings, user_screen_time

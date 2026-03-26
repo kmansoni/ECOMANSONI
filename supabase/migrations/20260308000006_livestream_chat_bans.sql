@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- =============================================================================
 -- ECOMANSONI Livestream Platform — Баны в чате прямого эфира
 -- Миграция: 20260308000006_livestream_chat_bans.sql

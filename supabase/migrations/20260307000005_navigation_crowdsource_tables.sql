@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- =============================================================================
 -- ECOMANSONI Navigation Platform — Crowdsourcing таблицы
 -- Миграция: 20260307000005_navigation_crowdsource_tables.sql

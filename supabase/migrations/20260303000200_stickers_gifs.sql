@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Стикерпаки
 CREATE TABLE IF NOT EXISTS sticker_packs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

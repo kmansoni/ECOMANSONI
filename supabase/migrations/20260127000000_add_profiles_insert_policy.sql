@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Add missing INSERT policy for profiles
 -- Allows authenticated users to create their own profile row
 

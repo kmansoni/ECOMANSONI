@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Phase 1 L1.1: Tenant Model + Auto-Creation (Telegram-grade)
 CREATE TABLE tenants(tenant_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),name TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'active' CHECK(status IN('active','suspended','deleted')),created_at TIMESTAMPTZ NOT NULL DEFAULT now(),updated_at TIMESTAMPTZ NOT NULL DEFAULT now());
 CREATE TABLE tenant_members(tenant_id UUID NOT NULL REFERENCES tenants(tenant_id)ON DELETE CASCADE,user_id UUID NOT NULL REFERENCES auth.users(id)ON DELETE CASCADE,role TEXT NOT NULL DEFAULT'member'CHECK(role IN('owner','admin','member','guest')),created_at TIMESTAMPTZ NOT NULL DEFAULT now(),updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),PRIMARY KEY(tenant_id,user_id));

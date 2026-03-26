@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- ============================================================
 -- Migration: Message delivery status + edit history + thread read positions
 -- Priority: P1 — required for Telegram-parity UX

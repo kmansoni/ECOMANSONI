@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- 20260224152000_req_0136_message_versions.sql
 -- REQ-0136: Message Version Stream for Edit/Delete/Restore (P0)
 

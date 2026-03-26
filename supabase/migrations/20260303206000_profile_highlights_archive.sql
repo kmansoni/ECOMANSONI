@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Highlights (подборки из Stories)
 CREATE TABLE IF NOT EXISTS public.highlights (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

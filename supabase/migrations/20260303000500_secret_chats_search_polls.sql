@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Секретные чаты
 CREATE TABLE IF NOT EXISTS secret_chats (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

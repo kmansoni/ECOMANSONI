@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Paid Messages: Stars per DM
 -- Migration: 20260311000002_paid_messages
 

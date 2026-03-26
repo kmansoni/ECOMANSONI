@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- AI Assistant: chat messages + usage limits
 -- Migration: 20260311100001
 

@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Step 1: Create SECURITY DEFINER function to get user's conversation IDs (bypasses RLS)
 CREATE OR REPLACE FUNCTION public.get_user_conversation_ids(user_uuid UUID)
 RETURNS SETOF UUID

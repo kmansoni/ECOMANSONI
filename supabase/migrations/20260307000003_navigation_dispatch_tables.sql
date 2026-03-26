@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- =============================================================================
 -- ECOMANSONI Navigation Platform — Dispatch / Matching таблицы
 -- Миграция: 20260307000003_navigation_dispatch_tables.sql

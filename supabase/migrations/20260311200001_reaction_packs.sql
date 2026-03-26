@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- ============================================================
 -- Batch 3: Custom Reaction Packs
 -- ============================================================

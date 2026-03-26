@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Сначала удалим все существующие политики для channels
 DROP POLICY IF EXISTS "Public channels are viewable by everyone" ON public.channels;
 DROP POLICY IF EXISTS "Users can view channels they are members of" ON public.channels;

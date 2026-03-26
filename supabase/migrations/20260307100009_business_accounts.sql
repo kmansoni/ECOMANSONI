@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- ============================================================
 -- Business Accounts (Telegram Business аналог)
 -- Миграция: business_accounts, business_chat_labels

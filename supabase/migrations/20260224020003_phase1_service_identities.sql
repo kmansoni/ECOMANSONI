@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Phase 1: L1.3 - Service identities with ENCRYPTED keys (P0 FIX)
 -- Telegram-grade: Multi-tenant isolation + key rotation + pgcrypto encryption
 

@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Star Reactions: paid emoji reactions on messages
 -- Migration: 20260311000003_star_reactions
 

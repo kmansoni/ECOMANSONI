@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Phase 1 EPIC M: Observability v1 - Schema
 -- Purpose: SLO/Guardrails registry + metrics samples + kill-switch expansion
 -- Dependencies: 20260224130000_phase1_l_feature_flags.sql (feature_flags table)

@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Fix infinite recursion in group_chat_members policies
 -- Drop all existing problematic policies
 DROP POLICY IF EXISTS "Members can view members" ON public.group_chat_members;

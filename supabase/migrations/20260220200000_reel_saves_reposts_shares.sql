@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Reel engagement: saves, reposts, shares + counters on reels
 
 -- Add counters to reels

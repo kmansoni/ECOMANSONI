@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Migration: emergency_signals
 -- Source concept: crisis-mesh-messenger / EmergencySignal model (Dart → SQL)

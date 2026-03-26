@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Create blocked_users table
 CREATE TABLE public.blocked_users (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,

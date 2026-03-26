@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Migration: X3DH Pre-Key Bundle Storage
 -- Enables Signal Protocol X3DH key agreement for secret chats
 --

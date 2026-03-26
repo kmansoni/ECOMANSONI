@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- =============================================================================
 -- ECOMANSONI Navigation Platform — Marketplace: surge pricing, forecasting, anti-fraud
 -- Миграция: 20260307000004_navigation_marketplace_tables.sql

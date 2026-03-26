@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Ensure RLS policies required for profiles upsert exist in every environment.
 -- This migration is idempotent and safe to run multiple times.
 

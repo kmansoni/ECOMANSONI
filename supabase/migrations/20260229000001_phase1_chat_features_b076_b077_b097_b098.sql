@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- ============================================================================
 -- PHASE 1: Messaging Core Features (B-076, B-077, B-097, B-098)
 -- ============================================================================

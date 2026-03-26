@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Исправляем overly permissive policies
 
 -- 1. Удаляем слишком открытую политику для commissions

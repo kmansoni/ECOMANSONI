@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- ============================================================
 -- BUG FIX #1: Enable RLS on custom auth tables
 -- auth_accounts, auth_devices, auth_sessions, auth_audit_events,

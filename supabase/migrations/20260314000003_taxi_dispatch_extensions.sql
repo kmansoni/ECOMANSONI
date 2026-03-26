@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Migration: taxi_dispatch_extensions
 -- Extends taxi_rides schema for dispatch algorithm + trip chat + surge

@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- ============================================================
 -- CRM Extended: Компании, Лиды, Подзадачи, Автоматизация,
 -- Документы, Каталог товаров, Поиск, Импорт

@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- =============================================================================
 -- 20260311000000_chat_attachments_geolocation.sql
 -- Chat Attachments v2: Geolocation + Document + Live Location

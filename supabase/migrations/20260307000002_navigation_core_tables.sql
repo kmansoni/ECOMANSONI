@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- =============================================================================
 -- ECOMANSONI Navigation Platform — Основные таблицы навигации
 -- Миграция: 20260307000002_navigation_core_tables.sql

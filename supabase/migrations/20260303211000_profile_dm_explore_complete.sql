@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Professional Dashboard
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS account_type TEXT DEFAULT 'personal'; -- personal, creator, business
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS action_email TEXT;

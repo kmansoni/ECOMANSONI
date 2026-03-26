@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- =============================================================================
 -- ECOMANSONI Livestream Platform — Stream Keys (RTMP / WHIP авторизация)
 -- Миграция: 20260308000002_livestream_stream_keys.sql

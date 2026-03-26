@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- ============================================================
 -- CRM Real Estate — полная схема
 -- Уровень: Bitrix24 RE + TopN Lab + ReBPM + Follow Up Boss

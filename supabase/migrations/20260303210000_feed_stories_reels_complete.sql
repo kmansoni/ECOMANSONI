@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Geolocation для постов
 ALTER TABLE posts ADD COLUMN IF NOT EXISTS location_name TEXT;
 ALTER TABLE posts ADD COLUMN IF NOT EXISTS location_lat FLOAT;

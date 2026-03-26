@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- =============================================================================
 -- ECOMANSONI Livestream Platform — Live Guests (Совместные эфиры / Live Rooms)
 -- Миграция: 20260308000004_livestream_guests.sql

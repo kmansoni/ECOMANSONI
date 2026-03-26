@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Исправляем рекурсивную политику для channel_members
 -- Удаляем проблемную политику
 DROP POLICY IF EXISTS "Channel owner/admin can manage members" ON public.channel_members;

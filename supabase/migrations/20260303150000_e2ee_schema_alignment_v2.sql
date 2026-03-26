@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- ============================================================
 -- E2EE schema alignment v2
 -- Aligns DB contract with src/lib/e2ee/keyDistribution.ts

@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- =============================================================================
 -- ECOMANSONI Livestream Platform — Live Shopping (Витрина в эфире)
 -- Миграция: 20260308000009_livestream_shopping.sql

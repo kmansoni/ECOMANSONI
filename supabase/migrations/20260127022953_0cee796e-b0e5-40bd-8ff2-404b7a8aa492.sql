@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- ============================================
 -- SEC-1: Restrict profiles to authenticated users only
 -- SEC-2: Restrict bank_details access in agent_profiles  

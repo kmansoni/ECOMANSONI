@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Fix permissive INSERT policy for conversations
 DROP POLICY IF EXISTS "Users can create conversations" ON public.conversations;
 CREATE POLICY "Authenticated users can create conversations" ON public.conversations

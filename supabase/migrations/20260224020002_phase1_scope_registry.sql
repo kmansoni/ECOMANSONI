@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Phase 1: L1.2 - Scope registry with validation
 -- Telegram-grade scope enforcement: NO wildcards, SSOT validation
 

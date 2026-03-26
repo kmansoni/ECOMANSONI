@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Phase 1 EPIC L: Rate Limit Audits Table
 -- Tracks every rate limit decision for compliance + analytics
 

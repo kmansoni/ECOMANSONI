@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Create posts table
 CREATE TABLE public.posts (
     id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,

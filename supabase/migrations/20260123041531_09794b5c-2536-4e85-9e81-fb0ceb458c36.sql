@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Create calls table for audio/video calls
 CREATE TABLE public.calls (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

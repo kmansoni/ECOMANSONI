@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- v2.8 Platform Core RLS Policies
 --
 -- Section 5: RLS deny-by-default + REVOKE direct writes

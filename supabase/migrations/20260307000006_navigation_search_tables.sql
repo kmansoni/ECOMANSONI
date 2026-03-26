@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- =============================================================================
 -- ECOMANSONI Navigation Platform — Search, Geocoding, Saved Places, Location Sharing
 -- Миграция: 20260307000006_navigation_search_tables.sql

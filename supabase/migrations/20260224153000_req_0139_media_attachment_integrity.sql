@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- 20260224153000_req_0139_media_attachment_integrity.sql
 -- REQ-0139: Media Attachment Integrity and Signed URL Access (P0)
 

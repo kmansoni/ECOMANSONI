@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Создаём таблицу для групповых чатов
 CREATE TABLE IF NOT EXISTS public.group_chats (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,

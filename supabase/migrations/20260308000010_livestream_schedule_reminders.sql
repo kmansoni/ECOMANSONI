@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- =============================================================================
 -- ECOMANSONI Livestream Platform — Напоминания о запланированных эфирах
 -- Миграция: 20260308000010_livestream_schedule_reminders.sql

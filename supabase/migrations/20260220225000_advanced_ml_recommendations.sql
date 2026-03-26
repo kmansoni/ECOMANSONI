@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- ============================================================================
 -- SUPER ADVANCED ML-BASED RECOMMENDATIONS SYSTEM FOR REELS
 -- Includes: Collaborative Filtering, Content-Based, Session Analysis,

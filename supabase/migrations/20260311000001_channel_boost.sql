@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Channel Boost: Stars → channel perks
 -- Migration: 20260311000001_channel_boost
 

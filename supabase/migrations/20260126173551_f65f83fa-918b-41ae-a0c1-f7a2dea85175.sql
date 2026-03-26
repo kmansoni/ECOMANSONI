@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Create SECURITY DEFINER function to check group membership without RLS recursion
 CREATE OR REPLACE FUNCTION public.is_group_member(_group_id uuid, _user_id uuid)
 RETURNS boolean

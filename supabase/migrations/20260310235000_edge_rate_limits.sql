@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Migration: Distributed rate limiting for Edge Functions
 --
 -- Provides an atomic sliding-window counter per (key, window) that works

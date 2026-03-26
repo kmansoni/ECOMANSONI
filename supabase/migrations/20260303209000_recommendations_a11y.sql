@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Взаимодействия пользователя для ML-рекомендаций
 CREATE TABLE IF NOT EXISTS public.user_interactions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

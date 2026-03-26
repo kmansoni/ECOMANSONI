@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Темы (Topics) для групп — как в Telegram
 CREATE TABLE IF NOT EXISTS group_topics (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

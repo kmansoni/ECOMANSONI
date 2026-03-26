@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Phase 1: L1.5 - Trust core tables
 
 CREATE TYPE risk_tier AS ENUM('A','B','C','D');

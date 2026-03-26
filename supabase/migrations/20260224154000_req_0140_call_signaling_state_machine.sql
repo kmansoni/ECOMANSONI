@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- 20260224154000_req_0140_call_signaling_state_machine.sql
 -- REQ-0140: Call Signaling State Machine and Race Safety (P0)
 

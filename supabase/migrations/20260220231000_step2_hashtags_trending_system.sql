@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- ============================================================================
 -- ЭТАП 2: СИСТЕМА ХЕШТЕГОВ И АВТОМАТИЧЕСКОЕ ОПРЕДЕЛЕНИЕ ТРЕНДОВ
 -- Hashtag tracking, trending detection, topic clustering

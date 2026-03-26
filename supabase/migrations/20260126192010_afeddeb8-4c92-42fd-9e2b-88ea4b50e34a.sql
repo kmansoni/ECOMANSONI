@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Create reel_comments table for comments on reels
 CREATE TABLE IF NOT EXISTS public.reel_comments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

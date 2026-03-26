@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Fix function search_path for update_updated_at_column
 CREATE OR REPLACE FUNCTION public.update_updated_at_column()
 RETURNS TRIGGER

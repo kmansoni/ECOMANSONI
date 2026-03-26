@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- Extend profiles table with bio, website, verified
 ALTER TABLE public.profiles
 ADD COLUMN IF NOT EXISTS bio TEXT,

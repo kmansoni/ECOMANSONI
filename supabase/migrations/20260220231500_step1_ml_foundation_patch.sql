@@ -1,3 +1,4 @@
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: legacy migration already applied to production; non-idempotent policies are intentional here.
 -- ============================================================================
 -- PATCH: ЭТАП 1 (ML foundation) — привести схему к нужному виду,
 -- даже если таблицы были созданы ранее другими миграциями.
