@@ -34,7 +34,7 @@ import { collectDefaultMetrics } from 'prom-client';
 
 import { loadEnv } from './config/env.js';
 import { createLogger, createRequestLogger } from './lib/logger.js';
-import { createIPRateLimit, TenantRateLimiter } from './lib/rateLimit.js';
+import { createIPRateLimit, TenantRateLimiter, WarmupRateLimiter } from './lib/rateLimit.js';
 import { IdempotencyService } from './lib/idempotency.js';
 import { QueueService } from './services/queueService.js';
 import { TemplateService } from './services/templateService.js';
@@ -77,6 +77,15 @@ async function main(): Promise<void> {
   // ─── 4. Initialize services (dependency injection) ─────────────────────
   const idempotencyService = new IdempotencyService(db, redis);
   const tenantRateLimiter = new TenantRateLimiter(redis);
+  const warmupRateLimiter = new WarmupRateLimiter(redis);
+  if (env.WARMUP_ENABLED && env.IP_LAUNCH_DATE) {
+    const limit = warmupRateLimiter.getDailyLimit(env.IP_LAUNCH_DATE);
+    if (limit !== null) {
+      logger.warn({ dailyLimit: limit, launchDate: env.IP_LAUNCH_DATE }, 'IP warmup mode active — daily send limit enforced');
+    } else {
+      logger.info({ launchDate: env.IP_LAUNCH_DATE }, 'IP warmup period completed — no daily limit');
+    }
+  }
   const queueService = new QueueService(redis, db);
   const templateService = new TemplateService(db, redis);
   const suppressionService = new SuppressionService(db, redis);
@@ -159,7 +168,7 @@ async function main(): Promise<void> {
   // Email API — JWT-protected, mounted under /email
   const emailRouter = createEmailRouter({
     db, queueService, templateService, suppressionService,
-    bounceProcessor, idempotencyService, tenantRateLimiter,
+    bounceProcessor, idempotencyService, tenantRateLimiter, warmupRateLimiter,
   });
   app.use('/email', emailRouter);
 

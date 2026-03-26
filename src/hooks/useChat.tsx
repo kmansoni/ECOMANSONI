@@ -630,15 +630,30 @@ export function useConversations() {
           )
           .subscribe()
       : supabase
-          .channel("conversations-updates")
+          // Subscribe to conversation_participants filtered by current user —
+          // fires only when this user's conversations change (new message bumps updated_at).
+          .channel(`conversations-updates:${user.id}`)
           .on(
             "postgres_changes",
             {
-              event: "UPDATE",
+              event: "*",
               schema: "public",
-              table: "conversations",
+              table: "conversation_participants",
+              filter: `user_id=eq.${user.id}`,
             },
             () => {
+              scheduleConversationsRefetch();
+            }
+          )
+          .on(
+            "postgres_changes",
+            {
+              event: "INSERT",
+              schema: "public",
+              table: "messages",
+            },
+            () => {
+              // New message in any conversation — refetch to update last_message + unread_count
               scheduleConversationsRefetch();
             }
           )

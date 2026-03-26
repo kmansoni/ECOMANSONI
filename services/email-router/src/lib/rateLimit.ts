@@ -1,8 +1,23 @@
 // lib/rateLimit.ts — Per-tenant rate limiting
 //
-// Two-tier rate limiting:
+// Three-tier rate limiting:
 //   Tier 1: IP-based via express-rate-limit (global anti-DDoS)
 //   Tier 2: Tenant-aware Redis sliding window (ZSET with timestamp scores)
+//   Tier 3: Global IP warmup daily limit (new sending IP reputation protection)
+//
+// Warmup strategy (HIGH-4 fix):
+//   New sending IPs have no reputation with Gmail/iCloud/Apple.
+//   Sending too many emails too quickly causes immediate blacklisting.
+//   The warmup limiter enforces a daily cap that grows linearly over 30 days.
+//   After IP_LAUNCH_DATE + 30 days, the warmup limit is disabled.
+//
+//   Schedule:
+//     Days  1-3:    50/day
+//     Days  4-7:   200/day
+//     Days  8-14:  500/day
+//     Days 15-21: 1000/day
+//     Days 22-30: 2000/day
+//     Day  31+:   unlimited (normal limits apply)
 
 import rateLimit from 'express-rate-limit';
 import { Redis } from 'ioredis';
@@ -99,6 +114,80 @@ export class TenantRateLimiter {
     pipeline.expire(hourKey, 7200);
     await pipeline.exec();
   }
+}
+
+// ─── Global warmup rate limiter ─────────────────────────────────────────────
+// Enforces daily sending cap during IP warmup period (HIGH-4).
+// Uses a Redis counter with TTL expiring at midnight UTC.
+export class WarmupRateLimiter {
+  // Days 1-3: 50, Days 4-7: 200, Days 8-14: 500, Days 15-21: 1000, Days 22-30: 2000
+  private static readonly SCHEDULE: Array<{ upToDay: number; limit: number }> = [
+    { upToDay: 3,  limit: 50   },
+    { upToDay: 7,  limit: 200  },
+    { upToDay: 14, limit: 500  },
+    { upToDay: 21, limit: 1000 },
+    { upToDay: 30, limit: 2000 },
+  ];
+
+  constructor(private readonly redis: Redis) {}
+
+  /**
+   * Returns the daily limit for the current day of warmup.
+   * Returns null if warmup period has ended (day > 30) or WARMUP_ENABLED=false.
+   */
+  getDailyLimit(launchDateIso: string): number | null {
+    const launchTs = new Date(launchDateIso).getTime();
+    if (isNaN(launchTs)) return null; // invalid date → no limit
+
+    const daysSinceLaunch = Math.floor((Date.now() - launchTs) / 86_400_000) + 1;
+    if (daysSinceLaunch > 30) return null; // warmup period ended
+
+    for (const entry of WarmupRateLimiter.SCHEDULE) {
+      if (daysSinceLaunch <= entry.upToDay) return entry.limit;
+    }
+    return null;
+  }
+
+  /**
+   * Checks if the global daily warmup limit has been reached.
+   * Key is day-scoped: resets automatically at UTC midnight via expiry.
+   *
+   * Returns { allowed: true } if under limit or warmup is not active.
+   * Returns { allowed: false, limit, current } if over limit.
+   */
+  async check(count: number = 1): Promise<{ allowed: boolean; limit?: number; current?: number }> {
+    const env = getEnv();
+    if (!env.WARMUP_ENABLED || !env.IP_LAUNCH_DATE) return { allowed: true };
+
+    const dailyLimit = this.getDailyLimit(env.IP_LAUNCH_DATE);
+    if (dailyLimit === null) return { allowed: true }; // warmup ended
+
+    // Key scoped to UTC date for automatic daily reset
+    const utcDate = new Date().toISOString().slice(0, 10); // "2026-03-26"
+    const key = `warmup:daily:${utcDate}`;
+
+    // INCR + EXPIRY in pipeline — atomic for single-threaded Redis
+    const pipeline = this.redis.pipeline();
+    pipeline.incrby(key, count);
+    pipeline.expireat(key, getMidnightUtcUnix());
+    const results = await pipeline.exec();
+
+    const current = (results?.[0]?.[1] as number) ?? count;
+
+    if (current > dailyLimit) {
+      getLogger().warn({ current, dailyLimit, utcDate }, 'Warmup daily limit reached — email queued for tomorrow');
+      return { allowed: false, limit: dailyLimit, current };
+    }
+
+    return { allowed: true };
+  }
+}
+
+/** Returns Unix timestamp for next midnight UTC (for Redis EXPIREAT). */
+function getMidnightUtcUnix(): number {
+  const now = new Date();
+  const midnight = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
+  return Math.floor(midnight.getTime() / 1000);
 }
 
 // ─── Express middleware для tenant rate limiting ─────

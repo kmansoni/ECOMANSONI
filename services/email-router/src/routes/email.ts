@@ -25,7 +25,7 @@ import { Router, Request, Response } from 'express';
 import { randomUUID, createHmac, timingSafeEqual } from 'crypto';
 import { Pool } from 'pg';
 import { authSupabaseJwt, adminOnly } from '../middleware/authSupabaseJwt.js';
-import { tenantRateLimitMiddleware, TenantRateLimiter } from '../lib/rateLimit.js';
+import { tenantRateLimitMiddleware, TenantRateLimiter, WarmupRateLimiter } from '../lib/rateLimit.js';
 import { IdempotencyService } from '../lib/idempotency.js';
 import { QueueService } from '../services/queueService.js';
 import { TemplateService } from '../services/templateService.js';
@@ -48,9 +48,10 @@ export function createEmailRouter(deps: {
   bounceProcessor: BounceProcessor;
   idempotencyService: IdempotencyService;
   tenantRateLimiter: TenantRateLimiter;
+  warmupRateLimiter: WarmupRateLimiter;
 }): Router {
   const router = Router();
-  const { db, queueService, templateService, suppressionService, bounceProcessor, idempotencyService, tenantRateLimiter } = deps;
+  const { db, queueService, templateService, suppressionService, bounceProcessor, idempotencyService, tenantRateLimiter, warmupRateLimiter } = deps;
 
   // ─── POST /email/send ─────────────────────
   // Отправка одного письма.
@@ -96,7 +97,26 @@ export function createEmailRouter(deps: {
           }
         }
 
-        // 3. Suppression check — filter out bounced/complained/unsubscribed recipients
+        // 3. Warmup rate limit — global daily cap during IP warmup period (HIGH-4)
+        // Checked before suppression to short-circuit early and preserve quota.
+        const warmupResult = await warmupRateLimiter.check(1);
+        if (!warmupResult.allowed) {
+          logger.warn({ limit: warmupResult.limit, current: warmupResult.current }, 'Warmup daily limit reached');
+          res.setHeader('Retry-After', '86400');
+          res.status(429).json({
+            success: false,
+            error: {
+              code: 'WARMUP_DAILY_LIMIT',
+              message: 'Daily sending quota reached during IP warmup period. Try again tomorrow.',
+              retryAfter: 86400,
+            },
+            requestId: req.requestId,
+            timestamp: new Date().toISOString(),
+          });
+          return;
+        }
+
+        // 4. Suppression check — filter out bounced/complained/unsubscribed recipients
         const allRecipients = [
           ...body.to.map(r => r.email),
           ...(body.cc || []).map(r => r.email),
@@ -118,7 +138,7 @@ export function createEmailRouter(deps: {
           return;
         }
 
-        // 4. Template rendering (if template specified)
+        // 5. Template rendering (if template specified)
         let subject = body.subject;
         let html = body.html;
         let text = body.text;
@@ -159,7 +179,7 @@ export function createEmailRouter(deps: {
           }
         }
 
-        // 5. Insert message into database (status='queued')
+        // 6. Insert message into database (status='queued')
         // Transaction isolation: READ COMMITTED is sufficient here because
         // the idempotency check already guards against duplicate inserts,
         // and the BullMQ job deduplicates by messageId.

@@ -12,6 +12,19 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'staging', 'production']).default('development'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
 
+  // Mail domain — used in Message-ID generation and unsubscribe links.
+  // Must match the domain that has SPF/DKIM/DMARC records.
+  MAIL_DOMAIN: z.string().min(3).default('mansoni.ru'),
+
+  // URL base for one-click unsubscribe links (RFC 8058).
+  UNSUBSCRIBE_BASE_URL: z.string().url().default('https://mansoni.ru'),
+
+  // IP launch date for warmup rate limiting (ISO 8601).
+  // Set to the date the sending IP was first used to send mail.
+  // After 30 days this limit is disabled automatically.
+  IP_LAUNCH_DATE: z.string().optional(),
+  WARMUP_ENABLED: z.coerce.boolean().default(true),
+
   // PostgreSQL
   DATABASE_URL: z.string().url(),
   DATABASE_POOL_MIN: z.coerce.number().default(2),
@@ -57,8 +70,19 @@ const envSchema = z.object({
   // Must be a shared secret between this service and the bounce notification
   // source (Postfix milter, Rspamd, or external ESP). Generate with:
   //   openssl rand -hex 32
-  // Leave empty string to disable HMAC verification (NOT recommended in production).
+  // Required in production — startup will fail if NODE_ENV=production and this is empty.
   BOUNCE_WEBHOOK_SECRET: z.string().default(''),
+}).superRefine((data, ctx) => {
+  // Enforce BOUNCE_WEBHOOK_SECRET in production (КРИТ-5)
+  if (data.NODE_ENV === 'production' && !data.BOUNCE_WEBHOOK_SECRET) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['BOUNCE_WEBHOOK_SECRET'],
+      message:
+        'BOUNCE_WEBHOOK_SECRET must be set in production. ' +
+        'Generate with: openssl rand -hex 32',
+    });
+  }
 });
 
 export type Env = z.infer<typeof envSchema>;

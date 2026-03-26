@@ -25,7 +25,7 @@
  * Environment (Supabase Vault):
  *   SUPABASE_URL
  *   SUPABASE_SERVICE_ROLE_KEY  — needed to bypass RLS for encryption ops
- *   SMTP_ENCRYPTION_KEY        — 32-byte hex key for AES-256-CBC encryption
+ *   SMTP_ENCRYPTION_KEY        — 32-byte hex key for AES-256-GCM encryption
  */
 
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";

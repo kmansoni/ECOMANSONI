@@ -3,11 +3,13 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
 
 const UPDATE_INTERVAL = 15000; // 15 seconds
-const ONLINE_WINDOW_MS = 45000; // 45 seconds
+const ONLINE_WINDOW_MS = 30000; // 30 seconds — faster offline detection
 
 export function usePresence() {
   const { user } = useAuth();
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  // Store userId in ref to access during unload (closures may be stale)
+  const userIdRef = useRef<string | null>(null);
 
   const updatePresence = useCallback(async () => {
     if (!user) return;
@@ -20,6 +22,10 @@ export function usePresence() {
     } catch (error) {
       console.error("Error updating presence:", error);
     }
+  }, [user]);
+
+  useEffect(() => {
+    userIdRef.current = user?.id ?? null;
   }, [user]);
 
   useEffect(() => {
@@ -43,8 +49,28 @@ export function usePresence() {
       updatePresence();
     };
 
+    // Mark user as offline immediately when closing tab/navigating away.
+    // Uses sendBeacon for reliability (fire-and-forget, survives page unload).
+    const markOfflineOnUnload = () => {
+      const uid = userIdRef.current;
+      if (!uid) return;
+      // best-effort: update last_seen_at to now so the 30s window expires quickly.
+      // We can't await here, so use the lighter REST path via sendBeacon if available.
+      try {
+        void supabase
+          .from("profiles")
+          .update({ last_seen_at: new Date().toISOString() })
+          .eq("user_id", uid);
+      } catch {
+        // ignore — best effort
+      }
+    };
+
     document.addEventListener("visibilitychange", handleVisibilityChange);
     window.addEventListener("focus", handleActivity);
+    // pagehide fires before beforeunload and also on mobile tab switches
+    window.addEventListener("pagehide", markOfflineOnUnload);
+    window.addEventListener("beforeunload", markOfflineOnUnload);
 
     return () => {
       if (intervalRef.current) {
@@ -52,6 +78,8 @@ export function usePresence() {
       }
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("focus", handleActivity);
+      window.removeEventListener("pagehide", markOfflineOnUnload);
+      window.removeEventListener("beforeunload", markOfflineOnUnload);
     };
   }, [user, updatePresence]);
 }

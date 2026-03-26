@@ -28,6 +28,7 @@
 
 import nodemailer from 'nodemailer';
 import type { Transporter } from 'nodemailer';
+import { randomUUID } from 'crypto';
 import type { Pool } from 'pg';
 import type { Redis } from 'ioredis';
 import { getEnv } from '../config/env.js';
@@ -173,6 +174,18 @@ export class SendService {
       const result = await this.circuitBreaker.execute(async () => {
         smtpConnectionsActive.inc();
         try {
+          const env = getEnv();
+          // RFC 2822 §3.6.4: Message-ID must be globally unique.
+          // Format: <uuid@sending-domain> — domain must match SPF/DKIM domain.
+          // Using os.hostname() or 127.0.0.1 here would produce invalid Message-ID
+          // that triggers spam filters at iCloud/Gmail.
+          const messageId = `<${randomUUID()}@${env.MAIL_DOMAIN}>`;
+
+          // RFC 8058: One-Click Unsubscribe — required by Gmail for bulk senders.
+          // Apple iCloud also scores positively on presence of unsubscribe headers.
+          const unsubscribeUrl = `${env.UNSUBSCRIBE_BASE_URL}/unsubscribe?mid=${encodeURIComponent(job.messageId)}`;
+          const unsubscribeMailto = `unsubscribe@${env.MAIL_DOMAIN}`;
+
           const info = await this.transporter.sendMail({
             from: `"${escapeName(job.from.name)}" <${job.from.email}>`,
             to: formatRecipients(job.to),
@@ -181,13 +194,14 @@ export class SendService {
             subject: job.subject,
             html: job.html || undefined,
             text: job.text || undefined,
+            messageId,
             headers: {
               ...job.headers,
               'X-Message-Id': job.messageId,
               'X-Tenant-Id': job.tenantId,
-              'List-Unsubscribe': `<mailto:unsubscribe@mansoni.ru?subject=unsubscribe-${job.messageId}>`,
+              // RFC 8058: One-Click Unsubscribe — mandatory for Gmail bulk senders ≥5000/day
+              'List-Unsubscribe': `<${unsubscribeUrl}>, <mailto:${unsubscribeMailto}?subject=unsubscribe>`,
               'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
-              // RFC 8058: One-Click Unsubscribe support
             },
             attachments: job.attachments?.map((a) => ({
               filename: a.filename,

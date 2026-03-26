@@ -89,6 +89,7 @@ import { DisappearTimerPicker } from "./DisappearTimerPicker";
 import { DisappearCountdown } from "./DisappearCountdown";
 import { useDisappearingMessages } from "@/hooks/useDisappearingMessages";
 import { supabase } from "@/integrations/supabase/client";
+import { useTypingIndicator } from "@/hooks/useTypingIndicator";
 import { useUserPresenceStatus } from "@/hooks/useUserPresenceStatus";
 import { cn } from "@/lib/utils";
 import { GradientAvatar } from "@/components/ui/gradient-avatar";
@@ -188,7 +189,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
   const { messages, loading, sendMessage, sendMediaMessage, deleteMessage, editMessage } = useMessages(conversationId);
   const { toggleReaction, getReactions } = useMessageReactions(conversationId);
   const { markConversationRead } = useMarkConversationRead();
-  const { getMessageStatus, markAsRead } = useReadReceipts(conversationId);
+  const { getMessageStatus, markAsRead, markAsDelivered } = useReadReceipts(conversationId);
   const { pinnedMessages, pinMessage, unpinMessage } = usePinnedMessages(conversationId);
   const { saveMessage: saveToSavedMessages, removeSavedByOriginalId, isSaved } = useSavedMessages();
   const { translate } = useMessageTranslation();
@@ -260,12 +261,16 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
     !isGroup ? otherUserId : null,
   );
 
-  const [isOtherTyping, setIsOtherTyping] = useState(false);
-  const [otherLiveActivity, setOtherLiveActivity] = useState<"typing" | "recording_voice" | "recording_video" | null>(null);
-  const typingChannelRef = useRef<any>(null);
-  const typingStopTimerRef = useRef<number | null>(null);
-  const lastTypingSentAtRef = useRef<number>(0);
-  const otherTypingTimerRef = useRef<number | null>(null);
+  // Typing indicator: useTypingIndicator handles DM + group, presence-based, multi-device-safe
+  const { typingLabel, onKeyDown: typingOnKeyDown, onStopTyping: typingOnStop } = useTypingIndicator(
+    conversationId,
+    user?.id,
+    chatName ?? null,
+    chatAvatar ?? null,
+  );
+  // Derive typing state for the header status text
+  const isOtherTyping = !!typingLabel;
+  const otherLiveActivity = null; // activity types (recording_voice/video) kept for future extension
 
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const lastNotifiedIncomingMessageIdRef = useRef<string | null>(null);
@@ -614,78 +619,17 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
     }
   }, [visibleMessages, user?.id]);
 
-  // Realtime typing status (1:1)
-  useEffect(() => {
-    if (isGroup) return;
-    if (!conversationId || !otherUserId || !user?.id) return;
-
-    const channel = supabase
-      .channel(`typing:${conversationId}`, {
-        config: {
-          broadcast: { self: true },
-        },
-      })
-      .on(
-        "broadcast" as any,
-        { event: "typing" },
-        (payload: any) => {
-          const p = payload?.payload;
-          if (!p || p.user_id !== otherUserId) return;
-
-          const isTyping = !!p.is_typing;
-          const activityRaw = String(p.activity || (isTyping ? "typing" : ""));
-          const activity: "typing" | "recording_voice" | "recording_video" =
-            activityRaw === "recording_voice" || activityRaw === "recording_video"
-              ? activityRaw
-              : "typing";
-
-          setIsOtherTyping(isTyping && activity === "typing");
-          setOtherLiveActivity(isTyping ? activity : null);
-
-          if (otherTypingTimerRef.current) window.clearTimeout(otherTypingTimerRef.current);
-          if (isTyping) {
-            otherTypingTimerRef.current = window.setTimeout(() => {
-              setIsOtherTyping(false);
-              setOtherLiveActivity(null);
-            }, 3500);
-          }
-        },
-      )
-      .subscribe();
-
-    typingChannelRef.current = channel;
-
-    return () => {
-      typingChannelRef.current = null;
-      if (typingStopTimerRef.current) window.clearTimeout(typingStopTimerRef.current);
-      if (otherTypingTimerRef.current) window.clearTimeout(otherTypingTimerRef.current);
-      void supabase.removeChannel(channel);
-    };
-  }, [conversationId, otherUserId, user?.id, isGroup]);
-
+  // Typing is handled by useTypingIndicator hook (see state section above).
+  // sendTyping stub delegates to the hook; activity param is kept for recording states.
   const sendTyping = useCallback(
-    (isTyping: boolean, activity: "typing" | "recording_voice" | "recording_video" = "typing") => {
-      if (isGroup) return;
-      const channel = typingChannelRef.current;
-      if (!channel) return;
-      if (!user?.id) return;
-
-      const state = String(channel.state || "");
-      if (state && state !== "joined") return;
-
-      const payload = {
-        type: "broadcast",
-        event: "typing",
-        payload: { user_id: user.id, is_typing: isTyping, activity },
-      };
-
-      const sender = typeof channel.httpSend === "function" ? channel.httpSend.bind(channel) : channel.send.bind(channel);
-
-      Promise.resolve(sender(payload)).catch(() => {
-        // best-effort typing signal only
-      });
+    (isTyping: boolean, _activity: "typing" | "recording_voice" | "recording_video" = "typing") => {
+      if (isTyping) {
+        typingOnKeyDown();
+      } else {
+        typingOnStop();
+      }
     },
-    [user?.id, isGroup],
+    [typingOnKeyDown, typingOnStop],
   );
 
   const handleInputChange = useCallback(
@@ -707,31 +651,21 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
       setMentionTrigger(trigger);
       setMentionActiveIndex(0);
 
-      if (isGroup) return;
-
-      const now = Date.now();
-      if (now - lastTypingSentAtRef.current > 700) {
-        sendTyping(value.trim().length > 0, "typing");
-        lastTypingSentAtRef.current = now;
-      }
-
-      if (typingStopTimerRef.current) window.clearTimeout(typingStopTimerRef.current);
-      typingStopTimerRef.current = window.setTimeout(() => {
-        sendTyping(false, "typing");
-      }, 2000);
+      // Typing indicator: works for both DM and groups via useTypingIndicator
+      typingOnKeyDown();
     },
-    [sendTyping, isGroup],
+    [typingOnKeyDown],
   );
 
   const headerStatusText = useMemo(() => {
     if (isGroup) {
+      // In groups: show typing label if anyone is typing, else participant count
+      if (typingLabel) return typingLabel;
       return `${participantCount || 0} участник${participantCount === 1 ? "" : participantCount && participantCount < 5 ? "а" : "ов"}`;
     }
-    if (otherLiveActivity === "recording_voice") return "записывает голосовое…";
-    if (otherLiveActivity === "recording_video") return "записывает кружочек…";
-    if (isOtherTyping || otherLiveActivity === "typing") return "печатает…";
+    if (isOtherTyping) return typingLabel ?? "печатает…";
     return otherPresenceText;
-  }, [isGroup, participantCount, isOtherTyping, otherPresenceText, otherLiveActivity]);
+  }, [isGroup, participantCount, isOtherTyping, typingLabel, otherPresenceText]);
 
   // Mark incoming messages as read when chat is opened / receives new messages.
   useEffect(() => {
@@ -743,14 +677,20 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
       onRefetch?.();
     })();
 
-    // Mark unread incoming messages as read via read-receipts hook
+    // Mark unread incoming messages as delivered then read.
+    // delivered first so the sender sees ✓✓ grey, then ✓✓ blue.
     const incomingUnread = messages.filter(
       (m) => m.sender_id !== user.id && !m.is_read
     );
+    const incomingUnreadIds = incomingUnread.map((m) => m.id);
+    if (incomingUnreadIds.length > 0) {
+      // Fire-and-forget: mark delivered (grey ✓✓) then mark read (blue ✓✓)
+      void markAsDelivered(incomingUnreadIds);
+    }
     for (const msg of incomingUnread) {
       markAsRead(msg.id);
     }
-  }, [conversationId, user, isGroup, messages, markConversationRead, onRefetch, markAsRead]);
+  }, [conversationId, user, isGroup, messages, markConversationRead, onRefetch, markAsRead, markAsDelivered]);
 
   useEffect(() => {
     if (!user?.id) return;
