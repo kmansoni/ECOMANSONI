@@ -6,7 +6,6 @@ import {
   subscribeToUserSettings,
   updateUserSettings,
   type UserSettings,
-  type ThemePreference,
 } from "@/lib/user-settings";
 import { cleanupInactiveSessions, computeSessionKey, heartbeatMySession, upsertMySession } from "@/lib/sessions";
 import { supabase } from "@/integrations/supabase/client";
@@ -30,10 +29,6 @@ function applyRootFlags(settings: UserSettings | null) {
 
   root.classList.toggle("reduce-motion", !!settings.reduce_motion);
   root.classList.toggle("high-contrast", !!settings.high_contrast);
-}
-
-function mapThemePreference(pref: ThemePreference): "light" | "dark" | "system" {
-  return pref;
 }
 
 export function UserSettingsProvider({ children }: { children: React.ReactNode }) {
@@ -122,7 +117,7 @@ export function UserSettingsProvider({ children }: { children: React.ReactNode }
       const next = await getOrCreateUserSettings(userId);
       setSettings(next);
       applyRootFlags(next);
-      setTheme(mapThemePreference(next.theme));
+      setTheme(next.theme);
     } finally {
       setLoading(false);
     }
@@ -135,7 +130,7 @@ export function UserSettingsProvider({ children }: { children: React.ReactNode }
       setSettings(next);
       applyRootFlags(next);
       if (patch.theme) {
-        setTheme(mapThemePreference(next.theme));
+        setTheme(next.theme);
       }
     },
     [setTheme, userId],
@@ -151,7 +146,7 @@ export function UserSettingsProvider({ children }: { children: React.ReactNode }
     const unsubscribe = subscribeToUserSettings(userId, (next) => {
       setSettings(next);
       applyRootFlags(next);
-      setTheme(mapThemePreference(next.theme));
+      setTheme(next.theme);
     });
 
     return unsubscribe;

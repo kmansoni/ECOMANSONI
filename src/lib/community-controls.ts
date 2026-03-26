@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { isTableMissingError } from "@/lib/utils/isTableMissingError";
 
 export interface UserCommunitySettings {
   user_id: string;
@@ -18,18 +19,6 @@ const DEFAULT_SETTINGS = {
   mute_new_communities: false,
   show_media_preview: true,
 };
-
-function isSchemaMissingError(error: unknown): boolean {
-  const msg = String((error as any)?.message ?? error).toLowerCase();
-  const code = String((error as any)?.code ?? "");
-  return (
-    code === "42P01" ||
-    code === "42703" ||
-    msg.includes("does not exist") ||
-    msg.includes("relation") ||
-    msg.includes("column")
-  );
-}
 
 function localKey(userId: string) {
   return `community-settings:${userId}`;
@@ -66,7 +55,7 @@ function defaultRow(userId: string): UserCommunitySettings {
 export async function getOrCreateUserCommunitySettings(userId: string): Promise<UserCommunitySettings> {
   const table = (supabase as any).from("user_channel_group_settings");
   const { data, error } = await table.select("*").eq("user_id", userId).maybeSingle();
-  if (error && isSchemaMissingError(error)) {
+  if (error && isTableMissingError(error)) {
     return readLocalSettings(userId) ?? defaultRow(userId);
   }
   if (error) throw error;
@@ -76,7 +65,7 @@ export async function getOrCreateUserCommunitySettings(userId: string): Promise<
     .insert({ user_id: userId, ...DEFAULT_SETTINGS })
     .select("*")
     .single();
-  if (insertError && isSchemaMissingError(insertError)) {
+  if (insertError && isTableMissingError(insertError)) {
     const local = readLocalSettings(userId) ?? defaultRow(userId);
     writeLocalSettings(local);
     return local;
@@ -95,7 +84,7 @@ export async function updateUserCommunitySettings(
     .upsert({ user_id: userId, ...patch }, { onConflict: "user_id" })
     .select("*")
     .single();
-  if (error && isSchemaMissingError(error)) {
+  if (error && isTableMissingError(error)) {
     const current = readLocalSettings(userId) ?? defaultRow(userId);
     const next: UserCommunitySettings = {
       ...current,
@@ -120,7 +109,7 @@ export async function createChannelInviteToken(
     _max_uses: maxUses ?? null,
     _ttl_hours: ttlHours,
   });
-  if (error && isSchemaMissingError(error)) {
+  if (error && isTableMissingError(error)) {
     throw new Error("invite_schema_missing:create_channel_invite");
   }
   if (error) throw error;
@@ -137,7 +126,7 @@ export async function createGroupInviteToken(
     _max_uses: maxUses ?? null,
     _ttl_hours: ttlHours,
   });
-  if (error && isSchemaMissingError(error)) {
+  if (error && isTableMissingError(error)) {
     throw new Error("invite_schema_missing:create_group_invite");
   }
   if (error) throw error;
@@ -148,7 +137,7 @@ export async function joinChannelByInviteToken(token: string): Promise<string> {
   const { data, error } = await (supabase as any).rpc("join_channel_by_invite", {
     _token: token,
   });
-  if (error && isSchemaMissingError(error)) {
+  if (error && isTableMissingError(error)) {
     throw new Error("invite_schema_missing:join_channel_by_invite");
   }
   if (error) throw error;
@@ -159,7 +148,7 @@ export async function joinGroupByInviteToken(token: string): Promise<string> {
   const { data, error } = await (supabase as any).rpc("join_group_by_invite", {
     _token: token,
   });
-  if (error && isSchemaMissingError(error)) {
+  if (error && isTableMissingError(error)) {
     throw new Error("invite_schema_missing:join_group_by_invite");
   }
   if (error) throw error;

@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { isTableMissingError } from "@/lib/utils/isTableMissingError";
 
 export type ThemePreference = "light" | "dark" | "system";
 
@@ -55,11 +56,6 @@ export type UserSettings = {
   updated_at?: string;
 };
 
-function looksLikeMissingColumn(error: unknown) {
-  const msg = String((error as any)?.message ?? error).toLowerCase();
-  return msg.includes("column") && msg.includes("does not exist");
-}
-
 function withDataStorageDefaults(partial: Partial<UserSettings>): UserSettings {
   return {
     notif_sound_id: "rebound",
@@ -98,7 +94,7 @@ export async function getOrCreateUserSettings(userId: string): Promise<UserSetti
     .maybeSingle();
 
   if (selectError) {
-    if (looksLikeMissingColumn(selectError)) {
+    if (isTableMissingError(selectError)) {
       const { data: base, error: baseErr } = await supabaseAny
         .from("user_settings")
         .select(BASE_SETTINGS_SELECT)
@@ -141,7 +137,7 @@ export async function updateUserSettings(
     .single();
 
   if (error) {
-    if (looksLikeMissingColumn(error)) {
+    if (isTableMissingError(error)) {
       // Try returning a base shape so the app can keep running until migrations are applied.
       const { data: base, error: baseErr } = await supabaseAny
         .from("user_settings")

@@ -88,10 +88,16 @@ export function useAccessibility() {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
-        await (supabase as any)
+        const { error } = await (supabase as any)
           .from('user_settings')
-          .upsert({ user_id: user.id, accessibility: { ...loadFromStorage(), ...partial } })
-          .eq('user_id', user.id);
+          .upsert(
+            { user_id: user.id, accessibility: { ...loadFromStorage(), ...partial } },
+            { onConflict: 'user_id' }
+          );
+        if (error) {
+          console.error('[useAccessibility] upsert failed:', error.message);
+          // НЕ бросаем ошибку — localStorage fallback уже применён
+        }
       }
     } catch (error) {
       logger.warn('[useAccessibility] Failed to sync settings to Supabase', { error });

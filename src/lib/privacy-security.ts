@@ -123,9 +123,12 @@ function makeDefaultRows(userId: string): Array<Partial<PrivacyRule>> {
 }
 
 export async function getOrCreatePrivacyRules(userId: string): Promise<PrivacyRule[]> {
-  await supabaseAny
+  const { error: seedError } = await supabaseAny
     .from("privacy_rules")
     .upsert(makeDefaultRows(userId), { onConflict: "user_id,rule_key", ignoreDuplicates: true });
+  if (seedError) {
+    console.error('[privacy-security] seed privacy rules failed:', seedError.message);
+  }
 
   const { data, error } = await supabaseAny
     .from("privacy_rules")

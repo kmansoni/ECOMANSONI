@@ -31,7 +31,7 @@ interface PrivacySectionProps extends SectionProps {
   currentScreen: PrivacyScreen;
 }
 
-function BlockedUsersPanel({ isDark }: { isDark: boolean }) {
+export function BlockedUsersPanel({ isDark }: { isDark: boolean }) {
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const [rows, setRows] = useState<Array<{ id: string; blocked_id: string; created_at: string }>>([]);
@@ -62,7 +62,7 @@ function BlockedUsersPanel({ isDark }: { isDark: boolean }) {
         setProfilesById({});
       }
     } catch (e) {
-      toast({ title: "Blocked Users", description: e instanceof Error ? e.message : String(e) });
+      toast({ title: "Заблокированные", description: e instanceof Error ? e.message : String(e) });
     } finally {
       setLoading(false);
     }
@@ -73,18 +73,18 @@ function BlockedUsersPanel({ isDark }: { isDark: boolean }) {
   return (
     <div className={cn("backdrop-blur-xl rounded-2xl border overflow-hidden", isDark ? "settings-dark-card" : "bg-card/80 border-white/20")}>
       <div className="px-5 py-4">
-        <p className="font-semibold">Block List</p>
+        <p className="font-semibold">Список</p>
         <p className={cn("text-sm mt-1", isDark ? "text-white/60" : "text-white/70")}>
-          Blocked users cannot write to you or see your profile.
+          Заблокированные пользователи не смогут писать вам и видеть ваш профиль.
         </p>
       </div>
       {loading ? (
         <div className="px-5 pb-5">
-          <p className={cn("text-sm", isDark ? "text-white/60" : "text-white/70")}>Loading…</p>
+          <p className={cn("text-sm", isDark ? "text-white/60" : "text-white/70")}>Загрузка…</p>
         </div>
       ) : rows.length === 0 ? (
         <div className="px-5 pb-5">
-          <p className={cn("text-sm", isDark ? "text-white/60" : "text-white/70")}>No one is in the block list.</p>
+          <p className={cn("text-sm", isDark ? "text-white/60" : "text-white/70")}>Никого нет в блок-листе.</p>
         </div>
       ) : (
         <div className="px-5 pb-5 grid gap-2">
@@ -95,7 +95,7 @@ function BlockedUsersPanel({ isDark }: { isDark: boolean }) {
                 <div className="min-w-0">
                   <p className="font-medium truncate">{p?.display_name ?? r.blocked_id}</p>
                   <p className={cn("text-xs", isDark ? "text-white/50" : "text-white/60")}>
-                    Blocked: {new Date(r.created_at).toLocaleDateString()}
+                    Заблокирован: {new Date(r.created_at).toLocaleDateString()}
                   </p>
                 </div>
                 <Button
@@ -104,13 +104,13 @@ function BlockedUsersPanel({ isDark }: { isDark: boolean }) {
                     try {
                       const { error } = await supabase.from("blocked_users").delete().eq("id", r.id);
                       if (error) throw error;
-                      toast({ title: "Done", description: "User unblocked." });
+                      toast({ title: "Готово", description: "Пользователь разблокирован." });
                     } catch (e) {
-                      toast({ title: "Unblock", description: e instanceof Error ? e.message : String(e) });
+                      toast({ title: "Разблокировать", description: e instanceof Error ? e.message : String(e) });
                     }
                   }}
                 >
-                  Unblock
+                  Разблок.
                 </Button>
               </div>
             );

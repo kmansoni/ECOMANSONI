@@ -148,7 +148,9 @@ export function useNotifications() {
       setHasMore(rows.length === PAGE_SIZE);
       return result;
     } catch (err) {
-      console.error("Ошибка загрузки уведомлений:", err);
+      if (import.meta.env.DEV) {
+        console.error("Ошибка загрузки уведомлений:", err);
+      }
       return [];
     }
   }, [user]);

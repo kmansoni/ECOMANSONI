@@ -167,8 +167,6 @@ export function useChatSettings(conversationId?: string) {
       : extensionFromName;
     const extension = extensionFromType || 'jpg';
 
-    const filePath = `chat-wallpapers/${user.id}/${conversationId}/${Date.now()}-${crypto.randomUUID()}.${extension}`;
-
     const result = await uploadMedia(file, { bucket: 'chat-media' });
     const publicUrl = result.url;
     await updateSetting('chat_wallpaper', publicUrl);

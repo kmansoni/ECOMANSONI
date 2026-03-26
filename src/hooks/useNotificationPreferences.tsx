@@ -64,7 +64,7 @@ export function useNotificationPreferences() {
 
       let nextCategories = existing;
       if (missing.length) {
-        await supabaseAny
+        const { error: seedError } = await supabaseAny
           .from("notification_category_settings")
           .upsert(
             missing.map((category) => ({
@@ -74,6 +74,9 @@ export function useNotificationPreferences() {
             })),
             { onConflict: "user_id,category" },
           );
+        if (seedError) {
+          console.error('[useNotificationPreferences] seed categories failed:', seedError.message);
+        }
 
         const { data: afterInsert, error: afterError } = await supabaseAny
           .from("notification_category_settings")
@@ -136,7 +139,7 @@ export function useNotificationPreferences() {
   const upsertCategory = useCallback(
     async (category: NotificationCategory, patch: Partial<Omit<NotificationCategorySetting, "id" | "user_id" | "category" | "created_at" | "updated_at">>) => {
       if (!user?.id) return;
-      await supabaseAny
+      const { error } = await supabaseAny
         .from("notification_category_settings")
         .upsert(
           {
@@ -146,14 +149,19 @@ export function useNotificationPreferences() {
           },
           { onConflict: "user_id,category" },
         );
+      if (error) {
+        console.error('[useNotificationPreferences] upsertCategory failed:', error.message);
+        return;
+      }
+      await fetchAll();
     },
-    [user?.id],
+    [user?.id, fetchAll],
   );
 
   const upsertException = useCallback(
     async (item_kind: "dm" | "group" | "channel", item_id: string, patch: Partial<Omit<NotificationException, "id" | "user_id" | "item_kind" | "item_id" | "created_at" | "updated_at">>) => {
       if (!user?.id) return;
-      await supabaseAny
+      const { error } = await supabaseAny
         .from("notification_exceptions")
         .upsert(
           {
@@ -164,8 +172,13 @@ export function useNotificationPreferences() {
           },
           { onConflict: "user_id,item_kind,item_id" },
         );
+      if (error) {
+        console.error('[useNotificationPreferences] upsertException failed:', error.message);
+        return;
+      }
+      await fetchAll();
     },
-    [user?.id],
+    [user?.id, fetchAll],
   );
 
   const removeException = useCallback(
