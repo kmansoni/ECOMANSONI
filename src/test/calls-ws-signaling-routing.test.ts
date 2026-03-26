@@ -206,6 +206,34 @@ class WsSession {
     });
   }
 
+  waitForClose(timeoutMs = 5000) {
+    return new Promise<{ code: number; reason: string }>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        cleanup();
+        reject(new Error("Timed out waiting socket close"));
+      }, timeoutMs);
+
+      const onClose = (code: number, reason: Buffer) => {
+        cleanup();
+        resolve({ code, reason: reason.toString() });
+      };
+
+      const onError = (err: Error) => {
+        cleanup();
+        reject(err);
+      };
+
+      const cleanup = () => {
+        clearTimeout(timer);
+        this.ws.off("close", onClose);
+        this.ws.off("error", onError);
+      };
+
+      this.ws.on("close", onClose);
+      this.ws.on("error", onError);
+    });
+  }
+
   async helloAndAuth(deviceId: string, accessToken: string) {
     const helloMsgId = this.send("HELLO", { client: { deviceId } });
     const helloAck = await this.waitForAck(helloMsgId);
@@ -317,6 +345,89 @@ describe("calls-ws signaling routing", () => {
       expect(badInviteAck.ack?.error?.code).toBe("VALIDATION_FAILED");
     } finally {
       callerWs.ws.close();
+    }
+  }, 20000);
+
+  it("replaces stale socket when same user reconnects with same deviceId", async () => {
+    const { proc, port } = await startCallsWs();
+    runningServers.push(proc);
+
+    const sharedToken = "shared-user-token-ffffffffffffffff";
+    const userId = devUserIdFromToken(sharedToken);
+
+    const firstSession = new WsSession(await connectWs(`ws://127.0.0.1:${port}`));
+    const secondSession = new WsSession(await connectWs(`ws://127.0.0.1:${port}`));
+    const callerSession = new WsSession(await connectWs(`ws://127.0.0.1:${port}`));
+
+    try {
+      await firstSession.helloAndAuth("shared-device-42", sharedToken);
+      const closePromise = firstSession.waitForClose();
+
+      await secondSession.helloAndAuth("shared-device-42", sharedToken);
+      const closed = await closePromise;
+      expect(closed.code).toBe(4009);
+      expect(closed.reason).toBe("DEVICE_REPLACED");
+
+      await callerSession.helloAndAuth("caller-device-shared-check", "caller-token-12121212121212121212");
+      const deliveredPromise = secondSession.waitForFrame("call.invite");
+      const inviteMsgId = callerSession.send("call.invite", {
+        to: userId,
+        callId: "call-after-device-replace",
+        callType: "video",
+      });
+      const inviteAck = await callerSession.waitForAck(inviteMsgId);
+      expect(inviteAck.ack?.ok).toBe(true);
+
+      const delivered = await deliveredPromise;
+      expect(delivered.payload.callId).toBe("call-after-device-replace");
+    } finally {
+      firstSession.ws.close();
+      secondSession.ws.close();
+      callerSession.ws.close();
+    }
+  }, 20000);
+
+  it("rejects deviceId hijack attempt from another user", async () => {
+    const { proc, port } = await startCallsWs();
+    runningServers.push(proc);
+
+    const ownerToken = "owner-token-13131313131313131313";
+    const attackerToken = "attacker-token-1414141414141414";
+    const ownerUserId = devUserIdFromToken(ownerToken);
+
+    const ownerSession = new WsSession(await connectWs(`ws://127.0.0.1:${port}`));
+    const attackerSession = new WsSession(await connectWs(`ws://127.0.0.1:${port}`));
+    const callerSession = new WsSession(await connectWs(`ws://127.0.0.1:${port}`));
+
+    try {
+      await ownerSession.helloAndAuth("exclusive-device-99", ownerToken);
+
+      const attackerHelloMsgId = attackerSession.send("HELLO", { client: { deviceId: "exclusive-device-99" } });
+      const attackerHelloAck = await attackerSession.waitForAck(attackerHelloMsgId);
+      expect(attackerHelloAck.ack?.ok).toBe(true);
+
+      const attackerAuthMsgId = attackerSession.send("AUTH", { accessToken: attackerToken });
+      const attackerAuthAck = await attackerSession.waitForAck(attackerAuthMsgId);
+      expect(attackerAuthAck.ack?.ok).toBe(false);
+      expect(attackerAuthAck.ack?.error?.code).toBe("VALIDATION_FAILED");
+      expect(attackerAuthAck.ack?.error?.message).toBe("DEVICE_ID_IN_USE");
+
+      await callerSession.helloAndAuth("caller-device-owner-check", "caller-token-15151515151515151515");
+      const deliveredPromise = ownerSession.waitForFrame("call.invite");
+      const inviteMsgId = callerSession.send("call.invite", {
+        to: ownerUserId,
+        callId: "call-owner-still-reachable",
+        callType: "audio",
+      });
+      const inviteAck = await callerSession.waitForAck(inviteMsgId);
+      expect(inviteAck.ack?.ok).toBe(true);
+
+      const delivered = await deliveredPromise;
+      expect(delivered.payload.callId).toBe("call-owner-still-reachable");
+    } finally {
+      ownerSession.ws.close();
+      attackerSession.ws.close();
+      callerSession.ws.close();
     }
   }, 20000);
 });

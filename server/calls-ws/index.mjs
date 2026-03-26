@@ -297,12 +297,14 @@ function dropUserDevice(userId, deviceId) {
 function unbindConnectionDevice(conn, ws) {
   const currentDeviceId = conn.deviceId;
   if (!currentDeviceId) return;
-  if (deviceSockets.get(currentDeviceId) === ws) {
+
+  const isCurrentBinding = deviceSockets.get(currentDeviceId) === ws;
+  if (isCurrentBinding) {
     deviceSockets.delete(currentDeviceId);
     deviceOwners.delete(currentDeviceId);
-  }
-  if (conn.userId) {
-    dropUserDevice(conn.userId, currentDeviceId);
+    if (conn.userId) {
+      dropUserDevice(conn.userId, currentDeviceId);
+    }
   }
 }
 
