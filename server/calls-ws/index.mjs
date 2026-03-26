@@ -95,6 +95,7 @@ function resolveSupabaseAuthEnv() {
   const envFromFiles = {
     ...parseDotEnvFile(path.join(root, ".env")),
     ...parseDotEnvFile(path.join(root, ".env.local")),
+    ...parseDotEnvFile(path.join(root, ".env.production")),
   };
 
   const read = (...keys) => {

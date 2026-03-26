@@ -31,12 +31,14 @@ jobs:
           CALLS_JOIN_TOKEN_SECRET: ${{ secrets.CALLS_JOIN_TOKEN_SECRET }}
           CALLS_WS_TRUSTED_PROXIES: ${{ secrets.CALLS_WS_TRUSTED_PROXIES }}
           SFU_TRUSTED_PROXIES: ${{ secrets.SFU_TRUSTED_PROXIES }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
         with:
           host: ${{ secrets.SFU_RU_HOST }}
           port: ${{ secrets.SFU_RU_SSH_PORT || '22' }}
           username: ${{ secrets.SFU_RU_USER }}
           key: ${{ secrets.SFU_RU_SSH_KEY }}
-          envs: CALLS_JOIN_TOKEN_SECRET,CALLS_WS_TRUSTED_PROXIES,SFU_TRUSTED_PROXIES
+          envs: CALLS_JOIN_TOKEN_SECRET,CALLS_WS_TRUSTED_PROXIES,SFU_TRUSTED_PROXIES,VITE_SUPABASE_URL,VITE_SUPABASE_PUBLISHABLE_KEY
           script: |
             set -euo pipefail
             APP_DIR="${CALLS_APP_DIR:-/opt/mansoni/app}"
@@ -55,6 +57,19 @@ jobs:
             git checkout main
             git reset --hard origin/main
             git clean -fd
+
+            upsert_env_var() {
+              local file="$1"
+              local key="$2"
+              local value="$3"
+              touch "$file"
+              chmod 600 "$file" || true
+              if grep -q "^${key}=" "$file"; then
+                sed -i "s|^${key}=.*|${key}=${value}|" "$file"
+              else
+                printf '\n%s=%s\n' "$key" "$value" >> "$file"
+              fi
+            }
 
             # -- 1.1 Ensure join-token secret exists in environment ------------
             # Keep secret in .env.production for systemd EnvironmentFile loading.
@@ -99,6 +114,25 @@ jobs:
               echo "[RU] SFU_TRUSTED_PROXIES synced to server/sfu/.env.production"
             else
               echo "[RU] WARNING: SFU_TRUSTED_PROXIES secret is not set in GitHub"
+            fi
+
+            if [ -n "${VITE_SUPABASE_URL:-}" ]; then
+              ENV_FILE="$APP_DIR/.env.production"
+              upsert_env_var "$ENV_FILE" "SUPABASE_URL" "$VITE_SUPABASE_URL"
+              upsert_env_var "$ENV_FILE" "VITE_SUPABASE_URL" "$VITE_SUPABASE_URL"
+              echo "[RU] SUPABASE_URL synced to .env.production"
+            else
+              echo "[RU] WARNING: VITE_SUPABASE_URL secret is not set in GitHub"
+            fi
+
+            if [ -n "${VITE_SUPABASE_PUBLISHABLE_KEY:-}" ]; then
+              ENV_FILE="$APP_DIR/.env.production"
+              upsert_env_var "$ENV_FILE" "SUPABASE_ANON_KEY" "$VITE_SUPABASE_PUBLISHABLE_KEY"
+              upsert_env_var "$ENV_FILE" "VITE_SUPABASE_PUBLISHABLE_KEY" "$VITE_SUPABASE_PUBLISHABLE_KEY"
+              upsert_env_var "$ENV_FILE" "VITE_SUPABASE_ANON_KEY" "$VITE_SUPABASE_PUBLISHABLE_KEY"
+              echo "[RU] SUPABASE_ANON_KEY synced to .env.production"
+            else
+              echo "[RU] WARNING: VITE_SUPABASE_PUBLISHABLE_KEY secret is not set in GitHub"
             fi
 
             # -- 1.2 Ensure runtime deps are present -----------------------------
@@ -193,12 +227,14 @@ jobs:
           CALLS_JOIN_TOKEN_SECRET: ${{ secrets.CALLS_JOIN_TOKEN_SECRET }}
           CALLS_WS_TRUSTED_PROXIES: ${{ secrets.CALLS_WS_TRUSTED_PROXIES }}
           SFU_TRUSTED_PROXIES: ${{ secrets.SFU_TRUSTED_PROXIES }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
         with:
           host: ${{ secrets.SFU_TR_HOST }}
           port: ${{ secrets.SFU_TR_SSH_PORT || '22' }}
           username: ${{ secrets.SFU_TR_USER }}
           key: ${{ secrets.SFU_TR_SSH_KEY }}
-          envs: CALLS_JOIN_TOKEN_SECRET,CALLS_WS_TRUSTED_PROXIES,SFU_TRUSTED_PROXIES
+          envs: CALLS_JOIN_TOKEN_SECRET,CALLS_WS_TRUSTED_PROXIES,SFU_TRUSTED_PROXIES,VITE_SUPABASE_URL,VITE_SUPABASE_PUBLISHABLE_KEY
           script: |
             set -euo pipefail
             APP_DIR="${CALLS_APP_DIR:-/opt/mansoni/app}"
@@ -216,6 +252,19 @@ jobs:
             git checkout main
             git reset --hard origin/main
             git clean -fd
+
+            upsert_env_var() {
+              local file="$1"
+              local key="$2"
+              local value="$3"
+              touch "$file"
+              chmod 600 "$file" || true
+              if grep -q "^${key}=" "$file"; then
+                sed -i "s|^${key}=.*|${key}=${value}|" "$file"
+              else
+                printf '\n%s=%s\n' "$key" "$value" >> "$file"
+              fi
+            }
 
             if [ -n "${CALLS_JOIN_TOKEN_SECRET:-}" ]; then
               ENV_FILE="$APP_DIR/.env.production"
@@ -257,6 +306,25 @@ jobs:
               echo "[TR] SFU_TRUSTED_PROXIES synced to server/sfu/.env.production"
             else
               echo "[TR] WARNING: SFU_TRUSTED_PROXIES secret is not set in GitHub"
+            fi
+
+            if [ -n "${VITE_SUPABASE_URL:-}" ]; then
+              ENV_FILE="$APP_DIR/.env.production"
+              upsert_env_var "$ENV_FILE" "SUPABASE_URL" "$VITE_SUPABASE_URL"
+              upsert_env_var "$ENV_FILE" "VITE_SUPABASE_URL" "$VITE_SUPABASE_URL"
+              echo "[TR] SUPABASE_URL synced to .env.production"
+            else
+              echo "[TR] WARNING: VITE_SUPABASE_URL secret is not set in GitHub"
+            fi
+
+            if [ -n "${VITE_SUPABASE_PUBLISHABLE_KEY:-}" ]; then
+              ENV_FILE="$APP_DIR/.env.production"
+              upsert_env_var "$ENV_FILE" "SUPABASE_ANON_KEY" "$VITE_SUPABASE_PUBLISHABLE_KEY"
+              upsert_env_var "$ENV_FILE" "VITE_SUPABASE_PUBLISHABLE_KEY" "$VITE_SUPABASE_PUBLISHABLE_KEY"
+              upsert_env_var "$ENV_FILE" "VITE_SUPABASE_ANON_KEY" "$VITE_SUPABASE_PUBLISHABLE_KEY"
+              echo "[TR] SUPABASE_ANON_KEY synced to .env.production"
+            else
+              echo "[TR] WARNING: VITE_SUPABASE_PUBLISHABLE_KEY secret is not set in GitHub"
             fi
 
             if [ ! -f "$APP_DIR/node_modules/ioredis/package.json" ] || [ ! -f "$APP_DIR/node_modules/ajv/package.json" ] || [ ! -f "$APP_DIR/node_modules/ajv-formats/package.json" ]; then
@@ -337,12 +405,14 @@ jobs:
           CALLS_JOIN_TOKEN_SECRET: ${{ secrets.CALLS_JOIN_TOKEN_SECRET }}
           CALLS_WS_TRUSTED_PROXIES: ${{ secrets.CALLS_WS_TRUSTED_PROXIES }}
           SFU_TRUSTED_PROXIES: ${{ secrets.SFU_TRUSTED_PROXIES }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
         with:
           host: ${{ secrets.SFU_AE_HOST }}
           port: ${{ secrets.SFU_AE_SSH_PORT || '22' }}
           username: ${{ secrets.SFU_AE_USER }}
           key: ${{ secrets.SFU_AE_SSH_KEY }}
-          envs: CALLS_JOIN_TOKEN_SECRET,CALLS_WS_TRUSTED_PROXIES,SFU_TRUSTED_PROXIES
+          envs: CALLS_JOIN_TOKEN_SECRET,CALLS_WS_TRUSTED_PROXIES,SFU_TRUSTED_PROXIES,VITE_SUPABASE_URL,VITE_SUPABASE_PUBLISHABLE_KEY
           script: |
             set -euo pipefail
             APP_DIR="${CALLS_APP_DIR:-/opt/mansoni/app}"
@@ -360,6 +430,19 @@ jobs:
             git checkout main
             git reset --hard origin/main
             git clean -fd
+
+            upsert_env_var() {
+              local file="$1"
+              local key="$2"
+              local value="$3"
+              touch "$file"
+              chmod 600 "$file" || true
+              if grep -q "^${key}=" "$file"; then
+                sed -i "s|^${key}=.*|${key}=${value}|" "$file"
+              else
+                printf '\n%s=%s\n' "$key" "$value" >> "$file"
+              fi
+            }
 
             if [ -n "${CALLS_JOIN_TOKEN_SECRET:-}" ]; then
               ENV_FILE="$APP_DIR/.env.production"
@@ -401,6 +484,25 @@ jobs:
               echo "[AE] SFU_TRUSTED_PROXIES synced to server/sfu/.env.production"
             else
               echo "[AE] WARNING: SFU_TRUSTED_PROXIES secret is not set in GitHub"
+            fi
+
+            if [ -n "${VITE_SUPABASE_URL:-}" ]; then
+              ENV_FILE="$APP_DIR/.env.production"
+              upsert_env_var "$ENV_FILE" "SUPABASE_URL" "$VITE_SUPABASE_URL"
+              upsert_env_var "$ENV_FILE" "VITE_SUPABASE_URL" "$VITE_SUPABASE_URL"
+              echo "[AE] SUPABASE_URL synced to .env.production"
+            else
+              echo "[AE] WARNING: VITE_SUPABASE_URL secret is not set in GitHub"
+            fi
+
+            if [ -n "${VITE_SUPABASE_PUBLISHABLE_KEY:-}" ]; then
+              ENV_FILE="$APP_DIR/.env.production"
+              upsert_env_var "$ENV_FILE" "SUPABASE_ANON_KEY" "$VITE_SUPABASE_PUBLISHABLE_KEY"
+              upsert_env_var "$ENV_FILE" "VITE_SUPABASE_PUBLISHABLE_KEY" "$VITE_SUPABASE_PUBLISHABLE_KEY"
+              upsert_env_var "$ENV_FILE" "VITE_SUPABASE_ANON_KEY" "$VITE_SUPABASE_PUBLISHABLE_KEY"
+              echo "[AE] SUPABASE_ANON_KEY synced to .env.production"
+            else
+              echo "[AE] WARNING: VITE_SUPABASE_PUBLISHABLE_KEY secret is not set in GitHub"
             fi
 
             if [ ! -f "$APP_DIR/node_modules/ioredis/package.json" ] || [ ! -f "$APP_DIR/node_modules/ajv/package.json" ] || [ ! -f "$APP_DIR/node_modules/ajv-formats/package.json" ]; then
@@ -475,6 +577,8 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - deploy-sfu-ru
+      - deploy-sfu-tr
+      - deploy-sfu-ae
     if: ${{ always() }}
     steps:
       - name: Checkout
@@ -495,11 +599,12 @@ jobs:
           CALLS_WS_TRUSTED_PROXIES: ${{ secrets.CALLS_WS_TRUSTED_PROXIES }}
           SFU_TRUSTED_PROXIES: ${{ secrets.SFU_TRUSTED_PROXIES }}
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           set -euo pipefail
           missing=0
-          for name in CALLS_JOIN_TOKEN_SECRET CALLS_WS_TRUSTED_PROXIES SFU_TRUSTED_PROXIES VITE_SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY; do
+          for name in CALLS_JOIN_TOKEN_SECRET CALLS_WS_TRUSTED_PROXIES SFU_TRUSTED_PROXIES VITE_SUPABASE_URL VITE_SUPABASE_PUBLISHABLE_KEY SUPABASE_SERVICE_ROLE_KEY; do
             value="${!name:-}"
             if [ -z "$value" ]; then
               echo "[verify-sfu] missing required secret: $name"
@@ -514,9 +619,21 @@ jobs:
       - name: Security policy smoke (calls-ws)
         run: npm run test -- src/test/calls-ws-e2ee-caps-policy.test.ts
 
-      - name: Readiness probe (RU/TR/AE)
+      - name: Build readiness endpoint list
+        run: |
+          set -euo pipefail
+          endpoints="wss://sfu-ru.mansoni.ru/ws"
+          if [ "${{ needs.deploy-sfu-tr.result }}" != "skipped" ]; then
+            endpoints="$endpoints,wss://sfu-tr.mansoni.ru/ws"
+          fi
+          if [ "${{ needs.deploy-sfu-ae.result }}" != "skipped" ]; then
+            endpoints="$endpoints,wss://sfu-ae.mansoni.ru/ws"
+          fi
+          echo "CALLS_SMOKE_ENDPOINTS=$endpoints" >> "$GITHUB_ENV"
+          echo "[verify-sfu] endpoints=$endpoints"
+
+      - name: Readiness probe (deployed regions)
         env:
           SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          CALLS_SMOKE_ENDPOINTS: wss://sfu-ru.mansoni.ru/ws,wss://sfu-tr.mansoni.ru/ws,wss://sfu-ae.mansoni.ru/ws
         run: npm run calls:sfu:readiness
