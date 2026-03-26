@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, CheckCheck, Hash, Link, LogOut, MoreVertical, QrCode, Send, UserPlus, Users } from "lucide-react";
 import { useSlowMode } from "@/hooks/useSlowMode";
 import { SlowModeTimer } from "@/components/chat/SlowModeTimer";
@@ -24,6 +24,7 @@ import type { GroupChat } from "@/hooks/useGroupChats";
 import { useGroupMembers, useGroupMessages } from "@/hooks/useGroupChats";
 import { useCommunityGlobalSettings, useCommunityInvites } from "@/hooks/useCommunityControls";
 import { useChatOpen } from "@/contexts/ChatOpenContext";
+import { useTypingIndicator } from "@/hooks/useTypingIndicator";
 import { supabase } from "@/lib/supabase";
 import { GradientAvatar } from "@/components/ui/gradient-avatar";
 import { InviteQrDialog } from "@/components/chat/InviteQrDialog";
@@ -62,6 +63,18 @@ export function GroupConversation({ group, onBack, onLeave }: GroupConversationP
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const isOwner = group.owner_id === user?.id;
   const canInvite = isOwner && (settings?.allow_group_invites ?? true);
+  const currentDisplayName = useMemo(() => {
+    const fromMeta = typeof user?.user_metadata?.full_name === "string" ? user.user_metadata.full_name.trim() : "";
+    if (fromMeta) return fromMeta;
+    const fromEmail = user?.email?.split("@")[0]?.trim() ?? "";
+    return fromEmail || "Пользователь";
+  }, [user?.email, user?.user_metadata?.full_name]);
+  const { typingLabel, onKeyDown: typingOnKeyDown, onStopTyping: typingOnStop } = useTypingIndicator(
+    group.id,
+    user?.id,
+    currentDisplayName,
+    null,
+  );
 
   useEffect(() => {
     setIsChatOpen(true);
@@ -71,6 +84,12 @@ export function GroupConversation({ group, onBack, onLeave }: GroupConversationP
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  useEffect(() => {
+    return () => {
+      typingOnStop();
+    };
+  }, [typingOnStop]);
 
   const formatMessageTime = (dateStr: string) => {
     try {
@@ -91,6 +110,7 @@ export function GroupConversation({ group, onBack, onLeave }: GroupConversationP
       setSending(true);
       await sendMessage(inputText);
       setInputText("");
+      typingOnStop();
       recordSend();
     } catch (error) {
       const payload = getHashtagBlockedToastPayload(error);
@@ -216,7 +236,9 @@ export function GroupConversation({ group, onBack, onLeave }: GroupConversationP
 
           <div className="flex-1 flex flex-col items-center justify-center min-w-0">
             <h2 className="font-semibold text-foreground text-base truncate max-w-[200px]">{group.name}</h2>
-            <p className="text-xs text-muted-foreground">{group.member_count} участников</p>
+            <p className={`text-xs ${typingLabel ? "text-primary" : "text-muted-foreground"}`}>
+              {typingLabel ?? `${group.member_count} участников`}
+            </p>
           </div>
 
           <DropdownMenu>
@@ -370,8 +392,22 @@ export function GroupConversation({ group, onBack, onLeave }: GroupConversationP
             <Input
               placeholder={isRestricted ? `Медленный режим — подождите ${remainingSeconds}с` : "Сообщение"}
               value={inputText}
-              onChange={(e) => setInputText(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleSend()}
+              onChange={(e) => {
+                const nextValue = e.target.value;
+                setInputText(nextValue);
+                if (nextValue.trim()) {
+                  typingOnKeyDown();
+                } else {
+                  typingOnStop();
+                }
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  void handleSend();
+                  return;
+                }
+                typingOnKeyDown();
+              }}
               className="w-full h-11 rounded-full"
               disabled={isRestricted}
             />
