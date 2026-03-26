@@ -11,7 +11,7 @@ export default defineConfig(({ mode }) => ({
     host: "0.0.0.0",
     port: 8080,
     hmr: {
-      overlay: false,
+      overlay: true,
     },
   },
   plugins: [react()],

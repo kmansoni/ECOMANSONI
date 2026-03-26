@@ -169,7 +169,7 @@ export function CreateContentModal({ isOpen, onClose, onSuccess }: CreateContent
         onClose();
       } else {
         if (!selectedFile) { toast.error('Выберите медиа-файл'); return; }
-        let result = null;
+        let result: { content_type: ContentType } | null = null;
         switch (activeTab) {
           case 'publications': result = await uploadPostMedia(selectedFile, caption); break;
           case 'stories': result = await uploadStoryMedia(selectedFile, caption); break;

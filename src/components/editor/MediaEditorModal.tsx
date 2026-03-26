@@ -26,6 +26,7 @@ const ASPECT_RATIOS: Record<ContentType, { width: number; height: number; label:
   story: { width: 9, height: 16, label: "9:16" },
   reel: { width: 9, height: 16, label: "9:16" },
   live: { width: 16, height: 9, label: "16:9" },
+};
 
 export function MediaEditorModal({
   open,

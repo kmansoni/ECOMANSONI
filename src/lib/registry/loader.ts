@@ -80,8 +80,9 @@ function loadRegistry(): CompiledRegistry {
     if (isNodeRuntime) {
       const registryPath = path.join(process.cwd(), "supabase", "registry.json");
       const content = fs.readFileSync(registryPath, "utf-8");
-      cachedRegistry = JSON.parse(content);
-      return cachedRegistry;
+      const parsed = JSON.parse(content) as CompiledRegistry;
+      cachedRegistry = parsed;
+      return parsed;
     }
 
     // In browser, would need to fetch

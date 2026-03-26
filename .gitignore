@@ -54,6 +54,9 @@ vite_errors.txt
 # Supabase local temp
 supabase/.temp/
 
+# Scripts local temp
+scripts/.temp/
+
 # Local app temp
 tmp/
 
@@ -63,6 +66,11 @@ tmp/
 # Local secrets directory (never commit secrets)
 .secrets/
 .git-push-force.ps1
+
+# P0-010: Env snapshots and build artifacts must never be committed
+.tmp_env_local_snapshot.txt
+*.env.local.snapshot
+TIMEWEB_PASTE_TO_CONSOLE.txt
 
 # Test artifacts
 test-results/

@@ -241,18 +241,20 @@ export function useSearch() {
       `;
 
       let includesSavesColumn = true;
-      let { data, error } = await supabase
+      let data: any[] | null = null;
+      let error: any = null;
+      ({ data, error } = await (supabase as any)
         .from("posts")
         .select(selectWithSaves)
         .eq("is_published", true)
         .order("created_at", { ascending: false })
-        .limit(30);
+        .limit(30));
 
       const errorText = String(error?.message || error?.details || "");
       const isMissingSavesColumn = !!error && /(saves_count|column)/i.test(errorText);
       if (isMissingSavesColumn) {
         includesSavesColumn = false;
-        const retry = await supabase
+        const retry = await (supabase as any)
           .from("posts")
           .select(selectBase)
           .eq("is_published", true)

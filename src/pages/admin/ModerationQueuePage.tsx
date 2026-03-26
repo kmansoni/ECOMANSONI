@@ -207,10 +207,10 @@ export function ModerationQueuePage() {
         p_content_type: selectedItem.content_type,
         p_content_id: selectedItem.content_id,
         p_new_decision: decision,
-        p_reason_code: reasonCode || null,
+        p_reason_code: reasonCode || undefined,
         p_actor_type: "human",
-        p_actor_id: adminMe?.admin_user_id || null,
-        p_notes: notes || null,
+        p_actor_id: adminMe?.admin_user_id || undefined,
+        p_notes: notes || undefined,
       });
 
       if (error) throw error;

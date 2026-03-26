@@ -1006,7 +1006,7 @@ export function SettingsPage() {
       const postIds = (savedRows ?? []).map((r: any) => String(r.post_id));
       const postsMap = await fetchPostsByIds(postIds);
       const ordered = postIds
-        .map((id) => postsMap.get(id))
+        .map((id: string) => postsMap.get(id))
         .filter(Boolean) as SettingsPostItem[];
 
       setSavedAllPosts(ordered);
@@ -1032,7 +1032,7 @@ export function SettingsPage() {
       const postIds = (likeRows ?? []).map((r: any) => String(r.post_id));
       const postsMap = await fetchPostsByIds(postIds);
       const ordered = postIds
-        .map((id) => postsMap.get(id))
+        .map((id: string) => postsMap.get(id))
         .filter(Boolean) as SettingsPostItem[];
 
       setSavedLikedPosts(ordered);
@@ -1084,7 +1084,7 @@ export function SettingsPage() {
       const postIds = (archivedRows ?? []).map((r: any) => String(r.post_id));
       const postsMap = await fetchPostsByIds(postIds);
       const ordered = postIds
-        .map((id) => postsMap.get(id))
+        .map((id: string) => postsMap.get(id))
         .filter(Boolean) as SettingsPostItem[];
 
       setArchivedPosts(ordered);
@@ -1138,7 +1138,7 @@ export function SettingsPage() {
       const postIds = (likeRows ?? []).map((r: any) => String(r.post_id));
       const postsMap = await fetchPostsByIds(postIds);
       const ordered = postIds
-        .map((id) => postsMap.get(id))
+        .map((id: string) => postsMap.get(id))
         .filter(Boolean) as SettingsPostItem[];
 
       setActivityLikes(ordered);

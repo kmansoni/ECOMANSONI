@@ -315,21 +315,29 @@ class CrowdsourceService:
             vote_type,
         )
 
-        # Update counters
+        # Update counters with static SQL only (no dynamic field interpolation).
         if vote_type == "upvote":
-            counter_field = "upvotes = upvotes + 1"
+            updated = await self.db.fetch_one(
+                """
+                UPDATE nav_crowdsource_reports
+                   SET upvotes = upvotes + 1,
+                       updated_at = now()
+                 WHERE id = $1
+                RETURNING id, status, upvotes, downvotes, reporter_id
+                """,
+                uuid.UUID(report_id),
+            )
         else:
-            counter_field = "downvotes = downvotes + 1"
-
-        updated = await self.db.fetch_one(
-            f"""
-            UPDATE nav_crowdsource_reports
-               SET {counter_field}, updated_at = now()
-             WHERE id = $1
-            RETURNING id, status, upvotes, downvotes, reporter_id
-            """,
-            uuid.UUID(report_id),
-        )
+            updated = await self.db.fetch_one(
+                """
+                UPDATE nav_crowdsource_reports
+                   SET downvotes = downvotes + 1,
+                       updated_at = now()
+                 WHERE id = $1
+                RETURNING id, status, upvotes, downvotes, reporter_id
+                """,
+                uuid.UUID(report_id),
+            )
 
         new_upvotes = updated["upvotes"]
         new_downvotes = updated["downvotes"]
@@ -414,8 +422,7 @@ class CrowdsourceService:
         if limit > 200:
             limit = 200
 
-        type_filter = ""
-        params: list[Any] = [lng, lat, radius_m, limit]
+        report_types_filter: list[str] | None = None
 
         if report_types:
             # Validate each type
@@ -425,15 +432,10 @@ class CrowdsourceService:
                     f"Invalid report types: {invalid}",
                     detail={"valid": sorted(VALID_REPORT_TYPES)},
                 )
-            # Build parameterised IN clause
-            type_placeholders = ", ".join(
-                f"${i + 5}" for i in range(len(report_types))
-            )
-            type_filter = f"AND report_type IN ({type_placeholders})"
-            params.extend(report_types)
+            report_types_filter = report_types
 
         rows = await self.db.fetch_all(
-            f"""
+            """
             SELECT
                 id,
                 reporter_id,
@@ -460,11 +462,15 @@ class CrowdsourceService:
             )
               AND status IN ('submitted', 'verified', 'active')
               AND (expires_at IS NULL OR expires_at > now())
-              {type_filter}
+                            AND ($5::text[] IS NULL OR report_type = ANY($5::text[]))
             ORDER BY created_at DESC
             LIMIT $4
             """,
-            *params,
+                        lng,
+                        lat,
+                        radius_m,
+                        limit,
+                        report_types_filter,
         )
         return [dict(r) for r in rows]
 

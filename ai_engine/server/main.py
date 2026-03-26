@@ -13,6 +13,8 @@ import asyncio
 import json
 import logging
 import os
+import secrets
+import hashlib
 import time
 import uuid
 from typing import Any, AsyncGenerator, Coroutine, List, Optional, Literal
@@ -68,6 +70,10 @@ app = FastAPI(
 
 _cors_origins_env = os.environ.get("ARIA_CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:5173")
 _cors_origins = [origin.strip() for origin in _cors_origins_env.split(",") if origin.strip()]
+if "*" in _cors_origins:
+    raise RuntimeError(
+        "ARIA_CORS_ALLOWED_ORIGINS must not contain '*' when credentials are enabled"
+    )
 
 app.add_middleware(
     CORSMiddleware,
@@ -89,7 +95,7 @@ def verify_api_key(request: Request) -> None:
     if not auth.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing Bearer token")
     token = auth[7:].strip()
-    if token != API_KEY:
+    if not secrets.compare_digest(token, API_KEY):
         raise HTTPException(status_code=401, detail="Invalid API key")
 
 
@@ -116,8 +122,8 @@ _feedback_store: Optional[FeedbackStore] = None
 _reward_model: Optional[RewardModel] = None
 
 _FEEDBACK_DB  = os.environ.get("ARIA_FEEDBACK_DB",  "aria_feedback.db")
-_REWARD_CKPT  = os.environ.get("ARIA_REWARD_CKPT",  "aria_reward_model.pkl")
-_USER_ID_SALT = os.environ.get("ARIA_USER_ID_SALT",  "aria-feedback-v1")
+_REWARD_CKPT  = os.environ.get("ARIA_REWARD_CKPT",  "aria_reward_model.json")
+_USER_ID_SALT = os.environ.get("ARIA_USER_ID_SALT") or hashlib.sha256(API_KEY.encode("utf-8")).hexdigest()
 # Флаг: автоматически запускать обучение при накоплении N новых пар
 _AUTO_TRAIN_THRESHOLD = int(os.environ.get("ARIA_AUTO_TRAIN_THRESHOLD", "50"))
 
@@ -459,7 +465,7 @@ data = json.loads(user_data)
 ### 4. Hardcoded secrets
 ```python
 # ❌ Уязвимо
-API_KEY = "sk-1234567890abcdef"
+API_KEY = "<API_KEY_FROM_ENV>"
 
 # ✅ Безопасно
 import os

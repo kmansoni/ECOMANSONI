@@ -36,6 +36,11 @@ function makeSupabaseMock({
 describe("reels-arbiter journal contract (P1)", () => {
   const realNow = Date.now;
 
+  async function loadTick() {
+    const mod = await import("../../server/reels-arbiter/index.mjs");
+    return (mod as { tick: (args: unknown) => Promise<void> }).tick;
+  }
+
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-02-21T20:00:00.000Z"));
@@ -47,7 +52,7 @@ describe("reels-arbiter journal contract (P1)", () => {
   });
 
   it("NO-SET is observable via record_decision_v1 (floor breached, lag null)", async () => {
-    const { tick } = await import("../../server/reels-arbiter/index.mjs");
+    const tick = await loadTick();
 
     const supabase = makeSupabaseMock({
       suppressionRow: { suppressed_until: null, reason: null, is_suppressed: false },
@@ -86,7 +91,7 @@ describe("reels-arbiter journal contract (P1)", () => {
   });
 
   it("SET happens only when lag>=900 AND floor breached", async () => {
-    const { tick } = await import("../../server/reels-arbiter/index.mjs");
+    const tick = await loadTick();
 
     const supabase = makeSupabaseMock({
       suppressionRow: { suppressed_until: null, reason: null, is_suppressed: false },
@@ -122,7 +127,7 @@ describe("reels-arbiter journal contract (P1)", () => {
   });
 
   it("NO-CLEAR is observable via record_decision_v1 when lag>180 even if green streak ok", async () => {
-    const { tick } = await import("../../server/reels-arbiter/index.mjs");
+    const tick = await loadTick();
 
     const supabase = makeSupabaseMock({
       suppressionRow: { suppressed_until: "2099-01-01T00:00:00Z", reason: "x", is_suppressed: true },

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
-import { fetchUserBriefMap, resolveUserBrief } from "@/lib/users/userBriefs";
+import { fetchUserBriefMap, resolveUserBrief, type UserBriefClient } from "@/lib/users/userBriefs";
 
 export interface Notification {
   id: string;
@@ -12,7 +12,7 @@ export interface Notification {
   actor_id?: string;
   target_type?: "post" | "reel" | "story" | "comment" | "profile";
   target_id?: string;
-  data?: Record<string, any>;
+  data?: Record<string, unknown>;
   is_read: boolean;
   created_at: string;
   actor?: {
@@ -37,7 +37,78 @@ export interface NotificationSettings {
 
 const PAGE_SIZE = 20;
 
+type QueryResult<T> = Promise<{ data: T | null; error: unknown; count?: number | null }>;
+
+interface NotificationRow {
+  id: string;
+  user_id: string;
+  type: Notification["type"];
+  title?: string | null;
+  body?: string | null;
+  content?: string | null;
+  actor_id?: string | null;
+  target_type?: Notification["target_type"];
+  target_id?: string | null;
+  data?: Record<string, unknown> | null;
+  is_read: boolean;
+  created_at: string;
+}
+
+interface NotificationsClient {
+  rpc: UserBriefClient["rpc"];
+  from(table: "notifications"): {
+    select: (columns: string, options?: { count?: "exact"; head?: boolean }) => {
+      eq: (column: string, value: string | boolean) => {
+        eq?: (column: string, value: string | boolean) => QueryResult<NotificationRow[]>;
+        order?: (column: string, options: { ascending: boolean }) => {
+          range: (from: number, to: number) => QueryResult<NotificationRow[]>;
+        };
+      };
+      order: (column: string, options: { ascending: boolean }) => {
+        range: (from: number, to: number) => QueryResult<NotificationRow[]>;
+      };
+    };
+    update: (payload: { is_read: boolean }) => {
+      eq: (column: string, value: string | boolean) => { eq: (column: string, value: string | boolean) => QueryResult<null> };
+    };
+    delete: () => {
+      eq: (column: string, value: string) => { eq: (column: string, value: string) => QueryResult<null> };
+    };
+  };
+  from(table: "notification_settings"): {
+    select: (columns: "*") => {
+      eq: (column: "user_id", value: string) => { maybeSingle: () => QueryResult<Partial<NotificationSettings>> };
+    };
+    upsert: (payload: Partial<NotificationSettings> & { user_id: string }, options: { onConflict: string }) => QueryResult<null>;
+  };
+  from(table: "push_tokens"): {
+    upsert: (
+      payload: { user_id: string; token: string; platform: "web" | "ios" | "android"; last_used_at: string },
+      options: { onConflict: string }
+    ) => QueryResult<null>;
+  };
+}
+
+function normalizeNotificationRow(row: NotificationRow): Notification {
+  return {
+    id: row.id,
+    user_id: row.user_id,
+    type: row.type,
+    title: row.title ?? undefined,
+    body: row.body ?? row.content ?? "",
+    actor_id: row.actor_id ?? undefined,
+    target_type: row.target_type ?? undefined,
+    target_id: row.target_id ?? undefined,
+    data: row.data ?? undefined,
+    is_read: row.is_read,
+    created_at: row.created_at,
+  };
+}
+
 export function useNotifications() {
+  const sb = supabase;
+  const db = sb as unknown as NotificationsClient;
+  const briefClient = sb as unknown as UserBriefClient;
   const { user } = useAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -45,14 +116,17 @@ export function useNotifications() {
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
 
-  const fetchActors = async (items: any[]): Promise<Notification[]> => {
-    const actorIds = [...new Set(items.map((n: any) => n.actor_id).filter(Boolean))] as string[];
-    const briefMap = await fetchUserBriefMap(actorIds, supabase as any);
+  const fetchActors = async (items: NotificationRow[]): Promise<Notification[]> => {
+    const actorIds = [...new Set(items.map((n) => n.actor_id).filter(Boolean))] as string[];
+    const briefMap = await fetchUserBriefMap(actorIds, briefClient);
 
-    return items.map((n: any) => ({
-      ...n,
-      actor: n.actor_id ? resolveUserBrief(String(n.actor_id), briefMap) : undefined,
-    }));
+    return items.map((row) => {
+      const n = normalizeNotificationRow(row);
+      return {
+        ...n,
+        actor: n.actor_id ? resolveUserBrief(String(n.actor_id), briefMap) : undefined,
+      };
+    });
   };
 
   const getNotifications = useCallback(async (pageNum = 0) => {
@@ -60,7 +134,7 @@ export function useNotifications() {
     try {
       const from = pageNum * PAGE_SIZE;
       const to = from + PAGE_SIZE - 1;
-      const { data, error } = await (supabase as any)
+      const { data, error } = await db
         .from("notifications")
         .select("*")
         .eq("user_id", user.id)
@@ -69,8 +143,9 @@ export function useNotifications() {
 
       if (error) throw error;
 
-      const result = await fetchActors(data || []);
-      setHasMore((data || []).length === PAGE_SIZE);
+      const rows = (data ?? []) as NotificationRow[];
+      const result = await fetchActors(rows);
+      setHasMore(rows.length === PAGE_SIZE);
       return result;
     } catch (err) {
       console.error("Ошибка загрузки уведомлений:", err);
@@ -91,7 +166,7 @@ export function useNotifications() {
       setNotifications(result);
       setPage(0);
       // Fetch unread count
-      const { count } = await (supabase as any)
+      const { count } = await db
         .from("notifications")
         .select("*", { count: "exact", head: true })
         .eq("user_id", user.id)
@@ -112,7 +187,7 @@ export function useNotifications() {
 
   const getUnreadCount = useCallback(async (): Promise<number> => {
     if (!user) return 0;
-    const { count } = await (supabase as any)
+    const { count } = await db
       .from("notifications")
       .select("*", { count: "exact", head: true })
       .eq("user_id", user.id)
@@ -122,7 +197,7 @@ export function useNotifications() {
 
   const markAsRead = useCallback(async (id: string) => {
     if (!user) return;
-    await (supabase as any)
+    await db
       .from("notifications")
       .update({ is_read: true })
       .eq("id", id)
@@ -136,7 +211,7 @@ export function useNotifications() {
 
   const markAllAsRead = useCallback(async () => {
     if (!user) return;
-    await (supabase as any)
+    await db
       .from("notifications")
       .update({ is_read: true })
       .eq("user_id", user.id)
@@ -149,7 +224,7 @@ export function useNotifications() {
   const deleteNotification = useCallback(async (id: string) => {
     if (!user) return;
     const item = notifications.find((n) => n.id === id);
-    await (supabase as any)
+    await db
       .from("notifications")
       .delete()
       .eq("id", id)
@@ -172,7 +247,7 @@ export function useNotifications() {
       pause_until: null,
     };
     if (!user) return defaults;
-    const { data } = await (supabase as any)
+    const { data } = await db
       .from("notification_settings")
       .select("*")
       .eq("user_id", user.id)
@@ -182,14 +257,14 @@ export function useNotifications() {
 
   const updateNotificationSettings = useCallback(async (settings: Partial<NotificationSettings>) => {
     if (!user) return;
-    await (supabase as any)
+    await db
       .from("notification_settings")
       .upsert({ user_id: user.id, ...settings }, { onConflict: "user_id" });
   }, [user]);
 
   const registerPushToken = useCallback(async (token: string, platform: "web" | "ios" | "android") => {
     if (!user) return;
-    await (supabase as any)
+    await db
       .from("push_tokens")
       .upsert(
         { user_id: user.id, token, platform, last_used_at: new Date().toISOString() },
@@ -200,7 +275,7 @@ export function useNotifications() {
   // Realtime subscription
   const subscribeToNotifications = useCallback(() => {
     if (!user) return () => {};
-    const channel = (supabase as any)
+    const channel = sb
       .channel("notifications-v2-realtime")
       .on(
         "postgres_changes",
@@ -210,8 +285,8 @@ export function useNotifications() {
           table: "notifications",
           filter: `user_id=eq.${user.id}`,
         },
-        async (payload: any) => {
-          const n = payload.new as any;
+        async (payload: { new: NotificationRow }) => {
+          const n = payload.new;
           const result = await fetchActors([n]);
           const notif = result[0];
           setNotifications((prev) => {

@@ -26,14 +26,14 @@ interface PinchZoomState {
   translateY: number;
 }
 
-interface UsePinchZoomOptions {
+export interface UsePinchZoomOptions {
   minScale?: number;
   maxScale?: number;
   doubleTapScale?: number;
   onZoomChange?: (scale: number) => void;
 }
 
-interface UsePinchZoomReturn {
+export interface UsePinchZoomResult {
   ref: React.RefObject<HTMLDivElement>;
   style: React.CSSProperties;
   scale: number;
@@ -46,7 +46,7 @@ const MIN_SCALE_DEFAULT = 1;
 const MAX_SCALE_DEFAULT = 5;
 const DOUBLE_TAP_SCALE_DEFAULT = 2.5;
 
-export function usePinchZoom(options: UsePinchZoomOptions = {}): UsePinchZoomReturn {
+export function usePinchZoom(options: UsePinchZoomOptions = {}): UsePinchZoomResult {
   const {
     minScale = MIN_SCALE_DEFAULT,
     maxScale = MAX_SCALE_DEFAULT,

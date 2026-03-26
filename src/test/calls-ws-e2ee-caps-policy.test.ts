@@ -1,7 +1,7 @@
 /* @vitest-environment node */
 
 import { afterEach, describe, expect, it } from "vitest";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import http from "node:http";
 import path from "node:path";
@@ -96,7 +96,7 @@ async function startCallsWs(envOverrides: Record<string, string>) {
   return { proc, port };
 }
 
-function stopCallsWs(proc: ChildProcessWithoutNullStreams) {
+function stopCallsWs(proc: ChildProcess) {
   return new Promise<void>((resolve) => {
     if (proc.killed || proc.exitCode !== null) {
       resolve();
@@ -201,7 +201,7 @@ async function authAndGetAck(ws: WebSocket) {
   expect(authAck.ack?.ok).toBe(true);
 }
 
-const runningServers: ChildProcessWithoutNullStreams[] = [];
+const runningServers: ChildProcess[] = [];
 
 afterEach(async () => {
   while (runningServers.length) {

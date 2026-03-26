@@ -9,7 +9,7 @@ import { motion } from 'framer-motion';
 
 // --- Mock data ---
 const generateFollowerGrowth = () => {
-  const data = [];
+  const data: Array<{ date: string; followers: number }> = [];
   let count = 1200;
   const now = new Date();
   for (let i = 29; i >= 0; i--) {

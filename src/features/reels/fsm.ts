@@ -283,7 +283,7 @@ export function reduceReels(
         effects: [
           { t: "PLAYER_PAUSE", reason: event.reason },
           ...(context.activeReelId
-            ? [{ t: "WATCH_EMIT_STOP", reelId: context.activeReelId, reason: event.reason === "tap" ? "overlay" : event.reason } as const]
+            ? [{ t: "WATCH_EMIT_STOP", reelId: context.activeReelId, reason: event.reason === "tap" ? "overlay" : event.reason === "visibility" ? "scroll" : event.reason } as const]
             : []),
         ],
       };

@@ -35,7 +35,7 @@ export async function reportMetric(
       return null;
     }
 
-    return data as EvaluateGuardrailsResponse;
+    return data as unknown as EvaluateGuardrailsResponse;
   } catch (err) {
     console.error(`[observability] reportMetric(${metricName}) exception:`, err);
     return null;
@@ -62,7 +62,7 @@ export async function getActiveGuardrailBreaches(
       return null;
     }
 
-    return data as GuardrailBreachesResponse;
+    return data as unknown as GuardrailBreachesResponse;
   } catch (err) {
     console.error('[observability] getActiveGuardrailBreaches exception:', err);
     return null;
@@ -82,7 +82,7 @@ export async function getSLOStatus(
 ): Promise<SLOStatus | null> {
   try {
     const { data, error } = await supabase.rpc('get_slo_status_v1', {
-      p_domain: domain || null,
+      p_domain: domain || undefined,
       p_lookback_minutes: lookbackMinutes,
     });
 
@@ -91,7 +91,7 @@ export async function getSLOStatus(
       return null;
     }
 
-    return data as SLOStatus;
+    return data as unknown as SLOStatus;
   } catch (err) {
     console.error('[observability] getSLOStatus exception:', err);
     return null;
@@ -123,7 +123,7 @@ export async function getMetricSamples(
       return [];
     }
 
-    return data || [];
+    return (data as unknown as MetricSampleRow[]) || [];
   } catch (err) {
     console.error(`[observability] getMetricSamples(${metricName}) exception:`, err);
     return [];

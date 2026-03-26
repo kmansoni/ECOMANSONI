@@ -43,6 +43,115 @@ import { encryptForStorage, decryptFromStorage } from "@/auth/localStorageCrypto
 import { isWebAuthnPRFSupported, loadWebAuthnRecord } from "@/lib/e2ee/webAuthnBinding";
 import { logger } from "@/lib/logger";
 
+type UnknownRecord = Record<string, unknown>;
+
+type DbResult<T> = Promise<{ data: T | null; error: { message?: string } | null }>;
+
+interface SecretChatDbClient {
+  from: (table: string) => {
+    select: (columns: string) => {
+      eq: (column: string, value: string) => {
+        maybeSingle: () => DbResult<unknown>;
+        single: () => DbResult<unknown>;
+      };
+      single: () => DbResult<unknown>;
+    };
+    insert: (payload: unknown) => {
+      select: (columns: string) => { single: () => DbResult<unknown> };
+    };
+    update: (payload: unknown) => {
+      eq: (column: string, value: string) => {
+        select?: (columns: string) => { single: () => DbResult<unknown> };
+      };
+    };
+    upsert: (payload: unknown) => DbResult<null>;
+  };
+  rpc: (fn: string, args?: Record<string, unknown>) => DbResult<unknown>;
+  channel: typeof supabase.channel;
+  removeChannel: typeof supabase.removeChannel;
+}
+
+const secretChatDb = supabase as unknown as SecretChatDbClient;
+
+interface SecretChatPreKeyBundleRow {
+  identityKeyPublic: string;
+  identitySigningPublic: string;
+  signedPreKeyPublic: string;
+  signedPreKeySignature: string;
+}
+
+function isRecord(value: unknown): value is UnknownRecord {
+  return typeof value === "object" && value !== null;
+}
+
+function getStringField(source: UnknownRecord, key: string): string | null {
+  const value = source[key];
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function decodeSecretChatRow(value: unknown): SecretChat | null {
+  if (!isRecord(value)) return null;
+
+  const id = getStringField(value, "id");
+  const conversationId = getStringField(value, "conversation_id");
+  const initiatorId = getStringField(value, "initiator_id");
+  const participantId = getStringField(value, "participant_id");
+  const status = getStringField(value, "status");
+  const createdAt = getStringField(value, "created_at");
+
+  if (!id || !conversationId || !initiatorId || !participantId || !status || !createdAt) {
+    return null;
+  }
+
+  return {
+    id,
+    conversation_id: conversationId,
+    initiator_id: initiatorId,
+    participant_id: participantId,
+    status: status === "pending" || status === "active" || status === "closed" ? status : "pending",
+    default_ttl_seconds:
+      typeof value.default_ttl_seconds === "number"
+        ? value.default_ttl_seconds
+        : Number(value.default_ttl_seconds ?? 0) || 0,
+    screenshot_notifications: Boolean(value.screenshot_notifications),
+    created_at: createdAt,
+    accepted_at: getStringField(value, "accepted_at"),
+    closed_at: getStringField(value, "closed_at"),
+    initiator_ephemeral_key: getStringField(value, "initiator_ephemeral_key"),
+    initiator_identity_key: getStringField(value, "initiator_identity_key"),
+    used_opk_id: getStringField(value, "used_opk_id"),
+    initiator_used_one_time_prekey_public: getStringField(value, "initiator_used_one_time_prekey_public"),
+  };
+}
+
+function decodeSecretChatPreKeyBundleRow(value: unknown): SecretChatPreKeyBundleRow | null {
+  if (!isRecord(value)) return null;
+
+  const identityKeyPublic = getStringField(value, "identity_key_public");
+  const identitySigningPublic = getStringField(value, "identity_signing_public");
+  const signedPreKeyPublic = getStringField(value, "signed_prekey_public");
+  const signedPreKeySignature = getStringField(value, "signed_prekey_signature");
+
+  if (!identityKeyPublic || !identitySigningPublic || !signedPreKeyPublic || !signedPreKeySignature) {
+    return null;
+  }
+
+  return {
+    identityKeyPublic,
+    identitySigningPublic,
+    signedPreKeyPublic,
+    signedPreKeySignature,
+  };
+}
+
+function decodeConversationIdRow(value: unknown): { id: string } | null {
+  if (!isRecord(value)) return null;
+  const id = getStringField(value, "id");
+  return id ? { id } : null;
+}
+
 // ── Types ──────────────────────────────────────────────────────────────────
 
 export interface SecretChat {
@@ -81,7 +190,7 @@ const DR_STATE_KEY = (userId: string, convId: string) => `dr_state_${userId}_${c
 // Secret chat encrypted blob storage (IndexedDB)
 const SECRET_CHAT_DB = "secret-chat-e2ee-v1";
 const SECRET_CHAT_STORE = "kv";
-const REQUIRE_WEBAUTHN_IN_PROD = ((import.meta as any).env?.VITE_E2EE_REQUIRE_WEBAUTHN ?? "true") === "true";
+const REQUIRE_WEBAUTHN_IN_PROD = (import.meta.env.VITE_E2EE_REQUIRE_WEBAUTHN ?? "true") === "true";
 
 function openSecretChatDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -214,6 +323,9 @@ async function getOrCreateIdentityKeys(userId: string): Promise<{
   if (stored) {
     try {
       const decrypted = await decryptFromStorage(stored);
+      if (!decrypted) {
+        throw new Error("decrypt_identity_keys_failed");
+      }
       const s: StoredIdentityKeys = JSON.parse(decrypted);
       const identityEcdhKeyPair = await X3DH.importEcdhKeyPair(s.ecdhPublic, s.ecdhPrivate);
       const identityEcdsaKeyPair = await X3DH.importEcdsaKeyPair(s.ecdsaPublic, s.ecdsaPrivate);
@@ -285,6 +397,7 @@ async function findStoredOneTimePreKeyPair(userId: string, publicKey: string): P
 
   try {
     const decrypted = await decryptFromStorage(stored);
+    if (!decrypted) return null;
     const parsed = JSON.parse(decrypted) as StoredIdentityKeys;
     const match = (parsed.oneTimePreKeys ?? []).find((entry) => entry.publicKey === publicKey);
     if (!match) return null;
@@ -304,7 +417,7 @@ async function encryptRatchetState(raw: string): Promise<string> {
   return encryptForStorage(raw);
 }
 
-async function decryptRatchetState(blob: string): Promise<string> {
+async function decryptRatchetState(blob: string): Promise<string | null> {
   return decryptFromStorage(blob);
 }
 
@@ -361,16 +474,30 @@ export function useSecretChat(conversationId: string | null) {
     }
     let cancelled = false;
     setLoading(true);
-    ;(supabase as any)
-      .from("secret_chats")
-      .select("*")
-      .eq("conversation_id", conversationId)
-      .maybeSingle()
-      .then(({ data }: { data: SecretChat | null }) => {
+    void (async () => {
+      try {
+        const { data, error } = await secretChatDb
+          .from("secret_chats")
+          .select("*")
+          .eq("conversation_id", conversationId)
+          .maybeSingle();
+
         if (cancelled) return;
-        setSecretChat(data);
-        setLoading(false);
-      });
+        if (error) {
+          logger.warn("[useSecretChat] Failed to load secret chat", {
+            conversationId,
+            userId: user.id,
+            error,
+          });
+          setSecretChat(null);
+          return;
+        }
+
+        setSecretChat(decodeSecretChatRow(data));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
     return () => { cancelled = true; };
   }, [conversationId, user]);
 
@@ -398,7 +525,7 @@ export function useSecretChat(conversationId: string | null) {
   // Realtime subscription
   useEffect(() => {
     if (!conversationId) return;
-    const channel = (supabase as any)
+    const channel = secretChatDb
       .channel(`secret_chat:${conversationId}`)
       .on(
         "postgres_changes",
@@ -408,16 +535,16 @@ export function useSecretChat(conversationId: string | null) {
           table: "secret_chats",
           filter: `conversation_id=eq.${conversationId}`,
         },
-        (payload: { eventType: string; new: SecretChat }) => {
+        (payload) => {
           if (payload.eventType === "DELETE") {
             setSecretChat(null);
           } else {
-            setSecretChat(payload.new);
+            setSecretChat(decodeSecretChatRow(payload.new));
           }
         }
       )
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => { secretChatDb.removeChannel(channel); };
   }, [conversationId]);
 
   /**
@@ -440,7 +567,7 @@ export function useSecretChat(conversationId: string | null) {
     if (!serverBundle) return { error: "bundle_missing_after_keygen" };
 
     // Upsert public key material only — private keys remain in encrypted localStorage
-    const { error } = await (supabase as any)
+    const { error } = await secretChatDb
       .from("user_prekey_bundles")
       .upsert({
         user_id: user.id,
@@ -467,25 +594,27 @@ export function useSecretChat(conversationId: string | null) {
       const { identityEcdhKeyPair } = await getOrCreateIdentityKeys(user.id);
 
       // 2. Fetch Bob's pre-key bundle
-      const { data: bobBundle, error: bundleErr } = await (supabase as any)
+      const { data: bobBundleRaw, error: bundleErr } = await secretChatDb
         .from("user_prekey_bundles")
         .select("identity_key_public, identity_signing_public, signed_prekey_public, signed_prekey_signature")
         .eq("user_id", participantId)
         .single();
 
+      const bobBundle = decodeSecretChatPreKeyBundleRow(bobBundleRaw);
+
       if (bundleErr || !bobBundle) return { error: "participant_has_no_prekey_bundle" };
 
       // 3. Atomically consume one OPK from Bob
-      const { data: opkData } = await (supabase as any)
+      const { data: opkData } = await secretChatDb
         .rpc("consume_one_time_prekey", { target_user_id: participantId });
-      const oneTimePreKeyPublic: string | undefined = opkData ?? undefined;
+      const oneTimePreKeyPublic = typeof opkData === "string" && opkData.trim() ? opkData : undefined;
 
       // 4. X3DH key agreement
       const bundle: PreKeyBundle = X3DH.createSessionBundle({
         bundle: {
-          identityKeyPublic: bobBundle.identity_key_public,
-          signedPreKeyPublic: bobBundle.signed_prekey_public,
-          signedPreKeySignature: bobBundle.signed_prekey_signature,
+          identityKeyPublic: bobBundle.identityKeyPublic,
+          signedPreKeyPublic: bobBundle.signedPreKeyPublic,
+          signedPreKeySignature: bobBundle.signedPreKeySignature,
         },
         oneTimePreKeyPublic,
       });
@@ -495,7 +624,7 @@ export function useSecretChat(conversationId: string | null) {
         initiatorResult = await X3DH.initiatorKeyAgreement(
           identityEcdhKeyPair,
           bundle,
-          bobBundle.identity_signing_public
+          bobBundle.identitySigningPublic
         );
       } catch (e) {
         return { error: String(e) };
@@ -505,7 +634,7 @@ export function useSecretChat(conversationId: string | null) {
       // In Signal protocol the DR is initialized with Bob's SPK as the first ratchet key
       const bobRatchetPublicKey = await crypto.subtle.importKey(
         "spki",
-        fromBase64(bobBundle.signed_prekey_public),
+        fromBase64(bobBundle.signedPreKeyPublic),
         { name: "ECDH", namedCurve: "P-256" },
         true,
         []
@@ -518,21 +647,22 @@ export function useSecretChat(conversationId: string | null) {
       );
 
       // 7. Create conversation
-      const { data: conv, error: convErr } = await (supabase as any)
+      const { data: convRaw, error: convErr } = await secretChatDb
         .from("conversations")
         .insert({ is_secret: true })
         .select("id")
         .single();
+      const conv = decodeConversationIdRow(convRaw);
       if (convErr || !conv) return { error: convErr?.message };
 
       // 8. Add participants
-      await (supabase as any).from("conversation_participants").insert([
+      await supabase.from("conversation_participants").insert([
         { conversation_id: conv.id, user_id: user.id },
         { conversation_id: conv.id, user_id: participantId },
       ]);
 
       // 9. Create secret_chats record with X3DH handshake data for Bob
-      const { data: sc, error: scErr } = await (supabase as any)
+      const { data: scRaw, error: scErr } = await secretChatDb
         .from("secret_chats")
         .insert({
           conversation_id: conv.id,
@@ -547,7 +677,10 @@ export function useSecretChat(conversationId: string | null) {
         .select("*")
         .single();
 
+      const sc = decodeSecretChatRow(scRaw);
+
       if (scErr) return { error: scErr.message };
+      if (!sc) return { error: "secret_chat_create_invalid_payload" };
 
       // 10. Save ratchet state
       await saveRatchetState(ratchetState, user.id, conv.id);
@@ -594,7 +727,7 @@ export function useSecretChat(conversationId: string | null) {
     }
 
     // 5. Update status
-    await (supabase as any)
+    await secretChatDb
       .from("secret_chats")
       .update({ status: "active", accepted_at: new Date().toISOString() })
       .eq("id", secretChat.id);
@@ -640,7 +773,7 @@ export function useSecretChat(conversationId: string | null) {
 
   const declineSecretChat = useCallback(async () => {
     if (!secretChat) return;
-    await (supabase as any)
+    await secretChatDb
       .from("secret_chats")
       .update({ status: "closed", closed_at: new Date().toISOString() })
       .eq("id", secretChat.id);
@@ -648,7 +781,7 @@ export function useSecretChat(conversationId: string | null) {
 
   const closeSecretChat = useCallback(async () => {
     if (!secretChat || !user) return;
-    await (supabase as any)
+    await secretChatDb
       .from("secret_chats")
       .update({ status: "closed", closed_at: new Date().toISOString() })
       .eq("id", secretChat.id);
@@ -661,13 +794,14 @@ export function useSecretChat(conversationId: string | null) {
   const updateSettings = useCallback(
     async (settings: { default_ttl_seconds?: number; screenshot_notifications?: boolean }) => {
       if (!secretChat) return;
-      const { data } = await (supabase as any)
+      const { data } = await secretChatDb
         .from("secret_chats")
         .update(settings)
         .eq("id", secretChat.id)
         .select("*")
         .single();
-      if (data) setSecretChat(data as SecretChat);
+      const nextSecretChat = decodeSecretChatRow(data);
+      if (nextSecretChat) setSecretChat(nextSecretChat);
     },
     [secretChat]
   );

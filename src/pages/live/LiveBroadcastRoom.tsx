@@ -26,6 +26,8 @@ import { LiveDonation } from "@/components/live/LiveDonation";
 import { LiveReplay } from "@/components/live/LiveReplay";
 import { InviteGuestSheet } from "@/components/live/InviteGuestSheet";
 import { logger } from "@/lib/logger";
+import { useInviteGuest, useKickGuest, useStreamGuests } from "@/hooks/useLivestream";
+import type { LiveGuest } from "@/types/livestream";
 
 interface LiveSession {
   id: string;
@@ -45,6 +47,13 @@ interface ChatMessage {
   created_at: string;
 }
 
+interface InviteFollower {
+  id: string;
+  username: string;
+  display_name: string;
+  avatar_url?: string;
+}
+
 function formatDuration(sec: number) {
   const h = Math.floor(sec / 3600);
   const m = Math.floor((sec % 3600) / 60);
@@ -59,6 +68,7 @@ function formatDuration(sec: number) {
  */
 export function LiveBroadcastRoom() {
   const { sessionId } = useParams<{ sessionId: string }>();
+  const sessionIdNum = Number(sessionId);
   const navigate = useNavigate();
   const [session, setSession] = useState<LiveSession | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -73,10 +83,16 @@ export function LiveBroadcastRoom() {
   const [showQA, setShowQA] = useState(false);
   const [showInviteGuest, setShowInviteGuest] = useState(false);
   const [showEndConfirm, setShowEndConfirm] = useState(false);
+  const [followers, setFollowers] = useState<InviteFollower[]>([]);
+  const [isSearchingFollowers, setIsSearchingFollowers] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const chatBottomRef = useRef<HTMLDivElement>(null);
+
+  const { data: guests = [] } = useStreamGuests(Number.isFinite(sessionIdNum) ? sessionIdNum : undefined);
+  const inviteGuest = useInviteGuest();
+  const kickGuest = useKickGuest();
 
   // Инициализация камеры
   const startCamera = useCallback(async (facingMode: "user" | "environment") => {
@@ -101,17 +117,22 @@ export function LiveBroadcastRoom() {
 
   // Загрузка данных сессии
   const loadSession = useCallback(async () => {
+    if (!Number.isFinite(sessionIdNum)) {
+      setLoading(false);
+      toast.error("Некорректный идентификатор эфира");
+      return;
+    }
     try {
       const { data, error } = await supabase
         .from("live_sessions")
         .select("*")
-        .eq("id", sessionId)
+        .eq("id", sessionIdNum)
         .single();
       if (error) throw error;
        
       const row = data as any;
       const mapped: LiveSession = {
-        id: String(row?.id ?? sessionId ?? ""),
+        id: String(row?.id ?? sessionIdNum ?? ""),
         title: String(row?.title ?? "Прямой эфир"),
         category: String(row?.category ?? "general"),
         status: String(row?.status ?? "active"),
@@ -128,15 +149,16 @@ export function LiveBroadcastRoom() {
     } finally {
       setLoading(false);
     }
-  }, [sessionId]);
+  }, [sessionIdNum]);
 
   // Загрузка сообщений
   const loadMessages = useCallback(async () => {
+    if (!Number.isFinite(sessionIdNum)) return;
     try {
       const { data, error } = await supabase
         .from("live_chat_messages")
         .select("*")
-        .eq("session_id", Number(sessionId))
+        .eq("session_id", sessionIdNum)
         .order("created_at", { ascending: true })
         .limit(100);
       if (error) throw error;
@@ -151,10 +173,10 @@ export function LiveBroadcastRoom() {
     } catch (error) {
       logger.warn("[LiveBroadcastRoom] Failed to load chat messages", { sessionId, error });
     }
-  }, [sessionId]);
+  }, [sessionIdNum]);
 
   useEffect(() => {
-    if (!sessionId) return;
+    if (!sessionId || !Number.isFinite(sessionIdNum)) return;
     void loadSession();
     void loadMessages();
     void startCamera(facing);
@@ -165,7 +187,7 @@ export function LiveBroadcastRoom() {
         event: "INSERT",
         schema: "public",
         table: "live_chat_messages",
-        filter: `session_id=eq.${sessionId}`,
+        filter: `session_id=eq.${sessionIdNum}`,
       }, (payload) => {
         const row = payload.new as any;
         setMessages((prev) => [...prev, {
@@ -181,7 +203,7 @@ export function LiveBroadcastRoom() {
         event: "UPDATE",
         schema: "public",
         table: "live_sessions",
-        filter: `id=eq.${sessionId}`,
+        filter: `id=eq.${sessionIdNum}`,
       }, (payload) => {
         setViewerCount(Number((payload.new as any).viewer_count_current ?? 0));
       })
@@ -195,7 +217,7 @@ export function LiveBroadcastRoom() {
       streamRef.current?.getTracks().forEach((t) => t.stop());
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId]);
+  }, [sessionId, sessionIdNum]);
 
   // Прокрутка вниз при новых сообщениях
   useEffect(() => {
@@ -227,7 +249,7 @@ export function LiveBroadcastRoom() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Не авторизован");
       const { error } = await supabase.from("live_chat_messages").insert({
-        session_id: Number(sessionId),
+        session_id: sessionIdNum,
         sender_id: user.id,
         content: messageText.trim(),
         is_creator_message: true,
@@ -242,12 +264,57 @@ export function LiveBroadcastRoom() {
     }
   };
 
+  const handleInviteGuest = useCallback(async (userId: string) => {
+    if (!Number.isFinite(sessionIdNum)) return;
+    await inviteGuest.mutateAsync({ sessionId: sessionIdNum, userId });
+  }, [inviteGuest, sessionIdNum]);
+
+  const handleCancelGuestInvite = useCallback(async (guestId: string) => {
+    if (!Number.isFinite(sessionIdNum)) return;
+    await kickGuest.mutateAsync({ sessionId: sessionIdNum, guestId });
+  }, [kickGuest, sessionIdNum]);
+
+  const handleSearchFollowers = useCallback(async (query: string) => {
+    const q = query.trim();
+    if (!q) {
+      setFollowers([]);
+      return;
+    }
+
+    setIsSearchingFollowers(true);
+    try {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("user_id, username, display_name, avatar_url")
+        .or(`username.ilike.%${q}%,display_name.ilike.%${q}%`)
+        .limit(20);
+
+      if (error) throw error;
+
+      const mapped: InviteFollower[] = (data ?? [])
+        .map((row: any) => ({
+          id: String(row.user_id ?? ""),
+          username: String(row.username ?? "user"),
+          display_name: String(row.display_name ?? row.username ?? "User"),
+          avatar_url: typeof row.avatar_url === "string" ? row.avatar_url : undefined,
+        }))
+        .filter((row) => row.id.length > 0);
+
+      setFollowers(mapped);
+    } catch (error) {
+      logger.warn("[LiveBroadcastRoom] Failed to search followers for guest invite", { query: q, error });
+      setFollowers([]);
+    } finally {
+      setIsSearchingFollowers(false);
+    }
+  }, []);
+
   const doEndBroadcast = async () => {
     try {
       await supabase.from("live_sessions").update({
         status: "ended",
         ended_at: new Date().toISOString(),
-      }).eq("id", sessionId);
+      }).eq("id", sessionIdNum);
       streamRef.current?.getTracks().forEach((t) => t.stop());
       toast.success("Эфир завершён");
       navigate(-1);
@@ -424,9 +491,14 @@ export function LiveBroadcastRoom() {
       {/* InviteGuest */}
       {showInviteGuest && (
         <InviteGuestSheet
-          sessionId={sessionId!}
-          hostStream={streamRef.current}
-          onClose={() => setShowInviteGuest(false)}
+          open={showInviteGuest}
+          onOpenChange={setShowInviteGuest}
+          guests={guests as LiveGuest[]}
+          followers={followers}
+          isSearching={isSearchingFollowers}
+          onInvite={handleInviteGuest}
+          onCancel={handleCancelGuestInvite}
+          onSearch={handleSearchFollowers}
         />
       )}
 

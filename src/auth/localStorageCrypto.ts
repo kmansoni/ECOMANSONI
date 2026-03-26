@@ -78,7 +78,9 @@ function bufToB64(buf: ArrayBuffer): string {
   let binary = "";
   // Обходим весь буфер побайтово — safe for any size
   for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i]);
+    const byte = bytes.at(i);
+    if (byte === undefined) continue;
+    binary += String.fromCharCode(byte);
   }
   return btoa(binary);
 }
@@ -250,10 +252,10 @@ function isEncryptedEnvelope(obj: unknown): obj is EncryptedEnvelope {
   if (typeof obj !== "object" || obj === null) return false;
   const o = obj as Record<string, unknown>;
   return (
-    typeof o.v === "number" &&
-    typeof o.s === "string" &&
-    typeof o.iv === "string" &&
-    typeof o.ct === "string"
+    typeof o["v"] === "number" &&
+    typeof o["s"] === "string" &&
+    typeof o["iv"] === "string" &&
+    typeof o["ct"] === "string"
   );
 }
 

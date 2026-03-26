@@ -1,4 +1,4 @@
-import { useRef, useState, ReactNode, useCallback } from 'react';
+import { useRef, useState, ReactNode, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface DoubleTapReactionProps {
@@ -11,6 +11,7 @@ interface DoubleTapReactionProps {
 }
 
 const DOUBLE_TAP_DELAY = 300;
+const HEART_DISPLAY_MS = 800;
 
 export function DoubleTapReaction({
   messageId,
@@ -21,6 +22,17 @@ export function DoubleTapReaction({
 }: DoubleTapReactionProps) {
   const lastTap = useRef(0);
   const [showHeart, setShowHeart] = useState(false);
+  // P0-014: Store timer ref to clear on unmount — prevents setState on unmounted component
+  const heartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // P0-014: Cleanup timer on unmount to prevent memory leak
+  useEffect(() => {
+    return () => {
+      if (heartTimerRef.current !== null) {
+        clearTimeout(heartTimerRef.current);
+      }
+    };
+  }, []);
 
   const handleTap = useCallback(() => {
     if (disabled) return;
@@ -30,7 +42,14 @@ export function DoubleTapReaction({
       onToggleReaction(messageId, '❤️');
       if (!hasReaction) {
         setShowHeart(true);
-        setTimeout(() => setShowHeart(false), 800);
+        // P0-014: Cancel any pending timer before scheduling a new one
+        if (heartTimerRef.current !== null) {
+          clearTimeout(heartTimerRef.current);
+        }
+        heartTimerRef.current = setTimeout(() => {
+          setShowHeart(false);
+          heartTimerRef.current = null;
+        }, HEART_DISPLAY_MS);
       }
     }
     lastTap.current = now;

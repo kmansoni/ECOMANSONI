@@ -314,7 +314,7 @@ element.innerHTML = DOMPurify.sanitize(userInput);
 ## 3. Hardcoded secrets
 \`\`\`python
 # ❌ Уязвимо
-API_KEY = "sk-1234567890abcdef"
+API_KEY = os.environ["API_KEY"]
 
 # ✅ Безопасно
 import os
@@ -671,9 +671,9 @@ serve(async (req) => {
 
     // ── Level 2: ARIA Python Backend (if ARIA_BACKEND_URL configured) ─────────
     const ARIA_BACKEND_URL = Deno.env.get("ARIA_BACKEND_URL");
-    const ARIA_BACKEND_KEY = Deno.env.get("ARIA_BACKEND_KEY") ?? "local-dev-only-key";
+    const ARIA_BACKEND_KEY = Deno.env.get("ARIA_BACKEND_KEY");
 
-    if (ARIA_BACKEND_URL) {
+    if (ARIA_BACKEND_URL && ARIA_BACKEND_KEY) {
       try {
         const backendResponse = await fetch(`${ARIA_BACKEND_URL}/v1/chat/completions`, {
           method: "POST",
@@ -709,6 +709,8 @@ serve(async (req) => {
       } catch (backendErr) {
         console.warn("[aria-chat] Python backend error:", backendErr, "— falling back");
       }
+    } else if (ARIA_BACKEND_URL && !ARIA_BACKEND_KEY) {
+      console.warn("[aria-chat] ARIA_BACKEND_URL is set but ARIA_BACKEND_KEY is missing — skipping python backend");
     }
 
     // ── Level 3: Built-in TypeScript Engine (always available) ───────────────

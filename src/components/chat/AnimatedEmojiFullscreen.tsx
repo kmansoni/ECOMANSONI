@@ -21,6 +21,7 @@ export function AnimatedEmojiFullscreen({ emoji, onComplete }: AnimatedEmojiFull
       }, 1500);
       return () => clearTimeout(timer);
     }
+    return undefined;
   }, [emoji, onComplete]);
 
   return (

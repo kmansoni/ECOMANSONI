@@ -30,10 +30,11 @@ function isAvailableService(item: ServiceItem): item is AvailableServiceItem {
 function validateServiceConfig(items: ServiceItem[]): void {
   if (!import.meta.env.DEV) return;
   for (const item of items) {
-    if (item.available && !item.route) {
+    const route = (item as { route?: string }).route;
+    if (item.available && !route) {
       console.error("[ServicesMenu] Invalid config: available service without route", item.id);
     }
-    if (!item.available && item.route) {
+    if (!item.available && route) {
       console.warn("[ServicesMenu] Potentially inconsistent config: coming soon service has route", item.id);
     }
   }

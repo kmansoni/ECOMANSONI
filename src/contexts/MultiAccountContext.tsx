@@ -108,8 +108,10 @@ function snapshotFromProfileRow(accountId: AccountId, row: any): AccountProfileS
   return {
     accountId,
     displayName,
+    display_name: displayName,
     username, // Now guaranteed to be non-null
     avatarUrl,
+    avatar_url: avatarUrl,
     updatedAt: new Date().toISOString(),
   };
 }
@@ -602,8 +604,10 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
           const profile: AccountProfileSnapshot = {
             accountId,
             displayName: row.display_name ?? null,
+            display_name: row.display_name ?? null,
             username: row.username,
             avatarUrl: row.avatar_url ?? null,
+            avatar_url: row.avatar_url ?? null,
             updatedAt: new Date().toISOString(),
           };
 
@@ -697,8 +701,10 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
             const profile: AccountProfileSnapshot = {
               accountId: id,
               displayName: row.display_name ?? null,
+              display_name: row.display_name ?? null,
               username: row.username,
               avatarUrl: row.avatar_url ?? null,
+              avatar_url: row.avatar_url ?? null,
               updatedAt: new Date().toISOString(),
             };
             setAccounts(upsertAccountIndex({ accountId: id, profile }));

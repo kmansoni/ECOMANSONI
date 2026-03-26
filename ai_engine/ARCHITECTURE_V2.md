@@ -260,11 +260,11 @@ ai_engine/
 
 | Переменная | По умолчанию | Описание |
 |-----------|-------------|---------|
-| `ARIA_API_KEY` | `local-dev-only-key` | API ключ для Bearer auth |
+| `ARIA_API_KEY` | `<REQUIRED_STRONG_RANDOM_KEY>` | API ключ для Bearer auth |
 | `ARIA_FEEDBACK_DB` | `aria_feedback.db` | Путь к SQLite базе данных |
-| `ARIA_REWARD_CKPT` | `aria_reward_model.pkl` | Checkpoint reward model |
+| `ARIA_REWARD_CKPT` | `aria_reward_model.json` | Checkpoint reward model |
 | `ARIA_SAFETY_MODEL` | `aria_safety_model.pkl` | Checkpoint safety ML classifier |
-| `ARIA_USER_ID_SALT` | `aria-feedback-v1` | Соль для SHA-256 анонимизации |
+| `ARIA_USER_ID_SALT` | `<SET_RANDOM_SALT>` | Соль для SHA-256 анонимизации |
 | `ARIA_VOCAB_PATH` | `aria_vocab.json` | Путь к BPE vocab файлу |
 | `ARIA_AUTO_TRAIN_THRESHOLD` | `50` | Порог авто-запуска обучения |
 | `ARIA_CRAWL_SEEDS` | `wikipedia.org\|arxiv.org\|...` | Seed URLs для краулинга |

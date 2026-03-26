@@ -171,7 +171,7 @@ async function confirmUploadAndSend(params: {
     p_size_bytes: params.sizeBytes,
     p_checksum_sha256: params.checksum,
     p_entity_type: "message",
-    p_entity_id: null, // message_id not yet assigned; linked by storage_url
+    p_entity_id: undefined, // message_id not yet assigned; linked by storage_url
   });
 
   const kind = params.mediaType === "document" ? "document" : "media";

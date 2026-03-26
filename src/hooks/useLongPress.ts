@@ -20,14 +20,14 @@
 import { useCallback, useRef } from "react";
 import { Haptics } from "@/lib/haptics";
 
-interface LongPressOptions {
+export interface UseLongPressOptions {
   threshold?: number;      // ms, default 500
   moveThreshold?: number;  // px, default 10
   onStart?: () => void;
   onCancel?: () => void;
 }
 
-interface LongPressHandlers {
+export interface UseLongPressResult {
   onPointerDown: (e: React.PointerEvent) => void;
   onPointerUp: (e: React.PointerEvent) => void;
   onPointerMove: (e: React.PointerEvent) => void;
@@ -37,8 +37,8 @@ interface LongPressHandlers {
 
 export function useLongPress(
   callback: (e: React.PointerEvent) => void,
-  options: LongPressOptions = {}
-): LongPressHandlers {
+  options: UseLongPressOptions = {}
+): UseLongPressResult {
   const {
     threshold = 500,
     moveThreshold = 10,

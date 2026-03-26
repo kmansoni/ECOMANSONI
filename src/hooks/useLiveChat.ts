@@ -11,8 +11,24 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import type { LiveChatMessage } from '@/types/livestream';
+import type { Database } from '@/integrations/supabase/types';
 
 const PAGE_SIZE = 50;
+type LiveChatRow = Database['public']['Tables']['live_chat_messages']['Row'];
+
+function mapLiveChatRow(row: LiveChatRow): LiveChatMessage {
+  return {
+    id: row.id,
+    session_id: row.session_id,
+    user_id: row.sender_id,
+    message: row.content,
+    type: row.type as LiveChatMessage['type'],
+    is_pinned: row.is_pinned,
+    reply_to_id: row.reply_to_id ?? undefined,
+    metadata: (row.metadata as Record<string, unknown> | null) ?? undefined,
+    created_at: row.created_at,
+  };
+}
 
 export interface UseLiveChatReturn {
   messages: LiveChatMessage[];
@@ -67,7 +83,7 @@ export function useLiveChat(sessionId: number | null): UseLiveChatReturn {
           setIsLoading(false);
           return;
         }
-        const sorted = ((data ?? []) as LiveChatMessage[]).reverse();
+        const sorted = (data ?? []).map((row) => mapLiveChatRow(row as LiveChatRow)).reverse();
         setMessages(sorted);
         setHasMore((data?.length ?? 0) === PAGE_SIZE);
         setOldestCreatedAt(sorted[0]?.created_at ?? null);
@@ -93,8 +109,8 @@ export function useLiveChat(sessionId: number | null): UseLiveChatReturn {
           table: 'live_chat_messages',
           filter: `session_id=eq.${sessionId}`,
         },
-        (payload: { new: LiveChatMessage }) => {
-          const incoming = payload.new;
+        (payload: { new: LiveChatRow }) => {
+          const incoming = mapLiveChatRow(payload.new);
           if (optimisticIdsRef.current.has(incoming.id)) {
             optimisticIdsRef.current.delete(incoming.id);
             return;
@@ -110,8 +126,8 @@ export function useLiveChat(sessionId: number | null): UseLiveChatReturn {
           table: 'live_chat_messages',
           filter: `session_id=eq.${sessionId}`,
         },
-        (payload: { new: LiveChatMessage }) => {
-          const updated = payload.new;
+        (payload: { new: LiveChatRow }) => {
+          const updated = mapLiveChatRow(payload.new);
           setMessages((prev) =>
             prev.map((m) => (m.id === updated.id ? { ...m, ...updated } : m)),
           );
@@ -153,7 +169,7 @@ export function useLiveChat(sessionId: number | null): UseLiveChatReturn {
       return;
     }
 
-    const sorted = ((data ?? []) as LiveChatMessage[]).reverse();
+    const sorted = (data ?? []).map((row) => mapLiveChatRow(row as LiveChatRow)).reverse();
     setMessages((prev) => [...sorted, ...prev]);
     setHasMore(sorted.length === PAGE_SIZE);
     if (sorted.length > 0) setOldestCreatedAt(sorted[0].created_at);
@@ -184,7 +200,7 @@ export function useLiveChat(sessionId: number | null): UseLiveChatReturn {
 
       const { data, error: insertErr } = await supabase
         .from('live_chat_messages')
-        .insert({ session_id: sessionId, message: text.trim(), type: 'text' })
+        .insert({ session_id: sessionId, sender_id: session.user.id, content: text.trim(), type: 'text' })
         .select('id')
         .single();
 

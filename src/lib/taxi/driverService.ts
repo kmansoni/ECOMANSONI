@@ -435,7 +435,7 @@ export function subscribeToIncomingOrders(
         table: "taxi_rides",
         filter: `assigned_driver_id=eq.${driverId}`,
       },
-      (payload) => {
+      (payload: { new: Record<string, unknown> }) => {
         const row = payload.new as Record<string, unknown>;
         if (row.status !== "assigned_to_driver") return;
 

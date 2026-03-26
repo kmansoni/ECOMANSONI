@@ -39,9 +39,9 @@ export function LiveBroadcastCheck() {
       }
 
       // Call eligibility RPC
-      const { data, error } = await (supabase.rpc("is_eligible_for_live_v1", {
+      const { data, error } = await ((supabase as any).rpc("is_eligible_for_live_v1", {
         p_creator_id: user.id,
-      }) as any);
+      }) as Promise<{ data: EligibilityResult | null; error: { message?: string } | null }>);
 
       if (error) throw error;
 

@@ -19,6 +19,53 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "./useAuth";
 
+type QueryResult<T> = Promise<{ data: T | null; error: { message?: string } | null }>;
+
+interface DeliveryStatusRow {
+  id: string;
+  delivery_status: string | null;
+}
+
+interface DeliveryStatusClient {
+  from(table: "messages"): {
+    select: (columns: "id, delivery_status") => {
+      eq: (column: "conversation_id", value: string) => {
+        eq: (column: "sender_id", value: string) => QueryResult<DeliveryStatusRow[]>;
+      };
+    };
+  };
+  from(table: "message_read_receipts"): {
+    upsert: (
+      payload: Array<{ message_id: string; user_id: string; read_at: string }>,
+      options: { onConflict: string; ignoreDuplicates: boolean }
+    ) => QueryResult<null>;
+  };
+}
+
+interface DeliveryStatusMessageUpdate {
+  id: string;
+  sender_id: string | null;
+  delivery_status: ServerDeliveryStatus | null;
+}
+
+function isServerDeliveryStatus(value: unknown): value is ServerDeliveryStatus {
+  return value === "sending" || value === "sent" || value === "delivered" || value === "read" || value === "failed";
+}
+
+function decodeDeliveryStatusMessageUpdate(value: unknown): DeliveryStatusMessageUpdate | null {
+  if (!value || typeof value !== "object") return null;
+  const row = value as Record<string, unknown>;
+  const id = typeof row.id === "string" && row.id.trim() ? row.id : null;
+  const senderId = typeof row.sender_id === "string" && row.sender_id.trim() ? row.sender_id : null;
+  const deliveryStatus = isServerDeliveryStatus(row.delivery_status) ? row.delivery_status : null;
+  if (!id) return null;
+  return {
+    id,
+    sender_id: senderId,
+    delivery_status: deliveryStatus,
+  };
+}
+
 export type ServerDeliveryStatus = "sending" | "sent" | "delivered" | "read" | "failed";
 
 export interface DeliveryStatusMap {
@@ -40,12 +87,21 @@ export function useDeliveryStatus(conversationId: string | null): {
    */
   markManyAsRead: (messageIds: string[]) => Promise<void>;
 } {
+  const db = supabase as unknown as DeliveryStatusClient;
   const { user } = useAuth();
   const [statusMap, setStatusMap] = useState<DeliveryStatusMap>({});
 
   // Буфер message_id, ожидающих отправки receipt
   const pendingReadIdsRef = useRef<Set<string>>(new Set());
   const debounceTimerRef = useRef<number | null>(null);
+
+  const scheduleFlush = useCallback((delayMs = 500) => {
+    if (debounceTimerRef.current != null) return;
+    debounceTimerRef.current = window.setTimeout(() => {
+      debounceTimerRef.current = null;
+      void flushReadReceipts();
+    }, delayMs);
+  }, []);
 
   // ── Загрузка начальных статусов ───────────────────────────────────────────
 
@@ -58,7 +114,7 @@ export function useDeliveryStatus(conversationId: string | null): {
     let cancelled = false;
 
     void (async () => {
-      const { data, error } = await (supabase as any)
+      const { data, error } = await db
         .from("messages")
         .select("id, delivery_status")
         .eq("conversation_id", conversationId)
@@ -67,9 +123,9 @@ export function useDeliveryStatus(conversationId: string | null): {
       if (cancelled || error || !data) return;
 
       const map: DeliveryStatusMap = {};
-      for (const row of (data as Array<{ id: string; delivery_status: string | null }>)) {
-        if (row.delivery_status) {
-          map[row.id] = row.delivery_status as ServerDeliveryStatus;
+      for (const row of data ?? []) {
+        if (isServerDeliveryStatus(row.delivery_status)) {
+          map[row.id] = row.delivery_status;
         }
       }
       setStatusMap(map);
@@ -97,18 +153,14 @@ export function useDeliveryStatus(conversationId: string | null): {
           filter: `conversation_id=eq.${conversationId}`,
         },
         (payload) => {
-          const updated = payload.new as {
-            id?: string;
-            sender_id?: string;
-            delivery_status?: string | null;
-          };
+          const updated = decodeDeliveryStatusMessageUpdate(payload.new);
           if (!updated?.id || !updated?.delivery_status) return;
           // Отслеживаем только собственные сообщения
           if (updated.sender_id !== user.id) return;
 
           setStatusMap((prev) => {
-            if (prev[updated.id!] === updated.delivery_status) return prev;
-            return { ...prev, [updated.id!]: updated.delivery_status as ServerDeliveryStatus };
+            if (prev[updated.id] === updated.delivery_status) return prev;
+            return { ...prev, [updated.id]: updated.delivery_status };
           });
         }
       )
@@ -129,9 +181,10 @@ export function useDeliveryStatus(conversationId: string | null): {
 
   const flushReadReceipts = useCallback(async () => {
     if (!user) return;
-    const ids = Array.from(pendingReadIdsRef.current);
+    const pendingBatch = pendingReadIdsRef.current;
+    const ids = Array.from(pendingBatch);
     if (ids.length === 0) return;
-    pendingReadIdsRef.current.clear();
+    pendingReadIdsRef.current = new Set();
 
     const now = new Date().toISOString();
     const rows = ids.map((id) => ({
@@ -141,7 +194,7 @@ export function useDeliveryStatus(conversationId: string | null): {
     }));
 
     // ignoreDuplicates=true → ON CONFLICT DO NOTHING — идемпотентно
-    const { error } = await (supabase as any)
+    const { error } = await db
       .from("message_read_receipts")
       .upsert(rows, { onConflict: "message_id,user_id", ignoreDuplicates: true });
 
@@ -149,18 +202,9 @@ export function useDeliveryStatus(conversationId: string | null): {
       // Re-queue при ошибке (например, временный RLS-отказ или сетевой сбой)
       for (const id of ids) pendingReadIdsRef.current.add(id);
       console.warn("[useDeliveryStatus] flushReadReceipts error:", error.message);
+      scheduleFlush(1000);
     }
-  }, [user]);
-
-  // ── Хелпер: запланировать flush с дебаунсом ──────────────────────────────
-
-  const scheduleFlush = useCallback(() => {
-    if (debounceTimerRef.current != null) return;
-    debounceTimerRef.current = window.setTimeout(() => {
-      debounceTimerRef.current = null;
-      void flushReadReceipts();
-    }, 500);
-  }, [flushReadReceipts]);
+  }, [scheduleFlush, user]);
 
   // ── Public API ────────────────────────────────────────────────────────────
 
@@ -202,7 +246,7 @@ export function useDeliveryStatus(conversationId: string | null): {
             read_at: now,
           }));
           // fire-and-forget при unmount — best-effort
-          void (supabase as any)
+          void db
             .from("message_read_receipts")
             .upsert(rows, { onConflict: "message_id,user_id", ignoreDuplicates: true });
         }

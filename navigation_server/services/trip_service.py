@@ -380,6 +380,19 @@ class TripService:
         extra_params: list[Any] = []
 
         if timestamp_col:
+            # Defensive hardening: dynamic SQL fragment is allowed only for a fixed whitelist.
+            if timestamp_col not in {
+                "assigned_at",
+                "driver_enroute_at",
+                "driver_arrived_at",
+                "started_at",
+                "completed_at",
+                "cancelled_at",
+            }:
+                raise ValidationError(
+                    "Unsupported timestamp column for status transition",
+                    detail={"timestamp_col": timestamp_col, "status": new_status},
+                )
             extra_set = f", {timestamp_col}=$5"
             extra_params = [now]
 

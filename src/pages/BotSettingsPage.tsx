@@ -297,8 +297,10 @@ function GeneralTab({ bot, onUpdated, onDeleted }: GeneralTabProps) {
 // ===========================================================================
 interface TokensTabProps { botId: string }
 
+type TokenListItem = Omit<BotToken, "token"> & { token?: string };
+
 function TokensTab({ botId }: TokensTabProps) {
-  const [tokens, setTokens]       = useState<(BotToken & { token?: never })[]>([]);
+  const [tokens, setTokens]       = useState<TokenListItem[]>([]);
   const [loading, setLoading]     = useState(true);
   const [newToken, setNewToken]   = useState<string | null>(null); // shown only once
   const [newTokenName, setNewTokenName] = useState('');
@@ -321,7 +323,12 @@ function TokensTab({ botId }: TokensTabProps) {
       const result = await botApi.createBotToken(botId, { name: newTokenName.trim() || undefined });
       setNewToken(result.token);
       void navigator.clipboard.writeText(result.token).catch(() => {/* ignore */});
-      const placeholder = { id: result.id, bot_id: botId, name: newTokenName.trim() || undefined, created_at: new Date().toISOString() } as BotToken & { token?: never };
+      const placeholder: TokenListItem = {
+        id: result.id,
+        bot_id: botId,
+        name: newTokenName.trim() || undefined,
+        created_at: new Date().toISOString(),
+      };
       setTokens((prev) => [placeholder, ...prev]);
       setNewTokenName('');
       toast.success('Токен создан и скопирован в буфер обмена');

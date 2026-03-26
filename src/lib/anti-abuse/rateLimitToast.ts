@@ -9,8 +9,7 @@ export async function maybeToastRateLimit(res: Response): Promise<boolean> {
   const wait = parsed.retryAfterSeconds;
   const action = parsed.payload.action;
 
-  toast({
-    title: "Слишком много запросов",
+  toast.error("Слишком много запросов", {
     description: wait
       ? action
         ? `Действие: ${action}. Попробуйте снова через ${wait} сек.`

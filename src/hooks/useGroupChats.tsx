@@ -6,11 +6,82 @@ import { getErrorMessage } from "@/lib/utils";
 import { checkHashtagsAllowedForText } from "@/lib/hashtagModeration";
 import { removeRealtimeMessage, upsertRealtimeMessage } from "@/lib/chat/realtimeMessageReducer";
 import { canonicalizeOutgoingChatText } from "@/lib/chat/textPipeline";
-import { fetchUserBriefMap, resolveUserBrief } from "@/lib/users/userBriefs";
+import { fetchUserBriefMap, resolveUserBrief, type UserBriefClient } from "@/lib/users/userBriefs";
+
+type UnknownRecord = Record<string, unknown>;
+
+type RpcResult<T> = Promise<{ data: T | null; error: unknown }>;
+
+interface GroupRpcClient {
+  rpc: <T>(fn: string, args?: Record<string, unknown>) => RpcResult<T>;
+}
+
+interface ErrorLike {
+  code?: string;
+  message?: string;
+}
+
+function isRecord(value: unknown): value is UnknownRecord {
+  return typeof value === "object" && value !== null;
+}
+
+function toErrorLike(error: unknown): ErrorLike {
+  if (!isRecord(error)) return {};
+  return error as ErrorLike;
+}
+
+function getStringField(source: UnknownRecord, key: string): string | null {
+  const value = source[key];
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function getNullableStringField(source: UnknownRecord, key: string): string | null | undefined {
+  const value = source[key];
+  if (value === null) return null;
+  if (typeof value !== "string") return undefined;
+  return value;
+}
+
+function decodeRealtimeRow(payload: unknown): UnknownRecord | null {
+  if (!isRecord(payload)) return null;
+  const candidate = payload.new ?? payload.old;
+  return isRecord(candidate) ? candidate : null;
+}
+
+function decodeGroupMessageRealtimeRow(value: unknown): GroupMessage | null {
+  if (!isRecord(value)) return null;
+  const id = getStringField(value, "id");
+  const groupId = getStringField(value, "group_id");
+  const senderId = getStringField(value, "sender_id");
+  if (!id || !groupId || !senderId) return null;
+
+  return {
+    id,
+    group_id: groupId,
+    sender_id: senderId,
+    content: getStringField(value, "content") ?? "",
+    media_url: getNullableStringField(value, "media_url") ?? null,
+    media_type: getNullableStringField(value, "media_type") ?? null,
+    created_at: getStringField(value, "created_at") ?? new Date(0).toISOString(),
+  };
+}
+
+function decodeDeletedGroupMessageRow(value: unknown): { id: string } | null {
+  if (!isRecord(value)) return null;
+  const id = getStringField(value, "id");
+  return id ? { id } : null;
+}
+
+function getGroupRpcClient(): GroupRpcClient {
+  return supabase as unknown as GroupRpcClient;
+}
 
 function isSchemaMissingError(error: unknown): boolean {
-  const msg = String((error as any)?.message ?? error).toLowerCase();
-  const code = String((error as any)?.code ?? "");
+  const err = toErrorLike(error);
+  const msg = String(err.message ?? error).toLowerCase();
+  const code = String(err.code ?? "");
   return (
     code === "PGRST202" ||
     code === "42P01" ||
@@ -142,9 +213,12 @@ export function useGroupChats() {
         if (row.msg) lastMessages[row.groupId] = row.msg;
       }
 
-      const groupsWithMessages = (groupsData || []).map(group => ({
+      const groupsWithMessages = (groupsData || []).map((group) => ({
         ...group,
-        last_message: lastMessages[group.id]
+        member_count: group.member_count ?? 0,
+        created_at: group.created_at ?? new Date(0).toISOString(),
+        updated_at: group.updated_at ?? group.created_at ?? new Date(0).toISOString(),
+        last_message: lastMessages[group.id],
       }));
 
       setGroups(groupsWithMessages);
@@ -245,8 +319,8 @@ export function useGroupChats() {
           table: 'group_chats',
         },
         (payload) => {
-          const row = (payload as any)?.new ?? (payload as any)?.old;
-          scheduleGroupsRefresh(row?.id ?? null);
+          const row = decodeRealtimeRow(payload);
+          scheduleGroupsRefresh(row ? getStringField(row, "id") : null);
         }
       )
       .subscribe();
@@ -269,8 +343,8 @@ export function useGroupChats() {
           table: 'group_chat_messages',
         },
         (payload) => {
-          const row = (payload as any)?.new ?? (payload as any)?.old;
-          scheduleGroupsRefresh(row?.group_id ?? null);
+          const row = decodeRealtimeRow(payload);
+          scheduleGroupsRefresh(row ? getStringField(row, "group_id") : null);
         }
       )
       .on(
@@ -281,8 +355,8 @@ export function useGroupChats() {
           table: 'group_chat_messages',
         },
         (payload) => {
-          const row = (payload as any)?.new ?? (payload as any)?.old;
-          scheduleGroupsRefresh(row?.group_id ?? null);
+          const row = decodeRealtimeRow(payload);
+          scheduleGroupsRefresh(row ? getStringField(row, "group_id") : null);
         }
       )
       .on(
@@ -293,8 +367,8 @@ export function useGroupChats() {
           table: 'group_chat_messages',
         },
         (payload) => {
-          const row = (payload as any)?.new ?? (payload as any)?.old;
-          scheduleGroupsRefresh(row?.group_id ?? null);
+          const row = decodeRealtimeRow(payload);
+          scheduleGroupsRefresh(row ? getStringField(row, "group_id") : null);
         }
       )
       .subscribe();
@@ -309,6 +383,8 @@ export function useGroupChats() {
 
 export function useGroupMessages(groupId: string | null) {
   const { user } = useAuth();
+  const rpc = getGroupRpcClient();
+  const briefClient = supabase as unknown as UserBriefClient;
   const [messages, setMessages] = useState<GroupMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const profileCacheRef = useRef<Map<string, CachedSenderProfile>>(new Map());
@@ -347,7 +423,7 @@ export function useGroupMessages(groupId: string | null) {
     if (!profileInFlightRef.current[senderId]) {
       profileInFlightRef.current[senderId] = (async () => {
         try {
-          const briefMap = await fetchUserBriefMap([senderId], supabase as any);
+          const briefMap = await fetchUserBriefMap([senderId], briefClient);
           const brief = resolveUserBrief(senderId, briefMap);
           const normalized = brief
             ? {
@@ -387,7 +463,7 @@ export function useGroupMessages(groupId: string | null) {
 
       // Получаем профили отправителей
       const senderIds = [...new Set((data || []).map(m => m.sender_id))];
-      const briefMap = await fetchUserBriefMap(senderIds, supabase as any);
+      const briefMap = await fetchUserBriefMap(senderIds, briefClient);
       const profileMap: Record<string, SenderProfile> = {};
       senderIds.forEach((senderId) => {
         const brief = resolveUserBrief(senderId, briefMap);
@@ -399,8 +475,9 @@ export function useGroupMessages(groupId: string | null) {
         setCachedProfile(senderId, profileMap[senderId]);
       });
 
-      const messagesWithSenders = (data || []).map(msg => ({
+      const messagesWithSenders = (data || []).map((msg) => ({
         ...msg,
+        created_at: msg.created_at ?? new Date(0).toISOString(),
         sender: profileMap[msg.sender_id]
       }));
 
@@ -434,12 +511,14 @@ export function useGroupMessages(groupId: string | null) {
             filter: `group_id=eq.${groupId}`,
           },
           async (payload) => {
-            const newMessage = payload.new as GroupMessage;
+            const newMessage = decodeGroupMessageRealtimeRow(payload.new);
+            if (!newMessage) return;
             const profile = await getSenderProfile(newMessage.sender_id);
 
             setMessages((prev) =>
               upsertRealtimeMessage(prev, {
                 ...newMessage,
+                created_at: newMessage.created_at ?? new Date(0).toISOString(),
                 sender: profile,
               }),
             );
@@ -454,11 +533,13 @@ export function useGroupMessages(groupId: string | null) {
             filter: `group_id=eq.${groupId}`,
           },
           (payload) => {
-            const updatedMessage = payload.new as GroupMessage;
+            const updatedMessage = decodeGroupMessageRealtimeRow(payload.new);
+            if (!updatedMessage) return;
             setMessages((prev) => {
               const existing = prev.find((message) => message.id === updatedMessage.id);
               return upsertRealtimeMessage(prev, {
                 ...updatedMessage,
+                created_at: updatedMessage.created_at ?? existing?.created_at ?? new Date(0).toISOString(),
                 sender: updatedMessage.sender ?? existing?.sender,
               });
             });
@@ -473,7 +554,8 @@ export function useGroupMessages(groupId: string | null) {
             filter: `group_id=eq.${groupId}`,
           },
           (payload) => {
-            const deletedMessage = payload.old as Pick<GroupMessage, "id">;
+            const deletedMessage = decodeDeletedGroupMessageRow(payload.old);
+            if (!deletedMessage) return;
             setMessages((prev) => removeRealtimeMessage(prev, deletedMessage.id));
           }
         )
@@ -521,18 +603,18 @@ export function useGroupMessages(groupId: string | null) {
         throw new Error(`HASHTAG_BLOCKED:${("blockedTags" in hashtagVerdict ? hashtagVerdict.blockedTags : []).join(", ")}`);
       }
 
-      const rpc = await (supabase as any).rpc("send_group_message_v1", {
+      const rpcResult = await rpc.rpc<unknown>("send_group_message_v1", {
         p_group_id: groupId,
         p_content: normalizedContent,
-        p_media_url: null,
-        p_media_type: null,
+        p_media_url: undefined,
+        p_media_type: undefined,
       });
 
-      if (rpc.error && !isSchemaMissingError(rpc.error)) {
-        throw rpc.error;
+      if (rpcResult.error && !isSchemaMissingError(rpcResult.error)) {
+        throw rpcResult.error;
       }
 
-      if (rpc.error && isSchemaMissingError(rpc.error)) {
+      if (rpcResult.error && isSchemaMissingError(rpcResult.error)) {
         const { error } = await supabase.from("group_chat_messages").insert({
           group_id: groupId,
           sender_id: user.id,
@@ -565,8 +647,8 @@ export function useCreateGroup() {
     try {
       const { data, error } = await supabase.rpc("create_group_chat", {
         p_name: name,
-        p_description: description || null,
-        p_avatar_url: avatarUrl || null
+        p_description: description || undefined,
+        p_avatar_url: avatarUrl || undefined
       });
 
       if (error) throw error;
@@ -583,6 +665,7 @@ export function useCreateGroup() {
 export function useGroupMembers(groupId: string | null) {
   const [members, setMembers] = useState<{ user_id: string; role: string; profile?: { display_name: string | null; avatar_url: string | null } }[]>([]);
   const [loading, setLoading] = useState(true);
+  const briefClient = supabase as unknown as UserBriefClient;
 
   const fetchMembers = useCallback(async () => {
     if (!groupId) {
@@ -600,7 +683,7 @@ export function useGroupMembers(groupId: string | null) {
       if (error) throw error;
 
       const userIds = (data || []).map(m => m.user_id);
-      const briefMap = await fetchUserBriefMap(userIds, supabase as any);
+      const briefMap = await fetchUserBriefMap(userIds, briefClient);
       const profileMap: Record<string, SenderProfile> = {};
       userIds.forEach((memberId) => {
         const brief = resolveUserBrief(memberId, briefMap);
@@ -613,6 +696,7 @@ export function useGroupMembers(groupId: string | null) {
 
       const membersWithProfiles = (data || []).map(m => ({
         ...m,
+        role: m.role ?? "member",
         profile: profileMap[m.user_id]
       }));
 

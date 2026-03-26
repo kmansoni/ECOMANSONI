@@ -32,7 +32,7 @@
 
 import { toBase64, fromBase64 } from "./utils";
 
-function toLocalBytesFromBase64(b64: string): Uint8Array {
+function toLocalBytesFromBase64(b64: string): Uint8Array<ArrayBuffer> {
   const raw = fromBase64(b64);
   return new Uint8Array(raw.slice(0));
 }

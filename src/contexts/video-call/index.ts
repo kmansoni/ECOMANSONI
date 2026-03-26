@@ -89,6 +89,7 @@ export function useVideoCallContext(): VideoCallContextType {
     currentCall: signaling.currentCall,
     incomingCall: signaling.incomingCall,
     connectionState: signaling.connectionState,
+    pendingCalleeProfile: signaling.pendingCalleeProfile,
     startCall: signaling.startCall,
     answerCall: signaling.answerCall,
     declineCall: signaling.declineCall,

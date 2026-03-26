@@ -82,7 +82,7 @@ export function StoryHighlights({
       const { error } = await supabase.from("story_highlights").insert({
         user_id: user.id,
         title: newTitle.trim(),
-        cover_url: coverUrl,
+        cover_url: coverUrl ?? "",
         story_ids: [],
       });
 

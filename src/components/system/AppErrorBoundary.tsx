@@ -6,13 +6,13 @@ type State = {
 };
 
 export class AppErrorBoundary extends React.Component<React.PropsWithChildren, State> {
-  state: State = { hasError: false };
+  override state: State = { hasError: false };
 
   static getDerivedStateFromError(): State {
     return { hasError: true };
   }
 
-  componentDidCatch(error: unknown) {
+  override componentDidCatch(error: unknown) {
     logger.error("app.error_boundary.runtime_error", { error });
   }
 
@@ -20,7 +20,7 @@ export class AppErrorBoundary extends React.Component<React.PropsWithChildren, S
     window.location.reload();
   };
 
-  render() {
+  override render() {
     if (this.state.hasError) {
       return (
         <div className="min-h-screen flex items-center justify-center bg-background px-6">

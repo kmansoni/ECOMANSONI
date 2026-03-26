@@ -55,6 +55,9 @@ jobs:
       - name: SQL lint (RPC aliases)
         run: npm run sql:lint
 
+      - name: Migration governance lint
+        run: npm run migrations:lint
+
       - name: Lint
         run: npm run lint
 

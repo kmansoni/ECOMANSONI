@@ -346,21 +346,3 @@ export const ClockSkewRejectionSchema = z.object({
   skew_hint: z.string(),
   max_allowed_skew_ms: z.number().int(),
 });
-
-// ============================================================================
-// Exports
-// ============================================================================
-
-export {
-  SendMessageSchema,
-  EditMessageSchema,
-  DeleteMessageSchema,
-  UpdatePolicySchema,
-  AcceptInviteSchema,
-  InviteUserSchema,
-  RemoveMemberSchema,
-  TimelineQuerySchema,
-  CmdStatusQuerySchema,
-  RecordReceiptSchema,
-  AdminActionSchema,
-};

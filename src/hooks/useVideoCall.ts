@@ -1026,7 +1026,15 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
       // If we found an offer earlier, process it NOW (after PC is ready)
       if (existingOffer && peerConnectionRef.current && existingOffer.sender_id !== user.id) {
         try {
-          const existingOfferSdp = typeof existingOffer.signal_data?.sdp === "string" ? existingOffer.signal_data.sdp : null;
+          const existingSignalData = existingOffer.signal_data;
+          const existingOfferSdp =
+            existingSignalData &&
+            typeof existingSignalData === "object" &&
+            !Array.isArray(existingSignalData) &&
+            "sdp" in existingSignalData &&
+            typeof (existingSignalData as { sdp?: unknown }).sdp === "string"
+              ? (existingSignalData as { sdp: string }).sdp
+              : null;
           if (existingOfferSdp && lastOfferSdpRef.current === existingOfferSdp) {
             log("Existing offer already processed, skipping duplicate");
           } else {
@@ -1203,7 +1211,10 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
         };
 
         await debugEvent(currentCall.id, "slo_sample", {
-          rtt_ms: selectedPair?.currentRoundTripTime ? Math.round(selectedPair.currentRoundTripTime * 1000) : null,
+          rtt_ms:
+            selectedPair && "currentRoundTripTime" in selectedPair && typeof (selectedPair as { currentRoundTripTime?: number }).currentRoundTripTime === "number"
+              ? Math.round(((selectedPair as { currentRoundTripTime?: number }).currentRoundTripTime ?? 0) * 1000)
+              : null,
           packet_loss_audio_pct: ratio(inboundAudioLoss.lost, inboundAudioLoss.received),
           packet_loss_video_pct: ratio(inboundVideoLoss.lost, inboundVideoLoss.received),
           reconnect_proxy_ice_restart_count: iceRestartCountRef.current,

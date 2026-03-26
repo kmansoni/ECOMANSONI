@@ -29,7 +29,7 @@
 
 import { toBase64, fromBase64 } from './utils';
 
-function toLocalBytesFromBase64(b64: string): Uint8Array {
+function toLocalBytesFromBase64(b64: string): Uint8Array<ArrayBuffer> {
   const raw = fromBase64(b64);
   return new Uint8Array(raw.slice(0));
 }
@@ -180,7 +180,7 @@ async function _loadLatestState(conversationId: string, senderId: string): Promi
       senderId: latest.senderId,
       keyId: latest.keyId,
       iteration: latest.iteration,
-      chainKey: toLocalBytesFromBase64(latest.chainKey).buffer,
+      chainKey: toLocalBytesFromBase64(latest.chainKey).buffer as ArrayBuffer,
       signingKeyPair: { publicKey, privateKey },
       createdAt: latest.createdAt,
     };
@@ -405,7 +405,7 @@ export async function processSenderKeyMessage(msg: SenderKeyMessage): Promise<vo
     senderId: msg.senderId,
     keyId: msg.keyId,
     iteration: 0,
-    chainKey: toLocalBytesFromBase64(msg.chainKeySeed).buffer,
+    chainKey: toLocalBytesFromBase64(msg.chainKeySeed).buffer as ArrayBuffer,
     signingKeyPair: {
       publicKey: signingPubCryptoKey,
       privateKey: null as unknown as CryptoKey, // remote: no private key

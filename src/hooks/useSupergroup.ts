@@ -321,7 +321,7 @@ export function useSupergroup(conversationId: string): UseSupergroup {
 
       const rows = (data as Array<{ user_id: string; role: MemberRole; joined_at: string }>) ?? [];
       const userIds = rows.map(r => r.user_id);
-      const briefMap = userIds.length > 0 ? await fetchUserBriefMap(userIds, supabase as any) : {};
+      const briefMap = userIds.length > 0 ? await fetchUserBriefMap(userIds, supabase as any) : new Map();
 
       const { data: permissionsRows, error: permissionsErr } = await (supabase as any)
         .from("supergroup_member_permissions")

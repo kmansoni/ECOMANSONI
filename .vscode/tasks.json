@@ -101,16 +101,20 @@
 		{
 			"label": "Supabase: Migration list (linked)",
 			"type": "shell",
-			"command": "C:\\Users\\manso\\AppData\\Local\\supabase-cli\\v2.75.0\\supabase.exe",
+			"command": "pwsh",
 			"args": [
-				"migration",
-				"list"
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				"${workspaceFolder}\\scripts\\supabase-migration-list.ps1",
+				"-RetryCount",
+				"4",
+				"-RetryDelaySeconds",
+				"4"
 			],
 			"options": {
-				"cwd": "${workspaceFolder}",
-				"env": {
-					"SUPABASE_ACCESS_TOKEN": "${env:SUPABASE_ACCESS_TOKEN}"
-				}
+				"cwd": "${workspaceFolder}"
 			},
 			"problemMatcher": []
 		},
@@ -123,7 +127,12 @@
 				"-ExecutionPolicy",
 				"Bypass",
 				"-File",
-				"${workspaceFolder}\\scripts\\supabase-migration-list.ps1"
+				"${workspaceFolder}\\scripts\\supabase-migration-list.ps1",
+				"-PromptDbPassword",
+				"-RetryCount",
+				"4",
+				"-RetryDelaySeconds",
+				"4"
 			],
 			"options": {
 				"cwd": "${workspaceFolder}"

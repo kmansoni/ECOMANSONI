@@ -5,6 +5,7 @@ import { uploadMedia } from '@/lib/mediaUpload';
 import { isGuestMode } from '@/lib/demo/demoMode';
 import { getDemoBotsUsersWithStories, isDemoId } from '@/lib/demo/demoBots';
 import { fetchUserBriefMap, resolveUserBrief } from '@/lib/users/userBriefs';
+import { showErrorToast, handleApiError, errors } from '@/lib/errors';
 
 export interface Story {
   id: string;
@@ -193,8 +194,10 @@ export function useStories() {
 
       setUsersWithStories(users);
     } catch (err) {
-      console.error('Error fetching stories:', err);
-      setError(err instanceof Error ? err.message : 'Failed to fetch stories');
+      const appError = handleApiError(err);
+      console.error('Error fetching stories:', appError);
+      setError(appError.message);
+      showErrorToast(err, 'Не удалось загрузить истории');
     } finally {
       setLoading(false);
     }

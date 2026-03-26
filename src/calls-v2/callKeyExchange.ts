@@ -520,11 +520,15 @@ export class CallKeyExchange {
 
 function bytesToBase64(bytes: Uint8Array): string {
   let binary = '';
-  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  for (let i = 0; i < bytes.length; i++) {
+    const byte = bytes.at(i);
+    if (byte === undefined) continue;
+    binary += String.fromCharCode(byte);
+  }
   return btoa(binary);
 }
 
-function base64ToBytes(b64: string): Uint8Array {
+function base64ToBytes(b64: string): Uint8Array<ArrayBuffer> {
   const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
   // Ensure buffer is ArrayBuffer (not SharedArrayBuffer) for WebCrypto compatibility
   return new Uint8Array(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);

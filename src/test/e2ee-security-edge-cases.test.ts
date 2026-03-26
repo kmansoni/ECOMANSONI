@@ -802,7 +802,7 @@ describe('E2EE Security Edge Cases', () => {
       const { ciphertext } = await DoubleRatchetE2E.encrypt(aliceState, 'message');
 
       // Tamper with ciphertext
-      const tamperedCiphertext = fromBase64(ciphertext);
+      const tamperedCiphertext = new Uint8Array(fromBase64(ciphertext));
       tamperedCiphertext[0] = tamperedCiphertext[0] ^ 0xFF;
       const tamperedCiphertextB64 = toBase64(tamperedCiphertext);
 

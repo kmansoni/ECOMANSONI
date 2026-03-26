@@ -398,10 +398,11 @@ export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function Bottom
               const others = maAccounts.filter(a => a.accountId !== activeAccountId);
               const sorted = active ? [active, ...others] : others;
               return sorted.map((account) => {
-              const displayName = account.profile?.displayName ?? "(profile not loaded)";
-              const username = account.profile?.username ?? "(unknown)";
+              const displayName = account.profile?.display_name ?? account.profile?.displayName ?? "(profile not loaded)";
+              const username = account.profile?.username ?? (typeof displayName === "string" ? displayName : "(unknown)");
               // FIX (P1): Deterministic avatar per account (hash of accountId) instead of fixed img=32
               const getAvatarUrl = () => {
+                if (account.profile?.avatar_url) return account.profile.avatar_url;
                 if (account.profile?.avatarUrl) return account.profile.avatarUrl;
                 const hash = Array.from(account.accountId).reduce((h, c) => ((h << 5) - h) + c.charCodeAt(0), 0);
                 const imgId = Math.abs(hash) % 70;

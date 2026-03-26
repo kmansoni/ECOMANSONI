@@ -111,7 +111,7 @@ CREATE POLICY "smtp_settings_admin_select"
   USING (
     EXISTS (
       SELECT 1 FROM public.admin_users au
-      WHERE au.user_id = auth.uid()
+      WHERE au.id = auth.uid()
         AND au.status = 'active'
     )
   );

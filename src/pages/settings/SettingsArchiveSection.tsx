@@ -83,7 +83,7 @@ export function SettingsArchiveSection({ isDark, currentScreen, onNavigate, onBa
       if (error) throw error;
       const ids = (data ?? []).map((r: any) => String(r.post_id));
       const map = await fetchPostsByIds(ids);
-      setPosts(ids.map((id) => map.get(id)).filter(Boolean) as SettingsPostItem[]);
+      setPosts(ids.map((id: string) => map.get(id)).filter(Boolean) as SettingsPostItem[]);
     } catch (e) {
       toast({ title: "Post Archive", description: getErrorMessage(e) });
     } finally { setPostsLoading(false); }

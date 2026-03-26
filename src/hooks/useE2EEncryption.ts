@@ -119,6 +119,7 @@ export function useE2EEncryption(conversationId: string | null): UseE2EEncryptio
       clearPublicKeyCache();
       return;
     }
+    const cid = conversationId;
 
     let cancelled = false;
     setIsLoading(true);
@@ -126,7 +127,7 @@ export function useE2EEncryption(conversationId: string | null): UseE2EEncryptio
 
     async function load() {
       try {
-        const { data, error: convErr } = await e2eeDb.conversations.selectEncryptionEnabled(conversationId);
+        const { data, error: convErr } = await e2eeDb.conversations.selectEncryptionEnabled(cid);
 
         if (cancelled) return;
         if (convErr || !data) {
@@ -138,7 +139,7 @@ export function useE2EEncryption(conversationId: string | null): UseE2EEncryptio
         setIsEncrypted(enabled);
 
         if (enabled) {
-          const { data: keyData } = await e2eeDb.chatEncryptionKeys.selectActiveLatestVersion(conversationId);
+          const { data: keyData } = await e2eeDb.chatEncryptionKeys.selectActiveLatestVersion(cid);
 
           if (!cancelled && keyData) {
             setCurrentKeyVersion(keyData.key_version);
@@ -169,7 +170,7 @@ export function useE2EEncryption(conversationId: string | null): UseE2EEncryptio
 
     let cancelled = false;
     (async () => {
-      const { data, error: pErr } = await e2eeDb.conversationParticipants.selectByConversationId(conversationId);
+      const { data, error: pErr } = await e2eeDb.conversationParticipants.selectByConversation(conversationId);
       if (cancelled || pErr || !Array.isArray(data)) return;
       const isGroup = data.length >= 3;
       setIsGroupConversation(isGroup);
@@ -190,15 +191,17 @@ export function useE2EEncryption(conversationId: string | null): UseE2EEncryptio
   // ─── Получение/кеширование identity key pair ─────────────────────────────
 
   const getIdentityKeyPair = useCallback(async () => {
-    if (!user?.id) return null;
+    const userId = user?.id ?? null;
+    if (!userId) return null;
     const ks = getKeyStore();
-    return ks.getOrCreateIdentityKeyPair(user.id);
+    return ks.getOrCreateIdentityKeyPair(userId);
   }, [user?.id]);
 
   // ─── Получение группового ключа (с кешем) ────────────────────────────────
 
   const getGroupKey = useCallback(async (version: number): Promise<CryptoKey | null> => {
-    if (!conversationId || !user?.id) return null;
+    const userId = user?.id ?? null;
+    if (!conversationId || !userId) return null;
 
     // Проверяем in-memory кеш (forward secrecy: старые версии не удаляем)
     if (groupKeyCacheRef.current.has(version)) {
@@ -222,7 +225,7 @@ export function useE2EEncryption(conversationId: string | null): UseE2EEncryptio
         conversationId,
         version,
         { publicKey: identityKP.publicKey, privateKey: identityKP.privateKey },
-        user.id,
+        userId,
       );
       if (!groupKey) return null;
 

@@ -9,6 +9,7 @@ import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import type { Screen, SettingsPostItem } from "./types";
+export { dayLabel, estimateLocalStorageBytes, formatBytes, formatCompact } from "./formatters";
 
 // ——— Pure formatting utils ——————————————————————————————————————————————
 

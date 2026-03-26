@@ -32,13 +32,26 @@ export interface AccountIndexEntry {
   addedAt: string;
   lastActiveAt: string;
   requiresReauth: boolean;
-  profile: AccountProfile | null;
+  profile: AccountProfile | AccountProfileSnapshot | null;
 }
 
 export interface AccountProfile {
   display_name: string;
   avatar_url?: string;
+  displayName?: string | null;
+  avatarUrl?: string | null;
+  username?: string | null;
   email?: string;
+}
+
+export interface AccountProfileSnapshot {
+  accountId: AccountId;
+  displayName: string | null;
+  display_name?: string | null;
+  username: string;
+  avatarUrl: string | null;
+  avatar_url?: string | null;
+  updatedAt: string;
 }
 
 export interface SessionTokens {
@@ -132,7 +145,7 @@ export function upsertAccountIndex(opts: {
   accountId: AccountId;
   touchActive?: boolean;
   requiresReauth?: boolean;
-  profile?: AccountProfile | null;
+  profile?: AccountProfile | AccountProfileSnapshot | null;
 }): AccountIndexEntry[] {
   const now = new Date().toISOString();
   const list = listAccountsIndex();
@@ -164,7 +177,10 @@ export function upsertAccountIndex(opts: {
   return list;
 }
 
-export function pruneAccountsIndex(keepAccountIds: AccountId[]): AccountIndexEntry[] {
+export function pruneAccountsIndex(keepAccountIds?: AccountId[]): AccountIndexEntry[] {
+  if (!Array.isArray(keepAccountIds)) {
+    return listAccountsIndex();
+  }
   const keepSet = new Set(keepAccountIds);
   const list = listAccountsIndex().filter((e) => keepSet.has(e.accountId));
   writeAccountsIndex(list);

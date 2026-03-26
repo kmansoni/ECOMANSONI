@@ -21,7 +21,7 @@ BEGIN
   ) THEN
     ALTER TABLE public.posts
       ADD CONSTRAINT fk_posts_author_id
-      FOREIGN KEY (author_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+      FOREIGN KEY (author_id) REFERENCES auth.users(id) ON DELETE CASCADE NOT VALID;
   END IF;
 END $$;
 
@@ -38,7 +38,7 @@ BEGIN
   ) THEN
     ALTER TABLE public.stories
       ADD CONSTRAINT fk_stories_author_id
-      FOREIGN KEY (author_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+      FOREIGN KEY (author_id) REFERENCES auth.users(id) ON DELETE CASCADE NOT VALID;
   END IF;
 END $$;
 
@@ -55,7 +55,7 @@ BEGIN
   ) THEN
     ALTER TABLE public.reels
       ADD CONSTRAINT fk_reels_author_id
-      FOREIGN KEY (author_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+      FOREIGN KEY (author_id) REFERENCES auth.users(id) ON DELETE CASCADE NOT VALID;
   END IF;
 END $$;
 
@@ -72,7 +72,7 @@ BEGIN
   ) THEN
     ALTER TABLE public.comments
       ADD CONSTRAINT fk_comments_author_id
-      FOREIGN KEY (author_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+      FOREIGN KEY (author_id) REFERENCES auth.users(id) ON DELETE CASCADE NOT VALID;
   END IF;
 END $$;
 
@@ -89,7 +89,7 @@ BEGIN
   ) THEN
     ALTER TABLE public.reel_comments
       ADD CONSTRAINT fk_reel_comments_author_id
-      FOREIGN KEY (author_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+      FOREIGN KEY (author_id) REFERENCES auth.users(id) ON DELETE CASCADE NOT VALID;
   END IF;
 END $$;
 
@@ -106,7 +106,7 @@ BEGIN
   ) THEN
     ALTER TABLE public.followers
       ADD CONSTRAINT fk_followers_follower_id
-      FOREIGN KEY (follower_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+      FOREIGN KEY (follower_id) REFERENCES auth.users(id) ON DELETE CASCADE NOT VALID;
   END IF;
 END $$;
 
@@ -123,7 +123,7 @@ BEGIN
   ) THEN
     ALTER TABLE public.followers
       ADD CONSTRAINT fk_followers_following_id
-      FOREIGN KEY (following_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+      FOREIGN KEY (following_id) REFERENCES auth.users(id) ON DELETE CASCADE NOT VALID;
   END IF;
 END $$;
 
@@ -140,7 +140,7 @@ BEGIN
   ) THEN
     ALTER TABLE public.notifications
       ADD CONSTRAINT fk_notifications_user_id
-      FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+      FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE NOT VALID;
   END IF;
 END $$;
 
@@ -157,7 +157,7 @@ BEGIN
   ) THEN
     ALTER TABLE public.notifications
       ADD CONSTRAINT fk_notifications_actor_id
-      FOREIGN KEY (actor_id) REFERENCES auth.users(id) ON DELETE SET NULL;
+      FOREIGN KEY (actor_id) REFERENCES auth.users(id) ON DELETE SET NULL NOT VALID;
   END IF;
 END $$;
 
@@ -174,7 +174,7 @@ BEGIN
   ) THEN
     ALTER TABLE public.post_likes
       ADD CONSTRAINT fk_post_likes_user_id
-      FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+      FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE NOT VALID;
   END IF;
 END $$;
 
@@ -191,7 +191,7 @@ BEGIN
   ) THEN
     ALTER TABLE public.reel_likes
       ADD CONSTRAINT fk_reel_likes_user_id
-      FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+      FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE NOT VALID;
   END IF;
 END $$;
 
@@ -208,7 +208,7 @@ BEGIN
   ) THEN
     ALTER TABLE public.comment_likes
       ADD CONSTRAINT fk_comment_likes_user_id
-      FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+      FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE NOT VALID;
   END IF;
 END $$;
 
@@ -225,7 +225,7 @@ BEGIN
   ) THEN
     ALTER TABLE public.reel_comment_likes
       ADD CONSTRAINT fk_reel_comment_likes_user_id
-      FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+      FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE NOT VALID;
   END IF;
 END $$;
 
@@ -311,3 +311,4 @@ BEGIN
   RETURN NULL;
 END;
 $$;
+

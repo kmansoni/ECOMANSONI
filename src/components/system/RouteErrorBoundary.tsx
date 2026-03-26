@@ -7,13 +7,13 @@ type State = {
 };
 
 export class RouteErrorBoundary extends React.Component<React.PropsWithChildren, State> {
-  state: State = { hasError: false };
+  override state: State = { hasError: false };
 
   static getDerivedStateFromError(): State {
     return { hasError: true };
   }
 
-  componentDidCatch(error: unknown) {
+  override componentDidCatch(error: unknown) {
     const details =
       error instanceof Error
         ? `${error.name}: ${error.message}`
@@ -29,7 +29,7 @@ export class RouteErrorBoundary extends React.Component<React.PropsWithChildren,
     window.location.reload();
   };
 
-  render() {
+  override render() {
     if (this.state.hasError) {
       return (
         <div className="min-h-screen flex items-center justify-center bg-background px-6">

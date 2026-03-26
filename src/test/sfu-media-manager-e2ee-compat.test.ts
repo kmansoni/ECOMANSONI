@@ -44,7 +44,7 @@ const transportState = vi.hoisted(() => {
 vi.mock("mediasoup-client", () => {
   class Device {
     loaded = false;
-    rtpCapabilities = null;
+    rtpCapabilities: unknown = null;
 
     async load({ routerRtpCapabilities }: { routerRtpCapabilities: unknown }) {
       this.loaded = true;

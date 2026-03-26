@@ -131,7 +131,10 @@ describe("CallsWsClient reliability", () => {
       payload: { roomId: "room-1" },
     });
 
-    const frame = await client.waitFor("ROOM_JOIN_OK", (f) => f.payload?.roomId === "room-1", {
+    const frame = await client.waitFor("ROOM_JOIN_OK", (f) => {
+      const payload = f.payload as { roomId?: string } | undefined;
+      return payload?.roomId === "room-1";
+    }, {
       acceptRecent: true,
       timeoutMs: 500,
     });

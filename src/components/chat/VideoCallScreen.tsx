@@ -36,7 +36,7 @@ import {
 } from "lucide-react";
 // Status icon and color for call states
 function StatusIndicator({ status, connectionState }: { status: string, connectionState: string }) {
-  let icon = null;
+  let icon: React.ReactNode = null;
   let color = "text-blue-400";
   let pulse = false;
   let label = "";

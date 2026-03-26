@@ -24,10 +24,28 @@ type AdminLookupClient = {
 };
 
 async function findAuthUserByEmail(adminClient: AdminLookupClient, email: string) {
-  const { data, error } = await adminClient.auth.admin.listUsers({ page: 1, perPage: 200 });
-  if (error) return { user: null, error };
-  const user = (data?.users ?? []).find((entry) => String(entry.email ?? "").toLowerCase() === email.toLowerCase()) ?? null;
-  return { user, error: null };
+  const normalizedEmail = email.toLowerCase();
+  const perPage = 200;
+  let page = 1;
+
+  // Scan pages deterministically to avoid missing existing users when total > perPage.
+  while (true) {
+    const { data, error } = await adminClient.auth.admin.listUsers({ page, perPage });
+    if (error) return { user: null, error };
+
+    const users = data?.users ?? [];
+    const found = users.find((entry) => String(entry.email ?? "").toLowerCase() === normalizedEmail) ?? null;
+    if (found) {
+      return { user: found, error: null };
+    }
+
+    if (users.length < perPage) {
+      break;
+    }
+    page += 1;
+  }
+
+  return { user: null, error: null };
 }
 
 function jsonResp(origin: string | null, body: Record<string, unknown>, status = 200): Response {

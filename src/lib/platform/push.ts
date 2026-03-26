@@ -95,7 +95,7 @@ async function registerCapacitorPush(
 
     // Install listeners BEFORE calling register() — eliminates race condition.
     Promise.all([
-      PushNotifications.addListener("registration", (token) => {
+      PushNotifications.addListener("registration", (token: { value: string }) => {
         clearTimeout(timeoutId);
         cleanup();
         const type: PushTokenType =
@@ -106,7 +106,7 @@ async function registerCapacitorPush(
           registeredAt: new Date().toISOString(),
         });
       }),
-      PushNotifications.addListener("registrationError", (err) => {
+      PushNotifications.addListener("registrationError", (err: unknown) => {
         clearTimeout(timeoutId);
         cleanup();
         reject(new Error(`push:registration-error:${JSON.stringify(err)}`));

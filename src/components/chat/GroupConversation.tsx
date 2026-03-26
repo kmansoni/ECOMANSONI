@@ -324,7 +324,7 @@ export function GroupConversation({ group, onBack, onLeave }: GroupConversationP
                   </div>
 
                   <div className={`mt-0.5 flex items-center gap-1 px-1 ${isOwn ? "self-end" : "self-start"}`}>
-                    <span className="text-[11px] text-muted-foreground">{formatMessageTime(message.created_at)}</span>
+                    <span className="text-[11px] text-muted-foreground">{formatMessageTime(message.created_at ?? new Date(0).toISOString())}</span>
                     {isOwn && <CheckCheck className="w-4 h-4 text-muted-foreground" />}
                   </div>
                 </div>

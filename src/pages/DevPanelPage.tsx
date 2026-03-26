@@ -149,7 +149,7 @@ export default function DevPanelPage() {
         .eq("signal_type", "debug")
         .order("created_at", { ascending: false })
         .limit(100);
-      setDebugSignals(debugData || []);
+      setDebugSignals((debugData || []).map((row) => ({ ...row, processed: row.processed ?? false })));
       
       // Load all recent signals
       const { data: signalsData } = await supabase
@@ -157,7 +157,7 @@ export default function DevPanelPage() {
         .select("*")
         .order("created_at", { ascending: false })
         .limit(200);
-      setAllSignals(signalsData || []);
+      setAllSignals((signalsData || []).map((row) => ({ ...row, processed: row.processed ?? false })));
       
       // Load profiles
       const { data: profilesData } = await supabase

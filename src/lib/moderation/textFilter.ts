@@ -60,7 +60,7 @@ export function checkText(text: string): TextCheckResult {
   PHONE_REGEX.lastIndex = 0;
 
   // 4. Проверка на CAPS LOCK (>80% заглавных букв)
-  const letters = text.match(/[a-zA-Zа-яА-ЯёЁ]/g) || [];
+  const letters: string[] = text.match(/[a-zA-Zа-яА-ЯёЁ]/g) ?? [];
   if (letters.length >= 5) {
     const upperCount = letters.filter((c) => c === c.toUpperCase() && c !== c.toLowerCase()).length;
     if (upperCount / letters.length > 0.8) {

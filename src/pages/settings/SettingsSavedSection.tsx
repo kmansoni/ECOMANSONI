@@ -63,7 +63,7 @@ function SavedAllPostsScreen({ isDark, onBack }: SubProps) {
         if (error) throw error;
         const ids = (data ?? []).map((r: any) => String(r.post_id));
         const map = await fetchPostsByIds(ids);
-        setPosts(ids.map((id) => map.get(id)).filter(Boolean) as SettingsPostItem[]);
+        setPosts(ids.map((id: string) => map.get(id)).filter(Boolean) as SettingsPostItem[]);
       } catch (e) {
         toast({ title: "Saved", description: getErrorMessage(e) });
       } finally {
@@ -110,7 +110,7 @@ function SavedLikedPostsScreen({ isDark, onBack }: SubProps) {
         if (error) throw error;
         const ids = (data ?? []).map((r: any) => String(r.post_id));
         const map = await fetchPostsByIds(ids);
-        setPosts(ids.map((id) => map.get(id)).filter(Boolean) as SettingsPostItem[]);
+        setPosts(ids.map((id: string) => map.get(id)).filter(Boolean) as SettingsPostItem[]);
       } catch (e) {
         toast({ title: "Liked Posts", description: getErrorMessage(e) });
       } finally {

@@ -103,7 +103,7 @@ describe('reels_engine_validate_config_v1', () => {
 
   describe('required fields validation', () => {
     it('should reject if algorithm_version missing (missing_required_field)', async () => {
-      const config = buildConfig();
+      const config: Record<string, unknown> = buildConfig();
       delete config.algorithm_version;
 
       mockSupabase.rpc.mockResolvedValueOnce({
@@ -136,7 +136,7 @@ describe('reels_engine_validate_config_v1', () => {
     });
 
     it('should reject if exploration_ratio missing (missing_required_field)', async () => {
-      const config = buildConfig();
+      const config: Record<string, unknown> = buildConfig();
       delete config.exploration_ratio;
 
       mockSupabase.rpc.mockResolvedValueOnce({
@@ -169,7 +169,7 @@ describe('reels_engine_validate_config_v1', () => {
     });
 
     it('should reject if recency_days missing (missing_required_field)', async () => {
-      const config = buildConfig();
+      const config: Record<string, unknown> = buildConfig();
       delete config.recency_days;
 
       mockSupabase.rpc.mockResolvedValueOnce({
@@ -202,7 +202,7 @@ describe('reels_engine_validate_config_v1', () => {
     });
 
     it('should reject if freq_cap_hours missing (missing_required_field)', async () => {
-      const config = buildConfig();
+      const config: Record<string, unknown> = buildConfig();
       delete config.freq_cap_hours;
 
       mockSupabase.rpc.mockResolvedValueOnce({
@@ -939,7 +939,7 @@ describe('reels_engine_validate_config_v1', () => {
     });
 
     it('should reject activation if config has errors (gate enforcement)', async () => {
-      const invalidConfig = buildConfig();
+      const invalidConfig: Record<string, unknown> = buildConfig();
       delete invalidConfig.algorithm_version;
 
       mockSupabase.rpc.mockResolvedValueOnce({
@@ -1093,7 +1093,7 @@ describe('reels_engine_validate_config_v1', () => {
         p_config: invalidConfig
       });
 
-      data.errors.forEach((error) => {
+      data.errors.forEach((error: { code: string; path: string; message: string }) => {
         expect(stableErrorCodes).toContain(error.code);
         expect(error.path).toBeDefined();
         expect(error.message).toBeDefined();

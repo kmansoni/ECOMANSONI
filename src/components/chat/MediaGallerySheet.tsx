@@ -156,7 +156,8 @@ export function MediaGallerySheet({ isOpen, onClose, conversationId, userId, tit
                 if (!grouped[monthKey]) grouped[monthKey] = [];
                 
                 // Extract URL from content
-                const urls = msg.content.match(urlRegex) || [];
+                const rawContent = typeof msg.content === 'string' ? msg.content : '';
+                const urls: string[] = rawContent.match(urlRegex) ?? [];
                 urls.forEach((url, idx) => {
                   grouped[monthKey].push({
                     id: `${msg.id}-${idx}`,
@@ -164,7 +165,7 @@ export function MediaGallerySheet({ isOpen, onClose, conversationId, userId, tit
                     type: 'link',
                     created_at: msg.created_at,
                     link_title: url.length > 50 ? url.substring(0, 50) + '...' : url,
-                    link_description: msg.content.replace(url, '').trim() || undefined,
+                    link_description: rawContent.replace(url, '').trim() || undefined,
                   });
                 });
               });

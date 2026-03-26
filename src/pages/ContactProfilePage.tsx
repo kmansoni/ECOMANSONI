@@ -93,7 +93,8 @@ export function ContactProfilePage() {
 
   // Fetch real media stats from conversation
   useEffect(() => {
-    if (!state?.conversationId) {
+    const conversationId = state?.conversationId;
+    if (!conversationId) {
       setMediaStats({ photos: 0, files: 0, links: 0, voiceMessages: 0, commonGroups: 0 });
       return;
     }
@@ -103,7 +104,7 @@ export function ContactProfilePage() {
         const { data: messages } = await supabase
           .from('messages')
           .select('media_type, content')
-          .eq('conversation_id', state.conversationId);
+          .eq('conversation_id', conversationId);
 
         if (messages) {
           const photos = messages.filter(m => m.media_type === 'image').length;
@@ -392,6 +393,7 @@ export function ContactProfilePage() {
           {/* Block/Unblock User */}
           <button 
             onClick={async () => {
+                if (!userId) return;
               if (isBlocked) {
                 // Unblock
                 setIsBlocking(true);

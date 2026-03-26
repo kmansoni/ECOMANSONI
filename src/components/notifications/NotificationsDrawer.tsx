@@ -66,8 +66,8 @@ export function NotificationsDrawer({ open, onOpenChange }: NotificationsDrawerP
         navigate(`/contact/${notification.actor_id}`);
       }
       onOpenChange(false);
-    } else if (notification.post_id) {
-      navigate(`/post/${notification.post_id}`);
+    } else if (notification.target_type === "post" && notification.target_id) {
+      navigate(`/post/${notification.target_id}`);
       onOpenChange(false);
     }
   };
@@ -152,9 +152,9 @@ export function NotificationsDrawer({ open, onOpenChange }: NotificationsDrawerP
                         </span>{" "}
                         {notificationText[notification.type]}
                       </p>
-                      {notification.content && (
+                      {notification.body && (
                         <p className="text-sm text-muted-foreground line-clamp-1 mt-0.5">
-                          "{notification.content}"
+                          "{notification.body}"
                         </p>
                       )}
                       <p className="text-xs text-muted-foreground mt-1">

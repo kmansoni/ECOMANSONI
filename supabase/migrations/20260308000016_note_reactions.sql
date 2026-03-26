@@ -20,6 +20,12 @@ CREATE INDEX IF NOT EXISTS idx_note_reactions_owner
 -- RLS
 ALTER TABLE public.note_reactions ENABLE ROW LEVEL SECURITY;
 
+-- Re-apply policies idempotently in case they already exist in remote.
+DROP POLICY IF EXISTS "note_reactions_select" ON public.note_reactions;
+DROP POLICY IF EXISTS "note_reactions_insert" ON public.note_reactions;
+DROP POLICY IF EXISTS "note_reactions_update" ON public.note_reactions;
+DROP POLICY IF EXISTS "note_reactions_delete" ON public.note_reactions;
+
 -- Note reactions are visible to: the note owner, the reactor, and followers of the note owner
 CREATE POLICY "note_reactions_select"
   ON public.note_reactions FOR SELECT

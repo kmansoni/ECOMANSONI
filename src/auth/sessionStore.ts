@@ -79,7 +79,11 @@ function persistSessionsEncrypted(sessions: Record<string, AccountSession>): voi
   // Snapshot the data at call time (avoid race with future mutations)
   const snapshot = JSON.stringify(sessions);
 
-  _pendingWrite = (async () => {
+  // P0-013: Chain writes sequentially — wait for previous write before starting next.
+  // Without chaining, rapid successive calls would overwrite _pendingWrite and the
+  // previous Promise would be abandoned, potentially losing intermediate state.
+  const prev = _pendingWrite ?? Promise.resolve();
+  _pendingWrite = prev.then(async () => {
     try {
       const encrypted = await encryptForStorage(snapshot);
       localStorage.setItem(SESSIONS_KEY, encrypted);
@@ -94,7 +98,7 @@ function persistSessionsEncrypted(sessions: Record<string, AccountSession>): voi
         err,
       );
     }
-  })();
+  });
 }
 
 // ---------------------------------------------------------------------------

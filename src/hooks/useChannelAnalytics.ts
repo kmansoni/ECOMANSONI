@@ -83,12 +83,12 @@ export function useChannelAnalytics(channelId: string) {
         supabase.functions.invoke("channel-analytics", {
           method: "GET",
           headers: { "x-query": `channel_id=${ch}&period=${p}` },
-          body: null,
+          body: undefined,
         }),
         supabase.functions.invoke("channel-analytics", {
           method: "GET",
           headers: { "x-query": `channel_id=${ch}&limit=20&offset=0` },
-          body: null,
+          body: undefined,
         }),
       ]);
 

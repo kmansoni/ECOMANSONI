@@ -58,7 +58,7 @@ export function useStoryViews(storyId?: string, authorId?: string) {
                 viewer_id: v.viewer_id,
                 viewed_at: v.viewed_at ?? new Date().toISOString(),
                 display_name: resolveUserBrief(v.viewer_id, briefMap)?.display_name,
-                avatar_url: resolveUserBrief(v.viewer_id, briefMap)?.avatar_url ?? null,
+                avatar_url: resolveUserBrief(v.viewer_id, briefMap)?.avatar_url ?? undefined,
               }));
               setViewers(enriched);
             }

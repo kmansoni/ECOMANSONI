@@ -525,7 +525,7 @@ export function AuthPage() {
         }
 
         setOtpEmail(trimmedEmail);
-        setMaskedEmail(null);
+        setMaskedEmail("");
         toast.success("Код отправлен на " + trimmedEmail);
         setOtpCode("");
         setOtpCountdown(OTP_RESEND_COOLDOWN_SEC);
@@ -551,8 +551,8 @@ export function AuthPage() {
       // Go back to whatever mode we came from
       setMode(isRegisterFlowRef.current ? "register" : "login");
       setOtpCode("");
-      setOtpEmail(null);
-      setMaskedEmail(null);
+      setOtpEmail("");
+      setMaskedEmail("");
       otpSendUrlRef.current = "";
       return;
     }

@@ -48,7 +48,7 @@ import {
   REGISTRY_LAST_UPDATED,
   REGISTRY_REQUIRES_APPROVAL,
   REGISTRY_CODEOWNERS,
-} from "../../schemas/registry/types";
+} from "../../../schemas/registry/types";
 
 interface CompiledRegistry {
   version: string;
@@ -179,4 +179,5 @@ function main() {
 // Call main for CLI execution
 main();
 
-export { compileRegistry, writeCompiledRegistry, CompiledRegistry };
+export { compileRegistry, writeCompiledRegistry };
+export type { CompiledRegistry };

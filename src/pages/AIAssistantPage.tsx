@@ -20,6 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { maybeToastRateLimit } from "@/lib/anti-abuse/rateLimitToast";
+import { supabase } from "@/integrations/supabase/client";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -86,7 +87,7 @@ function clientBuiltinResponse(messages: Array<{ role: string; content: string }
     return "# SQL — основные паттерны\n\n```sql\n-- JOIN + агрегация\nSELECT u.name, COUNT(o.id) as orders\nFROM users u\nLEFT JOIN orders o ON u.id = o.user_id\nWHERE u.active = true\nGROUP BY u.id, u.name\nHAVING COUNT(o.id) > 0\nORDER BY orders DESC;\n\n-- Индексы\nCREATE INDEX CONCURRENTLY idx_orders_user ON orders(user_id);\n\n-- CTE\nWITH latest AS (\n  SELECT *, ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY created_at DESC) rn\n  FROM orders\n)\nSELECT * FROM latest WHERE rn = 1;\n```";
   }
   if (/безопасност|security|xss|sql.?inject|уязвим/.test(prompt)) {
-    return "# Безопасность кода\n\n## SQL Injection\n```python\n# ❌ Уязвимо\nquery = f\"SELECT * FROM users WHERE id = {user_id}\"\n\n# ✅ Безопасно\ncursor.execute(\"SELECT * FROM users WHERE id = %s\", (user_id,))\n```\n\n## XSS\n```typescript\n// ❌ Уязвимо\nelement.innerHTML = userInput;\n\n// ✅ Безопасно\nelement.textContent = userInput;\n```\n\n## Secrets\n```python\n# ❌ Никогда\nAPI_KEY = \"sk-hardcoded\"\n\n# ✅ Всегда\nAPI_KEY = os.environ[\"API_KEY\"]\n```";
+    return "# Безопасность кода\n\n## SQL Injection\n```python\n# ❌ Уязвимо\nquery = f\"SELECT * FROM users WHERE id = {user_id}\"\n\n# ✅ Безопасно\ncursor.execute(\"SELECT * FROM users WHERE id = %s\", (user_id,))\n```\n\n## XSS\n```typescript\n// ❌ Уязвимо\nelement.innerHTML = userInput;\n\n// ✅ Безопасно\nelement.textContent = userInput;\n```\n\n## Secrets\n```python\n# ❌ Никогда\nAPI_KEY = \"<HARDCODED_KEY>\"\n\n# ✅ Всегда\nAPI_KEY = os.environ[\"API_KEY\"]\n```";
   }
   if (/typescript|react|tsx|компонент/.test(prompt)) {
     return "# React + TypeScript хук\n\n```tsx\nimport { useState, useCallback } from 'react';\n\nfunction useCounter(initial = 0) {\n  const [count, setCount] = useState(initial);\n  const increment = useCallback(() => setCount(c => c + 1), []);\n  const decrement = useCallback(() => setCount(c => c - 1), []);\n  const reset = useCallback(() => setCount(initial), [initial]);\n  return { count, increment, decrement, reset };\n}\n\n// Использование\nexport function Counter() {\n  const { count, increment, decrement, reset } = useCounter(0);\n  return (\n    <div className=\"flex gap-2 items-center\">\n      <button onClick={decrement}>−</button>\n      <span className=\"font-bold\">{count}</span>\n      <button onClick={increment}>+</button>\n      <button onClick={reset} className=\"text-xs\">Reset</button>\n    </div>\n  );\n}\n```";
@@ -277,11 +278,11 @@ function renderMarkdown(text: string): string {
 
 function escapeHtml(str: string): string {
   const map: Record<string, string> = {
-    "&": "&",
-    "<": "<",
-    ">": ">",
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
     '"': "&#34;",
-    "'": "'",
+    "'": "&#39;",
   };
   return str.replace(/[&<>"']/g, (c) => map[c] ?? c);
 }
@@ -410,12 +411,15 @@ export function AIAssistantPage() {
           });
         } else if (EDGE_CHAT_URL && SUPABASE_ANON_KEY) {
           // ── Edge Function call (aria-chat must be deployed) ───────────────
+          const { data: sessionData } = await supabase.auth.getSession();
+          const accessToken = sessionData?.session?.access_token;
+
           resp = await fetch(EDGE_CHAT_URL, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
               apikey: SUPABASE_ANON_KEY,
-              Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+              Authorization: `Bearer ${accessToken ?? SUPABASE_ANON_KEY}`,
             },
             body: JSON.stringify({ messages: historyForApi }),
             signal: controller.signal,

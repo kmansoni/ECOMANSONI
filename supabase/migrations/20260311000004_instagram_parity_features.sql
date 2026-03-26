@@ -213,7 +213,7 @@ CREATE POLICY "video_messages_select_participant" ON video_messages
   FOR SELECT USING (
     auth.uid() = sender_id OR
     EXISTS (
-      SELECT 1 FROM conversation_members
+      SELECT 1 FROM public.conversation_participants
       WHERE conversation_id = video_messages.conversation_id
         AND user_id = auth.uid()
     )
@@ -225,7 +225,7 @@ CREATE POLICY "video_messages_insert_sender" ON video_messages
 CREATE POLICY "video_messages_update_viewed" ON video_messages
   FOR UPDATE USING (
     auth.uid() = ANY(
-      SELECT user_id FROM conversation_members
+      SELECT user_id FROM public.conversation_participants
       WHERE conversation_id = video_messages.conversation_id
     )
   );

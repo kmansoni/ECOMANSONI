@@ -105,12 +105,12 @@ export function PostDetailPage() {
         }
 
         setPost({
-          ...postData,
-          likes_count: clampCounter(postData.likes_count),
-          comments_count: clampCounter(postData.comments_count),
-          saves_count: clampCounter(postData.saves_count),
-          shares_count: clampCounter(postData.shares_count),
-          views_count: clampCounter(postData.views_count),
+          ...(postData as any),
+          likes_count: clampCounter((postData as any).likes_count),
+          comments_count: clampCounter((postData as any).comments_count),
+          saves_count: clampCounter((postData as any).saves_count),
+          shares_count: clampCounter((postData as any).shares_count),
+          views_count: clampCounter((postData as any).views_count),
           author: profile || undefined,
           media: media || [],
           isLiked,

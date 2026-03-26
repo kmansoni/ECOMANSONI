@@ -1763,12 +1763,23 @@ export function CRMHRDashboard() {
                 <div className="bg-slate-900/60 rounded-xl p-3 border border-slate-600">
                   <p className="text-xs text-slate-400 mb-1">Предпросмотр:</p>
                   <p className="text-sm text-slate-300 whitespace-pre-wrap">
-                    {crm.renderTemplate(tplBody, {
+                    {crm.renderTemplate({
+                      id: "preview",
+                      user_id: "preview",
+                      name: "preview",
+                      category: "invitation",
+                      subject: "",
+                      body: tplBody,
+                      is_default: false,
+                      send_channel: "email",
+                      created_at: new Date().toISOString(),
+                      updated_at: new Date().toISOString(),
+                    }, {
                       candidate_name: candidates.find(c => c.id === tplPreviewCandidate)?.name ?? 'Иван Иванов',
                       job_title: jobs[0]?.title ?? 'Frontend Developer',
                       company_name: 'Компания',
                       recruiter_name: 'Рекрутер',
-                    })}
+                    }).body}
                   </p>
                 </div>
               )}

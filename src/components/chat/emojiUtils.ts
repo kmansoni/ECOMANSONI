@@ -1,16 +1,28 @@
 const EMOJI_CORE_REGEX = /\p{Extended_Pictographic}/u;
 const LETTER_OR_NUMBER_REGEX = /[\p{L}\p{N}]/u;
 
-const graphemeSegmenter: any =
-  typeof Intl !== "undefined" && "Segmenter" in Intl
-    ? new (Intl as any).Segmenter(undefined, { granularity: "grapheme" })
-    : null;
+type GraphemeSegment = { segment: string };
+type GraphemeSegmenterLike = { segment: (input: string) => Iterable<GraphemeSegment> };
+
+const graphemeSegmenter: GraphemeSegmenterLike | null = (() => {
+  if (typeof Intl === "undefined" || !("Segmenter" in Intl)) {
+    return null;
+  }
+
+  type SegmenterCtor = new (
+    locales?: string | string[],
+    options?: { granularity?: "grapheme" | "word" | "sentence" }
+  ) => GraphemeSegmenterLike;
+
+  const Segmenter = (Intl as unknown as { Segmenter?: SegmenterCtor }).Segmenter;
+  return Segmenter ? new Segmenter(undefined, { granularity: "grapheme" }) : null;
+})();
 
 function splitGraphemes(input: string): string[] {
   if (!input) return [];
 
   if (graphemeSegmenter) {
-    return Array.from(graphemeSegmenter.segment(input), (segment) => segment.segment).filter(Boolean);
+    return Array.from(graphemeSegmenter.segment(input), (item) => item.segment).filter(Boolean);
   }
 
   return Array.from(input);

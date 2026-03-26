@@ -40,7 +40,7 @@ export const ENV = {
   
   // App Configuration
   appName: import.meta.env.VITE_APP_NAME || 'ECOMANSONI',
-  appVersion: import.meta.env.VITE_APP_VERSION || '0.0.0',
+  appVersion: import.meta.env.VITE_APP_VERSION || '0.1.0',
   appCommitSha: (import.meta as any).env?.VITE_APP_COMMIT_SHA || 'unknown',
   appBuildTime: (import.meta as any).env?.VITE_APP_BUILD_TIME || 'unknown',
   isDevelopment: import.meta.env.DEV,

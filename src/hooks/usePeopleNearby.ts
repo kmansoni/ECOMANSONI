@@ -151,7 +151,7 @@ export function usePeopleNearby(): UsePeopleNearbyReturn {
       const { data, error: fnErr } = await supabase.functions.invoke("people-nearby", {
         method: "GET",
         headers: { "x-path": `/find?lat=${lat}&lon=${lon}&radius=${radius}` },
-        body: null,
+        body: undefined,
       });
 
       if (fnErr) throw new Error(fnErr.message);

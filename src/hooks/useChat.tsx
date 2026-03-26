@@ -23,34 +23,199 @@ import { ChatV11RecoveryService } from "@/lib/chat/recoveryV11";
 import { getChatV11RecoveryPolicyConfig } from "@/lib/chat/recoveryPolicyV11";
 import { resolveChatV11RecoveryAction } from "@/lib/chat/rpcErrorPolicyV11";
 import { checkHashtagsAllowedForText } from "@/lib/hashtagModeration";
-import { fetchUserBriefMap, resolveUserBrief, type UserBrief } from "@/lib/users/userBriefs";
+import { fetchUserBriefMap, resolveUserBrief, type UserBrief, type UserBriefClient } from "@/lib/users/userBriefs";
 import { logger } from "@/lib/logger";
+
+type UnknownRecord = Record<string, unknown>;
+
+type RpcResponse<T> = Promise<{ data: T | null; error: unknown }>;
+
+interface ChatRpcClient {
+  rpc: <T>(fn: string, args?: Record<string, unknown>) => RpcResponse<T>;
+}
+
+interface ChatSendAck {
+  ackStatus: string | null;
+  msgId: string | null;
+  errorCode: string | null;
+}
+
+interface ChatWriteStatus {
+  msgId: string | null;
+}
+
+interface ChatReceipt {
+  clientWriteSeq: number | null;
+  deviceId: string | null;
+}
+
+interface ChatFullSnapshotMessage {
+  msgId: string;
+  senderId: string;
+  content: string;
+  createdAt: string;
+  msgSeq: number | null;
+}
+
+function isRecord(value: unknown): value is UnknownRecord {
+  return typeof value === "object" && value !== null;
+}
+
+function getStringField(source: UnknownRecord, key: string): string | null {
+  const value = source[key];
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function getNumberField(source: UnknownRecord, key: string): number | null {
+  const value = source[key];
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const normalized = value.trim();
+    if (!normalized) return null;
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function getBooleanField(source: UnknownRecord, key: string): boolean | null {
+  const value = source[key];
+  return typeof value === "boolean" ? value : null;
+}
+
+function getRecordField(source: UnknownRecord, key: string): UnknownRecord | null {
+  const value = source[key];
+  return isRecord(value) ? value : null;
+}
+
+function getArrayField(source: UnknownRecord, key: string): unknown[] {
+  const value = source[key];
+  return Array.isArray(value) ? value : [];
+}
+
+function toRecordArray(value: unknown): UnknownRecord[] {
+  return Array.isArray(value) ? value.filter(isRecord) : [];
+}
+
+function getChatRpcClient(): ChatRpcClient {
+  return supabase as unknown as ChatRpcClient;
+}
+
+function decodeChatSendAck(value: unknown): ChatSendAck | null {
+  if (!isRecord(value)) return null;
+  return {
+    ackStatus: getStringField(value, "ack_status"),
+    msgId: getStringField(value, "msg_id"),
+    errorCode: getStringField(value, "error_code"),
+  };
+}
+
+function decodeChatWriteStatus(value: unknown): ChatWriteStatus | null {
+  if (!isRecord(value)) return null;
+  return {
+    msgId: getStringField(value, "msg_id"),
+  };
+}
+
+function decodeChatReceipt(value: unknown): ChatReceipt | null {
+  if (!isRecord(value)) return null;
+  return {
+    clientWriteSeq: getNumberField(value, "client_write_seq"),
+    deviceId: getStringField(value, "device_id"),
+  };
+}
+
+function decodeChatFullSnapshotMessages(value: unknown): ChatFullSnapshotMessage[] {
+  return toRecordArray(value)
+    .map((row) => {
+      const msgId = getStringField(row, "msg_id");
+      if (!msgId) return null;
+      return {
+        msgId,
+        senderId: getStringField(row, "sender_id") ?? "",
+        content: getStringField(row, "content") ?? "",
+        createdAt: getStringField(row, "created_at") ?? new Date().toISOString(),
+        msgSeq: getNumberField(row, "msg_seq"),
+      };
+    })
+    .filter((row): row is ChatFullSnapshotMessage => row !== null);
+}
+
+function decodeRealtimeChatMessage(value: unknown): ChatMessage | null {
+  if (!isRecord(value)) return null;
+
+  const id = getStringField(value, "id");
+  const conversationId = getStringField(value, "conversation_id");
+  const senderId = getStringField(value, "sender_id");
+  if (!id || !conversationId || !senderId) return null;
+
+  return {
+    id,
+    client_msg_id: getStringField(value, "client_msg_id"),
+    conversation_id: conversationId,
+    sender_id: senderId,
+    content: getStringField(value, "content") ?? "",
+    is_read: getBooleanField(value, "is_read") ?? false,
+    created_at: getStringField(value, "created_at") ?? new Date().toISOString(),
+    edited_at: getStringField(value, "edited_at"),
+    seq: getNumberField(value, "seq"),
+    media_url: getStringField(value, "media_url"),
+    media_type: getStringField(value, "media_type"),
+    duration_seconds: getNumberField(value, "duration_seconds"),
+    shared_post_id: getStringField(value, "shared_post_id"),
+    shared_reel_id: getStringField(value, "shared_reel_id"),
+    disappear_in_seconds: getNumberField(value, "disappear_in_seconds"),
+    disappear_at: getStringField(value, "disappear_at"),
+    disappeared: getBooleanField(value, "disappeared"),
+    is_silent: getBooleanField(value, "is_silent"),
+  };
+}
+
+function decodeRealtimeDeletedChatMessage(value: unknown): { id: string } | null {
+  if (!isRecord(value)) return null;
+  const id = getStringField(value, "id");
+  return id ? { id } : null;
+}
+
+function findNearMatchOptimisticMessages(messages: ChatMessage[], incoming: ChatMessage): ChatMessage[] {
+  const serverTime = Date.parse(incoming.created_at);
+  if (Number.isNaN(serverTime)) return [];
+
+  return messages.filter((message) => {
+    if (!message.id.startsWith("local:")) return false;
+    if (message.sender_id !== incoming.sender_id) return false;
+    if ((message.content || "") !== (incoming.content || "")) return false;
+    const localTime = Date.parse(message.created_at);
+    if (Number.isNaN(localTime)) return false;
+    return Math.abs(serverTime - localTime) <= 15_000;
+  });
+}
 
 function getErrorMessage(err: unknown): string {
   if (!err) return "Unknown error";
   if (err instanceof Error) return err.message;
   if (typeof err === "string") return err;
-  if (typeof err === "object") {
-    const anyErr = err as any;
+  if (isRecord(err)) {
     // PostgREST errors
-    if (typeof anyErr.message === "string") return anyErr.message;
-    if (typeof anyErr.error_description === "string") return anyErr.error_description;
-    if (typeof anyErr.details === "string") return anyErr.details;
+    if (typeof err.message === "string") return err.message;
+    if (typeof err.error_description === "string") return err.error_description;
+    if (typeof err.details === "string") return err.details;
     try {
-      return JSON.stringify(anyErr);
+      return JSON.stringify(err);
     } catch (_error) {
-      return String(anyErr);
+      return String(err);
     }
   }
   return String(err);
 }
 
 function isBlockedDmError(err: unknown): boolean {
-  if (!err || typeof err !== "object") return false;
-  const anyErr = err as any;
-  const code = typeof anyErr.code === "string" ? anyErr.code : "";
-  const message = typeof anyErr.message === "string" ? anyErr.message.toLowerCase() : "";
-  const details = typeof anyErr.details === "string" ? anyErr.details.toLowerCase() : "";
+  if (!isRecord(err)) return false;
+  const code = typeof err.code === "string" ? err.code : "";
+  const message = typeof err.message === "string" ? err.message.toLowerCase() : "";
+  const details = typeof err.details === "string" ? err.details.toLowerCase() : "";
 
   return (
     code === "42501" ||
@@ -60,11 +225,10 @@ function isBlockedDmError(err: unknown): boolean {
 }
 
 function shouldFallbackToLegacySend(err: unknown): boolean {
-  if (!err || typeof err !== "object") return false;
-  const anyErr = err as any;
-  const code = typeof anyErr.code === "string" ? anyErr.code : "";
-  const status = Number(anyErr.status ?? 0);
-  const full = `${String(anyErr.message || "")} ${String(anyErr.details || "")}`.toLowerCase();
+  if (!isRecord(err)) return false;
+  const code = typeof err.code === "string" ? err.code : "";
+  const status = Number(err.status ?? 0);
+  const full = `${String(err.message || "")} ${String(err.details || "")}`.toLowerCase();
 
   // Fallback only on v11 infra/config issues; business rejections should remain explicit.
   if (code === "42883" || code === "PGRST202" || code === "PGRST301") return true;
@@ -136,6 +300,8 @@ export interface Conversation {
 
 export function useConversations() {
   const { user } = useAuth();
+  const chatRpc = getChatRpcClient();
+  const briefClient = supabase as unknown as UserBriefClient;
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -209,39 +375,36 @@ export function useConversations() {
         bumpChatMetric("inbox_fetch_count_per_open", 1);
         let inboxRes = (await withTimeout(
           "chat_get_inbox_v11_with_pointers",
-          (supabase as any).rpc("chat_get_inbox_v11_with_pointers", {
+          chatRpc.rpc<unknown[]>("chat_get_inbox_v11_with_pointers", {
             p_limit: 200,
             p_cursor: null,
           }),
           20000
-        )) as { data: any[] | null; error: any };
+        ));
         if (inboxRes.error) {
           inboxRes = (await withTimeout(
             "chat_get_inbox_v11",
-            (supabase as any).rpc("chat_get_inbox_v11", {
+            chatRpc.rpc<unknown[]>("chat_get_inbox_v11", {
               p_limit: 200,
               p_cursor: null,
             }),
             20000
-          )) as { data: any[] | null; error: any };
+          ));
         }
         const inboxRows = inboxRes.data;
         const inboxErr = inboxRes.error;
         if (inboxErr) throw inboxErr;
 
-        const rows = (Array.isArray(inboxRows) ? inboxRows : []) as any[];
-        const conversationIds = rows.map((r) => String(r.dialog_id || "")).filter(Boolean);
+        const rows = toRecordArray(inboxRows);
+        const conversationIds = rows
+          .map((row) => getStringField(row, "dialog_id"))
+          .filter((id): id is string => Boolean(id));
         if (conversationIds.length === 0) {
           setConversations([]);
           return;
         }
 
-        const [convRes, allPartRes] = await withTimeout<
-          [
-            { data: any[] | null; error: any },
-            { data: { conversation_id: string; user_id: string }[] | null; error: any }
-          ]
-        >(
+        const [convRes, allPartRes] = await withTimeout(
           "batch_v11",
           Promise.all([
             supabase.from("conversations").select("*").in("id", conversationIds),
@@ -252,15 +415,16 @@ export function useConversations() {
         if (convRes.error) throw convRes.error;
         if (allPartRes.error) throw allPartRes.error;
 
-        const convById = new Map<string, any>((convRes.data || []).map((c: any) => [String(c.id), c]));
+        const convById = new Map((convRes.data || []).map((conversation) => [String(conversation.id), conversation]));
         const allParticipants = allPartRes.data || [];
 
         const userIds = [...new Set(allParticipants.map((p) => p.user_id))];
-        const briefMap = await fetchUserBriefMap(userIds, supabase as any);
+        const briefMap = await fetchUserBriefMap(userIds, briefClient);
 
         const convs: Conversation[] = rows
-          .map((row: any) => {
-            const id = String(row.dialog_id);
+          .map((row) => {
+            const id = getStringField(row, "dialog_id");
+            if (!id) return null;
             const conv = convById.get(id);
             if (!conv) return null;
 
@@ -271,10 +435,10 @@ export function useConversations() {
                 profile: toParticipantProfile(p.user_id, briefMap),
               }));
 
-            const activitySeq = Number(row.activity_seq || 0);
-            const preview = String(row.preview || "");
-            const lastSenderId = String(row.last_sender_id || "");
-            const peerLastReadSeq = Number(row.peer_last_read_seq || 0);
+            const activitySeq = getNumberField(row, "activity_seq") ?? 0;
+            const preview = getStringField(row, "preview") ?? "";
+            const lastSenderId = getStringField(row, "last_sender_id") ?? "";
+            const peerLastReadSeq = getNumberField(row, "peer_last_read_seq") ?? 0;
             const isReadByPeer = activitySeq > 0 && peerLastReadSeq >= activitySeq;
             const syntheticLastMessage: ChatMessage | undefined =
               activitySeq > 0 || preview
@@ -295,7 +459,7 @@ export function useConversations() {
               updated_at: String(conv.updated_at),
               participants,
               last_message: syntheticLastMessage,
-              unread_count: Number(row.unread_count || 0),
+              unread_count: getNumberField(row, "unread_count") ?? 0,
             } as Conversation;
           })
           .filter(Boolean) as Conversation[];
@@ -307,18 +471,18 @@ export function useConversations() {
       // Inbox is server-first and avoids N+1: one RPC returns rollup + unread + participants.
       const inboxRes = (await withTimeout(
         "chat_get_inbox_v2",
-        (supabase as any).rpc("chat_get_inbox_v2", {
+        chatRpc.rpc<unknown[]>("chat_get_inbox_v2", {
           p_limit: 200,
           p_cursor_seq: null,
         }),
         20000
-      )) as { data: any[] | null; error: any };
+      ));
 
       if (inboxRes.error) throw inboxRes.error;
 
-      const rows = Array.isArray(inboxRes.data) ? inboxRes.data : [];
+      const rows = toRecordArray(inboxRes.data);
       const lastMessageIds = rows
-        .map((r: any) => (r?.last_message_id ? String(r.last_message_id) : null))
+        .map((row) => getStringField(row, "last_message_id"))
         .filter((id: string | null): id is string => Boolean(id));
 
       const lastMessagesById = new Map<string, ChatMessage>();
@@ -334,8 +498,8 @@ export function useConversations() {
           20000
         );
 
-        if ((lastMessagesRes as any).error) throw (lastMessagesRes as any).error;
-        for (const m of ((lastMessagesRes as any).data || []) as any[]) {
+        if (lastMessagesRes.error) throw lastMessagesRes.error;
+        for (const m of lastMessagesRes.data || []) {
           const id = String(m.id);
           lastMessagesById.set(id, {
             id,
@@ -354,37 +518,42 @@ export function useConversations() {
         }
       }
 
-      const participantIds = [...new Set(rows.flatMap((r: any) => {
-        const participantsRaw = Array.isArray(r?.participants) ? r.participants : [];
+      const participantIds = [...new Set(rows.flatMap((row) => {
+        const participantsRaw = getArrayField(row, "participants");
         return participantsRaw
-          .map((p: any) => String(p?.user_id || ""))
+          .map((participant) => isRecord(participant) ? getStringField(participant, "user_id") : null)
           .filter(Boolean);
       }))];
-      const participantBriefMap = await fetchUserBriefMap(participantIds, supabase as any);
+      const participantBriefMap = await fetchUserBriefMap(participantIds, briefClient);
 
-      const mappedConversations: Conversation[] = rows.map((r: any) => {
-        const participantsRaw = Array.isArray(r?.participants) ? r.participants : [];
-        const participants = participantsRaw.map((p: any) => ({
-          user_id: String(p?.user_id || ""),
-          profile: toParticipantProfile(String(p?.user_id || ""), participantBriefMap, {
-            display_name: (p?.profile?.display_name ?? null) as string | null,
-            avatar_url: (p?.profile?.avatar_url ?? null) as string | null,
-            username: (p?.profile?.username ?? null) as string | null,
-          }),
-        }));
+      const mappedConversations: Conversation[] = rows.map((row) => {
+        const participantsRaw = getArrayField(row, "participants");
+        const participants = participantsRaw.flatMap((participant) => {
+          if (!isRecord(participant)) return [];
+          const participantUserId = getStringField(participant, "user_id") ?? "";
+          const embeddedProfile = getRecordField(participant, "profile");
+          return [{
+            user_id: participantUserId,
+            profile: toParticipantProfile(participantUserId, participantBriefMap, {
+              display_name: embeddedProfile ? getStringField(embeddedProfile, "display_name") : null,
+              avatar_url: embeddedProfile ? getStringField(embeddedProfile, "avatar_url") : null,
+              username: embeddedProfile ? getStringField(embeddedProfile, "username") : null,
+            }),
+          }];
+        });
 
-        const lastMessageId = r?.last_message_id ? String(r.last_message_id) : "";
+        const lastMessageId = getStringField(row, "last_message_id") ?? "";
         const lastFromDb = lastMessageId ? lastMessagesById.get(lastMessageId) : undefined;
-          const seqSource = lastFromDb?.seq ?? r.last_seq ?? 0;
+        const seqSource = lastFromDb?.seq ?? getNumberField(row, "last_seq") ?? 0;
         const lastMessage: ChatMessage | undefined = lastMessageId
           ? {
               id: lastMessageId,
-              conversation_id: String(r.conversation_id),
-              sender_id: String(lastFromDb?.sender_id || r.last_sender_id || ""),
-              content: String(lastFromDb?.content || r.last_preview_text || ""),
+              conversation_id: getStringField(row, "conversation_id") ?? "",
+              sender_id: String(lastFromDb?.sender_id || getStringField(row, "last_sender_id") || ""),
+              content: String(lastFromDb?.content || getStringField(row, "last_preview_text") || ""),
               is_read: Boolean(lastFromDb?.is_read ?? false),
-              created_at: String(lastFromDb?.created_at || r.last_created_at || r.updated_at || new Date().toISOString()),
-            seq: typeof seqSource === "number" ? Number(seqSource) : Number(seqSource) || 0,
+              created_at: String(lastFromDb?.created_at || getStringField(row, "last_created_at") || getStringField(row, "updated_at") || new Date().toISOString()),
+              seq: typeof seqSource === "number" ? Number(seqSource) : Number(seqSource) || 0,
               media_url: lastFromDb?.media_url ?? null,
               media_type: lastFromDb?.media_type ?? null,
               duration_seconds: lastFromDb?.duration_seconds ?? null,
@@ -394,12 +563,12 @@ export function useConversations() {
           : undefined;
 
         return {
-          id: String(r.conversation_id),
-          created_at: String(r.updated_at || new Date().toISOString()),
-          updated_at: String(r.updated_at || new Date().toISOString()),
+          id: getStringField(row, "conversation_id") ?? "",
+          created_at: String(getStringField(row, "updated_at") || new Date().toISOString()),
+          updated_at: String(getStringField(row, "updated_at") || new Date().toISOString()),
           participants,
           last_message: lastMessage,
-          unread_count: Number(r.unread_count || 0),
+          unread_count: getNumberField(row, "unread_count") ?? 0,
         };
       });
 
@@ -489,6 +658,7 @@ export function useConversations() {
 
 export function useMessages(conversationId: string | null) {
   const { user } = useAuth();
+  const chatRpc = getChatRpcClient();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const recoveryPolicy = getChatV11RecoveryPolicyConfig();
@@ -514,7 +684,7 @@ export function useMessages(conversationId: string | null) {
         deliveredAckTimerRef.current = null;
         void (async () => {
           try {
-            await (supabase as any).rpc("ack_delivered_v1", {
+            await chatRpc.rpc<unknown>("ack_delivered_v1", {
               p_conversation_id: conversationId,
               p_up_to_seq: upTo,
             });
@@ -532,8 +702,8 @@ export function useMessages(conversationId: string | null) {
   const sortMessages = useCallback((list: ChatMessage[]): ChatMessage[] => {
     const next = [...list];
     next.sort((a, b) => {
-      const aSeq = typeof (a as any).seq === "number" ? (a as any).seq : null;
-      const bSeq = typeof (b as any).seq === "number" ? (b as any).seq : null;
+      const aSeq = typeof a.seq === "number" ? a.seq : null;
+      const bSeq = typeof b.seq === "number" ? b.seq : null;
       if (aSeq != null && bSeq != null && aSeq !== bSeq) return aSeq - bSeq;
       const aTime = Date.parse(a.created_at);
       const bTime = Date.parse(b.created_at);
@@ -630,13 +800,13 @@ export function useMessages(conversationId: string | null) {
         setMessages((prev) => prev.filter((m) => !(m.id.startsWith("local:") && m.client_msg_id === clientMsgId)));
       };
 
-      const { data: statusRows } = await (supabase as any).rpc("chat_status_write_v11", {
+      const { data: statusRows } = await chatRpc.rpc<unknown[]>("chat_status_write_v11", {
         p_device_id: deviceId,
         p_client_write_seq: clientWriteSeq,
       });
-      const status = (Array.isArray(statusRows) ? statusRows[0] : null) as any;
-      if (status?.msg_id) {
-        const { data: msgRow } = await supabase.from("messages").select("*").eq("id", String(status.msg_id)).maybeSingle();
+      const status = decodeChatWriteStatus(Array.isArray(statusRows) ? statusRows[0] : null);
+      if (status?.msgId) {
+        const { data: msgRow } = await supabase.from("messages").select("*").eq("id", status.msgId).maybeSingle();
         if (msgRow) {
           const returned = msgRow as unknown as ChatMessage;
           pendingLocalByClientIdRef.current.delete(clientMsgId);
@@ -649,7 +819,7 @@ export function useMessages(conversationId: string | null) {
         }
       }
 
-      const { error: resyncErr } = await (supabase as any).rpc("chat_resync_stream_v11", {
+      const { error: resyncErr } = await chatRpc.rpc<unknown[]>("chat_resync_stream_v11", {
         p_stream_id: `dialog:${conversationId}`,
         p_since_event_seq: 0,
         p_limit: 200,
@@ -670,27 +840,25 @@ export function useMessages(conversationId: string | null) {
         throw resyncErr;
       }
 
-      const { data: fullRows, error: fullErr } = await (supabase as any).rpc("chat_full_state_dialog_v11", {
+      const { data: fullRows, error: fullErr } = await chatRpc.rpc<unknown[]>("chat_full_state_dialog_v11", {
         p_dialog_id: conversationId,
         p_device_id: deviceId,
         p_message_limit: 200,
       });
       if (fullErr) throw fullErr;
 
-      const full = (Array.isArray(fullRows) ? fullRows[0] : null) as any;
-      const snapshot = full?.snapshot ?? null;
-      const snapshotMessagesRaw = Array.isArray(snapshot?.messages) ? snapshot.messages : [];
-      const snapshotMessages = snapshotMessagesRaw
-        .map((m: any) => ({
-          id: String(m?.msg_id ?? ""),
+      const full = Array.isArray(fullRows) ? fullRows[0] : null;
+      const snapshot = isRecord(full) ? getRecordField(full, "snapshot") : null;
+      const snapshotMessages = decodeChatFullSnapshotMessages(snapshot ? snapshot.messages : null)
+        .map((message) => ({
+          id: message.msgId,
           conversation_id: conversationId,
-          sender_id: String(m?.sender_id ?? ""),
-          content: sanitizeReceivedText(String(m?.content ?? "")),
+          sender_id: message.senderId,
+          content: sanitizeReceivedText(message.content),
           is_read: true,
-          created_at: String(m?.created_at ?? new Date().toISOString()),
-          seq: typeof m?.msg_seq === "number" ? m.msg_seq : Number(m?.msg_seq || 0) || null,
-        }))
-        .filter((m: ChatMessage) => Boolean(m.id));
+          created_at: message.createdAt,
+          seq: message.msgSeq,
+        }));
 
       clearLocalOptimistic();
       setMessages(sortMessages(snapshotMessages));
@@ -769,8 +937,8 @@ export function useMessages(conversationId: string | null) {
 
     if (isChatProtocolV11EnabledForUser(user.id)) {
       const deviceId = getOrCreateChatDeviceId();
-      void (supabase as any)
-        .rpc("chat_set_subscription_mode_v11", {
+      void chatRpc
+        .rpc<unknown>("chat_set_subscription_mode_v11", {
           p_device_id: deviceId,
           p_dialog_id: conversationId,
           p_mode: "active",
@@ -780,8 +948,8 @@ export function useMessages(conversationId: string | null) {
         });
 
       return () => {
-        void (supabase as any)
-          .rpc("chat_set_subscription_mode_v11", {
+        void chatRpc
+          .rpc<unknown>("chat_set_subscription_mode_v11", {
             p_device_id: deviceId,
             p_dialog_id: conversationId,
             p_mode: "background",
@@ -791,6 +959,8 @@ export function useMessages(conversationId: string | null) {
           });
       };
     }
+
+    return undefined;
   }, [conversationId, user]);
 
   useEffect(() => {
@@ -848,7 +1018,8 @@ export function useMessages(conversationId: string | null) {
             filter: `conversation_id=eq.${conversationId}`,
           },
           (payload) => {
-            const newMessage = payload.new as ChatMessage;
+              const newMessage = decodeRealtimeChatMessage(payload.new);
+              if (!newMessage) return;
             lastRealtimeEventAtRef.current = Date.now();
             // Sanitize received message content to prevent mojibake display
             if (newMessage?.content) {
@@ -876,19 +1047,9 @@ export function useMessages(conversationId: string | null) {
               // If server rows don't have client_msg_id (schema missing), reconcile via near-match.
               // This prevents temporary duplicates (local optimistic + server insert) for the same send.
               if (!clientMsgId && user?.id && newMessage?.sender_id === user.id) {
-                const serverTime = Date.parse(newMessage.created_at);
-                const windowMs = 15_000;
+                const localMatches = findNearMatchOptimisticMessages(withoutOptimistic, newMessage);
 
-                const localMatches = withoutOptimistic.filter((m) => {
-                  if (!m.id.startsWith("local:")) return false;
-                  if (m.sender_id !== newMessage.sender_id) return false;
-                  if ((m.content || "") !== (newMessage.content || "")) return false;
-                  const localTime = Date.parse(m.created_at);
-                  if (Number.isNaN(serverTime) || Number.isNaN(localTime)) return false;
-                  return Math.abs(serverTime - localTime) <= windowMs;
-                });
-
-                if (localMatches.length > 0) {
+                if (localMatches.length === 1) {
                   const localIds = new Set(localMatches.map((m) => m.id));
                   for (const lm of localMatches) {
                     if (lm.client_msg_id) pendingLocalByClientIdRef.current.delete(lm.client_msg_id);
@@ -915,7 +1076,8 @@ export function useMessages(conversationId: string | null) {
             filter: `conversation_id=eq.${conversationId}`,
           },
           (payload) => {
-            const updated = payload.new as ChatMessage;
+              const updated = decodeRealtimeChatMessage(payload.new);
+              if (!updated) return;
             lastRealtimeEventAtRef.current = Date.now();
             // Sanitize updated message content to prevent mojibake display
             if (updated?.content) {
@@ -935,19 +1097,9 @@ export function useMessages(conversationId: string | null) {
                 : prev;
 
               if (!clientMsgId && user?.id && updated?.sender_id === user.id) {
-                const serverTime = Date.parse(updated.created_at);
-                const windowMs = 15_000;
+                const localMatches = findNearMatchOptimisticMessages(withoutOptimistic, updated);
 
-                const localMatches = withoutOptimistic.filter((m) => {
-                  if (!m.id.startsWith("local:")) return false;
-                  if (m.sender_id !== updated.sender_id) return false;
-                  if ((m.content || "") !== (updated.content || "")) return false;
-                  const localTime = Date.parse(m.created_at);
-                  if (Number.isNaN(serverTime) || Number.isNaN(localTime)) return false;
-                  return Math.abs(serverTime - localTime) <= windowMs;
-                });
-
-                if (localMatches.length > 0) {
+                if (localMatches.length === 1) {
                   const localIds = new Set(localMatches.map((m) => m.id));
                   for (const lm of localMatches) {
                     if (lm.client_msg_id) pendingLocalByClientIdRef.current.delete(lm.client_msg_id);
@@ -977,7 +1129,7 @@ export function useMessages(conversationId: string | null) {
             table: "messages",
           },
           (payload) => {
-            const deleted = payload.old as Partial<ChatMessage>;
+            const deleted = decodeRealtimeDeletedChatMessage(payload.old);
             lastRealtimeEventAtRef.current = Date.now();
             if (!deleted?.id) return;
             setMessages((prev) => {
@@ -1019,12 +1171,12 @@ export function useMessages(conversationId: string | null) {
           filter: `user_id=eq.${user.id}`,
         },
         (payload) => {
-          const receipt = payload.new as any;
-          const seq = Number(receipt?.client_write_seq);
+          const receipt = decodeChatReceipt(payload.new);
+          const seq = receipt?.clientWriteSeq ?? null;
           if (!Number.isFinite(seq)) return;
           const latency = recoveryServiceRef.current?.acknowledgeReceipt(
             seq,
-            String(receipt?.device_id || "")
+            receipt?.deviceId ?? ""
           );
           if (typeof latency !== "number") return;
           observeChatMetric("write_receipt_latency_ms", latency);
@@ -1054,7 +1206,7 @@ export function useMessages(conversationId: string | null) {
     const probe = getLastChatSchemaProbe();
     if (probe && probe.ok === false) {
       logger.warn("[Chat] schema probe reported not-ok; continuing send with fallback paths", {
-        reason: probe.reason,
+        probe,
       });
     }
 
@@ -1096,7 +1248,7 @@ export function useMessages(conversationId: string | null) {
           deviceId,
         });
 
-        const { data: ackRows, error: ackErr } = await (supabase as any).rpc("chat_send_message_v11", {
+        const { data: ackRows, error: ackErr } = await chatRpc.rpc<unknown[]>("chat_send_message_v11", {
           p_dialog_id: conversationId,
           p_device_id: deviceId,
           p_client_write_seq: clientWriteSeq,
@@ -1139,11 +1291,11 @@ export function useMessages(conversationId: string | null) {
           throw ackErr;
         }
 
-        const ack = (Array.isArray(ackRows) ? ackRows[0] : null) as any;
-        const ackStatus = String(ack?.ack_status || "");
+        const ack = decodeChatSendAck(Array.isArray(ackRows) ? ackRows[0] : null);
+        const ackStatus = ack?.ackStatus ?? "";
 
         if (ackStatus === "accepted" || ackStatus === "duplicate") {
-          const ackMsgId = ack?.msg_id ? String(ack.msg_id) : null;
+          const ackMsgId = ack?.msgId ?? null;
           if (ackMsgId) {
             const { data: msgRow, error: msgErr } = await supabase.from("messages").select("*").eq("id", ackMsgId).maybeSingle();
             if (msgErr) {
@@ -1171,7 +1323,7 @@ export function useMessages(conversationId: string | null) {
           return;
         }
 
-        const rejectedCode = String(ack?.error_code || ackStatus || "unknown");
+        const rejectedCode = ack?.errorCode ?? ackStatus ?? "unknown";
         if (shouldFallbackRejectedV11Ack(rejectedCode)) {
           clearPendingReceiptWatch(clientWriteSeq);
           v11ClientWriteSeq = null;
@@ -1361,7 +1513,7 @@ export function useMessages(conversationId: string | null) {
     );
 
     try {
-      const { error } = await (supabase as any)
+      const { error } = await supabase
         .from("messages")
         .update({ content: trimmed, edited_at: now })
         .eq("id", messageId)
@@ -1409,6 +1561,7 @@ export function useMessages(conversationId: string | null) {
 
 export function useCreateConversation() {
   const { user } = useAuth();
+  const chatRpc = getChatRpcClient();
 
   const createConversation = async (otherUserId: string) => {
     if (!user) return null;
@@ -1423,11 +1576,11 @@ export function useCreateConversation() {
     try {
       // Contract-only path: SECURITY DEFINER RPC is the ONLY supported way.
       // Client must never try to INSERT other participants directly (RLS is self-only).
-      const rpcRes = await (supabase as any).rpc("get_or_create_dm", {
+      const rpcRes = await chatRpc.rpc<unknown>("get_or_create_dm", {
         target_user_id: otherUserId,
       });
-      const rpcError = (rpcRes as any)?.error;
-      const rpcData = (rpcRes as any)?.data;
+      const rpcError = rpcRes.error;
+      const rpcData = rpcRes.data;
       if (!rpcError && rpcData) {
         const id = Array.isArray(rpcData) ? rpcData[0] : rpcData;
         if (id) return String(id);

@@ -124,10 +124,15 @@ export function usePosts(filter: FeedFilter = 'all') {
 
       const finalPosts: Post[] = postsData.map(post => ({
         ...post,
+        views_count: Number(post.views_count ?? 0),
+        likes_count: Number(post.likes_count ?? 0),
+        comments_count: Number(post.comments_count ?? 0),
+        saves_count: Number((post as any).saves_count ?? 0),
+        shares_count: Number(post.shares_count ?? 0),
         author: profilesMap.get(post.author_id) ? {
           id: post.author_id,
-          display_name: profilesMap.get(post.author_id)?.display_name,
-          avatar_url: profilesMap.get(post.author_id)?.avatar_url
+          display_name: profilesMap.get(post.author_id)?.display_name ?? null,
+          avatar_url: profilesMap.get(post.author_id)?.avatar_url ?? null
         } : undefined,
         media: (post.post_media || []).sort((a: any, b: any) => a.sort_order - b.sort_order),
         is_liked: likedPostIds.has(post.id)
@@ -212,8 +217,13 @@ export function usePosts(filter: FeedFilter = 'all') {
 
                   const hydrated: Post = {
                     ...postRow,
+                    views_count: Number(postRow.views_count ?? 0),
+                    likes_count: Number(postRow.likes_count ?? 0),
+                    comments_count: Number(postRow.comments_count ?? 0),
+                    saves_count: Number((postRow as any).saves_count ?? 0),
+                    shares_count: Number(postRow.shares_count ?? 0),
                     author: profile
-                      ? { id: profile.user_id, display_name: profile.display_name, avatar_url: profile.avatar_url }
+                      ? { id: profile.user_id, display_name: profile.display_name ?? null, avatar_url: profile.avatar_url ?? null }
                       : undefined,
                     media: (postRow.post_media || []).sort((a: any, b: any) => a.sort_order - b.sort_order),
                     is_liked: isLiked,

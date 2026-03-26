@@ -133,6 +133,6 @@ docker run -d \
 
 | Переменная | Описание | По умолчанию |
 |---|---|---|
-| `ARIA_API_KEY` | API ключ для авторизации | `local-dev-only-key` |
+| `ARIA_API_KEY` | API ключ для авторизации | `<REQUIRED_STRONG_RANDOM_KEY>` |
 | `PORT` | Порт сервера | `8000` |
 | `PYTHONPATH` | Путь к коду | `/app` |

@@ -55,7 +55,7 @@ export function SettingsActivitySection({ isDark, currentScreen, onNavigate, onB
       if (error) throw error;
       const ids = (data ?? []).map((r: any) => String(r.post_id));
       const map = await fetchPostsByIds(ids);
-      setLikes(ids.map((id) => map.get(id)).filter(Boolean) as SettingsPostItem[]);
+      setLikes(ids.map((id: string) => map.get(id)).filter(Boolean) as SettingsPostItem[]);
     } catch (e) { toast({ title: "Likes", description: getErrorMessage(e) }); }
     finally { setLikesLoading(false); }
   }, [user?.id]);

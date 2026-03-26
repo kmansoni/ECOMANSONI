@@ -177,7 +177,7 @@ export async function getParticipantPublicKey(
 
   const { data, error } = await e2eeDb.userEncryptionKeys.selectByUserId(userId);
 
-  if (error || !data) return null;
+  if (error || !data || !data.public_key_raw || !data.fingerprint) return null;
 
   try {
     const key = await importPublicKey(data.public_key_raw);
@@ -201,8 +201,8 @@ export async function getConversationParticipantKeys(
   if (error || !participants) return [];
 
   const userIds: string[] = participants
-    .map((p: { user_id: string }) => p.user_id)
-    .filter((id: string) => id !== excludeUserId);
+    .map((p: { user_id: string | null }) => p.user_id)
+    .filter((id: string | null): id is string => Boolean(id) && id !== excludeUserId);
 
   const results: ParticipantPublicKey[] = [];
 
@@ -227,6 +227,9 @@ export async function getConversationParticipantKeys(
     // Дедупликация: берём последний ключ по user_id
     const seen = new Set<string>();
     for (const row of keysData) {
+      if (!row.user_id || !row.public_key_raw || !row.fingerprint) {
+        continue;
+      }
       if (seen.has(row.user_id)) continue;
       seen.add(row.user_id);
       try {

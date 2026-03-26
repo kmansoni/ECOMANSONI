@@ -63,9 +63,7 @@ describe("multiAccount/vault", () => {
 
   it("normalizes malformed index entries", () => {
     writeAccountsIndex([
-      // @ts-expect-error - intentionally malformed (missing required fields)
       { accountId: "u1" },
-      // @ts-expect-error - intentionally malformed (invalid accountId)
       { accountId: "" },
       null,
     ]);

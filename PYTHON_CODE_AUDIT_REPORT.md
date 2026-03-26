@@ -78,10 +78,10 @@ await self._db.execute(sql, uuid.UUID(poi_id), *params)
 **Пai_engine/server/main.py:76`
 
 ```python
-API_KEY = os.environ.get("ARIA_API_KEY") or "local-dev-only-key"
+API_KEY = os.environ.get("ARIA_API_KEY") or "<INSECURE_FALLBACK_KEY>"
 ```
 
-**Описание:** Fallback на hardcoded key "local-dev-only-key" — если env переменная не установлена, используется предсказуемый ключ.
+**Описание:** Fallback на hardcoded key "<INSECURE_FALLBACK_KEY>" — если env переменная не установлена, используется предсказуемый ключ.
 
 **Рекомендация:**
 ```python
@@ -98,7 +98,7 @@ if not API_KEY:
 **Путь:** `ai_engine/server/main.py:293`
 
 ```python
-SECRET_KEY = "your-secret-key-min-32-chars"
+SECRET_KEY = "<INSECURE_EXAMPLE_SECRET>"
 ```
 
 **Описание:** В демо-коде example содержит hardcoded JWT secret. Копипаста в production создаёт уязвимость.

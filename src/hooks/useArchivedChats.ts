@@ -61,7 +61,46 @@ export interface UseArchivedChatsReturn {
   isArchived: (conversationId: string) => boolean;
 }
 
+interface PostgrestLikeError {
+  message?: string;
+  details?: string;
+  code?: string;
+  status?: number;
+}
+
+type QueryResult<T> = Promise<{ data: T | null; error: unknown }>;
+
+interface UserChatSettingsRow {
+  conversation_id: string;
+}
+
+interface ArchivedChatsClient {
+  from(table: "user_chat_settings"): {
+    select: (columns: "conversation_id") => {
+      eq: (column: "user_id", value: string) => {
+        eq: (column: "is_archived", value: boolean) => QueryResult<UserChatSettingsRow[]>;
+      };
+    };
+    upsert: (
+      payload: {
+        user_id: string;
+        conversation_id: string;
+        is_archived: boolean;
+        archived_at: string | null;
+      },
+      options: { onConflict: string }
+    ) => QueryResult<null>;
+  };
+}
+
+function toPostgrestLikeError(error: unknown): PostgrestLikeError {
+  if (!error || typeof error !== "object") return {};
+  return error as PostgrestLikeError;
+}
+
 export function useArchivedChats(): UseArchivedChatsReturn {
+  const sb = supabase;
+  const settingsDb = sb as unknown as ArchivedChatsClient;
   const { user } = useAuth();
   const userId = user?.id ?? null;
 
@@ -69,11 +108,12 @@ export function useArchivedChats(): UseArchivedChatsReturn {
   const [loading, setLoading] = useState(false);
   const [useLS, setUseLS] = useState(false);
 
-  const isMissingSettingsTableError = useCallback((error: any) => {
-    const msg = String(error?.message ?? "").toLowerCase();
-    const details = String(error?.details ?? "").toLowerCase();
-    const code = String(error?.code ?? "");
-    const status = Number(error?.status ?? 0);
+  const isMissingSettingsTableError = useCallback((error: unknown) => {
+    const pgError = toPostgrestLikeError(error);
+    const msg = String(pgError.message ?? "").toLowerCase();
+    const details = String(pgError.details ?? "").toLowerCase();
+    const code = String(pgError.code ?? "");
+    const status = Number(pgError.status ?? 0);
     const mentionsSettingsTable =
       msg.includes("chat_user_settings") ||
       msg.includes("user_chat_settings") ||
@@ -95,7 +135,7 @@ export function useArchivedChats(): UseArchivedChatsReturn {
     if (!userId) return;
     setLoading(true);
     try {
-      const { data, error } = await (supabase as any)
+      const { data, error } = await settingsDb
         .from("user_chat_settings")
         .select("conversation_id")
         .eq("user_id", userId)
@@ -113,9 +153,7 @@ export function useArchivedChats(): UseArchivedChatsReturn {
         return;
       }
 
-      const ids = new Set<string>(
-        (data ?? []).map((r: { conversation_id: string }) => r.conversation_id)
-      );
+      const ids = new Set<string>((data ?? []).map((r) => r.conversation_id));
       setArchivedChatIds(ids);
     } finally {
       setLoading(false);
@@ -146,7 +184,7 @@ export function useArchivedChats(): UseArchivedChatsReturn {
     const channel = supabase
       .channel(`archived_chats:${userId}`)
       .on(
-        "postgres_changes" as any,
+        "postgres_changes",
         {
           event: "*",
           schema: "public",
@@ -186,7 +224,7 @@ export function useArchivedChats(): UseArchivedChatsReturn {
         return;
       }
 
-      const { error } = await (supabase as any)
+      const { error } = await settingsDb
         .from("user_chat_settings")
         .upsert(
           {
@@ -244,7 +282,7 @@ export function useArchivedChats(): UseArchivedChatsReturn {
         return;
       }
 
-      const { error } = await (supabase as any)
+      const { error } = await settingsDb
         .from("user_chat_settings")
         .upsert(
           {

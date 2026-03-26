@@ -157,8 +157,8 @@ export function extractSelectedIcePair(stats: StatsLike | null | undefined): Sel
   // Strategy 1: Use transport.selectedCandidatePairId
   let selectedPairId: string | null = null;
   for (const [, item] of entries) {
-    if ((item as AnyStats).type === "transport") {
-      const candidatePairId = (item as AnyStats).selectedCandidatePairId;
+    if (item["type"] === "transport") {
+      const candidatePairId = item["selectedCandidatePairId"];
       if (typeof candidatePairId === "string" && candidatePairId) {
         selectedPairId = candidatePairId;
         logger.debug("[relayStats] Found selected pair via transport", { pairId: selectedPairId });
@@ -171,10 +171,10 @@ export function extractSelectedIcePair(stats: StatsLike | null | undefined): Sel
   if (!selectedPairId) {
     logger.debug("[relayStats] No transport selectedCandidatePairId, falling back to nominated pair");
     for (const [id, item] of entries) {
-      if ((item as AnyStats).type !== "candidate-pair") continue;
-      const state = String((item as AnyStats).state ?? "").toLowerCase().trim();
-      const nominated = (item as AnyStats).nominated === true;
-      const selected = (item as AnyStats).selected === true;
+      if (item["type"] !== "candidate-pair") continue;
+      const state = String(item["state"] ?? "").toLowerCase().trim();
+      const nominated = item["nominated"] === true;
+      const selected = item["selected"] === true;
       if (selected || (nominated && state === "succeeded")) {
         selectedPairId = id;
         logger.debug("[relayStats] Found selected pair via nominated+succeeded", { pairId: selectedPairId });
@@ -189,26 +189,33 @@ export function extractSelectedIcePair(stats: StatsLike | null | undefined): Sel
   }
 
   const pair = byId.get(selectedPairId);
-  if (!pair || pair.type !== "candidate-pair") {
+  if (!pair || pair["type"] !== "candidate-pair") {
     logger.warn("[relayStats] Selected pair ID not found or not candidate-pair type", { selectedPairId });
     return null;
   }
 
   const localCandidateId =
-    typeof pair.localCandidateId === "string" ? pair.localCandidateId : undefined;
+    typeof pair["localCandidateId"] === "string" ? pair["localCandidateId"] : undefined;
   const remoteCandidateId =
-    typeof pair.remoteCandidateId === "string" ? pair.remoteCandidateId : undefined;
+    typeof pair["remoteCandidateId"] === "string" ? pair["remoteCandidateId"] : undefined;
 
   const local = localCandidateId ? byId.get(localCandidateId) : undefined;
   const remote = remoteCandidateId ? byId.get(remoteCandidateId) : undefined;
 
-  return {
+  const result: SelectedIcePair = {
     pairId: selectedPairId,
-    localCandidateId,
-    remoteCandidateId,
-    localCandidateType: normalizeCandidateType(local?.candidateType),
-    remoteCandidateType: normalizeCandidateType(remote?.candidateType),
+    localCandidateType: normalizeCandidateType(local?.["candidateType"]),
+    remoteCandidateType: normalizeCandidateType(remote?.["candidateType"]),
   };
+
+  if (localCandidateId) {
+    result.localCandidateId = localCandidateId;
+  }
+  if (remoteCandidateId) {
+    result.remoteCandidateId = remoteCandidateId;
+  }
+
+  return result;
 }
 
 /**
@@ -270,9 +277,16 @@ export function extractRelayMetrics(stats: StatsLike | null | undefined): RelayS
     localCandidateType: selected.localCandidateType,
     remoteCandidateType: selected.remoteCandidateType,
     pairId: selected.pairId,
-    bytesReceived: typeof pair?.bytesReceived === "number" ? pair.bytesReceived : undefined,
-    bytesSent: typeof pair?.bytesSent === "number" ? pair.bytesSent : undefined,
   };
+
+  const bytesReceived = typeof pair?.["bytesReceived"] === "number" ? pair["bytesReceived"] : undefined;
+  const bytesSent = typeof pair?.["bytesSent"] === "number" ? pair["bytesSent"] : undefined;
+  if (bytesReceived !== undefined) {
+    event.bytesReceived = bytesReceived;
+  }
+  if (bytesSent !== undefined) {
+    event.bytesSent = bytesSent;
+  }
 
   logger.debug("[relayStats] Relay metrics extracted", {
     isRelay,
@@ -415,20 +429,27 @@ export class RelayStatsCollector {
     const totalBytes = this.samples.reduce((sum, s) => sum + (s.bytesSent ?? 0) + (s.bytesReceived ?? 0), 0);
     let lastRelayTimestamp: number | undefined;
     for (let i = this.samples.length - 1; i >= 0; i--) {
-      if (this.samples[i].isRelaySelected) {
-        lastRelayTimestamp = this.samples[i].timestamp;
+      const sample = this.samples[i];
+      if (!sample) continue;
+      if (sample.isRelaySelected) {
+        lastRelayTimestamp = sample.timestamp;
         break;
       }
     }
 
-    return {
+    const metrics: RelayMetrics = {
       relay_usage_rate: this.getRelayUsageRate(),
       relay_fallback_count: this.fallbackCount,
       total_samples: this.samples.length,
       uptime_ms: Date.now() - this.startTime,
       avg_bytes_over_relay: this.samples.length > 0 ? totalBytes / this.samples.length : 0,
-      last_relay_timestamp_ms: lastRelayTimestamp,
     };
+
+    if (lastRelayTimestamp !== undefined) {
+      metrics.last_relay_timestamp_ms = lastRelayTimestamp;
+    }
+
+    return metrics;
   }
 
   /**

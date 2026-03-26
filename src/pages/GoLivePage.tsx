@@ -108,11 +108,11 @@ export default function GoLivePage() {
   );
   const { viewerCount } = useLiveViewers(phase === 'live' ? sessionId : null);
   const { data: analytics } = useStreamAnalytics(
-    phase === 'ended' ? sessionId : undefined,
+    phase === 'ended' ? (sessionId ?? undefined) : undefined,
   );
   const { data: streamKeys } = useStreamKeys();
   const { data: guests = [] } = useStreamGuests(
-    phase === 'live' ? sessionId : undefined,
+    phase === 'live' ? (sessionId ?? undefined) : undefined,
   );
 
   // Heartbeat

@@ -171,16 +171,20 @@ export function AppealsPage() {
 
   const submitReview = async () => {
     if (!selectedAppeal) return;
+    if (!adminMe?.admin_user_id) {
+      toast.error("Moderator admin id is missing");
+      return;
+    }
 
     setSubmitting(true);
     try {
       // Call RPC function to review appeal
       const { data, error } = await supabase.rpc("review_appeal_v1", {
         p_appeal_id: selectedAppeal.id,
-        p_moderator_admin_id: adminMe?.admin_user_id || null,
+        p_moderator_admin_id: adminMe.admin_user_id,
         p_decision: reviewDecision,
-        p_new_moderation_decision: reviewDecision === "accept" ? newDecision : null,
-        p_notes: notes || null,
+        p_new_moderation_decision: reviewDecision === "accept" ? newDecision : undefined,
+        p_notes: notes || undefined,
       });
 
       if (error) throw error;

@@ -2,10 +2,56 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
 import { logger } from "@/lib/logger";
-// TODO: Regenerate Supabase types with `supabase gen types` to include message_reactions table.
-// Using type assertion as temporary measure until types are regenerated.
-const db = supabase as any;
 import type { RealtimeChannel } from "@supabase/supabase-js";
+
+type QueryResult<T> = Promise<{ data: T | null; error: unknown }>;
+
+interface MessageIdRow {
+  id: string;
+}
+
+interface MessageReactionRow {
+  message_id: string;
+  user_id: string;
+  emoji: string;
+}
+
+type MessageReactionUpsertRow = MessageReactionRow & {
+  conversation_id?: string;
+};
+
+interface ErrorLike {
+  code?: string;
+  message?: string;
+  details?: string;
+  status?: number;
+}
+
+interface MessageReactionsClient {
+  from(table: "messages"): {
+    select: (columns: "id") => {
+      eq: (column: "conversation_id", value: string) => QueryResult<MessageIdRow[]>;
+    };
+  };
+  from(table: "message_reactions"): {
+    select: (columns: "message_id, user_id, emoji") => {
+      eq: (column: "conversation_id", value: string) => QueryResult<MessageReactionRow[]>;
+      in: (column: "message_id", values: string[]) => QueryResult<MessageReactionRow[]>;
+    };
+    upsert: (payload: MessageReactionUpsertRow, options: { onConflict: string }) => QueryResult<null>;
+    delete: () => {
+      eq: (column: "message_id", value: string) => {
+        eq: (column: "user_id", value: string) => {
+          eq: (column: "emoji", value: string) => QueryResult<null>;
+        };
+      };
+    };
+  };
+  channel: typeof supabase.channel;
+  removeChannel: typeof supabase.removeChannel;
+}
+
+const db = supabase as unknown as MessageReactionsClient;
 
 export interface MessageReaction {
   emoji: string;
@@ -46,8 +92,13 @@ function logOnce(key: string, message: string, context?: unknown): void {
   logger.warn(message, context);
 }
 
+function toErrorLike(error: unknown): ErrorLike {
+  if (!error || typeof error !== "object") return {};
+  return error as ErrorLike;
+}
+
 function mergeReactionRows(
-  rows: { message_id: string; user_id: string; emoji: string }[],
+  rows: MessageReactionRow[],
   currentUserId: string | undefined
 ): ReactionsMap {
   const map = new Map<string, Map<string, { count: number; userIds: string[] }>>();
@@ -89,19 +140,22 @@ export function useMessageReactions(conversationId: string) {
   const tableUnavailableRef = useRef(false);
   const reactionsMapRef = useRef<ReactionsMap>(new Map());
   const mutationVersionRef = useRef(0);
+  const mutationQueueRef = useRef<Map<string, Promise<void>>>(new Map());
   const fetchRequestIdRef = useRef(0);
   const lsKey = `${LS_KEY_PREFIX}${conversationId}`;
 
-  const isMissingConversationIdError = useCallback((err: any) => {
-    const msg = String(err?.message ?? "");
-    return err?.code === "42703" || msg.includes("message_reactions.conversation_id") || msg.includes("conversation_id does not exist");
+  const isMissingConversationIdError = useCallback((err: unknown) => {
+    const e = toErrorLike(err);
+    const msg = String(e?.message ?? "");
+    return e?.code === "42703" || msg.includes("message_reactions.conversation_id") || msg.includes("conversation_id does not exist");
   }, []);
 
-  const isMissingReactionsTableError = useCallback((err: any) => {
-    const msg = String(err?.message ?? "").toLowerCase();
-    const details = String(err?.details ?? "").toLowerCase();
-    const code = String(err?.code ?? "");
-    const status = Number(err?.status ?? 0);
+  const isMissingReactionsTableError = useCallback((err: unknown) => {
+    const e = toErrorLike(err);
+    const msg = String(e?.message ?? "").toLowerCase();
+    const details = String(e?.details ?? "").toLowerCase();
+    const code = String(e?.code ?? "");
+    const status = Number(e?.status ?? 0);
     return (
       code === "42P01" ||
       code === "PGRST205" ||
@@ -115,7 +169,7 @@ export function useMessageReactions(conversationId: string) {
   // ── localStorage helpers ─────────────────────────────────────────────────
 
   const persistToLS = useCallback(
-    (rows: { message_id: string; user_id: string; emoji: string }[]) => {
+    (rows: MessageReactionRow[]) => {
       try {
         localStorage.setItem(lsKey, JSON.stringify(rows));
       } catch (error) {
@@ -125,7 +179,7 @@ export function useMessageReactions(conversationId: string) {
     [lsKey]
   );
 
-  const loadFromLS = useCallback((): { message_id: string; user_id: string; emoji: string }[] => {
+  const loadFromLS = useCallback((): MessageReactionRow[] => {
     try {
       const raw = localStorage.getItem(lsKey);
       if (!raw) return [];
@@ -161,7 +215,7 @@ export function useMessageReactions(conversationId: string) {
       .eq("conversation_id", conversationId);
     if (msgErr) throw msgErr;
 
-    const ids = (msgRows ?? []).map((m: any) => String(m.id)).filter(Boolean);
+    const ids = ((msgRows ?? []) as MessageIdRow[]).map((row) => String(row.id)).filter(Boolean);
     if (ids.length === 0) {
       if (!canApplyFetchResult(requestId, mutationVersionAtStart)) return;
       replaceReactionsMap(new Map());
@@ -176,7 +230,7 @@ export function useMessageReactions(conversationId: string) {
 
     if (error) throw error;
 
-    const rows = (data ?? []) as { message_id: string; user_id: string; emoji: string }[];
+    const rows = (data ?? []) as MessageReactionRow[];
     if (!canApplyFetchResult(requestId, mutationVersionAtStart)) return;
     persistToLS(rows);
     replaceReactionsMap(mergeReactionRows(rows, user?.id));
@@ -210,7 +264,7 @@ export function useMessageReactions(conversationId: string) {
           throw error;
         }
 
-        const rows = (data ?? []) as { message_id: string; user_id: string; emoji: string }[];
+      const rows = (data ?? []) as MessageReactionRow[];
         if (!canApplyFetchResult(requestId, mutationVersionAtStart)) return;
         persistToLS(rows);
         replaceReactionsMap(mergeReactionRows(rows, user?.id));
@@ -228,6 +282,22 @@ export function useMessageReactions(conversationId: string) {
       replaceReactionsMap(mergeReactionRows(rows, user?.id));
     }
   }, [canApplyFetchResult, canFilterByConversation, conversationId, user?.id, persistToLS, loadFromLS, isMissingConversationIdError, isMissingReactionsTableError, fetchByMessageIds, replaceReactionsMap]);
+
+  const enqueueMessageMutation = useCallback(async (messageId: string, operation: () => Promise<void>) => {
+    const queues = mutationQueueRef.current;
+    const previous = queues.get(messageId) ?? Promise.resolve();
+    const next = previous.catch(() => undefined).then(operation);
+
+    queues.set(messageId, next);
+
+    try {
+      await next;
+    } finally {
+      if (queues.get(messageId) === next) {
+        queues.delete(messageId);
+      }
+    }
+  }, []);
 
   // ── Realtime subscription ────────────────────────────────────────────────
 
@@ -315,21 +385,23 @@ export function useMessageReactions(conversationId: string) {
       });
 
       try {
-        if (tableUnavailableRef.current) {
-          return;
-        }
-        const payload: any = {
-          message_id: messageId,
-          user_id: user.id,
-          emoji,
-        };
-        if (canFilterByConversation) payload.conversation_id = conversationId;
-        // Use upsert to handle PK(message_id, user_id) — allows changing emoji
-        // without a separate delete. ON CONFLICT updates the emoji column.
-        const { error } = await db
-          .from("message_reactions")
-          .upsert(payload, { onConflict: "message_id,user_id" });
-        if (error) throw error;
+        await enqueueMessageMutation(messageId, async () => {
+          if (tableUnavailableRef.current) {
+            return;
+          }
+          const payload: MessageReactionUpsertRow = {
+            message_id: messageId,
+            user_id: user.id,
+            emoji,
+          };
+          if (canFilterByConversation) payload.conversation_id = conversationId;
+          // Use upsert to handle PK(message_id, user_id) — allows changing emoji
+          // without a separate delete. ON CONFLICT updates the emoji column.
+          const { error } = await db
+            .from("message_reactions")
+            .upsert(payload, { onConflict: "message_id,user_id" });
+          if (error) throw error;
+        });
       } catch (err) {
         if (isMissingReactionsTableError(err)) {
           tableUnavailableRef.current = true;
@@ -344,7 +416,7 @@ export function useMessageReactions(conversationId: string) {
         fetchReactions();
       }
     },
-    [user, conversationId, fetchReactions, canFilterByConversation, isMissingConversationIdError, isMissingReactionsTableError, commitReactionsMap]
+    [user, conversationId, fetchReactions, canFilterByConversation, isMissingConversationIdError, isMissingReactionsTableError, commitReactionsMap, enqueueMessageMutation]
   );
 
   const removeReaction = useCallback(
@@ -375,16 +447,18 @@ export function useMessageReactions(conversationId: string) {
       });
 
       try {
-        if (tableUnavailableRef.current) {
-          return;
-        }
-        const { error } = await db
-          .from("message_reactions")
-          .delete()
-          .eq("message_id", messageId)
-          .eq("user_id", user.id)
-          .eq("emoji", emoji);
-        if (error) throw error;
+        await enqueueMessageMutation(messageId, async () => {
+          if (tableUnavailableRef.current) {
+            return;
+          }
+          const { error } = await db
+            .from("message_reactions")
+            .delete()
+            .eq("message_id", messageId)
+            .eq("user_id", user.id)
+            .eq("emoji", emoji);
+          if (error) throw error;
+        });
       } catch (err) {
         if (isMissingReactionsTableError(err)) {
           tableUnavailableRef.current = true;
@@ -394,7 +468,7 @@ export function useMessageReactions(conversationId: string) {
         fetchReactions();
       }
     },
-    [user, fetchReactions, commitReactionsMap, isMissingReactionsTableError]
+    [user, fetchReactions, commitReactionsMap, isMissingReactionsTableError, enqueueMessageMutation]
   );
 
   const toggleReaction = useCallback(

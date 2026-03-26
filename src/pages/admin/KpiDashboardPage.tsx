@@ -11,6 +11,14 @@ import { TrendingUp, TrendingDown, AlertTriangle, CheckCircle2, Clock } from "lu
 type KpiSnapshot = Tables<"kpi_daily_snapshots">;
 type GuardrailAlert = Tables<"guardrail_alerts">;
 
+function asNumber(value: number | null | undefined): number {
+  return value ?? 0;
+}
+
+function asDateInput(value: string | null | undefined): string {
+  return value ?? new Date(0).toISOString();
+}
+
 export function KpiDashboardPage() {
   const [kpiData, setKpiData] = useState<KpiSnapshot | null>(null);
   const [alerts, setAlerts] = useState<GuardrailAlert[]>([]);
@@ -98,9 +106,9 @@ export function KpiDashboardPage() {
     );
   }
 
-  const retentionStatus = getMetricStatus(kpiData.retention_7d, 35);
-  const reportRateStatus = getMetricStatus(kpiData.report_rate_per_1k, 5, true);
-  const creatorReturnStatus = getMetricStatus(kpiData.creator_return_rate_7d, 40);
+  const retentionStatus = getMetricStatus(asNumber(kpiData.retention_7d), 35);
+  const reportRateStatus = getMetricStatus(asNumber(kpiData.report_rate_per_1k), 5, true);
+  const creatorReturnStatus = getMetricStatus(asNumber(kpiData.creator_return_rate_7d), 40);
 
   return (
     <AdminShell>
@@ -109,7 +117,7 @@ export function KpiDashboardPage() {
         <div>
           <h1 className="text-3xl font-bold">Phase 1 KPI Dashboard</h1>
           <p className="text-muted-foreground">
-            Last updated: {new Date(kpiData.snapshot_date).toLocaleDateString()} · Auto-refresh every 60s
+            Last updated: {new Date(asDateInput(kpiData.snapshot_date)).toLocaleDateString()} · Auto-refresh every 60s
           </p>
         </div>
 
@@ -128,10 +136,10 @@ export function KpiDashboardPage() {
                   <div className="space-y-1">
                     <div className="font-medium">{alert.metric_name}</div>
                     <div className="text-sm text-muted-foreground">
-                      Current: {alert.current_value.toFixed(2)} · Threshold: {alert.threshold.toFixed(2)}
+                      Current: {asNumber(alert.current_value).toFixed(2)} · Threshold: {asNumber(alert.threshold).toFixed(2)}
                     </div>
                     <div className="text-xs text-muted-foreground">
-                      Affects: {alert.affected_feature} · {new Date(alert.created_at).toLocaleString()}
+                      Affects: {alert.affected_feature} · {new Date(asDateInput(alert.created_at)).toLocaleString()}
                     </div>
                   </div>
                   <Badge variant={alert.severity === "critical" ? "destructive" : "secondary"}>
@@ -152,9 +160,9 @@ export function KpiDashboardPage() {
                 <CardTitle className="text-sm font-medium text-muted-foreground">Daily Active Users</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-3xl font-bold">{kpiData.dau.toLocaleString()}</div>
+                <div className="text-3xl font-bold">{asNumber(kpiData.dau).toLocaleString()}</div>
                 <div className="text-sm text-muted-foreground mt-1">
-                  WAU: {kpiData.wau.toLocaleString()} · MAU: {kpiData.mau.toLocaleString()}
+                  WAU: {asNumber(kpiData.wau).toLocaleString()} · MAU: {asNumber(kpiData.mau).toLocaleString()}
                 </div>
               </CardContent>
             </Card>
@@ -165,13 +173,13 @@ export function KpiDashboardPage() {
               </CardHeader>
               <CardContent>
                 <div className="flex items-center gap-2">
-                  <div className="text-3xl font-bold">{kpiData.retention_7d.toFixed(1)}%</div>
+                  <div className="text-3xl font-bold">{asNumber(kpiData.retention_7d).toFixed(1)}%</div>
                   {retentionStatus === "green" && <TrendingUp className="h-5 w-5 text-green-500" />}
                   {retentionStatus === "yellow" && <Clock className="h-5 w-5 text-yellow-500" />}
                   {retentionStatus === "red" && <TrendingDown className="h-5 w-5 text-destructive" />}
                 </div>
                 <div className="text-sm text-muted-foreground mt-1">
-                  30d: {kpiData.retention_30d.toFixed(1)}% · Target: &gt;35%
+                  30d: {asNumber(kpiData.retention_30d).toFixed(1)}% · Target: &gt;35%
                 </div>
               </CardContent>
             </Card>
@@ -181,9 +189,9 @@ export function KpiDashboardPage() {
                 <CardTitle className="text-sm font-medium text-muted-foreground">Avg Session Duration</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-3xl font-bold">{formatDuration(kpiData.avg_session_duration_seconds)}</div>
+                <div className="text-3xl font-bold">{formatDuration(asNumber(kpiData.avg_session_duration_seconds))}</div>
                 <div className="text-sm text-muted-foreground mt-1">
-                  {kpiData.session_count.toLocaleString()} sessions · {kpiData.content_completion_rate.toFixed(1)}%
+                  {asNumber(kpiData.session_count).toLocaleString()} sessions · {asNumber(kpiData.content_completion_rate).toFixed(1)}%
                   completion
                 </div>
               </CardContent>
@@ -200,9 +208,9 @@ export function KpiDashboardPage() {
                 <CardTitle className="text-sm font-medium text-muted-foreground">Active Creators</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-3xl font-bold">{kpiData.active_creators_count.toLocaleString()}</div>
+                <div className="text-3xl font-bold">{asNumber(kpiData.active_creators_count).toLocaleString()}</div>
                 <div className="text-sm text-muted-foreground mt-1">
-                  New (7d): {kpiData.new_creators_count.toLocaleString()}
+                  New (7d): {asNumber(kpiData.new_creators_count).toLocaleString()}
                 </div>
               </CardContent>
             </Card>
@@ -213,7 +221,7 @@ export function KpiDashboardPage() {
               </CardHeader>
               <CardContent>
                 <div className="flex items-center gap-2">
-                  <div className="text-3xl font-bold">{kpiData.creator_return_rate_7d.toFixed(1)}%</div>
+                  <div className="text-3xl font-bold">{asNumber(kpiData.creator_return_rate_7d).toFixed(1)}%</div>
                   {creatorReturnStatus === "green" && <CheckCircle2 className="h-5 w-5 text-green-500" />}
                   {creatorReturnStatus === "yellow" && <Clock className="h-5 w-5 text-yellow-500" />}
                   {creatorReturnStatus === "red" && <AlertTriangle className="h-5 w-5 text-destructive" />}
@@ -232,14 +240,14 @@ export function KpiDashboardPage() {
                     <span className="text-sm">Report Rate</span>
                     <div className="flex items-center gap-2">
                       <Badge variant={reportRateStatus === "green" ? "secondary" : "destructive"}>
-                        {kpiData.report_rate_per_1k.toFixed(2)} per 1k
+                        {asNumber(kpiData.report_rate_per_1k).toFixed(2)} per 1k
                       </Badge>
                     </div>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-sm">Queue Age</span>
-                    <Badge variant={kpiData.moderation_queue_age_hours > 24 ? "destructive" : "secondary"}>
-                      {kpiData.moderation_queue_age_hours.toFixed(1)}h
+                    <Badge variant={asNumber(kpiData.moderation_queue_age_hours) > 24 ? "destructive" : "secondary"}>
+                      {asNumber(kpiData.moderation_queue_age_hours).toFixed(1)}h
                     </Badge>
                   </div>
                 </div>
@@ -266,14 +274,14 @@ export function KpiDashboardPage() {
                 />
                 <GuardrailRow
                   name="Retention 7d"
-                  value={kpiData.retention_7d}
+                  value={asNumber(kpiData.retention_7d)}
                   threshold={35}
                   unit="%"
                   status={retentionStatus}
                 />
                 <GuardrailRow
                   name="Report Rate per 1k"
-                  value={kpiData.report_rate_per_1k}
+                  value={asNumber(kpiData.report_rate_per_1k)}
                   threshold={5}
                   unit=""
                   inverted={true}
@@ -281,15 +289,15 @@ export function KpiDashboardPage() {
                 />
                 <GuardrailRow
                   name="Queue Age"
-                  value={kpiData.moderation_queue_age_hours}
+                  value={asNumber(kpiData.moderation_queue_age_hours)}
                   threshold={24}
                   unit="h"
                   inverted={true}
-                  status={kpiData.moderation_queue_age_hours > 24 ? "red" : "green"}
+                  status={asNumber(kpiData.moderation_queue_age_hours) > 24 ? "red" : "green"}
                 />
                 <GuardrailRow
                   name="Creator Return Rate"
-                  value={kpiData.creator_return_rate_7d}
+                  value={asNumber(kpiData.creator_return_rate_7d)}
                   threshold={40}
                   unit="%"
                   status={creatorReturnStatus}

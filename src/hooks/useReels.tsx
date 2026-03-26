@@ -6,6 +6,7 @@ import { getDemoBotsReels, isDemoId } from "@/lib/demo/demoBots";
 import { trackAnalyticsEvent } from "@/lib/analytics/firehose";
 import { fetchUserBriefMap, resolveUserBrief } from "@/lib/users/userBriefs";
 import { logger } from "@/lib/logger";
+import { OperationMutex, showErrorToast, handleApiError } from "@/lib/errors";
 
 function safeRandomUUID(): string {
   try {
@@ -139,6 +140,9 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
   const [savedReels, setSavedReels] = useState<Set<string>>(new Set());
   const [repostedReels, setRepostedReels] = useState<Set<string>>(new Set());
   const storageSyncOnceRef = useRef(false);
+  // Mutex для предотвращения race conditions при лайках/сохранениях
+  const likeMutex = useRef(new OperationMutex());
+  const saveMutex = useRef(new OperationMutex());
 
   const getFollowedAuthorIdsIfNeeded = useCallback(async (): Promise<string[] | null> => {
     if (feedMode !== "friends") return null;
@@ -444,49 +448,53 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
       return;
     }
 
-    const isCurrentlyLiked = likedReels.has(reelId);
+    // Используем mutex для предотвращения race conditions
+    await likeMutex.current.execute(async () => {
+      const isCurrentlyLiked = likedReels.has(reelId);
 
-    try {
-      if (isCurrentlyLiked) {
-        const { error } = await (supabase as any)
-          .from("reel_likes")
-          .delete()
-          .eq("reel_id", reelId)
-          .eq("user_id", user.id);
-        if (error) throw error;
+      try {
+        if (isCurrentlyLiked) {
+          const { error } = await (supabase as any)
+            .from("reel_likes")
+            .delete()
+            .eq("reel_id", reelId)
+            .eq("user_id", user.id);
+          if (error) throw error;
 
-        setLikedReels((prev) => {
-          const newSet = new Set(prev);
-          newSet.delete(reelId);
-          return newSet;
-        });
+          setLikedReels((prev) => {
+            const newSet = new Set(prev);
+            newSet.delete(reelId);
+            return newSet;
+          });
 
-        setReels((prev) =>
-          prev.map((r) =>
-            r.id === reelId
-              ? { ...r, likes_count: Math.max(0, r.likes_count - 1), isLiked: false }
-              : r
-          )
-        );
-      } else {
-        const { error } = await (supabase as any)
-          .from("reel_likes")
-          .insert({ reel_id: reelId, user_id: user.id });
-        if (error) throw error;
+          setReels((prev) =>
+            prev.map((r) =>
+              r.id === reelId
+                ? { ...r, likes_count: Math.max(0, r.likes_count - 1), isLiked: false }
+                : r
+            )
+          );
+        } else {
+          const { error } = await (supabase as any)
+            .from("reel_likes")
+            .insert({ reel_id: reelId, user_id: user.id });
+          if (error) throw error;
 
-        setLikedReels((prev) => new Set([...prev, reelId]));
+          setLikedReels((prev) => new Set([...prev, reelId]));
 
-        setReels((prev) =>
-          prev.map((r) =>
-            r.id === reelId
-              ? { ...r, likes_count: r.likes_count + 1, isLiked: true }
-              : r
-          )
-        );
+          setReels((prev) =>
+            prev.map((r) =>
+              r.id === reelId
+                ? { ...r, likes_count: r.likes_count + 1, isLiked: true }
+                : r
+            )
+          );
+        }
+      } catch (error) {
+        logger.error("[useReels] Error toggling like", { error, reelId, userId: user?.id ?? null });
+        showErrorToast(error, 'Не удалось обновить лайк');
       }
-    } catch (error) {
-      logger.error("[useReels] Error toggling like", { error, reelId, userId: user?.id ?? null });
-    }
+    });
   }, [user, likedReels]);
 
   const toggleSave = useCallback(
@@ -514,45 +522,50 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
         );
         return;
       }
-      const isCurrentlySaved = savedReels.has(reelId);
-      try {
-        if (isCurrentlySaved) {
-          const { error } = await (supabase as any)
-            .from("reel_saves")
-            .delete()
-            .eq("reel_id", reelId)
-            .eq("user_id", user.id);
-          if (error) throw error;
 
-          setSavedReels((prev) => {
-            const next = new Set(prev);
-            next.delete(reelId);
-            return next;
-          });
-          setReels((prev) =>
-            prev.map((r) =>
-              r.id === reelId
-                ? { ...r, saves_count: Math.max(0, (r.saves_count || 0) - 1), isSaved: false }
-                : r,
-            ),
-          );
-        } else {
-          const { error } = await (supabase as any)
-            .from("reel_saves")
-            .insert({ reel_id: reelId, user_id: user.id });
-          if (error) throw error;
-          setSavedReels((prev) => new Set([...prev, reelId]));
-          setReels((prev) =>
-            prev.map((r) =>
-              r.id === reelId
-                ? { ...r, saves_count: (r.saves_count || 0) + 1, isSaved: true }
-                : r,
-            ),
-          );
+      // Используем mutex для предотвращения race conditions
+      await saveMutex.current.execute(async () => {
+        const isCurrentlySaved = savedReels.has(reelId);
+        try {
+          if (isCurrentlySaved) {
+            const { error } = await (supabase as any)
+              .from("reel_saves")
+              .delete()
+              .eq("reel_id", reelId)
+              .eq("user_id", user.id);
+            if (error) throw error;
+
+            setSavedReels((prev) => {
+              const next = new Set(prev);
+              next.delete(reelId);
+              return next;
+            });
+            setReels((prev) =>
+              prev.map((r) =>
+                r.id === reelId
+                  ? { ...r, saves_count: Math.max(0, (r.saves_count || 0) - 1), isSaved: false }
+                  : r,
+              ),
+            );
+          } else {
+            const { error } = await (supabase as any)
+              .from("reel_saves")
+              .insert({ reel_id: reelId, user_id: user.id });
+            if (error) throw error;
+            setSavedReels((prev) => new Set([...prev, reelId]));
+            setReels((prev) =>
+              prev.map((r) =>
+                r.id === reelId
+                  ? { ...r, saves_count: (r.saves_count || 0) + 1, isSaved: true }
+                  : r,
+              ),
+            );
+          }
+        } catch (error) {
+          logger.error("[useReels] Error toggling save", { error, reelId, userId: user?.id ?? null });
+          showErrorToast(error, 'Не удалось обновить сохранение');
         }
-      } catch (error) {
-        logger.error("[useReels] Error toggling save", { error, reelId, userId: user?.id ?? null });
-      }
+      });
     },
     [user, savedReels],
   );

@@ -7,11 +7,104 @@ import { checkChannelCapabilityViaRpc } from "@/lib/channel-capabilities";
 import { checkHashtagsAllowedForText } from "@/lib/hashtagModeration";
 import { removeRealtimeMessage, upsertRealtimeMessage } from "@/lib/chat/realtimeMessageReducer";
 import { canonicalizeOutgoingChatText } from "@/lib/chat/textPipeline";
-import { fetchUserBriefMap, resolveUserBrief } from "@/lib/users/userBriefs";
+import { fetchUserBriefMap, resolveUserBrief, type UserBriefClient } from "@/lib/users/userBriefs";
+
+type UnknownRecord = Record<string, unknown>;
+
+type RpcResult<T> = Promise<{ data: T | null; error: unknown }>;
+
+interface ChannelRpcClient {
+  rpc: <T>(fn: string, args?: Record<string, unknown>) => RpcResult<T>;
+}
+
+interface ErrorLike {
+  code?: string;
+  status?: number;
+  message?: string;
+  details?: string;
+}
+
+interface ChannelMembershipRow {
+  channel_id: string;
+  role: string | null;
+}
+
+function isRecord(value: unknown): value is UnknownRecord {
+  return typeof value === "object" && value !== null;
+}
+
+function toErrorLike(error: unknown): ErrorLike {
+  if (!isRecord(error)) return {};
+  return error as ErrorLike;
+}
+
+function getStringField(source: UnknownRecord, key: string): string | null {
+  const value = source[key];
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function getNullableStringField(source: UnknownRecord, key: string): string | null | undefined {
+  const value = source[key];
+  if (value === null) return null;
+  if (typeof value !== "string") return undefined;
+  return value;
+}
+
+function getNumberField(source: UnknownRecord, key: string): number | null {
+  const value = source[key];
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const normalized = value.trim();
+    if (!normalized) return null;
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function decodeRealtimeRow(payload: unknown): UnknownRecord | null {
+  if (!isRecord(payload)) return null;
+  const candidate = payload.new ?? payload.old;
+  return isRecord(candidate) ? candidate : null;
+}
+
+function decodeChannelMessageRealtimeRow(value: unknown): ChannelMessage | null {
+  if (!isRecord(value)) return null;
+  const id = getStringField(value, "id");
+  const channelId = getStringField(value, "channel_id");
+  const senderId = getStringField(value, "sender_id");
+  if (!id || !channelId || !senderId) return null;
+
+  return {
+    id,
+    channel_id: channelId,
+    sender_id: senderId,
+    content: getStringField(value, "content") ?? "",
+    media_url: getNullableStringField(value, "media_url") ?? null,
+    media_type: getNullableStringField(value, "media_type") ?? null,
+    duration_seconds: getNumberField(value, "duration_seconds"),
+    silent: typeof value.silent === "boolean" ? value.silent : null,
+    created_at: getStringField(value, "created_at") ?? new Date(0).toISOString(),
+    edited_at: getNullableStringField(value, "edited_at") ?? null,
+  };
+}
+
+function decodeDeletedChannelMessageRow(value: unknown): { id: string } | null {
+  if (!isRecord(value)) return null;
+  const id = getStringField(value, "id");
+  return id ? { id } : null;
+}
+
+function getChannelRpcClient(): ChannelRpcClient {
+  return supabase as unknown as ChannelRpcClient;
+}
 
 function isSchemaMissingError(error: unknown): boolean {
-  const msg = String((error as any)?.message ?? error).toLowerCase();
-  const code = String((error as any)?.code ?? "");
+  const err = toErrorLike(error);
+  const msg = String(err.message ?? error).toLowerCase();
+  const code = String(err.code ?? "");
   return (
     code === "PGRST202" ||
     code === "42P01" ||
@@ -23,8 +116,9 @@ function isSchemaMissingError(error: unknown): boolean {
 }
 
 function isMissingSilentColumnError(error: unknown): boolean {
-  const msg = String((error as any)?.message ?? error).toLowerCase();
-  const code = String((error as any)?.code ?? "");
+  const err = toErrorLike(error);
+  const msg = String(err.message ?? error).toLowerCase();
+  const code = String(err.code ?? "");
   return (
     code === "42703" &&
     (msg.includes("silent") || msg.includes("column"))
@@ -80,10 +174,11 @@ const PROFILE_CACHE_MAX_ENTRIES = 200;
 const CHANNEL_MEMBERS_READABLE_LS_KEY = "channel_members.readable.v1";
 
 function isExpectedChannelMembersReadError(error: unknown): boolean {
-  const code = String((error as any)?.code ?? "");
-  const status = Number((error as any)?.status ?? 0);
-  const message = String((error as any)?.message ?? "").toLowerCase();
-  const details = String((error as any)?.details ?? "").toLowerCase();
+  const err = toErrorLike(error);
+  const code = String(err.code ?? "");
+  const status = Number(err.status ?? 0);
+  const message = String(err.message ?? "").toLowerCase();
+  const details = String(err.details ?? "").toLowerCase();
   return (
     code === "42501" ||
     code === "42P01" ||
@@ -117,6 +212,7 @@ function disableChannelMembersRead(): void {
 
 export function useChannels() {
   const { user } = useAuth();
+  const briefClient = supabase as unknown as UserBriefClient;
   const [channels, setChannels] = useState<Channel[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -174,8 +270,8 @@ export function useChannels() {
             console.warn("Unexpected channel_members read error:", memberError);
           }
         } else {
-          memberChannelIds = (memberData || []).map((m: any) => m.channel_id);
-          (memberData || []).forEach((m: any) => {
+          memberChannelIds = (memberData || []).map((m: ChannelMembershipRow) => m.channel_id);
+          (memberData || []).forEach((m: ChannelMembershipRow) => {
             if (!m?.channel_id) return;
             memberRoleByChannelId[String(m.channel_id)] = String(m?.role ?? "member");
           });
@@ -183,7 +279,7 @@ export function useChannels() {
       }
 
       // Fetch last message per channel (correctness > one global limit)
-      const channelIds = (channelsData || []).map((c: any) => c.id).filter(Boolean) as string[];
+      const channelIds = (channelsData || []).map((c) => c.id).filter(Boolean) as string[];
       const lastMessages: Record<string, ChannelMessage> = {};
       const rows = await mapWithConcurrency(channelIds, 6, async (channelId) => {
         const { data, error: msgError } = await supabase
@@ -303,8 +399,8 @@ export function useChannels() {
           table: 'channels',
         },
         (payload) => {
-          const row = (payload as any)?.new ?? (payload as any)?.old;
-          scheduleChannelsRefresh(row?.id ?? null);
+          const row = decodeRealtimeRow(payload);
+          scheduleChannelsRefresh(row ? getStringField(row, "id") : null);
         }
       )
       .subscribe();
@@ -327,8 +423,8 @@ export function useChannels() {
           table: 'channel_messages',
         },
         (payload) => {
-          const row = (payload as any)?.new ?? (payload as any)?.old;
-          scheduleChannelsRefresh(row?.channel_id ?? null);
+          const row = decodeRealtimeRow(payload);
+          scheduleChannelsRefresh(row ? getStringField(row, "channel_id") : null);
         }
       )
       .on(
@@ -339,8 +435,8 @@ export function useChannels() {
           table: 'channel_messages',
         },
         (payload) => {
-          const row = (payload as any)?.new ?? (payload as any)?.old;
-          scheduleChannelsRefresh(row?.channel_id ?? null);
+          const row = decodeRealtimeRow(payload);
+          scheduleChannelsRefresh(row ? getStringField(row, "channel_id") : null);
         }
       )
       .on(
@@ -351,8 +447,8 @@ export function useChannels() {
           table: 'channel_messages',
         },
         (payload) => {
-          const row = (payload as any)?.new ?? (payload as any)?.old;
-          scheduleChannelsRefresh(row?.channel_id ?? null);
+          const row = decodeRealtimeRow(payload);
+          scheduleChannelsRefresh(row ? getStringField(row, "channel_id") : null);
         }
       )
       .subscribe();
@@ -378,6 +474,8 @@ export function useChannelMessages(channelId: string | null): {
   refetch: () => Promise<void>;
 } {
   const { user } = useAuth();
+  const rpc = getChannelRpcClient();
+  const briefClient = supabase as unknown as UserBriefClient;
   const [messages, setMessages] = useState<ChannelMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const profileCacheRef = useRef<Map<string, CachedSenderProfile>>(new Map());
@@ -416,7 +514,7 @@ export function useChannelMessages(channelId: string | null): {
     if (!profileInFlightRef.current[senderId]) {
       profileInFlightRef.current[senderId] = (async () => {
         try {
-          const briefMap = await fetchUserBriefMap([senderId], supabase as any);
+          const briefMap = await fetchUserBriefMap([senderId], briefClient);
           const brief = resolveUserBrief(senderId, briefMap);
           const normalized = brief
             ? {
@@ -456,7 +554,7 @@ export function useChannelMessages(channelId: string | null): {
 
       // Fetch sender profiles
       const senderIds = [...new Set((data || []).map(m => m.sender_id))];
-      const briefMap = await fetchUserBriefMap(senderIds, supabase as any);
+      const briefMap = await fetchUserBriefMap(senderIds, briefClient);
       const profileMap: Record<string, SenderProfile> = {};
       senderIds.forEach((senderId) => {
         const brief = resolveUserBrief(senderId, briefMap);
@@ -503,7 +601,8 @@ export function useChannelMessages(channelId: string | null): {
             filter: `channel_id=eq.${channelId}`,
           },
           async (payload) => {
-            const newMessage = payload.new as ChannelMessage;
+            const newMessage = decodeChannelMessageRealtimeRow(payload.new);
+            if (!newMessage) return;
             const profile = await getSenderProfile(newMessage.sender_id);
 
             setMessages((prev) =>
@@ -523,7 +622,8 @@ export function useChannelMessages(channelId: string | null): {
             filter: `channel_id=eq.${channelId}`,
           },
           (payload) => {
-            const updatedMessage = payload.new as ChannelMessage;
+            const updatedMessage = decodeChannelMessageRealtimeRow(payload.new);
+            if (!updatedMessage) return;
             setMessages((prev) => {
               const existing = prev.find((message) => message.id === updatedMessage.id);
               return upsertRealtimeMessage(prev, {
@@ -542,7 +642,8 @@ export function useChannelMessages(channelId: string | null): {
             filter: `channel_id=eq.${channelId}`,
           },
           (payload) => {
-            const deletedMessage = payload.old as Pick<ChannelMessage, "id">;
+            const deletedMessage = decodeDeletedChannelMessageRow(payload.old);
+            if (!deletedMessage) return;
             setMessages((prev) => removeRealtimeMessage(prev, deletedMessage.id));
           }
         )
@@ -589,7 +690,7 @@ export function useChannelMessages(channelId: string | null): {
       if (!hashtagVerdict.ok) {
         throw new Error(`HASHTAG_BLOCKED:${("blockedTags" in hashtagVerdict ? hashtagVerdict.blockedTags : []).join(", ")}`);
       }
-      const rpc = await (supabase as any).rpc("send_channel_message_v1", {
+      const rpcResult = await rpc.rpc<unknown>("send_channel_message_v1", {
         p_channel_id: channelId,
         p_content: normalizedContent,
         p_silent: Boolean(options?.silent),
@@ -598,11 +699,11 @@ export function useChannelMessages(channelId: string | null): {
         p_duration_seconds: null,
       });
 
-      if (rpc.error && !isSchemaMissingError(rpc.error)) {
-        throw rpc.error;
+      if (rpcResult.error && !isSchemaMissingError(rpcResult.error)) {
+        throw rpcResult.error;
       }
 
-      if (rpc.error && isSchemaMissingError(rpc.error)) {
+      if (rpcResult.error && isSchemaMissingError(rpcResult.error)) {
         let canPost = true;
         try {
           canPost = await checkChannelCapabilityViaRpc(channelId, user.id, "channel.posts.create");
@@ -677,7 +778,7 @@ export function useChannelMessages(channelId: string | null): {
                 ? "🎤 Голосовое сообщение"
                 : "📎 Документ";
 
-      const rpc = await (supabase as any).rpc("send_channel_message_v1", {
+      const rpcResult = await rpc.rpc<unknown>("send_channel_message_v1", {
         p_channel_id: channelId,
         p_content: contentLabel,
         p_silent: Boolean(options?.silent),
@@ -686,11 +787,11 @@ export function useChannelMessages(channelId: string | null): {
         p_duration_seconds: options?.durationSeconds ?? null,
       });
 
-      if (rpc.error && !isSchemaMissingError(rpc.error)) {
-        throw rpc.error;
+      if (rpcResult.error && !isSchemaMissingError(rpcResult.error)) {
+        throw rpcResult.error;
       }
 
-      if (rpc.error && isSchemaMissingError(rpc.error)) {
+      if (rpcResult.error && isSchemaMissingError(rpcResult.error)) {
         let canPost = true;
         try {
           canPost = await checkChannelCapabilityViaRpc(channelId, user.id, "channel.posts.create");
@@ -752,7 +853,7 @@ export function useChannelMessages(channelId: string | null): {
     );
 
     try {
-      const { error } = await (supabase as any)
+      const { error } = await supabase
         .from("channel_messages")
         .update({ content: trimmed, edited_at: now })
         .eq("id", messageId)
@@ -782,8 +883,8 @@ export function useCreateChannel() {
     try {
       const { data, error } = await supabase.rpc("create_channel", {
         p_name: name,
-        p_description: description || null,
-        p_avatar_url: avatarUrl || null,
+        p_description: description || undefined,
+        p_avatar_url: avatarUrl || undefined,
         p_is_public: true
       });
 

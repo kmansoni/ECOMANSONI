@@ -139,6 +139,9 @@ export class CallsWsClient {
     for (let i = 0; i < attempts; i++) {
       const idx = (this.endpointIndex + i) % endpoints.length;
       const url = endpoints[idx];
+      if (!url) {
+        continue;
+      }
       try {
         await this.connectSingle(url);
         this.endpointIndex = idx;
@@ -560,6 +563,10 @@ export class CallsWsClient {
     try {
       msg = JSON.parse(typeof raw === "string" ? raw : new TextDecoder().decode(raw as ArrayBuffer));
     } catch {
+      return;
+    }
+
+    if (!msg) {
       return;
     }
 
