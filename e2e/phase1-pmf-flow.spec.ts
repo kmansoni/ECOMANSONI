@@ -119,21 +119,25 @@ test.describe("Phase 1 PMF: Complete User Journey", () => {
     // Page must resolve to the reels route
     await expect(page).toHaveURL(/\/reels/, { timeout: 15000 });
 
-    // Check whether any reels-related UI is visible — soft assertion:
-    // an empty state is valid for a new platform with no content yet.
+    // Accept only two valid outcomes:
+    // 1) feed content is visible, or 2) explicit empty-state UI is visible.
+    // This prevents false-green CI where the page is broken but body exists.
     const feedIndicators = page.locator(
       '[data-testid="reels-feed"], [data-testid="reel-item"], video, button:has-text("Включить звук"), button:has-text("Отправить")',
     );
     const feedVisible = await feedIndicators.first().isVisible({ timeout: 15000 }).catch(() => false);
+    const emptyStateIndicators = page.locator(
+      '[data-testid="reels-empty"], text=/пока нет рилсов|нет рилсов|ничего не найдено|no reels|nothing here/i',
+    );
+    const emptyStateVisible = await emptyStateIndicators.first().isVisible({ timeout: 15000 }).catch(() => false);
 
     if (feedVisible) {
       console.log("✅ Feed loaded with content");
+    } else if (emptyStateVisible) {
+      console.log("✅ Reels empty state is visible");
     } else {
-      console.log("⚠️  Reels page loaded but no feed content visible (empty state or loading — acceptable)");
+      throw new Error("Reels page has neither feed content nor explicit empty state");
     }
-
-    // Verify page body rendered (not a blank/error page)
-    await expect(page.locator("body")).not.toBeEmpty();
   });
 
   test("4. Analytics: Creator dashboard shows metrics", async ({ page }) => {

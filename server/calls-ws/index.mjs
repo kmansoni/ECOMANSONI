@@ -185,6 +185,34 @@ const GW_HELLO_PAYLOAD = {
 const ajv = new Ajv2020({ strict: true, allErrors: true });
 addFormats(ajv);
 
+const DEVICE_ID_PATTERN = "^[A-Za-z0-9._:-]{6,128}$";
+
+const callInvitePayloadValidate = ajv.compile({
+  type: "object",
+  additionalProperties: true,
+  required: ["to", "callId"],
+  properties: {
+    to: { type: "string", minLength: 1, maxLength: 256 },
+    to_device: { type: "string", pattern: DEVICE_ID_PATTERN },
+    callId: { type: "string", minLength: 1, maxLength: 256 },
+    callType: { type: "string", enum: ["audio", "voice", "video"] },
+    conversationId: { type: ["string", "null"], minLength: 1, maxLength: 256 },
+    callsV2RoomId: { type: ["string", "null"], minLength: 1, maxLength: 256 },
+    callsV2JoinToken: { type: ["string", "null"], minLength: 1, maxLength: 4096 },
+  },
+});
+
+const callStatePayloadValidate = ajv.compile({
+  type: "object",
+  additionalProperties: true,
+  required: ["to", "callId"],
+  properties: {
+    to: { type: "string", minLength: 1, maxLength: 256 },
+    to_device: { type: "string", pattern: DEVICE_ID_PATTERN },
+    callId: { type: "string", minLength: 1, maxLength: 256 },
+  },
+});
+
 const envelopeValidate = ajv.compile({
   type: "object",
   additionalProperties: true,
@@ -244,7 +272,119 @@ const rooms = new Map(); // roomId -> { callId, region, nodeId, epoch, memberSet
 
 const deviceSockets = new Map(); // deviceId -> ws
 const userDeviceSockets = new Map(); // userId -> Set<deviceIds> (for broadcast when to_device unknown)
+const deviceOwners = new Map(); // deviceId -> userId (anti-squatting guard)
 let cachedJoinTokenSecret = null;
+
+function normalizeDeviceId(value) {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  // Allow common device-id formats used by web/native clients.
+  if (!new RegExp(DEVICE_ID_PATTERN).test(trimmed)) return null;
+  return trimmed;
+}
+
+function dropUserDevice(userId, deviceId) {
+  if (!userId || !deviceId) return;
+  const userDevices = userDeviceSockets.get(userId);
+  if (!userDevices) return;
+  userDevices.delete(deviceId);
+  if (userDevices.size === 0) {
+    userDeviceSockets.delete(userId);
+  }
+}
+
+function unbindConnectionDevice(conn, ws) {
+  const currentDeviceId = conn.deviceId;
+  if (!currentDeviceId) return;
+  if (deviceSockets.get(currentDeviceId) === ws) {
+    deviceSockets.delete(currentDeviceId);
+    deviceOwners.delete(currentDeviceId);
+  }
+  if (conn.userId) {
+    dropUserDevice(conn.userId, currentDeviceId);
+  }
+}
+
+function bindConnectionDevice(conn, ws, requestedDeviceId) {
+  const normalizedRequested = normalizeDeviceId(requestedDeviceId);
+  if (requestedDeviceId != null && !normalizedRequested) {
+    return { ok: false, reason: "INVALID_DEVICE_ID" };
+  }
+
+  const effectiveDeviceId =
+    normalizedRequested ??
+    normalizeDeviceId(conn.deviceId) ??
+    `dev_${uuid().slice(0, 12)}`;
+
+  const existingOwner = deviceOwners.get(effectiveDeviceId);
+  const existingWs = deviceSockets.get(effectiveDeviceId);
+  if (existingOwner && existingOwner !== conn.userId && existingWs && existingWs !== ws) {
+    return { ok: false, reason: "DEVICE_ID_IN_USE" };
+  }
+
+  // If the deviceId was previously bound to an older socket of the same user,
+  // close the stale socket and replace mapping with the new one.
+  if (existingWs && existingWs !== ws) {
+    try {
+      existingWs.close(4009, "DEVICE_REPLACED");
+    } catch {
+      // ignore close errors
+    }
+  }
+
+  if (conn.deviceId && conn.deviceId !== effectiveDeviceId) {
+    unbindConnectionDevice(conn, ws);
+  }
+
+  conn.deviceId = effectiveDeviceId;
+  deviceSockets.set(effectiveDeviceId, ws);
+  if (conn.userId) {
+    deviceOwners.set(effectiveDeviceId, conn.userId);
+    const userDevices = userDeviceSockets.get(conn.userId) ?? new Set();
+    userDevices.add(effectiveDeviceId);
+    userDeviceSockets.set(conn.userId, userDevices);
+  }
+
+  return { ok: true, deviceId: effectiveDeviceId };
+}
+
+function parseCallSignalPayload(payload, validator) {
+  if (!validator(payload)) {
+    return {
+      ok: false,
+      error: "Invalid call signaling payload",
+      details: validator.errors ?? null,
+    };
+  }
+
+  const toUser = payload.to.trim();
+  const callId = payload.callId.trim();
+  const toDevice = payload.to_device == null ? null : normalizeDeviceId(payload.to_device);
+
+  if (payload.to_device != null && !toDevice) {
+    return {
+      ok: false,
+      error: "Invalid payload.to_device",
+      details: [{ keyword: "pattern", instancePath: "/to_device", message: "must match deviceId pattern" }],
+    };
+  }
+
+  return { ok: true, toUser, toDevice, callId, details: null };
+}
+
+function deliverToUserDevices(toUser, frame) {
+  const recipientDevices = userDeviceSockets.get(toUser);
+  if (!recipientDevices || recipientDevices.size === 0) return 0;
+  let delivered = 0;
+  for (const deviceId of recipientDevices) {
+    const targetWs = deviceSockets.get(deviceId);
+    if (!targetWs || targetWs.readyState !== WebSocket.OPEN) continue;
+    send(targetWs, { ...frame, ts: nowMs() });
+    delivered++;
+  }
+  return delivered;
+}
 
 function getTurnIceServersPublic() {
   const urls = String(process.env.CALLS_TURN_URLS ?? "")
@@ -637,14 +777,24 @@ wss.on("connection", (ws, req) => {
         conn.authVerifiedAt = Date.now();
         // #6: Reset consecutive failure counter on fresh AUTH — new token starts clean.
         conn._consecutiveAuthFailures = 0;
-        if (conn.deviceId) deviceSockets.set(conn.deviceId, ws);
+
+        const bindResult = bindConnectionDevice(
+          conn,
+          ws,
+          frame.payload?.client?.deviceId ?? frame.payload?.deviceId ?? conn.deviceId
+        );
+        if (!bindResult.ok) {
+          ack(ws, frame.msgId, false, wsError("VALIDATION_FAILED", bindResult.reason, {}, false));
+          return;
+        }
+
         send(ws, {
           v: 1,
           type: "AUTH_OK",
           msgId: uuid(),
           ts: nowMs(),
           seq: conn.nextOutboundSeq++,
-          payload: { userId: conn.userId, deviceId: conn.deviceId ?? "dev-device" }
+          payload: { userId: conn.userId, deviceId: bindResult.deviceId }
         });
 
         // Advertise gateway mode/features immediately after auth
@@ -842,16 +992,12 @@ wss.on("connection", (ws, req) => {
           ack(ws, frame.msgId, false, wsError("ROOM_FULL", `Max participants exceeded (${MAX_PARTICIPANTS_PER_ROOM})`, { roomId }, false));
           return;
         }
-        const deviceId = frame.payload?.deviceId ?? conn.deviceId ?? `dev_${uuid().slice(0, 6)}`;
-        conn.deviceId = deviceId;
-        deviceSockets.set(deviceId, ws);
-        
-        // Track device under user for call signaling broadcast
-        if (conn.userId) {
-          const userDevices = userDeviceSockets.get(conn.userId) || new Set();
-          userDevices.add(deviceId);
-          userDeviceSockets.set(conn.userId, userDevices);
+        const bindResult = bindConnectionDevice(conn, ws, frame.payload?.deviceId ?? conn.deviceId);
+        if (!bindResult.ok) {
+          ack(ws, frame.msgId, false, wsError("VALIDATION_FAILED", bindResult.reason, {}, false));
+          return;
         }
+        const deviceId = bindResult.deviceId;
 
         room.memberSetVersion++;
         await store.addMember(room.callId, deviceId);
@@ -922,30 +1068,34 @@ wss.on("connection", (ws, req) => {
           ack(ws, frame.msgId, false, wsError("UNAUTHENTICATED", "AUTH required", {}, true));
           return;
         }
-        // Deliver to the callee's device(s). If to_device is unknown, broadcast to ALL online devices of callee.
-        const toUser = frame.payload?.to;
-        const toDevice = frame.payload?.to_device ?? null;
-        const callId = frame.payload?.callId ?? "unknown";
-        
-        if (toDevice && deviceSockets.has(toDevice)) {
-          // Specific device requested and is online
-          console.log(`[calls-ws] call.invite routed to specific device: callId=${callId}, toDevice=${toDevice}`);
-          send(deviceSockets.get(toDevice), { ...frame, ts: nowMs() });
-        } else if (!toDevice && toUser) {
-          // No specific device — broadcast to ALL online devices of the callee
-          const calleesDevices = userDeviceSockets.get(toUser);
-          if (calleesDevices && calleesDevices.size > 0) {
-            console.log(`[calls-ws] call.invite broadcast to ${calleesDevices.size} device(s): callId=${callId}, toUser=${toUser.slice(0, 8)}`);
-            calleesDevices.forEach((deviceId) => {
-              const deviceWs = deviceSockets.get(deviceId);
-              if (deviceWs) {
-                send(deviceWs, { ...frame, ts: nowMs() });
-              }
-            });
-          } else {
-            console.log(`[calls-ws] call.invite: no online devices for user ${toUser.slice(0, 8)}`);
-          }
+        const parsed = parseCallSignalPayload(frame.payload, callInvitePayloadValidate);
+        if (!parsed.ok) {
+          ack(ws, frame.msgId, false, wsError("VALIDATION_FAILED", parsed.error, { errors: parsed.details }, false));
+          return;
         }
+
+        const { toUser, toDevice, callId } = parsed;
+        let delivered = 0;
+
+        if (toDevice) {
+          const targetWs = deviceSockets.get(toDevice);
+          if (targetWs && targetWs.readyState === WebSocket.OPEN) {
+            send(targetWs, { ...frame, ts: nowMs() });
+            delivered = 1;
+            console.log(`[calls-ws] call.invite routed to specific device: callId=${callId}, toDevice=${toDevice}`);
+          } else {
+            delivered = deliverToUserDevices(toUser, frame);
+            console.log(`[calls-ws] call.invite stale to_device fallback: callId=${callId}, toUser=${toUser.slice(0, 8)}, delivered=${delivered}`);
+          }
+        } else {
+          delivered = deliverToUserDevices(toUser, frame);
+          console.log(`[calls-ws] call.invite broadcast: callId=${callId}, toUser=${toUser.slice(0, 8)}, delivered=${delivered}`);
+        }
+
+        if (delivered === 0) {
+          console.log(`[calls-ws] call.invite: no online devices for user ${toUser.slice(0, 8)}`);
+        }
+
         // Return ACK regardless of delivery success (best effort — peer might be offline)
         return ack(ws, frame.msgId, true);
       }
@@ -960,30 +1110,35 @@ wss.on("connection", (ws, req) => {
           ack(ws, frame.msgId, false, wsError("UNAUTHENTICATED", "AUTH required", {}, true));
           return;
         }
-        const callSigToDevice = frame.payload?.to_device ?? null;
-        const callSigToUser = frame.payload?.to ?? null;
-        const sigType = frame.type;
-        const callId = frame.payload?.callId ?? "unknown";
-        
-        if (callSigToDevice && deviceSockets.has(callSigToDevice)) {
-          // Specific device requested and is online
-          console.log(`[calls-ws] ${sigType} routed to specific device: callId=${callId}, toDevice=${callSigToDevice}`);
-          send(deviceSockets.get(callSigToDevice), { ...frame, ts: nowMs() });
-        } else if (!callSigToDevice && callSigToUser) {
-          // No specific device — broadcast to ALL online devices of the recipient
-          const recipientsDevices = userDeviceSockets.get(callSigToUser);
-          if (recipientsDevices && recipientsDevices.size > 0) {
-            console.log(`[calls-ws] ${sigType} broadcast to ${recipientsDevices.size} device(s): callId=${callId}, toUser=${callSigToUser.slice(0, 8)}`);
-            recipientsDevices.forEach((deviceId) => {
-              const deviceWs = deviceSockets.get(deviceId);
-              if (deviceWs) {
-                send(deviceWs, { ...frame, ts: nowMs() });
-              }
-            });
-          } else {
-            console.log(`[calls-ws] ${sigType}: no online devices for user ${callSigToUser.slice(0, 8)}`);
-          }
+        const parsed = parseCallSignalPayload(frame.payload, callStatePayloadValidate);
+        if (!parsed.ok) {
+          ack(ws, frame.msgId, false, wsError("VALIDATION_FAILED", parsed.error, { errors: parsed.details }, false));
+          return;
         }
+
+        const { toUser, toDevice, callId } = parsed;
+        const sigType = frame.type;
+        let delivered = 0;
+
+        if (toDevice) {
+          const targetWs = deviceSockets.get(toDevice);
+          if (targetWs && targetWs.readyState === WebSocket.OPEN) {
+            send(targetWs, { ...frame, ts: nowMs() });
+            delivered = 1;
+            console.log(`[calls-ws] ${sigType} routed to specific device: callId=${callId}, toDevice=${toDevice}`);
+          } else {
+            delivered = deliverToUserDevices(toUser, frame);
+            console.log(`[calls-ws] ${sigType} stale to_device fallback: callId=${callId}, toUser=${toUser.slice(0, 8)}, delivered=${delivered}`);
+          }
+        } else {
+          delivered = deliverToUserDevices(toUser, frame);
+          console.log(`[calls-ws] ${sigType} broadcast: callId=${callId}, toUser=${toUser.slice(0, 8)}, delivered=${delivered}`);
+        }
+
+        if (delivered === 0) {
+          console.log(`[calls-ws] ${sigType}: no online devices for user ${toUser.slice(0, 8)}`);
+        }
+
         return ack(ws, frame.msgId, true);
       }
 
@@ -1413,19 +1568,8 @@ wss.on("connection", (ws, req) => {
     // Stop JWT revalidation interval
     if (conn.jwtCheckInterval) jwtGuard.stopPeriodicCheck(conn.jwtCheckInterval);
 
-    if (conn.deviceId && deviceSockets.get(conn.deviceId) === ws) {
-      deviceSockets.delete(conn.deviceId);
-      
-      // Clean up from user device tracking
-      if (conn.userId) {
-        const userDevices = userDeviceSockets.get(conn.userId);
-        if (userDevices) {
-          userDevices.delete(conn.deviceId);
-          if (userDevices.size === 0) {
-            userDeviceSockets.delete(conn.userId);
-          }
-        }
-      }
+    if (conn.deviceId) {
+      unbindConnectionDevice(conn, ws);
     }
 
     if (!conn.deviceId) return;
