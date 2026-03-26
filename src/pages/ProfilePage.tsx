@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -118,9 +118,21 @@ export function ProfilePage() {
   const [highlights, setHighlights] = useState<Highlight[]>([]);
   const [highlightsLoading, setHighlightsLoading] = useState(false);
 
-  const [myReels, setMyReels] = useState<any[]>([]);
+  // Типизированный интерфейс для Reels профиля
+  interface ProfileReel {
+    id: string;
+    video_url: string;
+    thumbnail_url: string | null;
+    views_count: number;
+    likes_count: number;
+    created_at: string;
+  }
+
+  const [myReels, setMyReels] = useState<ProfileReel[]>([]);
   const [myReelsLoading, setMyReelsLoading] = useState(false);
   const [myReelsHasMore, setMyReelsHasMore] = useState(true);
+  // AbortController для отмены запроса при смене userId
+  const reelsAbortRef = useRef<AbortController | null>(null);
 
   // Load highlights
   const loadHighlights = useCallback(async () => {
@@ -141,10 +153,17 @@ export function ProfilePage() {
   }, [loadHighlights]);
 
   // Load reels on tab switch
+  // ИСПРАВЛЕНИЕ: AbortController предотвращает race condition при быстрой смене userId
   const loadMyReels = useCallback(async (opts?: { reset?: boolean }) => {
-    if (!targetUserId || myReelsLoading) return;
+    if (!targetUserId) return;
     const reset = Boolean(opts?.reset);
     if (!reset && !myReelsHasMore) return;
+
+    // Отменяем предыдущий запрос
+    reelsAbortRef.current?.abort();
+    const controller = new AbortController();
+    reelsAbortRef.current = controller;
+
     setMyReelsLoading(true);
     try {
       const limit = 30;
@@ -154,31 +173,50 @@ export function ProfilePage() {
         p_limit: limit,
         p_offset: offset,
       });
+
+      // Игнорируем ответ если userId сменился во время запроса
+      if (controller.signal.aborted) return;
       if (error) throw error;
-      const rows = (data || []).map((r: any) => ({
-        ...r,
+
+      const rows: ProfileReel[] = (data || []).map((r: any) => ({
+        id: String(r?.id ?? ""),
         video_url: normalizeReelMediaUrl(r?.video_url, "reels-media"),
-        thumbnail_url: normalizeReelMediaUrl(r?.thumbnail_url, "reels-media") || r?.thumbnail_url,
+        thumbnail_url: normalizeReelMediaUrl(r?.thumbnail_url, "reels-media") || (r?.thumbnail_url as string | null) || null,
+        views_count: Number(r?.views_count ?? 0),
+        likes_count: Number(r?.likes_count ?? 0),
+        created_at: String(r?.created_at ?? ""),
       }));
+
       setMyReels(prev => (reset ? rows : [...prev, ...rows]));
       setMyReelsHasMore(rows.length >= limit);
     } catch (error) {
+      if ((error as any)?.name === "AbortError") return;
       logger.warn("profile.load_my_reels_failed", { error, targetUserId, reset });
     } finally {
-      setMyReelsLoading(false);
+      if (!controller.signal.aborted) setMyReelsLoading(false);
     }
-  }, [targetUserId, myReelsLoading, myReelsHasMore, myReels.length]);
+  }, [targetUserId, myReelsHasMore, myReels.length]);
 
-  const handleTabChange = (tabId: TabId) => {
+  // ИСПРАВЛЕНИЕ: мемоизирован через useCallback — стабильная ссылка при ре-рендерах
+  const handleTabChange = useCallback((tabId: TabId) => {
     setActiveTab(tabId);
     if (tabId === "saved") fetchSavedPosts();
     if (tabId === "reels") void loadMyReels({ reset: true });
-  };
+  }, [fetchSavedPosts, loadMyReels]);
 
   useEffect(() => {
     setMyReels([]);
     setMyReelsHasMore(true);
+    // Отменяем запрос при смене профиля
+    reelsAbortRef.current?.abort();
   }, [targetUserId]);
+
+  // Cleanup при unmount — отменяем все pending запросы
+  useEffect(() => {
+    return () => {
+      reelsAbortRef.current?.abort();
+    };
+  }, []);
 
   const handleDeleteHighlight = async (id: string) => {
     try {
@@ -541,7 +579,11 @@ export function ProfilePage() {
                 items={myReels}
                 loading={myReelsLoading && myReels.length === 0}
                 type="reels"
-                onItemClick={() => navigate("/reels")}
+                onItemClick={(item) => {
+                  if (!item?.id) return;
+                  // ИСПРАВЛЕНИЕ: открываем конкретный Reel автора, не общую ленту
+                  navigate(`/reels?userId=${targetUserId}&startId=${item.id}`);
+                }}
               />
               {myReels.length > 0 && myReelsHasMore && (
                 <div className="flex justify-center py-4">
