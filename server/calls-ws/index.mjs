@@ -243,6 +243,7 @@ function wsError(code, message, details, retryable) {
 const rooms = new Map(); // roomId -> { callId, region, nodeId, epoch, memberSetVersion, peers: Map(deviceId -> {userId, role, e2eeReady}), producers: [] }
 
 const deviceSockets = new Map(); // deviceId -> ws
+const userDeviceSockets = new Map(); // userId -> Set<deviceIds> (for broadcast when to_device unknown)
 let cachedJoinTokenSecret = null;
 
 function getTurnIceServersPublic() {
@@ -844,6 +845,13 @@ wss.on("connection", (ws, req) => {
         const deviceId = frame.payload?.deviceId ?? conn.deviceId ?? `dev_${uuid().slice(0, 6)}`;
         conn.deviceId = deviceId;
         deviceSockets.set(deviceId, ws);
+        
+        // Track device under user for call signaling broadcast
+        if (conn.userId) {
+          const userDevices = userDeviceSockets.get(conn.userId) || new Set();
+          userDevices.add(deviceId);
+          userDeviceSockets.set(conn.userId, userDevices);
+        }
 
         room.memberSetVersion++;
         await store.addMember(room.callId, deviceId);
@@ -914,12 +922,31 @@ wss.on("connection", (ws, req) => {
           ack(ws, frame.msgId, false, wsError("UNAUTHENTICATED", "AUTH required", {}, true));
           return;
         }
-        // Best effort: deliver to the callee's device if connected.
+        // Deliver to the callee's device(s). If to_device is unknown, broadcast to ALL online devices of callee.
         const toUser = frame.payload?.to;
         const toDevice = frame.payload?.to_device ?? null;
+        const callId = frame.payload?.callId ?? "unknown";
+        
         if (toDevice && deviceSockets.has(toDevice)) {
+          // Specific device requested and is online
+          console.log(`[calls-ws] call.invite routed to specific device: callId=${callId}, toDevice=${toDevice}`);
           send(deviceSockets.get(toDevice), { ...frame, ts: nowMs() });
+        } else if (!toDevice && toUser) {
+          // No specific device — broadcast to ALL online devices of the callee
+          const calleesDevices = userDeviceSockets.get(toUser);
+          if (calleesDevices && calleesDevices.size > 0) {
+            console.log(`[calls-ws] call.invite broadcast to ${calleesDevices.size} device(s): callId=${callId}, toUser=${toUser.slice(0, 8)}`);
+            calleesDevices.forEach((deviceId) => {
+              const deviceWs = deviceSockets.get(deviceId);
+              if (deviceWs) {
+                send(deviceWs, { ...frame, ts: nowMs() });
+              }
+            });
+          } else {
+            console.log(`[calls-ws] call.invite: no online devices for user ${toUser.slice(0, 8)}`);
+          }
         }
+        // Return ACK regardless of delivery success (best effort — peer might be offline)
         return ack(ws, frame.msgId, true);
       }
 
@@ -928,15 +955,34 @@ wss.on("connection", (ws, req) => {
       case "call.cancel":
       case "call.hangup":
       case "call.rekey": {
-        // S-01: was a no-op stub — now delivers the frame to the target device,
-        // mirroring the call.invite routing pattern.
+        // Deliver signal to the target device. If to_device unknown, broadcast to ALL online devices of recipient.
         if (!conn.authenticated) {
           ack(ws, frame.msgId, false, wsError("UNAUTHENTICATED", "AUTH required", {}, true));
           return;
         }
         const callSigToDevice = frame.payload?.to_device ?? null;
+        const callSigToUser = frame.payload?.to ?? null;
+        const sigType = frame.type;
+        const callId = frame.payload?.callId ?? "unknown";
+        
         if (callSigToDevice && deviceSockets.has(callSigToDevice)) {
+          // Specific device requested and is online
+          console.log(`[calls-ws] ${sigType} routed to specific device: callId=${callId}, toDevice=${callSigToDevice}`);
           send(deviceSockets.get(callSigToDevice), { ...frame, ts: nowMs() });
+        } else if (!callSigToDevice && callSigToUser) {
+          // No specific device — broadcast to ALL online devices of the recipient
+          const recipientsDevices = userDeviceSockets.get(callSigToUser);
+          if (recipientsDevices && recipientsDevices.size > 0) {
+            console.log(`[calls-ws] ${sigType} broadcast to ${recipientsDevices.size} device(s): callId=${callId}, toUser=${callSigToUser.slice(0, 8)}`);
+            recipientsDevices.forEach((deviceId) => {
+              const deviceWs = deviceSockets.get(deviceId);
+              if (deviceWs) {
+                send(deviceWs, { ...frame, ts: nowMs() });
+              }
+            });
+          } else {
+            console.log(`[calls-ws] ${sigType}: no online devices for user ${callSigToUser.slice(0, 8)}`);
+          }
         }
         return ack(ws, frame.msgId, true);
       }
@@ -1369,6 +1415,17 @@ wss.on("connection", (ws, req) => {
 
     if (conn.deviceId && deviceSockets.get(conn.deviceId) === ws) {
       deviceSockets.delete(conn.deviceId);
+      
+      // Clean up from user device tracking
+      if (conn.userId) {
+        const userDevices = userDeviceSockets.get(conn.userId);
+        if (userDevices) {
+          userDevices.delete(conn.deviceId);
+          if (userDevices.size === 0) {
+            userDeviceSockets.delete(conn.userId);
+          }
+        }
+      }
     }
 
     if (!conn.deviceId) return;
