@@ -1,5 +1,5 @@
 import { useEffect, useRef, memo } from 'react';
-import { MapPin, Navigation, Crosshair } from 'lucide-react';
+import { Crosshair, ZoomIn, ZoomOut, Layers } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { LatLng } from '@/types/taxi';
 import { TARIFF_COLORS } from '@/lib/taxi/constants';
@@ -7,7 +7,6 @@ import { TARIFF_COLORS } from '@/lib/taxi/constants';
 // ─── Leaflet импорт (только client-side) ──────────────────────────────────────
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-// Исправление стандартной проблемы с иконками Leaflet в Vite/Webpack
 import markerIconUrl from 'leaflet/dist/images/marker-icon.png';
 import markerIcon2xUrl from 'leaflet/dist/images/marker-icon-2x.png';
 import markerShadowUrl from 'leaflet/dist/images/marker-shadow.png';
@@ -41,24 +40,25 @@ interface TaxiMapProps {
   className?: string;
 }
 
-// ─── SVG-иконки для маркеров ──────────────────────────────────────────────────
+// ─── Тайлы карт (Яндекс-стиль: тёмная тема) ─────────────────────────────────
+const DARK_TILE_URL = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+const DARK_TILE_ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>';
+
+// ─── SVG-иконки маркеров (Яндекс Navigator стиль) ────────────────────────────
 function createPickupIcon(): L.DivIcon {
   return L.divIcon({
     html: `
-      <div style="
-        width:36px;height:36px;
-        background:#22c55e;
-        border:3px solid white;
-        border-radius:50% 50% 50% 0;
-        transform:rotate(-45deg);
-        box-shadow:0 2px 8px rgba(0,0,0,0.3);
-        display:flex;align-items:center;justify-content:center;
-      ">
-        <div style="transform:rotate(45deg);font-size:14px;color:white;font-weight:bold">A</div>
+      <div style="position:relative;width:40px;height:52px;">
+        <svg width="40" height="52" viewBox="0 0 40 52" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M20 0C9 0 0 9 0 20c0 15 20 32 20 32s20-17 20-32C40 9 31 0 20 0z" fill="#4ADE80"/>
+          <circle cx="20" cy="20" r="12" fill="#fff"/>
+          <circle cx="20" cy="20" r="6" fill="#22c55e"/>
+        </svg>
+        <div style="position:absolute;top:12px;left:0;width:40px;text-align:center;font-size:11px;font-weight:700;color:#166534;">A</div>
       </div>
     `,
-    iconSize: [36, 36],
-    iconAnchor: [18, 36],
+    iconSize: [40, 52],
+    iconAnchor: [20, 52],
     className: '',
   });
 }
@@ -66,20 +66,17 @@ function createPickupIcon(): L.DivIcon {
 function createDestinationIcon(): L.DivIcon {
   return L.divIcon({
     html: `
-      <div style="
-        width:36px;height:36px;
-        background:#ef4444;
-        border:3px solid white;
-        border-radius:50% 50% 50% 0;
-        transform:rotate(-45deg);
-        box-shadow:0 2px 8px rgba(0,0,0,0.3);
-        display:flex;align-items:center;justify-content:center;
-      ">
-        <div style="transform:rotate(45deg);font-size:14px;color:white;font-weight:bold">B</div>
+      <div style="position:relative;width:40px;height:52px;">
+        <svg width="40" height="52" viewBox="0 0 40 52" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M20 0C9 0 0 9 0 20c0 15 20 32 20 32s20-17 20-32C40 9 31 0 20 0z" fill="#F43F5E"/>
+          <circle cx="20" cy="20" r="12" fill="#fff"/>
+          <circle cx="20" cy="20" r="6" fill="#ef4444"/>
+        </svg>
+        <div style="position:absolute;top:12px;left:0;width:40px;text-align:center;font-size:11px;font-weight:700;color:#991b1b;">B</div>
       </div>
     `,
-    iconSize: [36, 36],
-    iconAnchor: [18, 36],
+    iconSize: [40, 52],
+    iconAnchor: [20, 52],
     className: '',
   });
 }
@@ -87,31 +84,45 @@ function createDestinationIcon(): L.DivIcon {
 function createDriverIcon(heading: number): L.DivIcon {
   return L.divIcon({
     html: `
-      <div style="
-        width:44px;height:44px;
-        position:relative;
-        display:flex;align-items:center;justify-content:center;
-      ">
+      <div style="width:48px;height:48px;position:relative;display:flex;align-items:center;justify-content:center;">
+        <!-- Пульсирующий ореол -->
+        <div style="
+          position:absolute;inset:-4px;
+          border-radius:50%;
+          background:radial-gradient(circle,rgba(252,211,77,0.4) 0%,transparent 70%);
+          animation:yandex-pulse 2s ease-in-out infinite;
+        "></div>
+        <!-- Машинка -->
         <div style="
           width:40px;height:40px;
-          background:#3b82f6;
-          border:3px solid white;
+          background:linear-gradient(135deg,#FBBF24,#F59E0B);
+          border:3px solid #FDE68A;
           border-radius:50%;
-          box-shadow:0 2px 12px rgba(59,130,246,0.5);
+          box-shadow:0 2px 12px rgba(245,158,11,0.5),0 0 20px rgba(251,191,36,0.3);
           display:flex;align-items:center;justify-content:center;
-          font-size:20px;
-        ">🚖</div>
+          font-size:18px;
+          transform:rotate(${heading}deg);
+        ">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#78350F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 17h14v-5l-2-5H7L5 12v5z"/>
+            <circle cx="7.5" cy="17.5" r="1.5"/>
+            <circle cx="16.5" cy="17.5" r="1.5"/>
+            <path d="M5 12h14"/>
+          </svg>
+        </div>
+        <!-- Стрелка направления -->
         <div style="
-          position:absolute;top:-6px;left:50%;transform:translateX(-50%) rotate(${heading}deg);
+          position:absolute;top:-8px;left:50%;transform:translateX(-50%);
           width:0;height:0;
-          border-left:6px solid transparent;
-          border-right:6px solid transparent;
-          border-bottom:10px solid #3b82f6;
+          border-left:7px solid transparent;
+          border-right:7px solid transparent;
+          border-bottom:12px solid #F59E0B;
+          filter:drop-shadow(0 1px 2px rgba(0,0,0,0.3));
         "></div>
       </div>
     `,
-    iconSize: [44, 44],
-    iconAnchor: [22, 22],
+    iconSize: [48, 48],
+    iconAnchor: [24, 24],
     className: '',
   });
 }
@@ -120,15 +131,15 @@ function createUserLocationIcon(): L.DivIcon {
   return L.divIcon({
     html: `
       <div style="
-        width:20px;height:20px;
-        background:#3b82f6;
+        width:22px;height:22px;
+        background:radial-gradient(circle,#60A5FA 0%,#3B82F6 100%);
         border:3px solid white;
         border-radius:50%;
-        box-shadow:0 0 0 6px rgba(59,130,246,0.2);
+        box-shadow:0 0 0 8px rgba(59,130,246,0.15),0 2px 8px rgba(0,0,0,0.3);
       "></div>
     `,
-    iconSize: [20, 20],
-    iconAnchor: [10, 10],
+    iconSize: [22, 22],
+    iconAnchor: [11, 11],
     className: '',
   });
 }
@@ -138,23 +149,28 @@ function createNearbyDriverIcon(tariff: string): L.DivIcon {
   return L.divIcon({
     html: `
       <div style="
-        width:28px;height:28px;
+        width:30px;height:30px;
         background:${color};
-        border:2px solid white;
+        border:2px solid rgba(255,255,255,0.9);
         border-radius:50%;
-        box-shadow:0 1px 4px rgba(0,0,0,0.3);
+        box-shadow:0 2px 6px rgba(0,0,0,0.4);
         display:flex;align-items:center;justify-content:center;
-        font-size:12px;
-        opacity:0.85;
-      ">🚗</div>
+        opacity:0.9;
+      ">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round">
+          <path d="M5 17h14v-5l-2-5H7L5 12v5z"/>
+          <circle cx="7.5" cy="17.5" r="1.5"/>
+          <circle cx="16.5" cy="17.5" r="1.5"/>
+        </svg>
+      </div>
     `,
-    iconSize: [28, 28],
-    iconAnchor: [14, 14],
+    iconSize: [30, 30],
+    iconAnchor: [15, 15],
     className: '',
   });
 }
 
-// ─── Компонент карты ────────────────────────────────────────────────────────
+// ─── Компонент карты (Яндекс Navigator стиль) ─────────────────────────────────
 export const TaxiMap = memo(function TaxiMap({
   center,
   zoom,
@@ -177,6 +193,7 @@ export const TaxiMap = memo(function TaxiMap({
   const driverMarkerRef = useRef<L.Marker | null>(null);
   const userMarkerRef = useRef<L.Marker | null>(null);
   const routePolylineRef = useRef<L.Polyline | null>(null);
+  const routeShadowRef = useRef<L.Polyline | null>(null);
   const nearbyLayerRef = useRef<L.LayerGroup | null>(null);
 
   // ─── Инициализация карты ─────────────────────────────────────────────────
@@ -187,15 +204,19 @@ export const TaxiMap = memo(function TaxiMap({
       center: [center.lat, center.lng],
       zoom,
       zoomControl: false,
-      attributionControl: true,
+      attributionControl: false,
     });
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© OpenStreetMap contributors',
+    // Тёмная тема тайлов (как Яндекс Навигатор ночью)
+    L.tileLayer(DARK_TILE_URL, {
+      attribution: DARK_TILE_ATTR,
       maxZoom: 19,
+      subdomains: 'abcd',
     }).addTo(map);
 
-    // Обработчик клика по карте
+    // Мелкая атрибуция в углу
+    L.control.attribution({ position: 'bottomleft', prefix: false }).addTo(map);
+
     if (onMapClick) {
       map.on('click', (e: L.LeafletMouseEvent) => {
         onMapClick({ lat: e.latlng.lat, lng: e.latlng.lng });
@@ -220,12 +241,10 @@ export const TaxiMap = memo(function TaxiMap({
   // ─── Маркер подачи ────────────────────────────────────────────────────────
   useEffect(() => {
     if (!mapRef.current) return;
-
     if (pickupMarkerRef.current) {
       pickupMarkerRef.current.remove();
       pickupMarkerRef.current = null;
     }
-
     if (pickupMarker) {
       pickupMarkerRef.current = L.marker([pickupMarker.lat, pickupMarker.lng], {
         icon: createPickupIcon(),
@@ -236,12 +255,10 @@ export const TaxiMap = memo(function TaxiMap({
   // ─── Маркер назначения ────────────────────────────────────────────────────
   useEffect(() => {
     if (!mapRef.current) return;
-
     if (destinationMarkerRef.current) {
       destinationMarkerRef.current.remove();
       destinationMarkerRef.current = null;
     }
-
     if (destinationMarker) {
       destinationMarkerRef.current = L.marker(
         [destinationMarker.lat, destinationMarker.lng],
@@ -253,12 +270,9 @@ export const TaxiMap = memo(function TaxiMap({
   // ─── Маркер водителя (с анимацией) ───────────────────────────────────────
   useEffect(() => {
     if (!mapRef.current) return;
-
     if (driverPosition) {
       if (driverMarkerRef.current) {
-        // Плавная анимация перемещения через setLatLng
         driverMarkerRef.current.setLatLng([driverPosition.lat, driverPosition.lng]);
-        // Обновляем иконку с новым heading
         driverMarkerRef.current.setIcon(createDriverIcon(driverHeading));
       } else {
         driverMarkerRef.current = L.marker([driverPosition.lat, driverPosition.lng], {
@@ -277,12 +291,10 @@ export const TaxiMap = memo(function TaxiMap({
   // ─── Маркер геопозиции пользователя ──────────────────────────────────────
   useEffect(() => {
     if (!mapRef.current) return;
-
     if (userMarkerRef.current) {
       userMarkerRef.current.remove();
       userMarkerRef.current = null;
     }
-
     if (userLocation) {
       userMarkerRef.current = L.marker([userLocation.lat, userLocation.lng], {
         icon: createUserLocationIcon(),
@@ -291,26 +303,41 @@ export const TaxiMap = memo(function TaxiMap({
     }
   }, [userLocation]);
 
-  // ─── Маршрут (polyline) ───────────────────────────────────────────────────
+  // ─── Маршрут (Яндекс-стиль: толстая линия с тенью) ──────────────────────
   useEffect(() => {
     if (!mapRef.current) return;
 
+    if (routeShadowRef.current) {
+      routeShadowRef.current.remove();
+      routeShadowRef.current = null;
+    }
     if (routePolylineRef.current) {
       routePolylineRef.current.remove();
       routePolylineRef.current = null;
     }
 
     if (routePoints.length >= 2) {
-      routePolylineRef.current = L.polyline(
-        routePoints.map((p) => [p.lat, p.lng] as [number, number]),
-        {
-          color: '#3b82f6',
-          weight: 4,
-          opacity: 0.8,
-          smoothFactor: 2,
-          dashArray: undefined,
-        }
-      ).addTo(mapRef.current);
+      const latlngs = routePoints.map((p) => [p.lat, p.lng] as [number, number]);
+
+      // Тень маршрута
+      routeShadowRef.current = L.polyline(latlngs, {
+        color: '#000000',
+        weight: 10,
+        opacity: 0.15,
+        smoothFactor: 2,
+        lineCap: 'round',
+        lineJoin: 'round',
+      }).addTo(mapRef.current);
+
+      // Основная линия (Яндекс жёлто-зелёный градиент имитация)
+      routePolylineRef.current = L.polyline(latlngs, {
+        color: '#FBBF24',
+        weight: 6,
+        opacity: 0.95,
+        smoothFactor: 2,
+        lineCap: 'round',
+        lineJoin: 'round',
+      }).addTo(mapRef.current);
     }
   }, [routePoints]);
 
@@ -328,28 +355,72 @@ export const TaxiMap = memo(function TaxiMap({
     }
   }, [nearbyDrivers, showNearbyDrivers]);
 
+  // ─── Zoom helpers ──────────────────────────────────────────────────────────
+  const handleZoomIn = () => mapRef.current?.zoomIn();
+  const handleZoomOut = () => mapRef.current?.zoomOut();
+
   return (
     <div className={cn('relative w-full h-full', className)}>
       {/* Контейнер карты */}
       <div ref={mapContainerRef} className="w-full h-full" />
 
-      {/* Кнопка «Моё местоположение» */}
-      {onCenterOnUser && (
+      {/* Яндекс-стиль: правая панель кнопок */}
+      <div className="absolute bottom-24 right-3 z-[1000] flex flex-col gap-2">
+        {/* Zoom In */}
         <button
-          onClick={onCenterOnUser}
+          onClick={handleZoomIn}
           className={cn(
-            'absolute bottom-4 right-4 z-[1000]',
-            'w-10 h-10 rounded-full',
-            'bg-white shadow-lg border border-gray-100',
+            'w-11 h-11 rounded-xl',
+            'bg-gray-900/80 backdrop-blur-md border border-white/10',
             'flex items-center justify-center',
-            'transition-transform active:scale-95',
-            'hover:shadow-xl'
+            'transition-all active:scale-95 hover:bg-gray-800/90',
+            'shadow-lg shadow-black/30'
           )}
-          aria-label="Моё местоположение"
+          aria-label="Приблизить"
         >
-          <Crosshair className="h-5 w-5 text-blue-600" />
+          <ZoomIn className="h-5 w-5 text-white" />
         </button>
-      )}
+
+        {/* Zoom Out */}
+        <button
+          onClick={handleZoomOut}
+          className={cn(
+            'w-11 h-11 rounded-xl',
+            'bg-gray-900/80 backdrop-blur-md border border-white/10',
+            'flex items-center justify-center',
+            'transition-all active:scale-95 hover:bg-gray-800/90',
+            'shadow-lg shadow-black/30'
+          )}
+          aria-label="Отдалить"
+        >
+          <ZoomOut className="h-5 w-5 text-white" />
+        </button>
+
+        {/* Моё местоположение */}
+        {onCenterOnUser && (
+          <button
+            onClick={onCenterOnUser}
+            className={cn(
+              'w-11 h-11 rounded-xl',
+              'bg-gray-900/80 backdrop-blur-md border border-white/10',
+              'flex items-center justify-center',
+              'transition-all active:scale-95 hover:bg-gray-800/90',
+              'shadow-lg shadow-black/30'
+            )}
+            aria-label="Моё местоположение"
+          >
+            <Crosshair className="h-5 w-5 text-blue-400" />
+          </button>
+        )}
+      </div>
+
+      {/* CSS анимации для пульсации водителя */}
+      <style>{`
+        @keyframes yandex-pulse {
+          0%, 100% { transform: scale(1); opacity: 0.4; }
+          50% { transform: scale(1.3); opacity: 0.1; }
+        }
+      `}</style>
     </div>
   );
 });

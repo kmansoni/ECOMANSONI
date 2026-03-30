@@ -1,6 +1,6 @@
 import { useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { History, Settings, ArrowLeft, Car } from 'lucide-react';
+import { History, Settings, ArrowLeft, Car, Shield } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTaxiOrder } from '@/hooks/taxi/useTaxiOrder';
 import { useTaxiMap } from '@/hooks/taxi/useTaxiMap';
@@ -10,30 +10,30 @@ import { OrderBottomSheet } from '@/components/taxi/OrderBottomSheet';
 import { SafetyPanel } from '@/components/taxi/SafetyPanel';
 import { calculateRoute } from '@/lib/taxi/api';
 
-// ─── Вычисление высоты bottom sheet по статусу ────────────────────────────────
+// ─── Высота bottom sheet по статусу (Яндекс Go стиль) ─────────────────────────
 function getSheetHeight(status: string): string {
   switch (status) {
     case 'idle':
-      return 'h-52';
+      return 'h-48';
     case 'selecting_route':
-      return 'h-[65%]';
+      return 'h-[60%]';
     case 'selecting_tariff':
-      return 'h-[80%]';
+      return 'h-[75%]';
     case 'searching_driver':
-      return 'h-72';
+      return 'h-64';
     case 'driver_found':
     case 'driver_arriving':
-      return 'h-80';
+      return 'h-72';
     case 'driver_arrived':
       return 'h-auto';
     case 'in_trip':
-      return 'h-64';
+      return 'h-56';
     case 'completed':
-      return 'h-64';
+      return 'h-56';
     case 'rating':
-      return 'h-[90%]';
+      return 'h-[85%]';
     default:
-      return 'h-52';
+      return 'h-48';
   }
 }
 
@@ -78,7 +78,6 @@ export default function TaxiHomePage() {
       order.order?.driver &&
       order.pickup
     ) {
-      // Построить маршрут водителя к пассажиру
       calculateRoute(
         order.order.driver.location,
         order.pickup.coordinates
@@ -93,7 +92,6 @@ export default function TaxiHomePage() {
       order.order?.driver &&
       order.destination
     ) {
-      // Переключаем цель трекинга на назначение
       tracking.updateTarget(order.destination.coordinates);
     }
 
@@ -112,7 +110,7 @@ export default function TaxiHomePage() {
     }
   }, [tracking.driverPosition, tracking.driverHeading]); // eslint-disable-line
 
-  // ─── Имитация: водитель прибыл после полного tracking ─────────────────────
+  // ─── Имитация: водитель прибыл ────────────────────────────────────────────
   useEffect(() => {
     if (
       order.status === 'driver_arriving' &&
@@ -133,16 +131,12 @@ export default function TaxiHomePage() {
     }
   }, [tracking.progress, order.status]); // eslint-disable-line
 
-  // ─── Режим показа водителей рядом (только idle) ───────────────────────────
   const showNearby = order.status === 'idle' || order.status === 'selecting_route';
-
-  // ─── Показывать ли SafetyPanel ────────────────────────────────────────────
   const showSafety = order.status === 'in_trip' && order.order;
-
   const sheetHeight = getSheetHeight(order.status);
 
   return (
-    <div className="relative w-full h-screen overflow-hidden bg-background">
+    <div className="relative w-full h-screen overflow-hidden bg-gray-950">
       {/* Карта — полноэкранная подложка */}
       <TaxiMap
         center={map.center}
@@ -159,19 +153,21 @@ export default function TaxiHomePage() {
         className="absolute inset-0"
       />
 
-      {/* Шапка — кнопки навигации */}
-      <div className="absolute top-0 left-0 right-0 z-[900] flex items-center justify-between p-4 pt-safe">
+      {/* Шапка — Яндекс-стиль: glassmorphism кнопки */}
+      <div className="absolute top-0 left-0 right-0 z-[900] flex items-center justify-between p-3 pt-safe">
         {/* Кнопка назад */}
         <button
           onClick={() => navigate(-1)}
           className={cn(
-            'w-10 h-10 rounded-full bg-white shadow-lg border border-gray-100',
+            'w-11 h-11 rounded-xl',
+            'bg-gray-900/80 backdrop-blur-md border border-white/10',
             'flex items-center justify-center',
-            'transition-transform active:scale-95'
+            'transition-all active:scale-95 hover:bg-gray-800/90',
+            'shadow-lg shadow-black/30'
           )}
           aria-label="Назад"
         >
-          <ArrowLeft className="h-5 w-5 text-gray-700" />
+          <ArrowLeft className="h-5 w-5 text-white" />
         </button>
 
         {/* Правые кнопки */}
@@ -179,51 +175,59 @@ export default function TaxiHomePage() {
           <button
             onClick={() => navigate('/taxi/driver')}
             className={cn(
-              'w-10 h-10 rounded-full bg-white shadow-lg border border-gray-100',
+              'w-11 h-11 rounded-xl',
+              'bg-gray-900/80 backdrop-blur-md border border-white/10',
               'flex items-center justify-center',
-              'transition-transform active:scale-95'
+              'transition-all active:scale-95 hover:bg-gray-800/90',
+              'shadow-lg shadow-black/30'
             )}
             aria-label="Режим водителя"
           >
-            <Car className="h-5 w-5 text-gray-700" />
+            <Car className="h-5 w-5 text-amber-400" />
           </button>
           <button
             onClick={() => navigate('/taxi/history')}
             className={cn(
-              'w-10 h-10 rounded-full bg-white shadow-lg border border-gray-100',
+              'w-11 h-11 rounded-xl',
+              'bg-gray-900/80 backdrop-blur-md border border-white/10',
               'flex items-center justify-center',
-              'transition-transform active:scale-95'
+              'transition-all active:scale-95 hover:bg-gray-800/90',
+              'shadow-lg shadow-black/30'
             )}
             aria-label="История"
           >
-            <History className="h-5 w-5 text-gray-700" />
+            <History className="h-5 w-5 text-white" />
           </button>
           <button
             onClick={() => navigate('/taxi/settings')}
             className={cn(
-              'w-10 h-10 rounded-full bg-white shadow-lg border border-gray-100',
+              'w-11 h-11 rounded-xl',
+              'bg-gray-900/80 backdrop-blur-md border border-white/10',
               'flex items-center justify-center',
-              'transition-transform active:scale-95'
+              'transition-all active:scale-95 hover:bg-gray-800/90',
+              'shadow-lg shadow-black/30'
             )}
             aria-label="Настройки"
           >
-            <Settings className="h-5 w-5 text-gray-700" />
+            <Settings className="h-5 w-5 text-white" />
           </button>
         </div>
       </div>
 
-      {/* SafetyPanel — только во время поездки */}
+      {/* SafetyPanel — во время поездки */}
       {showSafety && order.order && (
-        <div className="absolute top-[4.5rem] left-4 right-4 z-[900]">
+        <div className="absolute top-[4.5rem] left-3 right-3 z-[900]">
           <SafetyPanel orderId={order.order.id} />
         </div>
       )}
 
-      {/* Bottom Sheet — главный UX-элемент */}
+      {/* Bottom Sheet — Яндекс Go стиль */}
       <div
         className={cn(
           'absolute bottom-0 left-0 right-0 z-[800]',
-          'bg-background rounded-t-3xl shadow-2xl',
+          'bg-gray-950/95 backdrop-blur-xl',
+          'rounded-t-[1.5rem] border-t border-white/10',
+          'shadow-[0_-8px_40px_rgba(0,0,0,0.5)]',
           sheetHeight,
           'transition-all duration-300 ease-out',
           'overflow-hidden'
@@ -231,10 +235,10 @@ export default function TaxiHomePage() {
       >
         {/* Drag handle */}
         <div className="flex justify-center pt-3 pb-1">
-          <div className="w-10 h-1 rounded-full bg-muted-foreground/30" />
+          <div className="w-10 h-1 rounded-full bg-white/20" />
         </div>
 
-        {/* Контент Bottom Sheet */}
+        {/* Контент */}
         <div className="px-4 pb-6 overflow-y-auto h-full">
           <OrderBottomSheet
             order={order}
@@ -242,14 +246,11 @@ export default function TaxiHomePage() {
             trackingEta={tracking.etaMinutes}
             trackingDistanceLeft={tracking.distanceLeft}
             onDriverCall={() => {
-              // В production: инициировать звонок через VoIP proxy
               if (order.order?.driver) {
                 window.location.href = `tel:${order.order.driver.phone}`;
               }
             }}
-            onDriverChat={() => {
-              // В production: открыть чат с водителем
-            }}
+            onDriverChat={() => {}}
           />
         </div>
       </div>
