@@ -249,12 +249,12 @@ function RecoveryEmailPanel({ isDark }: { isDark: boolean }) {
 
 export function SettingsPrivacySection({ isDark, currentScreen, onNavigate, onBack }: PrivacySectionProps) {
   const titles: Record<PrivacyScreen, string> = {
-    privacy: "Privacy",
-    privacy_blocked: "Blocked Users",
-    security_sites: "Sites",
-    security_passcode: "Passcode",
-    security_cloud_password: "Cloud Password",
-    security_account_protection: "Account Protection",
+    privacy: "Конфиденциальность",
+    privacy_blocked: "Заблокированные",
+    security_sites: "Авторизованные сайты",
+    security_passcode: "Код-пароль",
+    security_cloud_password: "Облачный пароль",
+    security_account_protection: "Защита аккаунта",
   };
 
   if (currentScreen === "privacy_blocked") {

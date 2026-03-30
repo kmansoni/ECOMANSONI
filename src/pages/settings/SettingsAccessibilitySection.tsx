@@ -35,7 +35,7 @@ export function SettingsAccessibilitySection({ isDark, onBack }: SectionProps) {
           <SettingsToggleItem
             icon={<Accessibility className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />}
             label="Уменьшить анимации"
-            description="Respect prefers-reduced-motion"
+            description="Меньше движения для снижения нагрузки"
             isDark={isDark}
             checked={!!settings?.reduce_motion}
             onCheckedChange={async (val) => {

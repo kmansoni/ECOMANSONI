@@ -223,7 +223,7 @@ export function PhoneInput({ value, onChange, placeholder, required, className }
           type="tel"
           value={displayValue}
           onChange={handleChange}
-          placeholder={placeholder || "+7 (___) ___-__-__"}
+          placeholder={placeholder || (detectedCountry ? `+${detectedCountry.dialCode} (___) ___-__-__` : "+7 (___) ___-__-__")}
           required={required}
           className="w-full pl-14 pr-4 h-14 bg-transparent border border-white/20 rounded-2xl text-white placeholder:text-white/40 focus:border-white/40 focus:outline-none focus:ring-0"
         />

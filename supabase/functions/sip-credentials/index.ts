@@ -76,7 +76,7 @@ serve(async (req) => {
     console.log(`[SIP] Credentials issued to user ${user.id} for domain: ${domain}`);
 
     return new Response(
-      JSON.stringify({ configured: true, wssUrl, domain, username, password }),
+      JSON.stringify({ configured: true, wssUrl, domain, username }),
       { status: 200, headers: noStoreHeaders }
     );
   } catch (error: unknown) {

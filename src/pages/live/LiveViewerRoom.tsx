@@ -4,12 +4,13 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Loader2, Send, Flag, Users, UserPlus, Heart, X } from "lucide-react";
+import { Loader2, Send, Flag, Users, UserPlus, Heart, X, WifiOff } from "lucide-react";
 import { supabase, dbLoose } from "@/lib/supabase";
 import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { fetchUserBriefMap, resolveUserBrief } from "@/lib/users/userBriefs";
 import { logger } from "@/lib/logger";
+import { cn } from "@/lib/utils";
 import {
   Drawer,
   DrawerContent,
@@ -17,11 +18,19 @@ import {
   DrawerTitle,
 } from "@/components/ui/drawer";
 
+// Video stream states
+type VideoState = 'connecting' | 'playing' | 'unavailable' | 'ended';
+
 interface LiveSession {
   id: string;
   creator_id: string;
   title: string;
   viewer_count_current: number;
+  /** HLS/DASH manifest URL for live stream (populated when ingest is active) */
+  hls_url?: string | null;
+  /** LiveKit room name for SFU-based viewers */
+  livekit_room_name?: string | null;
+  status?: string;
 }
 
 interface CreatorProfile {
@@ -45,6 +54,8 @@ interface LiveViewerSessionRow {
   author_id?: string | null;
   viewer_count_current?: number | null;
   status?: string | null;
+  hls_url?: string | null;
+  livekit_room_name?: string | null;
 }
 
 interface LiveViewerMessageRow {
@@ -92,14 +103,16 @@ export function LiveViewerRoom() {
   const [selectedReason, setSelectedReason] = useState("");
   const [reportSubmitting, setReportSubmitting] = useState(false);
   const [hearts, setHearts] = useState<{ id: number; x: number }[]>([]);
+  const [videoState, setVideoState] = useState<VideoState>('connecting');
   const heartIdRef = useRef(0);
   const chatBottomRef = useRef<HTMLDivElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   const loadSession = useCallback(async () => {
     try {
       const { data, error } = await dbLoose
         .from("live_sessions")
-        .select("id, title, creator_id, viewer_count_current")
+        .select("id, title, creator_id, viewer_count_current, status, hls_url, livekit_room_name")
         .eq("id", sessionId)
         .single();
       if (error) throw error;
@@ -111,6 +124,9 @@ export function LiveViewerRoom() {
         title: String(row.title ?? "Прямой эфир"),
         creator_id: String(row.creator_id ?? row.author_id ?? ""),
         viewer_count_current: Number(row.viewer_count_current ?? 0),
+        hls_url: row.hls_url ?? null,
+        livekit_room_name: row.livekit_room_name ?? null,
+        status: row.status ?? "live",
       });
 
       // Загрузка профиля стримера
@@ -181,8 +197,16 @@ export function LiveViewerRoom() {
         filter: `id=eq.${sessionId}`,
       }, (payload) => {
         const updated = payload.new as unknown as LiveViewerSessionRow;
-        setSession((prev) => prev ? { ...prev, viewer_count_current: Number(updated.viewer_count_current ?? 0) } : prev);
+        setSession((prev) => prev
+          ? {
+              ...prev,
+              viewer_count_current: Number(updated.viewer_count_current ?? 0),
+              hls_url: updated.hls_url ?? prev.hls_url,
+              status: updated.status ?? prev.status,
+            }
+          : prev);
         if (updated.status === "ended") {
+          setVideoState('ended');
           toast.info("Эфир завершён");
           navigate(-1);
         }
@@ -196,6 +220,45 @@ export function LiveViewerRoom() {
   useEffect(() => {
     chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // Wire HLS/video stream to the video element once session is loaded
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !session) return;
+
+    const streamUrl = session.hls_url;
+
+    if (!streamUrl) {
+      setVideoState('unavailable');
+      return;
+    }
+
+    setVideoState('connecting');
+    video.src = streamUrl;
+
+    const onPlaying = () => setVideoState('playing');
+    const onWaiting = () => setVideoState('connecting');
+    const onError = () => {
+      logger.warn('[LiveViewerRoom] Video stream error', { sessionId, streamUrl });
+      setVideoState('unavailable');
+    };
+    const onEnded = () => setVideoState('ended');
+
+    video.addEventListener('playing', onPlaying);
+    video.addEventListener('waiting', onWaiting);
+    video.addEventListener('error', onError);
+    video.addEventListener('ended', onEnded);
+    video.load();
+
+    return () => {
+      video.removeEventListener('playing', onPlaying);
+      video.removeEventListener('waiting', onWaiting);
+      video.removeEventListener('error', onError);
+      video.removeEventListener('ended', onEnded);
+      video.src = '';
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.hls_url]);
 
   const sendMessage = async () => {
     if (!messageText.trim() || submitting) return;
@@ -286,13 +349,29 @@ export function LiveViewerRoom() {
       <div className="flex flex-col md:flex-row h-screen bg-black overflow-hidden">
         {/* Видео-область */}
         <div className="flex-1 relative flex flex-col">
-          {/* Заглушка: аватар стримера + "Прямой эфир" */}
           <div
-            className="flex-1 bg-gradient-to-b from-gray-900 to-black relative cursor-pointer select-none"
+            className="flex-1 bg-black relative cursor-pointer select-none overflow-hidden"
             onClick={addHeart}
             onTouchStart={addHeart}
           >
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
+            {/* Реальный видеопоток (HLS) */}
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              className={cn(
+                "absolute inset-0 w-full h-full object-cover transition-opacity duration-500",
+                videoState === 'playing' ? "opacity-100" : "opacity-0",
+              )}
+            />
+
+            {/* Аватар-заглушка: скрывается когда видео играет */}
+            <div
+              className={cn(
+                "absolute inset-0 flex flex-col items-center justify-center gap-3 bg-gradient-to-b from-gray-900 to-black transition-opacity duration-500",
+                videoState === 'playing' ? "opacity-0 pointer-events-none" : "opacity-100",
+              )}
+            >
               <Avatar className="w-24 h-24 border-4 border-red-500">
                 <AvatarImage src={creator?.avatar_url ?? undefined} />
                 <AvatarFallback className="text-2xl bg-gray-700 text-white">
@@ -300,9 +379,34 @@ export function LiveViewerRoom() {
                 </AvatarFallback>
               </Avatar>
               <p className="text-white font-semibold text-lg">{creator?.display_name}</p>
-              <Badge className="bg-red-600 text-white animate-pulse px-3 py-1 text-sm">
-                🔴 Прямой эфир
-              </Badge>
+
+              {videoState === 'connecting' && (
+                <div className="flex flex-col items-center gap-2">
+                  <Badge className="bg-red-600 text-white animate-pulse px-3 py-1 text-sm">
+                    🔴 Прямой эфир
+                  </Badge>
+                  <div className="flex items-center gap-2 text-white/60 text-sm">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Подключение к эфиру...</span>
+                  </div>
+                </div>
+              )}
+              {videoState === 'unavailable' && (
+                <div className="flex flex-col items-center gap-2">
+                  <Badge className="bg-red-600 text-white animate-pulse px-3 py-1 text-sm">
+                    🔴 Прямой эфир
+                  </Badge>
+                  <div className="flex items-center gap-2 text-white/60 text-sm">
+                    <WifiOff className="w-4 h-4" />
+                    <span>Поток недоступен</span>
+                  </div>
+                </div>
+              )}
+              {videoState === 'ended' && (
+                <Badge className="bg-gray-600 text-white px-3 py-1 text-sm">
+                  Эфир завершён
+                </Badge>
+              )}
             </div>
 
             {/* Плавающие сердечки */}

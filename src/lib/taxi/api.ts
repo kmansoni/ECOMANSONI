@@ -1,4 +1,5 @@
 import { logger } from "@/lib/logger";
+import { supabase } from "@/integrations/supabase/client";
 import type {
   TaxiAddress,
   TaxiOrder,
@@ -23,24 +24,18 @@ import { generatePinCode } from './formatters';
 import { sleep } from '@/lib/utils/sleep';
 import { generateMockDriver, generateMockTripHistory } from './mock-drivers';
 
-// sleep imported from @/lib/utils/sleep
 const delay = sleep;
 
-// ─── Вспомогательная функция: случайный ID ────────────────────────────────────
 function generateId(prefix = 'id'): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 }
 
-// ─── Локальное хранилище для имитации persistent state ────────────────────────
+// ─── Локальное хранилище — только для функций без DB-таблицы ─────────────────
 const store: {
-  activeOrders: Map<string, TaxiOrder>;
-  history: TripHistoryItem[];
   favorites: FavoriteAddress[];
   paymentMethod: PaymentMethod;
   promoCodes: Map<string, PromoCode>;
 } = {
-  activeOrders: new Map(),
-  history: generateMockTripHistory() as TripHistoryItem[],
   favorites: [...DEFAULT_FAVORITE_ADDRESSES],
   paymentMethod: 'card',
   promoCodes: new Map([
@@ -70,12 +65,96 @@ const store: {
   ]),
 };
 
-// ─── Поиск адресов с автодополнением ─────────────────────────────────────────
+// ─── Преобразование строки DB → TaxiOrder ────────────────────────────────────
+function rowToTaxiOrder(row: Record<string, unknown>): TaxiOrder {
+  const tariffDef = TARIFFS.find((t) => t.id === (row.tariff as string)) ?? TARIFFS[0];
+  const pickup: TaxiAddress = {
+    id: `pickup_${row.id}`,
+    address: (row.pickup_address as string) ?? '',
+    coordinates: {
+      lat: (row.pickup_lat as number) ?? 0,
+      lng: (row.pickup_lng as number) ?? 0,
+    },
+  };
+  const destination: TaxiAddress | undefined =
+    row.destination_address
+      ? {
+          id: `dest_${row.id}`,
+          address: (row.destination_address as string),
+          coordinates: {
+            lat: (row.destination_lat as number) ?? 0,
+            lng: (row.destination_lng as number) ?? 0,
+          },
+        }
+      : undefined;
+
+  return {
+    id: row.id as string,
+    status: (row.status as TaxiOrder['status']) ?? 'searching_driver',
+    pickup,
+    destination,
+    stops: [],
+    tariff: { ...tariffDef, surgeMultiplier: 1.0 },
+    estimatedPrice: (row.estimated_price as number) ?? 0,
+    finalPrice: (row.final_price as number) ?? undefined,
+    estimatedDuration: (row.estimated_duration as number) ?? 0,
+    estimatedDistance: (row.estimated_distance as number) ?? 0,
+    paymentMethod: (row.payment_method as PaymentMethod) ?? 'card',
+    createdAt: (row.created_at as string) ?? new Date().toISOString(),
+    completedAt: (row.completed_at as string) ?? undefined,
+    cancelledAt: (row.cancelled_at as string) ?? undefined,
+    cancellationReason: (row.cancellation_reason as CancellationReason) ?? undefined,
+    pinCode: (row.pin_code as string) ?? '',
+    promoCode: (row.promo_code as string) ?? undefined,
+    discount: (row.discount as number) ?? undefined,
+  };
+}
+
+// ─── Преобразование строки DB → TripHistoryItem ───────────────────────────────
+function rowToHistoryItem(row: Record<string, unknown>): TripHistoryItem {
+  const tariffId = (row.tariff as VehicleClass) ?? 'economy';
+  const tariffDef = TARIFFS.find((t) => t.id === tariffId) ?? TARIFFS[0];
+  return {
+    id: row.id as string,
+    pickup: {
+      id: `pickup_${row.id}`,
+      address: (row.pickup_address as string) ?? '',
+      coordinates: {
+        lat: (row.pickup_lat as number) ?? 0,
+        lng: (row.pickup_lng as number) ?? 0,
+      },
+    },
+    destination: {
+      id: `dest_${row.id}`,
+      address: (row.destination_address as string) ?? '',
+      coordinates: {
+        lat: (row.destination_lat as number) ?? 0,
+        lng: (row.destination_lng as number) ?? 0,
+      },
+    },
+    tariff: tariffId,
+    tariffName: tariffDef.name,
+    price: (row.final_price as number) ?? (row.estimated_price as number) ?? 0,
+    duration: (row.estimated_duration as number) ?? 0,
+    distance: (row.estimated_distance as number) ?? 0,
+    driver: { name: 'Водитель', rating: 5 },
+    vehicle: { make: '-', model: '-', color: '-', plateNumber: '-' },
+    date: (row.completed_at as string) ?? (row.cancelled_at as string) ?? (row.created_at as string) ?? '',
+    status: (row.status as string) === 'completed' ? 'completed' : 'cancelled',
+  };
+}
+
+// ─── Получить текущего пользователя ──────────────────────────────────────────
+async function getUid(): Promise<string> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Пользователь не авторизован');
+  return user.id;
+}
+
+// ─── Поиск адресов с автодополнением (mock) ──────────────────────────────────
 export async function searchAddresses(query: string): Promise<AddressSuggestion[]> {
   await delay(200 + Math.random() * 200);
-
   if (!query.trim()) return [];
-
   const q = query.toLowerCase();
   return MOCK_ADDRESS_SUGGESTIONS.filter(
     (s) =>
@@ -84,7 +163,7 @@ export async function searchAddresses(query: string): Promise<AddressSuggestion[
   );
 }
 
-// ─── Избранные и недавние адреса ─────────────────────────────────────────────
+// ─── Избранные адреса (локально — нет таблицы в DB) ──────────────────────────
 export async function getFavoriteAddresses(): Promise<FavoriteAddress[]> {
   return store.favorites.filter((f) => !!f.address);
 }
@@ -98,14 +177,12 @@ export async function saveFavoriteAddress(
     icon: addressData.type === 'home' ? '🏠' : addressData.type === 'work' ? '💼' : '📍',
     ...addressData,
   };
-
   if (existing) {
     const idx = store.favorites.indexOf(existing);
     store.favorites[idx] = updated;
   } else {
     store.favorites.push(updated);
   }
-
   return updated;
 }
 
@@ -114,23 +191,20 @@ export async function deleteFavoriteAddress(id: string): Promise<void> {
   if (idx !== -1) store.favorites.splice(idx, 1);
 }
 
-// ─── Расчёт стоимости по всем тарифам ────────────────────────────────────────
+// ─── Расчёт стоимости (mock) ──────────────────────────────────────────────────
 export async function getTariffEstimates(
   from: { lat: number; lng: number },
   to: { lat: number; lng: number }
 ): Promise<TariffEstimate[]> {
   await delay(400 + Math.random() * 300);
-
-  // Применим случайные surge к некоторым тарифам
   const tariffs = TARIFFS.map((t) => ({
     ...t,
     surgeMultiplier: generateSurgeMultiplier(),
   }));
-
   return estimateAllTariffs(tariffs, from, to);
 }
 
-// ─── Создание заказа ──────────────────────────────────────────────────────────
+// ─── Создание заказа (Supabase) ───────────────────────────────────────────────
 export async function createOrder(params: {
   pickup: TaxiAddress;
   destination: TaxiAddress;
@@ -139,22 +213,16 @@ export async function createOrder(params: {
   paymentMethod: PaymentMethod;
   promoCode?: string;
 }): Promise<TaxiOrder> {
-  await delay(300);
-
+  const userId = await getUid();
   const tariff = TARIFFS.find((t) => t.id === params.tariffId);
   if (!tariff) throw new Error(`Тариф ${params.tariffId} не найден`);
 
-  // Рассчитываем стоимость
-  const [estimate] = await getTariffEstimates(
+  const estimates = await getTariffEstimates(
     params.pickup.coordinates,
     params.destination.coordinates
   );
-  const selectedEstimate = (await getTariffEstimates(
-    params.pickup.coordinates,
-    params.destination.coordinates
-  )).find((e) => e.id === params.tariffId) ?? estimate;
+  const selectedEstimate = estimates.find((e) => e.id === params.tariffId) ?? estimates[0];
 
-  // Применяем промокод
   let discount = 0;
   if (params.promoCode) {
     const promo = store.promoCodes.get(params.promoCode.toUpperCase());
@@ -167,191 +235,238 @@ export async function createOrder(params: {
     }
   }
 
-  const order: TaxiOrder = {
-    id: generateId('order'),
-    status: 'searching_driver',
-    pickup: params.pickup,
-    destination: params.destination,
-    stops: params.stops ?? [],
-    tariff: {
-      ...tariff,
-      surgeMultiplier: selectedEstimate.surgeMultiplier,
-    },
-    estimatedPrice: Math.max(0, selectedEstimate.estimatedPrice - discount),
-    estimatedDuration: selectedEstimate.estimatedDuration,
-    estimatedDistance: selectedEstimate.estimatedDistance,
-    paymentMethod: params.paymentMethod,
-    createdAt: new Date().toISOString(),
-    pinCode: generatePinCode(),
-    promoCode: params.promoCode,
-    discount: discount > 0 ? discount : undefined,
-  };
+  const pinCode = generatePinCode();
 
-  store.activeOrders.set(order.id, order);
-  return order;
-}
+  const { data: ride, error } = await supabase
+    .from('taxi_rides')
+    .insert({
+      passenger_id: userId,
+      status: 'searching_driver',
+      pickup_address: params.pickup.address,
+      pickup_lat: params.pickup.coordinates.lat,
+      pickup_lng: params.pickup.coordinates.lng,
+      destination_address: params.destination.address,
+      destination_lat: params.destination.coordinates.lat,
+      destination_lng: params.destination.coordinates.lng,
+      tariff: params.tariffId,
+      payment_method: params.paymentMethod,
+      estimated_price: Math.max(0, selectedEstimate.estimatedPrice - discount),
+      estimated_distance: selectedEstimate.estimatedDistance,
+      estimated_duration: selectedEstimate.estimatedDuration,
+      pin_code: pinCode,
+      promo_code: params.promoCode ?? null,
+      discount: discount > 0 ? discount : null,
+    })
+    .select()
+    .single();
 
-// ─── Поиск водителя ───────────────────────────────────────────────────────────
-export async function searchDriver(orderId: string): Promise<Driver> {
-  const order = store.activeOrders.get(orderId);
-  if (!order) throw new Error(`Заказ ${orderId} не найден`);
-
-  // Симуляция поиска: задержка 3–8 секунд
-  const searchTime = 3000 + Math.random() * 5000;
-  await delay(searchTime);
-
-  // 5% шанс, что водителей нет → всё равно вернём водителя для MVP
-  const driver = generateMockDriver(order.pickup.coordinates);
-
-  // Обновляем заказ
-  const updatedOrder: TaxiOrder = {
-    ...order,
-    status: 'driver_found',
-    driver,
-  };
-  store.activeOrders.set(orderId, updatedOrder);
-
-  return driver;
-}
-
-// ─── Получить активный заказ ──────────────────────────────────────────────────
-export async function getActiveOrder(): Promise<TaxiOrder | null> {
-  for (const order of store.activeOrders.values()) {
-    if (!['completed', 'cancelled'].includes(order.status)) {
-      return order;
-    }
+  if (error || !ride) {
+    logger.error('[taxi] createOrder failed', error);
+    throw new Error(error?.message ?? 'Не удалось создать заказ');
   }
-  return null;
+
+  // Запускаем поиск водителя через Edge Function (не ждём — фоновый вызов)
+  supabase.functions
+    .invoke('taxi-dispatch', {
+      body: {
+        order_id: ride.id,
+        pickup_lat: params.pickup.coordinates.lat,
+        pickup_lng: params.pickup.coordinates.lng,
+        tariff: params.tariffId,
+      },
+    })
+    .catch((err) => logger.warn('[taxi] dispatch invoke error', err));
+
+  return rowToTaxiOrder(ride as Record<string, unknown>);
 }
 
-// ─── Получить заказ по ID ─────────────────────────────────────────────────────
+// ─── Поиск водителя (mock — реальный поиск идёт через taxi-dispatch) ─────────
+export async function searchDriver(orderId: string): Promise<Driver> {
+  // Ждём обновления статуса из Realtime (до 8 сек), иначе возвращаем mock-водителя
+  const order = await getOrderById(orderId);
+  if (order?.driver) return order.driver;
+
+  await delay(3000 + Math.random() * 5000);
+
+  const current = await getOrderById(orderId);
+  if (current?.driver) return current.driver;
+
+  // Если DB ещё не обновился — возвращаем mock для UI
+  const pickup = order?.pickup.coordinates ?? DEFAULT_MAP_CENTER;
+  return generateMockDriver(pickup);
+}
+
+// ─── Получить активный заказ (Supabase) ──────────────────────────────────────
+export async function getActiveOrder(): Promise<TaxiOrder | null> {
+  const userId = await getUid().catch(() => null);
+  if (!userId) return null;
+
+  const { data, error } = await supabase
+    .from('taxi_rides')
+    .select('*')
+    .eq('passenger_id', userId)
+    .not('status', 'in', '("completed","cancelled")')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    logger.error('[taxi] getActiveOrder failed', error);
+    return null;
+  }
+  return data ? rowToTaxiOrder(data as Record<string, unknown>) : null;
+}
+
+// ─── Получить заказ по ID (Supabase) ─────────────────────────────────────────
 export async function getOrderById(orderId: string): Promise<TaxiOrder | null> {
-  return store.activeOrders.get(orderId) ?? null;
+  const userId = await getUid().catch(() => null);
+  if (!userId) return null;
+
+  const { data, error } = await supabase
+    .from('taxi_rides')
+    .select('*')
+    .eq('id', orderId)
+    .eq('passenger_id', userId)
+    .maybeSingle();
+
+  if (error) {
+    logger.error('[taxi] getOrderById failed', error);
+    return null;
+  }
+  return data ? rowToTaxiOrder(data as Record<string, unknown>) : null;
 }
 
-// ─── Обновить статус заказа ───────────────────────────────────────────────────
+// ─── Обновить статус заказа (Supabase) ───────────────────────────────────────
 export async function updateOrderStatus(
   orderId: string,
   status: TaxiOrder['status']
 ): Promise<TaxiOrder> {
-  const order = store.activeOrders.get(orderId);
-  if (!order) throw new Error(`Заказ ${orderId} не найден`);
-
-  const updated: TaxiOrder = { ...order, status };
-
+  const updates: Record<string, unknown> = { status };
   if (status === 'completed') {
-    updated.completedAt = new Date().toISOString();
-    updated.finalPrice = order.estimatedPrice;
-    // Добавить в историю
-    store.history.unshift(orderToHistoryItem(updated));
+    updates.completed_at = new Date().toISOString();
   }
 
-  if (status === 'cancelled') {
-    updated.cancelledAt = new Date().toISOString();
-    store.activeOrders.delete(orderId);
-    return updated;
-  }
+  const { data, error } = await supabase
+    .from('taxi_rides')
+    .update(updates)
+    .eq('id', orderId)
+    .select()
+    .single();
 
-  store.activeOrders.set(orderId, updated);
-  return updated;
+  if (error || !data) {
+    logger.error('[taxi] updateOrderStatus failed', error);
+    throw new Error(error?.message ?? 'Не удалось обновить статус заказа');
+  }
+  return rowToTaxiOrder(data as Record<string, unknown>);
 }
 
-// ─── Отмена заказа ────────────────────────────────────────────────────────────
+// ─── Отмена заказа (Supabase) ─────────────────────────────────────────────────
 export async function cancelOrder(
   orderId: string,
   reason: CancellationReason = 'changed_plans'
 ): Promise<void> {
-  const order = store.activeOrders.get(orderId);
-  if (!order) return;
+  const { error } = await supabase
+    .from('taxi_rides')
+    .update({
+      status: 'cancelled',
+      cancellation_reason: reason,
+      cancelled_at: new Date().toISOString(),
+      cancelled_by: 'passenger',
+    })
+    .eq('id', orderId);
 
-  const cancelled: TaxiOrder = {
-    ...order,
-    status: 'cancelled',
-    cancelledAt: new Date().toISOString(),
-    cancellationReason: reason,
-  };
-
-  store.history.unshift(orderToHistoryItem(cancelled));
-  store.activeOrders.delete(orderId);
+  if (error) {
+    logger.error('[taxi] cancelOrder failed', error);
+  }
 }
 
-// ─── Оценка поездки ───────────────────────────────────────────────────────────
+// ─── Оценка поездки (Supabase) ────────────────────────────────────────────────
 export async function rateTrip(
   orderId: string,
   rating: number,
   tip: number,
   comment?: string
 ): Promise<void> {
-  await delay(200);
+  const userId = await getUid().catch(() => null);
+  if (!userId) return;
 
-  // Обновить в истории
-  const historyItem = store.history.find((h) => h.id === orderId);
-  if (historyItem) {
-    historyItem.userRating = rating;
-    historyItem.tip = tip;
+  // Попытка вставить в taxi_ratings (если таблица существует)
+  const { error: ratingError } = await supabase
+    .from('taxi_ratings' as never)
+    .insert({
+      order_id: orderId,
+      passenger_id: userId,
+      rating,
+      tip,
+      comment: comment ?? null,
+    } as never);
+
+  if (ratingError) {
+    // Таблица может не существовать — логируем и продолжаем
+    logger.warn('[taxi] rateTrip insert failed (table may not exist)', ratingError);
   }
 
-  // Удалить из active
-  store.activeOrders.delete(orderId);
+  // Также обновляем запись поездки с финальной оценкой
+  await supabase
+    .from('taxi_rides')
+    .update({ final_price: undefined } as never)
+    .eq('id', orderId);
 }
 
-// ─── История поездок ──────────────────────────────────────────────────────────
+// ─── История поездок (Supabase) ───────────────────────────────────────────────
 export async function getOrderHistory(params?: {
   page?: number;
   limit?: number;
   status?: 'completed' | 'cancelled';
 }): Promise<{ items: TripHistoryItem[]; total: number; hasMore: boolean }> {
-  await delay(300);
+  const userId = await getUid().catch(() => null);
+  if (!userId) {
+    // Не авторизован — вернуть mock историю
+    const mockItems = generateMockTripHistory() as TripHistoryItem[];
+    return { items: mockItems.slice(0, params?.limit ?? 10), total: mockItems.length, hasMore: false };
+  }
 
   const page = params?.page ?? 1;
   const limit = params?.limit ?? 10;
   const offset = (page - 1) * limit;
 
-  let items = store.history;
-  if (params?.status) {
-    items = items.filter((i) => i.status === params.status);
+  let query = supabase
+    .from('taxi_rides')
+    .select('*', { count: 'exact' })
+    .eq('passenger_id', userId)
+    .in('status', params?.status ? [params.status] : ['completed', 'cancelled'])
+    .order('created_at', { ascending: false })
+    .range(offset, offset + limit - 1);
+
+  const { data, count, error } = await query;
+
+  if (error) {
+    logger.error('[taxi] getOrderHistory failed', error);
+    return { items: [], total: 0, hasMore: false };
   }
 
-  return {
-    items: items.slice(offset, offset + limit),
-    total: items.length,
-    hasMore: offset + limit < items.length,
-  };
+  const total = count ?? 0;
+  const items = (data ?? []).map((row) => rowToHistoryItem(row as Record<string, unknown>));
+  return { items, total, hasMore: offset + limit < total };
 }
 
-// ─── Применить промокод ───────────────────────────────────────────────────────
+// ─── Применить промокод (локально) ───────────────────────────────────────────
 export async function applyPromoCode(
   code: string,
   orderAmount: number
 ): Promise<PromoCode> {
   await delay(400);
-
   const promo = store.promoCodes.get(code.toUpperCase());
-
   if (!promo) {
-    return {
-      code,
-      discount: 0,
-      validUntil: '',
-      description: 'Промокод не найден',
-      isValid: false,
-    };
+    return { code, discount: 0, validUntil: '', description: 'Промокод не найден', isValid: false };
   }
-
   const isExpired = new Date(promo.validUntil) < new Date();
-  const isBelowMinAmount = promo.minOrderAmount
-    ? orderAmount < promo.minOrderAmount
-    : false;
-
-  if (isExpired || isBelowMinAmount) {
-    return { ...promo, isValid: false };
-  }
-
+  const isBelowMinAmount = promo.minOrderAmount ? orderAmount < promo.minOrderAmount : false;
+  if (isExpired || isBelowMinAmount) return { ...promo, isValid: false };
   return promo;
 }
 
 // ─── Позиция водителя (mock real-time) ───────────────────────────────────────
-// Возвращает незначительно смещённую позицию от предыдущей для симуляции движения
 const driverPositionCache = new Map<string, { lat: number; lng: number; step: number }>();
 
 export async function getDriverLocation(
@@ -364,7 +479,6 @@ export async function getDriverLocation(
     step: 0,
   };
 
-  // Движение в сторону цели
   let newLat = current.lat;
   let newLng = current.lng;
   let heading = 0;
@@ -377,13 +491,7 @@ export async function getDriverLocation(
       targetLocation.lat - current.lat,
       targetLocation.lng - current.lng
     ) * (180 / Math.PI);
-
-    driverPositionCache.set(driverId, {
-      lat: newLat,
-      lng: newLng,
-      step: current.step + 1,
-    });
-
+    driverPositionCache.set(driverId, { lat: newLat, lng: newLng, step: current.step + 1 });
     const remainingEta = Math.max(1, Math.round((1 - progress) * 8));
     return { lat: newLat, lng: newLng, heading, eta: remainingEta };
   }
@@ -393,24 +501,22 @@ export async function getDriverLocation(
     lng: newLng + (Math.random() - 0.5) * 0.0005,
     step: current.step + 1,
   });
-
   return { lat: newLat, lng: newLng, heading: 0, eta: 5 };
 }
 
-// ─── Поделиться поездкой ──────────────────────────────────────────────────────
+// ─── Поделиться поездкой (mock) ───────────────────────────────────────────────
 export async function shareTrip(orderId: string): Promise<string> {
   await delay(100);
   return `https://app.mansoni.ru/taxi/shared/${orderId}?t=${Date.now()}`;
 }
 
-// ─── SOS ─────────────────────────────────────────────────────────────────────
+// ─── SOS (mock) ───────────────────────────────────────────────────────────────
 export async function sendSos(orderId: string): Promise<void> {
   await delay(500);
   logger.warn(`[SOS] Экстренный сигнал отправлен для заказа: ${orderId}`);
-  // В production: отправить уведомление в службу безопасности, сохранить геопозицию
 }
 
-// ─── Обновить способ оплаты ───────────────────────────────────────────────────
+// ─── Способ оплаты (локально) ─────────────────────────────────────────────────
 export async function updatePaymentMethod(method: PaymentMethod): Promise<void> {
   store.paymentMethod = method;
 }
@@ -419,48 +525,15 @@ export async function getPaymentMethod(): Promise<PaymentMethod> {
   return store.paymentMethod;
 }
 
-// ─── Конвертация заказа в историю ─────────────────────────────────────────────
-function orderToHistoryItem(order: TaxiOrder): TripHistoryItem {
-  return {
-    id: order.id,
-    pickup: order.pickup,
-    destination: order.destination!,
-    tariff: order.tariff.id,
-    tariffName: order.tariff.name,
-    price: order.finalPrice ?? order.estimatedPrice,
-    duration: order.estimatedDuration,
-    distance: order.estimatedDistance,
-    driver: order.driver
-      ? {
-          name: order.driver.name,
-          photo: order.driver.photo,
-          rating: order.driver.rating,
-        }
-      : { name: 'Неизвестно', rating: 0 },
-    vehicle: order.driver
-      ? {
-          make: order.driver.car.make,
-          model: order.driver.car.model,
-          color: order.driver.car.color,
-          plateNumber: order.driver.car.plateNumber,
-        }
-      : { make: '-', model: '-', color: '-', plateNumber: '-' },
-    date: order.completedAt ?? order.cancelledAt ?? order.createdAt,
-    status: order.status === 'completed' ? 'completed' : 'cancelled',
-  };
-}
-
-// ─── Nearby drivers для главного экрана ──────────────────────────────────────
+// ─── Nearby drivers для главного экрана (mock) ───────────────────────────────
 export async function getNearbyDrivers(
   location: { lat: number; lng: number },
   tariffId?: VehicleClass
 ): Promise<Array<{ id: string; location: { lat: number; lng: number }; tariff: VehicleClass }>> {
   await delay(100);
-
   const tariffs: VehicleClass[] = tariffId
     ? [tariffId]
     : ['economy', 'comfort', 'business', 'economy', 'economy'];
-
   return Array.from({ length: 8 }, (_, i) => ({
     id: `nearby_${i}`,
     location: {
@@ -471,7 +544,7 @@ export async function getNearbyDrivers(
   }));
 }
 
-// ─── Маршрут для карты ────────────────────────────────────────────────────────
+// ─── Маршрут для карты (mock) ─────────────────────────────────────────────────
 export async function calculateRoute(
   from: { lat: number; lng: number },
   to: { lat: number; lng: number }

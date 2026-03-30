@@ -4,7 +4,7 @@ import { SwipeBackGesture } from "@/components/layout/SwipeBackGesture";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { Suspense, lazy, useEffect } from "react";
 import { ChatsPage } from "@/pages/ChatsPage";
 import { useDeepLinks } from "@/hooks/useDeepLinks";
@@ -341,6 +341,7 @@ const App = () => {
                         <HomePage />
                       </Suspense>
                     } />
+                    <Route path="/feed" element={<Navigate to="/" replace />} />
                     <Route path="/search" element={
                       <Suspense fallback={<PageLoader />}>
                         <SearchPage />

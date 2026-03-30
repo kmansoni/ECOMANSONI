@@ -594,10 +594,15 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
   React.useEffect(() => {
     // DB-backed source of truth for "accounts on this device".
     // Vault remains a cache for tokens and offline identity.
+    // Guard: only call the authenticated RPC when a session exists to avoid
+    // HTTP 400 noise in the console for unauthenticated page loads.
     let cancelled = false;
     const deviceId = getOrCreateDeviceId();
 
     void (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session || cancelled) return;
+
       const rows = await fetchDeviceAccountsFromDb(deviceId);
       if (cancelled) return;
       if (!rows) return;

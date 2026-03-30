@@ -14,6 +14,22 @@ export class AppErrorBoundary extends React.Component<React.PropsWithChildren, S
 
   override componentDidCatch(error: unknown) {
     logger.error("app.error_boundary.runtime_error", { error });
+    // Vite/webpack chunk load failure after a deploy or HMR rebuild — auto-reload once.
+    // Guard with sessionStorage to prevent infinite reload loops.
+    if (
+      error instanceof Error &&
+      (error.message.includes("Loading chunk") ||
+        error.message.includes("Failed to fetch dynamically imported module") ||
+        error.message.includes("Importing a module script failed") ||
+        (error as { name?: string }).name === "ChunkLoadError")
+    ) {
+      const key = "app_chunk_reload_ts";
+      const last = Number(sessionStorage.getItem(key) ?? 0);
+      if (Date.now() - last > 10_000) {
+        sessionStorage.setItem(key, String(Date.now()));
+        window.location.reload();
+      }
+    }
   }
 
   private handleReload = () => {

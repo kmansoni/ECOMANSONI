@@ -362,8 +362,9 @@ export function useChannels() {
   }, []);
 
   useEffect(() => {
+    if (!user) return;
     fetchChannels();
-  }, [fetchChannels]);
+  }, [fetchChannels, user]);
 
   // Realtime subscription for channel updates
   useEffect(() => {

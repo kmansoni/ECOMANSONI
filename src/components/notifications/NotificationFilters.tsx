@@ -32,13 +32,16 @@ export function NotificationFilters({ active, onChange, notifications }: Props) 
     active === "you" || active === "following" ? active : "you";
 
   return (
-    <div className="flex border-b border-white/10 relative">
+    <div role="tablist" aria-label="Фильтры уведомлений" className="flex border-b border-white/10 relative">
       {TABS.map(({ id, label }) => {
         const badge = getUnread(id);
         const isActive = normalisedActive === id;
         return (
           <button
             key={id}
+            role="tab"
+            aria-selected={isActive}
+            aria-controls={`notifications-panel-${id}`}
             onClick={() => onChange(id)}
             className={cn(
               "flex-1 py-3 text-sm font-semibold flex items-center justify-center gap-1.5 relative transition-colors",

@@ -29,17 +29,6 @@ function formatSubscribers(n: number): string {
   return `${n} подписчик${n % 10 === 1 && n % 100 !== 11 ? "" : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? "а" : "ов"}`;
 }
 
-function stableHash32(s: string): number {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) {
-    h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
-  }
-  return h >>> 0;
-}
-
-function stableIntInRange(seed: string, min: number, max: number): number {
-  return min + (stableHash32(seed) % (max - min + 1));
-}
 
 interface ChannelHeaderProps {
   channel: Channel;
@@ -103,9 +92,8 @@ export function ChannelHeader(props: ChannelHeaderProps) {
 
   return (
     <div className="flex-shrink-0 flex items-center gap-2 px-2 py-2 bg-background/95 backdrop-blur-sm border-b border-border relative z-10 safe-area-top">
-      <button onClick={onBack} className="flex items-center gap-1 text-primary">
+      <button onClick={onBack} className="flex items-center gap-1 text-primary" aria-label="Назад">
         <ArrowLeft className="w-5 h-5" />
-        <span className="text-sm font-medium">{stableIntInRange(`channel:${channel.id}:header`, 10, 109)}</span>
       </button>
 
       <button
