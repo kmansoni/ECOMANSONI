@@ -84,15 +84,18 @@ jobs:
             echo "── [email-router] Start / restart via PM2 ──"
             cd "$ROUTER_DIR"
 
+            # Load env vars into shell, then pass to PM2
+            set -a; . "$ROUTER_ENV"; set +a
+
             if pm2 describe email-router >/dev/null 2>&1; then
-              pm2 reload email-router --update-env
-            else
-              pm2 start src/index.js --name email-router \
-                --env-file .env \
-                --time \
-                --max-restarts 5 \
-                --restart-delay 3000
+              pm2 delete email-router
             fi
+
+            pm2 start src/index.js \
+              --name email-router \
+              --time \
+              --max-restarts 5 \
+              --restart-delay 3000
             pm2 save
 
             echo "── [email-router] Health check ──"
