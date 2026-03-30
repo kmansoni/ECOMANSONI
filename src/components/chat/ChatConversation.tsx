@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo, useLayoutEffect } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { AnimatedEmojiFullscreen } from "./AnimatedEmojiFullscreen";
 import { isSingleEmoji } from "./emojiUtils";
 import { ChatHeader } from "./ChatHeader";
@@ -104,6 +105,142 @@ interface ChatConversationProps {
   onRefetch?: () => void;
   initialOpenPanelAction?: "settings" | "timer" | "scheduled";
   onInitialPanelHandled?: () => void;
+}
+
+/** Virtualized message list for performance with large chats */
+function VirtualizedMessages({
+  messages,
+  userId,
+  conversationId,
+  chatAvatar,
+  isGroup,
+  selectionMode,
+  selectedIds,
+  playingVoice,
+  manualMediaLoaded,
+  contextMenuMessageId,
+  decryptedCache,
+  senderProfiles,
+  style,
+  callbacks,
+  scrollContainerRef,
+  messagesEndRef,
+}: {
+  messages: any[];
+  userId?: string;
+  conversationId: string;
+  chatAvatar: string | null;
+  isGroup?: boolean;
+  selectionMode: boolean;
+  selectedIds: Set<string>;
+  playingVoice: string | null;
+  manualMediaLoaded: Set<string>;
+  contextMenuMessageId: string | null;
+  decryptedCache: Map<string, string>;
+  senderProfiles: Record<string, any>;
+  style: any;
+  callbacks: any;
+  scrollContainerRef: React.RefObject<HTMLDivElement>;
+  messagesEndRef: React.RefObject<HTMLDivElement>;
+}) {
+  const VIRTUALIZE_THRESHOLD = 60;
+
+  // For small chats, render directly without virtualization overhead
+  if (messages.length < VIRTUALIZE_THRESHOLD) {
+    return (
+      <>
+        <div className="space-y-1 min-w-0">
+          {messages.map((message, index) => (
+            <ChatMessageItem
+              key={message.id}
+              message={message}
+              prevMessage={index > 0 ? messages[index - 1] : null}
+              userId={userId}
+              conversationId={conversationId}
+              chatAvatar={chatAvatar}
+              isGroup={isGroup}
+              selectionMode={selectionMode}
+              selectedIds={selectedIds}
+              playingVoice={playingVoice}
+              manualMediaLoaded={manualMediaLoaded}
+              contextMenuMessageId={contextMenuMessageId}
+              decryptedCache={decryptedCache}
+              senderProfiles={senderProfiles}
+              style={style}
+              callbacks={callbacks}
+            />
+          ))}
+        </div>
+        <div ref={messagesEndRef} />
+      </>
+    );
+  }
+
+  // Large chats: use virtualization
+  const virtualizer = useVirtualizer({
+    count: messages.length,
+    getScrollElement: () => scrollContainerRef.current,
+    estimateSize: () => 64, // average message height estimate
+    overscan: 8,
+  });
+
+  // Auto-scroll to bottom on new messages
+  useLayoutEffect(() => {
+    if (messages.length > 0) {
+      virtualizer.scrollToIndex(messages.length - 1, { align: "end" });
+    }
+  }, [messages.length]);
+
+  return (
+    <>
+      <div
+        className="min-w-0"
+        style={{
+          height: `${virtualizer.getTotalSize()}px`,
+          width: "100%",
+          position: "relative",
+        }}
+      >
+        {virtualizer.getVirtualItems().map((virtualRow) => {
+          const index = virtualRow.index;
+          const message = messages[index];
+          return (
+            <div
+              key={message.id}
+              data-index={index}
+              ref={virtualizer.measureElement}
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                width: "100%",
+                transform: `translateY(${virtualRow.start}px)`,
+              }}
+            >
+              <ChatMessageItem
+                message={message}
+                prevMessage={index > 0 ? messages[index - 1] : null}
+                userId={userId}
+                conversationId={conversationId}
+                chatAvatar={chatAvatar}
+                isGroup={isGroup}
+                selectionMode={selectionMode}
+                selectedIds={selectedIds}
+                playingVoice={playingVoice}
+                manualMediaLoaded={manualMediaLoaded}
+                contextMenuMessageId={contextMenuMessageId}
+                decryptedCache={decryptedCache}
+                senderProfiles={senderProfiles}
+                style={style}
+                callbacks={callbacks}
+              />
+            </div>
+          );
+        })}
+      </div>
+      <div ref={messagesEndRef} />
+    </>
+  );
 }
 
 const TELEGRAM_MAX_MESSAGE_CHARS = 4096;
@@ -1276,30 +1413,24 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
           </div>
         )}
         
-        <div className="space-y-1 min-w-0">
-
-        {renderMessages.map((message, index) => (
-          <ChatMessageItem
-            key={message.id}
-            message={message}
-            prevMessage={index > 0 ? renderMessages[index - 1] : null}
-            userId={user?.id}
-            conversationId={conversationId}
-            chatAvatar={chatAvatar}
-            isGroup={isGroup}
-            selectionMode={selectionMode}
-            selectedIds={selectedIds}
-            playingVoice={playingVoice}
-            manualMediaLoaded={manualMediaLoaded}
-            contextMenuMessageId={contextMenuMessage?.id ?? null}
-            decryptedCache={decryptedCache}
-            senderProfiles={senderProfiles}
-            style={messageStyleConfig}
-            callbacks={messageCallbacks}
-          />
-        ))}
-        </div>
-        <div ref={messagesEndRef} />
+        <VirtualizedMessages
+          messages={renderMessages}
+          userId={user?.id}
+          conversationId={conversationId}
+          chatAvatar={chatAvatar}
+          isGroup={isGroup}
+          selectionMode={selectionMode}
+          selectedIds={selectedIds}
+          playingVoice={playingVoice}
+          manualMediaLoaded={manualMediaLoaded}
+          contextMenuMessageId={contextMenuMessage?.id ?? null}
+          decryptedCache={decryptedCache}
+          senderProfiles={senderProfiles}
+          style={messageStyleConfig}
+          callbacks={messageCallbacks}
+          scrollContainerRef={scrollContainerRef}
+          messagesEndRef={messagesEndRef}
+        />
         </div>
       </ChatBackground>
       </div>{/* end scrollContainerRef div */}

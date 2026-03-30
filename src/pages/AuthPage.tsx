@@ -1,6 +1,8 @@
 import { useRef, useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { QRCodeLogin } from "@/components/auth/QRCodeLogin";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PhoneInput } from "@/components/ui/phone-input";
@@ -21,11 +23,11 @@ import { logger } from "@/lib/logger";
  *  register — phone + email → send OTP to given email
  *  otp      — enter 6-digit code from email
  */
-type AuthMode = "select" | "login" | "register" | "otp";
+type AuthMode = "select" | "login" | "register" | "otp" | "qr";
 
 const OTP_RESEND_COOLDOWN_SEC = 60;
-const AUTH_TIMEOUT_MS = 20_000;
-const AUTH_RETRY_ATTEMPTS = 2;
+const AUTH_TIMEOUT_MS = 10_000;  // 10s per attempt (was 20s) — 2 URLs × 2 retries × 10s = 40s max
+const AUTH_RETRY_ATTEMPTS = 1;   // 1 retry (was 2) — reduces max wait to 2 URLs × 2 attempts × 10s = 40s → 20s
 const AUTH_RETRY_DELAY_MS = 700;
 
 type ApiPayload = Record<string, unknown>;
@@ -784,7 +786,7 @@ export function AuthPage() {
                     Регистрация
                   </Button>
                   
-                  <Button 
+                  <Button
                     onClick={() => setMode("login")}
                     disabled={loading}
                     variant="outline"
@@ -792,7 +794,26 @@ export function AuthPage() {
                   >
                     Вход
                   </Button>
+
+                  <Button
+                    onClick={() => setMode("qr")}
+                    disabled={loading}
+                    variant="ghost"
+                    className="w-full h-12 rounded-2xl text-sm font-medium text-white/70 hover:text-white hover:bg-white/5 transition-all"
+                  >
+                    Войти по QR-коду
+                  </Button>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* QR Login */}
+          {mode === "qr" && (
+            <div className="relative">
+              <div className="absolute -inset-1 bg-white/10 rounded-3xl blur-xl" />
+              <div className="relative bg-white/10 backdrop-blur-2xl rounded-3xl p-6 border border-white/20 shadow-2xl">
+                <QRCodeLogin onSuccess={() => navigate("/")} />
               </div>
             </div>
           )}

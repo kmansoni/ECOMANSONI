@@ -7,6 +7,7 @@
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Phone, Video, Search, Users as UsersIcon } from "lucide-react";
 import { GradientAvatar } from "@/components/ui/gradient-avatar";
+import { TypingDots } from "./TypingDots";
 
 interface ChatHeaderProps {
   conversationId: string;
@@ -107,7 +108,10 @@ export function ChatHeader({
                   aria-hidden="true"
                 />
               ) : null}
-              <span className="truncate">{headerStatusText}</span>
+              <span className="truncate">
+                {headerStatusText}
+                {isOtherTyping && <TypingDots className="ml-1" />}
+              </span>
             </p>
           </div>
         </button>

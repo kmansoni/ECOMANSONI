@@ -13,6 +13,7 @@ import { GradientAvatar } from "@/components/ui/gradient-avatar";
 import { BubbleTail } from "./BubbleTail";
 import { DateSeparator } from "./FloatingDate";
 import { SwipeableMessage } from "./SwipeableMessage";
+import { MessageHoverActions } from "./MessageHoverActions";
 import { DoubleTapReaction } from "./DoubleTapReaction";
 import { MessageReactions } from "./MessageReactions";
 import { DisappearCountdown } from "./DisappearCountdown";
@@ -450,6 +451,12 @@ export function ChatMessageItem({
             }}
             onTouchEnd={onLongPressEnd}
           >
+            {/* Forward label */}
+            {message.content?.startsWith("↪ Переслано от") && (
+              <p className="text-[11px] font-medium text-[#6ab3f3]/70 mb-0.5 italic">
+                {message.content.split("\n")[0]}
+              </p>
+            )}
             {showSenderName && (
               <p className="text-[13px] font-medium text-[#6ab3f3] mb-0.5">{senderName}</p>
             )}
@@ -548,7 +555,7 @@ export function ChatMessageItem({
       >
         <div
           className={cn(
-            "flex items-end min-w-0",
+            "group relative flex items-end min-w-0",
             densityStyles.gap,
             isOwn ? "justify-end" : "justify-start",
             isInContextMenu && "opacity-0",
@@ -569,6 +576,17 @@ export function ChatMessageItem({
             </div>
           )}
           {renderContent()}
+          {/* Desktop hover action buttons */}
+          {!selectionMode && (
+            <MessageHoverActions
+              isOwn={isOwn}
+              onReply={() => onReply(message.id)}
+              onReact={() => onReaction(message.id, "❤️")}
+              onPin={() => {}}
+              onForward={() => {}}
+              onDelete={() => onDelete(message.id)}
+            />
+          )}
         </div>
       </SwipeableMessage>
     </Fragment>

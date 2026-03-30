@@ -1,10 +1,12 @@
 import { useRef, useState, useEffect } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import { BottomNav } from "./BottomNav";
+import { DesktopLayout } from "./DesktopLayout";
 import { ScrollContainerProvider } from "@/contexts/ScrollContainerContext";
 import { useChatOpen } from "@/contexts/ChatOpenContext";
 import { cn } from "@/lib/utils";
 import { usePresence } from "@/hooks/usePresence";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { CreateContentModal } from "@/components/feed/CreateContentModal";
 import { toast } from "sonner";
 import type { ContentType } from "@/hooks/useMediaEditor";
@@ -13,6 +15,18 @@ const BOTTOM_NAV_BAR_HEIGHT_PX = 56;
 const BOTTOM_NAV_OUTER_GAP_PX = 8;
 
 export function AppLayout() {
+  const isMobile = useIsMobile();
+
+  // Desktop: use sidebar layout
+  if (!isMobile) {
+    return <DesktopLayout />;
+  }
+
+  // Mobile: original layout
+  return <MobileLayout />;
+}
+
+function MobileLayout() {
   usePresence();
 
   const mainRef = useRef<HTMLElement>(null);
@@ -22,12 +36,12 @@ export function AppLayout() {
     location.pathname.startsWith("/profile") ||
     location.pathname.startsWith("/user/") ||
     location.pathname.startsWith("/contact/");
-  
+
   // Hide bottom nav on creation pages
-  const isCreationPage = 
+  const isCreationPage =
     location.pathname.startsWith("/create") ||
     location.pathname.startsWith("/create-surface");
-  
+
   const [createOpen, setCreateOpen] = useState(false);
 
   // Sync createOpen state with context
@@ -39,18 +53,18 @@ export function AppLayout() {
   const shouldHideMobile = shouldHideBottomNav || isCreationPage;
 
   return (
-    <div 
+    <div
       className={cn(
         "AppShell h-full flex flex-col safe-area-left safe-area-right relative bg-transparent"
       )}
-      style={{ 
+      style={{
         position: 'relative',
         overflow: 'hidden',
       }}
     >
 
       <ScrollContainerProvider value={mainRef}>
-        <main 
+        <main
           ref={mainRef}
           className={cn(
             "flex-1 overflow-x-hidden w-full native-scroll relative z-10",

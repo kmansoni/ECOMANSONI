@@ -116,9 +116,19 @@ export function MessageReactions({
                   ? 'bg-blue-500/20 border-blue-500/40 text-blue-300'
                   : 'bg-zinc-800 border-zinc-700 text-zinc-300'
               }`}
+              initial={{ scale: 0.6, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0, opacity: 0 }}
               whileTap={{ scale: 0.9 }}
+              transition={{ type: "spring", stiffness: 400, damping: 15 }}
             >
-              <span>{r.emoji}</span>
+              <motion.span
+                key={`${r.emoji}-${r.count}`}
+                animate={{ scale: [1, 1.3, 1] }}
+                transition={{ duration: 0.3 }}
+              >
+                {r.emoji}
+              </motion.span>
               {r.count > 1 && <span>{r.count}</span>}
             </motion.button>
           ))}

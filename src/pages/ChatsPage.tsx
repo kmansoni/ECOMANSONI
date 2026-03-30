@@ -22,8 +22,7 @@ import { useCallHistory } from "@/hooks/useCallHistory";
 import { useVideoCallContext } from "@/contexts/VideoCallContext";
 import { SearchUser } from "@/hooks/useSearch";
 import { joinChannelByInviteToken, joinGroupByInviteToken } from "@/lib/community-controls";
-import { formatDistanceToNow } from "date-fns";
-import { ru } from "date-fns/locale";
+import { formatTelegramTime } from "@/lib/formatTelegramTime";
 import { ScrollContainerProvider } from "@/contexts/ScrollContainerContext";
 import { usePullDownExpand } from "@/hooks/usePullDownExpand";
 import { supabase } from "@/lib/supabase";
@@ -38,6 +37,14 @@ import { motion, AnimatePresence } from "framer-motion";
 import { clearHandledChatsQueryParams, parseChatsQueryActions } from "@/lib/chat/deepLinkQuery";
 import { logger } from "@/lib/logger";
 import { EmergencySOSSheet } from "@/components/chat/EmergencySOSSheet";
+import { OnlineDot } from "@/components/ui/OnlineDot";
+import { useUserPresenceStatus } from "@/hooks/useUserPresenceStatus";
+
+/** Lightweight presence dot for chat list avatars */
+function ChatPresenceDot({ userId }: { userId?: string | null }) {
+  const { isOnline } = useUserPresenceStatus(userId);
+  return <OnlineDot isOnline={isOnline} size="sm" />;
+}
 
 
 interface LocationState {
@@ -194,6 +201,9 @@ export function ChatsPage() {
   const [selectedChannel, setSelectedChannel] = useState<Channel | null>(null);
   const [selectedGroup, setSelectedGroup] = useState<GroupChat | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [inlineSearchQuery, setInlineSearchQuery] = useState("");
+  const [inlineSearchActive, setInlineSearchActive] = useState(false);
+  const inlineSearchRef = useRef<HTMLInputElement>(null);
   const [emergencyOpen, setEmergencyOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [createMode, setCreateMode] = useState<"select" | "channel" | "group">("select");
@@ -500,6 +510,26 @@ export function ChatsPage() {
     return [...pinnedItems, ...regularItems];
   }, [activeFolder, activeFolderKeys, combinedItems, archivedChatIds, pinnedOrder, pinnedChatIds, showArchive, archivedItems]);
 
+  // Inline search filter
+  const displayItems = useMemo(() => {
+    const q = inlineSearchQuery.trim().toLowerCase();
+    if (!q) return visibleItems;
+    return visibleItems.filter((item) => {
+      let name = "";
+      let preview = "";
+      if (item.kind === "channel") {
+        name = item.channel.name?.toLowerCase() ?? "";
+      } else if (item.kind === "group") {
+        name = item.group.name?.toLowerCase() ?? "";
+      } else {
+        const other = item.conv.participants?.find((p: any) => p?.user_id !== user?.id);
+        name = (other?.display_name ?? "").toLowerCase();
+        preview = (item.conv.last_message?.content ?? "").toLowerCase();
+      }
+      return name.includes(q) || preview.includes(q);
+    });
+  }, [visibleItems, inlineSearchQuery, user?.id]);
+
   const activeCalls = useMemo(() => {
     return callsFilter === "missed" ? missedCalls : calls;
   }, [calls, callsFilter, missedCalls]);
@@ -675,13 +705,7 @@ export function ChatsPage() {
     }
   }, [conversations, selectedConversation?.id]);
 
-  const formatTime = (dateStr: string) => {
-    try {
-      return formatDistanceToNow(new Date(dateStr), { addSuffix: false, locale: ru });
-    } catch (_error) {
-      return "";
-    }
-  };
+  const formatTime = (dateStr: string) => formatTelegramTime(dateStr);
 
   // ── Swipe helpers ──────────────────────────────────────────────────────────
 
@@ -960,34 +984,56 @@ export function ChatsPage() {
               )}
             </div>
             
-            {/* Title - shifts based on expand */}
-            <h1 
-              className="text-lg font-semibold absolute left-1/2 text-foreground dark:text-white"
-              style={{
-                transform: `translateX(-50%) translateX(${(1 - effectiveExpandProgress) * 30}px)`,
-                transition: 'transform 0.25s cubic-bezier(0.25, 0.1, 0.25, 1)',
-              }}
-            >
-              {primaryTab === "calls" ? "Звонки" : "Чаты"}
-            </h1>
-            
-            {/* Actions: Search */}
-            {primaryTab === "chats" && (
-              <div className="flex items-center gap-1">
+            {/* Title / Inline search */}
+            {inlineSearchActive ? (
+              <div className="flex-1 flex items-center gap-2 mx-2">
+                <input
+                  ref={inlineSearchRef}
+                  type="text"
+                  value={inlineSearchQuery}
+                  onChange={(e) => setInlineSearchQuery(e.target.value)}
+                  placeholder="Поиск чатов..."
+                  className="flex-1 h-9 px-3 rounded-lg bg-black/5 dark:bg-white/10 border border-border/50 dark:border-white/20 text-sm text-foreground dark:text-white placeholder:text-muted-foreground outline-none focus:ring-1 focus:ring-primary/50"
+                  autoFocus
+                />
                 <button
-                  onClick={() => setEmergencyOpen(true)}
-                  className="w-9 h-9 flex items-center justify-center rounded-full bg-red-500/10 backdrop-blur-xl border border-red-500/20 hover:bg-red-500/15 transition-colors"
-                  aria-label="Открыть SOS-центр"
+                  onClick={() => { setInlineSearchActive(false); setInlineSearchQuery(""); }}
+                  className="text-sm text-primary font-medium"
                 >
-                  <AlertTriangle className="w-5 h-5 text-red-500" />
-                </button>
-                <button 
-                  onClick={() => setSearchOpen(true)}
-                  className="w-9 h-9 flex items-center justify-center rounded-full bg-black/5 dark:bg-white/10 backdrop-blur-xl border border-border/50 dark:border-white/20 hover:bg-black/10 dark:hover:bg-white/20 transition-colors"
-                >
-                  <Search className="w-5 h-5 text-foreground dark:text-white" />
+                  Отмена
                 </button>
               </div>
+            ) : (
+              <>
+                <h1
+                  className="text-lg font-semibold absolute left-1/2 text-foreground dark:text-white"
+                  style={{
+                    transform: `translateX(-50%) translateX(${(1 - effectiveExpandProgress) * 30}px)`,
+                    transition: 'transform 0.25s cubic-bezier(0.25, 0.1, 0.25, 1)',
+                  }}
+                >
+                  {primaryTab === "calls" ? "Звонки" : "Чаты"}
+                </h1>
+
+                {/* Actions: Search */}
+                {primaryTab === "chats" && (
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => setEmergencyOpen(true)}
+                      className="w-9 h-9 flex items-center justify-center rounded-full bg-red-500/10 backdrop-blur-xl border border-red-500/20 hover:bg-red-500/15 transition-colors"
+                      aria-label="Открыть SOS-центр"
+                    >
+                      <AlertTriangle className="w-5 h-5 text-red-500" />
+                    </button>
+                    <button
+                      onClick={() => setInlineSearchActive(true)}
+                      className="w-9 h-9 flex items-center justify-center rounded-full bg-black/5 dark:bg-white/10 backdrop-blur-xl border border-border/50 dark:border-white/20 hover:bg-black/10 dark:hover:bg-white/20 transition-colors"
+                    >
+                      <Search className="w-5 h-5 text-foreground dark:text-white" />
+                    </button>
+                  </div>
+                )}
+              </>
             )}
           </div>
           
@@ -1415,7 +1461,7 @@ export function ChatsPage() {
                 </div>
               ))}
 
-              {!showChatListPlaceholders && visibleItems.map((item) => {
+              {!showChatListPlaceholders && displayItems.map((item) => {
                 const itemKey = `${item.kind}-${item.id}`;
                 const swipeOffset = swipeOffsets[itemKey] ?? 0;
                 // swipe left (-) = archive/delete actions; swipe right (+) = pin/unpin
@@ -1652,6 +1698,7 @@ export function ChatsPage() {
                           avatarUrl={other.avatar_url}
                           size="md"
                         />
+                        <ChatPresenceDot userId={other.user_id} />
                       </div>
 
                       <div className="flex-1 min-w-0">
