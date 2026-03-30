@@ -163,6 +163,20 @@ jobs:
             fi
 
             sudo nginx -t && sudo systemctl reload nginx
+
+            echo "── [email-router] SMTP relay test ──"
+            # Test full SMTP session including RCPT TO external domain
+            printf "EHLO mail.mansoni.ru\r\nMAIL FROM:<noreply@mansoni.ru>\r\nRCPT TO:<postmaster@gmail.com>\r\nQUIT\r\n" \
+              | nc -w5 127.0.0.1 25 2>/dev/null || echo "[email-router] nc not available, skipping SMTP relay test"
+
+            echo "── [email-router] Direct /send test ──"
+            set -a; . "$ROUTER_ENV"; set +a
+            curl -sf -X POST http://127.0.0.1:8090/send \
+              -H "Content-Type: application/json" \
+              -H "X-API-Key: ${EMAIL_ROUTER_API_KEY}" \
+              -d '{"to":"test-deploy@mansoni.ru","subject":"Deploy test","text":"SMTP relay test from deploy"}' \
+              -w " HTTP:%{http_code}" 2>&1 || echo "[email-router] direct send test failed (see above)"
+
             echo "── [email-router] Done ──"
 
       - name: Update Supabase EMAIL_ROUTER_URL secret
