@@ -1,13 +1,27 @@
 -- =============================================================================
--- Migration: fix_ranked_feed_v2_order_by
--- Purpose:   Исправить ORDER BY в get_ranked_feed_v2 — использовать final_score
---            для ВСЕХ режимов, т.к. final_score уже корректно вычислен:
---            - smart: ML-weighted score
---            - chronological/following: recency_decay
---            Старый ORDER BY использовал CASE...NULL + fallback на created_at,
---            что работало, но было избыточным и неоптимальным.
+-- Migration: add_saves_count_to_posts
+-- Purpose:   Add missing saves_count column to posts table.
+--            The get_ranked_feed_v2 RPC and useSmartFeed fallback both reference
+--            this column but it was never created, causing "column p.saves_count
+--            does not exist" errors that break the entire feed.
 -- =============================================================================
 
+-- 1. Add the column (default 0, same pattern as likes_count/comments_count/shares_count)
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS saves_count integer DEFAULT 0;
+
+-- 2. Backfill from saved_posts aggregate
+UPDATE posts p
+SET saves_count = sub.cnt
+FROM (
+  SELECT post_id, COUNT(*)::int AS cnt
+  FROM saved_posts
+  GROUP BY post_id
+) sub
+WHERE p.id = sub.post_id
+  AND p.saves_count IS DISTINCT FROM sub.cnt;
+
+-- 3. Re-create the RPC so it picks up the new column without errors
+-- (idempotent CREATE OR REPLACE)
 CREATE OR REPLACE FUNCTION get_ranked_feed_v2(
   p_user_id         uuid,
   p_mode            text    DEFAULT 'smart',
@@ -151,12 +165,12 @@ BEGIN
       ap.is_verified,
       COALESCE(pma.media, '[]'::jsonb)                 AS media
     FROM candidates c
-    LEFT JOIN affinity a         ON a.author_id = c.author_id
-    LEFT JOIN post_tags pt       ON pt.post_id  = c.id
-    LEFT JOIN user_likes ul      ON ul.post_id  = c.id
-    LEFT JOIN user_saves us      ON us.post_id  = c.id
-    LEFT JOIN author_profiles ap ON ap.user_id  = c.author_id
-    LEFT JOIN post_media_agg pma ON pma.post_id = c.id
+    LEFT JOIN affinity a          ON a.author_id = c.author_id
+    LEFT JOIN post_tags pt        ON pt.post_id  = c.id
+    LEFT JOIN user_likes ul       ON ul.post_id  = c.id
+    LEFT JOIN user_saves us       ON us.post_id  = c.id
+    LEFT JOIN author_profiles ap  ON ap.user_id  = c.author_id
+    LEFT JOIN post_media_agg pma  ON pma.post_id = c.id
   ),
 
   -- ── 9. Final score + diversity ───────────────────────────────────────────

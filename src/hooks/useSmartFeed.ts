@@ -83,7 +83,6 @@ interface PublicFeedRow {
   created_at: string;
   likes_count: number | null;
   comments_count: number | null;
-  saves_count: number | null;
   shares_count: number | null;
   views_count: number | null;
   post_media?: FeedMedia[] | null;
@@ -93,7 +92,7 @@ interface PublicProfileRow {
   user_id: string;
   display_name: string | null;
   avatar_url: string | null;
-  is_verified?: boolean | null;
+  verified?: boolean | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -154,6 +153,14 @@ function isRecoverableEdgeFeedError(error: unknown): boolean {
   );
 }
 
+function extractErrorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === 'object' && err !== null && 'message' in err) {
+    return String((err as { message: unknown }).message);
+  }
+  return String(err ?? 'Неизвестная ошибка');
+}
+
 async function fetchPublicFeedPage(
   cursor: FeedCursor | null,
   pageSize: number,
@@ -161,7 +168,7 @@ async function fetchPublicFeedPage(
   let query = (supabase as any)
     .from("posts")
     .select(
-      "id, author_id, content, created_at, likes_count, comments_count, saves_count, shares_count, views_count, post_media(id, media_url, media_type, sort_order)",
+      "id, author_id, content, created_at, likes_count, comments_count, shares_count, views_count, post_media(id, media_url, media_type, sort_order)",
     )
     .eq("is_published", true)
     .order("created_at", { ascending: false })
@@ -176,7 +183,7 @@ async function fetchPublicFeedPage(
 
   const { data: rawPosts, error: postsError } = await query;
   if (postsError) {
-    throw postsError;
+    throw new Error(postsError.message ?? 'Ошибка загрузки постов из базы');
   }
 
   const postRows = ((rawPosts ?? []) as PublicFeedRow[]).map((row) => ({
@@ -190,7 +197,7 @@ async function fetchPublicFeedPage(
   if (authorIds.length > 0) {
     const { data: profileRows, error: profilesError } = await (supabase as any)
       .from("profiles")
-      .select("user_id, display_name, avatar_url, is_verified")
+      .select("user_id, display_name, avatar_url, verified")
       .in("user_id", authorIds);
 
     if (!profilesError) {
@@ -219,7 +226,7 @@ async function fetchPublicFeedPage(
         id: row.author_id,
         display_name: profile?.display_name ?? null,
         avatar_url: profile?.avatar_url ?? null,
-        is_verified: Boolean(profile?.is_verified),
+        is_verified: Boolean(profile?.verified),
       },
       media: (row.post_media ?? []).slice().sort((a, b) => a.sort_order - b.sort_order),
     };
@@ -339,7 +346,7 @@ export function useSmartFeed() {
         setPosts((prev) => [...prev, ...fresh]);
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Ошибка загрузки ленты';
+      const message = extractErrorMessage(err);
       setError(message);
       logger.error("[useSmartFeed] fetch error", { message });
     } finally {

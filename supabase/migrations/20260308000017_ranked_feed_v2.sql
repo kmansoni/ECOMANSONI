@@ -174,7 +174,7 @@ BEGIN
       pr.user_id,
       pr.display_name,
       pr.avatar_url,
-      COALESCE(pr.is_verified, false) AS is_verified
+      COALESCE(pr.verified, false) AS is_verified
     FROM profiles pr
     WHERE pr.user_id IN (SELECT DISTINCT author_id FROM candidates)
   ),
