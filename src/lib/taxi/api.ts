@@ -151,10 +151,31 @@ async function getUid(): Promise<string> {
   return user.id;
 }
 
-// ─── Поиск адресов с автодополнением (mock) ──────────────────────────────────
+// ─── Поиск адресов — DaData (ФИАС) с fallback на mock ───────────────────────
 export async function searchAddresses(query: string): Promise<AddressSuggestion[]> {
-  await delay(200 + Math.random() * 200);
   if (!query.trim()) return [];
+
+  // Try DaData first
+  try {
+    const { suggestAddress } = await import('@/lib/navigation/dadata');
+    const results = await suggestAddress(query, 8);
+    if (results.length > 0) {
+      return results
+        .filter((r) => r.geoLat != null && r.geoLon != null)
+        .map((r, i) => ({
+          id: r.fiasId ?? `dadata-${i}`,
+          address: r.value,
+          shortAddress: r.value.split(',')[0],
+          coordinates: { lat: r.geoLat!, lng: r.geoLon! },
+          type: 'address' as const,
+        }));
+    }
+  } catch {
+    // fallback below
+  }
+
+  // Fallback to mock
+  await delay(200 + Math.random() * 200);
   const q = query.toLowerCase();
   return MOCK_ADDRESS_SUGGESTIONS.filter(
     (s) =>

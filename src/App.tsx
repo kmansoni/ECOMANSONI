@@ -134,6 +134,9 @@ const TaxiHistoryPage = lazy(() => import("./pages/taxi/TaxiHistoryPage"));
 const TaxiSettingsPage = lazy(() => import("./pages/taxi/TaxiSettingsPage"));
 const TaxiDriverPage = lazy(() => import("./pages/taxi/TaxiDriverPage"));
 
+// Navigation module (lazy)
+const NavigationPage = lazy(() => import("@/pages/navigation/NavigationPage"));
+
 // Video Editor module (lazy)
 const EditorProjectsPage = lazy(() => import("@/pages/EditorProjectsPage"));
 const EditorPage = lazy(() => import("@/pages/EditorPage"));
@@ -799,6 +802,13 @@ const App = () => {
                   <Route path="/editor/:projectId" element={
                     <Suspense fallback={<PageLoader />}>
                       <EditorPage />
+                    </Suspense>
+                  } />
+
+                  {/* Navigation — fullscreen, outside AppLayout */}
+                  <Route path="/navigation" element={
+                    <Suspense fallback={<PageLoader />}>
+                      <NavigationPage />
                     </Suspense>
                   } />
                 </Route>
