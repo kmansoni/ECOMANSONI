@@ -115,8 +115,9 @@ export async function adminApi<T>(action: AdminApiAction, params?: Record<string
   if (error) throw error;
 
   const payload = data as AdminApiOk<T> | AdminApiErr;
-  if (!payload || (payload as any).ok !== true) {
-    throw new Error((payload as any)?.error || "Admin API error");
+  if (!payload || payload.ok !== true) {
+    const message = payload && 'error' in payload ? String(payload.error) : "Admin API error";
+    throw new Error(message);
   }
 
   return (payload as AdminApiOk<T>).data;

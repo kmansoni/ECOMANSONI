@@ -8,7 +8,7 @@
  * - Список шаблонов из БД (reel_templates)
  * - Каждый шаблон: N слотов для клипов, аудио, длительность
  * - Превью: автовоспроизведение при hover/tap
- * - Использование шаблона: открывает CreateReelSheet с предзаполненными параметрами
+ * - Использование шаблона: открывает единый create-flow с предзаполненными параметрами
  * - use_count инкрементируется при использовании
  */
 
@@ -17,7 +17,7 @@ import { Play, Pause, Zap, Music, Clock, Users } from "lucide-react";
 import { motion } from "framer-motion";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
-import { supabase } from "@/integrations/supabase/client";
+import { dbLoose } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -53,7 +53,7 @@ function TemplateCard({
   const handleHover = (playing: boolean) => {
     if (!videoRef.current || !template.preview_url) return;
     if (playing) {
-      videoRef.current.play().catch(() => {});
+      videoRef.current.play().catch(() => { /* autoplay blocked */ });
     } else {
       videoRef.current.pause();
       videoRef.current.currentTime = 0;
@@ -158,8 +158,7 @@ export function ReelTemplates({ onSelectTemplate, onClose }: ReelTemplatesProps)
 
   const loadTemplates = async () => {
     setIsLoading(true);
-    const db = supabase as any;
-    let query = db
+    let query = dbLoose
       .from("reel_templates")
       .select("*")
       .eq("is_public", true);
@@ -180,14 +179,13 @@ export function ReelTemplates({ onSelectTemplate, onClose }: ReelTemplatesProps)
     }
 
     const { data, error } = await query.limit(20);
-    if (!error && data) setTemplates(data);
+    if (!error && data) setTemplates(data as ReelTemplate[]);
     setIsLoading(false);
   };
 
   const handleSelect = async (template: ReelTemplate) => {
     // Инкрементируем use_count
-    const db = supabase as any;
-    await db
+    await dbLoose
       .from("reel_templates")
       .update({ use_count: template.use_count + 1 })
       .eq("id", template.id);

@@ -1,7 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import type { Database } from '@/integrations/supabase/types';
 import { useAuth } from './useAuth';
 import { uploadMedia } from '@/lib/mediaUpload';
+import { logger } from '@/lib/logger';
+
+type PostRow = Database['public']['Tables']['posts']['Row'];
+type PostMediaRow = Database['public']['Tables']['post_media']['Row'];
+type PostWithMedia = PostRow & { post_media: PostMediaRow[] };
 
 export interface Verification {
   type: "owner" | "verified" | "professional" | "business";
@@ -39,13 +45,13 @@ export interface ProfileWithStats extends Profile {
 }
 
 async function getArchivedPostIdsForUser(userId: string): Promise<string[]> {
-  const { data, error } = await (supabase as any)
+  const { data, error } = await supabase
     .from('archived_posts')
     .select('post_id')
     .eq('user_id', userId);
 
   if (error) throw error;
-  return (data || []).map((row: any) => String(row.post_id)).filter(Boolean);
+  return (data || []).map((row) => String(row.post_id)).filter(Boolean);
 }
 
 async function getVisiblePostsCount(targetUserId: string, currentUserId?: string): Promise<number> {
@@ -103,13 +109,13 @@ export function useProfile(userId?: string) {
       if (profileError) throw profileError;
 
       // Fetch verifications
-      const { data: verificationsData } = await (supabase as any)
+      const { data: verificationsData } = await supabase
         .from('user_verifications')
         .select('verification_type, is_active, verified_at')
         .eq('user_id', targetUserId)
         .order('verified_at', { ascending: false });
 
-      const verifications = (verificationsData || []).map((v: any) => ({
+      const verifications = (verificationsData || []).map((v) => ({
         type: v.verification_type,
         is_active: v.is_active,
         verified_at: v.verified_at,
@@ -117,22 +123,20 @@ export function useProfile(userId?: string) {
 
       const postsCount = await getVisiblePostsCount(targetUserId, user?.id);
 
-      // Fetch followers count (using any for new table)
-      const { count: followersCount } = await (supabase as any)
+      const { count: followersCount } = await supabase
         .from('followers')
         .select('*', { count: 'exact', head: true })
         .eq('following_id', targetUserId);
 
-      // Fetch following count
-      const { count: followingCount } = await (supabase as any)
+      const { count: followingCount } = await supabase
         .from('followers')
         .select('*', { count: 'exact', head: true })
         .eq('follower_id', targetUserId);
 
-      // Check if current user follows this profile
+      // Проверяем, подписан ли текущий пользователь
       let isFollowing = false;
       if (user && user.id !== targetUserId) {
-        const { data: followData } = await (supabase as any)
+        const { data: followData } = await supabase
           .from('followers')
           .select('id')
           .eq('follower_id', user.id)
@@ -145,21 +149,21 @@ export function useProfile(userId?: string) {
       // Some legacy users may not have a profiles row yet. Keep screen functional with auth fallback.
       const fallbackDisplayName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User';
       const fallbackAvatar = user?.user_metadata?.avatar_url || null;
-      const extendedProfile = (profileData ?? {
+      const extendedProfile = profileData ?? {
         id: `fallback-${targetUserId}`,
         user_id: targetUserId,
-        username: null,
+        username: null as string | null,
         display_name: fallbackDisplayName,
         avatar_url: fallbackAvatar,
-        bio: null,
-        website: null,
-        phone: null,
-        verified: false,
-        status_emoji: null,
-        status_sticker_url: null,
+        bio: null as string | null,
+        website: null as string | null,
+        phone: null as string | null,
+        verified: false as boolean | null,
+        status_emoji: null as string | null,
+        status_sticker_url: null as string | null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-      }) as any;
+      };
 
       setProfile({
         id: extendedProfile.id,
@@ -199,7 +203,7 @@ export function useProfile(userId?: string) {
     if (!user || !targetUserId || user.id === targetUserId) return;
 
     try {
-      const { error } = await (supabase as any)
+      const { error } = await supabase
         .from('followers')
         .insert({ follower_id: user.id, following_id: targetUserId });
 
@@ -214,7 +218,7 @@ export function useProfile(userId?: string) {
         },
       } : null);
     } catch (err) {
-      console.error('Failed to follow:', err);
+      logger.error("[useProfile] Failed to follow", { error: err });
       throw err;
     }
   }, [user, targetUserId]);
@@ -223,7 +227,7 @@ export function useProfile(userId?: string) {
     if (!user || !targetUserId) return;
 
     try {
-      const { error } = await (supabase as any)
+      const { error } = await supabase
         .from('followers')
         .delete()
         .eq('follower_id', user.id)
@@ -240,7 +244,7 @@ export function useProfile(userId?: string) {
         },
       } : null);
     } catch (err) {
-      console.error('Failed to unfollow:', err);
+      logger.error("[useProfile] Failed to unfollow", { error: err });
       throw err;
     }
   }, [user, targetUserId]);
@@ -249,7 +253,7 @@ export function useProfile(userId?: string) {
     if (!user) return;
 
     try {
-      const { error } = await (supabase as any)
+      const { error } = await supabase
         .from('profiles')
         .update(updates)
         .eq('user_id', user.id);
@@ -270,13 +274,13 @@ export function useProfile(userId?: string) {
       if (Object.keys(metaPatch).length > 0) {
         const { error: metaError } = await supabase.auth.updateUser({ data: metaPatch });
         if (metaError) {
-          console.warn('[useProfile] auth.updateUser metadata sync failed:', metaError);
+          logger.warn("[useProfile] auth.updateUser metadata sync failed", { error: metaError });
         }
       }
 
       setProfile(prev => prev ? { ...prev, ...updates } : null);
     } catch (err) {
-      console.error('Failed to update profile:', err);
+      logger.error("[useProfile] Failed to update profile", { error: err });
       throw err;
     }
   }, [user]);
@@ -357,22 +361,19 @@ export function useProfileByUsername(username?: string) {
 
       const postsCount = await getVisiblePostsCount(targetUserId, user?.id);
 
-      // Fetch followers count
-      const { count: followersCount } = await (supabase as any)
+      const { count: followersCount } = await supabase
         .from('followers')
         .select('*', { count: 'exact', head: true })
         .eq('following_id', targetUserId);
 
-      // Fetch following count
-      const { count: followingCount } = await (supabase as any)
+      const { count: followingCount } = await supabase
         .from('followers')
         .select('*', { count: 'exact', head: true })
         .eq('follower_id', targetUserId);
 
-      // Check if current user follows this profile
       let isFollowing = false;
       if (user && user.id !== targetUserId) {
-        const { data: followData } = await (supabase as any)
+        const { data: followData } = await supabase
           .from('followers')
           .select('id')
           .eq('follower_id', user.id)
@@ -382,20 +383,18 @@ export function useProfileByUsername(username?: string) {
         isFollowing = !!followData;
       }
 
-      const extendedProfile = profileData as any;
-
       setProfile({
-        id: extendedProfile.id,
-        user_id: extendedProfile.user_id,
-        username: extendedProfile.username ?? null,
-        display_name: extendedProfile.display_name,
-        avatar_url: extendedProfile.avatar_url,
-        bio: extendedProfile.bio ?? null,
-        website: extendedProfile.website ?? null,
-        phone: extendedProfile.phone,
-        verified: extendedProfile.verified ?? false,
-        created_at: extendedProfile.created_at,
-        updated_at: extendedProfile.updated_at,
+        id: profileData.id,
+        user_id: profileData.user_id,
+        username: profileData.username ?? null,
+        display_name: profileData.display_name,
+        avatar_url: profileData.avatar_url,
+        bio: profileData.bio ?? null,
+        website: profileData.website ?? null,
+        phone: profileData.phone,
+        verified: profileData.verified ?? false,
+        created_at: profileData.created_at,
+        updated_at: profileData.updated_at,
         stats: {
           postsCount: postsCount || 0,
           followersCount: followersCount || 0,
@@ -419,7 +418,7 @@ export function useProfileByUsername(username?: string) {
     if (!user || !profile || user.id === profile.user_id) return;
 
     try {
-      const { error } = await (supabase as any)
+      const { error } = await supabase
         .from('followers')
         .insert({ follower_id: user.id, following_id: profile.user_id });
 
@@ -434,7 +433,7 @@ export function useProfileByUsername(username?: string) {
         },
       } : null);
     } catch (err) {
-      console.error('Failed to follow:', err);
+      logger.error("[useProfile] Failed to follow", { error: err });
       throw err;
     }
   }, [user, profile]);
@@ -443,7 +442,7 @@ export function useProfileByUsername(username?: string) {
     if (!user || !profile) return;
 
     try {
-      const { error } = await (supabase as any)
+      const { error } = await supabase
         .from('followers')
         .delete()
         .eq('follower_id', user.id)
@@ -460,7 +459,7 @@ export function useProfileByUsername(username?: string) {
         },
       } : null);
     } catch (err) {
-      console.error('Failed to unfollow:', err);
+      logger.error("[useProfile] Failed to unfollow", { error: err });
       throw err;
     }
   }, [user, profile]);
@@ -488,7 +487,7 @@ export interface Highlight {
 }
 
 export async function getHighlights(userId: string): Promise<Highlight[]> {
-  const { data, error } = await (supabase as any)
+  const { data, error } = await supabase
     .from('highlights')
     .select('*')
     .eq('user_id', userId)
@@ -513,7 +512,7 @@ export async function createHighlight(
     }
   }
 
-  const { data: highlight, error } = await (supabase as any)
+  const { data: highlight, error } = await supabase
     .from('highlights')
     .insert({ user_id: userId, title, cover_url })
     .select()
@@ -526,14 +525,14 @@ export async function createHighlight(
       story_id,
       position: i,
     }));
-    await (supabase as any).from('highlight_stories').insert(rows);
+    await supabase.from('highlight_stories').insert(rows);
   }
 
   return highlight;
 }
 
 export async function deleteHighlight(id: string): Promise<void> {
-  const { error } = await (supabase as any)
+  const { error } = await supabase
     .from('highlights')
     .delete()
     .eq('id', id);
@@ -544,14 +543,14 @@ export async function deleteHighlight(id: string): Promise<void> {
 // Archive
 // ────────────────────────────────────────────────────────────────
 export async function archivePost(userId: string, postId: string): Promise<void> {
-  const { error } = await (supabase as any)
+  const { error } = await supabase
     .from('archived_posts')
     .insert({ user_id: userId, post_id: postId });
   if (error) throw error;
 }
 
 export async function unarchivePost(userId: string, postId: string): Promise<void> {
-  const { error } = await (supabase as any)
+  const { error } = await supabase
     .from('archived_posts')
     .delete()
     .eq('user_id', userId)
@@ -559,28 +558,33 @@ export async function unarchivePost(userId: string, postId: string): Promise<voi
   if (error) throw error;
 }
 
-export async function getArchivedPosts(userId: string): Promise<any[]> {
-  const { data, error } = await (supabase as any)
+export async function getArchivedPosts(userId: string): Promise<PostWithMedia[]> {
+  // Связь archived_posts → posts отсутствует в сгенерированных типах,
+  // но FK существует в БД; приводим результат вручную.
+  const { data, error } = await supabase
     .from('archived_posts')
     .select('post_id, posts(*, post_media(*))')
     .eq('user_id', userId)
     .order('archived_at', { ascending: false });
   if (error) throw error;
-  return (data || []).map((row: any) => row.posts).filter(Boolean);
+  type ArchivedRow = { post_id: string; posts: PostWithMedia | null };
+  return ((data || []) as unknown as ArchivedRow[])
+    .map((row) => row.posts)
+    .filter((p): p is PostWithMedia => p !== null);
 }
 
 // ────────────────────────────────────────────────────────────────
 // Block
 // ────────────────────────────────────────────────────────────────
 export async function blockUser(blockerId: string, blockedId: string): Promise<void> {
-  const { error } = await (supabase as any)
+  const { error } = await supabase
     .from('blocked_users')
     .insert({ blocker_id: blockerId, blocked_id: blockedId });
   if (error) throw error;
 }
 
 export async function unblockUser(blockerId: string, blockedId: string): Promise<void> {
-  const { error } = await (supabase as any)
+  const { error } = await supabase
     .from('blocked_users')
     .delete()
     .eq('blocker_id', blockerId)
@@ -599,7 +603,7 @@ export async function uploadAvatar(userId: string, file: File): Promise<string> 
 // Hook to get user's posts
 export function useUserPosts(userId?: string) {
   const { user } = useAuth();
-  const [posts, setPosts] = useState<any[]>([]);
+  const [posts, setPosts] = useState<PostWithMedia[]>([]);
   const [loading, setLoading] = useState(true);
 
   const targetUserId = userId || user?.id;
@@ -627,7 +631,7 @@ export function useUserPosts(userId?: string) {
           .order('created_at', { ascending: false });
 
         if (!error) {
-          const visiblePosts = (postsData || []).filter((post: any) => !archivedSet.has(String(post.id)));
+          const visiblePosts = (postsData || []).filter((post) => !archivedSet.has(String(post.id)));
           setPosts(visiblePosts);
           return;
         }
@@ -643,7 +647,7 @@ export function useUserPosts(userId?: string) {
 
         if (postsError) throw postsError;
 
-        const postIds = (plainPosts || []).map((p: any) => p.id).filter(Boolean);
+        const postIds = (plainPosts || []).map((p) => p.id).filter(Boolean);
         if (postIds.length === 0) {
           setPosts([]);
           return;
@@ -657,23 +661,23 @@ export function useUserPosts(userId?: string) {
 
         if (mediaError) throw mediaError;
 
-        const mediaByPostId = new Map<string, any[]>();
+        const mediaByPostId = new Map<string, PostMediaRow[]>();
         for (const media of mediaRows || []) {
-          const key = String((media as any).post_id || '');
+          const key = String(media.post_id || '');
           if (!key) continue;
           const arr = mediaByPostId.get(key) || [];
           arr.push(media);
           mediaByPostId.set(key, arr);
         }
 
-        const merged = (plainPosts || []).map((post: any) => ({
+        const merged = (plainPosts || []).map((post) => ({
           ...post,
           post_media: mediaByPostId.get(String(post.id)) || [],
-        })).filter((post: any) => !archivedSet.has(String(post.id)));
+        })).filter((post) => !archivedSet.has(String(post.id)));
 
         setPosts(merged);
       } catch (err) {
-        console.error('Failed to load posts:', err);
+        logger.error("[useProfile] Failed to load posts", { error: err });
       } finally {
         setLoading(false);
       }

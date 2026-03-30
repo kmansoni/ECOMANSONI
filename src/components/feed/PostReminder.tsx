@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Bell, BellOff, Check } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { dbLoose } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -27,7 +27,7 @@ export function PostReminder({ postId }: PostReminderProps) {
     setLoading(true);
     try {
       const remindAt = new Date(`${date}T${time}`).toISOString();
-      const { error } = await (supabase as any)
+      const { error } = await dbLoose
         .from("post_reminders")
         .upsert({ post_id: postId, user_id: user.id, remind_at: remindAt });
       if (error) throw error;
@@ -43,7 +43,7 @@ export function PostReminder({ postId }: PostReminderProps) {
 
   const handleRemove = async () => {
     if (!user) return;
-    await (supabase as any)
+    await dbLoose
       .from("post_reminders")
       .delete()
       .eq("post_id", postId)

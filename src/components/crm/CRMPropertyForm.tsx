@@ -8,6 +8,7 @@ import { useState } from "react";
 import { X, Save, Home, MapPin, Layers, DollarSign, User, Star, CheckSquare } from "lucide-react";
 import { crm, type CRMProperty, PROPERTY_FEATURES } from "@/lib/crm";
 import { toast } from "sonner";
+import { logger } from "@/lib/logger";
 
 const PROPERTY_TYPES = [
   { value: 'apartment', label: 'Квартира' },
@@ -133,7 +134,7 @@ export function CRMPropertyForm({ initial, onClose, onSaved }: Props) {
       onSaved(saved);
     } catch (err) {
       toast.error('Ошибка сохранения объекта');
-      console.error(err);
+      logger.error('[CRMPropertyForm] submit error', { error: err });
     } finally {
       setSaving(false);
     }

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { adminApi, JitRequest, AdminMe } from "@/lib/adminApi";
+import { JIT_POLL_MS } from "@/lib/timing";
 
 export function useJitRequests(me: AdminMe | null | undefined) {
   const [requests, setRequests] = useState<JitRequest[]>([]);
@@ -22,7 +23,7 @@ export function useJitRequests(me: AdminMe | null | undefined) {
 
   useEffect(() => {
     load();
-    const interval = setInterval(load, 10000); // Refresh every 10s
+    const interval = setInterval(load, JIT_POLL_MS);
     return () => clearInterval(interval);
   }, [load]);
 

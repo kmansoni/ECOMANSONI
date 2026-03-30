@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { checkHashtagsAllowedForText } from "@/lib/hashtagModeration";
 import { fetchUserBriefMap, resolveUserBrief } from "@/lib/users/userBriefs";
+import { logger } from "@/lib/logger";
 
 export interface Comment {
   id: string;
@@ -140,8 +141,8 @@ export function useComments(postId: string) {
 
       setComments(topLevel);
     } catch (err: any) {
-      console.error("Error fetching comments:", err);
-      setError(err.message || "Ошибка загрузки комментариев");
+      logger.error("[useComments] Error fetching comments", { error: err });
+      setError("Не удалось загрузить комментарии. Попробуйте снова.");
     } finally {
       setLoading(false);
     }
@@ -153,6 +154,9 @@ export function useComments(postId: string) {
     }
   }, [postId, fetchComments]);
 
+  // ИСПРАВЛЕНИЕ дефекта #3: оптимистичное добавление без рефетча
+  // Ранее: INSERT → fetchComments() (полный рефетч, N+1, мигание списка)
+  // Теперь: INSERT → локальное добавление в state (мгновенно, без мигания)
   const addComment = async (content: string, parentId?: string) => {
     if (!user) {
       return { error: "Необходимо войти в систему" };
@@ -177,11 +181,42 @@ export function useComments(postId: string) {
 
       if (error) throw error;
 
-      // Refetch to get the updated list with author info
-      await fetchComments();
+      // Оптимистичное добавление — строим объект Comment из известных данных
+      const newComment: Comment = {
+        id: data.id,
+        post_id: postId,
+        author_id: user.id,
+        parent_id: parentId || null,
+        content,
+        likes_count: 0,
+        created_at: data.created_at ?? new Date().toISOString(),
+        author: {
+          display_name: (user.user_metadata?.display_name as string | undefined)
+            || user.email?.split('@')[0]
+            || 'Вы',
+          avatar_url: (user.user_metadata?.avatar_url as string | undefined) || null,
+          user_id: user.id,
+          verified: false,
+        },
+        liked_by_user: false,
+        replies: [],
+      };
+
+      if (parentId) {
+        // Добавляем как reply к родительскому комментарию
+        setComments(prev => prev.map(c =>
+          c.id === parentId
+            ? { ...c, replies: [...(c.replies || []), newComment] }
+            : c
+        ));
+      } else {
+        // Добавляем в конец списка (хронологический порядок)
+        setComments(prev => [...prev, newComment]);
+      }
+
       return { error: null, comment: data };
     } catch (err: any) {
-      console.error("Error adding comment:", err);
+      logger.error("[useComments] Error adding comment", { error: err });
       return { error: err.message || "Ошибка добавления комментария" };
     }
   };
@@ -244,15 +279,28 @@ export function useComments(postId: string) {
 
       return { error: null };
     } catch (err: any) {
-      console.error("Error toggling like:", err);
+      logger.error("[useComments] Error toggling like", { error: err });
       return { error: err.message || "Ошибка" };
     }
   };
 
+  // ИСПРАВЛЕНИЕ дефекта #35: оптимистичное удаление без рефетча
   const deleteComment = async (commentId: string) => {
     if (!user) {
       return { error: "Необходимо войти в систему" };
     }
+
+    // Сохраняем предыдущее состояние для отката
+    const prevComments = comments;
+
+    // Оптимистичное удаление из state
+    setComments(prev => {
+      const filtered = prev.filter(c => c.id !== commentId);
+      return filtered.map(c => ({
+        ...c,
+        replies: (c.replies || []).filter(r => r.id !== commentId),
+      }));
+    });
 
     try {
       const { error } = await (supabase
@@ -262,11 +310,11 @@ export function useComments(postId: string) {
         .eq("author_id", user.id) as any);
 
       if (error) throw error;
-
-      await fetchComments();
       return { error: null };
     } catch (err: any) {
-      console.error("Error deleting comment:", err);
+      // Откат при ошибке
+      setComments(prevComments);
+      logger.error("[useComments] Error deleting comment", { error: err });
       return { error: err.message || "Ошибка удаления" };
     }
   };

@@ -2,6 +2,7 @@
 // Purpose: Frontend client for metrics, guardrails, and SLO monitoring
 
 import { supabase } from '@/integrations/supabase/client';
+import { logger } from '../logger';
 import type {
   MetricSample,
   GuardrailBreachesResponse,
@@ -31,13 +32,13 @@ export async function reportMetric(
     });
 
     if (error) {
-      console.error(`[observability] reportMetric(${metricName}) failed:`, error);
+      logger.error(`[observability] reportMetric(${metricName}) failed:`, { error });
       return null;
     }
 
     return data as unknown as EvaluateGuardrailsResponse;
   } catch (err) {
-    console.error(`[observability] reportMetric(${metricName}) exception:`, err);
+    logger.error(`[observability] reportMetric(${metricName}) exception:`, { error: err });
     return null;
   }
 }
@@ -58,13 +59,13 @@ export async function getActiveGuardrailBreaches(
     );
 
     if (error) {
-      console.error('[observability] getActiveGuardrailBreaches failed:', error);
+      logger.error('[observability] getActiveGuardrailBreaches failed:', { error });
       return null;
     }
 
     return data as unknown as GuardrailBreachesResponse;
   } catch (err) {
-    console.error('[observability] getActiveGuardrailBreaches exception:', err);
+    logger.error('[observability] getActiveGuardrailBreaches exception:', { error: err });
     return null;
   }
 }
@@ -87,13 +88,13 @@ export async function getSLOStatus(
     });
 
     if (error) {
-      console.error('[observability] getSLOStatus failed:', error);
+      logger.error('[observability] getSLOStatus failed:', { error });
       return null;
     }
 
     return data as unknown as SLOStatus;
   } catch (err) {
-    console.error('[observability] getSLOStatus exception:', err);
+    logger.error('[observability] getSLOStatus exception:', { error: err });
     return null;
   }
 }
@@ -119,13 +120,13 @@ export async function getMetricSamples(
     });
 
     if (error) {
-      console.error(`[observability] getMetricSamples(${metricName}) failed:`, error);
+      logger.error(`[observability] getMetricSamples(${metricName}) failed:`, { error });
       return [];
     }
 
     return (data as unknown as MetricSampleRow[]) || [];
   } catch (err) {
-    console.error(`[observability] getMetricSamples(${metricName}) exception:`, err);
+    logger.error(`[observability] getMetricSamples(${metricName}) exception:`, { error: err });
     return [];
   }
 }

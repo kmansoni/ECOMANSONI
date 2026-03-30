@@ -16,26 +16,21 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { handleCors, getCorsHeaders } from "../_shared/utils.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
 
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Authorization, Content-Type",
-};
-
-function jsonResponse(data: unknown, status = 200): Response {
+function jsonResponse(data: unknown, origin: string | null, status = 200): Response {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+    headers: { ...getCorsHeaders(origin), "Content-Type": "application/json" },
   });
 }
 
-function errorResponse(message: string, status = 400): Response {
-  return jsonResponse({ error: message }, status);
+function errorResponse(message: string, origin: string | null, status = 400): Response {
+  return jsonResponse({ error: message }, origin, status);
 }
 
 function periodToDays(period: string): number | null {
@@ -49,16 +44,17 @@ function periodToDays(period: string): number | null {
 }
 
 serve(async (req: Request) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: CORS_HEADERS });
-  }
+  const corsResponse = handleCors(req);
+  if (corsResponse) return corsResponse;
+
+  const origin = req.headers.get("Origin");
 
   // ---------------------------------------------------------------------------
   // Auth — extract user JWT
   // ---------------------------------------------------------------------------
   const authHeader = req.headers.get("Authorization");
   if (!authHeader?.startsWith("Bearer ")) {
-    return errorResponse("Missing or invalid Authorization header", 401);
+    return errorResponse("Missing or invalid Authorization header", origin, 401);
   }
 
   // User-scoped client (respects RLS)
@@ -83,18 +79,18 @@ serve(async (req: Request) => {
     try {
       body = await req.json();
     } catch {
-      return errorResponse("Invalid JSON body");
+      return errorResponse("Invalid JSON body", origin);
     }
 
     const { post_id, channel_id } = body ?? {};
     if (!post_id || !channel_id) {
-      return errorResponse("post_id and channel_id are required");
+      return errorResponse("post_id and channel_id are required", origin);
     }
 
     // Validate UUIDs
     const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     if (!uuidRe.test(post_id) || !uuidRe.test(channel_id)) {
-      return errorResponse("Invalid UUID format");
+      return errorResponse("Invalid UUID format", origin);
     }
 
     const { error } = await serviceClient.rpc("record_post_view", {
@@ -104,10 +100,10 @@ serve(async (req: Request) => {
 
     if (error) {
       console.error("[channel-analytics] record_post_view error:", error);
-      return errorResponse("Failed to record view", 500);
+      return errorResponse("Failed to record view", origin, 500);
     }
 
-    return jsonResponse({ ok: true });
+    return jsonResponse({ ok: true }, origin);
   }
 
   // ---------------------------------------------------------------------------
@@ -118,7 +114,7 @@ serve(async (req: Request) => {
     const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "20"), 100);
     const offset = Math.max(parseInt(url.searchParams.get("offset") ?? "0"), 0);
 
-    if (!channel_id) return errorResponse("channel_id is required");
+    if (!channel_id) return errorResponse("channel_id is required", origin);
 
     const { data, error } = await userClient
       .from("channel_post_stats")
@@ -128,11 +124,11 @@ serve(async (req: Request) => {
       .range(offset, offset + limit - 1);
 
     if (error) {
-      if (error.code === "PGRST301") return errorResponse("Unauthorized", 403);
-      return errorResponse(error.message, 500);
+      if (error.code === "PGRST301") return errorResponse("Unauthorized", origin, 403);
+      return errorResponse(error.message, origin, 500);
     }
 
-    return jsonResponse({ posts: data ?? [] });
+    return jsonResponse({ posts: data ?? [] }, origin);
   }
 
   // ---------------------------------------------------------------------------
@@ -142,7 +138,7 @@ serve(async (req: Request) => {
     const channel_id = url.searchParams.get("channel_id");
     const period = url.searchParams.get("period") ?? "30d";
 
-    if (!channel_id) return errorResponse("channel_id is required");
+    if (!channel_id) return errorResponse("channel_id is required", origin);
 
     const days = periodToDays(period);
 
@@ -162,8 +158,8 @@ serve(async (req: Request) => {
     const { data, error } = await query;
 
     if (error) {
-      if (error.code === "PGRST301") return errorResponse("Unauthorized", 403);
-      return errorResponse(error.message, 500);
+      if (error.code === "PGRST301") return errorResponse("Unauthorized", origin, 403);
+      return errorResponse(error.message, origin, 500);
     }
 
     const rows = data ?? [];
@@ -190,8 +186,8 @@ serve(async (req: Request) => {
       },
     );
 
-    return jsonResponse({ overview, dailyStats: rows, period });
+    return jsonResponse({ overview, dailyStats: rows, period }, origin);
   }
 
-  return errorResponse("Not found", 404);
+  return errorResponse("Not found", origin, 404);
 });

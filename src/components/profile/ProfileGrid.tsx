@@ -1,15 +1,26 @@
 import { useState } from "react";
-import { Grid3X3, Bookmark, Play, AtSign } from "lucide-react";
+import { Grid3X3, Bookmark, Play, AtSign, type LucideIcon } from "lucide-react";
 import { motion } from "framer-motion";
 
-interface ProfileGridProps {
-  items: any[];
-  loading: boolean;
-  type: "posts" | "reels" | "tagged" | "saved";
-  onItemClick?: (item: any) => void;
+interface PostMediaItem {
+  media_url?: string;
+  media_type?: string;
 }
 
-const emptyMessage: Record<string, { icon: any; title: string; desc: string }> = {
+export interface ProfileGridItem {
+  id?: string;
+  thumbnail_url?: string;
+  post_media?: PostMediaItem[];
+}
+
+interface ProfileGridProps {
+  items: ProfileGridItem[];
+  loading: boolean;
+  type: "posts" | "reels" | "tagged" | "saved";
+  onItemClick?: (item: ProfileGridItem) => void;
+}
+
+const emptyMessage: Record<string, { icon: LucideIcon; title: string; desc: string }> = {
   posts: { icon: Grid3X3, title: "Нет публикаций", desc: "Создайте свою первую публикацию" },
   reels: { icon: Play, title: "Нет Reels", desc: "Снимите своё первое видео" },
   tagged: { icon: AtSign, title: "Нет отметок", desc: "Публикации с вашими отметками появятся здесь" },
@@ -19,26 +30,26 @@ const emptyMessage: Record<string, { icon: any; title: string; desc: string }> =
 export function ProfileGrid({ items, loading, type, onItemClick }: ProfileGridProps) {
   const [failedVariantByKey, setFailedVariantByKey] = useState<Record<string, number>>({});
 
-  const selectPreviewVariant = (item: any, index: number) => {
+  const selectPreviewVariant = (item: ProfileGridItem, index: number) => {
     const key = String(item?.id ?? index);
     const isReel = type === "reels";
 
     const reelCandidates = [item?.thumbnail_url].filter((u: unknown): u is string => typeof u === "string" && u.trim().length > 0);
     const postMedia = Array.isArray(item?.post_media) ? item.post_media : [];
     const postCandidates = postMedia
-      .map((m: any) => ({
+      .map((m) => ({
         url: typeof m?.media_url === "string" ? m.media_url.trim() : "",
         mediaType: typeof m?.media_type === "string" ? m.media_type : null,
       }))
-      .filter((m: { url: string }) => m.url.length > 0);
+      .filter((m) => m.url.length > 0);
 
     const orderedPostCandidates = [
-      ...postCandidates.filter((m: { mediaType: string | null }) => m.mediaType !== "video"),
-      ...postCandidates.filter((m: { mediaType: string | null }) => m.mediaType === "video"),
+      ...postCandidates.filter((m) => m.mediaType !== "video"),
+      ...postCandidates.filter((m) => m.mediaType === "video"),
     ];
 
     const variants = isReel
-      ? reelCandidates.map((url: string) => ({ url, mediaType: "video" }))
+      ? reelCandidates.map((url) => ({ url, mediaType: "video" }))
       : orderedPostCandidates;
 
     const failedIndex = failedVariantByKey[key] ?? 0;

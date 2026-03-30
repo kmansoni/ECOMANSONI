@@ -13,7 +13,7 @@ import {
   groupNotifications,
   buildGroupSummary,
   type NotificationFilterType,
-  type GroupedNotification,
+  type FeedGroupedNotification,
 } from "@/components/notifications/notificationFiltersModel";
 import { initPushNotifications } from "@/lib/push/serviceWorker";
 
@@ -22,15 +22,15 @@ import { initPushNotifications } from "@/lib/push/serviceWorker";
 // ---------------------------------------------------------------------------
 
 interface NotificationSections {
-  today: GroupedNotification[];
-  week: GroupedNotification[];
-  earlier: GroupedNotification[];
+  today: FeedGroupedNotification[];
+  week: FeedGroupedNotification[];
+  earlier: FeedGroupedNotification[];
 }
 
-function sectionGroups(groups: GroupedNotification[]): NotificationSections {
-  const today: GroupedNotification[] = [];
-  const week: GroupedNotification[] = [];
-  const earlier: GroupedNotification[] = [];
+function sectionGroups(groups: FeedGroupedNotification[]): NotificationSections {
+  const today: FeedGroupedNotification[] = [];
+  const week: FeedGroupedNotification[] = [];
+  const earlier: FeedGroupedNotification[] = [];
 
   for (const g of groups) {
     const date = parseISO(g.representative.created_at);
@@ -51,7 +51,7 @@ function sectionGroups(groups: GroupedNotification[]): NotificationSections {
 // ---------------------------------------------------------------------------
 
 interface GroupedItemProps {
-  group: GroupedNotification;
+  group: FeedGroupedNotification;
   onMarkAsRead: (id: string) => void;
   onDelete: (id: string) => void;
 }
@@ -89,7 +89,7 @@ function GroupedNotificationItem({ group, onMarkAsRead, onDelete }: GroupedItemP
 
 function renderSection(
   title: string,
-  groups: GroupedNotification[],
+  groups: FeedGroupedNotification[],
   onMarkAsRead: (id: string) => void,
   onDelete: (id: string) => void,
 ) {

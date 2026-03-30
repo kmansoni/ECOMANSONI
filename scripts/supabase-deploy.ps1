@@ -9,7 +9,7 @@ param(
   [switch]$EnforceCriticalSecurityGate,
   [string]$MirrorRepoPath = "",
   [switch]$PromptToken,
-  [string[]]$Functions = @("vk-webhook", "turn-credentials", "aria-chat", "insurance-assistant", "property-assistant")
+  [string[]]$Functions = @("vk-webhook", "turn-credentials", "aria-chat", "aria-memory", "insurance-assistant", "property-assistant")
 )
 
 $ErrorActionPreference = "Stop"

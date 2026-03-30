@@ -7,6 +7,7 @@ import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
+import { logger } from "@/lib/logger";
 import { useUserSettings } from "@/contexts/UserSettingsContext";
 import {
   getOrCreateAppearanceSettings,
@@ -82,7 +83,8 @@ export function AppearanceAndEnergyCenter({ userId, isDark, mode, onOpenEnergy }
         setLocalColorSecondary(a.personal_color_secondary ?? "#8b5cf6");
       } catch (err) {
         if (!cancelled) {
-          toast({ title: "Настройки", description: err instanceof Error ? err.message : String(err) });
+          logger.error("[AppearanceAndEnergyCenter] load failed", { error: err });
+          toast({ title: "Настройки", description: "Не удалось загрузить настройки. Попробуйте снова." });
         }
       } finally {
         if (!cancelled) setLoading(false);

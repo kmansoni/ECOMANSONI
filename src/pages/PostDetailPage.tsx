@@ -8,6 +8,7 @@ import { CommentsSheet } from "@/components/feed/CommentsSheet";
 import { ShareSheet } from "@/components/feed/ShareSheet";
 import { formatDistanceToNow } from "date-fns";
 import { ru } from "date-fns/locale";
+import { logger } from "@/lib/logger";
 
 interface PostDetail {
   id: string;
@@ -29,6 +30,18 @@ interface PostDetail {
   }[];
   isLiked?: boolean;
   isSaved?: boolean;
+}
+
+interface PostRow {
+  id: string;
+  content: string | null;
+  author_id: string;
+  likes_count?: number | null;
+  comments_count?: number | null;
+  saves_count?: number | null;
+  shares_count?: number | null;
+  views_count?: number | null;
+  created_at: string;
 }
 
 const clampCounter = (value: number | null | undefined) => Math.max(0, Number.isFinite(value as number) ? Number(value) : 0);
@@ -104,20 +117,24 @@ export function PostDetailPage() {
           isSaved = !!savedData;
         }
 
+        const row = postData as unknown as PostRow;
         setPost({
-          ...(postData as any),
-          likes_count: clampCounter((postData as any).likes_count),
-          comments_count: clampCounter((postData as any).comments_count),
-          saves_count: clampCounter((postData as any).saves_count),
-          shares_count: clampCounter((postData as any).shares_count),
-          views_count: clampCounter((postData as any).views_count),
+          id: row.id,
+          content: row.content,
+          author_id: row.author_id,
+          created_at: row.created_at,
+          likes_count: clampCounter(row.likes_count),
+          comments_count: clampCounter(row.comments_count),
+          saves_count: clampCounter(row.saves_count),
+          shares_count: clampCounter(row.shares_count),
+          views_count: clampCounter(row.views_count),
           author: profile || undefined,
           media: media || [],
           isLiked,
           isSaved,
         });
       } catch (error) {
-        console.error("Error fetching post:", error);
+        logger.error("[PostDetailPage] Error fetching post", { error });
       } finally {
         setLoading(false);
       }
@@ -147,7 +164,7 @@ export function PostDetailPage() {
         setPost({ ...post, isLiked: true, likes_count: post.likes_count + 1 });
       }
     } catch (error) {
-      console.error("Error toggling like:", error);
+      logger.error("[PostDetailPage] Error toggling like", { error });
     } finally {
       setLikePending(false);
     }
@@ -174,7 +191,7 @@ export function PostDetailPage() {
         setPost({ ...post, isSaved: true, saves_count: (post.saves_count || 0) + 1 });
       }
     } catch (error) {
-      console.error("Error toggling save:", error);
+      logger.error("[PostDetailPage] Error toggling save", { error });
     } finally {
       setSavePending(false);
     }
@@ -183,7 +200,7 @@ export function PostDetailPage() {
   const formatTime = (dateStr: string) => {
     try {
       return formatDistanceToNow(new Date(dateStr), { addSuffix: true, locale: ru });
-    } catch {
+    } catch (_err) {
       return "";
     }
   };

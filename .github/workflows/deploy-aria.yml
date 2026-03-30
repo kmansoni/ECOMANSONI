@@ -1,0 +1,209 @@
+name: Deploy ARIA Server → Admin VPS
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - infra/aria/**
+      - supabase/functions/aria-chat/**
+      - supabase/functions/aria-memory/**
+      - .github/workflows/deploy-aria.yml
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-aria
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────────
+  # 1. Deploy ARIA Python server to admin VPS
+  # ─────────────────────────────────────────────────────────────────────────
+  deploy-aria-vps:
+    name: Deploy ARIA → VPS
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy ARIA server on VPS
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          AI_API_KEY:              ${{ secrets.AI_API_KEY }}
+          AI_API_URL:              ${{ vars.AI_API_URL || 'https://api.mansoni.ru/v1/chat/completions' }}
+          AI_DEFAULT_MODEL:        ${{ vars.AI_DEFAULT_MODEL || 'google/gemini-2.5-pro-exp-03-25' }}
+          ARIA_SERVER_KEY:         ${{ secrets.ARIA_SERVER_KEY }}
+          SUPABASE_URL:            ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY:    ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        with:
+          host:     ${{ secrets.ADMINVPS_HOST }}
+          username: ${{ secrets.ADMINVPS_USER }}
+          key:      ${{ secrets.ADMINVPS_SSH_KEY }}
+          port:     22
+          timeout:  120s
+          envs: AI_API_KEY,AI_API_URL,AI_DEFAULT_MODEL,ARIA_SERVER_KEY,SUPABASE_URL,SUPABASE_SERVICE_KEY
+          script: |
+            set -euo pipefail
+            APP_DIR="${ADMINVPS_APP_DIR:-/opt/mansoni/app}"
+            ARIA_DIR="$APP_DIR/infra/aria"
+            ARIA_ENV="$ARIA_DIR/.env"
+            LOCK_FILE="/tmp/aria-deploy.lock"
+            exec 9>"$LOCK_FILE"
+            flock -w 30 9
+
+            echo "── [ARIA] Syncing code ──────────────────────────────"
+            cd "$APP_DIR"
+            git config --global --add safe.directory "$APP_DIR"
+            rm -f .git/index.lock .git/MERGE_HEAD || true
+            git fetch origin main
+            git checkout main
+            git reset --hard origin/main
+            git clean -fd
+
+            echo "── [ARIA] Writing .env ──────────────────────────────"
+            touch "$ARIA_ENV"
+            chmod 600 "$ARIA_ENV"
+
+            upsert_env() {
+              local key="$1" value="$2"
+              if grep -q "^${key}=" "$ARIA_ENV" 2>/dev/null; then
+                sed -i "s|^${key}=.*|${key}=${value}|" "$ARIA_ENV"
+              else
+                printf '%s=%s\n' "$key" "$value" >> "$ARIA_ENV"
+              fi
+            }
+
+            upsert_env "AI_API_KEY"              "${AI_API_KEY}"
+            upsert_env "AI_API_URL"              "${AI_API_URL}"
+            upsert_env "AI_DEFAULT_MODEL"        "${AI_DEFAULT_MODEL}"
+            upsert_env "ARIA_SERVER_KEY"         "${ARIA_SERVER_KEY}"
+            upsert_env "SUPABASE_URL"            "${SUPABASE_URL}"
+            upsert_env "SUPABASE_SERVICE_ROLE_KEY" "${SUPABASE_SERVICE_KEY}"
+            upsert_env "LOG_LEVEL"               "info"
+
+            echo "── [ARIA] Building & starting Docker ───────────────"
+            cd "$ARIA_DIR"
+
+            # Detect docker compose command
+            if docker compose version >/dev/null 2>&1; then
+              DC="docker compose"
+            elif docker-compose version >/dev/null 2>&1; then
+              DC="docker-compose"
+            else
+              DC="sudo docker compose"
+            fi
+
+            $DC --env-file .env pull --quiet 2>/dev/null || true
+            $DC --env-file .env build --no-cache --quiet
+            $DC --env-file .env up -d --remove-orphans
+
+            echo "── [ARIA] Waiting for health ────────────────────────"
+            for i in $(seq 1 15); do
+              sleep 2
+              if curl -sf http://127.0.0.1:7860/health >/dev/null 2>&1; then
+                echo "[ARIA] Container healthy after ${i}×2s"
+                break
+              fi
+              if [ "$i" -eq 15 ]; then
+                echo "[ARIA] ERROR: container not healthy after 30s"
+                $DC logs --tail=50 aria || true
+                exit 1
+              fi
+            done
+
+            echo "── [ARIA] Nginx setup ───────────────────────────────"
+            NGINX_CONF="/etc/nginx/sites-available/aria.mansoni.ru"
+            NGINX_ENABLED="/etc/nginx/sites-enabled/aria.mansoni.ru"
+
+            # Copy config if changed or missing
+            if ! diff -q "$APP_DIR/infra/aria/nginx.conf" "$NGINX_CONF" >/dev/null 2>&1; then
+              sudo cp "$APP_DIR/infra/aria/nginx.conf" "$NGINX_CONF"
+              echo "[ARIA] Nginx config updated"
+            fi
+
+            if [ ! -L "$NGINX_ENABLED" ]; then
+              sudo ln -sf "$NGINX_CONF" "$NGINX_ENABLED"
+              echo "[ARIA] Nginx symlink created"
+            fi
+
+            # Obtain cert if not present (first deploy)
+            if [ ! -d "/etc/letsencrypt/live/aria.mansoni.ru" ]; then
+              echo "[ARIA] Obtaining SSL cert for aria.mansoni.ru..."
+              sudo certbot --nginx -d aria.mansoni.ru \
+                --non-interactive --agree-tos \
+                -m admin@mansoni.ru --redirect || echo "[ARIA] certbot failed — check manually"
+            fi
+
+            sudo nginx -t
+            sudo systemctl reload nginx
+            echo "── [ARIA] Nginx reloaded ────────────────────────────"
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 2. Deploy aria-chat + aria-memory Edge Functions + set Supabase Vault
+  # ─────────────────────────────────────────────────────────────────────────
+  deploy-aria-supabase:
+    name: Deploy ARIA Edge Functions + Vault
+    runs-on: ubuntu-latest
+    needs: deploy-aria-vps   # VPS must be up before we point Supabase at it
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Link Supabase project
+        run: |
+          PROJECT_REF=$(echo "$VITE_SUPABASE_URL" | grep -oP '(?<=https://)([a-z0-9]+)(?=\.supabase\.co)')
+          echo "Linking to project: $PROJECT_REF"
+          supabase link --project-ref "$PROJECT_REF"
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          VITE_SUPABASE_URL:     ${{ secrets.VITE_SUPABASE_URL }}
+
+      - name: Set Vault secrets (ARIA_BACKEND_URL + ARIA_BACKEND_KEY)
+        run: |
+          supabase secrets set \
+            ARIA_BACKEND_URL="${ARIA_BACKEND_URL}" \
+            ARIA_BACKEND_KEY="${ARIA_BACKEND_KEY}"
+          echo "Vault: ARIA_BACKEND_URL and ARIA_BACKEND_KEY set"
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          ARIA_BACKEND_URL: "https://aria.mansoni.ru"
+          ARIA_BACKEND_KEY: ${{ secrets.ARIA_SERVER_KEY }}
+
+      - name: Deploy aria-chat Edge Function
+        run: supabase functions deploy aria-chat --no-verify-jwt=false
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+      - name: Deploy aria-memory Edge Function
+        run: supabase functions deploy aria-memory --no-verify-jwt=false
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 3. Smoke test
+  # ─────────────────────────────────────────────────────────────────────────
+  smoke-test:
+    name: Smoke test ARIA
+    runs-on: ubuntu-latest
+    needs: [deploy-aria-vps, deploy-aria-supabase]
+
+    steps:
+      - name: Health check aria.mansoni.ru
+        run: |
+          sleep 5
+          HTTP=$(curl -o /dev/null -sf -w "%{http_code}" \
+            --retry 3 --retry-delay 3 --retry-connrefused \
+            --max-time 10 https://aria.mansoni.ru/health)
+          echo "aria.mansoni.ru/health → $HTTP"
+          if [ "$HTTP" != "200" ]; then
+            echo "::error::ARIA health check failed (HTTP $HTTP)"
+            exit 1
+          fi
+          curl -s https://aria.mansoni.ru/health | python3 -m json.tool

@@ -95,7 +95,7 @@ export function useAccessibility() {
             { onConflict: 'user_id' }
           );
         if (error) {
-          console.error('[useAccessibility] upsert failed:', error.message);
+          logger.error('[useAccessibility] upsert failed', { error: error.message });
           // НЕ бросаем ошибку — localStorage fallback уже применён
         }
       }

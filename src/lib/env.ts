@@ -3,6 +3,8 @@
  * Provides type-safe access to frontend environment variables
  */
 
+import { logger } from "./logger";
+
 interface ImportMetaEnv {
   // Phone Auth
   readonly VITE_PHONE_AUTH_API_URL: string;
@@ -88,23 +90,22 @@ export function validateEnvironment(): { valid: boolean; errors: string[] } {
 export function logEnvironment(): void {
   if (!ENV.enableDebugLogging) return;
 
-  console.group('🔧 Environment Configuration');
-  console.log('Phone Auth API:', ENV.phoneAuthApiUrl);
-  console.log('Phone Auth Function:', ENV.phoneAuthFunctionUrl || '(derived)');
-  console.log('Supabase URL:', ENV.supabaseUrl);
-  console.log('Environment:', ENV.mode);
-  console.log('App version:', ENV.appVersion);
-  console.log('App commit:', ENV.appCommitSha);
-  console.log('Build time:', ENV.appBuildTime);
-  console.log('Development:', ENV.isDevelopment);
-  console.groupEnd();
+  logger.debug('[ENV] Environment Configuration', {
+    phoneAuthApi: ENV.phoneAuthApiUrl,
+    phoneAuthFunction: ENV.phoneAuthFunctionUrl || '(derived)',
+    supabaseUrl: ENV.supabaseUrl,
+    mode: ENV.mode,
+    appVersion: ENV.appVersion,
+    appCommit: ENV.appCommitSha,
+    buildTime: ENV.appBuildTime,
+    isDevelopment: ENV.isDevelopment,
+  });
 }
 
 // Validate on module load
 const validation = validateEnvironment();
 if (!validation.valid) {
-  console.error('❌ Environment validation failed:');
-  validation.errors.forEach(err => console.error(`  - ${err}`));
+  logger.error('[ENV] Environment validation failed', { errors: validation.errors });
   if (ENV.isProduction) {
     throw new Error('Missing required environment variables');
   }

@@ -21,6 +21,7 @@ import {
   type PrivacyRuleException,
   type PrivacyRuleExceptionMode,
   type PrivacyRuleKey,
+  type AuthorizedSite,
   listAuthorizedSites,
   revokeAllAuthorizedSites,
   revokeAuthorizedSite,
@@ -86,7 +87,7 @@ export function PrivacySecurityCenter({ mode, isDark, onOpenBlocked }: Props) {
   const [securitySettings, setSecuritySettings] = useState<UserSecuritySettings | null>(null);
   const [passcode, setPasscode] = useState("");
   const [cloudPassword, setCloudPassword] = useState("");
-  const [sites, setSites] = useState<any[]>([]);
+  const [sites, setSites] = useState<AuthorizedSite[]>([]);
 
   const selectedMeta = useMemo(() => RULES.find((r) => r.key === selectedRuleKey) ?? null, [selectedRuleKey]);
   const selectedRule = useMemo(() => rules.find((r) => r.rule_key === selectedRuleKey) ?? null, [rules, selectedRuleKey]);
@@ -134,7 +135,7 @@ export function PrivacySecurityCenter({ mode, isDark, onOpenBlocked }: Props) {
         setProfilesById({});
         return;
       }
-      const briefMap = await fetchUserBriefMap(ids, supabase as any);
+      const briefMap = await fetchUserBriefMap(ids);
       const map: Record<string, { display_name: string | null; avatar_url: string | null }> = {};
       for (const id of ids) {
         const brief = resolveUserBrief(id, briefMap);
@@ -182,7 +183,7 @@ export function PrivacySecurityCenter({ mode, isDark, onOpenBlocked }: Props) {
           .ilike("display_name", `%${search.trim()}%`)
           .limit(8);
         if (error) throw error;
-        if (!cancelled) setSearchResults((data ?? []) as any);
+        if (!cancelled) setSearchResults(data ?? []);
       } catch (e) {
         if (!cancelled) toast({ title: "Поиск", description: e instanceof Error ? e.message : String(e) });
       }
@@ -474,18 +475,18 @@ export function PrivacySecurityCenter({ mode, isDark, onOpenBlocked }: Props) {
                 setRules((prev) => prev.map((r) => (r.rule_key === next.rule_key ? next : r)));
               }} />
             </div>
-            {[
+            {([
               ["gift_allow_common", "Обычные"],
               ["gift_allow_rare", "Редкие"],
               ["gift_allow_unique", "Уникальные"],
               ["gift_allow_channels", "От каналов"],
               ["gift_allow_premium", "Telegram Premium"],
-            ].map(([key, title]) => (
+            ] as const).map(([key, title]) => (
               <div key={key} className={cn("px-5 py-4 border-t flex items-center justify-between gap-3", isDark ? "border-white/10" : "border-white/20")}>
                 <p className="font-medium">{title}</p>
-                <Switch checked={Boolean((selectedRule as any)[key])} onCheckedChange={async (val) => {
+                <Switch checked={Boolean(selectedRule[key])} onCheckedChange={async (val) => {
                   if (!user?.id) return;
-                  const next = await updatePrivacyRule(user.id, "gifts", { [key]: val } as any);
+                  const next = await updatePrivacyRule(user.id, "gifts", { [key]: val });
                   setRules((prev) => prev.map((r) => (r.rule_key === next.rule_key ? next : r)));
                 }} />
               </div>

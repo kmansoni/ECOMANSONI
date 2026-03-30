@@ -7,6 +7,7 @@ import { useRecommendedUsers } from "@/hooks/useRecommendedUsers";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
+import { logger } from "@/lib/logger";
 import { VerifiedBadge } from "@/components/ui/verified-badge";
 
 interface RecommendedUsersModalProps {
@@ -81,7 +82,7 @@ export function RecommendedUsersModal({ isOpen, onClose }: RecommendedUsersModal
         setFollowing(prev => new Set(prev).add(userId));
       }
     } catch (error) {
-      console.error('Follow error:', error);
+      logger.error('[RecommendedUsersModal] Follow error', { error });
       toast.error('Не удалось выполнить действие');
     } finally {
       setProcessing(null);
@@ -100,7 +101,7 @@ export function RecommendedUsersModal({ isOpen, onClose }: RecommendedUsersModal
       toast.info("Функция доступа к контактам будет доступна в мобильном приложении");
       setShowContactsPermission(false);
     } catch (error) {
-      console.error('Contacts error:', error);
+      logger.error('[RecommendedUsersModal] Contacts error', { error });
       toast.error('Не удалось получить доступ к контактам');
     }
   };

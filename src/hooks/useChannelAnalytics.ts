@@ -12,6 +12,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { logger } from "@/lib/logger";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -136,7 +137,7 @@ export function useChannelAnalytics(channelId: string) {
 
     if (invErr) {
       // Не блокируем UX — просмотр не критичен
-      console.warn("[useChannelAnalytics] recordView error:", invErr.message);
+      logger.warn("[useChannelAnalytics] recordView error", { error: invErr.message });
     }
   }, [channelId]);
 

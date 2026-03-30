@@ -1,8 +1,31 @@
 import { useState, useCallback } from 'react';
-import { supabase } from '@/lib/supabase';
+import { supabase, dbLoose } from '@/lib/supabase';
 
 export type SearchType = 'all' | 'users' | 'hashtags' | 'posts' | 'locations';
 export type SearchHistoryType = 'general' | 'user' | 'hashtag' | 'location';
+
+// Локальные типы для колонок posts, отсутствующих в сгенерированных типах
+interface PostSearchRow {
+  id: string;
+  content: string | null;
+  image_urls: string[] | null;
+  likes_count: number;
+  comments_count: number;
+  profiles?: { username: string | null; avatar_url: string | null } | null;
+}
+
+interface PostLocationRow {
+  location: string | null;
+}
+
+interface PostExploreRow {
+  id: string;
+  image_urls: string[] | null;
+  video_url: string | null;
+  likes_count: number;
+  comments_count: number;
+  content: string | null;
+}
 
 export interface SearchResultUser {
   id: string;
@@ -94,54 +117,60 @@ export function useExploreSearch() {
           .select('id, username, display_name, avatar_url, bio')
           .or(`username.ilike.%${query}%,display_name.ilike.%${query}%`)
           .limit(20);
-        results.users = (users || []).map((u: any) => ({
-          ...u,
+        results.users = (users || []).map((u) => ({
+          id: u.id,
+          username: u.username ?? '',
+          display_name: u.display_name ?? '',
+          avatar_url: u.avatar_url,
+          bio: u.bio,
           followers_count: 0,
           is_verified: false,
         }));
       }
 
       if (type === 'all' || type === 'hashtags') {
-        const { data: tags } = await (supabase as any)
+        const { data: tags } = await supabase
           .from('hashtags')
-          .select('id, name, post_count')
-          .ilike('name', `%${query.replace(/^#/, '')}%`)
-          .order('post_count', { ascending: false })
+          .select('id, tag, posts_count')
+          .ilike('tag', `%${query.replace(/^#/, '')}%`)
+          .order('posts_count', { ascending: false })
           .limit(20);
-        results.hashtags = (tags || []).map((t: any) => ({
+        results.hashtags = (tags || []).map((t) => ({
           id: t.id,
-          name: t.name,
-          post_count: t.post_count || 0,
+          name: t.tag,
+          post_count: t.posts_count ?? 0,
         }));
       }
 
       if (type === 'all' || type === 'posts') {
-        const { data: posts } = await supabase
+        const { data: rawPosts } = await dbLoose
           .from('posts')
           .select('id, content, image_urls, likes_count, comments_count, profiles(username, avatar_url)')
           .ilike('content', `%${query}%`)
           .limit(20);
-        results.posts = (posts || []).map((p: any) => ({
+        const posts = (rawPosts ?? []) as PostSearchRow[];
+        results.posts = posts.map((p) => ({
           id: p.id,
-          content: p.content,
-          image_urls: p.image_urls || [],
+          content: p.content ?? '',
+          image_urls: p.image_urls ?? [],
           likes_count: p.likes_count || 0,
           comments_count: p.comments_count || 0,
           author: {
-            username: p.profiles?.username || '',
-            avatar_url: p.profiles?.avatar_url || null,
+            username: p.profiles?.username ?? '',
+            avatar_url: p.profiles?.avatar_url ?? null,
           },
         }));
       }
 
       if (type === 'all' || type === 'locations') {
-        const { data: locs } = await supabase
+        const { data: rawLocs } = await dbLoose
           .from('posts')
           .select('location')
           .ilike('location', `%${query}%`)
           .not('location', 'is', null)
           .limit(20);
-        const unique = [...new Set((locs || []).map((l: any) => l.location).filter(Boolean))];
+        const locs = (rawLocs ?? []) as PostLocationRow[];
+        const unique = [...new Set(locs.map((l) => l.location).filter(Boolean))];
         results.locations = unique as string[];
       }
 
@@ -193,13 +222,13 @@ export function useExploreSearch() {
       // Fallback: get from hashtags table
       const { data: tags } = await supabase
         .from('hashtags')
-        .select('id, name, post_count')
-        .order('post_count', { ascending: false })
+        .select('id, tag, posts_count')
+        .order('posts_count', { ascending: false })
         .limit(20);
-      setTrending((tags || []).map((t: any) => ({
+      setTrending((tags || []).map((t) => ({
         id: t.id,
-        tag: t.name,
-        post_count: t.post_count || 0,
+        tag: t.tag,
+        post_count: t.posts_count ?? 0,
         recent_count: 0,
         growth_rate: 0,
       })));
@@ -209,7 +238,7 @@ export function useExploreSearch() {
   const getExploreContent = useCallback(async (category?: string) => {
     setLoading(true);
     try {
-      let query = supabase
+      let query = dbLoose
         .from('posts')
         .select('id, image_urls, video_url, likes_count, comments_count, content')
         .not('image_urls', 'is', null)
@@ -220,7 +249,8 @@ export function useExploreSearch() {
         query = query.ilike('content', `%${category}%`);
       }
 
-      const { data: posts } = await query;
+      const { data: rawPosts } = await query;
+      const posts = (rawPosts ?? []) as PostExploreRow[];
 
       const { data: reels } = await supabase
         .from('reels')
@@ -228,17 +258,17 @@ export function useExploreSearch() {
         .order('likes_count', { ascending: false })
         .limit(20);
 
-      const postsFormatted: ExplorePost[] = (posts || []).map((p: any) => ({
+      const postsFormatted: ExplorePost[] = posts.map((p) => ({
         id: p.id,
-        image_urls: p.image_urls || [],
-        video_url: p.video_url || null,
-        type: p.video_url ? 'reel' : (p.image_urls?.length > 1 ? 'carousel' : 'post'),
+        image_urls: p.image_urls ?? [],
+        video_url: p.video_url ?? null,
+        type: p.video_url ? 'reel' : (p.image_urls && p.image_urls.length > 1 ? 'carousel' : 'post'),
         likes_count: p.likes_count || 0,
         comments_count: p.comments_count || 0,
         category: null,
       }));
 
-      const reelsFormatted: ExplorePost[] = (reels || []).map((r: any) => ({
+      const reelsFormatted: ExplorePost[] = (reels || []).map((r) => ({
         id: r.id,
         image_urls: r.thumbnail_url ? [r.thumbnail_url] : [],
         video_url: r.video_url,

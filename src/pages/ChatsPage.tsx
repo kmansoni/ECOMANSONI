@@ -49,6 +49,14 @@ interface LocationState {
   chatAction?: "settings" | "timer" | "scheduled";
 }
 
+interface TypingBroadcastPayload {
+  payload?: {
+    user_id?: string;
+    is_typing?: boolean;
+    activity?: string;
+  };
+}
+
 function fallbackNameFromUserId(userId: string | null | undefined, fallback = "User"): string {
   const normalized = String(userId || "").trim();
   if (!normalized) return fallback;
@@ -424,7 +432,7 @@ export function ChatsPage() {
 
   const combinedItems: CombinedItem[] = useMemo(() => {
     return [
-      ...channels.map((channel) => ({
+      ...channels.filter((c) => c.is_member).map((channel) => ({
         kind: "channel" as const,
         id: channel.id,
         activityAt: channel.last_message?.created_at || channel.updated_at || channel.created_at,
@@ -498,10 +506,8 @@ export function ChatsPage() {
 
   // Get the other participant's info for display
   const getOtherParticipant = (conv: Conversation) => {
-    const participants = Array.isArray((conv as any)?.participants)
-      ? (conv as any).participants
-      : [];
-    const other = participants.find((p: any) => p?.user_id !== user?.id);
+    const participants = Array.isArray(conv?.participants) ? conv.participants : [];
+    const other = participants.find((p) => p?.user_id !== user?.id);
     return {
       user_id: other?.user_id || "",
       ...(other?.profile || { display_name: fallbackNameFromUserId(other?.user_id), avatar_url: null })
@@ -721,10 +727,8 @@ export function ChatsPage() {
     if (!user?.id) return;
     const dmConversations = conversations
       .map((conv) => {
-        const participants = Array.isArray((conv as any)?.participants)
-          ? (conv as any).participants
-          : [];
-        const other = participants.find((p: any) => p?.user_id !== user.id);
+        const participants = Array.isArray(conv?.participants) ? conv.participants : [];
+        const other = participants.find((p) => p?.user_id !== user.id);
         return { id: conv.id, otherUserId: other?.user_id || null };
       })
       .filter((item): item is { id: string; otherUserId: string } => Boolean(item.otherUserId));
@@ -738,9 +742,9 @@ export function ChatsPage() {
       return supabase
         .channel(`typing:${id}`)
         .on(
-          "broadcast" as any,
+          "broadcast",
           { event: "typing" },
-          (payload: any) => {
+          (payload: TypingBroadcastPayload) => {
             const p = payload?.payload;
             if (!p || p.user_id !== otherUserId) return;
 
@@ -775,11 +779,9 @@ export function ChatsPage() {
   // Get user IDs already in conversations
   const conversationUserIds = new Set(
     conversations.flatMap((c) => {
-      const participants = Array.isArray((c as any)?.participants)
-        ? (c as any).participants
-        : [];
+      const participants = Array.isArray(c?.participants) ? c.participants : [];
       return participants
-        .map((p: any) => (typeof p?.user_id === "string" ? p.user_id : ""))
+        .map((p) => (typeof p?.user_id === "string" ? p.user_id : ""))
         .filter(Boolean);
     })
   );
@@ -819,7 +821,7 @@ export function ChatsPage() {
         const { data, error } = await supabase.from("channels").select("*").eq("id", channelId).maybeSingle();
         if (error) throw error;
         if (data) {
-          setSelectedChannel({ ...(data as any), is_member: true });
+          setSelectedChannel({ ...(data as unknown as Channel), is_member: true });
           return;
         }
       } catch (e) {

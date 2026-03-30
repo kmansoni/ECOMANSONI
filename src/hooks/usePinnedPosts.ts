@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
+import { logger } from "@/lib/logger";
 
 export interface PinnedPostRecord {
   id: string;
@@ -114,7 +115,7 @@ export function usePinnedPosts(userId?: string) {
 
       setPinnedPosts(mapped);
     } catch (error) {
-      console.error("Failed to load pinned posts", error);
+      logger.error("[usePinnedPosts] Failed to load pinned posts", { error });
       setPinnedPosts([]);
     } finally {
       setLoading(false);

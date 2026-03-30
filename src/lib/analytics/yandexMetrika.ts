@@ -6,6 +6,8 @@
  * Нет зависимостей; нет `any` в публичном API.
  */
 
+import { logger } from '@/lib/logger';
+
 // ---------------------------------------------------------------------------
 // Window-level типы (Yandex.Metrika injected globals)
 // ---------------------------------------------------------------------------
@@ -142,7 +144,7 @@ export async function initYandexMetrika(options: YMOptions = {}): Promise<void> 
     scriptFailed = true;
     // Graceful degradation: не бросаем наружу, только логируем в dev
     if (import.meta.env?.DEV) {
-      console.warn("[YM] init failed:", err);
+      logger.warn("[YM] init failed", { error: err });
     }
   }
 }

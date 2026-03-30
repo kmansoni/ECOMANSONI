@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { logger } from "@/lib/logger";
 
 export type UserSessionRow = {
   id: string;
@@ -36,7 +37,7 @@ export function useUserSessions() {
       if (error) throw error;
       setRows((data ?? []) as any);
     } catch (e) {
-      console.error("useUserSessions.fetchRows error:", e);
+      logger.error("[useUserSessions] fetchRows error", { error: e });
       setRows([]);
     } finally {
       setLoading(false);

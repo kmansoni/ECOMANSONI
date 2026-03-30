@@ -333,17 +333,17 @@ export function AdminUsersPage() {
                         <div className="flex flex-wrap gap-1">
                           {(r.admin_user_roles ?? []).map((x) => x.role).filter(Boolean).map((role) => (
                             <Button
-                              key={(role as any).name}
+                              key={role!.name}
                               size="sm"
                               variant="secondary"
                               onClick={() => setRevokeDraft({
                                 admin_user_id: r.id,
-                                role_name: (role as any).name,
-                                role_display_name: (role as any).display_name,
-                                role_category: (role as any).category,
+                                role_name: role!.name,
+                                role_display_name: role!.display_name,
+                                role_category: role!.category,
                               })}
                             >
-                              {(role as any).display_name}
+                              {role!.display_name}
                             </Button>
                           ))}
                         </div>

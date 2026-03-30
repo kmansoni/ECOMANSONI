@@ -49,17 +49,16 @@ const DEFAULT_EMOJI_PREFERENCES: Omit<UserEmojiPreferences, "user_id" | "updated
 };
 
 const DEFAULT_QUICK_REACTION = "❤️";
-const supabaseAny = supabase as any;
 
 function withEmojiDefaults(row: Partial<UserEmojiPreferences>): UserEmojiPreferences {
   return {
-    ...(DEFAULT_EMOJI_PREFERENCES as any),
-    ...(row as any),
+    ...DEFAULT_EMOJI_PREFERENCES,
+    ...row,
   } as UserEmojiPreferences;
 }
 
 export async function listStickerPacks(query = ""): Promise<StickerPack[]> {
-  let req = supabaseAny
+  let req = supabase
     .from("sticker_packs")
     .select("id, slug, title, source_type, visibility_status, is_active, is_premium, is_business, is_animated, owner_user_id, cover_asset_path, item_count, sort_order")
     .eq("is_active", true)
@@ -76,32 +75,32 @@ export async function listStickerPacks(query = ""): Promise<StickerPack[]> {
 }
 
 export async function listMyStickerLibrary(userId: string): Promise<StickerPack[]> {
-  const { data, error } = await supabaseAny
+  const { data, error } = await supabase
     .from("user_sticker_library")
     .select("sort_order, sticker_packs!inner(id, slug, title, source_type, visibility_status, is_active, is_premium, is_business, is_animated, owner_user_id, cover_asset_path, item_count, sort_order)")
     .eq("user_id", userId)
     .order("sort_order");
   if (error) throw error;
-  return (data ?? []).map((row: any) => row.sticker_packs as StickerPack);
+  return (data ?? []).map((row) => (row as unknown as { sticker_packs: StickerPack }).sticker_packs);
 }
 
 export async function listArchivedStickerPacks(userId: string): Promise<StickerPack[]> {
-  const { data, error } = await supabaseAny
+  const { data, error } = await supabase
     .from("user_sticker_archive")
     .select("archived_at, sticker_packs!inner(id, slug, title, source_type, visibility_status, is_active, is_premium, is_business, is_animated, owner_user_id, cover_asset_path, item_count, sort_order)")
     .eq("user_id", userId)
     .order("archived_at", { ascending: false });
   if (error) throw error;
-  return (data ?? []).map((row: any) => row.sticker_packs as StickerPack);
+  return (data ?? []).map((row) => (row as unknown as { sticker_packs: StickerPack }).sticker_packs);
 }
 
 export async function installStickerPack(userId: string, packId: string): Promise<void> {
-  const { error: upsertError } = await supabaseAny
+  const { error: upsertError } = await supabase
     .from("user_sticker_library")
     .upsert({ user_id: userId, pack_id: packId }, { onConflict: "user_id,pack_id" });
   if (upsertError) throw upsertError;
 
-  const { error: removeArchiveError } = await supabaseAny
+  const { error: removeArchiveError } = await supabase
     .from("user_sticker_archive")
     .delete()
     .eq("user_id", userId)
@@ -110,12 +109,12 @@ export async function installStickerPack(userId: string, packId: string): Promis
 }
 
 export async function archiveStickerPack(userId: string, packId: string): Promise<void> {
-  const { error: archiveError } = await supabaseAny
+  const { error: archiveError } = await supabase
     .from("user_sticker_archive")
     .upsert({ user_id: userId, pack_id: packId }, { onConflict: "user_id,pack_id" });
   if (archiveError) throw archiveError;
 
-  const { error: deleteError } = await supabaseAny
+  const { error: deleteError } = await supabase
     .from("user_sticker_library")
     .delete()
     .eq("user_id", userId)
@@ -126,12 +125,12 @@ export async function archiveStickerPack(userId: string, packId: string): Promis
 export async function bulkArchiveStickerPacks(userId: string, packIds: string[]): Promise<void> {
   if (!packIds.length) return;
   const archiveRows = packIds.map((packId) => ({ user_id: userId, pack_id: packId }));
-  const { error: archiveError } = await supabaseAny
+  const { error: archiveError } = await supabase
     .from("user_sticker_archive")
     .upsert(archiveRows, { onConflict: "user_id,pack_id" });
   if (archiveError) throw archiveError;
 
-  const { error: deleteError } = await supabaseAny
+  const { error: deleteError } = await supabase
     .from("user_sticker_library")
     .delete()
     .eq("user_id", userId)
@@ -142,12 +141,12 @@ export async function bulkArchiveStickerPacks(userId: string, packIds: string[])
 export async function bulkRestoreStickerPacks(userId: string, packIds: string[]): Promise<void> {
   if (!packIds.length) return;
   const rows = packIds.map((packId) => ({ user_id: userId, pack_id: packId }));
-  const { error: upsertError } = await supabaseAny
+  const { error: upsertError } = await supabase
     .from("user_sticker_library")
     .upsert(rows, { onConflict: "user_id,pack_id" });
   if (upsertError) throw upsertError;
 
-  const { error: archiveDeleteError } = await supabaseAny
+  const { error: archiveDeleteError } = await supabase
     .from("user_sticker_archive")
     .delete()
     .eq("user_id", userId)
@@ -156,7 +155,7 @@ export async function bulkRestoreStickerPacks(userId: string, packIds: string[])
 }
 
 export async function listEmojiSets(): Promise<EmojiSet[]> {
-  const { data, error } = await supabaseAny
+  const { data, error } = await supabase
     .from("emoji_sets")
     .select("id, slug, title, source_type, is_active, is_premium, sort_order")
     .eq("is_active", true)
@@ -166,49 +165,49 @@ export async function listEmojiSets(): Promise<EmojiSet[]> {
 }
 
 export async function getOrCreateUserEmojiPreferences(userId: string): Promise<UserEmojiPreferences> {
-  const { data: existing, error } = await supabaseAny
+  const { data: existing, error } = await supabase
     .from("user_emoji_preferences")
     .select("*")
     .eq("user_id", userId)
     .maybeSingle();
   if (error) throw error;
-  if (existing) return withEmojiDefaults(existing as any);
+  if (existing) return withEmojiDefaults(existing as Partial<UserEmojiPreferences>);
 
-  const { data, error: insertError } = await supabaseAny
+  const { data, error: insertError } = await supabase
     .from("user_emoji_preferences")
     .insert({ user_id: userId })
     .select("*")
     .single();
   if (insertError) throw insertError;
-  return withEmojiDefaults(data as any);
+  return withEmojiDefaults(data as Partial<UserEmojiPreferences>);
 }
 
 export async function updateUserEmojiPreferences(
   userId: string,
   patch: Partial<Omit<UserEmojiPreferences, "user_id" | "updated_at" | "created_at">>,
 ): Promise<UserEmojiPreferences> {
-  const { data, error } = await supabaseAny
+  const { data, error } = await supabase
     .from("user_emoji_preferences")
     .update(patch)
     .eq("user_id", userId)
     .select("*")
     .single();
   if (error) throw error;
-  return withEmojiDefaults(data as any);
+  return withEmojiDefaults(data as Partial<UserEmojiPreferences>);
 }
 
 export async function listQuickReactionCatalog(): Promise<string[]> {
-  const { data, error } = await supabaseAny
+  const { data, error } = await supabase
     .from("quick_reaction_catalog")
     .select("emoji")
     .eq("is_active", true)
     .order("sort_order");
   if (error) throw error;
-  return (data ?? []).map((row: any) => String(row.emoji));
+  return (data ?? []).map((row) => String(row.emoji));
 }
 
 export async function getOrCreateUserQuickReaction(userId: string): Promise<UserQuickReaction> {
-  const { data: existing, error } = await supabaseAny
+  const { data: existing, error } = await supabase
     .from("user_quick_reaction")
     .select("*")
     .eq("user_id", userId)
@@ -216,7 +215,7 @@ export async function getOrCreateUserQuickReaction(userId: string): Promise<User
   if (error) throw error;
   if (existing) return existing as UserQuickReaction;
 
-  const { data, error: insertError } = await supabaseAny
+  const { data, error: insertError } = await supabase
     .from("user_quick_reaction")
     .insert({ user_id: userId, emoji: DEFAULT_QUICK_REACTION })
     .select("*")
@@ -226,7 +225,7 @@ export async function getOrCreateUserQuickReaction(userId: string): Promise<User
 }
 
 export async function setUserQuickReaction(userId: string, emoji: string): Promise<UserQuickReaction> {
-  const { data, error } = await supabaseAny
+  const { data, error } = await supabase
     .from("user_quick_reaction")
     .upsert({ user_id: userId, emoji }, { onConflict: "user_id" })
     .select("*")
@@ -236,7 +235,7 @@ export async function setUserQuickReaction(userId: string, emoji: string): Promi
 }
 
 export async function getQuickReactionForChat(userId: string, chatId: string): Promise<string | null> {
-  const { data, error } = await supabaseAny
+  const { data, error } = await supabase
     .from("user_quick_reaction_overrides")
     .select("emoji")
     .eq("user_id", userId)
@@ -247,14 +246,14 @@ export async function getQuickReactionForChat(userId: string, chatId: string): P
 }
 
 export async function setQuickReactionForChat(userId: string, chatId: string, emoji: string): Promise<void> {
-  const { error } = await supabaseAny
+  const { error } = await supabase
     .from("user_quick_reaction_overrides")
     .upsert({ user_id: userId, chat_id: chatId, emoji }, { onConflict: "user_id,chat_id" });
   if (error) throw error;
 }
 
 export async function removeQuickReactionForChat(userId: string, chatId: string): Promise<void> {
-  const { error } = await supabaseAny
+  const { error } = await supabase
     .from("user_quick_reaction_overrides")
     .delete()
     .eq("user_id", userId)

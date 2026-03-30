@@ -31,6 +31,7 @@ import {
   ReactNode,
   createElement,
 } from "react";
+import { logger } from "@/lib/logger";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 const LS_HASH_KEY = "__psl_h__";
@@ -135,7 +136,7 @@ async function registerBiometric(userId: string): Promise<string | null> {
     if (!credential) return null;
     return bufferToBase64(credential.rawId);
   } catch (err) {
-    console.error("[PasscodeLock] registerBiometric failed:", err);
+    logger.error("[PasscodeLock] registerBiometric failed", { error: err });
     return null;
   }
 }
@@ -155,7 +156,7 @@ async function verifyBiometric(credentialIdBase64: string): Promise<boolean> {
     });
     return assertion !== null;
   } catch (err) {
-    console.error("[PasscodeLock] verifyBiometric failed:", err);
+    logger.error("[PasscodeLock] verifyBiometric failed", { error: err });
     return false;
   }
 }

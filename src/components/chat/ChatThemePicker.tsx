@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { X, Check } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { logger } from "@/lib/logger";
 import { CHAT_THEMES, type ThemeId } from "./chatThemes";
 
 const EMOJIS = ["❤️", "🔥", "⭐", "🌙", "🌈", "💫", "🎵", "🌸", "🦋", "🎉", "🍀", "🐾"];
@@ -52,8 +53,9 @@ export function ChatThemePicker({
 
       onThemeChange(themeId, currentEmoji);
     } catch (err: unknown) {
+      logger.error("[ChatThemePicker] update theme failed", { error: err });
       toast.error("Не удалось сменить тему", {
-        description: err instanceof Error ? err.message : "Ошибка сохранения",
+        description: "Попробуйте снова.",
       });
     } finally {
       if (requestSeq === requestSeqRef.current) {
@@ -92,8 +94,9 @@ export function ChatThemePicker({
 
       onThemeChange(currentTheme, emoji);
     } catch (err: unknown) {
+      logger.error("[ChatThemePicker] update emoji failed", { error: err });
       toast.error("Не удалось изменить эмодзи", {
-        description: err instanceof Error ? err.message : "Ошибка сохранения",
+        description: "Попробуйте снова.",
       });
     } finally {
       if (requestSeq === requestSeqRef.current) {

@@ -1,6 +1,7 @@
 import { useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "./useAuth";
+import { logger } from "@/lib/logger";
 import {
   getOrCreateChatDeviceId,
   isChatProtocolV11EnabledForUser,
@@ -102,7 +103,7 @@ export function useMarkConversationRead() {
             .eq("id", conversationId)
             .maybeSingle();
           if (convErr) {
-            console.error("[markConversationRead] conversation load error", convErr);
+            logger.error("[markConversationRead] conversation load error", { error: convErr });
             return;
           }
 
@@ -116,7 +117,7 @@ export function useMarkConversationRead() {
             p_client_sent_at: new Date().toISOString(),
           });
           if (rpcErr) {
-            console.error("[markConversationRead] v11 rpc error", rpcErr);
+            logger.error("[markConversationRead] v11 rpc error", { error: rpcErr });
           }
           return;
         }
@@ -128,7 +129,7 @@ export function useMarkConversationRead() {
           .eq("id", conversationId)
           .maybeSingle();
         if (convErr) {
-          console.error("[markConversationRead] conversation load error", convErr);
+          logger.error("[markConversationRead] conversation load error", { error: convErr });
           return;
         }
 
@@ -143,7 +144,7 @@ export function useMarkConversationRead() {
           p_up_to_seq: targetSeq,
         });
         if (deliveredErr) {
-          console.error("[markConversationRead] ack_delivered_v1 rpc error", deliveredErr);
+          logger.error("[markConversationRead] ack_delivered_v1 rpc error", { error: deliveredErr });
           return;
         }
 
@@ -171,12 +172,12 @@ export function useMarkConversationRead() {
                   p_up_to_seq: Math.min(targetSeq, deliveredRetrySeq),
                 });
                 if (!readRetryErr) return;
-                console.error("[markConversationRead] ack_read_v1 retry rpc error", readRetryErr);
+                logger.error("[markConversationRead] ack_read_v1 retry rpc error", { error: readRetryErr });
                 return;
               }
             }
           }
-          console.error("[markConversationRead] ack_read_v1 rpc error", rpcErr);
+          logger.error("[markConversationRead] ack_read_v1 rpc error", { error: rpcErr });
         }
       } finally {
         inFlightConversationIdsRef.current.delete(conversationId);

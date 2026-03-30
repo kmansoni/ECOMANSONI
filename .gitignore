@@ -83,3 +83,9 @@ crisis-mesh-messenger/
 # Python cache artifacts
 __pycache__/
 *.py[cod]
+
+# Python virtual environment
+.venv/
+
+# Kilo Code AI workspace (worktrees, node_modules)
+.kilocode/

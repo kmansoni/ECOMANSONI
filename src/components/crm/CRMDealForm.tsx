@@ -7,6 +7,7 @@ import { useState, useEffect } from "react";
 import { X, Save, Briefcase, DollarSign, Calendar, Target, Home, CreditCard, TrendingUp } from "lucide-react";
 import { crm, type CRMDeal, type CRMClientRecord, type CRMProperty, type Profession, DEAL_SOURCES } from "@/lib/crm";
 import { toast } from "sonner";
+import { logger } from "@/lib/logger";
 
 const RE_STAGES = [
   { value: 'new',         label: 'Новая заявка' },
@@ -122,7 +123,7 @@ export function CRMDealForm({ profession, initial, clientId, onClose, onSaved }:
       onSaved(saved);
     } catch (err) {
       toast.error('Ошибка сохранения сделки');
-      console.error(err);
+      logger.error('[CRMDealForm] submit error', { error: err });
     } finally {
       setSaving(false);
     }

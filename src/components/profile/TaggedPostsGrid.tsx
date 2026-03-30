@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Loader2 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { dbLoose } from "@/lib/supabase";
 
 interface TaggedPostsGridProps {
   userId: string;
@@ -21,14 +21,15 @@ export function TaggedPostsGrid({ userId, onPostClick }: TaggedPostsGridProps) {
     (async () => {
       setLoading(true);
       try {
-        const { data } = await (supabase as any)
+        const { data } = await dbLoose
           .from("post_user_tags")
           .select("post_id, posts(id, image_url)")
           .eq("user_id", userId)
           .order("created_at", { ascending: false })
           .limit(30);
+        const rows = (data ?? []) as Array<{ post_id: string; posts: { image_url: string | null } | null }>;
         setPosts(
-          (data ?? []).map((d: any) => ({
+          rows.map((d) => ({
             post_id: d.post_id,
             image_url: d.posts?.image_url,
           }))

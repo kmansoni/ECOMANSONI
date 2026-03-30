@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 import { createFetchWithTimeout } from "@/lib/network/fetchWithTimeout";
 import { getSupabaseRuntimeConfig } from "@/lib/supabaseRuntimeConfig";
+import { logger } from "@/lib/logger";
 
 function normalizeEnv(value: unknown): string {
   if (typeof value !== "string") return "";
@@ -33,7 +34,7 @@ function extractProjectRefFromUrl(url: string): string | null {
 function enforceExpectedProjectRef() {
   // Build-time env lock: prevents shipping a bundle that points to a different Supabase project.
   // This is intentionally strict in production builds.
-  const expected = normalizeEnv((import.meta as any)?.env?.VITE_EXPECTED_SUPABASE_PROJECT_REF);
+  const expected = normalizeEnv(import.meta.env?.VITE_EXPECTED_SUPABASE_PROJECT_REF);
   if (!expected) return;
 
   const actual = extractProjectRefFromUrl(SUPABASE_URL);
@@ -49,24 +50,11 @@ if (!import.meta.env.DEV) {
 if (import.meta.env.DEV) {
   const projectRef = extractProjectRefFromUrl(SUPABASE_URL);
   const anonPrefix = SUPABASE_PUBLISHABLE_KEY ? SUPABASE_PUBLISHABLE_KEY.slice(0, 8) : "";
-  console.info("[Env] Supabase", {
+  logger.info("[Env] Supabase", {
     VITE_SUPABASE_URL: SUPABASE_URL,
     projectRef,
     anonKeyPrefix: anonPrefix,
   });
-}
-
-if ((!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) && !runtimeConfig.usedFallback) {
-  console.error("[Supabase] Missing VITE_SUPABASE_URL or VITE_SUPABASE_PUBLISHABLE_KEY");
-}
-
-if (runtimeConfig.usedFallback) {
-  // Always log in dev, but also log error in production to ensure this is noticed
-  if (import.meta.env.DEV) {
-    console.warn("[Supabase] Using fallback runtime config because VITE_SUPABASE_* is missing");
-  } else {
-    console.error("[Supabase] CRITICAL: Missing environment variables in production! App will likely fail.");
-  }
 }
 
 // Import the supabase client like this:
@@ -86,8 +74,9 @@ const baseSupabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_K
 });
 
 function isRetryableError(error: unknown): boolean {
-  const message = String((error as any)?.message ?? "").toLowerCase();
-  const code = String((error as any)?.code ?? "").toLowerCase();
+  const errObj = error as Record<string, unknown> | null;
+  const message = String(errObj?.message ?? "").toLowerCase();
+  const code = String(errObj?.code ?? "").toLowerCase();
   return (
     message.includes("fetch") ||
     message.includes("network") ||
@@ -113,13 +102,13 @@ function withDefaultInvokeHeaders(options?: Record<string, unknown>): Record<str
 
 async function invokeWithRetry(fnName: string, options?: Record<string, unknown>) {
   const preparedOptions = withDefaultInvokeHeaders(options);
-  const first = await (baseSupabase.functions as any).invoke(fnName, preparedOptions as any);
+  const first = await baseSupabase.functions.invoke(fnName, preparedOptions as Parameters<typeof baseSupabase.functions.invoke>[1]);
   if (!first?.error) return first;
   if (!isRetryableError(first.error)) return first;
 
-  const second = await (baseSupabase.functions as any).invoke(fnName, preparedOptions as any);
+  const second = await baseSupabase.functions.invoke(fnName, preparedOptions as Parameters<typeof baseSupabase.functions.invoke>[1]);
   if (second?.error && import.meta.env.DEV) {
-    console.warn("[BackendBridge] functions.invoke failed after retry", {
+    logger.warn("[BackendBridge] functions.invoke failed after retry", {
       fnName,
       firstError: first.error,
       secondError: second.error,
@@ -128,7 +117,7 @@ async function invokeWithRetry(fnName: string, options?: Record<string, unknown>
   return second;
 }
 
-const functionsProxy = new Proxy((baseSupabase as any).functions, {
+const functionsProxy = new Proxy(baseSupabase.functions, {
   get(target, prop, receiver) {
     if (prop === "invoke") {
       return invokeWithRetry;
@@ -138,7 +127,7 @@ const functionsProxy = new Proxy((baseSupabase as any).functions, {
   },
 });
 
-const supabaseProxy = new Proxy(baseSupabase as any, {
+const supabaseProxy = new Proxy(baseSupabase, {
   get(target, prop, receiver) {
     if (prop === "functions") {
       return functionsProxy;

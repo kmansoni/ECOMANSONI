@@ -54,6 +54,42 @@ interface InviteFollower {
   avatar_url?: string;
 }
 
+interface LiveSessionRow {
+  id?: string | number;
+  title?: string | null;
+  category?: string | null;
+  status?: string | null;
+  viewer_count_current?: number | string | null;
+  started_at?: string | null;
+}
+
+interface LiveChatMessageRow {
+  id?: string | number;
+  content?: string | null;
+  sender_id?: string | null;
+  sender_name?: string | null;
+  is_creator_message?: boolean | null;
+  created_at?: string | null;
+}
+
+interface LiveFollowerRow {
+  user_id?: string | null;
+  username?: string | null;
+  display_name?: string | null;
+  avatar_url?: string | null;
+}
+
+function toLiveChatMessage(row: LiveChatMessageRow): ChatMessage {
+  return {
+    id: String(row.id ?? ""),
+    content: String(row.content ?? ""),
+    sender_id: String(row.sender_id ?? ""),
+    sender_name: String(row.sender_name ?? ""),
+    is_creator_message: Boolean(row.is_creator_message),
+    created_at: String(row.created_at ?? ""),
+  };
+}
+
 function formatDuration(sec: number) {
   const h = Math.floor(sec / 3600);
   const m = Math.floor((sec % 3600) / 60);
@@ -130,14 +166,14 @@ export function LiveBroadcastRoom() {
         .single();
       if (error) throw error;
        
-      const row = data as any;
+      const row = (data ?? {}) as LiveSessionRow;
       const mapped: LiveSession = {
-        id: String(row?.id ?? sessionIdNum ?? ""),
-        title: String(row?.title ?? "Прямой эфир"),
-        category: String(row?.category ?? "general"),
-        status: String(row?.status ?? "active"),
-        viewer_count_current: Number(row?.viewer_count_current ?? 0),
-        started_at: String(row?.started_at ?? new Date().toISOString()),
+        id: String(row.id ?? sessionIdNum ?? ""),
+        title: String(row.title ?? "Прямой эфир"),
+        category: String(row.category ?? "general"),
+        status: String(row.status ?? "active"),
+        viewer_count_current: Number(row.viewer_count_current ?? 0),
+        started_at: String(row.started_at ?? new Date().toISOString()),
       };
       setSession(mapped);
       setViewerCount(mapped.viewer_count_current);
@@ -149,7 +185,7 @@ export function LiveBroadcastRoom() {
     } finally {
       setLoading(false);
     }
-  }, [sessionIdNum]);
+  }, [sessionId, sessionIdNum]);
 
   // Загрузка сообщений
   const loadMessages = useCallback(async () => {
@@ -162,18 +198,11 @@ export function LiveBroadcastRoom() {
         .order("created_at", { ascending: true })
         .limit(100);
       if (error) throw error;
-      setMessages((data || []).map((row: any) => ({
-        id: String(row.id),
-        content: String(row.content ?? ""),
-        sender_id: String(row.sender_id ?? ""),
-        sender_name: String(row.sender_name ?? ""),
-        is_creator_message: Boolean(row.is_creator_message),
-        created_at: String(row.created_at ?? ""),
-      })));
+      setMessages(((data ?? []) as LiveChatMessageRow[]).map((row) => toLiveChatMessage(row)));
     } catch (error) {
       logger.warn("[LiveBroadcastRoom] Failed to load chat messages", { sessionId, error });
     }
-  }, [sessionIdNum]);
+  }, [sessionId, sessionIdNum]);
 
   useEffect(() => {
     if (!sessionId || !Number.isFinite(sessionIdNum)) return;
@@ -189,15 +218,8 @@ export function LiveBroadcastRoom() {
         table: "live_chat_messages",
         filter: `session_id=eq.${sessionIdNum}`,
       }, (payload) => {
-        const row = payload.new as any;
-        setMessages((prev) => [...prev, {
-          id: String(row.id),
-          content: String(row.content ?? ""),
-          sender_id: String(row.sender_id ?? ""),
-          sender_name: String(row.sender_name ?? ""),
-          is_creator_message: Boolean(row.is_creator_message),
-          created_at: String(row.created_at ?? ""),
-        }]);
+        const row = payload.new as unknown as LiveChatMessageRow;
+        setMessages((prev) => [...prev, toLiveChatMessage(row)]);
       })
       .on("postgres_changes", {
         event: "UPDATE",
@@ -205,7 +227,8 @@ export function LiveBroadcastRoom() {
         table: "live_sessions",
         filter: `id=eq.${sessionIdNum}`,
       }, (payload) => {
-        setViewerCount(Number((payload.new as any).viewer_count_current ?? 0));
+        const row = payload.new as unknown as LiveSessionRow;
+        setViewerCount(Number(row.viewer_count_current ?? 0));
       })
       .subscribe();
 
@@ -291,8 +314,8 @@ export function LiveBroadcastRoom() {
 
       if (error) throw error;
 
-      const mapped: InviteFollower[] = (data ?? [])
-        .map((row: any) => ({
+      const mapped: InviteFollower[] = ((data ?? []) as LiveFollowerRow[])
+        .map((row) => ({
           id: String(row.user_id ?? ""),
           username: String(row.username ?? "user"),
           display_name: String(row.display_name ?? row.username ?? "User"),

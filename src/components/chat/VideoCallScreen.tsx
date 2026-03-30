@@ -7,7 +7,7 @@ function RingtonePlayer({ play }: { play: boolean }) {
     if (!audioRef.current) return;
     if (play) {
       audioRef.current.currentTime = 0;
-      audioRef.current.play().catch(() => {});
+      audioRef.current.play().catch(() => { /* autoplay blocked */ });
     } else {
       audioRef.current.pause();
       audioRef.current.currentTime = 0;
@@ -35,38 +35,39 @@ import {
   CheckCircle,
 } from "lucide-react";
 // Status icon and color for call states
-function StatusIndicator({ status, connectionState }: { status: string, connectionState: string }) {
+function StatusIndicator({ callState }: { callState: CallState }) {
   let icon: React.ReactNode = null;
   let color = "text-blue-400";
-  let pulse = false;
   let label = "";
-  switch (true) {
-    case connectionState === "failed":
+  switch (callState) {
+    case "failed":
       icon = <AlertTriangle className="w-6 h-6 animate-shake" />;
       color = "text-red-500";
       label = "Ошибка";
       break;
-    case connectionState === "connecting":
+    case "bootstrapping":
+    case "signaling_ready":
+    case "media_acquiring":
+    case "transport_connecting":
+    case "media_ready":
       icon = <Loader2 className="w-6 h-6 animate-spin" />;
       color = "text-blue-400";
       label = "Подключение";
       break;
-    case status === "connected":
+    case "in_call":
       icon = <CheckCircle className="w-6 h-6" />;
       color = "text-green-400";
       label = "Соединение";
       break;
-    case status === "calling":
+    case "outgoing_ringing":
       icon = <PhoneOutgoing className="w-6 h-6 animate-pulse" />;
       color = "text-blue-400";
       label = "Вызов";
-      pulse = true;
       break;
-    case status === "ringing":
+    case "incoming_ringing":
       icon = <PhoneIncoming className="w-6 h-6 animate-pulse" />;
       color = "text-yellow-400";
       label = "Звонок";
-      pulse = true;
       break;
     default:
       icon = <PhoneCall className="w-6 h-6" />;
@@ -82,6 +83,8 @@ function StatusIndicator({ status, connectionState }: { status: string, connecti
 }
 import type { VideoCall, VideoCallStatus } from "@/contexts/VideoCallContext";
 import type { CalleeProfile } from "@/contexts/video-call/types";
+import type { CallState } from "@/calls-v2/callStateMachine";
+import { isCallConnected, isCallRinging } from "@/calls-v2/callStateMachine";
 import { useAuth } from "@/hooks/useAuth";
 import { GradientAvatar } from "@/components/ui/gradient-avatar";
 
@@ -140,6 +143,7 @@ interface VideoCallScreenProps {
   call: VideoCall | null;
   pendingCalleeProfile?: CalleeProfile | null;
   status: VideoCallStatus;
+  callState: CallState;
   localStream: MediaStream | null;
   remoteStream: MediaStream | null;
   isMuted: boolean;
@@ -155,6 +159,7 @@ export function VideoCallScreen({
   call,
   pendingCalleeProfile,
   status,
+  callState,
   localStream,
   remoteStream,
   isMuted,
@@ -176,12 +181,12 @@ export function VideoCallScreen({
   useEffect(() => {
     if (audioOutRef.current && typeof audioOutRef.current.setSinkId === "function") {
       const sinkId = isSpeakerOn ? "default" : "communications";
-      audioOutRef.current.setSinkId(sinkId).catch(() => {});
+      audioOutRef.current.setSinkId(sinkId).catch(() => { /* audio output not supported */ });
     }
   }, [isSpeakerOn]);
 
   // Play ringtone if outgoing or incoming ringing
-  const shouldPlayRingtone = status === "calling" || status === "ringing";
+  const shouldPlayRingtone = isCallRinging(callState);
 
   // Handle null call during state transitions
   const isInitiator = call ? call.caller_id === user?.id : true;
@@ -189,7 +194,7 @@ export function VideoCallScreen({
   const otherName = otherProfile?.display_name || pendingCalleeProfile?.display_name || "Собеседник";
   const otherAvatar = otherProfile?.avatar_url ?? pendingCalleeProfile?.avatar_url;
   const isVideoCall = call ? call.call_type === "video" : true;
-  const isConnected = status === "connected" && connectionState === "connected";
+  const isConnected = isCallConnected(callState);
 
   // Determine if we have remote video to show
   const hasRemoteVideo = isConnected && remoteStream && remoteStream.getVideoTracks().length > 0;
@@ -231,20 +236,22 @@ export function VideoCallScreen({
 
   // Новый статус: иконка + цвет + плавный переход
   const getStatusText = (): string => {
-    if (connectionState === "failed") return "Ошибка соединения";
+    if (callState === "failed") return "Ошибка соединения";
     if (isConnected) return formatDuration(callDuration);
-    switch (status) {
-      case "calling": return "Вызов";
-      case "ringing": return "Звонок";
-    }
-    switch (connectionState) {
-      case "connecting": return "Настраиваем аудио и видео";
-      case "new": return "Инициализация";
+    switch (callState) {
+      case "outgoing_ringing": return "Вызов";
+      case "incoming_ringing": return "Звонок";
+      case "bootstrapping":
+      case "signaling_ready":
+      case "media_acquiring":
+      case "transport_connecting":
+      case "media_ready":
+        return "Настраиваем аудио и видео";
       default: return "Соединение";
     }
   };
 
-  const showRetryButton = connectionState === "failed";
+  const showRetryButton = callState === "failed";
   const showWaitingUI = !showRetryButton && !isConnected;
 
   // Video call - swap local/remote preview
@@ -359,7 +366,7 @@ export function VideoCallScreen({
               {/* Name and status */}
               <h3 className="text-2xl font-semibold text-white mt-6 mb-2 drop-shadow-lg">{otherName}</h3>
               <div className="flex items-center gap-3">
-                <StatusIndicator status={status} connectionState={connectionState} />
+                <StatusIndicator callState={callState} />
                 {!showRetryButton && (
                   <span className="flex ml-0.5">
                     <span className="animate-bounce text-white/80" style={{ animationDelay: "0ms", animationDuration: "1s" }}>.</span>
@@ -455,7 +462,7 @@ export function VideoCallScreen({
         <div className="flex-1 flex flex-col items-center justify-center -mt-16">
           {/* Status text above avatar + индикатор */}
           <div className="flex items-center gap-3 mb-3">
-            <StatusIndicator status={status} connectionState={connectionState} />
+            <StatusIndicator callState={callState} />
             <span className="text-white/60 text-sm">{getStatusText()}{showWaitingUI && !showRetryButton && '...'}</span>
           </div>
           

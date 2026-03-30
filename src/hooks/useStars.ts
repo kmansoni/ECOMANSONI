@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
+import { logger } from "@/lib/logger";
 import { useAuth } from "./useAuth";
 import { toast } from "sonner";
 
@@ -16,6 +17,18 @@ export interface StarTransaction {
 
 const DAILY_BONUS_KEY = "stars.daily_bonus.last_claimed";
 const DAILY_BONUS_AMOUNT = 10;
+
+async function withRetry<T>(fn: () => Promise<T>, retries = 2, delayMs = 1000): Promise<T> {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (attempt === retries) throw err;
+      await new Promise(r => setTimeout(r, delayMs * Math.pow(2, attempt)));
+    }
+  }
+  throw new Error("withRetry exhausted");
+}
 
 export function useStars() {
   const { user } = useAuth();
@@ -46,20 +59,25 @@ export function useStars() {
   const fetchBalance = useCallback(async () => {
     if (!user || starsUnavailable) return;
     try {
-      const { data, error } = await (supabase as any)
-        .from("user_stars")
-        .select("balance")
-        .eq("user_id", user.id)
-        .maybeSingle();
-      if (error) {
-        if (isOptionalStarsError(error)) {
-          setStarsUnavailable(true);
-          setBalance(0);
-          return;
+      const data = await withRetry(async () => {
+        const { data, error } = await (supabase as any)
+          .from("user_stars")
+          .select("balance")
+          .eq("user_id", user.id)
+          .maybeSingle();
+        if (error) {
+          if (isOptionalStarsError(error)) {
+            setStarsUnavailable(true);
+            setBalance(0);
+            return null;
+          }
+          throw error;
         }
-        throw error;
+        return data;
+      });
+      if (data !== null) {
+        setBalance(data?.balance ?? 0);
       }
-      setBalance(data?.balance ?? 0);
     } catch {
       setBalance(0);
     }
@@ -164,7 +182,7 @@ export function useStars() {
       await fetchTransactions();
       toast.success(`+${amount} ⭐ начислено`);
     } catch (e) {
-      console.error("addStars error", e);
+      logger.error("[useStars] addStars error", { error: e });
       toast.error("Не удалось пополнить баланс");
     }
   }, [user, fetchBalance, fetchTransactions, starsUnavailable]);
@@ -210,7 +228,7 @@ export function useStars() {
       await fetchTransactions();
       toast.success(`+${DAILY_BONUS_AMOUNT} ⭐ ежедневный бонус!`);
     } catch (e) {
-      console.error("claimDailyBonus error", e);
+      logger.error("[useStars] claimDailyBonus error", { error: e });
       toast.error("Не удалось получить бонус");
     }
   }, [user, canClaimDaily, fetchBalance, fetchTransactions, starsUnavailable]);

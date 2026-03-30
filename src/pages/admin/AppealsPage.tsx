@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { AdminShell } from "@/components/admin/AdminShell";
+import { logger } from "@/lib/logger";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -11,7 +12,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { toast } from "sonner";
 import { CheckCircle2, XCircle, Clock, AlertTriangle } from "lucide-react";
 import { useAdminMe } from "@/hooks/useAdminMe";
-import { supabase } from "@/lib/supabase";
+import { supabase, dbLoose } from "@/lib/supabase";
 import { Tables } from "@/integrations/supabase/types";
 
 type Appeal = Tables<"moderation_appeals">;
@@ -46,7 +47,6 @@ const CONTENT_TYPE_LABELS: Record<string, string> = {
 
 export function AppealsPage() {
   const { me: adminMe } = useAdminMe();
-  const supabaseUnsafe = supabase as any;
   const [appeals, setAppeals] = useState<AppealWithDetails[]>([]);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -72,7 +72,7 @@ export function AppealsPage() {
         .limit(50);
 
       if (filterStatus !== "all") {
-        query = query.eq("status", filterStatus as any);
+        query = query.eq("status", filterStatus as Appeal["status"]);
       }
 
       if (filterContentType !== "all") {
@@ -109,13 +109,13 @@ export function AppealsPage() {
                 preview = (comment.content || "").substring(0, 150);
               }
             } else if (appeal.content_type === "message") {
-              const { data: message } = await supabaseUnsafe
+              const { data: message } = await dbLoose
                 .from("direct_messages")
                 .select("content")
                 .eq("id", appeal.content_id)
                 .single();
               if (message) {
-                preview = (message.content || "").substring(0, 150);
+                preview = String((message as { content?: unknown }).content ?? "").substring(0, 150);
               }
             } else if (appeal.content_type === "profile") {
               const { data: profile } = await supabase
@@ -127,7 +127,7 @@ export function AppealsPage() {
                 preview = `${profile.display_name || ""}${profile.bio ? " - " + profile.bio : ""}`.substring(0, 150);
               }
             } else if (appeal.content_type === "hashtag") {
-              const { data: hashtag } = await supabaseUnsafe
+              const { data: hashtag } = await dbLoose
                 .from("hashtags")
                 .select("canonical_form")
                 .eq("id", appeal.content_id)
@@ -150,12 +150,12 @@ export function AppealsPage() {
 
       setAppeals(enriched);
     } catch (error) {
-      console.error("Failed to load appeals:", error);
+      logger.error("[AppealsPage] Failed to load appeals", { error });
       toast.error("Failed to load appeals");
     } finally {
       setLoading(false);
     }
-  }, [filterContentType, filterStatus, supabaseUnsafe]);
+  }, [filterContentType, filterStatus]);
 
   useEffect(() => {
     void loadAppeals();
@@ -193,9 +193,10 @@ export function AppealsPage() {
       
       setSelectedAppeal(null);
       loadAppeals();
-    } catch (error: any) {
-      console.error("Appeal review failed:", error);
-      toast.error(error.message || "Failed to submit appeal review");
+    } catch (error) {
+      logger.error("[AppealsPage] Appeal review failed", { error });
+      const message = error instanceof Error ? error.message : String(error);
+      toast.error(message || "Failed to submit appeal review");
     } finally {
       setSubmitting(false);
     }
@@ -404,7 +405,7 @@ export function AppealsPage() {
               {/* Review Decision */}
               <div className="space-y-2">
                 <Label>Review Decision</Label>
-                <Select value={reviewDecision} onValueChange={(v: any) => setReviewDecision(v)}>
+                <Select value={reviewDecision} onValueChange={(v: string) => setReviewDecision(v as "accept" | "reject")}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
@@ -429,7 +430,10 @@ export function AppealsPage() {
               {reviewDecision === "accept" && (
                 <div className="space-y-2">
                   <Label>New Moderation Decision</Label>
-                  <Select value={newDecision} onValueChange={(v: any) => setNewDecision(v)}>
+                  <Select
+                    value={newDecision}
+                    onValueChange={(v: string) => setNewDecision(v as "allow" | "restrict" | "needs_review" | "block")}
+                  >
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>

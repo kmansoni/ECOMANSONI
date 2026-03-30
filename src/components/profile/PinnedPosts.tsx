@@ -6,7 +6,7 @@
 
 import { useState } from "react";
 import { Pin, X } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { dbLoose } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -37,8 +37,7 @@ export function PinnedPosts({ userId, isOwner, pinnedPosts, onPostPress, onRefre
 
   const handleUnpin = async (pinnedId: string) => {
     setUnpinning(pinnedId);
-    const db = supabase as any;
-    const { error } = await db
+    const { error } = await dbLoose
       .from("pinned_posts")
       .delete()
       .eq("id", pinnedId)
@@ -117,8 +116,7 @@ export function usePinPost() {
       toast.error("Максимум 3 закреплённых поста");
       return false;
     }
-    const db = supabase as any;
-    const { error } = await db.from("pinned_posts").insert({
+    const { error } = await dbLoose.from("pinned_posts").insert({
       user_id: user.id,
       post_id: postId,
       position: currentPinnedCount,

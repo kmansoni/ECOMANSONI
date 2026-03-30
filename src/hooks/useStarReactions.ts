@@ -17,6 +17,7 @@
 import { useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
+import { logger } from "@/lib/logger";
 
 const db = supabase as any;
 
@@ -145,7 +146,7 @@ export function useStarReactions() {
         .order("stars_amount", { ascending: false });
 
       if (fetchError) {
-        console.error("[useStarReactions] getStarReactions error:", fetchError);
+        logger.error("[useStarReactions] getStarReactions error", { error: fetchError });
         return [];
       }
 
@@ -174,7 +175,7 @@ export function useStarReactions() {
       .eq("message_id", messageId);
 
     if (fetchError) {
-      console.error("[useStarReactions] totalStarsOnMessage error:", fetchError);
+      logger.error("[useStarReactions] totalStarsOnMessage error", { error: fetchError });
       return 0;
     }
 

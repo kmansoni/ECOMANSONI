@@ -11,6 +11,7 @@ import { useEffect, useRef, useCallback } from 'react';
 import { useEditorStore } from '../stores/editor-store';
 import { editorApi } from '../api';
 import { AUTO_SAVE_DEBOUNCE_MS } from '../constants';
+import { logger } from '@/lib/logger';
 
 export function useAutoSave(projectId: string | undefined) {
   const isSavingRef = useRef(false);
@@ -38,7 +39,7 @@ export function useAutoSave(projectId: string | undefined) {
       markClean();
     } catch (err) {
       // При ошибке сети не сбрасываем isDirty — повторим при следующем изменении
-      console.warn('[AutoSave] Save failed, will retry:', err);
+      logger.warn('[AutoSave] Save failed, will retry', { error: err });
     } finally {
       isSavingRef.current = false;
       if (needsRetryRef.current) {

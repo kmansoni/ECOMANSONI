@@ -48,22 +48,17 @@ import {
   verifyDelegationJwtHs256,
 } from "../_shared/delegation.ts";
 import { enforceRateLimit } from "../_shared/trust-lite.ts";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+import { handleCors, getCorsHeaders } from "../_shared/utils.ts";
 
 type RequestBody = {
   extension?: string;
   content_type?: string;
 };
 
-function json(status: number, body: unknown): Response {
+function json(status: number, body: unknown, origin: string | null): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...getCorsHeaders(origin), "Content-Type": "application/json" },
   });
 }
 
@@ -89,8 +84,11 @@ function extensionFromContentType(input: unknown): string | null {
 }
 
 serve(async (req: Request) => {
-  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
-  if (req.method !== "POST") return json(405, { error: "Method not allowed" });
+  const corsResp = handleCors(req);
+  if (corsResp) return corsResp;
+
+  const origin = req.headers.get("origin");
+  if (req.method !== "POST") return json(405, { error: "Method not allowed" }, origin);
 
   try {
     const supabaseUrl = requireEnv("SUPABASE_URL");
@@ -98,10 +96,10 @@ serve(async (req: Request) => {
 
     const token = getBearer(req);
     const { payload, alg } = await verifyDelegationJwtHs256(token);
-    if (alg !== "HS256") return json(400, { error: "Unsupported alg" });
+    if (alg !== "HS256") return json(400, { error: "Unsupported alg" }, origin);
 
     if (!hasScope(payload.scopes, "media:upload")) {
-      return json(403, { error: "Missing scope: media:upload" });
+      return json(403, { error: "Missing scope: media:upload" }, origin);
     }
 
     const supabase = createClient(supabaseUrl, serviceKey);
@@ -129,7 +127,7 @@ serve(async (req: Request) => {
         {
           status: 429,
           headers: {
-            ...corsHeaders,
+            ...getCorsHeaders(origin),
             "Content-Type": "application/json",
             "Retry-After": String(rl.retry_after_seconds),
           },
@@ -141,7 +139,7 @@ serve(async (req: Request) => {
       await validateDelegationInDb({ supabase, token, payload });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      return json(401, { error: msg });
+      return json(401, { error: msg }, origin);
     }
 
     const body: RequestBody = await req.json().catch(() => ({} as RequestBody));
@@ -152,7 +150,7 @@ serve(async (req: Request) => {
 
     const { data, error: signError } = await supabase.storage.from(bucket).createSignedUploadUrl(objectPath);
     if (signError || !data?.signedUrl) {
-      return json(500, { error: `Failed to sign upload url: ${signError?.message || "unknown"}` });
+      return json(500, { error: `Failed to sign upload url: ${signError?.message || "unknown"}` }, origin);
     }
 
     const signedPath = data.path || objectPath;
@@ -165,10 +163,10 @@ serve(async (req: Request) => {
       signed_url: data.signedUrl,
       token: data.token,
       public_url: publicUrlData?.publicUrl,
-    });
+    }, origin);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    if (msg.includes("Authorization")) return json(401, { error: "Unauthorized" });
-    return json(500, { error: "Internal server error" });
+    if (msg.includes("Authorization")) return json(401, { error: "Unauthorized" }, origin);
+    return json(500, { error: "Internal server error" }, origin);
   }
 });

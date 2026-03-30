@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import { dbLoose } from "@/lib/supabase";
 import { Heart } from "lucide-react";
 
 interface SuggestedPost {
@@ -20,7 +20,7 @@ export function SuggestedPostsInline() {
 
   useEffect(() => {
     (async () => {
-      const { data } = await (supabase as any)
+      const { data } = await dbLoose
         .from("posts")
         .select(`
           id,
@@ -32,8 +32,10 @@ export function SuggestedPostsInline() {
         .order("likes_count", { ascending: false })
         .limit(8);
       if (data) {
+        interface PostRow { id: string; image_url: string; likes_count: number | null; profiles: { id: string; username: string; avatar_url: string | null } | null }
+        const rows = data as PostRow[];
         setPosts(
-          data.map((p: any) => ({
+          rows.map((p) => ({
             id: p.id,
             image_url: p.image_url,
             likes_count: p.likes_count ?? 0,

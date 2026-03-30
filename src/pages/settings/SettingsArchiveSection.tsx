@@ -12,6 +12,62 @@ import { getErrorMessage } from "@/lib/utils";
 import { SettingsHeader, SettingsMenuItem, SettingsPostsList } from "./helpers";
 import type { SectionProps, SettingsPostItem, SettingsStoryItem, SettingsLiveArchiveItem } from "./types";
 
+interface PostMediaRow {
+  media_url: string | null;
+  sort_order: number | null;
+}
+
+interface PostRow {
+  id: string;
+  content: string | null;
+  created_at: string;
+  likes_count: number | null;
+  comments_count: number | null;
+  post_media: PostMediaRow[] | null;
+}
+
+interface StoryArchiveRow {
+  id: string;
+  media_url: string | null;
+  created_at: string;
+  archived_at: string | null;
+}
+
+interface ArchivedPostRefRow {
+  post_id: string;
+  archived_at: string;
+}
+
+interface LiveSessionArchiveRow {
+  id: string;
+  state: string | null;
+  started_at: string | null;
+  ended_at: string | null;
+  created_at: string;
+}
+
+interface QueryResult<T> {
+  data: T[] | null;
+  error: unknown;
+}
+
+interface StoriesQuery {
+  eq(column: string, value: unknown): StoriesQuery;
+  order(column: string, options: { ascending: boolean }): Promise<QueryResult<StoryArchiveRow>>;
+}
+
+interface LiveSessionsQuery {
+  eq(column: string, value: unknown): LiveSessionsQuery;
+  not(column: string, operator: string, value: unknown): LiveSessionsQuery;
+  order(column: string, options: { ascending: boolean }): LiveSessionsQuery;
+  limit(count: number): Promise<QueryResult<LiveSessionArchiveRow>>;
+}
+
+interface LightweightArchiveClient {
+  from(table: "stories"): { select(columns: string): StoriesQuery };
+  from(table: "live_sessions"): { select(columns: string): LiveSessionsQuery };
+}
+
 async function fetchPostsByIds(postIds: string[]): Promise<Map<string, SettingsPostItem>> {
   if (!postIds.length) return new Map();
   const { data, error } = await supabase
@@ -20,9 +76,9 @@ async function fetchPostsByIds(postIds: string[]): Promise<Map<string, SettingsP
     .in("id", postIds);
   if (error) throw error;
   const map = new Map<string, SettingsPostItem>();
-  for (const row of (data ?? []) as any[]) {
+  for (const row of (data ?? []) as unknown as PostRow[]) {
     const media = Array.isArray(row.post_media) ? row.post_media : [];
-    media.sort((a: any, b: any) => (a?.sort_order ?? 0) - (b?.sort_order ?? 0));
+    media.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
     map.set(String(row.id), {
       id: String(row.id),
       content: row.content ?? null,
@@ -55,14 +111,16 @@ export function SettingsArchiveSection({ isDark, currentScreen, onNavigate, onBa
     if (!user?.id) return;
     setStoriesLoading(true);
     try {
-      const { data, error } = await (supabase as any)
+      const archiveClient = supabase as unknown as LightweightArchiveClient;
+      const { data, error } = await archiveClient
         .from("stories")
         .select("id, media_url, created_at, archived_at")
         .eq("user_id", user.id)
         .eq("is_archived", true)
         .order("archived_at", { ascending: false });
       if (error) throw error;
-      setStories((data ?? []).map((r: any) => ({
+      const rows = data ?? [];
+      setStories(rows.map((r) => ({
         id: String(r.id), media_url: r.media_url ?? null,
         created_at: r.created_at, archived_at: r.archived_at ?? null,
       })));
@@ -75,15 +133,16 @@ export function SettingsArchiveSection({ isDark, currentScreen, onNavigate, onBa
     if (!user?.id) return;
     setPostsLoading(true);
     try {
-      const { data, error } = await (supabase as any)
+      const { data, error } = await supabase
         .from("archived_posts")
         .select("post_id, archived_at")
         .eq("user_id", user.id)
         .order("archived_at", { ascending: false });
       if (error) throw error;
-      const ids = (data ?? []).map((r: any) => String(r.post_id));
+      const refs = (data ?? []) as unknown as ArchivedPostRefRow[];
+      const ids = refs.map((r) => String(r.post_id));
       const map = await fetchPostsByIds(ids);
-      setPosts(ids.map((id: string) => map.get(id)).filter(Boolean) as SettingsPostItem[]);
+      setPosts(ids.map((id) => map.get(id)).filter(Boolean) as SettingsPostItem[]);
     } catch (e) {
       toast({ title: "Post Archive", description: getErrorMessage(e) });
     } finally { setPostsLoading(false); }
@@ -93,7 +152,8 @@ export function SettingsArchiveSection({ isDark, currentScreen, onNavigate, onBa
     if (!user?.id) return;
     setLiveLoading(true);
     try {
-      const { data, error } = await (supabase as any)
+      const archiveClient = supabase as unknown as LightweightArchiveClient;
+      const { data, error } = await archiveClient
         .from("live_sessions")
         .select("id, state, started_at, ended_at, created_at")
         .eq("author_id", user.id)
@@ -101,7 +161,8 @@ export function SettingsArchiveSection({ isDark, currentScreen, onNavigate, onBa
         .order("ended_at", { ascending: false })
         .limit(100);
       if (error) throw error;
-      setLive((data ?? []).map((r: any) => ({
+      const rows = data ?? [];
+      setLive(rows.map((r) => ({
         id: String(r.id), state: String(r.state ?? "ended"),
         started_at: r.started_at ?? null, ended_at: r.ended_at ?? null, created_at: r.created_at,
       })));

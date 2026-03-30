@@ -52,6 +52,7 @@
  */
 
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { logger } from "@/lib/logger";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import {
@@ -314,7 +315,7 @@ export function CRMRealEstateDashboard() {
       setTasks(tasksData);
       setDistrictAnalytics(analyticsData);
     } catch (err) {
-      console.error('RE CRM load error:', err);
+      logger.error('[CRMRealEstate] load error', { error: err });
       if (!silent) toast.error('Ошибка загрузки CRM');
     } finally {
       setLoading(false);
@@ -424,7 +425,7 @@ export function CRMRealEstateDashboard() {
       setShowClientModal(false);
       toast.success(`✅ Клиент ${created.name} добавлен`);
     } catch (err) {
-      console.error(err);
+      logger.error('[CRMRealEstate] operation error', { error: err });
       toast.error('Ошибка создания клиента');
     }
   };
@@ -481,7 +482,7 @@ export function CRMRealEstateDashboard() {
       setShowPropertyModal(false);
       toast.success(`✅ Объект "${created.title}" добавлен`);
     } catch (err) {
-      console.error(err);
+      logger.error('[CRMRealEstate] operation error', { error: err });
       toast.error('Ошибка создания объекта');
     }
   };
@@ -514,7 +515,7 @@ export function CRMRealEstateDashboard() {
       setShowDealModal(false);
       toast.success(`✅ Сделка "${created.title}" создана`);
     } catch (err) {
-      console.error(err);
+      logger.error('[CRMRealEstate] operation error', { error: err });
       toast.error('Ошибка создания сделки');
     }
   };
@@ -529,7 +530,7 @@ export function CRMRealEstateDashboard() {
       setDeals(prev => prev.map(d => d.id === dealId ? updated : d));
       const stageLabel = RE_DEAL_STAGES.find(s => s.value === newStage)?.label ?? newStage;
       toast.success(`Сделка → ${stageLabel}`);
-    } catch { toast.error('Ошибка обновления сделки'); }
+    } catch (_err) { toast.error('Ошибка обновления сделки'); }
   };
 
   const handleCreateShowing = async () => {
@@ -553,7 +554,7 @@ export function CRMRealEstateDashboard() {
       setShowShowingModal(false);
       toast.success('✅ Показ запланирован');
     } catch (err) {
-      console.error(err);
+      logger.error('[CRMRealEstate] operation error', { error: err });
       toast.error('Ошибка создания показа');
     }
   };
@@ -563,7 +564,7 @@ export function CRMRealEstateDashboard() {
       const updated = await crmRE.updateShowing(id, { status: 'completed', client_feedback: feedback });
       setShowings(prev => prev.map(s => s.id === id ? updated : s));
       toast.success('Показ завершён');
-    } catch { toast.error('Ошибка обновления показа'); }
+    } catch (_err) { toast.error('Ошибка обновления показа'); }
   };
 
   const handleCreateTask = async () => {
@@ -585,7 +586,7 @@ export function CRMRealEstateDashboard() {
       setShowTaskModal(false);
       toast.success('✅ Задача создана');
     } catch (err) {
-      console.error(err);
+      logger.error('[CRMRealEstate] operation error', { error: err });
       toast.error('Ошибка создания задачи');
     }
   };
@@ -595,7 +596,7 @@ export function CRMRealEstateDashboard() {
       const updated = await crmRE.completeTask(id);
       setTasks(prev => prev.map(t => t.id === id ? updated : t));
       toast.success('Задача выполнена ✓');
-    } catch { toast.error('Ошибка'); }
+    } catch (_err) { toast.error('Ошибка'); }
   };
 
   const handleCreateDocument = async () => {
@@ -614,7 +615,7 @@ export function CRMRealEstateDashboard() {
       setShowDocModal(false);
       toast.success('✅ Документ добавлен');
     } catch (err) {
-      console.error(err);
+      logger.error('[CRMRealEstate] operation error', { error: err });
       toast.error('Ошибка создания документа');
     }
   };
@@ -629,7 +630,7 @@ export function CRMRealEstateDashboard() {
         Number(mortgageCalc.term),
       );
       setMortgageResult(result);
-    } catch {
+    } catch (_err) {
       // Fallback: client-side calculation
       const price = Number(mortgageCalc.price);
       const loan = price * (1 - Number(mortgageCalc.down_pct) / 100);
@@ -655,7 +656,7 @@ export function CRMRealEstateDashboard() {
       setMatchedProperties(matched);
       setActiveTab('matching');
       toast.success(`Найдено ${matched.length} подходящих объектов`);
-    } catch {
+    } catch (_err) {
       toast.error('Ошибка подбора объектов');
     } finally {
       setMatchingClientId(null);
@@ -667,7 +668,7 @@ export function CRMRealEstateDashboard() {
       const updated = await crmRE.updateProperty(id, { status });
       setProperties(prev => prev.map(p => p.id === id ? updated : p));
       toast.success(`Статус: ${PROPERTY_STATUS_LABELS[status]}`);
-    } catch { toast.error('Ошибка обновления'); }
+    } catch (_err) { toast.error('Ошибка обновления'); }
   };
 
   const handleUpdateClientStage = async (id: string, stage: REClientStage) => {
@@ -676,7 +677,7 @@ export function CRMRealEstateDashboard() {
       setClients(prev => prev.map(c => c.id === id ? updated : c));
       const stageLabel = RE_CLIENT_STAGES.find(s => s.value === stage)?.label ?? stage;
       toast.success(`Стадия → ${stageLabel}`);
-    } catch { toast.error('Ошибка обновления'); }
+    } catch (_err) { toast.error('Ошибка обновления'); }
   };
 
   const handleDeleteClient = async (id: string) => {
@@ -685,7 +686,7 @@ export function CRMRealEstateDashboard() {
       await crmRE.deleteClient(id);
       setClients(prev => prev.filter(c => c.id !== id));
       toast.success('Клиент удалён');
-    } catch { toast.error('Ошибка удаления'); }
+    } catch (_err) { toast.error('Ошибка удаления'); }
   };
 
   const handleDeleteProperty = async (id: string) => {
@@ -694,7 +695,7 @@ export function CRMRealEstateDashboard() {
       await crmRE.deleteProperty(id);
       setProperties(prev => prev.filter(p => p.id !== id));
       toast.success('Объект удалён');
-    } catch { toast.error('Ошибка удаления'); }
+    } catch (_err) { toast.error('Ошибка удаления'); }
   };
 
   const handleDeleteDeal = async (id: string) => {
@@ -703,7 +704,7 @@ export function CRMRealEstateDashboard() {
       await crmRE.deleteDeal(id);
       setDeals(prev => prev.filter(d => d.id !== id));
       toast.success('Сделка удалена');
-    } catch { toast.error('Ошибка удаления'); }
+    } catch (_err) { toast.error('Ошибка удаления'); }
   };
 
   const toggleCompare = (id: string) => {

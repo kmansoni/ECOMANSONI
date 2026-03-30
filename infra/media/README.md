@@ -94,19 +94,44 @@ nano .env
 | `MINIO_ROOT_PASSWORD` | Minimum 32 random characters |
 | `SUPABASE_SERVICE_ROLE_KEY` | From Supabase project Settings → API |
 | `JWT_SECRET` | From Supabase project Settings → API → JWT Secret |
+| `LETSENCRYPT_EMAIL` | Your email for Let's Encrypt expiry notifications |
 
-### 3. Obtain SSL certificate
+### 3. Obtain SSL certificate (first time)
+
+Use the bundled init script — it handles cert issuance via certbot in standalone mode and then starts the full stack:
 
 ```bash
-# On the host (not inside Docker):
-certbot certonly --standalone \
-  -d media.mansoni.ru \
-  --email admin@mansoni.ru \
-  --agree-tos --no-eff-email
-
-# Verify:
-ls /etc/letsencrypt/live/media.mansoni.ru/
+bash scripts/ssl-init.sh
 ```
+
+The script will:
+1. Read `MEDIA_DOMAIN` and `LETSENCRYPT_EMAIL` from `.env`
+2. Stop nginx (if already running) to free port 80
+3. Run `certbot certonly --standalone` → write cert into the `ssl-certs` Docker volume
+4. Start the full stack (`docker compose up -d`)
+
+After the first run, configure host cron for automatic renewal.
+
+Manual renewal (one-time):
+
+```bash
+bash scripts/ssl-renew-and-reload.sh
+```
+
+Enable cron (recommended, 2x/day):
+
+```bash
+chmod +x scripts/ssl-renew-and-reload.sh
+crontab -e
+```
+
+Add:
+
+```cron
+0 3,15 * * * cd /opt/your-ai-companion-main/infra/media && ./scripts/ssl-renew-and-reload.sh >> /var/log/media-ssl-renew.log 2>&1
+```
+
+This command runs `certbot renew` through Docker and then reloads nginx so the updated certificate is picked up immediately.
 
 ### 4. Configure Nginx http{} context
 
@@ -185,6 +210,13 @@ ssh -L 9001:localhost:9001 user@<adminvps-ip>
 | `VIDEO_MAX_BITRATE` | `4000k` | Max video bitrate |
 | `THUMBNAIL_WIDTH` | `480` | Video thumbnail width |
 | `THUMBNAIL_HEIGHT` | `480` | Video thumbnail height |
+| `LETSENCRYPT_EMAIL` | — | Email for Let's Encrypt cert expiry alerts |
+| `TLS_EXPIRY_WARNING_DAYS` | `21` | Warning threshold for TLS expiry health check |
+| `TELEGRAM_BOT_TOKEN` | — | Bot token for TLS alert notifications |
+| `TELEGRAM_CHAT_ID` | — | Telegram chat ID for TLS alerts |
+| `TLS_NOTIFY_COOLDOWN_HOURS` | `24` | Cooldown for duplicate TLS Telegram alerts |
+| `TLS_NOTIFY_CRITICAL_REPEAT_HOURS` | `6` | Repeat interval for identical CRITICAL TLS alerts |
+| `TLS_NOTIFY_STATE_FILE` | `/tmp/media-ssl-alert-state.env` | File storing last alert fingerprint/time |
 
 ---
 
@@ -203,6 +235,59 @@ docker compose logs -f minio
 docker compose logs -f media-api
 docker compose logs -f nginx
 ```
+
+### TLS certificate health check
+
+Manual check:
+
+```bash
+bash scripts/ssl-cert-health.sh
+```
+
+Exit codes:
+- `0` = healthy
+- `1` = warning (expires soon)
+- `2` = critical (expired/unreachable/invalid)
+
+Recommended cron (daily, alerts when needed):
+
+```bash
+chmod +x scripts/ssl-cert-health.sh
+crontab -e
+```
+
+Add:
+
+```cron
+30 4 * * * cd /opt/your-ai-companion-main/infra/media && ./scripts/ssl-cert-health.sh >> /var/log/media-ssl-health.log 2>&1
+```
+
+### Telegram alerts for TLS problems
+
+Set in `.env`:
+
+```bash
+TELEGRAM_BOT_TOKEN=<your_bot_token>
+TELEGRAM_CHAT_ID=<your_chat_id>
+TLS_NOTIFY_COOLDOWN_HOURS=24
+TLS_NOTIFY_CRITICAL_REPEAT_HOURS=6
+```
+
+Manual run:
+
+```bash
+bash scripts/ssl-health-notify.sh
+```
+
+Recommended cron (sends Telegram only on warning/critical):
+
+```cron
+35 4 * * * cd /opt/your-ai-companion-main/infra/media && ./scripts/ssl-health-notify.sh >> /var/log/media-ssl-notify.log 2>&1
+```
+
+`ssl-health-notify.sh` uses escalation policy:
+- WARNING duplicates are suppressed for `TLS_NOTIFY_COOLDOWN_HOURS`.
+- CRITICAL duplicates are resent every `TLS_NOTIFY_CRITICAL_REPEAT_HOURS` until resolved.
 
 ### Resource usage
 

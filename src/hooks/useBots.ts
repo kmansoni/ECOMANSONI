@@ -24,6 +24,12 @@ export interface BotCommand {
   sort_order: number;
 }
 
+/** Ответ Supabase для таблиц, отсутствующих в generated types */
+interface UntypedResult<T> {
+  data: T | null;
+  error: { message: string; code?: string } | null;
+}
+
 export function useBots() {
   const { user } = useAuth();
   const [myBots, setMyBots] = useState<Bot[]>([]);
@@ -37,8 +43,8 @@ export function useBots() {
         .from('bots')
         .select('*')
         .eq('owner_id', user.id)
-        .order('created_at');
-      if (data) setMyBots(data as Bot[]);
+        .order('created_at') as UntypedResult<Bot[]>;
+      if (data) setMyBots(data);
     } finally {
       setLoading(false);
     }
@@ -58,16 +64,16 @@ export function useBots() {
       .from('bots')
       .insert({ ...params, owner_id: user.id })
       .select()
-      .single();
+      .single() as UntypedResult<Bot>;
     if (!error && data) {
-      setMyBots(prev => [...prev, data as Bot]);
-      return data as Bot;
+      setMyBots(prev => [...prev, data]);
+      return data;
     }
     return null;
   }, [user]);
 
   const deleteBot = useCallback(async (botId: string) => {
-    const { error } = await (supabase as any).from('bots').delete().eq('id', botId);
+    const { error } = await (supabase as any).from('bots').delete().eq('id', botId) as UntypedResult<unknown>;
     if (!error) setMyBots(prev => prev.filter(b => b.id !== botId));
     return !error;
   }, []);
@@ -77,7 +83,7 @@ export function useBots() {
     const { error } = await (supabase as any)
       .from('bots')
       .update({ api_token: newToken })
-      .eq('id', botId);
+      .eq('id', botId) as UntypedResult<unknown>;
     if (!error) {
       setMyBots(prev => prev.map(b => b.id === botId ? { ...b, api_token: newToken } : b));
       return newToken;
@@ -90,13 +96,13 @@ export function useBots() {
       .from('bot_commands')
       .insert({ bot_id: botId, command, description })
       .select()
-      .single();
-    if (!error && data) return data as BotCommand;
+      .single() as UntypedResult<BotCommand>;
+    if (!error && data) return data;
     return null;
   }, []);
 
   const removeCommand = useCallback(async (commandId: string) => {
-    const { error } = await (supabase as any).from('bot_commands').delete().eq('id', commandId);
+    const { error } = await (supabase as any).from('bot_commands').delete().eq('id', commandId) as UntypedResult<unknown>;
     return !error;
   }, []);
 
@@ -104,7 +110,7 @@ export function useBots() {
     if (!user) return false;
     const { error } = await (supabase as any)
       .from('bot_conversations')
-      .insert({ bot_id: botId, conversation_id: conversationId, added_by: user.id });
+      .insert({ bot_id: botId, conversation_id: conversationId, added_by: user.id }) as UntypedResult<unknown>;
     return !error;
   }, [user]);
 
@@ -113,8 +119,8 @@ export function useBots() {
       .from('bot_commands')
       .select('*')
       .eq('bot_id', botId)
-      .order('sort_order');
-    return (data as BotCommand[]) || [];
+      .order('sort_order') as UntypedResult<BotCommand[]>;
+    return data || [];
   }, []);
 
   return { myBots, createBot, deleteBot, regenerateToken, addCommand, removeCommand, addBotToChat, getBotCommands, loading, refetch: fetchBots };

@@ -8,6 +8,7 @@ import { createQueryClient } from "@/lib/queryClient";
 import { createEphemeralSupabaseClient } from "@/lib/multiAccount/supabaseEphemeral";
 import { useAccountContainerContext } from "@/contexts/AccountContainerContext";
 import { loadOrCreateDeviceIdentity } from "@/auth/deviceIdentity";
+import { logger } from "@/lib/logger";
 import {
   getActiveAccountId,
   getOrCreateDeviceId,
@@ -78,9 +79,9 @@ async function activateSessionBySessionId(sessionId: string): Promise<ActivatedS
 
 // IRON RULE 4.1: Debug logging gated by FLAG_DEBUG
 const FLAG_DEBUG = import.meta.env.VITE_DEBUG_MULTI_ACCOUNT === 'true';
-const logDebug = (label: string, ...args: any[]) => {
+const logDebug = (label: string, ...args: unknown[]) => {
   if (FLAG_DEBUG) {
-    console.log(`[MultiAccount] ${label}`, ...args);
+    logger.debug(`[MultiAccount] ${label}`, ...args);
   }
 };
 
@@ -94,10 +95,16 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   });
 }
 
-function snapshotFromProfileRow(accountId: AccountId, row: any): AccountProfileSnapshot {
-  const displayName = (row?.display_name ?? null) as string | null;
-  const username = (row?.username ?? null) as string | null;
-  const avatarUrl = (row?.avatar_url ?? null) as string | null;
+interface ProfileRowSlice {
+  display_name: string | null;
+  username: string | null;
+  avatar_url: string | null;
+}
+
+function snapshotFromProfileRow(accountId: AccountId, row: ProfileRowSlice): AccountProfileSnapshot {
+  const displayName = row?.display_name ?? null;
+  const username = row?.username ?? null;
+  const avatarUrl = row?.avatar_url ?? null;
 
   // IRON RULE 1.2: No fallback for identification fields
   // Throw early if profile is incomplete — don't silently degrade to "user"
@@ -133,7 +140,7 @@ async function fetchMyProfileSnapshot(
     }
     const startTime = Date.now();
     
-    const timeoutPromise = new Promise((_, reject) => {
+    const timeoutPromise = new Promise<never>((_, reject) => {
       const timer = setTimeout(() => reject(new Error('timeout')), 5000);
       signal?.addEventListener('abort', () => clearTimeout(timer), { once: true });
     });
@@ -144,7 +151,7 @@ async function fetchMyProfileSnapshot(
       .eq("user_id", accountId)
       .maybeSingle();
     
-    const { data, error } = await Promise.race([fetchPromise, timeoutPromise]) as any;
+    const { data, error } = await Promise.race([fetchPromise, timeoutPromise]);
     
     const duration = Date.now() - startTime;
     
@@ -234,7 +241,7 @@ async function fetchMyProfileSnapshotWithTokens(
 
     if (signal?.aborted) return { profile: null, requiresReauth: false };
 
-    const { data, error } = await (client as any)
+    const { data, error } = await client
       .from("profiles")
       .select("user_id, display_name, avatar_url, username, updated_at")
       .eq("user_id", accountId)
@@ -258,9 +265,8 @@ async function upsertDeviceAccountLink(userId: string) {
   try {
     const deviceId = getOrCreateDeviceId();
     // Prefer RPC (SECURITY DEFINER) to avoid RLS edge-cases and centralize logic.
-    await (supabase as any).rpc("upsert_device_account", {
+    await supabase.rpc("upsert_device_account", {
       p_device_id: deviceId,
-      p_label: null,
     });
   } catch {
     // best effort
@@ -275,7 +281,7 @@ async function fetchDeviceAccountsFromDb(deviceId: string): Promise<Array<{
   last_active_at: string | null;
 }> | null> {
   try {
-    const { data, error } = await (supabase as any).rpc("list_device_accounts_for_device", {
+    const { data, error } = await supabase.rpc("list_device_accounts_for_device", {
       p_device_id: deviceId,
     });
     if (error) {
@@ -429,7 +435,7 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
     }
 
     try {
-      (supabase as any).removeAllChannels?.();
+      supabase.removeAllChannels();
     } catch {
       // ignore
     }
@@ -498,7 +504,7 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
       if (typeof BroadcastChannel !== "undefined") {
         bc = new BroadcastChannel("multi-account:v1");
         bc.onmessage = (ev) => {
-          const msg = ev?.data as any;
+          const msg = ev?.data as Record<string, unknown> | undefined;
           if (!msg || typeof msg !== "object") return;
           if (msg.source && msg.source === instanceIdRef.current) return;
 
@@ -787,7 +793,7 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
       try {
         const client = createEphemeralSupabaseClient();
         const { data, error } = await client.auth.signInWithPassword({ email, password });
-        if (error) return { error: error as any };
+        if (error) return { error };
         const session = data.session;
         if (!session || !session.user) return { error: new Error("no_session") };
 
@@ -819,7 +825,7 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
           email: trimmed,
           options: { shouldCreateUser: true },
         });
-        return { error: (error as any) ?? null };
+        return { error: error ?? null };
       } catch (e) {
         return { error: e as Error };
       }
@@ -837,7 +843,7 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
           token,
           type: "email",
         });
-        if (error) return { error: error as any };
+        if (error) return { error };
 
         const session = data.session;
         if (!session || !session.user) return { error: new Error("no_session") };

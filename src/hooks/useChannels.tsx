@@ -2,8 +2,8 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { uploadMedia } from "@/lib/mediaUpload";
 import { useAuth } from "./useAuth";
+import { logger } from "@/lib/logger";
 import type { RealtimeChannel } from "@supabase/supabase-js";
-import { checkChannelCapabilityViaRpc } from "@/lib/channel-capabilities";
 import { checkHashtagsAllowedForText } from "@/lib/hashtagModeration";
 import { removeRealtimeMessage, upsertRealtimeMessage } from "@/lib/chat/realtimeMessageReducer";
 import { canonicalizeOutgoingChatText } from "@/lib/chat/textPipeline";
@@ -101,29 +101,7 @@ function getChannelRpcClient(): ChannelRpcClient {
   return supabase as unknown as ChannelRpcClient;
 }
 
-function isSchemaMissingError(error: unknown): boolean {
-  const err = toErrorLike(error);
-  const msg = String(err.message ?? error).toLowerCase();
-  const code = String(err.code ?? "");
-  return (
-    code === "PGRST202" ||
-    code === "42P01" ||
-    code === "42883" ||
-    msg.includes("does not exist") ||
-    msg.includes("function") ||
-    msg.includes("relation")
-  );
-}
 
-function isMissingSilentColumnError(error: unknown): boolean {
-  const err = toErrorLike(error);
-  const msg = String(err.message ?? error).toLowerCase();
-  const code = String(err.code ?? "");
-  return (
-    code === "42703" &&
-    (msg.includes("silent") || msg.includes("column"))
-  );
-}
 
 export interface Channel {
   id: string;
@@ -152,6 +130,8 @@ export interface ChannelMessage {
   silent?: boolean | null;
   created_at: string;
   edited_at?: string | null;
+  views_count?: number | null;
+  reactions?: Array<{ emoji: string; count: number }> | null;
   sender?: {
     display_name: string | null;
     avatar_url: string | null;
@@ -267,7 +247,7 @@ export function useChannels() {
           if (isExpectedChannelMembersReadError(memberError)) {
             disableChannelMembersRead();
           } else {
-            console.warn("Unexpected channel_members read error:", memberError);
+            logger.warn("[useChannels] Unexpected channel_members read error", { error: memberError });
           }
         } else {
           memberChannelIds = (memberData || []).map((m: ChannelMembershipRow) => m.channel_id);
@@ -304,7 +284,7 @@ export function useChannels() {
 
       setChannels(channelsWithMembership);
     } catch (err) {
-      console.error("Error fetching channels:", err);
+      logger.error("[useChannels] Error fetching channels", { error: err });
       setError(err instanceof Error ? err.message : "Failed to fetch channels");
     } finally {
       setLoading(false);
@@ -345,7 +325,7 @@ export function useChannels() {
         }),
       );
     } catch (err) {
-      console.error("Error refreshing channels by ids:", err);
+      logger.error("[useChannels] Error refreshing channels by ids", { error: err });
       void fetchChannels();
     }
   }, [mapWithConcurrency, fetchChannels]);
@@ -573,7 +553,7 @@ export function useChannelMessages(channelId: string | null): {
 
       setMessages(messagesWithSenders);
     } catch (error) {
-      console.error("Error fetching channel messages:", error);
+      logger.error("[useChannels] Error fetching channel messages", { error });
     } finally {
       setLoading(false);
     }
@@ -699,47 +679,9 @@ export function useChannelMessages(channelId: string | null): {
         p_duration_seconds: null,
       });
 
-      if (rpcResult.error && !isSchemaMissingError(rpcResult.error)) {
-        throw rpcResult.error;
-      }
-
-      if (rpcResult.error && isSchemaMissingError(rpcResult.error)) {
-        let canPost = true;
-        try {
-          canPost = await checkChannelCapabilityViaRpc(channelId, user.id, "channel.posts.create");
-        } catch (err) {
-          if (!isSchemaMissingError(err)) throw err;
-        }
-        if (!canPost) {
-          throw new Error("No permission to publish in this channel");
-        }
-
-        const basePayload = {
-          channel_id: channelId,
-          sender_id: user.id,
-          content: normalizedContent,
-        };
-
-        let { error } = await supabase.from("channel_messages").insert({
-          ...basePayload,
-          silent: Boolean(options?.silent),
-        });
-
-        // Backward compatibility: environments without `silent` column.
-        if (error && isMissingSilentColumnError(error)) {
-          const retry = await supabase.from("channel_messages").insert(basePayload);
-          error = retry.error;
-        }
-
-        if (error) throw error;
-
-        await supabase
-          .from("channels")
-          .update({ updated_at: new Date().toISOString() })
-          .eq("id", channelId);
-      }
+      if (rpcResult.error) throw rpcResult.error;
     } catch (error) {
-      console.error("Error sending channel message:", error);
+      logger.error("[useChannels] Error sending channel message", { error });
       throw error;
     }
   };
@@ -752,18 +694,6 @@ export function useChannelMessages(channelId: string | null): {
     if (!channelId || !user) return;
 
     try {
-      const mime = String(file.type || "").toLowerCase();
-      const fileExt =
-        file.name.split(".").pop() ||
-        (mediaType === "image"
-          ? "jpg"
-          : mediaType === "video" || mediaType === "video_circle"
-            ? "webm"
-            : mediaType === "voice"
-              ? (mime.includes("mp4") ? "m4a" : mime.includes("ogg") ? "ogg" : "webm")
-              : "bin");
-      const fileName = `${user.id}/channels/${channelId}/${Date.now()}.${fileExt}`;
-
       const uploadResult = await uploadMedia(file, { bucket: 'chat-media' });
       const publicUrl = uploadResult.url;
 
@@ -787,50 +717,9 @@ export function useChannelMessages(channelId: string | null): {
         p_duration_seconds: options?.durationSeconds ?? null,
       });
 
-      if (rpcResult.error && !isSchemaMissingError(rpcResult.error)) {
-        throw rpcResult.error;
-      }
-
-      if (rpcResult.error && isSchemaMissingError(rpcResult.error)) {
-        let canPost = true;
-        try {
-          canPost = await checkChannelCapabilityViaRpc(channelId, user.id, "channel.posts.create");
-        } catch (err) {
-          if (!isSchemaMissingError(err)) throw err;
-        }
-        if (!canPost) {
-          throw new Error("No permission to publish in this channel");
-        }
-
-        const basePayload = {
-          channel_id: channelId,
-          sender_id: user.id,
-          content: contentLabel,
-          media_url: publicUrl,
-          media_type: mediaType,
-          duration_seconds: options?.durationSeconds ?? null,
-        };
-
-        let { error } = await supabase.from("channel_messages").insert({
-          ...basePayload,
-          silent: Boolean(options?.silent),
-        });
-
-        // Backward compatibility: environments without `silent` column.
-        if (error && isMissingSilentColumnError(error)) {
-          const retry = await supabase.from("channel_messages").insert(basePayload);
-          error = retry.error;
-        }
-
-        if (error) throw error;
-
-        await supabase
-          .from("channels")
-          .update({ updated_at: new Date().toISOString() })
-          .eq("id", channelId);
-      }
+      if (rpcResult.error) throw rpcResult.error;
     } catch (error) {
-      console.error("Error sending channel media message:", error);
+      logger.error("[useChannels] Error sending channel media message", { error });
       throw error;
     }
   };
@@ -891,7 +780,7 @@ export function useCreateChannel() {
       if (error) throw error;
       return data as string;
     } catch (error) {
-      console.error("Error creating channel:", error);
+      logger.error("[useChannels] Error creating channel", { error });
       return null;
     }
   };
@@ -915,7 +804,7 @@ export function useJoinChannel() {
       if (error) throw error;
       return true;
     } catch (error) {
-      console.error("Error joining channel:", error);
+      logger.error("[useChannels] Error joining channel", { error });
       return false;
     }
   };
@@ -933,7 +822,7 @@ export function useJoinChannel() {
       if (error) throw error;
       return true;
     } catch (error) {
-      console.error("Error leaving channel:", error);
+      logger.error("[useChannels] Error leaving channel", { error });
       return false;
     }
   };

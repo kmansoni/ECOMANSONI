@@ -141,13 +141,23 @@ export function useLiveKitRoom(options: UseLiveKitRoomOptions): UseLiveKitRoomRe
 
     // ── Event bindings ───────────────────────────────────────────────────────
 
-    room.on(RoomEvent.Connected, () => {
+    room.on(RoomEvent.Connected, async () => {
       if (unmountedRef.current) return;
       setConnectionState(ConnectionState.Connected);
       setLocalParticipant(room.localParticipant);
       syncRemoteParticipants(room);
       syncLocalTracks(room.localParticipant);
       onConnectRef.current?.();
+
+      // Auto-enable camera+mic for publisher / guest after state is synced
+      if (role === 'publisher' || role === 'guest') {
+        try {
+          await room.localParticipant.enableCameraAndMicrophone();
+          syncLocalTracks(room.localParticipant);
+        } catch {
+          // Graceful: permissions denied or no device — viewer continues without media
+        }
+      }
     });
 
     room.on(RoomEvent.Disconnected, () => {
@@ -192,22 +202,6 @@ export function useLiveKitRoom(options: UseLiveKitRoomOptions): UseLiveKitRoomRe
 
     room.on(RoomEvent.LocalTrackUnpublished, () => {
       if (!unmountedRef.current) syncLocalTracks(room.localParticipant);
-    });
-
-    // ── Auto-enable camera+mic for publisher / guest ─────────────────────────
-    // enableCameraAndMicrophone() internally creates and publishes local tracks.
-    // The previous call to createLocalTracks() before it was redundant — it
-    // created tracks whose handles were discarded, wasting resources and
-    // triggering a double permission prompt on some browsers.
-    room.on(RoomEvent.Connected, async () => {
-      if (role === 'publisher' || role === 'guest') {
-        try {
-          await room.localParticipant.enableCameraAndMicrophone();
-          syncLocalTracks(room.localParticipant);
-        } catch {
-          // Graceful: permissions denied or no device — viewer continues without media
-        }
-      }
     });
 
     void connectRoom(room, serverUrl, token);

@@ -141,15 +141,21 @@ interface ImapSettings {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+interface SmtpApiBody {
+  data?: Record<string, unknown>;
+  ok?: boolean;
+  error?: string;
+}
+
 async function callSmtpSettingsApi(
   path: string,
   method: string = "GET",
   body?: unknown
-): Promise<{ ok: boolean; data?: unknown; error?: string }> {
+): Promise<{ ok: boolean; data?: SmtpApiBody; error?: string }> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.access_token) return { ok: false, error: "NOT_AUTHENTICATED" };
 
-  const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL ?? "";
+  const supabaseUrl = String(import.meta.env.VITE_SUPABASE_URL ?? "");
   const url = `${supabaseUrl.replace(/\/$/, "")}/functions/v1/email-smtp-settings${path}`;
   const runtimeConfig = getSupabaseRuntimeConfig();
   const apikey = String(runtimeConfig.supabasePublishableKey || "").trim();
@@ -165,9 +171,9 @@ async function callSmtpSettingsApi(
     signal: AbortSignal.timeout(20_000),
   });
 
-  const data = await resp.json().catch(() => ({}));
-  if (!resp.ok) return { ok: false, error: (data as any)?.error ?? `HTTP ${resp.status}` };
-  return { ok: true, data };
+  const json = await resp.json().catch(() => ({})) as SmtpApiBody;
+  if (!resp.ok) return { ok: false, error: json.error ?? `HTTP ${resp.status}` };
+  return { ok: true, data: json };
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -218,8 +224,8 @@ export function SmtpSettingsPanel() {
       callSmtpSettingsApi("/imap"),
     ]);
 
-    if (smtpResult.ok && (smtpResult.data as any)?.data) {
-      const d = (smtpResult.data as any).data;
+    if (smtpResult.ok && smtpResult.data?.data) {
+      const d = smtpResult.data.data as Partial<SmtpSettings>;
       setSmtp({
         id: d.id,
         smtp_host: d.smtp_host ?? "",
@@ -236,8 +242,8 @@ export function SmtpSettingsPanel() {
       });
     }
 
-    if (imapResult.ok && (imapResult.data as any)?.data) {
-      const d = (imapResult.data as any).data;
+    if (imapResult.ok && imapResult.data?.data) {
+      const d = imapResult.data.data as Partial<ImapSettings>;
       setImap({
         id: d.id,
         imap_host: d.imap_host ?? "",
@@ -298,12 +304,12 @@ export function SmtpSettingsPanel() {
     });
     setLoadingTest(false);
 
-    if (result.ok && (result.data as any)?.ok) {
+    if (result.ok && result.data?.ok) {
       toast.success("✅ SMTP подключение успешно!");
       setSmtp((prev) => ({ ...prev, verified_at: new Date().toISOString(), last_error: null }));
     } else {
-      const err = (result.data as any)?.error ?? result.error ?? "Неизвестная ошибка";
-      toast.error(`❌ SMTP ошибка: ${err}`);
+      const err = result.data?.error ?? result.error ?? "Неизвестная ошибка";
+      toast.error("Не удалось проверить SMTP. Проверьте данные и попробуйте снова.");
       setSmtp((prev) => ({ ...prev, verified_at: null, last_error: err }));
     }
   };
@@ -334,14 +340,14 @@ export function SmtpSettingsPanel() {
     setLoading(false);
 
     if (result.ok) {
-      const d = (result.data as any)?.data;
+      const d = result.data?.data as Partial<SmtpSettings> | undefined;
       if (d) {
         setSmtp((prev) => ({ ...prev, ...d, has_password: true }));
         setSmtpPassword(""); // clear password from memory
       }
       toast.success("SMTP настройки сохранены");
     } else {
-      toast.error(`Ошибка сохранения: ${result.error}`);
+      toast.error("Не удалось сохранить SMTP настройки. Попробуйте снова.");
     }
   };
 
@@ -369,7 +375,7 @@ export function SmtpSettingsPanel() {
       toast.success("IMAP настройки сохранены");
       void loadSettings();
     } else {
-      toast.error(`Ошибка: ${result.error}`);
+      toast.error("Не удалось сохранить IMAP настройки. Попробуйте снова.");
     }
   };
 
@@ -384,7 +390,7 @@ export function SmtpSettingsPanel() {
       setSmtpPassword("");
       toast.success("SMTP настройки удалены");
     } else {
-      toast.error(`Ошибка: ${result.error}`);
+      toast.error("Не удалось удалить SMTP настройки. Попробуйте снова.");
     }
   };
 
@@ -477,7 +483,7 @@ export function SmtpSettingsPanel() {
               <Label>Шифрование *</Label>
               <Select
                 value={smtp.tls_mode}
-                onValueChange={(v) => setSmtp((p) => ({ ...p, tls_mode: v as any }))}
+                onValueChange={(v) => setSmtp((p) => ({ ...p, tls_mode: v as SmtpSettings["tls_mode"] }))}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -692,7 +698,7 @@ export function SmtpSettingsPanel() {
               <Label>Шифрование</Label>
               <Select
                 value={imap.tls_mode}
-                onValueChange={(v) => setImap((p) => ({ ...p, tls_mode: v as any }))}
+                onValueChange={(v) => setImap((p) => ({ ...p, tls_mode: v as ImapSettings["tls_mode"] }))}
               >
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>

@@ -13,6 +13,7 @@
 
 import { supabase } from '@/integrations/supabase/client';
 import { compressImage, isCompressibleImage, COMPRESS_PRESETS } from '@/lib/imageCompressor';
+import { logger } from './logger';
 import type { CompressOptions } from '@/lib/imageCompressor';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -368,7 +369,7 @@ export async function uploadMedia(
       } catch (compressErr) {
         // Сжатие не является критической операцией —
         // при любой ошибке Canvas API загружаем оригинал.
-        console.warn('[mediaUpload] compression failed, uploading original:', compressErr);
+        logger.warn('[mediaUpload] compression failed, uploading original', { error: compressErr });
         uploadFile = file;
       }
     }

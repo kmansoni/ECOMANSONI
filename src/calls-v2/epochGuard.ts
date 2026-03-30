@@ -1,3 +1,5 @@
+import { logger } from '@/lib/logger';
+
 /**
  * Epoch Guard — fail-closed enforcement для E2EE call media.
  *
@@ -125,7 +127,7 @@ export class EpochGuard {
       const msg = `[EpochGuard] BLOCKED ${operation}: ${reason}`;
       this.recordViolation(msg);
       if (this.strict) throw new Error(msg);
-      else console.warn(msg);
+      else logger.warn(msg);
     }
   }
 
@@ -137,7 +139,7 @@ export class EpochGuard {
       const msg = `[EpochGuard] STALE epoch in ${operation}: got ${epoch}, current ${this.state.currentEpoch}`;
       this.recordViolation(msg);
       if (this.strict) throw new Error(msg);
-      else console.warn(msg);
+      else logger.warn(msg);
     }
   }
 
@@ -146,7 +148,7 @@ export class EpochGuard {
       const msg = `[EpochGuard] NOT AUTHENTICATED for ${operation}`;
       this.recordViolation(msg);
       if (this.strict) throw new Error(msg);
-      else console.warn(msg);
+      else logger.warn(msg);
     }
   }
 
@@ -155,7 +157,7 @@ export class EpochGuard {
       const msg = `[EpochGuard] NOT IN ROOM for ${operation}`;
       this.recordViolation(msg);
       if (this.strict) throw new Error(msg);
-      else console.warn(msg);
+      else logger.warn(msg);
     }
   }
 
@@ -196,11 +198,11 @@ export class EpochGuard {
   private recordViolation(msg: string): void {
     this.state.lastViolation = msg;
     this.state.violationCount++;
-    console.error(msg);
+    logger.error(msg);
     try {
       this.violationHandler?.(msg, { ...this.state });
     } catch (err) {
-      console.error('[EpochGuard] violationHandler threw:', err);
+      logger.error('[EpochGuard] violationHandler threw', { error: err });
     }
   }
 }

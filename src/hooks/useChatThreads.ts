@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from './useAuth';
+import { logger } from '@/lib/logger';
 
 const supabaseAny = supabase as any;
 
@@ -80,7 +81,7 @@ export function useThreadMessages(rootMessageId: string | null) {
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to load thread';
       setError(msg);
-      console.error('[useThreadMessages] Error:', err);
+      logger.error('[useThreadMessages] Error', { error: err });
     } finally {
       setLoading(false);
     }
@@ -267,7 +268,7 @@ export function useThreadBadge(conversationId: string | null) {
 
         setThreadsWithReplies(threads);
       } catch (err) {
-        console.error('[useThreadBadge] Error:', err);
+        logger.error('[useThreadBadge] Error', { error: err });
       } finally {
         setLoading(false);
       }

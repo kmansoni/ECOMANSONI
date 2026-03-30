@@ -19,6 +19,7 @@ import { GradientAvatar } from "@/components/ui/gradient-avatar";
 import { toast } from "sonner";
 import { usePeopleNearby, type NearbyUser } from "@/hooks/usePeopleNearby";
 import { cn } from "@/lib/utils";
+import { logger } from "@/lib/logger";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -162,7 +163,7 @@ export function PeopleNearbyPage() {
         await updateMyLocation(lat, lon);
       },
       (err) => {
-        console.warn("[PeopleNearbyPage] watchPosition error:", err.message);
+        logger.warn("[PeopleNearbyPage] watchPosition error", { error: err.message });
       },
       { enableHighAccuracy: false, timeout: 15_000 },
     );

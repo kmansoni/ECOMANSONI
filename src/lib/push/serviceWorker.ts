@@ -3,20 +3,22 @@
  * Регистрация, подписка, интеграция с Notification API
  */
 
+import { logger } from "@/lib/logger";
+
 const SW_URL = "/sw-push.js";
 
 export async function registerPushServiceWorker(): Promise<ServiceWorkerRegistration | null> {
   if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
-    console.warn("Push уведомления не поддерживаются");
+    logger.warn("[Push] Push уведомления не поддерживаются");
     return null;
   }
 
   try {
     const registration = await navigator.serviceWorker.register(SW_URL);
-    console.log("SW зарегистрирован:", registration.scope);
+    logger.debug("[Push] SW зарегистрирован", { scope: registration.scope });
     return registration;
   } catch (err) {
-    console.error("Ошибка регистрации SW:", err);
+    logger.error("[Push] Ошибка регистрации SW", { error: err });
     return null;
   }
 }
@@ -42,7 +44,7 @@ export async function subscribeToPush(
     });
     return subscription;
   } catch (err) {
-    console.error("Ошибка подписки на push:", err);
+    logger.error("[Push] Ошибка подписки на push", { error: err });
     return null;
   }
 }
@@ -95,6 +97,6 @@ export async function initPushNotifications(vapidPublicKey?: string): Promise<vo
   const sub = await subscribeToPush(reg, vapidPublicKey);
   if (sub) {
     // Сохранить подписку на сервере (опционально)
-    console.log("Push подписка активна:", sub.endpoint.slice(0, 50) + "...");
+    logger.debug("[Push] Push подписка активна", { endpoint: sub.endpoint.slice(0, 50) });
   }
 }

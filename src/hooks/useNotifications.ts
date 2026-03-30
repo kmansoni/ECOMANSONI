@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
 import { fetchUserBriefMap, resolveUserBrief, type UserBriefClient } from "@/lib/users/userBriefs";
+import { logger } from "@/lib/logger";
 
 export interface Notification {
   id: string;
@@ -148,9 +149,7 @@ export function useNotifications() {
       setHasMore(rows.length === PAGE_SIZE);
       return result;
     } catch (err) {
-      if (import.meta.env.DEV) {
-        console.error("Ошибка загрузки уведомлений:", err);
-      }
+      logger.error("[useNotifications] Ошибка загрузки уведомлений", { error: err });
       return [];
     }
   }, [user]);

@@ -5,6 +5,8 @@
  */
 
 import { supabase as supabaseClient } from '@/integrations/supabase/client';
+import { dbLoose } from '@/lib/supabase';
+import { logger } from '@/lib/logger';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/integrations/supabase/types';
 
@@ -39,8 +41,8 @@ export const db = {
   /**
    * RPC - через Supabase
    */
-  rpc: (fn: string, params?: any) => {
-    return (supabaseClient as any).rpc(fn, params);
+  rpc: (fn: string, params?: Record<string, unknown>) => {
+    return dbLoose.rpc(fn, params);
   },
 
   /**
@@ -81,7 +83,7 @@ export const supabase = supabaseClient;
 
 // Логирование в dev режиме
 if (import.meta.env.DEV) {
-  console.info("[DB Adapter] Configuration", {
+  logger.info("[DB Adapter] Configuration", {
     mode: 'SUPABASE_ONLY',
     supabaseOnlyTables: SUPABASE_ONLY_TABLES,
   });

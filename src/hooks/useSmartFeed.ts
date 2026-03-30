@@ -23,9 +23,10 @@
  *     concurrent loadMore calls
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react'; // useRef уже импортирован
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import { logger } from '@/lib/logger';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -128,12 +129,28 @@ function writeStoredMode(mode: FeedMode): void {
   }
 }
 
-function isUnauthorizedFeedError(error: unknown): boolean {
-  const message = String((error as any)?.message ?? error ?? "").toLowerCase();
+/**
+ * Определяет, является ли ошибка восстановимой (Edge Function недоступна).
+ * Для таких ошибок хук переключается на публичный fallback-запрос напрямую к БД.
+ * Невосстановимые ошибки (JS-ошибки в коде) пробрасываются наверх.
+ */
+function isRecoverableEdgeFeedError(error: unknown): boolean {
+  const errObj = error instanceof Error ? error : null;
+  const name = (errObj?.name ?? "").toLowerCase();
+  const message = (errObj?.message ?? String(error ?? "")).toLowerCase();
   return (
+    // Supabase FunctionsHttpError (4xx/5xx от Edge Function)
+    name.includes("functionshttperror") ||
+    name.includes("functionsrelayerror") ||
+    name.includes("functionsfetcherror") ||
+    // Fallback-строки в сообщении
     message.includes("unauthorized") ||
     message.includes("non-2xx") ||
-    message.includes("functionshttperror")
+    message.includes("functionshttperror") ||
+    message.includes("feed unavailable") ||
+    message.includes("failed to fetch") ||
+    message.includes("network") ||
+    message.includes("edge function")
   );
 }
 
@@ -293,10 +310,10 @@ export function useSmartFeed() {
           has_more = data.has_more;
           next_cursor = data.next_cursor;
         } catch (edgeError) {
-          if (!isUnauthorizedFeedError(edgeError)) {
+          if (!isRecoverableEdgeFeedError(edgeError)) {
             throw edgeError;
           }
-          console.warn('[useSmartFeed] edge feed unavailable, using public fallback', edgeError);
+          logger.warn("[useSmartFeed] edge feed unavailable, using public fallback", { error: edgeError });
           const fallback = await fetchPublicFeedPage(cursor, PAGE_SIZE);
           incoming = fallback.posts;
           has_more = fallback.has_more;
@@ -324,7 +341,7 @@ export function useSmartFeed() {
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Ошибка загрузки ленты';
       setError(message);
-      console.error('[useSmartFeed] fetch error:', message);
+      logger.error("[useSmartFeed] fetch error", { message });
     } finally {
       setLoading(false);
       setLoadingMore(false);
@@ -332,13 +349,55 @@ export function useSmartFeed() {
     }
   }, [mode, hasMore, authLoading, user]);
 
+  // ИСПРАВЛЕНИЕ дефекта #32: используем ref для стабильной ссылки на fetchPosts
+  // Убираем eslint-disable — теперь deps корректны
+  const fetchPostsRef = useRef(fetchPosts);
+  useEffect(() => { fetchPostsRef.current = fetchPosts; }, [fetchPosts]);
+
   // Reset and reload when mode changes or user changes
   useEffect(() => {
     if (authLoading) return;
     setHasMore(true);
-    void fetchPosts(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    void fetchPostsRef.current(true); // всегда актуальная ссылка без stale closure
   }, [mode, user?.id, authLoading]);
+
+  // Realtime: подписка на новые посты — добавляем в начало ленты
+  useEffect(() => {
+    const channel = supabase
+      .channel('feed_posts_realtime')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'posts', filter: 'is_published=eq.true' },
+        (payload) => {
+          const newPost = payload.new as Record<string, unknown>;
+          if (!newPost?.id || seenIdsRef.current.has(String(newPost.id))) return;
+
+          // Собираем FeedPost из Realtime payload (без media/author — будут подгружены при refresh)
+          const post: FeedPost = {
+            id: String(newPost.id),
+            author_id: String(newPost.author_id ?? ''),
+            content: newPost.content != null ? String(newPost.content) : null,
+            created_at: String(newPost.created_at ?? new Date().toISOString()),
+            likes_count: Number(newPost.likes_count ?? 0),
+            comments_count: Number(newPost.comments_count ?? 0),
+            saves_count: Number(newPost.saves_count ?? 0),
+            shares_count: Number(newPost.shares_count ?? 0),
+            views_count: Number(newPost.views_count ?? 0),
+            score: 0,
+            is_liked: false,
+            is_saved: false,
+            author: { id: String(newPost.author_id ?? ''), display_name: null, avatar_url: null, is_verified: false },
+            media: [],
+          };
+
+          seenIdsRef.current.add(post.id);
+          setPosts((prev) => [post, ...prev]);
+        },
+      )
+      .subscribe();
+
+    return () => { void supabase.removeChannel(channel); };
+  }, []);
 
   const refetch = useCallback((): Promise<void> => {
     setHasMore(true);

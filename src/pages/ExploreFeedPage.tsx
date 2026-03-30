@@ -38,7 +38,7 @@ export function ExploreFeedPage() {
   const formatTimeAgo = (dateStr: string) => {
     try {
       return formatDistanceToNow(new Date(dateStr), { addSuffix: true, locale: ru });
-    } catch {
+    } catch (_err) {
       return "";
     }
   };

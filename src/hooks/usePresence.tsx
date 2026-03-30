@@ -1,6 +1,7 @@
 import { useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
+import { logger } from "@/lib/logger";
 
 const UPDATE_INTERVAL = 15000; // 15 seconds
 const ONLINE_WINDOW_MS = 30000; // 30 seconds — faster offline detection
@@ -20,7 +21,7 @@ export function usePresence() {
         .update({ last_seen_at: new Date().toISOString() })
         .eq("user_id", user.id);
     } catch (error) {
-      console.error("Error updating presence:", error);
+      logger.error("[usePresence] Error updating presence", { error });
     }
   }, [user]);
 

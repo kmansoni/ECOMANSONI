@@ -14,7 +14,29 @@ function extractHashtags(text: string): string[] {
   return (text.match(/#[\w\u0400-\u04FF]+/g) ?? []).map((t) => t.slice(1).toLowerCase());
 }
 
-function computeEngagementRate(post: Record<string, any>): number {
+// Локальные типы для таблиц без сгенерированных типов
+interface SimilarUserRow {
+  similar_user_id: string;
+  similarity_score: number | null;
+}
+
+interface RecommendedUser {
+  id: string;
+  username: string | null;
+  avatar_url: string | null;
+  full_name: string | null;
+  reason?: string;
+  similarityScore?: number;
+}
+
+interface EngagementMetrics {
+  likes_count?: number | null;
+  comments_count?: number | null;
+  shares_count?: number | null;
+  views_count?: number | null;
+}
+
+function computeEngagementRate(post: EngagementMetrics): number {
   const total = (post.likes_count ?? 0) + (post.comments_count ?? 0) * 2 + (post.shares_count ?? 0) * 3;
   const views = Math.max(post.views_count ?? 100, 1);
   return Math.min(total / views, 1);
@@ -87,17 +109,17 @@ export function useRecommendations() {
 
       const isColdStart = interactionCount < DEFAULT_CONFIG.coldStartThreshold;
 
-      const { data: posts } = await (supabase as any)
+      const { data: posts } = await supabase
         .from('posts')
-        .select('id, user_id, content, media_urls, created_at, likes_count, comments_count')
+        .select('id, author_id, content, created_at, likes_count, comments_count')
         .order('created_at', { ascending: false })
         .range(page * limit * 3, (page + 1) * limit * 3 - 1);
 
       if (!posts?.length) return [];
 
-      const items: ContentItem[] = posts.map((p: any) => ({
+      const items: ContentItem[] = posts.map((p) => ({
         id: p.id,
-        authorId: p.user_id,
+        authorId: p.author_id,
         contentType: 'post' as const,
         categories: [],
         hashtags: extractHashtags(p.content ?? ''),
@@ -121,18 +143,18 @@ export function useRecommendations() {
         .limit(20);
 
       if (similar?.length) {
-        const similarIds = similar.map((s: any) => s.similar_user_id);
-        const { data: similarPosts } = await (supabase as any)
+        const similarIds = similar.map((s: SimilarUserRow) => s.similar_user_id);
+        const { data: similarPosts } = await supabase
           .from('posts')
-          .select('id, user_id')
-          .in('user_id', similarIds)
+          .select('id, author_id')
+          .in('author_id', similarIds)
           .order('created_at', { ascending: false })
           .limit(100);
 
         if (similarPosts) {
           for (const sp of similarPosts) {
-            const sim = similar.find((s: any) => s.similar_user_id === sp.user_id);
-            collaborativeMap.set(sp.id, (sim?.similarity_score ?? 0) as number);
+            const sim = similar.find((s: SimilarUserRow) => s.similar_user_id === sp.author_id);
+            collaborativeMap.set(sp.id, sim?.similarity_score ?? 0);
           }
         }
       }
@@ -141,24 +163,24 @@ export function useRecommendations() {
       const ranked = rankContent(items, userEmbedding, collaborativeMap, trendingMap);
       const diversified = diversifyResults(ranked, DEFAULT_CONFIG.maxSameAuthor);
       return diversified.slice(0, limit);
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Ошибка загрузки рекомендаций');
       return [];
     } finally {
       setIsLoading(false);
     }
   }, [userEmbedding, interactionCount]);
 
-  const getRecommendedUsers = useCallback(async (limit = 10): Promise<any[]> => {
+  const getRecommendedUsers = useCallback(async (limit = 10): Promise<RecommendedUser[]> => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return [];
 
-      const { data: following } = await (supabase as any)
+      const { data: following } = await supabase
         .from('followers')
         .select('following_id')
         .eq('follower_id', user.id);
-      const followingIds = new Set<string>((following ?? []).map((f: any) => f.following_id as string));
+      const followingIds = new Set<string>((following ?? []).map((f) => f.following_id));
       followingIds.add(user.id);
 
       const { data: similar } = await (supabase as any)
@@ -168,10 +190,10 @@ export function useRecommendations() {
         .order('similarity_score', { ascending: false })
         .limit(50);
 
-      const candidates = (similar ?? []).filter((s: any) => !followingIds.has(s.similar_user_id)).slice(0, limit);
+      const candidates = (similar ?? []).filter((s: SimilarUserRow) => !followingIds.has(s.similar_user_id)).slice(0, limit);
 
       if (!candidates.length) {
-        const { data: profiles } = await (supabase as any)
+        const { data: profiles } = await supabase
           .from('profiles')
           .select('id, username, avatar_url, full_name')
           .neq('id', user.id)
@@ -179,25 +201,25 @@ export function useRecommendations() {
         return profiles ?? [];
       }
 
-      const ids = candidates.map((c: any) => c.similar_user_id);
-      const { data: profiles } = await (supabase as any)
+      const ids = candidates.map((c: SimilarUserRow) => c.similar_user_id);
+      const { data: profiles } = await supabase
         .from('profiles')
         .select('id, username, avatar_url, full_name')
         .in('id', ids);
 
-      return (profiles ?? []).map((p: any) => ({
+      return (profiles ?? []).map((p) => ({
         ...p,
-        reason: 'similar_interests',
-        similarityScore: candidates.find((c: any) => c.similar_user_id === p.id)?.similarity_score ?? 0,
+        reason: 'similar_interests' as const,
+        similarityScore: candidates.find((c: SimilarUserRow) => c.similar_user_id === p.id)?.similarity_score ?? 0,
       }));
     } catch {
       return [];
     }
   }, []);
 
-  const getRecommendedReels = useCallback(async (limit = 20): Promise<any[]> => {
+  const getRecommendedReels = useCallback(async (limit = 20) => {
     try {
-      const { data: reels } = await (supabase as any)
+      const { data: reels } = await supabase
         .from('reels')
         .select('*')
         .order('created_at', { ascending: false })
@@ -205,12 +227,12 @@ export function useRecommendations() {
 
       if (!reels?.length) return [];
 
-      const items: ContentItem[] = reels.map((r: any) => ({
+      const items: ContentItem[] = reels.map((r) => ({
         id: r.id,
-        authorId: r.user_id,
+        authorId: r.author_id,
         contentType: 'reel' as const,
         categories: [],
-        hashtags: extractHashtags(r.caption ?? ''),
+        hashtags: extractHashtags(r.description ?? ''),
         engagementRate: computeEngagementRate(r),
         likesCount: r.likes_count ?? 0,
         commentsCount: r.comments_count ?? 0,
@@ -220,7 +242,7 @@ export function useRecommendations() {
 
       const trendingMap = new Map<string, number>(items.map((i) => [i.id, i.engagementRate]));
       const ranked = rankContent(items, userEmbedding, new Map(), trendingMap);
-      return ranked.slice(0, limit).map((r) => reels.find((reel: any) => reel.id === r.id));
+      return ranked.slice(0, limit);
     } catch {
       return [];
     }

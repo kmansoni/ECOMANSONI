@@ -33,7 +33,7 @@ export default function FollowRequestsPage() {
       await acceptRequest(req.id);
       setRequests(prev => prev.filter(r => r.id !== req.id));
       toast.success(`@${req.requester?.username} теперь подписан(а)`);
-    } catch {
+    } catch (_err) {
       toast.error("Ошибка");
     } finally {
       setProcessing(null);
@@ -46,7 +46,7 @@ export default function FollowRequestsPage() {
       await rejectRequest(req.id);
       setRequests(prev => prev.filter(r => r.id !== req.id));
       toast.success("Запрос отклонён");
-    } catch {
+    } catch (_err) {
       toast.error("Ошибка");
     } finally {
       setProcessing(null);

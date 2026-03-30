@@ -1,13 +1,18 @@
 import { supabase } from "@/integrations/supabase/client";
 import { sha256Hex } from "@/lib/passcode";
 
+type SessionTokens = {
+  refresh_token?: string;
+  access_token?: string;
+};
+
 function safeString(input: unknown, maxLen: number) {
   const str = String(input ?? "");
   if (str.length <= maxLen) return str;
   return str.slice(0, maxLen);
 }
 
-export async function computeSessionKey(session: any): Promise<string | null> {
+export async function computeSessionKey(session: SessionTokens | null | undefined): Promise<string | null> {
   // Prefer refresh_token (stable across access token refreshes).
   const rt = session?.refresh_token;
   if (typeof rt === "string" && rt.length > 10) {
@@ -22,7 +27,7 @@ export async function computeSessionKey(session: any): Promise<string | null> {
 
 export async function upsertMySession(params: {
   userId: string;
-  session: any;
+  session: SessionTokens | null | undefined;
   deviceName?: string | null;
 }) {
   const session_key = await computeSessionKey(params.session);
@@ -40,29 +45,29 @@ export async function upsertMySession(params: {
         device_name,
         user_agent,
         last_seen_at: new Date().toISOString(),
-      } as any,
+      },
       { onConflict: "user_id,session_key" },
     );
 }
 
-export async function heartbeatMySession(params: { userId: string; session: any }) {
+export async function heartbeatMySession(params: { userId: string; session: SessionTokens | null | undefined }) {
   const session_key = await computeSessionKey(params.session);
   if (!session_key) return;
 
   await supabase
     .from("user_sessions")
-    .update({ last_seen_at: new Date().toISOString() } as any)
+    .update({ last_seen_at: new Date().toISOString() })
     .eq("user_id", params.userId)
     .eq("session_key", session_key);
 }
 
-export async function revokeOtherSessions(params: { userId: string; session: any }) {
+export async function revokeOtherSessions(params: { userId: string; session: SessionTokens | null | undefined }) {
   const myKey = await computeSessionKey(params.session);
   if (!myKey) return;
 
   await supabase
     .from("user_sessions")
-    .update({ revoked_at: new Date().toISOString() } as any)
+    .update({ revoked_at: new Date().toISOString() })
     .eq("user_id", params.userId)
     .neq("session_key", myKey)
     .is("revoked_at", null);
@@ -71,7 +76,7 @@ export async function revokeOtherSessions(params: { userId: string; session: any
 export async function revokeSessionById(params: { userId: string; sessionId: string }) {
   await supabase
     .from("user_sessions")
-    .update({ revoked_at: new Date().toISOString() } as any)
+    .update({ revoked_at: new Date().toISOString() })
     .eq("user_id", params.userId)
     .eq("id", params.sessionId)
     .is("revoked_at", null);
@@ -86,7 +91,7 @@ export async function cleanupInactiveSessions(params: {
 
   await supabase
     .from("user_sessions")
-    .update({ revoked_at: new Date().toISOString() } as any)
+    .update({ revoked_at: new Date().toISOString() })
     .eq("user_id", params.userId)
     .lt("last_seen_at", cutoff)
     .is("revoked_at", null);

@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { SimpleMediaEditor } from "@/components/editor";
 import { useChatOpen } from "@/contexts/ChatOpenContext";
 import { checkHashtagsAllowedForText } from "@/lib/hashtagModeration";
+import { logger } from "@/lib/logger";
 
 interface CreatePostSheetProps {
   isOpen: boolean;
@@ -163,8 +164,9 @@ export function CreatePostSheet({ isOpen, onClose }: CreatePostSheetProps) {
       setText("");
       setSelectedImages([]);
       onClose();
-    } catch (error: any) {
-      toast.error("Ошибка публикации", { description: error.message });
+    } catch (error) {
+      logger.error('[CreatePostSheet] Ошибка публикации поста', { error });
+      toast.error("Не удалось опубликовать пост. Попробуйте снова.");
     } finally {
       setIsUploading(false);
     }

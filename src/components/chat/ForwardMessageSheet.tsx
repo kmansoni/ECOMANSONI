@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
-import { useConversations, type ChatMessage, useCreateConversation } from "@/hooks/useChat";
+import { useConversations, type ChatMessage, type Conversation, useCreateConversation } from "@/hooks/useChat";
 import { useGroupChats } from "@/hooks/useGroupChats";
 import { useChannels } from "@/hooks/useChannels";
 import { useSearch, type SearchUser } from "@/hooks/useSearch";
@@ -35,12 +35,12 @@ function messagePreview(message: ChatMessage) {
   return "Сообщение";
 }
 
-function getOtherParticipantTitle(conversation: any, currentUserId: string) {
-  const other = (conversation.participants || []).find((p: any) => p.user_id !== currentUserId);
+function getOtherParticipantTitle(conversation: Conversation, currentUserId: string) {
+  const other = (conversation.participants || []).find((p) => p.user_id !== currentUserId);
   return other?.profile?.display_name || String(other?.user_id || "").slice(0, 8);
 }
 
-function guessMyName(user: { email?: string | null; user_metadata?: any } | null): string {
+function guessMyName(user: { email?: string | null; user_metadata?: Record<string, unknown> } | null): string {
   if (!user) return "";
   const metaName = typeof user.user_metadata?.full_name === "string" ? user.user_metadata.full_name.trim() : "";
   if (metaName) return metaName;
@@ -101,7 +101,7 @@ export function ForwardMessageSheet({ open, onOpenChange, message }: ForwardMess
 
     (async () => {
       try {
-        const briefMap = await fetchUserBriefMap([user.id], supabase as any);
+        const briefMap = await fetchUserBriefMap([user.id]);
         const name = (resolveUserBrief(user.id, briefMap)?.display_name || "").trim();
         if (name) setSenderName(name);
       } catch (error) {
@@ -124,7 +124,7 @@ export function ForwardMessageSheet({ open, onOpenChange, message }: ForwardMess
   const filteredConversations = useMemo(() => {
     if (!user) return [];
     if (!q) return conversations;
-    return conversations.filter((c: any) => normalize(getOtherParticipantTitle(c, user.id)).includes(q));
+    return conversations.filter((c) => normalize(getOtherParticipantTitle(c, user.id)).includes(q));
   }, [conversations, q, user]);
 
   const filteredGroups = useMemo(() => {
@@ -180,9 +180,9 @@ export function ForwardMessageSheet({ open, onOpenChange, message }: ForwardMess
     // and safe: if it fails, the message is still sent; only the metadata is missing.
     if (hideSender && result?.messageId) {
       try {
-        await (supabase as any)
+        await supabase
           .from("messages")
-          .update({ forward_hide_sender: true })
+          .update({ forward_hide_sender: true } as Record<string, unknown>)
           .eq("id", result.messageId);
       } catch (error) {
         // Non-critical: log but don't re-throw — message was already delivered.
@@ -200,21 +200,24 @@ export function ForwardMessageSheet({ open, onOpenChange, message }: ForwardMess
     const baseContent = (message.content || "").trim() || messagePreview(message);
     const content = withOptionalSignature(baseContent, senderName, hideSender ? false : withSignature);
 
-    const { error } = await (supabase as any).from("group_chat_messages").insert({
-      group_id: groupId,
-      sender_id: user.id,
-      content,
-      media_url: message.media_url ?? null,
-      media_type: message.media_type ?? null,
-      forward_hide_sender: hideSender,
+    const { data, error } = await supabase.rpc("send_group_message_v1" as any, {
+      p_group_id: groupId,
+      p_content: content,
+      p_media_url: message.media_url ?? null,
+      p_media_type: message.media_type ?? null,
     });
 
     if (error) throw error;
 
-    await supabase
-      .from("group_chats")
-      .update({ updated_at: new Date().toISOString() })
-      .eq("id", groupId);
+    // Persist forward_hide_sender as a follow-up (RPC doesn't accept it).
+    const messageId = Array.isArray(data) ? data[0]?.message_id : (data as Record<string, unknown>)?.message_id;
+    if (messageId && hideSender) {
+      try {
+        await supabase.from("group_chat_messages").update({ forward_hide_sender: true } as Record<string, unknown>).eq("id", messageId as string);
+      } catch (e) {
+        logger.warn("forward: failed to set forward_hide_sender on group message", { messageId, error: e });
+      }
+    }
   };
 
   const sendToChannel = async (channelId: string) => {
@@ -223,28 +226,33 @@ export function ForwardMessageSheet({ open, onOpenChange, message }: ForwardMess
     const baseContent = (message.content || "").trim() || messagePreview(message);
     const content = withOptionalSignature(baseContent, senderName, hideSender ? false : withSignature);
 
-    const { error } = await (supabase as any).from("channel_messages").insert({
-      channel_id: channelId,
-      sender_id: user.id,
-      content,
-      media_url: message.media_url ?? null,
-      media_type: message.media_type ?? null,
-      forward_hide_sender: hideSender,
+    const { data, error } = await supabase.rpc("send_channel_message_v1" as any, {
+      p_channel_id: channelId,
+      p_content: content,
+      p_silent: false,
+      p_media_url: message.media_url ?? null,
+      p_media_type: message.media_type ?? null,
+      p_duration_seconds: message.duration_seconds ?? null,
     });
 
     if (error) throw error;
 
-    await supabase
-      .from("channels")
-      .update({ updated_at: new Date().toISOString() })
-      .eq("id", channelId);
+    // Persist forward_hide_sender as a follow-up (RPC doesn't accept it).
+    const messageId = Array.isArray(data) ? data[0]?.message_id : (data as Record<string, unknown>)?.message_id;
+    if (messageId && hideSender) {
+      try {
+        await supabase.from("channel_messages").update({ forward_hide_sender: true } as Record<string, unknown>).eq("id", messageId as string);
+      } catch (e) {
+        logger.warn("forward: failed to set forward_hide_sender on channel message", { messageId, error: e });
+      }
+    }
   };
 
   const handleForwardToUser = async (u: SearchUser) => {
     if (!user || !message) return;
 
     // If a conversation already exists with this user, reuse it.
-    const existing = conversations.find((c: any) => (c.participants || []).some((p: any) => p.user_id === u.user_id));
+    const existing = conversations.find((c) => (c.participants || []).some((p) => p.user_id === u.user_id));
     const convId = existing?.id || (await createConversation(u.user_id));
 
     if (!convId) {
@@ -369,7 +377,7 @@ export function ForwardMessageSheet({ open, onOpenChange, message }: ForwardMess
               {filteredConversations.length === 0 ? (
                 <div className="text-sm text-white/40 py-2">Нет диалогов</div>
               ) : (
-                filteredConversations.map((c: any) => (
+                filteredConversations.map((c) => (
                   <button
                     key={c.id}
                     className="w-full flex items-center gap-3 py-3 hover:bg-white/10 transition-colors rounded-lg px-2 -mx-2"

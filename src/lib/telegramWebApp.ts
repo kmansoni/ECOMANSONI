@@ -1,6 +1,6 @@
 export type TelegramWebApp = {
   initData?: string;
-  initDataUnsafe?: any;
+  initDataUnsafe?: Record<string, unknown>;
   ready: () => void;
   expand?: () => void;
   isExpanded?: boolean;
@@ -11,9 +11,12 @@ export type TelegramWebApp = {
 
 export function getTelegramWebApp(): TelegramWebApp | null {
   if (typeof window === "undefined") return null;
-  const tg = (window as any)?.Telegram?.WebApp as TelegramWebApp | undefined;
-  if (!tg || typeof tg.ready !== "function") return null;
-  return tg;
+  // window.Telegram?.WebApp объявлен как unknown (declare global в useVideoCall.ts)
+  const raw = window.Telegram?.WebApp;
+  if (raw && typeof raw === "object" && "ready" in raw && typeof (raw as TelegramWebApp).ready === "function") {
+    return raw as TelegramWebApp;
+  }
+  return null;
 }
 
 export function isTelegramMiniApp(): boolean {

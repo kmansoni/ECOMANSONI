@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Search, Edit3, Archive } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase, dbLoose } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import { useE2EEncryption } from '@/hooks/useE2EEncryption';
 import type { EncryptedPayload } from '@/hooks/useE2EEncryption';
@@ -26,6 +26,30 @@ interface ChatItem {
   unread_count: number;
 }
 
+interface ParticipantRow {
+  conversation_id: string;
+}
+
+interface MessageRow {
+  conversation_id: string;
+  content?: string | null;
+  media_type?: string | null;
+  created_at?: string | null;
+  sender_id?: string | null;
+}
+
+interface ProfileRow {
+  id: string;
+  username: string;
+  full_name: string;
+  avatar_url?: string;
+}
+
+interface ConversationParticipantRow {
+  conversation_id: string;
+  profiles?: ProfileRow | null;
+}
+
 function parseEncryptedPayload(content: unknown): EncryptedPayload | null {
   if (typeof content !== 'string') return null;
   const trimmed = content.trim();
@@ -43,7 +67,7 @@ function parseEncryptedPayload(content: unknown): EncryptedPayload | null {
       typeof parsed.kid === 'string'
     );
     return isValid ? (parsed as EncryptedPayload) : null;
-  } catch {
+  } catch (_err) {
     return null;
   }
 }
@@ -203,7 +227,7 @@ export default function ChatPage() {
 
     try {
       // Получаем разговоры пользователя
-      const { data: participants } = await (supabase as any)
+      const { data: participants } = await dbLoose
         .from('conversation_participants')
         .select(`
           conversation_id,
@@ -221,7 +245,7 @@ export default function ChatPage() {
       }
 
       // Получаем второго участника каждого разговора
-      const conversationIds = (participants as any[]).map((p: any) => p.conversation_id);
+      const conversationIds = (participants as unknown as ParticipantRow[]).map((p) => p.conversation_id);
 
       if (conversationIds.length === 0) {
         setChats([]);
@@ -230,21 +254,21 @@ export default function ChatPage() {
       }
 
       // Получаем всех участников
-      const { data: allParticipants } = await (supabase as any)
+      const { data: allParticipants } = await dbLoose
         .from('conversation_participants')
         .select('conversation_id, user_id, profiles(id, username, full_name, avatar_url)')
         .in('conversation_id', conversationIds)
         .neq('user_id', user.id);
 
       // Получаем последние сообщения
-      const { data: lastMessages } = await (supabase as any)
+      const { data: lastMessages } = await dbLoose
         .from('messages')
         .select('conversation_id, content, media_type, created_at, sender_id')
         .in('conversation_id', conversationIds)
         .order('created_at', { ascending: false });
 
       // Считаем непрочитанные
-      const { data: unreadData } = await (supabase as any)
+      const { data: unreadData } = await dbLoose
         .from('messages')
         .select('conversation_id')
         .in('conversation_id', conversationIds)
@@ -258,19 +282,19 @@ export default function ChatPage() {
         }
       }
 
-      const lastMsgMap: Record<string, any> = {};
+      const lastMsgMap: Record<string, MessageRow> = {};
       if (lastMessages) {
-        for (const m of lastMessages as any[]) {
+        for (const m of lastMessages as unknown as MessageRow[]) {
           if (!lastMsgMap[m.conversation_id]) {
             lastMsgMap[m.conversation_id] = m;
           }
         }
       }
 
-      const otherUserMap: Record<string, any> = {};
+      const otherUserMap: Record<string, ProfileRow> = {};
       if (allParticipants) {
-        for (const p of allParticipants as any[]) {
-          if (!otherUserMap[p.conversation_id]) {
+        for (const p of allParticipants as unknown as ConversationParticipantRow[]) {
+          if (!otherUserMap[p.conversation_id] && p.profiles) {
             otherUserMap[p.conversation_id] = p.profiles;
           }
         }
@@ -278,15 +302,27 @@ export default function ChatPage() {
 
       const chatItems: ChatItem[] = conversationIds
         .filter((cid: string) => otherUserMap[cid])
-        .map((cid: string) => ({
-          id: cid,
-          other_user: {
-            ...otherUserMap[cid],
-            is_online: false,
-          },
-          last_message: lastMsgMap[cid] ?? null,
-          unread_count: unreadMap[cid] ?? 0,
-        }));
+        .map((cid: string) => {
+          const rawMessage = lastMsgMap[cid];
+          const normalizedMessage = rawMessage
+            ? {
+                content: String(rawMessage.content ?? ""),
+                media_type: rawMessage.media_type ? String(rawMessage.media_type) : undefined,
+                created_at: String(rawMessage.created_at ?? ""),
+                sender_id: String(rawMessage.sender_id ?? ""),
+              }
+            : undefined;
+
+          return {
+            id: cid,
+            other_user: {
+              ...otherUserMap[cid],
+              is_online: false,
+            },
+            last_message: normalizedMessage,
+            unread_count: unreadMap[cid] ?? 0,
+          };
+        });
 
       // Сортируем по дате последнего сообщения
       chatItems.sort((a, b) => {
@@ -311,7 +347,7 @@ export default function ChatPage() {
 
     const channel = supabase
       .channel('chats-list')
-      .on('postgres_changes' as any, { event: '*', schema: 'public', table: 'messages' }, () =>
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, () =>
         loadChats()
       )
       .subscribe();

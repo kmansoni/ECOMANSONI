@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
+import { logger } from "@/lib/logger";
 
 export type ChannelUserSettings = {
   channel_id: string;
@@ -44,7 +45,7 @@ export function useChannelUserSettings(channelId: string | null) {
       if (error) throw error;
       setSettings((data as any) ?? null);
     } catch (e) {
-      console.warn("useChannelUserSettings load failed:", e);
+      logger.warn("[useChannelUserSettings] load failed", { error: e });
       setSettings(null);
     } finally {
       setLoading(false);

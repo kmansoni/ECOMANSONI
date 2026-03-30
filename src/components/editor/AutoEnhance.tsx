@@ -17,6 +17,7 @@
  */
 
 import { useState, useRef, useCallback } from "react";
+import { logger } from "@/lib/logger";
 import { Wand2, Loader2, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -209,7 +210,7 @@ export function AutoEnhance({ imageUrl, onEnhanced, className }: AutoEnhanceProp
         }
       }, "image/jpeg", 0.92);
     } catch (err) {
-      console.error("Auto-enhance failed:", err);
+      logger.error("[AutoEnhance] Auto-enhance failed", { error: err });
     } finally {
       setIsProcessing(false);
     }

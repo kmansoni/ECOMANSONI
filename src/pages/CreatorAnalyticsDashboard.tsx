@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Loader2, TrendingUp, Eye, Play, Heart, MessageSquare, AlertCircle, Lightbulb, Target } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { dbLoose } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
+import { logger } from "@/lib/logger";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -35,6 +36,8 @@ interface RecommendedAction {
   reels_affected: number;
 }
 
+type AnalyticsTopReel = Record<string, unknown>;
+
 export function CreatorAnalyticsDashboard() {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -42,7 +45,7 @@ export function CreatorAnalyticsDashboard() {
   const [metrics, setMetrics] = useState<CreatorMetrics | null>(null);
   const [insights, setInsights] = useState<ReelInsight[]>([]);
   const [recommendations, setRecommendations] = useState<RecommendedAction[]>([]);
-  const [topReels, setTopReels] = useState<any[]>([]);
+  const [topReels, setTopReels] = useState<AnalyticsTopReel[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -54,37 +57,38 @@ export function CreatorAnalyticsDashboard() {
         setLoading(true);
 
         // Get creator dashboard metrics
-        const { data: dashboardData, error: dashboardError } = await (supabase as any).rpc(
+        const { data: dashboardData, error: dashboardError } = await dbLoose.rpc(
           "get_creator_dashboard_v1",
           { p_creator_id: user.id }
         );
         if (dashboardError) throw dashboardError;
         if (mounted && dashboardData) {
-          setMetrics(dashboardData);
+          setMetrics(dashboardData as unknown as CreatorMetrics);
         }
 
         // Get creator recommendations
-        const { data: recommendationsData, error: recommendationsError } = await (supabase as any).rpc(
+        const { data: recommendationsData, error: recommendationsError } = await dbLoose.rpc(
           "get_creator_recommendations_v1",
           { p_creator_id: user.id, p_limit: 5 }
         );
         if (recommendationsError) throw recommendationsError;
         if (mounted && recommendationsData) {
-          setRecommendations(recommendationsData);
+          setRecommendations(recommendationsData as unknown as RecommendedAction[]);
         }
 
         // Get growth trends
-        const { data: growthData, error: growthError } = await (supabase as any).rpc(
+        const { data: growthData, error: growthError } = await dbLoose.rpc(
           "get_creator_growth_v1",
           { p_creator_id: user.id, p_days: 7 }
         );
         if (growthError) throw growthError;
         // Store growth data if needed for charts later
 
-      } catch (error: any) {
-        console.error("Failed to load analytics:", error);
+      } catch (error) {
+        logger.error("[CreatorAnalytics] Failed to load analytics", { error });
         if (mounted) {
-          toast.error(`Ошибка загрузки аналитики: ${error.message}`);
+          const message = error instanceof Error ? error.message : String(error);
+          toast.error(`Ошибка загрузки аналитики: ${message}`);
         }
       } finally {
         if (mounted) {

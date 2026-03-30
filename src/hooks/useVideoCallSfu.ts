@@ -94,7 +94,7 @@ async function acquireLocalMedia(isVideo: boolean): Promise<MediaStream> {
         await new Promise((resolve) => window.setTimeout(resolve, 150));
         return navigator.mediaDevices.getUserMedia(constraints);
       }
-      console.warn(`[acquireLocalMedia] ${label} failed`, error);
+      logger.warn("video_call_sfu.acquire_local_media_failed", { label, error });
       throw error;
     }
   };
@@ -117,7 +117,7 @@ async function acquireLocalMedia(isVideo: boolean): Promise<MediaStream> {
 
     return await request({ audio: baseAudio, video: false }, "audio-only");
   } catch (err) {
-    console.error("[acquireLocalMedia] Failed to acquire local media", err);
+    logger.error("video_call_sfu.acquire_local_media_all_failed", { error: err });
     throw err;
   }
 }
@@ -289,7 +289,7 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
   }, []);
 
   const markMediaBootstrapFailed = useCallback((reason = "media_bootstrap_failed", details?: unknown) => {
-    console.error("[useVideoCallSfu] markMediaBootstrapFailed:", reason, details);
+    logger.error("video_call_sfu.media_bootstrap_failed", { reason, details });
     setConnectionState("failed");
     // Do NOT touch status here. status tracks DB/call lifecycle (idle/calling/ringing/connected/ended)
     // and must not be artificially promoted to "connected" on a media failure.
@@ -313,7 +313,7 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
         const hasSend = mediaBootstrapSignalsRef.current.has("send_transport_created");
         const hasRecv = mediaBootstrapSignalsRef.current.has("recv_transport_created");
         if (!hasSend || !hasRecv) {
-          console.warn("[useVideoCallSfu] 3500ms fallback skipped: missing media bootstrap signals", {
+          logger.warn("video_call_sfu.fallback_skipped_missing_signals", {
             hasSend,
             hasRecv,
           });
@@ -371,11 +371,11 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
     callType: "video" | "audio"
   ): Promise<VideoCall | null> => {
     if (!user?.id) {
-      console.error("[useVideoCallSfu] startCall: not authenticated");
+      logger.error("video_call_sfu.start_call_not_authenticated", {});
       return null;
     }
     if (currentCallRef.current) {
-      console.warn("[useVideoCallSfu] startCall: already in a call");
+      logger.warn("video_call_sfu.start_call_already_in_call", {});
       return null;
     }
 
@@ -386,7 +386,7 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
     try {
       stream = await acquireLocalMedia(isVideo);
     } catch (err) {
-      console.error("[useVideoCallSfu] startCall: media acquisition failed", err);
+      logger.error("video_call_sfu.start_call_media_failed", { error: err });
       throw toMediaAccessError(err);
     }
 
@@ -411,7 +411,7 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
       });
 
     if (error) {
-      console.error("[useVideoCallSfu] startCall: DB insert failed", error);
+      logger.error("video_call_sfu.start_call_db_insert_failed", { error });
       releaseLocalMedia();
       setStatus("idle");
       throw new VideoCallStartError("db_insert_failed", error);
@@ -449,7 +449,7 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
     try {
       stream = await acquireLocalMedia(isVideo);
     } catch (err) {
-      console.error("[useVideoCallSfu] answerCall: media acquisition failed", err);
+      logger.error("video_call_sfu.answer_call_media_failed", { error: err });
       throw toMediaAccessError(err);
     }
 
@@ -502,24 +502,30 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
     const active = currentCallRef.current;
     if (!active || active.id !== updated.id) return;
 
+    // Always sync call metadata (participants, timestamps, call_type, etc.)
     setCurrentCall(updated);
 
-    if (isConnectedCallStatus(updated.status)) {
-      setStatus("connected");
-      // DB status can become "answered" before media transport is actually ready.
-      // Keep connecting state until remote tracks arrive or fallback timer promotes it.
-      setConnectionState((prev) => {
-        if (prev === "failed" || prev === "connected") return prev;
-        return "connecting";
-      });
-      return;
-    }
-
+    // Terminal states from DB are authoritative — honour unconditionally.
     if (["declined", "ended", "missed"].includes(updated.status)) {
       onCallEndedRef.current?.(updated);
       setStatus("ended");
       setCurrentCall(null);
       resetState();
+      return;
+    }
+
+    // For connected call statuses (answered/active/connected):
+    // Only advance status forward (calling/ringing → connected).
+    // Never regress from ended/idle and never override media-driven connectionState.
+    if (isConnectedCallStatus(updated.status)) {
+      setStatus((prev) => {
+        if (prev === "calling" || prev === "ringing") return "connected";
+        return prev; // already connected or terminal — no-op
+      });
+      // connectionState is exclusively managed by WS / media events
+      // (setRemoteStream, markMediaBootstrapFailed, fallback timer).
+      // DB must not touch it.
+      return;
     }
   }, [resetState]);
 
@@ -587,10 +593,10 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
           })
           .eq("id", call.id);
         if (error) {
-          console.error("[useVideoCallSfu] endCall: DB update returned error", error);
+          logger.error("video_call_sfu.end_call_db_update_error", { error });
         }
       } catch (e) {
-        console.error("[useVideoCallSfu] endCall: DB update failed", e);
+        logger.error("video_call_sfu.end_call_db_update_failed", { error: e });
       }
       onCallEndedRef.current?.(call);
     }

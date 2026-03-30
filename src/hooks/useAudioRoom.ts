@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import { logger } from '@/lib/logger';
 
 export interface AudioRoom {
   id: string;
@@ -109,7 +110,7 @@ export function useAudioRoom(roomId?: string) {
       })
       .select()
       .single();
-    if (error) { console.error(error); return null; }
+    if (error) { logger.error("[useAudioRoom] create error", { error }); return null; }
     // Auto-join as host
     await sb.from('audio_room_participants').insert({
       room_id: data.id,
@@ -132,7 +133,7 @@ export function useAudioRoom(roomId?: string) {
     }, { onConflict: 'room_id,user_id' });
     // increment listener count
     await sb.rpc('increment_audio_room_listeners', { room_id: rid }).catch((error: unknown) => {
-      console.warn('[useAudioRoom] Failed to increment listeners', { roomId: rid, error });
+      logger.warn('[useAudioRoom] Failed to increment listeners', { roomId: rid, error });
     });
     fetchParticipants();
   };

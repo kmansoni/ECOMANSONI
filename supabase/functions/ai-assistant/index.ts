@@ -1,6 +1,7 @@
 // Deno Edge Function: AI Assistant
 // POST { message: string, conversationId?: string }
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { handleCors, getCorsHeaders } from "../_shared/utils.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -10,24 +11,18 @@ const FREE_DAILY_LIMIT = 20;
 const SYSTEM_PROMPT =
   "Ты — AI-ассистент платформы Mansoni. Помогай пользователям с вопросами, переводами, написанием текстов. Отвечай кратко и по делу.";
 
-function corsHeaders() {
-  return {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  };
-}
-
 Deno.serve(async (req: Request) => {
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders() });
-  }
+  const corsResponse = handleCors(req);
+  if (corsResponse) return corsResponse;
+
+  const origin = req.headers.get("origin");
 
   // 1. Verify JWT
   const authHeader = req.headers.get("Authorization");
   if (!authHeader) {
     return new Response(JSON.stringify({ error: "Missing authorization" }), {
       status: 401,
-      headers: { ...corsHeaders(), "Content-Type": "application/json" },
+      headers: { ...getCorsHeaders(origin), "Content-Type": "application/json" },
     });
   }
 
@@ -40,7 +35,7 @@ Deno.serve(async (req: Request) => {
   if (authError || !user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
-      headers: { ...corsHeaders(), "Content-Type": "application/json" },
+      headers: { ...getCorsHeaders(origin), "Content-Type": "application/json" },
     });
   }
 
@@ -53,7 +48,7 @@ Deno.serve(async (req: Request) => {
   } catch {
     return new Response(JSON.stringify({ error: "Invalid JSON body" }), {
       status: 400,
-      headers: { ...corsHeaders(), "Content-Type": "application/json" },
+      headers: { ...getCorsHeaders(origin), "Content-Type": "application/json" },
     });
   }
 
@@ -61,7 +56,7 @@ Deno.serve(async (req: Request) => {
   if (!message || typeof message !== "string" || message.trim().length === 0) {
     return new Response(JSON.stringify({ error: "message is required" }), {
       status: 400,
-      headers: { ...corsHeaders(), "Content-Type": "application/json" },
+      headers: { ...getCorsHeaders(origin), "Content-Type": "application/json" },
     });
   }
 
@@ -110,7 +105,7 @@ Deno.serve(async (req: Request) => {
       }),
       {
         status: 429,
-        headers: { ...corsHeaders(), "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(origin), "Content-Type": "application/json" },
       }
     );
   }
@@ -165,7 +160,7 @@ Deno.serve(async (req: Request) => {
     console.error("OpenAI error:", errText);
     return new Response(JSON.stringify({ error: "AI service error", detail: errText }), {
       status: 502,
-      headers: { ...corsHeaders(), "Content-Type": "application/json" },
+      headers: { ...getCorsHeaders(origin), "Content-Type": "application/json" },
     });
   }
 
@@ -219,6 +214,6 @@ Deno.serve(async (req: Request) => {
 
   return new Response(
     JSON.stringify({ reply: aiReply, tokensUsed, remainingMessages }),
-    { headers: { ...corsHeaders(), "Content-Type": "application/json" } }
+    { headers: { ...getCorsHeaders(origin), "Content-Type": "application/json" } }
   );
 });

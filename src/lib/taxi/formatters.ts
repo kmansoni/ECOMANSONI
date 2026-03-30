@@ -1,4 +1,5 @@
 import type { OrderStatus, VehicleClass, PaymentMethod } from '@/types/taxi';
+export { formatRating } from '@/lib/formatters/rating';
 
 /**
  * Форматирует цену поездки
@@ -28,13 +29,6 @@ export function formatEta(minutes: number): string {
   const mins = Math.round(minutes % 60);
   if (mins === 0) return `${hours} ч`;
   return `${hours} ч ${mins} мин`;
-}
-
-/**
- * Форматирует рейтинг водителя
- */
-export function formatRating(rating: number): string {
-  return rating.toFixed(1);
 }
 
 /**

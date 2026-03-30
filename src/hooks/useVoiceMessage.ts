@@ -2,6 +2,7 @@ import { useState, useRef, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { uploadMedia } from '@/lib/mediaUpload';
+import { logger } from '@/lib/logger';
 
 interface VoiceRecordingResult {
   blob: Blob;
@@ -76,7 +77,7 @@ export function useVoiceMessage() {
       };
       captureWaveform();
     } catch (err) {
-      console.error('Ошибка доступа к микрофону:', err);
+      logger.error('[useVoiceMessage] Ошибка доступа к микрофону', { error: err });
     }
   }, []);
 

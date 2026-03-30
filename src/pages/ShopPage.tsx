@@ -15,7 +15,7 @@ export default function ShopPage() {
   const { isInWishlist, toggleWishlist } = useWishlist();
   const [createOpen, setCreateOpen] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
-  const [cart, setCart] = useState<any[]>([]);
+  const [cart, setCart] = useState<Record<string, unknown>[]>([]);
 
   const categories = useMemo(() => {
     const cats = [...new Set(products.map(p => p.category).filter(Boolean))] as string[];

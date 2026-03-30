@@ -59,7 +59,7 @@ export function AdminApprovalsPage() {
     let payload: Record<string, unknown>;
     try {
       payload = JSON.parse(payloadJson) as Record<string, unknown>;
-    } catch {
+    } catch (_err) {
       toast.error("operation_payload must be valid JSON");
       return;
     }

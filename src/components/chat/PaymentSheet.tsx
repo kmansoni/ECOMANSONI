@@ -100,10 +100,11 @@ export const PaymentSheet = ({
           .maybeSingle();
 
         if (error) {
-          const code = String((error as any)?.code ?? "");
-          const status = Number((error as any)?.status ?? 0);
-          const message = String((error as any)?.message ?? "").toLowerCase();
-          const details = String((error as any)?.details ?? "").toLowerCase();
+          const pgErr = error as { code?: string; status?: number; message?: string; details?: string };
+          const code = String(pgErr.code ?? "");
+          const status = Number(pgErr.status ?? 0);
+          const message = String(pgErr.message ?? "").toLowerCase();
+          const details = String(pgErr.details ?? "").toLowerCase();
           const isOptionalStarsUnavailable =
             code === "42P01" ||
             code === "PGRST204" ||

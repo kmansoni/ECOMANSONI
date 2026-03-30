@@ -36,17 +36,25 @@ interface LiveCollabInviteProps {
   onCollabStarted: (guestId: string) => void;
 }
 
+interface SearchProfile {
+  id: string;
+  username: string | null;
+  avatar_url: string | null;
+}
+
 export function LiveCollabInvite({ liveSessionId, isHost, onCollabStarted }: LiveCollabInviteProps) {
   const { user } = useAuth();
   const [showInviteSheet, setShowInviteSheet] = useState(false);
   const [pendingInvite, setPendingInvite] = useState<CollabSession | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [searchResults, setSearchResults] = useState<SearchProfile[]>([]);
   const [isSending, setIsSending] = useState(false);
 
   // Подписка на входящие инвайты (для гостя)
   useEffect(() => {
     if (!user || isHost) return;
+    // live_collab_sessions не в генерированных типах
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const db = supabase as any;
 
     const channel = db
@@ -59,7 +67,7 @@ export function LiveCollabInvite({ liveSessionId, isHost, onCollabStarted }: Liv
           table: "live_collab_sessions",
           filter: `guest_id=eq.${user.id}`,
         },
-        (payload: any) => {
+        (payload: { new: CollabSession }) => {
           if (payload.new.status === "pending") {
             setPendingInvite(payload.new);
           }
@@ -73,6 +81,8 @@ export function LiveCollabInvite({ liveSessionId, isHost, onCollabStarted }: Liv
   // Подписка на изменение статуса (для хоста)
   useEffect(() => {
     if (!user || !isHost) return;
+    // live_collab_sessions не в генерированных типах
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const db = supabase as any;
 
     const channel = db
@@ -85,10 +95,10 @@ export function LiveCollabInvite({ liveSessionId, isHost, onCollabStarted }: Liv
           table: "live_collab_sessions",
           filter: `live_session_id=eq.${liveSessionId}`,
         },
-        (payload: any) => {
+        (payload: { new: CollabSession }) => {
           if (payload.new.status === "active") {
             toast.success("Гость принял приглашение!");
-            onCollabStarted(payload.new.guest_id);
+            onCollabStarted(payload.new.guest_id!);
           } else if (payload.new.status === "declined") {
             toast.error("Гость отклонил приглашение");
           }
@@ -102,14 +112,13 @@ export function LiveCollabInvite({ liveSessionId, isHost, onCollabStarted }: Liv
   const handleSearch = async (query: string) => {
     setSearchQuery(query);
     if (query.length < 2) { setSearchResults([]); return; }
-    const db = supabase as any;
-    const { data } = await db
+    const { data } = await supabase
       .from("profiles")
       .select("id, username, avatar_url")
       .ilike("username", `%${query}%`)
-      .neq("id", user?.id)
+      .neq("id", user?.id ?? "")
       .limit(10);
-    setSearchResults(data ?? []);
+    setSearchResults((data ?? []) as SearchProfile[]);
   };
 
   const sendInvite = async (guestId: string) => {

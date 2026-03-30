@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { AdminShell } from "@/components/admin/AdminShell";
+import { logger } from "@/lib/logger";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
@@ -7,6 +8,7 @@ import { supabase } from "@/lib/supabase";
 import { Tables } from "@/integrations/supabase/types";
 import { toast } from "sonner";
 import { TrendingUp, TrendingDown, AlertTriangle, CheckCircle2, Clock } from "lucide-react";
+import { DASHBOARD_REFRESH_MS } from "@/lib/timing";
 
 type KpiSnapshot = Tables<"kpi_daily_snapshots">;
 type GuardrailAlert = Tables<"guardrail_alerts">;
@@ -26,7 +28,7 @@ export function KpiDashboardPage() {
 
   useEffect(() => {
     loadDashboardData();
-    const interval = setInterval(loadDashboardData, 60000); // Refresh every minute
+    const interval = setInterval(loadDashboardData, DASHBOARD_REFRESH_MS);
     return () => clearInterval(interval);
   }, []);
 
@@ -54,7 +56,7 @@ export function KpiDashboardPage() {
       if (alertError) throw alertError;
       setAlerts(alertData || []);
     } catch (error) {
-      console.error("Failed to load KPI data:", error);
+      logger.error("[KpiDashboard] Failed to load KPI data", { error });
       toast.error("Failed to load dashboard data");
     } finally {
       setLoading(false);

@@ -4,18 +4,20 @@
  * Prevents permanent fallback to localStorage after transient network failures.
  * Used by useArchivedChats and usePinnedChats.
  */
-import { supabase } from "@/lib/supabase";
+import { supabase, dbLoose } from "@/lib/supabase";
 
 let _available: boolean | null = null;
 let _probeAt = 0;
 const PROBE_TTL_OK_MS = 60_000;
 const PROBE_TTL_FAIL_MS = 30 * 60_000;
 
-function isExpectedOptionalSettingsError(error: any): boolean {
-  const code = String(error?.code ?? "");
-  const status = Number(error?.status ?? 0);
-  const message = String(error?.message ?? "").toLowerCase();
-  const details = String(error?.details ?? "").toLowerCase();
+function isExpectedOptionalSettingsError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const e = error as Record<string, unknown>;
+  const code = String(e.code ?? "");
+  const status = Number(e.status ?? 0);
+  const message = String(e.message ?? "").toLowerCase();
+  const details = String(e.details ?? "").toLowerCase();
   const mentionsSettingsTable =
     message.includes("chat_user_settings") ||
     message.includes("user_chat_settings") ||
@@ -39,7 +41,7 @@ export async function probeSupabase(): Promise<boolean> {
     return _available;
   }
   try {
-    const { error } = await (supabase as any)
+    const { error } = await dbLoose
       .from("user_chat_settings")
       .select("conversation_id")
       .limit(1);

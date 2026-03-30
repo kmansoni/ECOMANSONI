@@ -1,11 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
-};
+import { handleCors, getCorsHeaders } from "../_shared/utils.ts";
 
 type Json = string | number | boolean | null | Json[] | { [key: string]: Json };
 
@@ -55,10 +50,10 @@ function extractAuthorIdFromObjectName(name: string): string | null {
   return v;
 }
 
-function json(body: unknown, status = 200): Response {
+function json(body: unknown, status = 200, cors: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...cors, "Content-Type": "application/json" },
   });
 }
 
@@ -69,13 +64,18 @@ function clampInt(v: unknown, def: number, min: number, max: number): number {
 }
 
 serve(async (req: Request) => {
-  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
-  if (req.method !== "POST") return json({ ok: false, error: "Method not allowed" }, 405);
+  const corsResponse = handleCors(req);
+  if (corsResponse) return corsResponse;
+
+  const origin = req.headers.get("origin");
+  const cors = getCorsHeaders(origin);
+
+  if (req.method !== "POST") return json({ ok: false, error: "Method not allowed" }, 405, cors);
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (!supabaseUrl || !serviceKey) {
-    return json({ ok: false, error: "Server not configured" }, 500);
+    return json({ ok: false, error: "Server not configured" }, 500, cors);
   }
 
   let body: RequestBody = {};
@@ -184,13 +184,13 @@ serve(async (req: Request) => {
 
     if (res.error) {
       console.error("[reels-feed] query error:", res.error);
-      return json({ ok: false, error: "DB query failed" }, 500);
+      return json({ ok: false, error: "DB query failed" }, 500, cors);
     }
 
     const rows = (res.data ?? []) as Record<string, Json>[];
-    return json({ ok: true, data: rows });
+    return json({ ok: true, data: rows }, 200, cors);
   } catch (e) {
     console.error("[reels-feed] exception:", e);
-    return json({ ok: false, error: "Internal error" }, 500);
+    return json({ ok: false, error: "Internal error" }, 500, cors);
   }
 });

@@ -104,12 +104,12 @@ function hasTurnServer(iceServers: RTCIceServer[]): boolean {
 async function fetchTurnCredentials(): Promise<{ iceServers: RTCIceServer[] | null; ttlMs: number }> {
   const now = Date.now();
   if (turnFetchCircuitOpenUntil > now) {
-    console.warn("[WebRTC Config] TURN fetch circuit is open; skipping remote call");
+    logger.warn("[WebRTC Config] TURN fetch circuit is open; skipping remote call");
     return { iceServers: null, ttlMs: FALLBACK_CACHE_TTL_MS };
   }
 
   try {
-    console.log("[WebRTC Config] Fetching TURN credentials...");
+    logger.debug("[WebRTC Config] Fetching TURN credentials...");
 
     if (TURN_CREDENTIALS_URL) {
       const { data, error } = await fetchTurnCredentialsFromUrl();
@@ -121,10 +121,10 @@ async function fetchTurnCredentials(): Promise<{ iceServers: RTCIceServer[] | nu
           turnFetchCircuitOpenUntil = 0;
           return parsedResult;
         }
-        console.warn("[WebRTC Config] TURN endpoint returned no ICE servers, falling back to Supabase function");
+        logger.warn("[WebRTC Config] TURN endpoint returned no ICE servers, falling back to Supabase function");
       } else {
-        console.error("[WebRTC Config] TURN endpoint error:", error);
-        console.warn("[WebRTC Config] Falling back to Supabase turn-credentials function");
+        logger.error("[WebRTC Config] TURN endpoint error", { error });
+        logger.warn("[WebRTC Config] Falling back to Supabase turn-credentials function");
       }
     }
 
@@ -149,10 +149,10 @@ async function fetchTurnCredentials(): Promise<{ iceServers: RTCIceServer[] | nu
         }
 
         invokeError = result.error;
-        console.error("[WebRTC Config] Edge function error:", { fn, error: result.error });
+        logger.error("[WebRTC Config] Edge function error", { fn, error: result.error });
       } catch (fnError) {
         invokeError = fnError;
-        console.error("[WebRTC Config] Edge function invoke exception:", { fn, error: fnError });
+        logger.error("[WebRTC Config] Edge function invoke exception", { fn, error: fnError });
       }
     }
 
@@ -168,11 +168,11 @@ async function fetchTurnCredentials(): Promise<{ iceServers: RTCIceServer[] | nu
     }
     return result;
   } catch (err) {
-    console.error("[WebRTC Config] Failed to fetch TURN credentials:", err);
+    logger.error("[WebRTC Config] Failed to fetch TURN credentials", { error: err });
     turnFetchFailures += 1;
     if (turnFetchFailures >= TURN_FETCH_FAILURE_THRESHOLD) {
       turnFetchCircuitOpenUntil = Date.now() + TURN_FETCH_CIRCUIT_COOLDOWN_MS;
-      console.warn("[WebRTC Config] TURN fetch circuit opened due to consecutive failures");
+      logger.warn("[WebRTC Config] TURN fetch circuit opened due to consecutive failures");
     }
     return { iceServers: null, ttlMs: FALLBACK_CACHE_TTL_MS };
   }
@@ -192,7 +192,7 @@ function computeCacheTtl(ttlFromServerMs: number): number {
 
 function parseTurnResponse(parsed: TurnCredentialsResponse): { iceServers: RTCIceServer[] | null; ttlMs: number } {
   if (parsed.error) {
-    console.warn("[WebRTC Config] TURN error:", parsed.error);
+    logger.warn("[WebRTC Config] TURN error", { error: parsed.error });
   }
 
   const ttlFromServerMs = typeof parsed.ttlSeconds === "number" && Number.isFinite(parsed.ttlSeconds)
@@ -213,7 +213,7 @@ function parseTurnResponse(parsed: TurnCredentialsResponse): { iceServers: RTCIc
 
   const sanitizedIceServers = sanitizeIceServers(parsed.iceServers);
   if (sanitizedIceServers.length > 0) {
-    console.log("[WebRTC Config] Got", sanitizedIceServers.length, "ICE servers");
+    logger.debug("[WebRTC Config] Got ICE servers", { count: sanitizedIceServers.length });
     return { iceServers: sanitizedIceServers, ttlMs };
   }
 
@@ -273,7 +273,7 @@ function resolveIceTransportPolicy(
 
   if (wantRelay) {
     if (!canRelay) {
-      console.warn("[WebRTC Config] relay requested but TURN is unavailable; downgrading to policy=all");
+      logger.warn("[WebRTC Config] relay requested but TURN is unavailable; downgrading to policy=all");
       return "all";
     }
     return "relay";
@@ -312,7 +312,7 @@ export async function getIceServers(
     }
 
     if (cachedIceServers && cacheExpiry > now) {
-    console.log("[WebRTC Config] Using cached ICE servers");
+    logger.debug("[WebRTC Config] Using cached ICE servers");
     const canRelay = hasTurnServer(cachedIceServers);
     return {
       iceServers: cachedIceServers,
@@ -327,9 +327,9 @@ export async function getIceServers(
   if (turnServers && turnServers.length > 0) {
     cachedIceServers = sanitizeIceServers([...turnServers, ...FALLBACK_ICE_SERVERS]);
     cacheExpiry = now + ttlMs;
-    console.log("[WebRTC Config] Cached", cachedIceServers.length, "ICE servers (ttlMs=", ttlMs, ")");
+    logger.debug("[WebRTC Config] Cached ICE servers", { count: cachedIceServers.length, ttlMs });
   } else {
-    console.warn("[WebRTC Config] Using fallback ICE servers only");
+    logger.warn("[WebRTC Config] Using fallback ICE servers only");
     cachedIceServers = FALLBACK_ICE_SERVERS;
     cacheExpiry = now + FALLBACK_CACHE_TTL_MS;
   }
@@ -348,7 +348,7 @@ export function clearIceServerCache(): void {
   cacheExpiry = 0;
   turnFetchFailures = 0;
   turnFetchCircuitOpenUntil = 0;
-  console.log("[WebRTC Config] ICE server cache cleared");
+  logger.debug("[WebRTC Config] ICE server cache cleared");
 }
 
 export function initIceCacheAutoInvalidation(): void {

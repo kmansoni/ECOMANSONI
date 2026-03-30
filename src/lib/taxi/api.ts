@@ -1,3 +1,4 @@
+import { logger } from "@/lib/logger";
 import type {
   TaxiAddress,
   TaxiOrder,
@@ -19,12 +20,11 @@ import {
 } from './constants';
 import { estimateAllTariffs, generateSurgeMultiplier, generateRoutePoints } from './calculations';
 import { generatePinCode } from './formatters';
+import { sleep } from '@/lib/utils/sleep';
 import { generateMockDriver, generateMockTripHistory } from './mock-drivers';
 
-// ─── Вспомогательная функция: искусственная задержка ─────────────────────────
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+// sleep imported from @/lib/utils/sleep
+const delay = sleep;
 
 // ─── Вспомогательная функция: случайный ID ────────────────────────────────────
 function generateId(prefix = 'id'): string {
@@ -406,7 +406,7 @@ export async function shareTrip(orderId: string): Promise<string> {
 // ─── SOS ─────────────────────────────────────────────────────────────────────
 export async function sendSos(orderId: string): Promise<void> {
   await delay(500);
-  console.warn(`[SOS] Экстренный сигнал отправлен для заказа: ${orderId}`);
+  logger.warn(`[SOS] Экстренный сигнал отправлен для заказа: ${orderId}`);
   // В production: отправить уведомление в службу безопасности, сохранить геопозицию
 }
 

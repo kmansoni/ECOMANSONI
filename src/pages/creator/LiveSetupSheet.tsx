@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { logger } from "@/lib/logger";
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -68,9 +69,10 @@ export function LiveSetupSheet() {
       } else if (data && data[0].error) {
         toast.error(data[0].error);
       }
-    } catch (error: any) {
-      console.error("Failed to create session:", error);
-      toast.error(error.message || "Failed to start broadcast");
+    } catch (error) {
+      logger.error("[LiveSetupSheet] Failed to create session", { error });
+      const message = error instanceof Error ? error.message : String(error);
+      toast.error(message || "Failed to start broadcast");
     } finally {
       setSubmitting(false);
     }

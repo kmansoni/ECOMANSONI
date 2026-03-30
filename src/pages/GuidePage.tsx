@@ -4,9 +4,15 @@ import { ArrowLeft, Loader2, Trash2 } from "lucide-react";
 import { motion } from "framer-motion";
 import { getGuides, getGuideItems, deleteGuide, removeFromGuide } from "@/hooks/useGuides";
 import type { Guide, GuideItem } from "@/hooks/useGuides";
-import { supabase } from "@/integrations/supabase/client";
+import { dbLoose } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
+
+interface GuidePostPreview {
+  id: string;
+  image_url?: string | null;
+  caption?: string | null;
+}
 
 export default function GuidePage() {
   const { id } = useParams<{ id: string }>();
@@ -14,7 +20,7 @@ export default function GuidePage() {
   const { user } = useAuth();
   const [guide, setGuide] = useState<Guide | null>(null);
   const [items, setItems] = useState<GuideItem[]>([]);
-  const [posts, setPosts] = useState<Record<string, any>>({});
+  const [posts, setPosts] = useState<Record<string, GuidePostPreview>>({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -23,7 +29,7 @@ export default function GuidePage() {
       setLoading(true);
       try {
         const [guideData, itemsData] = await Promise.all([
-          (supabase as any).from("guides").select("*").eq("id", id).single().then((r: any) => r.data),
+          dbLoose.from("guides").select("*").eq("id", id).single().then((r) => r.data as unknown as Guide | null),
           getGuideItems(id),
         ]);
         setGuide(guideData);
@@ -32,10 +38,10 @@ export default function GuidePage() {
         // Load post data
         const postIds = itemsData.filter((i: GuideItem) => i.content_type === "post").map((i: GuideItem) => i.content_id);
         if (postIds.length) {
-          const { data } = await (supabase as any).from("posts").select("id, image_url, caption").in("id", postIds);
+          const { data } = await dbLoose.from("posts").select("id, image_url, caption").in("id", postIds);
           if (data) {
-            const map: Record<string, any> = {};
-            data.forEach((p: any) => { map[p.id] = p; });
+            const map: Record<string, GuidePostPreview> = {};
+            (data as unknown as GuidePostPreview[]).forEach((p) => { map[p.id] = p; });
             setPosts(map);
           }
         }
@@ -51,7 +57,7 @@ export default function GuidePage() {
       await deleteGuide(id);
       toast.success("Гайд удалён");
       navigate(-1);
-    } catch {
+    } catch (_err) {
       toast.error("Не удалось удалить гайд");
     }
   };
@@ -61,7 +67,7 @@ export default function GuidePage() {
       await removeFromGuide(itemId);
       setItems(prev => prev.filter(i => i.id !== itemId));
       toast.success("Удалено из гайда");
-    } catch {
+    } catch (_err) {
       toast.error("Ошибка");
     }
   };

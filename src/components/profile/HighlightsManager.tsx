@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useHighlights, StoryHighlight } from "@/hooks/useHighlights";
 import { toast } from "sonner";
+import { logger } from "@/lib/logger";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Loader2 } from "lucide-react";
 
@@ -36,7 +37,7 @@ export function HighlightsManager({ userId, isOwnProfile }: HighlightsManagerPro
       setShowCreateDialog(false);
       resetForm();
     } catch (error) {
-      console.error(error);
+      logger.error('[HighlightsManager] operation error', { error });
       toast.error("Не удалось создать актуальное");
     }
   };
@@ -54,7 +55,7 @@ export function HighlightsManager({ userId, isOwnProfile }: HighlightsManagerPro
       setEditingHighlight(null);
       resetForm();
     } catch (error) {
-      console.error(error);
+      logger.error('[HighlightsManager] operation error', { error });
       toast.error("Не удалось обновить актуальное");
     }
   };
@@ -66,7 +67,7 @@ export function HighlightsManager({ userId, isOwnProfile }: HighlightsManagerPro
       await deleteHighlight(highlightId);
       toast.success("Актуальное удалено");
     } catch (error) {
-      console.error(error);
+      logger.error('[HighlightsManager] operation error', { error });
       toast.error("Не удалось удалить актуальное");
     }
   };
@@ -78,7 +79,7 @@ export function HighlightsManager({ userId, isOwnProfile }: HighlightsManagerPro
       });
       toast.success(highlight.is_visible ? "Актуальное скрыто" : "Актуальное показано");
     } catch (error) {
-      console.error(error);
+      logger.error('[HighlightsManager] operation error', { error });
       toast.error("Не удалось изменить видимость");
     }
   };

@@ -2,9 +2,10 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Radio } from "lucide-react";
-import { supabase } from "@/lib/supabase";
+import { supabase, dbLoose } from "@/lib/supabase";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { fetchUserBriefMap, resolveUserBrief } from "@/lib/users/userBriefs";
+import { logger } from "@/lib/logger";
 
 interface LiveSession {
   id: string;
@@ -37,7 +38,7 @@ export function LiveTab() {
 
   const loadSessions = async () => {
     try {
-      const { data, error } = await (supabase as any)
+      const { data, error } = await dbLoose
         .from("live_sessions")
         .select("id, title, category, thumbnail_url, viewer_count_current, creator_id")
         .eq("status", "active")
@@ -50,7 +51,7 @@ export function LiveTab() {
 
       // Загрузить аватары создателей
       const creatorIds = [...new Set(rows.map((r) => r.creator_id).filter(Boolean))];
-      const briefMap = await fetchUserBriefMap(creatorIds, supabase as any);
+      const briefMap = await fetchUserBriefMap(creatorIds);
 
       setSessions(
         rows.map((r) => ({
@@ -60,7 +61,7 @@ export function LiveTab() {
         })),
       );
     } catch (err) {
-      console.error("Ошибка загрузки эфиров:", err);
+      logger.error('[LiveTab] Ошибка загрузки эфиров', { error: err });
     } finally {
       setLoading(false);
     }

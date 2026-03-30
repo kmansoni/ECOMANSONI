@@ -120,7 +120,7 @@ export function WebLoginCallbackPage() {
       if (resolvedRedirectUrl) {
         try {
           targetOrigin = new URL(resolvedRedirectUrl).origin;
-        } catch {
+        } catch (_err) {
           // malformed redirect_url — fall back to same-origin
         }
       }
@@ -434,7 +434,7 @@ function extractSiteName(url: string): string {
   try {
     const parsed = new URL(url);
     return parsed.hostname.replace(/^www\./, "");
-  } catch {
+  } catch (_err) {
     return url;
   }
 }

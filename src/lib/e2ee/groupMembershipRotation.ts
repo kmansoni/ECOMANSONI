@@ -1,5 +1,6 @@
 import { removeGroupMember, getGroupKeyTree } from "@/lib/e2ee/groupKeyTree";
 import { toBase64 } from "@/lib/e2ee/utils";
+import { logger } from '@/lib/logger';
 
 /**
  * Best-effort local key rotation when a member leaves a group.
@@ -27,7 +28,7 @@ export async function rotateGroupMembershipAfterRemoval(
     });
     return true;
   } catch (error) {
-    console.warn("[group-e2ee] membership rotation after removal failed", error);
+    logger.warn('[group-e2ee] membership rotation after removal failed', { error });
     return false;
   }
 }

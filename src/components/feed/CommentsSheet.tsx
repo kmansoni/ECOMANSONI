@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { Heart, Send, Loader2, Trash2, SortAsc, Clock } from "lucide-react";
 import { CommentFilter } from "@/components/moderation/CommentFilter";
 import { Button } from "@/components/ui/button";
@@ -47,7 +47,7 @@ export function CommentsSheet({
     addComment,
     toggleLike,
     deleteComment,
-  } = useComments(postId) as any;
+  } = useComments(postId);
   const [newComment, setNewComment] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [replyingTo, setReplyingTo] = useState<ReplyingTo | null>(null);
@@ -101,7 +101,7 @@ export function CommentsSheet({
       } else {
         toast({
           title: "Ошибка",
-          description: result.error,
+          description: "Не удалось отправить комментарий. Попробуйте снова.",
           variant: "destructive",
         });
       }
@@ -128,9 +128,15 @@ export function CommentsSheet({
     return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
   });
 
-  const totalComments = comments.reduce((acc: number, c: any) => acc + 1 + (c.replies?.length || 0), 0);
+  const totalComments = comments.reduce((acc: number, c: Comment) => acc + 1 + (c.replies?.length || 0), 0);
 
+  // ИСПРАВЛЕНИЕ дефекта #25: предотвращаем бесконечный цикл при нестабильной ссылке callback
+  // Если onCommentsCountChange создаётся inline в PostCard — каждый ре-рендер даёт новую ссылку
+  // Решение: проверяем что значение реально изменилось перед вызовом
+  const prevCountRef = useRef(totalComments);
   useEffect(() => {
+    if (prevCountRef.current === totalComments) return;
+    prevCountRef.current = totalComments;
     onCommentsCountChange?.(totalComments);
   }, [onCommentsCountChange, totalComments]);
 

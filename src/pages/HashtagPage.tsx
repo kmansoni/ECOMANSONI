@@ -1,16 +1,36 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Hash, Loader2 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { dbLoose } from "@/lib/supabase";
+import { logger } from "@/lib/logger";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { normalizeReelMediaUrl } from "@/lib/reels/media";
+
+type HashtagRelatedTag = {
+  hashtag?: string | null;
+};
+
+type HashtagTopReel = {
+  reel_id?: string | null;
+  thumbnail_url?: string | null;
+};
+
+type HashtagSectionItem = HashtagRelatedTag | HashtagTopReel | Record<string, unknown>;
 
 type HashtagPagePayload = {
   hashtag: string;
   generated_at: string;
   status: "normal" | "restricted" | "hidden" | string;
-  sections: Array<{ type: string; items: any[] }>;
+  sections: Array<{ type: string; items: HashtagSectionItem[] }>;
 };
+
+function asRelatedTag(item: HashtagSectionItem): HashtagRelatedTag {
+  return item as HashtagRelatedTag;
+}
+
+function asTopReel(item: HashtagSectionItem): HashtagTopReel {
+  return item as HashtagTopReel;
+}
 
 function normalizeTag(raw: string | undefined): string {
   const t = String(raw || "").trim();
@@ -31,7 +51,7 @@ export function HashtagPage() {
       if (!tag) return;
       setLoading(true);
       try {
-        const { data: payload, error } = await (supabase as any).rpc("get_hashtag_page_v2", {
+        const { data: payload, error } = await dbLoose.rpc("get_hashtag_page_v2", {
           p_hashtag: tag,
           p_section: "top",
           p_limit: 30,
@@ -41,7 +61,7 @@ export function HashtagPage() {
         if (!mounted) return;
         setData(payload as HashtagPagePayload);
       } catch (e) {
-        console.error("HashtagPage load failed:", e);
+        logger.error("[HashtagPage] load failed", { error: e });
         if (!mounted) return;
         setData(null);
       } finally {
@@ -99,7 +119,9 @@ export function HashtagPage() {
               <div className="text-sm font-medium mb-2">Похожие теги</div>
               <ScrollArea className="w-full whitespace-nowrap">
                 <div className="flex gap-2">
-                  {related.map((r: any) => (
+                  {related.map((raw) => {
+                    const r = asRelatedTag(raw);
+                    return (
                     <button
                       key={String(r?.hashtag ?? "")}
                       className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-muted hover:bg-muted/80 transition-colors"
@@ -108,7 +130,8 @@ export function HashtagPage() {
                       <Hash className="w-4 h-4 text-muted-foreground" />
                       <span className="text-sm font-medium">{String(r?.hashtag ?? "")}</span>
                     </button>
-                  ))}
+                    );
+                  })}
                 </div>
                 <ScrollBar orientation="horizontal" className="h-0" />
               </ScrollArea>
@@ -118,7 +141,9 @@ export function HashtagPage() {
           <div className="px-1">
             {topSection?.items?.length ? (
               <div className="grid grid-cols-3 gap-[2px]">
-                {topSection.items.map((it: any) => (
+                {topSection.items.map((raw) => {
+                  const it = asTopReel(raw);
+                  return (
                   <div
                     key={String(it?.reel_id ?? "")}
                     className="aspect-square relative overflow-hidden bg-muted"
@@ -135,7 +160,8 @@ export function HashtagPage() {
                       </div>
                     )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             ) : (
               <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">

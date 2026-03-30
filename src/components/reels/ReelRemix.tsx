@@ -102,8 +102,8 @@ export function ReelRemix({
     if (mode === "preview") {
       canvasRef.current!.width = 720;
       canvasRef.current!.height = 1280;
-      originalVideoRef.current?.play().catch(() => {});
-      newVideoRef.current?.play().catch(() => {});
+      originalVideoRef.current?.play().catch(() => { /* autoplay blocked */ });
+      newVideoRef.current?.play().catch(() => { /* autoplay blocked */ });
       rafRef.current = requestAnimationFrame(renderFrame);
     }
     return () => cancelAnimationFrame(rafRef.current);

@@ -45,6 +45,8 @@
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
+import { logger } from "../lib/logger";
+
 // ─── Константы ────────────────────────────────────────────────────────────────
 
 /**
@@ -317,7 +319,7 @@ export async function decryptFromStorage(stored: string): Promise<string | null>
 
   if (parsed.v !== ENVELOPE_VERSION) {
     // Неизвестная версия конверта — пытаемся как v1 (forward compat)
-    console.warn(
+    logger.warn(
       `[localStorageCrypto] Неизвестная версия конверта ${parsed.v}, пробуем v1-расшифровку`,
     );
   }
@@ -339,7 +341,7 @@ export async function decryptFromStorage(stored: string): Promise<string | null>
   } catch (err) {
     // GCM аутентификация не прошла: данные повреждены, ключ сменился
     // (userAgent update, смена браузера) или атака на целостность.
-    console.error("[localStorageCrypto] Расшифровка не удалась:", err);
+    logger.error("[localStorageCrypto] Расшифровка не удалась", { error: err });
     return null;
   }
 }

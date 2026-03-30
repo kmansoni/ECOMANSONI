@@ -14,11 +14,14 @@
  *  - `paid_message_stars` on profiles is writeable only by owner (auth.uid() check via RLS).
  */
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
+import { logger } from "@/lib/logger";
 
 const db = supabase as any;
+
+const PAY_DEBOUNCE_MS = 2000;
 
 export interface PaidMessageTransaction {
   id: string;
@@ -40,6 +43,7 @@ export function usePaidMessages() {
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const lastPayRef = useRef(0);
 
   /**
    * Set own DM price.
@@ -94,7 +98,7 @@ export function usePaidMessages() {
         .maybeSingle();
 
       if (fetchError) {
-        console.error("[usePaidMessages] getPaidMessagePrice error:", fetchError);
+        logger.error("[usePaidMessages] getPaidMessagePrice error", { error: fetchError });
         return 0;
       }
       return data?.paid_message_stars ?? 0;
@@ -120,6 +124,13 @@ export function usePaidMessages() {
     async (recipientId: string, starsAmount: number): Promise<PayForMessageResult> => {
       if (!user) return { ok: false, error: "Не авторизован" };
       if (starsAmount <= 0) return { ok: false, error: "Сумма должна быть больше 0" };
+
+      // Debounce: блокируем повторные вызовы в течение PAY_DEBOUNCE_MS
+      const now = Date.now();
+      if (now - lastPayRef.current < PAY_DEBOUNCE_MS) {
+        return { ok: false, error: "Подождите перед повторной оплатой" };
+      }
+      lastPayRef.current = now;
 
       setLoading(true);
       setError(null);
@@ -162,7 +173,7 @@ export function usePaidMessages() {
         .range(offset, offset + limit - 1);
 
       if (fetchError) {
-        console.error("[usePaidMessages] getMyTransactions error:", fetchError);
+        logger.error("[usePaidMessages] getMyTransactions error", { error: fetchError });
         return [];
       }
 

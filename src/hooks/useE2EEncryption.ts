@@ -294,18 +294,22 @@ export function useE2EEncryption(conversationId: string | null): UseE2EEncryptio
       await publishIdentityKey(user.id, exported.raw, exported.fingerprint);
 
       // 3. Генерируем групповой ключ
-      const groupKey = await generateMessageKey();
+      const groupKeyBundle = await generateMessageKey();
       const keyVersion = 1;
 
       // 4. Распространяем групповой ключ всем участникам
       const distResult = await distributeGroupKey(
         conversationId,
-        groupKey,
+        groupKeyBundle.key,
+        groupKeyBundle.rawBytes,
         keyVersion,
         { publicKey: identityKP.publicKey, privateKey: identityKP.privateKey },
         user.id,
         exported.raw,
       );
+
+      // SECURITY: Очищаем raw key material после distribute
+      groupKeyBundle.zeroRawBytes();
 
       if (distResult.distributed.length === 0) {
         throw new Error('Key distribution failed for all participants');
@@ -370,12 +374,12 @@ export function useE2EEncryption(conversationId: string | null): UseE2EEncryptio
       }
 
       // 6. Кешируем групповой ключ локально
-      groupKeyCacheRef.current.set(keyVersion, groupKey);
+      groupKeyCacheRef.current.set(keyVersion, groupKeyBundle.key);
       const ks = getKeyStore();
       const now = Date.now();
       await ks.storeKey({
         id: `group:${conversationId}:v${keyVersion}`,
-        key: groupKey,
+        key: groupKeyBundle.key,
         createdAt: now,
         // SUGGESTION fix: TTL 90 дней — старые версии auto-cleanup
         expiresAt: now + GROUP_KEY_EXPIRES_OFFSET_MS,

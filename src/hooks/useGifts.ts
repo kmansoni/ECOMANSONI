@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "./useAuth";
 import { toast } from "sonner";
+import { logger } from "@/lib/logger";
 
 export interface GiftCatalogItem {
   id: string;
@@ -33,6 +34,18 @@ export interface SentGift {
 
 let catalogCache: GiftCatalogItem[] | null = null;
 
+async function withRetry<T>(fn: () => Promise<T>, retries = 2, delayMs = 1000): Promise<T> {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (attempt === retries) throw err;
+      await new Promise(r => setTimeout(r, delayMs * Math.pow(2, attempt)));
+    }
+  }
+  throw new Error("withRetry exhausted");
+}
+
 export function useGifts() {
   const { user } = useAuth();
   const [catalog, setCatalog] = useState<GiftCatalogItem[]>(catalogCache ?? []);
@@ -49,15 +62,19 @@ export function useGifts() {
     if (fetchingCatalog.current) return;
     fetchingCatalog.current = true;
     try {
-      const { data } = await (supabase as any)
-        .from("gift_catalog")
-        .select("*")
-        .eq("is_available", true)
-        .order("sort_order", { ascending: true });
+      const data = await withRetry(async () => {
+        const { data, error } = await (supabase as any)
+          .from("gift_catalog")
+          .select("*")
+          .eq("is_available", true)
+          .order("sort_order", { ascending: true });
+        if (error) throw error;
+        return data;
+      });
       catalogCache = data ?? [];
       setCatalog(catalogCache!);
     } catch (e) {
-      console.error("fetchCatalog error", e);
+      logger.error("[useGifts] fetchCatalog error after retries", { error: e });
     } finally {
       fetchingCatalog.current = false;
     }
@@ -74,7 +91,7 @@ export function useGifts() {
         .limit(50);
       setReceivedGifts(data ?? []);
     } catch (e) {
-      console.error("fetchReceivedGifts error", e);
+      logger.error("[useGifts] fetchReceivedGifts error", { error: e });
     }
   }, [user]);
 
@@ -89,7 +106,7 @@ export function useGifts() {
         .limit(50);
       setSentGifts(data ?? []);
     } catch (e) {
-      console.error("fetchSentGifts error", e);
+      logger.error("[useGifts] fetchSentGifts error", { error: e });
     }
   }, [user]);
 
@@ -122,7 +139,7 @@ export function useGifts() {
           p_message_text: params.messageText ?? null,
         });
         if (error) {
-          console.error("send_gift_v1 error", error);
+          logger.error("[useGifts] send_gift_v1 error", { error });
           return { ok: false, error: error.message };
         }
         if (!data?.ok) {
@@ -158,7 +175,7 @@ export function useGifts() {
           )
         );
       } catch (e) {
-        console.error("openGift error", e);
+        logger.error("[useGifts] openGift error", { error: e });
         toast.error("Не удалось открыть подарок");
       }
     },
@@ -172,6 +189,10 @@ export function useGifts() {
     receivedGifts,
     sentGifts,
     openGift,
+    refreshCatalog: () => {
+      catalogCache = null;
+      fetchCatalog();
+    },
     refetch: () => {
       fetchReceivedGifts();
       fetchSentGifts();

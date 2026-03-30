@@ -1,4 +1,5 @@
 import { useParams, useNavigate } from "react-router-dom";
+import { logger } from "@/lib/logger";
 import { ArrowLeft, Grid3X3, Bookmark, Heart, Play, MoreHorizontal, MessageCircle, Loader2, User, Eye, AtSign } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState, useEffect } from "react";
@@ -6,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
+import { dbLoose } from "@/lib/supabase";
 import { normalizeReelMediaUrl } from "@/lib/reels/media";
 import { toast } from "sonner";
 import { useProfileByUsername, useUserPosts } from "@/hooks/useProfile";
@@ -21,6 +23,33 @@ const tabs = [
   { id: "reels", icon: Play },
   { id: "tagged", icon: AtSign },
 ];
+
+interface UserReelRow {
+  id?: string | number;
+  video_url?: string | null;
+  thumbnail_url?: string | null;
+}
+
+interface UserReel {
+  id: string;
+  video_url: string;
+  thumbnail_url: string | null;
+}
+
+interface PostMediaItem {
+  media_url?: string | null;
+  media_type?: string | null;
+}
+
+interface ProfilePost {
+  id: string;
+  views_count?: number | null;
+  post_media?: PostMediaItem[];
+}
+
+interface ErrorWithDetails {
+  details?: unknown;
+}
 
 function formatNumber(num: number): string {
   if (num >= 1000000) {
@@ -48,7 +77,7 @@ export function UserProfilePage() {
 
   const { profile, loading: profileLoading, error, follow, unfollow } = useProfileByUsername(username);
   const { posts, loading: postsLoading } = useUserPosts(profile?.user_id);
-  const [userReels, setUserReels] = useState<any[]>([]);
+  const [userReels, setUserReels] = useState<UserReel[]>([]);
   const [userReelsLoading, setUserReelsLoading] = useState(false);
   const [userReelsError, setUserReelsError] = useState<string | null>(null);
   const [userReelsHasMore, setUserReelsHasMore] = useState(true);
@@ -67,18 +96,18 @@ export function UserProfilePage() {
     try {
       const limit = 30;
       const offset = reset ? 0 : userReels.length;
-      const { data, error: reelsError } = await (supabase as any).rpc("get_user_reels_v1", {
+      const { data, error: reelsError } = await dbLoose.rpc("get_user_reels_v1", {
         p_author_id: profile.user_id,
         p_limit: limit,
         p_offset: offset,
       });
       if (reelsError) throw reelsError;
 
-      const rows = (data || []) as any[];
-      const normalized = rows.map((r: any) => ({
-        ...r,
-        video_url: normalizeReelMediaUrl(r?.video_url, "reels-media"),
-        thumbnail_url: normalizeReelMediaUrl(r?.thumbnail_url, "reels-media") || r?.thumbnail_url,
+      const rows = Array.isArray(data) ? (data as unknown as UserReelRow[]) : [];
+      const normalized: UserReel[] = rows.map((r) => ({
+        id: String(r.id ?? ""),
+        video_url: normalizeReelMediaUrl(r.video_url ?? null, "reels-media"),
+        thumbnail_url: normalizeReelMediaUrl(r.thumbnail_url ?? null, "reels-media") || r.thumbnail_url || null,
       }));
       setUserReels((prev) => (reset ? normalized : [...prev, ...normalized]));
       setUserReelsHasMore(rows.length >= limit);
@@ -120,7 +149,7 @@ export function UserProfilePage() {
       setProfileStoriesUsers([userEntry]);
       setStoryViewerOpen(true);
     } catch (e) {
-      console.error('Error opening profile stories:', e);
+      logger.error('[UserProfilePage] Error opening profile stories', { error: e });
     }
   };
 
@@ -160,7 +189,7 @@ export function UserProfilePage() {
             .in('story_id', storyIds);
 
           if (viewsError) {
-            console.error('Error checking story views:', viewsError);
+            logger.error('[UserProfilePage] Error checking story views', { error: viewsError });
             setHasUnviewedStories(true); // Assume unviewed on error
             return;
           }
@@ -175,7 +204,7 @@ export function UserProfilePage() {
           setHasUnviewedStories(true);
         }
       } catch (err) {
-        console.error('Error checking stories:', err);
+        logger.error('[UserProfilePage] Error checking stories', { error: err });
         setHasUnviewedStories(false);
         setHasAnyStories(false);
       }
@@ -240,10 +269,10 @@ export function UserProfilePage() {
       });
 
     } catch (error) {
-      console.error("[Chat] Error:", error);
+      logger.error("[UserProfilePage] Chat error", { error });
       const msg = error instanceof Error ? error.message : String(error);
-      const anyErr = error as any;
-      const details = typeof anyErr?.details === "string" ? anyErr.details : "";
+      const withDetails = error as ErrorWithDetails;
+      const details = typeof withDetails?.details === "string" ? withDetails.details : "";
       // Only match explicit blocked_user signals — do NOT match generic 42501
       // (insufficient_privilege) which fires for unrelated permission errors.
       const blockedPair =
@@ -257,7 +286,7 @@ export function UserProfilePage() {
       } else if (blockedPair) {
         toast.error("Чат недоступен: пользователь в блокировке");
       } else {
-        toast.error("Не удалось открыть чат", { description: msg });
+        toast.error("Не удалось открыть чат. Попробуйте позже.");
       }
     } finally {
       setIsCreatingChat(false);
@@ -265,9 +294,9 @@ export function UserProfilePage() {
   };
 
   // Get first media URL for a post
-  const getPostImage = (post: any): string | null => {
+  const getPostImage = (post: ProfilePost): string | null => {
     if (post.post_media && post.post_media.length > 0) {
-      return post.post_media[0].media_url;
+      return post.post_media[0].media_url ?? null;
     }
     return null;
   };

@@ -31,11 +31,23 @@ interface PrivacySectionProps extends SectionProps {
   currentScreen: PrivacyScreen;
 }
 
+interface BlockedUserRow {
+  id: string;
+  blocked_id: string;
+  created_at: string;
+}
+
+interface BlockedProfileRow {
+  user_id: string;
+  display_name: string | null;
+  avatar_url: string | null;
+}
+
 export function BlockedUsersPanel({ isDark }: { isDark: boolean }) {
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
-  const [rows, setRows] = useState<Array<{ id: string; blocked_id: string; created_at: string }>>([]);
-  const [profilesById, setProfilesById] = useState<Record<string, any>>({});
+  const [rows, setRows] = useState<BlockedUserRow[]>([]);
+  const [profilesById, setProfilesById] = useState<Record<string, BlockedProfileRow>>({});
 
   const load = useCallback(async () => {
     if (!user?.id) return;
@@ -47,7 +59,7 @@ export function BlockedUsersPanel({ isDark }: { isDark: boolean }) {
         .eq("blocker_id", user.id)
         .order("created_at", { ascending: false });
       if (error) throw error;
-      const list = (data ?? []) as any[];
+      const list = (data ?? []) as unknown as BlockedUserRow[];
       setRows(list);
       const ids = list.map((r) => r.blocked_id).filter(Boolean);
       if (ids.length) {
@@ -55,8 +67,8 @@ export function BlockedUsersPanel({ isDark }: { isDark: boolean }) {
           .from("profiles")
           .select("user_id, display_name, avatar_url")
           .in("user_id", ids);
-        const map: Record<string, any> = {};
-        for (const p of prof ?? []) map[(p as any).user_id] = p;
+        const map: Record<string, BlockedProfileRow> = {};
+        for (const p of (prof ?? []) as unknown as BlockedProfileRow[]) map[p.user_id] = p;
         setProfilesById(map);
       } else {
         setProfilesById({});

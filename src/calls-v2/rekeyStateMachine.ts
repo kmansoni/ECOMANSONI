@@ -66,6 +66,8 @@ export interface RekeyEvent {
 
 export type RekeyEventHandler = (event: RekeyEvent) => void;
 
+import { logger } from '@/lib/logger';
+
 /**
  * Anti-replay entry: messageId + expiry timestamp.
  */
@@ -131,7 +133,7 @@ export class RekeyStateMachine {
     if (this.state === 'KEY_DELIVERY') {
       // Blocked: full replace during KEY_DELIVERY could inadvertently achieve
       // fake quorum by removing peers that haven't acked yet.
-      console.warn(
+      logger.warn(
         '[RekeyStateMachine] setActivePeers blocked during KEY_DELIVERY — use addPeer/removePeer'
       );
       return;
@@ -173,7 +175,7 @@ export class RekeyStateMachine {
    */
   initiateRekey(): number | null {
     if (this.state !== 'IDLE') {
-      console.warn(
+      logger.warn(
         `[RekeyStateMachine] Cannot rekey: state=${this.state}`
       );
       return null;
@@ -181,7 +183,7 @@ export class RekeyStateMachine {
 
     const now = Date.now();
     if (now - this.lastRekeyTime < this.config.minRekeyIntervalMs) {
-      console.warn(
+      logger.warn(
         `[RekeyStateMachine] Cannot rekey: min interval not elapsed`
       );
       return null;
@@ -211,7 +213,7 @@ export class RekeyStateMachine {
    */
   onRekeyBeginAcked(epoch: number): boolean {
     if (this.state !== 'REKEY_PENDING' || epoch !== this.pendingEpoch) {
-      console.warn(
+      logger.warn(
         `[RekeyStateMachine] Unexpected REKEY_BEGIN_ACK: state=${this.state}, epoch=${epoch}, pending=${this.pendingEpoch}`
       );
       return false;
@@ -248,14 +250,14 @@ export class RekeyStateMachine {
     if (!this.checkAndRegisterMessageId(messageId, 'KEY_ACK')) return false;
 
     if (epoch < this.currentEpoch) {
-      console.warn(
+      logger.warn(
         `[RekeyStateMachine] Stale KEY_ACK: epoch=${epoch} < current=${this.currentEpoch}`
       );
       return false;
     }
 
     if (this.state !== 'KEY_DELIVERY' || epoch !== this.pendingEpoch) {
-      console.warn(
+      logger.warn(
         `[RekeyStateMachine] Unexpected KEY_ACK: state=${this.state}, epoch=${epoch}, pending=${this.pendingEpoch}`
       );
       return false;
@@ -263,14 +265,14 @@ export class RekeyStateMachine {
 
     const ack = this.peerAcks.get(peerId);
     if (!ack) {
-      console.warn(
+      logger.warn(
         `[RekeyStateMachine] KEY_ACK from unknown peer: ${peerId}`
       );
       return false;
     }
 
     if (ack.acked) {
-      console.warn(
+      logger.warn(
         `[RekeyStateMachine] Duplicate KEY_ACK from peer (already acked): ${peerId}`
       );
       return false;
@@ -299,7 +301,7 @@ export class RekeyStateMachine {
     }
 
     if (epoch < this.currentEpoch) {
-      console.warn(
+      logger.warn(
         `[RekeyStateMachine] Stale KEY_PACKAGE: epoch=${epoch} < current=${this.currentEpoch}`
       );
       return false;
@@ -317,7 +319,7 @@ export class RekeyStateMachine {
       this.state !== 'REKEY_COMMITTED' ||
       epoch !== this.pendingEpoch
     ) {
-      console.warn(
+      logger.warn(
         `[RekeyStateMachine] Cannot activate epoch ${epoch}: state=${this.state}, pending=${this.pendingEpoch}`
       );
       return false;
@@ -370,7 +372,7 @@ export class RekeyStateMachine {
   }
 
   destroy(): void {
-    console.log('[RekeyStateMachine] destroy() called', {
+    logger.debug('[RekeyStateMachine] destroy() called', {
       state: this.state,
       currentEpoch: this.currentEpoch,
       pendingEpoch: this.pendingEpoch,
@@ -392,7 +394,7 @@ export class RekeyStateMachine {
       try {
         clearInterval(this.messageIdCleanupTimer);
       } catch (e) {
-        console.error('[RekeyStateMachine] Failed to clear cleanup timer:', e);
+        logger.error('[RekeyStateMachine] Failed to clear cleanup timer:', e);
       }
       this.messageIdCleanupTimer = null;
     }
@@ -402,7 +404,7 @@ export class RekeyStateMachine {
     this.eventLog = [];
     this.eventHandler = null;
     
-    console.log('[RekeyStateMachine] destroy() completed', { timestamp: Date.now() });
+    logger.debug('[RekeyStateMachine] destroy() completed', { timestamp: Date.now() });
   }
 
   // ─── Private ───────────────────────────────────────────────────────────────
@@ -414,14 +416,14 @@ export class RekeyStateMachine {
     // H-3: Missing messageId is REJECTED — cannot do anti-replay without it.
     // An absent messageId is a security concern: replay attacks are undetectable.
     if (!messageId) {
-      console.warn(`[RekeyStateMachine] REJECTED: missing messageId for ${kind} (required for anti-replay)`);
+      logger.warn(`[RekeyStateMachine] REJECTED: missing messageId for ${kind} (required for anti-replay)`);
       return false;
     }
 
     const now = Date.now();
     const existing = this.replayMap.get(messageId);
     if (existing !== undefined && existing > now) {
-      console.warn(
+      logger.warn(
         `[RekeyStateMachine] Anti-replay: duplicate ${kind} messageId=${messageId}`
       );
       return false;
@@ -504,7 +506,7 @@ export class RekeyStateMachine {
     try {
       this.eventHandler?.(event);
     } catch (err) {
-      console.error('[RekeyStateMachine] eventHandler threw:', err);
+      logger.error('[RekeyStateMachine] eventHandler threw:', err);
     }
   }
 }

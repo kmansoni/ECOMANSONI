@@ -27,15 +27,16 @@ export async function parseRateLimitFromResponse(res: Response): Promise<ParsedR
   const text = await res.text().catch(() => "");
   const json = typeof text === "string" && text ? safeJsonParse(text) : null;
 
-  const payload: RateLimitErrorPayload =
-    json && typeof json === "object"
-      ? {
-          error: typeof (json as any).error === "string" ? (json as any).error : undefined,
-          action: typeof (json as any).action === "string" ? (json as any).action : undefined,
-          tier: typeof (json as any).tier === "string" ? (json as any).tier : undefined,
-          retryAfter: typeof (json as any).retryAfter === "number" ? (json as any).retryAfter : undefined,
-        }
-      : {};
+  const obj = json && typeof json === "object" ? (json as Record<string, unknown>) : null;
+
+  const payload: RateLimitErrorPayload = obj
+    ? {
+        error: typeof obj.error === "string" ? obj.error : undefined,
+        action: typeof obj.action === "string" ? obj.action : undefined,
+        tier: typeof obj.tier === "string" ? obj.tier : undefined,
+        retryAfter: typeof obj.retryAfter === "number" ? obj.retryAfter : undefined,
+      }
+    : {};
 
   return {
     payload,

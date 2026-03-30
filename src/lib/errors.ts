@@ -1,16 +1,20 @@
 /**
  * @file src/lib/errors.ts
- * @description Универсальная система обработки ошибок для Instagram модуля
- * 
+ * @description Единая система обработки ошибок для всего проекта.
+ *
  * Архитектура:
- * - AppError: базовый класс ошибок с кодами
- * - handleApiError: универсальный обработчик
- * - withErrorBoundary: HOC для React компонентов
+ * - AppError: базовый класс ошибок с типизированными кодами
+ * - handleApiError: нормализует любое брошенное значение → AppError
+ * - showErrorToast: отображает уведомление пользователю через sonner
  * - useErrorHandler: hook для функциональных компонентов
+ * - OperationMutex: предотвращает параллельные мутирующие операции
+ *
+ * Использование во всём проекте вместо разрозненных catch-toast/catch-console.
  */
 
 import { useCallback, useState } from 'react';
 import { toast } from 'sonner';
+import { logger } from './logger';
 
 // ---------------------------------------------------------------------------
 // Типы ошибок
@@ -123,8 +127,9 @@ export function handleApiError(err: unknown): AppError {
 
   // Supabase ошибка
   if (err && typeof err === 'object' && 'code' in err) {
-    const code = String((err as any).code ?? '');
-    const message = String((err as any).message ?? '');
+    const errObj = err as Record<string, unknown>;
+    const code = String(errObj.code ?? '');
+    const message = String(errObj.message ?? '');
     
     if (code === 'PGRST116' || message.includes('not found')) {
       return errors.notFound(message);
@@ -145,7 +150,7 @@ export function handleApiError(err: unknown): AppError {
 
   // Network error
   if (err && typeof err === 'object' && 'name' in err) {
-    const name = String((err as any).name ?? '');
+    const name = String((err as Record<string, unknown>).name ?? '');
     if (name === 'TypeError' && String(err).includes('fetch')) {
       return errors.network('Нет подключения к интернету');
     }
@@ -153,8 +158,9 @@ export function handleApiError(err: unknown): AppError {
 
   // Проверяем статус код из response
   if (err && typeof err === 'object' && 'status' in err) {
-    const status = Number((err as any).status ?? 0);
-    const message = String((err as any).message ?? 'Ошибка');
+    const errObj = err as Record<string, unknown>;
+    const status = Number(errObj.status ?? 0);
+    const message = String(errObj.message ?? 'Ошибка');
     
     if (status === 401) return errors.auth(message);
     if (status === 403) return errors.auth('Доступ запрещён');
@@ -200,7 +206,7 @@ export function showErrorToast(err: unknown, customMessage?: string): void {
   
   // В dev mode показываем больше деталей
   if (import.meta.env.DEV) {
-    console.error('[Error]', error.toString(), error.details);
+    logger.error('[Error] ' + error.toString(), { error, details: error.details });
   }
   
   toast.error(message, {
@@ -219,7 +225,7 @@ export function showSuccessToast(message: string): void {
 // Debounce для предотвращения race conditions
 // ---------------------------------------------------------------------------
 
-export function createDebouncedFunction<T extends (...args: any[]) => any>(
+export function createDebouncedFunction<T extends (...args: never[]) => unknown>(
   fn: T,
   delayMs: number
 ): (...args: Parameters<T>) => void {
@@ -262,14 +268,14 @@ export class OperationMutex {
       }
     }
 
-    return new Promise((resolve) => {
+    return new Promise<T>((resolve, reject) => {
       this.queue.push(async () => {
         try {
-          const result = await operation();
-          resolve(result);
+          resolve(await operation());
         } catch (e) {
-          resolve(Promise.reject(e));
+          reject(e);
         } finally {
+          this.inProgress = false;
           this.processQueue();
         }
       });
@@ -277,7 +283,7 @@ export class OperationMutex {
   }
 
   private processQueue(): void {
-    if (!this.inProgress && this.queue.length > 0) {
+    if (this.queue.length > 0) {
       const next = this.queue.shift();
       if (next) {
         this.inProgress = true;
@@ -311,8 +317,6 @@ export function useErrorHandler() {
 
   return { error, handleError, clearError };
 }
-
-type _useStateType<T> = ReturnType<typeof import('react').useState<T>>;
 
 export function assertDefined<T>(value: T | null | undefined, message = 'Value is required'): asserts value is T {
   if (value === null || value === undefined) {

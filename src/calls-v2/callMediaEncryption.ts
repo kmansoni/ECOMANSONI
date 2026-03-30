@@ -1,3 +1,5 @@
+import { logger } from '@/lib/logger';
+
 /**
  * Call Media Encryption — оркестрирует SFrame encryption/decryption для call media pipeline.
  *
@@ -20,9 +22,17 @@
  *   removeAllTransforms(): void
  */
 
-import { MediaEncryptor } from '@/lib/e2ee/insertableStreams';
+import { MediaEncryptor, type InsertableStreamsConfig } from '@/lib/e2ee/insertableStreams';
+import type { PipeBreakInfo } from '@/lib/e2ee/insertableStreams';
 import type { EpochKeyMaterial } from './callKeyExchange';
 import type { EpochGuard } from './epochGuard';
+
+export interface CallMediaEncryptionConfig {
+  /** Вызывается при ошибке шифрования/дешифровки на уровне кадра (информационный) */
+  onError?: (error: Error, direction: 'encrypt' | 'decrypt') => void;
+  /** Вызывается при поломке pipe — caller должен пересоздать producer/consumer для восстановления */
+  onPipeBreak?: (info: PipeBreakInfo) => void;
+}
 
 export class CallMediaEncryption {
   private encryptor: MediaEncryptor;
@@ -33,8 +43,12 @@ export class CallMediaEncryption {
   /** M-6: optional EpochGuard — wenn gesetzt, assertMediaAllowed() wird aufgerufen */
   private epochGuard: EpochGuard | null = null;
 
-  constructor() {
-    this.encryptor = new MediaEncryptor();
+  constructor(config: CallMediaEncryptionConfig = {}) {
+    const encryptorConfig: InsertableStreamsConfig = {
+      onError: config.onError,
+      onPipeBreak: config.onPipeBreak,
+    };
+    this.encryptor = new MediaEncryptor(encryptorConfig);
   }
 
   /**
@@ -64,7 +78,7 @@ export class CallMediaEncryption {
     await this.encryptor.setEncryptionKey(epochKey.key, epochKey.epoch & 0xff);
     this.currentEpoch = epochKey.epoch;
     this.hasEncryptionKey = true;
-    console.log(`[CallMediaEncryption] Encryption key set for epoch ${epochKey.epoch}`);
+    logger.debug(`[CallMediaEncryption] Encryption key set for epoch ${epochKey.epoch}`);
   }
 
   /**
@@ -79,7 +93,7 @@ export class CallMediaEncryption {
     // MediaEncryptor.setDecryptionKey(CryptoKey, keyId: number, peerId: string)
     await this.encryptor.setDecryptionKey(epochKey.key, epochKey.epoch & 0xff, peerId);
     this.peerDecryptionEpochs.set(peerId, epochKey.epoch);
-    console.log(`[CallMediaEncryption] Decryption key set for peer ${peerId} epoch ${epochKey.epoch}`);
+    logger.debug(`[CallMediaEncryption] Decryption key set for peer ${peerId} epoch ${epochKey.epoch}`);
   }
 
   /**
@@ -106,7 +120,7 @@ export class CallMediaEncryption {
 
     // MediaEncryptor.setupSenderTransform throws if browser doesn't support transforms (C-4)
     this.encryptor.setupSenderTransform(sender, trackId);
-    console.log(`[CallMediaEncryption] Sender transform attached, track=${trackId}`);
+    logger.debug(`[CallMediaEncryption] Sender transform attached, track=${trackId}`);
   }
 
   /**
@@ -126,14 +140,14 @@ export class CallMediaEncryption {
     this.epochGuard?.assertMediaAllowed('setupReceiverTransform');
 
     if (!this.peerDecryptionEpochs.has(peerId)) {
-      console.warn(
+      logger.warn(
         `[CallMediaEncryption] No decryption key for peer ${peerId} — frames will be dropped until key arrives`
       );
     }
     // MediaEncryptor.setupReceiverTransform(receiver, trackId, peerId) — note arg order difference
     // MediaEncryptor throws if browser doesn't support transforms (C-4)
     this.encryptor.setupReceiverTransform(receiver, trackId, peerId);
-    console.log(`[CallMediaEncryption] Receiver transform attached, peer=${peerId} track=${trackId}`);
+    logger.debug(`[CallMediaEncryption] Receiver transform attached, peer=${peerId} track=${trackId}`);
   }
 
   /**
@@ -151,7 +165,7 @@ export class CallMediaEncryption {
         await this.setDecryptionKey(peerId, key);
       }
     }
-    console.log(`[CallMediaEncryption] Keys updated for epoch ${ownEpochKey.epoch}, peers=${peerKeys?.size ?? 0}`);
+    logger.debug(`[CallMediaEncryption] Keys updated for epoch ${ownEpochKey.epoch}, peers=${peerKeys?.size ?? 0}`);
   }
 
   /**
@@ -176,6 +190,6 @@ export class CallMediaEncryption {
     this.peerDecryptionEpochs.clear();
     this.currentEpoch = 0;
     this.epochGuard = null;
-    console.log('[CallMediaEncryption] Destroyed');
+    logger.debug('[CallMediaEncryption] Destroyed');
   }
 }

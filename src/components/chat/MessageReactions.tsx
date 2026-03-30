@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { supabase } from '@/integrations/supabase/client';
+import { dbLoose } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 
 const QUICK_REACTIONS = ['❤️', '😂', '😮', '😢', '😡', '👍'];
@@ -51,20 +51,20 @@ export function MessageReactions({
       const existing = reactions.find((r) => r.emoji === emoji);
 
       if (existing?.hasReacted) {
-        await (supabase as any)
+        await dbLoose
           .from('message_reactions')
           .delete()
           .eq('message_id', messageId)
           .eq('user_id', user.id);
       } else {
         // Удалим предыдущую реакцию если есть
-        await (supabase as any)
+        await dbLoose
           .from('message_reactions')
           .delete()
           .eq('message_id', messageId)
           .eq('user_id', user.id);
 
-        await (supabase as any)
+        await dbLoose
           .from('message_reactions')
           .insert({ message_id: messageId, user_id: user.id, emoji });
       }

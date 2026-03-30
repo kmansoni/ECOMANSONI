@@ -133,14 +133,45 @@ export async function hkdfDerive(
 }
 
 /**
- * Генерация AES-256-GCM ключа для шифрования сообщений
+ * Bundle containing a non-extractable CryptoKey and its raw bytes.
+ * rawBytes is required ONLY for wrapKey during key distribution.
+ * Caller MUST call zeroRawBytes() after distribution is complete.
  */
-export async function generateMessageKey(): Promise<CryptoKey> {
-  return crypto.subtle.generateKey(
+export interface MessageKeyBundle {
+  /** Non-extractable AES-256-GCM key for encrypt/decrypt operations */
+  key: CryptoKey;
+  /** Raw key material — needed only for wrapKey(); call zeroRawBytes() after use */
+  rawBytes: Uint8Array;
+  /** Overwrites rawBytes with zeros. Call after key distribution is complete. */
+  zeroRawBytes: () => void;
+}
+
+/**
+ * Генерация AES-256-GCM ключа для шифрования сообщений.
+ *
+ * SECURITY: Ключ возвращается как non-extractable CryptoKey.
+ * rawBytes нужен ТОЛЬКО для wrapKey-операции при distributeGroupKey.
+ * После distribute вызвать bundle.zeroRawBytes() для очистки raw material из памяти.
+ *
+ * Паттерн из callKeyExchange.ts §14.3.13: ephemeral extractable alias.
+ */
+export async function generateMessageKey(): Promise<MessageKeyBundle> {
+  const rawBytes = new Uint8Array(32);
+  crypto.getRandomValues(rawBytes);
+
+  const key = await crypto.subtle.importKey(
+    'raw',
+    rawBytes,
     { name: 'AES-GCM', length: 256 },
-    true, // extractable для wrapping
-    ['encrypt', 'decrypt']
+    false, // NON-EXTRACTABLE: XSS не может экспортировать ключ
+    ['encrypt', 'decrypt'],
   );
+
+  return {
+    key,
+    rawBytes,
+    zeroRawBytes: () => { rawBytes.fill(0); },
+  };
 }
 
 // ─── Шифрование/Расшифровка ───────────────────────────────────────────────────

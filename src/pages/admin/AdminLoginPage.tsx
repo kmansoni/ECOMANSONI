@@ -13,10 +13,11 @@ import { supabase } from "@/lib/supabase";
 export function AdminLoginPage() {
   const { signIn } = useAuth();
   const navigate = useNavigate();
-  const location = useLocation() as any;
+  const location = useLocation();
+  const locState = location.state as { from?: string; notAdmin?: boolean } | null;
 
-  const from = useMemo(() => location?.state?.from || "/admin", [location?.state?.from]);
-  const notAdmin = Boolean(location?.state?.notAdmin);
+  const from = useMemo(() => locState?.from ?? "/admin", [locState?.from]);
+  const notAdmin = Boolean(locState?.notAdmin);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -28,7 +29,7 @@ export function AdminLoginPage() {
     try {
       const res = await signIn(email.trim().toLowerCase(), password);
       if (res.error) {
-        toast.error("Ошибка входа", { description: res.error.message });
+        toast.error("Ошибка входа", { description: "Проверьте email и пароль." });
         return;
       }
 
@@ -43,7 +44,7 @@ export function AdminLoginPage() {
       toast.success("Вход выполнен");
       navigate(from, { replace: true });
     } catch (err) {
-      toast.error("Ошибка", { description: err instanceof Error ? err.message : String(err) });
+      toast.error("Ошибка", { description: "Не удалось выполнить вход. Попробуйте позже." });
     } finally {
       setLoading(false);
     }

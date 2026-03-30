@@ -17,6 +17,7 @@
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
+import { handleCors, getCorsHeaders } from "./utils.ts";
 
 const NAVIGATION_API_URL =
   Deno.env.get("NAVIGATION_API_URL") || "http://navigation-api:8100";
@@ -24,30 +25,20 @@ const NAVIGATION_API_URL =
 /** Maximum upstream fetch timeout in milliseconds */
 const UPSTREAM_TIMEOUT_MS = 30_000;
 
-const CORS_HEADERS: Record<string, string> = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, GET, DELETE, PATCH, PUT, OPTIONS",
-  "Access-Control-Allow-Headers":
-    "authorization, content-type, x-client-info, apikey",
-  "Access-Control-Max-Age": "86400",
-};
-
 // ─── helpers ────────────────────────────────────────────────────────────────
 
-function corsPreflightResponse(): Response {
-  return new Response(null, { status: 204, headers: CORS_HEADERS });
-}
-
 function jsonResponse(
+  req: Request,
   body: unknown,
   status: number,
   extra?: Record<string, string>,
 ): Response {
+  const corsHeaders = getCorsHeaders(req.headers.get("origin"));
   return new Response(JSON.stringify(body), {
     status,
     headers: {
       "Content-Type": "application/json",
-      ...CORS_HEADERS,
+      ...corsHeaders,
       ...extra,
     },
   });
@@ -149,13 +140,14 @@ export async function proxyToNavigation(
   req: Request,
   opts: ProxyOptions,
 ): Promise<Response> {
-  // 1. CORS preflight — must respond before auth check per W3C spec
-  if (req.method === "OPTIONS") return corsPreflightResponse();
+  // 1. CORS preflight — делегируем shared utils (allowlist вместо wildcard)
+  const corsResponse = handleCors(req);
+  if (corsResponse) return corsResponse;
 
   // 2. Method guard
   const allowed = [...(opts.allowedMethods ?? ["GET", "POST"]), "OPTIONS"];
   if (!allowed.includes(req.method)) {
-    return jsonResponse({ error: "Method not allowed" }, 405);
+    return jsonResponse(req, { error: "Method not allowed" }, 405);
   }
 
   try {
@@ -192,7 +184,7 @@ export async function proxyToNavigation(
           const parsed = await req.json();
           bodyInit = JSON.stringify(parsed);
         } catch {
-          return jsonResponse({ error: "Invalid JSON body" }, 400);
+          return jsonResponse(req, { error: "Invalid JSON body" }, 400);
         }
       } else {
         // Forward raw body for other content types
@@ -240,12 +232,14 @@ export async function proxyToNavigation(
       if ((fetchErr as Error).name === "AbortError") {
         console.error(`[nav-proxy] upstream timeout trace=${traceId}`);
         return jsonResponse(
+          req,
           { error: "Navigation API timeout", trace_id: traceId },
           504,
         );
       }
       console.error(`[nav-proxy] upstream unreachable trace=${traceId}`, fetchErr);
       return jsonResponse(
+        req,
         { error: "Navigation API unreachable", trace_id: traceId },
         502,
       );
@@ -260,6 +254,7 @@ export async function proxyToNavigation(
         `[nav-proxy] non-JSON upstream response status=${navResponse.status} trace=${traceId} body=${text.slice(0, 256)}`,
       );
       return jsonResponse(
+        req,
         {
           error: "Navigation API returned unexpected content type",
           trace_id: traceId,
@@ -269,14 +264,14 @@ export async function proxyToNavigation(
     }
 
     const data = await navResponse.json();
-    return jsonResponse(data, navResponse.status, {
+    return jsonResponse(req, data, navResponse.status, {
       "X-Trace-Id": traceId,
     });
   } catch (err) {
     const httpErr = err as Error & { status?: number };
     const status = httpErr.status ?? 500;
     if (status === 401) {
-      return jsonResponse({ error: "Unauthorized", detail: httpErr.message }, 401);
+      return jsonResponse(req, { error: "Unauthorized", detail: httpErr.message }, 401);
     }
     console.error("[nav-proxy] unhandled error", err);
     // In production never expose internal error messages to the client —
@@ -284,6 +279,7 @@ export async function proxyToNavigation(
     const isDev = Deno.env.get("DENO_ENV") === "development" ||
       Deno.env.get("SUPABASE_ENV") === "local";
     return jsonResponse(
+      req,
       {
         error: "Internal proxy error",
         ...(isDev ? { detail: httpErr.message } : {}),

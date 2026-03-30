@@ -15,6 +15,8 @@
 
 export type { VideoCall, VideoCallStatus } from "@/hooks/useVideoCallSfu";
 import type { VideoCall, VideoCallStatus } from "@/hooks/useVideoCallSfu";
+export type { CallState } from "@/calls-v2/callStateMachine";
+import type { CallState } from "@/calls-v2/callStateMachine";
 
 // ─── Signaling domain ──────────────────────────────────────────────────────────
 
@@ -27,6 +29,8 @@ export interface CalleeProfile {
 export interface VideoCallSignalingContextType {
   /** Current call lifecycle state machine position. */
   status: VideoCallStatus;
+  /** FSM-derived call state — primary source of truth for call phase. */
+  callState: CallState;
   /** Active call object (caller or callee, after negotiation). */
   currentCall: VideoCall | null;
   /** Pending incoming call waiting to be accepted or declined. */

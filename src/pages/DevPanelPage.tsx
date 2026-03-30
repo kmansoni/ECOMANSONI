@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { logger } from "@/lib/logger";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,10 +29,21 @@ interface DebugSignal {
   id: string;
   call_id: string;
   signal_type: string;
-  signal_data: any;
+  signal_data: unknown;
   created_at: string;
   sender_id: string;
   processed: boolean;
+}
+
+interface ProfileCardRow {
+  id: string;
+  user_id: string;
+  display_name: string | null;
+  avatar_url: string | null;
+}
+
+function asObject(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
 }
 
 interface VideoCallRecord {
@@ -58,7 +70,7 @@ export default function DevPanelPage() {
   const [calls, setCalls] = useState<VideoCallRecord[]>([]);
   const [debugSignals, setDebugSignals] = useState<DebugSignal[]>([]);
   const [allSignals, setAllSignals] = useState<DebugSignal[]>([]);
-  const [profiles, setProfiles] = useState<any[]>([]);
+  const [profiles, setProfiles] = useState<ProfileCardRow[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
   // Check existing token on mount
@@ -82,7 +94,7 @@ export default function DevPanelPage() {
           localStorage.removeItem(DEV_TOKEN_KEY);
           setIsAuthenticated(false);
         }
-      } catch {
+      } catch (_err) {
         localStorage.removeItem(DEV_TOKEN_KEY);
         setIsAuthenticated(false);
       } finally {
@@ -116,8 +128,9 @@ export default function DevPanelPage() {
       } else {
         toast.error(data.error || "Неверные учётные данные");
       }
-    } catch (err: any) {
-      toast.error(err.message || "Ошибка авторизации");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      toast.error(message || "Ошибка авторизации");
     } finally {
       setLoading(false);
     }
@@ -165,10 +178,10 @@ export default function DevPanelPage() {
         .select("*")
         .order("created_at", { ascending: false })
         .limit(50);
-      setProfiles(profilesData || []);
+      setProfiles((profilesData || []) as ProfileCardRow[]);
       
     } catch (err) {
-      console.error("Error loading data:", err);
+      logger.error("[DevPanelPage] Error loading data", { error: err });
     } finally {
       setRefreshing(false);
     }
@@ -391,23 +404,27 @@ export default function DevPanelPage() {
                         <div className="space-y-2">
                           {signals.sort((a, b) => 
                             new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-                          ).map((sig) => (
-                            <div key={sig.id} className="text-xs border-l-2 border-primary pl-3 py-1">
-                              <div className="flex items-center gap-2">
-                                <Badge variant="outline" className="text-[10px]">
-                                  {sig.signal_data?.stage || "unknown"}
-                                </Badge>
-                                <span className="text-muted-foreground">
-                                  {formatTime(sig.created_at)}
-                                </span>
+                          ).map((sig) => {
+                            const signalData = asObject(sig.signal_data);
+                            const stage = typeof signalData?.stage === "string" ? signalData.stage : "unknown";
+                            return (
+                              <div key={sig.id} className="text-xs border-l-2 border-primary pl-3 py-1">
+                                <div className="flex items-center gap-2">
+                                  <Badge variant="outline" className="text-[10px]">
+                                    {stage}
+                                  </Badge>
+                                  <span className="text-muted-foreground">
+                                    {formatTime(sig.created_at)}
+                                  </span>
+                                </div>
+                                {signalData && Object.keys(signalData).length > 2 && (
+                                  <pre className="mt-1 text-[10px] bg-muted p-2 rounded overflow-auto max-h-24">
+                                    {JSON.stringify(signalData, null, 2)}
+                                  </pre>
+                                )}
                               </div>
-                              {sig.signal_data && Object.keys(sig.signal_data).length > 2 && (
-                                <pre className="mt-1 text-[10px] bg-muted p-2 rounded overflow-auto max-h-24">
-                                  {JSON.stringify(sig.signal_data, null, 2)}
-                                </pre>
-                              )}
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       </CardContent>
                     </Card>

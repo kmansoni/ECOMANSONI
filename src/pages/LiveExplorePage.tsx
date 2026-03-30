@@ -305,7 +305,7 @@ function ScheduledStreamCard({
         await toggleReminder(session.id, userId, hasReminder);
         setHasReminder((v) => !v);
         toast.success(hasReminder ? 'Напоминание отключено' : 'Напомним перед эфиром!');
-      } catch {
+      } catch (_err) {
         toast.error('Не удалось изменить напоминание');
       } finally {
         setLoading(false);

@@ -93,7 +93,7 @@ export function CaptionGenerator({ videoFile, videoUrl, onCaptionsGenerated }: C
         formData.append("file", videoFile);
         formData.append("language", "ru");
 
-        const { data, error } = await (supabase as any).functions.invoke("transcribe-video", {
+        const { data, error } = await supabase.functions.invoke("transcribe-video", {
           body: formData,
         });
 
@@ -230,20 +230,20 @@ export function CaptionGenerator({ videoFile, videoUrl, onCaptionsGenerated }: C
 // Real-time субтитры при записи через Web Speech API
 export function useLiveCaptions(isRecording: boolean) {
   const [transcript, setTranscript] = useState("");
-  const recognitionRef = useRef<any>(null);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
 
   useEffect(() => {
-    const SpeechRecognition =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const SpeechRecognitionCtor =
+      window.SpeechRecognition ?? window.webkitSpeechRecognition;
 
-    if (!SpeechRecognition || !isRecording) return;
+    if (!SpeechRecognitionCtor || !isRecording) return;
 
-    const recognition = new SpeechRecognition();
+    const recognition = new SpeechRecognitionCtor();
     recognition.continuous = true;
     recognition.interimResults = true;
     recognition.lang = "ru-RU";
 
-    recognition.onresult = (event: any) => {
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
       let interim = "";
       let final = "";
       for (let i = event.resultIndex; i < event.results.length; i++) {

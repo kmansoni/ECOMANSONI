@@ -1,17 +1,14 @@
-import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, expect, it, vi, beforeEach } from "vitest";
+import { render, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
-vi.mock("@/components/reels/CreateReelSheet", () => ({
-  CreateReelSheet: () => null,
-}));
+let modalProps: any = null;
 
-vi.mock("@/components/feed/PostEditorFlow", () => ({
-  PostEditorFlow: () => null,
-}));
-
-vi.mock("@/components/feed/StoryEditorFlow", () => ({
-  StoryEditorFlow: () => null,
+vi.mock("@/components/feed/CreateContentModal", () => ({
+  CreateContentModal: (props: any) => {
+    modalProps = props;
+    return null;
+  },
 }));
 
 vi.mock("@/contexts/ChatOpenContext", () => ({
@@ -25,6 +22,10 @@ vi.mock("sonner", () => ({
 }));
 
 describe("CreateCenterPage entry defaults", () => {
+  beforeEach(() => {
+    modalProps = null;
+  });
+
   it("defaults to post for plus entry when tab is absent", async () => {
     const { CreateCenterPage } = await import("@/pages/CreateCenterPage");
 
@@ -36,20 +37,27 @@ describe("CreateCenterPage entry defaults", () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByRole("heading", { name: "Новая публикация" })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(modalProps).toBeDefined();
+      expect(modalProps?.isOpen).toBe(true);
+      expect(modalProps?.initialTab).toBe("publications");
+    });
   });
 
-  it("defaults to story for swipe entry when tab is absent", async () => {
+  it("maps tab=story to stories in unified modal", async () => {
     const { CreateCenterPage } = await import("@/pages/CreateCenterPage");
 
     render(
-      <MemoryRouter initialEntries={["/create?entry=swipe"]} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <MemoryRouter initialEntries={["/create?tab=story"]} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <Routes>
           <Route path="/create" element={<CreateCenterPage />} />
         </Routes>
       </MemoryRouter>,
     );
 
-    expect(screen.getByRole("heading", { name: "Новая история" })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(modalProps).toBeDefined();
+      expect(modalProps?.initialTab).toBe("stories");
+    });
   });
 });

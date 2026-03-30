@@ -15,7 +15,8 @@ import { ArrowLeft, AlertTriangle, Trash2, ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/useAuth";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase, dbLoose } from "@/lib/supabase";
+import { logger } from "@/lib/logger";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
 
@@ -39,13 +40,13 @@ export function DeleteAccountPage() {
 
     try {
       // Call server-side deletion RPC (cascades all user data)
-      const { error: rpcError } = await (supabase as any).rpc("delete_my_account", {
+      const { error: rpcError } = await dbLoose.rpc("delete_my_account", {
         confirmation: CONFIRM_WORD,
       });
 
       if (rpcError) {
         // Fallback: try direct auth deletion
-        console.error("RPC delete_my_account failed:", rpcError);
+        logger.error("[DeleteAccountPage] RPC delete_my_account failed", { error: rpcError });
         // Sign out anyway — server admin will handle cleanup
       }
 

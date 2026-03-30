@@ -92,14 +92,16 @@ function _canonicalPayload(ekg: Omit<E2EKeyGroup, 'signature'>): Uint8Array {
 /**
  * Генерирует E2EKeyGroup для участника при вступлении в звонок.
  *
- * @param participantId    Supabase user UUID
- * @param sessionId        Call/room ID
- * @param identitySignKey  Participant's ECDSA private key (for authentication)
+ * @param participantId      Supabase user UUID
+ * @param sessionId          Call/room ID
+ * @param identitySigningKey ECDSA private key (for signing)
+ * @param identityPublicKey  ECDSA public key (sent to peers for verification)
  */
 export async function buildE2EKeyGroup(
   participantId: string,
   sessionId: string,
-  identitySignKey: CryptoKey,
+  identitySigningKey: CryptoKey,
+  identityPublicKey: CryptoKey,
 ): Promise<{ ekg: E2EKeyGroup; ephemeralPrivateKey: CryptoKey }> {
   // Generate ephemeral ECDH key pair
   const ephemeralPair = await crypto.subtle.generateKey(
@@ -117,15 +119,7 @@ export async function buildE2EKeyGroup(
   const timestamp = Date.now();
 
   // Export identity public key for recipients to verify signature
-  const identityPubSpki = await crypto.subtle.exportKey(
-    'spki',
-    // identitySignKey is private ECDSA; we need the public part separately
-    // Caller must pass both or export identity public key separately
-    identitySignKey,
-  ).catch(() => {
-    // If identitySignKey is private, we can't export spki — return placeholder
-    return new ArrayBuffer(0);
-  });
+  const identityPubSpki = await crypto.subtle.exportKey('spki', identityPublicKey);
 
   const ekg: Omit<E2EKeyGroup, 'signature' | 'identityPublicKey'> = {
     participantId,
@@ -138,7 +132,7 @@ export async function buildE2EKeyGroup(
   const payload = _canonicalPayload({ ...ekg, identityPublicKey: '' });
   const sigBuf = await crypto.subtle.sign(
     { name: 'ECDSA', hash: 'SHA-256' },
-    identitySignKey,
+    identitySigningKey,
     payload as unknown as Uint8Array<ArrayBuffer>,
   );
 
@@ -174,8 +168,14 @@ export async function processE2EKeyGroup(
     );
   }
 
-  // Verify ECDSA signature
-  if (ekg.identityPublicKey) {
+  // Verify ECDSA signature — MANDATORY. Reject if identity key or signature is missing.
+  if (!ekg.identityPublicKey || !ekg.signature) {
+    throw new Error(
+      `E2EKeyGroup from ${ekg.participantId} is missing identityPublicKey or signature — ` +
+      `unauthenticated key exchange REJECTED. Possible downgrade attack.`,
+    );
+  }
+  {
     const identityVerifyKey = await crypto.subtle.importKey(
       'spki',
       fromBase64(ekg.identityPublicKey),
@@ -279,9 +279,10 @@ export function clearSFUSession(sessionId: string): void {
 export async function rotateSessionKey(
   participantId: string,
   sessionId: string,
-  identitySignKey: CryptoKey,
+  identitySigningKey: CryptoKey,
+  identityPublicKey: CryptoKey,
 ): Promise<{ ekg: E2EKeyGroup; ephemeralPrivateKey: CryptoKey }> {
   // Clear old keys for this session from our perspective
   clearSFUSession(sessionId);
-  return buildE2EKeyGroup(participantId, sessionId, identitySignKey);
+  return buildE2EKeyGroup(participantId, sessionId, identitySigningKey, identityPublicKey);
 }

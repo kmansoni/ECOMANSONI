@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import { logger } from '@/lib/logger';
 
 export interface RecommendedUser {
   user_id: string;
@@ -39,7 +40,7 @@ export function useRecommendedUsers(limit: number = 10) {
 
       setUsers((data || []) as RecommendedUser[]);
     } catch (err) {
-      console.error('Error fetching recommended users:', err);
+      logger.error("[useRecommendedUsers] Error fetching recommended users", { error: err });
       setError(err instanceof Error ? err.message : 'Failed to fetch recommended users');
     } finally {
       setLoading(false);
@@ -59,7 +60,7 @@ export function useRecommendedUsers(limit: number = 10) {
       // Перезагружаем рекомендации после сохранения контактов
       await fetchRecommendedUsers();
     } catch (err) {
-      console.error('Error saving contacts:', err);
+      logger.error("[useRecommendedUsers] Error saving contacts", { error: err });
       throw err;
     }
   }, [user?.id, fetchRecommendedUsers]);
@@ -76,7 +77,7 @@ export function useRecommendedUsers(limit: number = 10) {
       // Перезагружаем рекомендации после отзыва доступа
       await fetchRecommendedUsers();
     } catch (err) {
-      console.error('Error revoking contacts access:', err);
+      logger.error("[useRecommendedUsers] Error revoking contacts access", { error: err });
       throw err;
     }
   }, [user?.id, fetchRecommendedUsers]);

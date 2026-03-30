@@ -4,7 +4,7 @@ import { X, Volume2, VolumeX, Eye } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useStoryViews } from "@/hooks/useStoryViews";
 import { cn } from "@/lib/utils";
-import { useStories, type UserWithStories } from "@/hooks/useStories";
+import { useStories, type UserWithStories, type Story } from "@/hooks/useStories";
 import { formatDistanceToNow } from "date-fns";
 import { ru } from "date-fns/locale";
 import { useChatOpen } from "@/contexts/ChatOpenContext";
@@ -13,6 +13,7 @@ import { VerifiedBadge } from "@/components/ui/verified-badge";
 import { useAuth } from "@/hooks/useAuth";
 import { getOrCreateDeviceId } from "@/lib/multiAccount/vault";
 import { trackAnalyticsEvent } from "@/lib/analytics/firehose";
+import { logger } from "@/lib/logger";
 import { StoryReactionBar } from "./StoryReactionBar";
 import { StoryPollWidget } from "./StoryPollWidget";
 import { StoryQuestionWidget } from "./StoryQuestionWidget";
@@ -32,9 +33,9 @@ interface StoryViewerProps {
   onClose: () => void;
 }
 
-const EMPTY_STORIES: any[] = [];
+const EMPTY_STORIES: Story[] = [];
 
-function StoryWidgetsLayer({ storyId, currentUser }: { storyId: string; currentUser: any }) {
+function StoryWidgetsLayer({ storyId, currentUser }: { storyId: string; currentUser: UserWithStories }) {
   const { polls, vote, getPollResults } = useStoryPolls(storyId);
 
   const [questions, setQuestions] = useState<any[]>([]);
@@ -43,23 +44,38 @@ function StoryWidgetsLayer({ storyId, currentUser }: { storyId: string; currentU
   const [sliders, setSliders] = useState<any[]>([]);
   const [stickers, setStickers] = useState<any[]>([]);
 
+  // ИСПРАВЛЕНИЕ дефекта #19: добавлен ignore-флаг и Promise.allSettled
+  // - ignore предотвращает setState после смены storyId (race condition)
+  // - Promise.allSettled: ошибка одного запроса не блокирует остальные
+  // - cleanup возвращает ignore=true при unmount
   useEffect(() => {
     if (!storyId) return;
+    let ignore = false;
+
     (async () => {
-      const { supabase } = await import("@/integrations/supabase/client");
-      const [q, c, qz, sl, st] = await Promise.all([
-        supabase.from('story_questions').select('*').eq('story_id', storyId),
-        supabase.from('story_countdowns').select('*').eq('story_id', storyId),
-        supabase.from('story_quizzes').select('*').eq('story_id', storyId),
-        supabase.from('story_emoji_sliders').select('*').eq('story_id', storyId),
-        supabase.from('story_stickers').select('*').eq('story_id', storyId),
-      ]);
-      setQuestions(q.data || []);
-      setCountdowns(c.data || []);
-      setQuizzes(qz.data || []);
-      setSliders(sl.data || []);
-      setStickers(st.data || []);
+      try {
+        const { supabase } = await import("@/integrations/supabase/client");
+        const [q, c, qz, sl, st] = await Promise.allSettled([
+          supabase.from('story_questions').select('*').eq('story_id', storyId),
+          supabase.from('story_countdowns').select('*').eq('story_id', storyId),
+          supabase.from('story_quizzes').select('*').eq('story_id', storyId),
+          supabase.from('story_emoji_sliders').select('*').eq('story_id', storyId),
+          supabase.from('story_stickers').select('*').eq('story_id', storyId),
+        ]);
+
+        if (ignore) return; // storyId сменился пока шёл запрос
+
+        if (q.status === 'fulfilled') setQuestions(q.value.data || []);
+        if (c.status === 'fulfilled') setCountdowns(c.value.data || []);
+        if (qz.status === 'fulfilled') setQuizzes(qz.value.data || []);
+        if (sl.status === 'fulfilled') setSliders(sl.value.data || []);
+        if (st.status === 'fulfilled') setStickers(st.value.data || []);
+      } catch (err) {
+        if (!ignore) logger.error('[StoryViewer] Не удалось загрузить виджеты', { error: err });
+      }
     })();
+
+    return () => { ignore = true; };
   }, [storyId]);
 
   const linkStickers = stickers.filter((s) => s.type === 'link');
@@ -207,6 +223,15 @@ export function StoryViewer({ usersWithStories, initialUserIndex, isOpen, onClos
   const viewStoryIdRef = useRef<string | null>(null);
   const viewOwnerIdRef = useRef<string | null>(null);
 
+  // Refs для значений внутри интервала — предотвращают бесконечный цикл пересоздания
+  // (дефект #20: deps массива содержал currentStoryInUser, который меняется при каждом тике)
+  const currentStoryInUserRef = useRef(0);
+  const totalStoriesForUserRef = useRef(0);
+  const currentUserIndexRef = useRef(0);
+  const activeUsersLengthRef = useRef(0);
+  const effectiveDurationRef = useRef(5000);
+  const onCloseRef = useRef(onClose);
+
   const STORY_DURATION = 5000;
   const PROGRESS_INTERVAL = 50;
   const MIN_SWIPE_DISTANCE = 50;
@@ -247,6 +272,15 @@ export function StoryViewer({ usersWithStories, initialUserIndex, isOpen, onClos
 
   // Compute effective duration: video uses actual duration, photos use 5s
   const effectiveDuration = videoDurationMs ?? STORY_DURATION;
+
+  // Синхронизируем refs при изменении значений — интервал читает refs, не state
+  // Это разрывает цикл: тик → setState → ре-рендер → новый интервал → тик
+  useEffect(() => { currentStoryInUserRef.current = currentStoryInUser; }, [currentStoryInUser]);
+  useEffect(() => { totalStoriesForUserRef.current = totalStoriesForUser; }, [totalStoriesForUser]);
+  useEffect(() => { currentUserIndexRef.current = currentUserIndex; }, [currentUserIndex]);
+  useEffect(() => { activeUsersLengthRef.current = activeUsers.length; }, [activeUsers.length]);
+  useEffect(() => { effectiveDurationRef.current = effectiveDuration; }, [effectiveDuration]);
+  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
 
   // Fix: render-time setState → move to useEffect
   useEffect(() => {
@@ -349,31 +383,36 @@ export function StoryViewer({ usersWithStories, initialUserIndex, isOpen, onClos
     viewStartMsRef.current = null;
   }, [isOpen, user]);
 
-  // Progress timer
+  // Progress timer — ИСПРАВЛЕНИЕ дефекта #20:
+  // Используем refs вместо state в deps, чтобы разорвать цикл:
+  // тик → setProgress → ре-рендер → новые deps → пересоздание интервала → тик
+  // Теперь deps только [isOpen, isPaused] — интервал создаётся один раз
   useEffect(() => {
     if (!isOpen || isPaused) {
       if (progressInterval.current) {
         clearInterval(progressInterval.current);
+        progressInterval.current = null;
       }
       return;
     }
 
     progressInterval.current = setInterval(() => {
       setProgress(prev => {
-        const delta = 100 / (effectiveDuration / PROGRESS_INTERVAL);
+        // Читаем актуальные значения из refs (не из stale closure)
+        const delta = 100 / (effectiveDurationRef.current / PROGRESS_INTERVAL);
         const newProgress = prev + delta;
         
         if (newProgress >= 100) {
-          if (currentStoryInUser < totalStoriesForUser - 1) {
+          if (currentStoryInUserRef.current < totalStoriesForUserRef.current - 1) {
             setCurrentStoryInUser(curr => curr + 1);
             return 0;
           } else {
-            if (currentUserIndex < activeUsers.length - 1) {
+            if (currentUserIndexRef.current < activeUsersLengthRef.current - 1) {
               setCurrentUserIndex(curr => curr + 1);
               setCurrentStoryInUser(0);
               return 0;
             } else {
-              onClose();
+              onCloseRef.current();
               return 100;
             }
           }
@@ -386,9 +425,10 @@ export function StoryViewer({ usersWithStories, initialUserIndex, isOpen, onClos
     return () => {
       if (progressInterval.current) {
         clearInterval(progressInterval.current);
+        progressInterval.current = null;
       }
     };
-  }, [isOpen, isPaused, currentUserIndex, currentStoryInUser, totalStoriesForUser, activeUsers.length, onClose, effectiveDuration]);
+  }, [isOpen, isPaused]); // Минимальные deps — интервал не пересоздаётся при каждом тике
 
   const goToNextStory = useCallback(() => {
     const story = currentUserStories[currentStoryInUser];
@@ -663,7 +703,7 @@ export function StoryViewer({ usersWithStories, initialUserIndex, isOpen, onClos
               src={currentUser.avatar_url || `https://i.pravatar.cc/150?u=${currentUser.user_id}`}
               alt={currentUser.display_name || ''}
               className="w-9 h-9 rounded-full border-2 border-white/50 object-cover flex-shrink-0"
-              style={{ boxShadow: (currentUser as any).isCloseFriend ? '0 0 0 2px #22c55e' : undefined }}
+              style={{ boxShadow: 'isCloseFriend' in currentUser && currentUser.isCloseFriend ? '0 0 0 2px #22c55e' : undefined }}
             />
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-1">

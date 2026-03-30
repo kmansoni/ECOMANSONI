@@ -6,6 +6,7 @@ import { Play, Square, Save, Download, Loader2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { uploadMedia } from "@/lib/mediaUpload";
 import { toast } from "sonner";
+import { logger } from "@/lib/logger";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -71,8 +72,9 @@ export function LiveReplay({ sessionId, stream, onSaved }: Props) {
       setSavedUrl(replayUrl);
       onSaved?.(replayUrl);
       toast.success("Запись эфира сохранена!");
-    } catch (err: any) {
-      toast.error("Ошибка сохранения: " + (err.message || ""));
+    } catch (err) {
+      logger.error("[LiveReplay] save failed", { error: err });
+      toast.error("Не удалось сохранить запись эфира. Попробуйте снова.");
     } finally {
       setSaving(false);
     }

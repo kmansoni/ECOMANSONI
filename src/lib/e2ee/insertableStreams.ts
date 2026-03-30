@@ -8,12 +8,43 @@
  */
 
 import { SFrameContext } from './sframe';
+import { logger } from '@/lib/logger';
+
+// Нестандартные WebRTC API — экспериментальная поддержка Insertable Streams
+interface RTCRtpSenderWithStreams extends RTCRtpSender {
+  createEncodedStreams?: () => { readable: ReadableStream; writable: WritableStream };
+}
+
+interface RTCRtpReceiverWithStreams extends RTCRtpReceiver {
+  createEncodedStreams?: () => { readable: ReadableStream; writable: WritableStream };
+}
+
+interface EncodedFrame {
+  data: ArrayBuffer;
+  timestamp: number;
+  type?: string;
+  getMetadata?: () => Record<string, unknown>;
+}
+
+type GlobalWithScriptTransform = typeof globalThis & {
+  RTCRtpScriptTransform?: new (worker: Worker, options: Record<string, unknown>) => unknown;
+};
+
+/** Контекст поломки pipe — передаётся в caller для recovery */
+export interface PipeBreakInfo {
+  trackId: string;
+  direction: 'encrypt' | 'decrypt';
+  /** Для receiver — peerId отправителя (producerId). Для sender — undefined. */
+  peerId?: string;
+}
 
 export interface InsertableStreamsConfig {
-  /** Called when encryption/decryption fails */
+  /** Called when encryption/decryption fails on a per-frame basis (informational) */
   onError?: (error: Error, direction: 'encrypt' | 'decrypt') => void;
   /** Called on frame processed (for metrics) */
   onFrame?: (direction: 'encrypt' | 'decrypt', size: number) => void;
+  /** Called when the transform pipe breaks — caller must re-create producer/consumer to recover */
+  onPipeBreak?: (info: PipeBreakInfo) => void;
 }
 
 interface TransformEntry {
@@ -251,7 +282,7 @@ export class MediaEncryptor {
           }
         });
 
-        transformer.readable.pipeThrough(t).pipeTo(transformer.writable).catch(() => {});
+        transformer.readable.pipeThrough(t).pipeTo(transformer.writable).catch((err) => { self.postMessage({ type: 'pipe_error', message: String(err) }); });
       });
     `;
 
@@ -272,6 +303,11 @@ export class MediaEncryptor {
         if (data.direction === 'decrypt') this.stats.decryptionErrors++;
         this.config.onError?.(new Error(data.message || 'ScriptTransform error'), data.direction);
       }
+      if (data.type === 'pipe_error') {
+        logger.error('[E2EE] ScriptTransform pipe failed — recovery needed', { error: data.message, trackId });
+        this.removeTransform(trackId);
+        this.config.onPipeBreak?.({ trackId, direction: 'encrypt' });
+      }
     };
 
     this.scriptTransforms.set(trackId, { worker });
@@ -286,11 +322,11 @@ export class MediaEncryptor {
     this.removeTransform(trackId);
 
     // Method 1: Insertable Streams via createEncodedStreams (Chrome 86+, Edge)
-    if (typeof (sender as any).createEncodedStreams === 'function') {
-      const { readable, writable } = (sender as any).createEncodedStreams() as TransformEntry;
+    if (typeof (sender as RTCRtpSenderWithStreams).createEncodedStreams === 'function') {
+      const { readable, writable } = (sender as RTCRtpSenderWithStreams).createEncodedStreams!() as TransformEntry;
 
       const transformStream = new TransformStream({
-        transform: async (frame: any, controller: any) => {
+        transform: async (frame: EncodedFrame, controller: TransformStreamDefaultController<EncodedFrame>) => {
           try {
             const encryptedData = await this.sframeContext.encryptFrame(frame.data as ArrayBuffer);
             frame.data = encryptedData;
@@ -308,7 +344,9 @@ export class MediaEncryptor {
       const abortController = new AbortController();
       readable.pipeThrough(transformStream).pipeTo(writable, { signal: abortController.signal }).catch((err: unknown) => {
         if ((err as { name?: string } | null)?.name === 'AbortError') return;
-        console.error('[MediaEncryptor] Sender pipe error:', err);
+        logger.error('[MediaEncryptor] Sender pipe error — recovery needed', { error: err, trackId });
+        this.removeTransform(trackId);
+        this.config.onPipeBreak?.({ trackId, direction: 'encrypt' });
       });
 
       this.activeTransforms.set(trackId, { readable, writable, abortController });
@@ -316,11 +354,11 @@ export class MediaEncryptor {
     }
 
     // Method 2: RTCRtpScriptTransform (Firefox/Safari compatible path)
-    if (typeof (globalThis as any).RTCRtpScriptTransform !== 'undefined') {
-      const anySender = sender as any;
-      const RTCRtpScriptTransformCtor = (globalThis as any).RTCRtpScriptTransform;
+    if ('RTCRtpScriptTransform' in globalThis) {
+      const senderWithStreams = sender as RTCRtpSenderWithStreams;
+      const RTCRtpScriptTransformCtor = (globalThis as GlobalWithScriptTransform).RTCRtpScriptTransform!;
       const worker = this._createScriptWorker(trackId);
-      anySender.transform = new RTCRtpScriptTransformCtor(worker, {
+      senderWithStreams.transform = new RTCRtpScriptTransformCtor(worker, {
         operation: 'encrypt',
         trackId,
       });
@@ -349,11 +387,11 @@ export class MediaEncryptor {
     this.removeTransform(trackId);
 
     // Method 1: Insertable Streams via createEncodedStreams (Chrome 86+, Edge)
-    if (typeof (receiver as any).createEncodedStreams === 'function') {
-      const { readable, writable } = (receiver as any).createEncodedStreams() as TransformEntry;
+    if (typeof (receiver as RTCRtpReceiverWithStreams).createEncodedStreams === 'function') {
+      const { readable, writable } = (receiver as RTCRtpReceiverWithStreams).createEncodedStreams!() as TransformEntry;
 
       const transformStream = new TransformStream({
-        transform: async (frame: any, controller: any) => {
+        transform: async (frame: EncodedFrame, controller: TransformStreamDefaultController<EncodedFrame>) => {
           const ctx = this.decryptionContexts.get(peerId);
           if (!ctx) {
             // SECURITY FIX: Drop frames when no decryption key available.
@@ -381,7 +419,9 @@ export class MediaEncryptor {
       const abortController = new AbortController();
       readable.pipeThrough(transformStream).pipeTo(writable, { signal: abortController.signal }).catch((err: unknown) => {
         if ((err as { name?: string } | null)?.name === 'AbortError') return;
-        console.error('[MediaEncryptor] Receiver pipe error:', err);
+        logger.error('[MediaEncryptor] Receiver pipe error — recovery needed', { error: err, trackId, peerId });
+        this.removeTransform(trackId);
+        this.config.onPipeBreak?.({ trackId, direction: 'decrypt', peerId });
       });
 
       this.activeTransforms.set(trackId, { readable, writable, abortController });
@@ -389,11 +429,11 @@ export class MediaEncryptor {
     }
 
     // Method 2: RTCRtpScriptTransform (Firefox/Safari compatible path)
-    if (typeof (globalThis as any).RTCRtpScriptTransform !== 'undefined') {
-      const anyReceiver = receiver as any;
-      const RTCRtpScriptTransformCtor = (globalThis as any).RTCRtpScriptTransform;
+    if ('RTCRtpScriptTransform' in globalThis) {
+      const receiverWithStreams = receiver as RTCRtpReceiverWithStreams;
+      const RTCRtpScriptTransformCtor = (globalThis as GlobalWithScriptTransform).RTCRtpScriptTransform!;
       const worker = this._createScriptWorker(trackId);
-      anyReceiver.transform = new RTCRtpScriptTransformCtor(worker, {
+      receiverWithStreams.transform = new RTCRtpScriptTransformCtor(worker, {
         operation: 'decrypt',
         trackId,
         peerId,
@@ -460,7 +500,7 @@ export class MediaEncryptor {
     const hasEncodedStreams =
       typeof RTCRtpSender !== 'undefined' &&
       'createEncodedStreams' in RTCRtpSender.prototype;
-    const hasScriptTransform = typeof (globalThis as any).RTCRtpScriptTransform !== 'undefined';
+    const hasScriptTransform = 'RTCRtpScriptTransform' in globalThis;
     return hasEncodedStreams || hasScriptTransform;
   }
 

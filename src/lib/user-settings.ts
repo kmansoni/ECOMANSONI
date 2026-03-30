@@ -77,14 +77,17 @@ function withDataStorageDefaults(partial: Partial<UserSettings>): UserSettings {
     calls_noise_suppression: true,
     calls_p2p_mode: "contacts",
     // existing defaults are handled by DB; for fallback we just spread what we got
-    ...(partial as any),
+    ...partial,
   } as UserSettings;
 }
 
 const BASE_SETTINGS_SELECT =
   "user_id, theme, language_code, font_scale, reduce_motion, high_contrast, push_notifications, likes_notifications, comments_notifications, followers_notifications, private_account, show_activity_status, branded_content_manual_approval, notif_sound_id, notif_vibrate, notif_show_text, notif_show_sender, show_calls_tab, sessions_auto_terminate_days, messages_auto_delete_seconds, account_self_destruct_days, created_at, updated_at";
 
-const supabaseAny = supabase as any;
+const supabaseAny = supabase;
+const supabaseRpc = supabase as unknown as {
+  rpc: (fn: string, args?: Record<string, unknown>) => Promise<{ data: unknown; error: unknown }>;
+};
 
 export async function getOrCreateUserSettings(userId: string): Promise<UserSettings> {
   const { data: existing, error: selectError } = await supabaseAny
@@ -101,7 +104,7 @@ export async function getOrCreateUserSettings(userId: string): Promise<UserSetti
         .eq("user_id", userId)
         .maybeSingle();
       if (baseErr) throw selectError;
-      if (base) return withDataStorageDefaults(base as any);
+      if (base) return withDataStorageDefaults(base as Partial<UserSettings>);
       // Continue to create row below.
     } else {
       throw selectError;
@@ -109,7 +112,7 @@ export async function getOrCreateUserSettings(userId: string): Promise<UserSetti
   }
 
   if (existing) {
-    return withDataStorageDefaults(existing as any);
+    return withDataStorageDefaults(existing as Partial<UserSettings>);
   }
 
   const { data: inserted, error: insertError } = await supabaseAny
@@ -122,7 +125,7 @@ export async function getOrCreateUserSettings(userId: string): Promise<UserSetti
     throw insertError;
   }
 
-  return withDataStorageDefaults(inserted as any);
+  return withDataStorageDefaults(inserted as Partial<UserSettings>);
 }
 
 export async function updateUserSettings(
@@ -145,27 +148,27 @@ export async function updateUserSettings(
         .eq("user_id", userId)
         .single();
       if (baseErr) throw error;
-      return withDataStorageDefaults(base as any);
+      return withDataStorageDefaults(base as Partial<UserSettings>);
     }
     throw error;
   }
 
-  return withDataStorageDefaults(data as any);
+  return withDataStorageDefaults(data as Partial<UserSettings>);
 }
 
 export function subscribeToUserSettings(userId: string, onChange: (settings: UserSettings) => void) {
   const channel = supabase
     .channel(`user-settings:${userId}`)
     .on(
-      "postgres_changes" as any,
+      "postgres_changes",
       {
         event: "*",
         schema: "public",
         table: "user_settings",
         filter: `user_id=eq.${userId}`,
       },
-      (payload: any) => {
-        if (payload?.new) {
+      (payload: { new?: unknown }) => {
+        if (payload?.new && typeof payload.new === "object") {
           onChange(payload.new as UserSettings);
         }
       },
@@ -287,7 +290,7 @@ export async function listCloseFriends(userId: string): Promise<CloseFriend[]> {
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
   if (error) throw error;
-  return (data ?? []) as CloseFriend[];
+  return (data ?? []) as unknown as CloseFriend[];
 }
 
 export async function addCloseFriend(userId: string, friendId: string): Promise<void> {
@@ -309,13 +312,13 @@ export async function removeCloseFriend(userId: string, friendId: string): Promi
 // ─── Screen Time ─────────────────────────────────────────────────
 
 export async function getScreenTimeToday(): Promise<number> {
-  const { data, error } = await supabaseAny.rpc("get_screen_time_today");
+  const { data, error } = await supabaseRpc.rpc("get_screen_time_today");
   if (error) throw error;
   return typeof data === "number" ? data : 0;
 }
 
 export async function pingScreenTime(seconds: number = 60): Promise<void> {
-  const { error } = await supabaseAny.rpc("increment_screen_time", { p_seconds: seconds });
+  const { error } = await supabaseRpc.rpc("increment_screen_time", { p_seconds: seconds });
   if (error) throw error;
 }
 

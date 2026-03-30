@@ -4,6 +4,8 @@
  * Замена фона на изображение / blur.
  */
 
+import { logger } from '@/lib/logger';
+
 let bodyPixModel: any = null;
 let segModelLoading = false;
 
@@ -22,13 +24,13 @@ export async function loadSegmentationModel(): Promise<boolean> {
     ]);
 
     if (bp) {
-      await (Function('m', 'return import(m)') as (m: string) => Promise<any>)('@tensorflow/tfjs-backend-webgl').catch(() => {});
+      await (Function('m', 'return import(m)') as (m: string) => Promise<any>)('@tensorflow/tfjs-backend-webgl').catch((err) => { logger.warn('[BackgroundSegmentation] WebGL backend load failed', { error: err }); });
       bodyPixModel = await bp.load({ architecture: 'MobileNetV1', outputStride: 16, multiplier: 0.75 });
-      console.log('[BackgroundSeg] BodyPix model loaded');
+      logger.debug('[BackgroundSeg] BodyPix model loaded');
       return true;
     }
   } catch (e) {
-    console.warn('[BackgroundSeg] BodyPix not available', e);
+    logger.warn('[BackgroundSeg] BodyPix not available', { error: e });
   } finally {
     segModelLoading = false;
   }
@@ -62,7 +64,7 @@ export async function segmentPerson(videoElement: HTMLVideoElement): Promise<Seg
         height: segmentation.height,
       };
     } catch (e) {
-      console.warn('[BackgroundSeg] segmentPerson error', e);
+      logger.warn('[BackgroundSeg] segmentPerson error', { error: e });
     }
   }
 

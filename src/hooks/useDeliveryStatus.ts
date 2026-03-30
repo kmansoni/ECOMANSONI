@@ -14,6 +14,7 @@
  * - Клиент не может подделать статус чужого сообщения: он пишет только свой receipt,
  *   а триггер обновляет delivery_status на стороне сервера.
  */
+import { logger } from "@/lib/logger";
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabase";
@@ -168,7 +169,7 @@ export function useDeliveryStatus(conversationId: string | null): {
         if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
           // Канал упал — при следующем монтировании произойдёт re-subscribe.
           // Для критичности можно добавить метрику, но это best-effort.
-          console.warn("[useDeliveryStatus] Realtime channel error:", channelName, status);
+          logger.warn("[useDeliveryStatus] Realtime channel error", { channelName, status });
         }
       });
 
@@ -201,7 +202,7 @@ export function useDeliveryStatus(conversationId: string | null): {
     if (error) {
       // Re-queue при ошибке (например, временный RLS-отказ или сетевой сбой)
       for (const id of ids) pendingReadIdsRef.current.add(id);
-      console.warn("[useDeliveryStatus] flushReadReceipts error:", error.message);
+      logger.warn("[useDeliveryStatus] flushReadReceipts error", { error: error.message });
       scheduleFlush(1000);
     }
   }, [scheduleFlush, user]);

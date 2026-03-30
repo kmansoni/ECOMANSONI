@@ -11,6 +11,8 @@
  * - GIF/SVG/WebP не сжимаются: потеря анимации, векторности или overhead > экономии.
  */
 
+import { logger } from './logger';
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface CompressOptions {
@@ -388,7 +390,7 @@ export async function compressImage(
       } catch (offscreenErr) {
         // OffscreenCanvas может упасть при нехватке памяти или CORS-проблемах
         // Логируем деградацию и переходим на fallback
-        console.warn('[imageCompressor] OffscreenCanvas failed, falling back to HTMLCanvas:', offscreenErr);
+        logger.warn('[imageCompressor] OffscreenCanvas failed, falling back to HTMLCanvas', { error: offscreenErr });
         useOffscreen = false;
 
         if (!objectUrl) {

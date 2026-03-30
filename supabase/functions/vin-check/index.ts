@@ -20,6 +20,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { handleCors, getCorsHeaders } from "../_shared/utils.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -57,25 +58,20 @@ interface VinCheckResult {
   checked_at: string;
 }
 
-// ─── CORS headers ─────────────────────────────────────────────────────────────
-const CORS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, apikey, x-client-info",
-};
-
 // ─── Main handler ─────────────────────────────────────────────────────────────
 serve(async (req: Request) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: CORS });
-  }
+  const corsResponse = handleCors(req);
+  if (corsResponse) return corsResponse;
+
+  const origin = req.headers.get("origin");
+  const cors = getCorsHeaders(origin);
 
   try {
     const { vin, vehicle_id } = await req.json() as { vin: string; vehicle_id?: string };
 
     if (!vin || vin.length < 7) {
       return new Response(JSON.stringify({ error: "Invalid VIN" }), {
-        status: 400, headers: { ...CORS, "Content-Type": "application/json" },
+        status: 400, headers: { ...cors, "Content-Type": "application/json" },
       });
     }
 
@@ -172,14 +168,14 @@ serve(async (req: Request) => {
 
     return new Response(JSON.stringify(result), {
       status: 200,
-      headers: { ...CORS, "Content-Type": "application/json" },
+      headers: { ...cors, "Content-Type": "application/json" },
     });
 
   } catch (err) {
     console.error("VIN check error:", err);
     return new Response(JSON.stringify({ error: String(err) }), {
       status: 500,
-      headers: { ...CORS, "Content-Type": "application/json" },
+      headers: { ...cors, "Content-Type": "application/json" },
     });
   }
 });

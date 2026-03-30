@@ -52,10 +52,10 @@ export function LiveShoppingOverlay({
 
   // Подписка на пины товаров (для зрителей)
   useEffect(() => {
-    const db = supabase as any;
+    const db = supabase as unknown as { channel: (name: string) => { on: (...args: unknown[]) => { subscribe: () => unknown }; }; removeChannel: (ch: unknown) => void };
     const channel = db
       .channel(`live_shopping_${liveSessionId}`)
-      .on("broadcast", { event: "product_pin" }, (payload: any) => {
+      .on("broadcast", { event: "product_pin" }, (payload: { payload?: { product?: LiveProduct | null } }) => {
         if (payload.payload?.product) {
           setPinnedProduct(payload.payload.product);
         } else {
@@ -88,7 +88,7 @@ export function LiveShoppingOverlay({
       .limit(20);
 
     setMyProducts(
-      (products ?? []).map((p: any) => ({
+      (products ?? []).map((p: { id: string; title: string; price: number; currency: string; images?: string[] | null; stock: number }) => ({
         ...p,
         image_url: p.images?.[0] ?? null,
       }))

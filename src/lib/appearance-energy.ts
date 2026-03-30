@@ -74,34 +74,34 @@ const ENERGY_DEFAULTS: Omit<UserEnergySaverSettings, "user_id" | "updated_at" | 
 
 function withAppearanceDefaults(row: Partial<UserAppearanceSettings>): UserAppearanceSettings {
   return {
-    ...(APPEARANCE_DEFAULTS as any),
-    ...(row as any),
+    ...APPEARANCE_DEFAULTS,
+    ...row,
   } as UserAppearanceSettings;
 }
 
 function withEnergyDefaults(row: Partial<UserEnergySaverSettings>): UserEnergySaverSettings {
   return {
-    ...(ENERGY_DEFAULTS as any),
-    ...(row as any),
+    ...ENERGY_DEFAULTS,
+    ...row,
   } as UserEnergySaverSettings;
 }
 
 export async function getOrCreateAppearanceSettings(userId: string): Promise<UserAppearanceSettings> {
-  const { data: existing, error } = await supabaseAny
+  const { data: existing, error } = await supabase
     .from("user_appearance_settings")
     .select("*")
     .eq("user_id", userId)
     .maybeSingle();
   if (error) throw error;
-  if (existing) return withAppearanceDefaults(existing as any);
+  if (existing) return withAppearanceDefaults(existing as Partial<UserAppearanceSettings>);
 
-  const { data, error: insertError } = await supabaseAny
+  const { data, error: insertError } = await supabase
     .from("user_appearance_settings")
     .insert({ user_id: userId })
     .select("*")
     .single();
   if (insertError) throw insertError;
-  return withAppearanceDefaults(data as any);
+  return withAppearanceDefaults(data as Partial<UserAppearanceSettings>);
 }
 
 export async function updateAppearanceSettings(
@@ -122,7 +122,7 @@ export async function updateAppearanceSettings(
     p_media_tap_navigation_enabled: patch.media_tap_navigation_enabled ?? null,
   });
   if (error) throw error;
-  return withAppearanceDefaults(data as any);
+  return withAppearanceDefaults(data as Partial<UserAppearanceSettings>);
 }
 
 export async function listAppIconCatalog(): Promise<AppIconCatalogItem[]> {
@@ -168,7 +168,7 @@ export async function getOrCreateEnergySaverSettings(userId: string): Promise<Us
     .eq("user_id", userId)
     .maybeSingle();
   if (error) throw error;
-  if (existing) return withEnergyDefaults(existing as any);
+  if (existing) return withEnergyDefaults(existing as Partial<UserEnergySaverSettings>);
 
   const { data, error: insertError } = await supabaseAny
     .from("user_energy_saver_settings")
@@ -176,7 +176,7 @@ export async function getOrCreateEnergySaverSettings(userId: string): Promise<Us
     .select("*")
     .single();
   if (insertError) throw insertError;
-  return withEnergyDefaults(data as any);
+  return withEnergyDefaults(data as Partial<UserEnergySaverSettings>);
 }
 
 export async function updateEnergySaverSettings(
@@ -195,5 +195,5 @@ export async function updateEnergySaverSettings(
     p_background_updates: patch.background_updates ?? null,
   });
   if (error) throw error;
-  return withEnergyDefaults(data as any);
+  return withEnergyDefaults(data as Partial<UserEnergySaverSettings>);
 }

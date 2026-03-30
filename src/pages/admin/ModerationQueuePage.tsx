@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { AdminShell } from "@/components/admin/AdminShell";
+import { logger } from "@/lib/logger";
 import { useAdminMe } from "@/hooks/useAdminMe";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -12,7 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { CheckCircle2, AlertTriangle, Ban, Clock, Eye, ExternalLink } from "lucide-react";
-import { supabase } from "@/lib/supabase";
+import { supabase, dbLoose } from "@/lib/supabase";
 import { Tables } from "@/integrations/supabase/types";
 
 type QueueItem = Tables<"moderation_queue_items">;
@@ -59,7 +60,6 @@ const REASON_CODES = [
 
 export function ModerationQueuePage() {
   const { me: adminMe } = useAdminMe();
-  const supabaseUnsafe = supabase as any;
   const [queueItems, setQueueItems] = useState<QueueItemWithContent[]>([]);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -127,14 +127,15 @@ export function ModerationQueuePage() {
                 authorId = comment.author_id;
               }
             } else if (item.content_type === "message") {
-              const { data: message } = await supabaseUnsafe
+              const { data: message } = await dbLoose
                 .from("direct_messages")
                 .select("content, from_id")
                 .eq("id", item.content_id)
                 .single();
               if (message) {
-                preview = (message.content || "").substring(0, 150);
-                authorId = message.from_id;
+                const msg = message as { content?: unknown; from_id?: unknown };
+                preview = String(msg.content ?? "").substring(0, 150);
+                authorId = String(msg.from_id ?? "");
               }
             } else if (item.content_type === "profile") {
               const { data: profile } = await supabase
@@ -147,7 +148,7 @@ export function ModerationQueuePage() {
                 authorId = profile.id;
               }
             } else if (item.content_type === "hashtag") {
-              const { data: hashtag } = await supabaseUnsafe
+              const { data: hashtag } = await dbLoose
                 .from("hashtags")
                 .select("canonical_form")
                 .eq("id", item.content_id)
@@ -179,12 +180,12 @@ export function ModerationQueuePage() {
 
       setQueueItems(enriched);
     } catch (error) {
-      console.error("Failed to load moderation queue:", error);
+      logger.error("[ModerationQueue] Failed to load moderation queue", { error });
       toast.error("Failed to load moderation queue");
     } finally {
       setLoading(false);
     }
-  }, [filterContentType, filterStatus, supabaseUnsafe]);
+  }, [filterContentType, filterStatus]);
 
   useEffect(() => {
     void loadQueue();
@@ -219,9 +220,10 @@ export function ModerationQueuePage() {
       
       setSelectedItem(null);
       loadQueue();
-    } catch (error: any) {
-      console.error("Moderation decision failed:", error);
-      toast.error(error.message || "Failed to submit moderation decision");
+    } catch (error) {
+      logger.error("[ModerationQueue] Moderation decision failed", { error });
+      const message = error instanceof Error ? error.message : String(error);
+      toast.error(message || "Failed to submit moderation decision");
     } finally {
       setSubmitting(false);
     }
@@ -462,7 +464,10 @@ export function ModerationQueuePage() {
               {/* Decision */}
               <div className="space-y-2">
                 <Label>Decision</Label>
-                <Select value={decision} onValueChange={(v: any) => setDecision(v)}>
+                <Select
+                  value={decision}
+                  onValueChange={(v: string) => setDecision(v as "allow" | "restrict" | "needs_review" | "block")}
+                >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>

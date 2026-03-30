@@ -31,6 +31,8 @@ import type {
   GetRouterRtpCapabilitiesPayload,
 } from "./types";
 
+import { logger } from '@/lib/logger';
+
 function nowMs() {
   return Date.now();
 }
@@ -167,7 +169,7 @@ export class CallsWsClient {
       ws.onopen = () => {
         settled = true;
         // BUG #1 FIX: Логирование для диагностики sequence issues при переподключении
-        console.log('[CallsWsClient] WebSocket connected', {
+        logger.debug('[CallsWsClient] WebSocket connected', {
           previousLastServerSeq: this.lastServerSeq,
           wasReconnecting: this._connectionState === 'reconnecting',
           timestamp: nowMs(),
@@ -212,7 +214,7 @@ export class CallsWsClient {
   close() {
     this.manualClose = true;
     // BUG #2 FIX: Логирование состояния перед закрытием
-    console.log('[CallsWsClient] close() called', {
+    logger.debug('[CallsWsClient] close() called', {
       pendingAcksCount: this.pendingAcks.size,
       pendingAcksMsgIds: Array.from(this.pendingAcks.keys()),
       awaitingHeartbeatAck: this.awaitingHeartbeatAckMsgId,
@@ -235,7 +237,7 @@ export class CallsWsClient {
       rejectedAcks.push(msgId);
     });
     
-    console.log('[CallsWsClient] close() rejected pending ACKs', {
+    logger.debug('[CallsWsClient] close() rejected pending ACKs', {
       rejectedCount: rejectedAcks.length,
       msgIds: rejectedAcks,
       timestamp: Date.now(),

@@ -16,7 +16,7 @@ export function RingtonePlayer({ play, src = "/audio/ringtone.mp3", volume = 1.0
     if (play) {
       audioRef.current.loop = true;
       audioRef.current.currentTime = 0;
-      audioRef.current.play().catch(() => {});
+      audioRef.current.play().catch(() => { /* autoplay blocked */ });
     } else {
       audioRef.current.pause();
       audioRef.current.currentTime = 0;

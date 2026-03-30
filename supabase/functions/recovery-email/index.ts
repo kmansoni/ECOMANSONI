@@ -3,17 +3,11 @@
 // POST { action: "verify", code: string }
 // deno-lint-ignore-file no-explicit-any
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { handleCors, getCorsHeaders } from "../_shared/utils.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const EMAIL_ROUTER_URL = Deno.env.get("EMAIL_ROUTER_URL") ?? "http://email-router:3100/api/v1/send";
-
-function corsHeaders() {
-  return {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  };
-}
 
 async function sha256hex(text: string): Promise<string> {
   const encoder = new TextEncoder();
@@ -31,15 +25,15 @@ function generateSixDigitCode(): string {
 }
 
 Deno.serve(async (req: Request) => {
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders() });
-  }
+  const corsResponse = handleCors(req);
+  if (corsResponse) return corsResponse;
 
+  const origin = req.headers.get("Origin");
   const authHeader = req.headers.get("Authorization");
   if (!authHeader) {
     return new Response(JSON.stringify({ error: "Missing authorization" }), {
       status: 401,
-      headers: { ...corsHeaders(), "Content-Type": "application/json" },
+      headers: { ...getCorsHeaders(origin), "Content-Type": "application/json" },
     });
   }
 
@@ -52,7 +46,7 @@ Deno.serve(async (req: Request) => {
   if (authError || !user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
-      headers: { ...corsHeaders(), "Content-Type": "application/json" },
+      headers: { ...getCorsHeaders(origin), "Content-Type": "application/json" },
     });
   }
 
@@ -64,7 +58,7 @@ Deno.serve(async (req: Request) => {
   } catch {
     return new Response(JSON.stringify({ error: "Invalid JSON body" }), {
       status: 400,
-      headers: { ...corsHeaders(), "Content-Type": "application/json" },
+      headers: { ...getCorsHeaders(origin), "Content-Type": "application/json" },
     });
   }
 
@@ -76,7 +70,7 @@ Deno.serve(async (req: Request) => {
     if (!email || typeof email !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return new Response(JSON.stringify({ error: "Valid email required" }), {
         status: 400,
-        headers: { ...corsHeaders(), "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(origin), "Content-Type": "application/json" },
       });
     }
 
@@ -102,7 +96,7 @@ Deno.serve(async (req: Request) => {
     if (upsertError) {
       return new Response(JSON.stringify({ error: upsertError.message }), {
         status: 500,
-        headers: { ...corsHeaders(), "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(origin), "Content-Type": "application/json" },
       });
     }
 
@@ -124,7 +118,7 @@ Deno.serve(async (req: Request) => {
     }
 
     return new Response(JSON.stringify({ success: true, expiresAt }), {
-      headers: { ...corsHeaders(), "Content-Type": "application/json" },
+      headers: { ...getCorsHeaders(origin), "Content-Type": "application/json" },
     });
   }
 
@@ -134,7 +128,7 @@ Deno.serve(async (req: Request) => {
     if (!code || typeof code !== "string" || !/^\d{6}$/.test(code)) {
       return new Response(JSON.stringify({ error: "6-digit code required" }), {
         status: 400,
-        headers: { ...corsHeaders(), "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(origin), "Content-Type": "application/json" },
       });
     }
 
@@ -147,21 +141,21 @@ Deno.serve(async (req: Request) => {
     if (fetchError || !record) {
       return new Response(JSON.stringify({ error: "No pending verification found" }), {
         status: 404,
-        headers: { ...corsHeaders(), "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(origin), "Content-Type": "application/json" },
       });
     }
 
     if (record.verified) {
       return new Response(JSON.stringify({ error: "Already verified" }), {
         status: 409,
-        headers: { ...corsHeaders(), "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(origin), "Content-Type": "application/json" },
       });
     }
 
     if (!record.code_expires_at || new Date(record.code_expires_at) < new Date()) {
       return new Response(JSON.stringify({ error: "Code expired" }), {
         status: 410,
-        headers: { ...corsHeaders(), "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(origin), "Content-Type": "application/json" },
       });
     }
 
@@ -170,7 +164,7 @@ Deno.serve(async (req: Request) => {
     if (inputHash !== record.verification_code) {
       return new Response(JSON.stringify({ error: "Invalid code" }), {
         status: 400,
-        headers: { ...corsHeaders(), "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(origin), "Content-Type": "application/json" },
       });
     }
 
@@ -188,17 +182,17 @@ Deno.serve(async (req: Request) => {
     if (updateError) {
       return new Response(JSON.stringify({ error: updateError.message }), {
         status: 500,
-        headers: { ...corsHeaders(), "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(origin), "Content-Type": "application/json" },
       });
     }
 
     return new Response(JSON.stringify({ success: true, verified: true }), {
-      headers: { ...corsHeaders(), "Content-Type": "application/json" },
+      headers: { ...getCorsHeaders(origin), "Content-Type": "application/json" },
     });
   }
 
   return new Response(JSON.stringify({ error: "Unknown action. Use send-code or verify" }), {
     status: 400,
-    headers: { ...corsHeaders(), "Content-Type": "application/json" },
+    headers: { ...getCorsHeaders(origin), "Content-Type": "application/json" },
   });
 });

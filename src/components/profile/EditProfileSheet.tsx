@@ -6,12 +6,25 @@ import { toast } from "sonner";
 import { uploadAvatar } from "@/hooks/useProfile";
 import { supabase } from "@/integrations/supabase/client";
 
+interface ProfileData {
+  display_name?: string | null;
+  username?: string | null;
+  bio?: string | null;
+  website?: string | null;
+  gender?: string | null;
+  category?: string | null;
+  contact_email?: string | null;
+  contact_phone?: string | null;
+  is_private?: boolean;
+  avatar_url?: string | null;
+}
+
 interface EditProfileSheetProps {
   isOpen: boolean;
   onClose: () => void;
-  profile: any;
+  profile: ProfileData | null;
   userId: string;
-  onSaved: (updated: any) => void;
+  onSaved: (updated: ProfileData) => void;
 }
 
 export function EditProfileSheet({ isOpen, onClose, profile, userId, onSaved }: EditProfileSheetProps) {
@@ -40,7 +53,7 @@ export function EditProfileSheet({ isOpen, onClose, profile, userId, onSaved }: 
     try {
       const url = await uploadAvatar(userId, file);
       setAvatar(url);
-      await (supabase as any).from("profiles").update({ avatar_url: url }).eq("user_id", userId);
+      await supabase.from("profiles").update({ avatar_url: url }).eq("user_id", userId);
       toast.success("Фото профиля обновлено");
     } catch {
       toast.error("Не удалось загрузить фото");

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { ArrowLeft, Check } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase, dbLoose } from '@/lib/supabase';
 import { toast } from 'sonner';
 
 const TOPICS = [
@@ -37,7 +37,7 @@ export default function ContentPreferencesPage() {
     void (async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-      const { data } = await (supabase as any)
+      const { data } = await dbLoose
         .from('content_preferences')
         .select('topics')
         .eq('user_id', user.id)
@@ -69,7 +69,7 @@ export default function ContentPreferencesPage() {
       const topics: Record<string, boolean> = {};
       TOPICS.forEach(t => { topics[t.id] = selected.has(t.id); });
 
-      await (supabase as any)
+      await dbLoose
         .from('content_preferences')
         .upsert({ user_id: user.id, topics, updated_at: new Date().toISOString() });
 

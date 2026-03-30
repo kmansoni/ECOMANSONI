@@ -9,6 +9,7 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { VerifiedBadge } from "@/components/ui/verified-badge";
 import { fetchUserBriefMap, resolveUserBrief } from "@/lib/users/userBriefs";
+import { logger } from "@/lib/logger";
 
 interface FollowUser {
   id: string;
@@ -43,22 +44,22 @@ export function FollowersSheet({ isOpen, onClose, userId, type, title }: Followe
 
       if (type === "followers") {
         // Get users who follow this profile
-        const { data: followersData, error } = await (supabase as any)
+        const { data: followersData, error } = await supabase
           .from("followers")
           .select("follower_id")
           .eq("following_id", userId);
 
         if (error) throw error;
-        userIds = (followersData || []).map((f: any) => f.follower_id);
+        userIds = (followersData || []).map((f) => f.follower_id);
       } else {
         // Get users this profile follows
-        const { data: followingData, error } = await (supabase as any)
+        const { data: followingData, error } = await supabase
           .from("followers")
           .select("following_id")
           .eq("follower_id", userId);
 
         if (error) throw error;
-        userIds = (followingData || []).map((f: any) => f.following_id);
+        userIds = (followingData || []).map((f) => f.following_id);
       }
 
       userIds = Array.from(new Set(userIds.filter(Boolean)));
@@ -69,7 +70,7 @@ export function FollowersSheet({ isOpen, onClose, userId, type, title }: Followe
         return;
       }
 
-      const briefMap = await fetchUserBriefMap(userIds, supabase as any);
+      const briefMap = await fetchUserBriefMap(userIds);
 
       const { data: profiles, error: profilesError } = await supabase
         .from("profiles")
@@ -81,15 +82,15 @@ export function FollowersSheet({ isOpen, onClose, userId, type, title }: Followe
       // Check which users the current user follows
       let currentUserFollowing: string[] = [];
       if (currentUser) {
-        const { data: followingData } = await (supabase as any)
+        const { data: followingData } = await supabase
           .from("followers")
           .select("following_id")
           .eq("follower_id", currentUser.id);
         
-        currentUserFollowing = (followingData || []).map((f: any) => f.following_id);
+        currentUserFollowing = (followingData || []).map((f) => f.following_id);
       }
 
-      const profileByUserId = new Map<string, any>();
+      const profileByUserId = new Map<string, { id: string; user_id: string; verified: boolean | null }>();
       for (const p of profiles || []) {
         if (p?.user_id) {
           profileByUserId.set(String(p.user_id), p);
@@ -111,7 +112,7 @@ export function FollowersSheet({ isOpen, onClose, userId, type, title }: Followe
 
       setUsers(usersWithStatus);
     } catch (error) {
-      console.error("Error fetching users:", error);
+      logger.error('[FollowersSheet] Error fetching users', { error });
       toast.error("Не удалось загрузить список");
     } finally {
       setLoading(false);
@@ -138,7 +139,7 @@ export function FollowersSheet({ isOpen, onClose, userId, type, title }: Followe
 
     try {
       if (isCurrentlyFollowing) {
-        await (supabase as any)
+        await supabase
           .from("followers")
           .delete()
           .eq("follower_id", currentUser.id)
@@ -149,7 +150,7 @@ export function FollowersSheet({ isOpen, onClose, userId, type, title }: Followe
         ));
         toast.success("Вы отписались");
       } else {
-        await (supabase as any)
+        await supabase
           .from("followers")
           .insert({ follower_id: currentUser.id, following_id: targetUserId });
 
@@ -159,7 +160,7 @@ export function FollowersSheet({ isOpen, onClose, userId, type, title }: Followe
         toast.success("Вы подписались");
       }
     } catch (error) {
-      console.error("Follow toggle error:", error);
+      logger.error('[FollowersSheet] Follow toggle error', { error });
       toast.error("Не удалось выполнить действие");
     } finally {
       setFollowingInProgress(null);

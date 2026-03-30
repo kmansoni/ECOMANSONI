@@ -22,23 +22,20 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { handleCors, getCorsHeaders } from "../_shared/utils.ts";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-const CORS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
-
-function json(body: unknown, status = 200) {
+function json(body: unknown, status = 200, req?: Request) {
+  const origin = req?.headers.get("origin") ?? null;
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...CORS, "Content-Type": "application/json" },
+    headers: { ...getCorsHeaders(origin), "Content-Type": "application/json" },
   });
 }
 
-function err(msg: string, status = 400) {
-  return json({ error: msg }, status);
+function err(msg: string, status = 400, req?: Request) {
+  return json({ error: msg }, status, req);
 }
 
 function getServiceClient() {
@@ -170,17 +167,18 @@ async function sendNewDeviceNotification(payload: {
 // ─── Main handler ─────────────────────────────────────────────────────────────
 
 serve(async (req: Request) => {
-  if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
-  if (req.method !== "POST") return err("Method not allowed", 405);
+  const corsResponse = handleCors(req);
+  if (corsResponse) return corsResponse;
+  if (req.method !== "POST") return err("Method not allowed", 405, req);
 
   const userId = await getUserIdFromJWT(req);
-  if (!userId) return err("Unauthorized", 401);
+  if (!userId) return err("Unauthorized", 401, req);
 
   let body: { fingerprint?: string; userAgent?: string } = {};
   try {
     body = await req.json();
   } catch {
-    return err("Invalid JSON");
+    return err("Invalid JSON", 400, req);
   }
 
   const fingerprint = body.fingerprint ?? "";
@@ -244,5 +242,5 @@ serve(async (req: Request) => {
       .eq("device_fingerprint", fingerprint);
   }
 
-  return json({ isNewDevice: deviceIsNew, city: geo.city, country: geo.country });
+  return json({ isNewDevice: deviceIsNew, city: geo.city, country: geo.country }, 200, req);
 });

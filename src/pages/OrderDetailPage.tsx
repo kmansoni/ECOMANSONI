@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Package, MapPin, Loader2, CheckCircle2, Clock, Truck, XCircle } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase, dbLoose } from '@/lib/supabase';
 import { toast } from 'sonner';
 
 type OrderStatus = 'pending' | 'confirmed' | 'shipped' | 'delivered' | 'cancelled';
@@ -35,13 +35,13 @@ export default function OrderDetailPage() {
     void (async () => {
       setLoading(true);
       try {
-        const { data, error } = await (supabase as any)
+        const { data, error } = await dbLoose
           .from('shop_orders')
           .select('*')
           .eq('id', id)
           .single();
         if (error) throw error;
-        setOrder(data as ShopOrder);
+        setOrder(data as unknown as ShopOrder);
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : 'Ошибка загрузки заказа';
         toast.error(msg);

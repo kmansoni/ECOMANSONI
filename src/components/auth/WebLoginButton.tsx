@@ -13,6 +13,7 @@
  * - state parameter generated client-side (CSRF guard)
  * - After popup posts data, caller should verify via /web-login-widget/verify
  */
+import { logger } from "@/lib/logger";
 
 import { useCallback, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
@@ -129,7 +130,7 @@ export function WebLoginButton({
       // subdomain or a compromised script) could post a crafted message with a
       // valid type but different auth data, hijacking the session.
       if (event.data.state !== stateRef.current) {
-        console.error("WebLoginButton: state mismatch — possible CSRF; ignoring message");
+        logger.error("[WebLoginButton] state mismatch — possible CSRF; ignoring message");
         return;
       }
 

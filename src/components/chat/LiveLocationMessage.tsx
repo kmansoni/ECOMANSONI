@@ -15,7 +15,7 @@
 import { useState, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { MapPin, Navigation, Timer, Square } from "lucide-react";
-import { supabase } from "@/lib/supabase";
+import { supabase, dbLoose } from "@/lib/supabase";
 import { logger } from "@/lib/logger";
 
 interface LiveLocationMessageProps {
@@ -95,7 +95,7 @@ export function LiveLocationMessage({
           // Server-side RLS on live_locations ensures only the authenticated sender
           // can upsert their own record (checked against auth.uid()).
           try {
-            await (supabase as any)
+            await dbLoose
               .from("live_locations")
               .upsert({
                 message_id: messageId,
@@ -134,7 +134,7 @@ export function LiveLocationMessage({
 
     // Subscribe to INSERT/UPDATE on live_locations filtered by message_id.
     // Server RLS ensures subscription only delivers records the user is authorized to see.
-    const channel = (supabase as any)
+    const channel = supabase
       .channel(`live_location:${messageId}`)
       .on(
         "postgres_changes",
@@ -155,7 +155,7 @@ export function LiveLocationMessage({
       .subscribe();
 
     return () => {
-      (supabase as any).removeChannel(channel);
+      supabase.removeChannel(channel);
     };
   }, [isSender, expired, messageId]);
 

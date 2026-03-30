@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import logo from "@/assets/logo.png";
 import { RegistrationModal } from "@/components/auth/RegistrationModal";
 import { supabase } from "@/lib/supabase";
+import { sleep } from "@/lib/utils/sleep";
 import { RecommendedUsersModal } from "@/components/profile/RecommendedUsersModal";
 import { setGuestMode } from "@/lib/demo/demoMode";
 import { getVerifyEmailOtpUrls, getSendEmailOtpUrls, getAnonHeaders } from "@/lib/auth/backendEndpoints";
@@ -27,20 +28,35 @@ const AUTH_TIMEOUT_MS = 20_000;
 const AUTH_RETRY_ATTEMPTS = 2;
 const AUTH_RETRY_DELAY_MS = 700;
 
+type ApiPayload = Record<string, unknown>;
+
+function asApiPayload(value: unknown): ApiPayload | null {
+  return value && typeof value === "object" ? (value as ApiPayload) : null;
+}
+
+function payloadString(payload: ApiPayload | null, key: string): string | undefined {
+  const value = payload?.[key];
+  return typeof value === "string" ? value : undefined;
+}
+
+function payloadBoolean(payload: ApiPayload | null, key: string): boolean {
+  return Boolean(payload?.[key]);
+}
+
 async function fetchJsonWithTimeout(
   input: RequestInfo | URL,
   init: RequestInit,
   timeoutMs: number,
   label: string,
-): Promise<{ response: Response; data: any | null }> {
+): Promise<{ response: Response; data: ApiPayload | null }> {
   const controller = new AbortController();
   const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(input, { ...init, signal: controller.signal });
     const text = await response.text();
-    let data: any | null = null;
+    let data: ApiPayload | null = null;
     try {
-      data = text ? JSON.parse(text) : null;
+      data = asApiPayload(text ? JSON.parse(text) : null);
     } catch (_parseError) {
       data = null;
     }
@@ -68,16 +84,12 @@ function isRetryableAuthTransportError(error: unknown): boolean {
   );
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
-}
-
 async function fetchJsonWithRetry(
   input: RequestInfo | URL,
   init: RequestInit,
   timeoutMs: number,
   label: string,
-): Promise<{ response: Response; data: any | null }> {
+): Promise<{ response: Response; data: ApiPayload | null }> {
   let lastError: unknown = null;
   for (let attempt = 1; attempt <= AUTH_RETRY_ATTEMPTS; attempt += 1) {
     try {
@@ -215,7 +227,7 @@ export function AuthPage() {
 
         const sendUrls = getSendEmailOtpUrls();
         let response: Response | null = null;
-        let data: any | null = null;
+        let data: ApiPayload | null = null;
         let lastError: unknown = null;
 
         for (const sendUrl of sendUrls) {
@@ -249,21 +261,21 @@ export function AuthPage() {
           throw (lastError || new Error("Failed to reach send-email-otp endpoint"));
         }
 
-        if (response.status === 404 && data?.error === "not_found") {
+        if (response.status === 404 && payloadString(data, "error") === "not_found") {
           toast.error("Аккаунт не найден", { description: "Пройдите регистрацию для создания аккаунта" });
           setMode("register");
           return;
         }
 
         if (!response.ok) {
-          const errMsg = data?.message || data?.error || `HTTP ${response.status}`;
+          const errMsg = payloadString(data, "message") || payloadString(data, "error") || `HTTP ${response.status}`;
           toast.error("Не удалось отправить код", { description: errMsg });
           return;
         }
 
         // Server returns { success, maskedEmail, email }
-        const serverEmail = data?.email || "";
-        const masked = data?.maskedEmail || "";
+        const serverEmail = payloadString(data, "email") || "";
+        const masked = payloadString(data, "maskedEmail") || "";
 
         setOtpEmail(serverEmail);
         setMaskedEmail(masked);
@@ -309,7 +321,7 @@ export function AuthPage() {
           }
         }
         let response: Response | null = null;
-        let data: any | null = null;
+        let data: ApiPayload | null = null;
         let lastError: unknown = null;
 
         for (const verifyUrl of verifyUrls) {
@@ -341,18 +353,25 @@ export function AuthPage() {
           throw (lastError || new Error("Failed to reach verify-email-otp endpoint"));
         }
 
-        if (!response.ok || !data?.ok) {
-          const errMsg = data?.message || data?.error || `HTTP ${response.status}`;
+        if (!response.ok || !payloadBoolean(data, "ok")) {
+          const errMsg = payloadString(data, "message") || payloadString(data, "error") || `HTTP ${response.status}`;
           logger.error("[AuthPage] verify-email-otp failed", { error: errMsg, email: verifyEmail });
           toast.error("Неверный или просроченный код", { description: errMsg });
+          return;
+        }
+
+        const accessToken = payloadString(data, "accessToken");
+        const refreshToken = payloadString(data, "refreshToken");
+        if (!accessToken || !refreshToken) {
+          toast.error("Не удалось создать сессию", { description: "Ответ сервера не содержит токены" });
           return;
         }
 
         // Set session from server-returned tokens
         const { error: sessionError } = await withTimeout(
           supabase.auth.setSession({
-            access_token: data.accessToken,
-            refresh_token: data.refreshToken,
+            access_token: accessToken,
+            refresh_token: refreshToken,
           }),
           8000,
           "setSession",
@@ -364,7 +383,7 @@ export function AuthPage() {
           return;
         }
 
-        const isNewUser = data.isNewUser || isRegisterFlowRef.current;
+        const isNewUser = payloadBoolean(data, "isNewUser") || isRegisterFlowRef.current;
 
         if (isNewUser) {
           toast.success("Заполните профиль для завершения регистрации");
@@ -404,7 +423,7 @@ export function AuthPage() {
 
         const sendUrls = getSendEmailOtpUrls();
         let response: Response | null = null;
-        let data: any | null = null;
+        let data: ApiPayload | null = null;
         let lastError: unknown = null;
 
         for (const sendUrl of sendUrls) {
@@ -438,7 +457,7 @@ export function AuthPage() {
         }
 
         if (!response.ok) {
-          const errMsg = data?.message || data?.error || `HTTP ${response.status}`;
+          const errMsg = payloadString(data, "message") || payloadString(data, "error") || `HTTP ${response.status}`;
           toast.error("Не удалось переотправить код", { description: errMsg });
           return;
         }
@@ -484,7 +503,7 @@ export function AuthPage() {
 
         const sendUrls = getSendEmailOtpUrls();
         let response: Response | null = null;
-        let data: any | null = null;
+        let data: ApiPayload | null = null;
         let lastError: unknown = null;
 
         for (const sendUrl of sendUrls) {
@@ -519,7 +538,7 @@ export function AuthPage() {
         }
 
         if (!response.ok) {
-          const errMsg = data?.message || data?.error || `HTTP ${response.status}`;
+          const errMsg = payloadString(data, "message") || payloadString(data, "error") || `HTTP ${response.status}`;
           toast.error("Не удалось отправить код", { description: errMsg });
           return;
         }

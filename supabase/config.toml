@@ -37,6 +37,9 @@ verify_jwt = true
 [functions.aria-chat]
 verify_jwt = true
 
+[functions.aria-memory]
+verify_jwt = true
+
 [functions.admin-api]
 verify_jwt = true
 

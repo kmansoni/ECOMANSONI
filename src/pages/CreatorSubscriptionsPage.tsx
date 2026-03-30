@@ -10,12 +10,12 @@
  * - Монетизация: 70% автору, 30% платформе (стандарт)
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Crown, Star, Users, DollarSign, Lock, Check, ChevronRight, ArrowLeft } from "lucide-react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { supabase } from "@/integrations/supabase/client";
+import { dbLoose } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -39,6 +39,20 @@ interface CreatorProfile {
   subscriber_count: number;
 }
 
+interface CreatorSubscriptionRow {
+  id?: string;
+  started_at?: string;
+  price_monthly?: number | null;
+  profiles?: {
+    username?: string | null;
+    avatar_url?: string | null;
+  };
+}
+
+interface ErrorWithMessage {
+  message?: string;
+}
+
 export default function CreatorSubscriptionsPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -47,21 +61,17 @@ export default function CreatorSubscriptionsPage() {
 
   const [creator, setCreator] = useState<CreatorProfile | null>(null);
   const [tiers, setTiers] = useState<SubscriptionTier[]>([]);
-  const [mySubscription, setMySubscription] = useState<any>(null);
-  const [mySubscribers, setMySubscribers] = useState<any[]>([]);
+  const [mySubscription, setMySubscription] = useState<CreatorSubscriptionRow | null>(null);
+  const [mySubscribers, setMySubscribers] = useState<CreatorSubscriptionRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [subscribing, setSubscribing] = useState<string | null>(null);
   const [totalEarnings, setTotalEarnings] = useState(0);
 
   const targetId = creatorId ?? user?.id;
 
-  useEffect(() => {
-    if (targetId) loadData(targetId);
-  }, [targetId]);
-
-  const loadData = async (id: string) => {
+  const loadData = useCallback(async (id: string) => {
     setIsLoading(true);
-    const db = supabase as any;
+    const db = dbLoose;
 
     // Профиль
     const { data: profile } = await db
@@ -70,7 +80,16 @@ export default function CreatorSubscriptionsPage() {
       .eq("id", id)
       .single();
 
-    if (profile) setCreator({ ...profile, subscriber_count: 0 });
+    if (profile) {
+      const profileRow = profile as { id?: unknown; username?: unknown; avatar_url?: unknown; bio?: unknown };
+      setCreator({
+        id: String(profileRow.id ?? ""),
+        username: String(profileRow.username ?? ""),
+        avatar_url: typeof profileRow.avatar_url === "string" ? profileRow.avatar_url : null,
+        bio: typeof profileRow.bio === "string" ? profileRow.bio : null,
+        subscriber_count: 0,
+      });
+    }
 
     // Тарифы (пока используем дефолтный)
     const defaultTiers: SubscriptionTier[] = [
@@ -125,20 +144,24 @@ export default function CreatorSubscriptionsPage() {
         .eq("status", "active")
         .order("started_at", { ascending: false })
         .limit(20);
-      setMySubscribers(subs ?? []);
+      setMySubscribers((subs ?? []) as CreatorSubscriptionRow[]);
 
       // Подсчёт заработка
-      const total = (subs ?? []).reduce((sum: number, s: any) => sum + (s.price_monthly ?? 0), 0);
+      const total = ((subs ?? []) as CreatorSubscriptionRow[]).reduce((sum: number, s) => sum + (s.price_monthly ?? 0), 0);
       setTotalEarnings(total);
     }
 
     setIsLoading(false);
-  };
+  }, [isOwnPage, user]);
+
+  useEffect(() => {
+    if (targetId) void loadData(targetId);
+  }, [targetId, loadData]);
 
   const handleSubscribe = async (tier: SubscriptionTier) => {
     if (!user || !targetId) return;
     setSubscribing(tier.id);
-    const db = supabase as any;
+    const db = dbLoose;
 
     try {
       const { error } = await db.from("creator_subscriptions").upsert(
@@ -155,8 +178,9 @@ export default function CreatorSubscriptionsPage() {
       if (error) throw error;
       toast.success(`Подписка оформлена! ${tier.price_monthly}$/мес`);
       setMySubscription({ price_monthly: tier.price_monthly });
-    } catch (err: any) {
-      toast.error(err.message ?? "Ошибка оформления подписки");
+    } catch (err) {
+      const apiError = err as ErrorWithMessage;
+      toast.error(apiError.message ?? "Ошибка оформления подписки");
     } finally {
       setSubscribing(null);
     }
@@ -164,7 +188,7 @@ export default function CreatorSubscriptionsPage() {
 
   const handleUnsubscribe = async () => {
     if (!user || !targetId) return;
-    const db = supabase as any;
+    const db = dbLoose;
     const { error } = await db
       .from("creator_subscriptions")
       .update({ status: "cancelled", cancelled_at: new Date().toISOString() })

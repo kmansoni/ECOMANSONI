@@ -1,5 +1,6 @@
 import { getOrCreateDeviceId } from "@/lib/multiAccount/vault";
 import { upsertDeviceToken } from "./deviceTokens";
+import { logger } from "@/lib/logger";
 
 export type NativePushTokenDetail = {
   token: string;
@@ -47,7 +48,7 @@ export function startAutoPushTokenRegistration(): () => void {
       lastRegisteredKey = dedupeKey;
       localStorage.setItem(PUSH_TOKEN_CACHE_KEY, JSON.stringify(detail));
     } catch (error) {
-      console.warn("[Push] upsertDeviceToken failed:", error);
+      logger.warn("[Push] upsertDeviceToken failed", { error });
     }
   };
 
@@ -84,7 +85,7 @@ export function startAutoPushTokenRegistration(): () => void {
       });
     });
     push.addListener("registrationError", (err: unknown) => {
-      console.warn("[Push] native registration error:", err);
+      logger.warn("[Push] native registration error", { error: err });
     });
     void (async () => {
       try {
@@ -93,7 +94,7 @@ export function startAutoPushTokenRegistration(): () => void {
           await push.register();
         }
       } catch (error) {
-        console.warn("[Push] request/register failed:", error);
+        logger.warn("[Push] request/register failed", { error });
       }
     })();
   }

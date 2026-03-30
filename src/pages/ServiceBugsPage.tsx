@@ -2,10 +2,11 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, AlertTriangle, Bug, CheckCircle2, RefreshCw, Wrench } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { supabase } from "@/integrations/supabase/client";
+import { dbLoose } from "@/lib/supabase";
 import { useAdminMe } from "@/hooks/useAdminMe";
 import { adminApi, hasScope, isOwner } from "@/lib/adminApi";
 import { toast } from "sonner";
+import { logger } from "@/lib/logger";
 
 type BugStatus = "open" | "in_progress" | "fixed";
 
@@ -23,6 +24,21 @@ type ServiceBug = {
   sortOrder?: number;
   updatedAt?: string;
 };
+
+interface ServiceBugRow {
+  id: string | number;
+  slug?: string | null;
+  service?: string | null;
+  title?: string | null;
+  symptoms?: unknown;
+  root_cause?: string | null;
+  tech_notes?: unknown;
+  checks?: unknown;
+  workaround?: string | null;
+  status?: string | null;
+  sort_order?: number | null;
+  updated_at?: string | null;
+}
 
 const FALLBACK_BUGS: ServiceBug[] = [
   {
@@ -184,7 +200,7 @@ export function ServiceBugsPage() {
     setErrorText("");
 
     try {
-      const { data, error } = await (supabase as any)
+      const { data, error } = await dbLoose
         .from("service_bugs")
         .select("id, slug, service, title, symptoms, root_cause, tech_notes, checks, workaround, status, sort_order, updated_at")
         .order("sort_order", { ascending: true })
@@ -192,8 +208,8 @@ export function ServiceBugsPage() {
 
       if (error) throw error;
 
-      const rows = Array.isArray(data) ? data : [];
-      const normalized: ServiceBug[] = rows.map((row: any) => ({
+      const rows = Array.isArray(data) ? (data as unknown as ServiceBugRow[]) : [];
+      const normalized: ServiceBug[] = rows.map((row) => ({
         id: String(row.id),
         slug: row.slug ? String(row.slug) : undefined,
         service: String(row.service ?? "Unknown"),
@@ -316,8 +332,9 @@ export function ServiceBugsPage() {
       resetEditor();
       await loadBugs();
     } catch (err) {
+      logger.error("[ServiceBugsPage] save failed", { error: err });
       toast.error("Не удалось сохранить", {
-        description: err instanceof Error ? err.message : String(err),
+        description: "Попробуйте снова.",
       });
     } finally {
       setSaving(false);
@@ -335,8 +352,9 @@ export function ServiceBugsPage() {
       if (editingId === id) resetEditor();
       await loadBugs();
     } catch (err) {
+      logger.error("[ServiceBugsPage] delete failed", { error: err });
       toast.error("Не удалось удалить", {
-        description: err instanceof Error ? err.message : String(err),
+        description: "Попробуйте снова.",
       });
     } finally {
       setSaving(false);

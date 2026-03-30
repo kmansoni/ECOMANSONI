@@ -12,6 +12,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { logger } from "@/lib/logger";
 import { fetchUserBriefMap, resolveUserBrief } from "@/lib/users/userBriefs";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -205,7 +206,7 @@ export function useSupergroup(conversationId: string): UseSupergroup {
         .single();
 
       if (err) {
-        setError(err.message);
+        setError("Не удалось обновить настройки супергруппы. Попробуйте снова.");
         throw new Error(err.message);
       }
       setSettings(data as SupergroupSettings);
@@ -226,7 +227,7 @@ export function useSupergroup(conversationId: string): UseSupergroup {
         .eq("id", requestId);
 
       if (err) {
-        setError(err.message);
+        setError("Не удалось одобрить заявку. Попробуйте снова.");
         throw new Error(err.message);
       }
       // DB trigger handles member insertion
@@ -248,7 +249,7 @@ export function useSupergroup(conversationId: string): UseSupergroup {
         .eq("id", requestId);
 
       if (err) {
-        setError(err.message);
+        setError("Не удалось отклонить заявку. Попробуйте снова.");
         throw new Error(err.message);
       }
     },
@@ -293,7 +294,7 @@ export function useSupergroup(conversationId: string): UseSupergroup {
       .rpc("convert_group_to_supergroup", { p_conversation_id: conversationId });
 
     if (err) {
-      setError(err.message);
+      setError("Не удалось преобразовать группу в супергруппу. Попробуйте снова.");
       throw new Error(err.message);
     }
 
@@ -363,7 +364,7 @@ export function useSupergroup(conversationId: string): UseSupergroup {
 
       setMembers(result);
     } catch (e) {
-      console.error("[useSupergroup] loadMembers failed", e);
+      logger.error("[useSupergroup] loadMembers failed", { error: e });
     } finally {
       setMembersLoading(false);
     }
@@ -379,7 +380,7 @@ export function useSupergroup(conversationId: string): UseSupergroup {
         .eq("user_id", userId);
 
       if (err) {
-        setError(err.message);
+        setError("Не удалось обновить роль участника. Попробуйте снова.");
         throw new Error(err.message);
       }
       setMembers(prev => prev.map(m => m.user_id === userId ? { ...m, role } : m));
@@ -405,7 +406,7 @@ export function useSupergroup(conversationId: string): UseSupergroup {
         .upsert(payload, { onConflict: "conversation_id,user_id" });
 
       if (err) {
-        setError(err.message);
+        setError("Не удалось обновить права участника. Попробуйте снова.");
         throw new Error(err.message);
       }
 
@@ -433,7 +434,7 @@ export function useSupergroup(conversationId: string): UseSupergroup {
         .eq("user_id", userId);
 
       if (err) {
-        setError(err.message);
+        setError("Не удалось удалить участника. Попробуйте снова.");
         throw new Error(err.message);
       }
       setMembers(prev => prev.filter(m => m.user_id !== userId));

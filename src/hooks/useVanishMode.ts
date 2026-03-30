@@ -1,17 +1,21 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import { logger } from '@/lib/logger';
+import { VANISH_DELETE_DELAY_MS } from '@/lib/timing';
 
 const VANISH_KEY_PREFIX = 'vanish_mode_';
 
 export function useVanishMode(conversationId: string) {
   const { user } = useAuth();
   const storageKey = `${VANISH_KEY_PREFIX}${conversationId}`;
+  const deletingRef = useRef(false);
 
   const [isVanishMode, setIsVanishMode] = useState<boolean>(() => {
     try {
       return localStorage.getItem(storageKey) === 'true';
-    } catch {
+    } catch (err) {
+      logger.warn('[useVanishMode] localStorage read failed', { conversationId, error: err });
       return false;
     }
   });
@@ -21,46 +25,80 @@ export function useVanishMode(conversationId: string) {
       const next = !prev;
       try {
         localStorage.setItem(storageKey, String(next));
-      } catch {
-        // ignore
+      } catch (err) {
+        logger.warn('[useVanishMode] localStorage write failed', { storageKey, error: err });
       }
+      logger.info('[useVanishMode] Vanish mode toggled', { conversationId, enabled: next });
       return next;
     });
-  }, [storageKey]);
+  }, [storageKey, conversationId]);
 
   // Удаляем прочитанные сообщения если Vanish Mode активен
   useEffect(() => {
     if (!isVanishMode || !user) return;
 
     const deleteReadMessages = async () => {
+      if (deletingRef.current) return;
+      deletingRef.current = true;
+
       try {
-        // Получаем сообщения которые прочитаны обоими участниками
-        const { data: messages } = await (supabase as any)
+        // Получаем сообщения которые прочитаны обоими участниками (read_at не null)
+        // и которые отправлены НЕ текущим пользователем (чтобы удалять только прочитанные)
+        const { data: messages, error: fetchError } = await (supabase as any)
           .from('messages')
-          .select('id, read_at')
+          .select('id, read_at, sender_id')
           .eq('conversation_id', conversationId)
           .not('read_at', 'is', null);
 
+        if (fetchError) {
+          logger.error('[useVanishMode] Ошибка получения сообщений', {
+            conversationId,
+            code: fetchError.code,
+            message: fetchError.message,
+          });
+          return;
+        }
+
         if (!messages || messages.length === 0) return;
 
-        const readIds = (messages as { id: string; read_at: string | null }[])
+        // Фильтруем: удаляем только действительно прочитанные сообщения
+        const readIds = (messages as { id: string; read_at: string | null; sender_id: string }[])
           .filter((m) => m.read_at != null)
           .map((m) => m.id);
 
-        if (readIds.length > 0) {
-          await (supabase as any)
-            .from('messages')
-            .delete()
-            .in('id', readIds)
-            .eq('conversation_id', conversationId);
+        if (readIds.length === 0) return;
+
+        const { error: deleteError } = await (supabase as any)
+          .from('messages')
+          .delete()
+          .in('id', readIds)
+          .eq('conversation_id', conversationId);
+
+        if (deleteError) {
+          logger.error('[useVanishMode] Ошибка удаления сообщений', {
+            conversationId,
+            count: readIds.length,
+            code: deleteError.code,
+            message: deleteError.message,
+          });
+          return;
         }
-      } catch {
-        // ignore — таблица может иметь другую схему
+
+        logger.debug('[useVanishMode] Удалено vanish-сообщений', {
+          conversationId,
+          count: readIds.length,
+        });
+      } catch (err) {
+        logger.error('[useVanishMode] Unexpected error in deleteReadMessages', {
+          conversationId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      } finally {
+        deletingRef.current = false;
       }
     };
 
-    // Запускаем удаление через 3 секунды после активации
-    const timer = setTimeout(deleteReadMessages, 3000);
+    const timer = setTimeout(deleteReadMessages, VANISH_DELETE_DELAY_MS);
     return () => clearTimeout(timer);
   }, [isVanishMode, conversationId, user]);
 

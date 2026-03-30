@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
+import { logger } from "@/lib/logger";
 
 export interface ArchivedStory {
   story_id: string;
@@ -40,7 +41,7 @@ export function useStoryArchive() {
       setArchivedStories(stories);
       return stories;
     } catch (err) {
-      console.error("Error fetching archived stories:", err);
+      logger.error("[useStoryArchive] Error fetching archived stories", { error: err });
       return [];
     } finally {
       setLoading(false);

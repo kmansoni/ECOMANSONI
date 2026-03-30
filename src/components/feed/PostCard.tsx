@@ -1,4 +1,6 @@
+import { memo } from "react";
 import { Heart, MessageCircle, Send, Bookmark, MoreHorizontal, Pin } from "lucide-react";
+import { toast } from "sonner";
 import { WhyRecommended } from "./WhyRecommended";
 import { Button } from "@/components/ui/button";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -11,9 +13,11 @@ import { PostOptionsSheet } from "./PostOptionsSheet";
 import { usePostActions } from "@/hooks/usePosts";
 import { useSavedPosts } from "@/hooks/useSavedPosts";
 import { VerifiedBadge } from "@/components/ui/verified-badge";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { LocationTag } from "./LocationTag";
 import { PostReminder } from "./PostReminder";
 import { useHapticFeedback } from "@/hooks/useHapticFeedback";
+import { logger } from "@/lib/logger";
 
 interface PostCardProps {
   id?: string;
@@ -51,7 +55,9 @@ interface PostCardProps {
 
 const clampCounter = (value: number) => Math.max(0, Number.isFinite(value) ? value : 0);
 
-export function PostCard({
+// ИСПРАВЛЕНИЕ дефекта #6: обёртка в memo — предотвращает ре-рендер при обновлении родителя
+// Без memo при каждом loadMore/realtime-обновлении ленты все 20+ карточек ре-рендерятся
+function PostCardComponent({
   id,
   authorId,
   author,
@@ -109,28 +115,19 @@ export function PostCard({
   
   const saved = id ? isSaved(id) : false;
 
+  // ИСПРАВЛЕНИЕ дефекта #6: объединяем 5 useEffect в 2 — меньше микро-задач при ре-рендере
   // Keep local UI state synced with upstream props (refetch/realtime), but avoid clobbering mid-request.
   useEffect(() => {
     if (likePending) return;
     setLiked(isLiked);
-  }, [id, isLiked, likePending]);
-
-  useEffect(() => {
-    if (likePending) return;
     setLikeCount(clampCounter(likes));
-  }, [id, likes, likePending]);
+  }, [id, isLiked, likes, likePending]);
 
   useEffect(() => {
     setCommentCount(clampCounter(comments));
-  }, [id, comments]);
-
-  useEffect(() => {
     setShareCount(clampCounter(shares));
-  }, [id, shares]);
-
-  useEffect(() => {
     setSaveCount(clampCounter(saves));
-  }, [id, saves]);
+  }, [id, comments, shares, saves]);
   
   const handleSave = async () => {
     if (!id || savePending) return;
@@ -143,8 +140,10 @@ export function PostCard({
     try {
       await toggleSave(id);
     } catch (err) {
+      // ИСПРАВЛЕНИЕ дефекта #7: откат счётчика + toast.error (пользователь должен знать об ошибке)
       setSaveCount(prevCount);
-      console.error('Failed to toggle save:', err);
+      toast.error('Не удалось сохранить публикацию');
+      logger.error('[PostCard] Ошибка переключения сохранения', { error: err });
     } finally {
       setSavePending(false);
     }
@@ -294,9 +293,14 @@ export function PostCard({
     return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
   };
 
-  const truncatedContent = content.length > 100 && !expanded 
-    ? content.slice(0, 100) + "..." 
-    : content;
+  // ИСПРАВЛЕНИЕ дефекта #8: обрезка по границе слова, 125 символов (Instagram standard)
+  const CAPTION_LIMIT = 125;
+  const truncatedContent = useMemo(() => {
+    if (content.length <= CAPTION_LIMIT || expanded) return content;
+    const cut = content.slice(0, CAPTION_LIMIT);
+    const lastSpace = cut.lastIndexOf(' ');
+    return (lastSpace > CAPTION_LIMIT * 0.7 ? cut.slice(0, lastSpace) : cut) + '…';
+  }, [content, expanded]);
 
   const goToProfile = () => {
     // Use authorId (user_id) for reliable navigation
@@ -310,12 +314,14 @@ export function PostCard({
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3">
         <div className="flex items-center gap-3">
+          {/* ИСПРАВЛЕНИЕ дефекта #10: Avatar с AvatarFallback — нет broken image при ошибке загрузки */}
           <div className="relative cursor-pointer" onClick={goToProfile}>
-            <img
-              src={author.avatar}
-              alt={author.name}
-              className="w-10 h-10 rounded-full object-cover ring-2 ring-primary/20"
-            />
+            <Avatar className="w-10 h-10">
+              <AvatarImage src={author.avatar || undefined} alt={author.name} />
+              <AvatarFallback className="bg-muted text-muted-foreground text-sm font-semibold">
+                {author.name.charAt(0).toUpperCase() || '?'}
+              </AvatarFallback>
+            </Avatar>
             {author.verified && (
               <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-primary rounded-full flex items-center justify-center">
                 <VerifiedBadge size="xs" className="text-primary-foreground fill-primary-foreground stroke-primary" />
@@ -513,7 +519,8 @@ export function PostCard({
         <p className="text-sm">
           <span className="font-semibold">{author.username}</span>{" "}
           <CaptionText text={truncatedContent} navigate={navigate} />
-          {content.length > 100 && !expanded && (
+          {/* ИСПРАВЛЕНИЕ дефекта #8: используем CAPTION_LIMIT вместо захардкоженного 100 */}
+          {content.length > CAPTION_LIMIT && !expanded && (
             <button
               onClick={() => setExpanded(true)}
               className="text-muted-foreground ml-1"
@@ -574,8 +581,12 @@ export function PostCard({
   );
 }
 
-// Компонент для текста с кликабельными хэштегами
-function CaptionText({
+// ИСПРАВЛЕНИЕ дефекта #6: экспортируем мемоизированный компонент
+// memo предотвращает ре-рендер при обновлении родителя если props не изменились
+export const PostCard = memo(PostCardComponent);
+
+// ИСПРАВЛЕНИЕ дефекта #31: CaptionText мемоизирован — не пересоздаётся при ре-рендере PostCard
+const CaptionText = memo(function CaptionText({
   text,
   navigate,
 }: {
@@ -603,4 +614,4 @@ function CaptionText({
       )}
     </>
   );
-}
+});

@@ -17,10 +17,11 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { supabase } from "@/integrations/supabase/client";
+import { dbLoose } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { logger } from "@/lib/logger";
 
 export interface ProfileNoteData {
   id: string;
@@ -53,10 +54,9 @@ export function ProfileNote({ note, isOwner, onRefresh }: ProfileNoteProps) {
   const handleSave = async () => {
     if (!user || !text.trim()) return;
     setIsSubmitting(true);
-    const db = supabase as any;
     try {
       // Upsert — одна заметка на пользователя
-      const { error } = await db.from("profile_notes").upsert(
+      const { error } = await dbLoose.from("profile_notes").upsert(
         {
           user_id: user.id,
           text: text.trim(),
@@ -69,8 +69,9 @@ export function ProfileNote({ note, isOwner, onRefresh }: ProfileNoteProps) {
       toast.success("Заметка опубликована");
       setShowSheet(false);
       onRefresh();
-    } catch (err: any) {
-      toast.error(err.message ?? "Ошибка");
+    } catch (err) {
+      logger.error("[ProfileNote] save failed", { error: err });
+      toast.error("Не удалось сохранить заметку. Попробуйте снова.");
     } finally {
       setIsSubmitting(false);
     }
@@ -78,8 +79,7 @@ export function ProfileNote({ note, isOwner, onRefresh }: ProfileNoteProps) {
 
   const handleDelete = async () => {
     if (!user) return;
-    const db = supabase as any;
-    const { error } = await db
+    const { error } = await dbLoose
       .from("profile_notes")
       .delete()
       .eq("user_id", user.id);

@@ -71,11 +71,12 @@ function loadAccountsFromStorage(): StoredAccount[] {
     const parsed = JSON.parse(raw) as unknown[];
     if (!Array.isArray(parsed)) return [];
     return parsed.filter(
-      (account) =>
-        account &&
-        typeof (account as any).user_id === 'string' &&
-        typeof (account as any).session_id === 'string',
-    ) as StoredAccount[];
+      (account): account is StoredAccount => {
+        if (!account || typeof account !== 'object') return false;
+        const obj = account as Record<string, unknown>;
+        return typeof obj.user_id === 'string' && typeof obj.session_id === 'string';
+      },
+    );
   } catch (error) {
     logger.warn('account_container.load_accounts_failed', { error });
     return [];
@@ -117,7 +118,7 @@ export function useAccountContainer() {
     setState((prev) => {
       const account = prev.accounts.find((a) => a.user_id === userId);
       if (!account) {
-        console.warn('[AccountContainer] Account not found:', userId);
+        logger.warn('[AccountContainer] Account not found', { userId });
         return prev;
       }
 

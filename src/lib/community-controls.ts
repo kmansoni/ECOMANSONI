@@ -1,16 +1,19 @@
+import { z } from "zod";
 import { supabase } from "@/lib/supabase";
 import { isTableMissingError } from "@/lib/utils/isTableMissingError";
 
-export interface UserCommunitySettings {
-  user_id: string;
-  allow_channel_invites: boolean;
-  allow_group_invites: boolean;
-  auto_join_by_invite: boolean;
-  mute_new_communities: boolean;
-  show_media_preview: boolean;
-  created_at: string;
-  updated_at: string;
-}
+const UserCommunitySettingsSchema = z.object({
+  user_id: z.string(),
+  allow_channel_invites: z.boolean(),
+  allow_group_invites: z.boolean(),
+  auto_join_by_invite: z.boolean(),
+  mute_new_communities: z.boolean(),
+  show_media_preview: z.boolean(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+
+export type UserCommunitySettings = z.infer<typeof UserCommunitySettingsSchema>;
 
 const DEFAULT_SETTINGS = {
   allow_channel_invites: true,
@@ -28,7 +31,8 @@ function readLocalSettings(userId: string): UserCommunitySettings | null {
   try {
     const raw = localStorage.getItem(localKey(userId));
     if (!raw) return null;
-    return JSON.parse(raw) as UserCommunitySettings;
+    const result = UserCommunitySettingsSchema.safeParse(JSON.parse(raw));
+    return result.success ? result.data : null;
   } catch {
     return null;
   }
@@ -53,7 +57,7 @@ function defaultRow(userId: string): UserCommunitySettings {
 }
 
 export async function getOrCreateUserCommunitySettings(userId: string): Promise<UserCommunitySettings> {
-  const table = (supabase as any).from("user_channel_group_settings");
+  const table = supabase.from("user_channel_group_settings");
   const { data, error } = await table.select("*").eq("user_id", userId).maybeSingle();
   if (error && isTableMissingError(error)) {
     return readLocalSettings(userId) ?? defaultRow(userId);
@@ -79,7 +83,7 @@ export async function updateUserCommunitySettings(
   userId: string,
   patch: Partial<Omit<UserCommunitySettings, "user_id" | "created_at" | "updated_at">>,
 ): Promise<UserCommunitySettings> {
-  const { data, error } = await (supabase as any)
+  const { data, error } = await supabase
     .from("user_channel_group_settings")
     .upsert({ user_id: userId, ...patch }, { onConflict: "user_id" })
     .select("*")
@@ -104,7 +108,7 @@ export async function createChannelInviteToken(
   maxUses?: number | null,
   ttlHours = 24,
 ): Promise<string> {
-  const { data, error } = await (supabase as any).rpc("create_channel_invite", {
+  const { data, error } = await supabase.rpc("create_channel_invite", {
     _channel_id: channelId,
     _max_uses: maxUses ?? null,
     _ttl_hours: ttlHours,
@@ -121,7 +125,7 @@ export async function createGroupInviteToken(
   maxUses?: number | null,
   ttlHours = 24,
 ): Promise<string> {
-  const { data, error } = await (supabase as any).rpc("create_group_invite", {
+  const { data, error } = await supabase.rpc("create_group_invite", {
     _group_id: groupId,
     _max_uses: maxUses ?? null,
     _ttl_hours: ttlHours,
@@ -134,7 +138,7 @@ export async function createGroupInviteToken(
 }
 
 export async function joinChannelByInviteToken(token: string): Promise<string> {
-  const { data, error } = await (supabase as any).rpc("join_channel_by_invite", {
+  const { data, error } = await supabase.rpc("join_channel_by_invite", {
     _token: token,
   });
   if (error && isTableMissingError(error)) {
@@ -145,7 +149,7 @@ export async function joinChannelByInviteToken(token: string): Promise<string> {
 }
 
 export async function joinGroupByInviteToken(token: string): Promise<string> {
-  const { data, error } = await (supabase as any).rpc("join_group_by_invite", {
+  const { data, error } = await supabase.rpc("join_group_by_invite", {
     _token: token,
   });
   if (error && isTableMissingError(error)) {

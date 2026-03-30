@@ -37,6 +37,7 @@ import React, {
 import { AnimatePresence, motion } from 'framer-motion';
 import { Play, Pause, AlertCircle, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { logger } from '@/lib/logger';
 import { useReelsContext } from '@/contexts/ReelsContext';
 import { normalizeReelMediaUrl } from '@/lib/reels/media';
 import { ReelDoubleTapHeart } from './ReelDoubleTapHeart';
@@ -185,11 +186,11 @@ function ReelPlayerInner({
           .catch((err: Error) => {
             // AutoPlay policy block — не является ошибкой воспроизведения
             if (err.name !== 'AbortError') {
-              console.warn('[ReelPlayer] play() rejected:', err.name, err.message);
+              logger.warn('[ReelPlayer] play() rejected', { name: err.name, message: err.message });
             }
           });
       }
-      blurVideoRef.current?.play().catch(() => {});
+      blurVideoRef.current?.play().catch(() => { /* autoplay blocked */ });
     } else {
       video.pause();
       video.currentTime = 0;
@@ -316,7 +317,7 @@ function ReelPlayerInner({
     if (video.paused) {
       video.play().catch((err: Error) => {
         if (err.name !== 'AbortError') {
-          console.warn('[ReelPlayer] play() rejected on toggle:', err.message);
+          logger.warn('[ReelPlayer] play() rejected on toggle', { message: err.message });
         }
       });
     } else {

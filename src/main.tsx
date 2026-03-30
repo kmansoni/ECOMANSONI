@@ -1,3 +1,4 @@
+import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { ThemeProvider } from "next-themes";
 import App from "./App.tsx";
@@ -9,6 +10,7 @@ import { applyPlatformAttributes } from "@/hooks/usePlatform";
 import { ENV } from "@/lib/env";
 import { initSessionStore } from "@/auth/sessionStore";
 import { initDeviceIdentity } from "@/auth/deviceIdentity";
+import { logger } from "@/lib/logger";
 
 const CHUNK_RELOAD_ONCE_KEY = "app.chunk_reload_once";
 
@@ -84,25 +86,23 @@ window.__APP_BUILD__ = {
   mode: ENV.mode,
 };
 
-console.info(
-  "[build]",
-  `${window.__APP_BUILD__.name} v${window.__APP_BUILD__.version}`,
-  `commit=${window.__APP_BUILD__.commit}`,
-  `built=${window.__APP_BUILD__.buildTime}`,
-  `mode=${window.__APP_BUILD__.mode}`
+logger.info(
+  `[build] ${window.__APP_BUILD__.name} v${window.__APP_BUILD__.version} commit=${window.__APP_BUILD__.commit} built=${window.__APP_BUILD__.buildTime} mode=${window.__APP_BUILD__.mode}`
 );
 
 async function bootstrapApp(): Promise<void> {
   try {
     await Promise.all([initSessionStore(), initDeviceIdentity()]);
   } catch (err) {
-    console.error("[bootstrap] Secure auth stores initialization failed", err);
+    logger.error("[bootstrap] Secure auth stores initialization failed", { error: err });
   }
 
   createRoot(document.getElementById("root")!).render(
-    <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
-      <App />
-    </ThemeProvider>
+    <StrictMode>
+      <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
+        <App />
+      </ThemeProvider>
+    </StrictMode>
   );
 }
 

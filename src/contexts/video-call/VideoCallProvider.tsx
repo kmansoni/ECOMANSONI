@@ -50,6 +50,14 @@ import { CallKeyExchange } from "@/calls-v2/callKeyExchange";
 import { CallMediaEncryption } from "@/calls-v2/callMediaEncryption";
 import { RekeyStateMachine } from "@/calls-v2/rekeyStateMachine";
 import { EpochGuard } from "@/calls-v2/epochGuard";
+import {
+  CALL_ENGINE_MODE,
+  transition as fsmTransition,
+  isCallActive,
+  isCallConnected,
+  fromLegacyStatus,
+} from "@/calls-v2/callStateMachine";
+import type { CallState, CallEvent } from "@/calls-v2/callStateMachine";
 import type { RtpCapabilities } from "@/calls-v2/types";
 import type { CallIdentity, KeyPackageData } from "@/calls-v2/callKeyExchange";
 import type { RekeyEvent } from "@/calls-v2/rekeyStateMachine";
@@ -447,12 +455,41 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
   const mediaBootstrapErrorLogAtRef = useRef<Map<string, number>>(new Map());
   const mediaBootstrapToastShownRef = useRef<Set<string>>(new Set());
 
+  // E2EE pipe break recovery: stored consumer params for re-consume + debounce
+  const consumerCreateParamsRef = useRef<Map<string, import('@/calls-v2/types').ConsumedPayload>>(new Map());
+  /** trackId → timestamp последней попытки recovery (debounce 10s) */
+  const pipeBreakRetryAtRef = useRef<Map<string, number>>(new Map());
+  /** Ref для функции recovery — заполняется после определения, вызывается из closure в CallMediaEncryption */
+  const handleE2eePipeBreakRef = useRef<((info: import('@/lib/e2ee/insertableStreams').PipeBreakInfo) => void) | null>(null);
+
   // UI-lock: keeps call UI visible even during transient status changes (permission prompts, etc.)
   const [isCallUiActive, setIsCallUiActive] = useState(false);
   const isCallUiActiveRef = useRef(false);
 
   // Profile of the callee shown immediately on the call screen before the call record loads from DB
   const [pendingCalleeProfile, setPendingCalleeProfile] = useState<CalleeProfile | null>(null);
+
+  // ─── Call FSM (primary state source) ──────────────────────────────────────
+  const [callState, setCallState] = useState<CallState>("idle");
+  const callStateRef = useRef<CallState>("idle");
+
+  /**
+   * Dispatch an FSM event. Updates both state and ref.
+   * Returns the new state. On invalid transitions, logs a warning and returns current state.
+   */
+  const dispatchFsm = useCallback((event: CallEvent): CallState => {
+    const prev = callStateRef.current;
+    const next = fsmTransition(prev, event);
+    if (next === null) {
+      logger.warn("[CallFSM] invalid transition", { prev, event });
+      return prev;
+    }
+    callStateRef.current = next;
+    setCallState(next);
+    logger.info("[CallFSM] transition", { prev, event, next });
+    return next;
+  }, []);
+  // ────────────────────────────────────────────────────────────────────────────
 
   // Sync ref with state for callbacks
   useEffect(() => {
@@ -492,6 +529,8 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
   } = useVideoCallSfu({
     onCallEnded: (call) => {
       logger.info("[VideoCallContext] Call ended:", call.id.slice(0, 8));
+      dispatchFsm("CLEANUP_DONE");
+      dispatchFsm("RESET");
       if (callsWsCallIdRef.current === call.id) {
         callsWsCallIdRef.current = null;
         callsWsRoomRef.current = null;
@@ -581,6 +620,8 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     mediaBootstrapBlockedUntilRef.current.clear();
     mediaBootstrapErrorLogAtRef.current.clear();
     mediaBootstrapToastShownRef.current.clear();
+    consumerCreateParamsRef.current.clear();
+    pipeBreakRetryAtRef.current.clear();
   }, [setRemoteMediaStream]);
 
   /**
@@ -773,7 +814,17 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         logger.info("[VideoCallContext] calls-v2 CallKeyExchange initialized");
       }
       if (!callMediaEncryptionRef.current) {
-        callMediaEncryptionRef.current = new CallMediaEncryption();
+        callMediaEncryptionRef.current = new CallMediaEncryption({
+          onError: (err, direction) => {
+            // Frame-level ошибки (per-frame encryption/decryption) — фрейм дропается, это нормально
+            // при ротации ключей или первых кадрах до прихода ключа. Не показываем toast.
+            logger.warn(`[VideoCallContext] E2EE ${direction} frame error`, { error: err.message });
+          },
+          onPipeBreak: (info) => {
+            logger.error('[VideoCallContext] E2EE pipe broke — starting recovery', info);
+            handleE2eePipeBreakRef.current?.(info);
+          },
+        });
         if (epochGuardRef.current) {
           callMediaEncryptionRef.current.setEpochGuard(epochGuardRef.current);
         }
@@ -1397,7 +1448,8 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       return;
     }
     setRemoteMediaStream(new MediaStream(tracks));
-  }, [setRemoteMediaStream]);
+    dispatchFsm("REMOTE_MEDIA_READY");
+  }, [setRemoteMediaStream, dispatchFsm]);
 
   const reportMediaBootstrapFailure = useCallback(
     (roomId: string, callId: string, error: unknown) => {
@@ -1433,9 +1485,121 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
           duration: 5000,
         });
       }
+
+      dispatchFsm("ERROR");
     },
-    [markMediaBootstrapFailed]
+    [markMediaBootstrapFailed, dispatchFsm]
   );
+
+  /**
+   * E2EE pipe break auto-recovery.
+   *
+   * Sender: закрыть producer → re-produce тот же track → новый RTCRtpSender → re-attach E2EE.
+   * Receiver: закрыть consumer → re-consume с сохранёнными params → новый RTCRtpReceiver → re-attach E2EE.
+   *
+   * createEncodedStreams() — одноразовый API на RTCRtpSender/Receiver (Chrome). После pipe break
+   * единственный путь восстановления — пересоздание producer/consumer, получая свежий sender/receiver.
+   *
+   * Debounce: max 1 retry per trackId per 10 секунд.
+   * Fail-closed: при неудаче recovery → toast, медиа неактивен (unencrypted frames никогда не проходят).
+   */
+  handleE2eePipeBreakRef.current = async (info) => {
+    const RECOVERY_DEBOUNCE_MS = 10_000;
+    const { trackId, direction, peerId } = info;
+
+    // Debounce: не повторять чаще 10 с per track
+    const lastRetry = pipeBreakRetryAtRef.current.get(trackId) ?? 0;
+    if (Date.now() - lastRetry < RECOVERY_DEBOUNCE_MS) {
+      logger.warn('[VideoCallContext] E2EE pipe break recovery throttled', { trackId, direction });
+      return;
+    }
+    pipeBreakRetryAtRef.current.set(trackId, Date.now());
+
+    const sfuManager = sfuManagerRef.current;
+    const encryption = callMediaEncryptionRef.current;
+    if (!sfuManager || !encryption) {
+      logger.error('[VideoCallContext] E2EE pipe recovery impossible — no sfuManager or encryption', { trackId });
+      toast.error('Ошибка шифрования — переподключение невозможно');
+      return;
+    }
+
+    try {
+      if (direction === 'encrypt') {
+        // === SENDER RECOVERY ===
+        // trackId = producer.id → close producer → re-produce track → new sender → E2EE
+        const track = sfuManager.closeProducer(trackId);
+        if (!track || track.readyState !== 'live') {
+          logger.error('[VideoCallContext] E2EE sender recovery: track dead', { trackId });
+          toast.error('Ошибка шифрования — медиа-трек недоступен');
+          return;
+        }
+
+        logger.info('[VideoCallContext] E2EE sender pipe recovery: re-producing', { trackId });
+        const newProducer = await sfuManager.produce(track, { trackId: track.id });
+
+        if (CallMediaEncryption.isSupported()) {
+          const newSender = sfuManager.getProducerSender(newProducer.id);
+          if (newSender) {
+            encryption.setupSenderTransform(newSender, newProducer.id);
+          }
+        }
+        logger.info('[VideoCallContext] E2EE sender pipe recovery: OK', {
+          oldProducerId: trackId,
+          newProducerId: newProducer.id,
+        });
+      } else {
+        // === RECEIVER RECOVERY ===
+        // trackId = consumer.id, peerId = producerId
+        const storedParams = consumerCreateParamsRef.current.get(trackId);
+        if (!storedParams) {
+          logger.error('[VideoCallContext] E2EE receiver recovery: no stored params', { trackId, peerId });
+          toast.error('Ошибка дешифровки — параметры потеряны');
+          return;
+        }
+
+        sfuManager.closeConsumer(trackId);
+        logger.info('[VideoCallContext] E2EE receiver pipe recovery: re-consuming', {
+          consumerId: trackId,
+          producerId: storedParams.producerId,
+        });
+
+        const newConsumer = await sfuManager.consume({
+          id: storedParams.consumerId,
+          producerId: storedParams.producerId,
+          kind: storedParams.kind as import('mediasoup-client').types.MediaKind,
+          rtpParameters: storedParams.rtpParameters as import('mediasoup-client').types.RtpParameters,
+        });
+
+        consumerCreateParamsRef.current.set(newConsumer.id, storedParams);
+
+        if (CallMediaEncryption.isSupported()) {
+          const newReceiver = sfuManager.getConsumerReceiver(newConsumer.id);
+          if (newReceiver) {
+            encryption.setupReceiverTransform(newReceiver, storedParams.producerId, newConsumer.id);
+          }
+        }
+
+        const client = callsWsRef.current;
+        const roomId = callsWsMediaRoomRef.current;
+        if (client && roomId) {
+          await client.consumerResume({ roomId, consumerId: newConsumer.id });
+        }
+        rebuildRemoteStream();
+
+        logger.info('[VideoCallContext] E2EE receiver pipe recovery: OK', {
+          oldConsumerId: trackId,
+          newConsumerId: newConsumer.id,
+        });
+      }
+    } catch (err) {
+      logger.error('[VideoCallContext] E2EE pipe recovery failed', { trackId, direction, error: err });
+      toast.error(
+        direction === 'encrypt'
+          ? 'Ошибка шифрования медиа — собеседник может не слышать вас'
+          : 'Ошибка дешифровки медиа — вы можете не слышать собеседника'
+      );
+    }
+  };
 
   const bootstrapCallsV2Media = useCallback(
     async (call: VideoCall, stream: MediaStream | null) => {
@@ -1607,6 +1771,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         }
         logger.info("[VideoCallContext] calls-v2 transport-created:send", { roomId, transportId: sendParams.transportId });
         markMediaBootstrapProgress("send_transport_created");
+        dispatchFsm("MEDIA_ACQUIRED");
 
         sfuManager.createSendTransport(
           {
@@ -1669,6 +1834,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         }
         logger.info("[VideoCallContext] calls-v2 transport-created:recv", { roomId, transportId: recvParams.transportId });
         markMediaBootstrapProgress("recv_transport_created");
+        dispatchFsm("TRANSPORT_CONNECTED");
 
         sfuManager.createRecvTransport(
           {
@@ -1705,6 +1871,8 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
             rtpParameters: p.rtpParameters as import('mediasoup-client').types.RtpParameters,
           }).then((consumer) => {
             logger.info("[VideoCallContext] calls-v2 consumer:created", { roomId, consumerId: consumer.id, kind: consumer.kind });
+            // Сохранить params для возможного E2EE pipe recovery
+            consumerCreateParamsRef.current.set(consumer.id, p);
             // Attach E2EE receiver transform (Insertable Streams) — fail-closed: frames dropped without key
             if (CallMediaEncryption.isSupported()) {
               const receiver = sfuManagerRef.current?.getConsumerReceiver(consumer.id);
@@ -1757,6 +1925,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         return;
       }
       logger.info("[VideoCallContext] Setting pending incoming call:", call.id.slice(0, 8));
+      dispatchFsm("INCOMING_OFFER");
       setPendingIncomingCall(call);
     },
   });
@@ -1774,6 +1943,28 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     hasDetectedIncoming: !!detectedIncomingCall,
     isCallUiActive,
   });
+
+  // ─── FSM: promote to in_call when legacy connectionState becomes "connected" ─
+  // Catches the fallback timer path in useVideoCallSfu that promotes connectionState
+  // without going through rebuildRemoteStream.
+  useEffect(() => {
+    if (legacyEngineActive) return;
+    if (connectionState !== "connected") return;
+    const s = callStateRef.current;
+    if (s === "transport_connecting" || s === "media_ready") {
+      dispatchFsm("PROMOTE_IN_CALL");
+    }
+  }, [connectionState, legacyEngineActive, dispatchFsm]);
+
+  // ─── FSM drift detection (legacy vs FSM) ───────────────────────────────────
+  useEffect(() => {
+    if (legacyEngineActive) return; // FSM doesn't track legacy P2P
+    const expected = fromLegacyStatus(status, connectionState);
+    if (expected !== callState) {
+      logger.warn("[CallFSM:drift]", { expected, actual: callState, status, connectionState });
+    }
+  }, [status, connectionState, legacyEngineActive, callState]);
+  // ────────────────────────────────────────────────────────────────────────────
 
   const isExpectedCallsBootstrapFailure = (error: unknown): boolean => {
     const message = String((error as any)?.message ?? error ?? "").toLowerCase();
@@ -1810,6 +2001,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
 
     try {
       await answerVideoCall(call);
+      dispatchFsm("CALLEE_ACCEPT");
 
       // Refresh call row to pick up caller-persisted calls-v2 room metadata.
       let resolvedCall = call as VideoCall & {
@@ -1838,14 +2030,16 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       }
 
       const roomBootstrapOk = await bootstrapCallsV2Room(resolvedCall, "callee");
+      if (roomBootstrapOk) dispatchFsm("BOOTSTRAP_OK");
       if (!roomBootstrapOk) {
         // Detect whether the caller used legacy P2P (no SFU room hints were written).
         // When calls_v2_room_id is absent the caller launched a P2P call — match the protocol.
         const hasSfuRoomHints = !!resolvedCall.calls_v2_room_id;
 
-        if (!hasSfuRoomHints) {
-          logger.info("[VideoCallContext] Answering legacy P2P call (no SFU room hints)");
-          // Release SFU-acquired media before legacy hook re-acquires its own tracks.
+        if (!hasSfuRoomHints && CALL_ENGINE_MODE === "compatibility") {
+          // Legacy P2P fallback for callee — only in compatibility mode.
+          // In sfu_only mode this branch is unreachable; callers always write room hints.
+          logger.info("[VideoCallContext] Answering legacy P2P call (no SFU room hints, compatibility mode)");
           releaseMediaWithoutDbUpdate();
           closeCallsV2();
           setLegacyEngineActive(true);
@@ -1868,7 +2062,10 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
           return;
         }
 
-        // SFU room hints exist but server rejected join → clean failure, no auto-recovery.
+        // SFU bootstrap failed (or no room hints in sfu_only mode) → fail-closed.
+        if (!hasSfuRoomHints) {
+          logger.error("[VideoCallContext] No SFU room hints in sfu_only mode — cannot answer call");
+        }
         await endVideoCall("ended");
         setIsCallUiActive(false);
         const toastPayload = getCallsBootstrapToastPayload(lastCallsBootstrapErrorRef.current);
@@ -1879,6 +2076,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         return;
       }
     } catch (err) {
+      dispatchFsm("ERROR");
       if (isExpectedCallsBootstrapFailure(err)) {
         logger.warn("[VideoCallContext] answerCall bootstrap/connect failed", err);
       } else {
@@ -1899,9 +2097,10 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       setIsCallUiActive(false); // Release UI-lock on error
     }
   }, [answerVideoCall, bootstrapCallsV2Room, clearIncomingCall, endVideoCall,
-    closeCallsV2, releaseMediaWithoutDbUpdate, legacyAnswerVideoCall]);
+    closeCallsV2, releaseMediaWithoutDbUpdate, legacyAnswerVideoCall, dispatchFsm]);
 
   const declineCall = useCallback(async () => {
+    dispatchFsm("CALL_END");
     if (incomingCall || pendingIncomingCall) {
       const callToDecline = incomingCall || pendingIncomingCall;
       if (!callToDecline) return;
@@ -1927,10 +2126,11 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       clearIncomingCall();
       setIsCallUiActive(false); // Release UI-lock
     }
-  }, [incomingCall, pendingIncomingCall, clearIncomingCall]);
+  }, [incomingCall, pendingIncomingCall, clearIncomingCall, dispatchFsm]);
 
   const endCall = useCallback(async () => {
     logger.info("[VideoCallContext] endCall called");
+    dispatchFsm("CALL_END");
     // B: send hangup via WS relay so the peer knows immediately
     const callForHangup = currentCall ?? legacyCurrentCall;
     const wsForHangup = callsWsRef.current;
@@ -1957,7 +2157,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       closeCallsV2();
     }
     setIsCallUiActive(false); // Release UI-lock
-  }, [legacyEngineActive, currentCall, legacyCurrentCall, incomingCall, pendingIncomingCall, endVideoCall, legacyEndVideoCall, declineCall, closeCallsV2]);
+  }, [legacyEngineActive, currentCall, legacyCurrentCall, incomingCall, pendingIncomingCall, endVideoCall, legacyEndVideoCall, declineCall, closeCallsV2, dispatchFsm]);
 
   const startCall = useCallback(async (
     calleeId: string,
@@ -1983,6 +2183,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
 
     try {
       const result = await startVideoCall(calleeId, conversationId, callType);
+      if (result) dispatchFsm("CALLER_INITIATE");
       if (!result) {
         logger.error("[VideoCallContext] startVideoCall returned null unexpectedly — releasing UI-lock");
         setPendingCalleeProfile(null);
@@ -2003,48 +2204,31 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
           conversationId: conversationId ?? undefined,
         }).catch((e) => logger.warn("[VideoCallContext] callInvite WS send failed", e));
       }
+      dispatchFsm("BOOTSTRAP_START");
       const roomBootstrapOk = await bootstrapCallsV2Room(result, "caller");
+      if (roomBootstrapOk) dispatchFsm("BOOTSTRAP_OK");
       if (!roomBootstrapOk) {
-        // SFU room bootstrap failed — auto-retry via legacy P2P so the call can still connect.
-        logger.warn("[VideoCallContext] SFU bootstrap failed for caller, falling back to legacy P2P");
-        releaseMediaWithoutDbUpdate(); // Free getUserMedia acquired by SFU hook before legacy re-acquires
-        await endVideoCall("ended");  // Clean up SFU DB state
-        closeCallsV2();               // Tear down WS / SFU resources
-
-        setLegacyEngineActive(true);
-        try {
-          const legacyResult = await legacyStartVideoCall(calleeId, conversationId, callType);
-          if (!legacyResult) {
-            setPendingCalleeProfile(null);
-            setIsCallUiActive(false);
-            setLegacyEngineActive(false);
-            toast.error("Не удалось начать звонок", {
-              description: "SFU и P2P недоступны. Проверьте сеть.",
-              duration: 5000,
-            });
-            return null;
-          }
-          logger.info("[VideoCallContext] Legacy P2P call started as SFU fallback", { callId: legacyResult.id.slice(0, 8) });
-          return legacyResult;
-        } catch (legacyErr) {
-          logger.warn("[VideoCallContext] Legacy P2P startCall also failed", legacyErr);
-          setPendingCalleeProfile(null);
-          setIsCallUiActive(false);
-          setLegacyEngineActive(false);
-          if (isMediaErrorForCall(legacyErr)) {
-            const toastPayload = getMediaPermissionToastPayload(legacyErr, callType);
-            toast.error(toastPayload.title, { description: toastPayload.description, duration: 4000 });
-          } else {
-            toast.error("Не удалось начать звонок", {
-              description: "Ошибка сети или сервиса звонков. Попробуйте еще раз",
-              duration: 5000,
-            });
-          }
-          return null;
-        }
+        dispatchFsm("ERROR");
+        // P0: Fail-closed — NO auto-fallback to legacy P2P.
+        // Silent downgrade from SFU+E2EE to legacy P2P creates split-brain:
+        // two different media engines, security postures, and state machines.
+        // If SFU is down, the call must not start rather than silently degrade.
+        logger.error("[VideoCallContext] SFU bootstrap failed for caller — fail-closed, no P2P fallback");
+        releaseMediaWithoutDbUpdate();
+        await endVideoCall("ended");
+        closeCallsV2();
+        setPendingCalleeProfile(null);
+        setIsCallUiActive(false);
+        const toastPayload = getCallsBootstrapToastPayload(lastCallsBootstrapErrorRef.current);
+        toast.error(toastPayload.title, {
+          description: toastPayload.description,
+          duration: 5000,
+        });
+        return null;
       }
       return result;
     } catch (err) {
+      dispatchFsm("ERROR");
       if (isExpectedCallsBootstrapFailure(err)) {
         logger.warn("[VideoCallContext] startCall bootstrap/connect failed", err);
       } else {
@@ -2067,7 +2251,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       return null;
     }
   }, [user, startVideoCall, bootstrapCallsV2Room, endVideoCall, closeCallsV2,
-    releaseMediaWithoutDbUpdate, legacyStartVideoCall]);
+    releaseMediaWithoutDbUpdate, dispatchFsm]);
 
   const retryConnection = useCallback(async () => {
     if (legacyEngineActive) {
@@ -2205,6 +2389,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
 
   const signalingValue: VideoCallSignalingContextType = {
     status: activeStatus,
+    callState,
     currentCall: legacyEngineActive ? legacyCurrentCall : currentCall,
     incomingCall,
     connectionState: legacyEngineActive ? legacyConnectionState : connectionState,

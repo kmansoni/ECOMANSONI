@@ -1,38 +1,15 @@
 /**
  * src/pages/settings/index.ts
  * Public API barrel for the settings sub-module.
- * 
- * The SettingsPage component is the main entry point.
- * It re-exports from the original SettingsPage.tsx during the migration
- * period, while individual section components are progressively extracted.
- * 
- * Migration status (as of Phase 1 extraction):
- *   [x] SettingsHelpSection
- *   [x] SettingsAboutSection
- *   [x] SettingsSavedSection  
- *   [x] SettingsArchiveSection
- *   [x] SettingsActivitySection
- *   [x] SettingsPrivacySection
- *   [x] SettingsAppearanceSection
- *   [x] SettingsCallsSection
- *   [x] SettingsDataStorageSection
- *   [ ] SettingsNotificationsSection  (inline in orchestrator)
- *   [ ] SettingsSecuritySection       (inline in orchestrator)
- *   [ ] SettingsChatFoldersSection    (inline in orchestrator)
- *   [ ] SettingsProfileStatusSection  (inline in orchestrator)
- *   [ ] SettingsLanguageSection       (inline in orchestrator)
- *   [ ] SettingsAccessibilitySection  (inline in orchestrator)
- *   [ ] SettingsStatisticsSection     (inline in orchestrator)
- *   [ ] SettingsBrandedContentSection (inline in orchestrator)
- *   [ ] SettingsCloseFriendsSection   (inline in orchestrator)
- *   [ ] SettingsMainSection           (inline in orchestrator)
+ *
+ * SettingsPage (thin orchestrator) routes currentScreen to section components.
+ * All 18 sections are fully extracted — nothing remains inline.
  */
 
-// Re-export the main SettingsPage component (defined in the parent for now,
-// will be moved here in Phase 2 of the migration).
 export { SettingsPage } from "../SettingsPage";
 
-// Export all extracted section components for external use / testing
+// Section components
+export { SettingsMainSection } from "./SettingsMainSection";
 export { SettingsHelpSection } from "./SettingsHelpSection";
 export { SettingsAboutSection } from "./SettingsAboutSection";
 export { SettingsSavedSection } from "./SettingsSavedSection";
@@ -42,7 +19,15 @@ export { SettingsPrivacySection } from "./SettingsPrivacySection";
 export { SettingsAppearanceSection } from "./SettingsAppearanceSection";
 export { SettingsCallsSection } from "./SettingsCallsSection";
 export { SettingsDataStorageSection } from "./SettingsDataStorageSection";
+export { SettingsNotificationsSection } from "./SettingsNotificationsSection";
+export { SettingsSecuritySection } from "./SettingsSecuritySection";
+export { SettingsStatisticsSection } from "./SettingsStatisticsSection";
+export { SettingsBrandedContentSection } from "./SettingsBrandedContentSection";
+export { SettingsChatFoldersSection } from "./SettingsChatFoldersSection";
+export { SettingsProfileStatusSection } from "./SettingsProfileStatusSection";
+export { SettingsAccessibilitySection } from "./SettingsAccessibilitySection";
+export { SettingsLanguageSection } from "./SettingsLanguageSection";
 
-// Export shared types and utilities
+// Shared types and utilities
 export type { Screen, SectionProps, SettingsPostItem, SettingsStoryItem, SettingsLiveArchiveItem, ActivityCommentItem, ActivityRepostItem } from "./types";
-export { formatCompact, formatBytes, estimateLocalStorageBytes, dayLabel } from "./helpers";
+export { formatCompact, formatBytes, estimateLocalStorageBytes, dayLabel } from "./formatters";

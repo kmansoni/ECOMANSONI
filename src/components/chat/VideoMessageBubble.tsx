@@ -286,7 +286,7 @@ export function VideoMessageRecorder({ onRecorded, onCancel }: VideoMessageRecor
         streamRef.current = stream;
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
-          videoRef.current.play().catch(() => {});
+          videoRef.current.play().catch(() => { /* autoplay blocked */ });
         }
         setHasPermission(true);
       })

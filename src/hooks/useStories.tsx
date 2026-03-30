@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { uploadMedia } from '@/lib/mediaUpload';
@@ -6,6 +6,7 @@ import { isGuestMode } from '@/lib/demo/demoMode';
 import { getDemoBotsUsersWithStories, isDemoId } from '@/lib/demo/demoBots';
 import { fetchUserBriefMap, resolveUserBrief } from '@/lib/users/userBriefs';
 import { showErrorToast, handleApiError, errors } from '@/lib/errors';
+import { logger } from '@/lib/logger';
 
 export interface Story {
   id: string;
@@ -195,7 +196,7 @@ export function useStories() {
       setUsersWithStories(users);
     } catch (err) {
       const appError = handleApiError(err);
-      console.error('Error fetching stories:', appError);
+      logger.error('[useStories] Error fetching stories', { error: appError });
       setError(appError.message);
       showErrorToast(err, 'Не удалось загрузить истории');
     } finally {
@@ -207,7 +208,12 @@ export function useStories() {
     fetchStories();
   }, [fetchStories]);
 
-  // Subscribe to realtime updates
+  // Subscribe to realtime updates — ИСПРАВЛЕНИЕ дефекта #5:
+  // fetchStories в deps вызывало пересоздание канала при каждом ре-рендере.
+  // Решение: стабилизировать ссылку через useRef — канал создаётся один раз.
+  const fetchStoriesRef = useRef(fetchStories);
+  useEffect(() => { fetchStoriesRef.current = fetchStories; }, [fetchStories]);
+
   useEffect(() => {
     const channel = supabase
       .channel('stories-changes')
@@ -215,7 +221,7 @@ export function useStories() {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'stories' },
         () => {
-          fetchStories();
+          fetchStoriesRef.current(); // всегда актуальная ссылка
         }
       )
       .subscribe();
@@ -223,7 +229,7 @@ export function useStories() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [fetchStories]);
+  }, []); // пустой deps — канал создаётся один раз за жизнь хука
 
   const markAsViewed = useCallback(async (storyId: string) => {
     if (!user) return;
@@ -247,7 +253,7 @@ export function useStories() {
           viewer_id: user.id
         }, { onConflict: 'story_id,viewer_id' });
     } catch (err) {
-      console.error('Error marking story as viewed:', err);
+      logger.error('[useStories] Error marking story as viewed', { error: err });
     }
   }, [user]);
 

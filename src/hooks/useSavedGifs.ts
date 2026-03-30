@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
+import { logger } from "@/lib/logger";
 import { useAuth } from "./useAuth";
 import type { GifItem } from "@/lib/chat/gifService";
 
@@ -32,7 +33,7 @@ export function useSavedGifs() {
       if (error) throw error;
       setSavedGifs((data || []) as SavedGif[]);
     } catch (err) {
-      console.error("useSavedGifs: load", err);
+      logger.error("[useSavedGifs] load error", { error: err });
     } finally {
       setLoading(false);
     }

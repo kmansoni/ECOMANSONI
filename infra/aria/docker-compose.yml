@@ -1,0 +1,41 @@
+# ARIA VPS Server
+# Primary AI backend for Mansoni platform.
+# Supabase Edge Function (aria-chat) proxies here after JWT auth.
+#
+# Usage (on VPS):
+#   cp .env.example .env && nano .env
+#   docker compose up -d
+#   docker compose logs -f aria
+
+services:
+  aria:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:7860:7860"     # bind to loopback — Nginx proxies externally
+    environment:
+      - AI_API_KEY=${AI_API_KEY}
+      - AI_API_URL=${AI_API_URL:-https://api.mansoni.ru/v1/chat/completions}
+      - AI_DEFAULT_MODEL=${AI_DEFAULT_MODEL:-google/gemini-2.5-pro-exp-03-25}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - ARIA_SERVER_KEY=${ARIA_SERVER_KEY}   # shared secret — must match ARIA_BACKEND_KEY in Supabase
+      - ARIA_PORT=7860
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    volumes:
+      - aria_logs:/var/log/aria
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:7860/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+volumes:
+  aria_logs:

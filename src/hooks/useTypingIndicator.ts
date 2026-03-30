@@ -34,6 +34,7 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { RealtimeChannel } from "@supabase/supabase-js";
+import { logger } from "@/lib/logger";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -138,7 +139,7 @@ export function useTypingIndicator(
     }
     const channel = channelRef.current;
     if (!channel || !currentUserId) return;
-    void channel.untrack().catch(() => {});
+    void channel.untrack().catch((err) => { logger.warn("[TypingIndicator] Untrack failed", { error: err }); });
   }, [currentUserId]);
 
   // ── Input event handlers ────────────────────────────────────────────────

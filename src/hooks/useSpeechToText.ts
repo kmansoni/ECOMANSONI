@@ -13,6 +13,7 @@
  */
 
 import { useState, useCallback } from "react";
+import { logger } from "@/lib/logger";
 
 export interface SpeechToTextResult {
   text: string;
@@ -58,7 +59,7 @@ export function useSpeechToText() {
       };
 
       recognition.onerror = (event: any) => {
-        console.warn("[STT] error:", event.error);
+        logger.warn("[useSpeechToText] STT error", { error: event.error });
         setError(`Ошибка распознавания: ${event.error}`);
         setTranscribing(false);
         resolve(null);

@@ -1,11 +1,7 @@
 // deno-lint-ignore-file
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { handleCors, getCorsHeaders } from "../_shared/utils.ts";
 
 const fallbackCompanies = [
   { id: "ingos", name: "Ингосстрах", rating: 4.8, reviewsCount: 12453, founded: 1947, license: "СИ-0660", categories: ["osago","kasko","dms","travel","property","mortgage","life"], description: "Один из крупнейших страховщиков России.", logoUrl: null, isPopular: true, hasMobileApp: true, hasOnlineService: true, avgClaimDays: 7, claimApprovalRate: 94, premiumStart: 3200 },
@@ -61,14 +57,16 @@ function mapDbRowToCompany(row: Record<string, unknown>): CompanyOutput {
 }
 
 serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
-  }
+  const corsResponse = handleCors(req);
+  if (corsResponse) return corsResponse;
+
+  const origin = req.headers.get("origin");
+  const headers = { ...getCorsHeaders(origin), "Content-Type": "application/json" };
 
   if (req.method !== "GET") {
     return new Response(
       JSON.stringify({ error: { code: "METHOD_NOT_ALLOWED", message: "Use GET" } }),
-      { status: 405, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 405, headers }
     );
   }
 
@@ -114,12 +112,12 @@ serve(async (req) => {
 
     return new Response(
       JSON.stringify({ companies, total: companies.length }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { headers }
     );
   } catch (error) {
     return new Response(
       JSON.stringify({ error: { code: "SERVER_ERROR", message: (error as Error).message } }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 500, headers }
     );
   }
 });

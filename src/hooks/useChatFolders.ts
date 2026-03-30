@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
+import { logger } from "@/lib/logger";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 
 export type ChatFolderItemKind = "dm" | "group" | "channel";
@@ -129,7 +130,7 @@ export function useChatFolders() {
       }
     } catch (e) {
       // If migrations aren't applied yet (missing tables/columns), don't crash the UI.
-      console.warn("useChatFolders: failed to fetch", e);
+      logger.warn("[useChatFolders] failed to fetch", { error: e });
       setFolders([]);
       setItems([]);
     } finally {

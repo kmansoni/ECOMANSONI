@@ -13,12 +13,7 @@ import {
   validateDelegationInDb,
   verifyDelegationJwtHs256,
 } from "../_shared/delegation.ts";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-debug-db-verify",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+import { handleCors, getCorsHeaders } from "../_shared/utils.ts";
 
 type RequestBody = {
   conversation_id: string;
@@ -26,15 +21,20 @@ type RequestBody = {
   limit?: number | null;
 };
 
+let _origin: string | null = null;
+
 function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...getCorsHeaders(_origin), "Content-Type": "application/json" },
   });
 }
 
 serve(async (req: Request) => {
-  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  const corsResponse = handleCors(req);
+  if (corsResponse) return corsResponse;
+
+  _origin = req.headers.get("origin");
   if (req.method !== "POST") return json(405, { error: "Method not allowed" });
 
   try {

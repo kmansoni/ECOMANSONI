@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, createContext, useContext, ReactNode } from "react";
-import { User, Session } from "@supabase/supabase-js";
+import { User, Session, AuthError } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
+import { logger } from "@/lib/logger";
 import { startAutoPushTokenRegistration } from "@/lib/push/autoRegister";
 
 interface AuthContextType {
@@ -11,8 +12,8 @@ interface AuthContextType {
   isAuthOperationInProgress: boolean;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signUp: (email: string, password: string, displayName?: string) => Promise<{ error: Error | null }>;
-  sendEmailOtp: (email: string) => Promise<{ error: any | null }>;
-  verifyEmailOtp: (email: string, token: string) => Promise<{ error: any | null }>;
+  sendEmailOtp: (email: string) => Promise<{ error: AuthError | null }>;
+  verifyEmailOtp: (email: string, token: string) => Promise<{ error: AuthError | null }>;
   signOut: () => Promise<void>;
 }
 
@@ -75,11 +76,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           );
 
         if (upsertError) {
-          const status = Number((upsertError as any)?.status ?? 0);
-          const code = String((upsertError as any)?.code ?? "");
+          const errObj = upsertError as unknown as Record<string, unknown>;
+          const status = Number(errObj?.status ?? 0);
+          const code = String(errObj?.code ?? "");
           if (status === 403 || code === "42501") {
             profileUpsertBlockedRef.current = true;
-            console.warn("[AuthProvider] profiles upsert blocked by RLS, skipping further safety-net upserts");
+            logger.warn("[AuthProvider] profiles upsert blocked by RLS, skipping further safety-net upserts");
           } else {
             throw upsertError;
           }
@@ -95,7 +97,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .maybeSingle();
 
       if (profileError) {
-        console.warn("[AuthProvider] ensureProfile profile fetch failed:", profileError);
+        logger.warn("[AuthProvider] ensureProfile profile fetch failed", { error: profileError });
         return;
       }
 
@@ -124,7 +126,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
 
       if (updateAuthError) {
-        console.warn("[AuthProvider] auth.updateUser metadata sync failed:", updateAuthError);
+        logger.warn("[AuthProvider] auth.updateUser metadata sync failed", { error: updateAuthError });
       }
     } catch (e) {
       // Distinguish transient network failures (Supabase temporarily unavailable)
@@ -133,17 +135,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const isNetworkError =
         e instanceof TypeError ||
         /failed to fetch|networkerror|load failed|connection/i.test(
-          String((e as any)?.message ?? ""),
+          String((e as Record<string, unknown>)?.message ?? ""),
         ) ||
-        (e as any)?.status === 503 ||
-        (e as any)?.status === 0;
+        (e as Record<string, unknown>)?.status === 503 ||
+        (e as Record<string, unknown>)?.status === 0;
       if (isNetworkError) {
-        console.warn(
-          "[AuthProvider] ensureProfile: Supabase temporarily unavailable, will retry on next auth event.",
-          (e as Error).message,
+        logger.warn(
+          "[AuthProvider] ensureProfile: Supabase temporarily unavailable, will retry on next auth event",
+          { error: (e as Error).message },
         );
       } else {
-        console.error("Error ensuring profile:", e);
+        logger.error("[AuthProvider] Error ensuring profile", { error: e });
       }
     }
   };
@@ -178,15 +180,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const isNetworkError =
           e instanceof TypeError ||
           /failed to fetch|networkerror|load failed|connection/i.test(
-            String((e as any)?.message ?? ""),
+            String((e as Record<string, unknown>)?.message ?? ""),
           );
         if (isNetworkError) {
-          console.warn(
-            "[AuthProvider] getSession: Supabase temporarily unavailable.",
-            (e as Error).message,
+          logger.warn(
+            "[AuthProvider] getSession: Supabase temporarily unavailable",
+            { error: (e as Error).message },
           );
         } else {
-          console.error("[AuthProvider] getSession failed:", e);
+          logger.error("[AuthProvider] getSession failed", { error: e });
         }
         if (cancelled) return;
         setSession(null);
@@ -247,14 +249,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return runExclusiveAuthOp("email-otp", async () => {
       const trimmed = email.trim().toLowerCase();
       if (!trimmed) {
-        return { error: new Error("Email is required") };
+        return { error: new Error("Email is required") as AuthError };
       }
 
       const { error } = await supabase.auth.signInWithOtp({
         email: trimmed,
         options: { shouldCreateUser: true },
       });
-      return { error: (error as any) ?? null };
+      return { error: error ?? null };
     });
   };
 
@@ -267,7 +269,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         token,
         type: "email",
       });
-      return { error: (error as any) ?? null };
+      return { error: error ?? null };
     });
   };
 

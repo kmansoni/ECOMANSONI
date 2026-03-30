@@ -6,6 +6,8 @@
  * Нет зависимостей; нет `any` в публичном API.
  */
 
+import { logger } from "../logger";
+
 // ---------------------------------------------------------------------------
 // Window-level типы (gtag injected globals)
 // ---------------------------------------------------------------------------
@@ -139,7 +141,7 @@ export async function initGoogleAnalytics(
   } catch (err) {
     scriptFailed = true;
     if (import.meta.env?.DEV) {
-      console.warn("[GA4] init failed:", err);
+      logger.warn("[GA4] init failed", { error: err });
     }
   }
 }

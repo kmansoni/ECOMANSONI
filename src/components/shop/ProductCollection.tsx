@@ -38,22 +38,26 @@ export function ProductCollection({ collectionId, collection: collectionProp, on
     if (!collectionId) { setLoading(false); return; }
 
     void (async () => {
-      const { data: col } = await (supabase as any)
+      // shop_collections, shop_collection_items, products — нет в сгенерированных типах Supabase
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const db = supabase as any;
+
+      const { data: col } = await db
         .from('shop_collections')
         .select('*')
         .eq('id', collectionId)
         .single();
       setCollection(col);
 
-      const { data: items } = await (supabase as any)
+      const { data: items } = await db
         .from('shop_collection_items')
         .select('product_id, position')
         .eq('collection_id', collectionId)
         .order('position');
 
       if (items?.length) {
-        const ids = items.map((i: any) => i.product_id);
-        const { data: prods } = await (supabase as any)
+        const ids = items.map((i: { product_id: string }) => i.product_id);
+        const { data: prods } = await db
           .from('products')
           .select('id, name, price, image_url')
           .in('id', ids);

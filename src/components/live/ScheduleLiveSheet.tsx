@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/lib/supabase";
 import { uploadMedia } from "@/lib/mediaUpload";
 import { toast } from "sonner";
+import { logger } from "@/lib/logger";
 import { addMinutes, isBefore } from "date-fns";
 
 interface Props {
@@ -72,8 +73,9 @@ export function ScheduleLiveSheet({ onClose, onScheduled }: Props) {
       toast.success("Эфир запланирован! Подписчики получат уведомление.");
       onScheduled?.(String(data.id));
       onClose();
-    } catch (err: any) {
-      toast.error("Ошибка: " + (err.message || "неизвестная ошибка"));
+    } catch (err) {
+      logger.error("[ScheduleLiveSheet] schedule failed", { error: err });
+      toast.error("Не удалось запланировать эфир. Попробуйте снова.");
     } finally {
       setLoading(false);
     }

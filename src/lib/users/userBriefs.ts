@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { logger } from "@/lib/logger";
 
 export interface UserBrief {
   user_id: string;
@@ -65,7 +66,7 @@ function isObject(value: unknown): value is Record<string, unknown> {
 function warnUserBriefs(message: string, error: unknown): void {
   if (!import.meta.env.DEV) return;
   if (import.meta.env.MODE === "test") return;
-  console.warn(message, error);
+  logger.warn(message, { error });
 }
 
 async function fetchProfilesFallback(

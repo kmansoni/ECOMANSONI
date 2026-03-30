@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { logger } from "@/lib/logger";
 
 export type NotificationCategory = "dm" | "group" | "channel" | "stories" | "reactions";
 
@@ -33,7 +34,7 @@ export type NotificationException = {
 };
 
 const CATEGORY_KEYS: NotificationCategory[] = ["dm", "group", "channel", "stories", "reactions"];
-const supabaseAny = supabase as any;
+const supabaseAny = supabase;
 
 export function useNotificationPreferences() {
   const { user } = useAuth();
@@ -75,7 +76,7 @@ export function useNotificationPreferences() {
             { onConflict: "user_id,category" },
           );
         if (seedError) {
-          console.error('[useNotificationPreferences] seed categories failed:', seedError.message);
+          logger.error('[useNotificationPreferences] seed categories failed', { error: seedError.message });
         }
 
         const { data: afterInsert, error: afterError } = await supabaseAny
@@ -112,12 +113,12 @@ export function useNotificationPreferences() {
     ch = supabase
       .channel(`notification-prefs:${user.id}`)
       .on(
-        "postgres_changes" as any,
+        "postgres_changes",
         { event: "*", schema: "public", table: "notification_category_settings", filter: `user_id=eq.${user.id}` },
         () => void fetchAll(),
       )
       .on(
-        "postgres_changes" as any,
+        "postgres_changes",
         { event: "*", schema: "public", table: "notification_exceptions", filter: `user_id=eq.${user.id}` },
         () => void fetchAll(),
       )
@@ -145,12 +146,12 @@ export function useNotificationPreferences() {
           {
             user_id: user.id,
             category,
-            ...(patch as any),
+            ...patch,
           },
           { onConflict: "user_id,category" },
         );
       if (error) {
-        console.error('[useNotificationPreferences] upsertCategory failed:', error.message);
+        logger.error('[useNotificationPreferences] upsertCategory failed', { error: error.message });
         return;
       }
       await fetchAll();
@@ -168,12 +169,12 @@ export function useNotificationPreferences() {
             user_id: user.id,
             item_kind,
             item_id,
-            ...(patch as any),
+            ...patch,
           },
           { onConflict: "user_id,item_kind,item_id" },
         );
       if (error) {
-        console.error('[useNotificationPreferences] upsertException failed:', error.message);
+        logger.error('[useNotificationPreferences] upsertException failed', { error: error.message });
         return;
       }
       await fetchAll();

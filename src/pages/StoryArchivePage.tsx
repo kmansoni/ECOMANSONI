@@ -11,14 +11,14 @@
  * - Настройка: включить/выключить архивирование
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { ArrowLeft, Archive, Plus, Eye, Clock, Grid3X3 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { dbLoose } from "@/lib/supabase";
 
 interface ArchivedStory {
   id: string;
@@ -59,24 +59,25 @@ export default function StoryArchivePage() {
   const [selectedStory, setSelectedStory] = useState<ArchivedStory | null>(null);
   const [archiveEnabled, setArchiveEnabled] = useState(true);
 
-  useEffect(() => {
-    loadArchive();
-  }, []);
-
-  const loadArchive = async () => {
-    if (!user) return;
+  const loadArchive = useCallback(async () => {
+    if (!user?.id) return;
     setIsLoading(true);
-    const db = supabase as any;
 
-    const { data, error } = await db
+    const { data, error } = await dbLoose
       .from("stories")
       .select("id, user_id, media_url, media_type, thumbnail_url, created_at, expires_at, view_count")
       .eq("user_id", user.id)
       .order("created_at", { ascending: false });
 
-    if (!error && data) setStories(data);
+    if (!error && data) {
+      setStories(data as unknown as ArchivedStory[]);
+    }
     setIsLoading(false);
-  };
+  }, [user?.id]);
+
+  useEffect(() => {
+    void loadArchive();
+  }, [loadArchive]);
 
   const handleAddToHighlight = async (story: ArchivedStory) => {
     // Открываем выбор Highlight

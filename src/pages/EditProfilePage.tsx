@@ -11,6 +11,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useProfile } from '@/hooks/useProfile';
 import { AvatarPresetPicker } from '@/components/profile/AvatarPresetPicker';
 import { toast } from 'sonner';
+import { logger } from '@/lib/logger';
 
 export function EditProfilePage() {
   const navigate = useNavigate();
@@ -56,7 +57,7 @@ export function EditProfilePage() {
       setAvatarUrl(uploadResult.url);
       toast.success('Фото загружено');
     } catch (err) {
-      console.error('Upload error:', err);
+      logger.error('[EditProfilePage] Upload error', { error: err });
       toast.error('Не удалось загрузить фото');
     } finally {
       setUploading(false);
@@ -77,7 +78,7 @@ export function EditProfilePage() {
       toast.success('Профиль обновлён');
       navigate(-1);
     } catch (err) {
-      console.error('Save error:', err);
+      logger.error('[EditProfilePage] Save error', { error: err });
       toast.error('Не удалось сохранить');
     } finally {
       setSaving(false);

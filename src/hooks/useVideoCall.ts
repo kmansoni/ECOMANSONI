@@ -15,6 +15,22 @@ import { useAuth } from "@/hooks/useAuth";
 import { getIceServers, getMediaConstraints, clearIceServerCache } from "@/lib/webrtc-config";
 import { logger } from "@/lib/logger";
 import type { RealtimeChannel } from "@supabase/supabase-js";
+import type { Json } from "@/integrations/supabase/types";
+
+declare global {
+  interface Window {
+    Telegram?: { WebApp?: unknown };
+  }
+}
+
+/** Форма строки video_call_signals из Supabase Realtime payload */
+interface VideoCallSignalPayload {
+  id: string;
+  sender_id: string;
+  signal_type: string;
+  signal_data: Record<string, unknown>;
+  processed: boolean | null;
+}
 
 export type VideoCallStatus = "idle" | "calling" | "ringing" | "connected" | "ended";
 
@@ -85,11 +101,11 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
   const isCallActiveRef = useRef(false);
   const answerInFlightRef = useRef(false);
 
-  const log = useCallback((msg: string, ...args: any[]) => {
+  const log = useCallback((msg: string, ...args: unknown[]) => {
     logger.info("video_call.info", { msg, args });
   }, []);
 
-  const warn = useCallback((msg: string, ...args: any[]) => {
+  const warn = useCallback((msg: string, ...args: unknown[]) => {
     logger.warn("video_call.warn", { msg, args });
   }, []);
 
@@ -249,7 +265,7 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
   const sendSignal = useCallback(async (
     callId: string,
     signalType: string,
-    signalData: any
+    signalData: Record<string, unknown>
   ) => {
     if (!user) return;
 
@@ -287,7 +303,7 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
         sender_id: user.id,
         processed: false,
         signal_type: signalType,
-        signal_data: normalizedSignalData,
+        signal_data: normalizedSignalData as Json,
       });
       if (insertError) {
         warn("DB signal insert RLS/constraint error:", { error: insertError, callId, signalType, sender_id: user.id });
@@ -302,7 +318,7 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
   // Process incoming signal
   const handleSignal = useCallback(async (
     signalType: string,
-    signalData: any,
+    signalData: Record<string, unknown>,
     fromUserId: string
   ) => {
     if (fromUserId === user?.id) return;
@@ -386,7 +402,7 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
             // ICE candidates
             newPc.onicecandidate = (event) => {
               if (event.candidate && currentCall) {
-                sendSignal(currentCall.id, "ice-candidate", event.candidate.toJSON());
+                sendSignal(currentCall.id, "ice-candidate", event.candidate.toJSON() as unknown as Record<string, unknown>);
               }
             };
             
@@ -429,7 +445,7 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
           }
           
           await peerConnectionRef.current.setRemoteDescription(
-            new RTCSessionDescription(signalData)
+            new RTCSessionDescription(signalData as unknown as RTCSessionDescriptionInit)
           );
           if (incomingOfferSdp) {
             lastOfferSdpRef.current = incomingOfferSdp;
@@ -445,7 +461,7 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
           const answer = await peerConnectionRef.current.createAnswer();
           await peerConnectionRef.current.setLocalDescription(answer);
           if (currentCall) {
-            await sendSignal(currentCall.id, "answer", answer);
+            await sendSignal(currentCall.id, "answer", answer as unknown as Record<string, unknown>);
           }
           break;
         }
@@ -476,7 +492,7 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
           }
 
           await peerConnectionRef.current.setRemoteDescription(
-            new RTCSessionDescription(signalData)
+            new RTCSessionDescription(signalData as unknown as RTCSessionDescriptionInit)
           );
           if (incomingAnswerSdp) {
             lastAnswerSdpRef.current = incomingAnswerSdp;
@@ -494,16 +510,16 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
         case "ice-candidate":
           if (!peerConnectionRef.current) {
             // Buffer candidate for later
-            pendingCandidatesRef.current.push(signalData);
+            pendingCandidatesRef.current.push(signalData as RTCIceCandidateInit);
             return;
           }
           if (peerConnectionRef.current.remoteDescription) {
             await peerConnectionRef.current.addIceCandidate(
-              new RTCIceCandidate(signalData)
+              new RTCIceCandidate(signalData as RTCIceCandidateInit)
             );
           } else {
             // Buffer candidate
-            pendingCandidatesRef.current.push(signalData);
+            pendingCandidatesRef.current.push(signalData as RTCIceCandidateInit);
           }
           break;
 
@@ -545,7 +561,7 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
         },
         async (payload) => {
           if (!user) return;
-          const signal = payload.new as any;
+          const signal = payload.new as VideoCallSignalPayload;
           if (!signal) return;
           if (signal.sender_id === user.id) return;
           // processed can be NULL; treat NULL as not processed
@@ -588,7 +604,7 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
         for (const signal of signals) {
           await handleSignal(
             signal.signal_type,
-            signal.signal_data,
+            signal.signal_data as Record<string, unknown>,
             signal.sender_id
           );
 
@@ -636,7 +652,7 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
     // Force TURN relay on Telegram iOS to avoid frequent ICE failures in WebView/NAT environments.
     // On other platforms keep adaptive behavior: start with "all" and switch to relay on failure.
     const isTelegramIOS = /iPhone|iPad/i.test(navigator.userAgent) &&
-      ((window as any).Telegram?.WebApp || /Telegram/i.test(navigator.userAgent));
+      (window.Telegram?.WebApp || /Telegram/i.test(navigator.userAgent));
     const shouldForceRelay = forceRelay || isTelegramIOS;
 
     log("Creating peer connection, initiator:", isInitiator, "forceRelay:", shouldForceRelay, "isTelegramIOS:", isTelegramIOS);
@@ -679,7 +695,7 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
     // ICE candidates
     pc.onicecandidate = (event) => {
       if (event.candidate) {
-        sendSignal(callId, "ice-candidate", event.candidate.toJSON());
+        sendSignal(callId, "ice-candidate", event.candidate.toJSON() as unknown as Record<string, unknown>);
       }
     };
 
@@ -736,7 +752,7 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
             try {
               const offer = await pc.createOffer({ iceRestart: true });
               await pc.setLocalDescription(offer);
-              await sendSignal(callId, "offer", offer);
+              await sendSignal(callId, "offer", offer as unknown as Record<string, unknown>);
             } catch (err) {
               warn("ICE restart failed:", err);
             }
@@ -765,7 +781,7 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
     if (isInitiator) {
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
-      await sendSignal(callId, "offer", offer);
+      await sendSignal(callId, "offer", offer as unknown as Record<string, unknown>);
     }
 
     return pc;
@@ -885,7 +901,7 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
             callType: call.call_type,
             platform: navigator.platform,
             ua: navigator.userAgent.slice(0, 100),
-            isTelegram: !!(window as any).Telegram?.WebApp,
+            isTelegram: !!window.Telegram?.WebApp,
           },
         });
       } catch {
@@ -922,11 +938,13 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
         void debugEvent(call.id, "answer_getusermedia_success", {
           tracks: stream.getTracks().map((t) => ({ kind: t.kind, enabled: t.enabled, readyState: t.readyState })),
         });
-      } catch (mediaErr: any) {
-        warn("getUserMedia FAILED:", mediaErr.name, mediaErr.message);
+      } catch (mediaErr: unknown) {
+        const mediaErrName = mediaErr instanceof Error ? mediaErr.name : "UnknownError";
+        const mediaErrMsg = mediaErr instanceof Error ? mediaErr.message : String(mediaErr);
+        warn("getUserMedia FAILED:", mediaErrName, mediaErrMsg);
         void debugEvent(call.id, "answer_getusermedia_failed", {
-          name: mediaErr?.name,
-          message: mediaErr?.message,
+          name: mediaErrName,
+          message: mediaErrMsg,
         });
         
         // If video fails, try audio-only as fallback
@@ -944,11 +962,11 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
             stream = await Promise.race([fallbackPromise, fallbackTimeout]);
             log("Audio-only fallback succeeded");
             void debugEvent(call.id, "answer_getusermedia_audio_only_success");
-          } catch (fallbackErr: any) {
+          } catch (fallbackErr: unknown) {
             warn("Audio fallback also failed:", fallbackErr);
             void debugEvent(call.id, "answer_getusermedia_audio_fallback_failed", {
-              name: fallbackErr?.name,
-              message: fallbackErr?.message,
+              name: fallbackErr instanceof Error ? fallbackErr.name : "UnknownError",
+              message: fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr),
             });
             throw fallbackErr;
           }
@@ -974,8 +992,8 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
 
       if (updateError || !updatedCall?.started_at) {
         void debugEvent(call.id, "answer_started_at_update_failed", {
-          code: (updateError as any)?.code ?? null,
-          message: (updateError as any)?.message ?? "started_at_not_set",
+          code: updateError?.code ?? null,
+          message: updateError?.message ?? "started_at_not_set",
         });
         throw new Error("Failed to mark call as answered (started_at)");
       }
@@ -1054,7 +1072,7 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
           
           const answer = await peerConnectionRef.current.createAnswer();
           await peerConnectionRef.current.setLocalDescription(answer);
-          await sendSignal(call.id, "answer", answer);
+          await sendSignal(call.id, "answer", answer as unknown as Record<string, unknown>);
           log("Processed existing offer and sent answer");
           }
           
@@ -1077,11 +1095,11 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
       await sendSignal(call.id, "ready", { userId: user.id });
       void debugEvent(call.id, "answer_ready_sent");
       log("Answer call setup complete");
-    } catch (err: any) {
+    } catch (err: unknown) {
       warn("Answer call error:", err);
       void debugEvent(call.id, "answer_fatal_error", {
-        name: err?.name,
-        message: err?.message,
+        name: err instanceof Error ? err.name : "UnknownError",
+        message: err instanceof Error ? err.message : String(err),
       });
       isCallActiveRef.current = false;
       await cleanup("answer_call_error");

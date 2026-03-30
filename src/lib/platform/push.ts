@@ -24,6 +24,7 @@
 
 import { detectDevice } from "@/lib/platform/device";
 import type { DeviceInfo } from "@/lib/platform/device";
+import { logger } from "../logger";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -285,7 +286,7 @@ export async function uploadPushTokens(
     (import.meta.env as Record<string, string>).VITE_NOTIFICATION_ROUTER_URL ?? "";
 
   if (!notificationRouterUrl) {
-    console.warn("[push] VITE_NOTIFICATION_ROUTER_URL not set — token upload skipped");
+    logger.warn("[push] VITE_NOTIFICATION_ROUTER_URL not set — token upload skipped");
     return;
   }
 

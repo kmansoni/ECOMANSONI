@@ -51,6 +51,7 @@ import {
 } from "@/lib/crm";
 import { CRMHRJobForm } from "@/components/crm/CRMHRJobForm";
 import { CRMHRCandidateForm } from "@/components/crm/CRMHRCandidateForm";
+import { logger } from "@/lib/logger";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Tab = 'dashboard' | 'jobs' | 'candidates' | 'pipeline' | 'interviews' | 'offers'
@@ -191,7 +192,7 @@ export function CRMHRDashboard() {
       setEmploymentDocs(docs);
       setEmployerBrand(brand);
     } catch (err) {
-      console.error('HR load error:', err);
+      logger.error('[CRMHRDashboard] HR load error', { error: err });
       if (!silent) toast.error('Ошибка загрузки HR данных');
     } finally {
       setLoading(false);
@@ -209,7 +210,7 @@ export function CRMHRDashboard() {
       await crm.deleteHRJob(id);
       setJobs(prev => prev.filter(j => j.id !== id));
       toast.success('Вакансия удалена');
-    } catch { toast.error('Ошибка удаления'); }
+    } catch (_err) { toast.error('Ошибка удаления'); }
   };
 
   const handleMoveApp = async () => {
@@ -224,7 +225,7 @@ export function CRMHRDashboard() {
       toast.success(`Перемещён на стадию: ${HR_APP_STAGES.find(s => s.value === moveStage)?.label ?? moveStage}`);
       setMovingApp(null);
       setMoveStage(''); setMoveNotes(''); setRejectReason(''); setMoveScore('');
-    } catch { toast.error('Ошибка перемещения'); }
+    } catch (_err) { toast.error('Ошибка перемещения'); }
   };
 
   const handleCompleteScorecard = async () => {
@@ -239,7 +240,7 @@ export function CRMHRDashboard() {
       setInterviews(prev => prev.map(i => i.id === updated.id ? updated : i));
       toast.success('Оценка сохранена');
       setScorecardInterview(null);
-    } catch { toast.error('Ошибка сохранения оценки'); }
+    } catch (_err) { toast.error('Ошибка сохранения оценки'); }
   };
 
   const handleAddToVacancy = async () => {
@@ -277,7 +278,7 @@ export function CRMHRDashboard() {
       toast.success(`Оффер создан для ${candidate?.name ?? 'кандидата'}`);
       setOfferApp(null);
       setOfferSalary(''); setOfferStartDate(''); setOfferProbation('3'); setOfferBonuses('');
-    } catch { toast.error('Ошибка создания оффера'); }
+    } catch (_err) { toast.error('Ошибка создания оффера'); }
   };
 
   const handleOfferStatusChange = async (offerId: string, status: string) => {
@@ -295,7 +296,7 @@ export function CRMHRDashboard() {
       } else {
         toast.success(`Оффер: ${status === 'declined' ? 'отклонён кандидатом' : status}`);
       }
-    } catch { toast.error('Ошибка обновления оффера'); }
+    } catch (_err) { toast.error('Ошибка обновления оффера'); }
   };
 
   // ─── Computed ──────────────────────────────────────────────────────────────
@@ -360,7 +361,7 @@ export function CRMHRDashboard() {
       });
       toast.success('Шаблон сохранён');
       setEditingTemplate(null); setTplName(''); setTplCategory('invitation'); setTplSubject(''); setTplBody('');
-    } catch { toast.error('Ошибка сохранения шаблона'); }
+    } catch (_err) { toast.error('Ошибка сохранения шаблона'); }
   };
 
   const handleSeedTemplates = async () => {
@@ -369,14 +370,14 @@ export function CRMHRDashboard() {
       const tpls = await crm.getHRTemplates();
       setTemplates(tpls);
       toast.success(`Загружено ${tpls.length} шаблонов по умолчанию`);
-    } catch { toast.error('Ошибка загрузки шаблонов'); }
+    } catch (_err) { toast.error('Ошибка загрузки шаблонов'); }
   };
 
   const handleToggleOnboardingTask = async (onboardingId: string, taskId: string, completed: boolean) => {
     try {
       const updated = await crm.updateHROnboardingTask(onboardingId, taskId, completed);
       setOnboardings(prev => prev.map(o => o.id === updated.id ? updated : o));
-    } catch { toast.error('Ошибка обновления задачи'); }
+    } catch (_err) { toast.error('Ошибка обновления задачи'); }
   };
 
   const handleCreateOnboarding = async (candidateId: string, jobId: string) => {
@@ -390,7 +391,7 @@ export function CRMHRDashboard() {
       });
       setOnboardings(prev => [...prev, ob]);
       toast.success('Онбординг создан');
-    } catch { toast.error('Ошибка создания онбординга'); }
+    } catch (_err) { toast.error('Ошибка создания онбординга'); }
   };
 
   const handleUpsertDoc = async (
@@ -407,7 +408,7 @@ export function CRMHRDashboard() {
         return idx >= 0 ? prev.map(d => d.id === doc.id ? doc : d) : [...prev, doc];
       });
       toast.success('Документ обновлён');
-    } catch { toast.error('Ошибка обновления документа'); }
+    } catch (_err) { toast.error('Ошибка обновления документа'); }
   };
 
   const handleSaveBrand = async () => {
@@ -424,7 +425,7 @@ export function CRMHRDashboard() {
       setEmployerBrand(saved);
       setEditingBrand(false);
       toast.success('Бренд работодателя обновлён');
-    } catch { toast.error('Ошибка сохранения бренда'); }
+    } catch (_err) { toast.error('Ошибка сохранения бренда'); }
   };
 
   const handleComputeAIScore = async (appId: string) => {
@@ -436,7 +437,7 @@ export function CRMHRDashboard() {
         weak_match: '⚠ Слабое', no_match: '✗ Не подходит',
       };
       toast.success(`AI оценка: ${updated.ai_score ?? 0}% — ${verdictMap[updated.ai_verdict ?? ''] ?? ''}`);
-    } catch { toast.error('Ошибка AI оценки'); }
+    } catch (_err) { toast.error('Ошибка AI оценки'); }
   };
 
   const TABS: Array<{ id: Tab; label: string; badge?: number }> = [

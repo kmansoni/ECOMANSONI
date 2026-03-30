@@ -9,6 +9,22 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useSearch } from "@/hooks/useSearch";
 import { VerifiedBadge } from "@/components/ui/verified-badge";
 
+type RecommendedReelItem = {
+  reel_id?: string | number;
+  thumbnail_url?: string | null;
+};
+
+type PopularHashtagItem = {
+  hashtag?: string;
+  post_count_approx?: number;
+};
+
+type FreshCreatorItem = {
+  user_id?: string;
+  display_name?: string;
+  avatar_url?: string | null;
+};
+
 function formatCompactCount(value: number): string {
   if (!Number.isFinite(value)) return "0";
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
@@ -79,21 +95,21 @@ export function SearchPage() {
   const recommendedReels = (() => {
     const sections = explorePage?.sections || [];
     const s = sections.find((x) => x.type === "recommended_reels");
-    const items = (s?.items || []) as any[];
+    const items = (s?.items || []) as RecommendedReelItem[];
     return items;
   })();
 
   const popularHashtags = (() => {
     const sections = explorePage?.sections || [];
     const s = sections.find((x) => x.type === "hashtags");
-    const items = (s?.items || []) as any[];
+    const items = (s?.items || []) as PopularHashtagItem[];
     return items;
   })();
 
   const freshCreators = (() => {
     const sections = explorePage?.sections || [];
     const s = sections.find((x) => x.type === "fresh_creators");
-    const items = (s?.items || []) as any[];
+    const items = (s?.items || []) as FreshCreatorItem[];
     return items;
   })();
 
@@ -238,7 +254,7 @@ export function SearchPage() {
                 </div>
                 <ScrollArea className="w-full whitespace-nowrap mt-2">
                   <div className="flex gap-2">
-                    {recommendedReels.slice(0, 12).map((r: any) => (
+                    {recommendedReels.slice(0, 12).map((r) => (
                       <button
                         key={String(r?.reel_id ?? "")}
                         type="button"
@@ -274,7 +290,7 @@ export function SearchPage() {
                 <div className="text-sm font-medium mb-2">Популярные хештеги</div>
                 <ScrollArea className="w-full whitespace-nowrap">
                   <div className="flex gap-2">
-                    {popularHashtags.slice(0, 16).map((h: any) => (
+                    {popularHashtags.slice(0, 16).map((h) => (
                       <button
                         key={String(h?.hashtag ?? "")}
                         className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-muted hover:bg-muted/80 transition-colors"
@@ -301,7 +317,7 @@ export function SearchPage() {
                 <div className="text-sm font-medium mb-2">Новые авторы</div>
                 <ScrollArea className="w-full whitespace-nowrap">
                   <div className="flex gap-3">
-                    {freshCreators.slice(0, 14).map((c: any) => {
+                    {freshCreators.slice(0, 14).map((c) => {
                       const userId = String(c?.user_id ?? "");
                       const name = String(c?.display_name ?? (userId ? userId.slice(0, 8) : "User"));
                       const avatarUrl = c?.avatar_url ? String(c.avatar_url) : "";

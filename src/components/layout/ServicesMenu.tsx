@@ -4,6 +4,7 @@ import { Car, ShoppingBag, Home, Shield, Briefcase, Building2, TrendingUp, Plane
 import logoImage from "@/assets/logo.png";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
+import { logger } from "@/lib/logger";
 
 type AvailableServiceItem = {
   id: string;
@@ -32,10 +33,10 @@ function validateServiceConfig(items: ServiceItem[]): void {
   for (const item of items) {
     const route = (item as { route?: string }).route;
     if (item.available && !route) {
-      console.error("[ServicesMenu] Invalid config: available service without route", item.id);
+      logger.error("[ServicesMenu] Невалидная конфигурация: доступный сервис без маршрута", { serviceId: item.id });
     }
     if (!item.available && route) {
-      console.warn("[ServicesMenu] Potentially inconsistent config: coming soon service has route", item.id);
+      logger.warn("[ServicesMenu] Несогласованная конфигурация: coming soon сервис имеет маршрут", { serviceId: item.id });
     }
   }
 }

@@ -27,7 +27,7 @@ export function estimateLocalStorageBytes(): number {
       total += (key.length + value.length) * 2;
     }
     return total;
-  } catch {
+  } catch (_error) {
     return 0;
   }
 }

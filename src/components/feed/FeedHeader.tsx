@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { Loader2, User } from "lucide-react";
+import { User } from "lucide-react";
 import { useScrollCollapse } from "@/hooks/useScrollCollapse";
 import { ServicesMenu } from "@/components/layout/ServicesMenu";
 import { cn } from "@/lib/utils";
@@ -31,16 +31,16 @@ export function FeedHeader() {
   const [storyViewerOpen, setStoryViewerOpen] = useState(false);
   const [selectedStoryIndex, setSelectedStoryIndex] = useState(0);
 
-  // Handle story click - either scroll to top or open viewer
+  // ИСПРАВЛЕНИЕ дефекта #11: истории открываются всегда при нажатии на аватар.
+  // Ранее при collapseProgress > 0.1 история не открывалась — только скролл вверх.
+  // Теперь: история открывается всегда, скролл — отдельное действие (не связано с нажатием).
   const handleStoryClick = (index: number, user: UserWithStories) => {
-    if (collapseProgress > 0.1 && scrollContainerRef?.current) {
-      scrollContainerRef.current.scrollTo({
-        top: 0,
-        behavior: 'smooth'
-      });
-    } else if (user.stories.length > 0) {
+    if (user.stories.length > 0) {
       setSelectedStoryIndex(index);
       setStoryViewerOpen(true);
+    } else if (user.isOwn && collapseProgress > 0.1 && scrollContainerRef?.current) {
+      // Для собственного аватара без историй — скролл вверх (чтобы показать кнопку +)
+      scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
     }
   };
 
@@ -96,17 +96,21 @@ export function FeedHeader() {
         </div>
       </div>
 
-      {/* Loading state */}
+      {/* ИСПРАВЛЕНИЕ дефекта #34: skeleton-кружки вместо spinner — соответствует Instagram */}
       {loading && usersWithStories.length === 0 && (
-        <div 
-          className="absolute flex items-center justify-center"
-          style={{ 
-            left: PADDING_LEFT, 
-            top: HEADER_HEIGHT,
-            height: EXPANDED_AVATAR_SIZE 
-          }}
+        <div
+          className="absolute flex items-center gap-4"
+          style={{ left: PADDING_LEFT, top: HEADER_HEIGHT }}
         >
-          <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="flex flex-col items-center gap-1">
+              <div
+                className="rounded-full bg-muted animate-pulse"
+                style={{ width: EXPANDED_AVATAR_SIZE, height: EXPANDED_AVATAR_SIZE }}
+              />
+              <div className="w-12 h-2.5 rounded bg-muted animate-pulse" />
+            </div>
+          ))}
         </div>
       )}
 

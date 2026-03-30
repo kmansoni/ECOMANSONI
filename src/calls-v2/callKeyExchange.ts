@@ -36,6 +36,8 @@ export interface CallIdentity {
   sessionId: string;
 }
 
+import { logger } from '@/lib/logger';
+
 export interface EpochKeyMaterial {
   epoch: number;
   /**
@@ -474,7 +476,7 @@ export class CallKeyExchange {
    */
   destroy(): void {
     // BUG #8 FIX: Логирование состояния перед уничтожением
-    console.log('[CallKeyExchange] destroy() called', {
+    logger.debug('[CallKeyExchange] destroy() called', {
       hasEphemeralKeyPair: !!this.ephemeralKeyPair,
       hasSigningKeyPair: !!this.signingKeyPair,
       hasCurrentEpochKey: !!this.currentEpochKey,
@@ -498,7 +500,7 @@ export class CallKeyExchange {
       this.currentEpochKey._rawBytes.fill(0);
     }
     
-    console.log('[CallKeyExchange] destroy() keys cleared', {
+    logger.debug('[CallKeyExchange] destroy() keys cleared', {
       epochKeysCleared: clearedKeysCount,
       timestamp: Date.now(),
     });
@@ -510,7 +512,7 @@ export class CallKeyExchange {
     this.epochKeys.clear();
     this.peerSigningKeys.clear(); // C-1: clear signing keys
     
-    console.log('[CallKeyExchange] destroy() completed', { timestamp: Date.now() });
+    logger.debug('[CallKeyExchange] destroy() completed', { timestamp: Date.now() });
   }
 }
 

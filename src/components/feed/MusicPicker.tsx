@@ -42,7 +42,7 @@ export function MusicPicker({ open, onClose, onSelect }: MusicPickerProps) {
     } else {
       audioRef.current.src = track.audio_url;
       audioRef.current.currentTime = startTime;
-      audioRef.current.play().catch(() => {});
+      audioRef.current.play().catch(() => { /* autoplay blocked */ });
       setPlayingId(track.id);
     }
   };

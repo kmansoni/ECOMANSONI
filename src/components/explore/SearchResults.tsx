@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Hash, MapPin, UserPlus, Check } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import type { SearchResults as SearchResultsType } from '@/hooks/useExploreSearch';
+import type { SearchResults as SearchResultsType, SearchResultUser, SearchResultHashtag } from '@/hooks/useExploreSearch';
 import { buildProfilePath } from '@/lib/users/profileLinks';
 
 interface SearchResultsProps {
@@ -28,9 +28,9 @@ function FollowButton({ userId }: { userId: string }) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
     if (following) {
-      await (supabase as any).from('followers').delete().match({ follower_id: user.id, following_id: userId });
+      await supabase.from('followers').delete().match({ follower_id: user.id, following_id: userId });
     } else {
-      await (supabase as any).from('followers').insert({ follower_id: user.id, following_id: userId });
+      await supabase.from('followers').insert({ follower_id: user.id, following_id: userId });
     }
     setFollowing(f => !f);
   };
@@ -144,7 +144,7 @@ export function SearchResults({ results, query, loading }: SearchResultsProps) {
   );
 }
 
-function UserRow({ user, navigate, showFollow }: { user: any; navigate: any; showFollow?: boolean }) {
+function UserRow({ user, navigate, showFollow }: { user: SearchResultUser; navigate: (path: string) => void; showFollow?: boolean }) {
   return (
     <div
       className="flex items-center gap-3 px-4 py-3 active:bg-neutral-900 cursor-pointer"
@@ -168,7 +168,7 @@ function UserRow({ user, navigate, showFollow }: { user: any; navigate: any; sho
   );
 }
 
-function TagRow({ tag, navigate }: { tag: any; navigate: any }) {
+function TagRow({ tag, navigate }: { tag: SearchResultHashtag; navigate: (path: string) => void }) {
   return (
     <div
       className="flex items-center gap-3 px-4 py-3 active:bg-neutral-900 cursor-pointer"
@@ -185,7 +185,7 @@ function TagRow({ tag, navigate }: { tag: any; navigate: any }) {
   );
 }
 
-function LocationRow({ location, navigate }: { location: string; navigate: any }) {
+function LocationRow({ location, navigate }: { location: string; navigate: (path: string) => void }) {
   return (
     <div
       className="flex items-center gap-3 px-4 py-3 active:bg-neutral-900 cursor-pointer"

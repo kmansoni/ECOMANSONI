@@ -3,10 +3,39 @@ import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Loader2, X, Check, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { logger } from "@/lib/logger";
 import type { ContentType } from "@/hooks/useMediaEditor";
 
+/** Минимальный интерфейс экземпляра CreativeEditor SDK */
+interface CesdkInstance {
+  dispose: () => void;
+  engine: {
+    scene: { get: () => unknown; getPages: () => number[] };
+    block: {
+      create: (type: string) => number;
+      setString: (block: number, key: string, value: string) => void;
+      appendChild: (parent: number, child: number) => void;
+      setWidth: (block: number, width: number) => void;
+      setHeight: (block: number, height: number) => void;
+      getWidth: (block: number) => number;
+      getHeight: (block: number) => number;
+      setPositionX: (block: number, x: number) => void;
+      setPositionY: (block: number, y: number) => void;
+      export: (block: number, mimeType: string, options?: Record<string, unknown>) => Promise<Blob>;
+    };
+  };
+  addDefaultAssetSources: () => Promise<void>;
+  addDemoAssetSources: (options: { sceneMode: string }) => Promise<void>;
+  createVideoScene: () => Promise<void>;
+  createDesignScene: () => Promise<void>;
+}
+
+interface CesdkModule {
+  create: (container: HTMLDivElement, config: Record<string, unknown>) => Promise<CesdkInstance>;
+}
+
 // Lazy load the SDK
-let CreativeEditorSDK: any = null;
+let CreativeEditorSDK: CesdkModule | null = null;
 
 const CESDK_VERSION = "1.67.0";
 
@@ -38,7 +67,7 @@ export function MediaEditorModal({
   onCancel,
 }: MediaEditorModalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const editorInstanceRef = useRef<any>(null);
+  const editorInstanceRef = useRef<CesdkInstance | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
@@ -52,7 +81,7 @@ export function MediaEditorModal({
       try {
         editorInstanceRef.current.dispose();
       } catch (e) {
-        console.warn("Error disposing editor:", e);
+        logger.warn("[MediaEditorModal] Error disposing editor", { error: e });
       }
       editorInstanceRef.current = null;
     }
@@ -73,12 +102,12 @@ export function MediaEditorModal({
         // Ensure container is mounted and has size (Dialog portals can mount async)
         const container = containerRef.current;
         if (!container) {
-          console.warn("[CESDK] containerRef is null (mount timing)");
+          logger.warn("[MediaEditorModal] containerRef is null (mount timing)");
           return;
         }
 
         const license = import.meta.env.VITE_IMGLY_LICENSE_KEY || "";
-        console.log("[CESDK] init", {
+        logger.debug("[MediaEditorModal] CESDK init", {
           hasLicense: Boolean(license),
           contentType,
           isVideo,
@@ -88,14 +117,14 @@ export function MediaEditorModal({
         // CE.SDK requires a non-zero sized container to render reliably
         const rect = container.getBoundingClientRect();
         if (rect.width < 10 || rect.height < 10) {
-          console.warn("[CESDK] container has zero size, retrying next frame", rect);
+          logger.warn("[MediaEditorModal] container has zero size, retrying", { rect });
           await new Promise<void>((r) => requestAnimationFrame(() => r()));
         }
 
         // Dynamically import SDK
         if (!CreativeEditorSDK) {
           const module = await import("@cesdk/cesdk-js");
-          CreativeEditorSDK = module.default;
+          CreativeEditorSDK = module.default as unknown as CesdkModule;
         }
 
         if (!isMounted || !containerRef.current) return;
@@ -168,7 +197,7 @@ export function MediaEditorModal({
           await editor.addDefaultAssetSources();
           await editor.addDemoAssetSources({ sceneMode: isVideo ? "Video" : "Design" });
         } catch (e) {
-          console.warn("[CESDK] add asset sources failed", e);
+          logger.warn("[MediaEditorModal] add asset sources failed", { error: e });
         }
 
         // Load the appropriate scene based on media type
@@ -233,12 +262,13 @@ export function MediaEditorModal({
         }
 
         setIsLoading(false);
-      } catch (err: any) {
-        console.error("Error initializing CreativeEditor:", err);
+      } catch (err: unknown) {
+        logger.error("[MediaEditorModal] Error initializing CreativeEditor", { error: err });
         if (isMounted) {
           setError(
-            err?.message ||
-              "Не удалось загрузить редактор (проверьте license/baseURL и CSS импорты)"
+            err instanceof Error
+              ? err.message
+              : "Не удалось загрузить редактор (проверьте license/baseURL и CSS импорты)"
           );
           setIsLoading(false);
         }
@@ -284,9 +314,9 @@ export function MediaEditorModal({
         const blob = await engine.block.export(page, mimeType, options);
         onSave(blob);
       }
-    } catch (err: any) {
-      console.error("Export error:", err);
-      setError("Ошибка экспорта: " + err.message);
+    } catch (err: unknown) {
+      logger.error("[MediaEditorModal] Export error", { error: err });
+      setError("Ошибка экспорта: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setIsExporting(false);
     }

@@ -8,16 +8,9 @@
  * - Один указатель при zoom > 1 → pan (translate)
  * - Границы: minScale=1, maxScale=5
  * - Double-tap: toggle между 1x и 2.5x
- * - Momentum: при отпускании с velocity → плавное затухание
- * - Возврат в границы: если pan выходит за пределы контейнера → spring-анимация
- *
- * Использование:
- * ```tsx
- * const { ref, style, reset } = usePinchZoom();
- * <div ref={ref} style={style}><img src="..." /></div>
- * ```
  */
 
+import { clamp } from '@/lib/utils/clamp';
 import { useRef, useState, useCallback, useEffect } from "react";
 
 interface PinchZoomState {
@@ -70,7 +63,7 @@ export function usePinchZoom(options: UsePinchZoomOptions = {}): UsePinchZoomRes
   const isAnimatingRef = useRef(false);
   const animFrameRef = useRef<number>(0);
 
-  const clamp = (val: number, min: number, max: number) => Math.min(Math.max(val, min), max);
+  // clamp imported from @/lib/utils/clamp
 
   // Вычисляем максимальный pan для текущего scale
   const getMaxPan = useCallback((scale: number) => {

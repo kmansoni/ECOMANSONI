@@ -3,6 +3,8 @@
  * Lazy-load модели. Fallback: определение по цвету кожи через Canvas.
  */
 
+import { logger } from '@/lib/logger';
+
 export interface BoundingBox {
   x: number;
   y: number;
@@ -43,16 +45,16 @@ export async function loadModel(): Promise<boolean> {
     ]);
 
     if (fld) {
-      await (Function('m', 'return import(m)') as (m: string) => Promise<any>)('@tensorflow/tfjs-backend-webgl').catch(() => {});
+      await (Function('m', 'return import(m)') as (m: string) => Promise<any>)('@tensorflow/tfjs-backend-webgl').catch((err) => { logger.warn('[FaceDetection] WebGL backend load failed', { error: err }); });
       detectorInstance = await fld.createDetector(
         fld.SupportedModels.MediaPipeFaceMesh,
         { runtime: 'tfjs', maxFaces: 4 }
       );
-      console.log('[FaceDetection] TF.js model loaded');
+      logger.debug('[FaceDetection] TF.js model loaded');
       return true;
     }
   } catch (e) {
-    console.warn('[FaceDetection] TF.js not available, using fallback', e);
+    logger.warn('[FaceDetection] TF.js not available, using fallback', { error: e });
   } finally {
     modelLoading = false;
   }

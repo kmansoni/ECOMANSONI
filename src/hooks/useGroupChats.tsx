@@ -7,6 +7,7 @@ import { checkHashtagsAllowedForText } from "@/lib/hashtagModeration";
 import { removeRealtimeMessage, upsertRealtimeMessage } from "@/lib/chat/realtimeMessageReducer";
 import { canonicalizeOutgoingChatText } from "@/lib/chat/textPipeline";
 import { fetchUserBriefMap, resolveUserBrief, type UserBriefClient } from "@/lib/users/userBriefs";
+import { logger } from "@/lib/logger";
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -16,18 +17,8 @@ interface GroupRpcClient {
   rpc: <T>(fn: string, args?: Record<string, unknown>) => RpcResult<T>;
 }
 
-interface ErrorLike {
-  code?: string;
-  message?: string;
-}
-
 function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === "object" && value !== null;
-}
-
-function toErrorLike(error: unknown): ErrorLike {
-  if (!isRecord(error)) return {};
-  return error as ErrorLike;
 }
 
 function getStringField(source: UnknownRecord, key: string): string | null {
@@ -78,19 +69,7 @@ function getGroupRpcClient(): GroupRpcClient {
   return supabase as unknown as GroupRpcClient;
 }
 
-function isSchemaMissingError(error: unknown): boolean {
-  const err = toErrorLike(error);
-  const msg = String(err.message ?? error).toLowerCase();
-  const code = String(err.code ?? "");
-  return (
-    code === "PGRST202" ||
-    code === "42P01" ||
-    code === "42883" ||
-    msg.includes("does not exist") ||
-    msg.includes("function") ||
-    msg.includes("relation")
-  );
-}
+
 
 export interface GroupChat {
   id: string;
@@ -224,7 +203,7 @@ export function useGroupChats() {
       setGroups(groupsWithMessages);
     } catch (err) {
       const msg = getErrorMessage(err);
-      console.error("Error fetching groups:", msg, err);
+      logger.error("[useGroupChats] Error fetching groups", { message: msg, error: err });
       setError(msg || "Failed to fetch groups");
     } finally {
       setLoading(false);
@@ -265,7 +244,7 @@ export function useGroupChats() {
         }),
       );
     } catch (err) {
-      console.error("Error refreshing groups by ids:", err);
+      logger.error("[useGroupChats] Error refreshing groups by ids", { error: err });
       void fetchGroups();
     }
   }, [mapWithConcurrency, fetchGroups]);
@@ -483,7 +462,7 @@ export function useGroupMessages(groupId: string | null) {
 
       setMessages(messagesWithSenders);
     } catch (error) {
-      console.error("Error fetching group messages:", error);
+      logger.error("[useGroupChats] Error fetching group messages", { error });
     } finally {
       setLoading(false);
     }
@@ -606,31 +585,13 @@ export function useGroupMessages(groupId: string | null) {
       const rpcResult = await rpc.rpc<unknown>("send_group_message_v1", {
         p_group_id: groupId,
         p_content: normalizedContent,
-        p_media_url: undefined,
-        p_media_type: undefined,
+        p_media_url: null,
+        p_media_type: null,
       });
 
-      if (rpcResult.error && !isSchemaMissingError(rpcResult.error)) {
-        throw rpcResult.error;
-      }
-
-      if (rpcResult.error && isSchemaMissingError(rpcResult.error)) {
-        const { error } = await supabase.from("group_chat_messages").insert({
-          group_id: groupId,
-          sender_id: user.id,
-          content: normalizedContent,
-        });
-
-        if (error) throw error;
-
-        // Обновляем updated_at группы
-        await supabase
-          .from("group_chats")
-          .update({ updated_at: new Date().toISOString() })
-          .eq("id", groupId);
-      }
+      if (rpcResult.error) throw rpcResult.error;
     } catch (error) {
-      console.error("Error sending group message:", error);
+      logger.error("[useGroupChats] Error sending group message", { error });
       throw error;
     }
   };
@@ -654,7 +615,7 @@ export function useCreateGroup() {
       if (error) throw error;
       return data as string;
     } catch (error) {
-      console.error("Error creating group:", error);
+      logger.error("[useGroupChats] Error creating group", { error });
       return null;
     }
   };
@@ -702,7 +663,7 @@ export function useGroupMembers(groupId: string | null) {
 
       setMembers(membersWithProfiles);
     } catch (error) {
-      console.error("Error fetching members:", error);
+      logger.error("[useGroupChats] Error fetching members", { error });
     } finally {
       setLoading(false);
     }

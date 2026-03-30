@@ -3,6 +3,7 @@ import type { RealtimeChannel } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { fetchUserBriefMap, resolveUserBrief } from "@/lib/users/userBriefs";
+import { logger } from "@/lib/logger";
 
 export type CallRecord = {
   id: string;
@@ -74,7 +75,7 @@ export function useCallHistory() {
         setProfilesById({});
       }
     } catch (e) {
-      console.error("useCallHistory.fetchCalls error:", e);
+      logger.error("[useCallHistory] fetchCalls error", { error: e });
       setCalls([]);
       setProfilesById({});
     } finally {

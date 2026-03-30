@@ -168,7 +168,30 @@ serve(async (req: Request): Promise<Response> => {
     return json({ error: "Feed unavailable" }, 503, req);
   }
 
-  const posts: FeedPost[] = (data as FeedPost[]) ?? [];
+  // SQL RPC returns flat fields (author_display_name, author_avatar_url, author_is_verified).
+  // Transform into nested FeedPost structure expected by the client.
+  const rawRows = (data as Record<string, unknown>[]) ?? [];
+  const posts: FeedPost[] = rawRows.map((row) => ({
+    id: String(row.id ?? ""),
+    author_id: String(row.author_id ?? ""),
+    content: row.content != null ? String(row.content) : null,
+    created_at: String(row.created_at ?? ""),
+    likes_count: Number(row.likes_count ?? 0),
+    comments_count: Number(row.comments_count ?? 0),
+    saves_count: Number(row.saves_count ?? 0),
+    shares_count: Number(row.shares_count ?? 0),
+    views_count: Number(row.views_count ?? 0),
+    score: Number(row.score ?? 0),
+    is_liked: Boolean(row.is_liked),
+    is_saved: Boolean(row.is_saved),
+    author: {
+      id: String(row.author_id ?? ""),
+      display_name: row.author_display_name != null ? String(row.author_display_name) : null,
+      avatar_url: row.author_avatar_url != null ? String(row.author_avatar_url) : null,
+      is_verified: Boolean(row.author_is_verified),
+    },
+    media: Array.isArray(row.media) ? row.media as FeedPost["media"] : [],
+  }));
   const hasMore = posts.length === pageSize;
   const lastPost = posts[posts.length - 1] ?? null;
 

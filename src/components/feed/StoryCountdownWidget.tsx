@@ -53,12 +53,12 @@ export function StoryCountdownWidget({ countdown, className }: StoryCountdownWid
     if (!user || loading) return;
     setLoading(true);
     if (!subscribed) {
-      const { error } = await (supabase as any)
+      const { error } = await supabase
         .from('story_countdown_subscribers')
         .insert({ countdown_id: countdown.id, user_id: user.id });
       if (!error) setSubscribed(true);
     } else {
-      const { error } = await (supabase as any)
+      const { error } = await supabase
         .from('story_countdown_subscribers')
         .delete()
         .eq('countdown_id', countdown.id)

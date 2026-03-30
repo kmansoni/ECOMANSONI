@@ -22,5 +22,27 @@ export default defineConfig(({ mode }) => ({
   },
   build: {
     chunkSizeWarningLimit: 900,
+    target: "es2020",
+    minify: "esbuild",
+    sourcemap: false,
+    rollupOptions: {
+      output: {
+        manualChunks: (id) => {
+          if (!id.includes("node_modules")) return;
+          if (id.includes("react-dom") || id.includes("react-router")) return "react-vendor";
+          if (id.includes("/react/") || id.includes("react/index")) return "react-vendor";
+          if (id.includes("@supabase")) return "supabase-vendor";
+          if (id.includes("@radix-ui")) return "radix-vendor";
+          if (id.includes("framer-motion")) return "animation-vendor";
+          if (id.includes("@sentry")) return "sentry-vendor";
+          if (id.includes("lottie-web") || id.includes("@lottiefiles")) return "lottie-vendor";
+          if (id.includes("leaflet")) return "maps-vendor";
+          if (id.includes("recharts") || id.includes("/d3-") || id.includes("d3-scale") || id.includes("d3-shape")) return "chart-vendor";
+        },
+      },
+    },
+  },
+  esbuild: {
+    drop: mode === "production" ? ["console", "debugger"] : [],
   },
 }));

@@ -1,3 +1,5 @@
+import { logger } from "@/lib/logger";
+
 /**
  * src/pages/EmailPage.tsx — Production-grade email client.
  *
@@ -128,6 +130,38 @@ interface Thread {
   lastAt: string;
   messages: MailMessage[];
   unreadCount: number;
+}
+
+interface EmailRouterAttachmentRaw {
+  filename?: string;
+  name?: string;
+  size?: number;
+  content_type?: string;
+  mime?: string;
+  url?: string;
+  content?: string;
+}
+
+interface EmailRouterMessageRaw {
+  id: string;
+  subject?: string | null;
+  from_email?: string | null;
+  to_email?: string | null;
+  text_body?: string | null;
+  html_body?: string | null;
+  attachments?: EmailRouterAttachmentRaw[] | null;
+  folder?: FolderKind | null;
+  received_at?: string | null;
+  created_at?: string | null;
+  is_read?: boolean | null;
+  is_starred?: boolean | null;
+  is_flagged?: boolean | null;
+  status?: MailMessage["status"];
+}
+
+interface EmailRouterListPayload {
+  ok: boolean;
+  items: EmailRouterMessageRaw[];
 }
 
 // ─── State machine ─────────────────────────────────────────────────────────────
@@ -910,7 +944,7 @@ function MessageDetail({ thread, state, dispatch, onReply, onMove, onDelete, onM
 
   useEffect(() => {
     setExpandedIds(new Set([thread.messages[thread.messages.length - 1]?.id]));
-  }, [thread.id]);
+  }, [thread.messages]);
 
   const toggleExpand = (id: string) => {
     setExpandedIds((prev) => {
@@ -1142,7 +1176,7 @@ export function EmailPage() {
               return base;
             }
           }
-        } catch {
+        } catch (_err) {
           // try next
         }
       }
@@ -1188,8 +1222,8 @@ export function EmailPage() {
         throw new Error(text || `HTTP ${response.status}`);
       }
 
-      const payload = await response.json() as { ok: boolean; items: any[] };
-      const rawItems: any[] = payload.items ?? [];
+      const payload = (await response.json()) as EmailRouterListPayload;
+      const rawItems = payload.items ?? [];
 
       const messages: MailMessage[] = rawItems.map((item) => {
         const subj = item.subject ?? "(без темы)";
@@ -1207,7 +1241,7 @@ export function EmailPage() {
           : "(пустое сообщение)";
 
         // Parse attachments from item (if email-router returns them)
-        const attachments: Attachment[] = (item.attachments ?? []).map((a: any) => ({
+        const attachments: Attachment[] = (item.attachments ?? []).map((a) => ({
           name: a.filename ?? a.name ?? "Файл",
           size: a.size ?? 0,
           mime: a.content_type ?? a.mime ?? "application/octet-stream",
@@ -1470,7 +1504,7 @@ export function EmailPage() {
         body: JSON.stringify({ is_starred: newVal }),
       });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    } catch {
+    } catch (_err) {
       dispatch({ type: "MARK_STARRED", id: msg.id, isStarred: msg.isStarred });
     }
   }, [resolveApiBase]);
@@ -1525,7 +1559,9 @@ export function EmailPage() {
 
       // Delete draft if existed
       if (state.composer.draftId) {
-        void fetchWithTimeout(`${base}/v1/email/outbox/${state.composer.draftId}`, { method: "DELETE" }).catch(() => {});
+        void fetchWithTimeout(`${base}/v1/email/outbox/${state.composer.draftId}`, { method: "DELETE" }).catch((err) => {
+          logger.warn("[Email] Draft delete failed", { error: err });
+        });
       }
 
       toast.success("Письмо отправлено");

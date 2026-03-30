@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ContentType } from "@/hooks/useMediaEditor";
+import { logger } from "@/lib/logger";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface SimpleMediaEditorProps {
@@ -103,7 +104,7 @@ export function SimpleMediaEditor({
     };
     
     img.onerror = (e) => {
-      console.error("Error loading image:", e);
+      logger.error("[SimpleMediaEditor] Error loading image", { error: e });
       setIsLoading(false);
     };
     
@@ -222,7 +223,7 @@ export function SimpleMediaEditor({
 
       onSave(blob);
     } catch (error) {
-      console.error("Export error:", error);
+      logger.error("[SimpleMediaEditor] Export error", { error });
     } finally {
       setIsExporting(false);
     }

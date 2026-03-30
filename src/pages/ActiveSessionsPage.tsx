@@ -11,7 +11,7 @@
  */
 
 import React, { useCallback, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase, dbLoose } from "@/lib/supabase";
 import { useUserSessions, type UserSessionRow } from "@/hooks/useUserSessions";
 import {
   useLoginNotifications,
@@ -172,7 +172,7 @@ export default function ActiveSessionsPage({ onClose }: ActiveSessionsPageProps)
       setTerminatingId(sessionId);
       try {
          
-        await (supabase as any)
+        await dbLoose
           .from("user_sessions")
           .update({ revoked_at: new Date().toISOString() })
           .eq("id", sessionId)
@@ -190,7 +190,7 @@ export default function ActiveSessionsPage({ onClose }: ActiveSessionsPageProps)
     setTerminatingAll(true);
     try {
        
-      await (supabase as any)
+      await dbLoose
         .from("user_sessions")
         .update({ revoked_at: new Date().toISOString() })
         .eq("user_id", user?.id)

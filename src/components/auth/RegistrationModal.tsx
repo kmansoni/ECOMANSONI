@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import logo from "@/assets/logo.png";
+import { logger } from "@/lib/logger";
 
 interface RegistrationModalProps {
   isOpen: boolean;
@@ -84,8 +85,8 @@ export function RegistrationModal({ isOpen, onClose, phone, email: initialEmail,
       });
 
       if (authUpdateError) {
-        console.error("[RegistrationModal] auth update failed:", authUpdateError.message);
-        toast.error("Ошибка обновления аккаунта: " + (authUpdateError.message || "Unknown error"));
+        logger.error("[RegistrationModal] auth update failed", { error: authUpdateError.message });
+        toast.error("Не удалось обновить аккаунт. Попробуйте снова.");
         return;
       }
 
@@ -109,8 +110,8 @@ export function RegistrationModal({ isOpen, onClose, phone, email: initialEmail,
         .maybeSingle();
 
       if (existingProfileError) {
-        console.error("[RegistrationModal] profile existence check failed:", existingProfileError.message);
-        toast.error("Ошибка проверки профиля: " + (existingProfileError.message || "Unknown error"));
+        logger.error("[RegistrationModal] profile existence check failed", { error: existingProfileError.message });
+        toast.error("Не удалось проверить профиль. Попробуйте снова.");
         return;
       }
 
@@ -126,17 +127,17 @@ export function RegistrationModal({ isOpen, onClose, phone, email: initialEmail,
       const updateError = profileMutation.error;
 
       if (updateError) {
-        console.error("[RegistrationModal] profile save failed:", updateError.message);
-        toast.error("Ошибка обновления профиля: " + (updateError.message || "Unknown error"));
+        logger.error("[RegistrationModal] profile save failed", { error: updateError.message });
+        toast.error("Не удалось сохранить профиль. Попробуйте снова.");
         return;
       }
 
       toast.success("Аккаунт создан!");
       onSuccess();
     } catch (error) {
-      console.error("[RegistrationModal] registration error:", error instanceof Error ? error.message : String(error));
+      logger.error("[RegistrationModal] registration error", { error: error instanceof Error ? error.message : String(error) });
       toast.error("Ошибка регистрации", {
-        description: error instanceof Error ? error.message : String(error),
+        description: "Попробуйте снова позже.",
       });
     } finally {
       setLoading(false);
@@ -233,7 +234,7 @@ export function RegistrationModal({ isOpen, onClose, phone, email: initialEmail,
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label htmlFor="gender" className="text-sm">Пол *</Label>
-              <Select value={gender} onValueChange={(value: any) => setGender(value)}>
+              <Select value={gender} onValueChange={(value) => setGender(value as Gender)}>
                 <SelectTrigger id="gender" disabled={loading}>
                   <SelectValue placeholder="Выберите" />
                 </SelectTrigger>
@@ -245,7 +246,7 @@ export function RegistrationModal({ isOpen, onClose, phone, email: initialEmail,
             </div>
             <div>
               <Label htmlFor="entity" className="text-sm">Тип *</Label>
-              <Select value={entityType} onValueChange={(value: any) => setEntityType(value)}>
+              <Select value={entityType} onValueChange={(value) => setEntityType(value as EntityType)}>
                 <SelectTrigger id="entity" disabled={loading}>
                   <SelectValue placeholder="Выберите" />
                 </SelectTrigger>

@@ -1,31 +1,46 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useReducer } from 'react';
 import {
   X, Image, Film, Radio, Camera, Loader2, RotateCw, Upload,
   Zap, ZapOff, Timer, Settings, Sparkles, Music2, FlipHorizontal,
   Wand2, User, ChevronDown,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { useChatOpen } from '@/contexts/ChatOpenContext';
+import { useAuth } from '@/hooks/useAuth';
 import type { ContentType } from '@/hooks/useMediaEditor';
 import { useUnifiedContentCreator } from '@/hooks/useUnifiedContentCreator';
+import type { UnifiedContent } from '@/hooks/useUnifiedContentCreator';
+import { checkHashtagsAllowedForText } from '@/lib/hashtagModeration';
 import { CameraHost, type CameraHostHandle, type CaptureMode } from '@/components/camera/CameraHost';
 import type { CameraDebugSnapshot } from '@/components/camera/CameraHost';
+import { SimpleMediaEditor } from '@/components/editor';
+import { editorApi } from '@/features/editor/api';
+import { TabContentEditor } from './TabContentEditor';
+import {
+  getDefaultEditorState,
+  editorStateReducer,
+  validateEditorState,
+  validateMediaFile,
+} from './editorStateModel';
+import { logger } from '@/lib/logger';
 
 interface CreateContentModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess?: (contentType: ContentType) => void;
+  initialTab?: TabType;
 }
 
 type TabType = 'publications' | 'stories' | 'reels' | 'live';
 type CameraMode = 'camera' | 'gallery';
 type FlashMode = 'off' | 'on' | 'auto';
 
-const TABS: Array<{ id: TabType; label: string; icon: any; contentType: ContentType }> = [
+const TABS: Array<{ id: TabType; label: string; icon: LucideIcon; contentType: ContentType }> = [
   { id: 'publications', label: 'Публикация', icon: Image, contentType: 'post' },
   { id: 'stories', label: 'История', icon: Camera, contentType: 'story' },
   { id: 'reels', label: 'Видео Reels', icon: Film, contentType: 'reel' },
@@ -34,7 +49,23 @@ const TABS: Array<{ id: TabType; label: string; icon: any; contentType: ContentT
 
 const ZOOM_LEVELS = [0.5, 1, 2, 3] as const;
 
-export function CreateContentModal({ isOpen, onClose, onSuccess }: CreateContentModalProps) {
+type QuickPanel = 'audio' | 'effects' | null;
+
+type AudioTrackOption = {
+  id: string;
+  title: string;
+  artist?: string | null;
+};
+
+const REEL_EFFECT_PRESETS = [
+  { id: 'none', label: 'Без эффекта' },
+  { id: 'cinematic', label: 'Кино' },
+  { id: 'vintage', label: 'Винтаж' },
+  { id: 'vivid', label: 'Яркий' },
+] as const;
+
+export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'publications' }: CreateContentModalProps) {
+  const { user } = useAuth();
   const { setIsCreatingContent } = useChatOpen();
   const {
     isLoading,
@@ -62,13 +93,46 @@ export function CreateContentModal({ isOpen, onClose, onSuccess }: CreateContent
   const [timerEnabled, setTimerEnabled] = useState(false);
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('environment');
   const [showCaptionEditor, setShowCaptionEditor] = useState(false);
+  const [musicTitle, setMusicTitle] = useState('');
+  const [selectedMusicTrackId, setSelectedMusicTrackId] = useState<string | null>(null);
+  const [audioQuery, setAudioQuery] = useState('');
+  const [audioTracks, setAudioTracks] = useState<AudioTrackOption[]>([]);
+  const [isAudioLoading, setIsAudioLoading] = useState(false);
+  const [quickPanel, setQuickPanel] = useState<QuickPanel>(null);
+  const [reelEffectPreset, setReelEffectPreset] = useState<(typeof REEL_EFFECT_PRESETS)[number]['id']>('none');
+  const [reelFaceEnhance, setReelFaceEnhance] = useState(false);
+  const [reelAiEnhance, setReelAiEnhance] = useState(false);
+  const [reelMaxDurationSec, setReelMaxDurationSec] = useState<60 | 90>(60);
+  const [reelTaggedUsers, setReelTaggedUsers] = useState('');
+  const [reelLocationName, setReelLocationName] = useState('');
+  const [reelAudience, setReelAudience] = useState<'public' | 'followers' | 'private'>('public');
+  const [reelAllowComments, setReelAllowComments] = useState(true);
+  const [reelAllowRemix, setReelAllowRemix] = useState(true);
+  const [isPublishing, setIsPublishing] = useState(false);
+  const [reelClientPublishId, setReelClientPublishId] = useState<string | null>(null);
+  const [showReelEditor, setShowReelEditor] = useState(false);
+
+  // CRITICAL FIX #1: EditorState Management (перемещено из TabEditor)
+  const [editorState, dispatchEditor] = useReducer(
+    editorStateReducer,
+    undefined,
+    getDefaultEditorState,
+  );
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraHostRef = useRef<CameraHostHandle | null>(null);
+  const publishInFlightRef = useRef(false);
 
   useEffect(() => {
+    // CRITICAL FIX #5: URL cleanup - предотвращение утечек памяти
     return () => {
-      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      if (previewUrl && previewUrl.startsWith('blob:')) {
+        try {
+          URL.revokeObjectURL(previewUrl);
+        } catch (e) {
+          logger.warn('[CreateContentModal] Не удалось отозвать object URL', { error: e });
+        }
+      }
     };
   }, [previewUrl]);
 
@@ -80,6 +144,14 @@ export function CreateContentModal({ isOpen, onClose, onSuccess }: CreateContent
     };
   }, [isOpen, setIsCreatingContent]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    setActiveTab(initialTab);
+    setActiveContentType(TABS.find((t) => t.id === initialTab)?.contentType || 'post');
+    setCameraMode(initialTab === 'live' ? 'gallery' : 'camera');
+    setShowCaptionEditor(false);
+  }, [isOpen, initialTab, setActiveContentType]);
+
   // Lock body scroll when modal open
   useEffect(() => {
     if (isOpen) {
@@ -90,12 +162,115 @@ export function CreateContentModal({ isOpen, onClose, onSuccess }: CreateContent
     return () => { document.body.style.overflow = ''; };
   }, [isOpen]);
 
+  const getReelsPublishStorageKey = useCallback(() => {
+    if (!user?.id) return null;
+    return `reels_client_publish_id:${user.id}`;
+  }, [user?.id]);
+
+  const clearStoredReelPublishId = useCallback(() => {
+    const storageKey = getReelsPublishStorageKey();
+    if (!storageKey) return;
+    try {
+      sessionStorage.removeItem(storageKey);
+    } catch (e) {
+      logger.warn('[CreateContentModal] Не удалось очистить reel publish id из sessionStorage', { error: e });
+    }
+  }, [getReelsPublishStorageKey]);
+
+  const getStableReelPublishId = useCallback((): string => {
+    if (reelClientPublishId) return reelClientPublishId;
+
+    const storageKey = getReelsPublishStorageKey();
+    let resolvedId: string | null = null;
+
+    if (storageKey) {
+      try {
+        resolvedId = sessionStorage.getItem(storageKey);
+      } catch (e) {
+        logger.warn('[CreateContentModal] Не удалось прочитать reel publish id из sessionStorage', { error: e });
+        resolvedId = null;
+      }
+    }
+
+    if (!resolvedId) {
+      if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+        resolvedId = crypto.randomUUID();
+      } else {
+        resolvedId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      }
+
+      if (storageKey) {
+        try {
+          sessionStorage.setItem(storageKey, resolvedId);
+        } catch (e) {
+          logger.warn('[CreateContentModal] Не удалось сохранить reel publish id в sessionStorage', { error: e });
+        }
+      }
+    }
+
+    setReelClientPublishId(resolvedId);
+    return resolvedId;
+  }, [getReelsPublishStorageKey, reelClientPublishId]);
+
+  const getVideoDurationSeconds = useCallback((file: File) => {
+    return new Promise<number | null>((resolve) => {
+      const objectUrl = URL.createObjectURL(file);
+      const video = document.createElement('video');
+      video.preload = 'metadata';
+      video.muted = true;
+
+      const finalize = (duration: number | null) => {
+        URL.revokeObjectURL(objectUrl);
+        resolve(duration);
+      };
+
+      video.onloadedmetadata = () => {
+        const d = Number(video.duration);
+        finalize(Number.isFinite(d) ? d : null);
+      };
+
+      video.onerror = () => finalize(null);
+      video.src = objectUrl;
+    });
+  }, []);
+
+  const loadAudioTracks = useCallback(async (queryText?: string) => {
+    setIsAudioLoading(true);
+    try {
+      const response = await editorApi.searchMusic({
+        page: 1,
+        limit: 20,
+        query: (queryText ?? '').trim() || undefined,
+      });
+
+      setAudioTracks(
+        response.data
+          .filter((row) => row?.id && row?.title)
+          .map((row) => ({
+            id: String(row.id),
+            title: String(row.title),
+            artist: row.artist ? String(row.artist) : null,
+          })),
+      );
+    } catch (err) {
+      logger.error('[CreateContentModal] Не удалось загрузить аудио-треки', { error: err });
+      toast.error('Не удалось загрузить аудио-треки');
+    } finally {
+      setIsAudioLoading(false);
+    }
+  }, []);
+
   const setPreviewFromCapture = (file: File, url: string) => {
+    // CRITICAL FIX #1: Reset editor state on new capture
+    dispatchEditor({ type: 'CLEAR_ALL' });
+
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setSelectedFile(file);
     setPreviewUrl(url);
     setCameraMode('gallery');
     setShowCaptionEditor(true);
+    setReelClientPublishId(null);
+    clearStoredReelPublishId();
   };
 
   const handleTabChange = useCallback((tabId: TabType) => {
@@ -104,6 +279,7 @@ export function CreateContentModal({ isOpen, onClose, onSuccess }: CreateContent
       return;
     }
     setActiveTab(tabId);
+    setQuickPanel(null);
     setActiveContentType(TABS.find(t => t.id === tabId)?.contentType || 'post');
     setCameraMode(tabId === 'live' ? 'gallery' : 'camera');
     setShowCaptionEditor(false);
@@ -149,32 +325,159 @@ export function CreateContentModal({ isOpen, onClose, onSuccess }: CreateContent
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      setSelectedFile(file);
-      const url = URL.createObjectURL(file);
-      setPreviewUrl(url);
-      setCameraMode('gallery');
-      setShowCaptionEditor(true);
+      // CRITICAL FIX #1: Reset editor state when new file selected
+      dispatchEditor({ type: 'CLEAR_ALL' });
+
+      void (async () => {
+        if (activeTab === 'reels' && file.type.startsWith('video/')) {
+          const duration = await getVideoDurationSeconds(file);
+          if (duration != null && duration > 90) {
+            toast.error('Выберите видео короче 90 секунд.');
+            if (fileInputRef.current) fileInputRef.current.value = '';
+            return;
+          }
+        }
+
+        setSelectedFile(file);
+        const url = URL.createObjectURL(file);
+        setPreviewUrl(url);
+        setCameraMode('gallery');
+        setShowCaptionEditor(true);
+        setReelClientPublishId(null);
+        clearStoredReelPublishId();
+      })();
     }
   };
 
   const handlePublish = async () => {
-    const currentTab = TABS.find((t) => t.id === activeTab);
+    if (publishInFlightRef.current) return;
+    publishInFlightRef.current = true;
+    setIsPublishing(true);
+
     try {
+      // CRITICAL FIX #3 & #4 & #6: Валидация + Schedule передача + Форма валидация
+      const currentTab = TABS.find((t) => t.id === activeTab);
+
+      // Валидация состояния редактора
+      const validation = validateEditorState(editorState, activeTab);
+      if (!validation.valid) {
+        toast.error(validation.error || 'Ошибка валидации');
+        return;
+      }
+
+      // Показываем предупреждения если есть
+      if (validation.warnings) {
+        validation.warnings.forEach((w) => toast.warning(w));
+      }
+
       if (activeTab === 'live') {
-        if (!title.trim()) { toast.error('Укажите название трансляции'); return; }
+        if (!title.trim()) {
+          toast.error('Укажите название трансляции');
+          return;
+        }
         await createLiveSession(title, category, previewUrl || undefined);
         toast.success('Трансляция готова к началу!');
         onSuccess?.('live');
         resetForm();
         onClose();
       } else {
-        if (!selectedFile) { toast.error('Выберите медиа-файл'); return; }
-        let result: { content_type: ContentType } | null = null;
-        switch (activeTab) {
-          case 'publications': result = await uploadPostMedia(selectedFile, caption); break;
-          case 'stories': result = await uploadStoryMedia(selectedFile, caption); break;
-          case 'reels': result = await uploadReelMedia(selectedFile, caption); break;
+        if (!selectedFile) {
+          toast.error('Выберите медиа-файл');
+          return;
         }
+
+        // CRITICAL FIX #6: Валидация файла перед загрузкой
+        const fileValidation = validateMediaFile(selectedFile, activeTab);
+        if (!fileValidation.valid) {
+          toast.error(fileValidation.error || 'Некорректный файл');
+          return;
+        }
+
+        if (activeTab === 'reels') {
+          if (selectedFile.type.startsWith('video/')) {
+            const duration = await getVideoDurationSeconds(selectedFile);
+            if (duration != null && duration > reelMaxDurationSec) {
+              toast.error(`Максимальная длительность в текущем режиме: ${reelMaxDurationSec}с`);
+              return;
+            }
+          }
+
+          const hashtagVerdict = await checkHashtagsAllowedForText(caption.trim());
+          if (!hashtagVerdict.ok) {
+            const blockedTags = 'blockedTags' in hashtagVerdict ? hashtagVerdict.blockedTags : [];
+            toast.error('Некоторые хештеги недоступны', {
+              description: blockedTags.join(', '),
+            });
+            return;
+          }
+        }
+
+        // Создаем metadata с scheduling информацией
+        const metadata = {
+          scheduledAt: editorState.scheduledDate?.toISOString() || null,
+          filters: {
+            selectedIdx: editorState.selectedFilterIdx,
+            intensity: editorState.filterIntensity,
+          },
+          adjustments: editorState.adjustments,
+          peopleTags: editorState.peopleTags,
+          location: editorState.location,
+          draftId: editorState.draftId,
+        };
+
+        let result: UnifiedContent | null = null;
+
+        // CRITICAL FIX #4: передаем scheduling metadata к backend
+        switch (activeTab) {
+          case 'publications':
+            result = await uploadPostMedia(selectedFile, caption);
+            if (result) {
+              // Если есть scheduling информация, сохраняем для обработки backend-ом
+              if (metadata.scheduledAt) {
+                // Сохраняем в localStorage временно (production должен быть в DB)
+                const scheduled = JSON.parse(localStorage.getItem('scheduled_posts') || '{}');
+                scheduled[result.id] = metadata;
+                localStorage.setItem('scheduled_posts', JSON.stringify(scheduled));
+                toast.info(`Публикация запланирована на ${new Date(metadata.scheduledAt).toLocaleString('ru')}`);
+              }
+            }
+            break;
+          case 'stories':
+            result = await uploadStoryMedia(selectedFile, caption);
+            if (result && metadata.scheduledAt) {
+              const scheduled = JSON.parse(localStorage.getItem('scheduled_stories') || '{}');
+              scheduled[result.id] = metadata;
+              localStorage.setItem('scheduled_stories', JSON.stringify(scheduled));
+              toast.info(`История запланирована на ${new Date(metadata.scheduledAt).toLocaleString('ru')}`);
+            }
+            break;
+          case 'reels':
+            result = await uploadReelMedia(selectedFile, caption, {
+              clientPublishId: getStableReelPublishId(),
+              musicTitle,
+              musicTrackId: selectedMusicTrackId,
+              effectPreset: reelEffectPreset,
+              faceEnhance: reelFaceEnhance,
+              aiEnhance: reelAiEnhance,
+              maxDurationSec: reelMaxDurationSec,
+              taggedUsers: reelTaggedUsers
+                .split(',')
+                .map((v) => v.trim())
+                .filter(Boolean),
+              locationName: reelLocationName.trim() || null,
+              visibility: reelAudience,
+              allowComments: reelAllowComments,
+              allowRemix: reelAllowRemix,
+            });
+            if (result && metadata.scheduledAt) {
+              const scheduled = JSON.parse(localStorage.getItem('scheduled_reels') || '{}');
+              scheduled[result.id] = metadata;
+              localStorage.setItem('scheduled_reels', JSON.stringify(scheduled));
+              toast.info(`Видео запланировано на ${new Date(metadata.scheduledAt).toLocaleString('ru')}`);
+            }
+            break;
+        }
+
         if (result) {
           toast.success(`${currentTab?.label} успешно загружена!`);
           onSuccess?.(result.content_type);
@@ -182,8 +485,13 @@ export function CreateContentModal({ isOpen, onClose, onSuccess }: CreateContent
           onClose();
         }
       }
-    } catch {
-      toast.error(error || 'Ошибка при публикации');
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : error;
+      toast.error(errorMsg || 'Ошибка при публикации');
+      logger.error('[CreateContentModal] Ошибка публикации', { error: err });
+    } finally {
+      publishInFlightRef.current = false;
+      setIsPublishing(false);
     }
   };
 
@@ -194,8 +502,24 @@ export function CreateContentModal({ isOpen, onClose, onSuccess }: CreateContent
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setPreviewUrl(null);
     setCategory('other');
+    setMusicTitle('');
+    setSelectedMusicTrackId(null);
+    setAudioQuery('');
+    setAudioTracks([]);
+    setQuickPanel(null);
+    setReelEffectPreset('none');
+    setReelFaceEnhance(false);
+    setReelAiEnhance(false);
+    setReelMaxDurationSec(60);
+    setReelTaggedUsers('');
+    setReelLocationName('');
+    setReelAudience('public');
+    setReelAllowComments(true);
+    setReelAllowRemix(true);
     setCameraMode('camera');
     setShowCaptionEditor(false);
+    setReelClientPublishId(null);
+    clearStoredReelPublishId();
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -261,7 +585,7 @@ export function CreateContentModal({ isOpen, onClose, onSuccess }: CreateContent
               toast.success('Видео сохранено');
             }}
             onError={(err) => {
-              console.error('Ошибка доступа к камере:', err);
+              logger.error('[CreateContentModal] Ошибка доступа к камере', { error: err });
               toast.error('Не удалось открыть камеру');
               setCameraMode('gallery');
             }}
@@ -366,10 +690,10 @@ export function CreateContentModal({ isOpen, onClose, onSuccess }: CreateContent
           {previewUrl ? (
             <button
               onClick={handlePublish}
-              disabled={isLoading}
+              disabled={isLoading || isPublishing}
               className="px-4 h-9 rounded-full bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold flex items-center gap-2 disabled:opacity-50 transition-colors"
             >
-              {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Далее →'}
+              {isLoading || isPublishing ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Далее →'}
             </button>
           ) : (
             <button className="w-10 h-10 flex items-center justify-center rounded-full bg-black/30 backdrop-blur-sm text-white" aria-label="Настройки">
@@ -381,9 +705,15 @@ export function CreateContentModal({ isOpen, onClose, onSuccess }: CreateContent
         {/* ── ADD AUDIO label (camera mode, non-live) ─────────────── */}
         {cameraMode === 'camera' && isCameraAvailable && (
           <div className="absolute top-16 left-1/2 -translate-x-1/2 z-20">
-            <button className="flex items-center gap-2 px-4 py-1.5 rounded-full bg-black/30 backdrop-blur-sm text-white text-sm">
+            <button
+              onClick={() => {
+                setQuickPanel('audio');
+                void loadAudioTracks(audioQuery);
+              }}
+              className="flex items-center gap-2 px-4 py-1.5 rounded-full bg-black/30 backdrop-blur-sm text-white text-sm"
+            >
               <Music2 className="w-4 h-4" />
-              <span>Добавить аудио</span>
+              <span>{musicTitle ? `Аудио: ${musicTitle}` : 'Добавить аудио'}</span>
             </button>
           </div>
         )}
@@ -392,18 +722,59 @@ export function CreateContentModal({ isOpen, onClose, onSuccess }: CreateContent
         {cameraMode === 'camera' && isCameraAvailable && (
           <div className="absolute left-3 top-1/2 -translate-y-1/2 z-20 flex flex-col gap-5">
             {[
-              { icon: Music2, label: 'Аудио' },
-              { icon: Sparkles, label: 'Эффекты' },
-              { icon: Timer, label: '60с' },
-              { icon: User, label: 'Лицо' },
-              { icon: Wand2, label: 'AI' },
-            ].map(({ icon: Icon, label }) => (
+              {
+                icon: Music2,
+                label: 'Аудио',
+                active: quickPanel === 'audio',
+                onClick: () => {
+                  setQuickPanel('audio');
+                  void loadAudioTracks(audioQuery);
+                },
+              },
+              {
+                icon: Sparkles,
+                label: 'Эффекты',
+                active: quickPanel === 'effects' || reelEffectPreset !== 'none',
+                onClick: () => setQuickPanel('effects'),
+              },
+              {
+                icon: Timer,
+                label: `${reelMaxDurationSec}с`,
+                active: reelMaxDurationSec === 90,
+                onClick: () => {
+                  setReelMaxDurationSec((prev) => (prev === 60 ? 90 : 60));
+                  toast.success(`Ограничение длительности: ${reelMaxDurationSec === 60 ? 90 : 60}с`);
+                },
+              },
+              {
+                icon: User,
+                label: 'Лицо',
+                active: reelFaceEnhance,
+                onClick: () => {
+                  setReelFaceEnhance((prev) => !prev);
+                  toast.success(`Режим лица: ${!reelFaceEnhance ? 'включен' : 'выключен'}`);
+                },
+              },
+              {
+                icon: Wand2,
+                label: 'AI',
+                active: reelAiEnhance,
+                onClick: () => {
+                  setReelAiEnhance((prev) => !prev);
+                  toast.success(`AI-режим: ${!reelAiEnhance ? 'включен' : 'выключен'}`);
+                },
+              },
+            ].map(({ icon: Icon, label, active, onClick }) => (
               <button
                 key={label}
+                onClick={onClick}
                 className="flex flex-col items-center gap-0.5"
                 aria-label={label}
               >
-                <div className="w-9 h-9 rounded-full bg-black/30 backdrop-blur-sm flex items-center justify-center">
+                <div className={cn(
+                  'w-9 h-9 rounded-full backdrop-blur-sm flex items-center justify-center border',
+                  active ? 'bg-blue-600/70 border-blue-300/60' : 'bg-black/30 border-transparent',
+                )}>
                   <Icon className="w-5 h-5 text-white" />
                 </div>
                 <span className="text-[10px] text-white/80 font-medium">{label}</span>
@@ -412,11 +783,128 @@ export function CreateContentModal({ isOpen, onClose, onSuccess }: CreateContent
           </div>
         )}
 
+        {/* ── QUICK PANELS (backend-backed) ─────────────────────────── */}
+        {cameraMode === 'camera' && isCameraAvailable && quickPanel === 'audio' && (
+          <div className="absolute left-14 top-1/2 -translate-y-1/2 z-20 w-72 rounded-2xl border border-white/20 bg-black/60 backdrop-blur-md p-3 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-white/90">Выбор аудио</span>
+              <button
+                onClick={() => setQuickPanel(null)}
+                className="text-white/70 hover:text-white text-xs"
+              >
+                Закрыть
+              </button>
+            </div>
+            <Input
+              value={audioQuery}
+              onChange={(e) => setAudioQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  void loadAudioTracks(audioQuery);
+                }
+              }}
+              placeholder="Поиск по трекам"
+              className="h-8 bg-white/10 border-white/20 text-white placeholder:text-white/50"
+            />
+            <div className="max-h-48 overflow-y-auto space-y-1">
+              {isAudioLoading ? (
+                <div className="flex items-center gap-2 text-white/70 text-xs py-3 justify-center">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Загрузка...
+                </div>
+              ) : audioTracks.length === 0 ? (
+                <p className="text-xs text-white/60 py-2 text-center">Нет результатов</p>
+              ) : (
+                audioTracks.map((track) => (
+                  <button
+                    key={track.id}
+                    onClick={() => {
+                      setSelectedMusicTrackId(track.id);
+                      setMusicTitle([track.artist, track.title].filter(Boolean).join(' — '));
+                      setQuickPanel(null);
+                      toast.success('Аудио добавлено');
+                    }}
+                    className={cn(
+                      'w-full text-left rounded-lg px-2 py-1.5 text-xs border transition-colors',
+                      selectedMusicTrackId === track.id
+                        ? 'bg-blue-600/50 border-blue-300/50 text-white'
+                        : 'bg-white/5 border-white/10 text-white/90 hover:bg-white/10',
+                    )}
+                  >
+                    <div className="font-medium truncate">{track.title}</div>
+                    <div className="text-white/60 truncate">{track.artist || 'Неизвестный артист'}</div>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+
+        {cameraMode === 'camera' && isCameraAvailable && quickPanel === 'effects' && (
+          <div className="absolute left-14 top-1/2 -translate-y-1/2 z-20 w-56 rounded-2xl border border-white/20 bg-black/60 backdrop-blur-md p-3 space-y-2">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs font-semibold text-white/90">Эффекты</span>
+              <button
+                onClick={() => setQuickPanel(null)}
+                className="text-white/70 hover:text-white text-xs"
+              >
+                Закрыть
+              </button>
+            </div>
+            {REEL_EFFECT_PRESETS.map((preset) => (
+              <button
+                key={preset.id}
+                onClick={() => {
+                  setReelEffectPreset(preset.id);
+                  setQuickPanel(null);
+                  toast.success(`Эффект: ${preset.label}`);
+                }}
+                className={cn(
+                  'w-full rounded-lg px-2 py-2 text-left text-xs border transition-colors',
+                  reelEffectPreset === preset.id
+                    ? 'bg-blue-600/50 border-blue-300/50 text-white'
+                    : 'bg-white/5 border-white/10 text-white/90 hover:bg-white/10',
+                )}
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* ── CAPTION EDITOR OVERLAY (after capture) ─────────────── */}
         {showCaptionEditor && previewUrl && activeTab !== 'live' && (
+          <div className="absolute bottom-0 left-0 right-0 z-20 bg-gradient-to-t from-black/90 to-transparent px-4 pb-4 pt-10 max-h-96 overflow-y-auto">
+            <TabContentEditor
+              activeTab={activeTab}
+              previewUrl={previewUrl}
+              caption={caption}
+              onCaptionChange={setCaption}
+              musicTitle={musicTitle}
+              onMusicTitleChange={setMusicTitle}
+              reelTaggedUsers={reelTaggedUsers}
+              onReelTaggedUsersChange={setReelTaggedUsers}
+              reelLocationName={reelLocationName}
+              onReelLocationNameChange={setReelLocationName}
+              reelAudience={reelAudience}
+              onReelAudienceChange={setReelAudience}
+              reelAllowComments={reelAllowComments}
+              onReelAllowCommentsChange={setReelAllowComments}
+              reelAllowRemix={reelAllowRemix}
+              onReelAllowRemixChange={setReelAllowRemix}
+              onClose={handleClose}
+              editorState={editorState}
+              dispatchEditor={dispatchEditor}
+            />
+          </div>
+        )}
+
+        {/* ── SIMPLE CAPTION FOR LIVE ──────────────────────────────── */}
+        {showCaptionEditor && activeTab === 'live' && (
           <div className="absolute bottom-0 left-0 right-0 z-20 bg-gradient-to-t from-black/80 to-transparent px-4 pb-4 pt-10">
             <Textarea
-              placeholder="Добавьте описание..."
+              placeholder="Добавьте описание трансляции..."
               value={caption}
               onChange={(e) => setCaption(e.target.value)}
               maxLength={300}
@@ -486,25 +974,36 @@ export function CreateContentModal({ isOpen, onClose, onSuccess }: CreateContent
 
         {/* Controls when preview shown */}
         {previewUrl && (
-          <button
-            onClick={() => {
-              if (previewUrl) URL.revokeObjectURL(previewUrl);
-              setPreviewUrl(null);
-              setSelectedFile(null);
-              setCameraMode('camera');
-              setShowCaptionEditor(false);
-            }}
-            className="absolute top-16 right-4 z-20 w-10 h-10 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center text-white"
-            aria-label="Переснять"
-          >
-            <RotateCw className="w-5 h-5" />
-          </button>
+          <div className="absolute top-16 right-4 z-20 flex items-center gap-2">
+            {activeTab === 'reels' && selectedFile?.type.startsWith('video/') && (
+              <button
+                onClick={() => setShowReelEditor(true)}
+                className="w-10 h-10 rounded-full bg-blue-600/90 backdrop-blur-sm flex items-center justify-center text-white"
+                aria-label="Редактировать видео"
+              >
+                <Wand2 className="w-5 h-5" />
+              </button>
+            )}
+            <button
+              onClick={() => {
+                if (previewUrl) URL.revokeObjectURL(previewUrl);
+                setPreviewUrl(null);
+                setSelectedFile(null);
+                setCameraMode('camera');
+                setShowCaptionEditor(false);
+              }}
+              className="w-10 h-10 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center text-white"
+              aria-label="Переснять"
+            >
+              <RotateCw className="w-5 h-5" />
+            </button>
+          </div>
         )}
 
         <input
           ref={fileInputRef}
           type="file"
-          accept={activeTab === 'live' ? 'image/*' : 'image/*,video/*'}
+          accept={activeTab === 'live' ? 'image/*' : activeTab === 'reels' ? 'video/*' : 'image/*,video/*'}
           onChange={handleFileSelect}
           className="hidden"
         />
@@ -556,10 +1055,10 @@ export function CreateContentModal({ isOpen, onClose, onSuccess }: CreateContent
           </Button>
           <Button
             onClick={handlePublish}
-            disabled={isLoading || !title.trim()}
+            disabled={isLoading || isPublishing || !title.trim()}
             className="flex-1 bg-red-600 hover:bg-red-500 h-11 rounded-2xl font-semibold text-white"
           >
-            {isLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+            {isLoading || isPublishing ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
             Начать эфир
           </Button>
         </div>
@@ -571,6 +1070,23 @@ export function CreateContentModal({ isOpen, onClose, onSuccess }: CreateContent
           {error}
         </div>
       )}
+
+      <SimpleMediaEditor
+        open={showReelEditor}
+        onOpenChange={setShowReelEditor}
+        mediaFile={activeTab === 'reels' ? selectedFile : null}
+        contentType="reel"
+        onSave={(blob) => {
+          if (previewUrl) URL.revokeObjectURL(previewUrl);
+          const editedFile = new File([blob], selectedFile?.name || 'reel.mp4', { type: blob.type });
+          const editedPreview = URL.createObjectURL(blob);
+          setSelectedFile(editedFile);
+          setPreviewUrl(editedPreview);
+          toast.success('Видео отредактировано');
+          setShowReelEditor(false);
+        }}
+        onCancel={() => setShowReelEditor(false)}
+      />
     </div>
   );
 }

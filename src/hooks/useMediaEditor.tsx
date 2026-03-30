@@ -2,6 +2,7 @@ import { useState, useCallback, useRef } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { uploadMedia, type MediaBucket } from "@/lib/mediaUpload";
+import { logger } from "@/lib/logger";
 
 export type MediaType = "image" | "video";
 export type ContentType = "post" | "story" | "reel" | "live";
@@ -87,7 +88,7 @@ export function useMediaEditor(): UseMediaEditorReturn {
 
       return result.url;
     } catch (error: any) {
-      console.error("Upload error:", error);
+      logger.error("[useMediaEditor] Upload error", { error });
       toast.error("Ошибка загрузки: " + error.message);
       return null;
     } finally {

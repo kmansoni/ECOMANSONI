@@ -24,7 +24,7 @@ function SavedMessageBubble({ message, onDelete, currentUserId }: SavedMessageBu
   const formatTime = (dateStr: string) => {
     try {
       return formatDistanceToNow(new Date(dateStr), { addSuffix: true, locale: ru });
-    } catch {
+    } catch (_err) {
       return "";
     }
   };

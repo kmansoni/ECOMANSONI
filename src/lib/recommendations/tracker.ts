@@ -4,6 +4,7 @@
  */
 
 import { supabase } from '@/integrations/supabase/client';
+import { logger } from '@/lib/logger';
 
 export type ContentType = 'post' | 'reel' | 'story' | 'profile' | 'hashtag';
 export type InteractionType = 'view' | 'like' | 'comment' | 'share' | 'save' | 'follow' | 'dwell_time' | 'skip';
@@ -51,7 +52,7 @@ async function flush() {
   try {
     await (supabase as any).from('user_interactions').insert(rows);
   } catch (err) {
-    console.warn('[tracker] flush error:', err);
+    logger.warn('[tracker] flush error', { error: err });
   }
 }
 

@@ -15,7 +15,7 @@ import { useState, useEffect, useRef } from "react";
 import { Search, Music, TrendingUp, Play, Pause, ChevronRight, Mic } from "lucide-react";
 import { motion } from "framer-motion";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { supabase } from "@/integrations/supabase/client";
+import { dbLoose } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { useNavigate } from "react-router-dom";
 
@@ -55,13 +55,12 @@ export function AudioSearchSheet({ isOpen, onClose, onSelectTrack, mode = "searc
   }, [isOpen]);
 
   const loadTrending = async () => {
-    const db = supabase as any;
-    const { data } = await db
+    const { data } = await dbLoose
       .from("music_tracks")
       .select("id, title, artist, duration, cover_url, audio_url, use_count")
       .order("use_count", { ascending: false })
       .limit(15);
-    setTrending(data ?? []);
+    setTrending((data ?? []) as AudioTrack[]);
   };
 
   const handleSearch = (q: string) => {
@@ -71,14 +70,13 @@ export function AudioSearchSheet({ isOpen, onClose, onSelectTrack, mode = "searc
 
     searchTimeoutRef.current = setTimeout(async () => {
       setIsLoading(true);
-      const db = supabase as any;
-      const { data } = await db
+      const { data } = await dbLoose
         .from("music_tracks")
         .select("id, title, artist, duration, cover_url, audio_url, use_count")
         .or(`title.ilike.%${q}%,artist.ilike.%${q}%`)
         .order("use_count", { ascending: false })
         .limit(20);
-      setResults(data ?? []);
+      setResults((data ?? []) as AudioTrack[]);
       setIsLoading(false);
     }, 300);
   };
@@ -96,7 +94,7 @@ export function AudioSearchSheet({ isOpen, onClose, onSelectTrack, mode = "searc
 
     const audio = new Audio(track.audio_url);
     audio.volume = 0.7;
-    audio.play().catch(() => {});
+    audio.play().catch(() => { /* autoplay blocked */ });
     audio.onended = () => setPlayingId(null);
     audioRef.current = audio;
     setPlayingId(track.id);

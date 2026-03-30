@@ -49,7 +49,7 @@ export function BoomerangCapture({ stream, onCapture, onCancel }: BoomerangCaptu
   useEffect(() => {
     if (!videoRef.current || !stream) return;
     videoRef.current.srcObject = stream;
-    videoRef.current.play().catch(() => {});
+    videoRef.current.play().catch(() => { /* autoplay blocked */ });
     return () => {
       if (videoRef.current) videoRef.current.srcObject = null;
     };

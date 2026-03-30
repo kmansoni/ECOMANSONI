@@ -26,6 +26,7 @@
 
 import { detectDevice } from "@/lib/platform/device";
 import { Capacitor } from "@capacitor/core";
+import { logger } from "../logger";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -66,7 +67,7 @@ async function acquireNativeLock(): Promise<void> {
     await KeepAwake.keepAwake();
     _nativeLockActive = true;
   } catch (err) {
-    console.warn("[wakelock] KeepAwake plugin unavailable, falling back to WebLock", err);
+    logger.warn("[wakelock] KeepAwake plugin unavailable, falling back to WebLock", { error: err });
     await acquireWebLock();
   }
 }
@@ -99,7 +100,7 @@ async function acquireWebLock(): Promise<void> {
       }
     });
   } catch (err) {
-    console.warn("[wakelock] Navigator.wakeLock failed:", err);
+    logger.warn("[wakelock] Navigator.wakeLock failed", { error: err });
   }
 }
 
@@ -117,7 +118,7 @@ async function releaseWebLock(): Promise<void> {
 function armHardTimeout(): void {
   clearHardTimeout();
   _hardTimeoutId = setTimeout(async () => {
-    console.warn("[wakelock] Hard timeout reached — force releasing wake lock");
+    logger.warn("[wakelock] Hard timeout reached — force releasing wake lock");
     _refCount = 1; // Force single release
     await releasePlatformWakeLock();
   }, HARD_TIMEOUT_MS);

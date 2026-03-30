@@ -26,6 +26,7 @@
  */
 
 import { encryptForStorage, decryptFromStorage } from "./localStorageCrypto";
+import { logger } from "../lib/logger";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -96,9 +97,9 @@ function persistIdentityEncrypted(identity: DeviceIdentity): void {
       localStorage.setItem(DEVICE_KEY, encrypted);
     } catch (err) {
       // FAIL-SECURE: do NOT write plaintext device_secret.
-      console.error(
+      logger.error(
         "[deviceIdentity] Encryption failed — identity NOT persisted to localStorage (fail-secure).",
-        err,
+        { error: err },
       );
     }
   })();
@@ -142,7 +143,7 @@ export async function initDeviceIdentity(): Promise<DeviceIdentity> {
       }
     } catch {
       // Corrupted data — will generate new identity below
-      console.warn("[deviceIdentity] Corrupted identity data. Generating new identity.");
+      logger.warn("[deviceIdentity] Corrupted identity data. Generating new identity.");
       localStorage.removeItem(DEVICE_KEY);
     }
   }
@@ -164,7 +165,7 @@ export async function initDeviceIdentity(): Promise<DeviceIdentity> {
  */
 function fallbackLoadRaw(): DeviceIdentity | null {
   if (localStorage.getItem(DEVICE_KEY)) {
-    console.warn(
+    logger.warn(
       "[deviceIdentity] initDeviceIdentity() was not called before loadOrCreateDeviceIdentity().",
     );
   }

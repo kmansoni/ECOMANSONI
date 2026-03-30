@@ -25,7 +25,7 @@ import React, {
 } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase, dbLoose } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import { useReelsContext } from '@/contexts/ReelsContext';
 import { useReels, type Reel } from '@/hooks/useReels';
@@ -92,7 +92,8 @@ const PREFETCH_AHEAD = 2;
 function mapToFeedItem(reel: Reel, index: number): ReelFeedItem {
   const author: ReelAuthor = {
     id: reel.author_id,
-    username: reel.author_id, // username недоступен в useReels — используем id как fallback
+    // ИСПРАВЛЕНИЕ дефекта #23: используем реальный username из author, fallback на первые 8 символов ID
+    username: reel.author?.username ?? String(reel.author_id || '').slice(0, 8),
     display_name: reel.author?.display_name ?? String(reel.author_id || '').slice(0, 8),
     avatar_url: reel.author?.avatar_url ?? null,
     is_verified: reel.author?.verified ?? false,
@@ -240,6 +241,7 @@ export default function ReelsPage(): JSX.Element {
     loading,
     loadingMore,
     hasMore,
+    error: reelsError, // ИСПРАВЛЕНИЕ дефекта #33: получаем error из хука
     loadMore,
     toggleLike,
     toggleSave,
@@ -255,9 +257,9 @@ export default function ReelsPage(): JSX.Element {
   // только если loading=false, reels=[] и первоначальная загрузка завершилась неудачно.
   // Для этого отслеживаем, была ли когда-либо успешная загрузка.
   // ---------------------------------------------------------------------------
+  // ИСПРАВЛЕНИЕ дефекта #33: используем error из useReels вместо ручного управления
 
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
-  const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
     if (!loading) {
@@ -265,14 +267,10 @@ export default function ReelsPage(): JSX.Element {
     }
   }, [loading]);
 
-  // Простейшая эвристика: если loading=false, rawReels=[],
-  // и мы уже ждали первую загрузку — считаем ошибкой только если
-  // поймали исключение (здесь не можем, useReels не пробрасывает error).
-  // Поэтому loadError управляется вручную только через handleRetry.
-  // По умолчанию пустой фид — это EmptyScreen, не ErrorScreen.
+  // Показываем ErrorScreen если есть ошибка и нет данных
+  const showErrorScreen = !loading && !!reelsError && rawReels.length === 0;
 
   const handleRetry = useCallback(() => {
-    setLoadError(false);
     void refetch();
   }, [refetch]);
 
@@ -478,7 +476,7 @@ export default function ReelsPage(): JSX.Element {
 
     try {
       if (wasFollowing) {
-        const { error } = await (supabase as any)
+        const { error } = await dbLoose
           .from("followers")
           .delete()
           .eq("follower_id", user.id)
@@ -486,7 +484,7 @@ export default function ReelsPage(): JSX.Element {
         if (error) throw error;
         toast.success("Вы отписались");
       } else {
-        const { error } = await (supabase as any)
+        const { error } = await dbLoose
           .from("followers")
           .upsert(
             { follower_id: user.id, following_id: authorId },
@@ -525,7 +523,7 @@ export default function ReelsPage(): JSX.Element {
     return <ReelsSkeletonScreen />;
   }
 
-  if (loadError) {
+  if (showErrorScreen) {
     return <ReelsErrorScreen onRetry={handleRetry} />;
   }
 

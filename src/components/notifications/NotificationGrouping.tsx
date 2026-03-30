@@ -3,7 +3,7 @@
  * "user1, user2 и ещё 3 понравилась ваша публикация"
  */
 import React from "react";
-import { type GroupedNotification } from "./notificationGroupingModel";
+import { type TargetGroupedNotification } from "./notificationGroupingModel";
 
 function getActionText(type: string): string {
   switch (type) {
@@ -19,7 +19,7 @@ function getActionText(type: string): string {
 }
 
 interface Props {
-  group: GroupedNotification;
+  group: TargetGroupedNotification;
 }
 
 export function GroupedNotificationItem({ group }: Props) {

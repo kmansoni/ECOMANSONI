@@ -2,6 +2,7 @@ import { useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
 import { checkText } from "@/lib/moderation/textFilter";
+import { logger } from "@/lib/logger";
 
 export type ReportReason =
   | "spam"
@@ -50,7 +51,7 @@ export function useContentModeration() {
         .single();
 
       if (error) {
-        console.error("Ошибка отправки жалобы:", error);
+        logger.error("[useContentModeration] Ошибка отправки жалобы", { error });
         return null;
       }
       return data as ContentReport;
@@ -75,7 +76,7 @@ export function useContentModeration() {
       .order("created_at", { ascending: false });
 
     if (error) {
-      console.error("Ошибка загрузки жалоб:", error);
+      logger.error("[useContentModeration] Ошибка загрузки жалоб", { error });
       return [];
     }
     return data as ContentReport[];

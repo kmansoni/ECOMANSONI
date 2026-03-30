@@ -15,6 +15,7 @@
 
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { handleCors, getCorsHeaders } from "../_shared/utils.ts";
 
 // ─── Toxicity keyword list ────────────────────────────────────────────────────
 // Keep minimal — full blocklist should be in DB table `moderation_blocked_words`
@@ -243,17 +244,12 @@ function validateBody(
 // ─── Handler ──────────────────────────────────────────────────────────────────
 
 serve(async (req: Request) => {
-  const origin = req.headers.get("origin");
-  const corsHeaders = {
-    "Access-Control-Allow-Origin": origin ?? "*",
-    "Access-Control-Allow-Headers":
-      "authorization, x-client-info, apikey, content-type",
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-  };
+  // CORS preflight
+  const corsResponse = handleCors(req);
+  if (corsResponse) return corsResponse;
 
-  if (req.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: corsHeaders });
-  }
+  const origin = req.headers.get("origin");
+  const corsHeaders = getCorsHeaders(origin);
 
   const json = (body: unknown, status: number) =>
     new Response(JSON.stringify(body), {

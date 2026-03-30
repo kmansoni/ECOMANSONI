@@ -5,6 +5,7 @@
 import { useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from './useAuth';
+import { logger } from '@/lib/logger';
 
 const supabaseAny = supabase as any;
 
@@ -95,7 +96,7 @@ export function useMessageThreads(conversationId: string | null) {
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to load thread';
       setError(msg);
-      console.error('[useMessageThreads] getThread error:', err);
+      logger.error('[useMessageThreads] getThread error', { error: err });
       return null;
     } finally {
       setLoading(false);
@@ -175,7 +176,7 @@ export function useMessageThreads(conversationId: string | null) {
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to load threads';
       setError(msg);
-      console.error('[useMessageThreads] listThreadRoots error:', err);
+      logger.error('[useMessageThreads] listThreadRoots error', { error: err });
       return [];
     } finally {
       setLoading(false);

@@ -1,7 +1,7 @@
 import { useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { MapPin, X, Loader2, Navigation } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { dbLoose } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { logger } from "@/lib/logger";
@@ -56,7 +56,7 @@ export function LocationShareSheet({ isOpen, onClose, conversationId, onSent }: 
     setLoading(true);
     try {
       // Create message
-      const { data: msg, error: msgError } = await (supabase as any)
+      const { data: msg, error: msgError } = await dbLoose
         .from("messages")
         .insert({
           conversation_id: conversationId,
@@ -67,10 +67,11 @@ export function LocationShareSheet({ isOpen, onClose, conversationId, onSent }: 
         .select()
         .single();
       if (msgError) throw msgError;
+      const msgRow = msg as { id: string };
 
       // Save location details
-      await (supabase as any).from("shared_locations").insert({
-        message_id: msg.id,
+      await dbLoose.from("shared_locations").insert({
+        message_id: msgRow.id,
         sender_id: user.id,
         lat: location.lat,
         lng: location.lng,

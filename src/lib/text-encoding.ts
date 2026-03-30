@@ -3,6 +3,8 @@
  * Handles UTF-8 verification and mojibake detection/recovery
  */
 
+import { logger } from "@/lib/logger";
+
 /**
  * Detects if text appears to be corrupted (mojibake)
  * Checks for patterns like "P$P°C,C<" which indicate UTF-8 bytes misinterpreted as Latin-1
@@ -89,7 +91,7 @@ export function sanitizeReceivedText(text: string | null | undefined): string {
   if (isMojibake(normalized)) {
     const recovered = recoverFromUTF8toLatin1Corruption(normalized);
     if (recovered !== normalized) {
-      console.warn('[Text Recovery] Recovered mojibake:', { original: text, recovered });
+      logger.warn('[Text Recovery] Recovered mojibake', { original: text, recovered });
       return recovered;
     }
   }

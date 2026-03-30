@@ -13,6 +13,7 @@
 import { useState, useRef } from "react";
 import { Plus, Pencil, X, Check, ChevronRight } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { logger } from "@/lib/logger";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -93,8 +94,9 @@ export function StoryHighlights({
       setCoverFile(null);
       setCoverPreview(null);
       onRefresh();
-    } catch (err: any) {
-      toast.error(err.message ?? "Ошибка создания");
+    } catch (err) {
+      logger.error("[StoryHighlights] Не удалось создать Highlight", { error: err });
+      toast.error("Не удалось создать Highlight. Попробуйте снова.");
     } finally {
       setIsSubmitting(false);
     }

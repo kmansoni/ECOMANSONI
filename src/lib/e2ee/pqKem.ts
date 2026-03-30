@@ -1,3 +1,5 @@
+import { logger } from '@/lib/logger';
+
 /**
  * Post-Quantum Readiness — Hybrid KEM abstraction
  *
@@ -117,7 +119,7 @@ async function _ecdhDecap(
  * Replace this when integrating a real ML-KEM implementation.
  */
 async function _mlkemStub(): Promise<{ kemSharedSecret: ArrayBuffer; kemCiphertext: ArrayBuffer }> {
-  console.warn(
+  logger.warn(
     '[E2EE:PQ] ML-KEM-768 requested but not available. ' +
     'Falling back to ECDH-only. Enable PQ when FIPS 203 lands in Web Crypto.',
   );

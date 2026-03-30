@@ -16,7 +16,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { ChevronLeft, Music2, Play } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase, dbLoose } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
@@ -61,7 +61,7 @@ function useTrackReels(trackTitle: string | undefined) {
       else setLoadingMore(true);
 
       try {
-        let query = (supabase as any)
+        let query = dbLoose
           .from("reels")
           .select(
             `id, thumbnail_url, video_url, views_count, likes_count, created_at,

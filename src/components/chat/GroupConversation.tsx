@@ -32,7 +32,7 @@ import { rotateGroupMembershipAfterRemoval } from "@/lib/e2ee/groupMembershipRot
 import { logger } from "@/lib/logger";
 
 interface GroupConversationProps {
-  group: GroupChat;
+  group: GroupChat & { slow_mode_seconds?: number; topics_enabled?: boolean };
   onBack: () => void;
   onLeave?: () => void;
 }
@@ -43,7 +43,7 @@ export function GroupConversation({ group, onBack, onLeave }: GroupConversationP
   const { members } = useGroupMembers(group.id);
   const { settings, update: updateGlobalSettings } = useCommunityGlobalSettings();
   const isOwnerDerived = group.owner_id === user?.id;
-  const slowModeDelaySeconds: number = (group as any).slow_mode_seconds ?? 0;
+  const slowModeDelaySeconds: number = group.slow_mode_seconds ?? 0;
   const { remainingSeconds, isRestricted, recordSend } = useSlowMode(
     group.id,
     user?.id ?? null,
@@ -57,7 +57,7 @@ export function GroupConversation({ group, onBack, onLeave }: GroupConversationP
   const [sending, setSending] = useState(false);
   const [activeTopic, setActiveTopic] = useState<string | null>(null);
   const [showCreateTopic, setShowCreateTopic] = useState(false);
-  const [topicsEnabled, setTopicsEnabled] = useState<boolean>((group as any).topics_enabled ?? false);
+  const [topicsEnabled, setTopicsEnabled] = useState<boolean>(group.topics_enabled ?? false);
   const [inviteQrOpen, setInviteQrOpen] = useState(false);
   const [inviteQrUrl, setInviteQrUrl] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -134,11 +134,11 @@ export function GroupConversation({ group, onBack, onLeave }: GroupConversationP
 
   const handleLeave = async () => {
     try {
-      const { error } = await (supabase as any)
+      const { error } = await supabase
         .from("group_chat_members")
         .delete()
         .eq("group_id", group.id)
-        .eq("user_id", user?.id);
+        .eq("user_id", user?.id ?? "");
       if (error) throw error;
 
       // Best-effort E2EE rekey after membership change.
@@ -156,9 +156,9 @@ export function GroupConversation({ group, onBack, onLeave }: GroupConversationP
   const handleToggleTopics = async () => {
     const newVal = !topicsEnabled;
     try {
-      const { error } = await (supabase as any)
+      const { error } = await supabase
         .from("group_chats")
-        .update({ topics_enabled: newVal })
+        .update({ topics_enabled: newVal } as Record<string, unknown>)
         .eq("id", group.id);
       if (error) throw error;
       setTopicsEnabled(newVal);
@@ -169,6 +169,8 @@ export function GroupConversation({ group, onBack, onLeave }: GroupConversationP
           // The is_general flag is a non-critical metadata update; failure here must
           // not roll back the UX since the topic itself was created successfully.
           setActiveTopic(general.id);
+          // group_topics не в генерированных типах
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const { error: topicError } = await (supabase as any)
             .from("group_topics")
             .update({ is_general: true })

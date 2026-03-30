@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { maybeToastRateLimit } from "@/lib/anti-abuse/rateLimitToast";
+import { logger } from "@/lib/logger";
 
 interface Message {
   role: "user" | "assistant";
@@ -109,8 +110,8 @@ export function PropertyAssistant() {
         }
       }
     } catch (error) {
-      console.error("Chat error:", error);
-      toast.error(error instanceof Error ? error.message : "Произошла ошибка");
+      logger.error("[PropertyAssistant] Chat error", { error });
+      toast.error("Не удалось получить ответ ассистента. Попробуйте снова.");
       // Remove the empty assistant message if error
       setMessages(prev => prev.filter(m => m.content !== ""));
     } finally {

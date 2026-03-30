@@ -13,12 +13,13 @@
  */
 
 import { useState, useEffect, useCallback } from "react";
+import { logger } from "@/lib/logger";
 import { Star, Crown, Zap, Heart } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { supabase } from "@/integrations/supabase/client";
+import { dbLoose } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -116,10 +117,9 @@ export function LiveBadgePurchase({
     if (!user || !selectedLevel) return;
     setIsPurchasing(true);
     const config = BADGE_CONFIG[selectedLevel];
-    const db = supabase as any;
 
     try {
-      const { error } = await db.from("live_badges").insert({
+      const { error } = await dbLoose.from("live_badges").insert({
         live_session_id: liveSessionId,
         sender_id: user.id,
         recipient_id: recipientId,
@@ -130,8 +130,9 @@ export function LiveBadgePurchase({
       if (error) throw error;
       toast.success(`Бейдж отправлен ${recipientName}!`);
       onClose();
-    } catch (err: any) {
-      toast.error(err.message ?? "Ошибка покупки");
+    } catch (err) {
+      logger.error("[LiveBadges] Не удалось купить бейдж", { error: err });
+      toast.error("Не удалось отправить бейдж. Попробуйте снова.");
     } finally {
       setIsPurchasing(false);
     }
@@ -226,17 +227,19 @@ export function LiveTopBadgers({ liveSessionId }: LiveTopBadgersProps) {
   }, [liveSessionId]);
 
   const loadTopBadgers = async () => {
-    const db = supabase as any;
-    const { data } = await db
+    const { data } = await dbLoose
       .from("live_badges")
       .select("sender_id, amount_stars, profiles:sender_id(username, avatar_url)")
       .eq("live_session_id", liveSessionId);
 
     if (!data) return;
 
+    interface BadgeRow { sender_id: string; amount_stars: number; profiles: { username: string; avatar_url: string | null } | null }
+    const rows = data as BadgeRow[];
+
     // Агрегируем по sender_id
     const map = new Map<string, { username: string; avatar_url: string | null; total_stars: number }>();
-    for (const row of data) {
+    for (const row of rows) {
       const existing = map.get(row.sender_id);
       if (existing) {
         existing.total_stars += row.amount_stars;

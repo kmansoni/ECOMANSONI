@@ -12,6 +12,7 @@ import { logger } from "@/lib/logger";
 export function GlobalCallOverlay() {
   const {
     status,
+    callState,
     currentCall,
     incomingCall,
     localStream,
@@ -48,6 +49,7 @@ export function GlobalCallOverlay() {
         call={currentCall}
         pendingCalleeProfile={pendingCalleeProfile}
         status={status}
+        callState={callState}
         localStream={localStream}
         remoteStream={remoteStream}
         isMuted={isMuted}

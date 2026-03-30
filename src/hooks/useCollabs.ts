@@ -94,7 +94,7 @@ export function useCollabs() {
       .order('created_at', { ascending: false });
 
     if (err) {
-      setError(err.message);
+      setError("Не удалось загрузить приглашения. Попробуйте снова.");
       return [];
     }
     return (data ?? []) as CollabInvite[];

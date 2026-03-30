@@ -7,7 +7,7 @@ import { X, Search, UserCheck } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 
-interface PeopleTag {
+export interface PeopleTag {
   id?: string;
   user_id: string;
   username: string;

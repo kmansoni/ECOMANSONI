@@ -13,6 +13,7 @@
 
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { registry, getConstant } from "@/lib/registry/loader";
+import { logger } from "../logger";
 
 export interface ProjectionWatermark {
   scope_id: string;
@@ -98,7 +99,7 @@ export class DialogsProjectionService {
   async updateDialogsWatermark(scopeId: string, newSeq: number): Promise<void> {
     // This would update a local cache or client-side state
     // In real impl, could be IndexedDB or memory cache
-    console.log(`[Projection] Dialogs watermark for ${scopeId}: ${newSeq}`);
+    logger.debug(`[Projection] Dialogs watermark for ${scopeId}: ${newSeq}`);
   }
 
   /**
@@ -226,7 +227,7 @@ export class WatermarkService {
       throw new Error(`Failed to fail rebuild: ${error.message}`);
     }
 
-    console.error(`[Projection] Rebuild failed for ${scopeId}: ${reason}`);
+    logger.error(`[Projection] Rebuild failed for ${scopeId}: ${reason}`);
   }
 }
 
@@ -282,7 +283,7 @@ export class ProjectionRebuilder {
       // Complete rebuild
       await this.watermarkService.completeRebuild(scopeId, maxSeq);
 
-      console.log(`[Projection] Rebuild completed for ${scopeId}, maxSeq: ${maxSeq}`);
+      logger.debug(`[Projection] Rebuild completed for ${scopeId}, maxSeq: ${maxSeq}`);
     } catch (error) {
       await this.watermarkService.failRebuild(scopeId, String(error));
       throw error;
@@ -313,7 +314,7 @@ export class ProjectionRebuilder {
       }
 
       if (!newEvents || newEvents.length === 0) {
-        console.log(`[Projection] No new events for ${scopeId}`);
+        logger.debug(`[Projection] No new events for ${scopeId}`);
         return;
       }
 
@@ -327,7 +328,7 @@ export class ProjectionRebuilder {
       // Advance watermark
       await this.watermarkService.advanceDialogsWatermark(scopeId, maxSeq);
     } catch (error) {
-      console.error(`[Projection] Incremental rebuild failed for ${scopeId}:`, error);
+      logger.error(`[Projection] Incremental rebuild failed for ${scopeId}`, { error });
       throw error;
     }
   }

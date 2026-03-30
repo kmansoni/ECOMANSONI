@@ -119,7 +119,7 @@ describe("SfuMediaManager E2EE compatibility", () => {
     );
 
     await expect(manager.produce({ id: "local-track-1" } as MediaStreamTrack)).rejects.toThrow(
-      /Cannot locate RTCPeerConnection/
+      /E2EE transform cannot be applied/
     );
   });
 });

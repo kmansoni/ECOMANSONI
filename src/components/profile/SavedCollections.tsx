@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { Plus, Folder, Loader2, X } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { dbLoose } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
@@ -32,12 +32,12 @@ export function SavedCollections() {
     if (!user) return;
     setLoading(true);
     try {
-      const { data } = await (supabase as any)
+      const { data } = await dbLoose
         .from("saved_collections")
         .select("*")
         .eq("user_id", user.id)
         .order("created_at", { ascending: false });
-      setCollections(data ?? []);
+      setCollections((data ?? []) as Collection[]);
     } finally {
       setLoading(false);
     }
@@ -52,13 +52,13 @@ export function SavedCollections() {
     if (!newName.trim() || !user) return;
     setCreating(true);
     try {
-      const { data, error } = await (supabase as any)
+      const { data, error } = await dbLoose
         .from("saved_collections")
         .insert({ user_id: user.id, name: newName.trim() })
         .select()
         .single();
       if (error) throw error;
-      setCollections(prev => [data, ...prev]);
+      setCollections(prev => [data as Collection, ...prev]);
       setNewName("");
       setShowCreate(false);
       toast.success("Коллекция создана");
@@ -73,7 +73,7 @@ export function SavedCollections() {
     setActiveCollection(collectionId);
     setPostsLoading(true);
     try {
-      const { data } = await (supabase as any)
+      const { data } = await dbLoose
         .from("saved_collection_items")
         .select("post_id, posts(image_url)")
         .eq("collection_id", collectionId);

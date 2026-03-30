@@ -1,31 +1,15 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 // Track component props via render context
 let componentProps: {
-  createReelSheet?: any;
-  postEditorFlow?: any;
-  storyEditorFlow?: any;
+  createContentModal?: any;
 } = {};
 
-vi.mock("@/components/reels/CreateReelSheet", () => ({
-  CreateReelSheet: (props: any) => {
-    componentProps.createReelSheet = props;
-    return null;
-  },
-}));
-
-vi.mock("@/components/feed/PostEditorFlow", () => ({
-  PostEditorFlow: (props: any) => {
-    componentProps.postEditorFlow = props;
-    return null;
-  },
-}));
-
-vi.mock("@/components/feed/StoryEditorFlow", () => ({
-  StoryEditorFlow: (props: any) => {
-    componentProps.storyEditorFlow = props;
+vi.mock("@/components/feed/CreateContentModal", () => ({
+  CreateContentModal: (props: any) => {
+    componentProps.createContentModal = props;
     return null;
   },
 }));
@@ -45,7 +29,7 @@ describe("CreateCenterPage auto-open", () => {
     componentProps = {};
   });
 
-  it("auto-opens CreateReelSheet when url has tab=reels&auto=1", async () => {
+  it("opens unified modal with reels tab when url has tab=reels&auto=1", async () => {
     const { CreateCenterPage } = await import("@/pages/CreateCenterPage");
 
     render(
@@ -60,12 +44,13 @@ describe("CreateCenterPage auto-open", () => {
     );
 
     await waitFor(() => {
-      expect(componentProps.createReelSheet).toBeDefined();
-      expect(componentProps.createReelSheet?.open).toBe(true);
+      expect(componentProps.createContentModal).toBeDefined();
+      expect(componentProps.createContentModal?.isOpen).toBe(true);
+      expect(componentProps.createContentModal?.initialTab).toBe("reels");
     });
   });
 
-  it("auto-opens PostEditorFlow when url has tab=post&auto=1", async () => {
+  it("opens unified modal with publications tab when url has tab=post&auto=1", async () => {
     const { CreateCenterPage } = await import("@/pages/CreateCenterPage");
 
     render(
@@ -80,12 +65,13 @@ describe("CreateCenterPage auto-open", () => {
     );
 
     await waitFor(() => {
-      expect(componentProps.postEditorFlow).toBeDefined();
-      expect(componentProps.postEditorFlow?.isOpen).toBe(true);
+      expect(componentProps.createContentModal).toBeDefined();
+      expect(componentProps.createContentModal?.isOpen).toBe(true);
+      expect(componentProps.createContentModal?.initialTab).toBe("publications");
     });
   });
 
-  it("auto-opens StoryEditorFlow when url has tab=story&auto=1", async () => {
+  it("opens unified modal with stories tab when url has tab=story&auto=1", async () => {
     const { CreateCenterPage } = await import("@/pages/CreateCenterPage");
 
     render(
@@ -100,8 +86,9 @@ describe("CreateCenterPage auto-open", () => {
     );
 
     await waitFor(() => {
-      expect(componentProps.storyEditorFlow).toBeDefined();
-      expect(componentProps.storyEditorFlow?.isOpen).toBe(true);
+      expect(componentProps.createContentModal).toBeDefined();
+      expect(componentProps.createContentModal?.isOpen).toBe(true);
+      expect(componentProps.createContentModal?.initialTab).toBe("stories");
     });
   });
 });

@@ -66,8 +66,8 @@ export function VideoCircleRecorder({ onRecord, onCancel, autoRecord = true }: V
       if (flashEnabled && facingMode === "environment") {
         const videoTrack = stream.getVideoTracks()[0];
         try {
-          await (videoTrack as any).applyConstraints({
-            advanced: [{ torch: true }],
+          await videoTrack.applyConstraints({
+            advanced: [{ torch: true } as MediaTrackConstraintSet],
           });
         } catch (error) {
           logger.debug("video-circle: torch not supported", { facingMode, error });
@@ -181,8 +181,8 @@ export function VideoCircleRecorder({ onRecord, onCancel, autoRecord = true }: V
     if (streamRef.current && facingMode === "environment") {
       const videoTrack = streamRef.current.getVideoTracks()[0];
       try {
-        await (videoTrack as any).applyConstraints({
-          advanced: [{ torch: !flashEnabled }]
+        await videoTrack.applyConstraints({
+          advanced: [{ torch: !flashEnabled } as MediaTrackConstraintSet]
         });
       } catch (e) {
         logger.debug("video-circle: torch toggle unsupported", {

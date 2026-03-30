@@ -20,6 +20,9 @@ volumes:
     driver: local
   nginx-cache:
     driver: local
+  # Shared webroot for Let's Encrypt HTTP-01 challenges
+  certbot-webroot:
+    driver: local
 
 services:
 
@@ -174,6 +177,8 @@ services:
       - ./nginx/cors.conf:/etc/nginx/conf.d/cors.conf:ro
       - ssl-certs:/etc/letsencrypt:ro
       - nginx-cache:/var/cache/nginx
+      # Let's Encrypt HTTP-01 challenge webroot (shared with certbot)
+      - certbot-webroot:/var/www/certbot:ro
     networks:
       media-net:
         ipv4_address: 172.28.0.12
@@ -193,3 +198,19 @@ services:
         limits:
           cpus: "1.0"
           memory: 512M
+
+  # ----------------------------------------------------------
+  # Certbot — utility container for manual/cron renew commands.
+  # Use with: docker compose run --rm certbot renew --webroot ...
+  # FIRST-TIME SETUP: run scripts/ssl-init.sh.
+  # ----------------------------------------------------------
+  certbot:
+    image: certbot/certbot:v2.11.0
+    volumes:
+      - ssl-certs:/etc/letsencrypt
+      - certbot-webroot:/var/www/certbot
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

@@ -17,6 +17,7 @@
 import { useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
+import { logger } from "@/lib/logger";
 
 // Using `any` cast until Supabase types are regenerated with new tables
 const db = supabase as any;
@@ -142,7 +143,7 @@ export function useChannelBoost() {
         .maybeSingle();
 
       if (fetchError) {
-        console.error("[useChannelBoost] getBoostLevel error:", fetchError);
+        logger.error("[useChannelBoost] getBoostLevel error", { error: fetchError });
         return null;
       }
       if (!data) {
@@ -184,7 +185,7 @@ export function useChannelBoost() {
         .maybeSingle();
 
       if (fetchError) {
-        console.error("[useChannelBoost] getMyBoost error:", fetchError);
+        logger.error("[useChannelBoost] getMyBoost error", { error: fetchError });
         return null;
       }
       if (!data) return null;
@@ -218,7 +219,7 @@ export function useChannelBoost() {
         .limit(limit);
 
       if (fetchError) {
-        console.error("[useChannelBoost] topBoosters error:", fetchError);
+        logger.error("[useChannelBoost] topBoosters error", { error: fetchError });
         return [];
       }
 

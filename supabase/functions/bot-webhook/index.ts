@@ -6,6 +6,7 @@
  */
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { handleCors, getCorsHeaders } from '../_shared/utils.ts';
 
 declare const Deno: {
   env: { get(name: string): string | undefined };
@@ -14,6 +15,7 @@ declare const Deno: {
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+const botWebhookSecret = Deno.env.get('BOT_WEBHOOK_SECRET') ?? '';
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
@@ -88,17 +90,17 @@ type BotRecord = {
 // HELPERS
 // ============================================================================
 
-function createSuccessResponse(data: unknown): Response {
+function createSuccessResponse(data: unknown, origin: string | null = null): Response {
   return new Response(JSON.stringify({ ok: true, ...(data as Record<string, unknown>) }), {
     status: 200,
-    headers: { 'Content-Type': 'application/json' }
+    headers: { 'Content-Type': 'application/json', ...getCorsHeaders(origin) }
   });
 }
 
-function createErrorResponse(message: string, status = 400): Response {
+function createErrorResponse(message: string, status = 400, origin: string | null = null): Response {
   return new Response(JSON.stringify({ ok: false, error: message }), {
     status,
-    headers: { 'Content-Type': 'application/json' }
+    headers: { 'Content-Type': 'application/json', ...getCorsHeaders(origin) }
   });
 }
 
@@ -112,6 +114,43 @@ function extractCommand(text?: string): string | null {
   if (!text) return null;
   const match = text.match(/^\/(\w+)(?:@(\w+))?/);
   return match ? match[1].toLowerCase() : null;
+}
+
+/**
+ * HMAC-SHA256 signature verification for webhook requests.
+ * Header: X-Webhook-Signature: sha256=<hex>
+ * If BOT_WEBHOOK_SECRET is not set, verification is skipped with a warning.
+ */
+async function verifyWebhookSignature(body: string, signature: string | null): Promise<boolean> {
+  if (!botWebhookSecret) {
+    console.warn('[bot-webhook] BOT_WEBHOOK_SECRET not set — HMAC verification skipped');
+    return true;
+  }
+  if (!signature) return false;
+
+  const prefix = 'sha256=';
+  if (!signature.startsWith(prefix)) return false;
+  const receivedHex = signature.slice(prefix.length);
+
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(botWebhookSecret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(body));
+  const expectedHex = Array.from(new Uint8Array(sig))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
+
+  // Constant-time comparison
+  if (receivedHex.length !== expectedHex.length) return false;
+  let diff = 0;
+  for (let i = 0; i < receivedHex.length; i++) {
+    diff |= receivedHex.charCodeAt(i) ^ expectedHex.charCodeAt(i);
+  }
+  return diff === 0;
 }
 
 async function verifyToken(token: string): Promise<{ botId: string; bot: any } | null> {
@@ -410,42 +449,51 @@ async function getMyCommands(botId: string): Promise<TelegramBotCommand[]> {
 
 Deno.serve(async (req: Request) => {
   // Handle CORS preflight
-  if (req.method === 'OPTIONS') {
-    return new Response(null, {
-      status: 204,
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, X-Bot-Token',
-      }
-    });
-  }
+  const corsResponse = handleCors(req);
+  if (corsResponse) return corsResponse;
+
+  const origin = req.headers.get('origin');
 
   // Get bot token from header
   const token = req.headers.get('X-Bot-Token') || req.headers.get('Authorization')?.replace('Bearer ', '');
   
   if (!token) {
-    return createErrorResponse('Bot token required', 401);
+    return createErrorResponse('Bot token required', 401, origin);
   }
 
   // Verify token and get bot
   const botInfo = await verifyToken(token);
   if (!botInfo) {
-    return createErrorResponse('Invalid bot token', 401);
+    return createErrorResponse('Invalid bot token', 401, origin);
   }
 
   const { botId, bot } = botInfo;
 
+  // Read body as text first for HMAC verification
+  let bodyText: string;
+  try {
+    bodyText = await req.text();
+  } catch {
+    return createErrorResponse('Failed to read body', 400, origin);
+  }
+
+  // Verify HMAC signature if BOT_WEBHOOK_SECRET is configured
+  const signature = req.headers.get('X-Webhook-Signature');
+  const isValidSignature = await verifyWebhookSignature(bodyText, signature);
+  if (!isValidSignature) {
+    return createErrorResponse('Invalid webhook signature', 403, origin);
+  }
+
   // Parse update
   let update: TelegramUpdate;
   try {
-    update = await req.json();
+    update = JSON.parse(bodyText);
   } catch {
-    return createErrorResponse('Invalid JSON', 400);
+    return createErrorResponse('Invalid JSON', 400, origin);
   }
 
   if (!update.update_id) {
-    return createErrorResponse('Invalid update', 400);
+    return createErrorResponse('Invalid update', 400, origin);
   }
 
   try {
@@ -460,10 +508,10 @@ Deno.serve(async (req: Request) => {
 
     return createSuccessResponse({
       update_id: update.update_id
-    });
+    }, origin);
   } catch (error) {
     console.error('Error processing update:', error);
-    return createErrorResponse('Internal error', 500);
+    return createErrorResponse('Internal error', 500, origin);
   }
 });
 

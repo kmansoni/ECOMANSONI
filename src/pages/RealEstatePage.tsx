@@ -13,6 +13,7 @@ import { PropertyAssistant } from "@/components/realestate/PropertyAssistant";
 import { MortgageCalculator } from "@/components/realestate/MortgageCalculator";
 import { supabase } from "@/lib/supabase";
 import { Tables } from "@/integrations/supabase/types";
+import { logger } from "@/lib/logger";
 
 type Property = Tables<"properties"> & {
   property_images?: Tables<"property_images">[];
@@ -87,7 +88,7 @@ export function RealEstatePage() {
         setProperties(data || []);
         setFilteredProperties(data || []);
       } catch (error) {
-        console.error("Error fetching properties:", error);
+        logger.error("[RealEstatePage] Error fetching properties", { error });
       } finally {
         setLoading(false);
       }

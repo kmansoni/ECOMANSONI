@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "./useAuth";
+import { logger } from "@/lib/logger";
 
 export interface StickerPack {
   id: string;
@@ -45,7 +46,7 @@ export function useStickers() {
         .filter(Boolean);
       setInstalledPacks(packs);
     } catch (err) {
-      console.error("useStickers: loadInstalledPacks", err);
+      logger.error("[useStickers] loadInstalledPacks", { error: err });
     } finally {
       setLoading(false);
     }
@@ -66,7 +67,7 @@ export function useStickers() {
         .filter(Boolean);
       setRecentStickers(stickers);
     } catch (err) {
-      console.error("useStickers: loadRecentStickers", err);
+      logger.error("[useStickers] loadRecentStickers", { error: err });
     }
   }, [user]);
 

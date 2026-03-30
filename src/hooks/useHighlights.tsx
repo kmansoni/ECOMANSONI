@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import { logger } from '@/lib/logger';
 
 export interface StoryHighlight {
   id: string;
@@ -79,7 +80,7 @@ export function useHighlights(userId?: string) {
 
       setHighlights(highlightsWithSortedStories as unknown as StoryHighlight[]);
     } catch (err) {
-      console.error('Error fetching highlights:', err);
+      logger.error('[useHighlights] Error fetching highlights', { error: err });
       setError(err instanceof Error ? err.message : 'Failed to fetch highlights');
     } finally {
       setLoading(false);

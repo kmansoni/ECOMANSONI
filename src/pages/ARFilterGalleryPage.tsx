@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Search, Sparkles, Play } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
+import { dbLoose } from '@/lib/supabase';
 import { motion } from 'framer-motion';
 
 const CATEGORIES = [
@@ -34,12 +34,12 @@ export default function ARFilterGalleryPage() {
   useEffect(() => {
     void (async () => {
       setLoading(true);
-      const { data } = await (supabase as any)
+      const { data } = await dbLoose
         .from('ar_filters')
         .select('*, profiles(username)')
         .eq('is_published', true)
         .order('uses_count', { ascending: false });
-      setFilters(data ?? []);
+      setFilters((data as unknown as ARFilter[] | null) ?? []);
       setLoading(false);
     })();
   }, []);

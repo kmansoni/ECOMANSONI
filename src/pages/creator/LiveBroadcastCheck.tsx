@@ -1,11 +1,12 @@
 import { useState, useEffect } from "react";
+import { logger } from "@/lib/logger";
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Loader2, AlertTriangle, CheckCircle2, Clock } from "lucide-react";
-import { supabase } from "@/lib/supabase";
+import { supabase, dbLoose } from "@/lib/supabase";
 import { toast } from "sonner";
 
 // Type definitions (Supabase gen types will include these)
@@ -39,27 +40,27 @@ export function LiveBroadcastCheck() {
       }
 
       // Call eligibility RPC
-      const { data, error } = await ((supabase as any).rpc("is_eligible_for_live_v1", {
+      const { data, error } = await dbLoose.rpc("is_eligible_for_live_v1", {
         p_creator_id: user.id,
-      }) as Promise<{ data: EligibilityResult | null; error: { message?: string } | null }>);
+      });
 
       if (error) throw error;
 
-      const result = data as EligibilityResult;
+      const result = data as unknown as EligibilityResult;
       setEligible(result.eligible);
       setReason(result.reason);
 
       // Get today's session count
       const { data: sessions } = await (supabase
-        .from("live_sessions" as any)
+        .from("live_sessions")
         .select("id")
         .eq("creator_id", user.id)
         .gte("started_at", new Date(new Date().setHours(0, 0, 0, 0)).toISOString())
-        .in("status", ["live", "ended", "preparing"]) as any);
+        .in("status", ["live", "ended", "preparing"]));
 
       setSessionsToday(sessions?.length || 0);
-    } catch (error: any) {
-      console.error("Eligibility check failed:", error);
+    } catch (error) {
+      logger.error("[LiveBroadcastCheck] Eligibility check failed", { error });
       toast.error("Failed to check eligibility");
     } finally {
       setLoading(false);

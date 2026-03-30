@@ -77,15 +77,15 @@ function buildVTT(cues: VTTCue[]): string {
  */
 export function generateCaptions(videoElement: HTMLVideoElement): Promise<Blob> {
   return new Promise((resolve, reject) => {
-    const SpeechRecognition =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const SpeechRecognitionCtor =
+      window.SpeechRecognition ?? window.webkitSpeechRecognition;
 
-    if (!SpeechRecognition) {
+    if (!SpeechRecognitionCtor) {
       reject(new Error('Web Speech API не поддерживается в этом браузере'));
       return;
     }
 
-    const recognition = new SpeechRecognition();
+    const recognition = new SpeechRecognitionCtor();
     recognition.continuous = true;
     recognition.interimResults = false;
     recognition.lang = 'ru-RU';
@@ -93,7 +93,7 @@ export function generateCaptions(videoElement: HTMLVideoElement): Promise<Blob> 
     const cues: VTTCue[] = [];
     const startTime = Date.now();
 
-    recognition.onresult = (event: any) => {
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
       const now = (Date.now() - startTime) / 1000;
       for (let i = event.resultIndex; i < event.results.length; i++) {
         if (event.results[i].isFinal) {
@@ -109,7 +109,7 @@ export function generateCaptions(videoElement: HTMLVideoElement): Promise<Blob> 
       }
     };
 
-    recognition.onerror = (event: any) => {
+    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
       reject(new Error(`Speech recognition error: ${event.error}`));
     };
 

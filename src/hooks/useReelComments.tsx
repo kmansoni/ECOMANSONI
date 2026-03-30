@@ -3,6 +3,7 @@ import { supabase } from "@/lib/supabase";
 import { useAuth } from "./useAuth";
 import { checkHashtagsAllowedForText } from "@/lib/hashtagModeration";
 import { fetchUserBriefMap, resolveUserBrief } from "@/lib/users/userBriefs";
+import { logger } from "@/lib/logger";
 
 export interface ReelComment {
   id: string;
@@ -130,7 +131,7 @@ export function useReelComments(reelId: string) {
 
       setComments(rootComments);
     } catch (error) {
-      console.error("Error fetching reel comments:", error);
+      logger.error("[useReelComments] Error fetching reel comments", { error });
     } finally {
       setLoading(false);
     }
@@ -139,6 +140,74 @@ export function useReelComments(reelId: string) {
   useEffect(() => {
     fetchComments();
   }, [fetchComments]);
+
+  // Realtime подписки: новые/удалённые комментарии для текущего reel
+  useEffect(() => {
+    if (!reelId) return;
+
+    const channel = supabase
+      .channel(`reel-comments-rt:${reelId}`)
+      .on(
+        "postgres_changes" as any,
+        { event: "INSERT", schema: "public", table: "reel_comments", filter: `reel_id=eq.${reelId}` },
+        (payload: any) => {
+          const newComment = payload.new as CommentRow | undefined;
+          if (!newComment || newComment.author_id === user?.id) return;
+          setComments(prev => {
+            // Проверяем дубликаты
+            const allIds = new Set(prev.map(c => c.id));
+            prev.forEach(c => (c.replies ?? []).forEach(r => allIds.add(r.id)));
+            if (allIds.has(newComment.id)) return prev;
+
+            const normalized: ReelComment = {
+              id: newComment.id,
+              reel_id: newComment.reel_id,
+              author_id: newComment.author_id,
+              parent_id: newComment.parent_id,
+              content: newComment.content,
+              likes_count: newComment.likes_count ?? 0,
+              created_at: newComment.created_at,
+              author: {
+                user_id: newComment.author_id,
+                display_name: newComment.author_id.slice(0, 8),
+                avatar_url: null,
+                verified: false,
+              },
+              liked_by_user: false,
+            };
+
+            if (normalized.parent_id) {
+              return prev.map(c =>
+                c.id === normalized.parent_id
+                  ? { ...c, replies: [...(c.replies ?? []), normalized] }
+                  : c
+              );
+            }
+            return [...prev, { ...normalized, replies: [] }];
+          });
+        },
+      )
+      .on(
+        "postgres_changes" as any,
+        { event: "DELETE", schema: "public", table: "reel_comments", filter: `reel_id=eq.${reelId}` },
+        (payload: any) => {
+          const deletedId = payload.old?.id;
+          if (!deletedId) return;
+          setComments(prev => {
+            // Удаляем из корневых
+            const filtered = prev.filter(c => c.id !== deletedId);
+            // Удаляем из replies
+            return filtered.map(c => ({
+              ...c,
+              replies: (c.replies ?? []).filter(r => r.id !== deletedId),
+            }));
+          });
+        },
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [reelId, user?.id]);
 
   const addComment = async (
     content: string,
@@ -167,7 +236,7 @@ export function useReelComments(reelId: string) {
       await fetchComments();
       return { ok: true };
     } catch (error) {
-      console.error("Error adding reel comment:", error);
+      logger.error("[useReelComments] Error adding reel comment", { error });
       return { ok: false, error };
     }
   };
@@ -223,7 +292,7 @@ export function useReelComments(reelId: string) {
         })
       );
     } catch (error) {
-      console.error("Error toggling reel comment like:", error);
+      logger.error("[useReelComments] Error toggling reel comment like", { error });
     }
   };
 
@@ -242,7 +311,7 @@ export function useReelComments(reelId: string) {
       await fetchComments();
       return true;
     } catch (error) {
-      console.error("Error deleting reel comment:", error);
+      logger.error("[useReelComments] Error deleting reel comment", { error });
       return false;
     }
   };

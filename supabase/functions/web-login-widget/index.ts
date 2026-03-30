@@ -27,6 +27,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { handleCors, getCorsHeaders } from "../_shared/utils.ts";
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
@@ -259,9 +260,6 @@ function jsonResponse(data: unknown, status = 200): Response {
     status,
     headers: {
       "Content-Type": "application/json",
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization",
     },
   });
 }
@@ -328,7 +326,6 @@ function handleScriptRequest(req: Request): Response {
     headers: {
       "Content-Type": "application/javascript; charset=utf-8",
       "Cache-Control": "public, max-age=3600",
-      "Access-Control-Allow-Origin": "*",
     },
   });
 }
@@ -496,42 +493,42 @@ async function handleVerify(req: Request): Promise<Response> {
 // ── Router ─────────────────────────────────────────────────────────────────
 
 serve(async (req: Request) => {
+  const corsResponse = handleCors(req);
+  if (corsResponse) return corsResponse;
+
   const url = new URL(req.url);
   const path = url.pathname.replace(/^\/web-login-widget/, "");
   const method = req.method;
+  const origin = req.headers.get("origin");
+  const cors = getCorsHeaders(origin);
 
-  // CORS preflight
-  if (method === "OPTIONS") {
-    return new Response(null, {
-      status: 204,
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type, Authorization",
-      },
-    });
-  }
+  /** Добавляет CORS-заголовки к ответу обработчика */
+  const withCors = (res: Response): Response => {
+    const h = new Headers(res.headers);
+    for (const [k, v] of Object.entries(cors)) h.set(k, v);
+    return new Response(res.body, { status: res.status, statusText: res.statusText, headers: h });
+  };
 
   try {
     if (path === "/script.js" && method === "GET") {
-      return handleScriptRequest(req);
+      return withCors(handleScriptRequest(req));
     }
     if (path === "/auth" && method === "POST") {
-      return await handleCreateAuth(req);
+      return withCors(await handleCreateAuth(req));
     }
     if (path === "/callback" && method === "GET") {
-      return await handleCallback(url);
+      return withCors(await handleCallback(url));
     }
     if (path === "/verify" && method === "POST") {
-      return await handleVerify(req);
+      return withCors(await handleVerify(req));
     }
     if (path === "/authorize-user" && method === "POST") {
-      return await handleAuthorizeUser(req);
+      return withCors(await handleAuthorizeUser(req));
     }
 
-    return jsonResponse({ error: "not_found" }, 404);
+    return withCors(jsonResponse({ error: "not_found" }, 404));
   } catch (e) {
     console.error("web-login-widget error:", e);
-    return jsonResponse({ error: "internal_server_error" }, 500);
+    return withCors(jsonResponse({ error: "internal_server_error" }, 500));
   }
 });

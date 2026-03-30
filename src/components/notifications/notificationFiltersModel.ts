@@ -33,7 +33,7 @@ export type NotificationFilterType =
   | "confirmed"
   | "requests";
 
-export interface GroupedNotification {
+export interface FeedGroupedNotification {
   /** Stable key for React rendering */
   key: string;
   /** Representative notification (most recent in the group) */
@@ -144,7 +144,7 @@ export function filterNotifications(
  */
 export function groupNotifications(
   notifications: Notification[],
-): GroupedNotification[] {
+): FeedGroupedNotification[] {
   // Map from groupKey → accumulated group data
   const groupMap = new Map<string, {
     members: Notification[];
@@ -179,7 +179,7 @@ export function groupNotifications(
     }
   }
 
-  const result: GroupedNotification[] = [];
+  const result: FeedGroupedNotification[] = [];
 
   // Convert grouped notifications
   for (const [key, { members }] of groupMap) {
@@ -231,7 +231,7 @@ export function groupNotifications(
  *   actorCount=2:  "Alice и Bob лайкнули ваш пост"
  *   actorCount=5:  "Alice и ещё 4 лайкнули ваш пост"
  */
-export function buildGroupSummary(group: GroupedNotification): string {
+export function buildGroupSummary(group: FeedGroupedNotification): string {
   const { actorCount, actorNames, representative } = group;
 
   const typeLabel: Record<string, string> = {

@@ -13,11 +13,12 @@
  */
 
 import { useState, useCallback } from "react";
+import { logger } from "@/lib/logger";
 import { Plus, X, GripVertical, ExternalLink, Pencil, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { supabase } from "@/integrations/supabase/client";
+import { dbLoose } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -107,9 +108,8 @@ export function ProfileLinks({ userId, isOwner, links, onRefresh }: ProfileLinks
     setIsSubmitting(true);
 
     try {
-      const db = supabase as any;
       if (editingLink) {
-        const { error: dbErr } = await db
+        const { error: dbErr } = await dbLoose
           .from("profile_links")
           .update({ url: normalizedUrl, title })
           .eq("id", editingLink.id)
@@ -121,7 +121,7 @@ export function ProfileLinks({ userId, isOwner, links, onRefresh }: ProfileLinks
           toast.error(`Максимум ${MAX_LINKS} ссылок`);
           return;
         }
-        const { error: dbErr } = await db.from("profile_links").insert({
+        const { error: dbErr } = await dbLoose.from("profile_links").insert({
           user_id: user!.id,
           url: normalizedUrl,
           title,
@@ -132,16 +132,16 @@ export function ProfileLinks({ userId, isOwner, links, onRefresh }: ProfileLinks
       }
       setShowSheet(false);
       onRefresh();
-    } catch (err: any) {
-      toast.error(err.message ?? "Ошибка сохранения");
+    } catch (err) {
+      logger.error("[ProfileLinks] save failed", { error: err });
+      toast.error("Не удалось сохранить ссылку. Попробуйте снова.");
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const handleDelete = async (id: string) => {
-    const db = supabase as any;
-    const { error } = await db
+    const { error } = await dbLoose
       .from("profile_links")
       .delete()
       .eq("id", id)

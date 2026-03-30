@@ -9,6 +9,7 @@
 
 import { QueryClient, QueryCache, MutationCache } from '@tanstack/react-query';
 import { captureException } from './sentry';
+import { logger } from '@/lib/logger';
 
 // Circuit breaker state
 interface CircuitBreakerState {
@@ -52,7 +53,7 @@ function recordFailure(key: string): void {
   
   if (state.failures >= CIRCUIT_BREAKER_THRESHOLD) {
     state.isOpen = true;
-    console.warn(`[Circuit Breaker] Circuit opened for: ${key}`);
+    logger.warn(`[Circuit Breaker] Circuit opened for: ${key}`);
   }
   
   circuitBreakers.set(key, state);
@@ -118,7 +119,7 @@ export function createQueryClient(): QueryClient {
           extra: { queryKey: query.queryKey },
         });
         
-        console.error('[Query Error]', queryKey, error);
+        logger.error('[Query Error]', { queryKey, error });
       },
       onSuccess: (_, query) => {
         const queryKey = JSON.stringify(query.queryKey);
@@ -132,7 +133,7 @@ export function createQueryClient(): QueryClient {
           extra: { mutationKey: mutation.options.mutationKey },
         });
         
-        console.error('[Mutation Error]', error);
+        logger.error('[Mutation Error]', { error });
       },
     }),
   });

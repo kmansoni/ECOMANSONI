@@ -11,7 +11,8 @@ import { useAuth } from "@/hooks/useAuth";
 import { useUserSettings } from "@/contexts/UserSettingsContext";
 import { toast } from "@/hooks/use-toast";
 import { clearIceServerCache } from "@/lib/webrtc-config";
-import { SettingsHeader, SettingsToggleItem, estimateLocalStorageBytes, formatBytes } from "./helpers";
+import { SettingsHeader, SettingsToggleItem } from "./helpers";
+import { estimateLocalStorageBytes, formatBytes } from "./formatters";
 import type { SectionProps } from "./types";
 
 interface DataStorageSectionProps extends SectionProps {
@@ -47,7 +48,9 @@ export function SettingsDataStorageSection({ isDark, onBack, onDeleteAllFolders 
                   const keys: string[] = [];
                   for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k) keys.push(k); }
                   for (const k of keys) { if (prefixes.some((p) => k.startsWith(p))) { localStorage.removeItem(k); removed++; } }
-                } catch { /* ignore */ }
+                } catch (error) {
+                  toast({ title: "Cache", description: error instanceof Error ? error.message : "Failed to clear cache." });
+                }
                 toast({ title: "Done", description: `Chat cache cleared (${removed}).` });
                 setTick((x) => x + 1);
               }}>

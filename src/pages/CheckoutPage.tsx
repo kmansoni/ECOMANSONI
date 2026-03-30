@@ -20,9 +20,19 @@ export default function CheckoutPage() {
   const location = useLocation();
   const { createOrder, loading } = useCheckout();
 
-  const cartItems = (location.state as any)?.items ?? [];
-  const shopId = (location.state as any)?.shopId ?? '';
-  const itemsTotal: number = cartItems.reduce((s: number, i: any) => s + i.price * (i.quantity ?? 1), 0);
+  type CheckoutState = {
+    items: {
+      productId: string;
+      variantId?: string;
+      quantity: number;
+      price: number;
+    }[];
+    shopId: string;
+  };
+  const state = location.state as CheckoutState | null;
+  const cartItems = state?.items ?? [];
+  const shopId = state?.shopId ?? '';
+  const itemsTotal: number = cartItems.reduce((s: number, i) => s + i.price * (i.quantity ?? 1), 0);
 
   const [address, setAddress] = useState<Partial<DeliveryAddress>>({
     fullName: '',
@@ -87,7 +97,7 @@ export default function CheckoutPage() {
                 <label className="text-zinc-500 text-xs mb-1 block">{label}</label>
                 <input
                   type="text"
-                  value={(address as any)[field] ?? ''}
+                  value={(address as Record<string, string>)[field] ?? ''}
                   onChange={e => set(field as keyof DeliveryAddress, e.target.value)}
                   placeholder={placeholder}
                   className="w-full bg-zinc-900 text-white placeholder-zinc-600 rounded-xl px-4 py-3 text-sm outline-none focus:ring-1 focus:ring-zinc-600"

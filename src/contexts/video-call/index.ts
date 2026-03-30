@@ -36,6 +36,7 @@
 
 // Types
 export type {
+  CallState,
   VideoCall,
   VideoCallStatus,
   VideoCallSignalingContextType,
@@ -86,6 +87,7 @@ export function useVideoCallContext(): VideoCallContextType {
   return {
     // Signaling
     status: signaling.status,
+    callState: signaling.callState,
     currentCall: signaling.currentCall,
     incomingCall: signaling.incomingCall,
     connectionState: signaling.connectionState,

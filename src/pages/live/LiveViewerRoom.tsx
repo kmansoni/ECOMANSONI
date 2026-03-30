@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Loader2, Send, Flag, Users, UserPlus, Heart, X } from "lucide-react";
-import { supabase } from "@/lib/supabase";
+import { supabase, dbLoose } from "@/lib/supabase";
 import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { fetchUserBriefMap, resolveUserBrief } from "@/lib/users/userBriefs";
@@ -38,6 +38,33 @@ interface ChatMessage {
   created_at: string;
 }
 
+interface LiveViewerSessionRow {
+  id?: string | number;
+  title?: string | null;
+  creator_id?: string | null;
+  author_id?: string | null;
+  viewer_count_current?: number | null;
+  status?: string | null;
+}
+
+interface LiveViewerMessageRow {
+  id?: string | number;
+  content?: string | null;
+  sender_id?: string | null;
+  sender_name?: string | null;
+  created_at?: string | null;
+}
+
+function toViewerMessage(row: LiveViewerMessageRow): ChatMessage {
+  return {
+    id: String(row.id ?? ""),
+    content: String(row.content ?? ""),
+    sender_id: String(row.sender_id ?? ""),
+    sender_name: String(row.sender_name ?? ""),
+    created_at: String(row.created_at ?? ""),
+  };
+}
+
 const REPORT_REASONS = [
   { id: "sexual", label: "Сексуальный контент" },
   { id: "violence", label: "Насилие" },
@@ -53,7 +80,6 @@ const REPORT_REASONS = [
 export function LiveViewerRoom() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
-  const supabaseUnsafe = supabase as any;
 
   const [session, setSession] = useState<LiveSession | null>(null);
   const [creator, setCreator] = useState<CreatorProfile | null>(null);
@@ -71,24 +97,29 @@ export function LiveViewerRoom() {
 
   const loadSession = useCallback(async () => {
     try {
-      const { data, error } = await supabaseUnsafe
+      const { data, error } = await dbLoose
         .from("live_sessions")
         .select("id, title, creator_id, viewer_count_current")
         .eq("id", sessionId)
         .single();
       if (error) throw error;
 
+      const row = data as unknown as LiveViewerSessionRow;
+
       setSession({
-        id: String(data.id),
-        title: String(data.title ?? "Прямой эфир"),
-        creator_id: String(data.creator_id ?? data.author_id ?? ""),
-        viewer_count_current: Number(data.viewer_count_current ?? 0),
+        id: String(row.id ?? ""),
+        title: String(row.title ?? "Прямой эфир"),
+        creator_id: String(row.creator_id ?? row.author_id ?? ""),
+        viewer_count_current: Number(row.viewer_count_current ?? 0),
       });
 
       // Загрузка профиля стримера
-      const creatorId = String(data.creator_id ?? data.author_id ?? "");
+      const creatorId = String(row.creator_id ?? row.author_id ?? "");
       if (creatorId) {
-        const briefMap = await fetchUserBriefMap([creatorId], supabase as any);
+        const briefMap = await fetchUserBriefMap(
+          [creatorId],
+          supabase as unknown as Parameters<typeof fetchUserBriefMap>[1],
+        );
         const profile = resolveUserBrief(creatorId, briefMap);
         if (profile) {
           setCreator({
@@ -100,9 +131,9 @@ export function LiveViewerRoom() {
       }
 
       // Увеличить счётчик зрителей
-      await supabaseUnsafe
+      await dbLoose
         .from("live_sessions")
-        .update({ viewer_count_current: (data.viewer_count_current ?? 0) + 1 })
+        .update({ viewer_count_current: Number(row.viewer_count_current ?? 0) + 1 })
         .eq("id", sessionId);
     } catch (error) {
       logger.warn("[LiveViewerRoom] Failed to load live session", { sessionId, error });
@@ -110,28 +141,22 @@ export function LiveViewerRoom() {
     } finally {
       setLoading(false);
     }
-  }, [sessionId, supabaseUnsafe]);
+  }, [sessionId]);
 
   const loadMessages = useCallback(async () => {
     try {
-      const { data, error } = await supabaseUnsafe
+      const { data, error } = await dbLoose
         .from("live_chat_messages")
         .select("*")
         .eq("session_id", sessionId)
         .order("created_at", { ascending: true })
         .limit(100);
       if (error) throw error;
-      setMessages((data || []).map((row: any) => ({
-        id: String(row.id),
-        content: String(row.content ?? ""),
-        sender_id: String(row.sender_id ?? ""),
-        sender_name: String(row.sender_name ?? ""),
-        created_at: String(row.created_at ?? ""),
-      })));
+      setMessages(((data ?? []) as unknown as LiveViewerMessageRow[]).map((row) => toViewerMessage(row)));
     } catch (error) {
       logger.warn("[LiveViewerRoom] Failed to load messages", { sessionId, error });
     }
-  }, [sessionId, supabaseUnsafe]);
+  }, [sessionId]);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -146,14 +171,8 @@ export function LiveViewerRoom() {
         table: "live_chat_messages",
         filter: `session_id=eq.${sessionId}`,
       }, (payload) => {
-        const row = payload.new as any;
-        setMessages((prev) => [...prev, {
-          id: String(row.id),
-          content: String(row.content ?? ""),
-          sender_id: String(row.sender_id ?? ""),
-          sender_name: String(row.sender_name ?? ""),
-          created_at: String(row.created_at ?? ""),
-        }]);
+        const row = payload.new as unknown as LiveViewerMessageRow;
+        setMessages((prev) => [...prev, toViewerMessage(row)]);
       })
       .on("postgres_changes", {
         event: "UPDATE",
@@ -161,7 +180,7 @@ export function LiveViewerRoom() {
         table: "live_sessions",
         filter: `id=eq.${sessionId}`,
       }, (payload) => {
-        const updated = payload.new as any;
+        const updated = payload.new as unknown as LiveViewerSessionRow;
         setSession((prev) => prev ? { ...prev, viewer_count_current: Number(updated.viewer_count_current ?? 0) } : prev);
         if (updated.status === "ended") {
           toast.info("Эфир завершён");
@@ -184,7 +203,7 @@ export function LiveViewerRoom() {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { toast.error("Войдите для отправки сообщений"); return; }
-      const { error } = await supabaseUnsafe.from("live_chat_messages").insert({
+      const { error } = await dbLoose.from("live_chat_messages").insert({
         session_id: sessionId,
         sender_id: user.id,
         content: messageText.trim().slice(0, 200),
@@ -206,11 +225,11 @@ export function LiveViewerRoom() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { toast.error("Войдите чтобы подписаться"); return; }
       if (!followed) {
-        await supabaseUnsafe.from("follows").insert({ follower_id: user.id, following_id: creator.user_id });
+        await dbLoose.from("follows").insert({ follower_id: user.id, following_id: creator.user_id });
         setFollowed(true);
         toast.success(`Вы подписались на ${creator.display_name}`);
       } else {
-        await supabaseUnsafe.from("follows").delete().eq("follower_id", user.id).eq("following_id", creator.user_id);
+        await dbLoose.from("follows").delete().eq("follower_id", user.id).eq("following_id", creator.user_id);
         setFollowed(false);
       }
     } catch (error) {
@@ -228,7 +247,7 @@ export function LiveViewerRoom() {
     setReportSubmitting(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      await supabaseUnsafe.from("reports").insert({
+      await dbLoose.from("reports").insert({
         reporter_id: user?.id,
         target_type: "live_session",
         target_id: sessionId,

@@ -1,16 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
-
-const noStoreHeaders = {
-  ...corsHeaders,
-  "Content-Type": "application/json",
-  "Cache-Control": "no-store, no-cache, must-revalidate",
-};
+import { handleCors, getCorsHeaders } from "../_shared/utils.ts";
 
 /**
  * SIP Credentials Edge Function
@@ -28,9 +18,16 @@ const noStoreHeaders = {
  * - SIP_PASSWORD: SIP password
  */
 serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
+  const corsResponse = handleCors(req);
+  if (corsResponse) return corsResponse;
+
+  const origin = req.headers.get("origin");
+  const corsHeaders = getCorsHeaders(origin);
+  const noStoreHeaders = {
+    ...corsHeaders,
+    "Content-Type": "application/json",
+    "Cache-Control": "no-store, no-cache, must-revalidate",
+  };
 
   // In-function JWT verification (belt-and-suspenders — gateway already checks via verify_jwt=true).
   const authHeader = req.headers.get("Authorization") ?? "";

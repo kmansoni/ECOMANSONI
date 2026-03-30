@@ -16,6 +16,44 @@ import type { SectionProps, SettingsPostItem, ActivityCommentItem, ActivityRepos
 
 type ActivityScreen = "activity" | "activity_likes" | "activity_comments" | "activity_reposts";
 
+interface PostMediaRow {
+  media_url: string | null;
+  sort_order: number | null;
+}
+
+interface PostRow {
+  id: string;
+  content: string | null;
+  created_at: string;
+  likes_count: number | null;
+  comments_count: number | null;
+  post_media: PostMediaRow[] | null;
+}
+
+interface PostLikeRow {
+  post_id: string;
+  created_at: string;
+}
+
+interface CommentRow {
+  id: string;
+  post_id: string;
+  content: string | null;
+  created_at: string;
+}
+
+interface RepostRow {
+  id: string;
+  reel_id: string;
+  created_at: string | null;
+}
+
+interface ReelRow {
+  id: string;
+  description: string | null;
+  thumbnail_url: string | null;
+}
+
 interface ActivitySectionProps extends SectionProps { currentScreen: ActivityScreen; }
 
 async function fetchPostsByIds(ids: string[]): Promise<Map<string, SettingsPostItem>> {
@@ -26,9 +64,9 @@ async function fetchPostsByIds(ids: string[]): Promise<Map<string, SettingsPostI
     .in("id", ids);
   if (error) throw error;
   const map = new Map<string, SettingsPostItem>();
-  for (const row of (data ?? []) as any[]) {
+  for (const row of (data ?? []) as unknown as PostRow[]) {
     const media = Array.isArray(row.post_media) ? row.post_media : [];
-    media.sort((a: any, b: any) => (a?.sort_order ?? 0) - (b?.sort_order ?? 0));
+    media.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
     map.set(String(row.id), { id: String(row.id), content: row.content ?? null, created_at: row.created_at, likes_count: row.likes_count ?? 0, comments_count: row.comments_count ?? 0, media_url: media[0]?.media_url ?? null });
   }
   return map;
@@ -51,11 +89,12 @@ export function SettingsActivitySection({ isDark, currentScreen, onNavigate, onB
     if (!user?.id) return;
     setLikesLoading(true);
     try {
-      const { data, error } = await (supabase as any).from("post_likes").select("post_id, created_at").eq("user_id", user.id).order("created_at", { ascending: false });
+      const { data, error } = await supabase.from("post_likes").select("post_id, created_at").eq("user_id", user.id).order("created_at", { ascending: false });
       if (error) throw error;
-      const ids = (data ?? []).map((r: any) => String(r.post_id));
+      const rows = (data ?? []) as unknown as PostLikeRow[];
+      const ids = rows.map((r) => String(r.post_id));
       const map = await fetchPostsByIds(ids);
-      setLikes(ids.map((id: string) => map.get(id)).filter(Boolean) as SettingsPostItem[]);
+      setLikes(ids.map((id) => map.get(id)).filter(Boolean) as SettingsPostItem[]);
     } catch (e) { toast({ title: "Likes", description: getErrorMessage(e) }); }
     finally { setLikesLoading(false); }
   }, [user?.id]);
@@ -64,9 +103,10 @@ export function SettingsActivitySection({ isDark, currentScreen, onNavigate, onB
     if (!user?.id) return;
     setCommentsLoading(true);
     try {
-      const { data, error } = await (supabase as any).from("comments").select("id, post_id, content, created_at").eq("author_id", user.id).order("created_at", { ascending: false }).limit(200);
+      const { data, error } = await supabase.from("comments").select("id, post_id, content, created_at").eq("author_id", user.id).order("created_at", { ascending: false }).limit(200);
       if (error) throw error;
-      setComments((data ?? []).map((r: any) => ({ id: String(r.id), post_id: String(r.post_id), content: String(r.content ?? ""), created_at: r.created_at })));
+      const rows = (data ?? []) as unknown as CommentRow[];
+      setComments(rows.map((r) => ({ id: String(r.id), post_id: String(r.post_id), content: String(r.content ?? ""), created_at: r.created_at })));
     } catch (e) { toast({ title: "Comments", description: getErrorMessage(e) }); }
     finally { setCommentsLoading(false); }
   }, [user?.id]);
@@ -75,15 +115,17 @@ export function SettingsActivitySection({ isDark, currentScreen, onNavigate, onB
     if (!user?.id) return;
     setRepostsLoading(true);
     try {
-      const { data, error } = await (supabase as any).from("reel_reposts").select("id, reel_id, created_at").eq("user_id", user.id).order("created_at", { ascending: false }).limit(200);
+      const { data, error } = await supabase.from("reel_reposts").select("id, reel_id, created_at").eq("user_id", user.id).order("created_at", { ascending: false }).limit(200);
       if (error) throw error;
-      const reelIds = (data ?? []).map((r: any) => String(r.reel_id));
-      const reelMap = new Map<string, any>();
+      const repostRows = (data ?? []) as unknown as RepostRow[];
+      const reelIds = repostRows.map((r) => String(r.reel_id));
+      const reelMap = new Map<string, ReelRow>();
       if (reelIds.length) {
-        const { data: reelsData } = await (supabase as any).from("reels").select("id, description, thumbnail_url").in("id", reelIds);
-        for (const r of reelsData ?? []) reelMap.set(String((r as any).id), r);
+        const { data: reelsData } = await supabase.from("reels").select("id, description, thumbnail_url").in("id", reelIds);
+        const reels = (reelsData ?? []) as unknown as ReelRow[];
+        for (const r of reels) reelMap.set(String(r.id), r);
       }
-      setReposts((data ?? []).map((r: any) => ({ id: String(r.id), reel_id: String(r.reel_id), created_at: r.created_at ?? null, reel_description: reelMap.get(String(r.reel_id))?.description ?? null, reel_thumbnail_url: reelMap.get(String(r.reel_id))?.thumbnail_url ?? null })));
+      setReposts(repostRows.map((r) => ({ id: String(r.id), reel_id: String(r.reel_id), created_at: r.created_at ?? null, reel_description: reelMap.get(String(r.reel_id))?.description ?? null, reel_thumbnail_url: reelMap.get(String(r.reel_id))?.thumbnail_url ?? null })));
     } catch (e) { toast({ title: "Reposts", description: getErrorMessage(e) }); }
     finally { setRepostsLoading(false); }
   }, [user?.id]);
@@ -93,10 +135,10 @@ export function SettingsActivitySection({ isDark, currentScreen, onNavigate, onB
     setExportLoading(true);
     try {
       const [l, c, r, s] = await Promise.all([
-        (supabase as any).from("post_likes").select("id, post_id, created_at").eq("user_id", user.id),
-        (supabase as any).from("comments").select("id, post_id, content, created_at").eq("author_id", user.id),
-        (supabase as any).from("reel_reposts").select("id, reel_id, created_at").eq("user_id", user.id),
-        (supabase as any).from("saved_posts").select("id, post_id, created_at").eq("user_id", user.id),
+        supabase.from("post_likes").select("id, post_id, created_at").eq("user_id", user.id),
+        supabase.from("comments").select("id, post_id, content, created_at").eq("author_id", user.id),
+        supabase.from("reel_reposts").select("id, reel_id, created_at").eq("user_id", user.id),
+        supabase.from("saved_posts").select("id, post_id, created_at").eq("user_id", user.id),
       ]);
       const blob = new Blob([JSON.stringify({ exported_at: new Date().toISOString(), user_id: user.id, likes: l.data ?? [], comments: c.data ?? [], reposts: r.data ?? [], saved_posts: s.data ?? [] }, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
@@ -189,7 +231,18 @@ export function SettingsActivitySection({ isDark, currentScreen, onNavigate, onB
       <div className="flex-1 overflow-y-auto native-scroll">
         <div className={cn("mx-4 backdrop-blur-xl rounded-2xl border overflow-hidden", isDark ? "settings-dark-card" : "bg-card/80 border-white/20")}>
           <SettingsMenuItem icon={<Clock className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />} label="App Screen Time" isDark={isDark}
-            onClick={() => { if (!screenTimeLoading) { setScreenTimeLoading(true); getScreenTimeToday().then((s) => setScreenTime(s)).catch(() => {}).finally(() => setScreenTimeLoading(false)); } }}
+            onClick={() => {
+              if (!screenTimeLoading) {
+                setScreenTimeLoading(true);
+                getScreenTimeToday()
+                  .then((s) => setScreenTime(s))
+                  .catch((error) => {
+                    void error;
+                    setScreenTime(0);
+                  })
+                  .finally(() => setScreenTimeLoading(false));
+              }
+            }}
             value={screenTimeLoading ? "..." : screenTime > 0 ? `${Math.floor(screenTime / 3600)}h ${Math.floor((screenTime % 3600) / 60)}m` : "0m"} />
           <SettingsMenuItem icon={<Heart className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />} label="Likes" isDark={isDark}
             onClick={() => { onNavigate("activity_likes"); void loadLikes(); }} value={likes.length ? String(likes.length) : undefined} />

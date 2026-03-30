@@ -12,6 +12,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { supabase } from "@/lib/supabase";
+import { logger } from "@/lib/logger";
 
 const sb = supabase as any;
 import { useAuth } from "@/hooks/useAuth";
@@ -379,7 +380,7 @@ export function useSavedMessages(options: UseSavedMessagesOptions = {}): UseSave
           await saveMessage(payload);
         } else {
           toast.error("Не удалось сохранить");
-          console.error("saveMessage:", insertError);
+          logger.error("[useSavedMessages] saveMessage error", { error: insertError });
         }
         return;
       }
@@ -417,7 +418,7 @@ export function useSavedMessages(options: UseSavedMessagesOptions = {}): UseSave
         toast.error("Не удалось удалить");
         // Revert optimistic update
         void refetch();
-        console.error("removeSavedMessage:", delError);
+        logger.error("[useSavedMessages] removeSavedMessage error", { error: delError });
         return;
       }
 

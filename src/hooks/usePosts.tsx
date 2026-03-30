@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { checkHashtagsAllowedForText } from '@/lib/hashtagModeration';
+import { logger } from '@/lib/logger';
 
 export interface Post {
   id: string;
@@ -315,7 +316,7 @@ export function usePostActions() {
       });
     } catch (err) {
       // Silently ignore - view tracking is non-critical
-      console.error('Failed to record view:', err);
+      logger.error("[usePosts] Failed to record view", { error: err });
     }
   }, [user, viewedPosts]);
 

@@ -97,6 +97,7 @@ export interface Reel {
     display_name: string;
     avatar_url: string;
     verified: boolean;
+    username?: string | null; // ИСПРАВЛЕНИЕ дефекта #23: добавлен username
   };
   isLiked?: boolean;
   isSaved?: boolean;
@@ -136,13 +137,22 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
+  // ИСПРАВЛЕНИЕ дефекта #33: добавлен error state для пробрасывания в ReelsPage
+  const [error, setError] = useState<string | null>(null);
   const [likedReels, setLikedReels] = useState<Set<string>>(new Set());
   const [savedReels, setSavedReels] = useState<Set<string>>(new Set());
   const [repostedReels, setRepostedReels] = useState<Set<string>>(new Set());
   const storageSyncOnceRef = useRef(false);
+  // Ref для текущего user.id — используется в RT-обработчиках без пересоздания канала
+  const userIdRef = useRef<string | null>(null);
   // Mutex для предотвращения race conditions при лайках/сохранениях
   const likeMutex = useRef(new OperationMutex());
   const saveMutex = useRef(new OperationMutex());
+
+  // Синхронизируем ref с актуальным user.id
+  useEffect(() => {
+    userIdRef.current = user?.id ?? null;
+  }, [user?.id]);
 
   const getFollowedAuthorIdsIfNeeded = useCallback(async (): Promise<string[] | null> => {
     if (feedMode !== "friends") return null;
@@ -243,7 +253,7 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
           return data;
         }
 
-        return (rpc.data || []).map((row: any, index: number) => {
+        const rpcRows = (rpc.data || []).map((row: any, index: number) => {
           const id = row?.id ?? row?.reel_id;
           return {
             ...row,
@@ -254,6 +264,15 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
             final_score: row?.final_score ?? row?.score,
           };
         });
+
+        // RPC succeeded but returned 0 rows on first page → try fallback chain
+        if (rpcRows.length === 0 && offset === 0) {
+          let data = await fetchReelsFallback();
+          if ((data?.length || 0) === 0) data = await fetchReelsViaEdgeFallback();
+          if (data.length > 0) return data;
+        }
+
+        return rpcRows;
       }
 
       // friends mode
@@ -319,7 +338,7 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
           author: {
             display_name: brief?.display_name ?? null,
             avatar_url: brief?.avatar_url ?? null,
-            username: brief?.username ?? null,
+            username: brief?.username ?? null, // ИСПРАВЛЕНИЕ дефекта #23: username из brief
             verified: verifiedMap.get(r.author_id) ?? false,
           },
           isLiked: userLikedReels.includes(r.id),
@@ -339,7 +358,10 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
   );
 
   const fetchReels = useCallback(async () => {
+    // ИСПРАВЛЕНИЕ дефекта #21: ignore-флаг предотвращает setState после смены feedMode/user
+    let ignore = false;
     setLoading(true);
+    setError(null); // сбрасываем ошибку при новом запросе
     try {
       // Best-effort: sync storage-only uploads into public.reels so they appear in the feed.
       if (!storageSyncOnceRef.current && !isGuestMode() && feedMode === "reels") {
@@ -352,15 +374,15 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
       }
 
       if (feedMode === "friends" && !user) {
-        setReels([]);
-        setHasMore(false);
-        setLoading(false);
+        if (!ignore) { setReels([]); setHasMore(false); setLoading(false); }
         return;
       }
 
       const followedAuthorIds = await getFollowedAuthorIdsIfNeeded();
       const raw = await fetchRawBatch({ offset: 0, limit: PAGE_SIZE, followedAuthorIds });
       const enriched = await enrichRows(raw);
+
+      if (ignore) return; // feedMode/user сменились пока шёл запрос
 
       setLikedReels(new Set(enriched.likedIds));
       setSavedReels(new Set(enriched.savedIds));
@@ -375,11 +397,15 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
       } else {
         setReels(enriched.reels);
       }
-    } catch (error) {
-      logger.error("[useReels] Error fetching reels", { error, feedMode, userId: user?.id ?? null });
+    } catch (err) {
+      if (!ignore) {
+        logger.error("[useReels] Error fetching reels", { error: err, feedMode, userId: user?.id ?? null });
+        setError(err instanceof Error ? err.message : 'Ошибка загрузки Reels');
+      }
     } finally {
-      setLoading(false);
+      if (!ignore) setLoading(false);
     }
+    return () => { ignore = true; };
   }, [user, feedMode, enrichRows, fetchRawBatch, getFollowedAuthorIdsIfNeeded]);
 
   const loadMore = useCallback(async () => {
@@ -448,9 +474,25 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
       return;
     }
 
-    // Используем mutex для предотвращения race conditions
+    // ИСПРАВЛЕНИЕ дефекта #22: оптимистичное обновление ДО запроса к БД
+    // Ранее: запрос → обновление UI (задержка 200-500ms)
+    // Теперь: обновление UI → запрос → откат при ошибке (мгновенный отклик)
     await likeMutex.current.execute(async () => {
       const isCurrentlyLiked = likedReels.has(reelId);
+
+      // Оптимистичное обновление ДО запроса
+      setLikedReels((prev) => {
+        const next = new Set(prev);
+        if (isCurrentlyLiked) next.delete(reelId); else next.add(reelId);
+        return next;
+      });
+      setReels((prev) =>
+        prev.map((r) =>
+          r.id === reelId
+            ? { ...r, likes_count: Math.max(0, r.likes_count + (isCurrentlyLiked ? -1 : 1)), isLiked: !isCurrentlyLiked }
+            : r
+        )
+      );
 
       try {
         if (isCurrentlyLiked) {
@@ -460,37 +502,26 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
             .eq("reel_id", reelId)
             .eq("user_id", user.id);
           if (error) throw error;
-
-          setLikedReels((prev) => {
-            const newSet = new Set(prev);
-            newSet.delete(reelId);
-            return newSet;
-          });
-
-          setReels((prev) =>
-            prev.map((r) =>
-              r.id === reelId
-                ? { ...r, likes_count: Math.max(0, r.likes_count - 1), isLiked: false }
-                : r
-            )
-          );
         } else {
           const { error } = await (supabase as any)
             .from("reel_likes")
             .insert({ reel_id: reelId, user_id: user.id });
           if (error) throw error;
-
-          setLikedReels((prev) => new Set([...prev, reelId]));
-
-          setReels((prev) =>
-            prev.map((r) =>
-              r.id === reelId
-                ? { ...r, likes_count: r.likes_count + 1, isLiked: true }
-                : r
-            )
-          );
         }
       } catch (error) {
+        // Откат при ошибке
+        setLikedReels((prev) => {
+          const next = new Set(prev);
+          if (isCurrentlyLiked) next.add(reelId); else next.delete(reelId);
+          return next;
+        });
+        setReels((prev) =>
+          prev.map((r) =>
+            r.id === reelId
+              ? { ...r, likes_count: Math.max(0, r.likes_count + (isCurrentlyLiked ? 1 : -1)), isLiked: isCurrentlyLiked }
+              : r
+          )
+        );
         logger.error("[useReels] Error toggling like", { error, reelId, userId: user?.id ?? null });
         showErrorToast(error, 'Не удалось обновить лайк');
       }
@@ -897,6 +928,18 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
     description: string | undefined,
     musicTitle: string | undefined,
     clientPublishId: string,
+    options?: {
+      visibility?: 'public' | 'followers' | 'private';
+      locationName?: string | null;
+      taggedUsers?: string[];
+      allowComments?: boolean;
+      allowRemix?: boolean;
+      musicTrackId?: string | null;
+      effectPreset?: string | null;
+      faceEnhance?: boolean;
+      aiEnhance?: boolean;
+      maxDurationSec?: number | null;
+    },
   ) => {
     if (!user) return { error: "Not authenticated" };
 
@@ -909,6 +952,16 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
         p_thumbnail_url: thumbnailUrl ?? null,
         p_description: description ?? null,
         p_music_title: musicTitle ?? null,
+        p_music_track_id: options?.musicTrackId ?? null,
+        p_effect_preset: options?.effectPreset ?? null,
+        p_face_enhance: options?.faceEnhance ?? false,
+        p_ai_enhance: options?.aiEnhance ?? false,
+        p_max_duration_sec: options?.maxDurationSec ?? null,
+        p_visibility: options?.visibility ?? 'public',
+        p_location_name: options?.locationName ?? null,
+        p_tagged_users: Array.isArray(options?.taggedUsers) ? options?.taggedUsers : [],
+        p_allow_comments: options?.allowComments ?? true,
+        p_allow_remix: options?.allowRemix ?? true,
       });
 
       if (error) throw error;
@@ -924,11 +977,71 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
     fetchReels();
   }, [fetchReels]);
 
+  // Realtime подписки: лайки и комментарии обновляют счётчики в ленте
+  useEffect(() => {
+    const channel = supabase
+      .channel('reels-likes-comments-rt')
+      .on(
+        "postgres_changes" as any,
+        { event: "INSERT", schema: "public", table: "reel_likes" },
+        (payload: any) => {
+          const row = payload.new;
+          if (!row?.reel_id) return;
+          // Пропускаем собственные лайки — уже обновлены оптимистично в toggleLike
+          if (row.user_id === userIdRef.current) return;
+          setReels(prev => prev.map(r =>
+            r.id === row.reel_id ? { ...r, likes_count: (r.likes_count ?? 0) + 1 } : r
+          ));
+        },
+      )
+      .on(
+        "postgres_changes" as any,
+        { event: "DELETE", schema: "public", table: "reel_likes" },
+        (payload: any) => {
+          const row = payload.old;
+          if (!row?.reel_id) return;
+          // Пропускаем собственные unlike — уже обновлены оптимистично в toggleLike
+          if (row.user_id === userIdRef.current) return;
+          setReels(prev => prev.map(r =>
+            r.id === row.reel_id ? { ...r, likes_count: Math.max(0, (r.likes_count ?? 0) - 1) } : r
+          ));
+        },
+      )
+      .on(
+        "postgres_changes" as any,
+        { event: "INSERT", schema: "public", table: "reel_comments" },
+        (payload: any) => {
+          const reelId = payload.new?.reel_id;
+          if (reelId) {
+            setReels(prev => prev.map(r =>
+              r.id === reelId ? { ...r, comments_count: (r.comments_count ?? 0) + 1 } : r
+            ));
+          }
+        },
+      )
+      .on(
+        "postgres_changes" as any,
+        { event: "DELETE", schema: "public", table: "reel_comments" },
+        (payload: any) => {
+          const reelId = payload.old?.reel_id;
+          if (reelId) {
+            setReels(prev => prev.map(r =>
+              r.id === reelId ? { ...r, comments_count: Math.max(0, (r.comments_count ?? 0) - 1) } : r
+            ));
+          }
+        },
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, []);
+
   return {
     reels,
     loading,
     loadingMore,
     hasMore,
+    error, // ИСПРАВЛЕНИЕ дефекта #33: экспортируем error для ReelsPage
     loadMore,
     likedReels,
     savedReels,

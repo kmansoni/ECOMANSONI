@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { logger } from "../logger";
 
 export type ChatSchemaProbeV2 = {
   ok: boolean;
@@ -58,13 +59,13 @@ export async function runChatSchemaProbeOnce(): Promise<ChatSchemaProbeV2 | null
     if (error) {
       if (isExpectedProbeError(error)) {
         if (import.meta.env.DEV) {
-          console.warn("[ChatSchemaProbe] RPC unavailable for current env/session", error);
+          logger.warn("[ChatSchemaProbe] RPC unavailable for current env/session", error);
         }
         // Expected probe errors are not a proven schema mismatch.
         // Do not cache a hard failure because core chat RPCs may still be available.
         return null;
       } else {
-        console.error("[ChatSchemaProbe] RPC error", error);
+        logger.error("[ChatSchemaProbe] RPC error", error);
         // Unknown transport/runtime errors should not globally disable chat.
         return null;
       }
@@ -78,13 +79,13 @@ export async function runChatSchemaProbeOnce(): Promise<ChatSchemaProbeV2 | null
     }
 
     if (import.meta.env.DEV) {
-      console.info("[ChatSchemaProbe] result", lastProbe);
+      logger.info("[ChatSchemaProbe] result", lastProbe);
     }
 
     return lastProbe;
   } catch (e) {
     if (import.meta.env.DEV) {
-      console.warn("[ChatSchemaProbe] exception", e);
+      logger.warn("[ChatSchemaProbe] exception", e);
     }
     // Exceptions (network, auth race, transient failures) must not disable chat.
     return null;

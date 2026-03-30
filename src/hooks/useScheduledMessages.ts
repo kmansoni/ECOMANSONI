@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
+import { logger } from '@/lib/logger';
 import { useAuth } from './useAuth';
 
 const supabaseAny = supabase as any;
@@ -66,7 +67,7 @@ export function useScheduledMessages(conversationId?: string | null) {
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to load scheduled messages';
       setError(msg);
-      console.error('[useScheduledMessages] Error:', err);
+      logger.error('[useScheduledMessages] Error', { error: err });
     } finally {
       setLoading(false);
     }

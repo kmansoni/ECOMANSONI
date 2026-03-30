@@ -7,6 +7,7 @@ import { useState } from "react";
 import { X, Save, User, Phone, Mail, Linkedin, Globe, Star, AlertTriangle, Link as LinkIcon } from "lucide-react";
 import { crm, type HRCandidate, type HRGrade, HR_SOURCES } from "@/lib/crm";
 import { toast } from "sonner";
+import { logger } from "@/lib/logger";
 
 const GRADES: Array<{ value: string; label: string }> = [
   { value: 'intern',    label: 'Intern' },
@@ -131,7 +132,7 @@ export function CRMHRCandidateForm({ initial, onClose, onSaved }: Props) {
       onSaved(saved);
     } catch (err) {
       toast.error('Ошибка сохранения кандидата');
-      console.error(err);
+      logger.error('[CRMHRCandidateForm] submit error', { error: err });
     } finally {
       setSaving(false);
     }

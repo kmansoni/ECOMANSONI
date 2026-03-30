@@ -53,14 +53,14 @@ function LikerRow({ liker, currentUserId, onNavigate }: LikerRowProps) {
     setLoadingFollow(true);
     try {
       if (wasFollowing) {
-        const { error } = await (supabase as any)
+        const { error } = await supabase
           .from("followers")
           .delete()
           .eq("follower_id", currentUserId)
           .eq("following_id", liker.userId);
         if (error) throw error;
       } else {
-        const { error } = await (supabase as any)
+        const { error } = await supabase
           .from("followers")
           .upsert(
             { follower_id: currentUserId, following_id: liker.userId },

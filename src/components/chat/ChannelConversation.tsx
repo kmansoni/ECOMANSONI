@@ -3,30 +3,12 @@ import { FloatingDate, DateSeparator } from "./FloatingDate";
 import { ScrollToBottomFab } from "./ScrollToBottomFab";
 import { JumpToDatePicker } from "./JumpToDatePicker";
 import {
-  ArrowLeft,
-  Bell,
-  BellOff,
-  ChevronDown,
+  CheckCircle2,
   Eye,
   FileText,
-  Link,
-  Mic,
-  MoreVertical,
   Pin,
-  Search,
-  Send,
   Share2,
-  Smile,
-  Video,
-  Volume2 as Volume2Icon,
-  Trash2,
-  CheckCircle2,
   X,
-  Radio,
-  Users,
-  Settings2,
-  ChevronRight,
-  QrCode,
 } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
@@ -34,33 +16,14 @@ import { getHashtagBlockedToastPayload } from "@/lib/hashtagModeration";
 import { getChatSendErrorToast } from "@/lib/chat/sendError";
 import { diagnoseChannelSendReadiness } from "@/lib/chat/readiness";
 import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
-import { Drawer, DrawerClose, DrawerContent } from "@/components/ui/drawer";
-import { AttachmentIcon } from "@/components/chat/AttachmentIcon";
-import { AttachmentSheet } from "@/components/chat/AttachmentSheet";
-import { CameraCaptureSheet } from "@/components/chat/CameraCaptureSheet";
-import { EmojiStickerPicker } from "@/components/chat/EmojiStickerPicker";
-import { ImageViewer } from "@/components/chat/ImageViewer";
-import { VideoCircleRecorder } from "@/components/chat/VideoCircleRecorder";
 import { VideoCircleMessage } from "@/components/chat/VideoCircleMessage";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-  DropdownMenuSub,
-  DropdownMenuSubTrigger,
-  DropdownMenuSubContent,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-} from "@/components/ui/dropdown-menu";
+
 import { useAuth } from "@/hooks/useAuth";
 import { useMessageReactions } from "@/hooks/useMessageReactions";
 import { MessageReactions } from "@/components/chat/MessageReactions";
 import { MessageContextMenu } from "@/components/chat/MessageContextMenu";
-import type { Channel } from "@/hooks/useChannels";
+import type { Channel, ChannelMessage } from "@/hooks/useChannels";
 import { useChannelMessages, useJoinChannel } from "@/hooks/useChannels";
 import { useChannelCapabilities } from "@/hooks/useChannelCapabilities";
 import { useCommunityGlobalSettings, useCommunityInvites } from "@/hooks/useCommunityControls";
@@ -70,13 +33,13 @@ import { supabase } from "@/lib/supabase";
 import { useChannelUserSettings } from "@/hooks/useChannelUserSettings";
 import { InviteQrDialog } from "@/components/chat/InviteQrDialog";
 import { LinkPreview } from "@/components/chat/LinkPreview";
-import { MentionSuggestions } from "@/components/chat/MentionSuggestions";
-import { SendOptionsMenu } from "@/components/chat/SendOptionsMenu";
+
+import { ChannelInfoDrawer } from "@/components/chat/ChannelInfoDrawer";
+import { ChannelHeader } from "@/components/chat/ChannelHeader";
+import { ChannelInputBar } from "@/components/chat/ChannelInputBar";
 import { extractUrls } from "@/hooks/useLinkPreview";
 import {
-  detectMentionTrigger,
   getMentionSuggestions,
-  insertMention,
   useMentions,
   type MentionUser,
 } from "@/hooks/useMentions";
@@ -89,47 +52,18 @@ interface ChannelConversationProps {
   onLeave?: () => void;
 }
 
-const formatSubscribers = (count: number): string =>
-  `${count.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ")} подписчиков`;
-
 const formatViews = (count: number): string => {
   if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1).replace(".", ",")}M`;
   if (count >= 1_000) return `${(count / 1_000).toFixed(1).replace(".", ",")}K`;
   return String(count);
 };
 
-const formatAutoDeleteLabel = (seconds: number): string => {
-  const s = Math.max(0, Number(seconds) || 0);
-  if (s === 0) return "Никогда";
-  if (s === 24 * 60 * 60) return "1 день";
-  if (s === 7 * 24 * 60 * 60) return "1 нед.";
-  if (s === 30 * 24 * 60 * 60) return "1 месяц";
-  return `Другое: ${s} сек.`;
-};
-
-const stableHash32 = (input: string): number => {
-  // FNV-1a 32-bit
-  let h = 0x811c9dc5;
-  for (let i = 0; i < input.length; i++) {
-    h ^= input.charCodeAt(i);
-    h = Math.imul(h, 0x01000193);
-  }
-  return h >>> 0;
-};
-
-const stableIntInRange = (seed: string, minInclusive: number, maxInclusive: number): number => {
-  const min = Math.min(minInclusive, maxInclusive);
-  const max = Math.max(minInclusive, maxInclusive);
-  const span = max - min + 1;
-  if (span <= 1) return min;
-  return min + (stableHash32(seed) % span);
-};
-
-const isExpectedChannelMembersAccessError = (error: any): boolean => {
-  const code = String(error?.code ?? "");
-  const status = Number(error?.status ?? 0);
-  const message = String(error?.message ?? "").toLowerCase();
-  const details = String(error?.details ?? "").toLowerCase();
+const isExpectedChannelMembersAccessError = (error: unknown): boolean => {
+  const e = error as Record<string, unknown> | null;
+  const code = String(e?.code ?? "");
+  const status = Number(e?.status ?? 0);
+  const message = String(e?.message ?? "").toLowerCase();
+  const details = String(e?.details ?? "").toLowerCase();
   return (
     code === "42501" ||
     code === "42P01" ||
@@ -170,7 +104,7 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
     position: { top: number; left: number; width: number };
   } | null>(null);
   const longPressChannelRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const sendButtonLongPressRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const [sendingPost, setSendingPost] = useState(false);
   const [showAttachmentSheet, setShowAttachmentSheet] = useState(false);
   const [showCameraSheet, setShowCameraSheet] = useState(false);
@@ -232,7 +166,7 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
   const [admins, setAdmins] = useState<Array<{ user_id: string; display_name: string | null; avatar_url: string | null; role: string }>>([]);
   const [subscribers, setSubscribers] = useState<Array<{ user_id: string; display_name: string | null; avatar_url: string | null; role: string }>>([]);
   const [autoDeleteSecondsLocal, setAutoDeleteSecondsLocal] = useState<number | null>(() => {
-    const v = Number((channel as any)?.auto_delete_seconds);
+    const v = Number(channel?.auto_delete_seconds);
     return Number.isFinite(v) ? v : null;
   });
   const [autoDeleteLoading, setAutoDeleteLoading] = useState(false);
@@ -242,7 +176,7 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
   const [inviteQrUrl, setInviteQrUrl] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const channelInputRef = useRef<HTMLInputElement>(null);
+
   const canCreatePosts = isMember && can("channel.posts.create");
   const canInvite = isMember && can("channel.members.invite") && (settings?.allow_channel_invites ?? true);
   const canDeletePostsAny = isMember && (can("channel.posts.delete") || role === "owner" || role === "admin");
@@ -261,13 +195,13 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
     void (async () => {
       try {
         const { data: memberRows } = await supabase
-          .from("channel_members" as never)
+          .from("channel_members")
           .select("user_id")
           .eq("channel_id", channel.id)
           .limit(200);
-        const ids = ((memberRows ?? []) as any[]).map((r) => r.user_id as string).filter(Boolean);
+        const ids = (memberRows ?? []).map((r) => r.user_id).filter(Boolean);
         if (!ids.length) return;
-        const briefMap = await fetchUserBriefMap(ids, supabase as any);
+        const briefMap = await fetchUserBriefMap(ids);
         if (cancelled) return;
         setMentionParticipants(
           ids
@@ -306,7 +240,7 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
     let cancelled = false;
     const loadPinned = async () => {
       try {
-        const { data, error } = await (supabase as any)
+        const { data, error } = await supabase
           .from("channel_pins")
           .select("message_id")
           .eq("channel_id", channel.id)
@@ -339,7 +273,7 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
             setPinnedMessageId(null);
             return;
           }
-          const next = (payload.new as any)?.message_id;
+          const next = (payload.new as Record<string, unknown>)?.message_id;
           setPinnedMessageId(next ? String(next) : null);
         },
       )
@@ -560,12 +494,12 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
 
       const adminIds = new Set<string>();
       if (channel.owner_id) adminIds.add(String(channel.owner_id));
-      for (const r of rows as any[]) {
+      for (const r of (rows ?? [])) {
         if (r?.user_id) adminIds.add(String(r.user_id));
       }
 
       const ids = Array.from(adminIds);
-      const briefMap = await fetchUserBriefMap(ids, supabase as any);
+      const briefMap = await fetchUserBriefMap(ids);
 
       const out = ids.map((id) => ({
         user_id: id,
@@ -600,8 +534,8 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
       const ids = Array.from(
         new Set(
           (rows || [])
-            .map((r: any) => String(r?.user_id || ""))
-            .filter((x: string) => x.length > 0),
+            .map((r) => String(r?.user_id || ""))
+            .filter((x) => x.length > 0),
         ),
       );
       if (ids.length === 0) {
@@ -609,10 +543,10 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
         return;
       }
 
-      const briefMap = await fetchUserBriefMap(ids, supabase as any);
+      const briefMap = await fetchUserBriefMap(ids);
 
       const roleById: Record<string, string> = {};
-      (rows || []).forEach((r: any) => {
+      (rows || []).forEach((r) => {
         if (!r?.user_id) return;
         roleById[String(r.user_id)] = String(r?.role ?? "member");
       });
@@ -657,7 +591,7 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
         .eq("id", channel.id)
         .maybeSingle();
       if (error) throw error;
-      const v = Number((data as any)?.auto_delete_seconds ?? 0) || 0;
+      const v = Number(data?.auto_delete_seconds ?? 0) || 0;
       setAutoDeleteSecondsLocal(v);
     } catch (e) {
       logger.warn("[ChannelConversation] loadAutoDeleteSeconds failed", { channelId: channel.id, error: e });
@@ -672,15 +606,15 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
   }, [infoOpen, loadAutoDeleteSeconds]);
 
   const messageById = useMemo(() => {
-    const m = new Map<string, any>();
-    for (const msg of messages as any[]) {
+    const m = new Map<string, ChannelMessage>();
+    for (const msg of messages) {
       if (!msg?.id) continue;
       m.set(String(msg.id), msg);
     }
     return m;
   }, [messages]);
   const pinnedMessage = useMemo(
-    () => (pinnedMessageId ? (messages as any[]).find((m: any) => String(m?.id) === pinnedMessageId) ?? null : null),
+    () => (pinnedMessageId ? messages.find((m) => String(m?.id) === pinnedMessageId) ?? null : null),
     [messages, pinnedMessageId],
   );
 
@@ -698,7 +632,7 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
     return true;
   }, [canDeletePostsAny, isMember, messageById, selectedIds, user?.id]);
 
-  const autoDeleteSeconds = Number((autoDeleteSecondsLocal ?? (channel as any)?.auto_delete_seconds ?? 0)) || 0;
+  const autoDeleteSeconds = Number((autoDeleteSecondsLocal ?? channel?.auto_delete_seconds ?? 0)) || 0;
 
   const autoDeleteRadioValue = useMemo(() => {
     const known = new Set([0, 24 * 60 * 60, 7 * 24 * 60 * 60, 30 * 24 * 60 * 60]);
@@ -764,7 +698,7 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
   const unpinChannelMessage = async () => {
     if (!canPinPosts) return;
     try {
-      const { error } = await (supabase as any)
+      const { error } = await supabase
         .from("channel_pins")
         .delete()
         .eq("channel_id", channel.id);
@@ -788,7 +722,7 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
         return;
       }
 
-      const { error } = await (supabase as any)
+      const { error } = await supabase
         .from("channel_pins")
         .upsert(
           {
@@ -840,7 +774,7 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
       setDraftPost("");
       const result = await editChannelMessage(editing.id, text);
       if (result?.error) {
-        toast.error("Не удалось отредактировать", { description: String(result.error) });
+        toast.error("Не удалось отредактировать пост. Попробуйте снова.");
         setEditingChannelMsg(editing);
         setDraftPost(text);
       }
@@ -904,11 +838,6 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
     }
   };
 
-  const QUICK_STICKERS = useMemo(
-    () => ["😄", "😍", "😂", "🔥", "👍", "❤️", "🥳", "😮", "😢", "😡", "🤝", "🙏", "💯", "✨", "🎉", "🤩", "🫶", "😴", "🤯", "😎"],
-    [],
-  );
-
   const sendSticker = async (sticker: string) => {
     if (!canCreatePosts || sendingPost) return;
     try {
@@ -968,7 +897,7 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
     }
     try {
       const v = Math.max(0, Math.min(Number(seconds) || 0, 31_536_000));
-      const updatePayload: any = { auto_delete_seconds: v, updated_at: new Date().toISOString() };
+      const updatePayload = { auto_delete_seconds: v, updated_at: new Date().toISOString() };
       const { error } = await supabase
         .from("channels")
         .update(updatePayload)
@@ -1042,7 +971,7 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
     try {
       const { error } = await supabase
         .from("channel_members")
-        .update({ role: nextRole } as any)
+        .update({ role: nextRole })
         .eq("channel_id", channel.id)
         .eq("user_id", userId);
       if (error) throw error;
@@ -1124,694 +1053,71 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
 
   return (
     <div className="fixed inset-0 z-[200] flex flex-col bg-background">
-      <div className="flex-shrink-0 flex items-center gap-2 px-2 py-2 bg-background/95 backdrop-blur-sm border-b border-border relative z-10 safe-area-top">
-        <button onClick={onBack} className="flex items-center gap-1 text-primary">
-          <ArrowLeft className="w-5 h-5" />
-          <span className="text-sm font-medium">{stableIntInRange(`channel:${channel.id}:header`, 10, 109)}</span>
-        </button>
+      <ChannelHeader
+        channel={channel}
+        onBack={onBack}
+        openInfo={openInfo}
+        liveMode={liveMode}
+        setSearchOpen={setSearchOpen}
+        isMember={isMember}
+        handleLeave={handleLeave}
+        handleJoin={handleJoin}
+        muted={muted}
+        setMuted={setMuted}
+        canUpdateSettings={canUpdateSettings}
+        canInvite={canInvite}
+        role={role}
+        autoDeleteRadioValue={autoDeleteRadioValue}
+        autoDeleteSeconds={autoDeleteSeconds}
+        setAutoDeleteSeconds={setAutoDeleteSeconds}
+        toggleLive={toggleLive}
+        selectMode={selectMode}
+        setSelectMode={setSelectMode}
+        handleCreateInvite={handleCreateInvite}
+        handleShowInviteQr={handleShowInviteQr}
+        deleteChannel={deleteChannel}
+      />
 
-        <button
-          type="button"
-          onClick={openInfo}
-          className="rounded-full"
-          aria-label="Открыть меню канала"
-          title="Канал"
-        >
-          <GradientAvatar
-            name={channel.name}
-            seed={channel.id}
-            avatarUrl={channel.avatar_url}
-            size="sm"
-            className="w-9 h-9 text-xs border-border/60"
-          />
-        </button>
-
-        <div className="flex-1 min-w-0">
-          <button type="button" onClick={openInfo} className="text-left w-full">
-            <h2 className="font-semibold text-foreground text-sm truncate flex items-center gap-2">
-              <span className="truncate">{channel.name}</span>
-              {liveMode ? (
-                <span className="shrink-0 rounded-full bg-primary/10 text-primary text-[10px] leading-none px-2 py-1">
-                  LIVE
-                </span>
-              ) : null}
-            </h2>
-          </button>
-          <p className="text-[11px] text-muted-foreground">{formatSubscribers(channel.member_count || 0)}</p>
-        </div>
-
-        <button
-          type="button"
-          onClick={() => setSearchOpen((v) => !v)}
-          className="p-2 text-muted-foreground hover:text-foreground"
-          aria-label="Поиск сообщений"
-          title="Поиск сообщений"
-        >
-          <Search className="w-5 h-5" />
-        </button>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button className="p-2 text-muted-foreground hover:text-foreground">
-              <MoreVertical className="w-5 h-5" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={isMember ? handleLeave : handleJoin}>
-              {isMember ? "Отписаться от канала" : "Подписаться на канал"}
-            </DropdownMenuItem>
-
-            <DropdownMenuItem
-              onClick={async () => {
-                try {
-                  await setMuted(!muted);
-                  toast.success(!muted ? "Уведомления выключены" : "Уведомления включены");
-                } catch (e) {
-                  logger.error("[ChannelConversation] Mute toggle failed", { channelId: channel.id, error: e });
-                  toast.error("Не удалось обновить уведомления");
-                }
-              }}
-              disabled={!isMember}
-            >
-              {muted ? "Включить уведомления" : "Выключить уведомления"}
-            </DropdownMenuItem>
-
-            <DropdownMenuSub>
-              <DropdownMenuSubTrigger disabled={!isMember || !canUpdateSettings}>
-                Автоудаление
-              </DropdownMenuSubTrigger>
-              <DropdownMenuSubContent>
-                <DropdownMenuRadioGroup
-                  value={autoDeleteRadioValue}
-                  onValueChange={(v) => {
-                    if (v === "custom") return;
-                    void setAutoDeleteSeconds(Number(v));
-                  }}
-                >
-                  <DropdownMenuRadioItem value="0">Никогда</DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value={String(24 * 60 * 60)}>1 день</DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value={String(7 * 24 * 60 * 60)}>1 нед.</DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value={String(30 * 24 * 60 * 60)}>1 месяц</DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem
-                    value="custom"
-                    onSelect={(e) => {
-                      e.preventDefault();
-                      const raw = window.prompt("Автоудаление: секунд (0 = никогда)", String(autoDeleteSeconds));
-                      if (raw == null) return;
-                      const n = Number(raw);
-                      void setAutoDeleteSeconds(Number.isFinite(n) ? n : autoDeleteSeconds);
-                    }}
-                  >
-                    Другое
-                  </DropdownMenuRadioItem>
-                </DropdownMenuRadioGroup>
-              </DropdownMenuSubContent>
-            </DropdownMenuSub>
-
-            <DropdownMenuItem
-              onClick={toggleLive}
-              disabled={!isMember}
-            >
-              {liveMode ? "Остановить трансляцию" : "Трансляция"}
-            </DropdownMenuItem>
-
-            <DropdownMenuItem
-              onClick={() => setSelectMode((v) => !v)}
-              disabled={!isMember}
-            >
-              {selectMode ? "Отменить выбор" : "Выбрать сообщения"}
-            </DropdownMenuItem>
-
-            <DropdownMenuItem disabled>Отправить подарок</DropdownMenuItem>
-
-            <DropdownMenuItem onClick={handleCreateInvite} disabled={!canInvite}>
-              <Link className="w-4 h-4 mr-2" />
-              Пригласить в канал
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={handleShowInviteQr} disabled={!canInvite}>
-              <QrCode className="w-4 h-4 mr-2" />
-              Показать QR-приглашение
-            </DropdownMenuItem>
-
-            <DropdownMenuSeparator />
-
-            <DropdownMenuItem
-              onClick={deleteChannel}
-              className="text-destructive focus:text-destructive"
-              disabled={role !== "owner"}
-            >
-              <Trash2 className="w-4 h-4 mr-2" />
-              Удалить канал
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-
-      <Drawer
-        open={infoOpen}
-        onOpenChange={(open) => {
-          if (!open) closeInfo();
-          else setInfoOpen(true);
-        }}
-      >
-        <DrawerContent
-          className="h-[92dvh] max-h-[92dvh] rounded-t-3xl p-0 overflow-hidden mt-0"
-        >
-          <div className="px-4 pb-6 flex flex-col h-full">
-            <div className="flex items-center justify-between pb-2">
-              <button
-                type="button"
-                onClick={() => {
-                  if (infoView !== "main") setInfoView("main");
-                  else closeInfo();
-                }}
-                className="p-2 text-muted-foreground hover:text-foreground"
-                aria-label={infoView !== "main" ? "Назад" : "Закрыть"}
-              >
-                <ArrowLeft className="w-5 h-5" />
-              </button>
-
-              {infoView === "main" ? (
-                <button
-                  type="button"
-                  onClick={() => setInfoView("settings")}
-                  disabled={!canUpdateSettings}
-                  className={`px-3 py-2 rounded-full text-sm ${
-                    canUpdateSettings
-                      ? "text-foreground hover:bg-muted"
-                      : "text-muted-foreground opacity-60"
-                  }`}
-                >
-                  Изм.
-                </button>
-              ) : (
-                <div className="px-3 py-2 text-sm font-medium text-foreground">
-                  {infoView === "admins" && "Администраторы"}
-                  {infoView === "subscribers" && "Подписчики"}
-                  {infoView === "settings" && "Настройки канала"}
-                  {infoView === "more" && "Ещё"}
-                </div>
-              )}
-
-              <DrawerClose asChild>
-                <button type="button" className="p-2 text-muted-foreground hover:text-foreground" aria-label="Закрыть">
-                  <X className="w-5 h-5" />
-                </button>
-              </DrawerClose>
-            </div>
-
-            {infoView === "main" ? (
-              <div className="flex-1 overflow-y-auto">
-                <div className="flex flex-col items-center pt-3 pb-4">
-                  <GradientAvatar
-                    name={channel.name}
-                    seed={channel.id}
-                    avatarUrl={channel.avatar_url}
-                    size="lg"
-                    className="w-20 h-20 text-xl"
-                  />
-                  <div className="pt-3 text-center">
-                    <div className="text-xl font-semibold text-foreground">{channel.name}</div>
-                    <div className="text-sm text-muted-foreground">{formatSubscribers(channel.member_count || 0)}</div>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-4 gap-2 pb-4">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <button
-                        type="button"
-                        disabled={!isMember}
-                        className={`rounded-2xl bg-card border border-border/60 py-3 flex flex-col items-center gap-2 ${
-                          isMember ? "" : "opacity-60"
-                        }`}
-                      >
-                        <Radio className={`w-5 h-5 ${liveMode ? "text-primary" : "text-muted-foreground"}`} />
-                        <span className="text-xs text-muted-foreground">трансляция</span>
-                      </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="center">
-                      <DropdownMenuItem onClick={toggleLive}>
-                        {liveMode ? "Остановить" : "Начать трансляцию"}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={() => toast.message("Анонсы трансляции скоро")}
-                      >
-                        Анонсировать трансляцию
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={() => toast.message("Скоро")}
-                      >
-                        Начать с помощью…
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <button
-                        type="button"
-                        disabled={!isMember}
-                        className={`rounded-2xl bg-card border border-border/60 py-3 flex flex-col items-center gap-2 ${
-                          isMember ? "" : "opacity-60"
-                        }`}
-                      >
-                        <Volume2Icon className={`w-5 h-5 ${muted ? "text-muted-foreground" : "text-primary"}`} />
-                        <span className="text-xs text-muted-foreground">звук</span>
-                      </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="center">
-                      <DropdownMenuSub>
-                        <DropdownMenuSubTrigger>Выключить на время…</DropdownMenuSubTrigger>
-                        <DropdownMenuSubContent>
-                          <DropdownMenuItem onClick={() => void muteForMs(60 * 60 * 1000)}>На 1 час</DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => void muteForMs(8 * 60 * 60 * 1000)}>На 8 часов</DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => void muteForMs(2 * 24 * 60 * 60 * 1000)}>На 2 дня</DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => void muteUntil("infinity")}>Навсегда</DropdownMenuItem>
-                        </DropdownMenuSubContent>
-                      </DropdownMenuSub>
-
-                      {muted ? (
-                        <DropdownMenuItem
-                          onClick={() => void muteUntil(null)}
-                        >
-                          Включить звук
-                        </DropdownMenuItem>
-                      ) : (
-                        <DropdownMenuItem onClick={() => void muteUntil("infinity")}>Выключить звук</DropdownMenuItem>
-                      )}
-
-                      <DropdownMenuItem onClick={() => setInfoView("settings")}>Настроить</DropdownMenuItem>
-
-                      {notificationsDisabled ? (
-                        <DropdownMenuItem onClick={() => void enableNotifications()}>
-                          Вкл. уведомления
-                        </DropdownMenuItem>
-                      ) : (
-                        <DropdownMenuItem
-                          onClick={() => void disableNotifications()}
-                          className="text-destructive focus:text-destructive"
-                        >
-                          Выкл. уведомления
-                        </DropdownMenuItem>
-                      )}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSearchOpen(true);
-                      setSearchQuery("");
-                      closeInfo();
-                    }}
-                    className="rounded-2xl bg-card border border-border/60 py-3 flex flex-col items-center gap-2"
-                  >
-                    <Search className="w-5 h-5 text-primary" />
-                    <span className="text-xs text-muted-foreground">поиск</span>
-                  </button>
-
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <button
-                        type="button"
-                        className="rounded-2xl bg-card border border-border/60 py-3 flex flex-col items-center gap-2"
-                      >
-                        <MoreVertical className="w-5 h-5 text-primary" />
-                        <span className="text-xs text-muted-foreground">ещё</span>
-                      </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="center">
-                      <DropdownMenuItem onClick={() => toast.message("Подарки скоро")}>Отправить подарок</DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => toast.message("Скоро")}>Голоса</DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => toast.message("Скоро")}>Архив историй</DropdownMenuItem>
-                      <DropdownMenuSeparator />
-
-                      <DropdownMenuSub>
-                        <DropdownMenuSubTrigger disabled={!canUpdateSettings || autoDeleteLoading}>
-                          Автоудаление
-                        </DropdownMenuSubTrigger>
-                        <DropdownMenuSubContent>
-                          <DropdownMenuRadioGroup
-                            value={autoDeleteRadioValue}
-                            onValueChange={(v) => {
-                              if (v === "custom") return;
-                              void setAutoDeleteSeconds(Number(v));
-                            }}
-                          >
-                            <DropdownMenuRadioItem value="0">Никогда</DropdownMenuRadioItem>
-                            <DropdownMenuRadioItem value={String(24 * 60 * 60)}>1 день</DropdownMenuRadioItem>
-                            <DropdownMenuRadioItem value={String(7 * 24 * 60 * 60)}>1 нед.</DropdownMenuRadioItem>
-                            <DropdownMenuRadioItem value={String(30 * 24 * 60 * 60)}>1 месяц</DropdownMenuRadioItem>
-                            <DropdownMenuRadioItem
-                              value="custom"
-                              onSelect={(e) => {
-                                e.preventDefault();
-                                const raw = window.prompt("Автоудаление: секунд (0 = никогда)", String(autoDeleteSeconds));
-                                if (raw == null) return;
-                                const n = Number(raw);
-                                void setAutoDeleteSeconds(Number.isFinite(n) ? n : autoDeleteSeconds);
-                              }}
-                            >
-                              Другое
-                            </DropdownMenuRadioItem>
-                          </DropdownMenuRadioGroup>
-                        </DropdownMenuSubContent>
-                      </DropdownMenuSub>
-
-                      <DropdownMenuItem disabled>Удалить переписку</DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        onClick={handleLeave}
-                        disabled={!isMember}
-                        className="text-destructive focus:text-destructive"
-                      >
-                        Покинуть канал
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-
-                <div className="rounded-2xl bg-card border border-border/60 overflow-hidden">
-                  <div className="px-4 py-3 border-b border-border/60">
-                    <div className="text-xs text-muted-foreground">описание</div>
-                    <div className="text-sm text-foreground pt-1">{(channel.description || "").trim() || channel.name}</div>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => setInfoView("admins")}
-                    className="w-full px-4 py-3 flex items-center justify-between hover:bg-muted/40"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center">
-                        <Users className="w-5 h-5 text-primary" />
-                      </div>
-                      <div className="text-sm text-foreground">Администраторы</div>
-                    </div>
-                    <div className="flex items-center gap-2 text-muted-foreground">
-                      <span className="text-sm">{Math.max(1, admins.length || 1)}</span>
-                      <ChevronRight className="w-4 h-4" />
-                    </div>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setInfoView("subscribers")}
-                    className="w-full px-4 py-3 flex items-center justify-between hover:bg-muted/40 border-t border-border/60"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center">
-                        <Users className="w-5 h-5 text-primary" />
-                      </div>
-                      <div className="text-sm text-foreground">Подписчики</div>
-                    </div>
-                    <div className="flex items-center gap-2 text-muted-foreground">
-                      <span className="text-sm">{channel.member_count || 0}</span>
-                      <ChevronRight className="w-4 h-4" />
-                    </div>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setInfoView("settings")}
-                    disabled={!canUpdateSettings}
-                    className={`w-full px-4 py-3 flex items-center justify-between hover:bg-muted/40 border-t border-border/60 ${
-                      canUpdateSettings ? "" : "opacity-60"
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center">
-                        <Settings2 className="w-5 h-5 text-primary" />
-                      </div>
-                      <div className="text-sm text-foreground">Настройки канала</div>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                  </button>
-                </div>
-              </div>
-            ) : null}
-
-            {infoView === "admins" ? (
-              <div className="flex-1 overflow-y-auto">
-                {adminsLoading ? (
-                  <div className="flex items-center justify-center py-8">
-                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary" />
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {canManageMembers ? (
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          try {
-                            await loadSubscribers();
-                            setInfoView("subscribers");
-                            toast.message("Выберите участника и назначьте админом");
-                          } catch (error) {
-                            logger.warn("[ChannelConversation] Failed to open subscribers from admins pane", {
-                              channelId: channel.id,
-                              error,
-                            });
-                          }
-                        }}
-                        className="w-full flex items-center justify-between p-3 rounded-2xl bg-card border border-border/60 hover:bg-muted/40"
-                      >
-                        <div className="text-sm text-foreground">Добавить администратора</div>
-                        <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                      </button>
-                    ) : null}
-                    {admins.map((a) => (
-                      <div key={a.user_id} className="flex items-center gap-3 p-3 rounded-2xl bg-card border border-border/60">
-                        <GradientAvatar name={a.display_name || "User"} seed={a.user_id} avatarUrl={a.avatar_url} size="sm" className="w-10 h-10" />
-                        <div className="min-w-0 flex-1">
-                          <div className="text-sm font-medium text-foreground truncate">{a.display_name || a.user_id}</div>
-                          <div className="text-xs text-muted-foreground">{a.role === "owner" ? "владелец" : "админ"}</div>
-                        </div>
-                        {canManageMembers && a.role !== "owner" ? (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => void updateMemberRole(a.user_id, "member")}
-                          >
-                            Снять
-                          </Button>
-                        ) : null}
-                      </div>
-                    ))}
-                    {admins.length === 0 ? (
-                      <div className="text-center py-10 text-muted-foreground">Нет данных</div>
-                    ) : null}
-                  </div>
-                )}
-              </div>
-            ) : null}
-
-            {infoView === "subscribers" ? (
-              <div className="flex-1 overflow-y-auto">
-                {subsLoading ? (
-                  <div className="flex items-center justify-center py-8">
-                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary" />
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {(canManageMembers || canInvite) ? (
-                      <div className="rounded-2xl bg-card border border-border/60 overflow-hidden">
-                        {canManageMembers ? (
-                          <button
-                            type="button"
-                            onClick={() => toast.message("Добавление подписчиков скоро")}
-                            className="w-full px-4 py-3 text-left hover:bg-muted/40"
-                          >
-                            <div className="text-sm text-primary">Добавить подписчиков</div>
-                          </button>
-                        ) : null}
-                        {canInvite ? (
-                          <button
-                            type="button"
-                            onClick={handleCreateInvite}
-                            className={`w-full px-4 py-3 text-left hover:bg-muted/40 ${canManageMembers ? "border-t border-border/60" : ""}`}
-                          >
-                            <div className="text-sm text-primary">Пригласить по ссылке</div>
-                          </button>
-                        ) : null}
-                      </div>
-                    ) : null}
-
-                    {subscribers.map((s) => (
-                      <div key={s.user_id} className="flex items-center gap-3 p-3 rounded-2xl bg-card border border-border/60">
-                        <GradientAvatar name={s.display_name || "User"} seed={s.user_id} avatarUrl={s.avatar_url} size="sm" className="w-10 h-10" />
-                        <div className="min-w-0 flex-1">
-                          <div className="text-sm font-medium text-foreground truncate">{s.display_name || s.user_id}</div>
-                          <div className="text-xs text-muted-foreground">{String(s.role || "member")}</div>
-                        </div>
-
-                        {String(s.user_id) === String(channel.owner_id) ? (
-                          <span className="text-[10px] px-2 py-1 rounded-full bg-primary/10 text-primary">owner</span>
-                        ) : null}
-
-                        {canManageMembers && String(s.user_id) !== String(channel.owner_id) ? (
-                          <div className="flex items-center gap-1">
-                            {String(s.role) === "admin" ? (
-                              <Button variant="ghost" size="sm" onClick={() => void updateMemberRole(s.user_id, "member")}>
-                                Снять
-                              </Button>
-                            ) : (
-                              <Button variant="ghost" size="sm" onClick={() => void updateMemberRole(s.user_id, "admin")}>
-                                Админ
-                              </Button>
-                            )}
-                            <Button variant="ghost" size="sm" onClick={() => void removeMember(s.user_id)} className="text-destructive">
-                              Удалить
-                            </Button>
-                          </div>
-                        ) : null}
-                      </div>
-                    ))}
-                    {subscribers.length === 0 ? (
-                      <div className="text-center py-10 text-muted-foreground">Нет данных</div>
-                    ) : null}
-                  </div>
-                )}
-              </div>
-            ) : null}
-
-            {infoView === "settings" ? (
-              <div className="flex-1 overflow-y-auto">
-                <div className="space-y-3">
-                  <div className="rounded-2xl bg-card border border-border/60 overflow-hidden">
-                    <div className="px-4 py-3 flex items-center justify-between border-b border-border/60">
-                      <div>
-                        <div className="text-sm font-medium text-foreground">Уведомления</div>
-                        <div className="text-xs text-muted-foreground">Вкл/выкл для этого канала</div>
-                      </div>
-                      <Switch
-                        checked={!muted}
-                        onCheckedChange={async (checked) => {
-                          try {
-                            await setMuted(!checked);
-                          } catch (e) {
-                            logger.error("[ChannelConversation] Mute toggle failed", {
-                              channelId: channel.id,
-                              checked,
-                              error: e,
-                            });
-                            toast.error("Не удалось обновить уведомления");
-                          }
-                        }}
-                        disabled={!isMember}
-                      />
-                    </div>
-
-                    <div className="px-4 py-3 flex items-center justify-between">
-                      <div>
-                        <div className="text-sm font-medium text-foreground">Автоудаление</div>
-                        <div className="text-xs text-muted-foreground">Сколько хранить новые публикации</div>
-                      </div>
-                      <div className="text-xs text-muted-foreground">{formatAutoDeleteLabel(autoDeleteSeconds)}</div>
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl bg-card border border-border/60 overflow-hidden">
-                    <button
-                      type="button"
-                      className="w-full px-4 py-3 flex items-center justify-between hover:bg-muted/40"
-                      onClick={() => void setAutoDeleteSeconds(0)}
-                      disabled={!canUpdateSettings}
-                    >
-                      <div className="text-sm text-foreground">Никогда</div>
-                      {autoDeleteSeconds === 0 ? <CheckCircle2 className="w-4 h-4 text-primary" /> : null}
-                    </button>
-                    <button
-                      type="button"
-                      className="w-full px-4 py-3 flex items-center justify-between hover:bg-muted/40 border-t border-border/60"
-                      onClick={() => void setAutoDeleteSeconds(24 * 60 * 60)}
-                      disabled={!canUpdateSettings}
-                    >
-                      <div className="text-sm text-foreground">1 день</div>
-                      {autoDeleteSeconds === 24 * 60 * 60 ? <CheckCircle2 className="w-4 h-4 text-primary" /> : null}
-                    </button>
-                    <button
-                      type="button"
-                      className="w-full px-4 py-3 flex items-center justify-between hover:bg-muted/40 border-t border-border/60"
-                      onClick={() => void setAutoDeleteSeconds(7 * 24 * 60 * 60)}
-                      disabled={!canUpdateSettings}
-                    >
-                      <div className="text-sm text-foreground">1 нед.</div>
-                      {autoDeleteSeconds === 7 * 24 * 60 * 60 ? <CheckCircle2 className="w-4 h-4 text-primary" /> : null}
-                    </button>
-                    <button
-                      type="button"
-                      className="w-full px-4 py-3 flex items-center justify-between hover:bg-muted/40 border-t border-border/60"
-                      onClick={() => void setAutoDeleteSeconds(30 * 24 * 60 * 60)}
-                      disabled={!canUpdateSettings}
-                    >
-                      <div className="text-sm text-foreground">1 месяц</div>
-                      {autoDeleteSeconds === 30 * 24 * 60 * 60 ? <CheckCircle2 className="w-4 h-4 text-primary" /> : null}
-                    </button>
-                    <button
-                      type="button"
-                      className="w-full px-4 py-3 flex items-center justify-between hover:bg-muted/40 border-t border-border/60"
-                      onClick={() => {
-                        const raw = window.prompt("Автоудаление: секунд (0 = никогда)", String(autoDeleteSeconds));
-                        if (raw == null) return;
-                        const n = Number(raw);
-                        void setAutoDeleteSeconds(Number.isFinite(n) ? n : autoDeleteSeconds);
-                      }}
-                      disabled={!canUpdateSettings}
-                    >
-                      <div className="text-sm text-foreground">Другое…</div>
-                      <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ) : null}
-
-            {infoView === "more" ? (
-              <div className="flex-1 overflow-y-auto">
-                <div className="rounded-2xl bg-card border border-border/60 overflow-hidden">
-                  <button
-                    type="button"
-                    onClick={isMember ? handleLeave : handleJoin}
-                    className="w-full px-4 py-3 text-left hover:bg-muted/40"
-                  >
-                    <div className="text-sm text-foreground">{isMember ? "Отписаться от канала" : "Подписаться на канал"}</div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleCreateInvite}
-                    disabled={!canInvite}
-                    className={`w-full px-4 py-3 text-left hover:bg-muted/40 border-t border-border/60 ${canInvite ? "" : "opacity-60"}`}
-                  >
-                    <div className="text-sm text-foreground">Пригласить в канал</div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectMode(true);
-                      closeInfo();
-                    }}
-                    disabled={!isMember}
-                    className={`w-full px-4 py-3 text-left hover:bg-muted/40 border-t border-border/60 ${isMember ? "" : "opacity-60"}`}
-                  >
-                    <div className="text-sm text-foreground">Выбрать сообщения</div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={deleteChannel}
-                    disabled={role !== "owner"}
-                    className={`w-full px-4 py-3 text-left hover:bg-muted/40 border-t border-border/60 text-destructive ${
-                      role === "owner" ? "" : "opacity-60"
-                    }`}
-                  >
-                    <div className="text-sm">Удалить канал</div>
-                  </button>
-                </div>
-              </div>
-            ) : null}
-          </div>
-        </DrawerContent>
-      </Drawer>
+      <ChannelInfoDrawer
+        channel={channel}
+        infoOpen={infoOpen}
+        infoView={infoView}
+        setInfoView={setInfoView}
+        closeInfo={closeInfo}
+        liveMode={liveMode}
+        toggleLive={toggleLive}
+        muted={muted}
+        setMuted={setMuted}
+        muteForMs={muteForMs}
+        muteUntil={muteUntil}
+        notificationsDisabled={notificationsDisabled}
+        enableNotifications={enableNotifications}
+        disableNotifications={disableNotifications}
+        isMember={isMember}
+        role={role}
+        handleLeave={handleLeave}
+        handleJoin={handleJoin}
+        canUpdateSettings={canUpdateSettings}
+        canManageMembers={canManageMembers}
+        canInvite={canInvite}
+        admins={admins}
+        subscribers={subscribers}
+        adminsLoading={adminsLoading}
+        subsLoading={subsLoading}
+        loadAdmins={loadAdmins}
+        loadSubscribers={loadSubscribers}
+        updateMemberRole={updateMemberRole}
+        removeMember={removeMember}
+        autoDeleteSeconds={autoDeleteSeconds}
+        autoDeleteRadioValue={autoDeleteRadioValue}
+        autoDeleteLoading={autoDeleteLoading}
+        setAutoDeleteSeconds={setAutoDeleteSeconds}
+        handleCreateInvite={handleCreateInvite}
+        deleteChannel={deleteChannel}
+        setSearchOpen={setSearchOpen}
+        setSearchQuery={setSearchQuery}
+        setSelectMode={setSelectMode}
+      />
 
       {searchOpen ? (
         <div className="flex-shrink-0 px-3 py-2 bg-background/95 backdrop-blur-sm border-b border-border relative z-10">
@@ -1849,7 +1155,7 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
               <div className="min-w-0">
                 <p className="text-xs text-foreground truncate">Закрепленное сообщение</p>
                 <p className="text-xs text-muted-foreground truncate">
-                  {(String((pinnedMessage as any)?.content || "").trim() || "Сообщение недоступно")}
+                  {(String(pinnedMessage?.content || "").trim() || "Сообщение недоступно")}
                 </p>
               </div>
             </button>
@@ -1918,9 +1224,9 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
             msgDate.getDate() !== prevMsgDate.getDate();
           const dateSepId = `${msgDate.getFullYear()}-${String(msgDate.getMonth() + 1).padStart(2, "0")}-${String(msgDate.getDate()).padStart(2, "0")}`;
 
-          const viewCount = Number.isFinite((msg as any)?.views_count) ? Number((msg as any).views_count) : 0;
-          const postReactions: Array<{ emoji: string; count: number }> = Array.isArray((msg as any)?.reactions)
-            ? ((msg as any).reactions as any[])
+          const viewCount = Number.isFinite(msg.views_count) ? Number(msg.views_count) : 0;
+          const postReactions: Array<{ emoji: string; count: number }> = Array.isArray(msg.reactions)
+            ? msg.reactions
                 .filter((r) => r && typeof r.emoji === "string" && Number.isFinite(r.count))
                 .map((r) => ({ emoji: String(r.emoji), count: Number(r.count) }))
             : [];
@@ -1986,22 +1292,22 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
 
               {msg.media_url ? (
                 <div className="relative">
-                  {String((msg as any)?.media_type || "image") === "video_circle" ? (
+                  {String(msg.media_type || "image") === "video_circle" ? (
                     <div className="px-3 pb-3">
                       <VideoCircleMessage
                         videoUrl={msg.media_url}
-                        duration={String((msg as any)?.duration_seconds || 0)}
-                        isOwn={String((msg as any)?.sender_id) === String(user?.id)}
+                        duration={String(msg.duration_seconds || 0)}
+                        isOwn={String(msg.sender_id) === String(user?.id)}
                       />
                     </div>
-                  ) : String((msg as any)?.media_type || "image") === "voice" ? (
+                  ) : String(msg.media_type || "image") === "voice" ? (
                     <div className="px-3 pb-3">
                       <audio controls src={msg.media_url} className="w-full" />
                       <div className="mt-1 text-[11px] text-muted-foreground">
-                        {Number((msg as any)?.duration_seconds) ? formatDuration(Number((msg as any).duration_seconds)) : ""}
+                        {Number(msg.duration_seconds) ? formatDuration(Number(msg.duration_seconds)) : ""}
                       </div>
                     </div>
-                  ) : String((msg as any)?.media_type || "image") === "video" ? (
+                  ) : String(msg.media_type || "image") === "video" ? (
                     <div className="media-frame media-frame--channel">
                       <video
                         src={msg.media_url}
@@ -2010,7 +1316,7 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
                         playsInline
                       />
                     </div>
-                  ) : String((msg as any)?.media_type || "image") === "document" ? (
+                  ) : String(msg.media_type || "image") === "document" ? (
                     <a
                       href={msg.media_url}
                       target="_blank"
@@ -2107,7 +1413,7 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
               {/* Time (outside card) */}
               <div className="px-1 text-xs text-muted-foreground flex items-center gap-1">
                 {formatTime(msg.created_at)}
-                {(msg as any).edited_at && (
+                {msg.edited_at && (
                   <span className="italic opacity-70">ред.</span>
                 )}
               </div>
@@ -2145,263 +1451,49 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
       )}
 
       {isMember && (
-        <div className="flex-shrink-0 px-3 py-3 relative z-10 bg-background/95 backdrop-blur-sm border-t border-border safe-area-bottom">
-          {editingChannelMsg && (
-            <div className="mb-2 rounded-2xl bg-blue-900/40 border border-blue-500/30 px-3 py-2 flex items-start justify-between gap-2">
-              <div className="min-w-0 flex items-center gap-2">
-                <X className="w-4 h-4 text-blue-400 shrink-0" />
-                <div className="min-w-0">
-                  <p className="text-xs text-blue-300">Редактирование</p>
-                  <p className="text-sm text-foreground/80 truncate">{editingChannelMsg.content}</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => { setEditingChannelMsg(null); setDraftPost(""); }}
-                className="shrink-0 p-1 rounded-md hover:bg-white/10"
-                aria-label="Отменить редактирование"
-              >
-                <X className="w-4 h-4 text-muted-foreground" />
-              </button>
-            </div>
-          )}
-          <div className="flex items-center gap-2 text-[11px] text-muted-foreground mb-2">
-            <span>Роль: {role}</span>
-            {!canCreatePosts && <span>• публикация отключена</span>}
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setShowAttachmentSheet(true)}
-              disabled={!canCreatePosts || sendingPost}
-              className="w-11 h-11 rounded-full shrink-0 flex items-center justify-center border border-border bg-card text-muted-foreground hover:text-foreground disabled:opacity-50"
-              aria-label="Вложение"
-            >
-              <AttachmentIcon className="w-5 h-5" />
-            </button>
-
-            <div className="flex-1 relative">
-              {/* @Mention suggestions */}
-              <MentionSuggestions
-                suggestions={mentionSuggestions}
-                visible={mentionTrigger !== null && mentionSuggestions.length > 0}
-                onSelect={(user) => {
-                  if (!mentionTrigger) return;
-                  const caret = channelInputRef.current?.selectionStart ?? draftPost.length;
-                  const { newText, newCaretPos } = insertMention(draftPost, caret, mentionTrigger.triggerStart, user.username ?? user.display_name ?? user.user_id);
-                  setDraftPost(newText);
-                  setMentionTrigger(null);
-                  requestAnimationFrame(() => {
-                    if (channelInputRef.current) {
-                      channelInputRef.current.focus();
-                      channelInputRef.current.setSelectionRange(newCaretPos, newCaretPos);
-                    }
-                  });
-                }}
-                externalActiveIndex={mentionActiveIndex}
-              />
-              <Input
-                ref={channelInputRef}
-                value={draftPost}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setDraftPost(val);
-                  const caret = e.target.selectionStart ?? val.length;
-                  const trigger = detectMentionTrigger(val, caret);
-                  setMentionTrigger(trigger);
-                  setMentionActiveIndex(0);
-                }}
-                onKeyDown={(e) => {
-                  // Mention keyboard nav
-                  if (mentionTrigger && mentionSuggestions.length > 0) {
-                    if (e.key === "ArrowDown") { e.preventDefault(); setMentionActiveIndex(i => Math.min(i + 1, mentionSuggestions.length - 1)); return; }
-                    if (e.key === "ArrowUp") { e.preventDefault(); setMentionActiveIndex(i => Math.max(i - 1, 0)); return; }
-                    if (e.key === "Enter" || e.key === "Tab") {
-                      e.preventDefault();
-                      const sel = mentionSuggestions[mentionActiveIndex];
-                      if (sel) {
-                        const caret = channelInputRef.current?.selectionStart ?? draftPost.length;
-                        const { newText, newCaretPos } = insertMention(draftPost, caret, mentionTrigger.triggerStart, sel.username ?? sel.display_name ?? sel.user_id);
-                        setDraftPost(newText);
-                        setMentionTrigger(null);
-                        requestAnimationFrame(() => { if (channelInputRef.current) { channelInputRef.current.focus(); channelInputRef.current.setSelectionRange(newCaretPos, newCaretPos); } });
-                      }
-                      return;
-                    }
-                    if (e.key === "Escape") { setMentionTrigger(null); return; }
-                  }
-                  if (e.key !== "Enter") return;
-                  e.preventDefault();
-                  if (e.repeat) return;
-                  if (sendingPost) return;
-                  void handlePublishPost();
-                }}
-                onFocus={() => setShowEmojiPicker(false)}
-                placeholder={canCreatePosts ? "Сообщение" : "Для публикации нужны права"}
-                disabled={!canCreatePosts || sendingPost}
-                className="flex-1 h-11 rounded-full pr-20"
-              />
-
-              <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setNotifySubscribers((v) => !v)}
-                  disabled={!canCreatePosts || sendingPost}
-                  className="text-muted-foreground hover:text-foreground disabled:opacity-50"
-                  aria-label={notifySubscribers ? "Публикация с уведомлением" : "Публикация без уведомления"}
-                  title={notifySubscribers ? "С уведомлением" : "Без уведомления"}
-                >
-                  {notifySubscribers ? <Bell className="w-5 h-5" /> : <BellOff className="w-5 h-5" />}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowEmojiPicker((v) => !v)}
-                  disabled={!canCreatePosts || sendingPost}
-                  className="text-muted-foreground hover:text-foreground disabled:opacity-50"
-                  aria-label="Эмодзи"
-                >
-                  <Smile className="w-5 h-5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowStickerPicker(true)}
-                  disabled={!canCreatePosts || sendingPost}
-                  className="text-muted-foreground hover:text-foreground disabled:opacity-50"
-                  aria-label="Стикеры"
-                >
-                  <span className="text-[15px]">🧩</span>
-                </button>
-              </div>
-            </div>
-            {draftPost.trim() ? (
-              <div className="relative shrink-0">
-                <SendOptionsMenu
-                  open={showSendOptions}
-                  onClose={() => setShowSendOptions(false)}
-                  onSend={() => void handlePublishPost()}
-                  onSilent={() => { setNotifySubscribers(false); void handlePublishPost(); }}
-                  onSchedule={() => { /* channel doesn't have scheduler yet */ toast.info("Планирование постов скоро"); }}
-                />
-                <Button
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    sendButtonLongPressRef.current = setTimeout(() => {
-                      sendButtonLongPressRef.current = null;
-                      setShowSendOptions(true);
-                    }, 500) as unknown as ReturnType<typeof setTimeout>;
-                  }}
-                  onMouseUp={() => {
-                    if (sendButtonLongPressRef.current) {
-                      clearTimeout(sendButtonLongPressRef.current);
-                      sendButtonLongPressRef.current = null;
-                      void handlePublishPost();
-                    }
-                  }}
-                  onTouchStart={(e) => {
-                    e.preventDefault();
-                    sendButtonLongPressRef.current = setTimeout(() => {
-                      sendButtonLongPressRef.current = null;
-                      setShowSendOptions(true);
-                    }, 500) as unknown as ReturnType<typeof setTimeout>;
-                  }}
-                  onTouchEnd={() => {
-                    if (sendButtonLongPressRef.current) {
-                      clearTimeout(sendButtonLongPressRef.current);
-                      sendButtonLongPressRef.current = null;
-                      void handlePublishPost();
-                    }
-                  }}
-                  disabled={!canCreatePosts || sendingPost || !draftPost.trim()}
-                  size="icon"
-                  className="w-11 h-11 rounded-full"
-                  aria-label="Опубликовать"
-                  type="button"
-                >
-                  <Send className="w-5 h-5 text-primary-foreground" />
-                </Button>
-              </div>
-            ) : (
-              <button
-                onTouchStart={handleRecordButtonDown}
-                onTouchEnd={handleRecordButtonUp}
-                onMouseDown={handleRecordButtonDown}
-                onMouseUp={handleRecordButtonUp}
-                onMouseLeave={handleRecordButtonLeave}
-                onContextMenu={(e) => e.preventDefault()}
-                disabled={!canCreatePosts || sendingPost}
-                className="w-11 h-11 rounded-full shrink-0 flex items-center justify-center border border-border bg-card disabled:opacity-50"
-                aria-label={recordMode === "voice" ? "Голосовое (удерживайте)" : "Видео-кружок (удерживайте)"}
-                title={recordMode === "voice" ? "Тап: видео • Удержание: запись" : "Тап: голос • Удержание: запись"}
-                type="button"
-              >
-                {recordMode === "voice" ? <Mic className="w-5 h-5" /> : <Video className="w-5 h-5" />}
-              </button>
-            )}
-          </div>
-
-          {isRecording ? (
-            <div className="mt-2 flex items-center justify-between rounded-xl border border-border bg-card px-3 py-2">
-              <div className="text-xs text-muted-foreground">Запись… {formatDuration(recordingTime)}</div>
-              <div className="flex items-center gap-2">
-                <Button variant="ghost" size="sm" onClick={cancelVoiceRecording}>
-                  Отмена
-                </Button>
-                <Button size="sm" onClick={() => void stopVoiceRecordingAndSend()}>
-                  Отправить
-                </Button>
-              </div>
-            </div>
-          ) : null}
-
-          <EmojiStickerPicker
-            open={showEmojiPicker}
-            onOpenChange={setShowEmojiPicker}
-            onEmojiSelect={(emoji) => setDraftPost((prev) => prev + emoji)}
-          />
-
-          <Drawer open={showStickerPicker} onOpenChange={setShowStickerPicker}>
-            <DrawerContent className="mx-4 mb-4 rounded-2xl border-0 bg-card">
-              <div className="px-4 py-3 text-sm font-medium">Стикеры</div>
-              <div className="px-4 pb-4 grid grid-cols-5 gap-2">
-                {QUICK_STICKERS.map((s) => (
-                  <button
-                    key={s}
-                    type="button"
-                    className="h-12 rounded-xl border border-border bg-background/50 text-[26px] flex items-center justify-center"
-                    onClick={() => void sendSticker(s)}
-                  >
-                    {s}
-                  </button>
-                ))}
-              </div>
-            </DrawerContent>
-          </Drawer>
-
-          <AttachmentSheet
-            open={showAttachmentSheet}
-            onOpenChange={setShowAttachmentSheet}
-            onSelectFile={handleAttachment}
-            onSelectLocation={() => toast.message("Геопозиция пока не поддерживается")}
-            onOpenCamera={() => {
-              setShowCameraSheet(true);
-            }}
-          />
-
-          <CameraCaptureSheet
-            open={showCameraSheet}
-            onOpenChange={setShowCameraSheet}
-            settingsScopeKey={`channel:${channel.id}`}
-            onSendFile={async (file, type) => {
-              await handleAttachment(file, type);
-            }}
-          />
-
-          {viewingImage ? <ImageViewer src={viewingImage} onClose={() => setViewingImage(null)} /> : null}
-
-          {showVideoRecorder ? (
-            <VideoCircleRecorder onRecord={handleVideoRecord} onCancel={() => setShowVideoRecorder(false)} />
-          ) : null}
-        </div>
+        <ChannelInputBar
+          channelId={channel.id}
+          draftPost={draftPost}
+          setDraftPost={setDraftPost}
+          editingChannelMsg={editingChannelMsg}
+          setEditingChannelMsg={setEditingChannelMsg}
+          role={role}
+          canCreatePosts={canCreatePosts}
+          sendingPost={sendingPost}
+          handlePublishPost={handlePublishPost}
+          handleAttachment={handleAttachment}
+          notifySubscribers={notifySubscribers}
+          setNotifySubscribers={setNotifySubscribers}
+          recordMode={recordMode}
+          isRecording={isRecording}
+          recordingTime={recordingTime}
+          handleRecordButtonDown={handleRecordButtonDown}
+          handleRecordButtonUp={handleRecordButtonUp}
+          handleRecordButtonLeave={handleRecordButtonLeave}
+          handleVideoRecord={handleVideoRecord}
+          cancelVoiceRecording={cancelVoiceRecording}
+          stopVoiceRecordingAndSend={stopVoiceRecordingAndSend}
+          sendSticker={sendSticker}
+          mentionSuggestions={mentionSuggestions}
+          mentionTrigger={mentionTrigger}
+          mentionActiveIndex={mentionActiveIndex}
+          setMentionTrigger={setMentionTrigger}
+          setMentionActiveIndex={setMentionActiveIndex}
+          showAttachmentSheet={showAttachmentSheet}
+          setShowAttachmentSheet={setShowAttachmentSheet}
+          showCameraSheet={showCameraSheet}
+          setShowCameraSheet={setShowCameraSheet}
+          showEmojiPicker={showEmojiPicker}
+          setShowEmojiPicker={setShowEmojiPicker}
+          showStickerPicker={showStickerPicker}
+          setShowStickerPicker={setShowStickerPicker}
+          showSendOptions={showSendOptions}
+          setShowSendOptions={setShowSendOptions}
+          showVideoRecorder={showVideoRecorder}
+          setShowVideoRecorder={setShowVideoRecorder}
+          viewingImage={viewingImage}
+          setViewingImage={setViewingImage}
+        />
       )}
 
       {/* UI-6: Jump to date picker */}

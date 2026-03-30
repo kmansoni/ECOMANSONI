@@ -1,4 +1,14 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useNavigate, useParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -26,12 +36,40 @@ import { getHighlights, deleteHighlight, blockUser, Highlight } from "@/hooks/us
 import { useSavedPosts } from "@/hooks/useSavedPosts";
 import { useAuth } from "@/hooks/useAuth";
 import { normalizeReelMediaUrl } from "@/lib/reels/media";
-import { supabase } from "@/integrations/supabase/client";
+import { dbLoose } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import type { ContentType } from "@/hooks/useMediaEditor";
 import { toast } from "sonner";
 import { buildProfileUrl } from "@/lib/users/profileLinks";
 import { logger } from "@/lib/logger";
+
+type PostMediaItem = {
+  media_url?: string | null;
+};
+
+type ReelRpcRow = {
+  id?: string | number;
+  video_url?: string | null;
+  thumbnail_url?: string | null;
+  views_count?: string | number | null;
+  likes_count?: string | number | null;
+  created_at?: string | null;
+};
+
+type ProfileMetaExtras = {
+  status_emoji?: string | null;
+  category?: string | null;
+  account_type?: string | null;
+  action_email?: string | null;
+  action_phone?: string | null;
+  action_address?: string | null;
+};
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException
+    ? error.name === "AbortError"
+    : error instanceof Error && error.name === "AbortError";
+}
 
 function formatNumber(n: number): string {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, "") + "M";
@@ -69,9 +107,20 @@ export function ProfilePage() {
   const { pinnedPosts, refresh: refreshPinnedPosts } = usePinnedPosts(targetUserId);
   const { savedPosts, fetchSavedPosts, loading: savedLoading } = useSavedPosts();
 
+  // ИСПРАВЛЕНИЕ дефекта #16: оптимистичное состояние follow/unfollow
+  // Обновляем UI мгновенно, откатываем при ошибке
+  const [optimisticFollowing, setOptimisticFollowing] = useState<boolean | null>(null);
+  const [optimisticFollowersCount, setOptimisticFollowersCount] = useState<number | null>(null);
+  const [followPending, setFollowPending] = useState(false);
+
+  // Вычисляемые значения с учётом оптимистичного состояния
+  const displayIsFollowing = optimisticFollowing ?? profile?.isFollowing ?? false;
+  const displayFollowersCount = optimisticFollowersCount ?? profile?.stats?.followersCount ?? 0;
+
   useEffect(() => {
     const avatarUrl = profile?.avatar_url?.trim();
-    if (!avatarUrl) return;
+    // data: и blob: URI не нужно преднагружать — браузер выдаёт credentials mismatch warning
+    if (!avatarUrl || avatarUrl.startsWith("data:") || avatarUrl.startsWith("blob:")) return;
 
     const preload = document.createElement("link");
     preload.rel = "preload";
@@ -90,7 +139,7 @@ export function ProfilePage() {
       posts.filter(
         (post) =>
           Array.isArray(post?.post_media) &&
-          post.post_media.some((m: any) => typeof m?.media_url === "string" && m.media_url.trim().length > 0),
+          post.post_media.some((m: PostMediaItem) => typeof m?.media_url === "string" && m.media_url.trim().length > 0),
       ),
     [posts],
   );
@@ -117,6 +166,8 @@ export function ProfilePage() {
 
   const [highlights, setHighlights] = useState<Highlight[]>([]);
   const [highlightsLoading, setHighlightsLoading] = useState(false);
+  // ИСПРАВЛЕНИЕ дефекта #18: заменяем confirm() на AlertDialog
+  const [highlightToDelete, setHighlightToDelete] = useState<string | null>(null);
 
   // Типизированный интерфейс для Reels профиля
   interface ProfileReel {
@@ -168,7 +219,7 @@ export function ProfilePage() {
     try {
       const limit = 30;
       const offset = reset ? 0 : myReels.length;
-      const { data, error } = await (supabase as any).rpc("get_user_reels_v1", {
+      const { data, error } = await dbLoose.rpc("get_user_reels_v1", {
         p_author_id: targetUserId,
         p_limit: limit,
         p_offset: offset,
@@ -178,19 +229,20 @@ export function ProfilePage() {
       if (controller.signal.aborted) return;
       if (error) throw error;
 
-      const rows: ProfileReel[] = (data || []).map((r: any) => ({
-        id: String(r?.id ?? ""),
-        video_url: normalizeReelMediaUrl(r?.video_url, "reels-media"),
-        thumbnail_url: normalizeReelMediaUrl(r?.thumbnail_url, "reels-media") || (r?.thumbnail_url as string | null) || null,
-        views_count: Number(r?.views_count ?? 0),
-        likes_count: Number(r?.likes_count ?? 0),
-        created_at: String(r?.created_at ?? ""),
+      const reelRows = Array.isArray(data) ? (data as unknown as ReelRpcRow[]) : [];
+      const rows: ProfileReel[] = reelRows.map((r) => ({
+        id: String(r.id ?? ""),
+        video_url: normalizeReelMediaUrl(r.video_url ?? null, "reels-media"),
+        thumbnail_url: normalizeReelMediaUrl(r.thumbnail_url ?? null, "reels-media") || r.thumbnail_url || null,
+        views_count: Number(r.views_count ?? 0),
+        likes_count: Number(r.likes_count ?? 0),
+        created_at: String(r.created_at ?? ""),
       }));
 
       setMyReels(prev => (reset ? rows : [...prev, ...rows]));
       setMyReelsHasMore(rows.length >= limit);
     } catch (error) {
-      if ((error as any)?.name === "AbortError") return;
+      if (isAbortError(error)) return;
       logger.warn("profile.load_my_reels_failed", { error, targetUserId, reset });
     } finally {
       if (!controller.signal.aborted) setMyReelsLoading(false);
@@ -241,26 +293,79 @@ export function ProfilePage() {
     }
   };
 
+  // ИСПРАВЛЕНИЕ дефекта #16: оптимистичный follow/unfollow
   const handleFollowToggle = async () => {
+    if (followPending || !profile) return;
+
+    const wasFollowing = displayIsFollowing;
+    const prevCount = displayFollowersCount;
+
+    // Мгновенное обновление UI
+    setOptimisticFollowing(!wasFollowing);
+    setOptimisticFollowersCount(wasFollowing ? Math.max(0, prevCount - 1) : prevCount + 1);
+    setFollowPending(true);
+
     try {
-      if (profile?.isFollowing) {
+      if (wasFollowing) {
         await unfollow();
-        toast.success("Вы отписались");
       } else {
         await follow();
-        toast.success("Вы подписались");
       }
+      // Сбрасываем оптимистичное состояние — реальные данные придут через refetch
+      await refetch();
+      setOptimisticFollowing(null);
+      setOptimisticFollowersCount(null);
     } catch (error) {
-      logger.error("profile.follow_toggle_failed", { error, targetUserId, isFollowing: profile?.isFollowing ?? null });
+      // Откат при ошибке
+      setOptimisticFollowing(wasFollowing);
+      setOptimisticFollowersCount(prevCount);
+      logger.error("profile.follow_toggle_failed", { error, targetUserId, isFollowing: wasFollowing });
       toast.error("Не удалось выполнить действие");
+    } finally {
+      setFollowPending(false);
     }
   };
 
   // ── Loading state ──────────────────────────────────────────────
   if (profileLoading) {
+    // ИСПРАВЛЕНИЕ: skeleton вместо spinner — соответствует поведению Instagram
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+      <div className="min-h-screen bg-background">
+        {/* Header skeleton */}
+        <div className="flex items-center justify-between px-4 py-3">
+          <div className="w-8 h-8 rounded-full bg-muted animate-pulse" />
+          <div className="h-5 w-32 rounded bg-muted animate-pulse" />
+          <div className="w-8 h-8 rounded-full bg-muted animate-pulse" />
+        </div>
+        {/* Avatar + stats skeleton */}
+        <div className="px-4 pt-2 pb-4">
+          <div className="flex items-center gap-6">
+            <div className="w-20 h-20 rounded-full bg-muted animate-pulse shrink-0" />
+            <div className="flex-1 flex justify-around">
+              {[0,1,2].map(i => (
+                <div key={i} className="flex flex-col items-center gap-1">
+                  <div className="h-5 w-10 rounded bg-muted animate-pulse" />
+                  <div className="h-3 w-14 rounded bg-muted animate-pulse" />
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="mt-3 space-y-2">
+            <div className="h-4 w-36 rounded bg-muted animate-pulse" />
+            <div className="h-3 w-full rounded bg-muted animate-pulse" />
+            <div className="h-3 w-2/3 rounded bg-muted animate-pulse" />
+          </div>
+          <div className="flex gap-2 mt-4">
+            <div className="flex-1 h-9 rounded-xl bg-muted animate-pulse" />
+            <div className="flex-1 h-9 rounded-xl bg-muted animate-pulse" />
+          </div>
+        </div>
+        {/* Grid skeleton */}
+        <div className="grid grid-cols-3 gap-0.5">
+          {Array.from({ length: 9 }).map((_, i) => (
+            <div key={i} className="aspect-square bg-muted animate-pulse" />
+          ))}
+        </div>
       </div>
     );
   }
@@ -277,6 +382,7 @@ export function ProfilePage() {
   }
 
   const displayProfile = profile;
+  const displayProfileMeta = displayProfile as (typeof displayProfile & ProfileMetaExtras) | null;
 
   const allTabs = isOwnProfile
     ? ([...TABS, { id: "saved" as const, icon: Bookmark, label: "Сохранённые" }])
@@ -366,23 +472,25 @@ export function ProfilePage() {
               <span className="font-semibold text-foreground text-base">
                 {displayProfile?.display_name || "Пользователь"}
               </span>
-              {(displayProfile as any)?.status_emoji && (
-                <span>{(displayProfile as any).status_emoji}</span>
+              {displayProfileMeta?.status_emoji && (
+                <span>{displayProfileMeta.status_emoji}</span>
               )}
               {displayProfile?.verified && <VerifiedBadge size="sm" />}
             </div>
-            {(displayProfile as any)?.category && (
-              <p className="text-xs text-muted-foreground mb-2">{(displayProfile as any).category}</p>
+            {displayProfileMeta?.category && (
+              <p className="text-xs text-muted-foreground mb-2">{displayProfileMeta.category}</p>
             )}
             <div className="flex items-center gap-5">
               <div className="text-center">
+                {/* ИСПРАВЛЕНИЕ дефекта #17: показываем реальный счётчик постов, не только медиа */}
                 <p className="font-bold text-foreground text-sm">
-                  {postsLoading ? (displayProfile?.stats?.postsCount ?? 0) : mediaPosts.length}
+                  {displayProfile?.stats?.postsCount ?? posts.length}
                 </p>
                 <p className="text-xs text-muted-foreground">публикации</p>
               </div>
               <button onClick={() => setShowFollowers(true)} className="text-center">
-                <p className="font-bold text-foreground text-sm">{formatNumber(displayProfile?.stats?.followersCount ?? 0)}</p>
+                {/* ИСПРАВЛЕНИЕ дефекта #16: используем оптимистичный счётчик */}
+                <p className="font-bold text-foreground text-sm">{formatNumber(displayFollowersCount)}</p>
                 <p className="text-xs text-muted-foreground">подписчики</p>
               </button>
               <button onClick={() => setShowFollowing(true)} className="text-center">
@@ -414,16 +522,16 @@ export function ProfilePage() {
         )}
 
         {/* Business action buttons */}
-        {!isOwnProfile && (displayProfile as any)?.account_type === "business" && (
+        {!isOwnProfile && displayProfileMeta?.account_type === "business" && (
           <BusinessActionButtons
-            email={(displayProfile as any)?.action_email}
-            phone={(displayProfile as any)?.action_phone}
-            address={(displayProfile as any)?.action_address}
+            email={displayProfileMeta?.action_email}
+            phone={displayProfileMeta?.action_phone}
+            address={displayProfileMeta?.action_address}
           />
         )}
 
         {/* Professional Dashboard link (own profile, creator/business) */}
-        {isOwnProfile && ["creator", "business"].includes((displayProfile as any)?.account_type ?? "") && (
+        {isOwnProfile && ["creator", "business"].includes(displayProfileMeta?.account_type ?? "") && (
           <button
             onClick={() => navigate("/professional-dashboard")}
             className="w-full mt-2 py-2 bg-gradient-to-r from-purple-600 to-pink-600 rounded-xl text-sm font-semibold text-white"
@@ -454,16 +562,19 @@ export function ProfilePage() {
             </>
           ) : (
             <>
+              {/* ИСПРАВЛЕНИЕ дефекта #16: используем displayIsFollowing (оптимистичное состояние) */}
               <button
                 onClick={handleFollowToggle}
+                disabled={followPending}
                 className={cn(
                   "flex-1 py-2 rounded-xl text-sm font-semibold transition-colors",
-                  displayProfile?.isFollowing
+                  displayIsFollowing
                     ? "bg-muted text-foreground hover:bg-muted/80"
-                    : "bg-primary text-primary-foreground hover:bg-primary/80"
+                    : "bg-primary text-primary-foreground hover:bg-primary/80",
+                  followPending && "opacity-70 cursor-not-allowed"
                 )}
               >
-                {displayProfile?.isFollowing ? "Подписки" : "Подписаться"}
+                {displayIsFollowing ? "Подписки" : "Подписаться"}
               </button>
               <button
                 onClick={() => navigate(`/chat?userId=${targetUserId}`)}
@@ -506,12 +617,9 @@ export function ProfilePage() {
                   title={h.title}
                   coverUrl={h.cover_url}
                   onLongPress={
+                    // ИСПРАВЛЕНИЕ дефекта #18: AlertDialog вместо confirm()
                     isOwnProfile
-                      ? () => {
-                          if (confirm(`Удалить подборку "${h.title}"?`)) {
-                            handleDeleteHighlight(h.id);
-                          }
-                        }
+                      ? () => setHighlightToDelete(h.id)
                       : undefined
                   }
                 />
@@ -676,6 +784,32 @@ export function ProfilePage() {
           avatarUrl={displayProfile.avatar_url || undefined}
         />
       )}
+
+      {/* ИСПРАВЛЕНИЕ дефекта #18: AlertDialog для удаления Highlight вместо confirm() */}
+      <AlertDialog open={!!highlightToDelete} onOpenChange={(open) => !open && setHighlightToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Удалить подборку?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Это действие нельзя отменить. Подборка будет удалена навсегда.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (highlightToDelete) {
+                  handleDeleteHighlight(highlightToDelete);
+                  setHighlightToDelete(null);
+                }
+              }}
+            >
+              Удалить
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

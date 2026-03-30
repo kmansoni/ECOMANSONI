@@ -7,6 +7,7 @@ import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { PropertyMap } from "@/components/maps/PropertyMap";
 import { supabase } from "@/lib/supabase";
 import { Tables } from "@/integrations/supabase/types";
+import { logger } from "@/lib/logger";
 
 type Property = Tables<"properties"> & {
   property_images?: Tables<"property_images">[];
@@ -39,7 +40,7 @@ export function PropertyDetailPage() {
         if (error) throw error;
         setProperty(data);
       } catch (error) {
-        console.error("Error fetching property:", error);
+        logger.error("[PropertyDetailPage] Error fetching property", { error });
       } finally {
         setLoading(false);
       }

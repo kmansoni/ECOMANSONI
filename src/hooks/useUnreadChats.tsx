@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
+import { logger } from "@/lib/logger";
 import { isChatProtocolV11EnabledForUser } from "@/lib/chat/protocolV11";
 
 export function useUnreadChats() {
@@ -58,7 +59,7 @@ export function useUnreadChats() {
 
       setUnreadCount(totalUnread);
     } catch (error) {
-      console.error("Error fetching unread count:", error);
+      logger.error("[useUnreadChats] Ошибка получения счётчика непрочитанных", { error });
     }
   }, [user]);
 

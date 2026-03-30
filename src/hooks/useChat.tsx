@@ -8,10 +8,11 @@ import { useAuth } from "./useAuth";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { toast } from "sonner";
 import { getLastChatSchemaProbe } from "@/lib/chat/schemaProbe";
+import { isTableMissingError } from "@/lib/utils/isTableMissingError";
 import { uploadMedia } from "@/lib/mediaUpload";
 import { buildChatBodyEnvelope, sendMessageV1 } from "@/lib/chat/sendMessageV1";
 import { sanitizeReceivedText } from "@/lib/text-encoding";
-import { canonicalizeOutgoingChatText, repairBrokenLineWrapArtifacts } from "@/lib/chat/textPipeline";
+import { canonicalizeOutgoingChatText } from "@/lib/chat/textPipeline";
 import {
   bumpChatMetric,
   getOrCreateChatDeviceId,
@@ -232,7 +233,7 @@ function shouldFallbackToLegacySend(err: unknown): boolean {
 
   // Fallback only on v11 infra/config issues; business rejections should remain explicit.
   if (code === "42883" || code === "PGRST202" || code === "PGRST301") return true;
-  if (code === "42P01" || code === "42703" || code === "PGRST204" || code === "PGRST205") return true;
+  if (isTableMissingError({ code, message: String(err.message ?? "") })) return true;
   if (status === 404 && (full.includes("chat_send_message_v11") || full.includes("schema cache"))) return true;
   if (status === 400 && full.includes("chat_send_message_v11") && (full.includes("schema") || full.includes("column") || full.includes("relation"))) return true;
   if (full.includes("chat_send_message_v11") && (full.includes("does not exist") || full.includes("schema cache"))) return true;
@@ -249,10 +250,6 @@ function shouldFallbackRejectedV11Ack(errorCode: unknown): boolean {
   // Invalid-argument / protocol mismatches should degrade to v1.
   if (code === "ERR_INVALID_ARGUMENT") return true;
   return true;
-}
-
-function normalizeBrokenVerticalText(text: string): string {
-  return repairBrokenLineWrapArtifacts(text);
 }
 
 const TELEGRAM_MAX_MESSAGE_CHARS = 4096;
@@ -279,6 +276,12 @@ export interface ChatMessage {
   is_silent?: boolean | null;
   /** Серверный статус доставки (заполнен после сохранения в БД) */
   delivery_status?: 'sending' | 'sent' | 'delivered' | 'read' | 'failed' | null;
+  poll_id?: string | null;
+  is_encrypted?: boolean | null;
+  ttl_seconds?: number | null;
+  file_name?: string | null;
+  file_size?: number | null;
+  metadata?: Record<string, unknown> | null;
 }
 
 export type { DeliveryStatusMap };
@@ -1416,7 +1419,7 @@ export function useMessages(conversationId: string | null) {
     }
   };
 
-  const sendMediaMessage = async (file: File, mediaType: 'voice' | 'video_circle' | 'image' | 'video', durationSeconds?: number) => {
+  const sendMediaMessage = async (file: File, mediaType: 'voice' | 'video_circle' | 'image' | 'video' | 'document', durationSeconds?: number) => {
     if (!conversationId || !user) return { error: 'Not authenticated' };
 
     if (file.size > TELEGRAM_MAX_FILE_BYTES) {
@@ -1610,7 +1613,7 @@ export function useCreateConversation() {
         error: rpcError,
         dataType: Array.isArray(rpcData) ? "array" : typeof rpcData,
       });
-      toast.error("Chat service misconfigured: DM creation unavailable.");
+      toast.error("Чат временно недоступен. Попробуйте позже.");
       return null;
     } catch (error) {
       logger.error("Error creating conversation:", error);
@@ -1621,7 +1624,7 @@ export function useCreateConversation() {
       }
 
       // Deterministic failure: do not attempt any legacy inserts.
-      toast.error("Chat service misconfigured: DM creation unavailable.");
+      toast.error("Чат временно недоступен. Попробуйте позже.");
       return null;
     }
   };

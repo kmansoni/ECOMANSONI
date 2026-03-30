@@ -7,6 +7,8 @@
 import { supabase } from '@/integrations/supabase/client';
 import { e2eeDb } from './db-types';
 import { toBase64, fromBase64 } from './utils';
+import { sleep } from '@/lib/utils/sleep';
+import { logger } from '@/lib/logger';
 import {
   deriveSharedSecret,
   hkdfDerive,
@@ -115,10 +117,6 @@ async function deriveWrappingKey(
     false,
     ['wrapKey', 'unwrapKey'],
   );
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export async function fetchIdentityKeyWithRetry(userId: string) {
@@ -248,10 +246,14 @@ export async function getConversationParticipantKeys(
 /**
  * Распространение группового ключа всем участникам беседы.
  * Для каждого участника: ECDH + HKDF → AES-KW wrapping → сохранение в Supabase.
+ *
+ * SECURITY: groupKeyRawBytes используется для wrap-операции через эфемерный extractable alias.
+ * Основной CryptoKey (groupKey) — non-extractable и безопасен для хранения в памяти.
  */
 export async function distributeGroupKey(
   conversationId: string,
   groupKey: CryptoKey,
+  groupKeyRawBytes: Uint8Array,
   keyVersion: number,
   senderIdentityKeyPair: { publicKey: CryptoKey; privateKey: CryptoKey },
   senderUserId: string,
@@ -285,8 +287,17 @@ export async function distributeGroupKey(
           participant.userId,
         );
 
-        // Оборачиваем групповой ключ через AES-KW
-        const wrappedKeyB64 = await crypto.subtle.wrapKey('raw', groupKey, wrappingKey, 'AES-KW').then(
+        // SECURITY: Создаём эфемерный extractable CryptoKey ТОЛЬКО для wrapKey-операции.
+        // WebCrypto spec §14.3.13: wrapKey('raw') требует extractable=true у источника.
+        // Эфемерный ключ не хранится в полях — GC-ится по выходу из блока.
+        const ephemeralKey = await crypto.subtle.importKey(
+          'raw',
+          groupKeyRawBytes,
+          { name: 'AES-GCM', length: 256 },
+          true, // extractable: ТОЛЬКО для wrap — не хранится
+          ['encrypt', 'decrypt'],
+        );
+        const wrappedKeyB64 = await crypto.subtle.wrapKey('raw', ephemeralKey, wrappingKey, 'AES-KW').then(
           (buf) => toBase64(buf),
         );
 
@@ -306,7 +317,7 @@ export async function distributeGroupKey(
         const msg = err instanceof Error ? err.message : String(err);
         result.failed.push(participant.userId);
         result.errors.push({ userId: participant.userId, error: msg });
-        console.warn(`[keyDistribution] Failed to distribute key to ${participant.userId}:`, msg);
+        logger.warn(`[keyDistribution] Failed to distribute key to ${participant.userId}`, { error: msg });
       }
     }),
   );
@@ -336,12 +347,12 @@ export async function receiveGroupKey(
     );
 
     if (error || !keyData) {
-      console.warn('[keyDistribution] receiveGroupKey: no key found', { conversationId, keyVersion, error });
+      logger.warn('[keyDistribution] receiveGroupKey: no key found', { conversationId, keyVersion, error });
       return null;
     }
 
     if (!keyData || !keyData.sender_public_key_raw || !keyData.sender_id || !keyData.wrapped_key) {
-      console.warn('[keyDistribution] receiveGroupKey: incomplete key record', { conversationId, keyVersion });
+      logger.warn('[keyDistribution] receiveGroupKey: incomplete key record', { conversationId, keyVersion });
       return null;
     }
 
@@ -392,7 +403,7 @@ export async function receiveGroupKey(
         // The caller (useE2EEncryption) will retry on the next render/message cycle.
         // If the key never appears, the message remains undecrypted — not silently accepted.
         // MITMDetectedError is only raised on affirmative fingerprint MISMATCH (see above).
-        console.warn(
+        logger.warn(
           `[keyDistribution] receiveGroupKey: sender identity key not found for ${keyData.sender_id} — ` +
           `deferring decryption (may be replication lag). Will retry on next access.`,
         );
@@ -422,7 +433,7 @@ export async function receiveGroupKey(
     return groupKey;
   } catch (err) {
     if (err instanceof MITMDetectedError) throw err; // CRITICAL: пробрасываем MITM наружу
-    console.error('[keyDistribution] receiveGroupKey error:', err);
+    logger.error('[keyDistribution] receiveGroupKey error', { error: err });
     return null;
   }
 }
@@ -446,18 +457,22 @@ export async function rotateGroupKey(
     const newVersion = currentVersion + 1;
 
     // Шаг 1: Генерируем новый групповой ключ
-    const newGroupKey = await generateMessageKey();
+    const newGroupKeyBundle = await generateMessageKey();
 
     // Шаг 2: Распространяем новый ключ ПЕРЕД деактивацией старого
     //         Если распределение полностью провалилось — прерываем, старые ключи живы.
     const distResult = await distributeGroupKey(
       conversationId,
-      newGroupKey,
+      newGroupKeyBundle.key,
+      newGroupKeyBundle.rawBytes,
       newVersion,
       senderIdentityKeyPair,
       senderUserId,
       senderPublicKeyRaw,
     );
+
+    // SECURITY: Очищаем raw key material после distribute
+    newGroupKeyBundle.zeroRawBytes();
 
     if (distResult.distributed.length === 0) {
       throw new Error('[keyDistribution] rotateGroupKey: key distribution failed for all participants; aborting rotation.');
@@ -469,16 +484,16 @@ export async function rotateGroupKey(
     if (distResult.failed.length === 0) {
       await e2eeDb.chatEncryptionKeys.deactivateVersion(conversationId, currentVersion);
     } else {
-      console.warn(
+      logger.warn(
         `[keyDistribution] rotateGroupKey: partial failure — ${distResult.failed.length} participants did not receive key v${newVersion}. ` +
         `Old key v${currentVersion} kept active to avoid data loss.`,
-        distResult.errors,
+        { errors: distResult.errors },
       );
     }
 
     return { keyVersion: newVersion, result: distResult };
   } catch (err) {
-    console.error('[keyDistribution] rotateGroupKey error:', err);
+    logger.error('[keyDistribution] rotateGroupKey error', { error: err });
     return null;
   }
 }

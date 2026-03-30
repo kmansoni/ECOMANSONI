@@ -281,7 +281,7 @@ export function usePinnedChats(): UsePinnedChatsReturn {
         // Revert
         setPinnedOrder(prevOrder);
         toast.error("Не удалось открепить чат");
-        console.error("unpinChat:", error);
+        logger.error("[usePinnedChats] unpinChat error", { error });
         return;
       }
 
@@ -329,7 +329,7 @@ export function usePinnedChats(): UsePinnedChatsReturn {
           return;
         }
         setPinnedOrder(prevOrder);
-        console.error("reorderPinned:", error);
+        logger.error("[usePinnedChats] reorderPinned error", { error });
       }
     },
     [userId, pinnedOrder, useLS, isMissingSettingsTableError]

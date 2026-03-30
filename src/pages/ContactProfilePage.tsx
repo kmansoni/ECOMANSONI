@@ -1,4 +1,5 @@
 import { MessageCircle, Bell, BellOff, Phone, Video, Image, FileText, Link2, Mic, Users, Ban, X, User, Loader2, QrCode, Settings2, Timer, Clock3 } from "lucide-react";
+import { logger } from "@/lib/logger";
 import { useState, useEffect } from "react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -82,7 +83,7 @@ export function ContactProfilePage() {
           setProfile(data);
         }
       } catch (err) {
-        console.error('Error fetching contact profile:', err);
+        logger.error('[ContactProfilePage] Error fetching contact profile', { error: err });
       } finally {
         setLoading(false);
       }
@@ -124,7 +125,7 @@ export function ContactProfilePage() {
           });
         }
       } catch (err) {
-        console.error('Error fetching media stats:', err);
+        logger.error('[ContactProfilePage] Error fetching media stats', { error: err });
       }
     };
 
@@ -408,7 +409,7 @@ export function ContactProfilePage() {
                     setIsBlocked(false);
                   }
                 } catch (err) {
-                  console.error('Error unblocking user:', err);
+                  logger.error('[ContactProfilePage] Error unblocking user', { error: err });
                 } finally {
                   setIsBlocking(false);
                 }
@@ -491,7 +492,7 @@ export function ContactProfilePage() {
                       }
                     }
                   } catch (err) {
-                    console.error('Error blocking user:', err);
+                    logger.error('[ContactProfilePage] Error blocking user', { error: err });
                   } finally {
                     setIsBlocking(false);
                   }

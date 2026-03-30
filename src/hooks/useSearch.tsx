@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
+import { logger } from "@/lib/logger";
 import { fetchUserBriefMap, resolveUserBrief } from "@/lib/users/userBriefs";
 
 export interface SearchUser {
@@ -93,7 +94,7 @@ export function useSearch() {
       const { data: sessionCheck } = await supabase.auth.getSession();
       const hasSession = Boolean(sessionCheck?.session?.access_token);
       if (!hasSession) {
-        console.warn(
+        logger.warn(
           "[useSearch] Нет активной сессии — поиск может вернуть пусто. Запрос сохранён для автоповтора после восстановления сессии.",
           { query: raw }
         );
@@ -174,7 +175,7 @@ export function useSearch() {
 
       setUsers(usersWithFollowStatus);
     } catch (error) {
-      console.error("Error searching users:", error);
+      logger.error("[useSearch] Ошибка поиска пользователей", { error });
     } finally {
       setLoading(false);
     }
@@ -198,7 +199,7 @@ export function useSearch() {
       ) {
         const query = pendingAuthQuery.current;
         pendingAuthQuery.current = null;
-        console.info("[useSearch] Сессия восстановлена, повторяю поиск:", query);
+        logger.info("[useSearch] Сессия восстановлена, повторяю поиск", { query });
         searchUsers(query);
       }
     });
@@ -363,7 +364,7 @@ export function useSearch() {
 
       setExplorePosts(enrichedPosts);
     } catch (error) {
-      console.error("Error fetching explore posts:", error);
+      logger.error("[useSearch] Ошибка загрузки постов explore", { error });
     } finally {
       setExploring(false);
     }
@@ -378,7 +379,7 @@ export function useSearch() {
       if (error) throw error;
       setTrendingHashtags((data || []) as TrendingHashtag[]);
     } catch (error) {
-      console.error("Error fetching trending hashtags:", error);
+      logger.error("[useSearch] Ошибка загрузки трендовых хештегов", { error });
       setTrendingHashtags([]);
     } finally {
       setTrendingLoading(false);
@@ -398,7 +399,7 @@ export function useSearch() {
       if (error) throw error;
       setExplorePage((data || null) as ExplorePagePayload | null);
     } catch (error) {
-      console.error("Error fetching explore page:", error);
+      logger.error("[useSearch] Ошибка загрузки страницы explore", { error });
       setExplorePage(null);
     } finally {
       setExplorePageLoading(false);
@@ -437,7 +438,7 @@ export function useSearch() {
         )
       );
     } catch (error) {
-      console.error("Error toggling follow:", error);
+      logger.error("[useSearch] Ошибка переключения подписки", { error });
     }
   }, [user, users]);
 

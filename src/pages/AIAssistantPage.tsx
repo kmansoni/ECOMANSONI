@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { logger } from "@/lib/logger";
 import {
   Bot,
   Send,
@@ -11,7 +12,11 @@ import {
   ShieldCheck,
   Pen,
   Brain,
+  ThumbsUp,
+  ThumbsDown,
+  Database,
 } from "lucide-react";
+import { useAriaFeedback } from "@/hooks/useAriaFeedback";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -30,7 +35,24 @@ interface Message {
   content: string;
   timestamp: Date;
   streaming?: boolean;
+  intent?: string;         // orchestrator intent: 'code'|'security'|'data_analysis'|'writing'|'general'
+  memoriesUsed?: number;   // how many memories were injected
+  feedbackSaved?: boolean; // true after user rates this message
 }
+
+const INTENT_LABELS: Record<string, string> = {
+  code: "Код",
+  security: "Безопасность",
+  data_analysis: "Аналитика",
+  writing: "Тексты",
+};
+
+const INTENT_COLORS: Record<string, string> = {
+  code: "bg-violet-500/15 text-violet-300 border-violet-500/30",
+  security: "bg-rose-500/15 text-rose-300 border-rose-500/30",
+  data_analysis: "bg-cyan-500/15 text-cyan-300 border-cyan-500/30",
+  writing: "bg-amber-500/15 text-amber-300 border-amber-500/30",
+};
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -60,7 +82,7 @@ const DIRECT_AI_MODEL =
 // Block direct mode in production — the key would be visible to every user.
 const USE_DIRECT = Boolean(DIRECT_AI_KEY) && import.meta.env.DEV;
 if (DIRECT_AI_KEY && !import.meta.env.DEV) {
-  console.warn(
+  logger.warn(
     "[ARIA] VITE_AI_API_KEY is set but will be IGNORED in production builds. " +
     "Deploy the aria-chat Edge Function and store AI_API_KEY in Supabase Vault."
   );
@@ -328,6 +350,9 @@ export function AIAssistantPage() {
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // Stable conversation ID per page-mount session
+  const conversationIdRef = useRef<string>(crypto.randomUUID());
+  const { saveFeedback } = useAriaFeedback();
 
   const scrollToBottom = useCallback(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -387,7 +412,7 @@ export function AIAssistantPage() {
         let resp: Response;
 
         if (USE_DIRECT) {
-          // ── Direct API call (VITE_AI_API_KEY is set) ──────────────────────
+          // ── Direct API call (VITE_AI_API_KEY is set, dev-only) ────────────
           resp = await fetch(DIRECT_AI_URL, {
             method: "POST",
             headers: {
@@ -397,10 +422,7 @@ export function AIAssistantPage() {
             body: JSON.stringify({
               model: DIRECT_AI_MODEL,
               messages: [
-                {
-                  role: "system",
-                  content: ARIA_SYSTEM_PROMPT,
-                },
+                { role: "system", content: ARIA_SYSTEM_PROMPT },
                 ...historyForApi,
               ],
               stream: true,
@@ -410,7 +432,7 @@ export function AIAssistantPage() {
             signal: controller.signal,
           });
         } else if (EDGE_CHAT_URL && SUPABASE_ANON_KEY) {
-          // ── Edge Function call (aria-chat must be deployed) ───────────────
+          // ── Edge Function call (aria-chat with orchestrator) ──────────────
           const { data: sessionData } = await supabase.auth.getSession();
           const accessToken = sessionData?.session?.access_token;
 
@@ -421,13 +443,20 @@ export function AIAssistantPage() {
               apikey: SUPABASE_ANON_KEY,
               Authorization: `Bearer ${accessToken ?? SUPABASE_ANON_KEY}`,
             },
-            body: JSON.stringify({ messages: historyForApi }),
+            body: JSON.stringify({
+              messages: historyForApi,
+              conversation_id: conversationIdRef.current,
+            }),
             signal: controller.signal,
           });
         } else {
           // ── No backend configured → client-side fallback immediately ─────
           throw new TypeError("Failed to fetch: no backend configured");
         }
+
+        // Read orchestrator metadata from response headers
+        const respIntent = resp.headers?.get("X-ARIA-Intent") ?? undefined;
+        const respMemories = Number(resp.headers?.get("X-ARIA-Memories") ?? "0");
 
         if (!resp.ok) {
           if (resp.status === 404 && !USE_DIRECT) {
@@ -464,17 +493,52 @@ export function AIAssistantPage() {
                 )
               );
             }
-          } catch {
+          } catch (_err) {
             // Incomplete JSON chunk — ignore, continue accumulating
           }
         }
 
-        // Mark streaming complete
+        // Mark streaming complete + tag with orchestrator metadata
         setMessages((prev) =>
           prev.map((m) =>
-            m.id === assistantId ? { ...m, streaming: false } : m
+            m.id === assistantId
+              ? {
+                  ...m,
+                  streaming: false,
+                  intent: respIntent,
+                  memoriesUsed: respMemories,
+                }
+              : m
           )
         );
+
+        // Fire-and-forget: save memories from this exchange
+        if (accumulated && EDGE_CHAT_URL && SUPABASE_ANON_KEY) {
+          const { data: sessionData } = await supabase.auth.getSession();
+          const accessToken = sessionData?.session?.access_token;
+          if (accessToken) {
+            const memoryUrl = SUPABASE_URL
+              ? `${SUPABASE_URL}/functions/v1/aria-memory`
+              : "";
+            if (memoryUrl) {
+              fetch(memoryUrl, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  apikey: SUPABASE_ANON_KEY,
+                  Authorization: `Bearer ${accessToken}`,
+                },
+                body: JSON.stringify({
+                  action: "save",
+                  conversation_id: conversationIdRef.current,
+                  user_message: trimmed,
+                  assistant_message: accumulated,
+                  intent: respIntent ?? "general",
+                }),
+              }).catch(() => {/* non-critical */});
+            }
+          }
+        }
       } catch (err) {
         if ((err as Error).name === "AbortError") {
           // User pressed stop — keep whatever was streamed
@@ -486,7 +550,7 @@ export function AIAssistantPage() {
           return;
         }
 
-        console.error("[AIAssistantPage] stream error:", err);
+        logger.error("[AIAssistantPage] stream error", { error: err });
 
         // ── Client-side fallback: если сеть/сервер недоступен — отвечаем локально ──
         const errMsg = err instanceof Error ? err.message : "";
@@ -523,9 +587,9 @@ export function AIAssistantPage() {
                     )
                   );
                 }
-              } catch { /* ignore incomplete */ }
+              } catch (_err) { /* ignore incomplete */ }
             }
-          } catch { /* ignore */ }
+          } catch (_err) { /* ignore */ }
           setMessages((prev) =>
             prev.map((m) => m.id === assistantId ? { ...m, streaming: false } : m)
           );
@@ -565,7 +629,26 @@ export function AIAssistantPage() {
     abortRef.current?.abort();
     setMessages([]);
     setStreaming(false);
+    conversationIdRef.current = crypto.randomUUID(); // new session
   }, []);
+
+  const handleFeedback = useCallback(
+    async (msgId: string, rating: 1 | -1) => {
+      const msg = messages.find((m) => m.id === msgId);
+      const ok = await saveFeedback({
+        assistant_msg_id: msgId,
+        rating,
+        intent: msg?.intent,
+        conversation_id: conversationIdRef.current,
+      });
+      if (ok) {
+        setMessages((prev) =>
+          prev.map((m) => (m.id === msgId ? { ...m, feedbackSaved: true } : m))
+        );
+      }
+    },
+    [messages, saveFeedback]
+  );
 
   return (
     <div className="flex flex-col h-[calc(100dvh-4rem)] max-w-3xl mx-auto">
@@ -613,8 +696,8 @@ export function AIAssistantPage() {
       <div className="relative flex-1 overflow-hidden">
         <ScrollArea className="h-full" onScrollCapture={handleScroll}>
           <div className="px-4 py-4 space-y-4">
-            {/* Setup Banner — shown when neither direct key nor deployed function is available */}
-            {!USE_DIRECT && messages.length === 0 && (
+            {/* Setup Banner — shown only in local dev when VITE_AI_API_KEY is missing */}
+            {!USE_DIRECT && import.meta.env.DEV && messages.length === 0 && (
               <div className="mx-1 mb-4 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-400 space-y-2">
                 <p className="font-semibold">⚙️ Требуется настройка</p>
                 <p>ARIA не подключена к AI-бэкенду. Варианты:</p>
@@ -703,6 +786,57 @@ export function AIAssistantPage() {
                       />
                       {msg.streaming && msg.content && (
                         <span className="inline-block w-1.5 h-3.5 bg-current ml-0.5 animate-pulse" />
+                      )}
+
+                      {/* Metadata row: intent badge + memory indicator + feedback */}
+                      {!msg.streaming && (
+                        <div className="flex items-center justify-between mt-2 gap-2">
+                          <div className="flex items-center gap-1.5">
+                            {/* Intent badge */}
+                            {msg.intent && msg.intent !== "general" && INTENT_LABELS[msg.intent] && (
+                              <span
+                                className={cn(
+                                  "text-[10px] px-1.5 py-0.5 rounded-full border",
+                                  INTENT_COLORS[msg.intent] ?? "bg-white/10 text-white/60 border-white/20"
+                                )}
+                              >
+                                {INTENT_LABELS[msg.intent]}
+                              </span>
+                            )}
+                            {/* Memory indicator */}
+                            {msg.memoriesUsed != null && msg.memoriesUsed > 0 && (
+                              <span
+                                className="text-[10px] px-1.5 py-0.5 rounded-full border bg-emerald-500/10 text-emerald-400 border-emerald-500/25 flex items-center gap-0.5"
+                                title={`Использовано ${msg.memoriesUsed} воспоминаний о вас`}
+                              >
+                                <Database className="w-2.5 h-2.5" />
+                                {msg.memoriesUsed}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Feedback buttons */}
+                          {!msg.feedbackSaved ? (
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={() => void handleFeedback(msg.id, 1)}
+                                className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-emerald-500/15 text-muted-foreground hover:text-emerald-400 transition-colors"
+                                title="Полезный ответ"
+                              >
+                                <ThumbsUp className="w-3 h-3" />
+                              </button>
+                              <button
+                                onClick={() => void handleFeedback(msg.id, -1)}
+                                className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-rose-500/15 text-muted-foreground hover:text-rose-400 transition-colors"
+                                title="Неполезный ответ"
+                              >
+                                <ThumbsDown className="w-3 h-3" />
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="text-[10px] text-muted-foreground">Спасибо!</span>
+                          )}
+                        </div>
                       )}
                     </>
                   ) : (

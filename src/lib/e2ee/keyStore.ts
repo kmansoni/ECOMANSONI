@@ -1,3 +1,5 @@
+import { logger } from '@/lib/logger';
+
 /**
  * E2EE Key Store
  * Безопасное хранилище ключей на основе IndexedDB.
@@ -78,11 +80,11 @@ export class E2EEKeyStore {
       await this._migrateLegacyIfNeeded();
       if (this.autoCleanup) {
         this.cleanupTimer = setInterval(() => {
-          this.cleanupExpired().catch(console.warn);
+          this.cleanupExpired().catch((err: unknown) => logger.warn('[E2EEKeyStore] cleanupExpired failed', { error: err }));
         }, this.cleanupInterval);
       }
     } catch (err) {
-      console.warn('[E2EEKeyStore] IndexedDB unavailable, falling back to in-memory store:', err);
+      logger.warn('[E2EEKeyStore] IndexedDB unavailable, falling back', { error: err });
       this.useMemoryFallback = true;
     }
   }
@@ -141,7 +143,7 @@ export class E2EEKeyStore {
   private async _openExistingDatabase(name: string): Promise<IDBDatabase | null> {
     const listFn = (indexedDB as { databases?: () => Promise<Array<{ name?: string }>> }).databases;
     if (typeof listFn !== 'function') {
-      console.warn('[E2EEKeyStore] IndexedDB.databases() unsupported; skipping legacy keystore detection.');
+      logger.warn('[E2EEKeyStore] IndexedDB.databases() unsupported; skipping legacy detection');
       return null;
     }
 
@@ -186,12 +188,12 @@ export class E2EEKeyStore {
           });
         }
 
-        console.warn(
+        logger.warn(
           `[E2EEKeyStore] Migrated ${legacyEntries.length} keys from legacy DB "${legacyDbName}" to "${this.dbName}".`,
         );
         return;
       } catch (err) {
-        console.warn(`[E2EEKeyStore] Legacy keystore migration failed for ${legacyDbName}:`, err);
+        logger.warn(`[E2EEKeyStore] Legacy keystore migration failed for ${legacyDbName}`, { error: err });
       } finally {
         legacyDb?.close();
       }

@@ -6,6 +6,7 @@ import { useState } from "react";
 import { X, Save, User, Phone, Mail, Building2, MapPin, Tag, FileText } from "lucide-react";
 import { crm, type CRMClientRecord, type Profession } from "@/lib/crm";
 import { toast } from "sonner";
+import { logger } from "@/lib/logger";
 
 interface Props {
   profession: Profession;
@@ -65,7 +66,7 @@ export function CRMClientForm({ profession, initial, onClose, onSaved }: Props) 
       onSaved(saved);
     } catch (err) {
       toast.error('Ошибка сохранения клиента');
-      console.error(err);
+      logger.error('[CRMClientForm] submit error', { error: err });
     } finally {
       setSaving(false);
     }

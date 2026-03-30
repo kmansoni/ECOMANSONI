@@ -3,6 +3,8 @@
  * Lazy-load модели при первом вызове
  */
 
+import { logger } from "../logger";
+
 export interface NSFWResult {
   safe: boolean;
   confidence: number;
@@ -29,7 +31,7 @@ async function loadModel() {
     model = await nsfwjs.load();
     return model;
   } catch (err) {
-    console.warn("NSFWJS не доступен, NSFW проверка отключена:", err);
+    logger.warn("[imageFilter] NSFWJS не доступен, NSFW проверка отключена", { error: err });
     return null;
   }
 }
@@ -71,7 +73,7 @@ export async function checkImage(
       categories,
     };
   } catch (err) {
-    console.error("Ошибка NSFW проверки:", err);
+    logger.error("[imageFilter] Ошибка NSFW проверки", { error: err });
     return fallback;
   }
 }

@@ -6,6 +6,7 @@
  */
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { handleCors, getCorsHeaders } from '../_shared/utils.ts';
 
 declare const Deno: {
   env: { get(name: string): string | undefined };
@@ -358,22 +359,17 @@ async function handleEndMiniAppSession(req: Request, userId: string, sessionId: 
 // ROUTER
 // ============================================================================
 
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
-};
-
-function withCors(res: Response): Response {
+function withCors(res: Response, origin: string | null): Response {
   const out = new Response(res.body, res);
-  for (const [k, v] of Object.entries(CORS_HEADERS)) out.headers.set(k, v);
+  for (const [k, v] of Object.entries(getCorsHeaders(origin))) out.headers.set(k, v);
   return out;
 }
 
 Deno.serve(async (req: Request) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: CORS_HEADERS });
-  }
+  const corsResponse = handleCors(req);
+  if (corsResponse) return corsResponse;
+
+  const origin = req.headers.get('origin');
 
   const url = new URL(req.url);
   const path = url.pathname.replace(/^\/mini-app-api/, '');
@@ -385,25 +381,25 @@ Deno.serve(async (req: Request) => {
   if (segments[0] === 'app' && segments[1]) {
     // GET /mini-app-api/app/:slug - public mini app info
     if (req.method === 'GET') {
-      return withCors(await handleGetMiniAppBySlug(req, segments[1]));
+      return withCors(await handleGetMiniAppBySlug(req, segments[1]), origin);
     }
   }
 
   // Protected endpoints require auth
   if (!userId) {
-    return withCors(createErrorResponse('Unauthorized', 401));
+    return withCors(createErrorResponse('Unauthorized', 401), origin);
   }
 
   // Mini app management
   if (segments[0] === 'mini-apps') {
     // POST /mini-app-api/mini-apps - create mini app
     if (req.method === 'POST') {
-      return withCors(await handleCreateMiniApp(req, userId));
+      return withCors(await handleCreateMiniApp(req, userId), origin);
     }
     
     // GET /mini-app-api/mini-apps - list user's mini apps
     if (req.method === 'GET') {
-      return withCors(await handleListMiniApps(req, userId));
+      return withCors(await handleListMiniApps(req, userId), origin);
     }
     
     // Mini app-specific operations
@@ -412,24 +408,24 @@ Deno.serve(async (req: Request) => {
       
       // GET /mini-app-api/mini-apps/:id
       if (req.method === 'GET') {
-        return withCors(await handleGetMiniApp(req, userId, appId));
+        return withCors(await handleGetMiniApp(req, userId, appId), origin);
       }
       
       // PATCH /mini-app-api/mini-apps/:id
       if (req.method === 'PATCH') {
-        return withCors(await handleUpdateMiniApp(req, userId, appId));
+        return withCors(await handleUpdateMiniApp(req, userId, appId), origin);
       }
       
       // DELETE /mini-app-api/mini-apps/:id
       if (req.method === 'DELETE') {
-        return withCors(await handleDeleteMiniApp(req, userId, appId));
+        return withCors(await handleDeleteMiniApp(req, userId, appId), origin);
       }
       
       // Session management
       if (segments[2] === 'sessions') {
         // POST /mini-app-api/mini-apps/:id/sessions - start session
         if (req.method === 'POST') {
-          return withCors(await handleStartMiniAppSession(req, userId, appId));
+          return withCors(await handleStartMiniAppSession(req, userId, appId), origin);
         }
         
         // Session-specific operations
@@ -438,12 +434,12 @@ Deno.serve(async (req: Request) => {
           
           // DELETE /mini-app-api/mini-apps/:id/sessions/:sessionId - end session
           if (req.method === 'DELETE') {
-            return withCors(await handleEndMiniAppSession(req, userId, sessionId));
+            return withCors(await handleEndMiniAppSession(req, userId, sessionId), origin);
           }
         }
       }
     }
   }
 
-  return withCors(createErrorResponse('Not found', 404));
+  return withCors(createErrorResponse('Not found', 404), origin);
 });

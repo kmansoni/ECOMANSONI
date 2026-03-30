@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Plus, Users } from "lucide-react";
 import { motion } from "framer-motion";
-import { supabase } from "@/integrations/supabase/client";
+import { dbLoose } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 
@@ -29,11 +29,11 @@ export function AddYoursSticker({
     if (!user || joined || !currentStoryId) return;
     setLoading(true);
     try {
-      const { error } = await (supabase as any)
+      const { error } = await dbLoose
         .from("add_yours_entries")
         .insert({ chain_id: chainId, story_id: currentStoryId, user_id: user.id });
       if (!error) {
-        await (supabase as any)
+        await dbLoose
           .from("add_yours_chains")
           .update({ participants_count: count + 1 })
           .eq("id", chainId);

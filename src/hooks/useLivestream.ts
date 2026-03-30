@@ -89,7 +89,7 @@ export function useCreateStream() {
       void qc.invalidateQueries({ queryKey: ['streams'] });
       toast.success('Stream created');
     },
-    onError: (err: Error) => toast.error(`Failed to create stream: ${err.message}`),
+    onError: () => toast.error('Не удалось создать эфир. Попробуйте снова.'),
   });
 }
 
@@ -102,7 +102,7 @@ export function useStartStream() {
       void qc.invalidateQueries({ queryKey: livestreamKeys.stream(data.id) });
       toast.success('Stream started');
     },
-    onError: (err: Error) => toast.error(`Failed to start stream: ${err.message}`),
+    onError: () => toast.error('Не удалось запустить эфир. Попробуйте снова.'),
   });
 }
 
@@ -115,7 +115,7 @@ export function useStopStream() {
       void qc.invalidateQueries({ queryKey: livestreamKeys.stream(data.id) });
       toast.success('Stream ended');
     },
-    onError: (err: Error) => toast.error(`Failed to stop stream: ${err.message}`),
+    onError: () => toast.error('Не удалось завершить эфир. Попробуйте снова.'),
   });
 }
 
@@ -129,7 +129,7 @@ export function useInviteGuest() {
       void qc.invalidateQueries({ queryKey: livestreamKeys.guests(sessionId) });
       toast.success('Guest invited');
     },
-    onError: (err: Error) => toast.error(`Invite failed: ${err.message}`),
+    onError: () => toast.error('Не удалось отправить приглашение. Попробуйте снова.'),
   });
 }
 
@@ -143,7 +143,7 @@ export function useAcceptInvite() {
       void qc.invalidateQueries({ queryKey: livestreamKeys.guests(sessionId) });
       toast.success('Invitation accepted');
     },
-    onError: (err: Error) => toast.error(`Accept failed: ${err.message}`),
+    onError: () => toast.error('Не удалось принять приглашение. Попробуйте снова.'),
   });
 }
 
@@ -157,7 +157,7 @@ export function useKickGuest() {
       void qc.invalidateQueries({ queryKey: livestreamKeys.guests(sessionId) });
       toast.success('Guest removed');
     },
-    onError: (err: Error) => toast.error(`Kick failed: ${err.message}`),
+    onError: () => toast.error('Не удалось удалить гостя. Попробуйте снова.'),
   });
 }
 
@@ -174,7 +174,7 @@ export function useBanUser() {
       reason?: string;
     }) => api.banUser(sessionId, userId, reason),
     onSuccess: () => toast.success('User banned'),
-    onError: (err: Error) => toast.error(`Ban failed: ${err.message}`),
+    onError: () => toast.error('Не удалось заблокировать пользователя. Попробуйте снова.'),
   });
 }
 
@@ -189,7 +189,7 @@ export function useDeleteMessage() {
       messageId: number;
     }) => api.deleteMessage(sessionId, messageId),
     onSuccess: () => toast.success('Message deleted'),
-    onError: (err: Error) => toast.error(`Delete failed: ${err.message}`),
+    onError: () => toast.error('Не удалось удалить сообщение. Попробуйте снова.'),
   });
 }
 
@@ -204,7 +204,7 @@ export function usePinMessage() {
       messageId: number;
     }) => api.pinMessage(sessionId, messageId),
     onSuccess: () => toast.success('Message pinned'),
-    onError: (err: Error) => toast.error(`Pin failed: ${err.message}`),
+    onError: () => toast.error('Не удалось закрепить сообщение. Попробуйте снова.'),
   });
 }
 
@@ -217,7 +217,7 @@ export function useCreateStreamKey() {
       void qc.invalidateQueries({ queryKey: livestreamKeys.streamKeys() });
       toast.success('Stream key created');
     },
-    onError: (err: Error) => toast.error(`Create key failed: ${err.message}`),
+    onError: () => toast.error('Не удалось создать ключ трансляции. Попробуйте снова.'),
   });
 }
 
@@ -230,6 +230,6 @@ export function useRotateStreamKey() {
       void qc.invalidateQueries({ queryKey: livestreamKeys.streamKeys() });
       toast.success('Stream key rotated');
     },
-    onError: (err: Error) => toast.error(`Rotate key failed: ${err.message}`),
+    onError: () => toast.error('Не удалось обновить ключ трансляции. Попробуйте снова.'),
   });
 }

@@ -11,6 +11,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
 import { buildChatBodyEnvelope, sendMessageV1 } from "@/lib/chat/sendMessageV1";
+import { logger } from "@/lib/logger";
 import {
   Drawer,
   DrawerContent,
@@ -149,35 +150,41 @@ export function ShareSheet({
           };
           promises.push(sendDm());
         } else if (type === "group") {
-          // Send to group chat with shared post
+          // Send to group chat via authoritative RPC + follow-up shared_post_id
           const sendGroup = async () => {
-            const { error } = await supabase.from("group_chat_messages").insert({
-              group_id: id,
-              sender_id: user.id,
-              content: "📤 Поделился публикацией",
-              shared_post_id: postId,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const { data, error } = await supabase.rpc("send_group_message_v1" as any, {
+              p_group_id: id,
+              p_content: "📤 Поделился публикацией",
+              p_media_url: null,
+              p_media_type: null,
             });
             if (error) throw error;
-            await supabase
-              .from("group_chats")
-              .update({ updated_at: new Date().toISOString() })
-              .eq("id", id);
+            const result = Array.isArray(data) ? data[0] : data;
+            const messageId = (result as Record<string, unknown> | null)?.message_id as string | undefined;
+            if (messageId && postId) {
+              await supabase.from("group_chat_messages").update({ shared_post_id: postId }).eq("id", messageId).throwOnError();
+            }
           };
           promises.push(sendGroup());
         } else if (type === "channel") {
-          // Send to channel with shared post
+          // Send to channel via authoritative RPC + follow-up shared_post_id
           const sendChannel = async () => {
-            const { error } = await supabase.from("channel_messages").insert({
-              channel_id: id,
-              sender_id: user.id,
-              content: "📤 Поделился публикацией",
-              shared_post_id: postId,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const { data, error } = await supabase.rpc("send_channel_message_v1" as any, {
+              p_channel_id: id,
+              p_content: "📤 Поделился публикацией",
+              p_silent: false,
+              p_media_url: null,
+              p_media_type: null,
+              p_duration_seconds: null,
             });
             if (error) throw error;
-            await supabase
-              .from("channels")
-              .update({ updated_at: new Date().toISOString() })
-              .eq("id", id);
+            const result = Array.isArray(data) ? data[0] : data;
+            const messageId = (result as Record<string, unknown> | null)?.message_id as string | undefined;
+            if (messageId && postId) {
+              await supabase.from("channel_messages").update({ shared_post_id: postId }).eq("id", messageId).throwOnError();
+            }
           };
           promises.push(sendChannel());
         }
@@ -195,7 +202,7 @@ export function ShareSheet({
       
       onClose();
     } catch (err) {
-      console.error("Failed to share:", err);
+      logger.error("[ShareSheet] Не удалось поделиться постом", { error: err });
       toast({
         title: "Ошибка",
         description: "Не удалось поделиться постом",

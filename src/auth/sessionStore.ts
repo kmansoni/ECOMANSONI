@@ -19,6 +19,7 @@
  */
 
 import { encryptForStorage, decryptFromStorage } from "./localStorageCrypto";
+import { logger } from "../lib/logger";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -92,10 +93,10 @@ function persistSessionsEncrypted(sessions: Record<string, AccountSession>): voi
       // Sessions remain accessible from in-memory cache for the current
       // page lifetime; the user will be asked to re-authenticate on next
       // cold start if the underlying crypto issue persists.
-      console.error(
+      logger.error(
         "[sessionStore] Encryption failed — sessions NOT persisted to localStorage (fail-secure). " +
           "Sessions remain in memory for this page session only.",
-        err,
+        { error: err },
       );
     }
   });
@@ -138,7 +139,7 @@ export async function initSessionStore(): Promise<void> {
     } else {
       // Decryption returned null — data corrupted or key changed.
       // Log warning and start fresh to avoid bricking the app.
-      console.warn(
+      logger.warn(
         "[sessionStore] Could not decrypt stored sessions. " +
           "Starting with empty session store. User will need to re-authenticate.",
       );
@@ -147,7 +148,7 @@ export async function initSessionStore(): Promise<void> {
     }
   } catch {
     // Parse error — corrupted data. Start fresh.
-    console.warn("[sessionStore] Corrupted session data in localStorage. Resetting.");
+    logger.warn("[sessionStore] Corrupted session data in localStorage. Resetting.");
     _sessionsCache = {};
     localStorage.removeItem(SESSIONS_KEY);
   }
@@ -164,7 +165,7 @@ export async function initSessionStore(): Promise<void> {
  * Never reads plaintext localStorage to avoid accidental secret exposure.
  */
 function fallbackLoadRaw(): Record<string, AccountSession> {
-  console.warn(
+  logger.warn(
     "[sessionStore] initSessionStore() was not called before loadSessions(). Returning empty store.",
   );
   return {};

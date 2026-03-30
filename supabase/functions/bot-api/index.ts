@@ -7,6 +7,7 @@
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { createErrorResponse, createSuccessResponse } from './utils.ts';
+import { handleCors, getCorsHeaders } from '../_shared/utils.ts';
 
 declare const Deno: {
   env: { get(name: string): string | undefined };
@@ -527,21 +528,17 @@ function generateSecretToken(): string {
 // ROUTER
 // ============================================================================
 
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
-};
-
-function withCors(res: Response): Response {
-  const out = new Response(res.body, res);
-  for (const [k, v] of Object.entries(CORS_HEADERS)) out.headers.set(k, v);
-  return out;
-}
-
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: CORS_HEADERS });
+  const corsResponse = handleCors(req);
+  if (corsResponse) return corsResponse;
+
+  const origin = req.headers.get('Origin');
+  const corsHeaders = getCorsHeaders(origin);
+
+  function withCors(res: Response): Response {
+    const out = new Response(res.body, res);
+    for (const [k, v] of Object.entries(corsHeaders)) out.headers.set(k, v);
+    return out;
   }
 
   const url = new URL(req.url);

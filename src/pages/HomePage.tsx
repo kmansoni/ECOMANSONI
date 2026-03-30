@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import { FeedHeader } from "@/components/feed/FeedHeader";
 import { FeedFilters, ContentFilter } from "@/components/feed/FeedFilters";
 import { PostCard } from "@/components/feed/PostCard";
+import { PostCardSkeleton } from "@/components/feed/PostCardSkeleton";
 import { PullToRefresh } from "@/components/feed/PullToRefresh";
 import { SmartFeedToggle } from "@/components/feed/SmartFeedToggle";
 import { useSmartFeed } from "@/hooks/useSmartFeed";
@@ -31,7 +32,7 @@ export function HomePage() {
   const formatTimeAgo = (dateString: string) => {
     try {
       return formatDistanceToNow(new Date(dateString), { addSuffix: false, locale: ru });
-    } catch {
+    } catch (_err) {
       return "";
     }
   };
@@ -95,8 +96,11 @@ export function HomePage() {
         />
 
         {loading && posts.length === 0 ? (
-          <div className="flex items-center justify-center py-20">
-            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          // ИСПРАВЛЕНИЕ: skeleton-экраны вместо spinner — соответствует поведению Instagram
+          <div className="space-y-0">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <PostCardSkeleton key={i} />
+            ))}
           </div>
         ) : error && posts.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center px-4">
@@ -136,11 +140,14 @@ export function HomePage() {
                   id={safePostId}
                   authorId={safeAuthorId}
                   author={{
-                    name: post.author?.display_name || "Пользователь",
-                    username: safeUsername,
-                    avatar: post.author?.avatar_url || `https://i.pravatar.cc/150?u=${safeAuthorId}`,
-                    verified: false,
-                  }}
+                      name: post.author?.display_name || "Пользователь",
+                      username: safeUsername,
+                      // ИСПРАВЛЕНИЕ дефекта #1: убран pravatar.cc — утечка user ID на сторонний сервис
+                      // AvatarFallback в PostCard обрабатывает пустой src через initials
+                      avatar: post.author?.avatar_url || '',
+                      // ИСПРАВЛЕНИЕ дефекта #2: verified берётся из данных автора, не захардкожен
+                      verified: post.author?.is_verified ?? false,
+                    }}
                   content={post.content || ""}
                   images={post.media?.map(m => m.media_url)}
                   mediaItems={post.media?.map((m) => ({ url: m.media_url, type: m.media_type }))}

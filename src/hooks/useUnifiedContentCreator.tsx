@@ -58,7 +58,24 @@ interface UseUnifiedContentCreatorReturn {
   // Type-specific upload handlers
   uploadStoryMedia: (file: File, caption?: string) => Promise<UnifiedContent | null>;
   uploadPostMedia: (file: File, caption?: string) => Promise<UnifiedContent | null>;
-  uploadReelMedia: (file: File, caption?: string) => Promise<UnifiedContent | null>;
+  uploadReelMedia: (
+    file: File,
+    caption?: string,
+    options?: {
+      clientPublishId?: string;
+      musicTitle?: string | null;
+      musicTrackId?: string | null;
+      effectPreset?: string | null;
+      faceEnhance?: boolean;
+      aiEnhance?: boolean;
+      maxDurationSec?: number;
+      taggedUsers?: string[];
+      locationName?: string | null;
+      visibility?: 'public' | 'followers' | 'private';
+      allowComments?: boolean;
+      allowRemix?: boolean;
+    }
+  ) => Promise<UnifiedContent | null>;
   createLiveSession: (title: string, category: string, thumbnailUrl?: string) => Promise<UnifiedContent | null>;
 
   // Utilities
@@ -200,7 +217,24 @@ export function useUnifiedContentCreator(): UseUnifiedContentCreatorReturn {
   );
 
   const uploadReelMedia = useCallback(
-    async (file: File, caption?: string): Promise<UnifiedContent | null> => {
+    async (
+      file: File,
+      caption?: string,
+      options?: {
+        clientPublishId?: string;
+        musicTitle?: string | null;
+        musicTrackId?: string | null;
+        effectPreset?: string | null;
+        faceEnhance?: boolean;
+        aiEnhance?: boolean;
+        maxDurationSec?: number;
+        taggedUsers?: string[];
+        locationName?: string | null;
+        visibility?: 'public' | 'followers' | 'private';
+        allowComments?: boolean;
+        allowRemix?: boolean;
+      }
+    ): Promise<UnifiedContent | null> => {
       if (!user) {
         setError('User not authenticated');
         return null;
@@ -210,7 +244,7 @@ export function useUnifiedContentCreator(): UseUnifiedContentCreatorReturn {
       setError(null);
 
       try {
-        const clientPublishId = safeRandomUUID();
+        const clientPublishId = options?.clientPublishId || safeRandomUUID();
         const ext = file.name.split('.').pop() ?? 'mp4';
         const objectPath = `${user.id}/reels/${clientPublishId}/original.${ext.toLowerCase()}`;
 
@@ -223,7 +257,17 @@ export function useUnifiedContentCreator(): UseUnifiedContentCreatorReturn {
           p_video_url: publicUrl,
           p_thumbnail_url: null,
           p_description: caption || null,
-          p_music_title: null,
+          p_music_title: options?.musicTitle?.trim() || null,
+          p_music_track_id: options?.musicTrackId || null,
+          p_effect_preset: options?.effectPreset?.trim() || null,
+          p_face_enhance: options?.faceEnhance ?? false,
+          p_ai_enhance: options?.aiEnhance ?? false,
+          p_max_duration_sec: options?.maxDurationSec ?? null,
+          p_visibility: options?.visibility || 'public',
+          p_location_name: options?.locationName?.trim() || null,
+          p_tagged_users: Array.isArray(options?.taggedUsers) ? options?.taggedUsers : [],
+          p_allow_comments: options?.allowComments ?? true,
+          p_allow_remix: options?.allowRemix ?? true,
         });
 
         if (reelError) throw reelError;

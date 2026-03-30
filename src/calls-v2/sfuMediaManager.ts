@@ -1,4 +1,5 @@
 import { Device, types as mediasoupTypes } from 'mediasoup-client';
+import { logger } from '@/lib/logger';
 import {
   RelayStatsCollector,
   extractRelayMetrics,
@@ -38,46 +39,19 @@ export class SfuMediaManager {
     this.requireSenderReceiverAccessForE2ee = options?.requireSenderReceiverAccessForE2ee ?? false;
   }
 
-  private getTransportPeerConnection(
-    transport: mediasoupTypes.Transport | null,
-  ): RTCPeerConnection | null {
-    if (!transport) return null;
-    // BUG #4: Используется приватное API mediasoup-client, которое может измениться
-    // Добавляем логирование для диагностики
-    const handler = (transport as unknown as { _handler?: { _pc?: RTCPeerConnection } })._handler;
-    if (!handler) {
-      console.warn('[SfuMediaManager] _handler not found on transport - mediasoup-client API may have changed', {
-        transportId: transport.id,
-        hasHandlerProperty: '_handler' in transport,
-        timestamp: Date.now(),
-      });
-      return null;
-    }
-    const maybePc = handler._pc;
-    if (!maybePc) {
-      console.warn('[SfuMediaManager] _pc not found in _handler - mediasoup-client API may have changed', {
-        transportId: transport.id,
-        handlerKeys: Object.keys(handler),
-        timestamp: Date.now(),
-      });
-    }
-    return maybePc ?? null;
-  }
-
   private async collectRelaySampleFromTransport(
     transport: mediasoupTypes.Transport | null,
   ): Promise<RelaySelectionEvent | null> {
-    const pc = this.getTransportPeerConnection(transport);
-    if (!pc) return null;
+    if (!transport) return null;
     try {
-      const stats = await pc.getStats();
+      const stats = await transport.getStats();
       const sample = extractRelayMetrics(stats as unknown as Iterable<[string, Record<string, unknown>]>);
       if (sample) {
         this.relayStatsCollector.recordSample(sample);
       }
       return sample;
     } catch (error) {
-      console.warn('[SfuMediaManager] relay stats sample failed', error);
+      logger.warn('[SfuMediaManager] relay stats sample failed', error);
       return null;
     }
   }
@@ -96,7 +70,7 @@ export class SfuMediaManager {
 
     if (nextRoute !== this.lastRelayRoute) {
       this.lastRelayRoute = nextRoute;
-      console.info('[SfuMediaManager] media route changed', {
+      logger.info('[SfuMediaManager] media route changed', {
         route: nextRoute,
         relayFallbackCount: aggregate.relay_fallback_count,
         relayUsageRate: aggregate.relay_usage_rate,
@@ -171,7 +145,7 @@ export class SfuMediaManager {
     });
 
     this.sendTransport.on('connectionstatechange', (state: string) => {
-      console.log(`[SfuMediaManager] sendTransport connectionstatechange: ${state}`);
+      logger.debug(`[SfuMediaManager] sendTransport connectionstatechange: ${state}`);
       if (state === 'failed') {
         this.sendTransport?.close();
       }
@@ -210,7 +184,7 @@ export class SfuMediaManager {
     });
 
     this.recvTransport.on('connectionstatechange', (state: string) => {
-      console.log(`[SfuMediaManager] recvTransport connectionstatechange: ${state}`);
+      logger.debug(`[SfuMediaManager] recvTransport connectionstatechange: ${state}`);
       if (state === 'failed') {
         this.recvTransport?.close();
       }
@@ -238,34 +212,24 @@ export class SfuMediaManager {
 
     this.producers.set(producer.id, producer);
 
-    // C-3: Cache RTCRtpSender while track is still accessible after produce().
-    // This is required only when Insertable Streams E2EE is active.
+    // C-3: Cache RTCRtpSender for Insertable Streams E2EE.
+    // Uses public producer.rtpSender API (mediasoup-client ≥3.6) instead of private _handler._pc.
     try {
-      const pc = (this.sendTransport as any)._handler?._pc as RTCPeerConnection | undefined;
-      if (!pc) {
-        const error = new Error(
-          `[SfuMediaManager] Cannot locate RTCPeerConnection for sendTransport — ` +
-          `mediasoup-client internal API may have changed. Cannot apply E2EE transform.`
-        );
-        if (this.requireSenderReceiverAccessForE2ee) throw error;
-        console.warn(error.message);
-        return producer;
-      }
-      const sender = pc.getSenders().find((s) => s.track === track);
+      const sender = producer.rtpSender;
       if (!sender) {
         const error = new Error(
-          `[SfuMediaManager] RTCRtpSender not found for producer ${producer.id} after produce() — ` +
+          `[SfuMediaManager] producer.rtpSender is undefined for ${producer.id} — ` +
           `E2EE transform cannot be applied. Aborting produce to prevent plaintext media.`
         );
         if (this.requireSenderReceiverAccessForE2ee) throw error;
-        console.warn(error.message);
+        logger.warn(error.message);
         return producer;
       }
       this.producerSenders.set(producer.id, sender);
     } catch (e) {
       // Close producer immediately only in strict E2EE mode.
       if (!this.requireSenderReceiverAccessForE2ee) {
-        console.warn('[SfuMediaManager] Sender cache unavailable; continuing without E2EE transform', e);
+        logger.warn('[SfuMediaManager] Sender cache unavailable; continuing without E2EE transform', e);
         return producer;
       }
       if (!producer.closed) producer.close();
@@ -304,34 +268,24 @@ export class SfuMediaManager {
 
     this.consumers.set(consumer.id, consumer);
 
-    // C-3: Cache RTCRtpReceiver while track is still accessible after consume().
-    // This is required only when Insertable Streams E2EE is active.
+    // C-3: Cache RTCRtpReceiver for Insertable Streams E2EE.
+    // Uses public consumer.rtpReceiver API (mediasoup-client ≥3.6) instead of private _handler._pc.
     try {
-      const pc = (this.recvTransport as any)._handler?._pc as RTCPeerConnection | undefined;
-      if (!pc) {
-        const error = new Error(
-          `[SfuMediaManager] Cannot locate RTCPeerConnection for recvTransport — ` +
-          `mediasoup-client internal API may have changed. Cannot apply E2EE decrypt transform.`
-        );
-        if (this.requireSenderReceiverAccessForE2ee) throw error;
-        console.warn(error.message);
-        return consumer;
-      }
-      const receiver = pc.getReceivers().find((r) => r.track === consumer.track);
+      const receiver = consumer.rtpReceiver;
       if (!receiver) {
         const error = new Error(
-          `[SfuMediaManager] RTCRtpReceiver not found for consumer ${consumer.id} — ` +
+          `[SfuMediaManager] consumer.rtpReceiver is undefined for ${consumer.id} — ` +
           `E2EE decrypt transform cannot be applied. Aborting consume.`
         );
         if (this.requireSenderReceiverAccessForE2ee) throw error;
-        console.warn(error.message);
+        logger.warn(error.message);
         return consumer;
       }
       this.consumerReceivers.set(consumer.id, receiver);
     } catch (e) {
       // Close consumer immediately only in strict E2EE mode.
       if (!this.requireSenderReceiverAccessForE2ee) {
-        console.warn('[SfuMediaManager] Receiver cache unavailable; continuing without E2EE transform', e);
+        logger.warn('[SfuMediaManager] Receiver cache unavailable; continuing without E2EE transform', e);
         return consumer;
       }
       if (!consumer.closed) consumer.close();
@@ -382,6 +336,31 @@ export class SfuMediaManager {
    */
   getConsumerReceiver(consumerId: string): RTCRtpReceiver | null {
     return this.consumerReceivers.get(consumerId) ?? null;
+  }
+
+  /**
+   * Закрыть конкретный producer и вернуть его MediaStreamTrack (для recovery).
+   * Track можно использовать для повторного produce().
+   */
+  closeProducer(producerId: string): MediaStreamTrack | null {
+    const producer = this.producers.get(producerId);
+    if (!producer) return null;
+    const track = producer.track ?? null;
+    if (!producer.closed) producer.close();
+    this.producers.delete(producerId);
+    this.producerSenders.delete(producerId);
+    return track;
+  }
+
+  /**
+   * Закрыть конкретный consumer (для recovery — перед повторным consume).
+   */
+  closeConsumer(consumerId: string): void {
+    const consumer = this.consumers.get(consumerId);
+    if (!consumer) return;
+    if (!consumer.closed) consumer.close();
+    this.consumers.delete(consumerId);
+    this.consumerReceivers.delete(consumerId);
   }
 
   /** Закрыть всё и освободить ресурсы. */

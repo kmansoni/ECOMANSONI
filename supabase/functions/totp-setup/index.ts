@@ -23,6 +23,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { handleCors, getCorsHeaders } from "../_shared/utils.ts";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -226,17 +227,14 @@ async function hashBackupCode(token: string): Promise<string> {
   return `sha256:${bytesToHex(digest)}`;
 }
 
-// ─── CORS + JSON helpers ──────────────────────────────────────────────────────
+// ─── JSON helpers ─────────────────────────────────────────────────────────────
 
-const CORS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+let _corsHeaders: Record<string, string> = {};
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...CORS, "Content-Type": "application/json" },
+    headers: { ..._corsHeaders, "Content-Type": "application/json" },
   });
 }
 
@@ -445,9 +443,11 @@ async function handleBackup(userId: string, body: { code?: string }): Promise<Re
 // ─── Main router ─────────────────────────────────────────────────────────────
 
 serve(async (req: Request) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: CORS });
-  }
+  const corsResponse = handleCors(req);
+  if (corsResponse) return corsResponse;
+
+  const origin = req.headers.get("origin");
+  _corsHeaders = getCorsHeaders(origin);
 
   const url = new URL(req.url);
   const route = url.pathname.split("/").pop(); // last segment

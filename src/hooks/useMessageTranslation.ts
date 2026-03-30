@@ -1,23 +1,28 @@
 /**
- * useMessageTranslation — translates message text using free translation API.
+ * useMessageTranslation — translates message text using free translation APIs.
  *
  * Strategy:
  * 1. Primary: MyMemory Translation API (free, no key required, 5000 chars/day)
- * 2. Cache: sessionStorage to avoid re-translating same text
- * 3. Fallback: error message if API unavailable
+ * 2. Fallback: Lingva Translate (open-source Google Translate proxy)
+ * 3. Cache: sessionStorage to avoid re-translating same text
+ * 4. Retry: automatic fallback to second provider on failure
  */
 
 import { useState, useCallback } from "react";
 import { logger } from "@/lib/logger";
 
 const CACHE_PREFIX = "msg_translate_v1:";
-const API_URL = "https://api.mymemory.translated.net/get";
+const MYMEMORY_URL = "https://api.mymemory.translated.net/get";
+const LINGVA_URL = "https://lingva.ml/api/v1";
+const MAX_TEXT_LENGTH = 500;
+const REQUEST_TIMEOUT_MS = 8000;
 
 export interface TranslationResult {
   originalText: string;
   translatedText: string;
   sourceLang: string;
   targetLang: string;
+  provider: "mymemory" | "lingva";
 }
 
 function cacheKey(text: string, targetLang: string): string {
@@ -41,6 +46,58 @@ function writeCache(text: string, targetLang: string, translated: string): void 
   }
 }
 
+async function translateViaMyMemory(
+  text: string,
+  targetLang: string
+): Promise<{ translated: string; sourceLang: string }> {
+  const params = new URLSearchParams({
+    q: text.slice(0, MAX_TEXT_LENGTH),
+    langpair: `autodetect|${targetLang}`,
+  });
+
+  const res = await fetch(`${MYMEMORY_URL}?${params}`, {
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
+
+  if (!res.ok) throw new Error(`MyMemory API ${res.status}`);
+
+  const data = await res.json();
+
+  // Проверяем лимит запросов MyMemory
+  if (data?.responseStatus === 429 || data?.responseStatus === 403) {
+    throw new Error("MyMemory rate limit exceeded");
+  }
+
+  const translated = data?.responseData?.translatedText;
+  if (!translated) throw new Error("Empty translation from MyMemory");
+
+  return {
+    translated,
+    sourceLang: data?.responseData?.detectedLanguage ?? "auto",
+  };
+}
+
+async function translateViaLingva(
+  text: string,
+  targetLang: string
+): Promise<{ translated: string; sourceLang: string }> {
+  const encodedText = encodeURIComponent(text.slice(0, MAX_TEXT_LENGTH));
+  const res = await fetch(`${LINGVA_URL}/auto/${targetLang}/${encodedText}`, {
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
+
+  if (!res.ok) throw new Error(`Lingva API ${res.status}`);
+
+  const data = await res.json();
+  const translated = data?.translation;
+  if (!translated) throw new Error("Empty translation from Lingva");
+
+  return {
+    translated,
+    sourceLang: data?.info?.detectedSource ?? "auto",
+  };
+}
+
 export function useMessageTranslation() {
   const [translating, setTranslating] = useState(false);
   const [translations, setTranslations] = useState<Map<string, TranslationResult>>(new Map());
@@ -51,7 +108,7 @@ export function useMessageTranslation() {
     text: string,
     targetLang: string = "ru"
   ): Promise<TranslationResult | null> => {
-    // Check cache
+    // Проверяем кэш
     const cached = readCache(text, targetLang);
     if (cached) {
       const result: TranslationResult = {
@@ -59,6 +116,7 @@ export function useMessageTranslation() {
         translatedText: cached,
         sourceLang: "auto",
         targetLang,
+        provider: "mymemory",
       };
       setTranslations(prev => new Map(prev).set(messageId, result));
       return result;
@@ -67,45 +125,47 @@ export function useMessageTranslation() {
     setTranslating(true);
     setError(null);
 
-    try {
-      const params = new URLSearchParams({
-        q: text.slice(0, 500), // API limit
-        langpair: `autodetect|${targetLang}`,
-      });
+    // Провайдеры с автоматическим fallback
+    const providers = [
+      { name: "mymemory" as const, fn: translateViaMyMemory },
+      { name: "lingva" as const, fn: translateViaLingva },
+    ];
 
-      const res = await fetch(`${API_URL}?${params}`, {
-        signal: AbortSignal.timeout(8000),
-      });
+    for (const provider of providers) {
+      try {
+        const { translated, sourceLang } = await provider.fn(text, targetLang);
 
-      if (!res.ok) throw new Error(`API ${res.status}`);
+        writeCache(text, targetLang, translated);
 
-      const data = await res.json();
-      const translated = data?.responseData?.translatedText;
+        const result: TranslationResult = {
+          originalText: text,
+          translatedText: translated,
+          sourceLang,
+          targetLang,
+          provider: provider.name,
+        };
 
-      if (!translated) throw new Error("Empty translation");
-
-      writeCache(text, targetLang, translated);
-
-      const result: TranslationResult = {
-        originalText: text,
-        translatedText: translated,
-        sourceLang: data?.responseData?.detectedLanguage ?? "auto",
-        targetLang,
-      };
-
-      setTranslations(prev => new Map(prev).set(messageId, result));
-      return result;
-    } catch (err) {
-      logger.warn("[useMessageTranslation] Translation request failed", {
-        error: err,
-        targetLang,
-        textLength: text.length,
-      });
-      setError("Не удалось перевести сообщение");
-      return null;
-    } finally {
-      setTranslating(false);
+        setTranslations(prev => new Map(prev).set(messageId, result));
+        setTranslating(false);
+        return result;
+      } catch (err) {
+        logger.warn(`[useMessageTranslation] ${provider.name} failed, trying next`, {
+          error: err instanceof Error ? err.message : String(err),
+          targetLang,
+          textLength: text.length,
+        });
+        // Продолжаем к следующему провайдеру
+      }
     }
+
+    // Все провайдеры не сработали
+    logger.error("[useMessageTranslation] All providers failed", {
+      targetLang,
+      textLength: text.length,
+    });
+    setError("Не удалось перевести сообщение");
+    setTranslating(false);
+    return null;
   }, []);
 
   const getTranslation = useCallback((messageId: string): TranslationResult | null => {

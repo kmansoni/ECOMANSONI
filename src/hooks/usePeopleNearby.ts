@@ -13,6 +13,7 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { logger } from "@/lib/logger";
 
 export interface NearbyUser {
   id: string;
@@ -130,7 +131,7 @@ export function usePeopleNearby(): UsePeopleNearbyReturn {
       });
 
       if (fnErr) {
-        console.warn("[usePeopleNearby] updateMyLocation:", fnErr.message);
+        logger.warn("[usePeopleNearby] updateMyLocation", { error: fnErr.message });
         return;
       }
       lastUpdateRef.current = Date.now();
@@ -177,7 +178,7 @@ export function usePeopleNearby(): UsePeopleNearbyReturn {
           method: "POST",
           headers: { "x-path": "/hide" },
           body: {},
-        }).catch(() => {});
+        }).catch((err) => { logger.warn("[PeopleNearby] Operation failed", { error: err }); });
       }
     };
      

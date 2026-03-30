@@ -13,23 +13,20 @@ import {
   validateDelegationInDb,
   verifyDelegationJwtHs256,
 } from "../_shared/delegation.ts";
+import { handleCors, getCorsHeaders } from "../_shared/utils.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
-
-function json(status: number, body: unknown): Response {
+function json(status: number, body: unknown, req: Request): Response {
+  const origin = req.headers.get("origin");
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...getCorsHeaders(origin), "Content-Type": "application/json" },
   });
 }
 
 serve(async (req: Request) => {
-  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
-  if (req.method !== "POST") return json(405, { error: "Method not allowed" });
+  const corsResponse = handleCors(req);
+  if (corsResponse) return corsResponse;
+  if (req.method !== "POST") return json(405, { error: "Method not allowed" }, req);
 
   try {
     const supabaseUrl = requireEnv("SUPABASE_URL");
@@ -52,10 +49,10 @@ serve(async (req: Request) => {
       exp: payload.exp,
       iat: payload.iat,
       jti: payload.jti,
-    });
+    }, req);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    if (msg.includes("Authorization")) return json(401, { error: "Unauthorized" });
-    return json(401, { error: "Invalid or expired token" });
+    if (msg.includes("Authorization")) return json(401, { error: "Unauthorized" }, req);
+    return json(401, { error: "Invalid or expired token" }, req);
   }
 });

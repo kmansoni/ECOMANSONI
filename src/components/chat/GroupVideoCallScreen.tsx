@@ -184,7 +184,7 @@ function LocalTile({
     const el = videoRef.current;
     if (!el || !localStream) return;
     el.srcObject = localStream;
-    el.play().catch(() => {});
+    el.play().catch(() => { /* autoplay blocked */ });
     return () => { el.srcObject = null; };
   }, [localStream]);
 
@@ -259,10 +259,10 @@ export function GroupVideoCallScreen({
     const el = containerRef.current;
     if (!el) return;
     if (!document.fullscreenElement) {
-      await el.requestFullscreen().catch(() => {});
+      await el.requestFullscreen().catch(() => { /* fullscreen not available */ });
       setIsFullscreen(true);
     } else {
-      await document.exitFullscreen().catch(() => {});
+      await document.exitFullscreen().catch(() => { /* fullscreen not available */ });
       setIsFullscreen(false);
     }
   }, []);

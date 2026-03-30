@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, MapPin, Loader2, ExternalLink } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase, dbLoose } from "@/lib/supabase";
 
 interface LocationData {
   id: string;
@@ -32,11 +32,11 @@ export default function LocationPage() {
       setLoading(true);
       try {
         const [{ data: loc }, { data: postsData }] = await Promise.all([
-          (supabase as any).from("locations").select("*").eq("id", id).single(),
-          (supabase as any).from("posts").select("id, image_url, caption").eq("location_id", id).order("created_at", { ascending: false }).limit(30),
+          dbLoose.from("locations").select("*").eq("id", id).single(),
+          dbLoose.from("posts").select("id, image_url, caption").eq("location_id", id).order("created_at", { ascending: false }).limit(30),
         ]);
-        setLocation(loc);
-        setPosts(postsData ?? []);
+        setLocation((loc as unknown as LocationData | null) ?? null);
+        setPosts((postsData as unknown as Post[] | null) ?? []);
       } finally {
         setLoading(false);
       }

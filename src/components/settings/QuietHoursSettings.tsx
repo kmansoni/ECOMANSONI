@@ -7,6 +7,7 @@
 
 import React, { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { logger } from "@/lib/logger";
 import { Moon, Clock } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
@@ -89,7 +90,7 @@ export function QuietHoursSettings() {
       toast.success("Расписание тихих часов сохранено");
     } catch (e) {
       toast.error("Не удалось сохранить настройки");
-      console.error("[QuietHoursSettings] save error", e);
+      logger.error("[QuietHoursSettings] save error", { error: e });
     } finally {
       setSaving(false);
     }

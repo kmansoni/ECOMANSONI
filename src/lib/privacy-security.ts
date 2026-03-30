@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { logger } from "./logger";
 
 export type PrivacyAudience =
   | "everyone"
@@ -97,13 +98,17 @@ export const PRIVACY_RULE_DEFAULTS: Record<PrivacyRuleKey, Partial<PrivacyRule>>
   invites: { audience: "contacts" },
 };
 
-const supabaseAny = supabase as any;
+const supabaseAny = supabase;
 
 function allRuleKeys(): PrivacyRuleKey[] {
   return Object.keys(PRIVACY_RULE_DEFAULTS) as PrivacyRuleKey[];
 }
 
-function makeDefaultRows(userId: string): Array<Partial<PrivacyRule>> {
+type PrivacyRuleSeedRow =
+  Pick<PrivacyRule, "user_id" | "rule_key">
+  & Partial<Omit<PrivacyRule, "user_id" | "rule_key">>;
+
+function makeDefaultRows(userId: string): PrivacyRuleSeedRow[] {
   return allRuleKeys().map((ruleKey) => ({
     user_id: userId,
     rule_key: ruleKey,
@@ -127,7 +132,7 @@ export async function getOrCreatePrivacyRules(userId: string): Promise<PrivacyRu
     .from("privacy_rules")
     .upsert(makeDefaultRows(userId), { onConflict: "user_id,rule_key", ignoreDuplicates: true });
   if (seedError) {
-    console.error('[privacy-security] seed privacy rules failed:', seedError.message);
+    logger.error('[privacy-security] seed privacy rules failed', { error: seedError.message });
   }
 
   const { data, error } = await supabaseAny

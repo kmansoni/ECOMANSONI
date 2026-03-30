@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import { extractNormalizedHashtags, formatHashtag, type HashtagStatus } from "@/lib/hashtags";
+import { logger } from "./logger";
 
 type HashtagRow = {
   normalized_tag?: string | null;
@@ -79,7 +80,7 @@ export async function checkHashtagsAllowedForText(text: string): Promise<
 
     if (error) {
       if (isSchemaMissingError(error)) return { ok: true, normalizedTags };
-      console.warn("[HashtagModeration] status check failed:", error);
+      logger.warn("[HashtagModeration] status check failed", { error });
       return { ok: true, normalizedTags };
     }
 
@@ -100,7 +101,7 @@ export async function checkHashtagsAllowedForText(text: string): Promise<
 
     return { ok: false, normalizedTags, blockedTags };
   } catch (e) {
-    console.warn("[HashtagModeration] status check crashed:", e);
+    logger.warn("[HashtagModeration] status check crashed", { error: e });
     return { ok: true, normalizedTags };
   }
 }

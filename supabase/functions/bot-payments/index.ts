@@ -6,6 +6,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { handleCors, getCorsHeaders } from "../_shared/utils.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -38,18 +39,13 @@ interface RefundBody {
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-function corsHeaders() {
-  return {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-bot-token",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  };
-}
+// Фабрика json-ответа; origin передаётся из роутера
+let _currentOrigin: string | null = null;
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { ...corsHeaders(), "Content-Type": "application/json" },
+    headers: { ...getCorsHeaders(_currentOrigin), "Content-Type": "application/json" },
   });
 }
 
@@ -414,9 +410,10 @@ async function handleListInvoices(req: Request): Promise<Response> {
 // ── Router ─────────────────────────────────────────────────────────────────
 
 serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders() });
-  }
+  const corsResp = handleCors(req);
+  if (corsResp) return corsResp;
+
+  _currentOrigin = req.headers.get("origin");
 
   const url = new URL(req.url);
   const path = url.pathname.replace(/^\/bot-payments/, "").replace(/\/$/, "") || "/";

@@ -8,6 +8,7 @@ import {
   CLAIM_STATUS_COLORS,
   KBM_TABLE,
 } from "./constants";
+export { formatRating } from "@/lib/formatters/rating";
 
 /**
  * Форматирует страховую премию в читаемый вид
@@ -178,14 +179,6 @@ export function getPolicyProgressPercent(startDate: string, endDate: string): nu
   if (now >= end) return 100;
 
   return Math.round(((now - start) / (end - start)) * 100);
-}
-
-/**
- * Форматирует рейтинг компании
- * @example formatRating(4.7) => "4.7"
- */
-export function formatRating(rating: number): string {
-  return rating.toFixed(1);
 }
 
 /**

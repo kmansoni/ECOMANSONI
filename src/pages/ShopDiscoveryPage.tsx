@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, Store, ArrowLeft } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
+import { dbLoose } from '@/lib/supabase';
 import { motion } from 'framer-motion';
 
 const CATEGORIES = ['Все', 'Мода', 'Еда', 'Техника', 'Красота', 'Спорт', 'Дом', 'Искусство'];
@@ -26,13 +26,13 @@ export default function ShopDiscoveryPage() {
   useEffect(() => {
     void (async () => {
       setLoading(true);
-      const query = (supabase as any)
+      const query = dbLoose
         .from('shops')
         .select('*, profiles(username, avatar_url)')
         .order('created_at', { ascending: false });
 
       const { data } = await query;
-      setShops(data ?? []);
+      setShops((data as unknown as ShopItem[] | null) ?? []);
       setLoading(false);
     })();
   }, []);

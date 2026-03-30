@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { formatLastSeen, isOnline as isOnlineFromLastSeen } from "@/hooks/usePresence";
 import { getErrorMessage } from "@/lib/utils";
+import { PRESENCE_POLL_MS } from "@/lib/timing";
 
 export function useUserPresenceStatus(userId?: string | null) {
   const [lastSeenAt, setLastSeenAt] = useState<string | null>(null);
@@ -54,7 +55,7 @@ export function useUserPresenceStatus(userId?: string | null) {
     };
 
     void fetchLastSeen();
-    interval = window.setInterval(fetchLastSeen, 30000);
+    interval = window.setInterval(fetchLastSeen, PRESENCE_POLL_MS);
 
     const channel = supabase
       .channel(`presence:profile:${userId}`)

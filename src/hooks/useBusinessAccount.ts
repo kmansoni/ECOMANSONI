@@ -74,6 +74,19 @@ export type CreateBusinessData = Pick<
   | "auto_reply_enabled"
 >;
 
+/** Ответ Supabase для таблиц, отсутствующих в generated types */
+interface UntypedResult<T> {
+  data: T | null;
+  error: { message: string; code?: string } | null;
+}
+
+interface BusinessStatsResponse {
+  ok: boolean;
+  chats_today: number;
+  chats_week: number;
+  chats_month: number;
+}
+
 // ── Hook ───────────────────────────────────────────────────────────────────
 
 interface UseBusinessAccountReturn {
@@ -113,18 +126,18 @@ export function useBusinessAccount(): UseBusinessAccountReturn {
         .from("business_accounts")
         .select("*")
         .eq("user_id", user.id)
-        .single();
+        .single() as UntypedResult<BusinessAccount>;
       if (cancelled) return;
       if (qErr && qErr.code !== "PGRST116") {
         setError(qErr.message);
       } else if (data) {
-        setAccount(data as BusinessAccount);
+        setAccount(data);
         // Load chat labels
         const { data: labels } = await (supabase as any)
           .from("business_chat_labels")
           .select("*")
-          .eq("business_id", (data as BusinessAccount).id);
-        if (!cancelled) setChatLabels((labels ?? []) as ChatLabel[]);
+          .eq("business_id", data.id) as UntypedResult<ChatLabel[]>;
+        if (!cancelled) setChatLabels(labels ?? []);
       }
       setIsLoading(false);
     };
@@ -142,12 +155,12 @@ export function useBusinessAccount(): UseBusinessAccountReturn {
         .from("business_accounts")
         .insert({ ...data, user_id: user.id, quick_replies: [], labels: [] })
         .select()
-        .single();
+        .single() as UntypedResult<BusinessAccount>;
       if (insertErr) {
         setError(insertErr.message);
         return { ok: false, error: insertErr.message };
       }
-      setAccount(created as BusinessAccount);
+      setAccount(created);
       return { ok: true };
     } catch (e) {
       const msg = e instanceof Error ? e.message : "unknown_error";
@@ -169,12 +182,12 @@ export function useBusinessAccount(): UseBusinessAccountReturn {
         .eq("id", account.id)
         .eq("user_id", user.id) // RLS double-check
         .select()
-        .single();
+        .single() as UntypedResult<BusinessAccount>;
       if (updateErr) {
         setError(updateErr.message);
         return { ok: false, error: updateErr.message };
       }
-      setAccount(updated as BusinessAccount);
+      setAccount(updated);
       return { ok: true };
     } catch (e) {
       const msg = e instanceof Error ? e.message : "unknown_error";
@@ -193,7 +206,7 @@ export function useBusinessAccount(): UseBusinessAccountReturn {
         .from("business_accounts")
         .delete()
         .eq("id", account.id)
-        .eq("user_id", user.id);
+        .eq("user_id", user.id) as UntypedResult<unknown>;
       if (delErr) return { ok: false, error: delErr.message };
       setAccount(null);
       setChatLabels([]);
@@ -227,9 +240,9 @@ export function useBusinessAccount(): UseBusinessAccountReturn {
       .from("business_chat_labels")
       .insert({ business_id: account.id, chat_id: chatId, label, color })
       .select()
-      .single();
+      .single() as UntypedResult<ChatLabel>;
     if (insertErr) return { ok: false, error: insertErr.message };
-    setChatLabels((prev) => [...prev, created as ChatLabel]);
+    if (created) setChatLabels((prev) => [...prev, created]);
     return { ok: true };
   }, [account]);
 
@@ -240,7 +253,7 @@ export function useBusinessAccount(): UseBusinessAccountReturn {
       .delete()
       .eq("business_id", account.id)
       .eq("chat_id", chatId)
-      .eq("label", label);
+      .eq("label", label) as UntypedResult<unknown>;
     if (delErr) return { ok: false, error: delErr.message };
     setChatLabels((prev) => prev.filter((l) => !(l.chat_id === chatId && l.label === label)));
     return { ok: true };
@@ -248,7 +261,7 @@ export function useBusinessAccount(): UseBusinessAccountReturn {
 
   const reloadStats = useCallback(async () => {
     if (!account) return;
-    const { data } = await (supabase as any).rpc("get_business_stats", { p_business_id: account.id });
+    const { data } = await (supabase as any).rpc("get_business_stats", { p_business_id: account.id }) as UntypedResult<BusinessStatsResponse>;
     if (data?.ok) {
       setStats({
         chats_today: data.chats_today ?? 0,

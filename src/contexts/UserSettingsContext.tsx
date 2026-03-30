@@ -40,27 +40,34 @@ export function UserSettingsProvider({ children }: { children: React.ReactNode }
 
   const userId = user?.id ?? null;
 
+  // Cancellation token for refresh: every new call increments the counter;
+  // a stale in-flight call detects the mismatch and discards its result.
+  const refreshTokenRef = React.useRef(0);
+
   // Register this device/session + keep heartbeat; also enforce auto-terminate policy.
   React.useEffect(() => {
     if (!userId) return;
 
-    let interval: any = null;
-    let channel: any = null;
+    let interval: ReturnType<typeof setInterval> | null = null;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
     let cancelled = false;
 
     const run = async () => {
       const { data } = await supabase.auth.getSession();
+      if (cancelled) return;
       const session = data.session;
       if (!session) return;
 
       await upsertMySession({ userId, session, deviceName: null });
+      if (cancelled) return;
 
       // Cleanup inactive sessions based on current settings (or default 180 days).
       const autoDays = (settings?.sessions_auto_terminate_days ?? 180) || 180;
       await cleanupInactiveSessions({ userId, autoTerminateDays: autoDays });
+      if (cancelled) return;
 
       const myKey = await computeSessionKey(session);
-      if (!myKey) return;
+      if (cancelled || !myKey) return;
 
       channel = supabase
         .channel(`my-session:${userId}`)
@@ -112,14 +119,17 @@ export function UserSettingsProvider({ children }: { children: React.ReactNode }
       return;
     }
 
+    // Stamp this call; if a newer call supersedes us we discard our result.
+    const token = ++refreshTokenRef.current;
     setLoading(true);
     try {
       const next = await getOrCreateUserSettings(userId);
+      if (token !== refreshTokenRef.current) return; // stale — newer call already resolved
       setSettings(next);
       applyRootFlags(next);
       setTheme(next.theme);
     } finally {
-      setLoading(false);
+      if (token === refreshTokenRef.current) setLoading(false);
     }
   }, [setTheme, userId]);
 

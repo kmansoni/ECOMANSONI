@@ -8,6 +8,7 @@ import { ARFilterStrip } from './ARFilterStrip';
 import { type ARFilter } from '@/lib/ar/filters';
 import { loadModel, detectFaces } from '@/lib/ar/faceDetection';
 import { loadSegmentationModel, segmentPerson, applyBackgroundBlur } from '@/lib/ar/backgroundSegmentation';
+import { logger } from '@/lib/logger';
 
 interface ARFilterCameraProps {
   onCapture?: (dataUrl: string) => void;
@@ -48,7 +49,7 @@ export function ARFilterCamera({ onCapture, onClose }: ARFilterCameraProps) {
       setCameraError(null);
     } catch (e) {
       setCameraError('Нет доступа к камере');
-      console.error(e);
+      logger.error('[ARFilterCamera] camera error', { error: e });
     }
   }, [facingMode, mode]);
 
@@ -173,7 +174,7 @@ export function ARFilterCamera({ onCapture, onClose }: ARFilterCameraProps) {
         await navigator.share({ files: [file] });
       }
     } catch (e) {
-      console.error(e);
+      logger.error('[ARFilterCamera] filter error', { error: e });
     }
   };
 

@@ -7,6 +7,7 @@ import { useState } from "react";
 import { X, Save, Briefcase, DollarSign, Star, Clock, Users, Globe } from "lucide-react";
 import { crm, type HRJob, type HREmploymentType, type HRGrade, type HREnglishLevel } from "@/lib/crm";
 import { toast } from "sonner";
+import { logger } from "@/lib/logger";
 
 const EMPLOYMENT_TYPES: Array<{ value: HREmploymentType; label: string }> = [
   { value: 'full_time',   label: 'Полная занятость' },
@@ -154,7 +155,7 @@ export function CRMHRJobForm({ initial, onClose, onSaved }: Props) {
       onSaved(saved);
     } catch (err) {
       toast.error('Ошибка сохранения вакансии');
-      console.error(err);
+      logger.error('[CRMHRJobForm] submit error', { error: err });
     } finally {
       setSaving(false);
     }

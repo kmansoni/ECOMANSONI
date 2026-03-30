@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { uploadMedia } from '@/lib/mediaUpload';
+import { isTableMissingError } from '@/lib/utils/isTableMissingError';
 
 export interface ChatSettings {
   notifications_enabled: boolean;
@@ -75,11 +76,6 @@ export function useChatSettings(conversationId?: string) {
   const [globalTableAvailable, setGlobalTableAvailable] = useState(true);
   const [chatTableAvailable, setChatTableAvailable] = useState(true);
 
-  const isMissingTableError = (error: any): boolean => {
-    const msg = String(error?.message ?? '');
-    return error?.code === '42P01' || error?.code === 'PGRST205' || msg.includes('Could not find the table') || msg.includes('does not exist');
-  };
-
   const loadGlobalSettings = useCallback(async () => {
     if (!user || !globalTableAvailable) return;
     const { data, error } = await supabase
@@ -88,7 +84,7 @@ export function useChatSettings(conversationId?: string) {
       .eq('user_id', user.id)
       .maybeSingle();
     if (error) {
-      if (isMissingTableError(error)) setGlobalTableAvailable(false);
+      if (isTableMissingError(error)) setGlobalTableAvailable(false);
       return;
     }
     if (data) setGlobalSettings({ ...DEFAULT_GLOBAL_SETTINGS, ...(data as object) });
@@ -103,7 +99,7 @@ export function useChatSettings(conversationId?: string) {
       .eq('conversation_id', conversationId)
       .maybeSingle();
     if (error) {
-      if (isMissingTableError(error)) setChatTableAvailable(false);
+      if (isTableMissingError(error)) setChatTableAvailable(false);
       return;
     }
     if (data) setSettings({ ...DEFAULT_CHAT_SETTINGS, ...(data as object) });
@@ -132,7 +128,7 @@ export function useChatSettings(conversationId?: string) {
         [key]: value,
         updated_at: new Date().toISOString(),
       } as never, { onConflict: 'user_id,conversation_id' });
-    if (error && isMissingTableError(error)) {
+    if (error && isTableMissingError(error)) {
       setChatTableAvailable(false);
     }
   }, [user, conversationId, chatTableAvailable]);
@@ -151,7 +147,7 @@ export function useChatSettings(conversationId?: string) {
         [key]: value,
         updated_at: new Date().toISOString(),
       } as never, { onConflict: 'user_id' });
-    if (error && isMissingTableError(error)) {
+    if (error && isTableMissingError(error)) {
       setGlobalTableAvailable(false);
     }
   }, [user, globalTableAvailable]);

@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { logger } from "@/lib/logger";
 import { toast } from "sonner";
 import { INSURANCE_COMPANIES } from "@/lib/insurance/companies-dictionary";
 import {
@@ -198,7 +199,7 @@ export default function InsuranceApplyPage() {
           setFormData(JSON.parse(saved));
           return;
         } catch (parseError) {
-          console.warn("[InsuranceApplyPage] Failed to parse draft, clearing corrupted storage", parseError);
+          logger.warn("[InsuranceApplyPage] Failed to parse draft, clearing corrupted storage", { error: parseError });
           localStorage.removeItem(`insurance_draft_${category}`);
         }
       }

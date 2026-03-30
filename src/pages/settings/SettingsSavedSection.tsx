@@ -15,6 +15,34 @@ import type { SectionProps, SettingsPostItem } from "./types";
 
 // ——— Internal helpers ———————————————————————————————————————————————————
 
+interface PostMediaRow {
+  media_url: string | null;
+  sort_order: number | null;
+}
+
+interface PostRow {
+  id: string;
+  content: string | null;
+  created_at: string;
+  likes_count: number | null;
+  comments_count: number | null;
+  post_media: PostMediaRow[] | null;
+}
+
+interface SavedPostRefRow {
+  post_id: string;
+  created_at: string;
+}
+
+interface PostLikeRefRow {
+  post_id: string;
+  created_at: string;
+}
+
+interface CountOnlyRow {
+  post_id: string;
+}
+
 async function fetchPostsByIds(postIds: string[]): Promise<Map<string, SettingsPostItem>> {
   if (!postIds.length) return new Map();
   const { data, error } = await supabase
@@ -23,9 +51,9 @@ async function fetchPostsByIds(postIds: string[]): Promise<Map<string, SettingsP
     .in("id", postIds);
   if (error) throw error;
   const map = new Map<string, SettingsPostItem>();
-  for (const row of (data ?? []) as any[]) {
+  for (const row of (data ?? []) as unknown as PostRow[]) {
     const media = Array.isArray(row.post_media) ? row.post_media : [];
-    media.sort((a: any, b: any) => (a?.sort_order ?? 0) - (b?.sort_order ?? 0));
+    media.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
     map.set(String(row.id), {
       id: String(row.id),
       content: row.content ?? null,
@@ -55,15 +83,16 @@ function SavedAllPostsScreen({ isDark, onBack }: SubProps) {
     setLoading(true);
     (async () => {
       try {
-        const { data, error } = await (supabase as any)
+        const { data, error } = await supabase
           .from("saved_posts")
           .select("post_id, created_at")
           .eq("user_id", user.id)
           .order("created_at", { ascending: false });
         if (error) throw error;
-        const ids = (data ?? []).map((r: any) => String(r.post_id));
+        const refs = (data ?? []) as unknown as SavedPostRefRow[];
+        const ids = refs.map((r) => String(r.post_id));
         const map = await fetchPostsByIds(ids);
-        setPosts(ids.map((id: string) => map.get(id)).filter(Boolean) as SettingsPostItem[]);
+        setPosts(ids.map((id) => map.get(id)).filter(Boolean) as SettingsPostItem[]);
       } catch (e) {
         toast({ title: "Saved", description: getErrorMessage(e) });
       } finally {
@@ -102,15 +131,16 @@ function SavedLikedPostsScreen({ isDark, onBack }: SubProps) {
     setLoading(true);
     (async () => {
       try {
-        const { data, error } = await (supabase as any)
+        const { data, error } = await supabase
           .from("post_likes")
           .select("post_id, created_at")
           .eq("user_id", user.id)
           .order("created_at", { ascending: false });
         if (error) throw error;
-        const ids = (data ?? []).map((r: any) => String(r.post_id));
+        const refs = (data ?? []) as unknown as PostLikeRefRow[];
+        const ids = refs.map((r) => String(r.post_id));
         const map = await fetchPostsByIds(ids);
-        setPosts(ids.map((id: string) => map.get(id)).filter(Boolean) as SettingsPostItem[]);
+        setPosts(ids.map((id) => map.get(id)).filter(Boolean) as SettingsPostItem[]);
       } catch (e) {
         toast({ title: "Liked Posts", description: getErrorMessage(e) });
       } finally {
@@ -156,13 +186,15 @@ export function SettingsSavedSection({ isDark, currentScreen, onNavigate, onBack
     if (!user?.id) return;
     try {
       const [savedRes, likedRes] = await Promise.all([
-        (supabase as any).from("saved_posts").select("post_id").eq("user_id", user.id),
-        (supabase as any).from("post_likes").select("post_id").eq("user_id", user.id),
+        supabase.from("saved_posts").select("post_id").eq("user_id", user.id),
+        supabase.from("post_likes").select("post_id").eq("user_id", user.id),
       ]);
-      setSavedAllPosts((savedRes.data ?? []).map((r: any) => ({ id: r.post_id } as SettingsPostItem)));
-      setSavedLikedPosts((likedRes.data ?? []).map((r: any) => ({ id: r.post_id } as SettingsPostItem)));
-    } catch {
-      // counts are non-critical
+      const savedRows = (savedRes.data ?? []) as unknown as CountOnlyRow[];
+      const likedRows = (likedRes.data ?? []) as unknown as CountOnlyRow[];
+      setSavedAllPosts(savedRows.map((r) => ({ id: r.post_id } as SettingsPostItem)));
+      setSavedLikedPosts(likedRows.map((r) => ({ id: r.post_id } as SettingsPostItem)));
+    } catch (error) {
+      void error;
     }
   }, [user?.id]);
 
