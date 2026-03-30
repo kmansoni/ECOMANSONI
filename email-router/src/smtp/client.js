@@ -239,7 +239,9 @@ export async function sendMail(mail, smtpOverride = null) {
     const caps = parseCapabilities(resp);
 
     // ── 4. STARTTLS (if server advertises and not already TLS) ──────────────
-    if (!secure && caps.has('STARTTLS')) {
+    // SMTP_IGNORE_STARTTLS=true skips upgrade (for localhost Postfix with self-signed cert)
+    const ignoreStarttls = process.env.SMTP_IGNORE_STARTTLS === 'true';
+    if (!secure && !ignoreStarttls && caps.has('STARTTLS')) {
       const st = await command(socket, 'STARTTLS', T.STARTTLS);
       if (st.code !== 220) throw new SmtpError(st.code, st.resp);
 

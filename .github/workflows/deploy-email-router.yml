@@ -80,6 +80,7 @@ jobs:
             upsert "MAIL_DOMAIN"           "mansoni.ru"
             upsert "CORS_ORIGINS"          "https://mansoni.ru,https://kmansoni.github.io"
             upsert "LOG_LEVEL"             "info"
+            upsert "SMTP_IGNORE_STARTTLS"   "true"
 
             echo "── [email-router] Postfix: ensure outbound relay from localhost ──"
             if command -v postfix >/dev/null 2>&1; then
@@ -171,11 +172,12 @@ jobs:
 
             echo "── [email-router] Direct /send test ──"
             set -a; . "$ROUTER_ENV"; set +a
-            curl -sf -X POST http://127.0.0.1:8090/send \
+            SEND_RESP=$(curl -s -X POST http://127.0.0.1:8090/send \
               -H "Content-Type: application/json" \
               -H "X-API-Key: ${EMAIL_ROUTER_API_KEY}" \
-              -d '{"to":"test-deploy@mansoni.ru","subject":"Deploy test","text":"SMTP relay test from deploy"}' \
-              -w " HTTP:%{http_code}" 2>&1 || echo "[email-router] direct send test failed (see above)"
+              -d '{"to":"admin@mansoni.ru","subject":"Deploy smoke test","text":"SMTP relay test from deploy"}' \
+              -w "\nHTTP:%{http_code}" 2>&1)
+            echo "[email-router] direct /send result: $SEND_RESP"
 
             echo "── [email-router] Done ──"
 
