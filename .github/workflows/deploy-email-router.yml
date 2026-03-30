@@ -1,0 +1,148 @@
+name: Deploy Email Router → AdminVPS
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - email-router/**
+      - .github/workflows/deploy-email-router.yml
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-email-router
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy email-router → VPS
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy email-router on AdminVPS
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          EMAIL_ROUTER_API_KEY: ${{ secrets.EMAIL_ROUTER_API_KEY }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        with:
+          host:     ${{ secrets.ADMINVPS_HOST }}
+          username: ${{ secrets.ADMINVPS_USER }}
+          key:      ${{ secrets.ADMINVPS_SSH_KEY }}
+          port:     22
+          timeout:  120s
+          envs:     EMAIL_ROUTER_API_KEY,SUPABASE_ACCESS_TOKEN
+          script: |
+            set -euo pipefail
+            APP_DIR="${ADMINVPS_APP_DIR:-/opt/mansoni/app}"
+            ROUTER_DIR="$APP_DIR/email-router"
+            ROUTER_ENV="$ROUTER_DIR/.env"
+            LOCK="/tmp/email-router-deploy.lock"
+            exec 9>"$LOCK"; flock -w 30 9
+
+            echo "── [email-router] Syncing code ──"
+            cd "$APP_DIR"
+            git config --global --add safe.directory "$APP_DIR"
+            rm -f .git/index.lock .git/MERGE_HEAD || true
+            git fetch origin main
+            git checkout main
+            git reset --hard origin/main
+
+            echo "── [email-router] Writing .env ──"
+            touch "$ROUTER_ENV"
+            chmod 600 "$ROUTER_ENV"
+
+            upsert() {
+              local k="$1" v="$2"
+              if grep -q "^${k}=" "$ROUTER_ENV" 2>/dev/null; then
+                sed -i "s|^${k}=.*|${k}=${v}|" "$ROUTER_ENV"
+              else
+                printf '%s=%s\n' "$k" "$v" >> "$ROUTER_ENV"
+              fi
+            }
+
+            upsert "EMAIL_ROUTER_API_KEY"  "${EMAIL_ROUTER_API_KEY}"
+            upsert "EMAIL_ROUTER_PORT"     "8090"
+            upsert "SMTP_HOST"             "127.0.0.1"
+            upsert "SMTP_PORT"             "25"
+            upsert "SMTP_SECURE"           "false"
+            upsert "SMTP_FROM"             "noreply@mansoni.ru"
+            upsert "MAIL_DOMAIN"           "mansoni.ru"
+            upsert "CORS_ORIGINS"          "https://mansoni.ru,https://kmansoni.github.io"
+            upsert "LOG_LEVEL"             "info"
+
+            echo "── [email-router] Docker build & up ──"
+            cd "$ROUTER_DIR"
+
+            if docker compose version >/dev/null 2>&1; then
+              DC="docker compose"
+            elif docker-compose version >/dev/null 2>&1; then
+              DC="docker-compose"
+            else
+              DC="sudo docker compose"
+            fi
+
+            $DC --env-file .env build --no-cache --quiet
+            $DC --env-file .env up -d --remove-orphans
+
+            echo "── [email-router] Health check ──"
+            for i in $(seq 1 10); do
+              sleep 2
+              if curl -sf http://127.0.0.1:8090/health >/dev/null 2>&1; then
+                echo "[email-router] Healthy after ${i}×2s"
+                break
+              fi
+              if [ "$i" -eq 10 ]; then
+                echo "[email-router] ERROR: not healthy after 20s"
+                $DC logs --tail=30 email-router || true
+                exit 1
+              fi
+            done
+
+            echo "── [email-router] Nginx setup ──"
+            NGINX_CONF="/etc/nginx/sites-available/mail.mansoni.ru"
+            NGINX_ENABLED="/etc/nginx/sites-enabled/mail.mansoni.ru"
+
+            if ! diff -q "$ROUTER_DIR/nginx.conf" "$NGINX_CONF" >/dev/null 2>&1; then
+              sudo cp "$ROUTER_DIR/nginx.conf" "$NGINX_CONF"
+              echo "[email-router] Nginx config updated"
+            fi
+
+            if [ ! -L "$NGINX_ENABLED" ]; then
+              sudo ln -sf "$NGINX_CONF" "$NGINX_ENABLED"
+              echo "[email-router] Nginx symlink created"
+            fi
+
+            if [ ! -d "/etc/letsencrypt/live/mail.mansoni.ru" ]; then
+              echo "[email-router] Obtaining SSL cert..."
+              sudo certbot --nginx -d mail.mansoni.ru \
+                --non-interactive --agree-tos \
+                -m admin@mansoni.ru --redirect || echo "[email-router] certbot failed — check manually"
+            fi
+
+            sudo nginx -t
+            sudo systemctl reload nginx
+            echo "── [email-router] Nginx reloaded ──"
+
+      - name: Update Supabase EMAIL_ROUTER_URL secret
+        run: |
+          npx supabase@latest secrets set \
+            EMAIL_ROUTER_URL="https://mail.mansoni.ru" \
+            --project-ref lfkbgnbjxskspsownvjm
+          echo "Supabase secret EMAIL_ROUTER_URL set to https://mail.mansoni.ru"
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+      - name: Smoke test
+        run: |
+          sleep 5
+          HTTP=$(curl -o /dev/null -sf -w "%{http_code}" \
+            --retry 3 --retry-delay 3 --max-time 10 \
+            https://mail.mansoni.ru/health)
+          echo "mail.mansoni.ru/health → $HTTP"
+          if [ "$HTTP" != "200" ]; then
+            echo "::error::Email router health check failed (HTTP $HTTP)"
+            exit 1
+          fi
