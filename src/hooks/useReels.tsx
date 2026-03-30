@@ -197,14 +197,10 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
       };
 
       const fetchReelsFallback = async () => {
-        const buildQuery = () => {
+        const buildBaseQuery = () => {
           let query = (supabase as any)
             .from("reels")
             .select("*")
-            .neq("moderation_status", "blocked")
-            .eq("is_nsfw", false)
-            .eq("is_graphic_violence", false)
-            .eq("is_political_extremism", false)
             .order("created_at", { ascending: false })
             .range(offset, offset + limit - 1);
 
@@ -216,12 +212,49 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
           return query;
         };
 
-        const queryWithModeration = buildQuery();
-        if (!queryWithModeration) return [] as any[];
+        // Try with moderation filters first
+        try {
+          const baseQuery = buildBaseQuery();
+          if (!baseQuery) return [] as any[];
 
-        const res = await queryWithModeration;
-        if (res.error) throw res.error;
-        return (res.data || []) as any[];
+          const queryWithModeration = (supabase as any)
+            .from("reels")
+            .select("*")
+            .neq("moderation_status", "blocked")
+            .eq("is_nsfw", false)
+            .eq("is_graphic_violence", false)
+            .eq("is_political_extremism", false)
+            .order("created_at", { ascending: false })
+            .range(offset, offset + limit - 1);
+
+          const withFilter = feedMode === "friends" && followedAuthorIds && followedAuthorIds.length > 0
+            ? queryWithModeration.in("author_id", followedAuthorIds)
+            : queryWithModeration;
+
+          const res = await withFilter;
+          if (!res.error) return (res.data || []) as any[];
+
+          // Moderation columns might not exist — fall through to simple query
+          logger.warn("[useReels] moderation-filtered query failed, trying without moderation", { error: res.error });
+        } catch (e) {
+          logger.warn("[useReels] moderation-filtered query exception", { error: e });
+        }
+
+        // Fallback: query without moderation columns
+        try {
+          const simpleQuery = buildBaseQuery();
+          if (!simpleQuery) return [] as any[];
+
+          const res = await simpleQuery;
+          if (res.error) {
+            logger.warn("[useReels] simple reels query failed", { error: res.error });
+            return [] as any[];
+          }
+          return (res.data || []) as any[];
+        } catch (e) {
+          logger.warn("[useReels] simple reels query exception", { error: e });
+          return [] as any[];
+        }
       };
 
       if (feedMode === "reels") {

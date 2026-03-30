@@ -88,8 +88,11 @@ verify_jwt = true
 [functions.property-assistant]
 verify_jwt = true
 
+[functions.get-feed-v2]
+verify_jwt = false
+
 [functions.reels-feed]
-verify_jwt = true
+verify_jwt = false
 
 [functions.setup-owner]
 verify_jwt = true
