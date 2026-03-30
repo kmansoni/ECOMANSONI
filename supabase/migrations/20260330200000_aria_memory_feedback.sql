@@ -27,6 +27,8 @@ CREATE TABLE IF NOT EXISTS aria_memories (
 
 ALTER TABLE aria_memories ENABLE ROW LEVEL SECURITY;
 
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: new table, policy cannot exist before this migration
+DROP POLICY IF EXISTS "aria_memories_own" ON aria_memories;
 CREATE POLICY "aria_memories_own"
   ON aria_memories FOR ALL TO authenticated
   USING (user_id = auth.uid());
@@ -63,6 +65,8 @@ CREATE TABLE IF NOT EXISTS ai_feedback (
 
 ALTER TABLE ai_feedback ENABLE ROW LEVEL SECURITY;
 
+-- ALLOW_NON_IDEMPOTENT_POLICY_DDL: new table, policy cannot exist before this migration
+DROP POLICY IF EXISTS "ai_feedback_own" ON ai_feedback;
 CREATE POLICY "ai_feedback_own"
   ON ai_feedback FOR ALL TO authenticated
   USING (user_id = auth.uid());
