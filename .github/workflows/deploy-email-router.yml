@@ -26,14 +26,13 @@ jobs:
         uses: appleboy/ssh-action@v1.2.0
         env:
           EMAIL_ROUTER_API_KEY: ${{ secrets.EMAIL_ROUTER_API_KEY }}
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         with:
           host:     ${{ secrets.ADMINVPS_HOST }}
           username: ${{ secrets.ADMINVPS_USER }}
           key:      ${{ secrets.ADMINVPS_SSH_KEY }}
           port:     22
           timeout:  120s
-          envs:     EMAIL_ROUTER_API_KEY,SUPABASE_ACCESS_TOKEN
+          envs:     EMAIL_ROUTER_API_KEY
           script: |
             set -euo pipefail
             APP_DIR="${ADMINVPS_APP_DIR:-/opt/mansoni/app}"
@@ -49,6 +48,15 @@ jobs:
             git fetch origin main
             git checkout main
             git reset --hard origin/main
+
+            echo "── [email-router] Node.js version ──"
+            node --version || { curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt-get install -y nodejs; }
+            node --version
+
+            echo "── [email-router] PM2 ──"
+            if ! command -v pm2 >/dev/null 2>&1; then
+              sudo npm install -g pm2
+            fi
 
             echo "── [email-router] Writing .env ──"
             touch "$ROUTER_ENV"
@@ -73,19 +81,19 @@ jobs:
             upsert "CORS_ORIGINS"          "https://mansoni.ru,https://kmansoni.github.io"
             upsert "LOG_LEVEL"             "info"
 
-            echo "── [email-router] Docker build & up ──"
+            echo "── [email-router] Start / restart via PM2 ──"
             cd "$ROUTER_DIR"
 
-            if docker compose version >/dev/null 2>&1; then
-              DC="docker compose"
-            elif docker-compose version >/dev/null 2>&1; then
-              DC="docker-compose"
+            if pm2 describe email-router >/dev/null 2>&1; then
+              pm2 reload email-router --update-env
             else
-              DC="sudo docker compose"
+              pm2 start src/index.js --name email-router \
+                --env-file .env \
+                --time \
+                --max-restarts 5 \
+                --restart-delay 3000
             fi
-
-            $DC --env-file .env build --no-cache --quiet
-            $DC --env-file .env up -d --remove-orphans
+            pm2 save
 
             echo "── [email-router] Health check ──"
             for i in $(seq 1 10); do
@@ -96,7 +104,7 @@ jobs:
               fi
               if [ "$i" -eq 10 ]; then
                 echo "[email-router] ERROR: not healthy after 20s"
-                $DC logs --tail=30 email-router || true
+                pm2 logs email-router --lines 30 --nostream || true
                 exit 1
               fi
             done
@@ -122,9 +130,8 @@ jobs:
                 -m admin@mansoni.ru --redirect || echo "[email-router] certbot failed — check manually"
             fi
 
-            sudo nginx -t
-            sudo systemctl reload nginx
-            echo "── [email-router] Nginx reloaded ──"
+            sudo nginx -t && sudo systemctl reload nginx
+            echo "── [email-router] Done ──"
 
       - name: Update Supabase EMAIL_ROUTER_URL secret
         run: |
