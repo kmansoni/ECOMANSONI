@@ -82,7 +82,7 @@ export function HomePage() {
 
   return (
     <PullToRefresh onRefresh={handleRefresh}>
-      <div className="min-h-screen">
+      <div className="min-h-screen feed-column">
         <FeedHeader />
 
         {/* Smart Feed Toggle */}

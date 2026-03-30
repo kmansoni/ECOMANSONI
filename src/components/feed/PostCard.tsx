@@ -180,7 +180,7 @@ function PostCardComponent({
   const applyAspectRatio = (width: number, height: number) => {
     if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return;
     // Keep ratio in a sane feed range to avoid extreme layout jumps.
-    const next = Math.min(1.91, Math.max(0.56, width / height));
+    const next = Math.min(1.5, Math.max(0.75, width / height));
     setFrameAspectRatio((prev) => (Math.abs(prev - next) < 0.01 ? prev : next));
   };
 
@@ -372,7 +372,7 @@ function PostCardComponent({
         >
           {/* Слайдер с плавной анимацией */}
           <div
-            className="flex transition-transform duration-300 ease-out"
+            className="flex items-center h-full transition-transform duration-300 ease-out"
             style={{ transform: `translateX(-${currentImageIndex * 100}%)` }}
           >
             {allMedia.map((media, idx) => {
