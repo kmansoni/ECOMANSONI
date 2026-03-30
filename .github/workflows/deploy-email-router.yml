@@ -108,9 +108,15 @@ jobs:
               pm2 delete email-router
             fi
 
-            # Kill any stale process occupying port 8090 (e.g. old Express version)
-            fuser -k 8090/tcp 2>/dev/null || true
-            sleep 1
+            # Kill any stale process occupying port 8090 (e.g. old Express version, any user)
+            sudo fuser -k 8090/tcp 2>/dev/null || true
+            sudo fuser -k 8090/tcp6 2>/dev/null || true
+            # Also stop any systemd service on port 8090
+            sudo systemctl list-units --type=service --state=running 2>/dev/null \
+              | grep -i "email\|router\|node\|mansoni" \
+              | awk '{print $1}' \
+              | xargs -r sudo systemctl stop 2>/dev/null || true
+            sleep 2
 
             pm2 start src/index.js \
               --name email-router \
@@ -122,13 +128,17 @@ jobs:
             echo "── [email-router] Health check ──"
             for i in $(seq 1 10); do
               sleep 2
-              if curl -sf http://127.0.0.1:8090/health >/dev/null 2>&1; then
-                echo "[email-router] Healthy after ${i}×2s"
+              HEALTH=$(curl -sf http://127.0.0.1:8090/health 2>/dev/null || echo "")
+              if echo "$HEALTH" | grep -q '"version"'; then
+                echo "[email-router] New code healthy after ${i}×2s: $HEALTH"
                 break
+              elif [ -n "$HEALTH" ]; then
+                echo "[email-router] WARNING: Old code still running: $HEALTH"
               fi
               if [ "$i" -eq 10 ]; then
-                echo "[email-router] ERROR: not healthy after 20s"
+                echo "[email-router] ERROR: new code not healthy after 20s, pm2 logs:"
                 pm2 logs email-router --lines 30 --nostream || true
+                sudo lsof -i :8090 || true
                 exit 1
               fi
             done
