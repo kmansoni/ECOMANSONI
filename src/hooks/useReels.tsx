@@ -361,21 +361,25 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
 
       let profiles: Array<{ user_id: string; verified?: boolean | null }> = [];
       if (authorIds.length) {
-        const profilesResWithVerified = await supabase
-          .from("profiles")
-          .select("user_id, verified")
-          .in("user_id", authorIds);
-
-        if (profilesResWithVerified.error && isMissingColumnError(profilesResWithVerified.error, "verified")) {
-          const profilesResWithoutVerified = await supabase
+        try {
+          const profilesResWithVerified = await supabase
             .from("profiles")
-            .select("user_id")
+            .select("user_id, verified")
             .in("user_id", authorIds);
-          if (profilesResWithoutVerified.error) throw profilesResWithoutVerified.error;
-          profiles = profilesResWithoutVerified.data || [];
-        } else {
-          if (profilesResWithVerified.error) throw profilesResWithVerified.error;
-          profiles = profilesResWithVerified.data || [];
+
+          if (profilesResWithVerified.error && isMissingColumnError(profilesResWithVerified.error, "verified")) {
+            const profilesResWithoutVerified = await supabase
+              .from("profiles")
+              .select("user_id")
+              .in("user_id", authorIds);
+            if (!profilesResWithoutVerified.error) {
+              profiles = profilesResWithoutVerified.data || [];
+            }
+          } else if (!profilesResWithVerified.error) {
+            profiles = profilesResWithVerified.data || [];
+          }
+        } catch (e) {
+          logger.warn("[useReels] profiles query failed, skipping", { error: e });
         }
       }
 
@@ -385,14 +389,18 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
       let userSavedReels: string[] = [];
       let userRepostedReels: string[] = [];
       if (user && feedReelIds.length) {
-        const [likesRes, savesRes, repostsRes] = await Promise.all([
-          (supabase as any).from("reel_likes").select("reel_id").eq("user_id", user.id).in("reel_id", feedReelIds),
-          (supabase as any).from("reel_saves").select("reel_id").eq("user_id", user.id).in("reel_id", feedReelIds),
-          (supabase as any).from("reel_reposts").select("reel_id").eq("user_id", user.id).in("reel_id", feedReelIds),
-        ]);
-        userLikedReels = (likesRes.data || []).map((l: any) => l.reel_id);
-        userSavedReels = (savesRes.data || []).map((s: any) => s.reel_id);
-        userRepostedReels = (repostsRes.data || []).map((r: any) => r.reel_id);
+        try {
+          const [likesRes, savesRes, repostsRes] = await Promise.all([
+            (supabase as any).from("reel_likes").select("reel_id").eq("user_id", user.id).in("reel_id", feedReelIds),
+            (supabase as any).from("reel_saves").select("reel_id").eq("user_id", user.id).in("reel_id", feedReelIds),
+            (supabase as any).from("reel_reposts").select("reel_id").eq("user_id", user.id).in("reel_id", feedReelIds),
+          ]);
+          userLikedReels = (likesRes.data || []).map((l: any) => l.reel_id);
+          userSavedReels = (savesRes.data || []).map((s: any) => s.reel_id);
+          userRepostedReels = (repostsRes.data || []).map((r: any) => r.reel_id);
+        } catch (e) {
+          logger.warn("[useReels] engagement tables query failed, skipping", { error: e });
+        }
       }
 
       const reelsWithAuthors: Reel[] = normalizedRows.map((r: any) => {
