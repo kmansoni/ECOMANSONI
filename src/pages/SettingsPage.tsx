@@ -1,4 +1,4 @@
-﻿/**
+/**
  * src/pages/SettingsPage.tsx
  *
  * Thin orchestrator — routes `currentScreen` to the correct section component.

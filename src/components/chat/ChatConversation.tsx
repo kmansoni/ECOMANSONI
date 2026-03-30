@@ -1,4 +1,4 @@
-﻿import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { AnimatedEmojiFullscreen } from "./AnimatedEmojiFullscreen";
 import { isSingleEmoji } from "./emojiUtils";
 import { ChatHeader } from "./ChatHeader";
