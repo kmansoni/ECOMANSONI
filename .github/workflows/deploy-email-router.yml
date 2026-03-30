@@ -175,9 +175,9 @@ jobs:
             SEND_RESP=$(curl -s -X POST http://127.0.0.1:8090/send \
               -H "Content-Type: application/json" \
               -H "X-API-Key: ${EMAIL_ROUTER_API_KEY}" \
-              -d '{"to":"admin@mansoni.ru","subject":"Deploy smoke test","text":"SMTP relay test from deploy"}' \
+              -d '{"to":"postmaster@gmail.com","subject":"Deploy relay test","text":"SMTP relay test from deploy"}' \
               -w "\nHTTP:%{http_code}" 2>&1)
-            echo "[email-router] direct /send result: $SEND_RESP"
+            echo "[email-router] external send result: $SEND_RESP"
 
             echo "── [email-router] Done ──"
 
