@@ -108,34 +108,14 @@ jobs:
               pm2 delete email-router
             fi
 
-            # Find and permanently disable the old systemd service on port 8090
-            OLD_PID=$(sudo lsof -i :8090 -t 2>/dev/null | head -1)
-            if [ -n "$OLD_PID" ]; then
-              echo "[email-router] Port 8090 held by PID $OLD_PID"
-              # Detect systemd unit from cgroup
-              OLD_UNIT=$(cat /proc/"$OLD_PID"/cgroup 2>/dev/null \
-                | grep -oP '(?<=\.scope/).+\.service|[a-z0-9_-]+\.service' \
-                | head -1 || true)
-              if [ -z "$OLD_UNIT" ]; then
-                OLD_UNIT=$(sudo systemctl status "$OLD_PID" 2>/dev/null \
-                  | grep -oP '[a-z0-9_@-]+\.service' | head -1 || true)
-              fi
-              if [ -n "$OLD_UNIT" ]; then
-                echo "[email-router] Disabling systemd unit: $OLD_UNIT"
-                sudo systemctl disable "$OLD_UNIT" 2>/dev/null || true
-                sudo systemctl stop "$OLD_UNIT" 2>/dev/null || true
-              fi
-              sudo kill -9 "$OLD_PID" 2>/dev/null || true
-              echo "[email-router] Killed PID $OLD_PID"
-            fi
-            # Also catch any remaining node process running the old email-router
-            sudo pkill -9 -f "email-router" 2>/dev/null || true
+            # Stop and disable the legacy email-router.service (old Express version)
+            sudo systemctl disable email-router.service 2>/dev/null || true
+            sudo systemctl stop email-router.service 2>/dev/null || true
             sudo fuser -k 8090/tcp 2>/dev/null || true
             sudo fuser -k 8090/tcp6 2>/dev/null || true
-            sleep 3
-            # Verify port is free
+            sleep 2
             if sudo lsof -i :8090 2>/dev/null | grep -q LISTEN; then
-              echo "[email-router] WARNING: port 8090 still in use after kill attempts:"
+              echo "[email-router] WARNING: port 8090 still in use after kill attempts"
               sudo lsof -i :8090
             else
               echo "[email-router] Port 8090 is free"
