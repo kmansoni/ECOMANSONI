@@ -120,9 +120,18 @@ jobs:
             NGINX_CONF="/etc/nginx/sites-available/mail.mansoni.ru"
             NGINX_ENABLED="/etc/nginx/sites-enabled/mail.mansoni.ru"
 
-            if ! diff -q "$ROUTER_DIR/nginx.conf" "$NGINX_CONF" >/dev/null 2>&1; then
+            # If cert exists but nginx.conf doesn't have ssl_certificate (i.e. was overwritten),
+            # restore by re-running certbot --nginx to re-inject SSL blocks.
+            CERT_DIR="/etc/letsencrypt/live/mail.mansoni.ru"
+            if [ ! -d "$CERT_DIR" ]; then
               sudo cp "$ROUTER_DIR/nginx.conf" "$NGINX_CONF"
-              echo "[email-router] Nginx config updated"
+              echo "[email-router] Nginx config installed (first run)"
+            elif ! sudo grep -q "ssl_certificate" "$NGINX_CONF" 2>/dev/null; then
+              # Cert exists but nginx.conf lost SSL blocks — reinstall base and re-run certbot
+              sudo cp "$ROUTER_DIR/nginx.conf" "$NGINX_CONF"
+              echo "[email-router] Nginx config restored (lost SSL blocks)"
+            else
+              echo "[email-router] Cert exists and SSL config intact — skipping overwrite"
             fi
 
             if [ ! -L "$NGINX_ENABLED" ]; then
@@ -130,8 +139,8 @@ jobs:
               echo "[email-router] Nginx symlink created"
             fi
 
-            if [ ! -d "/etc/letsencrypt/live/mail.mansoni.ru" ]; then
-              echo "[email-router] Obtaining SSL cert..."
+            if [ ! -d "$CERT_DIR" ] || ! sudo grep -q "ssl_certificate" "$NGINX_CONF" 2>/dev/null; then
+              echo "[email-router] Running certbot to obtain/restore SSL config..."
               sudo certbot --nginx -d mail.mansoni.ru \
                 --non-interactive --agree-tos \
                 -m admin@mansoni.ru --redirect || echo "[email-router] certbot failed — check manually"
@@ -154,6 +163,7 @@ jobs:
           sleep 5
           HTTP=$(curl -o /dev/null -sf -w "%{http_code}" \
             --retry 3 --retry-delay 3 --max-time 10 \
+            --insecure \
             https://mail.mansoni.ru/health)
           echo "mail.mansoni.ru/health → $HTTP"
           if [ "$HTTP" != "200" ]; then
