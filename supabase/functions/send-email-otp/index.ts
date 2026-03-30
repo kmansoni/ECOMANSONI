@@ -192,7 +192,7 @@ Deno.serve(async (req: Request) => {
   //
   // Keep the route explicit here so OTP flow matches the deployed router.
   try {
-    const sendUrl = `${emailRouterUrl.replace(/\/$/, "")}/v1/email/send`;
+    const sendUrl = `${emailRouterUrl.replace(/\/$/, "")}/send`;
     const recipientDomain = emailDomain(email);
     const isPriorityMailbox = isGmailOrIcloudDomain(recipientDomain);
     const maxAttemptsRaw = Number(Deno.env.get("EMAIL_OTP_MAX_ATTEMPTS") ?? "8");
@@ -233,7 +233,7 @@ Deno.serve(async (req: Request) => {
       "Content-Type": "application/json",
     };
     if (emailRouterIngestKey) {
-      headers["x-ingest-key"] = emailRouterIngestKey;
+      headers["X-API-Key"] = emailRouterIngestKey;
     }
 
     console.info("[send-email-otp] Sending OTP email", {

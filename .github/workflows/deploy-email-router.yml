@@ -91,6 +91,10 @@ jobs:
               pm2 delete email-router
             fi
 
+            # Kill any stale process occupying port 8090 (e.g. old Express version)
+            fuser -k 8090/tcp 2>/dev/null || true
+            sleep 1
+
             pm2 start src/index.js \
               --name email-router \
               --time \
@@ -139,9 +143,9 @@ jobs:
       - name: Update Supabase EMAIL_ROUTER_URL secret
         run: |
           npx supabase@latest secrets set \
-            EMAIL_ROUTER_URL="http://mail.mansoni.ru" \
+            EMAIL_ROUTER_URL="https://mail.mansoni.ru" \
             --project-ref lfkbgnbjxskspsownvjm
-          echo "Supabase secret EMAIL_ROUTER_URL set to http://mail.mansoni.ru"
+          echo "Supabase secret EMAIL_ROUTER_URL set to https://mail.mansoni.ru"
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
@@ -150,7 +154,7 @@ jobs:
           sleep 5
           HTTP=$(curl -o /dev/null -sf -w "%{http_code}" \
             --retry 3 --retry-delay 3 --max-time 10 \
-            http://mail.mansoni.ru/health)
+            https://mail.mansoni.ru/health)
           echo "mail.mansoni.ru/health → $HTTP"
           if [ "$HTTP" != "200" ]; then
             echo "::error::Email router health check failed (HTTP $HTTP)"
