@@ -26,6 +26,7 @@ import { ReelsProvider } from "@/contexts/ReelsContext";
 import { ProfilePage } from "@/pages/ProfilePage";
 import { AdminProtectedRoute } from "@/components/admin/AdminProtectedRoute";
 import { AppearanceRuntimeProvider } from "@/contexts/AppearanceRuntimeContext";
+import { UnifiedCounterProvider } from "@/providers/UnifiedCounterProvider";
 import { runChatSchemaProbeOnce } from "@/lib/chat/schemaProbe";
 import { initOutbox } from "@/lib/chat/messageOutbox";
 import { toast } from "sonner";
@@ -222,6 +223,7 @@ const App = () => {
 <MultiAccountProvider>
 <AuthProvider>
 <UserSettingsProvider>
+<UnifiedCounterProvider>
 <AppearanceRuntimeProvider>
   <ReelsProvider>
   <VideoCallProvider>
@@ -843,6 +845,7 @@ const App = () => {
               </VideoCallProvider>
             </ReelsProvider>
             </AppearanceRuntimeProvider>
+          </UnifiedCounterProvider>
           </UserSettingsProvider>
         </AuthProvider>
       </MultiAccountProvider>
