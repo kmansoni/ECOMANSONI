@@ -72,7 +72,15 @@ async function callAI(messages, { stream = false } = {}) {
       },
       body: JSON.stringify({
         model,
-        system: payload.system,
+        system: [
+          {
+            type: "text",
+            text: payload.system,
+            cache_control: {
+              type: "ephemeral"
+            }
+          }
+        ],
         messages: payload.messages,
         max_tokens: maxTokens,
         temperature: 0.2,
