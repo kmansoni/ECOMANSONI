@@ -258,21 +258,28 @@ export function useChannels() {
         }
       }
 
-      // Fetch last message per channel (correctness > one global limit)
+      // Fetch last message per channel.
+      // Correctness requirement: every channel must surface its own latest message.
+      // A single global batch with limit=N*2 is unsafe — one high-traffic channel can
+      // dominate the result set and crowd out all others.
+      // Solution: per-channel query with concurrency=6 (original correct approach).
       const channelIds = (channelsData || []).map((c) => c.id).filter(Boolean) as string[];
       const lastMessages: Record<string, ChannelMessage> = {};
-      const rows = await mapWithConcurrency(channelIds, 6, async (channelId) => {
-        const { data, error: msgError } = await supabase
-          .from("channel_messages")
-          .select("*")
-          .eq("channel_id", channelId)
-          .order("created_at", { ascending: false })
-          .limit(1);
-        if (msgError) throw msgError;
-        return { channelId, msg: (data && data[0]) as ChannelMessage | undefined };
-      });
-      for (const row of rows) {
-        if (row.msg) lastMessages[row.channelId] = row.msg;
+
+      if (channelIds.length > 0) {
+        const rows = await mapWithConcurrency(channelIds, 6, async (channelId) => {
+          const { data, error: msgError } = await supabase
+            .from("channel_messages")
+            .select("*")
+            .eq("channel_id", channelId)
+            .order("created_at", { ascending: false })
+            .limit(1);
+          if (msgError) throw msgError;
+          return { channelId, msg: (data && data[0]) as ChannelMessage | undefined };
+        });
+        for (const row of rows) {
+          if (row.msg) lastMessages[row.channelId] = row.msg;
+        }
       }
 
       const channelsWithMembership = (channelsData || []).map(channel => ({
@@ -384,7 +391,11 @@ export function useChannels() {
           scheduleChannelsRefresh(row ? getStringField(row, "id") : null);
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === 'CHANNEL_ERROR') {
+          logger.warn("[useChannels] Realtime channel error for channels-updates");
+        }
+      });
 
     return () => {
       supabase.removeChannel(channel);

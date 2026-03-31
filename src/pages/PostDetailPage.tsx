@@ -1,9 +1,12 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, Heart, MessageCircle, Share2, Bookmark, MoreHorizontal } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
+import { useLikeActions } from "@/hooks/useLikeActions";
+import { batchGetPostLikes, batchGetSavedPosts } from "@/lib/likes";
 import { Button } from "@/components/ui/button";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { CommentsSheet } from "@/components/feed/CommentsSheet";
 import { ShareSheet } from "@/components/feed/ShareSheet";
 import { formatDistanceToNow } from "date-fns";
@@ -28,8 +31,8 @@ interface PostDetail {
     media_url: string;
     media_type: string;
   }[];
-  isLiked?: boolean;
-  isSaved?: boolean;
+  isLiked: boolean;
+  isSaved: boolean;
 }
 
 interface PostRow {
@@ -50,14 +53,19 @@ export function PostDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { togglePostLike } = useLikeActions();
+
   const [post, setPost] = useState<PostDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [showComments, setShowComments] = useState(false);
   const [showShare, setShowShare] = useState(false);
-  const [likePending, setLikePending] = useState(false);
-  const [savePending, setSavePending] = useState(false);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [frameAspectRatio, setFrameAspectRatio] = useState(1);
+
+  // useRef for pending guards — prevents re-render loops (consistent with PostCard)
+  const likePendingRef = useRef(false);
+  const savePendingRef = useRef(false);
 
   const applyAspectRatio = (width: number, height: number) => {
     if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return;
@@ -79,42 +87,30 @@ export function PostDetailPage() {
 
         if (postError) throw postError;
 
-        // Fetch author profile
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("display_name, avatar_url")
-          .eq("user_id", postData.author_id)
-          .single();
-
-        // Fetch post media
-        const { data: media } = await supabase
-          .from("post_media")
-          .select("media_url, media_type")
-          .eq("post_id", id)
-          .order("sort_order", { ascending: true });
-
-        // Check if liked
-        let isLiked = false;
-        if (user) {
-          const { data: likeData } = await supabase
-            .from("post_likes")
-            .select("id")
+        // Fetch author profile and media in parallel
+        const [profileRes, mediaRes] = await Promise.all([
+          supabase
+            .from("profiles")
+            .select("display_name, avatar_url")
+            .eq("user_id", postData.author_id)
+            .single(),
+          supabase
+            .from("post_media")
+            .select("media_url, media_type")
             .eq("post_id", id)
-            .eq("user_id", user.id)
-            .maybeSingle();
-          isLiked = !!likeData;
-        }
+            .order("sort_order", { ascending: true }),
+        ]);
 
-        // Check if saved
+        // Batch check liked & saved status via unified likes module
+        let isLiked = false;
         let isSaved = false;
         if (user) {
-          const { data: savedData } = await supabase
-            .from("saved_posts")
-            .select("id")
-            .eq("post_id", id)
-            .eq("user_id", user.id)
-            .maybeSingle();
-          isSaved = !!savedData;
+          const [likedSet, savedSet] = await Promise.all([
+            batchGetPostLikes([id], user.id),
+            batchGetSavedPosts([id], user.id),
+          ]);
+          isLiked = likedSet.has(id);
+          isSaved = savedSet.has(id);
         }
 
         const row = postData as unknown as PostRow;
@@ -128,13 +124,14 @@ export function PostDetailPage() {
           saves_count: clampCounter(row.saves_count),
           shares_count: clampCounter(row.shares_count),
           views_count: clampCounter(row.views_count),
-          author: profile || undefined,
-          media: media || [],
+          author: profileRes.data || undefined,
+          media: mediaRes.data || [],
           isLiked,
           isSaved,
         });
       } catch (error) {
         logger.error("[PostDetailPage] Error fetching post", { error });
+        setFetchError(error instanceof Error ? error.message : "Не удалось загрузить пост");
       } finally {
         setLoading(false);
       }
@@ -144,63 +141,65 @@ export function PostDetailPage() {
   }, [id, user]);
 
   const handleLike = async () => {
-    if (!post || !user || likePending) return;
+    if (!post || !user || likePendingRef.current) return;
+    likePendingRef.current = true;
+
+    const prevLiked = post.isLiked;
+    const prevCount = post.likes_count;
+
+    // Optimistic update
+    setPost((p) => p ? { ...p, isLiked: !prevLiked, likes_count: prevLiked ? Math.max(0, prevCount - 1) : prevCount + 1 } : p);
 
     try {
-      setLikePending(true);
-      if (post.isLiked) {
-        const { error } = await supabase
-          .from("post_likes")
-          .delete()
-          .eq("post_id", post.id)
-          .eq("user_id", user.id);
-        if (error) throw error;
-        setPost({ ...post, isLiked: false, likes_count: post.likes_count - 1 });
-      } else {
-        const { error } = await supabase
-          .from("post_likes")
-          .insert({ post_id: post.id, user_id: user.id });
-        if (error) throw error;
-        setPost({ ...post, isLiked: true, likes_count: post.likes_count + 1 });
+      const { error } = await togglePostLike(post.id, prevLiked);
+      if (error) {
+        // Rollback on error
+        setPost((p) => p ? { ...p, isLiked: prevLiked, likes_count: prevCount } : p);
+        logger.error("[PostDetailPage] Like error", { error });
       }
-    } catch (error) {
-      logger.error("[PostDetailPage] Error toggling like", { error });
     } finally {
-      setLikePending(false);
+      // Always release the lock — guards against unexpected throws from togglePostLike
+      likePendingRef.current = false;
     }
   };
 
   const handleSave = async () => {
-    if (!post || !user || savePending) return;
+    if (!post || !user || savePendingRef.current) return;
+    savePendingRef.current = true;
+
+    const prevSaved = post.isSaved;
+    const prevCount = post.saves_count;
+
+    // Optimistic update
+    setPost((p) => p ? { ...p, isSaved: !prevSaved, saves_count: prevSaved ? Math.max(0, prevCount - 1) : prevCount + 1 } : p);
 
     try {
-      setSavePending(true);
-      if (post.isSaved) {
+      if (prevSaved) {
         const { error } = await supabase
           .from("saved_posts")
           .delete()
           .eq("post_id", post.id)
           .eq("user_id", user.id);
         if (error) throw error;
-        setPost({ ...post, isSaved: false, saves_count: Math.max(0, (post.saves_count || 0) - 1) });
       } else {
         const { error } = await supabase
           .from("saved_posts")
           .insert({ post_id: post.id, user_id: user.id });
         if (error) throw error;
-        setPost({ ...post, isSaved: true, saves_count: (post.saves_count || 0) + 1 });
       }
     } catch (error) {
-      logger.error("[PostDetailPage] Error toggling save", { error });
+      // Rollback on error
+      setPost((p) => p ? { ...p, isSaved: prevSaved, saves_count: prevCount } : p);
+      logger.error("[PostDetailPage] Save error", { error });
     } finally {
-      setSavePending(false);
+      savePendingRef.current = false;
     }
   };
 
   const formatTime = (dateStr: string) => {
     try {
       return formatDistanceToNow(new Date(dateStr), { addSuffix: true, locale: ru });
-    } catch (_err) {
+    } catch {
       return "";
     }
   };
@@ -209,6 +208,16 @@ export function PostDetailPage() {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+      </div>
+    );
+  }
+
+  if (fetchError) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center p-6">
+        <h2 className="text-xl font-semibold mb-2">Ошибка загрузки</h2>
+        <p className="text-muted-foreground mb-4">{fetchError}</p>
+        <Button onClick={() => navigate(-1)}>Назад</Button>
       </div>
     );
   }
@@ -230,7 +239,6 @@ export function PostDetailPage() {
   );
 
   const authorName = post.author?.display_name || "Пользователь";
-  const authorAvatar = post.author?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${post.author_id}`;
 
   return (
     <div className="min-h-screen bg-background">
@@ -248,11 +256,12 @@ export function PostDetailPage() {
       <div className="pb-20">
         {/* Author header */}
         <div className="flex items-center gap-3 px-4 py-3">
-          <img
-            src={authorAvatar}
-            alt={authorName}
-            className="w-10 h-10 rounded-full object-cover"
-          />
+          <Avatar className="w-10 h-10">
+            <AvatarImage src={post.author?.avatar_url || undefined} alt={authorName} />
+            <AvatarFallback className="bg-muted text-muted-foreground font-semibold">
+              {authorName.charAt(0).toUpperCase()}
+            </AvatarFallback>
+          </Avatar>
           <div className="flex-1">
             <p className="font-semibold text-sm">{authorName}</p>
             <p className="text-xs text-muted-foreground">{formatTime(post.created_at)}</p>
