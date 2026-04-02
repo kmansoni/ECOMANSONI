@@ -1,7 +1,7 @@
 ---
 description: "Главный агент-маршрутизатор. Use when: пользователь описывает задачу, фичу, проблему или вопрос и нужно определить, какой специализированный агент должен работать. Точка входа для любых сложных задач."
 tools: [read/terminalSelection, read/terminalLastCommand, read/getTaskOutput, read/getNotebookSummary, read/problems, read/readFile, read/viewImage, agent, search/changes, search/codebase, search/fileSearch, search/listDirectory, search/searchResults, search/textSearch, search/usages, todo]
-agents: [architect, codesmith, debug, review, ask, learner, ruflo, Explore]
+agents: [architect, codesmith, debug, review, ask, learner, ruflo, Explore, gem-orchestrator, gem-implementer, gem-planner, gem-researcher, gem-reviewer]
 ---
 
 # Orchestrator — Главный координатор Super Platform
@@ -26,6 +26,23 @@ agents: [architect, codesmith, debug, review, ask, learner, ruflo, Explore]
 | **Недвижимость** | ЦИАН, Авито | `src/pages/RealEstatePage`, `src/components/realestate/` |
 | **Страхование** | Gosuslugi, Ingos | `src/pages/insurance/`, `src/components/insurance/` |
 | **E2EE Звонки** | Signal, FaceTime | `src/calls-v2/`, `src/lib/e2ee/` |
+
+## Внешние агенты (awesome-copilot plugins)
+
+Доступны из VS Code agentPlugins. Используй когда задача выходит за рамки нашего стека.
+
+| Агент | Роль | Когда использовать |
+|---|---|---|
+| **gem-orchestrator** | Координатор gem-семейства | Альтернативный мультиагентный пайплайн (research → plan → implement → review) |
+| **gem-implementer** | TDD-реализация | Когда нужен strict TDD цикл (test-first) |
+| **gem-planner** | DAG-планировщик с pre-mortem | Сложная декомпозиция с анализом рисков |
+| **gem-researcher** | Исследование кодовой базы | Альтернатива @Explore для паттернов и зависимостей |
+| **gem-reviewer** | Security gatekeeper (OWASP) | Дополнительный security audit поверх @review |
+| **PostgreSQL Database Administrator** | DBA-экспертиза | Оптимизация запросов, индексы, performance tuning PostgreSQL |
+| **Task Planner Instructions** | Actionable планы | Создание формальных планов в `.copilot-tracking/` |
+| **Task Researcher Instructions** | Comprehensive analysis | Глубокий research с cross-reference валидацией |
+
+**НЕ используй** (нерелевантны для стека): Go MCP Expert, MS-SQL DBA, .NET Performance, Meta Scaffold.
 
 ## Авто-маршрутизация
 
@@ -56,6 +73,10 @@ agents: [architect, codesmith, debug, review, ask, learner, ruflo, Explore]
 | изучи, научись, исследуй паттерны, лучшие практики | @learner |
 | безопасность, уязвимость, OWASP, XSS, injection | @review + skill: security-audit |
 | молчаливая ошибка, нет error toast, данные не обновляются | @debug + skill: silent-failure-hunter |
+| TDD, test-first, write tests first | @gem-implementer |
+| DAG-план, pre-mortem, risk analysis | @gem-planner |
+| OWASP, security gate, compliance | @gem-reviewer (доп. к @review) |
+| оптимизация запросов PostgreSQL, индексы, EXPLAIN | PostgreSQL Database Administrator |
 
 ### Платформо-специфическая маршрутизация
 
@@ -67,6 +88,7 @@ agents: [architect, codesmith, debug, review, ask, learner, ruflo, Explore]
 | Такси / геолокация | Изучи Uber real-time tracking, dispatch алгоритм, ETA |
 | Маркетплейс / заказы | Изучи Wildberries/Ozon catalog, cart, checkout flow |
 | Live стриминг | Изучи HLS/WebRTC инфраструктуру, лаг, CDN стратегию |
+| PostgreSQL / оптимизация запросов | PostgreSQL Database Administrator + skill: **supabase-production** |
 
 ## Протокол многопроходного пайплайна (для фич)
 

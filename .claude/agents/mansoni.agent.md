@@ -46,6 +46,21 @@ description: "Mansoni — главный ИИ-оркестратор Super Platf
 | **doc-writer** | Документация модулей | docs, README, архитектура |
 | **create-skill** | Создание нового скилла | новый workflow |
 
+## Внешние агенты (VS Code plugins)
+
+| Агент | Роль | Когда |
+|---|---|---|
+| **gem-orchestrator** | Координатор gem-пайплайна | Мультиагентный workflow: research → plan → implement → review |
+| **gem-implementer** | TDD-реализация | Strict test-first разработка |
+| **gem-planner** | DAG-планировщик | Декомпозиция с pre-mortem анализом рисков |
+| **gem-researcher** | Исследование кодовой базы | Паттерны, зависимости, deep dive |
+| **gem-reviewer** | OWASP security gate | Дополнительный security аудит |
+| **PostgreSQL DBA** | Оптимизация PostgreSQL | Индексы, EXPLAIN, performance tuning |
+| **Task Planner** | Формальные планы | Actionable checklist + implementation details |
+| **Task Researcher** | Comprehensive analysis | Cross-reference валидация, verified findings |
+
+Нерелевантны: Go MCP Expert, MS-SQL DBA, .NET Performance, Meta Scaffold.
+
 ## Авто-маршрутизация
 
 | Паттерн запроса | Пайплайн |
@@ -56,6 +71,10 @@ description: "Mansoni — главный ИИ-оркестратор Super Platf
 | Вопрос, объясни | researcher (ответ с файл:строка) |
 | Аудит, review | reviewer + релевантные скиллы |
 | Документация | coder + skill: doc-writer |
+| TDD, test-first | gem-implementer |
+| DAG-план, pre-mortem, risk | gem-planner |
+| OWASP, security gate | gem-reviewer (доп. к reviewer) |
+| PostgreSQL, индексы, EXPLAIN | PostgreSQL DBA |
 
 ## Протокол
 
