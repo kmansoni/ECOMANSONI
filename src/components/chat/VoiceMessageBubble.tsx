@@ -1,6 +1,5 @@
 import { motion } from 'framer-motion';
-import { Play, Pause, CheckCheck, Type } from 'lucide-react';
-import { useSpeechToText } from '@/hooks/useSpeechToText';
+import { Play, Pause, CheckCheck, Type, Loader2 } from 'lucide-react';
 
 interface VoiceMessageBubbleProps {
   audioUrl: string;
@@ -12,6 +11,13 @@ interface VoiceMessageBubbleProps {
   playbackProgress: number;
   onPlay: () => void;
   onPause: () => void;
+  messageId?: string;
+  /** Кешированный текст транскрипции из БД */
+  cachedTranscription?: string | null;
+  /** Callback для запуска транскрипции */
+  onTranscribe?: (messageId: string, audioUrl: string) => void;
+  /** Текущая транскрипция из хука */
+  transcriptionEntry?: { text: string; loading: boolean; error: string | null };
 }
 
 function formatDuration(seconds: number) {
@@ -30,6 +36,10 @@ export function VoiceMessageBubble({
   playbackProgress,
   onPlay,
   onPause,
+  messageId,
+  cachedTranscription,
+  onTranscribe,
+  transcriptionEntry,
 }: VoiceMessageBubbleProps) {
   const bars = waveform.length > 0 ? waveform : Array.from({ length: 30 }, () => Math.random() * 0.6 + 0.2);
   const remainingSeconds = isPlaying
@@ -43,7 +53,15 @@ export function VoiceMessageBubble({
   const barActiveClass = isOwnMessage ? 'bg-white' : 'bg-blue-400';
   const barInactiveClass = isOwnMessage ? 'bg-white/40' : 'bg-zinc-500';
 
-  const { transcribe, transcribing, transcript, error } = useSpeechToText();
+  const displayText = transcriptionEntry?.text || cachedTranscription || null;
+  const isLoading = transcriptionEntry?.loading ?? false;
+  const errorText = transcriptionEntry?.error ?? null;
+
+  const handleTranscribe = () => {
+    if (messageId && onTranscribe && !isLoading && !displayText) {
+      onTranscribe(messageId, audioUrl);
+    }
+  };
 
   return (
     <div className={`flex flex-col gap-1.5 px-3 py-2.5 rounded-2xl min-w-[180px] max-w-[260px] ${bgClass}`}>
@@ -85,12 +103,17 @@ export function VoiceMessageBubble({
             <div className="flex items-center gap-1">
               {/* Кнопка расшифровки */}
               <button
-                onClick={() => transcribe(audioUrl)}
-                disabled={transcribing}
+                onClick={handleTranscribe}
+                disabled={isLoading || !!displayText}
                 className="w-5 h-5 flex items-center justify-center rounded hover:bg-white/10 transition-colors disabled:opacity-40"
-                title="Расшифровать"
+                title={displayText ? "Уже расшифровано" : "Расшифровать"}
+                aria-label="Расшифровать голосовое сообщение"
               >
-                <Type className="w-3 h-3 text-white/60" />
+                {isLoading ? (
+                  <Loader2 className="w-3 h-3 text-white/60 animate-spin" />
+                ) : (
+                  <Type className="w-3 h-3 text-white/60" />
+                )}
               </button>
               {isOwnMessage && (
                 <CheckCheck
@@ -103,16 +126,22 @@ export function VoiceMessageBubble({
       </div>
 
       {/* STT результат */}
-      {transcribing && (
+      {isLoading && (
         <p className="text-xs text-white/40 animate-pulse">Расшифровка...</p>
       )}
-      {transcript && (
-        <p className="text-xs text-white/70 italic border-l-2 border-blue-400/50 pl-2">
-          {transcript}
+      {displayText && (
+        <p className="text-[13px] text-white/70 italic border-l-2 border-blue-400/50 pl-2">
+          {displayText}
         </p>
       )}
-      {error && (
-        <p className="text-xs text-red-400/70">{error}</p>
+      {errorText && !displayText && (
+        <button
+          onClick={handleTranscribe}
+          className="text-xs text-red-400/70 hover:text-red-400 transition-colors text-left"
+          type="button"
+        >
+          {errorText} — нажмите для повтора
+        </button>
       )}
     </div>
   );

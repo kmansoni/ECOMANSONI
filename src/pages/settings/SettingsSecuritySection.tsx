@@ -118,7 +118,7 @@ export function SettingsSecuritySection({
           <div className={cn("mx-4 mt-3", cardCls)}>
             <SettingsMenuItem icon={<Smartphone className={iconCls} />} label="Активные сеансы" isDark={isDark} onClick={() => onNavigate("security_sessions")} />
             <SettingsMenuItem icon={<Globe className={iconCls} />} label="Сайты" isDark={isDark} onClick={() => onNavigate("security_sites")} />
-            <SettingsMenuItem icon={<Mail className={iconCls} />} label="Письма от нас" isDark={isDark} onClick={() => navigate("/settings/notifications")} />
+            <SettingsMenuItem icon={<Mail className={iconCls} />} label="Письма от нас" isDark={isDark} onClick={() => onNavigate("notifications")} />
             <SettingsMenuItem icon={<Database className={iconCls} />} label="Данные аккаунта" isDark={isDark} onClick={() => navigate("/profile")} />
           </div>
         </div>

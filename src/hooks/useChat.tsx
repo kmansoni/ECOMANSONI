@@ -282,6 +282,11 @@ export interface ChatMessage {
   file_name?: string | null;
   file_size?: number | null;
   metadata?: Record<string, unknown> | null;
+  location_lat?: number | null;
+  location_lng?: number | null;
+  location_accuracy_m?: number | null;
+  location_is_live?: boolean | null;
+  message_effect?: string | null;
 }
 
 export type { DeliveryStatusMap };

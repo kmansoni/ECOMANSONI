@@ -12,12 +12,15 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, MapPin, Users, RefreshCw, Eye, EyeOff, Loader2, MessageSquare, AlertTriangle, X } from "lucide-react";
+import { ArrowLeft, MapPin, Users, RefreshCw, Eye, EyeOff, Loader2, MessageSquare, AlertTriangle, X, Heart, SlidersHorizontal } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { GradientAvatar } from "@/components/ui/gradient-avatar";
 import { toast } from "sonner";
 import { usePeopleNearby, type NearbyUser } from "@/hooks/usePeopleNearby";
+import { useDating } from "@/hooks/useDating";
+import { SwipeStack } from "@/components/dating/SwipeStack";
+import { DatingFilters } from "@/components/dating/DatingFilters";
 import { cn } from "@/lib/utils";
 import { logger } from "@/lib/logger";
 
@@ -123,6 +126,8 @@ const LOCATION_REFRESH_INTERVAL = 60_000; // 60 секунд
 
 export function PeopleNearbyPage() {
   const navigate = useNavigate();
+  const [activeTab, setActiveTab] = useState<'nearby' | 'dating'>('nearby');
+  const [showDatingFilters, setShowDatingFilters] = useState(false);
   const {
     nearbyUsers,
     isSharing,
@@ -133,6 +138,8 @@ export function PeopleNearbyPage() {
     refreshNearby,
     updateMyLocation,
   } = usePeopleNearby();
+
+  const dating = useDating();
 
   const [showPrivacyWarning, setShowPrivacyWarning] = useState(false);
   const [privacyConfirmed, setPrivacyConfirmed] = useState(false);
@@ -270,7 +277,16 @@ export function PeopleNearbyPage() {
           Люди рядом
         </h1>
         <div className="ml-auto flex items-center gap-2">
-          {isSharing && currentPosition && (
+          {activeTab === 'dating' && (
+            <button
+              onClick={() => setShowDatingFilters(true)}
+              className="p-2 rounded-full hover:bg-zinc-800 transition-colors"
+              aria-label="Фильтры знакомств"
+            >
+              <SlidersHorizontal className="w-4 h-4 text-zinc-400" />
+            </button>
+          )}
+          {activeTab === 'nearby' && isSharing && currentPosition && (
             <button
               onClick={handleRefresh}
               disabled={isLoading}
@@ -286,6 +302,78 @@ export function PeopleNearbyPage() {
         </div>
       </div>
 
+      {/* Tabs */}
+      <div className="flex border-b border-zinc-800 px-4">
+        <button
+          onClick={() => setActiveTab('nearby')}
+          className={cn(
+            "flex-1 py-3 text-sm font-medium text-center transition-colors border-b-2",
+            activeTab === 'nearby'
+              ? "border-blue-500 text-white"
+              : "border-transparent text-zinc-500 hover:text-zinc-300",
+          )}
+        >
+          <Users className="w-4 h-4 inline mr-1.5" />
+          Рядом
+        </button>
+        <button
+          onClick={() => setActiveTab('dating')}
+          className={cn(
+            "flex-1 py-3 text-sm font-medium text-center transition-colors border-b-2",
+            activeTab === 'dating'
+              ? "border-pink-500 text-white"
+              : "border-transparent text-zinc-500 hover:text-zinc-300",
+          )}
+        >
+          <Heart className="w-4 h-4 inline mr-1.5" />
+          Знакомства
+        </button>
+      </div>
+
+      {/* Dating Tab */}
+      {activeTab === 'dating' && (
+        <div className="px-4 py-4">
+          {dating.loading ? (
+            <div className="flex flex-col items-center py-20 gap-3">
+              <Loader2 className="w-8 h-8 text-pink-400 animate-spin" />
+              <p className="text-zinc-400 text-sm">Загрузка анкет...</p>
+            </div>
+          ) : dating.cards.length === 0 ? (
+            <div className="text-center py-20">
+              <div className="w-16 h-16 rounded-full bg-zinc-800 flex items-center justify-center mx-auto mb-4">
+                <Heart className="w-8 h-8 text-zinc-600" />
+              </div>
+              <p className="text-zinc-400 text-sm">Анкеты закончились</p>
+              <p className="text-zinc-600 text-xs mt-1">Попробуйте изменить фильтры</p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowDatingFilters(true)}
+                className="mt-4 border-zinc-700 text-zinc-300"
+              >
+                <SlidersHorizontal className="w-4 h-4 mr-2" />
+                Настроить фильтры
+              </Button>
+            </div>
+          ) : (
+            <SwipeStack
+              cards={dating.cards}
+              onSwipe={dating.swipe}
+              onEmpty={dating.refreshCards}
+            />
+          )}
+
+          <DatingFilters
+            open={showDatingFilters}
+            onClose={() => setShowDatingFilters(false)}
+            filters={dating.filters}
+            onUpdateFilters={dating.updateFilters}
+          />
+        </div>
+      )}
+
+      {/* Nearby Tab */}
+      {activeTab === 'nearby' && (
       <div className="px-4 py-4 space-y-4">
         {/* Toggle sharing */}
         <div
@@ -379,6 +467,7 @@ export function PeopleNearbyPage() {
           </div>
         )}
       </div>
+      )}
 
       {/* Privacy warning */}
       <AnimatePresence>

@@ -37,6 +37,7 @@ import { getHashtagBlockedToastPayload } from "@/lib/hashtagModeration";
 import { getChatSendErrorToast } from "@/lib/chat/sendError";
 import { VideoCircleRecorder } from "./VideoCircleRecorder";
 import { AttachmentSheet } from "./AttachmentSheet";
+import { ContactShareSheet } from "./ContactShareSheet";
 import { CameraCaptureSheet } from "./CameraCaptureSheet";
 import { ImageViewer } from "./ImageViewer";
 import { FullscreenVideoPlayer } from "./VideoPlayer";
@@ -388,6 +389,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
 
   const [replyKeyboard, setReplyKeyboard] = useState<ReplyKeyboardButton[][] | null>(null);
   const [showGiftCatalog, setShowGiftCatalog] = useState(false);
+  const [showContactSheet, setShowContactSheet] = useState(false);
   const [showChatSettings, setShowChatSettings] = useState(false);
   const [showTimerPicker, setShowTimerPicker] = useState(false);
   const handledPanelActionRef = useRef<string | null>(null);
@@ -938,6 +940,17 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
           encryption_key_version: encrypted.epoch,
         };
       }
+
+      // Атомарно включаем эффект в envelope (вместо отдельного UPDATE)
+      const effectToSend = pendingEffectRef.current;
+      if (effectToSend) {
+        contentToSend = buildChatBodyEnvelope({
+          kind: 'text',
+          text: contentToSend,
+          message_effect: effectToSend,
+        });
+      }
+
       await sendMessage(contentToSend, {
         clientMsgId,
         ...(silent ? { is_silent: true } : {}),
@@ -950,17 +963,10 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
         setIsSilentSend(false);
       }
 
-      // Эффект сообщения: обновляем запись в БД и показываем анимацию
-      const effect = pendingEffectRef.current;
-      if (effect) {
+      // Эффект сообщения: анимация (эффект уже сохранён атомарно в RPC)
+      if (effectToSend) {
         pendingEffectRef.current = null;
-        supabase
-          .from('messages')
-          .update({ message_effect: effect })
-          .eq('client_msg_id', clientMsgId)
-          .eq('conversation_id', conversationId)
-          .then(() => {});
-        setActiveEffect(effect);
+        setActiveEffect(effectToSend);
       }
 
       // Keep focus on input to prevent keyboard closing on mobile
@@ -1555,15 +1561,13 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
             if (!conversationId || !user) return;
             const clientMsgId = crypto.randomUUID();
             const envelope = buildChatBodyEnvelope({
-              kind: 'media',
-              text: '🎭 Стикер',
-              media_type: 'sticker',
+              kind: 'sticker',
               media_url: sticker.file_url,
-              sticker_id: sticker.id,
             });
             try {
               await sendMessageV1({ conversationId, clientMsgId, body: envelope });
             } catch (e) {
+              toast.error("Не удалось отправить");
               logger.error("chat: send sticker failed", { conversationId, error: e });
             }
           }}
@@ -1572,14 +1576,13 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
             if (!conversationId || !user) return;
             const clientMsgId = crypto.randomUUID();
             const envelope = buildChatBodyEnvelope({
-              kind: 'media',
-              text: 'GIF',
-              media_type: 'gif',
+              kind: 'gif',
               media_url: gif.url,
             });
             try {
               await sendMessageV1({ conversationId, clientMsgId, body: envelope });
             } catch (e) {
+              toast.error("Не удалось отправить");
               logger.error("chat: send gif failed", { conversationId, error: e });
             }
           }}
@@ -1606,6 +1609,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
         onOpenChange={setShowAttachmentSheet}
         onSelectFile={handleAttachment}
         onSelectLocation={handleLocationSelect}
+        onContactShare={() => setShowContactSheet(true)}
         onOpenCamera={() => {
           setShowCameraSheet(true);
         }}
@@ -1643,6 +1647,26 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
         message={forwardMessage}
       />
 
+      {/* Contact Share Sheet */}
+      <ContactShareSheet
+        open={showContactSheet}
+        onOpenChange={setShowContactSheet}
+        onSendContact={async (contact) => {
+          if (!conversationId || !user) return;
+          const clientMsgId = crypto.randomUUID();
+          const envelope = buildChatBodyEnvelope({
+            kind: 'contact',
+            contact: { name: contact.name, phone: contact.phone },
+          });
+          try {
+            await sendMessageV1({ conversationId, clientMsgId, body: envelope });
+          } catch (e) {
+            toast.error("Не удалось отправить");
+            logger.error("chat: send contact failed", { conversationId, error: e });
+          }
+        }}
+      />
+
       {/* Gift Catalog */}
       {!isGroup && (
         <GiftCatalog
@@ -1653,23 +1677,19 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
           recipientAvatar={chatAvatar}
           conversationId={conversationId}
           onGiftSent={async (giftEmoji, giftName, sentGiftId) => {
-            // Send a message with media_type='gift' encoding gift data as content JSON
             const clientMsgId = crypto.randomUUID();
             const envelope = buildChatBodyEnvelope({
-              kind: 'media',
-              text: JSON.stringify({
-                sent_gift_id: sentGiftId,
-                gift_emoji: giftEmoji,
-                gift_name: giftName,
-                stars_spent: 0,
-                is_opened: false,
-              }),
-              media_type: 'gift',
-              media_url: null,
+              kind: 'gift',
+              gift_emoji: giftEmoji,
+              gift_name: giftName,
+              sent_gift_id: sentGiftId,
+              stars_spent: 0,
+              is_opened: false,
             });
             try {
               await sendMessageV1({ conversationId, clientMsgId, body: envelope });
             } catch (e) {
+              toast.error("Не удалось отправить");
               logger.error("chat: send gift message failed", { conversationId, error: e });
             }
           }}
@@ -1824,18 +1844,15 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
           onOpenChange={setShowCreatePoll}
           conversationId={conversationId}
           onCreated={async (pollId) => {
-            // Send poll message
             const clientMsgId = crypto.randomUUID();
             const envelope = buildChatBodyEnvelope({
-              kind: 'media',
-              text: '📊 Опрос',
-              media_type: 'poll',
-              media_url: null,
+              kind: 'poll',
               poll_id: pollId,
             });
             try {
               await sendMessageV1({ conversationId, clientMsgId, body: envelope });
             } catch (e) {
+              toast.error("Не удалось отправить");
               logger.error("chat: send poll failed", { conversationId, error: e });
             }
           }}

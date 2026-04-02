@@ -6,7 +6,7 @@
  * Extracted from ChatConversation.tsx renderMessages.map() body.
  */
 import { Fragment } from "react";
-import { Play, Pause, CheckCheck } from "lucide-react";
+import { Play, Pause, CheckCheck, MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { GradientAvatar } from "@/components/ui/gradient-avatar";
@@ -25,7 +25,9 @@ import { StickerMessage } from "./StickerMessage";
 import { GifMessage } from "./GifMessage";
 import { GiftMessage } from "./GiftMessage";
 import { PollMessage } from "./PollMessage";
+import { ContactCard } from "./ContactCard";
 import { DocumentBubble } from "./DocumentBubble";
+import { MusicMessage } from "./MusicMessage";
 import { SelfDestructMedia } from "./SelfDestructMedia";
 import { SharedPostCard } from "./SharedPostCard";
 import { VideoPlayer } from "./VideoPlayer";
@@ -128,6 +130,11 @@ export function ChatMessageItem({
   const isGif = message.media_type === "gif";
   const isGift = message.media_type === "gift";
   const isPoll = message.media_type === "poll" && !!message.poll_id;
+  const isContact = message.media_type === "contact";
+  const isLocation = !message.media_type && message.location_lat != null && message.location_lng != null;
+  const AUDIO_EXTENSIONS = /\.(mp3|ogg|flac|wav|aac|m4a|wma|opus)$/i;
+  const isMusic = message.media_type === "document" && !!message.media_url &&
+    !!message.file_name && AUDIO_EXTENSIONS.test(message.file_name);
   const isSharedPost = !!message.shared_post_id;
   const isSelfDestruct =
     message.metadata?.self_destruct === true ||
@@ -135,7 +142,8 @@ export function ChatMessageItem({
   const isDocument =
     !!message.media_url &&
     !!message.media_type &&
-    !["voice", "video_circle", "image", "video", "sticker", "gif", "gift", "poll"].includes(message.media_type) &&
+    !["voice", "video_circle", "image", "video", "sticker", "gif", "gift", "poll", "contact"].includes(message.media_type) &&
+    !isMusic &&
     (message.media_type.startsWith("application/") ||
       message.media_type.startsWith("text/") ||
       message.media_type === "document");
@@ -307,6 +315,57 @@ export function ChatMessageItem({
             <span className="text-[10px] text-muted-foreground dark:text-white/50">{formatMessageTime(message.created_at)}</span>
             {isOwn && <CheckCheck className={cn("w-4 h-4", isRead ? "text-[#6ab3f3]" : "text-white/40")} />}
           </div>
+        </div>
+      );
+    }
+
+    if (isContact) {
+      let contactData: { name?: string; phone?: string } = {};
+      try { contactData = JSON.parse(message.content || "{}"); } catch { /* невалидный JSON */ }
+      return (
+        <div className={cn("flex flex-col gap-1 flex-1 min-w-0", isOwn ? "items-end" : "items-start")}>
+          <ContactCard name={contactData.name || "Контакт"} phone={contactData.phone || ""} />
+          {renderTimestamp()}
+        </div>
+      );
+    }
+
+    if (isLocation && message.location_lat != null && message.location_lng != null) {
+      const lat = message.location_lat;
+      const lng = message.location_lng;
+      return (
+        <div className={cn("flex flex-col gap-1 flex-1 min-w-0", isOwn ? "items-end" : "items-start")}>
+          <a
+            href={`https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=16/${lat}/${lng}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={cn(
+              "flex items-center gap-3 rounded-2xl px-4 py-3 backdrop-blur-xl border border-white/10 min-w-[200px] hover:bg-white/10 transition-colors",
+              isOwn ? "bg-white/10" : "bg-white/5"
+            )}
+          >
+            <div className="w-10 h-10 rounded-full bg-green-500/20 flex items-center justify-center flex-shrink-0">
+              <MapPin className="w-5 h-5 text-green-400" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-white">📍 Геолокация</p>
+              <p className="text-xs text-white/50">{lat.toFixed(5)}, {lng.toFixed(5)}</p>
+            </div>
+          </a>
+          {renderTimestamp()}
+        </div>
+      );
+    }
+
+    if (isMusic && message.media_url) {
+      return (
+        <div className={cn("flex flex-col gap-1 flex-1 min-w-0", isOwn ? "items-end" : "items-start")}>
+          <MusicMessage
+            fileUrl={message.media_url}
+            fileName={message.file_name ?? "audio"}
+            isOwn={isOwn}
+          />
+          {renderTimestamp()}
         </div>
       );
     }

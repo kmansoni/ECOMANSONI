@@ -155,7 +155,7 @@ export function SettingsChatFoldersSection({
           .filter(Boolean) as Array<{ folder_id: string; item_kind: ChatFolderItemKind; item_id: string }>;
 
         if (items.length) {
-          const ins2 = await supabase.from("chat_folder_items").insert(items);
+          const ins2 = await supabase.from("chat_folder_items").upsert(items, { onConflict: "folder_id,item_kind,item_id", ignoreDuplicates: true });
           if (ins2.error) throw ins2.error;
         }
       }

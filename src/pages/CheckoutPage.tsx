@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { ArrowLeft, MapPin, Truck, CreditCard, DollarSign, ChevronRight } from 'lucide-react';
 import { useCheckout, type DeliveryAddress } from '@/hooks/useCheckout';
+import { CouponInput } from '@/components/shop/CouponInput';
 import { toast } from 'sonner';
 
 const DELIVERY_METHODS = [
@@ -45,9 +46,10 @@ export default function CheckoutPage() {
   });
   const [deliveryMethod, setDeliveryMethod] = useState<'courier' | 'pickup' | 'mail'>('courier');
   const [paymentMethod, setPaymentMethod] = useState<'card' | 'cash'>('card');
+  const [couponDiscount, setCouponDiscount] = useState(0);
 
   const deliveryCost = DELIVERY_METHODS.find(d => d.id === deliveryMethod)?.cost ?? 0;
-  const totalAmount = itemsTotal + deliveryCost;
+  const totalAmount = Math.max(0, itemsTotal + deliveryCost - couponDiscount);
 
   const set = (field: keyof DeliveryAddress, value: string) =>
     setAddress(prev => ({ ...prev, [field]: value }));
@@ -168,6 +170,15 @@ export default function CheckoutPage() {
           </div>
         </section>
 
+        {/* Промокод */}
+        <section className="space-y-3">
+          <CouponInput
+            orderAmount={itemsTotal}
+            onApply={(discount) => setCouponDiscount(discount)}
+            onClear={() => setCouponDiscount(0)}
+          />
+        </section>
+
         {/* Summary */}
         <section className="bg-zinc-900 rounded-2xl p-4 space-y-2">
           <div className="flex justify-between text-sm">
@@ -178,6 +189,12 @@ export default function CheckoutPage() {
             <span className="text-zinc-400">Доставка</span>
             <span className="text-white">{deliveryCost === 0 ? 'Бесплатно' : `${deliveryCost} ₽`}</span>
           </div>
+          {couponDiscount > 0 && (
+            <div className="flex justify-between text-sm">
+              <span className="text-green-400">Скидка по промокоду</span>
+              <span className="text-green-400">−{couponDiscount.toLocaleString('ru-RU')} ₽</span>
+            </div>
+          )}
           <div className="flex justify-between font-bold text-lg pt-2 border-t border-zinc-800">
             <span className="text-white">Итого</span>
             <span className="text-white">{totalAmount.toLocaleString('ru-RU')} ₽</span>

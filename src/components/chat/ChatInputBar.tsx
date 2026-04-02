@@ -12,8 +12,10 @@ import { AutoGrowTextarea } from "./AutoGrowTextarea";
 import { InlineBotResults } from "./InlineBotResults";
 import { MentionSuggestions } from "./MentionSuggestions";
 import { SendOptionsMenu } from "./SendOptionsMenu";
+import { QuickReplyBar } from "./QuickReplyBar";
 import type { MessageEffectType } from "./MessageEffectOverlay";
 import type { MentionUser } from "@/hooks/useMentions";
+import type { QuickReply } from "@/hooks/useQuickReplies";
 import { formatTime } from "./chatConversationHelpers";
 
 interface ChatInputBarProps {
@@ -65,6 +67,8 @@ interface ChatInputBarProps {
   onInlineBotSelect: (result: { sendContent: { text?: string } }) => void;
   onInlineBotDismiss: () => void;
   onEffect?: (effect: MessageEffectType) => void;
+  quickReplies?: QuickReply[];
+  onQuickReplySelect?: (text: string) => void;
 }
 
 export function ChatInputBar({
@@ -111,6 +115,8 @@ export function ChatInputBar({
   onInlineBotSelect,
   onInlineBotDismiss,
   onEffect,
+  quickReplies,
+  onQuickReplySelect,
 }: ChatInputBarProps) {
   const sendButtonLongPressRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -261,6 +267,15 @@ export function ChatInputBar({
                 onSelect={onMentionSelect}
                 externalActiveIndex={mentionActiveIndex}
               />
+
+              {/* Quick replies — при вводе "/" */}
+              {quickReplies && quickReplies.length > 0 && inputText.startsWith("/") && onQuickReplySelect && (
+                <QuickReplyBar
+                  replies={quickReplies}
+                  filterText={inputText.slice(1)}
+                  onSelect={onQuickReplySelect}
+                />
+              )}
 
               <AutoGrowTextarea
                 ref={inputRef}

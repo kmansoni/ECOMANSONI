@@ -19,6 +19,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { getStableCallsDeviceId } from "@/lib/platform/device";
 import { logger } from "@/lib/logger";
+import { acquireScreenStream } from "@/lib/calls/screenShare";
+import { NoiseSuppressor } from "@/lib/audio/noiseSuppression";
+import { VideoBlurProcessor } from "@/lib/calls/videoBlurProcessor";
 
 // Re-use the canonical VideoCall / VideoCallStatus types to stay DB-schema-aligned
 // and remain compatible with the rest of the codebase (VideoCallContext, useIncomingCalls, etc.)
@@ -235,6 +238,22 @@ export interface UseVideoCallSfuReturn {
    * Used when handing off to the legacy P2P engine on SFU bootstrap failure.
    */
   releaseMediaWithoutDbUpdate: () => void;
+  /** Screen share: флаг активности демонстрации экрана. */
+  isScreenSharing: boolean;
+  /** Screen share: текущий MediaStream экрана (null если не активен). */
+  screenStream: MediaStream | null;
+  /** Screen share: начать демонстрацию экрана. */
+  startScreenShare: () => Promise<void>;
+  /** Screen share: остановить демонстрацию экрана. */
+  stopScreenShare: () => void;
+  /** Noise suppression: флаг активности шумоподавления. */
+  noiseSuppressionEnabled: boolean;
+  /** Noise suppression: переключить шумоподавление. */
+  toggleNoiseSuppression: () => Promise<void>;
+  /** Background blur: флаг активности размытия фона. */
+  backgroundBlurEnabled: boolean;
+  /** Background blur: переключить размытие фона. */
+  toggleBackgroundBlur: () => Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -264,6 +283,21 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
   const [connectionState, setConnectionState] = useState<string>("unknown");
+
+  // Screen share state
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
+  const screenStreamRef = useRef<MediaStream | null>(null);
+
+  // Noise suppression state
+  const [noiseSuppressionEnabled, setNoiseSuppressionEnabled] = useState(false);
+  const noiseSuppressorRef = useRef<NoiseSuppressor | null>(null);
+  const originalAudioTrackRef = useRef<MediaStreamTrack | null>(null);
+
+  // Background blur state
+  const [backgroundBlurEnabled, setBackgroundBlurEnabled] = useState(false);
+  const blurProcessorRef = useRef<VideoBlurProcessor | null>(null);
+  const originalVideoTrackRef = useRef<MediaStreamTrack | null>(null);
 
   const localStreamRef = useRef<MediaStream | null>(null);
   const currentCallRef = useRef<VideoCall | null>(null);
@@ -342,16 +376,42 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
     }
   }, []);
 
+  const stopScreenShare = useCallback(() => {
+    const stream = screenStreamRef.current;
+    if (stream) {
+      stream.getTracks().forEach((t) => t.stop());
+      screenStreamRef.current = null;
+      setScreenStream(null);
+    }
+    setIsScreenSharing(false);
+  }, []);
+
+  const cleanupProcessors = useCallback(() => {
+    noiseSuppressorRef.current?.close();
+    noiseSuppressorRef.current = null;
+    originalAudioTrackRef.current = null;
+    setNoiseSuppressionEnabled(false);
+
+    blurProcessorRef.current?.stop();
+    blurProcessorRef.current = null;
+    originalVideoTrackRef.current = null;
+    setBackgroundBlurEnabled(false);
+  }, []);
+
   const releaseMediaWithoutDbUpdate = useCallback(() => {
     releaseLocalMedia();
+    stopScreenShare();
+    cleanupProcessors();
     setRemoteStreamState(null);
     mediaBootstrapSignalsRef.current.clear();
     setConnectionState("unknown");
     logger.info("video_call_sfu.media_released_for_engine_handoff", {});
-  }, [releaseLocalMedia]);
+  }, [releaseLocalMedia, stopScreenShare, cleanupProcessors]);
 
   const resetState = useCallback(() => {
     releaseLocalMedia();
+    stopScreenShare();
+    cleanupProcessors();
     setRemoteStreamState(null);
     mediaBootstrapSignalsRef.current.clear();
     setStatus("idle");
@@ -359,7 +419,7 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
     setIsMuted(false);
     setIsVideoOff(false);
     // Note: setCurrentCall(null) must be called after onCallEnded fires — see endCall
-  }, [releaseLocalMedia]);
+  }, [releaseLocalMedia, stopScreenShare, cleanupProcessors]);
 
   // ---------------------------------------------------------------------------
   // startCall
@@ -629,6 +689,125 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
   }, []);
 
   // ---------------------------------------------------------------------------
+  // Screen share / Noise suppression / Background blur
+  // ---------------------------------------------------------------------------
+
+  const startScreenShare = useCallback(async () => {
+    if (screenStreamRef.current) return;
+    try {
+      const stream = await acquireScreenStream();
+      screenStreamRef.current = stream;
+      setScreenStream(stream);
+      setIsScreenSharing(true);
+
+      // Auto-stop: пользователь нажал "Прекратить демонстрацию" в браузере
+      const videoTrack = stream.getVideoTracks()[0];
+      if (videoTrack) {
+        videoTrack.addEventListener('ended', () => {
+          stopScreenShare();
+        }, { once: true });
+      }
+
+      logger.info('video_call_sfu.screen_share_started', {});
+    } catch (error: unknown) {
+      if (error instanceof DOMException && error.name === 'NotAllowedError') return;
+      logger.error('video_call_sfu.screen_share_failed', { error });
+    }
+  }, [stopScreenShare]);
+
+  const toggleNoiseSuppression = useCallback(async () => {
+    const stream = localStreamRef.current;
+    if (!stream) return;
+
+    try {
+      if (noiseSuppressorRef.current) {
+        // Выключаем: вернуть оригинальный трек
+        noiseSuppressorRef.current.close();
+        noiseSuppressorRef.current = null;
+
+        const originalTrack = originalAudioTrackRef.current;
+        if (originalTrack && originalTrack.readyState === 'live') {
+          const currentAudio = stream.getAudioTracks()[0];
+          if (currentAudio) stream.removeTrack(currentAudio);
+          stream.addTrack(originalTrack);
+        }
+        originalAudioTrackRef.current = null;
+        setNoiseSuppressionEnabled(false);
+        logger.info('video_call_sfu.noise_suppression_disabled', {});
+      } else {
+        // Включаем: процессинг аудио
+        const audioTrack = stream.getAudioTracks()[0];
+        if (!audioTrack) return;
+
+        originalAudioTrackRef.current = audioTrack;
+        const audioStream = new MediaStream([audioTrack]);
+        const suppressor = new NoiseSuppressor(audioStream);
+        noiseSuppressorRef.current = suppressor;
+
+        const processedStream = suppressor.getProcessedStream();
+        if (!processedStream) {
+          suppressor.close();
+          noiseSuppressorRef.current = null;
+          originalAudioTrackRef.current = null;
+          return;
+        }
+
+        const processedTrack = processedStream.getAudioTracks()[0];
+        if (processedTrack) {
+          stream.removeTrack(audioTrack);
+          stream.addTrack(processedTrack);
+        }
+        setNoiseSuppressionEnabled(true);
+        logger.info('video_call_sfu.noise_suppression_enabled', {});
+      }
+    } catch (error) {
+      logger.error('video_call_sfu.noise_suppression_toggle_failed', { error });
+    }
+  }, []);
+
+  const toggleBackgroundBlur = useCallback(async () => {
+    const stream = localStreamRef.current;
+    if (!stream) return;
+
+    try {
+      if (blurProcessorRef.current) {
+        // Выключаем: вернуть оригинальный трек
+        blurProcessorRef.current.stop();
+        blurProcessorRef.current = null;
+
+        const originalTrack = originalVideoTrackRef.current;
+        if (originalTrack && originalTrack.readyState === 'live') {
+          const currentVideo = stream.getVideoTracks()[0];
+          if (currentVideo) stream.removeTrack(currentVideo);
+          stream.addTrack(originalTrack);
+        }
+        originalVideoTrackRef.current = null;
+        setBackgroundBlurEnabled(false);
+        logger.info('video_call_sfu.background_blur_disabled', {});
+      } else {
+        // Включаем: процессинг видео
+        const videoTrack = stream.getVideoTracks()[0];
+        if (!videoTrack) return;
+
+        originalVideoTrackRef.current = videoTrack;
+        const processor = new VideoBlurProcessor();
+        blurProcessorRef.current = processor;
+
+        const processedTrack = await processor.start(videoTrack);
+        stream.removeTrack(videoTrack);
+        stream.addTrack(processedTrack);
+        setBackgroundBlurEnabled(true);
+        logger.info('video_call_sfu.background_blur_enabled', {});
+      }
+    } catch (error) {
+      logger.error('video_call_sfu.background_blur_toggle_failed', { error });
+      blurProcessorRef.current?.stop();
+      blurProcessorRef.current = null;
+      originalVideoTrackRef.current = null;
+    }
+  }, []);
+
+  // ---------------------------------------------------------------------------
   // retryWithFreshCredentials — no-op stub (P2P ICE concept, not applicable here)
   // ---------------------------------------------------------------------------
 
@@ -645,8 +824,10 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
   useEffect(() => {
     return () => {
       releaseLocalMedia();
+      stopScreenShare();
+      cleanupProcessors();
     };
-  }, [releaseLocalMedia]);
+  }, [releaseLocalMedia, stopScreenShare, cleanupProcessors]);
 
   return {
     status,
@@ -666,5 +847,16 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
     markMediaBootstrapFailed,
     markMediaBootstrapProgress,
     releaseMediaWithoutDbUpdate,
+    // Screen share
+    isScreenSharing,
+    screenStream,
+    startScreenShare,
+    stopScreenShare,
+    // Noise suppression
+    noiseSuppressionEnabled,
+    toggleNoiseSuppression,
+    // Background blur
+    backgroundBlurEnabled,
+    toggleBackgroundBlur,
   };
 }

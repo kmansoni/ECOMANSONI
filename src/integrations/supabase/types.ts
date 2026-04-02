@@ -6021,6 +6021,7 @@ export type Database = {
           seq: number
           shared_post_id: string | null
           shared_reel_id: string | null
+          transcription_text: string | null
           updated_at: string | null
         }
         Insert: {
@@ -6038,6 +6039,7 @@ export type Database = {
           seq: number
           shared_post_id?: string | null
           shared_reel_id?: string | null
+          transcription_text?: string | null
           updated_at?: string | null
         }
         Update: {
@@ -6055,6 +6057,7 @@ export type Database = {
           seq?: number
           shared_post_id?: string | null
           shared_reel_id?: string | null
+          transcription_text?: string | null
           updated_at?: string | null
         }
         Relationships: [

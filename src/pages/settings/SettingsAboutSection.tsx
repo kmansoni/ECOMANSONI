@@ -12,7 +12,7 @@ export function SettingsAboutSection({ isDark, onNavigate: _onNavigate, onBack }
   return (
     <>
       <SettingsHeader
-        title="About"
+        title="О приложении"
         isDark={isDark}
         currentScreen="about"
         onBack={onBack}
@@ -31,7 +31,7 @@ export function SettingsAboutSection({ isDark, onNavigate: _onNavigate, onBack }
             </span>
           </div>
           <h3 className="text-xl font-semibold">mansoni</h3>
-          <p className={cn("text-sm", isDark ? "text-white/60" : "text-white/60")}>Version 1.0.0</p>
+          <p className={cn("text-sm", isDark ? "text-white/60" : "text-white/60")}>Версия 2.0.0</p>
         </div>
         <div
           className={cn(
@@ -41,18 +41,18 @@ export function SettingsAboutSection({ isDark, onNavigate: _onNavigate, onBack }
         >
           <SettingsMenuItem
             icon={<FileText className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />}
-            label="Open Source Licenses"
+            label="Лицензии открытого ПО"
             isDark={isDark}
             onClick={() => window.open("https://mansoni.app/licenses", "_blank", "noopener,noreferrer")}
           />
           <SettingsMenuItem
             icon={<Info className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />}
-            label="Developer Info"
+            label="Информация о разработчике"
             isDark={isDark}
             onClick={() =>
               toast({
-                title: "Developer",
-                description: "mansoni — messenger of a new generation. © 2024–2026 Mansoni Team.",
+                title: "Разработчик",
+                description: "mansoni — мессенджер нового поколения. © 2024–2026 Mansoni.",
               })
             }
           />

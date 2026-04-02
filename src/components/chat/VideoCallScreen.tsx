@@ -33,6 +33,9 @@ import {
   Loader2,
   AlertTriangle,
   CheckCircle,
+  Monitor,
+  Waves,
+  Sparkles,
 } from "lucide-react";
 // Status icon and color for call states
 function StatusIndicator({ callState }: { callState: CallState }) {
@@ -153,6 +156,16 @@ interface VideoCallScreenProps {
   onToggleMute: () => void;
   onToggleVideo: () => void;
   onRetry: () => void;
+  // Screen share
+  isScreenSharing?: boolean;
+  remoteScreenStream?: MediaStream | null;
+  onToggleScreenShare?: () => void;
+  // Noise suppression
+  noiseSuppressionEnabled?: boolean;
+  onToggleNoiseSuppression?: () => void;
+  // Background blur
+  backgroundBlurEnabled?: boolean;
+  onToggleBackgroundBlur?: () => void;
 }
 
 export function VideoCallScreen({
@@ -169,11 +182,19 @@ export function VideoCallScreen({
   onToggleMute,
   onToggleVideo,
   onRetry,
+  isScreenSharing = false,
+  remoteScreenStream = null,
+  onToggleScreenShare,
+  noiseSuppressionEnabled = false,
+  onToggleNoiseSuppression,
+  backgroundBlurEnabled = false,
+  onToggleBackgroundBlur,
 }: VideoCallScreenProps) {
   const { user } = useAuth();
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const audioOutRef = useRef<HTMLAudioElement>(null);
+  const remoteScreenRef = useRef<HTMLVideoElement>(null);
   const [callDuration, setCallDuration] = useState(0);
   const [isSpeakerOn, setIsSpeakerOn] = useState(true);
   const [isSelfMain, setIsSelfMain] = useState(true); // swap state
@@ -217,6 +238,13 @@ export function VideoCallScreen({
     }
   }, [remoteStream, hasRemoteVideo]);
 
+  // Attach remote screen share stream
+  useEffect(() => {
+    if (remoteScreenRef.current && remoteScreenStream) {
+      remoteScreenRef.current.srcObject = remoteScreenStream;
+    }
+  }, [remoteScreenStream]);
+
   // Call duration timer
   useEffect(() => {
     if (!isConnected) return;
@@ -253,6 +281,8 @@ export function VideoCallScreen({
 
   const showRetryButton = callState === "failed";
   const showWaitingUI = !showRetryButton && !isConnected;
+  const hasRemoteScreen = isConnected && remoteScreenStream && remoteScreenStream.getVideoTracks().length > 0;
+  const hasSecondaryControls = !!(onToggleScreenShare || onToggleNoiseSuppression || onToggleBackgroundBlur);
 
   // Video call - swap local/remote preview
   if (isVideoCall && localStream && !isVideoOff) {
@@ -409,6 +439,55 @@ export function VideoCallScreen({
 
         {/* Bottom controls */}
         <div className="absolute bottom-0 left-0 right-0 p-6 pb-10 safe-area-bottom z-20 bg-gradient-to-t from-black/50 to-transparent">
+          {/* Screen sharing indicator */}
+          {isScreenSharing && (
+            <div className="flex justify-center mb-3">
+              <span className="px-4 py-1.5 rounded-full text-xs font-medium text-white bg-blue-600/80 backdrop-blur-sm">
+                <Monitor className="w-3.5 h-3.5 inline-block mr-1.5 -mt-0.5" />
+                Вы демонстрируете экран
+              </span>
+            </div>
+          )}
+          {/* Remote screen share */}
+          {hasRemoteScreen && (
+            <div className="absolute inset-0 bottom-36 z-[1]">
+              <video
+                ref={remoteScreenRef}
+                autoPlay
+                playsInline
+                className="w-full h-full object-contain bg-black/90"
+              />
+            </div>
+          )}
+          {/* Secondary controls */}
+          {isConnected && hasSecondaryControls && (
+            <div className="flex items-center justify-center gap-6 mb-4">
+              {onToggleScreenShare && (
+                <GlassControlButton
+                  icon={<Monitor className="w-5 h-5" />}
+                  label="Экран"
+                  isActive={!isScreenSharing}
+                  onClick={onToggleScreenShare}
+                />
+              )}
+              {onToggleNoiseSuppression && (
+                <GlassControlButton
+                  icon={<Waves className="w-5 h-5" />}
+                  label="Шум"
+                  isActive={!noiseSuppressionEnabled}
+                  onClick={onToggleNoiseSuppression}
+                />
+              )}
+              {onToggleBackgroundBlur && (
+                <GlassControlButton
+                  icon={<Sparkles className="w-5 h-5" />}
+                  label="Фон"
+                  isActive={!backgroundBlurEnabled}
+                  onClick={onToggleBackgroundBlur}
+                />
+              )}
+            </div>
+          )}
           <div className="flex items-center justify-around">
             <GlassControlButton
               icon={<Volume2 className="w-6 h-6" />}
@@ -528,6 +607,35 @@ export function VideoCallScreen({
 
         {/* Bottom controls */}
         <div className="p-6 pb-10 safe-area-bottom">
+          {/* Secondary controls */}
+          {isConnected && hasSecondaryControls && (
+            <div className="flex items-center justify-center gap-6 mb-4">
+              {onToggleScreenShare && (
+                <GlassControlButton
+                  icon={<Monitor className="w-5 h-5" />}
+                  label="Экран"
+                  isActive={!isScreenSharing}
+                  onClick={onToggleScreenShare}
+                />
+              )}
+              {onToggleNoiseSuppression && (
+                <GlassControlButton
+                  icon={<Waves className="w-5 h-5" />}
+                  label="Шум"
+                  isActive={!noiseSuppressionEnabled}
+                  onClick={onToggleNoiseSuppression}
+                />
+              )}
+              {onToggleBackgroundBlur && (
+                <GlassControlButton
+                  icon={<Sparkles className="w-5 h-5" />}
+                  label="Фон"
+                  isActive={!backgroundBlurEnabled}
+                  onClick={onToggleBackgroundBlur}
+                />
+              )}
+            </div>
+          )}
           <div className="flex items-center justify-around">
             <GlassControlButton
               icon={isSpeakerOn ? <Volume2 className="w-6 h-6" /> : <Headphones className="w-6 h-6" />}

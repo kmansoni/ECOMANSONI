@@ -125,7 +125,7 @@ export function SettingsArchiveSection({ isDark, currentScreen, onNavigate, onBa
         created_at: r.created_at, archived_at: r.archived_at ?? null,
       })));
     } catch (e) {
-      toast({ title: "Story Archive", description: getErrorMessage(e) });
+      toast({ title: "Архив историй", description: getErrorMessage(e) });
     } finally { setStoriesLoading(false); }
   }, [user?.id]);
 
@@ -144,7 +144,7 @@ export function SettingsArchiveSection({ isDark, currentScreen, onNavigate, onBa
       const map = await fetchPostsByIds(ids);
       setPosts(ids.map((id) => map.get(id)).filter(Boolean) as SettingsPostItem[]);
     } catch (e) {
-      toast({ title: "Post Archive", description: getErrorMessage(e) });
+      toast({ title: "Архив постов", description: getErrorMessage(e) });
     } finally { setPostsLoading(false); }
   }, [user?.id]);
 
@@ -167,25 +167,25 @@ export function SettingsArchiveSection({ isDark, currentScreen, onNavigate, onBa
         started_at: r.started_at ?? null, ended_at: r.ended_at ?? null, created_at: r.created_at,
       })));
     } catch (e) {
-      toast({ title: "Live Sessions Archive", description: getErrorMessage(e) });
+      toast({ title: "Архив трансляций", description: getErrorMessage(e) });
     } finally { setLiveLoading(false); }
   }, [user?.id]);
 
   if (currentScreen === "archive_stories") {
     return (
       <>
-        <SettingsHeader title="Story Archive" isDark={isDark} currentScreen="archive_stories" onBack={onBack} onClose={onBack} />
+        <SettingsHeader title="Архив историй" isDark={isDark} currentScreen="archive_stories" onBack={onBack} onClose={onBack} />
         <div className="flex-1 overflow-y-auto native-scroll pb-8">
           <div className="px-4">
             <div className={cn("backdrop-blur-xl rounded-2xl border overflow-hidden", isDark ? "settings-dark-card" : "bg-card/80 border-white/20")}>
               <div className="px-5 py-4">
-                <p className="font-semibold">Archived Stories</p>
-                <p className={cn("text-sm mt-1", isDark ? "text-white/60" : "text-white/70")}>Source: stories table, where is_archived = true.</p>
+                <p className="font-semibold">Архивированные истории</p>
+                <p className={cn("text-sm mt-1", isDark ? "text-white/60" : "text-white/70")}>Истории, которые были архивированы автоматически.</p>
               </div>
               {storiesLoading ? (
-                <p className={cn("px-5 py-4 text-sm", isDark ? "text-white/60" : "text-white/70")}>Loading...</p>
+                <p className={cn("px-5 py-4 text-sm", isDark ? "text-white/60" : "text-white/70")}>Загрузка…</p>
               ) : stories.length === 0 ? (
-                <p className={cn("px-5 py-4 text-sm", isDark ? "text-white/60" : "text-white/70")}>Story archive is empty.</p>
+                <p className={cn("px-5 py-4 text-sm", isDark ? "text-white/60" : "text-white/70")}>Архив историй пуст.</p>
               ) : (
                 <div className={cn("border-t", isDark ? "border-white/10" : "border-white/20")}>
                   {stories.map((s) => (
@@ -193,12 +193,12 @@ export function SettingsArchiveSection({ isDark, currentScreen, onNavigate, onBa
                       <div className={cn("w-14 h-14 rounded-xl overflow-hidden border shrink-0", isDark ? "border-white/10" : "border-white/20")}>
                         {s.media_url
                           ? <img src={s.media_url} alt="story" className="w-full h-full object-cover" />
-                          : <div className={cn("w-full h-full grid place-items-center text-xs", isDark ? "text-white/50" : "text-white/70")}>No media</div>}
+                          : <div className={cn("w-full h-full grid place-items-center text-xs", isDark ? "text-white/50" : "text-white/70")}>Нет медиа</div>}
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className={cn("font-medium", isDark ? "text-white" : "text-white")}>Story #{s.id.slice(0, 8)}</p>
                         <p className={cn("text-xs mt-1", isDark ? "text-white/60" : "text-white/70")}>
-                          Archived: {s.archived_at ? new Date(s.archived_at).toLocaleDateString("ru-RU") : "-"}
+                          Архивировано: {s.archived_at ? new Date(s.archived_at).toLocaleDateString("ru-RU") : "-"}
                         </p>
                       </div>
                     </div>
@@ -215,15 +215,15 @@ export function SettingsArchiveSection({ isDark, currentScreen, onNavigate, onBa
   if (currentScreen === "archive_posts") {
     return (
       <>
-        <SettingsHeader title="Post Archive" isDark={isDark} currentScreen="archive_posts" onBack={onBack} onClose={onBack} />
+        <SettingsHeader title="Архив постов" isDark={isDark} currentScreen="archive_posts" onBack={onBack} onClose={onBack} />
         <div className="flex-1 overflow-y-auto native-scroll pb-8">
           <div className="px-4">
             <div className={cn("backdrop-blur-xl rounded-2xl border overflow-hidden", isDark ? "settings-dark-card" : "bg-card/80 border-white/20")}>
               <div className="px-5 py-4">
-                <p className="font-semibold">Archived Posts</p>
-                <p className={cn("text-sm mt-1", isDark ? "text-white/60" : "text-white/70")}>Source: archived_posts table.</p>
+                <p className="font-semibold">Архивированные посты</p>
+                <p className={cn("text-sm mt-1", isDark ? "text-white/60" : "text-white/70")}>Посты, которые вы переместили в архив.</p>
               </div>
-              <SettingsPostsList rows={posts} loading={postsLoading} emptyText="Post archive is empty." isDark={isDark} />
+              <SettingsPostsList rows={posts} loading={postsLoading} emptyText="Архив постов пуст." isDark={isDark} />
             </div>
           </div>
         </div>
@@ -234,26 +234,26 @@ export function SettingsArchiveSection({ isDark, currentScreen, onNavigate, onBa
   if (currentScreen === "archive_live") {
     return (
       <>
-        <SettingsHeader title="Live Sessions Archive" isDark={isDark} currentScreen="archive_live" onBack={onBack} onClose={onBack} />
+        <SettingsHeader title="Архив трансляций" isDark={isDark} currentScreen="archive_live" onBack={onBack} onClose={onBack} />
         <div className="flex-1 overflow-y-auto native-scroll pb-8">
           <div className="px-4">
             <div className={cn("backdrop-blur-xl rounded-2xl border overflow-hidden", isDark ? "settings-dark-card" : "bg-card/80 border-white/20")}>
               <div className="px-5 py-4">
-                <p className="font-semibold">Past Live Streams</p>
-                <p className={cn("text-sm mt-1", isDark ? "text-white/60" : "text-white/70")}>Source: live_sessions (ended_at IS NOT NULL).</p>
+                <p className="font-semibold">Завершённые трансляции</p>
+                <p className={cn("text-sm mt-1", isDark ? "text-white/60" : "text-white/70")}>Ваши прошедшие прямые эфиры.</p>
               </div>
               {liveLoading ? (
-                <p className={cn("px-5 py-4 text-sm", isDark ? "text-white/60" : "text-white/70")}>Loading...</p>
+                <p className={cn("px-5 py-4 text-sm", isDark ? "text-white/60" : "text-white/70")}>Загрузка…</p>
               ) : live.length === 0 ? (
-                <p className={cn("px-5 py-4 text-sm", isDark ? "text-white/60" : "text-white/70")}>Live sessions archive is empty.</p>
+                <p className={cn("px-5 py-4 text-sm", isDark ? "text-white/60" : "text-white/70")}>Архив трансляций пуст.</p>
               ) : (
                 <div className={cn("border-t", isDark ? "border-white/10" : "border-white/20")}>
                   {live.map((s) => (
                     <div key={s.id} className={cn("px-5 py-4 border-b", isDark ? "border-white/10" : "border-white/20")}>
                       <p className={cn("font-medium", isDark ? "text-white" : "text-white")}>Live #{s.id.slice(0, 8)}</p>
-                      <p className={cn("text-xs mt-1", isDark ? "text-white/60" : "text-white/70")}>Status: {s.state}</p>
+                      <p className={cn("text-xs mt-1", isDark ? "text-white/60" : "text-white/70")}>Статус: {s.state}</p>
                       <p className={cn("text-xs mt-1", isDark ? "text-white/60" : "text-white/70")}>
-                        Ended: {s.ended_at ? new Date(s.ended_at).toLocaleString("ru-RU") : "-"}
+                        Завершено: {s.ended_at ? new Date(s.ended_at).toLocaleString("ru-RU") : "-"}
                       </p>
                     </div>
                   ))}
@@ -269,26 +269,26 @@ export function SettingsArchiveSection({ isDark, currentScreen, onNavigate, onBa
   // "archive" main
   return (
     <>
-      <SettingsHeader title="Archive" isDark={isDark} currentScreen="archive" onBack={onBack} onClose={onBack} />
+      <SettingsHeader title="Архив" isDark={isDark} currentScreen="archive" onBack={onBack} onClose={onBack} />
       <div className="flex-1 overflow-y-auto native-scroll">
         <div className={cn("mx-4 backdrop-blur-xl rounded-2xl border overflow-hidden", isDark ? "settings-dark-card" : "bg-card/80 border-white/20")}>
           <SettingsMenuItem
             icon={<Archive className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />}
-            label="Story Archive"
+            label="Архив историй"
             isDark={isDark}
             onClick={() => { onNavigate("archive_stories"); void loadStories(); }}
             value={stories.length ? String(stories.length) : undefined}
           />
           <SettingsMenuItem
             icon={<Archive className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />}
-            label="Post Archive"
+            label="Архив постов"
             isDark={isDark}
             onClick={() => { onNavigate("archive_posts"); void loadPosts(); }}
             value={posts.length ? String(posts.length) : undefined}
           />
           <SettingsMenuItem
             icon={<Archive className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />}
-            label="Live Sessions Archive"
+            label="Архив трансляций"
             isDark={isDark}
             onClick={() => { onNavigate("archive_live"); void loadLive(); }}
             value={live.length ? String(live.length) : undefined}

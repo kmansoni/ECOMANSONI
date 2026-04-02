@@ -11,7 +11,7 @@ export function SettingsHelpSection({ isDark, onNavigate: _onNavigate, onBack }:
   return (
     <>
       <SettingsHeader
-        title="Help"
+        title="Помощь"
         isDark={isDark}
         currentScreen="help"
         onBack={onBack}
@@ -26,13 +26,13 @@ export function SettingsHelpSection({ isDark, onNavigate: _onNavigate, onBack }:
         >
           <SettingsMenuItem
             icon={<HelpCircle className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />}
-            label="Help Center"
+            label="Центр помощи"
             isDark={isDark}
             onClick={() => window.open("https://mansoni.app/help", "_blank", "noopener,noreferrer")}
           />
           <SettingsMenuItem
             icon={<AlertCircle className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />}
-            label="Report a Problem"
+            label="Сообщить о проблеме"
             isDark={isDark}
             onClick={() =>
               window.open(
@@ -44,13 +44,13 @@ export function SettingsHelpSection({ isDark, onNavigate: _onNavigate, onBack }:
           />
           <SettingsMenuItem
             icon={<FileText className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />}
-            label="Terms of Service"
+            label="Условия использования"
             isDark={isDark}
             onClick={() => window.open("https://mansoni.app/terms", "_blank", "noopener,noreferrer")}
           />
           <SettingsMenuItem
             icon={<Lock className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />}
-            label="Privacy Policy"
+            label="Политика конфиденциальности"
             isDark={isDark}
             onClick={() => window.open("https://mansoni.app/privacy", "_blank", "noopener,noreferrer")}
           />

@@ -42,6 +42,7 @@ export type UserSettings = {
   // Calls — extended
   calls_noise_suppression: boolean;
   calls_p2p_mode: "everyone" | "contacts" | "nobody";
+  calls_vibration: boolean;
 
   // Data & storage (Telegram-like)
   media_auto_download_enabled: boolean;
@@ -76,6 +77,7 @@ function withDataStorageDefaults(partial: Partial<UserSettings>): UserSettings {
     mention_notifications: true,
     calls_noise_suppression: true,
     calls_p2p_mode: "contacts",
+    calls_vibration: true,
     // existing defaults are handled by DB; for fallback we just spread what we got
     ...partial,
   } as UserSettings;

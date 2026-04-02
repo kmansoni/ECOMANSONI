@@ -117,6 +117,7 @@ export function BlockedUsersPanel({ isDark }: { isDark: boolean }) {
                       const { error } = await supabase.from("blocked_users").delete().eq("id", r.id);
                       if (error) throw error;
                       toast({ title: "Готово", description: "Пользователь разблокирован." });
+                      void load();
                     } catch (e) {
                       toast({ title: "Разблокировать", description: e instanceof Error ? e.message : String(e) });
                     }

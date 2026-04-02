@@ -95,7 +95,7 @@ export function SettingsActivitySection({ isDark, currentScreen, onNavigate, onB
       const ids = rows.map((r) => String(r.post_id));
       const map = await fetchPostsByIds(ids);
       setLikes(ids.map((id) => map.get(id)).filter(Boolean) as SettingsPostItem[]);
-    } catch (e) { toast({ title: "Likes", description: getErrorMessage(e) }); }
+    } catch (e) { toast({ title: "Лайки", description: getErrorMessage(e) }); }
     finally { setLikesLoading(false); }
   }, [user?.id]);
 
@@ -107,7 +107,7 @@ export function SettingsActivitySection({ isDark, currentScreen, onNavigate, onB
       if (error) throw error;
       const rows = (data ?? []) as unknown as CommentRow[];
       setComments(rows.map((r) => ({ id: String(r.id), post_id: String(r.post_id), content: String(r.content ?? ""), created_at: r.created_at })));
-    } catch (e) { toast({ title: "Comments", description: getErrorMessage(e) }); }
+    } catch (e) { toast({ title: "Комментарии", description: getErrorMessage(e) }); }
     finally { setCommentsLoading(false); }
   }, [user?.id]);
 
@@ -126,7 +126,7 @@ export function SettingsActivitySection({ isDark, currentScreen, onNavigate, onB
         for (const r of reels) reelMap.set(String(r.id), r);
       }
       setReposts(repostRows.map((r) => ({ id: String(r.id), reel_id: String(r.reel_id), created_at: r.created_at ?? null, reel_description: reelMap.get(String(r.reel_id))?.description ?? null, reel_thumbnail_url: reelMap.get(String(r.reel_id))?.thumbnail_url ?? null })));
-    } catch (e) { toast({ title: "Reposts", description: getErrorMessage(e) }); }
+    } catch (e) { toast({ title: "Репосты", description: getErrorMessage(e) }); }
     finally { setRepostsLoading(false); }
   }, [user?.id]);
 
@@ -145,20 +145,20 @@ export function SettingsActivitySection({ isDark, currentScreen, onNavigate, onB
       const a = document.createElement("a");
       a.href = url; a.download = `activity-export-${new Date().toISOString().slice(0, 10)}.json`;
       document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
-      toast({ title: "Download Data", description: "JSON exported successfully." });
-    } catch (e) { toast({ title: "Export", description: getErrorMessage(e) }); }
+      toast({ title: "Готово", description: "Данные экспортированы." });
+    } catch (e) { toast({ title: "Экспорт", description: getErrorMessage(e) }); }
     finally { setExportLoading(false); }
   }, [user?.id]);
 
   if (currentScreen === "activity_likes") {
     return (
       <>
-        <SettingsHeader title="Likes" isDark={isDark} currentScreen="activity_likes" onBack={onBack} onClose={onBack} />
+        <SettingsHeader title="Лайки" isDark={isDark} currentScreen="activity_likes" onBack={onBack} onClose={onBack} />
         <div className="flex-1 overflow-y-auto native-scroll pb-8">
           <div className="px-4">
             <div className={cn("backdrop-blur-xl rounded-2xl border overflow-hidden", isDark ? "settings-dark-card" : "bg-card/80 border-white/20")}>
-              <div className="px-5 py-4"><p className="font-semibold">Liked Posts</p><p className={cn("text-sm mt-1", isDark ? "text-white/60" : "text-white/70")}>Source: post_likes.</p></div>
-              <SettingsPostsList rows={likes} loading={likesLoading} emptyText="No likes yet." isDark={isDark} />
+              <div className="px-5 py-4"><p className="font-semibold">Понравившиеся посты</p><p className={cn("text-sm mt-1", isDark ? "text-white/60" : "text-white/70")}>Посты, которым вы поставили лайк.</p></div>
+              <SettingsPostsList rows={likes} loading={likesLoading} emptyText="Лайков пока нет." isDark={isDark} />
             </div>
           </div>
         </div>
@@ -169,18 +169,18 @@ export function SettingsActivitySection({ isDark, currentScreen, onNavigate, onB
   if (currentScreen === "activity_comments") {
     return (
       <>
-        <SettingsHeader title="Comments" isDark={isDark} currentScreen="activity_comments" onBack={onBack} onClose={onBack} />
+        <SettingsHeader title="Комментарии" isDark={isDark} currentScreen="activity_comments" onBack={onBack} onClose={onBack} />
         <div className="flex-1 overflow-y-auto native-scroll pb-8">
           <div className="px-4">
             <div className={cn("backdrop-blur-xl rounded-2xl border overflow-hidden", isDark ? "settings-dark-card" : "bg-card/80 border-white/20")}>
-              <div className="px-5 py-4"><p className="font-semibold">Your Comments</p></div>
-              {commentsLoading ? <p className={cn("px-5 py-4 text-sm", isDark ? "text-white/60" : "text-white/70")}>Loading...</p>
-                : comments.length === 0 ? <p className={cn("px-5 py-4 text-sm", isDark ? "text-white/60" : "text-white/70")}>No comments yet.</p>
+              <div className="px-5 py-4"><p className="font-semibold">Ваши комментарии</p></div>
+              {commentsLoading ? <p className={cn("px-5 py-4 text-sm", isDark ? "text-white/60" : "text-white/70")}>Загрузка…</p>
+                : comments.length === 0 ? <p className={cn("px-5 py-4 text-sm", isDark ? "text-white/60" : "text-white/70")}>Комментариев пока нет.</p>
                 : <div className={cn("border-t", isDark ? "border-white/10" : "border-white/20")}>
                     {comments.map((item) => (
                       <button key={item.id} onClick={() => navigate(`/post/${item.post_id}`)}
                         className={cn("w-full px-5 py-4 text-left border-b", isDark ? "border-white/10 hover:bg-white/5" : "border-white/20 hover:bg-muted/30")}>
-                        <p className={cn("font-medium line-clamp-2", isDark ? "text-white" : "text-white")}>{item.content || "Comment without text"}</p>
+                        <p className={cn("font-medium line-clamp-2", isDark ? "text-white" : "text-white")}>{item.content || "Комментарий без текста"}</p>
                         <p className={cn("text-xs mt-1", isDark ? "text-white/60" : "text-white/70")}>{new Date(item.created_at).toLocaleString("ru-RU")}</p>
                       </button>
                     ))}
@@ -195,13 +195,13 @@ export function SettingsActivitySection({ isDark, currentScreen, onNavigate, onB
   if (currentScreen === "activity_reposts") {
     return (
       <>
-        <SettingsHeader title="Reposts" isDark={isDark} currentScreen="activity_reposts" onBack={onBack} onClose={onBack} />
+        <SettingsHeader title="Репосты" isDark={isDark} currentScreen="activity_reposts" onBack={onBack} onClose={onBack} />
         <div className="flex-1 overflow-y-auto native-scroll pb-8">
           <div className="px-4">
             <div className={cn("backdrop-blur-xl rounded-2xl border overflow-hidden", isDark ? "settings-dark-card" : "bg-card/80 border-white/20")}>
-              <div className="px-5 py-4"><p className="font-semibold">Reels Reposts</p></div>
-              {repostsLoading ? <p className={cn("px-5 py-4 text-sm", isDark ? "text-white/60" : "text-white/70")}>Loading...</p>
-                : reposts.length === 0 ? <p className={cn("px-5 py-4 text-sm", isDark ? "text-white/60" : "text-white/70")}>No reposts yet.</p>
+              <div className="px-5 py-4"><p className="font-semibold">Репосты Reels</p></div>
+              {repostsLoading ? <p className={cn("px-5 py-4 text-sm", isDark ? "text-white/60" : "text-white/70")}>Загрузка…</p>
+                : reposts.length === 0 ? <p className={cn("px-5 py-4 text-sm", isDark ? "text-white/60" : "text-white/70")}>Репостов пока нет.</p>
                 : <div className={cn("border-t", isDark ? "border-white/10" : "border-white/20")}>
                     {reposts.map((item) => (
                       <button key={item.id} onClick={() => navigate("/reels")}
@@ -227,10 +227,10 @@ export function SettingsActivitySection({ isDark, currentScreen, onNavigate, onB
   // "activity" main
   return (
     <>
-      <SettingsHeader title="Your Activity" isDark={isDark} currentScreen="activity" onBack={onBack} onClose={onBack} />
+      <SettingsHeader title="Ваша активность" isDark={isDark} currentScreen="activity" onBack={onBack} onClose={onBack} />
       <div className="flex-1 overflow-y-auto native-scroll">
         <div className={cn("mx-4 backdrop-blur-xl rounded-2xl border overflow-hidden", isDark ? "settings-dark-card" : "bg-card/80 border-white/20")}>
-          <SettingsMenuItem icon={<Clock className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />} label="App Screen Time" isDark={isDark}
+          <SettingsMenuItem icon={<Clock className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />} label="Время в приложении" isDark={isDark}
             onClick={() => {
               if (!screenTimeLoading) {
                 setScreenTimeLoading(true);
@@ -244,14 +244,14 @@ export function SettingsActivitySection({ isDark, currentScreen, onNavigate, onB
               }
             }}
             value={screenTimeLoading ? "..." : screenTime > 0 ? `${Math.floor(screenTime / 3600)}h ${Math.floor((screenTime % 3600) / 60)}m` : "0m"} />
-          <SettingsMenuItem icon={<Heart className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />} label="Likes" isDark={isDark}
+          <SettingsMenuItem icon={<Heart className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />} label="Лайки" isDark={isDark}
             onClick={() => { onNavigate("activity_likes"); void loadLikes(); }} value={likes.length ? String(likes.length) : undefined} />
-          <SettingsMenuItem icon={<MessageCircle className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />} label="Comments" isDark={isDark}
+          <SettingsMenuItem icon={<MessageCircle className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />} label="Комментарии" isDark={isDark}
             onClick={() => { onNavigate("activity_comments"); void loadComments(); }} value={comments.length ? String(comments.length) : undefined} />
-          <SettingsMenuItem icon={<Share2 className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />} label="Reposts" isDark={isDark}
+          <SettingsMenuItem icon={<Share2 className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />} label="Репосты" isDark={isDark}
             onClick={() => { onNavigate("activity_reposts"); void loadReposts(); }} value={reposts.length ? String(reposts.length) : undefined} />
           <SettingsMenuItem icon={<Download className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />}
-            label={exportLoading ? "Downloading..." : "Download Data"} isDark={isDark} onClick={() => { if (!exportLoading) void exportData(); }} />
+            label={exportLoading ? "Скачивание…" : "Скачать данные"} isDark={isDark} onClick={() => { if (!exportLoading) void exportData(); }} />
         </div>
       </div>
     </>
