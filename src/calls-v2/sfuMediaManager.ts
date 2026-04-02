@@ -18,6 +18,9 @@ import {
  * 5. consume(consumeOptions) → { consumer, track }
  * 6. close() — cleanup
  */
+/** Callback invoked when a transport ICE failure cannot be recovered in-place. */
+export type IceRestartCallback = (transportId: string, direction: 'send' | 'recv') => Promise<void>;
+
 export class SfuMediaManager {
   private device: Device;
   private sendTransport: mediasoupTypes.Transport | null = null;
@@ -25,6 +28,10 @@ export class SfuMediaManager {
   private producers: Map<string, mediasoupTypes.Producer> = new Map();
   private consumers: Map<string, mediasoupTypes.Consumer> = new Map();
   private readonly requireSenderReceiverAccessForE2ee: boolean;
+  /** C-1 fix: callback for ICE restart signaling via wsClient */
+  private onIceRestartNeeded: IceRestartCallback | null = null;
+  /** C-1 fix: pending ICE restart timers keyed by transportId */
+  private iceRestartTimers: Map<string, number> = new Map();
   /**
    * C-3: Кешируем RTCRtpSender/Receiver при produce/consume, пока track доступен.
    * Заменяет ненадёжный доступ к internal _rtpSender/_rtpReceiver mediasoup-client.
@@ -34,9 +41,59 @@ export class SfuMediaManager {
   private relayStatsCollector = new RelayStatsCollector({ maxHistorySize: 120 });
   private lastRelayRoute: "none" | "p2p" | "relay" = "none";
 
-  constructor(options?: { requireSenderReceiverAccessForE2ee?: boolean }) {
+  constructor(options?: { requireSenderReceiverAccessForE2ee?: boolean; onIceRestartNeeded?: IceRestartCallback }) {
     this.device = new Device();
-    this.requireSenderReceiverAccessForE2ee = options?.requireSenderReceiverAccessForE2ee ?? false;
+    // C-2 fix: default changed to TRUE — plaintext media is never acceptable
+    this.requireSenderReceiverAccessForE2ee = options?.requireSenderReceiverAccessForE2ee ?? true;
+    this.onIceRestartNeeded = options?.onIceRestartNeeded ?? null;
+  }
+
+  /**
+   * C-1 fix: Register ICE restart callback after construction.
+   * Called by VideoCallContext once wsClient is available.
+   */
+  setIceRestartCallback(cb: IceRestartCallback): void {
+    this.onIceRestartNeeded = cb;
+  }
+
+  /**
+   * C-1 fix: Attempt ICE restart with exponential backoff.
+   * Max 3 attempts at 1s, 2s, 4s. If all fail — close transport.
+   */
+  private scheduleIceRestart(
+    transport: mediasoupTypes.Transport,
+    transportId: string,
+    direction: 'send' | 'recv',
+    attempt = 0,
+  ): void {
+    const MAX_ATTEMPTS = 3;
+    if (attempt >= MAX_ATTEMPTS) {
+      logger.warn(`[SfuMediaManager] ICE restart exhausted after ${MAX_ATTEMPTS} attempts for ${direction} transport ${transportId}`);
+      if (!transport.closed) transport.close();
+      this.iceRestartTimers.delete(transportId);
+      return;
+    }
+
+    const delay = Math.min(4000, 1000 * Math.pow(2, attempt));
+    logger.info(`[SfuMediaManager] ICE restart attempt ${attempt + 1}/${MAX_ATTEMPTS} for ${direction} transport in ${delay}ms`);
+
+    const timer = window.setTimeout(async () => {
+      this.iceRestartTimers.delete(transportId);
+      if (!this.onIceRestartNeeded) {
+        logger.warn('[SfuMediaManager] No ICE restart callback registered — closing transport');
+        if (!transport.closed) transport.close();
+        return;
+      }
+      try {
+        await this.onIceRestartNeeded(transportId, direction);
+        logger.info(`[SfuMediaManager] ICE restart signaled successfully for ${direction} transport ${transportId}`);
+      } catch (err) {
+        logger.warn(`[SfuMediaManager] ICE restart signaling failed (attempt ${attempt + 1})`, err);
+        this.scheduleIceRestart(transport, transportId, direction, attempt + 1);
+      }
+    }, delay);
+
+    this.iceRestartTimers.set(transportId, timer);
   }
 
   private async collectRelaySampleFromTransport(
@@ -147,7 +204,11 @@ export class SfuMediaManager {
     this.sendTransport.on('connectionstatechange', (state: string) => {
       logger.debug(`[SfuMediaManager] sendTransport connectionstatechange: ${state}`);
       if (state === 'failed') {
-        this.sendTransport?.close();
+        // C-1 fix: attempt ICE restart before giving up
+        const t = this.sendTransport;
+        if (t) {
+          this.scheduleIceRestart(t, options.id, 'send');
+        }
       }
     });
 
@@ -186,7 +247,11 @@ export class SfuMediaManager {
     this.recvTransport.on('connectionstatechange', (state: string) => {
       logger.debug(`[SfuMediaManager] recvTransport connectionstatechange: ${state}`);
       if (state === 'failed') {
-        this.recvTransport?.close();
+        // C-1 fix: attempt ICE restart before giving up
+        const t = this.recvTransport;
+        if (t) {
+          this.scheduleIceRestart(t, options.id, 'recv');
+        }
       }
     });
 
@@ -365,17 +430,23 @@ export class SfuMediaManager {
 
   /** Закрыть всё и освободить ресурсы. */
   close(): void {
+    // C-1 fix: cancel all pending ICE restart timers before closing
+    for (const timer of this.iceRestartTimers.values()) {
+      window.clearTimeout(timer);
+    }
+    this.iceRestartTimers.clear();
+
     for (const producer of this.producers.values()) {
       if (!producer.closed) producer.close();
     }
     this.producers.clear();
-    this.producerSenders.clear(); // C-3: cleanup cached senders
+    this.producerSenders.clear();
 
     for (const consumer of this.consumers.values()) {
       if (!consumer.closed) consumer.close();
     }
     this.consumers.clear();
-    this.consumerReceivers.clear(); // C-3: cleanup cached receivers
+    this.consumerReceivers.clear();
 
     if (this.sendTransport && !this.sendTransport.closed) {
       this.sendTransport.close();
@@ -386,6 +457,9 @@ export class SfuMediaManager {
       this.recvTransport.close();
     }
     this.recvTransport = null;
+
+    // H-3 fix: reset Device so next loadDevice() picks up fresh routerRtpCapabilities
+    this.device = new Device();
 
     this.relayStatsCollector.reset();
     this.lastRelayRoute = "none";

@@ -63,6 +63,8 @@ export interface FeedPost {
   is_saved: boolean;
   author: FeedAuthor;
   media: FeedMedia[];
+  hide_likes_count?: boolean;
+  comments_disabled?: boolean;
 }
 
 interface FeedCursor {
@@ -216,7 +218,7 @@ async function fetchPublicFeedPage(
       created_at: row.created_at,
       likes_count: Number(row.likes_count ?? 0),
       comments_count: Number(row.comments_count ?? 0),
-      saves_count: Number(row.saves_count ?? 0),
+      saves_count: Number(row.shares_count ?? 0),
       shares_count: Number(row.shares_count ?? 0),
       views_count: Number(row.views_count ?? 0),
       score: 0,
@@ -419,6 +421,7 @@ export function useSmartFeed() {
 
   return {
     posts,
+    setPosts,
     loading,
     loadingMore,
     hasMore,

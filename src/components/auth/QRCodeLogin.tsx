@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
-import { supabase } from "@/lib/supabase";
+import { dbLoose } from "@/lib/supabase";
 import { Loader2, QrCode, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -14,6 +14,7 @@ export function QRCodeLogin({ onSuccess }: QRCodeLoginProps) {
   const [token, setToken] = useState<string | null>(null);
   const [status, setStatus] = useState<"generating" | "waiting" | "expired" | "success">("generating");
   const pollRef = useRef<ReturnType<typeof setInterval>>();
+  const expiryRef = useRef<ReturnType<typeof setTimeout>>();
 
   const generateToken = async () => {
     setStatus("generating");
@@ -33,23 +34,23 @@ export function QRCodeLogin({ onSuccess }: QRCodeLoginProps) {
       });
     }
 
-    // Store token in DB for mobile app to pick up
-    await supabase.from("qr_login_tokens").upsert({
+    // Сохраняем токен в БД (таблица не в сгенерированных типах — используем dbLoose)
+    await dbLoose.from("qr_login_tokens").upsert({
       token: newToken,
       status: "pending",
       expires_at: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
-    } as any);
+    });
 
     setStatus("waiting");
 
     // Poll for confirmation
     if (pollRef.current) clearInterval(pollRef.current);
     pollRef.current = setInterval(async () => {
-      const { data } = await supabase
+      const { data } = await dbLoose
         .from("qr_login_tokens")
         .select("status, user_id")
         .eq("token", newToken)
-        .maybeSingle() as any;
+        .maybeSingle();
 
       if (data?.status === "confirmed" && data?.user_id) {
         setStatus("success");
@@ -62,11 +63,15 @@ export function QRCodeLogin({ onSuccess }: QRCodeLoginProps) {
     }, 2000);
 
     // Auto-expire after 5 minutes
-    setTimeout(() => {
-      if (status === "waiting") {
-        setStatus("expired");
-        if (pollRef.current) clearInterval(pollRef.current);
-      }
+    if (expiryRef.current) clearTimeout(expiryRef.current);
+    expiryRef.current = setTimeout(() => {
+      setStatus((prev) => {
+        if (prev === "waiting") {
+          if (pollRef.current) clearInterval(pollRef.current);
+          return "expired";
+        }
+        return prev;
+      });
     }, 5 * 60 * 1000);
   };
 
@@ -74,6 +79,7 @@ export function QRCodeLogin({ onSuccess }: QRCodeLoginProps) {
     void generateToken();
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
+      if (expiryRef.current) clearTimeout(expiryRef.current);
     };
   }, []);
 

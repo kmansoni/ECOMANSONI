@@ -16,6 +16,7 @@ import { VerifiedBadge } from "@/components/ui/verified-badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { LocationTag } from "./LocationTag";
 import { PostReminder } from "./PostReminder";
+import { ZoomableImage } from "./ZoomableImage";
 import { useHapticFeedback } from "@/hooks/useHapticFeedback";
 import { logger } from "@/lib/logger";
 
@@ -51,6 +52,8 @@ interface PostCardProps {
   isPaidPartnership?: boolean;
   pinPosition?: number | null;
   onPinChanged?: () => void;
+  hideLikes?: boolean;
+  commentsDisabled?: boolean;
 }
 
 const clampCounter = (value: number) => Math.max(0, Number.isFinite(value) ? value : 0);
@@ -80,6 +83,8 @@ function PostCardComponent({
   isPaidPartnership = false,
   pinPosition,
   onPinChanged,
+  hideLikes = false,
+  commentsDisabled = false,
 }: PostCardProps) {
   const navigate = useNavigate();
   const { toggleLike } = usePostActions();
@@ -90,7 +95,7 @@ function PostCardComponent({
   const [commentCount, setCommentCount] = useState(clampCounter(comments));
   const [shareCount, setShareCount] = useState(clampCounter(shares));
   const [saveCount, setSaveCount] = useState(clampCounter(saves));
-  const [likePending, setLikePending] = useState(false);
+  const likePendingRef = useRef(false);
   const [savePending, setSavePending] = useState(false);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [expanded, setExpanded] = useState(false);
@@ -101,7 +106,7 @@ function PostCardComponent({
   const [likeAnimation, setLikeAnimation] = useState(false);
   const [floatingHearts, setFloatingHearts] = useState<{ id: number; x: number; y: number }[]>([]);
   const [frameAspectRatio, setFrameAspectRatio] = useState(1);
-  const imageRefs = useRef<(HTMLImageElement | null)[]>([]);
+  const aspectRatioCache = useRef<number[]>([]);
   const videoRefs = useRef<(HTMLVideoElement | null)[]>([]);
   const heartIdRef = useRef(0);
   // Touch double-tap detection
@@ -118,10 +123,10 @@ function PostCardComponent({
   // ИСПРАВЛЕНИЕ дефекта #6: объединяем 5 useEffect в 2 — меньше микро-задач при ре-рендере
   // Keep local UI state synced with upstream props (refetch/realtime), but avoid clobbering mid-request.
   useEffect(() => {
-    if (likePending) return;
+    if (likePendingRef.current) return;
     setLiked(isLiked);
     setLikeCount(clampCounter(likes));
-  }, [id, isLiked, likes, likePending]);
+  }, [id, isLiked, likes]);
 
   useEffect(() => {
     setCommentCount(clampCounter(comments));
@@ -175,6 +180,7 @@ function PostCardComponent({
   useEffect(() => {
     setCurrentImageIndex(0);
     setFrameAspectRatio(1);
+    aspectRatioCache.current = [];
   }, [id, allMedia.length]);
 
   const applyAspectRatio = (width: number, height: number) => {
@@ -200,9 +206,9 @@ function PostCardComponent({
       return;
     }
 
-    const el = imageRefs.current[currentImageIndex];
-    if (el && el.naturalWidth > 0 && el.naturalHeight > 0) {
-      applyAspectRatio(el.naturalWidth, el.naturalHeight);
+    const cached = aspectRatioCache.current[currentImageIndex];
+    if (cached && cached > 0) {
+      setFrameAspectRatio((prev) => (Math.abs(prev - cached) < 0.01 ? prev : cached));
     }
   }, [allMedia, currentImageIndex]);
 
@@ -254,7 +260,7 @@ function PostCardComponent({
   };
 
   const handleLike = async () => {
-    if (!id || likePending) return;
+    if (!id || likePendingRef.current) return;
 
     const prevLiked = liked;
     const prevCount = likeCount;
@@ -264,12 +270,12 @@ function PostCardComponent({
       setTimeout(() => setLikeAnimation(false), 300);
       void haptic.light(); // Instagram-style haptic on like
     }
-    
+
     const nextLiked = !prevLiked;
     setLiked(nextLiked);
     setLikeCount(prevLiked ? Math.max(0, prevCount - 1) : prevCount + 1);
 
-    setLikePending(true);
+    likePendingRef.current = true;
     try {
       const { error } = await toggleLike(id, prevLiked);
       if (error) {
@@ -279,7 +285,7 @@ function PostCardComponent({
         onLikeChange?.(id, nextLiked);
       }
     } finally {
-      setLikePending(false);
+      likePendingRef.current = false;
     }
   };
 
@@ -396,18 +402,22 @@ function PostCardComponent({
                   }}
                 />
               ) : (
-                <img
+                <ZoomableImage
                   key={idx}
                   src={media.url}
-                  ref={(el) => {
-                    imageRefs.current[idx] = el;
-                  }}
                   alt={altText || `Post ${idx + 1}`}
-                  className="media-object media-object--fill media-object--cover shrink-0 w-full"
+                  className="shrink-0 w-full h-full"
                   onLoad={(e) => {
-                    if (idx !== currentImageIndex) return;
-                    const el = e.currentTarget;
-                    applyAspectRatio(el.naturalWidth, el.naturalHeight);
+                    const el = e.currentTarget as HTMLImageElement;
+                    const w = el.naturalWidth;
+                    const h = el.naturalHeight;
+                    if (w > 0 && h > 0) {
+                      const ratio = Math.min(1.5, Math.max(0.75, w / h));
+                      aspectRatioCache.current[idx] = ratio;
+                      if (idx === currentImageIndex) {
+                        applyAspectRatio(w, h);
+                      }
+                    }
                   }}
                 />
               );
@@ -486,11 +496,11 @@ function PostCardComponent({
             {formatNumber(likeCount)}
           </button>
           <button 
-            className="flex items-center gap-1.5 text-foreground"
-            onClick={() => setShowComments(true)}
+            className={cn("flex items-center gap-1.5 text-foreground", commentsDisabled && "opacity-40 pointer-events-none")}
+            onClick={() => !commentsDisabled && setShowComments(true)}
           >
             <MessageCircle className="w-6 h-6" />
-            <span className="text-sm">{formatNumber(commentCount)}</span>
+            <span className="text-sm">{commentsDisabled ? "—" : formatNumber(commentCount)}</span>
           </button>
           <button 
             className="flex items-center gap-1.5 text-foreground"
@@ -513,6 +523,23 @@ function PostCardComponent({
           </button>
         </div>
       </div>
+
+      {/* Like summary — Instagram pattern */}
+      {likeCount > 0 && !hideLikes && (
+        <button
+          className="px-4 pb-1 text-left"
+          onClick={() => { if (id) setShowLikes(true); }}
+          aria-label="Посмотреть кто поставил лайк"
+        >
+          <span className="text-sm font-semibold text-foreground">
+            {liked
+              ? likeCount === 1
+                ? "Нравится вам"
+                : `Нравится вам и ещё ${formatNumber(likeCount - 1)}`
+              : `Нравится: ${formatNumber(likeCount)}`}
+          </span>
+        </button>
+      )}
 
       {/* Caption with clickable hashtags */}
       <div className="px-4 py-2">

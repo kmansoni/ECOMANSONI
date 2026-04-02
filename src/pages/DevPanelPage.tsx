@@ -58,6 +58,28 @@ interface VideoCallRecord {
 }
 
 const DEV_TOKEN_KEY = "dev_panel_token";
+const DEV_TOKEN_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours
+
+function saveDevToken(token: string) {
+  localStorage.setItem(DEV_TOKEN_KEY, JSON.stringify({ token, expiresAt: Date.now() + DEV_TOKEN_TTL_MS }));
+}
+
+function loadDevToken(): string | null {
+  try {
+    const raw = localStorage.getItem(DEV_TOKEN_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (typeof parsed === "string") return parsed; // legacy format
+    if (parsed?.expiresAt && Date.now() > parsed.expiresAt) {
+      localStorage.removeItem(DEV_TOKEN_KEY);
+      return null;
+    }
+    return parsed?.token ?? null;
+  } catch {
+    localStorage.removeItem(DEV_TOKEN_KEY);
+    return null;
+  }
+}
 
 export default function DevPanelPage() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -76,7 +98,7 @@ export default function DevPanelPage() {
   // Check existing token on mount
   useEffect(() => {
     void (async () => {
-      const token = localStorage.getItem(DEV_TOKEN_KEY);
+      const token = loadDevToken();
       if (!token) {
         setAuthChecking(false);
         return;
@@ -122,7 +144,7 @@ export default function DevPanelPage() {
       if (error) throw error;
       
       if (data.success && data.token) {
-        localStorage.setItem(DEV_TOKEN_KEY, data.token);
+        saveDevToken(data.token);
         setIsAuthenticated(true);
         toast.success("Добро пожаловать в панель разработчика!");
       } else {

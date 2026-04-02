@@ -507,11 +507,16 @@ export function useGroupVideoCall(roomId: string) {
   // Cleanup on unmount
   // ---------------------------------------------------------------------------
 
+  const stateRef = useRef(state);
+  useEffect(() => { stateRef.current = state; }, [state]);
+
+  const leaveCallRef = useRef(leaveCall);
+  useEffect(() => { leaveCallRef.current = leaveCall; }, [leaveCall]);
+
   useEffect(() => {
     return () => {
-      if (state.isJoined) leaveCall();
+      if (stateRef.current.isJoined) leaveCallRef.current();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return {

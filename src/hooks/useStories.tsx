@@ -16,6 +16,7 @@ export interface Story {
   caption: string | null;
   created_at: string;
   expires_at: string;
+  close_friends_only?: boolean;
 }
 
 export interface UserWithStories {
@@ -26,6 +27,7 @@ export interface UserWithStories {
   stories: Story[];
   hasNew: boolean;
   isOwn: boolean;
+  hasCloseFriendsStory: boolean;
 }
 
 interface StoryRow {
@@ -36,6 +38,7 @@ interface StoryRow {
   caption: string | null;
   created_at: string;
   expires_at: string;
+  close_friends_only?: boolean;
 }
 
 interface StoryViewRow {
@@ -90,7 +93,8 @@ export function useStories() {
             verified: ownProfile?.verified || false,
             stories: [],
             hasNew: false,
-            isOwn: true
+            isOwn: true,
+            hasCloseFriendsStory: false
           }]);
         } else {
           setUsersWithStories([]);
@@ -112,6 +116,19 @@ export function useStories() {
 
       const profiles = (profilesData || []) as ProfileRow[];
       const profilesMap = new Map(profiles.map(p => [p.user_id, p]));
+
+      // Fetch current user's close friends list
+      let closeFriendIds = new Set<string>();
+      if (user) {
+        const { data: cfData } = await supabase
+          .from('close_friends')
+          .select('friend_id')
+          .eq('user_id', user.id)
+          .limit(500);
+        if (cfData) {
+          closeFriendIds = new Set(cfData.map(r => r.friend_id));
+        }
+      }
 
       // Check which stories the current user has viewed
       let viewedStoryIds = new Set<string>();
@@ -151,7 +168,8 @@ export function useStories() {
           verified: profile?.verified || false,
           stories: ownStories,
           hasNew: false, // Own stories don't show as "new"
-          isOwn: true
+          isOwn: true,
+          hasCloseFriendsStory: ownStories.some(s => s.close_friends_only)
         });
 
         // Remove own user from the map to avoid duplication
@@ -171,7 +189,8 @@ export function useStories() {
           verified: profile?.verified || false,
           stories: userStories,
           hasNew: hasUnviewedStories,
-          isOwn: false
+          isOwn: false,
+          hasCloseFriendsStory: closeFriendIds.has(authorId) && userStories.some(s => s.close_friends_only)
         });
       });
 

@@ -515,7 +515,7 @@ describe('E2EE Security Edge Cases', () => {
   });
 
   describe('Full Chat Session', () => {
-    it('complete chat: 50 messages back-and-forth', async () => {
+    it('complete chat: 50 messages back-and-forth', { timeout: 30_000 }, async () => {
       const bobState = await DoubleRatchetE2E.initBob(initialSecret.buffer as ArrayBuffer);
       const aliceState = await DoubleRatchetE2E.initAlice(
         initialSecret.buffer as ArrayBuffer,

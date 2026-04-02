@@ -18,7 +18,7 @@ const DADATA_ORG_URL = 'https://suggestions.dadata.ru/suggestions/api/4_1/rs/sug
 const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
 
 function getToken(): string | null {
-  return (import.meta as Record<string, Record<string, string>>).env?.VITE_DADATA_API_KEY ?? null;
+  return (import.meta as unknown as Record<string, Record<string, string>>).env?.VITE_DADATA_API_KEY ?? null;
 }
 
 function headers(): Record<string, string> {

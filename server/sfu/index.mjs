@@ -139,6 +139,73 @@ async function verifyAccessToken(accessToken) {
   return { userId };
 }
 
+// Периодическая очистка authCache от expired entries (каждые 30 секунд)
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of authCache) {
+    if (v.exp <= now) authCache.delete(k);
+  }
+}, 30_000).unref();
+
+// ── joinToken verification (shared secret with calls-ws) ──────────────
+let cachedJoinTokenSecret = null;
+const CALLS_JOIN_TOKEN_SKIP = !IS_PROD && process.env.CALLS_JOIN_TOKEN_SKIP === "1";
+
+function getJoinTokenSecret() {
+  if (cachedJoinTokenSecret) return cachedJoinTokenSecret;
+  const explicit = process.env.CALLS_JOIN_TOKEN_SECRET;
+  if (explicit && explicit.length >= 32) {
+    cachedJoinTokenSecret = explicit;
+    return cachedJoinTokenSecret;
+  }
+  const jwtSecret = process.env.SUPABASE_JWT_SECRET;
+  if (jwtSecret && jwtSecret.length >= 32) {
+    console.warn("[sfu] Missing CALLS_JOIN_TOKEN_SECRET, using SUPABASE_JWT_SECRET fallback");
+    cachedJoinTokenSecret = jwtSecret;
+    return cachedJoinTokenSecret;
+  }
+  if (IS_PROD) {
+    const emergency = crypto.randomBytes(48).toString("base64url");
+    console.error("[sfu] CRITICAL: no join-token secret in production; using ephemeral secret");
+    cachedJoinTokenSecret = emergency;
+    return cachedJoinTokenSecret;
+  }
+  cachedJoinTokenSecret = "dev-only-join-token-secret";
+  return cachedJoinTokenSecret;
+}
+
+function verifyJoinToken(joinToken, expectedRoomId) {
+  if (CALLS_JOIN_TOKEN_SKIP) return { skipped: true };
+  if (typeof joinToken !== "string") return null;
+  const dotIdx = joinToken.indexOf(".");
+  if (dotIdx < 1) return null;
+  const encodedPayload = joinToken.slice(0, dotIdx);
+  const sig = joinToken.slice(dotIdx + 1);
+  if (!encodedPayload || !sig) return null;
+
+  const expectedSig = crypto
+    .createHmac("sha256", getJoinTokenSecret())
+    .update(encodedPayload)
+    .digest("base64url");
+  const sigBuf = Buffer.from(sig);
+  const expectedSigBuf = Buffer.from(expectedSig);
+  if (sigBuf.length !== expectedSigBuf.length) return null;
+  if (!crypto.timingSafeEqual(sigBuf, expectedSigBuf)) return null;
+
+  try {
+    const raw = encodedPayload.replace(/-/g, "+").replace(/_/g, "/");
+    const padLen = (4 - (raw.length % 4)) % 4;
+    const payload = JSON.parse(Buffer.from(raw + "=".repeat(padLen), "base64").toString("utf8"));
+    const expMs = Number(payload?.exp ?? 0) * 1000;
+    if (!expMs || expMs <= Date.now()) return null;
+    if (typeof payload?.roomId !== "string") return null;
+    if (expectedRoomId && payload.roomId !== expectedRoomId) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
 function isObject(value) {
   return !!value && typeof value === "object";
 }
@@ -505,8 +572,14 @@ wss.on("connection", (ws, req) => {
 
       case "ROOM_CREATE": {
         if (!ensureAuth()) return;
-        const roomId = frame.payload?.roomId ?? `room_${uuid().slice(0, 8)}`;
-        const callId = frame.payload?.callId ?? `call_${uuid().slice(0, 8)}`;
+        // S2: joinToken verification for ROOM_CREATE too
+        const createTokenPayload = verifyJoinToken(frame.payload?.joinToken);
+        if (!createTokenPayload) {
+          ack(ws, frame.msgId, false, wsError("UNAUTHORIZED", "Invalid or missing joinToken for ROOM_CREATE", {}, false));
+          return;
+        }
+        const roomId = frame.payload?.roomId ?? createTokenPayload.roomId ?? `room_${uuid().slice(0, 8)}`;
+        const callId = frame.payload?.callId ?? createTokenPayload.callId ?? `call_${uuid().slice(0, 8)}`;
         const preferredRegion = frame.payload?.preferredRegion ?? REGION;
         const room = ensureRoom(roomId, callId, preferredRegion);
         const created = await mediaPlane.createRoom(roomId);
@@ -545,7 +618,21 @@ wss.on("connection", (ws, req) => {
           return;
         }
 
-        const callId = frame.payload?.callId ?? `call_${uuid().slice(0, 8)}`;
+        // S3/W1: joinToken verification — unified with calls-ws
+        const tokenPayload = verifyJoinToken(frame.payload?.joinToken, roomId);
+        if (!tokenPayload) {
+          ack(ws, frame.msgId, false, wsError("UNAUTHORIZED", "Invalid or missing joinToken", { roomId }, false));
+          return;
+        }
+        // Verify userId is in allowedUserIds (if token contains the list)
+        if (Array.isArray(tokenPayload.allowedUserIds) && tokenPayload.allowedUserIds.length > 0) {
+          if (!tokenPayload.allowedUserIds.includes(conn.userId)) {
+            ack(ws, frame.msgId, false, wsError("UNAUTHORIZED", "User not authorized for this call", { roomId }, false));
+            return;
+          }
+        }
+
+        const callId = frame.payload?.callId ?? tokenPayload.callId ?? `call_${uuid().slice(0, 8)}`;
         const room = ensureRoom(roomId, callId, frame.payload?.preferredRegion ?? REGION);
         const ensured = await mediaPlane.createRoom(roomId);
         room.routerRtpCapabilities = ensured?.routerRtpCapabilities ?? room.routerRtpCapabilities;

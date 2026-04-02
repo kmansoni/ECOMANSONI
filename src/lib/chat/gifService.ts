@@ -2,9 +2,13 @@
  * GIF Service — интеграция с Tenor API v2
  */
 
-const TENOR_API_KEY = import.meta.env.VITE_TENOR_API_KEY || "AIzaSyAyimkuYQYF_FXVALexPVnuC_BIPZ";
+const TENOR_API_KEY = import.meta.env.VITE_TENOR_API_KEY || "";
 const TENOR_BASE = "https://tenor.googleapis.com/v2";
 const CLIENT_KEY = "your_ai_companion";
+
+function isTenorConfigured(): boolean {
+  return TENOR_API_KEY.length > 0;
+}
 
 export interface GifItem {
   id: string;
@@ -52,6 +56,7 @@ export async function searchGifs(
   limit = 20,
   pos?: string
 ): Promise<GifResult> {
+  if (!isTenorConfigured()) return { results: [] };
   const params = new URLSearchParams({
     q: query,
     key: TENOR_API_KEY,
@@ -74,6 +79,7 @@ export async function searchGifs(
 }
 
 export async function getTrendingGifs(limit = 20): Promise<GifResult> {
+  if (!isTenorConfigured()) return { results: [] };
   const params = new URLSearchParams({
     key: TENOR_API_KEY,
     client_key: CLIENT_KEY,
@@ -94,6 +100,7 @@ export async function getTrendingGifs(limit = 20): Promise<GifResult> {
 }
 
 export async function getGifCategories(): Promise<GifCategory[]> {
+  if (!isTenorConfigured()) return [];
   const params = new URLSearchParams({
     key: TENOR_API_KEY,
     client_key: CLIENT_KEY,

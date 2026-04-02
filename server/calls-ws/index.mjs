@@ -1502,6 +1502,9 @@ wss.on("connection", (ws, req) => {
         if (room && conn.deviceId && room.peers.has(conn.deviceId)) {
           room.peers.delete(conn.deviceId);
           room.memberSetVersion++;
+          // W2: persist member removal to store (was missing — only ws close did this)
+          void store.removeMember?.(room.callId, conn.deviceId);
+          void store.bumpRoomVersion?.(room.callId);
           // Notify remaining peers
           for (const [pid, peer] of room.peers.entries()) {
             const pws = deviceSockets.get(pid);

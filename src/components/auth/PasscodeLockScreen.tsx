@@ -14,7 +14,7 @@
  *   </PasscodeLockProvider>
  */
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Fingerprint, Delete } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { type PasscodeLockState } from "@/hooks/usePasscodeLock";
@@ -56,6 +56,7 @@ export function PasscodeLockScreen({ state }: PasscodeLockScreenProps) {
   const [shaking, setShaking] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
+  const shakeTimerRef = useRef<ReturnType<typeof setTimeout>>();
 
   // Format lockout countdown
   const lockoutSeconds = Math.ceil(lockoutRemainingMs / 1000);
@@ -67,6 +68,11 @@ export function PasscodeLockScreen({ state }: PasscodeLockScreenProps) {
     const t = setTimeout(() => setErrorMsg(null), 2000);
     return () => clearTimeout(t);
   }, [errorMsg]);
+
+  // Cleanup shake timer on unmount
+  useEffect(() => {
+    return () => clearTimeout(shakeTimerRef.current);
+  }, []);
 
   // Auto-submit when PIN reaches PIN_LENGTH digits
   useEffect(() => {
@@ -92,7 +98,8 @@ export function PasscodeLockScreen({ state }: PasscodeLockScreenProps) {
           ? `Слишком много попыток. Подождите ${Math.ceil(state.lockoutRemainingMs / 1000)} сек.`
           : "Неверный PIN"
         );
-        setTimeout(() => setShaking(false), 500);
+        clearTimeout(shakeTimerRef.current);
+        shakeTimerRef.current = setTimeout(() => setShaking(false), 500);
       }
     },
     [unlockApp, isLockedOut, lockoutSeconds, state.lockoutRemainingMs]

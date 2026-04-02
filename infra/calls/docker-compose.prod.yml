@@ -70,6 +70,9 @@ services:
       - SFU_STRICT_VALIDATION=1
       - SFU_INSECURE_DEV_MODE=0
       - SFU_TRUSTED_PROXIES=${SFU_TRUSTED_PROXIES:-127.0.0.1}
+      # КРИТИЧНО: публичный IP VPS для mediasoup ICE candidates.
+      # Без этого клиенты за NAT не смогут получить медиа-потоки.
+      - SFU_ANNOUNCED_IP=${SFU_ANNOUNCED_IP:?SFU_ANNOUNCED_IP must be set to VPS public IP}
       - SFU_KEY_PACKAGE_RATE=50
       - SFU_REKEY_BEGIN_RATE=5
       - SFU_WORKER_COUNT=auto

@@ -1,5 +1,6 @@
 import { logger } from "@/lib/logger";
 import { supabase } from "@/integrations/supabase/client";
+import { dbLoose } from "@/lib/supabase";
 import type {
   TaxiAddress,
   TaxiOrder,
@@ -258,7 +259,7 @@ export async function createOrder(params: {
 
   const pinCode = generatePinCode();
 
-  const { data: ride, error } = await supabase
+  const { data: rideData, error } = await dbLoose
     .from('taxi_rides')
     .insert({
       passenger_id: userId,
@@ -280,6 +281,8 @@ export async function createOrder(params: {
     })
     .select()
     .single();
+
+  const ride = rideData as Record<string, unknown> | null;
 
   if (error || !ride) {
     logger.error('[taxi] createOrder failed', error);
@@ -322,7 +325,7 @@ export async function getActiveOrder(): Promise<TaxiOrder | null> {
   const userId = await getUid().catch(() => null);
   if (!userId) return null;
 
-  const { data, error } = await supabase
+  const { data, error } = await dbLoose
     .from('taxi_rides')
     .select('*')
     .eq('passenger_id', userId)
@@ -343,7 +346,7 @@ export async function getOrderById(orderId: string): Promise<TaxiOrder | null> {
   const userId = await getUid().catch(() => null);
   if (!userId) return null;
 
-  const { data, error } = await supabase
+  const { data, error } = await dbLoose
     .from('taxi_rides')
     .select('*')
     .eq('id', orderId)
@@ -367,7 +370,7 @@ export async function updateOrderStatus(
     updates.completed_at = new Date().toISOString();
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await dbLoose
     .from('taxi_rides')
     .update(updates)
     .eq('id', orderId)
@@ -386,7 +389,7 @@ export async function cancelOrder(
   orderId: string,
   reason: CancellationReason = 'changed_plans'
 ): Promise<void> {
-  const { error } = await supabase
+  const { error } = await dbLoose
     .from('taxi_rides')
     .update({
       status: 'cancelled',
@@ -412,15 +415,15 @@ export async function rateTrip(
   if (!userId) return;
 
   // Попытка вставить в taxi_ratings (если таблица существует)
-  const { error: ratingError } = await supabase
-    .from('taxi_ratings' as never)
+  const { error: ratingError } = await dbLoose
+    .from('taxi_ratings')
     .insert({
       order_id: orderId,
       passenger_id: userId,
       rating,
       tip,
       comment: comment ?? null,
-    } as never);
+    });
 
   if (ratingError) {
     // Таблица может не существовать — логируем и продолжаем
@@ -428,9 +431,9 @@ export async function rateTrip(
   }
 
   // Также обновляем запись поездки с финальной оценкой
-  await supabase
+  await dbLoose
     .from('taxi_rides')
-    .update({ final_price: undefined } as never)
+    .update({ final_price: undefined })
     .eq('id', orderId);
 }
 
@@ -451,7 +454,7 @@ export async function getOrderHistory(params?: {
   const limit = params?.limit ?? 10;
   const offset = (page - 1) * limit;
 
-  let query = supabase
+  let query = dbLoose
     .from('taxi_rides')
     .select('*', { count: 'exact' })
     .eq('passenger_id', userId)

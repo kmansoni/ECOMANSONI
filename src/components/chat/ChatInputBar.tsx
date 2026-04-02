@@ -12,6 +12,7 @@ import { AutoGrowTextarea } from "./AutoGrowTextarea";
 import { InlineBotResults } from "./InlineBotResults";
 import { MentionSuggestions } from "./MentionSuggestions";
 import { SendOptionsMenu } from "./SendOptionsMenu";
+import type { MessageEffectType } from "./MessageEffectOverlay";
 import type { MentionUser } from "@/hooks/useMentions";
 import { formatTime } from "./chatConversationHelpers";
 
@@ -63,6 +64,7 @@ interface ChatInputBarProps {
   onMentionDismiss: () => void;
   onInlineBotSelect: (result: { sendContent: { text?: string } }) => void;
   onInlineBotDismiss: () => void;
+  onEffect?: (effect: MessageEffectType) => void;
 }
 
 export function ChatInputBar({
@@ -108,6 +110,7 @@ export function ChatInputBar({
   onMentionDismiss,
   onInlineBotSelect,
   onInlineBotDismiss,
+  onEffect,
 }: ChatInputBarProps) {
   const sendButtonLongPressRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -321,6 +324,7 @@ export function ChatInputBar({
                     onSetPendingScheduleContent(inputText.trim());
                     onSetShowSchedulePicker(true);
                   }}
+                  onEffect={onEffect}
                 />
                 <button
                   onMouseDown={(e) => {

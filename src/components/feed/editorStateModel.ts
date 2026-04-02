@@ -35,6 +35,10 @@ export interface EditorState {
   // Draft
   draftName: string;
   draftId: string | null;
+
+  // Privacy
+  hideLikes: boolean;
+  commentsDisabled: boolean;
 }
 
 /**
@@ -49,6 +53,8 @@ export type EditorAction =
   | { type: 'SET_SCHEDULED_DATE'; payload: Date | null }
   | { type: 'SET_LOCATION'; payload: EditorState['location'] }
   | { type: 'SET_DRAFT'; payload: { name: string; id: string | null } }
+  | { type: 'SET_HIDE_LIKES'; payload: boolean }
+  | { type: 'SET_COMMENTS_DISABLED'; payload: boolean }
   | { type: 'CLEAR_ALL' };
 
 /**
@@ -111,6 +117,12 @@ export function editorStateReducer(state: EditorState, action: EditorAction): Ed
         draftId: action.payload.id,
       };
 
+    case 'SET_HIDE_LIKES':
+      return { ...state, hideLikes: !!action.payload };
+
+    case 'SET_COMMENTS_DISABLED':
+      return { ...state, commentsDisabled: !!action.payload };
+
     case 'CLEAR_ALL':
       return getDefaultEditorState();
 
@@ -142,6 +154,8 @@ export function getDefaultEditorState(adjustments?: Adjustments): EditorState {
     location: null,
     draftName: '',
     draftId: null,
+    hideLikes: false,
+    commentsDisabled: false,
   };
 }
 

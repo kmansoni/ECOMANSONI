@@ -28,6 +28,7 @@ import {
   validateMediaFile,
 } from './editorStateModel';
 import { logger } from '@/lib/logger';
+import { applyImageFilter } from '@/lib/applyImageFilter';
 
 interface CreateContentModalProps {
   isOpen: boolean;
@@ -427,27 +428,30 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
 
         let result: UnifiedContent | null = null;
 
+        // Применяем фильтры к изображению перед загрузкой (для publications)
+        let processedFile = selectedFile;
+        if (activeTab === 'publications' && selectedFile.type.startsWith('image/')) {
+          processedFile = await applyImageFilter(selectedFile, {
+            filterIdx: editorState.selectedFilterIdx,
+            filterIntensity: editorState.filterIntensity,
+            adjustments: editorState.adjustments,
+          });
+        }
+
         // CRITICAL FIX #4: передаем scheduling metadata к backend
         switch (activeTab) {
           case 'publications':
-            result = await uploadPostMedia(selectedFile, caption);
-            if (result) {
-              // Если есть scheduling информация, сохраняем для обработки backend-ом
-              if (metadata.scheduledAt) {
-                // Сохраняем в localStorage временно (production должен быть в DB)
-                const scheduled = JSON.parse(localStorage.getItem('scheduled_posts') || '{}');
-                scheduled[result.id] = metadata;
-                localStorage.setItem('scheduled_posts', JSON.stringify(scheduled));
-                toast.info(`Публикация запланирована на ${new Date(metadata.scheduledAt).toLocaleString('ru')}`);
-              }
+            result = await uploadPostMedia(processedFile, caption, metadata.scheduledAt, {
+              hideLikes: editorState.hideLikes,
+              commentsDisabled: editorState.commentsDisabled,
+            });
+            if (result && metadata.scheduledAt) {
+              toast.info(`Публикация запланирована на ${new Date(metadata.scheduledAt).toLocaleString('ru')}`);
             }
             break;
           case 'stories':
             result = await uploadStoryMedia(selectedFile, caption);
             if (result && metadata.scheduledAt) {
-              const scheduled = JSON.parse(localStorage.getItem('scheduled_stories') || '{}');
-              scheduled[result.id] = metadata;
-              localStorage.setItem('scheduled_stories', JSON.stringify(scheduled));
               toast.info(`История запланирована на ${new Date(metadata.scheduledAt).toLocaleString('ru')}`);
             }
             break;
@@ -470,9 +474,6 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
               allowRemix: reelAllowRemix,
             });
             if (result && metadata.scheduledAt) {
-              const scheduled = JSON.parse(localStorage.getItem('scheduled_reels') || '{}');
-              scheduled[result.id] = metadata;
-              localStorage.setItem('scheduled_reels', JSON.stringify(scheduled));
               toast.info(`Видео запланировано на ${new Date(metadata.scheduledAt).toLocaleString('ru')}`);
             }
             break;

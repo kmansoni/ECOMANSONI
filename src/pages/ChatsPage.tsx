@@ -523,7 +523,7 @@ export function ChatsPage() {
         name = item.group.name?.toLowerCase() ?? "";
       } else {
         const other = item.conv.participants?.find((p: any) => p?.user_id !== user?.id);
-        name = (other?.display_name ?? "").toLowerCase();
+        name = (other?.profile?.display_name ?? "").toLowerCase();
         preview = (item.conv.last_message?.content ?? "").toLowerCase();
       }
       return name.includes(q) || preview.includes(q);

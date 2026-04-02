@@ -11,7 +11,7 @@ function normalizeEnv(value: unknown): string {
 
 const TURN_CREDENTIALS_URL = normalizeEnv(import.meta.env.VITE_TURN_CREDENTIALS_URL);
 const TURN_CREDENTIALS_API_KEY = normalizeEnv(import.meta.env.VITE_TURN_CREDENTIALS_API_KEY);
-const TURN_CREDENTIALS_EDGE_FNS = ["turn-credentials", "get-turn-credentials"] as const;
+const TURN_CREDENTIALS_EDGE_FNS = ["turn-credentials"] as const;
 
 export interface IceServerConfig {
   iceServers: RTCIceServer[];

@@ -180,17 +180,19 @@ pie title Распределение проблем по приоритету
 - **Исправление:** Заменить на `100dvh`
 - **Сложность:** Низкая
 
-### P1-004: Утечка `<link prefetch>` в DOM
+### ✅ P1-004: Утечка `<link prefetch>` в DOM
 - **Файл:** `src/pages/ReelsPage.tsx:365-366`
 - **Описание:** `document.head.appendChild(link)` для prefetch — никогда не удаляется. `prefetchedVideoUrls` Set растёт неограниченно
 - **Исправление:** Добавить cleanup при размонтировании, ограничить размер Set
 - **Сложность:** Средняя
+- **Статус:** ✅ ИСПРАВЛЕНО (Stage 8) — код prefetch ссылок полностью удалён
 
-### P1-005: IntersectionObserver пересоздаётся на каждый loadMore
+### ✅ P1-005: IntersectionObserver пересоздаётся на каждый loadMore
 - **Файл:** `src/pages/ReelsPage.tsx:239-294`
 - **Описание:** Зависимость от `[reels, recordImpression]` — observer уничтожается и создаётся заново при каждом изменении массива
 - **Исправление:** Использовать `useRef` для стабильных ссылок
 - **Сложность:** Средняя
+- **Статус:** ✅ ИСПРАВЛЕНО (Stage 8) — IO создаётся раз с пустым deps [], registerRef callback паттерн
 
 ### P1-006: N+1 Query Problem в useStories
 - **Файл:** `src/hooks/useStories.tsx:61-126`
@@ -198,17 +200,19 @@ pie title Распределение проблем по приоритету
 - **Исправление:** Объединить в один RPC или использовать `Promise.all`
 - **Сложность:** Средняя
 
-### P1-007: Race conditions в useReels toggleLike/toggleSave
+### ✅ P1-007: Race conditions в useReels toggleLike/toggleSave/toggleRepost
 - **Файл:** `src/hooks/useReels.tsx:426-489`
 - **Описание:** При быстром двойном клике — гонка между insert и delete
 - **Исправление:** Добавить debounce или mutex (OperationMutex уже создан в `src/lib/errors.ts`)
 - **Сложность:** Средняя
+- **Статус:** ✅ ИСПРАВЛЕНО (Stage 8) — toggleLike, toggleSave уже имели mutex; добавлен repostMutex + оптимистичное обновление + rollback для toggleRepost
 
-### P1-008: Memory leaks в Supabase realtime подписках
+### ✅ P1-008: Memory leaks в Supabase realtime подписках
 - **Файл:** `src/hooks/useStories.tsx:208-223`
 - **Описание:** `fetchStories` в зависимости useEffect может меняться, вызывая пересоздание канала
 - **Исправление:** Использовать `useRef` для стабильной ссылки на callback
 - **Сложность:** Средняя
+- **Статус:** ✅ ИСПРАВЛЕНО (Stage 8) — fetchStoriesRef стабилизирует ссылку, канал создаётся раз с пустым deps []
 
 ### P1-009: Отсутствие Error Boundaries
 - **Файлы:** Компоненты feed, reels, chat, profile
@@ -222,11 +226,12 @@ pie title Распределение проблем по приоритету
 - **Исправление:** Обернуть в try/catch с toast уведомлениями
 - **Сложность:** Низкая
 
-### P1-011: Дублирование Supabase клиента
+### ✅ P1-011: Дублирование Supabase клиента
 - **Файлы:** `src/lib/supabase.ts`, `src/integrations/supabase/client.ts`
 - **Описание:** Два файла создают Supabase клиент — потенциальная рассинхронизация
 - **Исправление:** Консолидировать в один файл, сделать второй реэкспортом
 - **Сложность:** Низкая
+- **Статус:** ✅ ИСПРАВЛЕНО (Stage 8) — src/lib/supabase.ts уже реэкспортирует единый клиент из integrations/supabase/client.ts
 
 ### P1-012: Dual lockfile conflict
 - **Файлы:** `package-lock.json`, `bun.lockb`
@@ -234,17 +239,19 @@ pie title Распределение проблем по приоритету
 - **Исправление:** Выбрать один (npm или bun), удалить другой lockfile
 - **Сложность:** Низкая
 
-### P1-013: @playwright/test в dependencies
+### ✅ P1-013: @playwright/test в dependencies
 - **Файл:** `package.json:152`
 - **Описание:** Тестовый фреймворк в production dependencies — раздувает бандл
 - **Исправление:** Перенести в devDependencies (уже перенесён, но `ioredis` и `ws` всё ещё в deps)
 - **Сложность:** Низкая
+- **Статус:** ✅ ИСПРАВЛЕНО (Stage 8) — @playwright/test уже в devDependencies
 
-### P1-014: ioredis и ws в frontend dependencies
+### ✅ P1-014: ioredis и ws в frontend dependencies
 - **Файл:** `package.json:122,143`
 - **Описание:** Redis-клиент и WebSocket-библиотека в корневом package.json — не нужны в браузере
 - **Исправление:** Вынести в server packages или devDependencies
 - **Сложность:** Низкая
+- **Статус:** ✅ ИСПРАВЛЕНО (Stage 8) — ioredis и ws перенесены в devDependencies
 
 ### P1-015: JWT в localStorage
 - **Файл:** Конфигурация Supabase клиента
@@ -399,11 +406,12 @@ pie title Распределение проблем по приоритету
 - **Исправление:** Добавить зависимости или использовать useRef
 - **Сложность:** Низкая
 
-### P2-015: Дублирование anonSessionId x6 в useReels
+### ✅ P2-015: Дублирование anonSessionId x6 в useReels
 - **Файл:** `src/hooks/useReels.tsx`
 - **Описание:** Один и тот же паттерн повторяется 6 раз
 - **Исправление:** Извлечь в утилиту `getAnonSessionId()`
 - **Сложность:** Низкая
+- **Статус:** ✅ ИСПРАВЛЕНО (Stage 8) — функция `getAnonSessionId()` уже извлечена
 
 ---
 

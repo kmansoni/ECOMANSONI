@@ -96,11 +96,10 @@ const CALLS_V2_WS_URL = SHOULD_USE_PROD_SFU_DEFAULTS
   ? DEFAULT_PROD_SFU_ENDPOINTS[0]
   : CALLS_V2_WS_URL_RAW;
 /**
- * TURN credentials edge functions ordered by priority.
- * Production deploy pipeline guarantees `turn-credentials`; legacy environments
- * may still expose `get-turn-credentials`.
+ * TURN credentials edge function (production canonical).
+ * Legacy `get-turn-credentials` removed — consolidated into `turn-credentials`.
  */
-const TURN_CREDENTIALS_EDGE_FNS = ["turn-credentials", "get-turn-credentials"] as const;
+const TURN_CREDENTIALS_EDGE_FNS = ["turn-credentials"] as const;
 /** Сколько секунд до истечения credentials начинать экстренное обновление (30 минут). */
 const TURN_REFRESH_BEFORE_EXPIRY_SEC = 30 * 60;
 const CALLS_V2_WS_URLS = SHOULD_USE_PROD_SFU_DEFAULTS
@@ -991,6 +990,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
               ciphertext: senderPublicKey, // discovery: our public key as payload
               sig: sigB64,                 // Phase C: real ECDSA P-256 identity binding
               senderPublicKey,
+              salt: "",                    // discovery packet — нет HKDF salt
               senderIdentity: {
                 userId: user?.id ?? "",
                 deviceId: getStableCallsDeviceId(),
@@ -1059,8 +1059,8 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
                 ciphertext: ciphertextB64,
                 sig: sigB64 ?? makeRandomB64(64),
                 epoch,
-                // salt: required by KeyPackageData; extract from payload or use empty string
-                // (processKeyPackage will reject if signature doesn't match due to wrong salt)
+                // E2: Reject KEY_PACKAGE with empty salt (except for discovery packets
+                // where ciphertext IS the senderPublicKey — those are always salt='')
                 salt: (rawPayload?.salt as string | undefined) ?? '',
                 senderIdentity: {
                   userId: senderUserId,
@@ -1069,10 +1069,23 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
                 },
               };
 
+              // Detect discovery packet: when ciphertext === senderPublicKey, this is a
+              // discovery request, not a wrapped epoch key — don't require salt
+              const isDiscovery = ciphertextB64 === senderPublicKeyB64;
+
+              // E2: Validate salt for non-discovery KEY_PACKAGE (empty salt = weak HKDF)
+              if (!isDiscovery && (!pkgData.salt || pkgData.salt.length < 8)) {
+                logger.warn("[VideoCallContext] KEY_PACKAGE rejected: empty/short salt on non-discovery packet", { epoch, senderUserId });
+                return;
+              }
+
+              let keyExchangeSuccess = false;
+
               // Try full ECDH unwrap (real wrapped epoch key from leader)
               try {
                 const peerEpochKey = await keyExchange.processKeyPackage(pkgData);
                 await mediaEncryption.setDecryptionKey(senderUserId, peerEpochKey);
+                keyExchangeSuccess = true;
                 logger.info("[VideoCallContext] KEY_PACKAGE: processKeyPackage OK", { epoch, senderUserId });
               } catch (error) {
                 logger.warn("video_call_context.key_package_process_failed", { error, epoch, senderUserId });
@@ -1098,6 +1111,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
                         ciphertext: pkg.ciphertext,
                         sig: pkg.sig,
                         senderPublicKey: pkg.senderPublicKey,
+                        salt: pkg.salt,
                         senderIdentity: {
                           userId: user?.id ?? "",
                           deviceId: getStableCallsDeviceId(),
@@ -1112,17 +1126,21 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
                   })();
                 }
               }
+
+              // E4: Send KEY_ACK only when key exchange succeeded (not unconditionally)
+              if (keyExchangeSuccess) {
+                void client.keyAck({
+                  roomId,
+                  epoch,
+                  fromDeviceId: myDeviceId,
+                  refId: frame.msgId,
+                }).catch((error) => {
+                  logger.warn("[VideoCallContext] KEY_ACK send failed", error);
+                });
+              }
             }
-          } finally {
-            // Always send KEY_ACK regardless of key exchange outcome
-            void client.keyAck({
-              roomId,
-              epoch,
-              fromDeviceId: myDeviceId,
-              refId: frame.msgId,
-            }).catch((error) => {
-              logger.warn("[VideoCallContext] KEY_ACK send failed", error);
-            });
+          } catch (outerErr) {
+            logger.warn("[VideoCallContext] KEY_PACKAGE outer error", outerErr);
           }
         })();
       });

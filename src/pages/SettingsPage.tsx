@@ -58,6 +58,7 @@ import { SettingsProfileStatusSection } from "./settings/SettingsProfileStatusSe
 import { SettingsAccessibilitySection } from "./settings/SettingsAccessibilitySection";
 import { SettingsLanguageSection } from "./settings/SettingsLanguageSection";
 import { SettingsMainSection } from "./settings/SettingsMainSection";
+import { SettingsCloseFriendsSection } from "./settings/SettingsCloseFriendsSection";
 
 type ProfileState = {
   user_id?: string;
@@ -302,8 +303,10 @@ export function SettingsPage() {
           />
         );
 
-      // close_friends — stub, navigates back to main
+      // close_friends — manage close friends list
       case "close_friends":
+        return <SettingsCloseFriendsSection {...sectionProps} />;
+
       default:
         return (
           <SettingsMainSection

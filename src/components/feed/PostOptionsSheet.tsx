@@ -7,6 +7,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
+import { ReportSheet } from "@/components/moderation/ReportSheet";
 
 interface PostOptionsSheetProps {
   isOpen: boolean;
@@ -33,6 +34,7 @@ export function PostOptionsSheet({
   const [pinLoading, setPinLoading] = useState(false);
   const [pinnedRows, setPinnedRows] = useState<Array<{ id: string; post_id: string; position: number | null }>>([]);
 
+  const [showReport, setShowReport] = useState(false);
   const saved = isSaved(postId);
   const isOwnPost = user?.id === authorId;
   const pinnedEntry = pinnedRows.find((row) => row.post_id === postId) ?? null;
@@ -142,8 +144,7 @@ export function PostOptionsSheet({
   };
 
   const handleReport = () => {
-    toast.success("Жалоба отправлена");
-    onClose();
+    setShowReport(true);
   };
 
   const handleCopyLink = async () => {
@@ -205,6 +206,7 @@ export function PostOptionsSheet({
   };
 
   return (
+    <>
     <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <SheetContent side="bottom" className="rounded-t-2xl px-0 pb-8">
         <div className="flex flex-col gap-1 pt-4">
@@ -276,5 +278,16 @@ export function PostOptionsSheet({
         </div>
       </SheetContent>
     </Sheet>
+
+      <ReportSheet
+        open={showReport}
+        onClose={() => {
+          setShowReport(false);
+          onClose();
+        }}
+        contentType="post"
+        contentId={postId}
+      />
+    </>
   );
 }

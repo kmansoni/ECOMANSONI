@@ -1,4 +1,5 @@
 import { logger } from "@/lib/logger";
+import DOMPurify from "dompurify";
 
 /**
  * src/pages/EmailPage.tsx — Production-grade email client.
@@ -565,7 +566,7 @@ function RichEditor({ value, onChange, placeholder, className }: RichEditorProps
     const el = editorRef.current;
     if (!el) return;
     if (el.innerHTML !== value && value !== lastHtmlRef.current) {
-      el.innerHTML = value;
+      el.innerHTML = DOMPurify.sanitize(value);
       lastHtmlRef.current = value;
     }
   }, [value]);
@@ -1687,13 +1688,18 @@ export function EmailPage() {
   }, []);
 
   const handleReply = useCallback((msg: MailMessage, mode: "reply" | "replyAll" | "forward") => {
+    const safeFrom = DOMPurify.sanitize(msg.from, { ALLOWED_TAGS: [] });
+    const safeBody = DOMPurify.sanitize(
+      msg.bodyHtml ?? `<p>${msg.bodyText ?? ""}</p>`,
+      { ALLOWED_TAGS: ["p", "br", "b", "i", "u", "a", "span", "div", "blockquote", "ul", "ol", "li", "strong", "em"], ALLOWED_ATTR: ["href", "style", "target"] }
+    );
     const quoteHtml = `
       <br/><br/>
       <blockquote style="border-left:3px solid #ccc;padding-left:12px;color:#555;margin:8px 0">
         <div style="font-size:12px;color:#888;margin-bottom:4px">
-          ${formatDateFull(msg.at)}, ${msg.from}:
+          ${formatDateFull(msg.at)}, ${safeFrom}:
         </div>
-        ${msg.bodyHtml ?? `<p>${msg.bodyText ?? ""}</p>`}
+        ${safeBody}
       </blockquote>
     `;
 

@@ -13,6 +13,7 @@ export function useVoiceMedia({ conversationId, sendMediaMessage, typingOnKeyDow
   const [recordingTime, setRecordingTime] = useState(0);
   const recordingTimeRef = useRef(0);
   const [playingVoice, setPlayingVoice] = useState<string | null>(null);
+  const [voicePlaybackRate, setVoicePlaybackRate] = useState<number>(1);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -134,6 +135,7 @@ export function useVoiceMedia({ conversationId, sendMediaMessage, typingOnKeyDow
             };
             await audio.play();
             audioRef.current = audio;
+            audio.playbackRate = voicePlaybackRate;
             setPlayingVoice(messageId);
           } catch (error) {
             logger.warn("chat: failed to play audio", { conversationId, messageId, error });
@@ -142,8 +144,18 @@ export function useVoiceMedia({ conversationId, sendMediaMessage, typingOnKeyDow
         }
       }
     },
-    [conversationId, playingVoice],
+    [conversationId, playingVoice, voicePlaybackRate],
   );
+
+  const cycleVoiceSpeed = useCallback(() => {
+    const speeds = [1, 1.5, 2];
+    const currentIdx = speeds.indexOf(voicePlaybackRate);
+    const nextRate = speeds[(currentIdx + 1) % speeds.length];
+    setVoicePlaybackRate(nextRate);
+    if (audioRef.current) {
+      audioRef.current.playbackRate = nextRate;
+    }
+  }, [voicePlaybackRate]);
 
   const getWaveformHeights = useMemo(() => {
     const cache: Record<string, number[]> = {};
@@ -165,10 +177,12 @@ export function useVoiceMedia({ conversationId, sendMediaMessage, typingOnKeyDow
     isRecording,
     recordingTime,
     playingVoice,
+    voicePlaybackRate,
     startRecording,
     stopRecording,
     cancelRecording,
     toggleVoicePlay,
+    cycleVoiceSpeed,
     getWaveformHeights,
   };
 }

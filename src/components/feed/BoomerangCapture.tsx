@@ -40,6 +40,7 @@ export function BoomerangCapture({ stream, onCapture, onCancel }: BoomerangCaptu
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
   const framesRef = useRef<ImageData[]>([]);
   const rafRef = useRef<number>(0);
+  const unmountedRef = useRef(false);
   const [state, setState] = useState<State>("idle");
   const [countdown, setCountdown] = useState(3);
   const [progress, setProgress] = useState(0);
@@ -125,7 +126,7 @@ export function BoomerangCapture({ stream, onCapture, onCancel }: BoomerangCaptu
       const frameInterval = 1000 / PLAYBACK_FPS;
 
       const renderFrame = () => {
-        if (frameIdx >= boomerangFrames.length) {
+        if (unmountedRef.current || frameIdx >= boomerangFrames.length) {
           recorder.stop();
           return;
         }
@@ -178,7 +179,10 @@ export function BoomerangCapture({ stream, onCapture, onCancel }: BoomerangCaptu
   }, []);
 
   useEffect(() => {
-    return () => { cancelAnimationFrame(rafRef.current); };
+    return () => {
+      unmountedRef.current = true;
+      cancelAnimationFrame(rafRef.current);
+    };
   }, []);
 
   // Countdown перед захватом

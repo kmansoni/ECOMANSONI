@@ -268,8 +268,8 @@ async function upsertDeviceAccountLink(userId: string) {
     await supabase.rpc("upsert_device_account", {
       p_device_id: deviceId,
     });
-  } catch {
-    // best effort
+  } catch (err) {
+    logger.warn('[MultiAccount] upsertDeviceAccountLink failed', { err });
   }
 }
 
@@ -430,14 +430,14 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
         });
         bc.close();
       }
-    } catch {
-      // ignore
+    } catch (err) {
+      logger.warn('[MultiAccount] BroadcastChannel notify failed', { err });
     }
 
     try {
       supabase.removeAllChannels();
-    } catch {
-      // ignore
+    } catch (err) {
+      logger.warn('[MultiAccount] removeAllChannels failed', { err });
     }
 
     hardResetQueryClient();
@@ -473,7 +473,8 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
       try {
         // activateSessionForAccount is the single authority that commits activeAccountId.
         await withTimeout(activateSessionForAccount(accountId), 5000, "externalSwitchActivate");
-      } catch {
+      } catch (err) {
+        logger.warn('[MultiAccount] External switch failed, marking reauth', { accountId, err });
         // Keep current active account unchanged in this tab, mark target as requiring reauth.
         setAccounts(upsertAccountIndex({ accountId, requiresReauth: true }));
       } finally {

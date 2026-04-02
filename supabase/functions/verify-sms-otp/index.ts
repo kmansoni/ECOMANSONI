@@ -64,8 +64,16 @@ serve(async (req: Request) => {
     const normalizedPhone = phone.replace(/\D/g, "");
     const normalizedCode = code.trim();
 
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    // Validate code format early — reject non-6-digit codes before any DB work.
+    if (!/^\d{6}$/.test(normalizedCode)) {
+      return new Response(
+        JSON.stringify({ error: "Неверный формат кода. Ожидается 6 цифр." }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     const phoneAuthSecret = Deno.env.get("PHONE_AUTH_SECRET");
 
     if (!supabaseUrl || !supabaseServiceKey) {
@@ -130,14 +138,19 @@ serve(async (req: Request) => {
       );
     }
 
-    // Timing-safe comparison
+    // Timing-safe comparison: pads both to same length, no early exit on length mismatch.
     function timingSafeEqual(a: string, b: string): boolean {
-      const aBytes = new TextEncoder().encode(a);
-      const bBytes = new TextEncoder().encode(b);
-      const maxLen = Math.max(aBytes.length, bBytes.length);
-      let diff = aBytes.length ^ bBytes.length;
-      for (let i = 0; i < maxLen; i++) {
-        diff |= (aBytes[i] ?? 0) ^ (bBytes[i] ?? 0);
+      const enc = new TextEncoder();
+      const bufA = enc.encode(a);
+      const bufB = enc.encode(b);
+      const len = Math.max(bufA.length, bufB.length);
+      const padA = new Uint8Array(len);
+      const padB = new Uint8Array(len);
+      padA.set(bufA);
+      padB.set(bufB);
+      let diff = bufA.length ^ bufB.length;
+      for (let i = 0; i < len; i++) {
+        diff |= padA[i] ^ padB[i];
       }
       return diff === 0;
     }

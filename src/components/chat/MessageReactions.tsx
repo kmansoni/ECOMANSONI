@@ -1,6 +1,8 @@
 import { useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { toast } from 'sonner';
 import { dbLoose } from '@/lib/supabase';
+import { logger } from '@/lib/logger';
 import { useAuth } from '@/hooks/useAuth';
 
 const QUICK_REACTIONS = ['❤️', '😂', '😮', '😢', '😡', '👍'];
@@ -48,29 +50,38 @@ export function MessageReactions({
       }
 
       // ── Legacy fallback: direct Supabase calls ─────────────────────────
-      const existing = reactions.find((r) => r.emoji === emoji);
+      try {
+        const existing = reactions.find((r) => r.emoji === emoji);
 
-      if (existing?.hasReacted) {
-        await dbLoose
-          .from('message_reactions')
-          .delete()
-          .eq('message_id', messageId)
-          .eq('user_id', user.id);
-      } else {
-        // Удалим предыдущую реакцию если есть
-        await dbLoose
-          .from('message_reactions')
-          .delete()
-          .eq('message_id', messageId)
-          .eq('user_id', user.id);
+        if (existing?.hasReacted) {
+          const { error } = await dbLoose
+            .from('message_reactions')
+            .delete()
+            .eq('message_id', messageId)
+            .eq('user_id', user.id);
+          if (error) throw error;
+        } else {
+          // Удалим предыдущую реакцию если есть
+          const { error: delErr } = await dbLoose
+            .from('message_reactions')
+            .delete()
+            .eq('message_id', messageId)
+            .eq('user_id', user.id);
+          if (delErr) throw delErr;
 
-        await dbLoose
-          .from('message_reactions')
-          .insert({ message_id: messageId, user_id: user.id, emoji });
+          const { error: insErr } = await dbLoose
+            .from('message_reactions')
+            .insert({ message_id: messageId, user_id: user.id, emoji });
+          if (insErr) throw insErr;
+        }
+
+        onReactionChange();
+      } catch (err) {
+        logger.error('[MessageReactions] Ошибка при обновлении реакции', { err });
+        toast.error('Не удалось обновить реакцию');
       }
 
       onPickerClose();
-      onReactionChange();
     },
     [user, messageId, reactions, onPickerClose, onReactionChange, onToggle]
   );

@@ -7,7 +7,6 @@
  * При zoom > 1 блокирует вертикальный скролл страницы (touch-action: none).
  */
 
-import { useCallback } from "react";
 import { usePinchZoom } from "@/hooks/usePinchZoom";
 import { cn } from "@/lib/utils";
 import { Haptics } from "@/lib/haptics";
@@ -17,9 +16,10 @@ interface ZoomableImageProps {
   alt?: string;
   className?: string;
   onPress?: () => void;
+  onLoad?: (e: React.SyntheticEvent<HTMLImageElement>) => void;
 }
 
-export function ZoomableImage({ src, alt, className, onPress }: ZoomableImageProps) {
+export function ZoomableImage({ src, alt, className, onPress, onLoad }: ZoomableImageProps) {
   const { ref, style, isZoomed, reset } = usePinchZoom({
     minScale: 1,
     maxScale: 5,
@@ -43,6 +43,7 @@ export function ZoomableImage({ src, alt, className, onPress }: ZoomableImagePro
           className="w-full h-full object-cover select-none"
           draggable={false}
           onClick={!isZoomed ? onPress : undefined}
+          onLoad={onLoad}
         />
       </div>
 

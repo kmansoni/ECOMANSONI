@@ -144,6 +144,7 @@ export function UserProfilePage() {
         // viewed влияет только на UI, но не на возможность открыть
         hasNew: hasUnviewedStories,
         isOwn: Boolean(currentUser && currentUser.id === profile.user_id),
+        hasCloseFriendsStory: activeStories.some(s => s.close_friends_only),
       };
 
       setProfileStoriesUsers([userEntry]);

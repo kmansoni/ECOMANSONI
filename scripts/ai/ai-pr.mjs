@@ -50,8 +50,18 @@ function toAnthropicMessages(messages) {
   const nonSystem = messages.filter((m) => m.role === "user" || m.role === "assistant");
   const anthropicMsgs = nonSystem.map((m) => ({
     role: m.role,
-    content: [{ type: "text", text: String(m.content || "") }],
+    content: [
+      {
+        type: "text",
+        text: String(m.content || ""),
+      },
+    ],
   }));
+
+  // Only add cache_control to the last message to save costs
+  if (anthropicMsgs.length > 0) {
+    anthropicMsgs[anthropicMsgs.length - 1].content[0].cache_control = { type: "ephemeral" };
+  }
 
   return { system, messages: anthropicMsgs };
 }
@@ -76,9 +86,6 @@ async function callAI(messages, { stream = false } = {}) {
           {
             type: "text",
             text: payload.system,
-            cache_control: {
-              type: "ephemeral"
-            }
           }
         ],
         messages: payload.messages,

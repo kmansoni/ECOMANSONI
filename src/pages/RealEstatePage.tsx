@@ -41,6 +41,7 @@ export function RealEstatePage() {
   const [properties, setProperties] = useState<Property[]>([]);
   const [filteredProperties, setFilteredProperties] = useState<Property[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [favorites, setFavorites] = useState<string[]>([]);
   const [showFilters, setShowFilters] = useState(false);
   const [visibleCount, setVisibleCount] = useState(6);
@@ -89,6 +90,7 @@ export function RealEstatePage() {
         setFilteredProperties(data || []);
       } catch (error) {
         logger.error("[RealEstatePage] Error fetching properties", { error });
+        setFetchError("Не удалось загрузить объекты недвижимости");
       } finally {
         setLoading(false);
       }
@@ -240,6 +242,11 @@ export function RealEstatePage() {
 
   return (
     <div className="min-h-screen bg-background pb-20">
+      {fetchError && (
+        <div className="mx-4 mt-4 p-4 bg-destructive/10 border border-destructive/20 rounded-xl text-center">
+          <p className="text-destructive text-sm font-medium">{fetchError}</p>
+        </div>
+      )}
       {/* Avito-style Filters Header */}
       <RealEstateFilters 
         onShowResults={handleShowMore}

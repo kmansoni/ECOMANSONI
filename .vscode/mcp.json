@@ -1,0 +1,64 @@
+{
+  "servers": {
+    "playwright": {
+      "command": "npx",
+      "args": ["@playwright/mcp@latest"],
+      "env": {},
+      "description": "Браузерная автоматизация и E2E-тестирование UI"
+    },
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "."],
+      "env": {},
+      "description": "Прямой доступ к файловой системе проекта"
+    },
+    "context7": {
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp@latest"],
+      "env": {},
+      "description": "Актуальная документация: React, Supabase, TypeScript, Vite, TanStack Query, Tailwind"
+    },
+    "supabase": {
+      "command": "npx",
+      "args": ["-y", "@supabase/mcp-server-supabase@latest", "--read-only"],
+      "env": {
+        "SUPABASE_ACCESS_TOKEN": "${env:SUPABASE_ACCESS_TOKEN}"
+      },
+      "description": "Прямой доступ к Supabase: схема БД, таблицы, RLS, Edge Functions (read-only)"
+    },
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${env:GITHUB_TOKEN}"
+      },
+      "description": "GitHub: PR, Issues, Actions, commits, code review"
+    },
+    "memory": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-memory"],
+      "env": {},
+      "description": "Персистентная память агентов между сессиями (граф знаний)"
+    },
+    "sequential-thinking": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"],
+      "env": {},
+      "description": "Инструмент для пошагового reasoning агентов при сложных задачах"
+    },
+    "brave-search": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-brave-search"],
+      "env": {
+        "BRAVE_API_KEY": "${env:BRAVE_API_KEY}"
+      },
+      "description": "Поиск: документация, паттерны, примеры кода Telegram/Instagram/Uber"
+    },
+    "ruflo": {
+      "command": "npx",
+      "args": ["-y", "claude-flow@latest", "mcp", "start"],
+      "env": {},
+      "description": "Ruflo (Claude Flow): оркестрация мульти-агентных роев, 100+ специализированных агентов, self-learning, иерархические и mesh-паттерны. GitHub: ruvnet/ruflo (14k+ stars)"
+    }
+  }
+}

@@ -1,10 +1,11 @@
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { FeedHeader } from "@/components/feed/FeedHeader";
 import { FeedFilters, ContentFilter } from "@/components/feed/FeedFilters";
 import { PostCard } from "@/components/feed/PostCard";
 import { PostCardSkeleton } from "@/components/feed/PostCardSkeleton";
 import { PullToRefresh } from "@/components/feed/PullToRefresh";
 import { SmartFeedToggle } from "@/components/feed/SmartFeedToggle";
+import { SuggestedUsers } from "@/components/recommendations/SuggestedUsers";
 import { useSmartFeed } from "@/hooks/useSmartFeed";
 import { usePinnedPosts } from "@/hooks/usePinnedPosts";
 import { usePresence } from "@/hooks/usePresence";
@@ -14,12 +15,18 @@ import { formatDistanceToNow } from "date-fns";
 import { ru } from "date-fns/locale";
 
 export function HomePage() {
-  const { posts, loading, loadingMore, hasMore, mode, setMode, refetch, loadMore, error } = useSmartFeed();
+  const { posts, setPosts, loading, loadingMore, hasMore, mode, setMode, refetch, loadMore, error } = useSmartFeed();
   const { pinnedPositions, refresh: refreshPinnedPosts } = usePinnedPosts();
   const [contentFilter, setContentFilter] = useState<ContentFilter>('all');
 
   // Initialize presence tracking
   usePresence();
+
+  const handleLikeChange = useCallback((postId: string, liked: boolean) => {
+    setPosts(prev => prev.map(p =>
+      p.id === postId ? { ...p, is_liked: liked, likes_count: liked ? p.likes_count + 1 : Math.max(0, p.likes_count - 1) } : p
+    ));
+  }, [setPosts]);
 
   const handleRefresh = async () => {
     await refetch();
@@ -135,7 +142,9 @@ export function HomePage() {
               const safeUsername = post.author?.display_name || safeAuthorId.slice(0, 8);
 
               return (
-                <PostCard
+                <div key={safePostId}>
+                  {index === 4 && <SuggestedUsers className="py-4 border-y border-border" />}
+                  <PostCard
                   key={safePostId}
                   id={safePostId}
                   authorId={safeAuthorId}
@@ -157,11 +166,15 @@ export function HomePage() {
                   saves={post.saves_count}
                   timeAgo={formatTimeAgo(post.created_at)}
                   isLiked={post.is_liked}
+                  onLikeChange={handleLikeChange}
                   pinPosition={pinnedPositions.get(post.id) ?? null}
                   onPinChanged={() => {
                     void refreshPinnedPosts();
                   }}
+                  hideLikes={post.hide_likes_count}
+                  commentsDisabled={post.comments_disabled}
                 />
+                </div>
               );
             })}
 

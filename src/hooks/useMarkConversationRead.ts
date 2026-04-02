@@ -7,6 +7,7 @@ import {
   isChatProtocolV11EnabledForUser,
   nextClientWriteSeq,
 } from "@/lib/chat/protocolV11";
+import { useUnifiedCounterStore } from "@/stores/useUnifiedCounterStore";
 
 type UnknownRecord = Record<string, unknown>;
 

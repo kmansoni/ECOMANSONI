@@ -13,5 +13,6 @@
     "**/supabase/seed.sql": "pgsql"
   },
   "mssql.enableSqlAuthenticationProvider": false,
-  "mssql.connections": []
+  "mssql.connections": [],
+  "claudeCode.useTerminal": true
 }

@@ -6,6 +6,7 @@ import { isGuestMode } from "@/lib/demo/demoMode";
 import { getDemoBotsReels, isDemoId } from "@/lib/demo/demoBots";
 import { trackAnalyticsEvent } from "@/lib/analytics/firehose";
 import { fetchUserBriefMap, resolveUserBrief } from "@/lib/users/userBriefs";
+import { toggleReelLike as _toggleReelLike } from "@/lib/likes";
 import { logger } from "@/lib/logger";
 import { OperationMutex, showErrorToast, handleApiError } from "@/lib/errors";
 
@@ -143,12 +144,14 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
   const [likedReels, setLikedReels] = useState<Set<string>>(new Set());
   const [savedReels, setSavedReels] = useState<Set<string>>(new Set());
   const [repostedReels, setRepostedReels] = useState<Set<string>>(new Set());
+  const dbOffsetRef = useRef(0);
   const storageSyncOnceRef = useRef(false);
   // Ref для текущего user.id — используется в RT-обработчиках без пересоздания канала
   const userIdRef = useRef<string | null>(null);
-  // Mutex для предотвращения race conditions при лайках/сохранениях
+  // Mutex для предотвращения race conditions при лайках/сохранениях/репостах
   const likeMutex = useRef(new OperationMutex());
   const saveMutex = useRef(new OperationMutex());
+  const repostMutex = useRef(new OperationMutex());
 
   // Синхронизируем ref с актуальным user.id
   useEffect(() => {
@@ -434,6 +437,7 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
     let ignore = false;
     setLoading(true);
     setError(null); // сбрасываем ошибку при новом запросе
+    dbOffsetRef.current = 0;
     try {
       // Best-effort: sync storage-only uploads into public.reels so they appear in the feed.
       if (!storageSyncOnceRef.current && !isGuestMode() && feedMode === "reels") {
@@ -468,6 +472,7 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
         setHasMore(false);
       } else {
         setReels(enriched.reels);
+        dbOffsetRef.current = raw?.length || 0;
       }
     } catch (err) {
       if (!ignore) {
@@ -488,13 +493,15 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
     try {
       setLoadingMore(true);
       const followedAuthorIds = await getFollowedAuthorIdsIfNeeded();
-      const nextOffset = reels.length;
+      const nextOffset = dbOffsetRef.current;
       const raw = await fetchRawBatch({ offset: nextOffset, limit: PAGE_SIZE, followedAuthorIds });
 
       if ((raw?.length || 0) === 0) {
         setHasMore(false);
         return;
       }
+
+      dbOffsetRef.current = nextOffset + (raw?.length || 0);
 
       const enriched = await enrichRows(raw);
 
@@ -512,11 +519,11 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
         setHasMore(false);
       }
     } catch (e) {
-      logger.error("[useReels] Error loading more reels", { error: e, feedMode, userId: user?.id ?? null, offset: reels.length });
+      logger.error("[useReels] Error loading more reels", { error: e, feedMode, userId: user?.id ?? null, offset: dbOffsetRef.current });
     } finally {
       setLoadingMore(false);
     }
-  }, [enrichRows, fetchRawBatch, feedMode, getFollowedAuthorIdsIfNeeded, hasMore, loading, loadingMore, reels.length, user?.id]);
+  }, [enrichRows, fetchRawBatch, feedMode, getFollowedAuthorIdsIfNeeded, hasMore, loading, loadingMore, user?.id]);
 
   const resolveReelOwnerId = useCallback(
     (reelId: string): string | null => {
@@ -567,19 +574,8 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
       );
 
       try {
-        if (isCurrentlyLiked) {
-          const { error } = await (supabase as any)
-            .from("reel_likes")
-            .delete()
-            .eq("reel_id", reelId)
-            .eq("user_id", user.id);
-          if (error) throw error;
-        } else {
-          const { error } = await (supabase as any)
-            .from("reel_likes")
-            .insert({ reel_id: reelId, user_id: user.id });
-          if (error) throw error;
-        }
+        const { error } = await _toggleReelLike(reelId, user.id, isCurrentlyLiked);
+        if (error) throw new Error(error);
       } catch (error) {
         // Откат при ошибке
         setLikedReels((prev) => {
@@ -699,44 +695,61 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
         return;
       }
       const isCurrentlyReposted = repostedReels.has(reelId);
-      try {
-        if (isCurrentlyReposted) {
-          const { error } = await (supabase as any)
-            .from("reel_reposts")
-            .delete()
-            .eq("reel_id", reelId)
-            .eq("user_id", user.id);
-          if (error) throw error;
+      await repostMutex.current.execute(async () => {
+        // Оптимистичное обновление
+        setRepostedReels((prev) => {
+          const next = new Set(prev);
+          if (isCurrentlyReposted) next.delete(reelId); else next.add(reelId);
+          return next;
+        });
+        setReels((prev) =>
+          prev.map((r) =>
+            r.id === reelId
+              ? {
+                  ...r,
+                  reposts_count: Math.max(0, (r.reposts_count || 0) + (isCurrentlyReposted ? -1 : 1)),
+                  isReposted: !isCurrentlyReposted,
+                }
+              : r,
+          ),
+        );
 
+        try {
+          if (isCurrentlyReposted) {
+            const { error } = await (supabase as any)
+              .from("reel_reposts")
+              .delete()
+              .eq("reel_id", reelId)
+              .eq("user_id", user.id);
+            if (error) throw error;
+          } else {
+            const { error } = await (supabase as any)
+              .from("reel_reposts")
+              .insert({ reel_id: reelId, user_id: user.id });
+            if (error) throw error;
+          }
+        } catch (error) {
+          // Откат при ошибке
           setRepostedReels((prev) => {
             const next = new Set(prev);
-            next.delete(reelId);
+            if (isCurrentlyReposted) next.add(reelId); else next.delete(reelId);
             return next;
           });
           setReels((prev) =>
             prev.map((r) =>
               r.id === reelId
-                ? { ...r, reposts_count: Math.max(0, (r.reposts_count || 0) - 1), isReposted: false }
+                ? {
+                    ...r,
+                    reposts_count: Math.max(0, (r.reposts_count || 0) + (isCurrentlyReposted ? 1 : -1)),
+                    isReposted: isCurrentlyReposted,
+                  }
                 : r,
             ),
           );
-        } else {
-          const { error } = await (supabase as any)
-            .from("reel_reposts")
-            .insert({ reel_id: reelId, user_id: user.id });
-          if (error) throw error;
-          setRepostedReels((prev) => new Set([...prev, reelId]));
-          setReels((prev) =>
-            prev.map((r) =>
-              r.id === reelId
-                ? { ...r, reposts_count: (r.reposts_count || 0) + 1, isReposted: true }
-                : r,
-            ),
-          );
+          logger.error("[useReels] Error toggling repost", { error, reelId, userId: user?.id ?? null });
+          showErrorToast(error, 'Не удалось обновить репост');
         }
-      } catch (error) {
-        logger.error("[useReels] Error toggling repost", { error, reelId, userId: user?.id ?? null });
-      }
+      });
     },
     [user, repostedReels],
   );

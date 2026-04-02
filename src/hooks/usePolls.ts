@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 
@@ -160,6 +160,10 @@ export function usePolls(conversationId: string | null) {
     [polls]
   );
 
+  // Ref to avoid re-subscribing when polls state changes
+  const pollsRef = useRef(polls);
+  useEffect(() => { pollsRef.current = polls; }, [polls]);
+
   // Realtime подписка
   useEffect(() => {
     if (!conversationId) return;
@@ -167,7 +171,7 @@ export function usePolls(conversationId: string | null) {
       .channel(`polls:${conversationId}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "poll_options" }, (payload: any) => {
         const pollId = payload.new?.poll_id || payload.old?.poll_id;
-        if (pollId && polls[pollId]) {
+        if (pollId && pollsRef.current[pollId]) {
           loadPoll(pollId);
         }
       })
@@ -175,7 +179,7 @@ export function usePolls(conversationId: string | null) {
     return () => {
       (supabase as any).removeChannel(channel);
     };
-  }, [conversationId, polls, loadPoll]);
+  }, [conversationId, loadPoll]);
 
   return { createPoll, vote, retractVote, closePoll, getPollResults, loadPoll };
 }

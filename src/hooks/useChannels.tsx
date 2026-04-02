@@ -260,9 +260,9 @@ export function useChannels() {
 
       // Fetch last message per channel.
       // Correctness requirement: every channel must surface its own latest message.
-      // A single global batch with limit=N*2 is unsafe — one high-traffic channel can
-      // dominate the result set and crowd out all others.
-      // Solution: per-channel query with concurrency=6 (original correct approach).
+      // A global batch with limit=N*2 is unsafe — one high-traffic channel can
+      // dominate results and crowd out all others (regression from previous PR).
+      // Reverted to per-channel queries with concurrency=6 (correct original approach).
       const channelIds = (channelsData || []).map((c) => c.id).filter(Boolean) as string[];
       const lastMessages: Record<string, ChannelMessage> = {};
 

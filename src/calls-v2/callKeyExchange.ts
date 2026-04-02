@@ -324,6 +324,17 @@ export class CallKeyExchange {
   async processKeyPackage(pkg: KeyPackageData): Promise<EpochKeyMaterial> {
     if (!this.ephemeralKeyPair) throw new Error('[CallKeyExchange] Not initialized');
 
+    // ── C-3 fix: runtime null-guards — defend against malformed/old-version server payloads ──
+    if (!pkg.senderPublicKey || typeof pkg.senderPublicKey !== 'string' || pkg.senderPublicKey.length === 0) {
+      throw new Error('[CallKeyExchange] processKeyPackage: senderPublicKey is missing or empty — cannot perform ECDH. Dropping package.');
+    }
+    if (!pkg.salt || typeof pkg.salt !== 'string' || pkg.salt.length === 0) {
+      throw new Error('[CallKeyExchange] processKeyPackage: salt is missing or empty — HKDF derivation would be deterministic. Dropping package.');
+    }
+    if (!pkg.sig || typeof pkg.sig !== 'string') {
+      throw new Error('[CallKeyExchange] processKeyPackage: sig is missing. Dropping package.');
+    }
+
     // ── C-1: CRITICAL — Verify ECDSA signature BEFORE any other processing ──
     const senderId = `${pkg.senderIdentity.userId}:${pkg.senderIdentity.deviceId}`;
     const verifyKey = this.peerSigningKeys.get(senderId);

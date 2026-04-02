@@ -2,7 +2,7 @@ import { useRef, useMemo } from "react";
 import { toast } from "sonner";
 import { Bell, BellOff, Mic, Send, Smile, Video, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { AutoGrowTextarea } from "@/components/chat/AutoGrowTextarea";
 import { Drawer, DrawerContent } from "@/components/ui/drawer";
 import { AttachmentIcon } from "@/components/chat/AttachmentIcon";
 import { AttachmentSheet } from "@/components/chat/AttachmentSheet";
@@ -124,7 +124,7 @@ export function ChannelInputBar(props: ChannelInputBarProps) {
     setViewingImage,
   } = props;
 
-  const channelInputRef = useRef<HTMLInputElement>(null);
+  const channelInputRef = useRef<HTMLTextAreaElement>(null);
   const sendButtonLongPressRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   return (
@@ -182,13 +182,13 @@ export function ChannelInputBar(props: ChannelInputBarProps) {
             }}
             externalActiveIndex={mentionActiveIndex}
           />
-          <Input
+          <AutoGrowTextarea
             ref={channelInputRef}
             value={draftPost}
             onChange={(e) => {
               const val = e.target.value;
               setDraftPost(val);
-              const caret = e.target.selectionStart ?? val.length;
+              const caret = (e.target as HTMLTextAreaElement).selectionStart ?? val.length;
               const trigger = detectMentionTrigger(val, caret);
               setMentionTrigger(trigger);
               setMentionActiveIndex(0);
@@ -211,16 +211,14 @@ export function ChannelInputBar(props: ChannelInputBarProps) {
                 }
                 if (e.key === "Escape") { setMentionTrigger(null); return; }
               }
-              if (e.key !== "Enter") return;
-              e.preventDefault();
-              if (e.repeat) return;
-              if (sendingPost) return;
-              void handlePublishPost();
+            }}
+            onSend={() => {
+              if (!sendingPost) void handlePublishPost();
             }}
             onFocus={() => setShowEmojiPicker(false)}
             placeholder={canCreatePosts ? "Сообщение" : "Для публикации нужны права"}
             disabled={!canCreatePosts || sendingPost}
-            className="flex-1 h-11 rounded-full pr-20"
+            className="flex-1 rounded-2xl pr-20 bg-black/40"
           />
 
           <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">

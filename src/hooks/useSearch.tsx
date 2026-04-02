@@ -33,6 +33,8 @@ export interface ExplorePost {
     media_type: string;
   }[];
   is_liked?: boolean;
+  hide_likes_count?: boolean;
+  comments_disabled?: boolean;
 }
 
 export interface TrendingHashtag {

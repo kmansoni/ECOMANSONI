@@ -649,7 +649,7 @@ serve(async (req) => {
 
   if (cachedRow && (cachedRow as CachedPreviewRow).url === normalizedUrl) {
     staleRow = cachedRow as CachedPreviewRow;
-    if (Date.parse(staleRow.expires_at) > Date.now()) {
+    if (Date.parse(staleRow.expires_at) >= Date.now()) {
       return jsonResponse(rowToPayload(staleRow, true), origin);
     }
   }

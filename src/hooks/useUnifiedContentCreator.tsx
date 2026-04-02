@@ -57,7 +57,7 @@ interface UseUnifiedContentCreatorReturn {
 
   // Type-specific upload handlers
   uploadStoryMedia: (file: File, caption?: string) => Promise<UnifiedContent | null>;
-  uploadPostMedia: (file: File, caption?: string) => Promise<UnifiedContent | null>;
+  uploadPostMedia: (file: File, caption?: string, scheduledAt?: string | null, opts?: { hideLikes?: boolean; commentsDisabled?: boolean }) => Promise<UnifiedContent | null>;
   uploadReelMedia: (
     file: File,
     caption?: string,
@@ -154,7 +154,7 @@ export function useUnifiedContentCreator(): UseUnifiedContentCreatorReturn {
   );
 
   const uploadPostMedia = useCallback(
-    async (file: File, caption?: string): Promise<UnifiedContent | null> => {
+    async (file: File, caption?: string, scheduledAt?: string | null, opts?: { hideLikes?: boolean; commentsDisabled?: boolean }): Promise<UnifiedContent | null> => {
       if (!user) {
         setError('User not authenticated');
         return null;
@@ -164,13 +164,18 @@ export function useUnifiedContentCreator(): UseUnifiedContentCreatorReturn {
       setError(null);
 
       try {
+        const isScheduled = !!scheduledAt;
+
         // Create post record first
         const { data: post, error: postError } = await (supabase
           .from('posts' as any)
           .insert({
             author_id: user.id,
             content: caption || null,
-            is_published: true,
+            is_published: !isScheduled,
+            scheduled_at: scheduledAt || null,
+            hide_likes_count: opts?.hideLikes ?? false,
+            comments_disabled: opts?.commentsDisabled ?? false,
           })
           .select()
           .single() as any);

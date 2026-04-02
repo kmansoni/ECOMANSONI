@@ -84,6 +84,8 @@ export function ExploreFeedPage() {
                 shares={post.shares_count}
                 saves={post.saves_count}
                 isLiked={post.is_liked}
+                hideLikes={post.hide_likes_count}
+                commentsDisabled={post.comments_disabled}
                 
                 timeAgo={formatTimeAgo(post.created_at)}
               />

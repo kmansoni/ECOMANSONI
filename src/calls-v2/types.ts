@@ -298,9 +298,10 @@ export interface KeyPackagePayload {
   epoch: number;
   ciphertext: string;           // encrypted key material (base64)
   sig: string;                  // signature (base64)
-  senderPublicKey?: string;     // sender's public key for ECDH (base64)
-  salt?: string;                // base64 random 32-byte HKDF salt (H-1)
-  senderIdentity: {             // C-2: required for ECDSA sig verification in processKeyPackage
+  /** C-3 fix: REQUIRED — sender ECDH P-256 public key (base64 uncompressed 65 bytes) */
+  senderPublicKey: string;      // was optional — made required to prevent null crash in processKeyPackage
+  salt: string;                 // base64 random 32-byte HKDF salt (H-1) — made required
+  senderIdentity: {             // required for ECDSA sig verification in processKeyPackage
     userId: string;
     deviceId: string;
     sessionId: string;

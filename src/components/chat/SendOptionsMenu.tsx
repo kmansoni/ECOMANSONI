@@ -4,19 +4,21 @@
  * Options:
  *   1. "Отправить" — normal send
  *   2. "Без звука" — silent send (is_silent: true)
- *   3. "Запланировать" — opens schedule picker
+ *   3. "С эффектом" — send with visual effect (confetti/fire/hearts/thumbsup)
+ *   4. "Запланировать" — opens schedule picker
  *
  * Design: bottom-anchored animated sheet (framer-motion).
  * Accessibility: role=menu, keyboard accessible, focus-trapped.
  *
  * Attack surface notes:
- * - onSend / onSilent / onSchedule are caller-supplied callbacks;
+ * - onSend / onSilent / onSchedule / onEffect are caller-supplied callbacks;
  *   this component itself has no side effects beyond UI.
  * - No prop injection — all labels are hardcoded strings.
  */
-import { useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, BellOff, Clock } from "lucide-react";
+import { Send, BellOff, Clock, Sparkles, ArrowLeft } from "lucide-react";
+import type { MessageEffectType } from "./MessageEffectOverlay";
 
 interface SendOptionsMenuProps {
   open: boolean;
@@ -24,6 +26,7 @@ interface SendOptionsMenuProps {
   onSend: () => void;
   onSilent: () => void;
   onSchedule: () => void;
+  onEffect?: (effect: MessageEffectType) => void;
 }
 
 interface MenuItem {
@@ -40,8 +43,15 @@ export function SendOptionsMenu({
   onSend,
   onSilent,
   onSchedule,
+  onEffect,
 }: SendOptionsMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
+  const [showEffects, setShowEffects] = useState(false);
+
+  // Reset sub-menu when closing
+  useEffect(() => {
+    if (!open) setShowEffects(false);
+  }, [open]);
 
   // Close on outside click
   useEffect(() => {
@@ -69,6 +79,13 @@ export function SendOptionsMenu({
     return () => document.removeEventListener("keydown", handler);
   }, [open, onClose]);
 
+  const effectOptions: { effect: MessageEffectType; emoji: string; label: string }[] = [
+    { effect: 'confetti', emoji: '🎉', label: 'Конфетти' },
+    { effect: 'fire', emoji: '🔥', label: 'Огонь' },
+    { effect: 'hearts', emoji: '❤️', label: 'Сердечки' },
+    { effect: 'thumbsup', emoji: '👍', label: 'Лайк' },
+  ];
+
   const items: MenuItem[] = [
     {
       icon: <Send className="w-5 h-5" />,
@@ -82,6 +99,13 @@ export function SendOptionsMenu({
       sublabel: "Получатель не услышит уведомление",
       action: () => { onClose(); onSilent(); },
       accent: "text-amber-400",
+    },
+    {
+      icon: <Sparkles className="w-5 h-5" />,
+      label: "С эффектом",
+      sublabel: "Конфетти, огонь, сердечки",
+      action: () => { setShowEffects(true); },
+      accent: "text-pink-400",
     },
     {
       icon: <Clock className="w-5 h-5" />,
@@ -126,7 +150,34 @@ export function SendOptionsMenu({
             role="menu"
             aria-label="Опции отправки"
           >
-            {items.map((item, i) => (
+            {showEffects ? (
+              <>
+                <button
+                  type="button"
+                  className="w-full flex items-center gap-3 px-4 py-3 border-b border-white/5 hover:bg-white/8 active:bg-white/12"
+                  onClick={() => setShowEffects(false)}
+                >
+                  <ArrowLeft className="w-4 h-4 text-white/60" />
+                  <span className="text-[14px] text-white/60">Назад</span>
+                </button>
+                {effectOptions.map((opt) => (
+                  <button
+                    key={opt.effect}
+                    type="button"
+                    role="menuitem"
+                    className="w-full flex items-center gap-4 px-4 py-3.5 transition-colors hover:bg-white/8 active:bg-white/12 text-left"
+                    onClick={() => {
+                      onClose();
+                      onEffect?.(opt.effect);
+                    }}
+                  >
+                    <span className="text-xl">{opt.emoji}</span>
+                    <span className="text-[15px] font-medium text-white">{opt.label}</span>
+                  </button>
+                ))}
+              </>
+            ) : (
+              items.map((item, i) => (
               <button
                 key={item.label}
                 type="button"
@@ -149,7 +200,8 @@ export function SendOptionsMenu({
                   )}
                 </div>
               </button>
-            ))}
+            ))
+            )}
           </motion.div>
         </>
       )}

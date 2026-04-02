@@ -55,7 +55,7 @@ export function VerifyEncryptionDialog({
     (async () => {
       try {
         const sn = await getSafetyNumber(otherUserId);
-        if (!cancelled) setSafetyNumber(sn ?? null);
+        if (!cancelled) setSafetyNumber(sn?.numeric ?? null);
       } catch {
         if (!cancelled) setSafetyNumber(null);
       } finally {

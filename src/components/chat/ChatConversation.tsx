@@ -42,6 +42,8 @@ import { ImageViewer } from "./ImageViewer";
 import { FullscreenVideoPlayer } from "./VideoPlayer";
 import { StickerGifPicker } from "./StickerGifPicker";
 import { buildChatBodyEnvelope, sendMessageV1 } from "@/lib/chat/sendMessageV1";
+import { MessageEffectOverlay } from "./MessageEffectOverlay";
+import type { MessageEffectType } from "./MessageEffectOverlay";
 import { sendStaticLocation, getCurrentPosition, geoErrorToKey } from "@/lib/chat/sendLocation";
 import { MessageContextMenu } from "./MessageContextMenu";
 import { ChatSettingsSheet } from "./ChatSettingsSheet";
@@ -136,7 +138,7 @@ function VirtualizedMessages({
   playingVoice: string | null;
   manualMediaLoaded: Set<string>;
   contextMenuMessageId: string | null;
-  decryptedCache: Map<string, string>;
+  decryptedCache: Record<string, string | null>;
   senderProfiles: Record<string, any>;
   style: any;
   callbacks: any;
@@ -333,9 +335,9 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
   const otherLiveActivity = null; // activity types (recording_voice/video) kept for future extension
 
   const {
-    isRecording, recordingTime, playingVoice,
+    isRecording, recordingTime, playingVoice, voicePlaybackRate,
     startRecording, stopRecording, cancelRecording,
-    toggleVoicePlay, getWaveformHeights,
+    toggleVoicePlay, cycleVoiceSpeed, getWaveformHeights,
   } = useVoiceMedia({
     conversationId,
     sendMediaMessage,
@@ -364,6 +366,10 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
   // ─── Silent send ─────────────────────────────────────────────────────────────
   const [isSilentSend, setIsSilentSend] = useState(false);
   const [showSendOptions, setShowSendOptions] = useState(false);
+
+  // ─── Message effects ─────────────────────────────────────────────────────────
+  const pendingEffectRef = useRef<MessageEffectType | null>(null);
+  const [activeEffect, setActiveEffect] = useState<MessageEffectType | null>(null);
 
   // ─── Inline bot state ────────────────────────────────────────────────────────
   const [inlineBotTrigger, setInlineBotTrigger] = useState<{ botUsername: string; query: string } | null>(null);
@@ -944,6 +950,19 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
         setIsSilentSend(false);
       }
 
+      // Эффект сообщения: обновляем запись в БД и показываем анимацию
+      const effect = pendingEffectRef.current;
+      if (effect) {
+        pendingEffectRef.current = null;
+        supabase
+          .from('messages')
+          .update({ message_effect: effect })
+          .eq('client_msg_id', clientMsgId)
+          .eq('conversation_id', conversationId)
+          .then(() => {});
+        setActiveEffect(effect);
+      }
+
       // Keep focus on input to prevent keyboard closing on mobile
       requestAnimationFrame(() => {
         inputRef.current?.focus();
@@ -1303,6 +1322,8 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
     getReactions,
     getMessageStatus,
     toggleVoicePlay,
+    cycleVoiceSpeed,
+    voicePlaybackRate,
     getWaveformHeights,
     renderText,
   };
@@ -1310,6 +1331,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
   return (
     <div className="fixed inset-0 flex flex-col bg-background z-[200]">
       <AnimatedEmojiFullscreen emoji={lastSentEmoji} onComplete={() => setLastSentEmoji(null)} />
+      <MessageEffectOverlay effect={activeEffect} onComplete={() => setActiveEffect(null)} />
       <AlertDialog
         open={deleteDialog.open}
         onOpenChange={(open) => setDeleteDialog((prev) => ({ ...prev, open }))}
@@ -1515,6 +1537,10 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
           onMentionDismiss={() => setMentionTrigger(null)}
           onInlineBotSelect={(result) => void handleSendMessage(false, result.sendContent.text)}
           onInlineBotDismiss={() => setInlineBotTrigger(null)}
+          onEffect={(effect) => {
+            pendingEffectRef.current = effect;
+            void handleSendMessage(false);
+          }}
         />
         
         {/* Sticker/GIF/Emoji Picker */}

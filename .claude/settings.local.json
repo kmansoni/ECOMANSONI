@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "Bash(\"c:/Users/manso/Desktop/разработка/your-ai-companion-main/docs/ARIA_ASSISTANT.md\":*)",
+      "Bash(\"c:/Users/manso/Desktop/разработка/your-ai-companion-main/infra/aria/.env.example\":*)",
+      "Bash(npx supabase:*)",
+      "Bash(grep -r SUPABASE_URL supabase/.env*)",
+      "Bash(find /c/Users/manso/Desktop/разработка/your-ai-companion-main/src/pages -type f \\\\\\(-name *.tsx -o -name *.ts \\\\\\))",
+      "Bash(grep -r \"return.*div\\\\|return.*null\\\\|return.*Loading\\\\|return.*Coming\\\\|const.*Page.*=.*{\" /c/Users/manso/Desktop/разработка/your-ai-companion-main/src/pages --include=*.tsx)",
+      "Bash(xargs grep:*)",
+      "Bash(grep -r \"import.*Map\\\\|import.*Leaflet\\\\|import.*mapbox\\\\|import.*yandex\\\\|useGeolocation\\\\|navigator.geolocation\" /c/Users/manso/Desktop/разработка/your-ai-companion-main/src --include=*.tsx --include=*.ts)",
+      "Bash(grep -l \"TODO\\\\|FIXME\\\\|stub\\\\|WIP\\\\|not.*implement\" /c/Users/manso/Desktop/разработка/your-ai-companion-main/src/pages/*.tsx)",
+      "Bash(grep -r \"return.*null\\\\|Coming soon\\\\|Скоро\" /c/Users/manso/Desktop/разработка/your-ai-companion-main/src/pages --include=*.tsx)",
+      "Bash(grep -r \"not.*implement\\\\|placeholder.*component\\\\|empty.*component\" /c/Users/manso/Desktop/разработка/your-ai-companion-main/src/pages --include=*.tsx)",
+      "Bash(find /c/Users/manso/Desktop/разработка/your-ai-companion-main/src -name \"*.tsx\" -type f -exec wc -l {} +)",
+      "Read(//c/Users/manso/Desktop/разработка/your-ai-companion-main/**)",
+      "Bash(wc -l /c/Users/manso/Desktop/разработка/your-ai-companion-main/src/components/taxi/*.tsx /c/Users/manso/Desktop/разработка/your-ai-companion-main/src/components/taxi/shared/*.tsx /c/Users/manso/Desktop/разработка/your-ai-companion-main/src/pages/taxi/*.tsx)",
+      "Bash(npx tsc:*)",
+      "Bash(npx vite:*)"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\manso\\.claude\\plans"
+    ]
+  },
+  "model": "claude-opus-4-6"
+}

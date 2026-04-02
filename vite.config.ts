@@ -26,6 +26,8 @@ export default defineConfig(({ mode }) => ({
     minify: "esbuild",
     sourcemap: false,
     rollupOptions: {
+      // Серверные зависимости — никогда не должны попадать в клиентский бандл
+      external: ["ioredis", "ws"],
       output: {
         manualChunks: (id) => {
           if (!id.includes("node_modules")) return;

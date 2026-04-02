@@ -72,6 +72,8 @@ interface MessageCallbacks {
   getReactions: (messageId: string) => Array<{ emoji: string; hasReacted: boolean; count: number }>;
   getMessageStatus: (messageId: string) => DeliveryStatus;
   toggleVoicePlay: (messageId: string, url?: string) => void;
+  cycleVoiceSpeed: () => void;
+  voicePlaybackRate: number;
   getWaveformHeights: (messageId: string) => number[];
   renderText: (text: string, userId?: string) => React.ReactNode;
 }
@@ -140,7 +142,7 @@ export function ChatMessageItem({
   const isRead = message.is_read;
 
   const { bubbleClass, densityStyles, fontSizeSetting, bubbleStyleSetting, messageCornerRadius, autoDownloadPhotos, autoDownloadVideos, mediaTapEnabled, linkPreviewEnabled } = style;
-  const { onReply, onDelete, onReaction, onLongPressStart, onLongPressEnd, onManualLoad, onViewImage, onViewVideo, toggleSelected: toggleSel, getReactions, getMessageStatus, toggleVoicePlay, getWaveformHeights, renderText } = callbacks;
+  const { onReply, onDelete, onReaction, onLongPressStart, onLongPressEnd, onManualLoad, onViewImage, onViewVideo, toggleSelected: toggleSel, getReactions, getMessageStatus, toggleVoicePlay, cycleVoiceSpeed, voicePlaybackRate, getWaveformHeights, renderText } = callbacks;
 
   const textSizeClass =
     fontSizeSetting === "small"
@@ -491,6 +493,14 @@ export function ChatMessageItem({
                 <span className="text-xs text-white/60 font-medium">
                   {message.duration_seconds ? formatTime(message.duration_seconds) : "0:00"}
                 </span>
+                {playingVoice === message.id && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); cycleVoiceSpeed(); }}
+                    className="ml-1 px-1.5 py-0.5 rounded-full bg-white/15 hover:bg-white/25 transition-colors text-[10px] text-white font-bold tabular-nums min-w-[32px]"
+                  >
+                    {voicePlaybackRate}x
+                  </button>
+                )}
               </div>
             ) : message.disappeared ? (
               <p className="text-[14px] italic text-white/40 flex items-center gap-1">

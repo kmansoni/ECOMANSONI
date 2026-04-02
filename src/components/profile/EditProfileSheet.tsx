@@ -5,6 +5,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { toast } from "sonner";
 import { uploadAvatar } from "@/hooks/useProfile";
 import { supabase } from "@/integrations/supabase/client";
+import { NamePronunciationRecorder } from "./NamePronunciationRecorder";
 
 interface ProfileData {
   display_name?: string | null;
@@ -17,6 +18,7 @@ interface ProfileData {
   contact_phone?: string | null;
   is_private?: boolean;
   avatar_url?: string | null;
+  name_pronunciation_url?: string | null;
 }
 
 interface EditProfileSheetProps {
@@ -40,6 +42,7 @@ export function EditProfileSheet({ isOpen, onClose, profile, userId, onSaved }: 
     is_private: profile?.is_private || false,
   });
   const [avatar, setAvatar] = useState<string | null>(profile?.avatar_url || null);
+  const [pronunciationUrl, setPronunciationUrl] = useState<string | null>(profile?.name_pronunciation_url || null);
   const [saving, setSaving] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -154,6 +157,16 @@ export function EditProfileSheet({ isOpen, onClose, profile, userId, onSaved }: 
                   accept="image/*"
                   className="hidden"
                   onChange={handleAvatarChange}
+                />
+              </div>
+
+              {/* Name Pronunciation */}
+              <div className="px-4 py-3 border-b border-border">
+                <label className="text-xs text-muted-foreground block mb-2">Произношение имени</label>
+                <NamePronunciationRecorder
+                  userId={userId}
+                  existingUrl={pronunciationUrl}
+                  onChanged={setPronunciationUrl}
                 />
               </div>
 

@@ -6033,6 +6033,7 @@ export type Database = {
           is_read?: boolean | null
           media_type?: string | null
           media_url?: string | null
+          message_effect?: string | null
           sender_id: string
           seq: number
           shared_post_id?: string | null
@@ -6049,6 +6050,7 @@ export type Database = {
           is_read?: boolean | null
           media_type?: string | null
           media_url?: string | null
+          message_effect?: string | null
           sender_id?: string
           seq?: number
           shared_post_id?: string | null
@@ -7437,6 +7439,7 @@ export type Database = {
           id: string
           last_name: string | null
           last_seen_at: string | null
+          name_pronunciation_url: string | null
           phone: string | null
           professions: string[] | null
           status_emoji: string | null
@@ -7464,6 +7467,7 @@ export type Database = {
           id?: string
           last_name?: string | null
           last_seen_at?: string | null
+          name_pronunciation_url?: string | null
           phone?: string | null
           professions?: string[] | null
           status_emoji?: string | null
@@ -7491,6 +7495,7 @@ export type Database = {
           id?: string
           last_name?: string | null
           last_seen_at?: string | null
+          name_pronunciation_url?: string | null
           phone?: string | null
           professions?: string[] | null
           status_emoji?: string | null

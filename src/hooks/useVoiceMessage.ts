@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { uploadMedia } from '@/lib/mediaUpload';
@@ -197,6 +197,17 @@ export function useVoiceMessage() {
   const pauseVoiceMessage = useCallback(() => {
     audioRef.current?.pause();
     setIsPlaying(false);
+  }, []);
+
+  // Cleanup при размонтировании: остановить таймер, анимацию, поток
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+      cancelAnimationFrame(animFrameRef.current);
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      audioContextRef.current?.close();
+      audioRef.current?.pause();
+    };
   }, []);
 
   return {

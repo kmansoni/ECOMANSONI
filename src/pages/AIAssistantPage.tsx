@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import DOMPurify from "dompurify";
 import { logger } from "@/lib/logger";
 import {
   Bot,
@@ -26,6 +27,11 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { maybeToastRateLimit } from "@/lib/anti-abuse/rateLimitToast";
 import { supabase } from "@/integrations/supabase/client";
+import {
+  isAnthropicConfigured,
+  callAnthropicStreaming,
+  type AnthropicMessage,
+} from "@/lib/ai/anthropic-client";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -295,7 +301,14 @@ function renderMarkdown(text: string): string {
     // Newlines to <br> (but not inside pre blocks)
     .replace(/\n/g, "<br />");
 
-  return safe;
+  // Defense-in-depth: DOMPurify как финальный барьер против XSS
+  return DOMPurify.sanitize(safe, {
+    ALLOWED_TAGS: [
+      "strong", "em", "code", "pre", "br", "h1", "h2", "h3",
+      "hr", "li", "tr", "td", "th", "table", "tbody", "thead", "span",
+    ],
+    ALLOWED_ATTR: ["class"],
+  });
 }
 
 function escapeHtml(str: string): string {
@@ -431,6 +444,48 @@ export function AIAssistantPage() {
             }),
             signal: controller.signal,
           });
+        } else if (isAnthropicConfigured()) {
+          // ── Anthropic Claude (client-side, dev-only) ─────────────────────
+          // Convert messages to Anthropic format
+          const anthropicMsgs: AnthropicMessage[] = historyForApi.map((m) => ({
+            role: m.role as "user" | "assistant",
+            content: m.content,
+          }));
+
+          try {
+            let accumulated = "";
+            await callAnthropicStreaming(
+              anthropicMsgs,
+              ARIA_SYSTEM_PROMPT,
+              (chunk) => {
+                accumulated += chunk;
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantId
+                      ? { ...m, content: accumulated, streaming: true }
+                      : m
+                  )
+                );
+              }
+            );
+
+            // Mark as complete
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantId
+                  ? { ...m, streaming: false }
+                  : m
+              )
+            );
+            return;
+          } catch (anthropicErr) {
+            // If Anthropic fails, fall through to Edge Function or local fallback
+            logger.warn("[AIAssistantPage] Anthropic failed, trying backup", {
+              error: anthropicErr,
+            });
+            // Throw to trigger fallback logic
+            throw anthropicErr;
+          }
         } else if (EDGE_CHAT_URL && SUPABASE_ANON_KEY) {
           // ── Edge Function call (aria-chat with orchestrator) ──────────────
           const { data: sessionData } = await supabase.auth.getSession();

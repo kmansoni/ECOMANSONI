@@ -12,7 +12,11 @@ export async function createRedisStore({
     maxRetriesPerRequest: 1,
     enableReadyCheck: true,
     connectTimeout: Number.isFinite(connectTimeoutMs) && connectTimeoutMs > 0 ? connectTimeoutMs : 1500,
-    retryStrategy: () => null,
+    // W4: exponential backoff reconnect (was: () => null — no reconnect at all)
+    retryStrategy(times) {
+      if (times > 20) return null; // give up after 20 attempts
+      return Math.min(times * 200, 5000); // 200ms, 400ms, ... max 5s
+    },
   });
 
   await redis.connect();

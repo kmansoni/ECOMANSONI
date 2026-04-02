@@ -152,13 +152,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
+    let resolved = false;
+
+    const resolve = () => {
+      if (!cancelled && !resolved) {
+        resolved = true;
+        setLoading(false);
+      }
+    };
 
     // Set up auth state listener FIRST
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (cancelled) return;
       setSession(session);
       setUser(session?.user ?? null);
-      setLoading(false);
+      resolve();
 
       // IMPORTANT: do not await here.
       // GoTrueClient awaits auth subscribers during setSession(), so awaiting network
@@ -194,14 +202,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSession(null);
         setUser(null);
       } finally {
-        if (!cancelled) setLoading(false);
+        resolve();
       }
     })();
 
     const safetyTimer = window.setTimeout(() => {
-      if (!cancelled) {
-        setLoading(false);
-      }
+      resolve();
     }, 20000);
 
     return () => {

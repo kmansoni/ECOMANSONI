@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, ReactNode } from "react";
+import { createContext, useContext, useState, useMemo, ReactNode } from "react";
 
 interface ChatOpenContextType {
   isChatOpen: boolean;
@@ -28,16 +28,18 @@ export function ChatOpenProvider({ children }: { children: ReactNode }) {
 
   const shouldHideBottomNav = isChatOpen || isStoryOpen || isCreatingContent;
 
+  const value = useMemo(() => ({
+    isChatOpen,
+    setIsChatOpen,
+    isStoryOpen,
+    setIsStoryOpen,
+    isCreatingContent,
+    setIsCreatingContent,
+    shouldHideBottomNav,
+  }), [isChatOpen, isStoryOpen, isCreatingContent, shouldHideBottomNav]);
+
   return (
-    <ChatOpenContext.Provider value={{ 
-      isChatOpen, 
-      setIsChatOpen, 
-      isStoryOpen, 
-      setIsStoryOpen,
-      isCreatingContent,
-      setIsCreatingContent,
-      shouldHideBottomNav 
-    }}>
+    <ChatOpenContext.Provider value={value}>
       {children}
     </ChatOpenContext.Provider>
   );

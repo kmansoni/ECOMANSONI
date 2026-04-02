@@ -94,7 +94,7 @@ export class CallsWsClient {
     if (this._connectionState === state) return;
     this._connectionState = state;
     this.connectionStateHandlers.forEach((h) => {
-      try { h(state); } catch { /* ignore */ }
+      try { h(state); } catch (err) { logger.warn('[CallsWsClient] connectionStateHandler error', { err }); }
     });
   }
 
@@ -279,7 +279,8 @@ export class CallsWsClient {
           this.endpointIndex = (this.endpointIndex + 1) % endpoints.length;
         }
         await this.connectWithFailover();
-      } catch {
+      } catch (err) {
+        logger.warn('[CallsWsClient] reconnect attempt failed', { attempt: this.reconnectAttempts, err });
         this.scheduleReconnect();
       }
     }, delay);
@@ -621,7 +622,7 @@ export class CallsWsClient {
     handlers.forEach((handler) => {
       try {
         handler(frame);
-      } catch { /* ignore */ }
+      } catch (err) { logger.warn('[CallsWsClient] event handler error', { event, err }); }
     });
   }
 

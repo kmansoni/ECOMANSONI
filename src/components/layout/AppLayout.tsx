@@ -42,6 +42,9 @@ function MobileLayout() {
     location.pathname.startsWith("/create") ||
     location.pathname.startsWith("/create-surface");
 
+  // Hide bottom nav on Reels (fullscreen immersive)
+  const isReelsPage = location.pathname.startsWith("/reels");
+
   const [createOpen, setCreateOpen] = useState(false);
 
   // Sync createOpen state with context
@@ -49,8 +52,8 @@ function MobileLayout() {
     setIsCreatingContent(createOpen);
   }, [createOpen, setIsCreatingContent]);
 
-  // Also hide when on creation pages
-  const shouldHideMobile = shouldHideBottomNav || isCreationPage;
+  // Also hide when on creation pages or Reels
+  const shouldHideMobile = shouldHideBottomNav || isCreationPage || isReelsPage;
 
   return (
     <div

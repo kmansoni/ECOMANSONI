@@ -32,6 +32,7 @@ import { initOutbox } from "@/lib/chat/messageOutbox";
 import { toast } from "sonner";
 import { AppErrorBoundary } from "@/components/system/AppErrorBoundary";
 import { RouteErrorBoundary } from "@/components/system/RouteErrorBoundary";
+import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
 const HashtagPage = lazy(() => import("@/pages/HashtagPage").then(m => ({ default: m.HashtagPage })));
 const ExplorePage = lazy(() => import("@/pages/ExplorePage"));
@@ -342,9 +343,11 @@ const App = () => {
                 <Route element={<ProtectedRoute />}>
                   <Route element={<AppLayout />}>
                     <Route path="/" element={
-                      <Suspense fallback={<PageLoader />}>
-                        <HomePage />
-                      </Suspense>
+                      <ErrorBoundary section="Лента">
+                        <Suspense fallback={<PageLoader />}>
+                          <HomePage />
+                        </Suspense>
+                      </ErrorBoundary>
                     } />
                     <Route path="/feed" element={<Navigate to="/" replace />} />
                     <Route path="/search" element={
@@ -505,9 +508,11 @@ const App = () => {
                       </Suspense>
                     } />
                     <Route path="/settings" element={
-                      <Suspense fallback={<PageLoader />}>
-                        <SettingsPage />
-                      </Suspense>
+                      <ErrorBoundary section="Настройки">
+                        <Suspense fallback={<PageLoader />}>
+                          <SettingsPage />
+                        </Suspense>
+                      </ErrorBoundary>
                     } />
                     <Route path="/settings/accessibility" element={
                       <Suspense fallback={<PageLoader />}>
@@ -727,9 +732,11 @@ const App = () => {
                       </Suspense>
                     } />
                     <Route path="/email" element={
-                      <Suspense fallback={<PageLoader />}>
-                        <EmailPage />
-                      </Suspense>
+                      <ErrorBoundary section="Почта">
+                        <Suspense fallback={<PageLoader />}>
+                          <EmailPage />
+                        </Suspense>
+                      </ErrorBoundary>
                     } />
                     <Route path="/services/bugs" element={
                       <Suspense fallback={<PageLoader />}>

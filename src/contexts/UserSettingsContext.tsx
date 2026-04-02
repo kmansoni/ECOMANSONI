@@ -96,8 +96,8 @@ export function UserSettingsProvider({ children }: { children: React.ReactNode }
           const { data: s } = await supabase.auth.getSession();
           if (!s.session) return;
           await heartbeatMySession({ userId, session: s.session });
-        } catch {
-          // ignore
+        } catch (err) {
+          console.warn('[UserSettings] heartbeat failed', err);
         }
       }, 60_000);
     };

@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { checkHashtagsAllowedForText } from '@/lib/hashtagModeration';
+import { togglePostLike } from '@/lib/likes';
 import { logger } from '@/lib/logger';
 
 export interface Post {
@@ -16,6 +17,8 @@ export interface Post {
   saves_count: number;
   shares_count: number;
   is_published: boolean;
+  hide_likes_count?: boolean;
+  comments_disabled?: boolean;
   author?: {
     id: string;
     display_name: string | null;
@@ -324,25 +327,7 @@ export function usePostActions() {
     if (!user) {
       return { error: 'Must be logged in to like posts' };
     }
-
-    try {
-      if (isCurrentlyLiked) {
-        const { error } = await supabase
-          .from('post_likes')
-          .delete()
-          .eq('post_id', postId)
-          .eq('user_id', user.id);
-        if (error) throw error;
-      } else {
-        const { error } = await supabase
-          .from('post_likes')
-          .insert({ post_id: postId, user_id: user.id });
-        if (error) throw error;
-      }
-      return { error: null };
-    } catch (err) {
-      return { error: err instanceof Error ? err.message : 'Failed to update like' };
-    }
+    return togglePostLike(postId, user.id, isCurrentlyLiked);
   }, [user]);
 
   const createPost = useCallback(async (content: string, mediaUrls?: string[]) => {

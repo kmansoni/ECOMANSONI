@@ -294,18 +294,8 @@ export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function Bottom
                         {item.hasBadge && item.to === "/notifications" && (
                           <NotificationBadge count={notifUnreadCount} />
                         )}
-                        {item.hasBadge && item.to === "/chats" && unreadCount > 0 && (
-                          <span
-                            className={cn(
-                              "absolute -top-1 -right-1",
-                              "bg-primary text-primary-foreground",
-                              "text-[10px] font-semibold leading-none",
-                              "rounded-full min-w-[18px] h-[18px]",
-                              "flex items-center justify-center px-1"
-                            )}
-                          >
-                            {unreadCount > 9 ? "9+" : unreadCount}
-                          </span>
+                        {item.hasBadge && item.to === "/chats" && (
+                          <NotificationBadge count={unreadCount} />
                         )}
                       </div>
                       <span className="text-[10px] font-medium mt-0.5 leading-tight">

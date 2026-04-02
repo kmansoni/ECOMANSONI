@@ -19,7 +19,6 @@ import { StoryPollWidget } from "./StoryPollWidget";
 import { StoryQuestionWidget } from "./StoryQuestionWidget";
 import { StoryCountdownWidget } from "./StoryCountdownWidget";
 import { useStoryPolls } from "@/hooks/useStoryPolls";
-import { useCloseFriends } from "@/hooks/useCloseFriends";
 import { StoryQuizWidget } from "./StoryQuizWidget";
 import { StoryEmojiSlider } from "./StoryEmojiSlider";
 import { StoryLinkSticker } from "./StoryLinkSticker";
@@ -703,7 +702,7 @@ export function StoryViewer({ usersWithStories, initialUserIndex, isOpen, onClos
               src={currentUser.avatar_url || `https://i.pravatar.cc/150?u=${currentUser.user_id}`}
               alt={currentUser.display_name || ''}
               className="w-9 h-9 rounded-full border-2 border-white/50 object-cover flex-shrink-0"
-              style={{ boxShadow: 'isCloseFriend' in currentUser && currentUser.isCloseFriend ? '0 0 0 2px #22c55e' : undefined }}
+              style={{ boxShadow: currentUser.hasCloseFriendsStory ? '0 0 0 2px #22c55e' : undefined }}
             />
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-1">

@@ -74,8 +74,8 @@ export function SearchPanel({
         const results = await searchPOIs(text);
         setPOIResults(results);
       }
-    } catch {
-      // ignore
+    } catch (err) {
+      console.warn('[SearchPanel] Ошибка поиска', err);
     } finally {
       setLoading(false);
     }

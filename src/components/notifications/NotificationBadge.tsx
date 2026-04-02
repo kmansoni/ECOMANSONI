@@ -27,7 +27,7 @@ export function NotificationBadge({ count, className }: NotificationBadgeProps) 
           className
         )}
       >
-        {count > 99 ? "99+" : count > 9 ? "9+" : count}
+        {count > 99 ? "99+" : count}
       </motion.span>
     </AnimatePresence>
   );

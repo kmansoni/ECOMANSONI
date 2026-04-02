@@ -56,7 +56,8 @@ export async function unsubscribeFromPush(
     const sub = await registration.pushManager.getSubscription();
     if (!sub) return true;
     return await sub.unsubscribe();
-  } catch {
+  } catch (err) {
+    logger.warn('[Push] Ошибка отписки от push', { error: err });
     return false;
   }
 }

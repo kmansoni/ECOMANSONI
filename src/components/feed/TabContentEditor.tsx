@@ -10,11 +10,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { PhotoFiltersPanel } from '@/components/editor/PhotoFiltersPanel';
+import { FILTERS } from '@/components/editor/photoFiltersModel';
 import { AdjustmentsPanel } from '@/components/editor/AdjustmentsPanel';
 import { PeopleTagOverlay } from './PeopleTagOverlay';
 import { SchedulePostPicker } from './SchedulePostPicker';
 import { adjustmentsToFilterStyle, type EditorState, type EditorAction } from './editorStateModel';
-import { useState } from 'react';
+import { useState, type CSSProperties } from 'react';
 
 type TabType = 'publications' | 'stories' | 'reels' | 'live';
 
@@ -71,17 +72,37 @@ export function TabContentEditor({
 
   // Publications: полный набор инструментов
   if (activeTab === 'publications') {
+    // Объединяем CSS-фильтр из выбранного Instagram-фильтра + adjustments
+    const selectedFilter = FILTERS[editorState.selectedFilterIdx] ?? FILTERS[0];
+    const adjStyle = adjustmentsToFilterStyle(editorState.adjustments);
+    const filterCSS = editorState.selectedFilterIdx > 0 && selectedFilter.style.filter
+      ? String(selectedFilter.style.filter)
+      : '';
+    const combinedFilter = [filterCSS, adjStyle.filter].filter(Boolean).join(' ');
+    const previewStyle: CSSProperties = {
+      filter: combinedFilter || undefined,
+    };
     return (
       <div className="space-y-3 bg-zinc-900/50 rounded-lg p-4 max-h-96 overflow-y-auto">
-        {/* CRITICAL FIX #3: Adjustments применяются к preview */}
+        {/* CRITICAL FIX #3: Adjustments + Filter применяются к preview */}
         {previewUrl && (
           <div className="relative group">
             <img
               src={previewUrl}
               alt="Preview"
               className="w-full aspect-square object-cover rounded-lg"
-              style={adjustmentsToFilterStyle(editorState.adjustments)}
+              style={previewStyle}
             />
+            {selectedFilter.overlay && editorState.selectedFilterIdx > 0 && (
+              <div
+                className="absolute inset-0 rounded-lg pointer-events-none"
+                style={{
+                  backgroundColor: selectedFilter.overlay.color,
+                  mixBlendMode: selectedFilter.overlay.blendMode as CSSProperties['mixBlendMode'],
+                  opacity: selectedFilter.overlay.opacity * editorState.filterIntensity,
+                }}
+              />
+            )}
             <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity bg-black/50 flex items-center justify-center gap-2 rounded-lg">
               <Button
                 size="sm"
@@ -199,6 +220,26 @@ export function TabContentEditor({
           maxLength={2200}
           className="text-sm"
         />
+
+        {/* Расширенные настройки */}
+        <div className="space-y-2">
+          <label className="flex items-center justify-between rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white/80">
+            <span>Скрыть количество лайков</span>
+            <input
+              type="checkbox"
+              checked={Boolean(editorState.hideLikes)}
+              onChange={(e) => dispatchEditor({ type: 'SET_HIDE_LIKES', payload: e.target.checked })}
+            />
+          </label>
+          <label className="flex items-center justify-between rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white/80">
+            <span>Отключить комментарии</span>
+            <input
+              type="checkbox"
+              checked={Boolean(editorState.commentsDisabled)}
+              onChange={(e) => dispatchEditor({ type: 'SET_COMMENTS_DISABLED', payload: e.target.checked })}
+            />
+          </label>
+        </div>
       </div>
     );
   }

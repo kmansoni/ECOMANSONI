@@ -56,7 +56,7 @@ export function ChatHeader({
         >
           <ArrowLeft className="w-5 h-5" />
           {totalUnreadCount && totalUnreadCount > 0 ? (
-            <span className="text-sm font-medium">{totalUnreadCount}</span>
+            <span className="text-sm font-medium">{totalUnreadCount > 99 ? "99+" : totalUnreadCount}</span>
           ) : null}
         </button>
 

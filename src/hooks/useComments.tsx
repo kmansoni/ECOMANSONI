@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { checkHashtagsAllowedForText } from "@/lib/hashtagModeration";
 import { fetchUserBriefMap, resolveUserBrief } from "@/lib/users/userBriefs";
+import { toggleCommentLike as _toggleCommentLike } from "@/lib/likes";
 import { logger } from "@/lib/logger";
 
 export interface Comment {
@@ -226,62 +227,50 @@ export function useComments(postId: string) {
       return { error: "Необходимо войти в систему" };
     }
 
-    try {
-      if (isCurrentlyLiked) {
-        const { error } = await (supabase
-          .from("comment_likes" as any)
-          .delete()
-          .eq("comment_id", commentId)
-          .eq("user_id", user.id) as any);
+    // Save previous state for rollback
+    const prevComments = comments;
 
-        if (error) throw error;
-      } else {
-        const { error } = await (supabase.from("comment_likes" as any).insert({
-          comment_id: commentId,
-          user_id: user.id,
-        }) as any);
+    // Optimistic update BEFORE DB call — instant UI feedback
+    const updateCommentLike = (items: typeof comments): typeof comments =>
+      items.map((comment) => {
+        if (comment.id === commentId) {
+          return {
+            ...comment,
+            liked_by_user: !isCurrentlyLiked,
+            likes_count: isCurrentlyLiked
+              ? comment.likes_count - 1
+              : comment.likes_count + 1,
+          };
+        }
+        if (comment.replies) {
+          return {
+            ...comment,
+            replies: comment.replies.map((reply) =>
+              reply.id === commentId
+                ? {
+                    ...reply,
+                    liked_by_user: !isCurrentlyLiked,
+                    likes_count: isCurrentlyLiked
+                      ? reply.likes_count - 1
+                      : reply.likes_count + 1,
+                  }
+                : reply
+            ),
+          };
+        }
+        return comment;
+      });
 
-        if (error) throw error;
-      }
+    setComments(updateCommentLike);
 
-      // Optimistically update the local state
-      setComments((prev) =>
-        prev.map((comment) => {
-          if (comment.id === commentId) {
-            return {
-              ...comment,
-              liked_by_user: !isCurrentlyLiked,
-              likes_count: isCurrentlyLiked
-                ? comment.likes_count - 1
-                : comment.likes_count + 1,
-            };
-          }
-          // Check replies
-          if (comment.replies) {
-            return {
-              ...comment,
-              replies: comment.replies.map((reply) =>
-                reply.id === commentId
-                  ? {
-                      ...reply,
-                      liked_by_user: !isCurrentlyLiked,
-                      likes_count: isCurrentlyLiked
-                        ? reply.likes_count - 1
-                        : reply.likes_count + 1,
-                    }
-                  : reply
-              ),
-            };
-          }
-          return comment;
-        })
-      );
-
-      return { error: null };
-    } catch (err: any) {
-      logger.error("[useComments] Error toggling like", { error: err });
-      return { error: err.message || "Ошибка" };
+    const { error } = await _toggleCommentLike(commentId, user.id, isCurrentlyLiked);
+    if (error) {
+      // Rollback on error
+      setComments(prevComments);
+      return { error };
     }
+
+    return { error: null };
   };
 
   // ИСПРАВЛЕНИЕ дефекта #35: оптимистичное удаление без рефетча

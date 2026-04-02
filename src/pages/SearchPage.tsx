@@ -254,9 +254,9 @@ export function SearchPage() {
                 </div>
                 <ScrollArea className="w-full whitespace-nowrap mt-2">
                   <div className="flex gap-2">
-                    {recommendedReels.slice(0, 12).map((r) => (
+                    {recommendedReels.slice(0, 12).map((r, idx) => (
                       <button
-                        key={String(r?.reel_id ?? "")}
+                        key={r?.reel_id ? String(r.reel_id) : `reel-${idx}`}
                         type="button"
                         className="w-24 h-32 rounded-xl overflow-hidden bg-muted flex-shrink-0"
                         onClick={() => navigate("/explore")}
@@ -290,9 +290,9 @@ export function SearchPage() {
                 <div className="text-sm font-medium mb-2">Популярные хештеги</div>
                 <ScrollArea className="w-full whitespace-nowrap">
                   <div className="flex gap-2">
-                    {popularHashtags.slice(0, 16).map((h) => (
+                    {popularHashtags.slice(0, 16).map((h, idx) => (
                       <button
-                        key={String(h?.hashtag ?? "")}
+                        key={h?.hashtag ? String(h.hashtag) : `tag-${idx}`}
                         className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-muted hover:bg-muted/80 transition-colors"
                         onClick={() => handleHashtagClick(String(h?.hashtag ?? ""))}
                         aria-label={`Открыть #${String(h?.hashtag ?? "")}`}
