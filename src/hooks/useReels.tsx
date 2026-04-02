@@ -302,7 +302,7 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
           p_exploration_ratio: 0.2,
           p_recency_days: 30,
           p_freq_cap_hours: 6,
-          p_algorithm_version: "v2",
+          p_algorithm_version: "v3",
         });
 
         if (rpc.error) {
