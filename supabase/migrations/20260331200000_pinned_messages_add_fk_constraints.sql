@@ -2,6 +2,21 @@
 -- Без FK PostgREST не может разрешить join-синтаксис: messages(content, ...)
 -- => PGRST200 «Could not find a relationship between pinned_messages and messages».
 
+-- Удаляем orphaned строки (message_id без соответствующего messages.id)
+DELETE FROM public.pinned_messages
+WHERE message_id IS NOT NULL
+  AND message_id NOT IN (SELECT id FROM public.messages);
+
+-- Удаляем orphaned строки (conversation_id без соответствующего conversations.id)
+DELETE FROM public.pinned_messages
+WHERE conversation_id IS NOT NULL
+  AND conversation_id NOT IN (SELECT id FROM public.conversations);
+
+-- Удаляем orphaned строки (pinned_by без соответствующего auth.users.id)
+DELETE FROM public.pinned_messages
+WHERE pinned_by IS NOT NULL
+  AND pinned_by NOT IN (SELECT id FROM auth.users);
+
 -- FK: message_id → messages(id) ON DELETE CASCADE
 DO $$
 BEGIN
