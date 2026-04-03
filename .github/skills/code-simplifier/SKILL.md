@@ -63,3 +63,60 @@ user-invocable: true
 - Early return вместо глубокой вложенности
 - Zustand selector вместо голого `useStore()`
 - Замена `array.filter().length > 0` на `array.some()`
+
+## Метрики сложности
+
+### Пороги
+
+| Метрика | Допустимо | Требует рефакторинга | Критично |
+|---|---|---|---|
+| Cyclomatic complexity (функция) | ≤ 10 | 11-15 | > 15 |
+| Cognitive complexity (функция) | ≤ 15 | 16-25 | > 25 |
+| Lines per function | ≤ 50 | 51-80 | > 80 |
+| Lines per file | ≤ 400 | 401-600 | > 600 |
+| Nesting depth | ≤ 3 | 4 | > 4 |
+| Parameters per function | ≤ 4 | 5-6 | > 6 |
+
+### Целевые улучшения при рефакторинге
+
+- Cyclomatic complexity: снизить на **≥ 30%**
+- Lines of code: снизить на **≥ 20%**
+- Cognitive complexity: снизить на **≥ 25%**
+- Все тесты должны проходить: **100%**
+- Новые lint ошибки: **0**
+
+### Каталог design patterns для рефакторинга
+
+| Паттерн | Когда применять |
+|---|---|
+| **Extract Method** | Функция > 50 строк, блок кода с комментарием-заголовком |
+| **Replace Conditional with Polymorphism** | Switch/if-else ≥ 4 веток с разной логикой |
+| **Introduce Parameter Object** | Функция ≥ 4 параметров одного контекста |
+| **Replace Temp with Query** | Переменная используется один раз после присваивания |
+| **Decompose Conditional** | Сложное условие if (a && b \|\| c && !d) |
+| **Replace Magic Number** | Число без имени в коде |
+| **Pull Up / Push Down** | Дублирование в компонентах-siblings |
+| **Inline Function** | Функция-обёртка из 1 строки без семантики |
+
+### Формат отчёта рефакторинга
+
+После каждого рефакторинга выдавай:
+
+```
+## Рефакторинг: {файл}
+
+### Метрики до/после
+| Метрика | До | После | Δ |
+|---|---|---|---|
+| Cyclomatic complexity | 15 | 6 | -60% |
+| Cognitive complexity | 22 | 8 | -64% |
+| Lines of code | 120 | 75 | -38% |
+
+### Применённые паттерны
+1. Extract Method → вынесена `calculateDiscount()` из `processOrder()`
+2. Replace Magic Number → `const MAX_RETRIES = 3`
+
+### Тесты
+- Все существующие: ✅ PASS
+- Новые lint ошибки: 0
+```

@@ -19,8 +19,13 @@ export async function createRedisStore({
     },
   });
 
-  await redis.connect();
-  await redis.ping();
+  try {
+    await redis.connect();
+    await redis.ping();
+  } catch (err) {
+    try { redis.disconnect(false); } catch {}
+    throw err;
+  }
 
   function mbKey(deviceId) {
     return `mb:${deviceId}`;
@@ -252,11 +257,11 @@ export async function createRedisStore({
       return await redis.get(rekeyBeginIdKey(callId, epoch));
     },
 
-    async markJoinTokenUsed(jti, expMs) {
+    async markJoinTokenUsed(jti, expMs, userId) {
       if (typeof jti !== "string" || jti.length < 8) return false;
       const now = Date.now();
       const ttlSec = Math.max(1, Math.ceil((Number(expMs) - now) / 1000));
-      const key = joinTokenJtiKey(jti);
+      const key = joinTokenJtiKey(userId ? `${jti}:${userId}` : jti);
       const res = await redis.set(key, "1", "EX", ttlSec, "NX");
       return res === "OK";
     },

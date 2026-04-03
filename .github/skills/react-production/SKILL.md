@@ -356,3 +356,53 @@ export default defineConfig({
   <MessageList channelId={id} />
 </ErrorBoundary>
 ```
+
+## Quality Gates (пороги качества)
+
+### Lighthouse
+
+| Метрика | Минимум | Цель |
+|---|---|---|
+| Performance | **≥ 90** | 95+ |
+| Accessibility | **= 100** | 100 |
+| Best Practices | **≥ 90** | 95+ |
+| SEO | **≥ 90** | 95+ |
+
+Проверка: Chrome DevTools → Lighthouse → Mobile
+
+### Bundle Size
+
+| Ограничение | Порог |
+|---|---|
+| Размер нового компонента (gzipped) | **< 5KB** |
+| Размер нового хука (gzipped) | **< 2KB** |
+| Total JS bundle (initial load) | **< 200KB** |
+| Lazy chunk | **< 50KB** |
+
+Проверка: `npx vite-bundle-visualizer`
+
+### Accessibility Tools
+
+| Инструмент | Команда | Назначение |
+|---|---|---|
+| **axe-core** | `npm install --save-dev @axe-core/react` | Runtime accessibility проверки в dev |
+| **pa11y** | `npx pa11y http://localhost:8080` | CLI аудит accessibility |
+| **eslint-plugin-jsx-a11y** | Встроен в eslint config | Статичная проверка a11y |
+
+### Обязательные проверки accessibility
+
+- [ ] All images have `alt` text
+- [ ] All interactive elements keyboard-accessible (`tabIndex`, `onKeyDown`)
+- [ ] Touch targets ≥ 44×44px (mobile)
+- [ ] Color contrast ≥ 4.5:1 (WCAG AA)
+- [ ] Focus visible на всех интерактивных элементах
+- [ ] `aria-label` на кнопках без текста (icon-only)
+- [ ] Screen reader announces state changes (`aria-live`)
+
+### Core Web Vitals
+
+| Метрика | Хорошо | Плохо |
+|---|---|---|
+| LCP (Largest Contentful Paint) | ≤ 2.5s | > 4.0s |
+| INP (Interaction to Next Paint) | ≤ 200ms | > 500ms |
+| CLS (Cumulative Layout Shift) | ≤ 0.1 | > 0.25 |

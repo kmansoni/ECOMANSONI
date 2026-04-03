@@ -93,11 +93,12 @@ export function createInMemoryStore({ degraded = true } = {}) {
       return null;
     },
 
-    async markJoinTokenUsed(jti, expMs) {
+    async markJoinTokenUsed(jti, expMs, userId) {
       if (typeof jti !== "string" || jti.length < 8) return false;
       pruneJoinTokenJti();
-      if (usedJoinTokenJti.has(jti)) return false;
-      usedJoinTokenJti.set(jti, Number(expMs) || Date.now() + 60_000);
+      const key = userId ? `${jti}:${userId}` : jti;
+      if (usedJoinTokenJti.has(key)) return false;
+      usedJoinTokenJti.set(key, Number(expMs) || Date.now() + 60_000);
       return true;
     },
   };

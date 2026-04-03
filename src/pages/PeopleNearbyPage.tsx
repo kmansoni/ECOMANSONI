@@ -359,16 +359,17 @@ export function PeopleNearbyPage() {
             <SwipeStack
               cards={dating.cards}
               onSwipe={dating.swipe}
-              onEmpty={dating.refreshCards}
+              loading={dating.loading}
+              onRefresh={dating.refreshCards}
             />
           )}
 
-          <DatingFilters
-            open={showDatingFilters}
-            onClose={() => setShowDatingFilters(false)}
-            filters={dating.filters}
-            onUpdateFilters={dating.updateFilters}
-          />
+          {showDatingFilters && (
+            <DatingFilters
+              filters={dating.filters}
+              onUpdate={dating.updateFilters}
+            />
+          )}
         </div>
       )}
 

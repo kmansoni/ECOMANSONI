@@ -984,7 +984,7 @@ wss.on("connection", (ws, req) => {
         }
         const joinTokenExpMs = Number(joinPayload?.exp ?? 0) * 1000;
         const marked = typeof store.markJoinTokenUsed === "function"
-          ? await store.markJoinTokenUsed(joinPayload.jti, joinTokenExpMs)
+          ? await store.markJoinTokenUsed(joinPayload.jti, joinTokenExpMs, conn.userId)
           : true;
         if (!marked) {
           ack(ws, frame.msgId, false, wsError("REPLAY_DETECTED", "Join token replay detected", { roomId }, false));

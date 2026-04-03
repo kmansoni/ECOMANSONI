@@ -48,7 +48,7 @@ description: "Mansoni — главный ИИ-оркестратор Super Platf
 
 ## Полный каталог скиллов
 
-### Наши скиллы (28 шт.)
+### Наши скиллы (23 шт.)
 
 Расположены в `.github/skills/{имя}/SKILL.md`. Агенты загружают по необходимости.
 
@@ -74,14 +74,10 @@ description: "Mansoni — главный ИИ-оркестратор Super Platf
 | **code-simplifier** | Упрощение кода с сохранением функциональности | рефакторинг, упростить, дублирование |
 | **doc-writer** | Документация: архитектура, API, schema, deployment | docs, README, описать модуль |
 | **create-skill** | Создание нового SKILL.md по требованиям | новый workflow, новый скилл |
-| **ui-design-system** | Дизайн-система: токены, темы, motion, адаптив, accessibility | дизайн, UI, тема, стили, анимация, адаптив |
-| **code-generator** | Генерация кода: модули, компоненты, хуки, миграции, шаблоны | сгенерировать, scaffolding, шаблон, новый модуль |
-| **advanced-debugger** | Продвинутый дебаггер: profiling, Web Vitals, memory leaks, WebRTC | profiling, медленно, memory leak, leak, тормозит |
-| **enhanced-doc-writer** | Расширенная документация: ADR, Mermaid, ERD, OpenAPI, changelog | ADR, диаграмма, ERD, OpenAPI, changelog |
-| **presentation-generator** | Презентации: слайды, roadmap, метрики, sprint demo, pitch | презентация, слайды, demo, pitch, roadmap |
-| **security-engineer** | Инженер безопасности: SAST, dependency scan, RLS тесты, CSP, rate limit | dependency scan, npm audit, CSP, rate limit, SAST |
-| **migration-engineer** | Инженер миграций: генерация SQL, rollback, schema diff, index optimization | миграция, rollback, schema diff, индексы, vacuum |
-| **calls-engineer** | Инженер звонков: mediasoup, ICE/TURN, кодеки, E2EE, quality metrics | звонки, mediasoup, ICE, TURN, кодек, качество связи |
+| **orchestrator-laws** | ЗАКОНЫ оркестратора: анти-дубли, аудит дублей, zero-мусор, humanizer | ПРИМЕНЯТЬ ВСЕГДА |
+| **rf-legal-specialist** | Юрист РФ: Privacy Policy, Terms, оферты, ФЗ-152, ЗоЗПП, лицензии | юридическая документация, privacy, закон, оферта |
+| **live-test-engineer** | Живой тестировщик: Playwright MCP изучает конкурентов, GAP-анализ | изучить конкурента, исследовать сайт, GAP |
+| **code-humanizer** | Humanizer: код неотличим от человеческого, убирает AI-паттерны | ПРИМЕНЯТЬ ВСЕГДА при написании кода |
 
 ### Внешние скиллы — База данных PostgreSQL/SQL (4)
 
@@ -90,7 +86,7 @@ description: "Mansoni — главный ИИ-оркестратор Super Platf
 | **postgresql-code-review** | PostgreSQL-specific code review: JSONB, массивы, RLS, schema design | review миграции, SQL-код, RLS |
 | **postgresql-optimization** | PostgreSQL оптимизация: full-text search, window functions, extensions | оптимизация запросов, индексы |
 | **sql-code-review** | Универсальный SQL review: security, maintainability, anti-patterns | review SQL-кода |
-| **sql-optimization** | SQL performance: query tuning, indexing, execution plans, pagination | медленные запросы, EXPLAIN |
+ | **sql-optimization** | SQL performance: query tuning, indexing, execution plans, pagination | медленные запросы, EXPLAIN |
 
 ### Внешние скиллы — E2E тестирование (2)
 
@@ -214,14 +210,9 @@ description: "Mansoni — главный ИИ-оркестратор Super Platf
 | создать агент, обновить скилл, agent setup | skill: agent-customization |
 | Copilot SDK, MCP сервер | coder + skill: copilot-sdk |
 | план рефакторинга, scope анализ | context-map + refactor-plan |
-| дизайн, UI система, токены, тема, адаптив, анимация | coder + skill: ui-design-system |
-| сгенерировать, scaffolding, шаблон модуля, новый модуль | coder + skill: code-generator |
-| profiling, тормозит, memory leak, Web Vitals, bundle size | debugger + skill: advanced-debugger |
-| ADR, Mermaid диаграмма, ERD, OpenAPI, changelog | coder + skill: enhanced-doc-writer |
-| презентация, слайды, demo, pitch, roadmap визуализация | coder + skill: presentation-generator |
-| dependency scan, npm audit, CSP headers, rate limiting | reviewer + skill: security-engineer |
-| генерация миграции, rollback, schema diff, vacuum, индекс | coder + skill: migration-engineer |
-| mediasoup, ICE/TURN, кодеки, качество связи, SFU | coder + skill: calls-engineer |
+| юридическая документация, privacy policy, оферта, закон, ФЗ | coder + skill: rf-legal-specialist |
+| изучить конкурента, исследовать сайт, GAP-анализ | researcher + skill: live-test-engineer |
+| humanize, сделай код человечным, убрать AI-паттерны | skill: code-humanizer (АВТОМАТИЧЕСКИ) |
 
 ### Платформо-специфическая маршрутизация
 
@@ -234,10 +225,7 @@ description: "Mansoni — главный ИИ-оркестратор Super Platf
 | Маркетплейс / заказы | Изучи Wildberries/Ozon catalog, cart, checkout flow |
 | Live стриминг | Изучи HLS/WebRTC инфраструктуру, лаг, CDN стратегию |
 | PostgreSQL / оптимизация запросов | skills: **supabase-production**, **postgresql-optimization**, **sql-optimization** |
-| Страхование / полисы | skills: **code-generator** для шаблонов страховых модулей |
-| Недвижимость | skills: **code-generator** для шаблонов объектов недвижимости |
-| CRM / клиенты | skills: **code-generator** для CRM компонентов |
-| E2EE Звонки / WebRTC | skills: **calls-engineer**, **advanced-debugger** для WebRTC |
+| Юридическая документация | skills: **rf-legal-specialist**. Изучи ФЗ-152, ЗоЗПП, ФЗ-580 по модулю |
 
 ## Протокол многопроходного пайплайна (для фич)
 
@@ -286,8 +274,7 @@ description: "Mansoni — главный ИИ-оркестратор Super Platf
 - **integration-checker** — проверка цепочек (UI → API → DB → side effects)
 - **recovery-engineer** — проверка recovery paths
 - **security-audit** — для фич с auth/payments/E2EE
-- **security-engineer** — dependency scanning и SAST для всех фич
-- **advanced-debugger** — профилирование для performance-sensitive фич
+- **code-humanizer** — проверка что код выглядит человеческим
 
 ## Pre-flight (ОБЯЗАТЕЛЬНО)
 

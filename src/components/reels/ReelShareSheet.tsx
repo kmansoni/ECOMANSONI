@@ -7,7 +7,7 @@
  * - Drag-to-dismiss: onDragEnd offset.y > 80px → onClose()
  * - Portal → рендерится вне scroll-контейнера Reels (z-[61])
  * - Web Share API с fallback на clipboard
- * - Mock-контакты (6 шт.) — API будет добавлен позже
+ * - Реальные контакты из followers + profiles через Supabase
  * - Client-side поиск по имени контакта
  * - Toast через sonner (уже в проекте)
  */
@@ -15,8 +15,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Link, PlusCircle, Share2, Flag } from 'lucide-react';
+import { Link, PlusCircle, Share2, Flag, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
+import { logger } from '@/lib/logger';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -29,23 +32,14 @@ interface ReelShareSheetProps {
 }
 
 // ---------------------------------------------------------------------------
-// Mock-контакты (будут заменены на API в следующих фазах)
+// Типы контактов
 // ---------------------------------------------------------------------------
 
-interface MockContact {
+interface ShareContact {
   id: string;
   name: string;
   avatar_url: string | null;
 }
-
-const MOCK_CONTACTS: MockContact[] = [
-  { id: '1', name: 'Алексей Смирнов', avatar_url: null },
-  { id: '2', name: 'Мария Иванова', avatar_url: null },
-  { id: '3', name: 'Дмитрий Козлов', avatar_url: null },
-  { id: '4', name: 'Анна Петрова', avatar_url: null },
-  { id: '5', name: 'Сергей Новиков', avatar_url: null },
-  { id: '6', name: 'Елена Морозова', avatar_url: null },
-];
 
 // ---------------------------------------------------------------------------
 // Avatar fallback
@@ -104,12 +98,51 @@ export function ReelShareSheet({ reelId, isOpen, onClose }: ReelShareSheetProps)
     if (isOpen) setSearch('');
   }, [isOpen]);
 
+  // Реальные контакты из followers + profiles
+  const { data: contacts = [], isLoading: contactsLoading } = useQuery({
+    queryKey: ['reel-share-contacts'],
+    queryFn: async (): Promise<ShareContact[]> => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return [];
+
+        const { data, error } = await supabase
+          .from('followers')
+          .select('following_id, profiles!followers_following_id_fkey(id, display_name, avatar_url)')
+          .eq('follower_id', user.id)
+          .limit(50);
+
+        if (error) {
+          logger.error('[ReelShareSheet] Ошибка загрузки контактов', { error });
+          return [];
+        }
+
+        return (data ?? [])
+          .map((row) => {
+            const profile = (row as unknown as { profiles: { id: string; display_name: string | null; avatar_url: string | null } | null }).profiles;
+            if (!profile) return null;
+            return {
+              id: profile.id ?? row.following_id,
+              name: profile.display_name ?? 'Пользователь',
+              avatar_url: profile.avatar_url,
+            };
+          })
+          .filter((c): c is ShareContact => c !== null);
+      } catch (err) {
+        logger.error('[ReelShareSheet] Ошибка загрузки контактов', { error: err });
+        return [];
+      }
+    },
+    enabled: isOpen,
+    staleTime: 60_000,
+  });
+
   // Client-side фильтрация
   const filteredContacts = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return MOCK_CONTACTS;
-    return MOCK_CONTACTS.filter((c) => c.name.toLowerCase().includes(q));
-  }, [search]);
+    if (!q) return contacts;
+    return contacts.filter((c) => c.name.toLowerCase().includes(q));
+  }, [search, contacts]);
 
   // ---------------------------------------------------------------------------
   // Drag-to-dismiss
@@ -241,7 +274,11 @@ export function ReelShareSheet({ reelId, isOpen, onClose }: ReelShareSheetProps)
                 className="flex gap-4 overflow-x-auto px-4 py-3 scrollbar-hide"
                 style={{ WebkitOverflowScrolling: 'touch' } as React.CSSProperties}
               >
-                {filteredContacts.length === 0 ? (
+                {contactsLoading ? (
+                  <div className="flex items-center justify-center w-full py-2">
+                    <Loader2 className="w-5 h-5 text-zinc-400 animate-spin" />
+                  </div>
+                ) : filteredContacts.length === 0 ? (
                   <p className="text-zinc-500 text-sm py-2">Нет контактов</p>
                 ) : (
                   filteredContacts.map((contact) => (
@@ -253,7 +290,15 @@ export function ReelShareSheet({ reelId, isOpen, onClose }: ReelShareSheetProps)
                       className="flex flex-col items-center gap-1 min-w-[64px]"
                       aria-label={`Отправить ${contact.name}`}
                     >
-                      <ContactAvatar name={contact.name} size={48} />
+                      {contact.avatar_url ? (
+                        <img
+                          src={contact.avatar_url}
+                          alt=""
+                          className="w-12 h-12 rounded-full object-cover flex-shrink-0"
+                        />
+                      ) : (
+                        <ContactAvatar name={contact.name} size={48} />
+                      )}
                       <span className="text-zinc-300 text-xs text-center w-16 truncate leading-tight">
                         {contact.name.split(' ')[0]}
                       </span>

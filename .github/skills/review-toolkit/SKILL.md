@@ -1,6 +1,6 @@
 ---
 name: review-toolkit
-description: "Оркестратор комплексного code review. Запускает до 6 специалистов-скиллов и агрегирует результаты в единый отчёт. Use when: комплексный review, тщательная проверка, полный аудит изменений."
+description: "Оркестратор комплексного code review. Запускает до 11 специалистов-скиллов и агрегирует результаты в единый отчёт. Use when: комплексный review, тщательная проверка, полный аудит изменений."
 argument-hint: "[файл, директория или git diff для review]"
 user-invocable: true
 ---
@@ -22,6 +22,8 @@ user-invocable: true
 | **invariant-guardian** | Доменные инварианты, бизнес-правила |
 | **integration-checker** | Межсервисные цепочки, побочные эффекты |
 | **recovery-engineer** | Recovery paths, reconnect, retry, rollback |
+| **ux-reviewer** | UX-ревью: эвристики Нильсена, touch/mobile, accessibility |
+| **code-humanizer** | Проверка: код выглядит как написанный человеком, нет AI-паттернов |
 
 ## Правила запуска
 
@@ -37,6 +39,8 @@ user-invocable: true
 - **integration-checker** — если изменение должно вызывать побочные эффекты (уведомления, CRM, кэш)
 - **recovery-engineer** — если затронуты сетевые вызовы, WS, Realtime подписки
 - **code-simplifier** — после подтверждения корректности (когда баги и безопасность проверены)
+- **ux-reviewer** — если затронуты UI компоненты, формы, навигация
+- **code-humanizer** — ВСЕГДА при написании нового кода (проверяет отсутствие AI-паттернов)
 
 ## Процесс
 

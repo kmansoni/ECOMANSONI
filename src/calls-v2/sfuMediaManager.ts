@@ -204,10 +204,18 @@ export class SfuMediaManager {
     this.sendTransport.on('connectionstatechange', (state: string) => {
       logger.debug(`[SfuMediaManager] sendTransport connectionstatechange: ${state}`);
       if (state === 'failed') {
-        // C-1 fix: attempt ICE restart before giving up
+        const t = this.sendTransport;
+        if (t) this.scheduleIceRestart(t, options.id, 'send');
+      } else if (state === 'disconnected') {
+        // ICE может восстановиться сам за ~5s, если нет — рестартим
         const t = this.sendTransport;
         if (t) {
-          this.scheduleIceRestart(t, options.id, 'send');
+          const timer = window.setTimeout(() => {
+            if (t.connectionState === 'disconnected') {
+              this.scheduleIceRestart(t, options.id, 'send');
+            }
+          }, 5_000);
+          t.once('connectionstatechange', () => clearTimeout(timer));
         }
       }
     });
@@ -247,10 +255,17 @@ export class SfuMediaManager {
     this.recvTransport.on('connectionstatechange', (state: string) => {
       logger.debug(`[SfuMediaManager] recvTransport connectionstatechange: ${state}`);
       if (state === 'failed') {
-        // C-1 fix: attempt ICE restart before giving up
+        const t = this.recvTransport;
+        if (t) this.scheduleIceRestart(t, options.id, 'recv');
+      } else if (state === 'disconnected') {
         const t = this.recvTransport;
         if (t) {
-          this.scheduleIceRestart(t, options.id, 'recv');
+          const timer = window.setTimeout(() => {
+            if (t.connectionState === 'disconnected') {
+              this.scheduleIceRestart(t, options.id, 'recv');
+            }
+          }, 5_000);
+          t.once('connectionstatechange', () => clearTimeout(timer));
         }
       }
     });

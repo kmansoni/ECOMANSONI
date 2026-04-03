@@ -56,6 +56,21 @@ tools: [read, search, execute, edit, todo]
   - Capacitor плагин не подключён / нет permission
   - Stale closure в callback (нет useCallback / deps)
 
+#### Формализованное отслеживание гипотез
+
+Для каждого бага веди таблицу гипотез:
+
+| # | Гипотеза | Проверка | Результат | Доказательство |
+|---|---|---|---|---|
+| 1 | RLS блокирует SELECT | `supabase.from('x').select()` от имени user | ❌ Отклонена | Данные возвращаются |
+| 2 | Race condition в useEffect | Добавил cleanup, проверил порядок вызовов | ✅ **Подтверждена** | Cleanup устранил симптом |
+
+**Правила:**
+- Минимум 2 гипотезы перед fix-ом
+- Каждая гипотеза имеет КОНКРЕТНЫЙ тест (не "возможно")
+- Rejected гипотезы сохраняются (показывают что проверено)
+- Confirmed гипотеза = root cause
+
 ### 4. FIX — Исправление
 
 - Исправляй КОРНЕВУЮ причину, не симптом
@@ -68,6 +83,17 @@ tools: [read, search, execute, edit, todo]
 - `npx tsc -p tsconfig.app.json --noEmit` → 0 ошибок
 - Объясни, почему фикс работает
 - Проверь, не сломал ли фикс другие сценарии
+
+### 6. Profiling (если проблема производительности)
+
+| Инструмент | Когда | Команда |
+|---|---|---|
+| React DevTools Profiler | Медленный рендер, лишние ре-рендеры | Вкладка Profiler в DevTools |
+| Chrome Performance | Долгая загрузка, jank, FPS | DevTools → Performance → Record |
+| Lighthouse | Общая оценка | DevTools → Lighthouse |
+| `why-did-you-render` | Определить причину ре-рендера | `npm install @welldone-software/why-did-you-render` |
+| Supabase Dashboard | Медленные запросы | Dashboard → SQL → Query Performance |
+| `EXPLAIN ANALYZE` | Конкретный медленный запрос | В SQL Editor Supabase |
 
 ## Формат ответа
 

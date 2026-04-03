@@ -21,6 +21,13 @@ import type {
   LifeCalculationRequest,
   ComparisonData,
 } from "@/types/insurance";
+import type {
+  ProviderCode,
+  AggregatedQuoteResponse,
+  VehicleLookupResult,
+  PurchaseRequest,
+  PurchaseResult,
+} from "@/types/insurance-providers";
 
 const db = supabase as any;
 
@@ -349,6 +356,28 @@ class InsuranceApiClient {
    */
   async compareProducts(ids: string[]): Promise<ComparisonData> {
     return this.callFunction<ComparisonData>("insurance-compare", { product_ids: ids });
+  }
+
+  // ===== Мультиоффер =====
+
+  async requestQuotes(
+    category: InsuranceCategory,
+    params: Record<string, unknown>,
+    preferredProviders?: ProviderCode[],
+  ): Promise<AggregatedQuoteResponse> {
+    return this.callFunction<AggregatedQuoteResponse>('insurance-quote', {
+      category,
+      params,
+      preferred_providers: preferredProviders,
+    });
+  }
+
+  async lookupVehicle(plate: string): Promise<VehicleLookupResult> {
+    return this.callFunction<VehicleLookupResult>('insurance-vehicle-lookup', { plate });
+  }
+
+  async purchasePolicy(request: PurchaseRequest): Promise<PurchaseResult> {
+    return this.callFunction<PurchaseResult>('insurance-purchase', { ...request });
   }
 
   // ===== КБМ =====

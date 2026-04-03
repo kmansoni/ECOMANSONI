@@ -27,7 +27,7 @@
     "calls:sfu:readiness": "node ./scripts/calls/sfu-production-readiness-probe.mjs",
     "calls:mediasoup:smoke": "node ./scripts/calls-mediasoup-smoke.mjs",
     "calls:chaos:gate": "node ./scripts/calls-chaos-gate.mjs",
-    "calls:ws:dev": "node ./server/calls-ws/index.mjs",
+    "calls:ws:dev": "node --env-file=.env.calls-dev ./server/calls-ws/index.mjs",
     "calls:sfu:dev": "node ./server/sfu/index.mjs",
     "turn:ws:guard": "node ./scripts/turn/verify-calls-ws-no-creds.mjs",
     "turn:relay:gate": "node --no-deprecation ./node_modules/vitest/vitest.mjs run src/test/webrtc-config-relay-fallback.test.ts",

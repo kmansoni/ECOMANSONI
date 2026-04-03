@@ -53,6 +53,12 @@ export type UserSettings = {
   cache_auto_delete_days: number;
   cache_max_size_mb: number | null;
 
+  // Accessibility
+  large_text: boolean;
+  color_blind_mode: boolean;
+  autoplay_gifs: boolean;
+  haptic_feedback: boolean;
+
   created_at?: string;
   updated_at?: string;
 };
@@ -78,6 +84,10 @@ function withDataStorageDefaults(partial: Partial<UserSettings>): UserSettings {
     calls_noise_suppression: true,
     calls_p2p_mode: "contacts",
     calls_vibration: true,
+    large_text: false,
+    color_blind_mode: false,
+    autoplay_gifs: true,
+    haptic_feedback: true,
     // existing defaults are handled by DB; for fallback we just spread what we got
     ...partial,
   } as UserSettings;

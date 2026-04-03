@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { Send, Bot, User, Shield, X, Minimize2, Maximize2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,6 +8,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { maybeToastRateLimit } from "@/lib/anti-abuse/rateLimitToast";
 import { logger } from "@/lib/logger";
 
+/** Интерфейс сообщения чата */
 interface Message {
   role: "user" | "assistant";
   content: string;
@@ -24,6 +25,10 @@ const suggestedQuestions = [
   "Нужна страховка для путешествия",
 ];
 
+/**
+ * Страховой AI-ассистент с поддержкой стриминга
+ * @description Интегрированный чат-бот для консультаций по страхованию
+ */
 export function InsuranceAssistant() {
   const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
@@ -32,19 +37,48 @@ export function InsuranceAssistant() {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  
+  // Ref для отслеживания состояния монтирования компонента
+  const isMountedRef = useRef(true);
+  // Ref для AbortController (отмена запроса)
+  const abortControllerRef = useRef<AbortController | null>(null);
 
+  // Эффект для автоскролла при новых сообщениях
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages]);
 
-  const streamChat = async (userMessage: string) => {
+  // Эффект очистки при размонтировании компонента
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+      // Отменяем активный запрос при размонтировании
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
+
+  /**
+   * Обработчик отправки сообщения в чат
+   * @param userMessage - текст сообщения пользователя
+   */
+  const streamChat = useCallback(async (userMessage: string) => {
+    // Отменяем предыдущий запрос если есть
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    
     const userMsg: Message = { role: "user", content: userMessage };
     const newMessages = [...messages, userMsg];
     setMessages(newMessages);
     setInput("");
     setIsLoading(true);
+
+    // Создаём новый AbortController для этого запроса
+    abortControllerRef.current = new AbortController();
 
     try {
       const resp = await fetch(CHAT_URL, {
@@ -55,6 +89,7 @@ export function InsuranceAssistant() {
           Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
         },
         body: JSON.stringify({ messages: newMessages }),
+        signal: abortControllerRef.current.signal,
       });
 
       if (!resp.ok) {
@@ -77,6 +112,13 @@ export function InsuranceAssistant() {
 
       while (true) {
         const { done, value } = await reader.read();
+        
+        // Проверяем, что компонент всё ещё примонтирован
+        if (!isMountedRef.current) {
+          reader.cancel();
+          break;
+        }
+        
         if (done) break;
         
         textBuffer += decoder.decode(value, { stream: true });
@@ -110,13 +152,20 @@ export function InsuranceAssistant() {
         }
       }
     } catch (error) {
+      // Игнорируем ошибку отмены запроса (AbortError)
+      if (error instanceof Error && error.name === "AbortError") {
+        return;
+      }
       logger.error("[InsuranceAssistant] Ошибка чата", { error });
       toast.error("Не удалось получить ответ ассистента. Попробуйте снова.");
       setMessages(prev => prev.filter(m => m.content !== ""));
     } finally {
-      setIsLoading(false);
+      if (isMountedRef.current) {
+        setIsLoading(false);
+      }
+      abortControllerRef.current = null;
     }
-  };
+  }, [messages]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();

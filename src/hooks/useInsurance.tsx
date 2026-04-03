@@ -1,6 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import type { InsuranceCategory } from "@/types/insurance";
 
+/**
+ * Базовая информация о страховой компании
+ * @interface InsuranceCompany
+ */
 export interface InsuranceCompany {
   id: string;
   name: string;
@@ -15,6 +20,10 @@ export interface InsuranceCompany {
   phone: string | null;
 }
 
+/**
+ * Страховой продукт с базовой информацией
+ * @interface InsuranceProduct
+ */
 export interface InsuranceProduct {
   id: string;
   company_id: string;
@@ -33,6 +42,10 @@ export interface InsuranceProduct {
   company?: InsuranceCompany;
 }
 
+/**
+ * Хук для получения списка страховых компаний
+ * @returns Query с компаниями, отсортированными по приоритету
+ */
 export function useInsuranceCompanies() {
   return useQuery({
     queryKey: ["insurance-companies"],
@@ -48,9 +61,12 @@ export function useInsuranceCompanies() {
   });
 }
 
-type InsuranceCategory = "auto" | "dms" | "health" | "kasko" | "life" | "mini_kasko" | "mortgage" | "osago" | "osgop" | "property" | "travel";
-
-export function useInsuranceProducts(category?: string) {
+/**
+ * Хук для получения страховых продуктов
+ * @param category - фильтр по категории (опционально)
+ * @returns Query с продуктами
+ */
+export function useInsuranceProducts(category?: InsuranceCategory | "all") {
   return useQuery({
     queryKey: ["insurance-products", category],
     queryFn: async () => {
@@ -65,7 +81,7 @@ export function useInsuranceProducts(category?: string) {
         .order("price_from", { ascending: true });
       
       if (category && category !== "all") {
-        query = query.eq("category", category as InsuranceCategory);
+        query = query.eq("category", category);
       }
       
       const { data, error } = await query;

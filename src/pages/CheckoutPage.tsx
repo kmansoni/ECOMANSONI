@@ -174,7 +174,7 @@ export default function CheckoutPage() {
         <section className="space-y-3">
           <CouponInput
             orderAmount={itemsTotal}
-            onApply={(discount) => setCouponDiscount(discount)}
+            onApply={(result) => setCouponDiscount(result.discount)}
             onClear={() => setCouponDiscount(0)}
           />
         </section>

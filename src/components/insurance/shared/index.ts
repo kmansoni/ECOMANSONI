@@ -7,3 +7,5 @@ export { StepperForm } from "./StepperForm";
 export { InsuranceCategoryTabs } from "./InsuranceCategoryTabs";
 export { ComparisonBar } from "./ComparisonBar";
 export { InsuranceHero } from "./InsuranceHero";
+export { StepIndicator } from "./StepIndicator";
+export { OfferCard } from "./OfferCard";

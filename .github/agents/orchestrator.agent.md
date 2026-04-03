@@ -54,7 +54,7 @@ agents: [architect, codesmith, debug, review, ask, learner, ruflo, Explore, gem-
 
 ## Полный каталог скиллов
 
-### Наши скиллы (28 шт.)
+### Наши скиллы (23 шт.)
 
 Расположены в `.github/skills/{имя}/SKILL.md`. Агенты загружают по необходимости.
 
@@ -80,14 +80,10 @@ agents: [architect, codesmith, debug, review, ask, learner, ruflo, Explore, gem-
 | **code-simplifier** | Упрощение кода с сохранением функциональности | рефакторинг, упростить, дублирование |
 | **doc-writer** | Документация: архитектура, API, schema, deployment | docs, README, описать модуль |
 | **create-skill** | Создание нового SKILL.md по требованиям | новый workflow, новый скилл |
-| **ui-design-system** | Дизайн-система: токены, темы, motion, адаптив, accessibility | дизайн, UI, тема, стили, анимация, адаптив |
-| **code-generator** | Генерация кода: модули, компоненты, хуки, миграции, шаблоны | сгенерировать, scaffolding, шаблон, новый модуль |
-| **advanced-debugger** | Продвинутый дебаггер: profiling, Web Vitals, memory leaks, WebRTC | profiling, медленно, memory leak, leak, тормозит |
-| **enhanced-doc-writer** | Расширенная документация: ADR, Mermaid, ERD, OpenAPI, changelog | ADR, диаграмма, ERD, OpenAPI, changelog |
-| **presentation-generator** | Презентации: слайды, roadmap, метрики, sprint demo, pitch | презентация, слайды, demo, pitch, roadmap |
-| **security-engineer** | Инженер безопасности: SAST, dependency scan, RLS тесты, CSP, rate limit | dependency scan, npm audit, CSP, rate limit, SAST |
-| **migration-engineer** | Инженер миграций: генерация SQL, rollback, schema diff, index optimization | миграция, rollback, schema diff, индексы, vacuum |
-| **calls-engineer** | Инженер звонков: mediasoup, ICE/TURN, кодеки, E2EE, quality metrics | звонки, mediasoup, ICE, TURN, кодек, качество связи |
+| **orchestrator-laws** | ЗАКОНЫ оркестратора: анти-дубли, аудит дублей, zero-мусор, humanizer | ПРИМЕНЯТЬ ВСЕГДА |
+| **rf-legal-specialist** | Юрист РФ: Privacy Policy, Terms, оферты, ФЗ-152, ЗоЗПП, лицензии | юридическая документация, privacy, закон, оферта |
+| **live-test-engineer** | Живой тестировщик: Playwright MCP изучает конкурентов, GAP-анализ | изучить конкурента, исследовать сайт, GAP |
+| **code-humanizer** | Humanizer: код неотличим от человеческого, убирает AI-паттерны | ПРИМЕНЯТЬ ВСЕГДА при написании кода |
 
 ### Внешние скиллы — База данных PostgreSQL/SQL (4)
 
@@ -228,14 +224,9 @@ agents: [architect, codesmith, debug, review, ask, learner, ruflo, Explore, gem-
 | создать агент, обновить скилл, agent setup | skill: agent-customization |
 | Copilot SDK, MCP сервер | @codesmith + skill: copilot-sdk |
 | план рефакторинга, scope анализ | context-map + refactor-plan |
-| дизайн, UI система, токены, тема, адаптив, анимация | @codesmith + skill: ui-design-system |
-| сгенерировать, scaffolding, шаблон модуля, новый модуль | @codesmith + skill: code-generator |
-| profiling, тормозит, memory leak, Web Vitals, bundle size | @debug + skill: advanced-debugger |
-| ADR, Mermaid диаграмма, ERD, OpenAPI, changelog | @codesmith + skill: enhanced-doc-writer |
-| презентация, слайды, demo, pitch, roadmap визуализация | @codesmith + skill: presentation-generator |
-| dependency scan, npm audit, CSP headers, rate limiting | @review + skill: security-engineer |
-| генерация миграции, rollback, schema diff, vacuum, индекс | @codesmith + skill: migration-engineer |
-| mediasoup, ICE/TURN, кодеки, качество связи, SFU | @codesmith + skill: calls-engineer |
+| юридическая документация, privacy policy, оферта, закон, ФЗ | @codesmith + skill: rf-legal-specialist |
+| изучить конкурента, исследовать сайт, GAP-анализ | @learner + skill: live-test-engineer |
+| humanize, сделай код человечным, убрать AI-паттерны | skill: code-humanizer (АВТОМАТИЧЕСКИ) |
 
 ### Платформо-специфическая маршрутизация
 
@@ -248,10 +239,7 @@ agents: [architect, codesmith, debug, review, ask, learner, ruflo, Explore, gem-
 | Маркетплейс / заказы | Изучи Wildberries/Ozon catalog, cart, checkout flow |
 | Live стриминг | Изучи HLS/WebRTC инфраструктуру, лаг, CDN стратегию |
 | PostgreSQL / оптимизация запросов | skills: **supabase-production**, **postgresql-optimization**, **sql-optimization** |
-| Страхование / полисы | skills: **code-generator** для шаблонов страховых модулей |
-| Недвижимость | skills: **code-generator** для шаблонов объектов недвижимости |
-| CRM / клиенты | skills: **code-generator** для CRM компонентов |
-| E2EE Звонки / WebRTC | skills: **calls-engineer**, **advanced-debugger** для WebRTC |
+| Юридическая документация | skills: **rf-legal-specialist**. Изучи ФЗ-152, ЗоЗПП, ФЗ-580 по модулю |
 
 ## Протокол многопроходного пайплайна (для фич)
 
@@ -305,8 +293,7 @@ agents: [architect, codesmith, debug, review, ask, learner, ruflo, Explore, gem-
 - **integration-checker** — проверка цепочек (UI → API → DB → side effects)
 - **recovery-engineer** — проверка recovery paths
 - **security-audit** — для фич с auth/payments/E2EE
-- **security-engineer** — dependency scanning и SAST для всех фич
-- **advanced-debugger** — профилирование для performance-sensitive фич
+- **code-humanizer** — проверка что код выглядит человеческим
 
 ## Pre-flight (ОБЯЗАТЕЛЬНО)
 
