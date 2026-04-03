@@ -1,22 +1,30 @@
 -- Мини-статусы (Notes) как в Instagram DM
-CREATE TABLE IF NOT EXISTS user_notes (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  text TEXT NOT NULL CHECK (char_length(text) <= 60),
-  emoji TEXT,
-  audience TEXT DEFAULT 'followers' CHECK (audience IN ('followers', 'close_friends')),
-  expires_at TIMESTAMPTZ NOT NULL DEFAULT (now() + interval '24 hours'),
-  created_at TIMESTAMPTZ DEFAULT now() NOT NULL
-);
+-- Таблица user_status_notes уже существует из 20260303211000 — расширяем её
+-- Добавляем недостающие колонки (audience, id) к user_status_notes
 
-CREATE INDEX IF NOT EXISTS idx_user_notes_user ON user_notes(user_id);
-CREATE INDEX IF NOT EXISTS idx_user_notes_expires ON user_notes(expires_at);
+ALTER TABLE public.user_status_notes
+  ADD COLUMN IF NOT EXISTS id UUID DEFAULT gen_random_uuid(),
+  ADD COLUMN IF NOT EXISTS audience TEXT DEFAULT 'followers' CHECK (audience IN ('followers', 'close_friends'));
 
-ALTER TABLE user_notes ENABLE ROW LEVEL SECURITY;
+-- Ограничение длины текста
+DO $$ BEGIN
+  ALTER TABLE public.user_status_notes ADD CHECK (char_length(text) <= 60);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
-CREATE POLICY "users_manage_own_notes" ON user_notes
-  FOR ALL USING (auth.uid() = user_id)
-  WITH CHECK (auth.uid() = user_id);
+-- Дефолт для expires_at
+ALTER TABLE public.user_status_notes ALTER COLUMN expires_at SET DEFAULT (now() + interval '24 hours');
 
-CREATE POLICY "anyone_can_view_active_notes" ON user_notes
-  FOR SELECT USING (expires_at > now());
+CREATE INDEX IF NOT EXISTS idx_user_status_notes_expires ON public.user_status_notes(expires_at);
+
+ALTER TABLE public.user_status_notes ENABLE ROW LEVEL SECURITY;
+
+DO $$ BEGIN
+  CREATE POLICY "users_manage_own_status_notes" ON public.user_status_notes
+    FOR ALL USING (auth.uid() = user_id)
+    WITH CHECK (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "anyone_can_view_active_status_notes" ON public.user_status_notes
+    FOR SELECT USING (expires_at > now());
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
