@@ -1,17 +1,16 @@
 -- Мягкая блокировка (Restrict) как в Instagram
-CREATE TABLE IF NOT EXISTS restricted_users (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  restricted_user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  created_at TIMESTAMPTZ DEFAULT now() NOT NULL,
-  UNIQUE(user_id, restricted_user_id)
-);
+-- Таблица restricted_users уже существует (20260303210000) с колонками user_id, restricted_id
+-- Расширяем: добавляем id (для PostgREST), индексы, RLS
 
-CREATE INDEX IF NOT EXISTS idx_restricted_users_user ON restricted_users(user_id);
-CREATE INDEX IF NOT EXISTS idx_restricted_users_target ON restricted_users(restricted_user_id);
+ALTER TABLE public.restricted_users ADD COLUMN IF NOT EXISTS id UUID DEFAULT gen_random_uuid();
 
-ALTER TABLE restricted_users ENABLE ROW LEVEL SECURITY;
+CREATE INDEX IF NOT EXISTS idx_restricted_users_user ON public.restricted_users(user_id);
+CREATE INDEX IF NOT EXISTS idx_restricted_users_target ON public.restricted_users(restricted_id);
 
-CREATE POLICY "users_manage_own_restrictions" ON restricted_users
-  FOR ALL USING (auth.uid() = user_id)
-  WITH CHECK (auth.uid() = user_id);
+ALTER TABLE public.restricted_users ENABLE ROW LEVEL SECURITY;
+
+DO $$ BEGIN
+  CREATE POLICY "users_manage_own_restrictions" ON public.restricted_users
+    FOR ALL USING (auth.uid() = user_id)
+    WITH CHECK (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
