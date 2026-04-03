@@ -4,7 +4,7 @@
 -- ============================================================================
 
 -- Индекс для быстрого поиска ожидающих публикации постов
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_posts_scheduled_pending
+CREATE INDEX IF NOT EXISTS idx_posts_scheduled_pending
   ON public.posts (scheduled_at)
   WHERE scheduled_at IS NOT NULL AND is_published = false;
 
