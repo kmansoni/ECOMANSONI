@@ -81,7 +81,7 @@ CREATE TABLE IF NOT EXISTS public.reel_shares (
 CREATE TABLE IF NOT EXISTS public.reel_comments (
   id         UUID        DEFAULT gen_random_uuid() PRIMARY KEY,
   reel_id    UUID        NOT NULL REFERENCES public.reels(id) ON DELETE CASCADE,
-  user_id    UUID        NOT NULL,
+  author_id  UUID        NOT NULL,
   parent_id  UUID        REFERENCES public.reel_comments(id) ON DELETE CASCADE,
   content    TEXT        NOT NULL,
   likes_count INTEGER    DEFAULT 0,
@@ -239,10 +239,10 @@ DO $$ BEGIN
   CREATE POLICY reel_shares_insert_auth ON public.reel_shares FOR INSERT TO authenticated WITH CHECK (user_id = auth.uid());
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN
-  CREATE POLICY reel_comments_insert_auth ON public.reel_comments FOR INSERT TO authenticated WITH CHECK (user_id = auth.uid());
+  CREATE POLICY reel_comments_insert_auth ON public.reel_comments FOR INSERT TO authenticated WITH CHECK (author_id = auth.uid());
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN
-  CREATE POLICY reel_comments_delete_auth ON public.reel_comments FOR DELETE TO authenticated USING (user_id = auth.uid());
+  CREATE POLICY reel_comments_delete_auth ON public.reel_comments FOR DELETE TO authenticated USING (author_id = auth.uid());
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN
   CREATE POLICY reel_views_insert_all ON public.reel_views FOR INSERT WITH CHECK (true);
