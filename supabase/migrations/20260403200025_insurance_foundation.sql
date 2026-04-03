@@ -1,83 +1,79 @@
--- Страховые компании
-CREATE TABLE IF NOT EXISTS insurance_companies (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  name text NOT NULL,
-  slug text UNIQUE NOT NULL,
-  logo_url text,
-  description text,
-  license_number text,
-  founded_year int,
-  rating numeric(2,1) DEFAULT 0,
-  reviews_count int DEFAULT 0,
-  avg_claim_days int DEFAULT 14,
-  claim_approval_rate numeric(4,1) DEFAULT 90,
-  has_mobile_app boolean DEFAULT false,
-  has_online_service boolean DEFAULT true,
-  is_active boolean DEFAULT true,
-  created_at timestamptz DEFAULT now()
-);
-ALTER TABLE insurance_companies ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "read_companies" ON insurance_companies FOR SELECT USING (true);
+-- Расширение существующих insurance-таблиц из 20260118165346
+-- insurance_companies уже существует, добавляем недостающие колонки
+ALTER TABLE public.insurance_companies ADD COLUMN IF NOT EXISTS slug text;
+ALTER TABLE public.insurance_companies ADD COLUMN IF NOT EXISTS description text;
+ALTER TABLE public.insurance_companies ADD COLUMN IF NOT EXISTS license_number text;
+ALTER TABLE public.insurance_companies ADD COLUMN IF NOT EXISTS founded_year int;
+ALTER TABLE public.insurance_companies ADD COLUMN IF NOT EXISTS reviews_count int DEFAULT 0;
+ALTER TABLE public.insurance_companies ADD COLUMN IF NOT EXISTS avg_claim_days int DEFAULT 14;
+ALTER TABLE public.insurance_companies ADD COLUMN IF NOT EXISTS claim_approval_rate numeric(4,1) DEFAULT 90;
+ALTER TABLE public.insurance_companies ADD COLUMN IF NOT EXISTS has_mobile_app boolean DEFAULT false;
+ALTER TABLE public.insurance_companies ADD COLUMN IF NOT EXISTS has_online_service boolean DEFAULT true;
+ALTER TABLE public.insurance_companies ADD COLUMN IF NOT EXISTS is_active boolean DEFAULT true;
 
--- Страховые продукты
-CREATE TABLE IF NOT EXISTS insurance_products (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id uuid REFERENCES insurance_companies(id) ON DELETE CASCADE NOT NULL,
-  type text NOT NULL CHECK (type IN ('osago','kasko','dms','travel','property','mortgage','life')),
-  name text NOT NULL,
-  description text,
-  min_premium numeric(10,2),
-  max_premium numeric(10,2),
-  coverage_details jsonb DEFAULT '{}',
-  is_active boolean DEFAULT true,
-  created_at timestamptz DEFAULT now()
-);
-CREATE INDEX idx_insurance_products_type ON insurance_products(type, is_active);
-ALTER TABLE insurance_products ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "read_products" ON insurance_products FOR SELECT USING (true);
+-- Уникальный индекс на slug (nullable-safe)
+CREATE UNIQUE INDEX IF NOT EXISTS idx_insurance_companies_slug ON public.insurance_companies(slug) WHERE slug IS NOT NULL;
 
--- Полисы пользователей
-CREATE TABLE IF NOT EXISTS insurance_policies (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
-  company_id uuid REFERENCES insurance_companies(id) NOT NULL,
-  product_id uuid REFERENCES insurance_products(id),
-  policy_number text,
-  type text NOT NULL,
-  status text DEFAULT 'draft' CHECK (status IN ('draft','pending','active','expired','cancelled')),
-  start_date date,
-  end_date date,
-  premium_amount numeric(10,2) NOT NULL,
-  coverage_amount numeric(12,2),
-  insured_object jsonb DEFAULT '{}',
-  documents jsonb DEFAULT '[]',
-  created_at timestamptz DEFAULT now(),
-  paid_at timestamptz
-);
-CREATE INDEX idx_insurance_policies_user ON insurance_policies(user_id, status);
-ALTER TABLE insurance_policies ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "own_policies" ON insurance_policies FOR ALL USING (auth.uid() = user_id);
+ALTER TABLE public.insurance_companies ENABLE ROW LEVEL SECURITY;
+DO $$ BEGIN
+  CREATE POLICY "read_companies" ON public.insurance_companies FOR SELECT USING (true);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
--- Страховые случаи (claims)
-CREATE TABLE IF NOT EXISTS insurance_claims (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  policy_id uuid REFERENCES insurance_policies(id) ON DELETE CASCADE NOT NULL,
-  user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
-  status text DEFAULT 'submitted' CHECK (status IN ('submitted','under_review','approved','rejected','paid')),
-  description text NOT NULL,
-  amount numeric(10,2),
-  approved_amount numeric(10,2),
-  documents jsonb DEFAULT '[]',
-  created_at timestamptz DEFAULT now(),
-  resolved_at timestamptz
-);
-ALTER TABLE insurance_claims ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "own_claims" ON insurance_claims FOR ALL USING (auth.uid() = user_id);
+-- insurance_products уже существует с category (enum), добавляем type (text alias)
+ALTER TABLE public.insurance_products ADD COLUMN IF NOT EXISTS type text;
+ALTER TABLE public.insurance_products ADD COLUMN IF NOT EXISTS min_premium numeric(10,2);
+ALTER TABLE public.insurance_products ADD COLUMN IF NOT EXISTS max_premium numeric(10,2);
+ALTER TABLE public.insurance_products ADD COLUMN IF NOT EXISTS coverage_details jsonb DEFAULT '{}';
+ALTER TABLE public.insurance_products ADD COLUMN IF NOT EXISTS is_active boolean DEFAULT true;
 
--- Платежи за полисы
-CREATE TABLE IF NOT EXISTS insurance_payments (
+-- Синхронизируем type из category для существующих строк
+UPDATE public.insurance_products SET type = category::text WHERE type IS NULL AND category IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_insurance_products_type ON public.insurance_products(type, is_active);
+ALTER TABLE public.insurance_products ENABLE ROW LEVEL SECURITY;
+DO $$ BEGIN
+  CREATE POLICY "read_products" ON public.insurance_products FOR SELECT USING (true);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+-- insurance_policies уже существует, добавляем недостающие колонки
+ALTER TABLE public.insurance_policies ADD COLUMN IF NOT EXISTS company_id uuid;
+ALTER TABLE public.insurance_policies ADD COLUMN IF NOT EXISTS type text;
+ALTER TABLE public.insurance_policies ADD COLUMN IF NOT EXISTS coverage_amount numeric(12,2);
+ALTER TABLE public.insurance_policies ADD COLUMN IF NOT EXISTS insured_object jsonb DEFAULT '{}';
+ALTER TABLE public.insurance_policies ADD COLUMN IF NOT EXISTS documents jsonb DEFAULT '[]';
+
+-- Разрешаем NULL policy_number (в старой схеме NOT NULL UNIQUE)
+DO $$ BEGIN
+  ALTER TABLE public.insurance_policies ALTER COLUMN policy_number DROP NOT NULL;
+EXCEPTION WHEN others THEN NULL; END $$;
+
+-- Расширяем status constraint
+DO $$ BEGIN
+  ALTER TABLE public.insurance_policies DROP CONSTRAINT IF EXISTS insurance_policies_status_check;
+  ALTER TABLE public.insurance_policies ADD CONSTRAINT insurance_policies_status_check
+    CHECK (status::text IN ('draft','pending','active','expired','cancelled'));
+EXCEPTION WHEN others THEN NULL; END $$;
+
+CREATE INDEX IF NOT EXISTS idx_insurance_policies_user ON public.insurance_policies(user_id);
+ALTER TABLE public.insurance_policies ENABLE ROW LEVEL SECURITY;
+DO $$ BEGIN
+  CREATE POLICY "own_policies" ON public.insurance_policies FOR ALL USING (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+-- insurance_claims уже может существовать
+ALTER TABLE public.insurance_claims ADD COLUMN IF NOT EXISTS approved_amount numeric(10,2);
+ALTER TABLE public.insurance_claims ADD COLUMN IF NOT EXISTS documents jsonb DEFAULT '[]';
+ALTER TABLE public.insurance_claims ADD COLUMN IF NOT EXISTS resolved_at timestamptz;
+
+ALTER TABLE public.insurance_claims ENABLE ROW LEVEL SECURITY;
+DO $$ BEGIN
+  CREATE POLICY "own_claims" ON public.insurance_claims FOR ALL USING (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+-- insurance_payments — новая таблица
+CREATE TABLE IF NOT EXISTS public.insurance_payments (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  policy_id uuid REFERENCES insurance_policies(id) ON DELETE CASCADE NOT NULL,
+  policy_id uuid REFERENCES public.insurance_policies(id) ON DELETE CASCADE NOT NULL,
   user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
   amount numeric(10,2) NOT NULL,
   status text DEFAULT 'pending' CHECK (status IN ('pending','processing','completed','failed','refunded')),
@@ -86,5 +82,7 @@ CREATE TABLE IF NOT EXISTS insurance_payments (
   created_at timestamptz DEFAULT now(),
   completed_at timestamptz
 );
-ALTER TABLE insurance_payments ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "own_payments" ON insurance_payments FOR ALL USING (auth.uid() = user_id);
+ALTER TABLE public.insurance_payments ENABLE ROW LEVEL SECURITY;
+DO $$ BEGIN
+  CREATE POLICY "own_payments" ON public.insurance_payments FOR ALL USING (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
