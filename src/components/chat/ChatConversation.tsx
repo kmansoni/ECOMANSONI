@@ -110,25 +110,7 @@ interface ChatConversationProps {
   onInitialPanelHandled?: () => void;
 }
 
-/** Virtualized message list for performance with large chats */
-function VirtualizedMessages({
-  messages,
-  userId,
-  conversationId,
-  chatAvatar,
-  isGroup,
-  selectionMode,
-  selectedIds,
-  playingVoice,
-  manualMediaLoaded,
-  contextMenuMessageId,
-  decryptedCache,
-  senderProfiles,
-  style,
-  callbacks,
-  scrollContainerRef,
-  messagesEndRef,
-}: {
+interface MessageListProps {
   messages: any[];
   userId?: string;
   conversationId: string;
@@ -145,49 +127,55 @@ function VirtualizedMessages({
   callbacks: any;
   scrollContainerRef: React.RefObject<HTMLDivElement>;
   messagesEndRef: React.RefObject<HTMLDivElement>;
-}) {
-  const VIRTUALIZE_THRESHOLD = 60;
+}
 
-  // For small chats, render directly without virtualization overhead
-  if (messages.length < VIRTUALIZE_THRESHOLD) {
-    return (
-      <>
-        <div className="space-y-1 min-w-0">
-          {messages.map((message, index) => (
-            <ChatMessageItem
-              key={message.id}
-              message={message}
-              prevMessage={index > 0 ? messages[index - 1] : null}
-              userId={userId}
-              conversationId={conversationId}
-              chatAvatar={chatAvatar}
-              isGroup={isGroup}
-              selectionMode={selectionMode}
-              selectedIds={selectedIds}
-              playingVoice={playingVoice}
-              manualMediaLoaded={manualMediaLoaded}
-              contextMenuMessageId={contextMenuMessageId}
-              decryptedCache={decryptedCache}
-              senderProfiles={senderProfiles}
-              style={style}
-              callbacks={callbacks}
-            />
-          ))}
-        </div>
-        <div ref={messagesEndRef} />
-      </>
-    );
-  }
+function SimpleMessageList({
+  messages, userId, conversationId, chatAvatar, isGroup,
+  selectionMode, selectedIds, playingVoice, manualMediaLoaded,
+  contextMenuMessageId, decryptedCache, senderProfiles, style, callbacks, messagesEndRef,
+}: MessageListProps) {
+  return (
+    <>
+      <div className="space-y-1 min-w-0">
+        {messages.map((message, index) => (
+          <ChatMessageItem
+            key={message.id}
+            message={message}
+            prevMessage={index > 0 ? messages[index - 1] : null}
+            userId={userId}
+            conversationId={conversationId}
+            chatAvatar={chatAvatar}
+            isGroup={isGroup}
+            selectionMode={selectionMode}
+            selectedIds={selectedIds}
+            playingVoice={playingVoice}
+            manualMediaLoaded={manualMediaLoaded}
+            contextMenuMessageId={contextMenuMessageId}
+            decryptedCache={decryptedCache}
+            senderProfiles={senderProfiles}
+            style={style}
+            callbacks={callbacks}
+          />
+        ))}
+      </div>
+      <div ref={messagesEndRef} />
+    </>
+  );
+}
 
-  // Large chats: use virtualization
+function VirtualizedMessageList({
+  messages, userId, conversationId, chatAvatar, isGroup,
+  selectionMode, selectedIds, playingVoice, manualMediaLoaded,
+  contextMenuMessageId, decryptedCache, senderProfiles, style, callbacks,
+  scrollContainerRef, messagesEndRef,
+}: MessageListProps) {
   const virtualizer = useVirtualizer({
     count: messages.length,
     getScrollElement: () => scrollContainerRef.current,
-    estimateSize: () => 64, // average message height estimate
+    estimateSize: () => 64,
     overscan: 8,
   });
 
-  // Auto-scroll to bottom on new messages
   useLayoutEffect(() => {
     if (messages.length > 0) {
       virtualizer.scrollToIndex(messages.length - 1, { align: "end" });
@@ -205,12 +193,12 @@ function VirtualizedMessages({
         }}
       >
         {virtualizer.getVirtualItems().map((virtualRow) => {
-          const index = virtualRow.index;
-          const message = messages[index];
+          const idx = virtualRow.index;
+          const msg = messages[idx];
           return (
             <div
-              key={message.id}
-              data-index={index}
+              key={msg.id}
+              data-index={idx}
               ref={virtualizer.measureElement}
               style={{
                 position: "absolute",
@@ -221,8 +209,8 @@ function VirtualizedMessages({
               }}
             >
               <ChatMessageItem
-                message={message}
-                prevMessage={index > 0 ? messages[index - 1] : null}
+                message={msg}
+                prevMessage={idx > 0 ? messages[idx - 1] : null}
                 userId={userId}
                 conversationId={conversationId}
                 chatAvatar={chatAvatar}
@@ -246,6 +234,12 @@ function VirtualizedMessages({
   );
 }
 
+/** Выбирает простой или виртуализированный рендер в зависимости от кол-ва сообщений */
+function VirtualizedMessages(props: MessageListProps) {
+  if (props.messages.length < 60) return <SimpleMessageList {...props} />;
+  return <VirtualizedMessageList {...props} />;
+}
+
 const TELEGRAM_MAX_MESSAGE_CHARS = 4096;
 
 export function ChatConversation({ conversationId, chatName, chatAvatar, otherUserId, onBack, participantCount, isGroup, totalUnreadCount, onRefetch, initialOpenPanelAction, onInitialPanelHandled }: ChatConversationProps) {
@@ -257,7 +251,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
   const { bubbleClass } = useBubbleGradient();
   const { styles: densityStyles } = useMessageDensity();
   const [lastSentEmoji, setLastSentEmoji] = useState<string | null>(null);
-  const { messages, loading, sendMessage, sendMediaMessage, deleteMessage, editMessage } = useMessages(conversationId);
+  const { messages, loading, fetchError, refetch, sendMessage, sendMediaMessage, deleteMessage, editMessage } = useMessages(conversationId);
   const { toggleReaction, getReactions } = useMessageReactions(conversationId);
   const { markConversationRead } = useMarkConversationRead();
   const { getMessageStatus, markAsRead, markAsDelivered } = useReadReceipts(conversationId);
@@ -287,7 +281,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
   
   const [inputText, setInputText] = useState("");
   const [isSending, setIsSending] = useState(false);
-  const sendInFlightRef = useRef(false);
+  const sendingFingerprintsRef = useRef(new Set<string>());
   const draftClientMsgIdRef = useRef<string>(crypto.randomUUID());
   const lastDraftTrimmedRef = useRef<string>("");
   const [showVideoRecorder, setShowVideoRecorder] = useState(false);
@@ -869,8 +863,6 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
   }, [visibleMessages]);
 
   const handleSendMessage = async (silent = false, overrideText?: string) => {
-    if (sendInFlightRef.current) return;
-
     const trimmed = (overrideText ?? inputText).trim();
     if (!trimmed) {
       sendTyping(false);
@@ -894,12 +886,15 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
       return;
     }
 
+    // Per-message duplicate guard — блокируем только повтор того же текста
+    const fingerprint = `${conversationId}:${trimmed}`;
+    if (sendingFingerprintsRef.current.has(fingerprint)) return;
+
     const reply = replyTo;
     const withReply = reply ? `↩️ Ответ на сообщение:\n${reply.preview}\n\n${trimmed}` : trimmed;
     const clientMsgId = draftClientMsgIdRef.current;
 
-    // Lock as early as possible to prevent any double-dispatch.
-    sendInFlightRef.current = true;
+    sendingFingerprintsRef.current.add(fingerprint);
     setIsSending(true);
 
     // Clear immediately to avoid perceived delay.
@@ -922,7 +917,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
         const encrypted = await encryptContent(withReply);
         if (!encrypted) {
           // Ключ недоступен — блокируем отправку, чтобы не допустить утечки plaintext.
-          sendInFlightRef.current = false;
+          sendingFingerprintsRef.current.delete(fingerprint);
           setIsSending(false);
           setInputText(trimmed);
           setReplyTo(reply);
@@ -1030,24 +1025,34 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
         });
       }
     } finally {
-      sendInFlightRef.current = false;
+      sendingFingerprintsRef.current.delete(fingerprint);
       setIsSending(false);
     }
   };
 
   const handleVideoRecord = async (videoBlob: Blob, duration: number) => {
     const file = new File([videoBlob], `video_circle_${Date.now()}.webm`, { type: 'video/webm' });
-    await sendMediaMessage(file, 'video_circle', duration);
+    try {
+      await sendMediaMessage(file, 'video_circle', duration);
+    } catch (err) {
+      logger.error("chat: video circle send failed", { conversationId, error: err });
+      toast.error("Не удалось отправить видеокружок");
+    }
     setShowVideoRecorder(false);
   };
 
   const handleAttachment = async (file: File, type: "image" | "video" | "document") => {
-    if (type === "image") {
-      await sendMediaMessage(file, 'image');
-    } else if (type === "document") {
-      await sendMediaMessage(file, 'document');
-    } else {
-      await sendMediaMessage(file, 'video');
+    try {
+      if (type === "image") {
+        await sendMediaMessage(file, 'image');
+      } else if (type === "document") {
+        await sendMediaMessage(file, 'document');
+      } else {
+        await sendMediaMessage(file, 'video');
+      }
+    } catch (err) {
+      logger.error("chat: attachment send failed", { conversationId, type, error: err });
+      toast.error("Не удалось прикрепить файл");
     }
   };
 
@@ -1077,11 +1082,21 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
   };
 
   const handleStartAudioCall = async () => {
-    await startCall(otherUserId, conversationId, "audio", { display_name: chatName, avatar_url: chatAvatar });
+    try {
+      await startCall(otherUserId, conversationId, "audio", { display_name: chatName, avatar_url: chatAvatar });
+    } catch (err) {
+      logger.error("chat: audio call start failed", { conversationId, error: err });
+      toast.error("Не удалось начать аудиозвонок");
+    }
   };
 
   const handleStartVideoCall = async () => {
-    await startCall(otherUserId, conversationId, "video", { display_name: chatName, avatar_url: chatAvatar });
+    try {
+      await startCall(otherUserId, conversationId, "video", { display_name: chatName, avatar_url: chatAvatar });
+    } catch (err) {
+      logger.error("chat: video call start failed", { conversationId, error: err });
+      toast.error("Не удалось начать видеозвонок");
+    }
   };
 
   // Hold-to-record handlers for dynamic mic/video button
@@ -1398,6 +1413,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
         onStartAudioCall={handleStartAudioCall}
         onStartVideoCall={handleStartVideoCall}
         onSearchOpen={() => setShowMessageSearch(true)}
+        onAddMembers={isGroup ? () => setShowChatSettings(true) : undefined}
       />
 
       {isSecret && (
@@ -1411,7 +1427,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
       />
 
       {/* Messages - scrollable with animated brand background */}
-      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto overflow-x-hidden native-scroll flex flex-col relative">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto overflow-x-hidden native-scroll flex flex-col relative" onClick={() => { if (showEmojiPicker) setShowEmojiPicker(false); }}>
         {/* UI-1: Floating date pill */}
         <FloatingDate
           date={floatingDate}
@@ -1435,7 +1451,19 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
           </div>
         )}
 
-        {!loading && renderMessages.length === 0 && (
+        {!loading && fetchError && (
+          <div className="flex flex-col items-center justify-center py-8 text-center gap-3">
+            <p className="text-sm text-destructive">{fetchError}</p>
+            <button
+              onClick={() => void refetch()}
+              className="text-sm text-primary underline hover:no-underline"
+            >
+              Повторить
+            </button>
+          </div>
+        )}
+
+        {!loading && !fetchError && renderMessages.length === 0 && (
           <div className="flex items-center justify-center py-8 text-center">
             <p className="text-muted-foreground">Начните переписку!</p>
           </div>
@@ -1547,9 +1575,11 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
             pendingEffectRef.current = effect;
             void handleSendMessage(false);
           }}
+          onToggleRecordMode={() => setRecordMode(p => p === 'voice' ? 'video' : 'voice')}
         />
         
         {/* Sticker/GIF/Emoji Picker */}
+        <div onClick={(e) => e.stopPropagation()}>
         <StickerGifPicker
           open={showEmojiPicker}
           onOpenChange={setShowEmojiPicker}
@@ -1587,8 +1617,8 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
             }
           }}
         />
+        </div>
       </div>
-      
       {/* Safe area for bottom - transparent */}
       {!showEmojiPicker && <div className="safe-area-bottom" />}
 
@@ -1755,6 +1785,10 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
           isSaved={isSaved(contextMenuMessage.id)}
           onTranslate={handleMessageTranslate}
           onEdit={handleMessageEdit}
+          onReport={!contextMenuMessage.isOwn ? (msgId) => {
+            toast.info("Жалоба отправлена на рассмотрение");
+            logger.info("chat: message reported", { messageId: msgId, conversationId });
+          } : undefined}
         />
       )}
 

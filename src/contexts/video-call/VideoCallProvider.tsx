@@ -1892,7 +1892,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
             // Сохранить params для возможного E2EE pipe recovery
             consumerCreateParamsRef.current.set(consumer.id, p);
             // Attach E2EE receiver transform (Insertable Streams) — fail-closed: frames dropped without key
-            if (CallMediaEncryption.isSupported()) {
+            if (REQUIRE_SFRAME && CallMediaEncryption.isSupported()) {
               const receiver = sfuManagerRef.current?.getConsumerReceiver(consumer.id);
               if (receiver) {
                 // Use producerId as peerId — links to who created this producer
@@ -1912,7 +1912,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         for (const track of tracks) {
           const producer = await sfuManager.produce(track, { trackId: track.id });
           // Attach E2EE sender transform after produce (Insertable Streams)
-          if (CallMediaEncryption.isSupported()) {
+          if (REQUIRE_SFRAME && CallMediaEncryption.isSupported()) {
             const sender = sfuManagerRef.current?.getProducerSender(producer.id);
             if (sender) {
               callMediaEncryptionRef.current?.setupSenderTransform(sender, producer.id);

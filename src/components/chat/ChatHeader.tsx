@@ -25,6 +25,7 @@ interface ChatHeaderProps {
   onStartAudioCall: () => void;
   onStartVideoCall: () => void;
   onSearchOpen: () => void;
+  onAddMembers?: () => void;
 }
 
 export function ChatHeader({
@@ -43,6 +44,7 @@ export function ChatHeader({
   onStartAudioCall,
   onStartVideoCall,
   onSearchOpen,
+  onAddMembers,
 }: ChatHeaderProps) {
   const navigate = useNavigate();
 
@@ -144,9 +146,11 @@ export function ChatHeader({
         </div>
       </div>
 
-      {/* Add participants banner for groups */}
-      {isGroup && (
-        <button className="w-full py-2.5 px-4 bg-white/5 flex items-center justify-center gap-2 border-t border-white/5">
+      {isGroup && onAddMembers && (
+        <button
+          onClick={onAddMembers}
+          className="w-full py-2.5 px-4 bg-white/5 flex items-center justify-center gap-2 border-t border-white/5 hover:bg-white/10 transition-colors"
+        >
           <span className="text-[#6ab3f3] text-sm font-medium">Добавить участников</span>
           <span className="w-5 h-5 rounded-full border border-white/20 flex items-center justify-center">
             <span className="text-white/60 text-xs leading-none">+</span>

@@ -89,3 +89,6 @@ __pycache__/
 
 # Kilo Code AI workspace (worktrees, node_modules)
 .kilocode/
+
+# Playwright MCP snapshots
+.playwright-mcp/

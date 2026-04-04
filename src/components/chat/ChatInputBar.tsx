@@ -67,6 +67,7 @@ interface ChatInputBarProps {
   onInlineBotSelect: (result: { sendContent: { text?: string } }) => void;
   onInlineBotDismiss: () => void;
   onEffect?: (effect: MessageEffectType) => void;
+  onToggleRecordMode?: () => void;
   quickReplies?: QuickReply[];
   onQuickReplySelect?: (text: string) => void;
 }
@@ -115,6 +116,7 @@ export function ChatInputBar({
   onInlineBotSelect,
   onInlineBotDismiss,
   onEffect,
+  onToggleRecordMode,
   quickReplies,
   onQuickReplySelect,
 }: ChatInputBarProps) {
@@ -390,6 +392,7 @@ export function ChatInputBar({
               </div>
             ) : (
               <button
+                onClick={() => onToggleRecordMode?.()}
                 onPointerDown={onRecordButtonDown}
                 onPointerUp={onRecordButtonUp}
                 onPointerCancel={onRecordButtonUp}

@@ -831,12 +831,13 @@ export function AIAssistantPage() {
                       <div
                         className="prose prose-sm prose-invert max-w-none leading-relaxed [&_pre]:my-2 [&_code]:text-xs [&_li]:my-0.5 [&_h1]:mt-3 [&_h2]:mt-2 [&_h3]:mt-2 [&_table]:w-full [&_table]:border-collapse [&_table]:text-xs [&_td]:border [&_td]:border-border/40 [&_td]:px-2 [&_td]:py-1"
                         dangerouslySetInnerHTML={{
-                          __html:
+                          __html: DOMPurify.sanitize(
                             msg.content
                               ? renderMarkdown(msg.content)
                               : msg.streaming
                               ? '<span class="animate-pulse">▊</span>'
-                              : "",
+                              : ""
+                          ),
                         }}
                       />
                       {msg.streaming && msg.content && (

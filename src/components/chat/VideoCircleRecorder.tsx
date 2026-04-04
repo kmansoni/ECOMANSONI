@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { ArrowUp, Pause, Play, Camera, Zap, ZapOff } from "lucide-react";
+import { ArrowUp, Pause, Play, Camera, Zap, ZapOff, RotateCcw, Trash2, Send } from "lucide-react";
 import { logger } from "@/lib/logger";
 
 interface VideoCircleRecorderProps {
@@ -20,6 +20,8 @@ export function VideoCircleRecorder({ onRecord, onCancel, autoRecord = true }: V
   const [hasPermission, setHasPermission] = useState(false);
   const [facingMode, setFacingMode] = useState<"user" | "environment">("user");
   const [flashEnabled, setFlashEnabled] = useState(false);
+  const [previewBlob, setPreviewBlob] = useState<Blob | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const recordingInterval = useRef<NodeJS.Timeout | null>(null);
   const recordingTimeRef = useRef(0);
 
@@ -97,14 +99,15 @@ export function VideoCircleRecorder({ onRecord, onCancel, autoRecord = true }: V
 
     mediaRecorder.onstop = () => {
       const blob = new Blob(chunksRef.current, { type: "video/webm" });
-      onRecord(blob, recordingTimeRef.current);
+      setPreviewBlob(blob);
+      setPreviewUrl(URL.createObjectURL(blob));
     };
 
     mediaRecorderRef.current = mediaRecorder;
     mediaRecorder.start();
     setIsRecording(true);
     setRecordingTime(0);
-  }, [onRecord]);
+  }, []);
 
   const stopRecording = useCallback(() => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
@@ -123,18 +126,49 @@ export function VideoCircleRecorder({ onRecord, onCancel, autoRecord = true }: V
       mediaRecorderRef.current.stop();
     }
     stopCamera();
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
     onCancel();
-  }, [onCancel, stopCamera]);
+  }, [onCancel, stopCamera, previewUrl]);
+
+  const handleRetake = useCallback(() => {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPreviewBlob(null);
+    setPreviewUrl(null);
+    chunksRef.current = [];
+    setRecordingTime(0);
+    setHasPermission(false);
+    void startCamera();
+  }, [previewUrl, startCamera]);
+
+  const handleDiscard = useCallback(() => {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPreviewBlob(null);
+    setPreviewUrl(null);
+    onCancel();
+  }, [previewUrl, onCancel]);
+
+  const handleSend = useCallback(() => {
+    if (!previewBlob) return;
+    onRecord(previewBlob, recordingTimeRef.current);
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+  }, [previewBlob, previewUrl, onRecord]);
 
   useEffect(() => {
     void startCamera();
     return () => {
+      if (mediaRecorderRef.current?.state !== 'inactive') {
+        try { mediaRecorderRef.current?.stop(); } catch {}
+      }
       stopCamera();
       if (recordingInterval.current) {
         clearInterval(recordingInterval.current);
       }
     };
   }, [startCamera, stopCamera, facingMode]);
+
+  useEffect(() => {
+    return () => { if (previewUrl) URL.revokeObjectURL(previewUrl) };
+  }, [previewUrl]);
 
   useEffect(() => {
     if (isRecording && !isPaused) {
@@ -250,7 +284,13 @@ export function VideoCircleRecorder({ onRecord, onCancel, autoRecord = true }: V
           
           {/* Video circle */}
           <div className="relative w-72 h-72 rounded-full overflow-hidden border-[3px] border-white/20 shadow-2xl flex items-center justify-center bg-black/50">
-            {hasPermission ? (
+            {previewUrl ? (
+              <video
+                src={previewUrl}
+                autoPlay loop muted playsInline
+                className="w-full h-full object-cover"
+              />
+            ) : hasPermission ? (
               <video
                 ref={videoRef}
                 autoPlay
@@ -275,7 +315,7 @@ export function VideoCircleRecorder({ onRecord, onCancel, autoRecord = true }: V
           </div>
 
           {/* Progress ring when recording */}
-          {isRecording && (
+          {isRecording && !previewUrl && (
             <svg className="absolute inset-[-6px] w-[calc(100%+12px)] h-[calc(100%+12px)] -rotate-90">
               <circle
                 cx="50%"
@@ -308,7 +348,7 @@ export function VideoCircleRecorder({ onRecord, onCancel, autoRecord = true }: V
       </div>
 
       {/* Right side controls - Timer/1x */}
-      {isRecording && (
+      {isRecording && !previewUrl && (
         <div className="absolute right-4 top-1/2 -translate-y-1/2 flex flex-col gap-3">
           <button className="w-12 h-12 rounded-full bg-black/40 backdrop-blur-sm border border-white/10 flex items-center justify-center text-white/80 text-xs font-medium">
             1x
@@ -327,6 +367,33 @@ export function VideoCircleRecorder({ onRecord, onCancel, autoRecord = true }: V
       )}
 
       {/* Bottom controls */}
+      {previewUrl ? (
+        <div className="pb-8 px-4 safe-area-bottom">
+          <div className="flex items-center justify-center gap-5">
+            <button
+              onClick={handleRetake}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-white/10 text-white/80 active:bg-white/20 transition-colors min-h-[44px]"
+            >
+              <RotateCcw className="w-4 h-4" />
+              <span className="text-sm">Переснять</span>
+            </button>
+            <button
+              onClick={handleDiscard}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-red-500/20 text-red-400 active:bg-red-500/30 transition-colors min-h-[44px]"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span className="text-sm">Удалить</span>
+            </button>
+            <button
+              onClick={handleSend}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-blue-500 text-white active:bg-blue-600 transition-colors shadow-lg shadow-blue-500/30 min-h-[44px]"
+            >
+              <Send className="w-4 h-4" />
+              <span className="text-sm">Отправить</span>
+            </button>
+          </div>
+        </div>
+      ) : (
       <div className="pb-8 px-4 safe-area-bottom">
         {/* Camera controls row */}
         {hasPermission && (
@@ -388,6 +455,7 @@ export function VideoCircleRecorder({ onRecord, onCancel, autoRecord = true }: V
           </button>
         </div>
       </div>
+      )}
     </div>
   );
 }

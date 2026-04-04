@@ -9,6 +9,7 @@ import { ArrowLeft, Camera, Loader2, User } from 'lucide-react';
 import { uploadMedia } from '@/lib/mediaUpload';
 import { useAuth } from '@/hooks/useAuth';
 import { useProfile } from '@/hooks/useProfile';
+import { supabase } from '@/integrations/supabase/client';
 import { AvatarPresetPicker } from '@/components/profile/AvatarPresetPicker';
 import { toast } from 'sonner';
 import { logger } from '@/lib/logger';
@@ -20,6 +21,8 @@ export function EditProfilePage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const [displayName, setDisplayName] = useState('');
+  const [username, setUsername] = useState('');
+  const [usernameError, setUsernameError] = useState('');
   const [bio, setBio] = useState('');
   const [website, setWebsite] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
@@ -30,6 +33,7 @@ export function EditProfilePage() {
   useEffect(() => {
     if (profile) {
       setDisplayName(profile.display_name || '');
+      setUsername(profile.username || '');
       setBio(profile.bio || '');
       setWebsite(profile.website || '');
       setAvatarUrl(profile.avatar_url || '');
@@ -65,11 +69,38 @@ export function EditProfilePage() {
   };
 
   const handleSave = async () => {
+    const trimmedUsername = username.trim();
+    if (trimmedUsername && (trimmedUsername.length < 3 || trimmedUsername.length > 30)) {
+      setUsernameError('От 3 до 30 символов');
+      return;
+    }
+    if (trimmedUsername && !/^[a-z0-9_]+$/.test(trimmedUsername)) {
+      setUsernameError('Только латинские буквы, цифры и _');
+      return;
+    }
+    setUsernameError('');
+
     try {
       setSaving(true);
-      
+
+      if (trimmedUsername && trimmedUsername !== profile?.username) {
+        const { data: existing } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('username', trimmedUsername)
+          .neq('id', user!.id)
+          .limit(1)
+          .maybeSingle();
+        if (existing) {
+          setUsernameError('Это имя уже занято');
+          setSaving(false);
+          return;
+        }
+      }
+
       await updateProfile({
         display_name: displayName.trim() || null,
+        username: trimmedUsername || null,
         bio: bio.trim() || null,
         website: website.trim() || null,
         avatar_url: avatarUrl || null,
@@ -175,6 +206,26 @@ export function EditProfilePage() {
             maxLength={50}
             className="h-12 rounded-xl"
           />
+        </div>
+
+        {/* Username */}
+        <div className="space-y-2">
+          <Label htmlFor="username">Имя пользователя</Label>
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">@</span>
+            <Input
+              id="username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
+              placeholder="username"
+              maxLength={30}
+              className="h-12 rounded-xl pl-8"
+            />
+          </div>
+          {usernameError && <p className="text-xs text-destructive">{usernameError}</p>}
+          <p className="text-xs text-muted-foreground">
+            Латинские буквы, цифры и _ (от 3 до 30 символов)
+          </p>
         </div>
 
         {/* Bio */}

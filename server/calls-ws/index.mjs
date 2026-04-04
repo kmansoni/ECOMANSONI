@@ -520,6 +520,17 @@ function pruneSeenMsgIds(seenMsgIds) {
 
 async function validateSupabaseAccessToken(accessToken) {
   if (CALLS_DEV_INSECURE_AUTH) {
+    // Декодируем JWT без проверки подписи — извлекаем реальный sub (userId),
+    // чтобы allowedUserIds в join-токене совпадал с conn.userId
+    try {
+      const parts = String(accessToken).split(".");
+      if (parts.length === 3) {
+        const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString());
+        if (payload.sub) {
+          return { ok: true, userId: payload.sub };
+        }
+      }
+    } catch { /* fallback ниже */ }
     return { ok: true, userId: `dev_${String(accessToken).slice(0, 8)}` };
   }
   const { supabaseUrl, supabaseAnonKey } = resolveSupabaseAuthEnv();

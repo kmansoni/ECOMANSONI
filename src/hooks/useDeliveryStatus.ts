@@ -31,7 +31,11 @@ interface DeliveryStatusClient {
   from(table: "messages"): {
     select: (columns: "id, delivery_status") => {
       eq: (column: "conversation_id", value: string) => {
-        eq: (column: "sender_id", value: string) => QueryResult<DeliveryStatusRow[]>;
+        eq: (column: "sender_id", value: string) => {
+          order: (col: string, opts: { ascending: boolean }) => {
+            limit: (n: number) => QueryResult<DeliveryStatusRow[]>;
+          };
+        } & QueryResult<DeliveryStatusRow[]>;
       };
     };
   };
@@ -92,15 +96,17 @@ export function useDeliveryStatus(conversationId: string | null): {
   const { user } = useAuth();
   const [statusMap, setStatusMap] = useState<DeliveryStatusMap>({});
 
-  // Буфер message_id, ожидающих отправки receipt
   const pendingReadIdsRef = useRef<Set<string>>(new Set());
   const debounceTimerRef = useRef<number | null>(null);
+  const consecutiveFailsRef = useRef(0);
+
+  const flushRef = useRef<() => Promise<void>>(async () => {});
 
   const scheduleFlush = useCallback((delayMs = 500) => {
     if (debounceTimerRef.current != null) return;
     debounceTimerRef.current = window.setTimeout(() => {
       debounceTimerRef.current = null;
-      void flushReadReceipts();
+      void flushRef.current();
     }, delayMs);
   }, []);
 
@@ -119,7 +125,9 @@ export function useDeliveryStatus(conversationId: string | null): {
         .from("messages")
         .select("id, delivery_status")
         .eq("conversation_id", conversationId)
-        .eq("sender_id", user.id);
+        .eq("sender_id", user.id)
+        .order('created_at', { ascending: false })
+        .limit(100);
 
       if (cancelled || error || !data) return;
 
@@ -200,12 +208,20 @@ export function useDeliveryStatus(conversationId: string | null): {
       .upsert(rows, { onConflict: "message_id,user_id", ignoreDuplicates: true });
 
     if (error) {
-      // Re-queue при ошибке (например, временный RLS-отказ или сетевой сбой)
+      consecutiveFailsRef.current++;
+      if (consecutiveFailsRef.current >= 5) {
+        logger.warn("[useDeliveryStatus] giving up after 5 consecutive failures", { error: error.message });
+        return;
+      }
       for (const id of ids) pendingReadIdsRef.current.add(id);
       logger.warn("[useDeliveryStatus] flushReadReceipts error", { error: error.message });
       scheduleFlush(1000);
+    } else {
+      consecutiveFailsRef.current = 0;
     }
   }, [scheduleFlush, user]);
+
+  useEffect(() => { flushRef.current = flushReadReceipts; }, [flushReadReceipts]);
 
   // ── Public API ────────────────────────────────────────────────────────────
 

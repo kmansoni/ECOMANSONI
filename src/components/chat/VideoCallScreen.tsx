@@ -287,7 +287,7 @@ export function VideoCallScreen({
   // Video call - swap local/remote preview
   if (isVideoCall && localStream && !isVideoOff) {
     return (
-      <div className="fixed inset-0 bg-black z-[100] flex flex-col">
+      <div className="fixed inset-0 bg-black z-[300] flex flex-col">
         {/* Ringtone player */}
         <RingtonePlayer play={shouldPlayRingtone} />
         {/* Main video area */}
@@ -521,7 +521,7 @@ export function VideoCallScreen({
 
   // Audio call or waiting state - with brand background
   return (
-    <div className="fixed inset-0 z-[100] flex flex-col">
+    <div className="fixed inset-0 z-[300] flex flex-col">
       {/* Ringtone player */}
       <RingtonePlayer play={shouldPlayRingtone} />
       {/* Brand animated background */}

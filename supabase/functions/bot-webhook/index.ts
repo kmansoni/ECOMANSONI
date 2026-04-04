@@ -123,8 +123,8 @@ function extractCommand(text?: string): string | null {
  */
 async function verifyWebhookSignature(body: string, signature: string | null): Promise<boolean> {
   if (!botWebhookSecret) {
-    console.warn('[bot-webhook] BOT_WEBHOOK_SECRET not set — HMAC verification skipped');
-    return true;
+    console.error('[bot-webhook] BOT_WEBHOOK_SECRET not set — rejecting request');
+    return false;
   }
   if (!signature) return false;
 

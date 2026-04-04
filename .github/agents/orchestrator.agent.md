@@ -1,7 +1,7 @@
 ---
 description: "Главный агент-маршрутизатор. Use when: пользователь описывает задачу, фичу, проблему или вопрос и нужно определить, какой специализированный агент должен работать. Точка входа для любых сложных задач."
-tools: [read/terminalSelection, read/terminalLastCommand, read/getTaskOutput, read/getNotebookSummary, read/problems, read/readFile, read/viewImage, agent, search/changes, search/codebase, search/fileSearch, search/listDirectory, search/searchResults, search/textSearch, search/usages, todo]
-agents: [architect, codesmith, debug, review, ask, learner, ruflo, Explore, gem-orchestrator, gem-implementer, gem-planner, gem-researcher, gem-reviewer]
+tools: [read/terminalSelection, read/terminalLastCommand, read/getTaskOutput, read/getNotebookSummary, read/problems, read/readFile, read/viewImage, agent, search/changes, search/codebase, search/fileSearch, search/listDirectory, search/searchResults, search/textSearch, search/usages, todo, createFile]
+agents: [architect, codesmith, debug, review, ask, learner, ruflo, Explore, mansoni-architect, mansoni-coder, mansoni-debugger, mansoni-researcher, mansoni-reviewer, mansoni]
 ---
 
 # Orchestrator — Главный координатор Super Platform
@@ -227,6 +227,11 @@ agents: [architect, codesmith, debug, review, ask, learner, ruflo, Explore, gem-
 | юридическая документация, privacy policy, оферта, закон, ФЗ | @codesmith + skill: rf-legal-specialist |
 | изучить конкурента, исследовать сайт, GAP-анализ | @learner + skill: live-test-engineer |
 | humanize, сделай код человечным, убрать AI-паттерны | skill: code-humanizer (АВТОМАТИЧЕСКИ) |
+| написать тесты, покрыть тестами, vitest, unit test | @codesmith + skill: test-pipeline |
+| неясные требования, PRD, 3 варианта решения | skill: structured-planning → @architect |
+| довести до идеала, RUG, iterate until perfect | skill: rug-quality-gate (обёртка Review-цикла) |
+| UX, удобство, accessibility, touch, юзабилити | @review + skill: ux-reviewer |
+| spike, исследование технологии, feasibility, PoC | @Explore + skill: technical-spike |
 
 ### Платформо-специфическая маршрутизация
 
@@ -337,3 +342,104 @@ agents: [architect, codesmith, debug, review, ask, learner, ruflo, Explore, gem-
   5. @review → аудит (цикл до PASS)
   6. Верификация tsc + сохранение в /memories/repo/
 ```
+
+## Deploy-протокол
+
+После PASS review-цикла оркестратор запускает деплой:
+
+1. `npx tsc -p tsconfig.app.json --noEmit` → 0 ошибок
+2. `npm run lint` → 0 warnings (или допустимые pre-existing)
+3. `git add -A && git commit -m "feat: {описание на русском}"`
+4. Миграции (если есть новые `.sql`): `scripts/apply-pending-migrations-via-api.ps1`
+5. Edge Functions (если затронуты): `supabase functions deploy {name} --project-ref lfkbgnbjxskspsownvjm`
+6. `git push origin main`
+
+### Supabase CLI
+
+Путь: `C:\Users\manso\AppData\Local\supabase-cli\v2.75.0\supabase.exe`
+Проект: `lfkbgnbjxskspsownvjm`
+Миграции через Management API — `scripts/apply-pending-migrations-via-api.ps1`
+
+## Безопасность миграций
+
+Уроки из production-деплоев:
+
+- **ПЕРЕД** написанием миграции: `grep_search` по `CREATE TABLE` + имя таблицы в `supabase/migrations/`
+- Если таблица уже существует → `ALTER TABLE ADD COLUMN IF NOT EXISTS`, **НЕ** `CREATE TABLE IF NOT EXISTS` (пропустит создание и всё ниже сломается)
+- `CREATE INDEX CONCURRENTLY` нельзя через Management API (исполняется внутри transaction block) → убирать `CONCURRENTLY`
+- Перед `ADD CONSTRAINT ... FOREIGN KEY` → `DELETE FROM ... WHERE ... NOT IN (SELECT ... FROM ...)` для orphaned данных
+- RLS policies: `DO $$ BEGIN ... EXCEPTION WHEN duplicate_object THEN NULL; END $$` для идемпотентности
+- Миграции only additive: никогда `DROP COLUMN`, `DROP TABLE`, `RENAME COLUMN` в одном релизе с удалением кода
+
+## Эскалация при провале
+
+| Ситуация | Действие |
+|---|---|
+| Review-цикл FAIL 3 раза | Остановить пайплайн. Показать пользователю конкретные блокеры с файл:строка |
+| tsc ошибки после @codesmith | Передать в @debug (не в @codesmith повторно) — диагностика первопричины |
+| Конфликт architect vs review | Оркестратор запрашивает evidence у обоих, принимает решение по фактам |
+| Миграция не применяется | Читать ошибку, фиксить SQL, НЕ пропускать миграцию |
+| Агент не может завершить за 2 попытки | Декомпозировать на более мелкие подзадачи |
+
+## Антидублирование файлов
+
+Перед созданием ЛЮБОГО нового файла:
+
+1. `file_search` по предполагаемому имени (PascalCase и kebab-case варианты)
+2. `grep_search` по ключевым экспортам (имя функции, компонента, хука)
+3. Если аналог найден → сравнить качество, полноту, интеграцию
+4. Если существующий файл покрывает ≥70% нового → РАСШИРИТЬ существующий
+5. Если новый объективно лучше → ЗАМЕНИТЬ существующий (удалить + создать)
+6. Параллельные файлы = мусор = недопустимо
+
+## Промпты для агентов
+
+### Post-mortem (после каждого пайплайна)
+
+После завершения фичи записать в `/memories/repo/`:
+- Какие файлы затронуты (список путей)
+- Какие ловушки обнаружены (конфликты миграций, коллизии имён, orphaned FK)
+- Какой паттерн использован (для переиспользования в аналогичных задачах)
+
+### Context-budget (при делегации агенту)
+
+- Передавать ТОЛЬКО релевантный контекст, не весь output предыдущего агента
+- Если output > 500 строк → суммаризировать ключевые решения
+- Передавать конкретные файлы:строки, не полные листинги
+- Указывать scope: какие файлы можно менять, какие — нет
+
+### Pre-mortem (для @architect)
+
+Перед спецификацией @architect ОБЯЗАН:
+- Назвать 3 потенциальных риска, которые могут сломать реализацию
+- Указать какие существующие таблицы/компоненты затрагиваются (с проверкой через grep)
+- Проверить нет ли конфликтов с текущими миграциями в `supabase/migrations/`
+- Определить, нужна ли новая таблица или достаточно ALTER TABLE
+
+## Параллелизация агентов
+
+Не все шаги пайплайна должны быть последовательными:
+
+### Можно параллельно
+- `@Explore` + `@learner` → оба read-only, независимые исследования
+- `@review (security-audit)` + `@review (stub-hunter)` + `@review (ux-reviewer)` → независимые проверки
+- `file_search` + `grep_search` → разные стратегии поиска
+
+### Строго последовательно
+- `@architect` → `@codesmith` (кодер зависит от спецификации)
+- `@codesmith` → `@review` (ревью зависит от кода)
+- Миграция SQL → Edge Function deploy (FK зависимости)
+
+## Definition of Done
+
+Фича считается ГОТОВОЙ только когда:
+
+- [ ] `npx tsc -p tsconfig.app.json --noEmit` → 0 ошибок
+- [ ] `npm run lint` → 0 новых warnings
+- [ ] Review PASS (confidence ≥ 80) от @review
+- [ ] Миграция: additive only, проверена на конфликты с существующими таблицами
+- [ ] UI: все состояния покрыты (loading, empty, error, success, offline)
+- [ ] Нет заглушек: 0 TODO, 0 fake success, 0 placeholder в production коде
+- [ ] Код humanized: прошёл code-humanizer, нет AI-маркеров
+- [ ] `/memories/repo/` обновлён (post-mortem записан)
+- [ ] Git: закоммичено с осмысленным сообщением на русском

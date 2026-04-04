@@ -684,6 +684,7 @@ export function useMessages(conversationId: string | null) {
   const chatRpc = getChatRpcClient();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const recoveryPolicy = getChatV11RecoveryPolicyConfig();
   const pollInFlightRef = useRef(false);
   const pendingLocalByClientIdRef = useRef<Map<string, ChatMessage>>(new Map());
@@ -692,6 +693,14 @@ export function useMessages(conversationId: string | null) {
 
   const deliveredMaxSeqRef = useRef<number>(0);
   const deliveredAckTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (deliveredAckTimerRef.current != null) {
+        window.clearTimeout(deliveredAckTimerRef.current);
+      }
+    };
+  }, []);
 
   const scheduleDeliveredAck = useCallback(
     (seq: number) => {
@@ -754,12 +763,15 @@ export function useMessages(conversationId: string | null) {
       return;
     }
 
+    setFetchError(null);
+
     try {
       const { data, error } = await supabase
         .from("messages")
         .select("*")
         .eq("conversation_id", conversationId)
-        .order("seq", { ascending: true });
+        .order("seq", { ascending: true })
+        .limit(200);
 
       if (error) throw error;
 
@@ -803,6 +815,7 @@ export function useMessages(conversationId: string | null) {
       setMessages(sortMessages(merged));
     } catch (error) {
       logger.error("Error fetching messages:", error);
+      setFetchError(error instanceof Error ? error.message : "Ошибка загрузки сообщений");
     } finally {
       setLoading(false);
     }
@@ -950,6 +963,7 @@ export function useMessages(conversationId: string | null) {
   }, []);
 
   useEffect(() => {
+    deliveredMaxSeqRef.current = 0;
     fetchMessages();
   }, [fetchMessages]);
 
@@ -966,8 +980,8 @@ export function useMessages(conversationId: string | null) {
           p_dialog_id: conversationId,
           p_mode: "active",
         })
-        .catch(() => {
-          // best-effort; chat remains functional without this hint
+        .catch((err: unknown) => {
+          logger.debug("chat: set subscription mode failed", { mode: "active", err });
         });
 
       return () => {
@@ -977,8 +991,8 @@ export function useMessages(conversationId: string | null) {
             p_dialog_id: conversationId,
             p_mode: "background",
           })
-          .catch(() => {
-            // best-effort cleanup
+          .catch((err: unknown) => {
+            logger.debug("chat: set subscription mode failed", { mode: "background", err });
           });
       };
     }
@@ -994,14 +1008,14 @@ export function useMessages(conversationId: string | null) {
 
     const scheduleNext = () => {
       if (cancelled) return;
+      if (document.hidden) return; // паузим при скрытой вкладке
       const now = Date.now();
       const staleMs = now - lastRealtimeEventAtRef.current;
-      const hidden = document.hidden;
-      const baseMs = hidden ? 15000 : staleMs > 12000 ? 3000 : 7000;
+      const baseMs = staleMs > 12000 ? 3000 : 7000;
       const jitterMs = Math.floor(Math.random() * 700);
       timerId = window.setTimeout(() => {
         if (cancelled) return;
-        if (!document.hidden && !pollInFlightRef.current) {
+        if (!pollInFlightRef.current) {
           pollInFlightRef.current = true;
           Promise.resolve(fetchMessages()).finally(() => {
             pollInFlightRef.current = false;
@@ -1013,10 +1027,34 @@ export function useMessages(conversationId: string | null) {
       }, baseMs + jitterMs);
     };
 
+    const onVisibilityChange = () => {
+      if (cancelled) return;
+      if (!document.hidden) {
+        // вернулись — один fetch + возобновить polling
+        if (!pollInFlightRef.current) {
+          pollInFlightRef.current = true;
+          Promise.resolve(fetchMessages()).finally(() => {
+            pollInFlightRef.current = false;
+            scheduleNext();
+          });
+        } else {
+          scheduleNext();
+        }
+      } else {
+        // ушли — отменить таймер
+        if (timerId != null) {
+          window.clearTimeout(timerId);
+          timerId = null;
+        }
+      }
+    };
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
     scheduleNext();
 
     return () => {
       cancelled = true;
+      document.removeEventListener("visibilitychange", onVisibilityChange);
       if (timerId != null) {
         window.clearTimeout(timerId);
       }
@@ -1568,16 +1606,14 @@ export function useMessages(conversationId: string | null) {
   return {
     messages,
     loading,
+    fetchError,
     sendMessage,
     sendMediaMessage,
     deleteMessage,
     editMessage,
     refetch: fetchMessages,
-    /** Карта delivery_status для собственных сообщений: messageId → статус */
     deliveryStatusMap,
-    /** Зафиксировать прочтение одного входящего сообщения (не своего) */
     markAsRead,
-    /** Batch-фиксация прочтения входящих сообщений */
     markManyAsRead,
   };
 }

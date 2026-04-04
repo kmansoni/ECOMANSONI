@@ -11,6 +11,7 @@ import { useChatSettings } from "@/hooks/useChatSettings";
 
 interface ContactProfile {
   display_name: string | null;
+  username: string | null;
   avatar_url: string | null;
   bio: string | null;
   verified: boolean | null;
@@ -55,6 +56,7 @@ export function ContactProfilePage() {
     if (state?.name || state?.avatar) {
       setProfile({
         display_name: state.name || null,
+        username: null,
         avatar_url: state.avatar || null,
         bio: null,
         verified: null,
@@ -74,7 +76,7 @@ export function ContactProfilePage() {
       try {
         const { data } = await supabase
           .from('profiles')
-          .select('display_name, avatar_url, bio, verified, last_seen_at, status_emoji, status_sticker_url')
+          .select('display_name, username, avatar_url, bio, verified, last_seen_at, status_emoji, status_sticker_url')
           .eq('user_id', userId)
           .limit(1)
           .maybeSingle();
@@ -303,7 +305,7 @@ export function ContactProfilePage() {
           <div className="bg-white/10 backdrop-blur-xl rounded-2xl border border-white/20 p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-white/60 text-sm">@{profile?.display_name?.toLowerCase().replace(/\s+/g, '_') || 'username'}</p>
+                {profile?.username && <p className="text-white/60 text-sm">@{profile.username}</p>}
                 <p className="text-white/40 text-xs mt-0.5">Имя пользователя</p>
               </div>
               <QrCode className="w-6 h-6 text-white/40" />

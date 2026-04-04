@@ -31,6 +31,8 @@ import {
 } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
+import { logger } from "@/lib/logger";
 import {
   type EmergencyLevel,
   type EmergencySignal,
@@ -115,6 +117,7 @@ export function EmergencySOSSheet({
       },
       () => {
         setLocLoading(false);
+        toast.error("Не удалось определить местоположение");
       },
       { timeout: 8000, maximumAge: 60_000 }
     );
@@ -135,8 +138,9 @@ export function EmergencySOSSheet({
       setCustomMessage("");
       setCoords(null);
       setTab("alerts");
-    } catch {
-      // error is surfaced via hook
+    } catch (err) {
+      logger.error("sos: broadcast failed", err);
+      toast.error("Не удалось отправить SOS-сигнал. Проверьте подключение.");
     } finally {
       setSending(false);
     }
@@ -144,7 +148,11 @@ export function EmergencySOSSheet({
 
   const handleResolve = useCallback(async () => {
     if (!mySignal) return;
-    await resolve(mySignal.id, currentUserId);
+    try {
+      await resolve(mySignal.id, currentUserId);
+    } catch {
+      toast.error("Не удалось деактивировать сигнал");
+    }
   }, [mySignal, resolve, currentUserId]);
 
   return (

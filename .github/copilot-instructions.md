@@ -94,6 +94,12 @@ Explore (исследование) → Architect (спецификация) → 
 | **coherence-checker** | Согласованность backend↔frontend↔миграции: поиск разрывов в цепочке данных |
 | **functional-tester** | Функциональное тестирование: tsc, lint, vitest, data flow verification |
 | **doc-writer** | Документация в проекте: архитектура, API, schema, модули в docs/ |
+| **agent-mastery** | Мастерство агента: глубинная реализация, самообучение, антидубли, humanizer |
+| **orchestrator-laws** | Законы оркестратора: анти-дубли, zero-мусор, мультиагентный пайплайн |
+| **code-humanizer** | Код неотличим от человеческого: убирает AI-паттерны |
+| **rug-quality-gate** | Итерационный Quality Gate: generate → review → fix → review до PASS |
+| **test-pipeline** | Тест-пайплайн: unit (Vitest) → integration → E2E (Playwright) |
+| **ux-reviewer** | UX-ревью: эвристики Нильсена, touch/mobile, accessibility |
 
 ## Автоматические инструкции
 

@@ -1,10 +1,5 @@
-import { serve } from "https://deno.land/std@0.208.0/http/server.ts";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, apikey",
-};
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { handleCors, getCorsHeaders } from "../_shared/utils.ts";
 
 interface AnthropicMessage {
   role: "system" | "user" | "assistant";
@@ -18,20 +13,40 @@ interface RequestBody {
   max_tokens?: number;
 }
 
-serve(async (req) => {
-  // Handle CORS
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
+Deno.serve(async (req) => {
+  const corsResponse = handleCors(req);
+  if (corsResponse) return corsResponse;
+
+  const origin = req.headers.get("origin");
+  const corsHeaders = getCorsHeaders(origin);
+
+  // JWT — обязательна авторизация
+  const authHeader = req.headers.get("Authorization");
+  if (!authHeader?.startsWith("Bearer ")) {
+    return new Response(JSON.stringify({ error: "Требуется авторизация" }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+  const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+  const userClient = createClient(supabaseUrl, anonKey, {
+    global: { headers: { Authorization: authHeader } },
+  });
+  const { error: authError } = await userClient.auth.getUser();
+  if (authError) {
+    return new Response(JSON.stringify({ error: "Неверный токен" }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 
   try {
-    // Get Anthropic API key from Supabase Vault
     const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
     if (!apiKey) {
       return new Response(
-        JSON.stringify({
-          error: "ANTHROPIC_API_KEY not configured in Supabase Vault",
-        }),
+        JSON.stringify({ error: "AI-сервис временно недоступен" }),
         {
           status: 500,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -49,7 +64,7 @@ serve(async (req) => {
 
     if (!messages || !Array.isArray(messages)) {
       return new Response(
-        JSON.stringify({ error: "Invalid request: messages array required" }),
+        JSON.stringify({ error: "Требуется массив messages" }),
         {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -82,21 +97,20 @@ serve(async (req) => {
     );
 
     if (!anthropicResponse.ok) {
-      const error = await anthropicResponse.text();
-      console.error("[aria-anthropic] Anthropic API error:", error);
+      const errBody = await anthropicResponse.text();
+      console.error("[aria-anthropic] Anthropic API error:", errBody);
       return new Response(
-        JSON.stringify({ error: `Anthropic API error: ${error}` }),
+        JSON.stringify({ error: "Ошибка AI-сервиса" }),
         {
-          status: anthropicResponse.status,
+          status: 502,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         }
       );
     }
 
-    // Stream response back to client
     const reader = anthropicResponse.body?.getReader();
     if (!reader) {
-      return new Response(JSON.stringify({ error: "No response body" }), {
+      return new Response(JSON.stringify({ error: "Пустой ответ от AI" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -190,9 +204,9 @@ serve(async (req) => {
         Connection: "keep-alive",
       },
     });
-  } catch (error) {
-    console.error("[aria-anthropic] Error:", error);
-    return new Response(JSON.stringify({ error: String(error) }), {
+  } catch (err) {
+    console.error("[aria-anthropic] Error:", err);
+    return new Response(JSON.stringify({ error: "Внутренняя ошибка сервиса" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

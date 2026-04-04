@@ -224,7 +224,9 @@ export function MessageContextMenu({
                 onClick={handleSave}
               />
               <MenuItem icon={Pin} label="Закрепить" onClick={handlePin} />
-              <MenuItem icon={Forward} label="Переслать" onClick={handleForward} />
+              {onForward && (
+                <MenuItem icon={Forward} label="Переслать" onClick={handleForward} />
+              )}
               {onTranslate && (
                 <MenuItem icon={Languages} label="Перевести" onClick={() => { onTranslate(messageId, messageContent); onClose(); }} />
               )}

@@ -158,7 +158,7 @@ Deno.serve(async (req: Request) => {
   if (!openaiRes.ok) {
     const errText = await openaiRes.text();
     console.error("OpenAI error:", errText);
-    return new Response(JSON.stringify({ error: "AI service error", detail: errText }), {
+    return new Response(JSON.stringify({ error: "AI service error" }), {
       status: 502,
       headers: { ...getCorsHeaders(origin), "Content-Type": "application/json" },
     });

@@ -9,9 +9,20 @@ serve(async (req) => {
   const origin = req.headers.get("origin");
 
   try {
+    const authHeader = req.headers.get("authorization");
+    const cronSecret = Deno.env.get("CRON_SECRET");
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+    const token = authHeader?.replace(/^Bearer\s+/i, "");
+    if (!token || (cronSecret ? token !== cronSecret : token !== serviceRoleKey)) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...getCorsHeaders(origin), "Content-Type": "application/json" },
+      });
+    }
+
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    const supabase = createClient(supabaseUrl, serviceRoleKey);
 
     // Вызываем хранимую процедуру обработки исчезающих сообщений
     const { data, error } = await supabase.rpc("process_disappearing_messages");

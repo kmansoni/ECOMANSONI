@@ -1,10 +1,9 @@
 import { useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { MapPin, X, Loader2, Navigation } from "lucide-react";
-import { dbLoose } from "@/lib/supabase";
-import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { logger } from "@/lib/logger";
+import { buildChatBodyEnvelope, sendMessageV1 } from "@/lib/chat/sendMessageV1";
 
 interface LocationShareSheetProps {
   isOpen: boolean;
@@ -21,7 +20,6 @@ interface Location {
 }
 
 export function LocationShareSheet({ isOpen, onClose, conversationId, onSent }: LocationShareSheetProps) {
-  const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const [currentLocation, setCurrentLocation] = useState<Location | null>(null);
   const [gettingLocation, setGettingLocation] = useState(false);
@@ -52,32 +50,15 @@ export function LocationShareSheet({ isOpen, onClose, conversationId, onSent }: 
   }, []);
 
   const sendLocation = async (location: Location) => {
-    if (!user) return;
     setLoading(true);
     try {
-      // Create message
-      const { data: msg, error: msgError } = await dbLoose
-        .from("messages")
-        .insert({
-          conversation_id: conversationId,
-          sender_id: user.id,
-          content: `📍 ${location.name}\n${location.address}`,
-          media_type: "location",
-        })
-        .select()
-        .single();
-      if (msgError) throw msgError;
-      const msgRow = msg as { id: string };
-
-      // Save location details
-      await dbLoose.from("shared_locations").insert({
-        message_id: msgRow.id,
-        sender_id: user.id,
-        lat: location.lat,
-        lng: location.lng,
-        name: location.name,
-        address: location.address,
+      const clientMsgId = crypto.randomUUID();
+      const envelope = buildChatBodyEnvelope({
+        kind: "location",
+        text: `📍 ${location.name}\n${location.address}`,
+        metadata: { lat: location.lat, lng: location.lng },
       });
+      await sendMessageV1({ conversationId, clientMsgId, body: envelope });
 
       toast.success("Геолокация отправлена");
       onSent?.();
@@ -126,10 +107,12 @@ export function LocationShareSheet({ isOpen, onClose, conversationId, onSent }: 
 
             <div className="px-4 py-4 space-y-3 max-h-[60vh] overflow-y-auto">
               {/* Current location button */}
-              <button
+              <div
+                role="button"
+                tabIndex={0}
                 onClick={getCurrentLocation}
-                disabled={gettingLocation}
-                className="w-full flex items-center gap-3 bg-zinc-800 rounded-2xl px-4 py-3 text-left"
+                onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') getCurrentLocation(); }}
+                className={`w-full flex items-center gap-3 bg-zinc-800 rounded-2xl px-4 py-3 text-left${gettingLocation ? ' opacity-70 pointer-events-none' : ' cursor-pointer'}`}
               >
                 <div className="w-10 h-10 rounded-full bg-blue-600/20 flex items-center justify-center flex-shrink-0">
                   {gettingLocation ? (
@@ -155,7 +138,7 @@ export function LocationShareSheet({ isOpen, onClose, conversationId, onSent }: 
                     {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : "Отправить"}
                   </button>
                 )}
-              </button>
+              </div>
 
               {/* Static map preview */}
               {currentLocation && (

@@ -139,7 +139,7 @@ export function useProfile(userId?: string) {
     }
   }, [user, targetUserId]);
 
-  const updateProfileCb = useCallback(async (updates: Partial<Pick<Profile, 'display_name' | 'bio' | 'website' | 'avatar_url'>>) => {
+  const updateProfileCb = useCallback(async (updates: Partial<Pick<Profile, 'display_name' | 'username' | 'bio' | 'website' | 'avatar_url'>>) => {
     if (!user) return;
     try {
       await repoUpdateProfile(user.id, updates);
@@ -286,7 +286,8 @@ export function useUserPosts(userId?: string) {
           .select('*, post_media (*)')
           .eq('author_id', targetUserId)
           .eq('is_published', true)
-          .order('created_at', { ascending: false });
+          .order('created_at', { ascending: false })
+          .limit(30);
 
         if (!joinError) {
           setPosts((postsData || []).filter((post) => !archivedSet.has(String(post.id))));
@@ -299,7 +300,8 @@ export function useUserPosts(userId?: string) {
           .select('*')
           .eq('author_id', targetUserId)
           .eq('is_published', true)
-          .order('created_at', { ascending: false });
+          .order('created_at', { ascending: false })
+          .limit(30);
 
         if (postsError) throw postsError;
 

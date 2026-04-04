@@ -39,10 +39,10 @@ export const useUnifiedCounterStore = create<CounterState>((set) => ({
   ...INITIAL,
 
   setNotificationsUnread: (count) =>
-    set({ notificationsUnread: count, lastSyncAt: { ...useUnifiedCounterStore.getState().lastSyncAt, notifications: Date.now() } }),
+    set((s) => ({ notificationsUnread: count, lastSyncAt: { ...s.lastSyncAt, notifications: Date.now() } })),
 
   setChatsUnread: (count) =>
-    set({ chatsUnread: count, lastSyncAt: { ...useUnifiedCounterStore.getState().lastSyncAt, chats: Date.now() } }),
+    set((s) => ({ chatsUnread: count, lastSyncAt: { ...s.lastSyncAt, chats: Date.now() } })),
 
   incrementNotifications: (by = 1) =>
     set((s) => ({ notificationsUnread: s.notificationsUnread + by })),

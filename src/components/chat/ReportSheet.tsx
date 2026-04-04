@@ -68,7 +68,8 @@ export function ReportSheet({ open, onOpenChange, targetType, targetId, messageP
           reason: selectedReason,
           error,
         });
-        // Still show success to user (report logged client-side)
+        toast.error("Не удалось отправить жалобу. Попробуйте позже.");
+        return;
       }
 
       toast.success("Жалоба отправлена. Спасибо!");

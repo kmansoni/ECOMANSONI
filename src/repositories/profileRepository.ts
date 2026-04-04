@@ -104,7 +104,7 @@ export async function fetchVerifications(userId: string): Promise<Verification[]
   }));
 }
 
-export type ProfileUpdate = Partial<Pick<Profile, 'display_name' | 'bio' | 'website' | 'avatar_url'>>;
+export type ProfileUpdate = Partial<Pick<Profile, 'display_name' | 'username' | 'bio' | 'website' | 'avatar_url'>>;
 
 export async function updateProfile(userId: string, updates: ProfileUpdate): Promise<void> {
   const { error } = await supabase
