@@ -53,12 +53,24 @@ function parseManeuverType(type: string, modifier?: string): ManeuverType {
   return 'straight';
 }
 
-function generateTraffic(): TrafficLevel {
+function estimateTraffic(hour: number = new Date().getHours()): TrafficLevel {
   const r = Math.random();
-  if (r < 0.5) return 'free';
-  if (r < 0.75) return 'moderate';
-  if (r < 0.9) return 'slow';
-  return 'congested';
+
+  if ((hour >= 7 && hour < 10) || (hour >= 17 && hour < 20)) {
+    // час пик
+    if (r < 0.1) return 'congested';
+    if (r < 0.4) return 'slow';
+    return 'moderate';
+  }
+  if (hour >= 10 && hour < 17) {
+    if (r < 0.5) return 'free';
+    if (r < 0.8) return 'moderate';
+    return 'slow';
+  }
+  // ночь
+  if (r < 0.7) return 'free';
+  if (r < 0.9) return 'moderate';
+  return 'slow';
 }
 
 function chunkRoute(points: LatLng[], segmentCount: number): RouteSegment[] {
@@ -72,7 +84,7 @@ function chunkRoute(points: LatLng[], segmentCount: number): RouteSegment[] {
     if (chunk.length >= 2) {
       segments.push({
         points: chunk,
-        traffic: generateTraffic(),
+        traffic: estimateTraffic(),
         speedLimit: [40, 60, 80, 100][Math.floor(Math.random() * 4)],
       });
     }
@@ -136,40 +148,4 @@ export async function fetchRoute(
   return { main, alternatives: alts };
 }
 
-export function generateFallbackRoute(from: LatLng, to: LatLng): NavRoute {
-  const steps = 50;
-  const points: LatLng[] = [];
-  for (let i = 0; i <= steps; i++) {
-    const t = i / steps;
-    const jitter = i > 0 && i < steps ? (Math.random() - 0.5) * 0.002 : 0;
-    points.push({
-      lat: from.lat + (to.lat - from.lat) * t + jitter,
-      lng: from.lng + (to.lng - from.lng) * t + jitter,
-    });
-  }
 
-  const R = 6371000;
-  const dLat = ((to.lat - from.lat) * Math.PI) / 180;
-  const dLng = ((to.lng - from.lng) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos((from.lat * Math.PI) / 180) *
-      Math.cos((to.lat * Math.PI) / 180) *
-      Math.sin(dLng / 2) ** 2;
-  const dist = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  const dur = (dist / 1000 / 35) * 3600;
-
-  return {
-    id: 'fallback',
-    segments: chunkRoute(points, 5),
-    maneuvers: [
-      { type: 'depart', instruction: '', streetName: '', distanceMeters: dist * 0.3, durationSeconds: dur * 0.3, location: from },
-      { type: 'turn-right', instruction: '', streetName: '', distanceMeters: dist * 0.4, durationSeconds: dur * 0.4, location: points[Math.floor(steps * 0.3)] },
-      { type: 'straight', instruction: '', streetName: '', distanceMeters: dist * 0.2, durationSeconds: dur * 0.2, location: points[Math.floor(steps * 0.7)] },
-      { type: 'arrive', instruction: '', streetName: '', distanceMeters: dist * 0.1, durationSeconds: dur * 0.1, location: to },
-    ],
-    totalDistanceMeters: dist,
-    totalDurationSeconds: dur,
-    geometry: points,
-  };
-}

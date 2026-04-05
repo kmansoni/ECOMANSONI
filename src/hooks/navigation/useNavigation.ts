@@ -7,17 +7,26 @@ import type {
   SpeedCamera,
   SavedPlace,
 } from '@/types/navigation';
-import { fetchRoute, generateFallbackRoute } from '@/lib/navigation/routing';
+import { fetchRoute } from '@/lib/navigation/routing';
 import { getManeuverInstruction, getVoiceInstruction, formatETA } from '@/lib/navigation/turnInstructions';
 import { getNearbyCamera, getCameraDistance } from '@/lib/navigation/speedCameras';
 import { calculateDistance } from '@/lib/taxi/calculations';
 import { getSavedPlaces, getSearchHistory, saveSearchEntry } from '@/lib/navigation/places';
 import { supabase } from '@/lib/supabase';
+import { toast } from 'sonner';
+import { logger } from '@/lib/logger';
 
-const DEFAULT_FAVORITES: SavedPlace[] = [
-  { id: 'home', name: 'Дом', address: '', coordinates: { lat: 0, lng: 0 }, icon: 'home' },
-  { id: 'work', name: 'Работа', address: '', coordinates: { lat: 0, lng: 0 }, icon: 'work' },
-];
+function getSavedCenter(): LatLng | null {
+  try {
+    const raw = localStorage.getItem('nav_last_center');
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (typeof parsed.lat === 'number' && typeof parsed.lng === 'number') return parsed;
+  } catch { /* corrupted */ }
+  return null;
+}
+
+const MOSCOW_CENTER: LatLng = { lat: 55.7558, lng: 37.6173 };
 
 const OFF_ROUTE_THRESHOLD_KM = 0.05; // 50m
 const MANEUVER_COMPLETE_KM = 0.03; // 30m
@@ -42,7 +51,7 @@ export function useNavigation() {
   const voiceSpokenRef = useRef<Set<string>>(new Set());
   const recalcTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const [favorites, setFavorites] = useState<SavedPlace[]>(DEFAULT_FAVORITES);
+  const [favorites, setFavorites] = useState<SavedPlace[]>([]);
   const [recents, setRecents] = useState<SavedPlace[]>([]);
   const [userId, setUserId] = useState<string | null>(null);
 
@@ -62,14 +71,7 @@ export function useNavigation() {
       if (cancelled) return;
 
       if (savedPlaces.length > 0) {
-        const home = savedPlaces.find((p) => p.icon === 'home');
-        const work = savedPlaces.find((p) => p.icon === 'work');
-        const custom = savedPlaces.filter((p) => p.icon !== 'home' && p.icon !== 'work');
-        setFavorites([
-          home ?? DEFAULT_FAVORITES[0],
-          work ?? DEFAULT_FAVORITES[1],
-          ...custom,
-        ]);
+        setFavorites(savedPlaces);
       }
 
       if (history.length > 0) {
@@ -132,7 +134,7 @@ export function useNavigation() {
       }).catch(() => {});
     }
 
-    const from = currentPosition ?? { lat: 55.7558, lng: 37.6173 };
+    const from = currentPosition ?? getSavedCenter() ?? MOSCOW_CENTER;
 
     try {
       const result = await fetchRoute(from, place.coordinates);
@@ -147,13 +149,12 @@ export function useNavigation() {
       });
       setRoute(result.main);
       setAlternativeRoutes(result.alternatives);
-    } catch {
-      const fallback = generateFallbackRoute(from, place.coordinates);
-      fallback.maneuvers.forEach((m) => {
-        m.instruction = getManeuverInstruction(m.type, m.streetName);
-      });
-      setRoute(fallback);
+    } catch (err) {
+      logger.error('[useNavigation] Ошибка построения маршрута', err);
+      toast.error('Не удалось построить маршрут, проверьте подключение');
+      setRoute(null);
       setAlternativeRoutes([]);
+      setPhase('idle');
     } finally {
       setLoading(false);
     }
@@ -204,6 +205,8 @@ export function useNavigation() {
     setCurrentPosition(pos);
     setCurrentHeading(heading);
     setCurrentSpeed(speed);
+    // сохраняем последний известный центр
+    try { localStorage.setItem('nav_last_center', JSON.stringify(pos)); } catch { /* quota */ }
   }, []);
 
   // Navigation logic: maneuver progression, off-route, cameras
@@ -288,14 +291,7 @@ export function useNavigation() {
     if (!userId) return;
     const savedPlaces = await getSavedPlaces(userId);
     if (savedPlaces.length > 0) {
-      const home = savedPlaces.find((p) => p.icon === 'home');
-      const work = savedPlaces.find((p) => p.icon === 'work');
-      const custom = savedPlaces.filter((p) => p.icon !== 'home' && p.icon !== 'work');
-      setFavorites([
-        home ?? DEFAULT_FAVORITES[0],
-        work ?? DEFAULT_FAVORITES[1],
-        ...custom,
-      ]);
+      setFavorites(savedPlaces);
     }
   }, [userId]);
 

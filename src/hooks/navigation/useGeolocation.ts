@@ -10,7 +10,18 @@ interface GeolocationState {
   isTracking: boolean;
 }
 
-const DEFAULT_CENTER: LatLng = { lat: 55.7558, lng: 37.6173 }; // Moscow
+const MOSCOW: LatLng = { lat: 55.7558, lng: 37.6173 };
+
+function getDefaultCenter(): LatLng {
+  try {
+    const raw = localStorage.getItem('nav_last_center');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (typeof parsed.lat === 'number' && typeof parsed.lng === 'number') return parsed;
+    }
+  } catch { /* corrupted */ }
+  return MOSCOW;
+}
 
 export function useGeolocation() {
   const [state, setState] = useState<GeolocationState>({
@@ -31,7 +42,7 @@ export function useGeolocation() {
       // Desktop fallback: use default center
       setState((s) => ({
         ...s,
-        position: DEFAULT_CENTER,
+        position: getDefaultCenter(),
         isTracking: true,
         error: null,
       }));
@@ -83,7 +94,7 @@ export function useGeolocation() {
         setState((s) => ({
           ...s,
           error: err.message,
-          position: s.position ?? DEFAULT_CENTER,
+          position: s.position ?? getDefaultCenter(),
           isTracking: true,
         }));
       },

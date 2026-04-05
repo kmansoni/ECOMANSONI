@@ -1,9 +1,11 @@
 import type { LatLng } from '@/types/taxi';
 import type { SpeedCamera } from '@/types/navigation';
 import { calculateDistance } from '@/lib/taxi/calculations';
+import { supabase } from '@/lib/supabase';
+import { logger } from '@/lib/logger';
 
-// Mock speed cameras in Moscow area
-const CAMERAS: SpeedCamera[] = [
+// Камеры Москвы и СПб — статичный набор, расширяется через nav_speed_cameras в Supabase
+const BUILTIN_CAMERAS: SpeedCamera[] = [
   { id: 'cam-1', location: { lat: 55.7558, lng: 37.6173 }, speedLimit: 60, direction: 0, type: 'fixed' },
   { id: 'cam-2', location: { lat: 55.7620, lng: 37.6250 }, speedLimit: 60, direction: 90, type: 'fixed' },
   { id: 'cam-3', location: { lat: 55.7510, lng: 37.6100 }, speedLimit: 80, direction: 180, type: 'fixed' },
@@ -14,11 +16,41 @@ const CAMERAS: SpeedCamera[] = [
   { id: 'cam-8', location: { lat: 55.7900, lng: 37.5600 }, speedLimit: 60, direction: 90, type: 'fixed' },
   { id: 'cam-9', location: { lat: 55.7650, lng: 37.5700 }, speedLimit: 60, direction: 180, type: 'average' },
   { id: 'cam-10', location: { lat: 55.7400, lng: 37.6600 }, speedLimit: 60, direction: 270, type: 'fixed' },
-  // SPb cameras
   { id: 'cam-11', location: { lat: 59.9343, lng: 30.3351 }, speedLimit: 60, direction: 0, type: 'fixed' },
   { id: 'cam-12', location: { lat: 59.9400, lng: 30.3150 }, speedLimit: 80, direction: 90, type: 'fixed' },
   { id: 'cam-13', location: { lat: 59.9250, lng: 30.3500 }, speedLimit: 60, direction: 180, type: 'fixed' },
 ];
+
+let _cameras: SpeedCamera[] = BUILTIN_CAMERAS;
+let _loaded = false;
+
+/** Загружает камеры из Supabase (таблица nav_speed_cameras). Если таблица не существует — fallback на встроенные */
+export async function loadSpeedCameras(): Promise<SpeedCamera[]> {
+  if (_loaded) return _cameras;
+  try {
+    // ⚠️ таблица может не существовать, поэтому обходим строгую типизацию
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const client = supabase as any;
+    const { data, error } = await client.from('nav_speed_cameras')
+      .select('id, lat, lng, speed_limit, direction, type')
+      .limit(500);
+    if (error) throw error;
+    if (data?.length) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      _cameras = (data as any[]).map((row) => ({
+        id: String(row.id),
+        location: { lat: Number(row.lat), lng: Number(row.lng) },
+        speedLimit: Number(row.speed_limit),
+        direction: Number(row.direction),
+        type: (String(row.type) as SpeedCamera['type']) || 'fixed',
+      }));
+    }
+  } catch (err) {
+    logger.debug('[speedCameras] nav_speed_cameras недоступна, используем встроенные', err);
+  }
+  _loaded = true;
+  return _cameras;
+}
 
 const WARN_RADIUS_KM = 0.8; // warn 800m ahead
 const ALERT_RADIUS_KM = 0.3; // alert within 300m
@@ -27,11 +59,11 @@ export function getNearbyCamera(position: LatLng, heading: number): SpeedCamera 
   let closest: SpeedCamera | null = null;
   let closestDist = Infinity;
 
-  for (const cam of CAMERAS) {
+  for (const cam of _cameras) {
     const dist = calculateDistance(position, cam.location);
     if (dist > WARN_RADIUS_KM) continue;
 
-    // Check if camera is roughly ahead (within ±60 degrees of heading)
+    // камера впереди? (±60° от курса)
     const bearing = getBearing(position, cam.location);
     const diff = Math.abs(normalizeDeg(bearing - heading));
     if (diff > 60) continue;
@@ -55,7 +87,7 @@ export function isCameraAlert(position: LatLng, camera: SpeedCamera): boolean {
 
 export function getCamerasOnRoute(routePoints: LatLng[]): SpeedCamera[] {
   const result: SpeedCamera[] = [];
-  for (const cam of CAMERAS) {
+  for (const cam of _cameras) {
     for (const point of routePoints) {
       if (calculateDistance(point, cam.location) < 0.1) { // within 100m of route
         result.push(cam);

@@ -10,10 +10,8 @@ import { RouteOverview } from '@/components/navigation/RouteOverview';
 import { NavigationPanel } from '@/components/navigation/NavigationPanel';
 import { AddPlaceSheet } from '@/components/navigation/AddPlaceSheet';
 import { SavePlaceSheet } from '@/components/navigation/SavePlaceSheet';
-import { getCamerasOnRoute } from '@/lib/navigation/speedCameras';
+import { loadSpeedCameras, getCamerasOnRoute } from '@/lib/navigation/speedCameras';
 import type { SavedPlace } from '@/types/navigation';
-
-const DEFAULT_CENTER = { lat: 55.7558, lng: 37.6173 };
 
 const glassBtn = cn(
   'w-11 h-11 rounded-xl',
@@ -30,6 +28,9 @@ export default function NavigationPage() {
   const [showAddPlace, setShowAddPlace] = useState(false);
   const [savePlaceTarget, setSavePlaceTarget] = useState<SavedPlace | null>(null);
 
+  // Загрузить камеры при монтировании
+  useEffect(() => { loadSpeedCameras(); }, []);
+
   // Start GPS on mount
   useEffect(() => {
     geo.startTracking();
@@ -45,7 +46,7 @@ export default function NavigationPage() {
 
   const mapCenter = nav.phase === 'navigating' && nav.currentPosition
     ? nav.currentPosition
-    : nav.currentPosition ?? DEFAULT_CENTER;
+    : nav.currentPosition ?? geo.position ?? { lat: 55.7558, lng: 37.6173 };
 
   const mapZoom = nav.phase === 'navigating' ? 17 : 14;
 

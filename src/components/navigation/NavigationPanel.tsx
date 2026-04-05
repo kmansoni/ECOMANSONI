@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { X, Camera, ChevronUp } from 'lucide-react';
+import { X, Camera } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Maneuver, SpeedCamera } from '@/types/navigation';
 import { SpeedDisplay } from './SpeedDisplay';
@@ -38,11 +38,11 @@ export function NavigationPanel({
   const idleTimerRef = useRef<ReturnType<typeof setTimeout>>();
   const touchTimerRef = useRef<number>(0);
 
-  // Auto-minimize after 10s idle at speed > 5 km/h
+  // Компактный режим через 30 сек при движении > 5 км/ч
   useEffect(() => {
     clearTimeout(idleTimerRef.current);
     if (speed > 5) {
-      idleTimerRef.current = setTimeout(() => setIsMinimized(true), 10000);
+      idleTimerRef.current = setTimeout(() => setIsMinimized(true), 30_000);
     } else {
       setIsMinimized(false);
     }
@@ -54,7 +54,7 @@ export function NavigationPanel({
     touchTimerRef.current = Date.now();
     clearTimeout(idleTimerRef.current);
     if (speed > 5) {
-      idleTimerRef.current = setTimeout(() => setIsMinimized(true), 10000);
+      idleTimerRef.current = setTimeout(() => setIsMinimized(true), 30_000);
     }
   };
 
@@ -104,9 +104,12 @@ export function NavigationPanel({
                 size="sm"
               />
             )}
-            <div className="ml-auto flex items-center gap-2">
-              <SpeedDisplay speed={speed} speedLimit={speedLimit} className="scale-50 origin-right" />
-              <ChevronUp className="w-4 h-4 text-gray-500" />
+            <div className="ml-auto flex items-center gap-3">
+              <div className="text-right">
+                <span className="text-sm font-semibold text-white tabular-nums">{formatDistance(remainingDistance)}</span>
+                <span className="text-xs text-gray-500 ml-1">{eta}</span>
+              </div>
+              <SpeedDisplay speed={speed} speedLimit={speedLimit} className="scale-75 origin-right" />
             </div>
           </div>
         ) : (
