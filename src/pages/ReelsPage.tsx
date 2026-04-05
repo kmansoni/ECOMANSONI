@@ -289,10 +289,7 @@ export default function ReelsPage(): JSX.Element {
 
   const [currentIndex, setCurrentIndex] = useState(0);
 
-  // Phase 5: Comments sheet state
   const [commentsReelId, setCommentsReelId] = useState<string | null>(null);
-
-  // Phase 6: Share sheet state
   const [shareReelId, setShareReelId] = useState<string | null>(null);
 
   // Ref на DOM-узлы каждого Reel (включая placeholder-ы), индексированные позицией
@@ -431,7 +428,6 @@ export default function ReelsPage(): JSX.Element {
     [toggleRepost],
   );
 
-  // Phase 6: Share sheet
   const handleShare = useCallback((reelId: string) => {
     setShareReelId(reelId);
   }, []);
@@ -440,7 +436,6 @@ export default function ReelsPage(): JSX.Element {
     setShareReelId(null);
   }, []);
 
-  // Phase 5: Comments sheet
   const handleComment = useCallback((reelId: string) => {
     setCommentsReelId(reelId);
   }, []);
@@ -653,7 +648,6 @@ export default function ReelsPage(): JSX.Element {
         )}
       </div>
 
-      {/* Phase 5: Comments Sheet — рендерится поверх через createPortal */}
       {commentsReelId !== null && (
         <ReelCommentsSheet
           reelId={commentsReelId}
@@ -666,7 +660,6 @@ export default function ReelsPage(): JSX.Element {
         />
       )}
 
-      {/* Phase 6: Share Sheet — рендерится через createPortal */}
       {shareReelId !== null && <ReelShareSheet
         reelId={shareReelId}
         isOpen

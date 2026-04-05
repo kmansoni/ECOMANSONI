@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  ChevronLeft, ChevronRight, Check, Upload, X, FileText, Shield,
+  ChevronLeft, ChevronRight, Check, Upload, X, FileText, Shield, Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -13,12 +13,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-
-const MOCK_POLICIES = [
-  { id: "p1", number: "ОСАГО-2025-001234", company: "Тинькофф Страхование", category: "ОСАГО", expiry: "31.12.2026" },
-  { id: "p2", number: "КАСКО-2024-005678", company: "Ингосстрах", category: "КАСКО", expiry: "15.06.2026" },
-  { id: "p3", number: "ДМС-2025-009012", company: "СОГАЗ", category: "ДМС", expiry: "01.01.2027" },
-];
+import { useInsurancePolicies } from "@/hooks/insurance/useInsurancePolicies";
+import { useCreateClaim } from "@/hooks/insurance/useInsuranceClaims";
 
 const INCIDENT_TYPES = [
   "ДТП",
@@ -50,6 +46,8 @@ interface FormData {
 export default function InsuranceNewClaimPage() {
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
+  const { data: policies = [] } = useInsurancePolicies({ sort_by: "popularity" });
+  const createClaim = useCreateClaim();
   const [form, setForm] = useState<FormData>({
     policyId: "",
     incidentDate: "",
@@ -60,7 +58,7 @@ export default function InsuranceNewClaimPage() {
     agreed: false,
   });
 
-  const selectedPolicy = MOCK_POLICIES.find((p) => p.id === form.policyId);
+  const selectedPolicy = policies.find((p: any) => p.id === form.policyId);
 
   const patch = (partial: Partial<FormData>) => setForm((prev) => ({ ...prev, ...partial }));
 
@@ -76,11 +74,22 @@ export default function InsuranceNewClaimPage() {
     if (step < 4) setStep(step + 1);
   };
 
-  const handleSubmit = () => {
-    toast.success("Заявление успешно отправлено!", {
-      description: "Мы рассмотрим его в течение 3 рабочих дней",
-    });
-    navigate("/insurance/claims");
+  const handleSubmit = async () => {
+    try {
+      await createClaim.mutateAsync({
+        policy_id: form.policyId,
+        incident_date: form.incidentDate,
+        incident_location: form.incidentLocation,
+        incident_type: form.incidentType,
+        description: form.description,
+      } as any);
+      toast.success("Заявление успешно отправлено!", {
+        description: "Мы рассмотрим его в течение 3 рабочих дней",
+      });
+      navigate("/insurance/claims");
+    } catch {
+      toast.error("Не удалось отправить заявление");
+    }
   };
 
   const handleFileAdd = () => {
@@ -154,7 +163,7 @@ export default function InsuranceNewClaimPage() {
                 <p className="text-xs text-white/40">Выберите полис, по которому произошёл страховой случай</p>
               </div>
               <div className="space-y-2">
-                {MOCK_POLICIES.map((policy) => (
+                {policies.map((policy: any) => (
                   <button
                     key={policy.id}
                     type="button"
@@ -168,9 +177,9 @@ export default function InsuranceNewClaimPage() {
                   >
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm font-semibold text-white">{policy.number}</p>
-                        <p className="text-xs text-white/50">{policy.company} · {policy.category}</p>
-                        <p className="text-xs text-white/30 mt-0.5">Действует до {policy.expiry}</p>
+                        <p className="text-sm font-semibold text-white">{policy.policy_number ?? policy.id}</p>
+                        <p className="text-xs text-white/50">{policy.company_name ?? "—"} · {policy.category ?? "—"}</p>
+                        <p className="text-xs text-white/30 mt-0.5">Действует до {policy.end_date ? new Date(policy.end_date).toLocaleDateString("ru") : "—"}</p>
                       </div>
                       <div className={cn(
                         "w-5 h-5 rounded-full border-2 flex items-center justify-center",
@@ -318,7 +327,7 @@ export default function InsuranceNewClaimPage() {
               <Card className="bg-white/[0.02] border-white/[0.06]">
                 <CardContent className="p-4 space-y-3 text-sm">
                   {[
-                    { label: "Полис", value: selectedPolicy ? `${selectedPolicy.number} (${selectedPolicy.company})` : "-" },
+                    { label: "Полис", value: selectedPolicy ? `${selectedPolicy.policy_number} (${selectedPolicy.company?.name ?? ''})` : "-" },
                     { label: "Дата инцидента", value: form.incidentDate || "-" },
                     { label: "Место", value: form.incidentLocation || "-" },
                     { label: "Тип инцидента", value: form.incidentType || "-" },

@@ -12,8 +12,8 @@
  */
 
 import { useState, useEffect, useCallback } from "react";
-import { ArrowLeft, Archive, Plus, Eye, Clock, Grid3X3 } from "lucide-react";
-import { motion } from "framer-motion";
+import { ArrowLeft, Archive, Plus, Eye, Clock, Loader2, Check } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
@@ -58,6 +58,11 @@ export default function StoryArchivePage() {
   const [isLoading, setIsLoading] = useState(true);
   const [selectedStory, setSelectedStory] = useState<ArchivedStory | null>(null);
   const [archiveEnabled, setArchiveEnabled] = useState(true);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerStory, setPickerStory] = useState<ArchivedStory | null>(null);
+  const [highlights, setHighlights] = useState<{ id: string; title: string; cover_url: string }[]>([]);
+  const [hlLoading, setHlLoading] = useState(false);
+  const [adding, setAdding] = useState<string | null>(null);
 
   const loadArchive = useCallback(async () => {
     if (!user?.id) return;
@@ -80,9 +85,32 @@ export default function StoryArchivePage() {
   }, [loadArchive]);
 
   const handleAddToHighlight = async (story: ArchivedStory) => {
-    // Открываем выбор Highlight
-    toast.info("Выберите Highlight для добавления");
-    // TODO: открыть HighlightPicker sheet
+    setPickerStory(story);
+    setPickerOpen(true);
+    setHlLoading(true);
+    const { data } = await dbLoose
+      .from("story_highlights")
+      .select("id, title, cover_url")
+      .eq("user_id", user!.id)
+      .order("position");
+    setHighlights((data as any[]) ?? []);
+    setHlLoading(false);
+  };
+
+  const handlePickHighlight = async (highlightId: string) => {
+    if (!pickerStory) return;
+    setAdding(highlightId);
+    const { error } = await dbLoose
+      .from("highlight_stories")
+      .upsert({ highlight_id: highlightId, story_id: pickerStory.id }, { onConflict: "highlight_id,story_id" });
+    setAdding(null);
+    if (error) {
+      toast.error("Не удалось добавить");
+    } else {
+      toast.success("Добавлено в Highlight");
+      setPickerOpen(false);
+      setPickerStory(null);
+    }
   };
 
   const monthGroups = groupByMonth(stories);
@@ -241,6 +269,58 @@ export default function StoryArchivePage() {
           </div>
         </div>
       )}
+      {/* Highlight picker sheet */}
+      <AnimatePresence>
+        {pickerOpen && (
+          <>
+            <motion.div
+              className="fixed inset-0 bg-black/60 z-50"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setPickerOpen(false)}
+            />
+            <motion.div
+              className="fixed bottom-0 left-0 right-0 z-50 bg-zinc-900 rounded-t-3xl p-5 pb-10 max-h-[60vh] overflow-y-auto"
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ type: "spring", damping: 30, stiffness: 300 }}
+            >
+              <div className="w-10 h-1 bg-zinc-600 rounded-full mx-auto mb-4" />
+              <h3 className="text-white font-bold text-lg mb-4">Добавить в Highlight</h3>
+              {hlLoading ? (
+                <div className="flex justify-center py-8">
+                  <Loader2 className="w-6 h-6 animate-spin text-zinc-400" />
+                </div>
+              ) : highlights.length === 0 ? (
+                <p className="text-zinc-400 text-center py-8 text-sm">
+                  У вас нет подборок. Создайте первую на странице профиля.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {highlights.map(hl => (
+                    <button
+                      key={hl.id}
+                      onClick={() => handlePickHighlight(hl.id)}
+                      disabled={adding === hl.id}
+                      className="flex items-center gap-3 w-full p-3 rounded-xl hover:bg-zinc-800 transition-colors"
+                    >
+                      <img src={hl.cover_url} alt="" className="w-12 h-12 rounded-full object-cover" />
+                      <span className="text-white flex-1 text-left">{hl.title}</span>
+                      {adding === hl.id ? (
+                        <Loader2 className="w-5 h-5 animate-spin text-zinc-400" />
+                      ) : (
+                        <Check className="w-5 h-5 text-zinc-500" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

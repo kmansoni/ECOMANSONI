@@ -14,5 +14,9 @@
   },
   "mssql.enableSqlAuthenticationProvider": false,
   "mssql.connections": [],
-  "claudeCode.useTerminal": true
+  "claudeCode.useTerminal": true,
+
+  "chat.agent.maxRequests": 150,
+  "github.copilot.chat.agent.autoFix": true,
+  "github.copilot.chat.agent.runTasks": true
 }

@@ -3,7 +3,7 @@ import { useNavigate, Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
   ChevronLeft, Plus, FileText, Clock, CheckCircle2,
-  XCircle, CreditCard, AlertCircle,
+  XCircle, CreditCard, AlertCircle, Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -11,68 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { ClaimStatus } from "@/types/insurance";
 import { cn } from "@/lib/utils";
-
-interface MockClaim {
-  id: string;
-  policyNumber: string;
-  companyName: string;
-  category: string;
-  status: ClaimStatus;
-  date: string;
-  incidentDate: string;
-  description: string;
-  amount: number;
-  approvedAmount?: number;
-}
-
-const MOCK_CLAIMS: MockClaim[] = [
-  {
-    id: "c1",
-    policyNumber: "ОСАГО-2025-001234",
-    companyName: "Тинькофф Страхование",
-    category: "ОСАГО",
-    status: "under_review",
-    date: "20 фев 2026",
-    incidentDate: "18 фев 2026",
-    description: "Столкновение на перекрёстке Ленина / Мира. Повреждён левый передний бампер.",
-    amount: 45000,
-  },
-  {
-    id: "c2",
-    policyNumber: "КАСКО-2024-005678",
-    companyName: "Ингосстрах",
-    category: "КАСКО",
-    status: "approved",
-    date: "05 янв 2026",
-    incidentDate: "03 янв 2026",
-    description: "Повреждение лобового стекла от камня на трассе М4.",
-    amount: 18500,
-    approvedAmount: 18500,
-  },
-  {
-    id: "c3",
-    policyNumber: "ДМС-2025-009012",
-    companyName: "СОГАЗ",
-    category: "ДМС",
-    status: "paid",
-    date: "12 дек 2025",
-    incidentDate: "10 дек 2025",
-    description: "Госпитализация, лечение острого бронхита.",
-    amount: 32000,
-    approvedAmount: 30000,
-  },
-  {
-    id: "c4",
-    policyNumber: "КАСКО-2025-003344",
-    companyName: "РЕСО-Гарантия",
-    category: "КАСКО",
-    status: "rejected",
-    date: "01 ноя 2025",
-    incidentDate: "30 окт 2025",
-    description: "Царапины на дверях — не признано страховым случаем.",
-    amount: 12000,
-  },
-];
+import { useClaims } from "@/hooks/insurance/useInsuranceClaims";
 
 const STATUS_CONFIG: Record<ClaimStatus, { label: string; icon: typeof Clock; color: string; bg: string }> = {
   submitted: { label: "Подано", icon: FileText, color: "text-blue-400", bg: "bg-blue-500/20" },
@@ -95,8 +34,9 @@ const TABS: { key: TabFilter; label: string }[] = [
 export default function InsuranceClaimsPage() {
   const navigate = useNavigate();
   const [tab, setTab] = useState<TabFilter>("all");
+  const { data: allClaims = [], isLoading } = useClaims();
 
-  const claims = tab === "all" ? MOCK_CLAIMS : MOCK_CLAIMS.filter((c) => c.status === tab);
+  const claims = tab === "all" ? allClaims : allClaims.filter((c: any) => c.status === tab);
 
   return (
     <div className="min-h-screen bg-background pb-24">
@@ -143,7 +83,11 @@ export default function InsuranceClaimsPage() {
       </div>
 
       <div className="px-4 pt-4 space-y-3">
-        {claims.length === 0 ? (
+        {isLoading ? (
+          <div className="flex justify-center py-24">
+            <Loader2 className="w-8 h-8 animate-spin text-white/20" />
+          </div>
+        ) : claims.length === 0 ? (
           <motion.div
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
@@ -163,8 +107,8 @@ export default function InsuranceClaimsPage() {
             </Button>
           </motion.div>
         ) : (
-          claims.map((claim, idx) => {
-            const cfg = STATUS_CONFIG[claim.status];
+          claims.map((claim: any, idx: number) => {
+            const cfg = STATUS_CONFIG[claim.status as ClaimStatus] ?? STATUS_CONFIG.submitted;
             const Icon = cfg.icon;
             return (
               <motion.div
@@ -177,9 +121,9 @@ export default function InsuranceClaimsPage() {
                   <CardContent className="p-4">
                     <div className="flex items-start justify-between mb-2">
                       <div>
-                        <p className="text-xs text-white/40 mb-0.5">{claim.companyName}</p>
-                        <p className="text-sm font-semibold text-white">{claim.policyNumber}</p>
-                        <p className="text-xs text-violet-400">{claim.category}</p>
+                        <p className="text-xs text-white/40 mb-0.5">{claim.policy?.company_name ?? "—"}</p>
+                        <p className="text-sm font-semibold text-white">{claim.policy?.policy_number ?? claim.policy_id}</p>
+                        <p className="text-xs text-violet-400">{claim.policy?.category ?? "—"}</p>
                       </div>
                       <Badge className={cn("gap-1 text-xs", cfg.bg, cfg.color)}>
                         <Icon className="w-3 h-3" />
@@ -187,25 +131,25 @@ export default function InsuranceClaimsPage() {
                       </Badge>
                     </div>
 
-                    <p className="text-xs text-white/50 mb-3 line-clamp-2">{claim.description}</p>
+                    <p className="text-xs text-white/50 mb-3 line-clamp-2">{claim.incident_description}</p>
 
                     <div className="flex items-center justify-between text-xs text-white/40">
-                      <span>Случай: {claim.incidentDate}</span>
-                      <span>Подано: {claim.date}</span>
+                      <span>Случай: {claim.incident_date ? new Date(claim.incident_date).toLocaleDateString("ru") : "—"}</span>
+                      <span>Подано: {claim.claim_date ? new Date(claim.claim_date).toLocaleDateString("ru") : "—"}</span>
                     </div>
 
                     <div className="mt-3 pt-3 border-t border-white/[0.06] flex items-center justify-between">
                       <div>
                         <p className="text-xs text-white/40">Заявленная сумма</p>
                         <p className="text-sm font-bold text-white">
-                          {new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 }).format(claim.amount)}
+                          {new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 }).format(claim.damage_amount ?? 0)}
                         </p>
                       </div>
-                      {claim.approvedAmount !== undefined && (
+                      {claim.approved_amount != null && (
                         <div className="text-right">
                           <p className="text-xs text-white/40">Одобрено</p>
                           <p className={cn("text-sm font-bold", claim.status === "paid" ? "text-violet-400" : "text-emerald-400")}>
-                            {new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 }).format(claim.approvedAmount)}
+                            {new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 }).format(claim.approved_amount)}
                           </p>
                         </div>
                       )}

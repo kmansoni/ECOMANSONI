@@ -5,7 +5,7 @@
  * gif, gift, poll, document, self-destruct, shared post, video circle).
  * Extracted from ChatConversation.tsx renderMessages.map() body.
  */
-import { Fragment } from "react";
+import { Fragment, useMemo } from "react";
 import { Play, Pause, CheckCheck, MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -131,7 +131,17 @@ export function ChatMessageItem({
   const isGift = message.media_type === "gift";
   const isPoll = message.media_type === "poll" && !!message.poll_id;
   const isContact = message.media_type === "contact";
-  const isLocation = !message.media_type && message.location_lat != null && message.location_lng != null;
+  const parsedLocationFromContent = useMemo(() => {
+    if (message.location_lat != null) return null;
+    try {
+      const p = message.content && JSON.parse(message.content);
+      if (p?.kind === 'location' && typeof p.lat === 'number') return p as { lat: number; lng: number };
+    } catch { logger.debug("chat: content is not location JSON", { messageId: message.id }); }
+    return null;
+  }, [message.content, message.location_lat]);
+  const isLocation = !message.media_type && (
+    (message.location_lat != null && message.location_lng != null) || parsedLocationFromContent != null
+  );
   const AUDIO_EXTENSIONS = /\.(mp3|ogg|flac|wav|aac|m4a|wma|opus)$/i;
   const isMusic = message.media_type === "document" && !!message.media_url &&
     !!message.file_name && AUDIO_EXTENSIONS.test(message.file_name);
@@ -321,7 +331,7 @@ export function ChatMessageItem({
 
     if (isContact) {
       let contactData: { name?: string; phone?: string } = {};
-      try { contactData = JSON.parse(message.content || "{}"); } catch { /* невалидный JSON */ }
+      try { contactData = JSON.parse(message.content || "{}"); } catch { logger.debug("chat: invalid contact JSON", { messageId: message.id }); }
       return (
         <div className={cn("flex flex-col gap-1 flex-1 min-w-0", isOwn ? "items-end" : "items-start")}>
           <ContactCard name={contactData.name || "Контакт"} phone={contactData.phone || ""} />
@@ -330,9 +340,10 @@ export function ChatMessageItem({
       );
     }
 
-    if (isLocation && message.location_lat != null && message.location_lng != null) {
-      const lat = message.location_lat;
-      const lng = message.location_lng;
+    if (isLocation) {
+      const lat = message.location_lat ?? parsedLocationFromContent?.lat;
+      const lng = message.location_lng ?? parsedLocationFromContent?.lng;
+      if (lat == null || lng == null) return null;
       return (
         <div className={cn("flex flex-col gap-1 flex-1 min-w-0", isOwn ? "items-end" : "items-start")}>
           <a

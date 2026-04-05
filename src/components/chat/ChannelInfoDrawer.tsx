@@ -3,6 +3,7 @@ import {
   ArrowLeft,
   CheckCircle2,
   ChevronRight,
+  ClipboardList,
   MoreVertical,
   Radio,
   Search,
@@ -28,9 +29,10 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { GradientAvatar } from "@/components/ui/gradient-avatar";
 import type { Channel } from "@/hooks/useChannels";
+import type { ModerationLogEntry } from "@/hooks/useChannelModerationLog";
 import { logger } from "@/lib/logger";
 
-type InfoView = "main" | "admins" | "subscribers" | "settings" | "more";
+type InfoView = "main" | "admins" | "subscribers" | "settings" | "more" | "audit";
 
 interface MemberItem {
   user_id: string;
@@ -85,6 +87,11 @@ interface ChannelInfoDrawerProps {
   setSearchOpen: (v: boolean) => void;
   setSearchQuery: (v: string) => void;
   setSelectMode: (v: boolean) => void;
+  // Audit log
+  auditEntries?: ModerationLogEntry[];
+  auditLoading?: boolean;
+  auditHasMore?: boolean;
+  loadAudit?: (offset?: number) => Promise<void>;
 }
 
 function formatSubscribers(n: number): string {
@@ -141,6 +148,10 @@ export function ChannelInfoDrawer(props: ChannelInfoDrawerProps) {
     setSearchOpen,
     setSearchQuery,
     setSelectMode,
+    auditEntries,
+    auditLoading,
+    auditHasMore,
+    loadAudit,
   } = props;
 
   return (
@@ -184,6 +195,7 @@ export function ChannelInfoDrawer(props: ChannelInfoDrawerProps) {
                 {infoView === "subscribers" && "Подписчики"}
                 {infoView === "settings" && "Настройки канала"}
                 {infoView === "more" && "Ещё"}
+                {infoView === "audit" && "Журнал модерации"}
               </div>
             )}
 
@@ -416,6 +428,22 @@ export function ChannelInfoDrawer(props: ChannelInfoDrawerProps) {
                   </div>
                   <ChevronRight className="w-4 h-4 text-muted-foreground" />
                 </button>
+
+                {canManageMembers && loadAudit ? (
+                  <button
+                    type="button"
+                    onClick={() => { void loadAudit(0); setInfoView("audit"); }}
+                    className="w-full px-4 py-3 flex items-center justify-between hover:bg-muted/40 border-t border-border/60"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center">
+                        <ClipboardList className="w-5 h-5 text-primary" />
+                      </div>
+                      <div className="text-sm text-foreground">Журнал модерации</div>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                  </button>
+                ) : null}
               </div>
             </div>
           ) : null}
@@ -678,8 +706,94 @@ export function ChannelInfoDrawer(props: ChannelInfoDrawerProps) {
               </div>
             </div>
           ) : null}
+
+          {infoView === "audit" ? (
+            <div className="flex-1 overflow-y-auto">
+              {auditLoading && !auditEntries?.length ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary" />
+                </div>
+              ) : auditEntries && auditEntries.length > 0 ? (
+                <div className="space-y-2">
+                  {auditEntries.map(entry => (
+                    <div key={entry.id} className="p-3 rounded-2xl bg-card border border-border/60">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium text-foreground">
+                          {formatModerationAction(entry.action)}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {formatAuditDate(entry.created_at)}
+                        </span>
+                      </div>
+                      {entry.details && Object.keys(entry.details).length > 0 ? (
+                        <div className="text-xs text-muted-foreground mt-1">
+                          {formatModerationDetails(entry.details)}
+                        </div>
+                      ) : null}
+                    </div>
+                  ))}
+                  {auditHasMore && loadAudit ? (
+                    <button
+                      type="button"
+                      onClick={() => void loadAudit(auditEntries.length)}
+                      disabled={auditLoading}
+                      className="w-full py-3 text-center text-sm text-primary hover:underline"
+                    >
+                      {auditLoading ? "Загрузка…" : "Показать ещё"}
+                    </button>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="text-center py-10 text-muted-foreground">Нет записей модерации</div>
+              )}
+            </div>
+          ) : null}
         </div>
       </DrawerContent>
     </Drawer>
   );
+}
+
+const ACTION_LABELS: Record<string, string> = {
+  member_kicked: "Участник удалён",
+  member_banned: "Участник забанен",
+  member_unbanned: "Участник разбанен",
+  role_changed: "Роль изменена",
+  message_deleted: "Сообщение удалено",
+  message_pinned: "Сообщение закреплено",
+  message_unpinned: "Сообщение откреплено",
+  channel_updated: "Канал обновлён",
+  invite_created: "Приглашение создано",
+};
+
+function formatModerationAction(action: string): string {
+  return ACTION_LABELS[action] ?? action;
+}
+
+function formatAuditDate(iso: string): string {
+  try {
+    const d = new Date(iso);
+    const now = new Date();
+    const diffMs = now.getTime() - d.getTime();
+    if (diffMs < 60_000) return "только что";
+    if (diffMs < 3_600_000) return `${Math.floor(diffMs / 60_000)} мин. назад`;
+    if (diffMs < 86_400_000) return `${Math.floor(diffMs / 3_600_000)} ч. назад`;
+    return d.toLocaleDateString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  } catch {
+    return iso;
+  }
+}
+
+function formatModerationDetails(details: Record<string, unknown>): string {
+  const parts: string[] = [];
+  if (details.prev_role && details.new_role) {
+    parts.push(`${details.prev_role} → ${details.new_role}`);
+  }
+  if (details.target_name) {
+    parts.push(String(details.target_name));
+  }
+  if (details.reason) {
+    parts.push(`причина: ${details.reason}`);
+  }
+  return parts.join(" · ") || JSON.stringify(details);
 }

@@ -137,19 +137,29 @@ function LastMessagePreview({
     };
   }, [decryptContent, encryptedPayload, lastMessage?.sender_id]);
 
+  const locationFromContent = useMemo(() => {
+    if (lastMessage?.location_lat != null) return true;
+    try {
+      const parsed = lastMessage?.content && JSON.parse(lastMessage.content);
+      return parsed?.kind === 'location';
+    } catch { return false; }
+  }, [lastMessage?.content, lastMessage?.location_lat]);
+
   const previewText = activityText
     ? activityText
-    : lastMessage?.media_type === "video_circle"
-      ? "🎥 Видеосообщение"
-      : lastMessage?.media_type === "voice"
-        ? "🎤 Голосовое сообщение"
-        : lastMessage?.media_type === "video"
-          ? "🎬 Видео"
-          : lastMessage?.media_url
-            ? "📷 Фото"
-            : encryptedPayload
-              ? decryptedPreview || "Зашифрованное сообщение"
-              : (lastMessage?.content || "Нет сообщений");
+    : lastMessage?.location_lat != null || locationFromContent
+      ? "📍 Геолокация"
+      : lastMessage?.media_type === "video_circle"
+        ? "🎥 Видеосообщение"
+        : lastMessage?.media_type === "voice"
+          ? "🎤 Голосовое сообщение"
+          : lastMessage?.media_type === "video"
+            ? "🎬 Видео"
+            : lastMessage?.media_url
+              ? "📷 Фото"
+              : encryptedPayload
+                ? decryptedPreview || "Зашифрованное сообщение"
+                : (lastMessage?.content || "Нет сообщений");
 
   return <>{isMyMessage && !activityText ? `Вы: ${previewText}` : previewText}</>;
 }

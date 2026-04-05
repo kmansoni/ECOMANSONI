@@ -160,6 +160,13 @@ class InsuranceApiClient {
     });
   }
 
+  async getCompanyBySlug(slug: string): Promise<InsuranceCompanyFull> {
+    return this.queryTable<InsuranceCompanyFull>("insurance_companies", {
+      eq: [["slug", slug]],
+      single: true,
+    });
+  }
+
   // ===== Продукты =====
 
   /**

@@ -1,58 +1,27 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronLeft, GitCompare, Check, X, Star, ShoppingCart, Plus } from "lucide-react";
+import { ChevronLeft, GitCompare, Check, X, Star, ShoppingCart, Plus, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { InsuranceCategoryTabs } from "@/components/insurance/shared/InsuranceCategoryTabs";
 import { formatPremium, formatCoverage, formatRating } from "@/lib/insurance/formatters";
-import type { InsuranceCategory } from "@/types/insurance";
+import { useInsuranceProducts } from "@/hooks/insurance/useInsuranceProducts";
+import type { InsuranceCategory, InsuranceProductFull } from "@/types/insurance";
 import { cn } from "@/lib/utils";
 
-const MOCK_PRODUCTS = [
-  {
-    id: "1",
-    name: "ОСАГО Стандарт",
-    category: "osago" as InsuranceCategory,
-    companyName: "Ингосстрах",
-    premium: 8500,
-    coverage: 400000,
-    companyRating: 4.5,
-    claimDays: 12,
-    approvalRate: 91,
-    deductible: 0,
-    features: ["Онлайн оформление", "Электронный полис", "Круглосуточная поддержка", "Мобильное приложение"],
-  },
-  {
-    id: "2",
-    name: "ОСАГО Онлайн",
-    category: "osago" as InsuranceCategory,
-    companyName: "Тинькофф Страхование",
-    premium: 7800,
-    coverage: 400000,
-    companyRating: 4.7,
-    claimDays: 8,
-    approvalRate: 95,
-    deductible: 0,
-    features: ["Онлайн оформление", "Моментальная выдача", "Партнёрские СТО", "Помощь на дороге"],
-  },
-  {
-    id: "3",
-    name: "ОСАГО Классик",
-    category: "osago" as InsuranceCategory,
-    companyName: "РЕСО-Гарантия",
-    premium: 9200,
-    coverage: 400000,
-    companyRating: 4.3,
-    claimDays: 15,
-    approvalRate: 88,
-    deductible: 5000,
-    features: ["Широкая сеть офисов", "Личный менеджер", "PDF-полис"],
-  },
-];
+type NumericKey = "premium_from" | "coverage_amount" | "companyRating" | "term_months";
 
-type ProductRow = (typeof MOCK_PRODUCTS)[number];
-type NumericKey = "premium" | "coverage" | "companyRating" | "claimDays" | "approvalRate" | "deductible";
+interface ProductRow {
+  id: string;
+  name: string;
+  companyName: string;
+  premium_from: number;
+  coverage_amount: number;
+  companyRating: number;
+  term_months: number;
+  features: string[];
+}
 
 interface Criterion {
   key: NumericKey;
@@ -62,12 +31,10 @@ interface Criterion {
 }
 
 const CRITERIA: Criterion[] = [
-  { key: "premium", label: "Стоимость (₽/год)", format: formatPremium, bestIsMin: true },
-  { key: "coverage", label: "Покрытие", format: formatCoverage },
+  { key: "premium_from", label: "Стоимость (₽/год)", format: formatPremium, bestIsMin: true },
+  { key: "coverage_amount", label: "Покрытие", format: formatCoverage },
   { key: "companyRating", label: "Рейтинг компании", format: (v) => `${formatRating(v)} / 5.0` },
-  { key: "claimDays", label: "Срок выплат (дней)", format: (v) => `${v} дн.`, bestIsMin: true },
-  { key: "approvalRate", label: "Одобрение выплат", format: (v) => `${v}%` },
-  { key: "deductible", label: "Франшиза", format: (v) => (v === 0 ? "Нет" : formatPremium(v)), bestIsMin: true },
+  { key: "term_months", label: "Срок (мес.)", format: (v) => `${v} мес.` },
 ];
 
 function getBestWorst(products: ProductRow[], key: NumericKey, bestIsMin?: boolean) {
@@ -80,8 +47,23 @@ function getBestWorst(products: ProductRow[], key: NumericKey, bestIsMin?: boole
 export default function InsuranceComparePage() {
   const navigate = useNavigate();
   const [category, setCategory] = useState<InsuranceCategory | "all">("osago");
+  const filters = category !== "all" ? { category: category as InsuranceCategory } : undefined;
+  const { data: rawProducts = [], isLoading } = useInsuranceProducts(filters);
 
-  const products = MOCK_PRODUCTS;
+  const products: ProductRow[] = useMemo(
+    () => rawProducts.map((p) => ({
+      id: p.id,
+      name: p.name,
+      companyName: p.company?.name ?? "—",
+      premium_from: p.premium_from ?? 0,
+      coverage_amount: p.coverage_amount ?? 0,
+      companyRating: p.company?.rating ?? 0,
+      term_months: p.term_months ?? 12,
+      features: p.features ?? [],
+    })),
+    [rawProducts],
+  );
+
   const isEmpty = products.length === 0;
   const colTemplate = `160px repeat(${products.length}, 1fr)`;
 
@@ -107,7 +89,11 @@ export default function InsuranceComparePage() {
       </div>
 
       <AnimatePresence mode="wait">
-        {isEmpty ? (
+        {isLoading ? (
+          <div className="flex items-center justify-center py-20">
+            <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+          </div>
+        ) : isEmpty ? (
           <motion.div
             key="empty"
             initial={{ opacity: 0, y: 20 }}
@@ -146,7 +132,7 @@ export default function InsuranceComparePage() {
                       </div>
                       <p className="text-xs text-white/50 mb-0.5">{product.companyName}</p>
                       <p className="text-sm font-semibold text-white mb-1">{product.name}</p>
-                      <p className="text-base font-bold text-violet-400">{formatPremium(product.premium)}</p>
+                      <p className="text-base font-bold text-violet-400">{formatPremium(product.premium_from)}</p>
                       <p className="text-xs text-white/40">/год</p>
                       <Button
                         size="sm"

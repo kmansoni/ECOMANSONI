@@ -42,7 +42,7 @@ export function NetworkStatusBanner({ userId }: { userId?: string } = {}) {
           ).length;
           setPendingCount(count);
         }
-      }).catch(() => {/* non-critical */});
+      }).catch(() => {/* outbox count fetch failed, will use stale value */});
     };
 
     load();

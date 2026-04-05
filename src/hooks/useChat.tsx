@@ -1462,7 +1462,12 @@ export function useMessages(conversationId: string | null) {
     }
   };
 
-  const sendMediaMessage = async (file: File, mediaType: 'voice' | 'video_circle' | 'image' | 'video' | 'document', durationSeconds?: number) => {
+  const sendMediaMessage = async (
+    file: File,
+    mediaType: 'voice' | 'video_circle' | 'image' | 'video' | 'document',
+    durationSeconds?: number,
+    opts?: { albumId?: string; caption?: string },
+  ) => {
     if (!conversationId || !user) return { error: 'Not authenticated' };
 
     if (file.size > TELEGRAM_MAX_FILE_BYTES) {
@@ -1481,7 +1486,6 @@ export function useMessages(conversationId: string | null) {
     }
 
     try {
-      // Upload to storage
       const fileExt = file.name.split('.').pop() || 'webm';
       const fileName = `${user.id}/${conversationId}/${Date.now()}.${fileExt}`;
 
@@ -1489,8 +1493,9 @@ export function useMessages(conversationId: string | null) {
       const publicUrl = uploadResult.url;
 
       const clientMsgId = crypto.randomUUID();
-      const content =
-        mediaType === 'voice'
+      const content = opts?.caption
+        ? opts.caption
+        : mediaType === 'voice'
           ? '🎤 Голосовое сообщение'
           : mediaType === 'video_circle'
             ? '🎬 Видео-кружок'
@@ -1498,13 +1503,18 @@ export function useMessages(conversationId: string | null) {
               ? '🎥 Видео'
               : '📷 Изображение';
 
-      const envelope = buildChatBodyEnvelope({
+      const envelopeData: Record<string, unknown> = {
         kind: 'media',
         text: content,
         media_type: mediaType,
         media_url: publicUrl,
         duration_seconds: durationSeconds ?? null,
-      });
+      };
+      if (opts?.albumId) {
+        envelopeData.metadata = { album_id: opts.albumId };
+      }
+
+      const envelope = buildChatBodyEnvelope(envelopeData);
 
       const { messageId } = await sendMessageV1({
         conversationId,

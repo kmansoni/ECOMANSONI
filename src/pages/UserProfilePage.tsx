@@ -1,4 +1,4 @@
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, Navigate } from "react-router-dom";
 import { logger } from "@/lib/logger";
 import { ArrowLeft, Grid3X3, Bookmark, Heart, Play, MoreHorizontal, MessageCircle, Loader2, User, Eye, AtSign } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -308,6 +308,10 @@ export function UserProfilePage() {
         <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
       </div>
     );
+  }
+
+  if (profile && currentUser && profile.user_id === currentUser.id) {
+    return <Navigate to="/profile" replace />;
   }
 
   if (error || !profile) {

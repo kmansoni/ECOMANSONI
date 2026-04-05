@@ -26,6 +26,7 @@ import { MessageContextMenu } from "@/components/chat/MessageContextMenu";
 import type { Channel, ChannelMessage } from "@/hooks/useChannels";
 import { useChannelMessages, useJoinChannel } from "@/hooks/useChannels";
 import { useChannelCapabilities } from "@/hooks/useChannelCapabilities";
+import { useChannelModerationLog } from "@/hooks/useChannelModerationLog";
 import { useCommunityGlobalSettings, useCommunityInvites } from "@/hooks/useCommunityControls";
 import { useChatOpen } from "@/contexts/ChatOpenContext";
 import { GradientAvatar } from "@/components/ui/gradient-avatar";
@@ -83,6 +84,7 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
   const { toggleReaction, getReactions } = useMessageReactions(channel.id);
   const { joinChannel, leaveChannel } = useJoinChannel();
   const { can, canRpc, role } = useChannelCapabilities(channel);
+  const { entries: auditEntries, loading: auditLoading, hasMore: auditHasMore, load: loadAudit, logAction } = useChannelModerationLog(channel.id);
   const { settings } = useCommunityGlobalSettings();
   const { createChannelInvite } = useCommunityInvites();
   const {
@@ -160,7 +162,7 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
     }
   });
   const [infoOpen, setInfoOpen] = useState(false);
-  const [infoView, setInfoView] = useState<"main" | "admins" | "subscribers" | "settings" | "more">("main");
+  const [infoView, setInfoView] = useState<"main" | "admins" | "subscribers" | "settings" | "more" | "audit">("main");
   const [adminsLoading, setAdminsLoading] = useState(false);
   const [subsLoading, setSubsLoading] = useState(false);
   const [admins, setAdmins] = useState<Array<{ user_id: string; display_name: string | null; avatar_url: string | null; role: string }>>([]);
@@ -976,6 +978,7 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
         .eq("user_id", userId);
       if (error) throw error;
       toast.success(nextRole === "admin" ? "Назначен администратор" : "Роль обновлена");
+      void logAction("role_changed", userId, { new_role: nextRole });
       await Promise.all([loadAdmins(), loadSubscribers()]);
     } catch (e) {
       logger.error("[ChannelConversation] updateMemberRole failed", { channelId: channel.id, userId, nextRole, error: e });
@@ -1012,6 +1015,7 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
         .eq("user_id", userId);
       if (error) throw error;
       toast.success("Участник удалён");
+      void logAction("member_kicked", userId);
       await Promise.all([loadAdmins(), loadSubscribers()]);
     } catch (e) {
       logger.error("[ChannelConversation] removeMember failed", { channelId: channel.id, userId, error: e });
@@ -1117,6 +1121,10 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
         setSearchOpen={setSearchOpen}
         setSearchQuery={setSearchQuery}
         setSelectMode={setSelectMode}
+        auditEntries={auditEntries}
+        auditLoading={auditLoading}
+        auditHasMore={auditHasMore}
+        loadAudit={loadAudit}
       />
 
       {searchOpen ? (

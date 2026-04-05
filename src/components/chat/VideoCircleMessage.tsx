@@ -31,14 +31,12 @@ export function VideoCircleMessage({ videoUrl, duration, isOwn }: VideoCircleMes
     if (!v) return;
     if (!expanded) {
       setExpanded(true);
-      v.play().catch(() => {});
-      setPlaying(true);
+      v.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
     } else if (playing) {
       v.pause();
       setPlaying(false);
     } else {
-      v.play().catch(() => {});
-      setPlaying(true);
+      v.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
     }
   }, [expanded, playing]);
 
@@ -80,7 +78,7 @@ export function VideoCircleMessage({ videoUrl, duration, isOwn }: VideoCircleMes
     videoRef.current = el;
     const seek = () => {
       el.currentTime = timeRef.current;
-      el.play().catch(() => {});
+      el.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
     };
     el.readyState >= 1 ? seek() : el.addEventListener('loadedmetadata', seek, { once: true });
   }, []);

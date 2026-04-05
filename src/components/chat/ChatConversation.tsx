@@ -37,6 +37,8 @@ import { getHashtagBlockedToastPayload } from "@/lib/hashtagModeration";
 import { getChatSendErrorToast } from "@/lib/chat/sendError";
 import { VideoCircleRecorder } from "./VideoCircleRecorder";
 import { AttachmentSheet } from "./AttachmentSheet";
+import { MediaAlbumPreview } from "./MediaAlbumPreview";
+import { AlbumBubble } from "./AlbumBubble";
 import { ContactShareSheet } from "./ContactShareSheet";
 import { CameraCaptureSheet } from "./CameraCaptureSheet";
 import { ImageViewer } from "./ImageViewer";
@@ -90,6 +92,7 @@ import {
 import { resolveChatMediaDownloadPrefs } from "@/lib/chat/mediaSettings";
 import { fetchUserBriefMap, resolveUserBrief } from "@/lib/users/userBriefs";
 import { logger } from "@/lib/logger";
+import { buildAlbumMap } from "@/lib/chat/albumGrouping";
 import {
   parseEncryptedPayload,
   toCompactErrorDetails,
@@ -134,29 +137,65 @@ function SimpleMessageList({
   selectionMode, selectedIds, playingVoice, manualMediaLoaded,
   contextMenuMessageId, decryptedCache, senderProfiles, style, callbacks, messagesEndRef,
 }: MessageListProps) {
+  const { albumMap, skipIds } = useMemo(() => buildAlbumMap(messages), [messages]);
+
   return (
     <>
       <div className="space-y-1 min-w-0">
-        {messages.map((message, index) => (
-          <ChatMessageItem
-            key={message.id}
-            message={message}
-            prevMessage={index > 0 ? messages[index - 1] : null}
-            userId={userId}
-            conversationId={conversationId}
-            chatAvatar={chatAvatar}
-            isGroup={isGroup}
-            selectionMode={selectionMode}
-            selectedIds={selectedIds}
-            playingVoice={playingVoice}
-            manualMediaLoaded={manualMediaLoaded}
-            contextMenuMessageId={contextMenuMessageId}
-            decryptedCache={decryptedCache}
-            senderProfiles={senderProfiles}
-            style={style}
-            callbacks={callbacks}
-          />
-        ))}
+        {messages.map((message, index) => {
+          if (skipIds.has(message.id)) return null;
+
+          const album = albumMap.get(message.id);
+          if (album) {
+            const lastMsg = album.messages[album.messages.length - 1];
+            const urls = album.messages.map((m) => m.media_url!).filter(Boolean);
+            const types = album.messages.map((m) =>
+              (m.media_type === "video" ? "video" : "image") as "image" | "video",
+            );
+            const caption = album.messages[0].content !== "📷 Изображение" &&
+              album.messages[0].content !== "🎥 Видео"
+              ? album.messages[0].content
+              : undefined;
+
+            return (
+              <AlbumBubble
+                key={`album-${album.albumId}`}
+                mediaUrls={urls}
+                mediaTypes={types}
+                caption={caption}
+                isOwn={message.sender_id === userId}
+                timestamp={lastMsg.created_at}
+                isRead={lastMsg.is_read}
+                onMediaClick={(idx) => {
+                  const url = urls[idx];
+                  if (types[idx] === "video") callbacks.onViewVideo?.(url);
+                  else callbacks.onViewImage?.(url);
+                }}
+              />
+            );
+          }
+
+          return (
+            <ChatMessageItem
+              key={message.id}
+              message={message}
+              prevMessage={index > 0 ? messages[index - 1] : null}
+              userId={userId}
+              conversationId={conversationId}
+              chatAvatar={chatAvatar}
+              isGroup={isGroup}
+              selectionMode={selectionMode}
+              selectedIds={selectedIds}
+              playingVoice={playingVoice}
+              manualMediaLoaded={manualMediaLoaded}
+              contextMenuMessageId={contextMenuMessageId}
+              decryptedCache={decryptedCache}
+              senderProfiles={senderProfiles}
+              style={style}
+              callbacks={callbacks}
+            />
+          );
+        })}
       </div>
       <div ref={messagesEndRef} />
     </>
@@ -286,6 +325,9 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
   const lastDraftTrimmedRef = useRef<string>("");
   const [showVideoRecorder, setShowVideoRecorder] = useState(false);
   const [showAttachmentSheet, setShowAttachmentSheet] = useState(false);
+  const [albumFiles, setAlbumFiles] = useState<File[]>([]);
+  const [showAlbumPreview, setShowAlbumPreview] = useState(false);
+  const albumInputRef = useRef<HTMLInputElement>(null);
   const [showCameraSheet, setShowCameraSheet] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [viewingImage, setViewingImage] = useState<string | null>(null);
@@ -319,7 +361,14 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
   );
 
   // Typing indicator: useTypingIndicator handles DM + group, presence-based, multi-device-safe
-  const { typingLabel, onKeyDown: typingOnKeyDown, onStopTyping: typingOnStop } = useTypingIndicator(
+  const {
+    typingLabel,
+    onKeyDown: typingOnKeyDown,
+    onStopTyping: typingOnStop,
+    onStartRecordingVoice: typingOnStartVoice,
+    onStartRecordingVideo: typingOnStartVideo,
+    onStopRecording: typingOnStopRecording,
+  } = useTypingIndicator(
     conversationId,
     user?.id,
     chatName ?? null,
@@ -327,7 +376,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
   );
   // Derive typing state for the header status text
   const isOtherTyping = !!typingLabel;
-  const otherLiveActivity = null; // activity types (recording_voice/video) kept for future extension
+  const otherLiveActivity = null;
 
   const {
     isRecording, recordingTime, playingVoice, voicePlaybackRate,
@@ -336,8 +385,8 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
   } = useVoiceMedia({
     conversationId,
     sendMediaMessage,
-    typingOnKeyDown,
-    typingOnStop,
+    typingOnKeyDown: typingOnStartVoice,
+    typingOnStop: typingOnStopRecording,
   });
 
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -689,16 +738,18 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
   }, [visibleMessages, user?.id]);
 
   // Typing is handled by useTypingIndicator hook (see state section above).
-  // sendTyping stub delegates to the hook; activity param is kept for recording states.
   const sendTyping = useCallback(
-    (isTyping: boolean, _activity: "typing" | "recording_voice" | "recording_video" = "typing") => {
-      if (isTyping) {
-        typingOnKeyDown();
-      } else {
-        typingOnStop();
+    (isTyping: boolean, activity: "typing" | "recording_voice" | "recording_video" = "typing") => {
+      if (!isTyping) {
+        if (activity === "typing") typingOnStop();
+        else typingOnStopRecording();
+        return;
       }
+      if (activity === "recording_voice") typingOnStartVoice();
+      else if (activity === "recording_video") typingOnStartVideo();
+      else typingOnKeyDown();
     },
-    [typingOnKeyDown, typingOnStop],
+    [typingOnKeyDown, typingOnStop, typingOnStartVoice, typingOnStartVideo, typingOnStopRecording],
   );
 
   const handleInputChange = useCallback(
@@ -1054,6 +1105,48 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
       logger.error("chat: attachment send failed", { conversationId, type, error: err });
       toast.error("Не удалось прикрепить файл");
     }
+  };
+
+  const handleAlbumFiles = (files: File[], _types: ("image" | "video")[]) => {
+    setAlbumFiles(files);
+    setShowAlbumPreview(true);
+  };
+
+  const handleAlbumAddMore = () => {
+    albumInputRef.current?.click();
+  };
+
+  const handleAlbumAddMoreChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const fl = e.target.files;
+    if (!fl) return;
+    const remaining = 10 - albumFiles.length;
+    const toAdd = Array.from(fl).slice(0, remaining);
+    if (fl.length > remaining) {
+      toast.error(`Можно добавить ещё ${remaining}`);
+    }
+    setAlbumFiles((prev) => [...prev, ...toAdd]);
+    e.target.value = "";
+  };
+
+  const handleAlbumSend = async (caption: string) => {
+    setShowAlbumPreview(false);
+    const albumId = crypto.randomUUID();
+
+    for (let i = 0; i < albumFiles.length; i++) {
+      const f = albumFiles[i];
+      const mediaType = f.type.startsWith("video/") ? "video" as const : "image" as const;
+      const opts: { albumId: string; caption?: string } = { albumId };
+      if (i === 0 && caption) opts.caption = caption;
+
+      try {
+        await sendMediaMessage(f, mediaType, undefined, opts);
+      } catch (err) {
+        logger.error("chat: album item send failed", { conversationId, idx: i, error: err });
+        toast.error(`Не удалось отправить файл ${i + 1}`);
+      }
+    }
+
+    setAlbumFiles([]);
   };
 
   const handleLocationSelect = async () => {
@@ -1498,7 +1591,9 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
           setReplyTo({ id: "", preview: text.slice(0, 80) });
         }}
         onCopy={(text) => {
-          navigator.clipboard.writeText(text).catch(() => { /* clipboard not available */ });
+          navigator.clipboard.writeText(text)
+            .then(() => toast.success("Скопировано"))
+            .catch(() => toast.error("Не удалось скопировать"));
         }}
       />
 
@@ -1638,11 +1733,33 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
         open={showAttachmentSheet}
         onOpenChange={setShowAttachmentSheet}
         onSelectFile={handleAttachment}
+        onSelectFiles={handleAlbumFiles}
         onSelectLocation={handleLocationSelect}
         onContactShare={() => setShowContactSheet(true)}
         onOpenCamera={() => {
           setShowCameraSheet(true);
         }}
+      />
+
+      {showAlbumPreview && albumFiles.length > 0 && (
+        <MediaAlbumPreview
+          files={albumFiles}
+          onRemove={(idx) => {
+            setAlbumFiles((prev) => prev.filter((_, i) => i !== idx));
+            if (albumFiles.length <= 1) setShowAlbumPreview(false);
+          }}
+          onAddMore={handleAlbumAddMore}
+          onSend={handleAlbumSend}
+          onCancel={() => { setShowAlbumPreview(false); setAlbumFiles([]); }}
+        />
+      )}
+      <input
+        ref={albumInputRef}
+        type="file"
+        accept="image/*,video/*"
+        multiple
+        className="hidden"
+        onChange={handleAlbumAddMoreChange}
       />
 
       <CameraCaptureSheet

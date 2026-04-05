@@ -33,6 +33,8 @@ import { cn } from "@/lib/utils";
 import { GradientAvatar } from "@/components/ui/gradient-avatar";
 import type { Participant } from "@/hooks/useGroupVideoCall";
 import { GroupCallInviteSheet } from "./GroupCallInviteSheet";
+import { CallReactionOverlay, ReactionPicker, type CallReaction } from "./CallReactionOverlay";
+import { Smile } from "lucide-react";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -58,6 +60,8 @@ interface Props {
   onLeaveCall: () => void;
   onPinParticipant: (id: string | null) => void;
   onAddParticipant: (userId: string) => void;
+  onReaction?: (emoji: string) => void;
+  incomingReactions?: CallReaction[];
   currentUserId: string;
 }
 
@@ -234,9 +238,31 @@ export function GroupVideoCallScreen({
   onLeaveCall,
   onPinParticipant,
   onAddParticipant,
+  onReaction,
+  incomingReactions,
   currentUserId,
 }: Props) {
   const [showInvite, setShowInvite] = useState(false);
+  const [showReactionPicker, setShowReactionPicker] = useState(false);
+  const [liveReactions, setLiveReactions] = useState<CallReaction[]>([]);
+
+  // мержим входящие реакции с локальными
+  useEffect(() => {
+    if (!incomingReactions?.length) return;
+    setLiveReactions(prev => {
+      const ids = new Set(prev.map(r => r.id));
+      const fresh = incomingReactions.filter(r => !ids.has(r.id));
+      return fresh.length ? [...prev, ...fresh] : prev;
+    });
+  }, [incomingReactions]);
+
+  const handleReactionExpired = useCallback((id: string) => {
+    setLiveReactions(prev => prev.filter(r => r.id !== id));
+  }, []);
+
+  const handleSendReaction = useCallback((emoji: string) => {
+    onReaction?.(emoji);
+  }, [onReaction]);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -467,6 +493,24 @@ export function GroupVideoCallScreen({
           accent={isHandRaised}
         />
 
+        {/* Реакции */}
+        {onReaction && (
+          <div className="relative">
+            {showReactionPicker && (
+              <ReactionPicker
+                onSelect={handleSendReaction}
+                onClose={() => setShowReactionPicker(false)}
+              />
+            )}
+            <ControlButton
+              onClick={() => setShowReactionPicker(v => !v)}
+              active={showReactionPicker}
+              icon={<Smile className="w-5 h-5" />}
+              label="Реакция"
+            />
+          </div>
+        )}
+
         {/* Завершить */}
         <button
           onClick={onLeaveCall}
@@ -485,6 +529,9 @@ export function GroupVideoCallScreen({
           label="Добавить участника"
         />
       </div>
+
+      {/* ── Reaction overlay ──────────────────────────────────────── */}
+      <CallReactionOverlay reactions={liveReactions} onExpired={handleReactionExpired} />
 
       {/* ── Invite sheet ──────────────────────────────────────────── */}
       {showInvite && (

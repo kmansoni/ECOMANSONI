@@ -1,18 +1,43 @@
 import { useParams, useNavigate } from "react-router-dom";
+import { useState } from "react";
 import { motion } from "framer-motion";
-import { Check, Download, FileText, Home, Shield } from "lucide-react";
+import { Check, Download, FileText, Home, Shield, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
+import { supabase } from "@/lib/supabase";
 
 export default function InsuranceSuccessPage() {
   const { policyId } = useParams<{ policyId: string }>();
   const navigate = useNavigate();
+  const [downloading, setDownloading] = useState(false);
 
-  const handleDownload = () => {
-    toast.success("PDF полиса скачивается...");
-    // mock download
+  const handleDownload = async () => {
+    if (!policyId) return;
+    setDownloading(true);
+    try {
+      const { data, error } = await supabase.storage
+        .from("policies")
+        .download(`${policyId}.pdf`);
+
+      if (error || !data) {
+        toast.error("Файл полиса не найден");
+        return;
+      }
+
+      const url = URL.createObjectURL(data);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `policy-${policyId}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success("PDF загружен");
+    } catch {
+      toast.error("Ошибка при скачивании");
+    } finally {
+      setDownloading(false);
+    }
   };
 
   return (
@@ -95,8 +120,9 @@ export default function InsuranceSuccessPage() {
           transition={{ delay: 0.6 }}
           className="space-y-3"
         >
-          <Button onClick={handleDownload} className="w-full" size="lg">
-            <Download className="w-4 h-4 mr-2" />Скачать PDF
+          <Button onClick={handleDownload} disabled={downloading} className="w-full" size="lg">
+            {downloading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}
+            {downloading ? "Загрузка..." : "Скачать PDF"}
           </Button>
           <Button variant="outline" onClick={() => navigate("/insurance/policies")} className="w-full">
             Мои полисы

@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { getSupabaseRuntimeConfig } from "@/lib/supabaseRuntimeConfig";
 import { useAuth } from "./useAuth";
 import { isGuestMode } from "@/lib/demo/demoMode";
 import { getDemoBotsReels, isDemoId } from "@/lib/demo/demoBots";
@@ -175,7 +174,7 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
   const fetchRawBatch = useCallback(
     async ({ offset, limit, followedAuthorIds }: { offset: number; limit: number; followedAuthorIds: string[] | null }) => {
       const fetchReelsViaEdgeFallback = async () => {
-        // Attempt 1: use supabase.functions.invoke (sends user JWT)
+        // supabase.functions.invoke автоматически передаёт JWT пользователя
         try {
           const { data, error } = await supabase.functions.invoke("reels-feed", {
             body: {
@@ -188,46 +187,12 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
           if (!error && data && (data as any).ok === true) {
             return ((data as any).data ?? []) as any[];
           }
-          logger.warn("[useReels] reels-feed invoke failed, trying direct fetch", { error, feedMode, offset, limit });
+          logger.warn("[useReels] reels-feed invoke failed", { error, feedMode, offset, limit });
         } catch (e) {
           logger.warn("[useReels] reels-feed invoke exception", { error: e });
         }
 
-        // Attempt 2: direct fetch with anon key only (bypasses expired JWT issues)
-        try {
-          const rtConfig = getSupabaseRuntimeConfig();
-          const baseUrl = rtConfig.supabaseUrl?.replace(/\/+$/, "");
-          const anonKey = rtConfig.supabasePublishableKey;
-          if (!baseUrl || !anonKey) return [] as any[];
-
-          const resp = await fetch(`${baseUrl}/functions/v1/reels-feed`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "apikey": anonKey,
-              "Authorization": `Bearer ${anonKey}`,
-            },
-            body: JSON.stringify({
-              limit,
-              offset,
-              author_ids: feedMode === "friends" ? (followedAuthorIds ?? []) : null,
-            }),
-          });
-
-          if (!resp.ok) {
-            logger.warn("[useReels] reels-feed direct fetch failed", { status: resp.status, feedMode });
-            return [] as any[];
-          }
-
-          const json = await resp.json();
-          if (json?.ok === true) {
-            return (json.data ?? []) as any[];
-          }
-          return [] as any[];
-        } catch (e) {
-          logger.warn("[useReels] reels-feed direct fetch exception", { error: e });
-          return [] as any[];
-        }
+        return [] as any[];
       };
 
       const fetchReelsFallback = async () => {

@@ -19,13 +19,19 @@ const REASON_TEXT: Record<string, (topic?: string) => string> = {
 
 export function WhyRecommended({ postId, reason = 'interests', topic, onDismiss }: WhyRecommendedProps) {
   const [open, setOpen] = useState(false);
-  const { markNotInterested } = useNotInterested();
+  const { markNotInterested, undoNotInterested } = useNotInterested();
 
   const handleNotInterested = async () => {
     await markNotInterested('post', postId, 'not_interested');
     toast('Пост скрыт', {
       description: 'Мы учтём ваши предпочтения',
-      action: { label: 'Отмена', onClick: () => {} },
+      action: {
+        label: 'Отмена',
+        onClick: () => {
+          undoNotInterested('post', postId);
+          toast('Скрытие отменено');
+        },
+      },
     });
     setOpen(false);
     onDismiss?.();

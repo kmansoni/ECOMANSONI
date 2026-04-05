@@ -195,7 +195,6 @@ export function ProfileHeader({
                     src={profile?.avatar_url || undefined}
                     alt={profile?.display_name || "Профиль"}
                     loading="eager"
-                    fetchPriority="high"
                     decoding="async"
                   />
                   <AvatarFallback className="bg-violet-500 text-white text-2xl font-semibold">

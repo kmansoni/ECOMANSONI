@@ -64,16 +64,21 @@ export function useRecommendations() {
   }, []);
 
   async function loadUserEmbedding() {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
 
-    const { data } = await (supabase as any)
-      .from('user_embeddings')
-      .select('*')
-      .eq('user_id', user.id)
-      .single();
+      const { data, error } = await (supabase as any)
+        .from('user_embeddings')
+        .select('*')
+        .eq('user_id', user.id)
+        .single();
 
-    if (data) {
+      if (error || !data) {
+        setUserEmbedding({ ...EMPTY_EMBEDDING, userId: user.id });
+        return;
+      }
+
       setUserEmbedding({
         userId: user.id,
         interests: data.interests ?? {},
@@ -83,19 +88,23 @@ export function useRecommendations() {
         preferredContentType: data.preferred_content_type ?? 'mixed',
         activeHours: data.active_hours ?? {},
       });
-    } else {
-      setUserEmbedding({ ...EMPTY_EMBEDDING, userId: user.id });
+    } catch {
+      // user_embeddings может не существовать — не блокируем UI
     }
   }
 
   async function loadInteractionCount() {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-    const { count } = await (supabase as any)
-      .from('user_interactions')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', user.id);
-    setInteractionCount(count ?? 0);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { count } = await (supabase as any)
+        .from('user_interactions')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id);
+      setInteractionCount(count ?? 0);
+    } catch {
+      // user_interactions может не существовать
+    }
   }
 
   const getUserEmbedding = useCallback(() => userEmbedding, [userEmbedding]);
@@ -197,8 +206,9 @@ export function useRecommendations() {
           .from('profiles')
           .select('id, username, avatar_url, full_name')
           .neq('id', user.id)
+          .not('username', 'is', null)
           .limit(limit);
-        return profiles ?? [];
+        return (profiles ?? []).filter(p => p.username?.trim());
       }
 
       const ids = candidates.map((c: SimilarUserRow) => c.similar_user_id);
@@ -207,7 +217,7 @@ export function useRecommendations() {
         .select('id, username, avatar_url, full_name')
         .in('id', ids);
 
-      return (profiles ?? []).map((p) => ({
+      return (profiles ?? []).filter(p => p.username?.trim()).map((p) => ({
         ...p,
         reason: 'similar_interests' as const,
         similarityScore: candidates.find((c: SimilarUserRow) => c.similar_user_id === p.id)?.similarity_score ?? 0,

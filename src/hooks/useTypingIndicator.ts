@@ -51,11 +51,14 @@ const CLEANUP_INTERVAL_MS = 2_000;
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
+export type TypingActivity = "typing" | "recording_voice" | "recording_video";
+
 export interface TypingUser {
   userId: string;
   displayName: string;
   avatarUrl?: string | null;
-  seenAt: number; // Date.now()
+  seenAt: number;
+  activity: TypingActivity;
 }
 
 interface PresenceState {
@@ -63,17 +66,17 @@ interface PresenceState {
   display_name: string;
   avatar_url?: string | null;
   ts: number;
+  activity?: TypingActivity;
 }
 
 export interface UseTypingIndicatorReturn {
-  /** Remote users currently typing (excludes self) */
   typingUsers: TypingUser[];
-  /** Human-readable label: "Alice", "Alice and Bob", "Alice, Bob and 3 others" */
   typingLabel: string | null;
-  /** Call this on every keystroke in the message input */
   onKeyDown: () => void;
-  /** Call this when the message is sent or input is cleared */
   onStopTyping: () => void;
+  onStartRecordingVoice: () => void;
+  onStartRecordingVideo: () => void;
+  onStopRecording: () => void;
 }
 
 // ── Hook ─────────────────────────────────────────────────────────────────────
@@ -113,7 +116,7 @@ export function useTypingIndicator(
 
   // ── Broadcast ───────────────────────────────────────────────────────────
 
-  const sendTyping = useCallback(() => {
+  const sendTyping = useCallback((activity: TypingActivity = "typing") => {
     const channel = channelRef.current;
     if (!channel || !currentUserId || !currentDisplayName) return;
     const now = Date.now();
@@ -125,11 +128,10 @@ export function useTypingIndicator(
       display_name: currentDisplayName,
       avatar_url: currentAvatarUrl ?? null,
       ts: now,
+      activity,
     };
 
-    void channel.track(payload).catch(() => {
-      // Best-effort; failures don't affect message delivery
-    });
+    void channel.track(payload).catch(() => {});
   }, [currentUserId, currentDisplayName, currentAvatarUrl]);
 
   const stopTyping = useCallback(() => {
@@ -194,6 +196,7 @@ export function useTypingIndicator(
           displayName: latest.display_name,
           avatarUrl: latest.avatar_url ?? null,
           seenAt: latest.ts,
+          activity: latest.activity || "typing",
         });
       }
 
@@ -210,6 +213,7 @@ export function useTypingIndicator(
         displayName: p.display_name,
         avatarUrl: p.avatar_url ?? null,
         seenAt: p.ts,
+        activity: p.activity || "typing",
       });
       setTypingUsers(Array.from(typerMapRef.current.values()));
     });
@@ -239,26 +243,69 @@ export function useTypingIndicator(
 
   // ── Typing label ────────────────────────────────────────────────────────
 
+  const onStartRecordingVoice = useCallback(() => {
+    lastSentRef.current = 0;
+    sendTyping("recording_voice");
+    if (stopTimerRef.current) {
+      clearTimeout(stopTimerRef.current);
+      stopTimerRef.current = null;
+    }
+  }, [sendTyping]);
+
+  const onStartRecordingVideo = useCallback(() => {
+    lastSentRef.current = 0;
+    sendTyping("recording_video");
+    if (stopTimerRef.current) {
+      clearTimeout(stopTimerRef.current);
+      stopTimerRef.current = null;
+    }
+  }, [sendTyping]);
+
+  const onStopRecording = useCallback(() => {
+    stopTyping();
+  }, [stopTyping]);
+
   const typingLabel = buildTypingLabel(typingUsers);
 
-  return { typingUsers, typingLabel, onKeyDown, onStopTyping };
+  return {
+    typingUsers, typingLabel,
+    onKeyDown, onStopTyping,
+    onStartRecordingVoice, onStartRecordingVideo, onStopRecording,
+  };
 }
 
 // ── Label builder ────────────────────────────────────────────────────────────
 
+const ACTIVITY_VERBS: Record<TypingActivity, [string, string]> = {
+  typing: ["печатает", "печатают"],
+  recording_voice: ["записывает голос", "записывают голос"],
+  recording_video: ["записывает видео", "записывают видео"],
+};
+
 function buildTypingLabel(users: TypingUser[]): string | null {
-  if (users.length === 0) return null;
+  if (!users.length) return null;
 
-  const names = users.slice(0, MAX_TYPERS_DISPLAYED).map((u) => u.displayName);
-  const overflow = users.length - MAX_TYPERS_DISPLAYED;
-
-  if (users.length === 1) {
-    return `${names[0]} печатает…`;
+  const byActivity = new Map<TypingActivity, TypingUser[]>();
+  for (const u of users) {
+    const a = u.activity || "typing";
+    const arr = byActivity.get(a);
+    if (arr) arr.push(u);
+    else byActivity.set(a, [u]);
   }
 
-  const listed = names.join(", ");
-  if (overflow <= 0) {
-    return `${listed} печатают…`;
+  const parts: string[] = [];
+  for (const [activity, group] of byActivity) {
+    const [singular, plural] = ACTIVITY_VERBS[activity];
+    const names = group.slice(0, MAX_TYPERS_DISPLAYED).map((u) => u.displayName);
+    const overflow = group.length - MAX_TYPERS_DISPLAYED;
+    const verb = group.length === 1 ? singular : plural;
+
+    if (overflow > 0) {
+      parts.push(`${names.join(", ")} и ещё ${overflow} ${verb}…`);
+    } else {
+      parts.push(`${names.join(", ")} ${verb}…`);
+    }
   }
-  return `${listed} и ещё ${overflow} печатают…`;
+
+  return parts.join(", ");
 }

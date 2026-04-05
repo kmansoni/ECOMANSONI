@@ -23,6 +23,14 @@ export function useInsuranceCompany(id: string | undefined) {
   });
 }
 
+export function useInsuranceCompanyBySlug(slug: string | undefined) {
+  return useQuery({
+    queryKey: ["insurance-company-slug", slug],
+    queryFn: () => insuranceApi.getCompanyBySlug(slug!),
+    enabled: !!slug,
+  });
+}
+
 /**
  * Хук для получения отзывов о страховой компании
  */

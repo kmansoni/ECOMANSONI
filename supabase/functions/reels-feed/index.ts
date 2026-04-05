@@ -10,13 +10,6 @@ type RequestBody = {
   author_ids?: string[];
 };
 
-type StorageObjectRow = {
-  name: string;
-  bucket_id: string;
-  created_at: string;
-  metadata: Record<string, unknown> | null;
-};
-
 function normalizeBaseUrl(url: string): string {
   return String(url || "").replace(/\/+$/, "");
 }
@@ -29,25 +22,6 @@ function buildPublicStorageUrl(supabaseUrl: string, bucket: string, objectPath: 
     .map((seg) => encodeURIComponent(seg))
     .join("/");
   return `${base}/storage/v1/object/public/${encodeURIComponent(bucket)}/${encoded}`;
-}
-
-function isProbablyVideoObject(obj: StorageObjectRow): boolean {
-  const nameLower = String(obj?.name || "").toLowerCase();
-  const meta = (obj?.metadata || {}) as any;
-  const mime = String(meta?.mimetype || meta?.contentType || "").toLowerCase();
-  if (mime.startsWith("video/")) return true;
-  return /\.(mp4|webm|mov|avi|m4v)(\?|#|$)/.test(nameLower);
-}
-
-function extractAuthorIdFromObjectName(name: string): string | null {
-  const firstSeg = String(name || "").split("/")[0] || "";
-  const v = firstSeg.trim();
-  if (!v) return null;
-  // Basic UUID v4-ish validation (Supabase auth user ids are UUIDs).
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v)) {
-    return null;
-  }
-  return v;
 }
 
 function json(body: unknown, status = 200, cors: Record<string, string> = {}): Response {
@@ -73,9 +47,26 @@ serve(async (req: Request) => {
   if (req.method !== "POST") return json({ ok: false, error: "Method not allowed" }, 405, cors);
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (!supabaseUrl || !serviceKey) {
     return json({ ok: false, error: "Server not configured" }, 500, cors);
+  }
+
+  // JWT авторизация — мягкая: фид публичный, но sync требует авторизации
+  const authHeader = req.headers.get("Authorization");
+  let caller: { id: string } | null = null;
+  if (authHeader?.startsWith("Bearer ")) {
+    try {
+      const authClient = createClient(supabaseUrl, supabaseAnonKey ?? serviceKey, {
+        global: { headers: { Authorization: authHeader } },
+        auth: { persistSession: false },
+      });
+      const { data: { user }, error: authError } = await authClient.auth.getUser();
+      if (!authError && user) caller = user;
+    } catch {
+      // мягкая проверка — не блокируем фид
+    }
   }
 
   let body: RequestBody = {};
@@ -94,68 +85,87 @@ serve(async (req: Request) => {
   const supabase = createClient(supabaseUrl, serviceKey);
 
   const syncStorageObjectsToReels = async () => {
-    // Goal: ensure every video object in reels-media bucket is represented in public.reels.
-    // This allows legacy uploads (storage-only) to appear in the feed.
+    // Синхронизируем видео из storage → public.reels.
+    // Используем Storage API (list) вместо прямого запроса к storage.objects.
     const bucket = "reels-media";
 
-    // List recent objects from storage.
-    const storageRes = await supabase
-      .from("storage.objects")
-      .select("name,bucket_id,created_at,metadata")
-      .eq("bucket_id", bucket)
-      .order("created_at", { ascending: false })
-      .range(offset, offset + limit - 1);
-
-    if (storageRes.error) {
-      console.warn("[reels-feed] storage.objects list failed:", storageRes.error);
-      return;
-    }
-
-    const objects = (storageRes.data ?? []) as StorageObjectRow[];
-    const videoObjects = objects.filter(isProbablyVideoObject);
-    if (videoObjects.length === 0) return;
-
-    const publicUrls = videoObjects.map((o) => buildPublicStorageUrl(supabaseUrl, bucket, o.name));
-
-    const existing = await supabase
-      .from("reels")
-      .select("id,video_url")
-      .in("video_url", publicUrls);
-
-    if (existing.error) {
-      console.warn("[reels-feed] reels existence check failed:", existing.error);
-      return;
-    }
-
-    const existingUrls = new Set(((existing.data ?? []) as any[]).map((r) => String(r?.video_url || "")));
-    const missing = videoObjects
-      .map((o) => {
-        const video_url = buildPublicStorageUrl(supabaseUrl, bucket, o.name);
-        const author_id = extractAuthorIdFromObjectName(o.name);
-        return {
-          author_id,
-          video_url,
-          created_at: o.created_at,
-        };
-      })
-      .filter((r) => !!r.author_id && !!r.video_url && !existingUrls.has(r.video_url));
-
-    if (missing.length === 0) return;
-
-    // Insert as best-effort. Keep schema compatibility by inserting only core columns.
-    // If created_at is not writable in some deployments, retry without it.
-    let insertRes = await supabase.from("reels").insert(missing);
-    if (insertRes.error) {
-      const msg = String((insertRes.error as any)?.message ?? "").toLowerCase();
-      if (msg.includes("created_at") || String((insertRes.error as any)?.code ?? "") === "42703") {
-        insertRes = await supabase
-          .from("reels")
-          .insert(missing.map(({ author_id, video_url }) => ({ author_id, video_url })));
+    try {
+      // Листаем корень бакета — получаем папки (UUID пользователей)
+      const { data: folders, error: listErr } = await supabase.storage.from(bucket).list("", {
+        limit: 100,
+        sortBy: { column: "created_at", order: "desc" },
+      });
+      if (listErr || !folders) {
+        console.warn("[reels-feed] storage list root failed:", listErr);
+        return;
       }
-    }
 
-    if (insertRes.error) {
-      console.warn("[reels-feed] reels insert missing storage videos failed:", insertRes.error);
+      const videoObjects: Array<{ name: string; authorId: string; createdAt: string }> = [];
+
+      for (const folder of folders) {
+        // Папки = UUID авторов
+        const authorId = folder.name?.trim();
+        if (!authorId || !/^[0-9a-f]{8}-/i.test(authorId)) continue;
+
+        const { data: files } = await supabase.storage.from(bucket).list(authorId, {
+          limit: 50,
+          sortBy: { column: "created_at", order: "desc" },
+        });
+        if (!files) continue;
+
+        for (const f of files) {
+          const nameLower = (f.name || "").toLowerCase();
+          if (/\.(mp4|webm|mov|m4v)$/.test(nameLower)) {
+            videoObjects.push({
+              name: `${authorId}/${f.name}`,
+              authorId,
+              createdAt: f.created_at || new Date().toISOString(),
+            });
+          }
+          // Проверяем вложенные папки (e.g. /reels/{id}/original.mp4)
+          if (!f.name?.includes(".")) {
+            const { data: nested } = await supabase.storage.from(bucket).list(`${authorId}/${f.name}`, { limit: 20 });
+            if (nested) {
+              for (const nf of nested) {
+                const nn = (nf.name || "").toLowerCase();
+                if (/\.(mp4|webm|mov|m4v)$/.test(nn)) {
+                  videoObjects.push({
+                    name: `${authorId}/${f.name}/${nf.name}`,
+                    authorId,
+                    createdAt: nf.created_at || f.created_at || new Date().toISOString(),
+                  });
+                }
+              }
+            }
+          }
+        }
+      }
+
+      if (videoObjects.length === 0) return;
+
+      const publicUrls = videoObjects.map((o) => buildPublicStorageUrl(supabaseUrl, bucket, o.name));
+      const existing = await supabase.from("reels").select("video_url").in("video_url", publicUrls);
+      const existingUrls = new Set(((existing.data ?? []) as any[]).map((r) => String(r?.video_url || "")));
+
+      const missing = videoObjects
+        .filter((o) => !existingUrls.has(buildPublicStorageUrl(supabaseUrl, bucket, o.name)))
+        .map((o) => ({
+          author_id: o.authorId,
+          video_url: buildPublicStorageUrl(supabaseUrl, bucket, o.name),
+          moderation_status: "clean",
+          created_at: o.createdAt,
+        }));
+
+      if (missing.length === 0) return;
+
+      const insertRes = await supabase.from("reels").insert(missing);
+      if (insertRes.error) {
+        console.warn("[reels-feed] reels insert failed:", insertRes.error);
+      } else {
+        console.log(`[reels-feed] synced ${missing.length} videos from storage`);
+      }
+    } catch (e) {
+      console.warn("[reels-feed] storage sync exception:", e);
     }
   };
 

@@ -118,8 +118,8 @@ export function SuggestedUsers({ className = '' }: SuggestedUsersProps) {
             </div>
 
             <div className="text-center min-w-0 w-full">
-              <p className="text-xs font-medium text-foreground truncate">{user.full_name || user.username}</p>
-              <p className="text-xs text-muted-foreground truncate">@{user.username}</p>
+              <p className="text-xs font-medium text-foreground truncate">{user.full_name || user.username || 'Пользователь'}</p>
+              <p className="text-xs text-muted-foreground truncate">@{user.username || '...'}</p>
             </div>
 
             {user.reason && (
@@ -136,7 +136,7 @@ export function SuggestedUsers({ className = '' }: SuggestedUsersProps) {
                 background: followedIds.has(user.id) ? 'var(--muted)' : 'var(--primary)',
                 color: followedIds.has(user.id) ? 'var(--muted-foreground)' : 'var(--primary-foreground)',
               }}
-              aria-label={followedIds.has(user.id) ? `Вы подписаны на ${user.username}` : `Подписаться на ${user.username}`}
+              aria-label={followedIds.has(user.id) ? `Вы подписаны на ${user.username || 'пользователя'}` : `Подписаться на ${user.username || 'пользователя'}`}
               aria-pressed={followedIds.has(user.id)}
             >
               {!followedIds.has(user.id) && <UserPlus className="w-3 h-3" aria-hidden="true" />}

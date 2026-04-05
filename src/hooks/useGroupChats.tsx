@@ -147,6 +147,14 @@ export function useGroupChats() {
       return;
     }
 
+    // Проверяем наличие активной сессии перед запросом
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      setGroups([]);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     setError(null);
 

@@ -83,6 +83,24 @@ export interface EncryptedGroupMessage {
 // Map: `${conversationId}:${senderId}:${keyId}` → SenderKeyState
 const _senderKeyStore = new Map<string, SenderKeyState>();
 
+const MAX_SKIP = 256;
+const SKIPPED_KEYS_LIMIT = 1024;
+const _skippedKeys = new Map<string, CryptoKey>();
+
+function _skippedKeyId(convId: string, sid: string, keyId: number, iter: number) {
+  return `${convId}:${sid}:${keyId}:${iter}`;
+}
+
+function pruneSkippedKeys() {
+  if (_skippedKeys.size <= SKIPPED_KEYS_LIMIT) return;
+  const excess = _skippedKeys.size - SKIPPED_KEYS_LIMIT;
+  const it = _skippedKeys.keys();
+  for (let i = 0; i < excess; i++) {
+    const { value } = it.next();
+    if (value) _skippedKeys.delete(value);
+  }
+}
+
 function openSenderKeyDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(SENDER_KEY_DB, 1);
@@ -464,11 +482,7 @@ export async function encryptGroupMessage(
 
 /**
  * Расшифровывает групповое сообщение.
- * Продвигает chain key sender'а до нужной iteration (forward-skip if needed).
- *
- * NOTE: для production нужен skipped-message-key cache (как в Double Ratchet).
- * Текущая реализация поддерживает порядковую доставку; out-of-order расшифровка
- * требует расширения (Task backlog).
+ * Поддерживает out-of-order доставку через skipped-message-key cache (Signal pattern).
  */
 export async function decryptGroupMessage(
   msg: EncryptedGroupMessage,
@@ -481,37 +495,54 @@ export async function decryptGroupMessage(
     );
   }
 
-  // Advance chain to target iteration
+  let messageKey: CryptoKey;
+
   if (msg.iteration < state.iteration) {
-    throw new Error(
-      `Out-of-order message: iteration ${msg.iteration} < current ${state.iteration}. ` +
-      'Skipped-message-key cache required for out-of-order delivery — not implemented yet.',
-    );
-  }
-
-  // Advance chain key to message's iteration
-  let chainKey = state.chainKey;
-  let messageKey: CryptoKey | null = null;
-
-  for (let i = state.iteration; i <= msg.iteration; i++) {
-    const result = await ratchet(chainKey);
-    if (i === msg.iteration) {
-      messageKey = result.messageKey;
+    const skId = _skippedKeyId(msg.conversationId, msg.senderId, msg.keyId, msg.iteration);
+    const cached = _skippedKeys.get(skId);
+    if (!cached) {
+      throw new Error(
+        `Message key for iteration ${msg.iteration} already consumed (current: ${state.iteration}).`,
+      );
     }
-    chainKey = result.nextChainKey;
-  }
+    _skippedKeys.delete(skId);
+    messageKey = cached;
+  } else {
+    const gap = msg.iteration - state.iteration;
+    if (gap > MAX_SKIP) {
+      throw new Error(`Too many skipped messages (${gap} > ${MAX_SKIP}). Possible DoS or lost session.`);
+    }
 
-  // Update stored state to latest position
-  state.chainKey = chainKey;
-  state.iteration = msg.iteration + 1;
-  await _persistState(state);
+    let chainKey = state.chainKey;
+    let mk: CryptoKey | null = null;
+
+    for (let i = state.iteration; i <= msg.iteration; i++) {
+      const { nextChainKey, messageKey: derived } = await ratchet(chainKey);
+      if (i < msg.iteration) {
+        _skippedKeys.set(
+          _skippedKeyId(msg.conversationId, msg.senderId, msg.keyId, i),
+          derived,
+        );
+      } else {
+        mk = derived;
+      }
+      chainKey = nextChainKey;
+    }
+
+    state.chainKey = chainKey;
+    state.iteration = msg.iteration + 1;
+    await _persistState(state);
+    pruneSkippedKeys();
+
+    messageKey = mk!;
+  }
 
   const iv = toLocalBytesFromBase64(msg.iv);
   const ciphertext = toLocalBytesFromBase64(msg.ciphertext);
 
   const plaintext = await crypto.subtle.decrypt(
     { name: 'AES-GCM', iv },
-    messageKey!,
+    messageKey,
     ciphertext,
   ).catch(() => {
     throw new Error('AES-GCM decryption failed — wrong key or tampered ciphertext.');
@@ -617,6 +648,11 @@ export function deleteSenderKeys(conversationId: string, senderId: string): void
   for (const key of _senderKeyStore.keys()) {
     if (key.startsWith(`${conversationId}:${senderId}:`)) {
       _senderKeyStore.delete(key);
+    }
+  }
+  for (const key of _skippedKeys.keys()) {
+    if (key.startsWith(`${conversationId}:${senderId}:`)) {
+      _skippedKeys.delete(key);
     }
   }
   void _deleteStates(conversationId, senderId);
