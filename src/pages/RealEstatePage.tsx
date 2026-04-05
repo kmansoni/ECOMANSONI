@@ -14,6 +14,7 @@ import { MortgageCalculator } from "@/components/realestate/MortgageCalculator";
 import { supabase } from "@/lib/supabase";
 import { Tables } from "@/integrations/supabase/types";
 import { logger } from "@/lib/logger";
+import { toast } from "sonner";
 
 type Property = Tables<"properties"> & {
   property_images?: Tables<"property_images">[];
@@ -45,7 +46,8 @@ export function RealEstatePage() {
   const [favorites, setFavorites] = useState<string[]>([]);
   const [showFilters, setShowFilters] = useState(false);
   const [visibleCount, setVisibleCount] = useState(6);
-  
+  const [sortBy, setSortBy] = useState<'popular' | 'price_asc' | 'price_desc' | 'date'>('popular');
+
   // Filter states from RealEstateFilters
   const [filters, setFilters] = useState({
     propertyType: "apartment",
@@ -174,8 +176,12 @@ export function RealEstatePage() {
       result = result.filter(p => p.has_furniture);
     }
 
+    if (sortBy === 'price_asc') result.sort((a, b) => Number(a.price) - Number(b.price));
+    else if (sortBy === 'price_desc') result.sort((a, b) => Number(b.price) - Number(a.price));
+    else if (sortBy === 'date') result.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
     setFilteredProperties(result);
-  }, [properties, filters, selectedCity, selectedRooms, filterOptions]);
+  }, [properties, filters, selectedCity, selectedRooms, filterOptions, sortBy]);
 
   const toggleFavorite = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -237,6 +243,30 @@ export function RealEstatePage() {
     setVisibleCount(prev => prev + 6);
   };
 
+  const sortLabels = {
+    popular: 'По популярности',
+    price_asc: 'Сначала дешевле',
+    price_desc: 'Сначала дороже',
+    date: 'По дате',
+  } as const;
+
+  const cycleSortOption = () => {
+    const opts = ['popular', 'price_asc', 'price_desc', 'date'] as const;
+    const idx = opts.indexOf(sortBy);
+    setSortBy(opts[(idx + 1) % opts.length]);
+  };
+
+  const handleServiceClick = (id: string) => {
+    if (id === 'insurance') { navigate('/insurance'); return; }
+    if (id === 'mortgage') { toast.info('Ипотечный калькулятор — выше на странице'); return; }
+    const msgs: Record<string, string> = {
+      newbuilding: 'Каталог новостроек в разработке',
+      check: 'Проверка жилья в разработке',
+      analytics: 'Аналитика рынка в разработке',
+    };
+    toast.info(msgs[id] || 'В разработке');
+  };
+
   const featuredProperties = filteredProperties.slice(0, 3);
   const visibleProperties = filteredProperties.slice(0, visibleCount);
 
@@ -264,6 +294,7 @@ export function RealEstatePage() {
         <Button 
           variant="outline" 
           className="w-full h-12 rounded-2xl border-2 border-border bg-card text-foreground font-medium hover:bg-muted"
+          onClick={() => toast.info("Размещение объявлений скоро будет доступно")}
         >
           <Plus className="w-5 h-5 mr-2" />
           Разместить за 0 ₽
@@ -279,6 +310,7 @@ export function RealEstatePage() {
               return (
                 <button
                   key={service.id}
+                  onClick={() => handleServiceClick(service.id)}
                   className="flex-shrink-0 flex flex-col items-center w-20 p-3 rounded-2xl bg-muted/50 hover:bg-muted transition-colors"
                 >
                   <div className="w-12 h-12 rounded-xl bg-background flex items-center justify-center mb-2 shadow-sm">
@@ -381,8 +413,11 @@ export function RealEstatePage() {
           <div className="px-4">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold">{filteredProperties.length} объектов</h3>
-              <button className="text-muted-foreground text-sm flex items-center gap-1">
-                По популярности
+              <button 
+                onClick={cycleSortOption}
+                className="text-muted-foreground text-sm flex items-center gap-1"
+              >
+                {sortLabels[sortBy]}
                 <ChevronLeft className="w-4 h-4 -rotate-90" />
               </button>
             </div>
@@ -475,10 +510,19 @@ export function RealEstatePage() {
                           )}
                         </div>
                         <div className="flex items-center gap-2">
-                          <Button size="icon" variant="outline" className="rounded-full w-10 h-10">
+                          <Button 
+                            size="icon" 
+                            variant="outline" 
+                            className="rounded-full w-10 h-10"
+                            onClick={(e) => { e.stopPropagation(); toast.info("Телефон не указан — обратитесь через чат"); }}
+                          >
                             <Phone className="w-4 h-4" />
                           </Button>
-                          <Button size="icon" className="rounded-full w-10 h-10">
+                          <Button 
+                            size="icon" 
+                            className="rounded-full w-10 h-10"
+                            onClick={(e) => { e.stopPropagation(); navigate(`/chat/new?userId=${property.owner_id}`); }}
+                          >
                             <MessageCircle className="w-4 h-4" />
                           </Button>
                         </div>

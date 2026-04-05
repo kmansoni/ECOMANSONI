@@ -8,6 +8,7 @@ import { PropertyMap } from "@/components/maps/PropertyMap";
 import { supabase } from "@/lib/supabase";
 import { Tables } from "@/integrations/supabase/types";
 import { logger } from "@/lib/logger";
+import { toast } from "sonner";
 
 type Property = Tables<"properties"> & {
   property_images?: Tables<"property_images">[];
@@ -151,7 +152,10 @@ export function PropertyDetailPage() {
               </p>
               <p className="text-white/70 text-sm">{property.title}</p>
             </div>
-            <Button className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-full px-6">
+            <Button 
+              className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-full px-6"
+              onClick={() => toast.info("Телефон не указан, обратитесь через чат")}
+            >
               <Phone className="w-4 h-4 mr-2" />
               Позвонить
             </Button>
@@ -175,7 +179,10 @@ export function PropertyDetailPage() {
           </button>
           <span className="font-medium text-sm truncate max-w-[200px]">{property.title}</span>
           <div className="flex items-center gap-3">
-            <button>
+            <button onClick={() => {
+              navigator.clipboard.writeText(property.title);
+              toast.info("Ссылка скопирована");
+            }}>
               <Share2 className="w-5 h-5" />
             </button>
             <button onClick={() => setIsFavorite(!isFavorite)}>
@@ -339,7 +346,11 @@ export function PropertyDetailPage() {
             {property.district && <p className="text-sm text-muted-foreground">{property.district}</p>}
             {property.address && <p className="text-sm text-muted-foreground">{property.address}</p>}
           </div>
-          <button className="ml-auto">
+          <button className="ml-auto" onClick={() => {
+            const addr = [property.city, property.district, property.address].filter(Boolean).join(', ');
+            navigator.clipboard.writeText(addr);
+            toast.info("Адрес скопирован");
+          }}>
             <Copy className="w-4 h-4 text-muted-foreground" />
           </button>
         </div>
@@ -390,11 +401,19 @@ export function PropertyDetailPage() {
       {/* Fixed Bottom Actions - positioned above BottomNav */}
       <div className="fixed bottom-16 left-0 right-0 bg-background border-t border-border px-4 py-3 z-40">
         <div className="flex gap-3">
-          <Button className="flex-1 h-12 rounded-xl bg-primary">
+          <Button 
+            className="flex-1 h-12 rounded-xl bg-primary"
+            onClick={() => toast.info("Телефон не указан, обратитесь через чат")}
+          >
             <Phone className="w-5 h-5 mr-2" />
             Позвонить
           </Button>
-          <Button variant="outline" size="icon" className="h-12 w-12 rounded-xl">
+          <Button 
+            variant="outline" 
+            size="icon" 
+            className="h-12 w-12 rounded-xl"
+            onClick={() => navigate(`/chat/new?userId=${property.owner_id}`)}
+          >
             <MessageCircle className="w-5 h-5" />
           </Button>
         </div>
