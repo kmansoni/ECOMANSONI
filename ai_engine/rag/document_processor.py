@@ -144,40 +144,51 @@ class DocumentProcessor:
         return chunks
 
     def process_url(self, url: str) -> list[Chunk]:
-        """
-        Извлечь контент по URL (заглушка — имитация веб-извлечения).
+        """Извлечь контент по URL через httpx + стрип HTML-тегов."""
+        try:
+            import httpx
+        except ImportError:
+            logger.error("httpx не установлен — process_url недоступен")
+            chunk = Chunk(
+                text=f"Не удалось загрузить URL: {url} (httpx не установлен)",
+                source=url,
+                metadata={"url": url, "error": "httpx не установлен"},
+            )
+            return [chunk]
 
-        В production реализации: использовать httpx + BeautifulSoup4
-        или Playwright для JavaScript-heavy страниц.
+        try:
+            resp = httpx.get(url, timeout=10.0, follow_redirects=True, headers={
+                "User-Agent": "Mozilla/5.0 (compatible; AriaBot/1.0)",
+            })
+            resp.raise_for_status()
+        except Exception as exc:
+            logger.error("Ошибка загрузки URL %s: %s", url, exc)
+            chunk = Chunk(
+                text=f"Не удалось загрузить URL: {url}",
+                source=url,
+                metadata={"url": url, "error": f"Не удалось загрузить URL: {exc}"},
+            )
+            return [chunk]
 
-        Args:
-            url: URL веб-страницы.
+        # Убираем script/style блоки, затем все HTML-теги
+        html = resp.text
+        html = re.sub(r"<(script|style)[^>]*>.*?</\1>", "", html, flags=re.DOTALL | re.IGNORECASE)
+        text = re.sub(r"<[^>]+>", " ", html)
+        text = re.sub(r"\s+", " ", text).strip()
 
-        Returns:
-            Список Chunk объектов с mock-данными.
-        """
-        logger.warning(
-            "process_url — заглушка. URL: %s. "
-            "В production замените на httpx + BeautifulSoup4.",
-            url,
-        )
+        if not text:
+            chunk = Chunk(
+                text=f"Страница не содержит текстового контента: {url}",
+                source=url,
+                metadata={"url": url, "error": "пустой контент"},
+            )
+            return [chunk]
 
-        # Mock контент для демонстрации
-        mock_content = (
-            f"[MOCK] Содержимое страницы: {url}\n\n"
-            "Это имитация веб-извлечения. В production реализации "
-            "здесь будет реальный HTTP запрос с парсингом HTML.\n\n"
-            "Пример извлечённого контента:\n"
-            "- Заголовок страницы\n"
-            "- Основной текст статьи\n"
-            "- Метаданные (дата, автор)"
-        )
-
-        chunks = self.process_text(mock_content, source=url)
+        chunks = self.process_text(text, source=url)
         for chunk in chunks:
             chunk.metadata["url"] = url
-            chunk.metadata["is_mock"] = True
 
+        logger.info("Извлечено %d chunks из URL: %s", len(chunks), url)
         return chunks
 
     # ------------------------------------------------------------------

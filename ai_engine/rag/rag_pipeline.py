@@ -197,6 +197,8 @@ class RAGPipeline:
 
         try:
             answer = self.llm(prompt)
+            if not answer or not answer.strip():
+                raise RuntimeError("LLM не сконфигурирован")
         except Exception as exc:
             logger.error("LLM ошибка: %s", exc)
             answer = f"Ошибка генерации ответа: {exc}"
@@ -259,6 +261,8 @@ class RAGPipeline:
 
         try:
             answer = self.llm(prompt)
+            if not answer or not answer.strip():
+                raise RuntimeError("LLM не сконфигурирован")
         except Exception as exc:
             logger.error("LLM ошибка: %s", exc)
             answer = f"Ошибка генерации ответа: {exc}"
@@ -298,7 +302,7 @@ class RAGPipeline:
 
 
 if __name__ == "__main__":
-    # Mock LLM для демонстрации
+    # DEMO ONLY — в production используется реальный LLM
     def mock_llm(prompt: str) -> str:
         if "No relevant" in prompt:
             return "I don't have information about that."

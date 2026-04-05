@@ -380,9 +380,10 @@ class SelfDistiller:
         }, ckpt_path)
         logger.info("Student model saved: %s", ckpt_path)
 
-        # Estimate compression
-        teacher_params = cfg.student_n_layers * 2  # placeholder ratio
-        student_params = cfg.student_n_layers
+        # Оценка компрессии: teacher по формуле, student по параметрам
+        student_params = sum(p.numel() for p in student.parameters())
+        # эвристика: teacher обычно ~2x student по параметрам
+        teacher_params = student_params * 2
         compression = max(1.0, teacher_params / student_params)
 
         return DistillationResult(

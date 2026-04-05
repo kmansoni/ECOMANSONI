@@ -134,7 +134,7 @@ class EmbeddingEngine:
             if key in self._cache:
                 results.append(self._cache[key])
             else:
-                results.append(np.array([]))  # placeholder
+                results.append(None)  # заполним после batch-вычисления
                 uncached_indices.append(i)
                 uncached_texts.append(text)
 
@@ -144,6 +144,13 @@ class EmbeddingEngine:
                 key = self._cache_key(texts[idx])
                 self._store_cache(key, vec)
                 results[idx] = vec
+
+        # Проверка: все элементы должны быть заполнены
+        for i, r in enumerate(results):
+            if r is None:
+                raise ValueError(
+                    f"Embedding model не загружена: не удалось вычислить эмбеддинг для текста [{i}]"
+                )
 
         return np.vstack(results)
 

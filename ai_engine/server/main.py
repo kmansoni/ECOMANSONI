@@ -154,7 +154,7 @@ _rag: Optional[RAGPipeline] = None
 
 
 def _noop_llm(_prompt: str) -> str:
-    """No-op LLM for retrieval-only RAG bootstrap."""
+    """No-op LLM для retrieval-only режима RAG."""
     return ""
 
 
@@ -192,6 +192,7 @@ def _load_bootstrap_corpus() -> tuple[list[str], list[str]]:
 def get_rag() -> RAGPipeline:
     global _rag
     if _rag is None:
+        logger.warning("RAG запущен без LLM — только retrieval")
         _rag = RAGPipeline(
             llm_callable=_noop_llm,
             top_k=3,
@@ -752,6 +753,10 @@ async def submit_feedback(
 
     # Автозапуск обучения при накоплении достаточного количества пар
     if saved and req.consent and req.rating == -1 and req.correction:
+        await _maybe_trigger_training()
+
+    # Проверка накопления пар для авто-обучения (при любом сохранённом feedback с consent)
+    if saved and req.consent and not (req.rating == -1 and req.correction):
         await _maybe_trigger_training()
 
     return {

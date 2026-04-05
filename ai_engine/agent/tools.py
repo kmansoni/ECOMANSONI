@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from functools import wraps
 from typing import Any, Callable, Optional
+from urllib.parse import quote_plus
 
 logger = logging.getLogger(__name__)
 
@@ -242,14 +243,14 @@ class ToolRegistry:
                 func=_tool_datetime,
             ),
             Tool(
-                name="web_search_mock",
-                description="Имитация веб-поиска. Возвращает mock-результаты для демонстрации.",
+                name="web_search",
+                description="Веб-поиск через DuckDuckGo. Возвращает краткие результаты.",
                 parameters={
                     "type": "object",
                     "properties": {"query": {"type": "string", "description": "Поисковый запрос"}},
                     "required": ["query"],
                 },
-                func=_tool_web_search_mock,
+                func=_tool_web_search,
             ),
             Tool(
                 name="code_executor",
@@ -315,16 +316,39 @@ def _tool_datetime() -> str:
     return now.strftime("%Y-%m-%dT%H:%M:%S") + f" (UTC+3, {now.strftime('%A')})"
 
 
-def _tool_web_search_mock(query: str) -> str:
-    """Mock веб-поиск — возвращает реалистичные заглушки."""
-    mock_results = [
-        f"[1] Wikipedia: {query} — подробная статья об этой теме.",
-        f"[2] Stack Overflow: Как использовать {query} в Python — 142 ответа.",
-        f"[3] GitHub: open-source реализация {query} — 2.3k stars.",
-        f"[4] Medium: Введение в {query} для начинающих.",
-        f"[5] arXiv: Исследовательская статья о {query} (2024).",
-    ]
-    return "\n".join(mock_results)
+def _tool_web_search(query: str) -> str:
+    """Веб-поиск через DuckDuckGo HTML."""
+    try:
+        import httpx
+    except ImportError:
+        return "Веб-поиск недоступен (httpx не установлен). Отвечаю на основе имеющихся знаний."
+
+    url = f"https://html.duckduckgo.com/html/?q={quote_plus(query)}"
+    try:
+        resp = httpx.get(url, timeout=8.0, follow_redirects=True, headers={
+            "User-Agent": "Mozilla/5.0 (compatible; AriaBot/1.0)",
+        })
+        resp.raise_for_status()
+    except Exception as exc:
+        logger.warning("Ошибка веб-поиска: %s", exc)
+        return "Веб-поиск недоступен. Отвечаю на основе имеющихся знаний."
+
+    # Извлекаем результаты из HTML
+    snippets: list[str] = []
+    for i, match in enumerate(
+        re.finditer(r'class="result__snippet"[^>]*>(.*?)</a>', resp.text, re.DOTALL),
+        start=1,
+    ):
+        text = re.sub(r"<[^>]+>", "", match.group(1)).strip()
+        if text:
+            snippets.append(f"[{i}] {text}")
+        if i >= 5:
+            break
+
+    if not snippets:
+        return "Поиск не дал результатов. Отвечаю на основе имеющихся знаний."
+
+    return "\n".join(snippets)
 
 
 def _tool_code_executor(code: str, timeout: float = 5.0) -> str:
