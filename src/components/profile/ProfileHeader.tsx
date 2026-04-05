@@ -112,7 +112,7 @@ export function ProfileHeader({
     const audio = new Audio(url);
     pronunciationAudioRef.current = audio;
     audio.onended = () => setPlayingPronunciation(false);
-    audio.play().catch(() => {/* ignore */});
+    audio.play().catch(() => setPlayingPronunciation(false));
     setPlayingPronunciation(true);
   };
 

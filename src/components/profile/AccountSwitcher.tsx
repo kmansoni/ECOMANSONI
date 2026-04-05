@@ -1,4 +1,4 @@
-import { Plus, Check, ChevronDown } from "lucide-react";
+import { Plus, Check, ChevronDown, Loader2 } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -9,31 +9,8 @@ import {
   DrawerTrigger,
 } from "@/components/ui/drawer";
 import { cn } from "@/lib/utils";
-
-interface Account {
-  id: string;
-  username: string;
-  displayName: string;
-  avatar: string;
-  isActive: boolean;
-}
-
-const mockAccounts: Account[] = [
-  {
-    id: "1",
-    username: "alex_ivanov",
-    displayName: "Александр Иванов",
-    avatar: "https://i.pravatar.cc/150?img=32",
-    isActive: true,
-  },
-  {
-    id: "2",
-    username: "work_account",
-    displayName: "Рабочий аккаунт",
-    avatar: "https://i.pravatar.cc/150?img=12",
-    isActive: false,
-  },
-];
+import { useMultiAccount } from "@/contexts/MultiAccountContext";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 interface AccountSwitcherProps {
   currentUsername: string;
@@ -42,15 +19,11 @@ interface AccountSwitcherProps {
 export function AccountSwitcher({ currentUsername }: AccountSwitcherProps) {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
-  const [accounts, setAccounts] = useState(mockAccounts);
+  const { accounts, activeAccountId, switchAccount, isSwitchingAccount } = useMultiAccount();
 
-  const handleSwitchAccount = (accountId: string) => {
-    setAccounts(prev =>
-      prev.map(acc => ({
-        ...acc,
-        isActive: acc.id === accountId,
-      }))
-    );
+  const handleSwitchAccount = async (accountId: string) => {
+    if (accountId === activeAccountId || isSwitchingAccount) return;
+    await switchAccount(accountId);
     setOpen(false);
   };
 
@@ -59,7 +32,26 @@ export function AccountSwitcher({ currentUsername }: AccountSwitcherProps) {
     navigate("/auth");
   };
 
-  const activeAccount = accounts.find(acc => acc.isActive);
+  const getDisplayName = (entry: typeof accounts[number]) => {
+    const p = entry.profile;
+    return p?.display_name || p?.displayName || p?.username || "Аккаунт";
+  };
+
+  const getUsername = (entry: typeof accounts[number]) => {
+    const p = entry.profile;
+    return p?.username || entry.accountId.slice(0, 8);
+  };
+
+  const getAvatar = (entry: typeof accounts[number]) => {
+    const p = entry.profile;
+    return p?.avatar_url || p?.avatarUrl || undefined;
+  };
+
+  if (accounts.length <= 1) {
+    return (
+      <span className="font-semibold text-lg">{currentUsername}</span>
+    );
+  }
 
   return (
     <Drawer open={open} onOpenChange={setOpen}>
@@ -75,33 +67,34 @@ export function AccountSwitcher({ currentUsername }: AccountSwitcherProps) {
         </DrawerHeader>
         
         <div className="p-4 space-y-2">
-          {accounts.map((account) => (
-            <button
-              key={account.id}
-              onClick={() => handleSwitchAccount(account.id)}
-              className={cn(
-                "w-full flex items-center gap-3 p-3 rounded-xl transition-colors",
-                account.isActive 
-                  ? "bg-primary/10" 
-                  : "hover:bg-muted"
-              )}
-            >
-              <img
-                src={account.avatar}
-                alt={account.displayName}
-                className="w-12 h-12 rounded-full object-cover"
-              />
-              <div className="flex-1 text-left">
-                <p className="font-medium text-foreground">{account.username}</p>
-                <p className="text-sm text-muted-foreground">{account.displayName}</p>
-              </div>
-              {account.isActive && (
-                <Check className="w-5 h-5 text-primary" />
-              )}
-            </button>
-          ))}
+          {accounts.map((entry) => {
+            const isActive = entry.accountId === activeAccountId;
+            const switching = isSwitchingAccount && !isActive;
+            return (
+              <button
+                key={entry.accountId}
+                onClick={() => handleSwitchAccount(entry.accountId)}
+                disabled={switching}
+                className={cn(
+                  "w-full flex items-center gap-3 p-3 rounded-xl transition-colors",
+                  isActive ? "bg-primary/10" : "hover:bg-muted",
+                  switching && "opacity-50"
+                )}
+              >
+                <Avatar className="w-12 h-12">
+                  <AvatarImage src={getAvatar(entry)} alt={getDisplayName(entry)} />
+                  <AvatarFallback>{getDisplayName(entry)[0]?.toUpperCase()}</AvatarFallback>
+                </Avatar>
+                <div className="flex-1 text-left">
+                  <p className="font-medium text-foreground">{getUsername(entry)}</p>
+                  <p className="text-sm text-muted-foreground">{getDisplayName(entry)}</p>
+                </div>
+                {isActive && <Check className="w-5 h-5 text-primary" />}
+                {switching && <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />}
+              </button>
+            );
+          })}
           
-          {/* Add Account Button */}
           <button
             onClick={handleAddAccount}
             className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-muted transition-colors"
@@ -113,7 +106,6 @@ export function AccountSwitcher({ currentUsername }: AccountSwitcherProps) {
           </button>
         </div>
         
-        {/* Safe area padding */}
         <div className="h-6" />
       </DrawerContent>
     </Drawer>

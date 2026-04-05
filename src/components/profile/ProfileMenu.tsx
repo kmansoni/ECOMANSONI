@@ -3,6 +3,8 @@ import { Share2, Link, Flag, UserX, Settings, Archive, Bookmark, Users, Trash2, 
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { buildProfileUrl } from "@/lib/users/profileLinks";
+import { supabase } from "@/integrations/supabase/client";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 interface ProfileMenuProps {
   isOpen: boolean;
@@ -33,6 +35,24 @@ export function ProfileMenu({ isOpen, onClose, isOwnProfile, username, userId, o
     onClose();
   };
 
+  const reportUser = async () => {
+    if (!userId) return;
+    onClose();
+    const db = supabase as SupabaseClient<any>;
+    const { error } = await db.from("moderation_reports").insert({
+      report_type: "other",
+      reported_entity_type: "user",
+      reported_entity_id: userId,
+      reported_user_id: userId,
+      reporter_id: (await supabase.auth.getUser()).data.user?.id ?? null,
+    });
+    if (error) {
+      toast.error("Не удалось отправить жалобу");
+    } else {
+      toast.success("Жалоба отправлена");
+    }
+  };
+
   const ownItems = [
     { icon: Settings, label: "Настройки", action: () => { onSettings?.(); onClose(); } },
     { icon: Archive, label: "Архив", action: () => { onArchive?.(); onClose(); } },
@@ -46,7 +66,7 @@ export function ProfileMenu({ isOpen, onClose, isOwnProfile, username, userId, o
   const otherItems = [
     { icon: Share2, label: "Поделиться", action: share },
     { icon: Link, label: "Скопировать ссылку", action: copyLink },
-    { icon: Flag, label: "Пожаловаться", action: () => { toast("Жалоба отправлена"); onClose(); }, danger: true },
+    { icon: Flag, label: "Пожаловаться", action: reportUser, danger: true },
     { icon: UserX, label: "Заблокировать", action: () => { onBlock?.(); onClose(); }, danger: true },
   ];
 

@@ -18,6 +18,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Link, PlusCircle, Share2, Flag, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useQuery } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { logger } from '@/lib/logger';
 
@@ -92,6 +93,7 @@ function ActionButton({ icon, label, onClick, 'aria-label': ariaLabel }: ActionB
 
 export function ReelShareSheet({ reelId, isOpen, onClose }: ReelShareSheetProps): JSX.Element | null {
   const [search, setSearch] = useState('');
+  const navigate = useNavigate();
 
   // Сброс поиска при открытии
   useEffect(() => {
@@ -197,13 +199,30 @@ export function ReelShareSheet({ reelId, isOpen, onClose }: ReelShareSheetProps)
   }, [reelId, handleCopyLink]);
 
   const handleShareToStory = useCallback(() => {
-    toast('Скоро', { description: 'Функция в разработке' });
-  }, []);
-
-  const handleReport = useCallback(() => {
-    toast('Функция в разработке', { description: 'Жалобы будут доступны в следующем обновлении' });
     onClose();
-  }, [onClose]);
+    navigate(`/create?tab=story&reelId=${reelId}`);
+  }, [reelId, onClose, navigate]);
+
+  const handleReport = useCallback(async () => {
+    onClose();
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      const db = supabase as unknown as import('@supabase/supabase-js').SupabaseClient<any>;
+      const { error } = await db.from('moderation_reports').insert({
+        report_type: 'other',
+        reported_entity_type: 'post',
+        reported_entity_id: reelId,
+        reporter_id: user?.id ?? null,
+      });
+      if (error) {
+        toast.error('Не удалось отправить жалобу');
+      } else {
+        toast.success('Жалоба отправлена');
+      }
+    } catch {
+      toast.error('Не удалось отправить жалобу');
+    }
+  }, [reelId, onClose]);
 
   // ---------------------------------------------------------------------------
   // Portal
