@@ -463,3 +463,95 @@ export interface CalculatorField {
     message?: string;
   };
 }
+
+// === Лояльность агента ===
+
+export type LoyaltyLevel = 'novice' | 'agent' | 'agent2' | 'authorized' | 'authorized_plus';
+
+export interface LoyaltyLevelInfo {
+  level: LoyaltyLevel;
+  name: string;
+  threshold: number;
+  bonus: number;
+}
+
+export const LOYALTY_LEVELS: LoyaltyLevelInfo[] = [
+  { level: 'novice', name: 'Новичок', threshold: 0, bonus: 0 },
+  { level: 'agent', name: 'Агент', threshold: 30_000, bonus: 5 },
+  { level: 'agent2', name: 'Агент 2.0', threshold: 75_000, bonus: 8 },
+  { level: 'authorized', name: 'Уполномоченный', threshold: 150_000, bonus: 12 },
+  { level: 'authorized_plus', name: 'Уполномоченный+', threshold: 300_000, bonus: 15 },
+];
+
+export function getLoyaltyInfo(level: LoyaltyLevel): LoyaltyLevelInfo {
+  return LOYALTY_LEVELS.find(l => l.level === level) ?? LOYALTY_LEVELS[0];
+}
+
+export function getNextLevel(level: LoyaltyLevel): LoyaltyLevelInfo | null {
+  const idx = LOYALTY_LEVELS.findIndex(l => l.level === level);
+  return idx < LOYALTY_LEVELS.length - 1 ? LOYALTY_LEVELS[idx + 1] : null;
+}
+
+// === Черновики ===
+
+export interface InsuranceDraft {
+  id: string;
+  user_id: string;
+  product_type: string;
+  step: number;
+  form_data: Record<string, unknown>;
+  title: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// === Реферальные ссылки ===
+
+export type ReferralLinkType = 'mentorship' | 'partnership' | 'osago' | 'mortgage' | 'travel' | 'kasko';
+
+export interface ReferralLink {
+  id: string;
+  agent_id: string;
+  type: ReferralLinkType;
+  name: string | null;
+  code: string;
+  quota_percent: number;
+  activations: number;
+  calculations: number;
+  policies: number;
+  revenue: number;
+  is_active: boolean;
+  created_at: string;
+}
+
+// === Баланс агента ===
+
+export interface AgentBalanceInfo {
+  available: number;
+  pending: number;
+  totalEarned: number;
+  loyaltyLevel: LoyaltyLevel;
+  quarterlyPremiums: number;
+  loyaltyBonus: number;
+  nextLevelThreshold: number | null;
+  nextLevelName: string | null;
+}
+
+// === ТС клиента ===
+
+export interface ClientVehicle {
+  id: string;
+  client_id: string | null;
+  user_id: string | null;
+  gos_number: string | null;
+  brand: string | null;
+  model: string | null;
+  year: number | null;
+  power: number | null;
+  vin: string | null;
+  doc_type: 'pts' | 'sts' | 'epts' | null;
+  doc_series: string | null;
+  doc_number: string | null;
+  doc_date: string | null;
+  created_at: string;
+}

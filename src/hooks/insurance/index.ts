@@ -11,3 +11,6 @@ export * from "./useInsurancePoliciesDB";
 export * from "./useInsurancePayments";
 export { useInsuranceQuote } from "./useInsuranceQuote";
 export { useVehicleLookup } from "./useVehicleLookup";
+export { useAgentBalance, useAgentTransactions, useRequestWithdrawal } from "./useInsuranceAgent";
+export { useInsuranceDrafts, useDeleteDraft, useDraftAutoSave } from "./useInsuranceDraft";
+export { useReferralLinks, useCreateReferralLink } from "./useInsuranceReferral";

@@ -92,3 +92,6 @@ __pycache__/
 
 # Playwright MCP snapshots
 .playwright-mcp/
+
+# Research screenshots
+inssmart-*.png

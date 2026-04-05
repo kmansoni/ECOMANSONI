@@ -1,7 +1,10 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, LayoutDashboard, Users, FileText, DollarSign, Settings, Shield, Star } from "lucide-react";
+import {
+  ArrowLeft, LayoutDashboard, Users, FileText, DollarSign,
+  Settings, Shield, Star, Wallet, Link2, BarChart3,
+} from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -12,7 +15,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { supabase } from "@/lib/supabase";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { AgentDashboard, AgentClients, AgentCommissions } from "@/components/insurance/agent";
+import {
+  AgentDashboard, AgentClients, AgentCommissions,
+  AgentBalance, AgentLoyalty, AgentPayouts, AgentReferrals, AgentReports,
+} from "@/components/insurance/agent";
 
 const db = supabase as SupabaseClient<any>;
 
@@ -252,31 +258,45 @@ export default function InsuranceAgentPage() {
       <div className="p-4 pb-24">
         <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }}>
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="w-full grid grid-cols-5 h-auto p-1 mb-6 overflow-x-auto">
-              <TabsTrigger value="dashboard" className="text-[11px] py-2 gap-1">
-                <LayoutDashboard className="w-3 h-3" />
-                <span className="hidden xs:inline">Дашборд</span>
-              </TabsTrigger>
-              <TabsTrigger value="clients" className="text-[11px] py-2 gap-1">
-                <Users className="w-3 h-3" />
-                <span className="hidden xs:inline">Клиенты</span>
-              </TabsTrigger>
-              <TabsTrigger value="policies" className="text-[11px] py-2 gap-1">
-                <FileText className="w-3 h-3" />
-                <span className="hidden xs:inline">Полисы</span>
-              </TabsTrigger>
-              <TabsTrigger value="commissions" className="text-[11px] py-2 gap-1">
-                <DollarSign className="w-3 h-3" />
-                <span className="hidden xs:inline">Комиссии</span>
-              </TabsTrigger>
-              <TabsTrigger value="settings" className="text-[11px] py-2 gap-1">
-                <Settings className="w-3 h-3" />
-                <span className="hidden xs:inline">Настройки</span>
-              </TabsTrigger>
-            </TabsList>
+            <div className="overflow-x-auto -mx-4 px-4 mb-6">
+              <TabsList className="inline-flex h-auto p-1 min-w-max">
+                <TabsTrigger value="dashboard" className="text-[11px] py-2 px-3 gap-1">
+                  <LayoutDashboard className="w-3 h-3" />
+                  Дашборд
+                </TabsTrigger>
+                <TabsTrigger value="clients" className="text-[11px] py-2 px-3 gap-1">
+                  <Users className="w-3 h-3" />
+                  Клиенты
+                </TabsTrigger>
+                <TabsTrigger value="policies" className="text-[11px] py-2 px-3 gap-1">
+                  <FileText className="w-3 h-3" />
+                  Полисы
+                </TabsTrigger>
+                <TabsTrigger value="finance" className="text-[11px] py-2 px-3 gap-1">
+                  <Wallet className="w-3 h-3" />
+                  Финансы
+                </TabsTrigger>
+                <TabsTrigger value="referrals" className="text-[11px] py-2 px-3 gap-1">
+                  <Link2 className="w-3 h-3" />
+                  Рефералы
+                </TabsTrigger>
+                <TabsTrigger value="reports" className="text-[11px] py-2 px-3 gap-1">
+                  <BarChart3 className="w-3 h-3" />
+                  Отчёты
+                </TabsTrigger>
+                <TabsTrigger value="settings" className="text-[11px] py-2 px-3 gap-1">
+                  <Settings className="w-3 h-3" />
+                  Настройки
+                </TabsTrigger>
+              </TabsList>
+            </div>
 
             <TabsContent value="dashboard">
-              <AgentDashboard />
+              <div className="space-y-6">
+                <AgentBalance onWithdrawClick={() => setActiveTab("finance")} />
+                <AgentLoyalty />
+                <AgentDashboard />
+              </div>
             </TabsContent>
             <TabsContent value="clients">
               <AgentClients />
@@ -284,8 +304,18 @@ export default function InsuranceAgentPage() {
             <TabsContent value="policies">
               <AgentPolicies />
             </TabsContent>
-            <TabsContent value="commissions">
-              <AgentCommissions />
+            <TabsContent value="finance">
+              <div className="space-y-6">
+                <AgentBalance />
+                <AgentCommissions />
+                <AgentPayouts />
+              </div>
+            </TabsContent>
+            <TabsContent value="referrals">
+              <AgentReferrals />
+            </TabsContent>
+            <TabsContent value="reports">
+              <AgentReports />
             </TabsContent>
             <TabsContent value="settings">
               <AgentSettings />

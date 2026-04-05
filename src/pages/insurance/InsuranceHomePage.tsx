@@ -21,6 +21,7 @@ import { InsuranceStories } from "@/components/insurance/media/InsuranceStories"
 import { InsuranceReelsBanner } from "@/components/insurance/media/InsuranceReelsBanner";
 import { InsuranceAdPricing } from "@/components/insurance/media/InsuranceAdPricing";
 import { DownloadAppBanner } from "@/components/insurance/shared/DownloadAppBanner";
+import { DraftsList } from "@/components/insurance/drafts/DraftsList";
 
 const CALCULATOR_LINKS = [
   {
@@ -152,6 +153,9 @@ export default function InsuranceHomePage() {
             })}
           </div>
         </section>
+
+        {/* Drafts */}
+        <DraftsList />
 
         {/* Stats */}
         <section>

@@ -49,7 +49,7 @@ const services: ServiceItem[] = [
   // Not routed yet: keep in "Coming Soon" to avoid dead-click UX.
   { id: "carsharing", name: "Каршеринг", icon: Car, available: false },
   { id: "delivery", name: "Доставка", icon: Truck, available: false },
-  { id: "marketplace", name: "Маркетплейс", icon: ShoppingBag, available: false },
+  { id: "marketplace", name: "Маркетплейс", icon: ShoppingBag, route: "/shop/discover", available: true },
   { id: "realestate", name: "Недвижимость", icon: Home, route: "/realestate", available: true },
   { id: "insurance", name: "Страхование", icon: Shield, route: "/insurance", available: true },
   { id: "crm", name: "CRM", icon: Users, route: "/crm", available: true },
