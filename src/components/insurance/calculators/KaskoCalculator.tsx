@@ -1,6 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Car, ChevronLeft, ChevronRight, Calculator, Loader2 } from "lucide-react";
+import { Car, ChevronLeft, ChevronRight, Calculator, Loader2, AlertCircle } from "lucide-react";
+import { supabase } from "@/lib/supabase";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -47,25 +50,19 @@ const EXTRA_OPTIONS = [
   { id: "substitute", label: "Подменный автомобиль" },
 ];
 
-function generateKaskoResults(basePrice: number): CalculationResponse {
-  const providers = [
-    { name: "Ингосстрах", rating: 4.7, mult: 1.0 },
-    { name: "РЕСО-Гарантия", rating: 4.5, mult: 1.08 },
-    { name: "АльфаСтрахование", rating: 4.6, mult: 0.93 },
-  ];
+type CompanyRow = { id: string; name: string; rating: number; logo_url: string | null };
 
-  const now = new Date();
-  const validUntil = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString();
-
-  const results = providers.map((p, i) => {
-    const premium = Math.round(basePrice * p.mult);
+function buildKaskoResults(basePrice: number, companies: CompanyRow[]): CalculationResponse {
+  const validUntil = new Date(Date.now() + 86400000).toISOString();
+  const results = companies.map((c, i) => {
+    const premium = Math.round(basePrice * (0.9 + i * 0.08));
     return {
-      id: `kasko-${i}`,
+      id: `kasko-${c.id}`,
       category: "kasko" as const,
-      provider_id: p.name.toLowerCase().replace(/\s/g, "_"),
-      provider_name: p.name,
-      provider_logo: "",
-      provider_rating: p.rating,
+      provider_id: c.id,
+      provider_name: c.name,
+      provider_logo: c.logo_url || "",
+      provider_rating: c.rating ?? 4.5,
       premium_amount: premium,
       premium_monthly: Math.round(premium / 12),
       coverage_amount: basePrice * 10,
@@ -79,15 +76,14 @@ function generateKaskoResults(basePrice: number): CalculationResponse {
       details: {},
     };
   });
-
   return {
     request_id: `kasko-req-${Date.now()}`,
     category: "kasko",
     results,
-    total_providers_queried: 3,
-    successful_providers: 3,
+    total_providers_queried: companies.length,
+    successful_providers: companies.length,
     failed_providers: [],
-    calculation_time_ms: 800,
+    calculation_time_ms: 0,
     cached: false,
   };
 }
@@ -96,6 +92,20 @@ export function KaskoCalculator() {
   const [step, setStep] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [results, setResults] = useState<CalculationResponse | null>(null);
+  const [companies, setCompanies] = useState<CompanyRow[]>([]);
+  const [companiesLoaded, setCompaniesLoaded] = useState(false);
+
+  useEffect(() => {
+    (supabase as SupabaseClient<any>)
+      .from('insurance_companies')
+      .select('id, name, rating, logo_url')
+      .eq('is_verified', true)
+      .limit(10)
+      .then(({ data, error }) => {
+        if (!error && data) setCompanies(data);
+        setCompaniesLoaded(true);
+      });
+  }, []);
 
   // Step 1: Vehicle
   const [vehicleMake, setVehicleMake] = useState("");
@@ -131,19 +141,21 @@ export function KaskoCalculator() {
   };
 
   const handleCalculate = () => {
+    if (!companies.length) {
+      toast.error('Нет доступных компаний для расчёта');
+      return;
+    }
     setIsLoading(true);
-    setTimeout(() => {
-      const price = parseFloat(vehiclePrice) || 1000000;
-      const kbm = KBM_TABLE[parseInt(kbmClass)] ?? 1.0;
-      const coverageMult = coverageType === "full" ? 1.0 : coverageType === "partial" ? 0.75 : 0.5;
-      const franchMult = 1 - parseInt(franchise) / price * 3;
-      const antiTheftDiscount = antiTheft ? 0.95 : 1.0;
-      const garageDiscount = garagePark ? 0.97 : 1.0;
-      const baseRate = 0.055;
-      const base = price * baseRate * kbm * coverageMult * Math.max(0.7, franchMult) * antiTheftDiscount * garageDiscount;
-      setResults(generateKaskoResults(base));
-      setIsLoading(false);
-    }, 1200);
+    const price = parseFloat(vehiclePrice) || 1000000;
+    const kbm = KBM_TABLE[parseInt(kbmClass)] ?? 1.0;
+    const coverageMult = coverageType === "full" ? 1.0 : coverageType === "partial" ? 0.75 : 0.5;
+    const franchMult = 1 - parseInt(franchise) / price * 3;
+    const antiTheftDiscount = antiTheft ? 0.95 : 1.0;
+    const garageDiscount = garagePark ? 0.97 : 1.0;
+    const baseRate = 0.055;
+    const base = price * baseRate * kbm * coverageMult * Math.max(0.7, franchMult) * antiTheftDiscount * garageDiscount;
+    setResults(buildKaskoResults(base, companies));
+    setIsLoading(false);
   };
 
   const toggleExtra = (id: string) => {
@@ -338,6 +350,12 @@ export function KaskoCalculator() {
       </div>
 
       <AnimatePresence>
+        {companiesLoaded && !companies.length && (
+          <div className="text-center py-8">
+            <AlertCircle className="w-10 h-10 text-white/20 mx-auto mb-3" />
+            <p className="text-sm text-white/40">Нет доступных страховых компаний</p>
+          </div>
+        )}
         {results && !isLoading && (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
             <CalculationResults response={results} />

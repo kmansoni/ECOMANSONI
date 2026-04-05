@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Shield, ImagePlus, X } from "lucide-react";
 import {
@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { supabase } from "@/lib/supabase";
 
 const GRADIENTS = [
   { id: "g1", label: "Ночной синий", value: "linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)" },
@@ -33,10 +34,6 @@ const DURATION_PRICING: Record<string, { label: string; price: number }> = {
   "7d": { label: "7 дней", price: 25000 },
 };
 
-// Mock: assume current user is a verified company/agent
-// In real app, check auth role
-const IS_VERIFIED_COMPANY = true;
-
 interface CreateInsuranceStorySheetProps {
   children?: React.ReactNode;
 }
@@ -50,6 +47,15 @@ export function CreateInsuranceStorySheet({ children }: CreateInsuranceStoryShee
   const [ctaLink, setCtaLink] = useState("");
   const [duration, setDuration] = useState("24h");
   const [loading, setLoading] = useState(false);
+  const [isVerified, setIsVerified] = useState(false);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      // Проверяем роль из метаданных пользователя
+      const role = user?.user_metadata?.role as string | undefined;
+      setIsVerified(role === "company" || role === "agent" || role === "broker");
+    });
+  }, []);
 
   const pricing = DURATION_PRICING[duration];
 
@@ -59,15 +65,9 @@ export function CreateInsuranceStorySheet({ children }: CreateInsuranceStoryShee
       return;
     }
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 1200));
+    // Таблицы insurance_stories пока нет в БД
+    toast.info("Публикация историй пока в разработке");
     setLoading(false);
-    toast.success("Story отправлена на модерацию и оплату");
-    setOpen(false);
-    setTitle("");
-    setDescription("");
-    setCtaText("");
-    setCtaLink("");
-    setDuration("24h");
   };
 
   return (
@@ -87,13 +87,13 @@ export function CreateInsuranceStorySheet({ children }: CreateInsuranceStoryShee
           <SheetTitle className="text-white">Создать Story</SheetTitle>
         </SheetHeader>
 
-        {!IS_VERIFIED_COMPANY ? (
+        {!isVerified ? (
           <div className="flex flex-col items-center gap-4 py-8 text-center">
             <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center">
               <Shield className="w-8 h-8 text-white/30" />
             </div>
             <p className="text-white/60 text-sm leading-relaxed max-w-xs">
-              Доступно только для верифицированных страховых компаний и агентов
+              Создание историй доступно верифицированным компаниям и агентам
             </p>
             <Button variant="outline" className="border-white/20 text-white/60" onClick={() => setOpen(false)}>
               Закрыть

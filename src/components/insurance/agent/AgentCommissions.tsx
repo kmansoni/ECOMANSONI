@@ -1,50 +1,73 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
+import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
+import { DollarSign } from "lucide-react";
+import { supabase } from "@/lib/supabase";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
-interface CommissionRow {
-  id: string;
-  policy: string;
-  client: string;
-  company: string;
-  premium: number;
-  rate: number;
-  commission: number;
-  payStatus: "paid" | "pending" | "processing";
-  date: string;
-}
+const db = supabase as SupabaseClient<any>;
 
-const mockCommissions: CommissionRow[] = [
-  { id: "k1", policy: "П-1247", client: "Иванов А.В.", company: "Ингосстрах", premium: 8420, rate: 15, commission: 1263, payStatus: "paid", date: "02.03.2026" },
-  { id: "k2", policy: "П-1246", client: "Смирнова Е.П.", company: "СОГАЗ", premium: 34100, rate: 12, commission: 4092, payStatus: "processing", date: "01.03.2026" },
-  { id: "k3", policy: "П-1245", client: "Козлов Д.И.", company: "АльфаСтрахование", premium: 18600, rate: 18, commission: 3348, payStatus: "paid", date: "28.02.2026" },
-  { id: "k4", policy: "П-1244", client: "Петрова М.С.", company: "Ренессанс", premium: 4200, rate: 20, commission: 840, payStatus: "pending", date: "27.02.2026" },
-  { id: "k5", policy: "П-1243", client: "Сидоров К.Н.", company: "РОСГОССТРАХ", premium: 7780, rate: 15, commission: 1167, payStatus: "paid", date: "25.02.2026" },
-  { id: "k6", policy: "П-1240", client: "Федорова О.А.", company: "СОГАЗ", premium: 42000, rate: 12, commission: 5040, payStatus: "paid", date: "20.02.2026" },
-];
+const COMMISSION_RATE = 0.1;
 
 const payStatusConfig: Record<string, { label: string; variant: "default" | "secondary" | "outline" }> = {
-  paid: { label: "Выплачено", variant: "default" },
-  processing: { label: "В обработке", variant: "secondary" },
+  active: { label: "Выплачено", variant: "default" },
   pending: { label: "Ожидается", variant: "outline" },
+  expired: { label: "Выплачено", variant: "default" },
+  cancelled: { label: "Отменено", variant: "outline" },
 };
 
 const periods = [
-  { value: "march2026", label: "Март 2026" },
-  { value: "february2026", label: "Февраль 2026" },
-  { value: "january2026", label: "Январь 2026" },
+  { value: "all", label: "Все время" },
+  { value: "30d", label: "Последние 30 дней" },
+  { value: "90d", label: "Последние 90 дней" },
 ];
 
 export function AgentCommissions() {
-  const [period, setPeriod] = useState("march2026");
+  const [period, setPeriod] = useState("all");
 
-  const totalPremium = mockCommissions.reduce((s, r) => s + r.premium, 0);
-  const totalCommission = mockCommissions.reduce((s, r) => s + r.commission, 0);
-  const paidCommission = mockCommissions.filter((r) => r.payStatus === "paid").reduce((s, r) => s + r.commission, 0);
-  const pendingCommission = mockCommissions.filter((r) => r.payStatus !== "paid").reduce((s, r) => s + r.commission, 0);
+  const { data: policies = [], isLoading } = useQuery({
+    queryKey: ["agent-commissions", period],
+    queryFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return [];
+
+      let query = db
+        .from("insurance_policies")
+        .select("id, policy_number, premium, status, start_date, insurance_companies(name), insurance_products(name)")
+        .eq("user_id", user.id)
+        .order("start_date", { ascending: false })
+        .limit(50);
+
+      if (period === "30d") {
+        const d = new Date(); d.setDate(d.getDate() - 30);
+        query = query.gte("start_date", d.toISOString());
+      } else if (period === "90d") {
+        const d = new Date(); d.setDate(d.getDate() - 90);
+        query = query.gte("start_date", d.toISOString());
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+
+  const rows = policies.map((p: any) => ({
+    ...p,
+    commission: Math.round((p.premium ?? 0) * COMMISSION_RATE),
+    companyName: p.insurance_companies?.name ?? "—",
+    productName: p.insurance_products?.name ?? p.policy_number ?? "—",
+  }));
+
+  const totalPremium = rows.reduce((s: number, r: any) => s + (r.premium ?? 0), 0);
+  const totalCommission = rows.reduce((s: number, r: any) => s + r.commission, 0);
+  const paidCommission = rows.filter((r: any) => r.status === "active" || r.status === "expired").reduce((s: number, r: any) => s + r.commission, 0);
+  const pendingCommission = totalCommission - paidCommission;
 
   const fmt = (v: number) => v.toLocaleString("ru-RU") + " \u20bd";
 
@@ -81,6 +104,19 @@ export function AgentCommissions() {
         ))}
       </div>
 
+      {isLoading ? (
+        <div className="space-y-2">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-12 w-full rounded-lg" />
+          ))}
+        </div>
+      ) : rows.length === 0 ? (
+        <div className="text-center py-12 text-muted-foreground">
+          <DollarSign className="w-10 h-10 mx-auto mb-3 opacity-40" />
+          <p className="text-sm">Комиссий пока нет</p>
+          <p className="text-xs mt-1">Они появятся после первых оформленных полисов</p>
+        </div>
+      ) : (
       <Card className="bg-card border-border">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-medium">Детали комиссий</CardTitle>
@@ -99,8 +135,8 @@ export function AgentCommissions() {
                 </tr>
               </thead>
               <tbody>
-                {mockCommissions.map((row, i) => {
-                  const status = payStatusConfig[row.payStatus];
+                {rows.map((row: any, i: number) => {
+                  const status = payStatusConfig[row.status] ?? { label: row.status, variant: "outline" as const };
                   return (
                     <motion.tr
                       key={row.id}
@@ -110,12 +146,12 @@ export function AgentCommissions() {
                       className="border-b border-border/50 last:border-0 hover:bg-muted/20 transition-colors"
                     >
                       <td className="p-3">
-                        <p className="font-medium text-foreground">{row.policy}</p>
-                        <p className="text-muted-foreground">{row.client}</p>
+                        <p className="font-medium text-foreground">{row.policy_number || row.id.slice(0, 8)}</p>
+                        <p className="text-muted-foreground">{row.productName}</p>
                       </td>
-                      <td className="p-3 text-muted-foreground hidden sm:table-cell">{row.company}</td>
-                      <td className="p-3 text-right text-foreground">{fmt(row.premium)}</td>
-                      <td className="p-3 text-right text-muted-foreground">{row.rate}%</td>
+                      <td className="p-3 text-muted-foreground hidden sm:table-cell">{row.companyName}</td>
+                      <td className="p-3 text-right text-foreground">{fmt(row.premium ?? 0)}</td>
+                      <td className="p-3 text-right text-muted-foreground">{Math.round(COMMISSION_RATE * 100)}%</td>
                       <td className="p-3 text-right font-semibold text-green-400">{fmt(row.commission)}</td>
                       <td className="p-3 text-center">
                         <Badge variant={status.variant} className="text-[10px] h-4 px-1">{status.label}</Badge>
@@ -137,6 +173,7 @@ export function AgentCommissions() {
           </div>
         </CardContent>
       </Card>
+      )}
     </div>
   );
 }

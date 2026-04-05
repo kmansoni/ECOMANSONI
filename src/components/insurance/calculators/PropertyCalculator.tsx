@@ -1,6 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Home, ChevronLeft, ChevronRight, Calculator, Loader2 } from "lucide-react";
+import { Home, ChevronLeft, ChevronRight, Calculator, Loader2, AlertCircle } from "lucide-react";
+import { supabase } from "@/lib/supabase";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -47,22 +50,18 @@ const MATERIAL_COEFS: Record<string, number> = {
   other: 1.2,
 };
 
-function generatePropertyResults(basePrice: number): CalculationResponse {
-  const providers = [
-    { name: "Росгосстрах", rating: 4.4, mult: 1.0 },
-    { name: "ВСК", rating: 4.5, mult: 0.94 },
-    { name: "СОГАЗ", rating: 4.8, mult: 1.1 },
-  ];
-  const validUntil = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
-  const results = providers.map((p, i) => {
-    const premium = Math.round(basePrice * p.mult);
+function buildPropertyResults(basePrice: number, companies: Array<{ id: string; name: string; rating: number; logo_url: string | null }>): CalculationResponse {
+  const validUntil = new Date(Date.now() + 86400000).toISOString();
+  const results = companies.map((c, i) => {
+    const mult = 0.92 + i * 0.07;
+    const premium = Math.round(basePrice * mult);
     return {
-      id: `property-${i}`,
+      id: `property-${c.id}`,
       category: "property" as const,
-      provider_id: p.name.toLowerCase().replace(/\s/g, "_"),
-      provider_name: p.name,
-      provider_logo: "",
-      provider_rating: p.rating,
+      provider_id: c.id,
+      provider_name: c.name,
+      provider_logo: c.logo_url || "",
+      provider_rating: c.rating ?? 4.5,
       premium_amount: premium,
       premium_monthly: Math.round(premium / 12),
       coverage_amount: basePrice * 20,
@@ -78,10 +77,10 @@ function generatePropertyResults(basePrice: number): CalculationResponse {
     request_id: `property-req-${Date.now()}`,
     category: "property",
     results,
-    total_providers_queried: 3,
-    successful_providers: 3,
+    total_providers_queried: companies.length,
+    successful_providers: companies.length,
     failed_providers: [],
-    calculation_time_ms: 700,
+    calculation_time_ms: 0,
     cached: false,
   };
 }
@@ -90,6 +89,21 @@ export function PropertyCalculator() {
   const [step, setStep] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [results, setResults] = useState<CalculationResponse | null>(null);
+  const [companies, setCompanies] = useState<Array<{ id: string; name: string; rating: number; logo_url: string | null }>>([]);
+  const [companiesReady, setCompaniesReady] = useState(false);
+
+  useEffect(() => {
+    const db = supabase as SupabaseClient<any>;
+    db.from('insurance_companies')
+      .select('id, name, rating, logo_url')
+      .eq('is_verified', true)
+      .limit(10)
+      .then(({ data, error }) => {
+        if (!error && data) setCompanies(data);
+        else if (error) toast.error('Ошибка загрузки компаний');
+        setCompaniesReady(true);
+      });
+  }, []);
 
   const [propType, setPropType] = useState("apartment");
   const [area, setArea] = useState("");
@@ -111,22 +125,24 @@ export function PropertyCalculator() {
   const handleNext = () => {
     if (step < STEPS.length - 1) setStep(step + 1);
     else {
+      if (!companies.length) {
+        toast.error('Нет доступных компаний');
+        return;
+      }
       setIsLoading(true);
-      setTimeout(() => {
-        const value = parseFloat(propValue) || 5000000;
-        const matCoef = MATERIAL_COEFS[material] ?? 1.0;
-        const yr = parseInt(buildYear) || 2000;
-        const age = new Date().getFullYear() - yr;
-        const ageMult = age > 50 ? 1.4 : age > 30 ? 1.2 : age > 15 ? 1.1 : 1.0;
-        const typeMult = propType === "wood" ? 1.5 : propType === "house" ? 1.2 : 1.0;
-        const interiorMult = interior ? 1.2 : 1.0;
-        const liabilityMult = liability ? 1.1 : 1.0;
-        const movablesMult = movables ? 1.15 : 1.0;
-        const baseRate = 0.004;
-        const base = value * baseRate * matCoef * ageMult * typeMult * interiorMult * liabilityMult * movablesMult;
-        setResults(generatePropertyResults(base));
-        setIsLoading(false);
-      }, 1000);
+      const value = parseFloat(propValue) || 5000000;
+      const matCoef = MATERIAL_COEFS[material] ?? 1.0;
+      const yr = parseInt(buildYear) || 2000;
+      const age = new Date().getFullYear() - yr;
+      const ageMult = age > 50 ? 1.4 : age > 30 ? 1.2 : age > 15 ? 1.1 : 1.0;
+      const typeMult = propType === "wood" ? 1.5 : propType === "house" ? 1.2 : 1.0;
+      const interiorMult = interior ? 1.2 : 1.0;
+      const liabilityMult = liability ? 1.1 : 1.0;
+      const movablesMult = movables ? 1.15 : 1.0;
+      const baseRate = 0.004;
+      const base = value * baseRate * matCoef * ageMult * typeMult * interiorMult * liabilityMult * movablesMult;
+      setResults(buildPropertyResults(base, companies));
+      setIsLoading(false);
     }
   };
 
@@ -269,6 +285,12 @@ export function PropertyCalculator() {
       </div>
 
       <AnimatePresence>
+        {companiesReady && !companies.length && (
+          <div className="text-center py-8">
+            <AlertCircle className="w-10 h-10 text-white/20 mx-auto mb-3" />
+            <p className="text-sm text-white/40">Нет доступных страховых компаний</p>
+          </div>
+        )}
         {results && !isLoading && (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
             <CalculationResults response={results} />

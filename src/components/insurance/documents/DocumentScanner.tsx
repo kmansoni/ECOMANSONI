@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Camera, Upload, RotateCcw, CheckCircle, Loader2, X } from "lucide-react";
+import { Camera, Upload, RotateCcw, CheckCircle, Loader2, X, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { recognizeDocument, FIELD_LABELS, DOCUMENT_FIELDS } from "@/lib/insurance/ocr";
@@ -320,12 +320,19 @@ export function DocumentScanner({ documentType, onRecognized, onClose }: Documen
               exit={{ opacity: 0, y: -10 }}
               className="space-y-4"
             >
-              <div className="flex items-center gap-2 text-green-500">
-                <CheckCircle className="w-5 h-5" />
-                <span className="text-sm font-medium">
-                  Документ распознан (достоверность {Math.round(ocrResult.confidence * 100)}%)
-                </span>
-              </div>
+              {ocrResult.error ? (
+                <div className="flex items-center gap-2 text-amber-500">
+                  <AlertTriangle className="w-5 h-5" />
+                  <span className="text-sm font-medium">{ocrResult.error}</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 text-green-500">
+                  <CheckCircle className="w-5 h-5" />
+                  <span className="text-sm font-medium">
+                    Документ распознан (достоверность {Math.round(ocrResult.confidence * 100)}%)
+                  </span>
+                </div>
+              )}
               <Card className="p-4 space-y-2">
                 {Object.entries(ocrResult.fields).map(([key, value]) => (
                   <div key={key} className="flex justify-between gap-2">

@@ -1,7 +1,7 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Check, Download, FileText, Home, Shield, Loader2 } from "lucide-react";
+import { Check, Download, Home, Shield, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
@@ -85,24 +85,22 @@ export default function InsuranceSuccessPage() {
 
               <Separator />
 
-              {/* QR-код (mock) */}
-              <div className="flex flex-col items-center gap-3">
-                <div className="w-36 h-36 bg-muted border-2 border-dashed border-border rounded-xl flex flex-col items-center justify-center gap-1">
-                  <FileText className="w-8 h-8 text-muted-foreground" />
-                  <p className="text-xs text-muted-foreground text-center">QR-код полиса</p>
-                  <p className="text-xs font-mono text-muted-foreground">{policyId?.slice(-8)}</p>
+              {policyId && (
+                <div className="flex flex-col items-center gap-2 py-3">
+                  <p className="text-xs text-muted-foreground">Номер полиса</p>
+                  <p className="text-2xl font-mono font-bold tracking-wider text-primary">{policyId}</p>
+                  <p className="text-xs text-muted-foreground text-center mt-1">
+                    Сохраните номер для обращения в страховую компанию
+                  </p>
                 </div>
-                <p className="text-xs text-muted-foreground text-center">
-                  Отсканируйте, чтобы проверить подлинность полиса
-                </p>
-              </div>
+              )}
 
               <Separator />
 
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Статус</span>
-                  <span className="font-medium text-green-500">Активен</span>
+                  <span className="font-medium text-amber-500">Ожидает оплаты</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Дата выдачи</span>

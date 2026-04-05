@@ -1,6 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Building2, ChevronLeft, ChevronRight, Calculator, Loader2 } from "lucide-react";
+import { Building2, ChevronLeft, ChevronRight, Calculator, Loader2, AlertCircle } from "lucide-react";
+import { supabase } from "@/lib/supabase";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -26,22 +29,17 @@ const STEPS = [
 
 const LOAN_TERMS = Array.from({ length: 30 }, (_, i) => ({ value: String(i + 1), label: `${i + 1} ${i + 1 === 1 ? "год" : i + 1 < 5 ? "года" : "лет"}` }));
 
-function generateMortgageResults(basePrice: number): CalculationResponse {
-  const providers = [
-    { name: "Абсолют Страхование", rating: 4.3, mult: 0.95 },
-    { name: "СберСтрахование", rating: 4.6, mult: 1.05 },
-    { name: "Ренессанс страхование", rating: 4.5, mult: 1.0 },
-  ];
-  const validUntil = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
-  const results = providers.map((p, i) => {
-    const premium = Math.round(basePrice * p.mult);
+function buildMortgageResults(basePrice: number, companies: Array<{ id: string; name: string; rating: number; logo_url: string | null }>): CalculationResponse {
+  const validUntil = new Date(Date.now() + 86400000).toISOString();
+  const results = companies.map((c, i) => {
+    const premium = Math.round(basePrice * (0.93 + i * 0.06));
     return {
-      id: `mortgage-${i}`,
+      id: `mortgage-${c.id}`,
       category: "mortgage" as const,
-      provider_id: p.name.toLowerCase().replace(/\s/g, "_"),
-      provider_name: p.name,
-      provider_logo: "",
-      provider_rating: p.rating,
+      provider_id: c.id,
+      provider_name: c.name,
+      provider_logo: c.logo_url || "",
+      provider_rating: c.rating ?? 4.5,
       premium_amount: premium,
       premium_monthly: Math.round(premium / 12),
       coverage_amount: basePrice * 15,
@@ -57,10 +55,10 @@ function generateMortgageResults(basePrice: number): CalculationResponse {
     request_id: `mortgage-req-${Date.now()}`,
     category: "mortgage",
     results,
-    total_providers_queried: 3,
-    successful_providers: 3,
+    total_providers_queried: companies.length,
+    successful_providers: companies.length,
     failed_providers: [],
-    calculation_time_ms: 700,
+    calculation_time_ms: 0,
     cached: false,
   };
 }
@@ -69,6 +67,20 @@ export function MortgageCalculator() {
   const [step, setStep] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [results, setResults] = useState<CalculationResponse | null>(null);
+  const [companies, setCompanies] = useState<Array<{ id: string; name: string; rating: number; logo_url: string | null }>>([]);
+  const [companiesLoaded, setCompaniesLoaded] = useState(false);
+
+  useEffect(() => {
+    const db = supabase as SupabaseClient<any>;
+    db.from('insurance_companies')
+      .select('id, name, rating, logo_url')
+      .eq('is_verified', true)
+      .limit(10)
+      .then(({ data, error }) => {
+        if (!error && data?.length) setCompanies(data);
+        setCompaniesLoaded(true);
+      });
+  }, []);
 
   const [propValue, setPropValue] = useState("");
   const [loanAmount, setLoanAmount] = useState("");
@@ -88,20 +100,22 @@ export function MortgageCalculator() {
   const handleNext = () => {
     if (step < STEPS.length - 1) setStep(step + 1);
     else {
+      if (!companies.length) {
+        toast.error('Нет доступных компаний для расчёта');
+        return;
+      }
       setIsLoading(true);
-      setTimeout(() => {
-        const loan = parseFloat(loanAmount) || 3000000;
-        const term = parseInt(loanTerm) || 20;
-        const age = parseInt(borrowerAge) || 35;
-        const ageMult = age > 55 ? 2.5 : age > 45 ? 1.7 : age > 35 ? 1.2 : 1.0;
-        const genderMult = borrowerGender === "male" ? 1.2 : 1.0;
-        const lifeCost = includeLife ? loan * 0.005 * ageMult * genderMult : 0;
-        const titleCost = includeTitle ? loan * 0.003 : 0;
-        const propCost = includeProperty ? loan * 0.002 : 0;
-        const base = (lifeCost + titleCost + propCost) * (1 + term * 0.01);
-        setResults(generateMortgageResults(Math.max(base, 5000)));
-        setIsLoading(false);
-      }, 1000);
+      const loan = parseFloat(loanAmount) || 3000000;
+      const term = parseInt(loanTerm) || 20;
+      const age = parseInt(borrowerAge) || 35;
+      const ageMult = age > 55 ? 2.5 : age > 45 ? 1.7 : age > 35 ? 1.2 : 1.0;
+      const genderMult = borrowerGender === "male" ? 1.2 : 1.0;
+      const lifeCost = includeLife ? loan * 0.005 * ageMult * genderMult : 0;
+      const titleCost = includeTitle ? loan * 0.003 : 0;
+      const propCost = includeProperty ? loan * 0.002 : 0;
+      const base = (lifeCost + titleCost + propCost) * (1 + term * 0.01);
+      setResults(buildMortgageResults(Math.max(base, 5000), companies));
+      setIsLoading(false);
     }
   };
 
@@ -252,6 +266,12 @@ export function MortgageCalculator() {
       </div>
 
       <AnimatePresence>
+        {companiesLoaded && !companies.length && (
+          <div className="text-center py-8">
+            <AlertCircle className="w-10 h-10 text-white/20 mx-auto mb-3" />
+            <p className="text-sm text-white/40">Нет доступных страховых компаний</p>
+          </div>
+        )}
         {results && !isLoading && (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
             <CalculationResults response={results} />

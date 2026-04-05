@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import {
   ChevronLeft, Star, Phone, Mail, Globe, MapPin,
   Shield, CheckCircle, XCircle, Clock, FileText,
-  ThumbsUp, ThumbsDown, MessageSquare, Bell,
+  ThumbsUp, MessageSquare, Bell, Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,57 +15,19 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { Progress } from "@/components/ui/progress";
+import { Skeleton } from "@/components/ui/skeleton";
 import { getCategoryLabel, formatRating, formatReviewsCount } from "@/lib/insurance/formatters";
-import type { InsuranceCategory } from "@/types/insurance";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { CompanyVerificationBadge } from "@/components/insurance/rating/CompanyVerificationBadge";
 import { CompanyProfileLink } from "@/components/insurance/rating/CompanyProfileLink";
 import { PolicyRatingSystem } from "@/components/insurance/rating/PolicyRatingSystem";
 import { InsuranceStories } from "@/components/insurance/media/InsuranceStories";
 import { InsuranceReelsBanner } from "@/components/insurance/media/InsuranceReelsBanner";
 
-const MOCK_COMPANIES: Record<string, {
-  id: string; slug: string; name: string; description: string;
-  rating: number; reviews_count: number; license_number: string; founded_year: number;
-  website: string; phone: string; email: string; address: string;
-  categories: InsuranceCategory[]; avg_claim_days: number; claim_approval_rate: number;
-  is_partner: boolean; products_count: number;
-  pros: string[]; cons: string[];
-}> = {
-  "ingosstrakh": {
-    id: "1", slug: "ingosstrakh", name: "Ингосстрах",
-    description: "Один из крупнейших и наиболее надёжных страховщиков России. Компания основана в 1947 году и имеет богатую историю. Предлагает широкий спектр страховых продуктов как для физических, так и для юридических лиц.",
-    rating: 4.5, reviews_count: 2400, license_number: "СИ №0928", founded_year: 1947,
-    website: "https://ingos.ru", phone: "+7 (495) 956-55-55", email: "info@ingos.ru", address: "Москва, ул. Пятницкая, 12",
-    categories: ["osago", "kasko", "dms", "travel", "property"] as InsuranceCategory[],
-    avg_claim_days: 12, claim_approval_rate: 91, is_partner: true, products_count: 24,
-    pros: ["Высокий рейтинг надёжности", "Широкая филиальная сеть", "Онлайн-сервисы", "Быстрая выплата страхового возмещения"],
-    cons: ["Высокие тарифы по КАСКО", "Долгое ожидание в офисах", "Иногда сложная документация"],
-  },
-  "tinkoff": {
-    id: "8", slug: "tinkoff", name: "Тинькофф Страхование",
-    description: "Полностью цифровая страховая компания группы Тинькофф. Оформление полисов занимает 5 минут без визита в офис. Лидер по удовлетворённости клиентов по итогам 2024 года.",
-    rating: 4.7, reviews_count: 2800, license_number: "СЛ №4184", founded_year: 2014,
-    website: "https://tinkoff.ru/insurance", phone: "+7 (888) 888-88-88", email: "insurance@tinkoff.ru", address: "Москва, ул. 2-я Хуторская, 38А",
-    categories: ["osago", "kasko", "dms", "travel", "property", "life"] as InsuranceCategory[],
-    avg_claim_days: 7, claim_approval_rate: 96, is_partner: true, products_count: 18,
-    pros: ["Полностью онлайн", "Быстрые выплаты (до 7 дней)", "Удобное приложение", "Кэшбэк баллами Тинькофф"],
-    cons: ["Нет физических офисов", "Ограниченное покрытие в отдалённых регионах"],
-  },
-};
-
-const MOCK_REVIEWS = [
-  { id: "r1", author: "Андрей К.", rating: 5, date: "15 фев 2026", pros: "Быстро оформил ОСАГО, пришло за 2 минуты на почту. Цена приятная.", cons: "Иногда зависает сайт", helpful: 24 },
-  { id: "r2", author: "Мария П.", rating: 4, date: "10 янв 2026", pros: "Страховой случай — помяли бампер. Выплатили за 10 дней без вопросов.", cons: "Пришлось собрать много документов", helpful: 18 },
-  { id: "r3", author: "Дмитрий С.", rating: 3, date: "05 дек 2025", pros: "Нормально, полис получил.", cons: "Поддержка долго отвечает, ждал 40 минут", helpful: 7 },
-];
-
-const MOCK_PRODUCTS = [
-  { id: "p1", name: "ОСАГО Онлайн", category: "osago" as InsuranceCategory, premium_from: 7800, coverage: 400000, features: ["Онлайн оформление", "Мгновенная выдача"] },
-  { id: "p2", name: "КАСКО Стандарт", category: "kasko" as InsuranceCategory, premium_from: 45000, coverage: 1500000, features: ["Полный ущерб", "Угон", "Помощь на дороге"] },
-  { id: "p3", name: "ДМС Базовый", category: "dms" as InsuranceCategory, premium_from: 18000, coverage: 1000000, features: ["Поликлиники", "Скорая помощь", "Госпитализация"] },
-];
+const db = supabase as SupabaseClient<any>;
 
 export default function InsuranceCompanyDetailPage() {
   const navigate = useNavigate();
@@ -72,8 +35,67 @@ export default function InsuranceCompanyDetailPage() {
   const [reviewOpen, setReviewOpen] = useState(false);
   const [reviewText, setReviewText] = useState("");
   const [reviewRating, setReviewRating] = useState(5);
+  const [submitting, setSubmitting] = useState(false);
 
-  const company = slug ? MOCK_COMPANIES[slug] : null;
+  const { data: company, isLoading } = useQuery({
+    queryKey: ['insurance-company', slug],
+    queryFn: async () => {
+      const { data, error } = await db.from('insurance_companies')
+        .select('*')
+        .eq('slug', slug)
+        .single();
+      if (error) throw error;
+      return data as Record<string, any>;
+    },
+    enabled: !!slug,
+  });
+
+  const { data: products = [] } = useQuery({
+    queryKey: ['insurance-products', company?.id],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('insurance_products')
+        .select('id, name, category, price_from, coverage_amount, features, description')
+        .eq('company_id', company!.id)
+        .limit(20);
+      if (error) throw error;
+      return data ?? [];
+    },
+    enabled: !!company?.id,
+  });
+
+  const { data: reviews = [], refetch: refetchReviews } = useQuery({
+    queryKey: ['insurance-reviews', company?.id],
+    queryFn: async () => {
+      const { data, error } = await db.from('insurance_company_reviews')
+        .select('*')
+        .eq('company_id', company!.id)
+        .eq('status', 'approved')
+        .order('created_at', { ascending: false })
+        .limit(20);
+      if (error) throw error;
+      return (data ?? []) as Array<Record<string, any>>;
+    },
+    enabled: !!company?.id,
+  });
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-background p-4 space-y-4">
+        <Skeleton className="h-8 w-32" />
+        <div className="flex gap-4">
+          <Skeleton className="w-16 h-16 rounded-2xl" />
+          <div className="flex-1 space-y-2">
+            <Skeleton className="h-6 w-48" />
+            <Skeleton className="h-4 w-32" />
+            <Skeleton className="h-12 w-full" />
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          {[1, 2, 3].map(i => <Skeleton key={i} className="h-20" />)}
+        </div>
+      </div>
+    );
+  }
 
   if (!company) {
     return (
@@ -87,11 +109,43 @@ export default function InsuranceCompanyDetailPage() {
     );
   }
 
-  const handleSubmitReview = () => {
-    toast.success("Отзыв отправлен на модерацию");
-    setReviewOpen(false);
-    setReviewText("");
+  const handleSubmitReview = async () => {
+    if (!company || !reviewText.trim()) return;
+    setSubmitting(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        toast.error('Войдите в аккаунт для отправки отзыва');
+        return;
+      }
+      const { error } = await db.from('insurance_company_reviews').insert({
+        company_id: company.id,
+        user_id: user.id,
+        rating: reviewRating,
+        pros_text: reviewText,
+        cons_text: '',
+      });
+      if (error) {
+        toast.error('Не удалось отправить отзыв');
+        return;
+      }
+      toast.success('Отзыв отправлен на модерацию');
+      setReviewOpen(false);
+      setReviewText('');
+      setReviewRating(5);
+      refetchReviews();
+    } catch {
+      toast.error('Ошибка при отправке отзыва');
+    } finally {
+      setSubmitting(false);
+    }
   };
+
+  const pros = (company.pros ?? []) as string[];
+  const cons = (company.cons ?? []) as string[];
+  const claimRate = Number(company.claim_approval_rate) || 85;
+  const claimDays = Number(company.avg_claim_days) || 14;
+  const prodCount = Number(company.products_count) || products.length;
 
   return (
     <div className="min-h-screen bg-background pb-24">
@@ -137,12 +191,12 @@ export default function InsuranceCompanyDetailPage() {
                 {[1, 2, 3, 4, 5].map((s) => (
                   <Star
                     key={s}
-                    className={cn("w-4 h-4", s <= Math.round(company.rating) ? "text-yellow-400 fill-yellow-400" : "text-white/20")}
+                    className={cn("w-4 h-4", s <= Math.round(Number(company.rating) || 0) ? "text-yellow-400 fill-yellow-400" : "text-white/20")}
                   />
                 ))}
               </div>
-              <span className="text-sm font-semibold text-white">{formatRating(company.rating)}</span>
-              <span className="text-xs text-white/40">{formatReviewsCount(company.reviews_count)}</span>
+              <span className="text-sm font-semibold text-white">{formatRating(Number(company.rating) || 0)}</span>
+              <span className="text-xs text-white/40">{formatReviewsCount(Number(company.reviews_count) || reviews.length)}</span>
             </div>
             <p className="text-sm text-white/50 leading-relaxed">{company.description}</p>
           </div>
@@ -151,9 +205,9 @@ export default function InsuranceCompanyDetailPage() {
         {/* Key stats */}
         <div className="grid grid-cols-3 gap-2 mb-6">
           {[
-            { label: "Выплат одобрено", value: `${company.claim_approval_rate}%`, color: "text-emerald-400" },
-            { label: "Срок выплат", value: `${company.avg_claim_days} дн.`, color: "text-violet-400" },
-            { label: "Продуктов", value: company.products_count.toString(), color: "text-blue-400" },
+            { label: "Выплат одобрено", value: `${claimRate}%`, color: "text-emerald-400" },
+            { label: "Срок выплат", value: `${claimDays} дн.`, color: "text-violet-400" },
+            { label: "Продуктов", value: String(prodCount), color: "text-blue-400" },
           ].map((stat) => (
             <Card key={stat.label} className="bg-white/[0.02] border-white/[0.06]">
               <CardContent className="p-3 text-center">
@@ -169,9 +223,9 @@ export default function InsuranceCompanyDetailPage() {
           <CardContent className="p-4">
             <div className="flex justify-between items-center mb-2">
               <span className="text-xs text-white/60">Процент одобрения выплат</span>
-              <span className="text-sm font-bold text-emerald-400">{company.claim_approval_rate}%</span>
+              <span className="text-sm font-bold text-emerald-400">{claimRate}%</span>
             </div>
-            <Progress value={company.claim_approval_rate} className="h-2" />
+            <Progress value={claimRate} className="h-2" />
           </CardContent>
         </Card>
 
@@ -192,9 +246,8 @@ export default function InsuranceCompanyDetailPage() {
               </CardHeader>
               <CardContent className="space-y-2 text-sm">
                 {[
-                  { label: "Год основания", value: company.founded_year },
-                  { label: "Лицензия", value: company.license_number },
-                  { label: "Категории", value: company.categories.map(getCategoryLabel).join(", ") },
+                  { label: "Год основания", value: company.founded_year ?? '—' },
+                  { label: "Лицензия", value: company.license_number ?? '—' },
                 ].map((row) => (
                   <div key={row.label} className="flex justify-between py-1.5 border-b border-white/[0.04]">
                     <span className="text-white/50">{row.label}</span>
@@ -212,7 +265,7 @@ export default function InsuranceCompanyDetailPage() {
                     Преимущества
                   </p>
                   <ul className="space-y-1">
-                    {company.pros.map((p, i) => (
+                    {pros.map((p, i) => (
                       <li key={i} className="text-xs text-white/60 flex items-start gap-1.5">
                         <CheckCircle className="w-3 h-3 text-emerald-500 mt-0.5 flex-shrink-0" />
                         {p}
@@ -228,7 +281,7 @@ export default function InsuranceCompanyDetailPage() {
                     Недостатки
                   </p>
                   <ul className="space-y-1">
-                    {company.cons.map((c, i) => (
+                    {cons.map((c, i) => (
                       <li key={i} className="text-xs text-white/60 flex items-start gap-1.5">
                         <XCircle className="w-3 h-3 text-red-500 mt-0.5 flex-shrink-0" />
                         {c}
@@ -242,7 +295,17 @@ export default function InsuranceCompanyDetailPage() {
 
           {/* PRODUCTS */}
           <TabsContent value="products" className="space-y-3">
-            {MOCK_PRODUCTS.map((product, idx) => (
+            {products.length === 0 && (
+              <Card className="bg-white/[0.02] border-white/[0.06]">
+                <CardContent className="p-8 text-center">
+                  <FileText className="w-8 h-8 text-white/20 mx-auto mb-2" />
+                  <p className="text-sm text-white/40">Нет доступных продуктов</p>
+                </CardContent>
+              </Card>
+            )}
+            {products.map((product, idx) => {
+              const feats = Array.isArray(product.features) ? product.features as string[] : [];
+              return (
               <motion.div key={product.id} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: idx * 0.08 }}>
                 <Card className="bg-white/[0.02] border-white/[0.06]">
                   <CardContent className="p-4">
@@ -254,13 +317,13 @@ export default function InsuranceCompanyDetailPage() {
                       <div className="text-right">
                         <p className="text-xs text-white/40">от</p>
                         <p className="text-base font-bold text-white">
-                          {new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 }).format(product.premium_from)}
+                          {new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 }).format(product.price_from)}
                         </p>
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-1 mb-3">
-                      {product.features.map((f) => (
-                        <span key={f} className="text-xs bg-white/5 text-white/50 px-2 py-0.5 rounded-full">{f}</span>
+                      {feats.map((f) => (
+                        <span key={String(f)} className="text-xs bg-white/5 text-white/50 px-2 py-0.5 rounded-full">{String(f)}</span>
                       ))}
                     </div>
                     <Button size="sm" className="w-full bg-violet-600 hover:bg-violet-500 text-xs" onClick={() => navigate("/insurance")}>
@@ -269,13 +332,14 @@ export default function InsuranceCompanyDetailPage() {
                   </CardContent>
                 </Card>
               </motion.div>
-            ))}
+              );
+            })}
           </TabsContent>
 
           {/* REVIEWS */}
           <TabsContent value="reviews" className="space-y-3">
             <div className="flex justify-between items-center mb-2">
-              <p className="text-sm text-white/60">{formatReviewsCount(company.reviews_count)}</p>
+              <p className="text-sm text-white/60">{reviews.length ? `${reviews.length} отзывов` : 'Пока нет отзывов'}</p>
               <Dialog open={reviewOpen} onOpenChange={setReviewOpen}>
                 <DialogTrigger asChild>
                   <Button size="sm" className="bg-violet-600 hover:bg-violet-500 text-xs">
@@ -305,24 +369,34 @@ export default function InsuranceCompanyDetailPage() {
                       className="bg-white/5 border-white/10 text-white placeholder:text-white/30 resize-none"
                       rows={4}
                     />
-                    <Button className="w-full bg-violet-600 hover:bg-violet-500" onClick={handleSubmitReview}>
+                    <Button className="w-full bg-violet-600 hover:bg-violet-500" onClick={handleSubmitReview} disabled={submitting || !reviewText.trim()}>
+                      {submitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
                       Отправить отзыв
                     </Button>
                   </div>
                 </DialogContent>
               </Dialog>
             </div>
-            {MOCK_REVIEWS.map((review) => (
+            {reviews.length === 0 && (
+              <Card className="bg-white/[0.02] border-white/[0.06]">
+                <CardContent className="p-8 text-center">
+                  <MessageSquare className="w-8 h-8 text-white/20 mx-auto mb-2" />
+                  <p className="text-sm text-white/40">Отзывов пока нет — будьте первым!</p>
+                </CardContent>
+              </Card>
+            )}
+            {reviews.map((review) => (
               <Card key={review.id} className="bg-white/[0.02] border-white/[0.06]">
                 <CardContent className="p-4">
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
                       <div className="w-7 h-7 rounded-full bg-violet-500/20 flex items-center justify-center">
-                        <span className="text-xs text-violet-400 font-medium">{review.author[0]}</span>
+                        <span className="text-xs text-violet-400 font-medium">★</span>
                       </div>
                       <div>
-                        <p className="text-xs font-medium text-white">{review.author}</p>
-                        <p className="text-xs text-white/30">{review.date}</p>
+                        <p className="text-xs text-white/30">
+                          {new Date(review.created_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        </p>
                       </div>
                     </div>
                     <div className="flex">
@@ -333,16 +407,13 @@ export default function InsuranceCompanyDetailPage() {
                   </div>
                   <Separator className="bg-white/[0.06] mb-3" />
                   <div className="space-y-1.5 mb-3">
-                    <p className="text-xs text-emerald-400 font-medium">Плюсы: <span className="text-white/60 font-normal">{review.pros}</span></p>
-                    <p className="text-xs text-red-400 font-medium">Минусы: <span className="text-white/60 font-normal">{review.cons}</span></p>
+                    {review.pros_text && <p className="text-xs text-emerald-400 font-medium">Плюсы: <span className="text-white/60 font-normal">{review.pros_text}</span></p>}
+                    {review.cons_text && <p className="text-xs text-red-400 font-medium">Минусы: <span className="text-white/60 font-normal">{review.cons_text}</span></p>}
                   </div>
                   <div className="flex items-center gap-3 text-xs text-white/40">
                     <span>Полезно?</span>
                     <button type="button" className="flex items-center gap-1 hover:text-emerald-400">
-                      <ThumbsUp className="w-3 h-3" /> {review.helpful}
-                    </button>
-                    <button type="button" className="flex items-center gap-1 hover:text-red-400">
-                      <ThumbsDown className="w-3 h-3" /> 0
+                      <ThumbsUp className="w-3 h-3" /> {review.helpful_count ?? 0}
                     </button>
                   </div>
                 </CardContent>
@@ -355,12 +426,12 @@ export default function InsuranceCompanyDetailPage() {
             <Card className="bg-white/[0.02] border-white/[0.06]">
               <CardContent className="p-4 space-y-3">
                 {[
-                  { icon: Phone, label: "Телефон", value: company.phone },
-                  { icon: Mail, label: "Email", value: company.email },
-                  { icon: Globe, label: "Сайт", value: company.website },
-                  { icon: MapPin, label: "Адрес", value: company.address },
-                  { icon: FileText, label: "Лицензия", value: company.license_number },
-                  { icon: Clock, label: "На рынке с", value: `${company.founded_year} года` },
+                  { icon: Phone, label: "Телефон", value: company.phone ?? '—' },
+                  { icon: Mail, label: "Email", value: company.email ?? '—' },
+                  { icon: Globe, label: "Сайт", value: company.website ?? '—' },
+                  { icon: MapPin, label: "Адрес", value: company.address ?? '—' },
+                  { icon: FileText, label: "Лицензия", value: company.license_number ?? '—' },
+                  { icon: Clock, label: "На рынке с", value: company.founded_year ? `${company.founded_year} года` : '—' },
                 ].map(({ icon: Icon, label, value }) => (
                   <div key={label} className="flex items-start gap-3 py-2 border-b border-white/[0.04] last:border-0">
                     <Icon className="w-4 h-4 text-violet-400 mt-0.5 flex-shrink-0" />
@@ -406,7 +477,7 @@ export default function InsuranceCompanyDetailPage() {
         <div className="mt-6">
           <Button
             className="w-full bg-white/5 hover:bg-white/10 border border-white/10 text-white/80"
-            onClick={() => toast.success(`Вы подписались на обновления ${company.name}`)}
+            onClick={() => toast.info(`Подписка на обновления ${company.name} пока в разработке`)}
           >
             <Bell className="w-4 h-4 mr-2" />
             Подписаться на обновления

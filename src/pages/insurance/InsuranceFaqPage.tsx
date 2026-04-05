@@ -428,7 +428,7 @@ export default function InsuranceFaqPage() {
   const handleHelpful = (id: string) => {
     if (helpfulVotes.has(id)) return;
     setHelpfulVotes(prev => new Set([...prev, id]));
-    toast.success("Спасибо за оценку!");
+    toast.info("Спасибо! Оценки FAQ пока в разработке");
   };
 
   return (

@@ -1,6 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plane, ChevronLeft, ChevronRight, Calculator, Loader2, Plus, Minus } from "lucide-react";
+import { Plane, ChevronLeft, ChevronRight, Calculator, Loader2, Plus, Minus, AlertCircle } from "lucide-react";
+import { supabase } from "@/lib/supabase";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -37,23 +40,25 @@ const COVERAGE_AMOUNTS = [
   { value: "100000", label: "100 000 EUR" },
 ];
 
-function generateTravelResults(basePrice: number): CalculationResponse {
-  const providers = [
-    { name: "ERV Страхование", rating: 4.6, mult: 1.0 },
-    { name: "Ингосстрах", rating: 4.7, mult: 1.12 },
-    { name: "АльфаСтрахование", rating: 4.5, mult: 0.91 },
-  ];
-  const validUntil = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
-  const results = providers.map((p, i) => {
-    const premium = Math.round(basePrice * p.mult);
+interface DbCompany {
+  id: string;
+  name: string;
+  rating: number;
+  logo_url: string | null;
+}
+
+function buildTravelResults(basePrice: number, companies: DbCompany[]): CalculationResponse {
+  const validUntil = new Date(Date.now() + 86400000).toISOString();
+  const results = companies.map((c, i) => {
+    const mult = 0.88 + i * 0.1;
     return {
-      id: `travel-${i}`,
+      id: `travel-${c.id}`,
       category: "travel" as const,
-      provider_id: p.name.toLowerCase().replace(/\s/g, "_"),
-      provider_name: p.name,
-      provider_logo: "",
-      provider_rating: p.rating,
-      premium_amount: premium,
+      provider_id: c.id,
+      provider_name: c.name,
+      provider_logo: c.logo_url || "",
+      provider_rating: c.rating ?? 4.5,
+      premium_amount: Math.round(basePrice * mult),
       coverage_amount: 50000 * 90,
       currency: "RUB" as const,
       valid_until: validUntil,
@@ -67,10 +72,10 @@ function generateTravelResults(basePrice: number): CalculationResponse {
     request_id: `travel-req-${Date.now()}`,
     category: "travel",
     results,
-    total_providers_queried: 3,
-    successful_providers: 3,
+    total_providers_queried: companies.length,
+    successful_providers: companies.length,
     failed_providers: [],
-    calculation_time_ms: 700,
+    calculation_time_ms: 0,
     cached: false,
   };
 }
@@ -79,6 +84,21 @@ export function TravelCalculator() {
   const [step, setStep] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [results, setResults] = useState<CalculationResponse | null>(null);
+  const [companies, setCompanies] = useState<DbCompany[]>([]);
+  const [companiesLoading, setCompaniesLoading] = useState(true);
+
+  useEffect(() => {
+    const db = supabase as SupabaseClient<any>;
+    db.from('insurance_companies')
+      .select('id, name, rating, logo_url')
+      .eq('is_verified', true)
+      .limit(10)
+      .then(({ data, error }) => {
+        if (error) toast.error('Не удалось загрузить компании');
+        else if (data?.length) setCompanies(data);
+        setCompaniesLoading(false);
+      });
+  }, []);
 
   const [country, setCountry] = useState("");
   const [duration, setDuration] = useState("");
@@ -109,24 +129,26 @@ export function TravelCalculator() {
   const handleNext = () => {
     if (step < STEPS.length - 1) setStep(step + 1);
     else {
+      if (!companies.length) {
+        toast.error('Нет доступных компаний для расчёта');
+        return;
+      }
       setIsLoading(true);
-      setTimeout(() => {
-        const countryData = TRAVEL_COUNTRIES.find(c => c.value === country);
-        const zoneRate = TRAVEL_ZONE_RATES[countryData?.zone ?? "world"] ?? 1.5;
-        const days = parseInt(duration) || 14;
-        const ages = travelerAges.map(a => parseInt(a) || 30);
-        const ageMult = ages.reduce((sum, a) => sum + (a > 65 ? 2.0 : a > 50 ? 1.5 : 1.0), 0) / ages.length;
-        const coverage = parseInt(coverageAmount) || 50000;
-        const coverMult = coverage === 100000 ? 1.8 : coverage === 50000 ? 1.0 : 0.7;
-        const sportMult = sport ? 1.5 : 1.0;
-        const cancelMult = cancellation ? 1.3 : 1.0;
-        const luggageMult = luggage ? 1.1 : 1.0;
-        const purposeMult = purpose === "work" ? 1.4 : purpose === "business" ? 1.2 : 1.0;
-        const multiMult = multiTrip ? 3.5 : 1.0;
-        const base = 150 * days * zoneRate * ageMult * ages.length * coverMult * sportMult * cancelMult * luggageMult * purposeMult * multiMult;
-        setResults(generateTravelResults(base));
-        setIsLoading(false);
-      }, 1000);
+      const countryData = TRAVEL_COUNTRIES.find(c => c.value === country);
+      const zoneRate = TRAVEL_ZONE_RATES[countryData?.zone ?? "world"] ?? 1.5;
+      const days = parseInt(duration) || 14;
+      const ages = travelerAges.map(a => parseInt(a) || 30);
+      const ageMult = ages.reduce((sum, a) => sum + (a > 65 ? 2.0 : a > 50 ? 1.5 : 1.0), 0) / ages.length;
+      const coverage = parseInt(coverageAmount) || 50000;
+      const coverMult = coverage === 100000 ? 1.8 : coverage === 50000 ? 1.0 : 0.7;
+      const sportMult = sport ? 1.5 : 1.0;
+      const cancelMult = cancellation ? 1.3 : 1.0;
+      const luggageMult = luggage ? 1.1 : 1.0;
+      const purposeMult = purpose === "work" ? 1.4 : purpose === "business" ? 1.2 : 1.0;
+      const multiMult = multiTrip ? 3.5 : 1.0;
+      const base = 150 * days * zoneRate * ageMult * ages.length * coverMult * sportMult * cancelMult * luggageMult * purposeMult * multiMult;
+      setResults(buildTravelResults(base, companies));
+      setIsLoading(false);
     }
   };
 
@@ -281,6 +303,13 @@ export function TravelCalculator() {
       </div>
 
       <AnimatePresence>
+        {!companiesLoading && !companies.length && (
+          <div className="text-center py-8">
+            <AlertCircle className="w-10 h-10 text-white/20 mx-auto mb-3" />
+            <p className="text-sm text-white/40">Нет доступных страховых компаний</p>
+            <p className="text-xs text-white/25 mt-1">Попробуйте позже</p>
+          </div>
+        )}
         {results && !isLoading && (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
             <CalculationResults response={results} />

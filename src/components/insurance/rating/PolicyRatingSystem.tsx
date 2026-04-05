@@ -99,7 +99,7 @@ export function PolicyRatingSystem({ policyId: _policyId, companyName = "ком�
       return;
     }
     onSubmit?.({ criteria, review, pros, cons, recommend });
-    toast.success("Спасибо за оценку!");
+    toast.info("Рейтинги пока в разработке");
     setSubmitted(true);
   };
 

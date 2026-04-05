@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -13,6 +13,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { supabase } from "@/lib/supabase";
 import { useInsurancePolicies } from "@/hooks/insurance/useInsurancePolicies";
 import { useCreateClaim } from "@/hooks/insurance/useInsuranceClaims";
 
@@ -46,6 +47,8 @@ interface FormData {
 export default function InsuranceNewClaimPage() {
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const { data: policies = [] } = useInsurancePolicies({ sort_by: "popularity" });
   const createClaim = useCreateClaim();
   const [form, setForm] = useState<FormData>({
@@ -92,9 +95,37 @@ export default function InsuranceNewClaimPage() {
     }
   };
 
-  const handleFileAdd = () => {
-    const name = `документ_${form.files.length + 1}.jpg`;
-    patch({ files: [...form.files, name] });
+  const handleFileAdd = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFiles = e.target.files;
+    if (!selectedFiles?.length) return;
+
+    setUploading(true);
+    const uploaded: string[] = [];
+    for (let i = 0; i < selectedFiles.length; i++) {
+      const file = selectedFiles[i];
+      if (file.size > 10 * 1024 * 1024) {
+        toast.error(`Файл ${file.name} превышает 10 МБ`);
+        continue;
+      }
+      const path = `claims/${Date.now()}-${file.name}`;
+      const { error } = await supabase.storage
+        .from('insurance-claims')
+        .upload(path, file);
+      if (error) {
+        toast.error(`Не удалось загрузить ${file.name}`);
+      } else {
+        const { data: urlData } = supabase.storage
+          .from('insurance-claims')
+          .getPublicUrl(path);
+        uploaded.push(urlData.publicUrl);
+      }
+    }
+    if (uploaded.length) {
+      patch({ files: [...form.files, ...uploaded] });
+      toast.success(`Загружено файлов: ${uploaded.length}`);
+    }
+    setUploading(false);
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const handleFileRemove = (i: number) => {
@@ -270,16 +301,31 @@ export default function InsuranceNewClaimPage() {
               {/* Drop zone */}
               <button
                 type="button"
-                onClick={handleFileAdd}
-                className="w-full border-2 border-dashed border-white/10 rounded-2xl p-8 flex flex-col items-center gap-3 hover:border-violet-500/40 hover:bg-violet-500/5 transition-all"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading}
+                className="w-full border-2 border-dashed border-white/10 rounded-2xl p-8 flex flex-col items-center gap-3 hover:border-violet-500/40 hover:bg-violet-500/5 transition-all disabled:opacity-50"
               >
-                <Upload className="w-8 h-8 text-white/30" />
+                {uploading ? (
+                  <Loader2 className="w-8 h-8 text-violet-400 animate-spin" />
+                ) : (
+                  <Upload className="w-8 h-8 text-white/30" />
+                )}
                 <div className="text-center">
-                  <p className="text-sm text-white/60 font-medium">Нажмите для загрузки</p>
+                  <p className="text-sm text-white/60 font-medium">
+                    {uploading ? 'Загрузка...' : 'Нажмите для загрузки'}
+                  </p>
                   <p className="text-xs text-white/30 mt-0.5">или перетащите файлы сюда</p>
                 </div>
                 <p className="text-xs text-white/20">PNG, JPG, PDF до 10 МБ</p>
               </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*,.pdf"
+                multiple
+                className="hidden"
+                onChange={handleFileAdd}
+              />
 
               {form.files.length > 0 && (
                 <div className="space-y-2">
@@ -290,7 +336,7 @@ export default function InsuranceNewClaimPage() {
                       className="flex items-center gap-3 p-3 bg-white/[0.02] border border-white/[0.06] rounded-xl"
                     >
                       <FileText className="w-4 h-4 text-violet-400 flex-shrink-0" />
-                      <span className="text-sm text-white/70 flex-1">{file}</span>
+                      <span className="text-sm text-white/70 flex-1 truncate">{file.split('/').pop() || file}</span>
                       <button type="button" onClick={() => handleFileRemove(i)}>
                         <X className="w-4 h-4 text-white/30 hover:text-red-400" />
                       </button>

@@ -88,7 +88,7 @@ export function CompanyProfileLink({
           <Button
             size="sm"
             className="flex-1 bg-violet-600 hover:bg-violet-500 text-xs"
-            onClick={() => toast.success(`Вы подписались на ${companyName}`)}
+            onClick={() => toast.info("Подписка пока в разработке")}
           >
             <Bell className="w-3.5 h-3.5 mr-1" />
             Подписаться

@@ -1,53 +1,67 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Search, Plus, Phone, Mail, FileText, ChevronRight } from "lucide-react";
+import { Search, Phone, Mail, FileText, ChevronRight, Users } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
+import { supabase } from "@/lib/supabase";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
-interface Client {
-  id: string;
-  name: string;
-  phone: string;
-  email: string;
-  policiesCount: number;
-  lastActivity: string;
-  totalPremium: string;
-}
+const db = supabase as SupabaseClient<any>;
 
-const mockClients: Client[] = [
-  { id: "c1", name: "Иванов Александр Владимирович", phone: "+7 (916) 123-45-67", email: "ivanov@mail.ru", policiesCount: 3, lastActivity: "02.03.2026", totalPremium: "45 600 ₽" },
-  { id: "c2", name: "Смирнова Елена Петровна", phone: "+7 (903) 234-56-78", email: "smirnova@gmail.com", policiesCount: 1, lastActivity: "01.03.2026", totalPremium: "34 100 \u20bd" },
-  { id: "c3", name: "Козлов Дмитрий Иванович", phone: "+7 (925) 345-67-89", email: "kozlov@yandex.ru", policiesCount: 2, lastActivity: "28.02.2026", totalPremium: "26 300 \u20bd" },
-  { id: "c4", name: "Петрова Мария Сергеевна", phone: "+7 (967) 456-78-90", email: "petrova@mail.ru", policiesCount: 1, lastActivity: "27.02.2026", totalPremium: "4 200 \u20bd" },
-  { id: "c5", name: "Сидоров Кирилл Николаевич", phone: "+7 (985) 567-89-01", email: "sidorov@gmail.com", policiesCount: 2, lastActivity: "25.02.2026", totalPremium: "18 400 \u20bd" },
-  { id: "c6", name: "Федорова Ольга Андреевна", phone: "+7 (916) 678-90-12", email: "fedorova@yandex.ru", policiesCount: 4, lastActivity: "22.02.2026", totalPremium: "92 700 \u20bd" },
-];
-
-interface NewClientForm {
-  name: string;
-  phone: string;
-  email: string;
-  birthDate: string;
+interface ClientRow {
+  user_id: string;
+  count: number;
+  total_premium: number;
+  last_date: string;
 }
 
 export function AgentClients() {
   const [search, setSearch] = useState("");
-  const [addOpen, setAddOpen] = useState(false);
-  const [detailClient, setDetailClient] = useState<Client | null>(null);
-  const [form, setForm] = useState<NewClientForm>({ name: "", phone: "", email: "", birthDate: "" });
+  const [detailClient, setDetailClient] = useState<ClientRow | null>(null);
 
-  const filtered = mockClients.filter((c) =>
-    c.name.toLowerCase().includes(search.toLowerCase())
+  const { data: clients = [], isLoading } = useQuery({
+    queryKey: ["agent-clients"],
+    queryFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return [];
+
+      // Получаем полисы агента и группируем по user_id (клиенту)
+      const { data, error } = await db
+        .from("insurance_policies")
+        .select("id, user_id, premium, start_date")
+        .eq("user_id", user.id)
+        .order("start_date", { ascending: false })
+        .limit(200);
+      if (error) throw error;
+      if (!data?.length) return [];
+
+      // Группировка по user_id
+      const map = new Map<string, ClientRow>();
+      for (const p of data) {
+        const uid = p.user_id as string;
+        const existing = map.get(uid);
+        if (existing) {
+          existing.count++;
+          existing.total_premium += p.premium ?? 0;
+          if (p.start_date > existing.last_date) existing.last_date = p.start_date;
+        } else {
+          map.set(uid, { user_id: uid, count: 1, total_premium: p.premium ?? 0, last_date: p.start_date });
+        }
+      }
+      return Array.from(map.values());
+    },
+  });
+
+  const filtered = clients.filter((c) =>
+    c.user_id.toLowerCase().includes(search.toLowerCase())
   );
 
-  const handleAdd = () => {
-    setAddOpen(false);
-    setForm({ name: "", phone: "", email: "", birthDate: "" });
-  };
+  const fmt = (v: number) => v.toLocaleString("ru-RU") + " ₽";
 
   return (
     <div className="space-y-4">
@@ -55,22 +69,31 @@ export function AgentClients() {
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
-            placeholder="Поиск клиента..."
+            placeholder="Поиск..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9"
           />
         </div>
-        <Button size="sm" onClick={() => setAddOpen(true)}>
-          <Plus className="w-4 h-4 mr-1" />
-          Добавить
-        </Button>
       </div>
 
+      {isLoading ? (
+        <div className="space-y-2">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-16 w-full rounded-lg" />
+          ))}
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="text-center py-12 text-muted-foreground">
+          <Users className="w-10 h-10 mx-auto mb-3 opacity-40" />
+          <p className="text-sm">Клиентов пока нет</p>
+          <p className="text-xs mt-1">Они появятся после оформления полисов</p>
+        </div>
+      ) : (
       <div className="space-y-2">
         {filtered.map((client, i) => (
           <motion.div
-            key={client.id}
+            key={client.user_id}
             initial={{ opacity: 0, x: -10 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: i * 0.04 }}
@@ -81,15 +104,14 @@ export function AgentClients() {
             >
               <CardContent className="p-4 flex items-center justify-between">
                 <div className="flex-1 min-w-0">
-                  <p className="font-medium text-sm text-foreground truncate">{client.name}</p>
-                  <div className="flex items-center gap-3 mt-1">
-                    <span className="text-xs text-muted-foreground flex items-center gap-1">
-                      <Phone className="w-3 h-3" />{client.phone}
-                    </span>
-                  </div>
+                  <p className="font-medium text-sm text-foreground truncate">{client.user_id.slice(0, 8)}...</p>
                   <div className="flex items-center gap-2 mt-1">
-                    <Badge variant="secondary" className="text-[10px] h-4 px-1">{client.policiesCount} полис{client.policiesCount > 1 ? "а" : ""}</Badge>
-                    <span className="text-[11px] text-muted-foreground">последняя активность {client.lastActivity}</span>
+                    <Badge variant="secondary" className="text-[10px] h-4 px-1">
+                      {client.count} полис{client.count > 4 ? "ов" : client.count > 1 ? "а" : ""}
+                    </Badge>
+                    <span className="text-[11px] text-muted-foreground">
+                      {new Date(client.last_date).toLocaleDateString("ru-RU")}
+                    </span>
                   </div>
                 </div>
                 <ChevronRight className="w-4 h-4 text-muted-foreground flex-shrink-0" />
@@ -98,36 +120,8 @@ export function AgentClients() {
           </motion.div>
         ))}
       </div>
+      )}
 
-      {/* Add Client Dialog */}
-      <Dialog open={addOpen} onOpenChange={setAddOpen}>
-        <DialogContent className="bg-card border-border">
-          <DialogHeader>
-            <DialogTitle>Добавить клиента</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div>
-              <label className="text-xs text-muted-foreground mb-1 block">ФИО</label>
-              <Input placeholder="Иванов Иван Иванович" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground mb-1 block">Телефон</label>
-              <Input placeholder="+7 (999) 000-00-00" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground mb-1 block">Email</label>
-              <Input placeholder="email@example.com" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground mb-1 block">Дата рождения</label>
-              <Input type="date" value={form.birthDate} onChange={(e) => setForm({ ...form, birthDate: e.target.value })} />
-            </div>
-            <Button className="w-full" onClick={handleAdd}>Сохранить</Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Client Detail Dialog */}
       <Dialog open={!!detailClient} onOpenChange={(v) => !v && setDetailClient(null)}>
         <DialogContent className="bg-card border-border">
           <DialogHeader>
@@ -136,30 +130,24 @@ export function AgentClients() {
           {detailClient && (
             <div className="space-y-4">
               <div>
-                <p className="font-semibold text-foreground">{detailClient.name}</p>
-                <div className="flex items-center gap-2 mt-2">
-                  <Phone className="w-4 h-4 text-muted-foreground" />
-                  <span className="text-sm text-foreground">{detailClient.phone}</span>
-                </div>
-                <div className="flex items-center gap-2 mt-1">
-                  <Mail className="w-4 h-4 text-muted-foreground" />
-                  <span className="text-sm text-foreground">{detailClient.email}</span>
-                </div>
+                <p className="font-semibold text-foreground">ID: {detailClient.user_id.slice(0, 12)}...</p>
               </div>
               <Separator />
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <p className="text-xs text-muted-foreground">Полисов</p>
                   <p className="text-lg font-bold text-foreground flex items-center gap-1">
-                    <FileText className="w-4 h-4" />{detailClient.policiesCount}
+                    <FileText className="w-4 h-4" />{detailClient.count}
                   </p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Общая сумма</p>
-                  <p className="text-lg font-bold text-foreground">{detailClient.totalPremium}</p>
+                  <p className="text-lg font-bold text-foreground">{fmt(detailClient.total_premium)}</p>
                 </div>
               </div>
-              <p className="text-xs text-muted-foreground">Последняя активность: {detailClient.lastActivity}</p>
+              <p className="text-xs text-muted-foreground">
+                Последняя активность: {new Date(detailClient.last_date).toLocaleDateString("ru-RU")}
+              </p>
             </div>
           )}
         </DialogContent>

@@ -1,6 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { HeartPulse, ChevronLeft, ChevronRight, Calculator, Loader2 } from "lucide-react";
+import { HeartPulse, ChevronLeft, ChevronRight, Calculator, Loader2, AlertCircle } from "lucide-react";
+import { supabase } from "@/lib/supabase";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -31,22 +34,17 @@ const DMS_PROGRAMS = [
   { value: "vip", label: "VIP", price: 120000, description: "Лучшие клиники, без очередей" },
 ];
 
-function generateDmsResults(basePrice: number): CalculationResponse {
-  const providers = [
-    { name: "СОГАЗ", rating: 4.8, mult: 1.0 },
-    { name: "Ренессанс страхование", rating: 4.5, mult: 0.92 },
-    { name: "Ингосстрах", rating: 4.7, mult: 1.1 },
-  ];
-  const validUntil = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
-  const results = providers.map((p, i) => {
-    const premium = Math.round(basePrice * p.mult);
+function buildDmsResults(basePrice: number, companies: Array<{ id: string; name: string; rating: number; logo_url: string | null }>): CalculationResponse {
+  const validUntil = new Date(Date.now() + 86400000).toISOString();
+  const results = companies.map((c, i) => {
+    const premium = Math.round(basePrice * (0.89 + i * 0.11));
     return {
-      id: `dms-${i}`,
+      id: `dms-${c.id}`,
       category: "dms" as const,
-      provider_id: p.name.toLowerCase().replace(/\s/g, "_"),
-      provider_name: p.name,
-      provider_logo: "",
-      provider_rating: p.rating,
+      provider_id: c.id,
+      provider_name: c.name,
+      provider_logo: c.logo_url || "",
+      provider_rating: c.rating ?? 4.5,
       premium_amount: premium,
       premium_monthly: Math.round(premium / 12),
       coverage_amount: 3000000,
@@ -62,10 +60,10 @@ function generateDmsResults(basePrice: number): CalculationResponse {
     request_id: `dms-req-${Date.now()}`,
     category: "dms",
     results,
-    total_providers_queried: 3,
-    successful_providers: 3,
+    total_providers_queried: companies.length,
+    successful_providers: companies.length,
     failed_providers: [],
-    calculation_time_ms: 700,
+    calculation_time_ms: 0,
     cached: false,
   };
 }
@@ -74,6 +72,20 @@ export function DmsCalculator() {
   const [step, setStep] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [results, setResults] = useState<CalculationResponse | null>(null);
+  const [companies, setCompanies] = useState<Array<{ id: string; name: string; rating: number; logo_url: string | null }>>([]);
+  const [companiesLoaded, setCompaniesLoaded] = useState(false);
+
+  useEffect(() => {
+    (supabase as SupabaseClient<any>)
+      .from('insurance_companies')
+      .select('id, name, rating, logo_url')
+      .eq('is_verified', true)
+      .limit(10)
+      .then(({ data, error }) => {
+        if (!error && data) setCompanies(data);
+        setCompaniesLoaded(true);
+      });
+  }, []);
 
   const [age, setAge] = useState("");
   const [gender, setGender] = useState("male");
@@ -91,22 +103,24 @@ export function DmsCalculator() {
   const handleNext = () => {
     if (step < STEPS.length - 1) setStep(step + 1);
     else {
+      if (!companies.length) {
+        toast.error('Нет доступных компаний для расчёта');
+        return;
+      }
       setIsLoading(true);
-      setTimeout(() => {
-        const prog = DMS_PROGRAMS.find(p => p.value === program);
-        let base = prog?.price ?? 35000;
-        const a = parseInt(age) || 30;
-        if (a > 50) base *= 1.4;
-        else if (a > 40) base *= 1.2;
-        if (chronic) base *= 1.3;
-        if (dental) base *= 1.15;
-        if (emergency) base *= 1.1;
-        if (online) base *= 1.05;
-        const emp = parseInt(employees) || 1;
-        if (emp > 1) base *= Math.max(0.7, 1 - emp * 0.02);
-        setResults(generateDmsResults(base));
-        setIsLoading(false);
-      }, 1000);
+      const prog = DMS_PROGRAMS.find(p => p.value === program);
+      let base = prog?.price ?? 35000;
+      const a = parseInt(age) || 30;
+      if (a > 50) base *= 1.4;
+      else if (a > 40) base *= 1.2;
+      if (chronic) base *= 1.3;
+      if (dental) base *= 1.15;
+      if (emergency) base *= 1.1;
+      if (online) base *= 1.05;
+      const emp = parseInt(employees) || 1;
+      if (emp > 1) base *= Math.max(0.7, 1 - emp * 0.02);
+      setResults(buildDmsResults(base, companies));
+      setIsLoading(false);
     }
   };
 
@@ -243,6 +257,12 @@ export function DmsCalculator() {
       </div>
 
       <AnimatePresence>
+        {companiesLoaded && !companies.length && (
+          <div className="text-center py-8">
+            <AlertCircle className="w-10 h-10 text-white/20 mx-auto mb-3" />
+            <p className="text-sm text-white/40">Нет доступных компаний</p>
+          </div>
+        )}
         {results && !isLoading && (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
             <CalculationResults response={results} />

@@ -2,55 +2,68 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, LayoutDashboard, Users, FileText, DollarSign, Settings, Shield, Star } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
+import { supabase } from "@/lib/supabase";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { AgentDashboard, AgentClients, AgentCommissions } from "@/components/insurance/agent";
 
-// Policies tab mock data
-interface Policy {
-  id: string;
-  client: string;
-  company: string;
-  category: string;
-  amount: string;
-  commission: string;
-  status: "active" | "pending" | "expired" | "cancelled";
-  date: string;
-}
+const db = supabase as SupabaseClient<any>;
 
-const mockPolicies: Policy[] = [
-  { id: "П-1247", client: "Иванов А.В.", company: "Ингосстрах", category: "ОСАГО", amount: "8 420 \u20bd", commission: "1 263 \u20bd", status: "active", date: "02.03.2026" },
-  { id: "П-1246", client: "Смирнова Е.П.", company: "СОГАЗ", category: "КАСКО", amount: "34 100 \u20bd", commission: "4 092 \u20bd", status: "pending", date: "01.03.2026" },
-  { id: "П-1245", client: "Козлов Д.И.", company: "АльфаСтрахование", category: "ДМС", amount: "18 600 \u20bd", commission: "3 348 \u20bd", status: "active", date: "28.02.2026" },
-  { id: "П-1244", client: "Петрова М.С.", company: "Ренессанс", category: "Travel", amount: "4 200 \u20bd", commission: "840 \u20bd", status: "active", date: "27.02.2026" },
-  { id: "П-1243", client: "Сидоров К.Н.", company: "РОСГОССТРАХ", category: "ОСАГО", amount: "7 780 \u20bd", commission: "1 167 \u20bd", status: "cancelled", date: "25.02.2026" },
-  { id: "П-1240", client: "Федорова О.А.", company: "СОГАЗ", category: "Ипотечное", amount: "42 000 \u20bd", commission: "5 040 \u20bd", status: "active", date: "20.02.2026" },
-];
-
-const policyStatusConfig: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
-  active: { label: "Активен", variant: "default" },
-  pending: { label: "Ожидание", variant: "secondary" },
-  expired: { label: "Истёк", variant: "outline" },
-  cancelled: { label: "Отменён", variant: "destructive" },
-};
-
-// Settings tab
 const specializations = ["ОСАГО", "КАСКО", "ДМС", "Travel", "Имущество", "Ипотечное", "Жизнь"];
+
+const fmt = (v: number) => v.toLocaleString("ru-RU") + " ₽";
 
 function AgentPolicies() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
 
-  const filtered = mockPolicies.filter((p) => {
+  const { data: policies = [], isLoading, isError } = useQuery({
+    queryKey: ["agent-policies"],
+    queryFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Не авторизован");
+
+      const { data, error } = await db
+        .from("insurance_policies")
+        .select("id, policy_number, type, status, premium, coverage_amount, start_date, product_id, company_id, user_id, insurance_companies(name), insurance_products(name)")
+        .eq("user_id", user.id)
+        .order("start_date", { ascending: false })
+        .limit(50);
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+
+  const filtered = policies.filter((p: any) => {
     const matchStatus = statusFilter === "all" || p.status === statusFilter;
-    const matchCategory = categoryFilter === "all" || p.category === categoryFilter;
+    const matchCategory = categoryFilter === "all" || p.type === categoryFilter;
     return matchStatus && matchCategory;
   });
+
+  if (isLoading) {
+    return (
+      <div className="space-y-3">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton key={i} className="h-12 w-full rounded-lg" />
+        ))}
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="text-center py-12 text-muted-foreground">
+        <p>Не удалось загрузить полисы</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -79,20 +92,33 @@ function AgentPolicies() {
       </div>
 
       <div className="overflow-x-auto">
+        {filtered.length === 0 ? (
+          <div className="text-center py-12 text-muted-foreground">
+            <FileText className="w-10 h-10 mx-auto mb-3 opacity-40" />
+            <p className="text-sm">У вас пока нет полисов</p>
+          </div>
+        ) : (
         <table className="w-full text-xs">
           <thead>
             <tr className="border-b border-border">
               <th className="text-left p-3 text-muted-foreground font-medium">Полис</th>
               <th className="text-left p-3 text-muted-foreground font-medium hidden sm:table-cell">Компания</th>
-              <th className="text-left p-3 text-muted-foreground font-medium">Категория</th>
-              <th className="text-right p-3 text-muted-foreground font-medium hidden md:table-cell">Сумма</th>
-              <th className="text-right p-3 text-muted-foreground font-medium hidden md:table-cell">Комиссия</th>
+              <th className="text-left p-3 text-muted-foreground font-medium">Тип</th>
+              <th className="text-right p-3 text-muted-foreground font-medium hidden md:table-cell">Премия</th>
+              <th className="text-right p-3 text-muted-foreground font-medium hidden md:table-cell">Покрытие</th>
               <th className="text-center p-3 text-muted-foreground font-medium">Статус</th>
             </tr>
           </thead>
           <tbody>
-            {filtered.map((policy, i) => {
-              const status = policyStatusConfig[policy.status];
+            {filtered.map((policy: any, i: number) => {
+              const statusMap: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
+                active: { label: "Активен", variant: "default" },
+                pending: { label: "Ожидание", variant: "secondary" },
+                expired: { label: "Истёк", variant: "outline" },
+                cancelled: { label: "Отменён", variant: "destructive" },
+              };
+              const st = statusMap[policy.status] ?? { label: policy.status, variant: "outline" as const };
+              const companyName = policy.insurance_companies?.name ?? "—";
               return (
                 <motion.tr
                   key={policy.id}
@@ -102,23 +128,24 @@ function AgentPolicies() {
                   className="border-b border-border/50 last:border-0 hover:bg-muted/20 transition-colors"
                 >
                   <td className="p-3">
-                    <p className="font-medium text-foreground">{policy.id}</p>
-                    <p className="text-muted-foreground">{policy.client}</p>
+                    <p className="font-medium text-foreground">{policy.policy_number || policy.id.slice(0, 8)}</p>
+                    <p className="text-muted-foreground">{new Date(policy.start_date).toLocaleDateString("ru-RU")}</p>
                   </td>
-                  <td className="p-3 text-muted-foreground hidden sm:table-cell">{policy.company}</td>
+                  <td className="p-3 text-muted-foreground hidden sm:table-cell">{companyName}</td>
                   <td className="p-3">
-                    <Badge variant="outline" className="text-[10px] h-4 px-1">{policy.category}</Badge>
+                    <Badge variant="outline" className="text-[10px] h-4 px-1">{policy.type}</Badge>
                   </td>
-                  <td className="p-3 text-right text-foreground hidden md:table-cell">{policy.amount}</td>
-                  <td className="p-3 text-right text-green-400 font-semibold hidden md:table-cell">{policy.commission}</td>
+                  <td className="p-3 text-right text-foreground hidden md:table-cell">{fmt(policy.premium ?? 0)}</td>
+                  <td className="p-3 text-right text-green-400 font-semibold hidden md:table-cell">{fmt(policy.coverage_amount ?? 0)}</td>
                   <td className="p-3 text-center">
-                    <Badge variant={status.variant} className="text-[10px] h-4 px-1">{status.label}</Badge>
+                    <Badge variant={st.variant} className="text-[10px] h-4 px-1">{st.label}</Badge>
                   </td>
                 </motion.tr>
               );
             })}
           </tbody>
         </table>
+        )}
       </div>
     </div>
   );

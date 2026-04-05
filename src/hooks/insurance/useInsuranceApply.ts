@@ -7,6 +7,8 @@ import { useState, useCallback, useEffect, useMemo } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { logger } from "@/lib/logger";
+import { supabase } from "@/lib/supabase";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   DEFAULT_FORM_DATA_FACTORIES,
   type InsuranceFormData,
@@ -271,27 +273,58 @@ export function useInsuranceApply() {
     setIsProcessing(true);
     
     try {
-      // Имитация обработки платежа
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      
-      const policyId = `POL-${Date.now()}-${Math.random()
-        .toString(36)
-        .slice(2, 7)
-        .toUpperCase()}`;
-      
-      // Очищаем черновик
+      const db = supabase as SupabaseClient<any>;
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        toast.error("Требуется авторизация");
+        return;
+      }
+
+      const rand4 = Math.floor(1000 + Math.random() * 9000);
+      const policyNumber = `POL-${Date.now()}-${rand4}`;
+      const now = new Date();
+      const endDate = new Date(now);
+      endDate.setFullYear(endDate.getFullYear() + 1);
+
+      const { data: policy, error } = await db
+        .from('insurance_policies')
+        .insert({
+          user_id: user.id,
+          product_id: selectedOffer?.id || null,
+          company_id: selectedOffer?.companyId || null,
+          policy_number: policyNumber,
+          type: category,
+          status: 'pending_payment',
+          start_date: now.toISOString().split('T')[0],
+          end_date: endDate.toISOString().split('T')[0],
+          premium: selectedOffer?.price || 0,
+          coverage_amount: 0,
+          deductible: 0,
+          insured_data: formData ? JSON.parse(JSON.stringify(formData)) : {},
+          metadata: { payment_method: paymentMethod },
+        })
+        .select('id')
+        .single();
+
+      if (error) {
+        logger.error('[useInsuranceApply] Ошибка создания полиса', { error });
+        toast.error('Не удалось создать полис');
+        return;
+      }
+
       if (category) {
         localStorage.removeItem(`insurance_draft_${category}`);
       }
-      
-      navigate(`/insurance/success/${policyId}`);
-    } catch (error) {
-      logger.error("[useInsuranceApply] Payment failed", { error });
-      toast.error("Ошибка при оплате. Попробуйте снова.");
+
+      toast.success('Полис создан. Оплата будет доступна после интеграции платёжной системы.');
+      navigate(`/insurance/success/${policy?.id || policyNumber}`);
+    } catch (err) {
+      logger.error("[useInsuranceApply] Payment failed", { error: err });
+      toast.error("Ошибка при создании полиса. Попробуйте снова.");
     } finally {
       setIsProcessing(false);
     }
-  }, [agreed, category, navigate]);
+  }, [agreed, category, navigate, selectedOffer, formData, paymentMethod]);
 
   // ---------------------------------------------------------------------------
   // Вычисляемые значения
