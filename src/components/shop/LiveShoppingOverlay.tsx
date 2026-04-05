@@ -74,23 +74,27 @@ export function LiveShoppingOverlay({
     const { data: shop } = await db
       .from("shops")
       .select("id")
-      .eq("user_id", user.id)
+      .eq("owner_id", user.id)
       .single();
 
     if (!shop) return;
 
     const { data: products } = await db
-      .from("products")
-      .select("id, title, price, currency, images, stock")
+      .from("shop_products")
+      .select("id, name, price, currency, images, in_stock")
       .eq("shop_id", shop.id)
-      .eq("is_active", true)
+      .eq("in_stock", true)
       .order("created_at", { ascending: false })
       .limit(20);
 
     setMyProducts(
-      (products ?? []).map((p: { id: string; title: string; price: number; currency: string; images?: string[] | null; stock: number }) => ({
-        ...p,
+      (products ?? []).map((p: { id: string; name: string; price: number; currency: string; images?: string[] | null; in_stock: boolean }) => ({
+        id: p.id,
+        title: p.name,
+        price: p.price,
+        currency: p.currency,
         image_url: p.images?.[0] ?? null,
+        stock: p.in_stock ? 999 : 0,
       }))
     );
   };

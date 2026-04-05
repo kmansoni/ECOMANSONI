@@ -55,18 +55,21 @@ export default function CheckoutPage() {
     setAddress(prev => ({ ...prev, [field]: value }));
 
   const handleSubmit = async () => {
-    const order = await createOrder({
-      items: cartItems,
-      address: address as DeliveryAddress,
-      deliveryMethod,
-      paymentMethod,
-      shopId,
-      totalAmount,
-      deliveryCost,
-    });
-    if (order) {
+    try {
+      const order = await createOrder({
+        items: cartItems,
+        address: address as DeliveryAddress,
+        deliveryMethod,
+        paymentMethod,
+        shopId,
+        totalAmount,
+        deliveryCost,
+      });
+      if (!order) return;
       toast.success('Заказ оформлен!');
       navigate(`/orders/${order.id}`);
+    } catch {
+      toast.error('Не удалось оформить заказ');
     }
   };
 

@@ -100,7 +100,12 @@ export function useCoupons() {
         return { valid: false, discount: 0, coupon: null, error: 'Промокод не найден или неактивен' };
       }
 
-      // Проверка срока действия
+      // Промокод ещё не начал действовать
+      if (coupon.valid_from && new Date(coupon.valid_from) > new Date()) {
+        return { valid: false, discount: 0, coupon: null, error: 'Промокод ещё не активен' };
+      }
+
+      // Срок действия истёк
       if (coupon.valid_until && new Date(coupon.valid_until) < new Date()) {
         return { valid: false, discount: 0, coupon: null, error: 'Срок действия промокода истёк' };
       }
