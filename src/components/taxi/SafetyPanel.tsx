@@ -30,6 +30,8 @@ export function SafetyPanel({ orderId, className }: SafetyPanelProps) {
   // ─── Поделиться поездкой ──────────────────────────────────────────────────
   const handleShare = async () => {
     const link = await shareTrip(orderId);
+    if (!link) return;
+
     setShareLink(link);
     setShareDialogOpen(true);
 

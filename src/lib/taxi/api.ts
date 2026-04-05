@@ -23,7 +23,7 @@ import {
 import { estimateAllTariffs, generateSurgeMultiplier, generateRoutePoints } from './calculations';
 import { generatePinCode } from './formatters';
 import { sleep } from '@/lib/utils/sleep';
-import { generateMockDriver, generateMockTripHistory } from './mock-drivers';
+import { toast } from 'sonner';
 
 const delay = sleep;
 
@@ -304,20 +304,19 @@ export async function createOrder(params: {
   return rowToTaxiOrder(ride as Record<string, unknown>);
 }
 
-// ─── Поиск водителя (mock — реальный поиск идёт через taxi-dispatch) ─────────
-export async function searchDriver(orderId: string): Promise<Driver> {
-  // Ждём обновления статуса из Realtime (до 8 сек), иначе возвращаем mock-водителя
+// ─── Поиск водителя (ожидаем назначение через taxi-dispatch) ─────────────────
+export async function searchDriver(orderId: string): Promise<Driver | null> {
   const order = await getOrderById(orderId);
   if (order?.driver) return order.driver;
 
-  await delay(3000 + Math.random() * 5000);
+  // Polling с интервалом 2с, макс ~10 сек
+  for (let i = 0; i < 5; i++) {
+    await delay(2000);
+    const current = await getOrderById(orderId);
+    if (current?.driver) return current.driver;
+  }
 
-  const current = await getOrderById(orderId);
-  if (current?.driver) return current.driver;
-
-  // Если DB ещё не обновился — возвращаем mock для UI
-  const pickup = order?.pickup.coordinates ?? DEFAULT_MAP_CENTER;
-  return generateMockDriver(pickup);
+  return null;
 }
 
 // ─── Получить активный заказ (Supabase) ──────────────────────────────────────
@@ -414,27 +413,37 @@ export async function rateTrip(
   const userId = await getUid().catch(() => null);
   if (!userId) return;
 
-  // Попытка вставить в taxi_ratings (если таблица существует)
   const { error: ratingError } = await dbLoose
     .from('taxi_ratings')
     .insert({
-      order_id: orderId,
-      passenger_id: userId,
+      ride_id: orderId,
+      rater_id: userId,
+      ratee_id: userId, // будет заменён на driver user_id при наличии
+      rater_role: 'passenger',
       rating,
-      tip,
       comment: comment ?? null,
     });
 
   if (ratingError) {
-    // Таблица может не существовать — логируем и продолжаем
-    logger.warn('[taxi] rateTrip insert failed (table may not exist)', ratingError);
+    logger.warn('[taxi] rateTrip insert failed', ratingError);
   }
 
-  // Также обновляем запись поездки с финальной оценкой
-  await dbLoose
-    .from('taxi_rides')
-    .update({ final_price: undefined })
-    .eq('id', orderId);
+  // Если есть чаевые — добавить к final_price
+  if (tip > 0) {
+    const { data: ride } = await dbLoose
+      .from('taxi_rides')
+      .select('final_price')
+      .eq('id', orderId)
+      .single();
+
+    const currentPrice = (ride as Record<string, unknown> | null)?.final_price as number | null;
+    if (currentPrice != null) {
+      await dbLoose
+        .from('taxi_rides')
+        .update({ final_price: currentPrice + tip })
+        .eq('id', orderId);
+    }
+  }
 }
 
 // ─── История поездок (Supabase) ───────────────────────────────────────────────
@@ -445,9 +454,7 @@ export async function getOrderHistory(params?: {
 }): Promise<{ items: TripHistoryItem[]; total: number; hasMore: boolean }> {
   const userId = await getUid().catch(() => null);
   if (!userId) {
-    // Не авторизован — вернуть mock историю
-    const mockItems = generateMockTripHistory() as TripHistoryItem[];
-    return { items: mockItems.slice(0, params?.limit ?? 10), total: mockItems.length, hasMore: false };
+    return { items: [], total: 0, hasMore: false };
   }
 
   const page = params?.page ?? 1;
@@ -528,16 +535,29 @@ export async function getDriverLocation(
   return { lat: newLat, lng: newLng, heading: 0, eta: 5 };
 }
 
-// ─── Поделиться поездкой (mock) ───────────────────────────────────────────────
-export async function shareTrip(orderId: string): Promise<string> {
-  await delay(100);
-  return `https://app.mansoni.ru/taxi/shared/${orderId}?t=${Date.now()}`;
+// ─── Поделиться поездкой ──────────────────────────────────────────────────────
+export async function shareTrip(orderId: string): Promise<string | null> {
+  // share_token пока не поддерживается в схеме
+  toast.info('Шеринг поездки в разработке');
+  logger.debug('[taxi] shareTrip — таблица не поддерживает share_token', { orderId });
+  return null;
 }
 
-// ─── SOS (mock) ───────────────────────────────────────────────────────────────
+// ─── SOS ──────────────────────────────────────────────────────────────────────
 export async function sendSos(orderId: string): Promise<void> {
-  await delay(500);
-  logger.warn(`[SOS] Экстренный сигнал отправлен для заказа: ${orderId}`);
+  logger.warn(`[SOS] Экстренный сигнал для заказа: ${orderId}`);
+
+  const { error } = await dbLoose
+    .from('taxi_rides')
+    .update({ status: 'cancelled', cancellation_reason: 'other', cancelled_by: 'system', cancelled_at: new Date().toISOString() })
+    .eq('id', orderId);
+
+  if (error) {
+    logger.error('[taxi] sendSos update failed', error);
+    toast.error('Не удалось отправить SOS, позвоните 112');
+    return;
+  }
+  toast.error('SOS — поездка экстренно завершена, обратитесь в поддержку');
 }
 
 // ─── Способ оплаты (локально) ─────────────────────────────────────────────────
@@ -549,30 +569,33 @@ export async function getPaymentMethod(): Promise<PaymentMethod> {
   return store.paymentMethod;
 }
 
-// ─── Nearby drivers для главного экрана (mock) ───────────────────────────────
+// ─── Nearby drivers (из БД taxi_driver_locations + taxi_drivers) ─────────────
 export async function getNearbyDrivers(
-  location: { lat: number; lng: number },
-  tariffId?: VehicleClass
+  _location: { lat: number; lng: number },
+  _tariffId?: VehicleClass
 ): Promise<Array<{ id: string; location: { lat: number; lng: number }; tariff: VehicleClass }>> {
-  await delay(100);
-  const tariffs: VehicleClass[] = tariffId
-    ? [tariffId]
-    : ['economy', 'comfort', 'business', 'economy', 'economy'];
-  return Array.from({ length: 8 }, (_, i) => ({
-    id: `nearby_${i}`,
-    location: {
-      lat: location.lat + (Math.random() - 0.5) * 0.02,
-      lng: location.lng + (Math.random() - 0.5) * 0.02,
-    },
-    tariff: tariffs[Math.floor(Math.random() * tariffs.length)],
+  const { data, error } = await dbLoose
+    .from('taxi_driver_locations')
+    .select('driver_id, lat, lng')
+    .limit(20);
+
+  if (error || !data) {
+    logger.warn('[taxi] getNearbyDrivers failed', error);
+    return [];
+  }
+
+  const rows = data as Array<Record<string, unknown>>;
+  return rows.map((r) => ({
+    id: r.driver_id as string,
+    location: { lat: r.lat as number, lng: r.lng as number },
+    tariff: 'economy' as VehicleClass,
   }));
 }
 
-// ─── Маршрут для карты (mock) ─────────────────────────────────────────────────
+// ─── Маршрут для карты (интерполяция, до интеграции с OSRM) ──────────────────
 export async function calculateRoute(
   from: { lat: number; lng: number },
   to: { lat: number; lng: number }
 ): Promise<Array<{ lat: number; lng: number }>> {
-  await delay(200);
   return generateRoutePoints(from, to, 30);
 }

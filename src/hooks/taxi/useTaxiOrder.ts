@@ -249,22 +249,16 @@ export function useTaxiOrder() {
 
       if (abortSignal.cancelled) return;
 
-      const updatedOrder: TaxiOrder = {
-        ...order,
-        status: 'driver_found',
-        driver,
-      };
-      dispatch({ type: 'SET_ORDER', payload: updatedOrder });
+      if (!driver) {
+        dispatch({ type: 'SET_ERROR', payload: 'Водители заняты, попробуйте позже' });
+        dispatch({ type: 'SET_STATUS', payload: 'selecting_tariff' });
+        return;
+      }
 
-      // Через 3 секунды — статус «водитель едет»
-      setTimeout(() => {
-        if (!abortSignal.cancelled) {
-          dispatch({
-            type: 'SET_ORDER',
-            payload: { ...updatedOrder, status: 'driver_arriving' },
-          });
-        }
-      }, 3000);
+      dispatch({
+        type: 'SET_ORDER',
+        payload: { ...order, status: 'driver_found', driver },
+      });
     } catch (err) {
       if (!abortSignal.cancelled) {
         dispatch({ type: 'SET_ERROR', payload: 'Не удалось найти водителя. Попробуйте ещё раз.' });
