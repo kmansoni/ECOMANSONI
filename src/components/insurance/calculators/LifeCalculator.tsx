@@ -1,9 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Shield, ChevronLeft, ChevronRight, Calculator, Loader2, AlertCircle } from "lucide-react";
-import { supabase } from "@/lib/supabase";
-import type { SupabaseClient } from "@supabase/supabase-js";
-import { toast } from "sonner";
+import { Shield, ChevronLeft, ChevronRight, Calculator, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,7 +16,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { CalculationResults } from "@/components/insurance/shared/CalculationResults";
-import type { CalculationResponse } from "@/types/insurance";
+import { useInsuranceQuote } from "@/hooks/insurance/useInsuranceQuote";
+import { toCalcResponse } from "@/lib/insurance/mappers";
+import type { CalculationResult } from "@/types/insurance";
 
 const STEPS = [
   { id: "personal", title: "Личные данные", description: "Возраст, пол и образ жизни" },
@@ -38,60 +38,10 @@ const TERM_OPTIONS = Array.from({ length: 30 }, (_, i) => ({
   label: `${i + 1} ${i + 1 === 1 ? "год" : i + 1 < 5 ? "года" : "лет"}`,
 }));
 
-type InsCompany = { id: string; name: string; rating: number; logo_url: string | null };
-
-function buildLifeResults(basePrice: number, companies: InsCompany[]): CalculationResponse {
-  const validUntil = new Date(Date.now() + 86400000).toISOString();
-  const results = companies.map((c, i) => {
-    const premium = Math.round(basePrice * (0.91 + i * 0.09));
-    return {
-      id: `life-${c.id}`,
-      category: "life" as const,
-      provider_id: c.id,
-      provider_name: c.name,
-      provider_logo: c.logo_url || "",
-      provider_rating: c.rating ?? 4.5,
-      premium_amount: premium,
-      premium_monthly: Math.round(premium / 12),
-      coverage_amount: basePrice * 20,
-      currency: "RUB" as const,
-      valid_until: validUntil,
-      features: ["Смерть по любой причине", "Инвалидность I-II группы", "Онлайн-управление полисом"],
-      exclusions: ["Суицид в первые 2 года", "Профессиональный спорт"],
-      documents_required: ["Паспорт", "Медицинская анкета"],
-      details: {},
-    };
-  });
-  return {
-    request_id: `life-req-${Date.now()}`,
-    category: "life",
-    results,
-    total_providers_queried: companies.length,
-    successful_providers: companies.length,
-    failed_providers: [],
-    calculation_time_ms: 0,
-    cached: false,
-  };
-}
-
 export function LifeCalculator() {
   const [step, setStep] = useState(0);
-  const [isLoading, setIsLoading] = useState(false);
-  const [results, setResults] = useState<CalculationResponse | null>(null);
-  const [companies, setCompanies] = useState<InsCompany[]>([]);
-  const [companiesReady, setCompaniesReady] = useState(false);
-
-  useEffect(() => {
-    const db = supabase as SupabaseClient<any>;
-    db.from('insurance_companies')
-      .select('id, name, rating, logo_url')
-      .eq('is_verified', true)
-      .limit(10)
-      .then(({ data, error }) => {
-        if (!error && data?.length) setCompanies(data);
-        setCompaniesReady(true);
-      });
-  }, []);
+  const navigate = useNavigate();
+  const quote = useInsuranceQuote("life");
 
   const [age, setAge] = useState("");
   const [gender, setGender] = useState("male");
@@ -112,28 +62,30 @@ export function LifeCalculator() {
   const handleNext = () => {
     if (step < STEPS.length - 1) setStep(step + 1);
     else {
-      if (!companies.length) {
-        toast.error('Нет доступных компаний');
-        return;
-      }
-      setIsLoading(true);
-      const a = parseInt(age) || 35;
-      const coverageVal = parseFloat(coverage) || 1000000;
-      const t = parseInt(term) || 10;
-      const prog = LIFE_PROGRAMS.find(p => p.value === program);
-      const progMult = prog?.mult ?? 1.0;
-      const ageMult = a > 60 ? 5.0 : a > 50 ? 3.0 : a > 40 ? 2.0 : a > 30 ? 1.3 : 1.0;
-      const genderMult = gender === "male" ? 1.3 : 1.0;
-      const smokerMult = smoker ? 1.5 : 1.0;
-      const danOccMult = dangerousOccupation ? 1.4 : 1.0;
-      const danHobMult = dangerousHobbies ? 1.3 : 1.0;
-      const accMult = includeAccident ? 1.1 : 1.0;
-      const critMult = includeCritical ? 1.2 : 1.0;
-      const baseRate = 0.007;
-      const base = coverageVal * baseRate * t * ageMult * genderMult * smokerMult * danOccMult * danHobMult * accMult * critMult * progMult;
-      setResults(buildLifeResults(base, companies));
-      setIsLoading(false);
+      quote.requestQuotes({
+        age: Number(age) || 35,
+        gender,
+        coverage_amount: Number(coverage) || 1_000_000,
+        term_years: Number(term),
+        program_type: program,
+        smoker,
+        dangerous_occupation: dangerousOccupation,
+        dangerous_hobbies: dangerousHobbies,
+        include_accident: includeAccident,
+        include_critical_illness: includeCritical,
+        beneficiary_count: Number(beneficiaries),
+      });
     }
+  };
+
+  const calcResponse = useMemo(() => {
+    if (!quote.offers.length) return null;
+    return toCalcResponse(quote.data!, "life");
+  }, [quote.offers, quote.data]);
+
+  const handleSelect = (result: CalculationResult) => {
+    const sid = (result.details as Record<string, unknown>)?.session_id;
+    navigate(`/insurance/apply?category=life&session_id=${sid}&offer_id=${result.id}`);
   };
 
   return (
@@ -265,27 +217,31 @@ export function LifeCalculator() {
 
       <div className="flex gap-3">
         {step > 0 && (
-          <Button variant="outline" onClick={() => setStep(step - 1)} disabled={isLoading} className="flex-1 border-white/10 text-white/70 hover:bg-white/5">
+          <Button variant="outline" onClick={() => setStep(step - 1)} disabled={quote.isLoading} className="flex-1 border-white/10 text-white/70 hover:bg-white/5">
             <ChevronLeft className="w-4 h-4 mr-1" />Назад
           </Button>
         )}
-        <Button onClick={handleNext} disabled={isLoading} className={`flex-1 bg-rose-600 hover:bg-rose-500 text-white ${step === 0 ? "w-full" : ""}`}>
-          {isLoading ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Расчёт...</>
+        <Button onClick={handleNext} disabled={quote.isLoading} className={`flex-1 bg-rose-600 hover:bg-rose-500 text-white ${step === 0 ? "w-full" : ""}`}>
+          {quote.isLoading ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Расчёт...</>
             : step < STEPS.length - 1 ? <>Далее<ChevronRight className="w-4 h-4 ml-1" /></>
             : <><Calculator className="w-4 h-4 mr-2" />Рассчитать</>}
         </Button>
       </div>
 
+      {quote.error && (
+        <p className="text-sm text-red-400 text-center">{quote.error.message}</p>
+      )}
+
+      {quote.localEstimate && quote.isLoading && (
+        <p className="text-sm text-white/50 text-center">
+          Предварительная оценка: ~{quote.localEstimate.toLocaleString('ru-RU')} ₽
+        </p>
+      )}
+
       <AnimatePresence>
-        {companiesReady && !companies.length && (
-          <div className="text-center py-8">
-            <AlertCircle className="w-10 h-10 text-white/20 mx-auto mb-3" />
-            <p className="text-sm text-white/40">Нет доступных страховых компаний</p>
-          </div>
-        )}
-        {results && !isLoading && (
+        {calcResponse && !quote.isLoading && (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-            <CalculationResults response={results} />
+            <CalculationResults response={calcResponse} onSelect={handleSelect} />
           </motion.div>
         )}
       </AnimatePresence>

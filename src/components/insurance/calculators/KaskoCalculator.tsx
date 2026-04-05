@@ -1,8 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Car, ChevronLeft, ChevronRight, Calculator, Loader2, AlertCircle } from "lucide-react";
-import { supabase } from "@/lib/supabase";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import { Car, ChevronLeft, ChevronRight, Calculator, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,7 +18,9 @@ import {
 } from "@/components/ui/select";
 import { CalculationResults } from "@/components/insurance/shared/CalculationResults";
 import { OSAGO_REGIONS, CAR_MAKES, KBM_TABLE } from "@/lib/insurance/constants";
-import type { CalculationResponse } from "@/types/insurance";
+import { useInsuranceQuote } from "@/hooks/insurance/useInsuranceQuote";
+import { toCalcResponse } from "@/lib/insurance/mappers";
+import type { CalculationResult } from "@/types/insurance";
 
 const STEPS = [
   { id: "vehicle", title: "Автомобиль", description: "Данные о транспортном средстве" },
@@ -50,62 +51,10 @@ const EXTRA_OPTIONS = [
   { id: "substitute", label: "Подменный автомобиль" },
 ];
 
-type CompanyRow = { id: string; name: string; rating: number; logo_url: string | null };
-
-function buildKaskoResults(basePrice: number, companies: CompanyRow[]): CalculationResponse {
-  const validUntil = new Date(Date.now() + 86400000).toISOString();
-  const results = companies.map((c, i) => {
-    const premium = Math.round(basePrice * (0.9 + i * 0.08));
-    return {
-      id: `kasko-${c.id}`,
-      category: "kasko" as const,
-      provider_id: c.id,
-      provider_name: c.name,
-      provider_logo: c.logo_url || "",
-      provider_rating: c.rating ?? 4.5,
-      premium_amount: premium,
-      premium_monthly: Math.round(premium / 12),
-      coverage_amount: basePrice * 10,
-      deductible_amount: 0,
-      currency: "RUB" as const,
-      valid_until: validUntil,
-      features: ["Ущерб от ДТП", "Угон", "Стихийные бедствия", "Пожар", "Противоправные действия третьих лиц"],
-      exclusions: ["Умышленное повреждение", "Управление в нетрезвом виде"],
-      documents_required: ["Паспорт", "ПТС", "СТС", "Водительское удостоверение"],
-      purchase_url: undefined,
-      details: {},
-    };
-  });
-  return {
-    request_id: `kasko-req-${Date.now()}`,
-    category: "kasko",
-    results,
-    total_providers_queried: companies.length,
-    successful_providers: companies.length,
-    failed_providers: [],
-    calculation_time_ms: 0,
-    cached: false,
-  };
-}
-
 export function KaskoCalculator() {
   const [step, setStep] = useState(0);
-  const [isLoading, setIsLoading] = useState(false);
-  const [results, setResults] = useState<CalculationResponse | null>(null);
-  const [companies, setCompanies] = useState<CompanyRow[]>([]);
-  const [companiesLoaded, setCompaniesLoaded] = useState(false);
-
-  useEffect(() => {
-    (supabase as SupabaseClient<any>)
-      .from('insurance_companies')
-      .select('id, name, rating, logo_url')
-      .eq('is_verified', true)
-      .limit(10)
-      .then(({ data, error }) => {
-        if (!error && data) setCompanies(data);
-        setCompaniesLoaded(true);
-      });
-  }, []);
+  const navigate = useNavigate();
+  const quote = useInsuranceQuote("kasko");
 
   // Step 1: Vehicle
   const [vehicleMake, setVehicleMake] = useState("");
@@ -141,21 +90,32 @@ export function KaskoCalculator() {
   };
 
   const handleCalculate = () => {
-    if (!companies.length) {
-      toast.error('Нет доступных компаний для расчёта');
-      return;
-    }
-    setIsLoading(true);
-    const price = parseFloat(vehiclePrice) || 1000000;
-    const kbm = KBM_TABLE[parseInt(kbmClass)] ?? 1.0;
-    const coverageMult = coverageType === "full" ? 1.0 : coverageType === "partial" ? 0.75 : 0.5;
-    const franchMult = 1 - parseInt(franchise) / price * 3;
-    const antiTheftDiscount = antiTheft ? 0.95 : 1.0;
-    const garageDiscount = garagePark ? 0.97 : 1.0;
-    const baseRate = 0.055;
-    const base = price * baseRate * kbm * coverageMult * Math.max(0.7, franchMult) * antiTheftDiscount * garageDiscount;
-    setResults(buildKaskoResults(base, companies));
-    setIsLoading(false);
+    quote.requestQuotes({
+      vehicle_make: vehicleMake,
+      vehicle_model: vehicleModel,
+      vehicle_year: Number(vehicleYear),
+      vehicle_price: Number(vehiclePrice),
+      engine_power: Number(enginePower),
+      region_code: region,
+      driver_age: Number(driverAge),
+      driver_experience_years: Number(driverExp),
+      kbm_class: Number(kbmClass),
+      has_anti_theft: antiTheft,
+      garage_parking: garagePark,
+      franchise_amount: Number(franchise),
+      coverage_type: coverageType,
+      additional_options: extraOptions,
+    });
+  };
+
+  const calcResponse = useMemo(() => {
+    if (!quote.offers.length) return null;
+    return toCalcResponse(quote.data!, "kasko");
+  }, [quote.offers, quote.data]);
+
+  const handleSelect = (result: CalculationResult) => {
+    const sid = (result.details as Record<string, unknown>)?.session_id;
+    navigate(`/insurance/apply?category=kasko&session_id=${sid}&offer_id=${result.id}`);
   };
 
   const toggleExtra = (id: string) => {
@@ -332,14 +292,14 @@ export function KaskoCalculator() {
 
       <div className="flex gap-3">
         {step > 0 && (
-          <Button variant="outline" onClick={() => setStep(step - 1)} disabled={isLoading}
+          <Button variant="outline" onClick={() => setStep(step - 1)} disabled={quote.isLoading}
             className="flex-1 border-white/10 text-white/70 hover:bg-white/5">
             <ChevronLeft className="w-4 h-4 mr-1" />Назад
           </Button>
         )}
-        <Button onClick={handleNext} disabled={isLoading}
+        <Button onClick={handleNext} disabled={quote.isLoading}
           className={`flex-1 bg-violet-600 hover:bg-violet-500 text-white ${step === 0 ? "w-full" : ""}`}>
-          {isLoading ? (
+          {quote.isLoading ? (
             <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Расчёт...</>
           ) : step < STEPS.length - 1 ? (
             <>Далее<ChevronRight className="w-4 h-4 ml-1" /></>
@@ -349,16 +309,20 @@ export function KaskoCalculator() {
         </Button>
       </div>
 
+      {quote.error && (
+        <p className="text-sm text-red-400 text-center">{quote.error.message}</p>
+      )}
+
+      {quote.localEstimate && quote.isLoading && (
+        <p className="text-sm text-white/50 text-center">
+          Предварительная оценка: ~{quote.localEstimate.toLocaleString('ru-RU')} ₽
+        </p>
+      )}
+
       <AnimatePresence>
-        {companiesLoaded && !companies.length && (
-          <div className="text-center py-8">
-            <AlertCircle className="w-10 h-10 text-white/20 mx-auto mb-3" />
-            <p className="text-sm text-white/40">Нет доступных страховых компаний</p>
-          </div>
-        )}
-        {results && !isLoading && (
+        {calcResponse && !quote.isLoading && (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-            <CalculationResults response={results} />
+            <CalculationResults response={calcResponse} onSelect={handleSelect} />
           </motion.div>
         )}
       </AnimatePresence>

@@ -79,6 +79,7 @@ export function useInsuranceQuote(category: InsuranceCategory) {
     requestQuotes,
     localEstimate,
     offers: (mutation.data?.offers ?? []) as ProviderOffer[],
+    data: mutation.data ?? null,
     sessionId: sessionRef.current,
     isLoading: mutation.isPending,
     hasRealQuotes: mutation.data?.has_real_quotes ?? false,

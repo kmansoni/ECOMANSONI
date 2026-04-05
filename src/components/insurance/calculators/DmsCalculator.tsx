@@ -1,9 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { HeartPulse, ChevronLeft, ChevronRight, Calculator, Loader2, AlertCircle } from "lucide-react";
-import { supabase } from "@/lib/supabase";
-import type { SupabaseClient } from "@supabase/supabase-js";
-import { toast } from "sonner";
+import { HeartPulse, ChevronLeft, ChevronRight, Calculator, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,7 +17,9 @@ import {
 } from "@/components/ui/select";
 import { CalculationResults } from "@/components/insurance/shared/CalculationResults";
 import { OSAGO_REGIONS } from "@/lib/insurance/constants";
-import type { CalculationResponse } from "@/types/insurance";
+import { useInsuranceQuote } from "@/hooks/insurance/useInsuranceQuote";
+import { toCalcResponse } from "@/lib/insurance/mappers";
+import type { CalculationResult } from "@/types/insurance";
 
 const STEPS = [
   { id: "personal", title: "Данные", description: "Личные данные застрахованного" },
@@ -34,58 +34,10 @@ const DMS_PROGRAMS = [
   { value: "vip", label: "VIP", price: 120000, description: "Лучшие клиники, без очередей" },
 ];
 
-function buildDmsResults(basePrice: number, companies: Array<{ id: string; name: string; rating: number; logo_url: string | null }>): CalculationResponse {
-  const validUntil = new Date(Date.now() + 86400000).toISOString();
-  const results = companies.map((c, i) => {
-    const premium = Math.round(basePrice * (0.89 + i * 0.11));
-    return {
-      id: `dms-${c.id}`,
-      category: "dms" as const,
-      provider_id: c.id,
-      provider_name: c.name,
-      provider_logo: c.logo_url || "",
-      provider_rating: c.rating ?? 4.5,
-      premium_amount: premium,
-      premium_monthly: Math.round(premium / 12),
-      coverage_amount: 3000000,
-      currency: "RUB" as const,
-      valid_until: validUntil,
-      features: ["Консультации специалистов", "Анализы и диагностика", "Госпитализация", "Скорая помощь"],
-      exclusions: ["Косметическая хирургия", "Лечение от алкоголизма"],
-      documents_required: ["Паспорт"],
-      details: {},
-    };
-  });
-  return {
-    request_id: `dms-req-${Date.now()}`,
-    category: "dms",
-    results,
-    total_providers_queried: companies.length,
-    successful_providers: companies.length,
-    failed_providers: [],
-    calculation_time_ms: 0,
-    cached: false,
-  };
-}
-
 export function DmsCalculator() {
   const [step, setStep] = useState(0);
-  const [isLoading, setIsLoading] = useState(false);
-  const [results, setResults] = useState<CalculationResponse | null>(null);
-  const [companies, setCompanies] = useState<Array<{ id: string; name: string; rating: number; logo_url: string | null }>>([]);
-  const [companiesLoaded, setCompaniesLoaded] = useState(false);
-
-  useEffect(() => {
-    (supabase as SupabaseClient<any>)
-      .from('insurance_companies')
-      .select('id, name, rating, logo_url')
-      .eq('is_verified', true)
-      .limit(10)
-      .then(({ data, error }) => {
-        if (!error && data) setCompanies(data);
-        setCompaniesLoaded(true);
-      });
-  }, []);
+  const navigate = useNavigate();
+  const quote = useInsuranceQuote("dms");
 
   const [age, setAge] = useState("");
   const [gender, setGender] = useState("male");
@@ -103,25 +55,29 @@ export function DmsCalculator() {
   const handleNext = () => {
     if (step < STEPS.length - 1) setStep(step + 1);
     else {
-      if (!companies.length) {
-        toast.error('Нет доступных компаний для расчёта');
-        return;
-      }
-      setIsLoading(true);
-      const prog = DMS_PROGRAMS.find(p => p.value === program);
-      let base = prog?.price ?? 35000;
-      const a = parseInt(age) || 30;
-      if (a > 50) base *= 1.4;
-      else if (a > 40) base *= 1.2;
-      if (chronic) base *= 1.3;
-      if (dental) base *= 1.15;
-      if (emergency) base *= 1.1;
-      if (online) base *= 1.05;
-      const emp = parseInt(employees) || 1;
-      if (emp > 1) base *= Math.max(0.7, 1 - emp * 0.02);
-      setResults(buildDmsResults(base, companies));
-      setIsLoading(false);
+      quote.requestQuotes({
+        age: Number(age) || 30,
+        gender,
+        region_code: region,
+        program_type: program,
+        has_chronic_diseases: chronic,
+        include_dental: dental,
+        include_emergency: emergency,
+        include_consultation: online,
+        employees_count: employees ? Number(employees) : undefined,
+        company_inn: inn || undefined,
+      });
     }
+  };
+
+  const calcResponse = useMemo(() => {
+    if (!quote.offers.length) return null;
+    return toCalcResponse(quote.data!, "dms");
+  }, [quote.offers, quote.data]);
+
+  const handleSelect = (result: CalculationResult) => {
+    const sid = (result.details as Record<string, unknown>)?.session_id;
+    navigate(`/insurance/apply?category=dms&session_id=${sid}&offer_id=${result.id}`);
   };
 
   return (
@@ -245,27 +201,31 @@ export function DmsCalculator() {
 
       <div className="flex gap-3">
         {step > 0 && (
-          <Button variant="outline" onClick={() => setStep(step - 1)} disabled={isLoading} className="flex-1 border-white/10 text-white/70 hover:bg-white/5">
+          <Button variant="outline" onClick={() => setStep(step - 1)} disabled={quote.isLoading} className="flex-1 border-white/10 text-white/70 hover:bg-white/5">
             <ChevronLeft className="w-4 h-4 mr-1" />Назад
           </Button>
         )}
-        <Button onClick={handleNext} disabled={isLoading} className={`flex-1 bg-emerald-600 hover:bg-emerald-500 text-white ${step === 0 ? "w-full" : ""}`}>
-          {isLoading ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Расчёт...</>
+        <Button onClick={handleNext} disabled={quote.isLoading} className={`flex-1 bg-emerald-600 hover:bg-emerald-500 text-white ${step === 0 ? "w-full" : ""}`}>
+          {quote.isLoading ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Расчёт...</>
             : step < STEPS.length - 1 ? <>Далее<ChevronRight className="w-4 h-4 ml-1" /></>
             : <><Calculator className="w-4 h-4 mr-2" />Рассчитать</>}
         </Button>
       </div>
 
+      {quote.error && (
+        <p className="text-sm text-red-400 text-center">{quote.error.message}</p>
+      )}
+
+      {quote.localEstimate && quote.isLoading && (
+        <p className="text-sm text-white/50 text-center">
+          Предварительная оценка: ~{quote.localEstimate.toLocaleString('ru-RU')} ₽
+        </p>
+      )}
+
       <AnimatePresence>
-        {companiesLoaded && !companies.length && (
-          <div className="text-center py-8">
-            <AlertCircle className="w-10 h-10 text-white/20 mx-auto mb-3" />
-            <p className="text-sm text-white/40">Нет доступных компаний</p>
-          </div>
-        )}
-        {results && !isLoading && (
+        {calcResponse && !quote.isLoading && (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-            <CalculationResults response={results} />
+            <CalculationResults response={calcResponse} onSelect={handleSelect} />
           </motion.div>
         )}
       </AnimatePresence>

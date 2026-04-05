@@ -137,7 +137,7 @@ export default function InsuranceComparePage() {
                       <Button
                         size="sm"
                         className="mt-3 w-full bg-violet-600 hover:bg-violet-500 text-xs"
-                        onClick={() => navigate("/insurance")}
+                        onClick={() => navigate(`/insurance/apply?category=${category}`)}
                       >
                         <ShoppingCart className="w-3 h-3 mr-1" />
                         Оформить
