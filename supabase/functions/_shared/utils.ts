@@ -72,7 +72,8 @@ function getAllowedOrigins(): string[] {
 function isOriginAllowed(origin: string | null): boolean {
   if (!origin) return true; // Non-browser clients
   const normalized = origin.replace(/\/$/, "");
-  if (!isProductionEnv() && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(normalized)) return true;
+  // localhost всегда разрешён (dev-машина, CORS — браузерная защита)
+  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(normalized)) return true;
   // Production first-party domains are always allowed.
   if (/^https?:\/\/([a-z0-9-]+\.)?mansoni\.ru(:\d+)?$/i.test(normalized)) return true;
   const allowed = getAllowedOrigins();

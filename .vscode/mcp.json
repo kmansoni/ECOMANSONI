@@ -20,11 +20,11 @@
     },
     "supabase": {
       "command": "npx",
-      "args": ["-y", "@supabase/mcp-server-supabase@latest", "--read-only"],
+      "args": ["-y", "@supabase/mcp-server-supabase@latest"],
       "env": {
         "SUPABASE_ACCESS_TOKEN": "${env:SUPABASE_ACCESS_TOKEN}"
       },
-      "description": "Прямой доступ к Supabase: схема БД, таблицы, RLS, Edge Functions (read-only)"
+      "description": "Прямой доступ к Supabase: схема БД, таблицы, RLS, Edge Functions, деплой"
     },
     "github": {
       "command": "npx",
