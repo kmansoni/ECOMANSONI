@@ -1,0 +1,47 @@
+[Unit]
+Description=Mansoni SFU (mediasoup WebRTC)
+Documentation=https://github.com/kmansoni/ECOMANSONI/tree/main/server/sfu
+After=network-online.target redis.service calls-ws.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mansoni
+Group=mansoni
+WorkingDirectory=/opt/mansoni/app
+
+# Secrets + SFU_ANNOUNCED_IP — задаются на VPS вручную:
+#   echo "SFU_ANNOUNCED_IP=$(curl -s ifconfig.me)" >> /opt/mansoni/app/server/sfu/.env.production
+#   echo "SUPABASE_URL=..." >> /opt/mansoni/app/server/sfu/.env.production
+EnvironmentFile=-/opt/mansoni/app/server/sfu/.env.production
+EnvironmentFile=-/opt/mansoni/app/.env.production
+EnvironmentFile=-/opt/mansoni/app/.env
+
+Environment=NODE_ENV=production
+Environment=ENV=production
+Environment=SFU_PORT=4443
+Environment=PORT=4443
+Environment=REGION=primary
+Environment=REDIS_URL=redis://127.0.0.1:6379
+Environment=SFU_ENABLE_MEDIASOUP=1
+Environment=SFU_REQUIRE_MEDIASOUP=1
+Environment=SFU_INSECURE_DEV_MODE=0
+Environment=SFU_WORKER_COUNT=auto
+
+ExecStart=/usr/bin/node server/sfu/index.mjs
+
+KillSignal=SIGTERM
+TimeoutStopSec=15s
+
+Restart=on-failure
+RestartSec=5s
+
+# mediasoup нужен доступ к реальным сетевым интерфейсам
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/opt/mansoni/app /var/log/mansoni
+ProtectHome=read-only
+
+[Install]
+WantedBy=multi-user.target

@@ -54,7 +54,10 @@ services:
     command: ["-c", "/etc/coturn/turnserver.conf", "-n", "--log-file=stdout"]
   sfu:
     # mediasoup SFU — production SFU-only mode
-    # Build: docker build -t mansoni-sfu ./server/sfu
+    # Build: docker build -t mansoni-sfu -f server/sfu/Dockerfile .
+    build:
+      context: ../..
+      dockerfile: server/sfu/Dockerfile
     image: mansoni-sfu:latest
     restart: unless-stopped
     ports:

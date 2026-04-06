@@ -1,12 +1,9 @@
 import type {
-  CallsWsAuth,
   CallsWsConfig,
   CallsWsEvent,
   CallsWsEventHandler,
-  ClientMessageMap,
   ConnectionState,
   ConnectionStateHandler,
-  MessageHandler,
   WsEnvelopeV1,
   HelloPayload,
   AuthPayload,
@@ -29,6 +26,8 @@ import type {
   KeyPackagePayload,
   KeyAckPayload,
   GetRouterRtpCapabilitiesPayload,
+  CallSignalInvitePayload,
+  CallSignalStatePayload,
 } from "./types";
 
 import { logger } from '@/lib/logger';
@@ -101,13 +100,22 @@ export class CallsWsClient {
   connect(): Promise<void> {
     this.manualClose = false;
 
-    // WSS enforcement
+    // WSS enforcement: ws:// разрешён только для localhost (dev-режим).
+    // Продакшен non-localhost endpoints обязаны использовать wss://.
     if (this.config.requireWss !== false) {
       const endpoints = this.getEndpoints();
-      const hasInsecure = endpoints.some((ep) => ep.startsWith('ws://'));
-      if (hasInsecure) {
+      const hasNonLocalInsecure = endpoints.some((ep) => {
+        if (!ep.startsWith('ws://')) return false;
+        try {
+          const { hostname } = new URL(ep);
+          return hostname !== 'localhost' && hostname !== '127.0.0.1' && hostname !== '::1';
+        } catch {
+          return true;
+        }
+      });
+      if (hasNonLocalInsecure) {
         return Promise.reject(new Error(
-          '[CallsWsClient] WSS enforcement: all endpoints must use wss:// protocol. ' +
+          '[CallsWsClient] WSS enforcement: non-localhost endpoints must use wss:// protocol. ' +
           'Set requireWss: false in config to disable (NOT RECOMMENDED for production).'
         ));
       }
@@ -141,285 +149,250 @@ export class CallsWsClient {
     for (let i = 0; i < attempts; i++) {
       const idx = (this.endpointIndex + i) % endpoints.length;
       const url = endpoints[idx];
-      if (!url) {
-        continue;
-      }
+      if (!url) continue;
       try {
         await this.connectSingle(url);
         this.endpointIndex = idx;
         this.reconnectAttempts = 0;
-        this.setConnectionState('connected');
         return;
       } catch (err) {
-        lastError = err instanceof Error ? err : new Error("WS connection error");
+        lastError = err instanceof Error ? err : new Error(String(err));
+        logger.warn('[CallsWsClient] endpoint failed, trying next', { url, err });
       }
     }
 
-    this.setConnectionState('failed');
-    throw lastError ?? new Error("WS connection error");
+    throw lastError ?? new Error('All WS endpoints failed');
   }
 
   private connectSingle(url: string): Promise<void> {
     return new Promise((resolve, reject) => {
+      const ws = new WebSocket(url);
       let settled = false;
 
-      const ws = new WebSocket(url);
-      this.ws = ws;
+      const cleanup = () => {
+        ws.removeEventListener('open', onOpen);
+        ws.removeEventListener('error', onError);
+        ws.removeEventListener('close', onClose);
+      };
 
-      ws.onopen = () => {
+      const onOpen = () => {
+        if (settled) return;
         settled = true;
-        // BUG #1 FIX: Логирование для диагностики sequence issues при переподключении
-        logger.debug('[CallsWsClient] WebSocket connected', {
-          previousLastServerSeq: this.lastServerSeq,
-          wasReconnecting: this._connectionState === 'reconnecting',
-          timestamp: nowMs(),
-        });
-        this.lastServerSeq = 0;
-        this.lastServerActivityAt = nowMs();
-        this.awaitingHeartbeatAckMsgId = null;
-        this.lastHeartbeatSentAt = 0;
-        this.seenServerMsgIds.clear();
-        this.seenServerMsgIdQueue.length = 0;
+        cleanup();
+        this.ws = ws;
+        ws.addEventListener('close', this.onWsClose);
+        ws.addEventListener('message', (ev) => this.onMessage(ev.data));
+        this.setConnectionState('connected');
         this.startHeartbeat();
         resolve();
       };
-      ws.onerror = () => {
-        if (!settled) {
-          settled = true;
-          reject(new Error("WS connection error"));
-        }
-      };
-      ws.onclose = () => {
-        this.stopHeartbeat();
-        this.ws = null;
-        if (this.manualClose) {
-          this.setConnectionState('disconnected');
-          return;
-        }
 
-        // If not yet resolved and socket closed early - fail current attempt.
-        if (!settled) {
-          settled = true;
-          reject(new Error("WS closed during connect"));
-          return;
-        }
-
-        this.setConnectionState('reconnecting');
-        this.scheduleReconnect();
+      const onError = (ev: Event) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        ws.close();
+        reject(new Error(`WebSocket error connecting to ${url}: ${(ev as ErrorEvent).message ?? 'unknown'}`));
       };
-      ws.onmessage = (evt) => this.onMessage(evt.data);
+
+      const onClose = (ev: CloseEvent) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        reject(new Error(`WebSocket closed before open: code=${ev.code} reason=${ev.reason}`));
+      };
+
+      ws.addEventListener('open', onOpen);
+      ws.addEventListener('error', onError);
+      ws.addEventListener('close', onClose);
     });
   }
 
-  close() {
-    this.manualClose = true;
-    // BUG #2 FIX: Логирование состояния перед закрытием
-    logger.debug('[CallsWsClient] close() called', {
-      pendingAcksCount: this.pendingAcks.size,
-      pendingAcksMsgIds: Array.from(this.pendingAcks.keys()),
-      awaitingHeartbeatAck: this.awaitingHeartbeatAckMsgId,
-      reconnectAttempts: this.reconnectAttempts,
-      timestamp: Date.now(),
-    });
-    
-    if (this.reconnectTimer) {
-      window.clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
-    }
-    this.stopHeartbeat();
-    
-    // BUG #2: Pending ACKs отклоняются, но нет механизма retry после переподключения
-    // Клиент может зависнуть навсегда
-    const rejectedAcks: string[] = [];
-    this.pendingAcks.forEach((pending, msgId) => {
-      window.clearTimeout(pending.timer);
-      pending.reject(new Error("WS closed"));
-      rejectedAcks.push(msgId);
-    });
-    
-    logger.debug('[CallsWsClient] close() rejected pending ACKs', {
-      rejectedCount: rejectedAcks.length,
-      msgIds: rejectedAcks,
-      timestamp: Date.now(),
-    });
-    
-    this.pendingAcks.clear();
-    this.awaitingHeartbeatAckMsgId = null;
-    this.lastHeartbeatSentAt = 0;
-    this.lastServerActivityAt = 0;
-    this.ws?.close();
+  private onWsClose = () => {
+    if (!this.ws) return; // уже очищено
     this.ws = null;
-    this.setConnectionState('disconnected');
-  }
+    this.handleDisconnect();
+  };
 
-  private scheduleReconnect() {
-    if (this.reconnectTimer || this.manualClose) return;
-    const reconnectCfg = this.config.reconnect;
-    if (reconnectCfg?.enabled === false) return;
+  private handleDisconnect() {
+    this.stopHeartbeat();
 
-    const maxAttempts = reconnectCfg?.maxAttempts ?? this.config.maxReconnectAttempts ?? 12;
+    if (this.manualClose) {
+      this.setConnectionState('disconnected');
+      return;
+    }
+
+    // Переходим к следующему эндпоинту при каждом reconnect
+    const endpoints = this.getEndpoints();
+    if (endpoints.length > 1) {
+      this.endpointIndex = (this.endpointIndex + 1) % endpoints.length;
+    }
+
+    const maxAttempts = this.config.reconnect?.maxAttempts ?? this.config.maxReconnectAttempts ?? 12;
     if (this.reconnectAttempts >= maxAttempts) {
       this.setConnectionState('failed');
       return;
     }
 
-    const base = reconnectCfg?.baseDelayMs ?? this.config.reconnectBaseMs ?? 500;
-    const max = reconnectCfg?.maxDelayMs ?? this.config.reconnectMaxMs ?? 10_000;
-    const exp = Math.min(max, base * Math.pow(2, this.reconnectAttempts));
-    const jitter = Math.floor(Math.random() * Math.max(100, exp * 0.2));
-    const delay = Math.min(max, exp + jitter);
+    this.setConnectionState('reconnecting');
+    this.scheduleReconnect();
+  }
 
+  private scheduleReconnect() {
+    if (this.reconnectTimer !== null) return;
+
+    const base = this.config.reconnect?.baseDelayMs ?? this.config.reconnectBaseMs ?? 500;
+    const max = this.config.reconnect?.maxDelayMs ?? this.config.reconnectMaxMs ?? 10_000;
+    const delay = Math.min(max, base * Math.pow(2, this.reconnectAttempts));
     this.reconnectAttempts += 1;
+
     this.reconnectTimer = window.setTimeout(async () => {
       this.reconnectTimer = null;
       try {
-        // Rotate endpoint before retry for multi-region failover.
-        const endpoints = this.getEndpoints();
-        if (endpoints.length > 1) {
-          this.endpointIndex = (this.endpointIndex + 1) % endpoints.length;
-        }
+        this.setConnectionState('connecting');
         await this.connectWithFailover();
-      } catch (err) {
-        logger.warn('[CallsWsClient] reconnect attempt failed', { attempt: this.reconnectAttempts, err });
-        this.scheduleReconnect();
+      } catch {
+        this.handleDisconnect();
       }
     }, delay);
   }
 
+  disconnect(): void {
+    this.manualClose = true;
+    this.stopHeartbeat();
+    if (this.reconnectTimer !== null) {
+      window.clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    if (this.ws) {
+      this.ws.removeEventListener('close', this.onWsClose);
+      this.ws.close();
+      this.ws = null;
+    }
+    this.setConnectionState('disconnected');
+  }
+
   private getEndpoints(): string[] {
-    if (Array.isArray(this.config.endpoints) && this.config.endpoints.length > 0) {
-      return this.config.endpoints.filter((v) => typeof v === "string" && v.trim().length > 0);
-    }
-    if (Array.isArray(this.config.urls) && this.config.urls.length > 0) {
-      return this.config.urls.filter((v) => typeof v === "string" && v.trim().length > 0);
-    }
-    if (this.config.url && this.config.url.trim().length > 0) {
-      return [this.config.url.trim()];
-    }
+    const cfg = this.config;
+    if (cfg.endpoints && cfg.endpoints.length > 0) return cfg.endpoints;
+    if (cfg.urls && cfg.urls.length > 0) return cfg.urls;
+    if (cfg.url) return [cfg.url];
     return [];
   }
 
-  // ----------- Typed send methods -----------
+  // ----------- Public send helpers -----------
 
-  private _send<T extends keyof ClientMessageMap>(
-    type: T,
-    payload: ClientMessageMap[T]
-  ): Promise<void> {
-    return this.sendOrderedAcked(type as string, payload as object);
+  auth(payload: AuthPayload, timeoutMs?: number): Promise<void> {
+    return this.sendOrderedAcked('AUTH', payload, timeoutMs);
   }
 
-  async hello(payload: HelloPayload) {
-    return this._send('HELLO', payload);
+  hello(payload: HelloPayload, timeoutMs?: number): Promise<void> {
+    return this.sendOrderedAcked('HELLO', payload, timeoutMs);
   }
 
-  async auth(payloadOrLegacy: AuthPayload | CallsWsAuth) {
-    // Support legacy CallsWsAuth shape { accessToken }
-    if ('accessToken' in payloadOrLegacy) {
-      return this.sendOrderedAcked('AUTH', { accessToken: payloadOrLegacy.accessToken });
-    }
-    return this._send('AUTH', payloadOrLegacy);
+  roomCreate(payload: RoomCreatePayload, timeoutMs?: number): Promise<void> {
+    return this.sendOrderedAcked('ROOM_CREATE', payload, timeoutMs);
   }
 
-  async roomCreate(payload: RoomCreatePayload) {
-    return this._send('ROOM_CREATE', payload);
+  roomJoin(payload: RoomJoinPayload, timeoutMs?: number): Promise<void> {
+    return this.sendOrderedAcked('ROOM_JOIN', payload, timeoutMs);
   }
 
-  async roomJoin(payload: RoomJoinPayload) {
-    return this._send('ROOM_JOIN', payload);
+  roomLeave(payload: RoomLeavePayload, timeoutMs?: number): Promise<void> {
+    return this.sendOrderedAcked('ROOM_LEAVE', payload, timeoutMs);
   }
 
-  async getRouterRtpCapabilities(roomId: string) {
-    const payload: GetRouterRtpCapabilitiesPayload = { roomId };
-    return this._send('GET_ROUTER_RTP_CAPABILITIES', payload);
+  transportCreate(payload: TransportCreatePayload, timeoutMs?: number): Promise<void> {
+    return this.sendOrderedAcked('TRANSPORT_CREATE', payload, timeoutMs);
   }
 
-  async roomLeave(payload: RoomLeavePayload) {
-    return this._send('ROOM_LEAVE', payload);
+  transportConnect(payload: TransportConnectPayload, timeoutMs?: number): Promise<void> {
+    return this.sendOrderedAcked('TRANSPORT_CONNECT', payload, timeoutMs);
   }
 
-  async transportCreate(payload: TransportCreatePayload) {
-    return this._send('TRANSPORT_CREATE', payload);
+  produce(payload: ProducePayload, timeoutMs?: number): Promise<void> {
+    return this.sendOrderedAcked('PRODUCE', payload, timeoutMs);
   }
 
-  async transportConnect(payload: TransportConnectPayload) {
-    return this._send('TRANSPORT_CONNECT', payload);
+  consume(payload: ConsumePayload, timeoutMs?: number): Promise<void> {
+    return this.sendOrderedAcked('CONSUME', payload, timeoutMs);
   }
 
-  async produce(payload: ProducePayload) {
-    return this._send('PRODUCE', payload);
+  consumerResume(payload: ConsumerResumePayload, timeoutMs?: number): Promise<void> {
+    return this.sendOrderedAcked('CONSUMER_RESUME', payload, timeoutMs);
   }
 
-  async consume(payload: ConsumePayload) {
-    return this._send('CONSUME', payload);
+  iceRestart(payload: IceRestartPayload, timeoutMs?: number): Promise<void> {
+    return this.sendOrderedAcked('ICE_RESTART', payload, timeoutMs);
   }
 
-  async consumerResume(payload: ConsumerResumePayload) {
-    return this._send('CONSUMER_RESUME', payload);
+  sendOffer(payload: OfferPayload, timeoutMs?: number): Promise<void> {
+    return this.sendOrderedAcked('OFFER', payload, timeoutMs);
   }
 
-  async iceRestart(payload: IceRestartPayload) {
-    return this._send('ICE_RESTART', payload);
+  sendAnswer(payload: AnswerPayload, timeoutMs?: number): Promise<void> {
+    return this.sendOrderedAcked('ANSWER', payload, timeoutMs);
   }
 
-  async offer(payload: OfferPayload) {
-    return this._send('OFFER', payload);
+  sendIceCandidate(payload: IceCandidatePayload, timeoutMs?: number): Promise<void> {
+    return this.sendOrderedAcked('ICE_CANDIDATE', payload, timeoutMs);
   }
 
-  async answer(payload: AnswerPayload) {
-    return this._send('ANSWER', payload);
+  e2eeCaps(payload: E2EECapsPayload, timeoutMs?: number): Promise<void> {
+    return this.sendOrderedAcked('E2EE_CAPS', payload, timeoutMs);
   }
 
-  async iceCandidate(payload: IceCandidatePayload) {
-    return this._send('ICE_CANDIDATE', payload);
+  e2eeReady(payload: E2EEReadyPayload, timeoutMs?: number): Promise<void> {
+    return this.sendOrderedAcked('E2EE_READY', payload, timeoutMs);
   }
 
-  async e2eeCaps(payload: E2EECapsPayload) {
-    return this._send('E2EE_CAPS', payload);
+  rekeyBegin(payload: RekeyBeginPayload, timeoutMs?: number): Promise<void> {
+    return this.sendOrderedAcked('REKEY_BEGIN', payload, timeoutMs);
   }
 
-  async e2eeReady(payload: E2EEReadyPayload) {
-    return this._send('E2EE_READY', payload);
+  rekeyCommit(payload: RekeyCommitPayload, timeoutMs?: number): Promise<void> {
+    return this.sendOrderedAcked('REKEY_COMMIT', payload, timeoutMs);
   }
 
-  async rekeyBegin(payload: RekeyBeginPayload) {
-    return this._send('REKEY_BEGIN', payload);
+  keyPackage(payload: KeyPackagePayload, timeoutMs?: number): Promise<void> {
+    return this.sendOrderedAcked('KEY_PACKAGE', payload, timeoutMs);
   }
 
-  async rekeyCommit(payload: RekeyCommitPayload) {
-    return this._send('REKEY_COMMIT', payload);
+  keyAck(payload: KeyAckPayload, timeoutMs?: number): Promise<void> {
+    return this.sendOrderedAcked('KEY_ACK', payload, timeoutMs);
   }
 
-  async keyPackage(payload: KeyPackagePayload) {
-    return this._send('KEY_PACKAGE', payload);
+  getRouterRtpCapabilities(payload: GetRouterRtpCapabilitiesPayload | string, timeoutMs?: number): Promise<void> {
+    const p = typeof payload === 'string' ? { roomId: payload } : payload;
+    return this.sendOrderedAcked('GET_ROUTER_RTP_CAPABILITIES', p, timeoutMs);
   }
 
-  async keyAck(payload: KeyAckPayload) {
-    return this._send('KEY_ACK', payload);
+  // ----------- Call signaling helpers -----------
+
+  callInvite(payload: CallSignalInvitePayload, timeoutMs?: number): Promise<void> {
+    return this.sendOrderedAcked('call.invite', payload, timeoutMs);
   }
 
-  // ----------- Call signaling relay -----------
-
-  async callInvite(payload: import('./types').CallSignalInvitePayload) {
-    return this._send('call.invite' as never, payload as never);
+  callAccept(payload: CallSignalStatePayload, timeoutMs?: number): Promise<void> {
+    return this.sendOrderedAcked('call.accept', payload, timeoutMs);
   }
 
-  async callAccept(payload: import('./types').CallSignalStatePayload) {
-    return this._send('call.accept' as never, payload as never);
+  callDecline(payload: CallSignalStatePayload, timeoutMs?: number): Promise<void> {
+    return this.sendOrderedAcked('call.decline', payload, timeoutMs);
   }
 
-  async callDecline(payload: import('./types').CallSignalStatePayload) {
-    return this._send('call.decline' as never, payload as never);
+  callHangup(payload: CallSignalStatePayload, timeoutMs?: number): Promise<void> {
+    return this.sendOrderedAcked('call.hangup', payload, timeoutMs);
   }
 
-  async callCancel(payload: import('./types').CallSignalStatePayload) {
-    return this._send('call.cancel' as never, payload as never);
+  // Алиас disconnect() для обратной совместимости
+  close(): void {
+    this.disconnect();
   }
 
-  async callHangup(payload: import('./types').CallSignalStatePayload) {
-    return this._send('call.hangup' as never, payload as never);
+  sendRaw(type: string, payload: object, timeoutMs?: number): Promise<void> {
+    return this.sendOrderedAcked(type, payload, timeoutMs);
   }
-
-  // ----------- Event subscription -----------
 
   on(event: CallsWsEvent, handler: CallsWsEventHandler): () => void {
     let handlers = this.listeners.get(event);
@@ -429,29 +402,15 @@ export class CallsWsClient {
     }
     handlers.add(handler);
     return () => {
-      const current = this.listeners.get(event);
-      if (!current) return;
-      current.delete(handler);
-      if (current.size === 0) this.listeners.delete(event);
+      handlers!.delete(handler);
     };
-  }
-
-  /** Typed event subscription — returns unsubscribe fn */
-  onEvent<E extends CallsWsEvent>(
-    event: E,
-    handler: MessageHandler
-  ): () => void {
-    return this.on(event, handler as CallsWsEventHandler);
   }
 
   waitFor(
     event: CallsWsEvent,
     predicate?: (frame: WsEnvelopeV1) => boolean,
-    options: WaitForOptions = {}
+    { timeoutMs = 10_000, acceptRecent = false }: WaitForOptions = {},
   ): Promise<WsEnvelopeV1> {
-    const timeoutMs = options.timeoutMs ?? 5000;
-    const acceptRecent = options.acceptRecent ?? true;
-
     if (acceptRecent) {
       const recent = this.recentEvents.get(event);
       if (recent && recent.length > 0) {

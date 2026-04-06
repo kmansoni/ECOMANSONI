@@ -158,6 +158,19 @@ jobs:
             fi
             sleep 1
 
+            # -- 1.6 Evict any stale sfu process holding port 4443 ---------------
+            SFU_PORT_VAL="${SFU_PORT:-4443}"
+            SFU_PIDS="$(ps -eo pid,args | awk '/[n]ode( |.* )server\/sfu\/index\.mjs/ {print $1}')"
+            if [ -n "$SFU_PIDS" ]; then
+              echo "$SFU_PIDS" | xargs -r kill -TERM || true
+              sleep 1
+              echo "$SFU_PIDS" | xargs -r kill -KILL || true
+            fi
+            if command -v fuser >/dev/null 2>&1; then
+              fuser -k "${SFU_PORT_VAL}/tcp" 2>/dev/null || true
+            fi
+            sleep 1
+
             # -- 2. Try to restart via Docker Compose ----------------------------
             _restart_docker() {
               local cmd="$1"
@@ -168,27 +181,43 @@ jobs:
               return 1
             }
 
-            if   _restart_docker "docker compose"        ; then echo "[RU] restarted via docker compose"
-            elif _restart_docker "docker-compose"        ; then echo "[RU] restarted via docker-compose"
-            elif _restart_docker "sudo docker compose"   ; then echo "[RU] restarted via sudo docker compose"
-            elif _restart_docker "sudo docker-compose"   ; then echo "[RU] restarted via sudo docker-compose"
+            if   _restart_docker "docker compose"        ; then echo "[RU] calls-ws restarted via docker compose"
+            elif _restart_docker "docker-compose"        ; then echo "[RU] calls-ws restarted via docker-compose"
+            elif _restart_docker "sudo docker compose"   ; then echo "[RU] calls-ws restarted via sudo docker compose"
+            elif _restart_docker "sudo docker-compose"   ; then echo "[RU] calls-ws restarted via sudo docker-compose"
 
             # -- 3. Try PM2 -------------------------------------------------------
             elif command -v pm2 >/dev/null 2>&1; then
               if pm2 list | grep -q "$SERVICE"; then
                 pm2 reload "$SERVICE" --update-env
-                echo "[RU] reloaded via pm2"
+                echo "[RU] calls-ws reloaded via pm2"
               else
                 pm2 start "$APP_DIR/infra/calls/pm2.config.cjs" --env production
                 pm2 save
-                echo "[RU] started via pm2 (first run)"
+                echo "[RU] calls-ws started via pm2 (first run)"
+              fi
+              if pm2 list | grep -q 'sfu'; then
+                pm2 reload sfu --update-env
+                echo "[RU] sfu reloaded via pm2"
+              else
+                pm2 start "$APP_DIR/infra/calls/pm2.config.cjs" --only sfu --env production 2>/dev/null || \
+                  pm2 start "$APP_DIR/infra/calls/pm2.config.cjs" --env production 2>/dev/null || true
+                pm2 save
+                echo "[RU] sfu started via pm2"
               fi
 
             # -- 4. Try systemd --------------------------------------------------
             elif systemctl list-units --type=service | grep -q "$SERVICE"; then
               sudo systemctl restart "$SERVICE"
-              sleep 3  # wait for new process to bind port
-              echo "[RU] restarted via systemd"
+              sleep 3
+              echo "[RU] calls-ws restarted via systemd"
+              if systemctl list-units --type=service 2>/dev/null | grep -q 'sfu\.service'; then
+                sudo systemctl restart sfu || true
+                sleep 2
+                echo "[RU] sfu restarted via systemd"
+              else
+                echo "[RU] sfu.service not installed — run bootstrap to set up"
+              fi
 
             # -- 5. Bootstrap: install service from scratch ----------------------
             else
@@ -200,12 +229,16 @@ jobs:
             echo "[RU] diagnostics: git/head + listeners + service + journal"
             git rev-parse --short HEAD || true
             ps -eo pid,user,args | grep -E '[n]ode( |.* )server/calls-ws/index\.mjs' || true
-            ss -ltnp | grep ':8787' || true
-            systemctl status "$SERVICE" --no-pager -l | sed -n '1,40p' || true
-            journalctl -u "$SERVICE" -n 40 --no-pager || true
+            ps -eo pid,user,args | grep -E '[n]ode( |.* )server/sfu/index\.mjs' || true
+            ss -ltnp | grep -E ':8787|:4443' || true
+            systemctl status "$SERVICE" --no-pager -l | sed -n '1,20p' || true
+            systemctl status sfu --no-pager -l | sed -n '1,20p' 2>/dev/null || true
+            journalctl -u "$SERVICE" -n 20 --no-pager || true
+            journalctl -u sfu -n 20 --no-pager 2>/dev/null || true
             grep -n '^CALLS_JOIN_TOKEN_SECRET=' "$APP_DIR/.env.production" >/dev/null 2>&1 && echo "[RU] join token secret present in .env.production" || echo "[RU] join token secret missing in .env.production"
             grep -n '^CALLS_WS_TRUSTED_PROXIES=' "$APP_DIR/.env.production" >/dev/null 2>&1 && echo "[RU] trusted proxies present in .env.production" || echo "[RU] trusted proxies missing in .env.production"
             grep -n '^SFU_TRUSTED_PROXIES=' "$APP_DIR/server/sfu/.env.production" >/dev/null 2>&1 && echo "[RU] sfu trusted proxies present in server/sfu/.env.production" || echo "[RU] sfu trusted proxies missing in server/sfu/.env.production"
+            grep -E '^SFU_ANNOUNCED_IP=.+' "$APP_DIR/server/sfu/.env.production" >/dev/null 2>&1 && echo "[RU] SFU_ANNOUNCED_IP is set" || echo "[RU] WARNING: SFU_ANNOUNCED_IP is empty — mediasoup ICE will fail!"
             echo "[RU] diagnostics: gateway code markers"
             grep -nE 'GATEWAY_DEFAULT_CODECS|ROOM_JOIN_OK|GET_ROUTER_RTP_CAPABILITIES|ROUTER_RTP_CAPABILITIES' "$APP_DIR/server/calls-ws/index.mjs" || true
             if command -v nginx >/dev/null 2>&1; then

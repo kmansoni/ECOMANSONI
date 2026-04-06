@@ -1718,7 +1718,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         // Some SFU deployments support GET_ROUTER_RTP_CAPABILITIES / ROUTER_RTP_CAPABILITIES exchange.
         if (!routerRtpCapabilities) {
           try {
-            await client.getRouterRtpCapabilities(roomId);
+            await client.getRouterRtpCapabilities({ roomId });
             const rtpCapsFrame = await client.waitFor(
               "ROUTER_RTP_CAPABILITIES",
               (frame) => {
