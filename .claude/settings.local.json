@@ -17,7 +17,8 @@
       "Read(//c/Users/manso/Desktop/разработка/your-ai-companion-main/**)",
       "Bash(wc -l /c/Users/manso/Desktop/разработка/your-ai-companion-main/src/components/taxi/*.tsx /c/Users/manso/Desktop/разработка/your-ai-companion-main/src/components/taxi/shared/*.tsx /c/Users/manso/Desktop/разработка/your-ai-companion-main/src/pages/taxi/*.tsx)",
       "Bash(npx tsc:*)",
-      "Bash(npx vite:*)"
+      "Bash(npx vite:*)",
+      "Read(//c/Users/manso/**)"
     ],
     "additionalDirectories": [
       "C:\\Users\\manso\\.claude\\plans"

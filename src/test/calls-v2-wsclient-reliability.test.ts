@@ -18,13 +18,33 @@ class MockWebSocket {
 
   sent: string[] = [];
 
+  private _listeners: Map<string, Set<EventListenerOrEventListenerObject>> = new Map();
+
   constructor(url: string) {
     this.url = url;
     MockWebSocket.instances.push(this);
 
     queueMicrotask(() => {
       this.readyState = MockWebSocket.OPEN;
-      this.onopen?.(new Event("open"));
+      const ev = new Event("open");
+      this.onopen?.(ev);
+      this._dispatch('open', ev);
+    });
+  }
+
+  addEventListener(type: string, listener: EventListenerOrEventListenerObject) {
+    if (!this._listeners.has(type)) this._listeners.set(type, new Set());
+    this._listeners.get(type)!.add(listener);
+  }
+
+  removeEventListener(type: string, listener: EventListenerOrEventListenerObject) {
+    this._listeners.get(type)?.delete(listener);
+  }
+
+  private _dispatch(type: string, ev: Event) {
+    this._listeners.get(type)?.forEach((l) => {
+      if (typeof l === 'function') l(ev);
+      else l.handleEvent(ev);
     });
   }
 
@@ -34,17 +54,28 @@ class MockWebSocket {
 
   close() {
     this.readyState = MockWebSocket.CLOSED;
-    this.onclose?.({} as CloseEvent);
+    const ev = {} as CloseEvent;
+    this.onclose?.(ev);
+    this._dispatch('close', new Event('close'));
   }
 
   emitClose() {
     this.readyState = MockWebSocket.CLOSED;
-    this.onclose?.({} as CloseEvent);
+    const ev = {} as CloseEvent;
+    this.onclose?.(ev);
+    this._dispatch('close', new Event('close'));
   }
 
   emitMessage(payload: unknown) {
     const event = { data: JSON.stringify(payload) } as MessageEvent;
     this.onmessage?.(event);
+    this._dispatch('message', event as unknown as Event);
+  }
+
+  emitError(message = 'mock error') {
+    const ev = new ErrorEvent('error', { message });
+    this.onerror?.(ev);
+    this._dispatch('error', ev);
   }
 }
 
