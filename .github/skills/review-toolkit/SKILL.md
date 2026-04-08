@@ -24,6 +24,7 @@ user-invocable: true
 | **recovery-engineer** | Recovery paths, reconnect, retry, rollback |
 | **ux-reviewer** | UX-ревью: эвристики Нильсена, touch/mobile, accessibility |
 | **code-humanizer** | Проверка: код выглядит как написанный человеком, нет AI-паттернов |
+| **skeptical-review** | Проверка, что claims о fix/review/tests/build действительно подтверждены evidence |
 
 ## Правила запуска
 
@@ -41,6 +42,7 @@ user-invocable: true
 - **code-simplifier** — после подтверждения корректности (когда баги и безопасность проверены)
 - **ux-reviewer** — если затронуты UI компоненты, формы, навигация
 - **code-humanizer** — ВСЕГДА при написании нового кода (проверяет отсутствие AI-паттернов)
+- **skeptical-review** — если в финальном отчёте делаются claims о fix, verify, build, tests, review verdict
 
 ## Процесс
 

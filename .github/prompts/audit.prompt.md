@@ -1,6 +1,6 @@
 ---
-agent: orchestrator
-description: "CTO-уровень аудит зрелости модуля или всей платформы. Scoring, risk map, честный вердикт."
+agent: mansoni
+description: "CTO-уровень аудит зрелости модуля или всей платформы через канонический режим Mansoni. Scoring, risk map, честный вердикт."
 ---
 
 # Аудит зрелости
@@ -25,5 +25,14 @@ description: "CTO-уровень аудит зрелости модуля или
 6. Составь risk map и top-5 действий для повышения уровня
 7. Напиши честный CTO verdict
 
+## Runtime bootstrap
+- Сразу в начале установи workflow context: `node .claude/helpers/workflow-context.cjs workflow audit`
+
 ## Формат
 Используй формат из скилла **platform-auditor**: инвентарь → категории → risk map → stub density → действия → вердикт
+
+## Финализация verdict
+- Перед финальным verdict зафиксируй audit evidence: `node .claude/helpers/workflow-context.cjs evidence review "audit completed with risk map and evidence"`
+- ACCEPT → `node .claude/helpers/workflow-context.cjs review-verdict PASS`
+- PARTIAL или RISKY → `node .claude/helpers/workflow-context.cjs review-verdict RISKY`
+- REJECT или UNSAFE → `node .claude/helpers/workflow-context.cjs review-verdict FAIL`

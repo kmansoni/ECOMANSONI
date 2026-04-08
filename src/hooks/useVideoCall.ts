@@ -60,6 +60,18 @@ const MAX_ICE_RESTARTS = 3;
 const SIGNAL_POLL_INTERVAL_MS = 1500;
 const SLO_SAMPLE_INTERVAL_MS = 5000;
 
+function normalizeRealtimeCallStatusRow(value: unknown): VideoCall | null {
+  if (!value || typeof value !== "object") return null;
+
+  const row = value as Record<string, unknown>;
+  if (typeof row.id !== "string") return null;
+
+  return {
+    ...(row as unknown as VideoCall),
+    status: String(row.state ?? row.status ?? ""),
+  };
+}
+
 function getStableDeviceId(): string {
   const key = "mansoni_device_id";
   const existing = window.localStorage.getItem(key);
@@ -1287,11 +1299,12 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
         {
           event: "UPDATE",
           schema: "public",
-          table: "video_calls",
+          table: "calls",
           filter: `id=eq.${currentCall.id}`,
         },
         (payload) => {
-          const updated = payload.new as VideoCall;
+          const updated = normalizeRealtimeCallStatusRow(payload.new);
+          if (!updated) return;
           handleCallStatusUpdate(updated.status);
         }
       )

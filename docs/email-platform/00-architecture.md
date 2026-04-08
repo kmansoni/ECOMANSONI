@@ -31,7 +31,7 @@
 
 ### 1.2 Текущее состояние
 
-Существующий `email-router` — zero-dependency Node.js сервис с:
+Существующий `services/email-router` — self-hosted Node.js сервис с:
 - Raw SMTP-клиент (RFC 5321, STARTTLS, AUTH PLAIN)
 - API Key аутентификация (`X-API-Key`)
 - HTML-шаблоны с XSS-защитой (`{{variable}}` + `{{url:variable}}`)
@@ -339,7 +339,7 @@ sequenceDiagram
 | **SLA** | 99.9% uptime, p99 latency < 100ms для enqueue |
 | **Healthcheck** | `GET /health` — проверка Redis + PostgreSQL + SMTP probe |
 
-**Текущий код:** `email-router/src/` — zero-dependency SMTP клиент, template engine, API key auth.
+**Текущий код:** `services/email-router/src/` — zero-dependency SMTP клиент, template engine, API key auth.
 
 **Изменения для production:**
 - Добавить JWT validation через Supabase JWKS (сохранить API key как fallback для service-to-service)
@@ -1349,7 +1349,7 @@ version: '3.8'
 
 services:
   email-router:
-    build: ../../email-router
+    build: ../../services/email-router
     ports:
       - "8090:8090"
     environment:

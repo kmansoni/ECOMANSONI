@@ -1,11 +1,14 @@
 ---
-agent: orchestrator
-description: "Систематический поиск заглушек, fake success, пустых кнопок и декоративной полноты."
+agent: mansoni
+description: "Систематический поиск заглушек, fake success, пустых кнопок и декоративной полноты через канонический режим Mansoni."
 ---
 
 # Охота на заглушки
 
 Найди все заглушки в: **${input}**
+
+## Runtime bootstrap
+- Сразу в начале установи workflow context: `node .claude/helpers/workflow-context.cjs workflow audit`
 
 ## Загрузи скиллы
 1. **stub-hunter** — основной workflow поиска заглушек

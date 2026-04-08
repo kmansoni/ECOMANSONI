@@ -43,7 +43,7 @@ const eventSchema = z.object({
   actor_id: z.string().min(1),
   device_id: z.string().min(1),
   session_id: z.string().min(1),
-  object_type: z.enum(["story", "reel", "post", "profile"]),
+  object_type: z.enum(["app", "screen", "module", "story", "reel", "post", "profile", "chat", "conversation", "message"]),
   object_id: z.string().min(1),
   owner_id: z.string().min(1),
   event_type: z.string().min(1),

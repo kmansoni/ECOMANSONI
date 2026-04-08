@@ -94,7 +94,7 @@ function SavedAllPostsScreen({ isDark, onBack }: SubProps) {
         const map = await fetchPostsByIds(ids);
         setPosts(ids.map((id) => map.get(id)).filter(Boolean) as SettingsPostItem[]);
       } catch (e) {
-        toast({ title: "Saved", description: getErrorMessage(e) });
+        toast({ title: "Сохранённое", description: getErrorMessage(e) });
       } finally {
         setLoading(false);
       }
@@ -103,17 +103,17 @@ function SavedAllPostsScreen({ isDark, onBack }: SubProps) {
 
   return (
     <>
-      <SettingsHeader title="All Posts" isDark={isDark} currentScreen="saved_all_posts" onBack={onBack} onClose={onBack} />
-      <div className="flex-1 overflow-y-auto native-scroll pb-8">
+      <SettingsHeader title="Все публикации" isDark={isDark} currentScreen="saved_all_posts" onBack={onBack} onClose={onBack} />
+      <div className="flex-1 pb-8">
         <div className="px-4">
           <div className={cn("backdrop-blur-xl rounded-2xl border overflow-hidden", isDark ? "settings-dark-card" : "bg-card/80 border-white/20")}>
             <div className="px-5 py-4">
-              <p className="font-semibold">Saved Posts</p>
+              <p className="font-semibold">Сохранённые публикации</p>
               <p className={cn("text-sm mt-1", isDark ? "text-white/60" : "text-white/70")}>
-                Source: saved_posts table.
+                Здесь собраны публикации, которые вы сохранили.
               </p>
             </div>
-            <SettingsPostsList rows={posts} loading={loading} emptyText="You have no saved posts yet." isDark={isDark} />
+            <SettingsPostsList rows={posts} loading={loading} emptyText="У вас пока нет сохранённых публикаций." isDark={isDark} />
           </div>
         </div>
       </div>
@@ -142,7 +142,7 @@ function SavedLikedPostsScreen({ isDark, onBack }: SubProps) {
         const map = await fetchPostsByIds(ids);
         setPosts(ids.map((id) => map.get(id)).filter(Boolean) as SettingsPostItem[]);
       } catch (e) {
-        toast({ title: "Liked Posts", description: getErrorMessage(e) });
+        toast({ title: "Понравившиеся публикации", description: getErrorMessage(e) });
       } finally {
         setLoading(false);
       }
@@ -151,17 +151,17 @@ function SavedLikedPostsScreen({ isDark, onBack }: SubProps) {
 
   return (
     <>
-      <SettingsHeader title="Liked Posts" isDark={isDark} currentScreen="saved_liked_posts" onBack={onBack} onClose={onBack} />
-      <div className="flex-1 overflow-y-auto native-scroll pb-8">
+      <SettingsHeader title="Понравившиеся публикации" isDark={isDark} currentScreen="saved_liked_posts" onBack={onBack} onClose={onBack} />
+      <div className="flex-1 pb-8">
         <div className="px-4">
           <div className={cn("backdrop-blur-xl rounded-2xl border overflow-hidden", isDark ? "settings-dark-card" : "bg-card/80 border-white/20")}>
             <div className="px-5 py-4">
-              <p className="font-semibold">Liked Posts</p>
+              <p className="font-semibold">Понравившиеся публикации</p>
               <p className={cn("text-sm mt-1", isDark ? "text-white/60" : "text-white/70")}>
-                Source: post_likes table.
+                Здесь отображаются публикации, которым вы поставили отметку «Нравится».
               </p>
             </div>
-            <SettingsPostsList rows={posts} loading={loading} emptyText="You have no liked posts yet." isDark={isDark} />
+            <SettingsPostsList rows={posts} loading={loading} emptyText="У вас пока нет понравившихся публикаций." isDark={isDark} />
           </div>
         </div>
       </div>
@@ -211,26 +211,26 @@ export function SettingsSavedSection({ isDark, currentScreen, onNavigate, onBack
 
   return (
     <>
-      <SettingsHeader title="Saved" isDark={isDark} currentScreen="saved" onBack={onBack} onClose={onBack} />
-      <div className="flex-1 overflow-y-auto native-scroll">
+      <SettingsHeader title="Сохранённое" isDark={isDark} currentScreen="saved" onBack={onBack} onClose={onBack} />
+      <div className="flex-1">
         <div className={cn("mx-4 backdrop-blur-xl rounded-2xl border overflow-hidden", isDark ? "settings-dark-card" : "bg-card/80 border-white/20")}>
           <SettingsMenuItem
             icon={<Bookmark className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />}
-            label="All Posts"
+            label="Все публикации"
             isDark={isDark}
             onClick={() => onNavigate("saved_all_posts")}
             value={savedAllPosts.length ? String(savedAllPosts.length) : undefined}
           />
           <SettingsMenuItem
             icon={<Heart className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />}
-            label="Liked Posts"
+            label="Понравившиеся публикации"
             isDark={isDark}
             onClick={() => onNavigate("saved_liked_posts")}
             value={savedLikedPosts.length ? String(savedLikedPosts.length) : undefined}
           />
         </div>
         <p className={cn("p-5 text-center text-sm", isDark ? "text-white/60" : "text-white/60")}>
-          Create collections to organize saved posts
+          Создавайте подборки, чтобы быстрее находить нужные публикации.
         </p>
       </div>
     </>

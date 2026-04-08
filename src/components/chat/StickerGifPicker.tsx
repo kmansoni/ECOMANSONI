@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import EmojiPicker, { EmojiStyle, EmojiClickData, Theme, Categories } from "emoji-picker-react";
+import EmojiPicker, { EmojiStyle, EmojiClickData, Theme } from "emoji-picker-react";
 import { useTheme } from "next-themes";
 import { useStickers, type Sticker } from "@/hooks/useStickers";
 import { useSavedGifs } from "@/hooks/useSavedGifs";
 import { searchGifs, getTrendingGifs, type GifItem } from "@/lib/chat/gifService";
 import { Heart } from "lucide-react";
 import { logger } from "@/lib/logger";
+import { EMOJI_PICKER_CATEGORIES } from "./emoji-picker-categories";
 
 type Tab = "stickers" | "gif" | "emoji";
 
@@ -410,17 +411,7 @@ export function StickerGifPicker({
               lazyLoadEmojis={true}
               previewConfig={{ showPreview: false }}
               searchPlaceHolder="Поиск эмодзи"
-              categories={[
-                { name: "Недавние", category: Categories.SUGGESTED },
-                { name: "Смайлики", category: Categories.SMILEYS_PEOPLE },
-                { name: "Животные", category: Categories.ANIMALS_NATURE },
-                { name: "Еда", category: Categories.FOOD_DRINK },
-                { name: "Путешествия", category: Categories.TRAVEL_PLACES },
-                { name: "Активности", category: Categories.ACTIVITIES },
-                { name: "Объекты", category: Categories.OBJECTS },
-                { name: "Символы", category: Categories.SYMBOLS },
-                { name: "Флаги", category: Categories.FLAGS },
-              ]}
+              categories={EMOJI_PICKER_CATEGORIES}
             />
           </div>
         )}

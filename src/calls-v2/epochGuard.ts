@@ -107,6 +107,22 @@ export class EpochGuard {
     this.state.mediaAllowed = false;
   }
 
+  /**
+   * Откат неудавшегося rekey: восстанавливает epoch и e2eeReady к предыдущему значению.
+   * Вызывается при DEADLINE_EXCEEDED / REKEY_ABORTED, когда новый epoch не был подтверждён.
+   */
+  rollbackFailedEpoch(previousEpoch: number): void {
+    if (previousEpoch > this.state.currentEpoch) {
+      this.recordViolation(
+        `rollbackFailedEpoch: target ${previousEpoch} > current ${this.state.currentEpoch}`
+      );
+      return;
+    }
+    this.state.currentEpoch = previousEpoch;
+    this.state.e2eeReady = true;
+    this.recomputeMediaAllowed();
+  }
+
   markRoomLeft(): void {
     this.state.roomJoined = false;
     this.state.e2eeReady = false;

@@ -16,7 +16,7 @@ import {
   Shield,
   Users,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, getErrorMessage } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useUserSettings } from "@/contexts/UserSettingsContext";
@@ -112,7 +112,7 @@ export function SettingsBrandedContentSection({
         setApprovedAuthorProfiles({});
       }
     } catch (e) {
-      toast({ title: "Брендированный контент", description: e instanceof Error ? e.message : String(e) });
+      toast({ title: "Брендированный контент", description: getErrorMessage(e) });
     } finally {
       setApprovedAuthorsLoading(false);
     }
@@ -148,7 +148,7 @@ export function SettingsBrandedContentSection({
         setRequestProfiles({});
       }
     } catch (e) {
-      toast({ title: "Бренд‑партнёры", description: e instanceof Error ? e.message : String(e) });
+      toast({ title: "Бренд‑партнёры", description: getErrorMessage(e) });
     } finally {
       setRequestsLoading(false);
     }
@@ -251,7 +251,7 @@ export function SettingsBrandedContentSection({
     return (
       <>
         {renderHeader("Брендированный контент")}
-        <div className="flex-1 overflow-y-auto native-scroll pb-8">
+        <div className="flex-1 pb-8">
           <div className="px-4">
             <p className={cn("text-sm mb-2 px-1", isDark ? "text-white/60" : "text-white/60")}>Статус</p>
             <div className={cn(
@@ -334,7 +334,7 @@ export function SettingsBrandedContentSection({
     return (
       <>
         {renderHeader("Брендированный контент")}
-        <div className="flex-1 overflow-y-auto native-scroll pb-8">
+        <div className="flex-1 pb-8">
           <div className="px-4">
             <div className={cn(
               "backdrop-blur-xl rounded-2xl border px-5 py-5",
@@ -362,7 +362,7 @@ export function SettingsBrandedContentSection({
     return (
       <>
         {renderHeader("Запросы бренд‑партнёрам")}
-        <div className="flex-1 overflow-y-auto native-scroll pb-8">
+        <div className="flex-1 pb-8">
           <div className="px-4 grid gap-3">
             {/* Send request form */}
             <div className={cn(
@@ -400,7 +400,7 @@ export function SettingsBrandedContentSection({
                         if (error) throw error;
                         setPartnerSearchResults(data ?? []);
                       } catch (e) {
-                        toast({ title: "Поиск", description: e instanceof Error ? e.message : String(e) });
+                        toast({ title: "Поиск", description: getErrorMessage(e) });
                       } finally {
                         setPartnerSearchLoading(false);
                       }
@@ -449,7 +449,7 @@ export function SettingsBrandedContentSection({
                               setPartnerRequestMessage("");
                               await loadPartnerRequests();
                             } catch (e) {
-                              toast({ title: "Запрос", description: e instanceof Error ? e.message : String(e) });
+                              toast({ title: "Запрос", description: getErrorMessage(e) });
                             }
                           }}
                         >
@@ -496,7 +496,7 @@ export function SettingsBrandedContentSection({
                                   await decideBrandedPartnerRequest(r.id, "approved");
                                   toast({ title: "Готово", description: "Запрос одобрен." });
                                 } catch (e) {
-                                  toast({ title: "Решение", description: e instanceof Error ? e.message : String(e) });
+                                  toast({ title: "Решение", description: getErrorMessage(e) });
                                 }
                               }}
                             >
@@ -510,7 +510,7 @@ export function SettingsBrandedContentSection({
                                   await decideBrandedPartnerRequest(r.id, "rejected");
                                   toast({ title: "Готово", description: "Запрос отклонён." });
                                 } catch (e) {
-                                  toast({ title: "Решение", description: e instanceof Error ? e.message : String(e) });
+                                  toast({ title: "Решение", description: getErrorMessage(e) });
                                 }
                               }}
                             >
@@ -567,7 +567,7 @@ export function SettingsBrandedContentSection({
     return (
       <>
         {renderHeader("Одобрение авторов контента")}
-        <div className="flex-1 overflow-y-auto native-scroll pb-8">
+        <div className="flex-1 pb-8">
           <div className="px-4">
             {/* Add author form */}
             <div className={cn(
@@ -604,7 +604,7 @@ export function SettingsBrandedContentSection({
                         if (error) throw error;
                         setAuthorSearchResults(data ?? []);
                       } catch (e) {
-                        toast({ title: "Поиск", description: e instanceof Error ? e.message : String(e) });
+                        toast({ title: "Поиск", description: getErrorMessage(e) });
                       } finally {
                         setAuthorSearchLoading(false);
                       }
@@ -633,7 +633,7 @@ export function SettingsBrandedContentSection({
                               setAuthorQuery("");
                               await loadApprovedAuthors();
                             } catch (e) {
-                              toast({ title: "Одобрение", description: e instanceof Error ? e.message : String(e) });
+                              toast({ title: "Одобрение", description: getErrorMessage(e) });
                             }
                           }}
                         >
@@ -680,7 +680,7 @@ export function SettingsBrandedContentSection({
                               toast({ title: "Готово", description: "Автор удалён из списка." });
                               await loadApprovedAuthors();
                             } catch (e) {
-                              toast({ title: "Удаление", description: e instanceof Error ? e.message : String(e) });
+                              toast({ title: "Удаление", description: getErrorMessage(e) });
                             }
                           }}
                         >

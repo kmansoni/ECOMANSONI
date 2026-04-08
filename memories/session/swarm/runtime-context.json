@@ -1,0 +1,32 @@
+{
+  "workflow": "bug",
+  "reviewVerdict": "PENDING",
+  "reviewStages": [],
+  "updatedAt": "2026-04-08T20:59:35.570Z",
+  "source": "evidence-command",
+  "taskDescription": "Финализировать review или audit успешным verdict",
+  "inference": {
+    "confidence": "high",
+    "matches": [
+      "audit"
+    ],
+    "score": 9,
+    "conflicts": [
+      {
+        "workflow": "review",
+        "score": 9,
+        "matches": [
+          "review"
+        ]
+      }
+    ]
+  },
+  "evidence": {
+    "tsc": [
+      {
+        "at": "2026-04-08T20:59:35.570Z",
+        "summary": "typecheck command completed via bash hook"
+      }
+    ]
+  }
+}

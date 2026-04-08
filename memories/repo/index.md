@@ -1,0 +1,30 @@
+# Repo Memory Index
+Ключевые факты проекта (39 файлов в VS Code /memories/repo/):
+- anthropic-edge-function-security
+- auth-storage-fail-secure
+- call-frontend-defects-fixed
+- calls-v2-bootstrap-fix
+- calls-wss-enforcement-localhost-fix
+- capacitor-optional-plugins
+- chat-decode-shared-module
+- chat-false-send-timeout-toast
+- chats-runtime-referenceerror-pattern
+- edge-function-cors-dev-origins
+- epoch-guard-rekey-deadlock-fix
+- multi-account-incomplete-profile-blocker
+- multi-account-switch-consistency
+- otp-send-verify-endpoint-pinning
+- mansoni-ruflo-helper-runtime-bootstrap-2026-04-08
+- mansoni-command-wrappers-and-review-stages-2026-04-08
+- mansoni-verification-fusion-file-context-2026-04-08
+- mansoni-task-workflow-autoclassifier-2026-04-08
+- mansoni-task-intent-verdict-ingestion-2026-04-08
+- mansoni-unique-agent-functions-integrated-2026-04-08
+- mansoni-auto-bash-evidence-and-skeptical-review-2026-04-08
+- reels-feed-root-cause-and-fix
+- sfu-mediasoup-port-firewall-fix
+- sfu-production-deployment
+- sql-migration-pitfalls
+- supabase-critical-hardening-pipeline
+- supabase-optional-resource-fallbacks
+- typescript-strict-phasing

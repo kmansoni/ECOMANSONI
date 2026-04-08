@@ -1,0 +1,53 @@
+# Decisions
+
+- 2026-04-08T20:09:29.535Z | session restored into mansoni-swarm namespace
+- 2026-04-08T20:09:29.687Z | task lifecycle completed
+- 2026-04-08T20:16:12.828Z | task lifecycle completed
+- 2026-04-08T20:16:12.887Z | verification fusion verdict: RISKY
+- 2026-04-08T20:20:04.069Z | workflow context set: feature
+- 2026-04-08T20:20:04.137Z | review verdict set: PASS
+- 2026-04-08T20:20:04.210Z | task lifecycle completed
+- 2026-04-08T20:20:04.271Z | verification fusion verdict: PASS
+- 2026-04-08T20:25:35.766Z | workflow context set: review
+- 2026-04-08T20:25:35.841Z | review stage set: review-start -> PENDING
+- 2026-04-08T20:25:35.915Z | review stage set: review-risky -> RISKY
+- 2026-04-08T20:25:35.984Z | review stage set: review-pass -> PASS
+- 2026-04-08T20:25:36.056Z | task lifecycle completed
+- 2026-04-08T20:25:36.116Z | verification fusion verdict: PASS
+- 2026-04-08T20:31:10.953Z | runtime context reset
+- 2026-04-08T20:31:11.063Z | workflow inferred: bug | confidence=high | matches=исправ, баг
+- 2026-04-08T20:31:11.072Z | task workflow auto-classified: bug
+- 2026-04-08T20:31:11.489Z | runtime context reset
+- 2026-04-08T20:31:11.578Z | workflow inferred: review | confidence=high | matches=review, code review
+- 2026-04-08T20:31:11.587Z | task workflow auto-classified: review
+- 2026-04-08T20:31:56.094Z | runtime context reset
+- 2026-04-08T20:31:56.183Z | workflow inferred: security | confidence=high | matches=rls, безопас
+- 2026-04-08T20:31:56.192Z | task workflow auto-classified: security
+- 2026-04-08T20:31:56.244Z | task lifecycle completed
+- 2026-04-08T20:31:56.290Z | verification fusion verdict: RISKY
+- 2026-04-08T20:37:39.583Z | runtime context reset
+- 2026-04-08T20:37:39.678Z | task intent pre: workflow=review score=16 confidence=high verdict=PENDING
+- 2026-04-08T20:37:39.687Z | task workflow auto-classified: review | verdict=PENDING
+- 2026-04-08T20:37:40.115Z | workflow context set: audit
+- 2026-04-08T20:37:40.211Z | task intent pre: workflow=audit score=9 confidence=high verdict=PASS
+- 2026-04-08T20:37:40.220Z | task workflow auto-classified: audit | verdict=PASS
+- 2026-04-08T20:37:40.283Z | task lifecycle completed
+- 2026-04-08T20:37:40.331Z | task intent post: workflow=audit score=9 confidence=high verdict=PASS
+- 2026-04-08T20:37:40.343Z | task post-intent synced: workflow=audit | verdict=PASS
+- 2026-04-08T20:37:40.405Z | verification fusion verdict: PASS
+- 2026-04-08T20:37:40.863Z | runtime context reset
+- 2026-04-08T20:37:40.962Z | task intent pre: workflow=audit score=4 confidence=medium verdict=PENDING
+- 2026-04-08T20:37:40.970Z | task workflow auto-classified: audit | verdict=PENDING
+- 2026-04-08T20:38:18.589Z | workflow context set: audit
+- 2026-04-08T20:38:18.681Z | task intent pre: workflow=audit score=9 confidence=high verdict=PASS
+- 2026-04-08T20:38:18.691Z | task workflow auto-classified: audit | verdict=PASS
+- 2026-04-08T20:38:18.747Z | task lifecycle completed
+- 2026-04-08T20:38:18.786Z | task intent post: workflow=audit score=9 confidence=high verdict=PASS
+- 2026-04-08T20:38:18.795Z | task post-intent synced: workflow=audit | verdict=PASS
+- 2026-04-08T20:38:18.841Z | verification fusion verdict: PASS
+- 2026-04-08T20:50:37.383Z | workflow context set: review
+- 2026-04-08T20:50:37.443Z | review verdict set: PASS
+- 2026-04-08T20:50:37.568Z | evidence recorded: review | review completed with evidence-backed findings
+- 2026-04-08T20:59:35.473Z | workflow context set: bug
+- 2026-04-08T20:59:35.572Z | evidence recorded: tsc | typecheck command completed via bash hook
+- 2026-04-08T20:59:35.582Z | bash evidence captured: tsc

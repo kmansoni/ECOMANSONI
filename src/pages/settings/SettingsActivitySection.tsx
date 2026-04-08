@@ -154,7 +154,7 @@ export function SettingsActivitySection({ isDark, currentScreen, onNavigate, onB
     return (
       <>
         <SettingsHeader title="Лайки" isDark={isDark} currentScreen="activity_likes" onBack={onBack} onClose={onBack} />
-        <div className="flex-1 overflow-y-auto native-scroll pb-8">
+        <div className="flex-1 pb-8">
           <div className="px-4">
             <div className={cn("backdrop-blur-xl rounded-2xl border overflow-hidden", isDark ? "settings-dark-card" : "bg-card/80 border-white/20")}>
               <div className="px-5 py-4"><p className="font-semibold">Понравившиеся посты</p><p className={cn("text-sm mt-1", isDark ? "text-white/60" : "text-white/70")}>Посты, которым вы поставили лайк.</p></div>
@@ -170,7 +170,7 @@ export function SettingsActivitySection({ isDark, currentScreen, onNavigate, onB
     return (
       <>
         <SettingsHeader title="Комментарии" isDark={isDark} currentScreen="activity_comments" onBack={onBack} onClose={onBack} />
-        <div className="flex-1 overflow-y-auto native-scroll pb-8">
+        <div className="flex-1 pb-8">
           <div className="px-4">
             <div className={cn("backdrop-blur-xl rounded-2xl border overflow-hidden", isDark ? "settings-dark-card" : "bg-card/80 border-white/20")}>
               <div className="px-5 py-4"><p className="font-semibold">Ваши комментарии</p></div>
@@ -196,7 +196,7 @@ export function SettingsActivitySection({ isDark, currentScreen, onNavigate, onB
     return (
       <>
         <SettingsHeader title="Репосты" isDark={isDark} currentScreen="activity_reposts" onBack={onBack} onClose={onBack} />
-        <div className="flex-1 overflow-y-auto native-scroll pb-8">
+        <div className="flex-1 pb-8">
           <div className="px-4">
             <div className={cn("backdrop-blur-xl rounded-2xl border overflow-hidden", isDark ? "settings-dark-card" : "bg-card/80 border-white/20")}>
               <div className="px-5 py-4"><p className="font-semibold">Репосты Reels</p></div>
@@ -228,7 +228,7 @@ export function SettingsActivitySection({ isDark, currentScreen, onNavigate, onB
   return (
     <>
       <SettingsHeader title="Ваша активность" isDark={isDark} currentScreen="activity" onBack={onBack} onClose={onBack} />
-      <div className="flex-1 overflow-y-auto native-scroll">
+      <div className="flex-1">
         <div className={cn("mx-4 backdrop-blur-xl rounded-2xl border overflow-hidden", isDark ? "settings-dark-card" : "bg-card/80 border-white/20")}>
           <SettingsMenuItem icon={<Clock className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />} label="Время в приложении" isDark={isDark}
             onClick={() => {

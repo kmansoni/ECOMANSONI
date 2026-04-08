@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -79,6 +79,9 @@ export function CreatePollSheet({ open, onOpenChange, conversationId, onCreated 
             <BarChart2 className="w-5 h-5 text-blue-400" />
             Создать опрос
           </SheetTitle>
+          <SheetDescription className="text-white/50">
+            Укажите вопрос и минимум два варианта ответа.
+          </SheetDescription>
         </SheetHeader>
 
         <div className="flex-1 overflow-y-auto px-4 space-y-4 pb-4">

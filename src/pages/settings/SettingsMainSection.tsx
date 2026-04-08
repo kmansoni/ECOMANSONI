@@ -45,7 +45,7 @@ export function SettingsMainSection({
         onClose={onClose}
       />
 
-      <div className="flex-1 overflow-y-auto native-scroll pb-8">
+      <div className="flex-1 pb-8">
         {/* Account */}
         <div className="px-4 mb-3">
           <p className={cn("text-sm mb-2 px-1", isDark ? "text-white/60" : "text-white/60")}>Аккаунт</p>

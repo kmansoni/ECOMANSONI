@@ -33,6 +33,7 @@ import { toast } from "sonner";
 import { AppErrorBoundary } from "@/components/system/AppErrorBoundary";
 import { RouteErrorBoundary } from "@/components/system/RouteErrorBoundary";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
+import { useAppActivity } from "@/hooks/useAppActivity";
 
 const HashtagPage = lazy(() => import("@/pages/HashtagPage").then(m => ({ default: m.HashtagPage })));
 const ExplorePage = lazy(() => import("@/pages/ExplorePage"));
@@ -180,6 +181,11 @@ function AnalyticsRouteTracker() {
   return null;
 }
 
+function AppActivityTracker() {
+  useAppActivity();
+  return null;
+}
+
 // Loading fallback component
 function PageLoader() {
   return (
@@ -251,6 +257,7 @@ const App = () => {
                   </Suspense>
                   <DeepLinkHandler />
                   <AnalyticsRouteTracker />
+                  <AppActivityTracker />
                   <OfflineIndicator />
                   <SwipeBackGesture>
                   <div style={{ position: "relative", height: "100%", overflow: "hidden" }}>

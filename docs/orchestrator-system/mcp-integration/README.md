@@ -21,6 +21,8 @@
 
 MCP (Model Context Protocol) — открытый стандарт Anthropic для подключения AI моделей к внешним инструментам и источникам данных. В нашей системе MCP-серверы расширяют возможности агентов за пределы работы с кодом.
 
+В контексте гибрида `Ruflo Inside Mansoni` MCP является частью execution/runtime слоя Ruflo. Схема полного распределения ответственности между runtime и project policy описана в [RUFLO_INSIDE_MANSONI.md](../architecture/RUFLO_INSIDE_MANSONI.md).
+
 ```
 AI Агент
     │

@@ -34,7 +34,7 @@ graph TB
         SUPA[Supabase Cloud<br/>lfkbgnbjxskspsownvjm.supabase.co<br/>SINGLE POINT OF FAILURE]
         CALLS[calls-ws<br/>server/calls-ws/]
         SFU_S[SFU Server<br/>server/sfu/]
-        EMAIL_S[email-router<br/>services/email-router/]
+        EMAIL_S[email-router<br/>services/email-router/ only]
         NOTIF[notification-router<br/>services/notification-router/]
         BOT[bot-api<br/>server/bot-api/]
         LIVE[Livestream Gateway<br/>infra/livestream/gateway/]

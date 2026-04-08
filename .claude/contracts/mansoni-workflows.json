@@ -1,0 +1,106 @@
+{
+  "version": 1,
+  "canonicalEntrypoint": "mansoni",
+  "runtime": "ruflo",
+  "namespace": "mansoni-swarm",
+  "defaultWorkflow": "general",
+  "classifier": {
+    "workflowPriority": ["review", "audit", "security", "bug", "refactor", "hardening", "feature", "general"],
+    "startKeywords": ["start", "bootstrap", "begin", "kickoff", "init", "начать", "старт", "запусти", "инициализ"],
+    "verdictKeywords": {
+      "PASS": ["pass", "accept", "approved", "green", "успеш", "принять", "одобр", "пройдено"],
+      "RISKY": ["risky", "warn", "warning", "partial", "concern", "risk", "частично", "риск", "предупреж", "сомнительно"],
+      "FAIL": ["fail", "reject", "unsafe", "blocked", "critical", "не принять", "отклон", "блокер", "критич", "небезопас"]
+    }
+  },
+  "workflows": {
+    "general": {
+      "label": "General Task",
+      "keywords": ["general", "task", "задача", "сделай", "do", "continue", "продолжай"],
+      "topology": "adaptive",
+      "pipeline": ["research", "execute", "review"],
+      "verification": {
+        "ruflo": ["session-state", "workflow-contract", "memory-sync"],
+        "mansoni": ["completeness", "integration", "humanized-code"],
+        "evidence": ["manual"]
+      }
+    },
+    "feature": {
+      "label": "Feature Delivery",
+      "keywords": ["feature", "implement", "build", "add", "create", "new", "фича", "реализ", "добав", "создай", "внедр"],
+      "topology": "hierarchical",
+      "pipeline": ["researcher", "architect", "coder", "reviewer", "tester"],
+      "verification": {
+        "ruflo": ["workflow-contract", "memory-sync", "post-task"],
+        "mansoni": ["root-cause", "anti-duplicate", "security", "ui-completeness", "pass-risky-fail"],
+        "evidence": ["tsc", "review"]
+      }
+    },
+    "bug": {
+      "label": "Bug Fix",
+      "keywords": ["bug", "fix", "debug", "issue", "error", "broken", "почин", "исправ", "баг", "ошиб", "debug"],
+      "topology": "hierarchical",
+      "pipeline": ["debugger", "coder", "reviewer"],
+      "verification": {
+        "ruflo": ["workflow-contract", "memory-sync", "post-task"],
+        "mansoni": ["root-cause", "minimal-fix", "regression-check", "pass-risky-fail"],
+        "evidence": ["tsc", "manual"]
+      }
+    },
+    "security": {
+      "label": "Security Hardening",
+      "keywords": ["security", "secure", "vulnerability", "owasp", "hardening", "auth", "rls", "безопас", "уязвим", "защит", "харденинг"],
+      "topology": "star",
+      "pipeline": ["security-engineer", "reviewer-security", "coder"],
+      "verification": {
+        "ruflo": ["workflow-contract", "memory-sync", "post-task"],
+        "mansoni": ["security-audit", "least-privilege", "invariant-check", "pass-risky-fail"],
+        "evidence": ["review", "manual"]
+      }
+    },
+    "audit": {
+      "label": "Deep Audit",
+      "keywords": ["audit", "analyze", "investigate", "assessment", "scan", "аудит", "провер", "проанализ", "исслед", "разбор"],
+      "topology": "mesh",
+      "pipeline": ["inventory", "parallel-review", "synthesis"],
+      "verification": {
+        "ruflo": ["workflow-contract", "memory-sync", "post-task"],
+        "mansoni": ["evidence-required", "confidence-filter", "risk-map", "pass-risky-fail"],
+        "evidence": ["review"]
+      }
+    },
+    "review": {
+      "label": "Code Review",
+      "keywords": ["review", "pr", "code review", "feedback", "comment", "ревью", "проверь код", "проверка кода", "замечан"],
+      "topology": "star",
+      "pipeline": ["scope", "multi-review", "verdict"],
+      "verification": {
+        "ruflo": ["workflow-contract", "memory-sync", "post-task"],
+        "mansoni": ["confidence-filter", "security", "correctness", "pass-risky-fail"],
+        "evidence": ["review"]
+      }
+    },
+    "refactor": {
+      "label": "Refactor",
+      "keywords": ["refactor", "cleanup", "simplify", "restructure", "deduplicate", "рефактор", "упрост", "почист", "декомпоз", "убери дубли"],
+      "topology": "hierarchical",
+      "pipeline": ["research", "plan", "implement", "review"],
+      "verification": {
+        "ruflo": ["workflow-contract", "memory-sync", "post-task"],
+        "mansoni": ["functional-parity", "anti-duplicate", "humanized-code", "pass-risky-fail"],
+        "evidence": ["tsc", "manual"]
+      }
+    },
+    "hardening": {
+      "label": "Hardening",
+      "keywords": ["stabilize", "stability", "resilience", "recovery", "retry", "timeout", "hardening", "stabiliz", "устойчив", "восстанов", "retry", "таймаут"],
+      "topology": "star",
+      "pipeline": ["completion-check", "recovery-check", "fixes", "verification"],
+      "verification": {
+        "ruflo": ["workflow-contract", "memory-sync", "post-task"],
+        "mansoni": ["completion", "recovery", "integration", "pass-risky-fail"],
+        "evidence": ["tsc", "manual"]
+      }
+    }
+  }
+}

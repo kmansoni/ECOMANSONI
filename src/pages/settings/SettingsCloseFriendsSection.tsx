@@ -3,7 +3,7 @@
  * Управление списком близких друзей.
  * Позволяет добавлять/удалять пользователей из списка.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Search, UserPlus, UserMinus, Star } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
@@ -81,7 +81,7 @@ export function SettingsCloseFriendsSection({
       })
     : followers;
 
-  const closeFriendsSet = new Set(closeFriends);
+  const closeFriendsSet = useMemo(() => new Set(closeFriends), [closeFriends]);
 
   // Сортируем: сперва close friends, потом остальные
   const sorted = [...filtered].sort((a, b) => {
@@ -138,7 +138,7 @@ export function SettingsCloseFriendsSection({
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto px-4">
+      <div className="flex-1 px-4 pb-8">
         {isLoading ? (
           <div className="space-y-3 py-2">
             {Array.from({ length: 6 }).map((_, i) => (

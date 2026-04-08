@@ -167,7 +167,7 @@ curl -X POST http://localhost:3100/email/admin/allowed-domains \
 ### CORS конфигурация
 
 ```typescript
-// services/email-router/src/config/cors.ts
+// Пример CORS-конфигурации для services/email-router
 const corsOptions = {
   origin: (origin, callback) => {
     const allowedOrigins = [
@@ -200,7 +200,7 @@ Cookie не используются → CSRF атаки невозможны (�
 Уязвимость SSRF возможна если API принимает URLs (например, для webhook callbacks или template URLs):
 
 ```typescript
-// services/email-router/src/utils/validateUrl.ts
+// Пример утилиты validateUrl для services/email-router
 import { URL } from 'url';
 import { isPrivateIP } from 'private-ip';
 

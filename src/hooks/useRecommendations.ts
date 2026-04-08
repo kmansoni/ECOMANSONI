@@ -8,6 +8,7 @@ import {
   type ContentItem,
   type UserEmbedding,
 } from '@/lib/recommendations/engine';
+import { logger } from '@/lib/logger';
 
 // Утилиты
 function extractHashtags(text: string): string[] {
@@ -72,9 +73,15 @@ export function useRecommendations() {
         .from('user_embeddings')
         .select('*')
         .eq('user_id', user.id)
-        .single();
+        .maybeSingle();
 
-      if (error || !data) {
+      if (error) {
+        logger.warn('recommendations: failed to load user embedding', { userId: user.id, error });
+        setUserEmbedding({ ...EMPTY_EMBEDDING, userId: user.id });
+        return;
+      }
+
+      if (!data) {
         setUserEmbedding({ ...EMPTY_EMBEDDING, userId: user.id });
         return;
       }
@@ -88,8 +95,12 @@ export function useRecommendations() {
         preferredContentType: data.preferred_content_type ?? 'mixed',
         activeHours: data.active_hours ?? {},
       });
-    } catch {
-      // user_embeddings может не существовать — не блокируем UI
+    } catch (error) {
+      logger.warn('recommendations: unexpected embedding load failure', { error });
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        setUserEmbedding({ ...EMPTY_EMBEDDING, userId: user.id });
+      }
     }
   }
 
@@ -102,8 +113,8 @@ export function useRecommendations() {
         .select('*', { count: 'exact', head: true })
         .eq('user_id', user.id);
       setInteractionCount(count ?? 0);
-    } catch {
-      // user_interactions может не существовать
+    } catch (error) {
+      logger.debug('recommendations: interaction count unavailable', { error });
     }
   }
 

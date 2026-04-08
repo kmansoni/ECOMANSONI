@@ -7,6 +7,7 @@
 ## Содержание
 
 - [Обзор](#обзор)
+- [Mansoni Ruflo Execution Contracts](MANSONI_RUFLO_EXECUTION_CONTRACTS.md)
 - [Workflow: Реализация фичи](#workflow-реализация-фичи)
 - [Workflow: Отладка ошибки](#workflow-отладка-ошибки)
 - [Workflow: Code Review](#workflow-code-review)

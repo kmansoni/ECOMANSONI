@@ -1,6 +1,22 @@
-export type AnalyticsObjectType = "story" | "reel" | "post" | "profile";
+export type AnalyticsObjectType =
+  | "app"
+  | "screen"
+  | "module"
+  | "story"
+  | "reel"
+  | "post"
+  | "profile"
+  | "chat"
+  | "conversation"
+  | "message";
 
 export type AnalyticsEventType =
+  | "session_start"
+  | "session_end"
+  | "screen_view"
+  | "screen_leave"
+  | "navigation"
+  | "heartbeat"
   | "view_start"
   | "view_end"
   | "view_progress"
@@ -18,7 +34,11 @@ export type AnalyticsEventType =
   | "mute"
   | "report"
   | "link_click"
-  | "sticker_interaction";
+  | "sticker_interaction"
+  | "message_send"
+  | "message_read"
+  | "composer_open"
+  | "composer_submit";
 
 export type AnalyticsPlatform = "ios" | "android" | "web";
 

@@ -265,6 +265,18 @@ export interface UseVideoCallSfuOptions {
   onCallEnded?: (call: VideoCall) => void;
 }
 
+function normalizeRealtimeCallRow(value: unknown): VideoCall | null {
+  if (!value || typeof value !== "object") return null;
+
+  const row = value as Record<string, unknown>;
+  if (typeof row.id !== "string") return null;
+
+  return {
+    ...(row as unknown as VideoCall),
+    status: (row.state ?? row.status) as VideoCall["status"],
+  };
+}
+
 // ---------------------------------------------------------------------------
 // useVideoCallSfu
 // ---------------------------------------------------------------------------
@@ -601,11 +613,11 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
         {
           event: "UPDATE",
           schema: "public",
-          table: "video_calls",
+          table: "calls",
           filter: `id=eq.${activeCallId}`,
         },
         (payload) => {
-          const updated = payload.new as VideoCall;
+          const updated = normalizeRealtimeCallRow(payload.new);
           if (!updated || updated.id !== activeCallId) return;
           applyCallRowUpdate(updated);
         }

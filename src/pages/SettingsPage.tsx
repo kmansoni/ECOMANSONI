@@ -36,7 +36,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useUserSettings } from "@/contexts/UserSettingsContext";
 import { useChatFolders } from "@/hooks/useChatFolders";
-import { pingScreenTime } from "@/lib/user-settings";
 import { toast } from "@/hooks/use-toast";
 import type { Screen } from "./settings/types";
 
@@ -88,14 +87,6 @@ export function SettingsPage() {
   const isAuthed = !!user?.id;
 
   useEffect(() => { setMounted(true); }, []);
-
-  // Screen time — ping every 60s while app is open
-  useEffect(() => {
-    if (!isAuthed) return;
-    void pingScreenTime(0);
-    const timer = setInterval(() => { void pingScreenTime(60); }, 60_000);
-    return () => clearInterval(timer);
-  }, [isAuthed]);
 
   const currentTheme = (mounted ? theme : "dark") ?? "dark";
   const isDark = currentTheme === "dark";
@@ -323,8 +314,8 @@ export function SettingsPage() {
   };
 
   return (
-    <div className="min-h-screen relative overflow-hidden">
-      <div className="relative z-10 min-h-screen flex flex-col safe-area-top safe-area-bottom">
+    <div className="min-h-full relative overflow-hidden">
+      <div className="relative z-10 min-h-full flex flex-col safe-area-top safe-area-bottom">
         {renderScreen()}
       </div>
 

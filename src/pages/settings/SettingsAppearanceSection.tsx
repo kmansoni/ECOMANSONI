@@ -16,7 +16,7 @@ interface AppearanceSectionProps extends SectionProps {
 
 export function SettingsAppearanceSection({ isDark, currentScreen, onNavigate, onBack }: AppearanceSectionProps) {
   const { user } = useAuth();
-  const title = currentScreen === "energy_saver" ? "Energy Saver" : "Appearance";
+  const title = currentScreen === "energy_saver" ? "Энергосбережение" : "Оформление";
 
   return (
     <>
@@ -27,7 +27,7 @@ export function SettingsAppearanceSection({ isDark, currentScreen, onNavigate, o
         onBack={onBack}
         onClose={onBack}
       />
-      <div className="flex-1 overflow-y-auto native-scroll pb-8">
+      <div className="flex-1 pb-8">
         <AppearanceAndEnergyCenter
           mode={currentScreen === "energy_saver" ? "energy" : "appearance"}
           userId={user?.id ?? null}

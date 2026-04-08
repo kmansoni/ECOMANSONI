@@ -538,6 +538,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         callsWsSendTransportRef.current = null;
         callsWsRecvTransportRef.current = null;
       }
+      closeCallsV2();
       setPendingIncomingCall(null);
       setPendingCalleeProfile(null);
       setIsCallUiActive(false); // Release UI-lock on call end
@@ -863,7 +864,9 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
 
         if (event.type === 'REKEY_ABORTED' || event.type === 'DEADLINE_EXCEEDED') {
           logger.error(`[Rekey] Aborted epoch=${event.epoch}: ${event.reason}`);
-          // Keep current epoch active; do NOT advance guard
+          // Откат epoch guard к последнему подтверждённому epoch — иначе deadlock:
+          // markEpochAdvanced(N) выключил media, rekey не удался, media заблокировано навсегда
+          epochGuardRef.current?.rollbackFailedEpoch(e2eeEpochRef.current);
         }
       });
 
@@ -1440,8 +1443,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
             } catch (err) {
               logger.error("[VideoCallContext] calls-v2 rekey:begin failed, aborting", err);
               machine.abortRekey(String(err));
-              // Restore previous epoch in guard on abort
-              epochGuardRef.current?.markE2eeReady(e2eeEpochRef.current);
+              epochGuardRef.current?.rollbackFailedEpoch(e2eeEpochRef.current);
             }
           })();
         }, REKEY_INTERVAL_MS);
@@ -1485,15 +1487,13 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       });
 
       if (shouldLog) {
-        logger.error("[VideoCallContext] DEBUG media-bootstrap FAILED:", {
-          callId,
-          roomId,
-          error: error instanceof Error ? error.message : String(error),
-          hasSfuManager: !!sfuManagerRef.current,
-          hasClient: !!callsWsRef.current,
-          hasIceServers: !!(turnIceServersRef.current && turnIceServersRef.current.length > 0),
-          blockedForMs: MEDIA_BOOTSTRAP_RETRY_BACKOFF_MS,
-        });
+        const errMsg = error instanceof Error ? error.message : String(error);
+        const hasSfu = !!sfuManagerRef.current;
+        const hasWs = !!callsWsRef.current;
+        const hasIce = !!(turnIceServersRef.current && turnIceServersRef.current.length > 0);
+        logger.error(
+          `[VideoCallContext] media-bootstrap FAILED: ${errMsg} | sfu=${hasSfu} ws=${hasWs} ice=${hasIce} room=${roomId.slice(0, 8)}`
+        );
       }
 
       if (!mediaBootstrapToastShownRef.current.has(roomId)) {

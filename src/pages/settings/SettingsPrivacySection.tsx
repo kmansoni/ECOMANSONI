@@ -5,7 +5,7 @@
  *
  * All privacy sub-screens delegate to the existing PrivacySecurityCenter component.
  */
-import { cn } from "@/lib/utils";
+import { cn, getErrorMessage } from "@/lib/utils";
 import { PrivacySecurityCenter } from "@/components/settings/PrivacySecurityCenter";
 import { SettingsHeader } from "./helpers";
 import type { SectionProps } from "./types";
@@ -74,7 +74,7 @@ export function BlockedUsersPanel({ isDark }: { isDark: boolean }) {
         setProfilesById({});
       }
     } catch (e) {
-      toast({ title: "Заблокированные", description: e instanceof Error ? e.message : String(e) });
+      toast({ title: "Заблокированные", description: getErrorMessage(e) });
     } finally {
       setLoading(false);
     }
@@ -119,7 +119,7 @@ export function BlockedUsersPanel({ isDark }: { isDark: boolean }) {
                       toast({ title: "Готово", description: "Пользователь разблокирован." });
                       void load();
                     } catch (e) {
-                      toast({ title: "Разблокировать", description: e instanceof Error ? e.message : String(e) });
+                      toast({ title: "Разблокировать", description: getErrorMessage(e) });
                     }
                   }}
                 >
@@ -135,6 +135,7 @@ export function BlockedUsersPanel({ isDark }: { isDark: boolean }) {
 }
 
 function RecoveryEmailPanel({ isDark }: { isDark: boolean }) {
+  const { user } = useAuth();
   const {
     recoveryEmail,
     isLoading,
@@ -155,27 +156,41 @@ function RecoveryEmailPanel({ isDark }: { isDark: boolean }) {
 
   const handleSendCode = async () => {
     if (!emailInput.trim()) return;
-    const ok = await setRecoveryEmail(emailInput.trim());
-    if (ok) toast({ title: "Код отправлен", description: `Проверьте ${emailInput}` });
-    else toast({ title: "Ошибка", description: error ?? "Не удалось отправить код", variant: "destructive" });
+    const result = await setRecoveryEmail(emailInput.trim());
+    if (result.ok) {
+      toast({ title: "Код отправлен", description: `Проверьте ${emailInput.trim()}` });
+      return;
+    }
+
+    if ("error" in result) {
+      toast({ title: "Ошибка", description: result.error, variant: "destructive" });
+    }
   };
 
   const handleVerify = async () => {
     if (!codeInput.trim()) return;
-    const ok = await verifyCode(codeInput.trim());
-    if (ok) {
-      toast({ title: "Email подтверждён", description: "Recovery Email успешно привязан." });
+    const result = await verifyCode(codeInput.trim());
+    if (result.ok) {
+      toast({ title: "Email подтверждён", description: "Резервный email успешно привязан." });
       setCodeInput("");
-    } else {
-      toast({ title: "Ошибка", description: error ?? "Неверный код", variant: "destructive" });
+      return;
+    }
+
+    if ("error" in result) {
+      toast({ title: "Ошибка", description: result.error, variant: "destructive" });
     }
   };
 
   const handleRemove = async () => {
-    await removeRecoveryEmail();
+    const result = await removeRecoveryEmail();
+    if ("error" in result) {
+      toast({ title: "Ошибка", description: result.error, variant: "destructive" });
+      return;
+    }
+
     setEmailInput("");
     setCodeInput("");
-    toast({ title: "Удалено", description: "Recovery Email отвязан." });
+    toast({ title: "Удалено", description: "Резервный email отвязан." });
   };
 
   return (
@@ -183,7 +198,7 @@ function RecoveryEmailPanel({ isDark }: { isDark: boolean }) {
       <div className="px-5 py-4">
         <div className="flex items-center gap-2 mb-1">
           <Mail className="w-4 h-4 text-muted-foreground" />
-          <p className="font-semibold">Recovery Email</p>
+          <p className="font-semibold">Резервный email</p>
           {recoveryEmail?.verified && (
             <CheckCircle2 className="w-4 h-4 text-green-500" />
           )}
@@ -194,7 +209,11 @@ function RecoveryEmailPanel({ isDark }: { isDark: boolean }) {
       </div>
 
       <div className="px-5 pb-5 grid gap-3">
-        {recoveryEmail ? (
+        {!user ? (
+          <div className={cn("rounded-xl border px-3 py-3 text-sm", isDark ? "border-white/10 text-white/70" : "border-white/20 text-white/70")}>
+            Войдите в аккаунт, чтобы привязать резервный email и управлять им.
+          </div>
+        ) : recoveryEmail ? (
           <div className={cn("rounded-xl border px-3 py-2 flex items-center justify-between gap-2", isDark ? "border-white/10" : "border-white/20")}>
             <div>
               <p className="text-sm font-medium">{recoveryEmail.email}</p>
@@ -211,7 +230,7 @@ function RecoveryEmailPanel({ isDark }: { isDark: boolean }) {
             <div className="flex gap-2">
               <Input
                 type="email"
-                placeholder="your@email.com"
+                placeholder="email@example.com"
                 value={emailInput}
                 onChange={(e) => setEmailInput(e.target.value)}
                 className="flex-1 h-9 text-sm"
@@ -240,7 +259,7 @@ function RecoveryEmailPanel({ isDark }: { isDark: boolean }) {
             )}
           </>
         )}
-        {error && (
+        {user && error && (
           <p className="text-xs text-destructive">{error}</p>
         )}
       </div>
@@ -262,7 +281,7 @@ export function SettingsPrivacySection({ isDark, currentScreen, onNavigate, onBa
     return (
       <>
         <SettingsHeader title={titles.privacy_blocked} isDark={isDark} currentScreen="privacy_blocked" onBack={onBack} onClose={onBack} />
-        <div className="flex-1 overflow-y-auto native-scroll pb-8">
+        <div className="flex-1 pb-8">
           <div className="px-4">
             <BlockedUsersPanel isDark={isDark} />
           </div>
@@ -283,7 +302,7 @@ export function SettingsPrivacySection({ isDark, currentScreen, onNavigate, onBa
   return (
     <>
       <SettingsHeader title={titles[currentScreen]} isDark={isDark} currentScreen={currentScreen} onBack={onBack} onClose={onBack} />
-      <div className="flex-1 overflow-y-auto native-scroll pb-8">
+      <div className="flex-1 pb-8">
         <PrivacySecurityCenter
           mode={modeMap[currentScreen]}
           isDark={isDark}

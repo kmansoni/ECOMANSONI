@@ -44,7 +44,7 @@ export function SettingsLanguageSection({ isDark, onBack }: SectionProps) {
         onBack={onBack}
         onClose={onBack}
       />
-      <div className="flex-1 overflow-y-auto native-scroll pb-8">
+      <div className="flex-1 pb-8">
         <div className="px-4 mb-3">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />

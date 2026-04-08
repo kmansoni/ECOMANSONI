@@ -12,24 +12,16 @@
  */
 
 import { useState, useEffect, useCallback } from "react";
-import { ArrowLeft, Archive, Plus, Eye, Clock, Loader2, Check } from "lucide-react";
+import { ArrowLeft, Archive, Plus, Clock, Loader2, Check } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { dbLoose } from "@/lib/supabase";
+import { supabase } from "@/integrations/supabase/client";
+import { listArchivedStories, type ArchivedStoryRecord } from "@/lib/story-archive";
 
-interface ArchivedStory {
-  id: string;
-  user_id: string;
-  media_url: string;
-  media_type: "image" | "video";
-  thumbnail_url: string | null;
-  created_at: string;
-  expires_at: string;
-  view_count: number;
-}
+type ArchivedStory = ArchivedStoryRecord;
 
 interface MonthGroup {
   label: string;
@@ -41,7 +33,6 @@ function groupByMonth(stories: ArchivedStory[]): MonthGroup[] {
   for (const story of stories) {
     const date = new Date(story.created_at);
     const key = `${date.getFullYear()}-${date.getMonth()}`;
-    const label = date.toLocaleDateString("ru", { month: "long", year: "numeric" });
     if (!map.has(key)) map.set(key, []);
     map.get(key)!.push(story);
   }
@@ -57,7 +48,6 @@ export default function StoryArchivePage() {
   const [stories, setStories] = useState<ArchivedStory[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedStory, setSelectedStory] = useState<ArchivedStory | null>(null);
-  const [archiveEnabled, setArchiveEnabled] = useState(true);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerStory, setPickerStory] = useState<ArchivedStory | null>(null);
   const [highlights, setHighlights] = useState<{ id: string; title: string; cover_url: string }[]>([]);
@@ -67,15 +57,12 @@ export default function StoryArchivePage() {
   const loadArchive = useCallback(async () => {
     if (!user?.id) return;
     setIsLoading(true);
-
-    const { data, error } = await dbLoose
-      .from("stories")
-      .select("id, user_id, media_url, media_type, thumbnail_url, created_at, expires_at, view_count")
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false });
-
-    if (!error && data) {
-      setStories(data as unknown as ArchivedStory[]);
+    try {
+      const rows = await listArchivedStories(user.id);
+      setStories(rows);
+    } catch (error) {
+      toast.error("Не удалось загрузить архив историй");
+      setStories([]);
     }
     setIsLoading(false);
   }, [user?.id]);
@@ -88,21 +75,21 @@ export default function StoryArchivePage() {
     setPickerStory(story);
     setPickerOpen(true);
     setHlLoading(true);
-    const { data } = await dbLoose
-      .from("story_highlights")
+    const { data } = await supabase
+      .from("highlights")
       .select("id, title, cover_url")
       .eq("user_id", user!.id)
       .order("position");
-    setHighlights((data as any[]) ?? []);
+    setHighlights((data ?? []) as { id: string; title: string; cover_url: string }[]);
     setHlLoading(false);
   };
 
   const handlePickHighlight = async (highlightId: string) => {
     if (!pickerStory) return;
     setAdding(highlightId);
-    const { error } = await dbLoose
+    const { error } = await supabase
       .from("highlight_stories")
-      .upsert({ highlight_id: highlightId, story_id: pickerStory.id }, { onConflict: "highlight_id,story_id" });
+      .upsert({ highlight_id: highlightId, story_id: pickerStory.story_id }, { onConflict: "highlight_id,story_id" });
     setAdding(null);
     if (error) {
       toast.error("Не удалось добавить");
@@ -126,19 +113,6 @@ export default function StoryArchivePage() {
           <h1 className="font-semibold">Архив историй</h1>
           <p className="text-xs text-muted-foreground">{stories.length} историй</p>
         </div>
-        {/* Настройка архива */}
-        <button
-          onClick={() => setArchiveEnabled(!archiveEnabled)}
-          className={cn(
-            "relative w-10 h-5 rounded-full transition-colors",
-            archiveEnabled ? "bg-primary" : "bg-muted"
-          )}
-        >
-          <div className={cn(
-            "absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform",
-            archiveEnabled ? "translate-x-5" : "translate-x-0.5"
-          )} />
-        </button>
       </div>
 
       {isLoading ? (
@@ -170,17 +144,24 @@ export default function StoryArchivePage() {
               <div className="grid grid-cols-3 gap-0.5">
                 {group.stories.map((story, i) => (
                   <motion.button
-                    key={story.id}
+                    key={story.story_id}
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     transition={{ delay: i * 0.02 }}
                     onClick={() => setSelectedStory(story)}
                     className="relative aspect-[9/16] overflow-hidden bg-muted"
                   >
-                    {story.thumbnail_url || story.media_type === "image" ? (
+                    {story.media_type === "image" && story.media_url ? (
                       <img
-                        src={story.thumbnail_url ?? story.media_url}
+                        src={story.media_url}
                         alt=""
+                        className="w-full h-full object-cover"
+                      />
+                    ) : story.media_url ? (
+                      <video
+                        src={story.media_url}
+                        muted
+                        playsInline
                         className="w-full h-full object-cover"
                       />
                     ) : (
@@ -193,14 +174,6 @@ export default function StoryArchivePage() {
                         {new Date(story.created_at).toLocaleDateString("ru", { day: "numeric", month: "short" })}
                       </span>
                     </div>
-
-                    {/* Просмотры */}
-                    {story.view_count > 0 && (
-                      <div className="absolute top-1 right-1 flex items-center gap-0.5 bg-black/60 rounded px-1 py-0.5">
-                        <Eye className="w-2.5 h-2.5 text-white" />
-                        <span className="text-white text-xs">{story.view_count}</span>
-                      </div>
-                    )}
 
                     {/* Видео индикатор */}
                     {story.media_type === "video" && (
@@ -248,10 +221,9 @@ export default function StoryArchivePage() {
                     day: "numeric", month: "long", year: "numeric"
                   })}
                 </p>
-                <div className="flex items-center gap-1 justify-center">
-                  <Eye className="w-3 h-3 text-white/70" />
-                  <span className="text-white/70 text-xs">{selectedStory.view_count} просмотров</span>
-                </div>
+                <p className="text-white/70 text-xs">
+                  Архивировано {new Date(selectedStory.archived_at).toLocaleDateString("ru")}
+                </p>
               </div>
               <div className="w-6" />
             </div>
@@ -306,7 +278,11 @@ export default function StoryArchivePage() {
                       disabled={adding === hl.id}
                       className="flex items-center gap-3 w-full p-3 rounded-xl hover:bg-zinc-800 transition-colors"
                     >
-                      <img src={hl.cover_url} alt="" className="w-12 h-12 rounded-full object-cover" />
+                      {hl.cover_url ? (
+                        <img src={hl.cover_url} alt="" className="w-12 h-12 rounded-full object-cover" />
+                      ) : (
+                        <div className="w-12 h-12 rounded-full bg-zinc-800" />
+                      )}
                       <span className="text-white flex-1 text-left">{hl.title}</span>
                       {adding === hl.id ? (
                         <Loader2 className="w-5 h-5 animate-spin text-zinc-400" />

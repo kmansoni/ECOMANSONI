@@ -295,9 +295,21 @@ export function useSmartFeed() {
 
       if (user) {
         try {
+          const { data: { session } } = await supabase.auth.getSession();
+
+          if (!session?.access_token) {
+            logger.warn('[useSmartFeed] session token unavailable, using public fallback');
+            const fallback = await fetchPublicFeedPage(cursor, PAGE_SIZE);
+            incoming = fallback.posts;
+            has_more = fallback.has_more;
+            next_cursor = fallback.next_cursor;
+          } else {
           const { data, error: fnError } = await supabase.functions.invoke<FeedResponse>(
             'get-feed-v2',
             {
+              headers: {
+                Authorization: `Bearer ${session.access_token}`,
+              },
               body: {
                 mode: effectiveMode,
                 page_size: PAGE_SIZE,
@@ -318,6 +330,7 @@ export function useSmartFeed() {
           incoming = data.posts;
           has_more = data.has_more;
           next_cursor = data.next_cursor;
+          }
         } catch (edgeError) {
           if (!isRecoverableEdgeFeedError(edgeError)) {
             throw edgeError;

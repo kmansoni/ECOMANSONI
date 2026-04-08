@@ -647,6 +647,21 @@
 				"chore: trigger sfu redeploy"
 			],
 			"isBackground": false
+		},
+		{
+			"label": "Deploy: Apply poll fix migration",
+			"type": "shell",
+			"command": "pwsh",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				"c:\\Users\\manso\\Desktop\\разработка\\your-ai-companion-main\\scripts\\apply-migration-via-api.ps1",
+				"-MigrationFile",
+				"c:\\Users\\manso\\Desktop\\разработка\\your-ai-companion-main\\supabase\\migrations\\20260406130000_fix_send_message_v1_restore_poll_kinds.sql"
+			],
+			"isBackground": false
 		}
 	]
 }

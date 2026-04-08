@@ -5,6 +5,8 @@ type SwitchAccountResponse = {
   ok: boolean;
 };
 
+const AUTH_SERVICE_BASE = (import.meta.env.VITE_AUTH_SERVICE_BASE_URL as string | undefined)?.replace(/\/$/, "") || "";
+
 export async function switchAccount(accountId: string): Promise<void> {
   const sessions = loadSessions();
   const target = sessions[accountId];
@@ -14,7 +16,11 @@ export async function switchAccount(accountId: string): Promise<void> {
 
   const device = loadOrCreateDeviceIdentity();
 
-  const res = await fetch("/v1/device/switch-account", {
+  const url = AUTH_SERVICE_BASE
+    ? `${AUTH_SERVICE_BASE}/v1/device/switch-account`
+    : "/v1/device/switch-account";
+
+  const res = await fetch(url, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({

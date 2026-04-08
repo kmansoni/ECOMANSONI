@@ -15,6 +15,18 @@ user-invocable: true
 - **Не выдумывай компоненты**: описывай только то что реально существует в коде
 - **Разделяй scope**: production/runtime отдельно от CI/build/dev
 - **Кратко для инженеров**: точная терминология, включай митигации и остаточные риски
+- **Zero Trust**: считай клиент злонамеренным, сеть враждебной, а misuse API — нормальным сценарием, который надо ломать на сервере
+- **Failure-first**: для каждой сильной рекомендации указывай как система деградирует, откатывается и наблюдается в продакшене
+
+## Обязательные архитектурные секции
+
+В каждом серьёзном security review отдельно проверь и отрази:
+
+- **Trust boundaries**: где заканчивается доверие между клиентом, Edge Function, Supabase, WS и storage
+- **Replay / idempotency**: можно ли безопасно повторить запрос и можно ли злоупотребить повтором
+- **Concurrency / race conditions**: что происходит при параллельных мутациях и повторных submit
+- **Rollback / migration safety**: как изменение откатывается и что будет в mixed-version состоянии
+- **Observability**: какими логами, метриками и алертами будет обнаружен провал защиты
 
 ## Чеклист для мессенджер-платформы
 
@@ -31,6 +43,7 @@ user-invocable: true
 - [ ] Authorization Bearer проверяется на КАЖДОМ endpoint
 - [ ] Input validation: все параметры проверены (тип, длина, диапазон)
 - [ ] Rate limiting реализован для публичных endpoint
+- [ ] Idempotency / replay protection есть для повторяемых POST/мутаций
 - [ ] Нет утечки stack trace / internal error в response
 - [ ] Content-Type проверяется при POST
 
@@ -48,6 +61,7 @@ user-invocable: true
 - [ ] Refresh token хранится безопасно
 - [ ] Роли (owner, admin, moderator, subscriber) проверяются через RLS, а не на клиенте
 - [ ] Multi-account: токены одного аккаунта изолированы от другого
+- [ ] Нет гонок между refresh / revoke / account-switch сценариями
 
 ### 5. E2EE (если применимо)
 - [ ] Приватные ключи никогда не покидают клиент
@@ -66,6 +80,12 @@ user-invocable: true
 - [ ] Подписки на каналы проверяют membership
 - [ ] Нет возможности подслушивать чужие каналы через Realtime
 - [ ] WebSocket signaling (calls-ws) проверяет JWT
+
+### 8. Устойчивость и эксплуатация
+- [ ] Replay / duplicate signaling события не ломают state machine
+- [ ] Есть стратегия rollback для security-sensitive changes
+- [ ] Есть наблюдаемость: audit logs, metrics, alerts или хотя бы явные точки контроля
+- [ ] Ошибки fail-closed, а не fail-open
 
 ## Приоритизация
 

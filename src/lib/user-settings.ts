@@ -286,41 +286,6 @@ export async function createBrandedPartnerRequest(
   if (error) throw error;
 }
 
-// ─── Close Friends ───────────────────────────────────────────────
-
-export type CloseFriend = {
-  id: string;
-  user_id: string;
-  friend_id: string;
-  created_at: string;
-};
-
-export async function listCloseFriends(userId: string): Promise<CloseFriend[]> {
-  const { data, error } = await supabaseAny
-    .from("close_friends")
-    .select("id, user_id, friend_id, created_at")
-    .eq("user_id", userId)
-    .order("created_at", { ascending: false });
-  if (error) throw error;
-  return (data ?? []) as unknown as CloseFriend[];
-}
-
-export async function addCloseFriend(userId: string, friendId: string): Promise<void> {
-  const { error } = await supabaseAny
-    .from("close_friends")
-    .insert({ user_id: userId, friend_id: friendId });
-  if (error) throw error;
-}
-
-export async function removeCloseFriend(userId: string, friendId: string): Promise<void> {
-  const { error } = await supabaseAny
-    .from("close_friends")
-    .delete()
-    .eq("user_id", userId)
-    .eq("friend_id", friendId);
-  if (error) throw error;
-}
-
 // ─── Screen Time ─────────────────────────────────────────────────
 
 export async function getScreenTimeToday(): Promise<number> {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, getErrorMessage } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -99,7 +99,7 @@ export function PrivacySecurityCenter({ mode, isDark, onOpenBlocked }: Props) {
       const data = await getOrCreatePrivacyRules(user.id);
       setRules(data);
     } catch (e) {
-      toast({ title: "Конфиденциальность", description: e instanceof Error ? e.message : String(e) });
+      toast({ title: "Конфиденциальность", description: getErrorMessage(e) });
     } finally {
       setLoading(false);
     }
@@ -111,7 +111,7 @@ export function PrivacySecurityCenter({ mode, isDark, onOpenBlocked }: Props) {
       const data = await getOrCreateUserSecuritySettings(user.id);
       setSecuritySettings(data);
     } catch (e) {
-      toast({ title: "Безопасность", description: e instanceof Error ? e.message : String(e) });
+      toast({ title: "Безопасность", description: getErrorMessage(e) });
     }
   }, [user?.id]);
 
@@ -121,7 +121,7 @@ export function PrivacySecurityCenter({ mode, isDark, onOpenBlocked }: Props) {
       const data = await listAuthorizedSites(user.id);
       setSites(data);
     } catch (e) {
-      toast({ title: "Сайты", description: e instanceof Error ? e.message : String(e) });
+      toast({ title: "Сайты", description: getErrorMessage(e) });
     }
   }, [user?.id]);
 
@@ -144,7 +144,7 @@ export function PrivacySecurityCenter({ mode, isDark, onOpenBlocked }: Props) {
       }
       setProfilesById(map);
     } catch (e) {
-      toast({ title: "Исключения", description: e instanceof Error ? e.message : String(e) });
+      toast({ title: "Исключения", description: getErrorMessage(e) });
     }
   }, [selectedRuleKey, user?.id]);
 
@@ -185,7 +185,7 @@ export function PrivacySecurityCenter({ mode, isDark, onOpenBlocked }: Props) {
         if (error) throw error;
         if (!cancelled) setSearchResults(data ?? []);
       } catch (e) {
-        if (!cancelled) toast({ title: "Поиск", description: e instanceof Error ? e.message : String(e) });
+        if (!cancelled) toast({ title: "Поиск", description: getErrorMessage(e) });
       }
     }, 300);
 

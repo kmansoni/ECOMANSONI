@@ -15,16 +15,12 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useNotifications, Notification } from "@/hooks/useNotifications";
+import { fallbackNameFromUserId } from "@/lib/chat/fallback-name-from-user-id";
 import { cn } from "@/lib/utils";
 
 interface NotificationsDrawerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-}
-
-function fallbackNameFromUserId(userId: string | undefined): string {
-  const id = String(userId || "").trim();
-  return id ? id.slice(0, 8) : "User";
 }
 
 const notificationIcons: Record<string, typeof Heart> = {

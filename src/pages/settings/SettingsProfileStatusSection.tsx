@@ -4,8 +4,8 @@
  * Extracted from SettingsPage.tsx — manages the "Стикеры и эмодзи" screen
  * (profile status emoji + status sticker upload).
  */
-import { useRef, useState } from "react";
-import { cn } from "@/lib/utils";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { cn, getErrorMessage } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -13,6 +13,7 @@ import { toast } from "@/hooks/use-toast";
 import { EmojiStickerPicker } from "@/components/chat/EmojiStickerPicker";
 import { StickersAndReactionsCenter } from "@/components/settings/StickersAndReactionsCenter";
 import { uploadMedia } from "@/lib/mediaUpload";
+import { logger } from "@/lib/logger";
 import { SettingsHeader } from "./helpers";
 import type { SectionProps } from "./types";
 
@@ -31,21 +32,36 @@ interface SettingsProfileStatusSectionProps extends SectionProps {
 export function SettingsProfileStatusSection({
   isDark,
   onBack,
+  initialProfile,
+  onProfileChange,
 }: SettingsProfileStatusSectionProps) {
   const { user } = useAuth();
   const isAuthed = !!user?.id;
 
-  const [profile, setProfile] = useState<ProfileStatusState | null>(null);
-  const [profileLoaded, setProfileLoaded] = useState(false);
+  const [profile, setProfile] = useState<ProfileStatusState | null>(initialProfile);
+  const [profileLoaded, setProfileLoaded] = useState(Boolean(initialProfile));
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const stickerInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Lazy-load profile on mount (self-contained — no prop dependency)
-  // We fetch fresh each time the screen opens so the user always sees current state.
-  if (!profileLoaded && isAuthed) {
+  const applyProfilePatch = useCallback((patch: Partial<ProfileStatusState>) => {
+    setProfile((prev) => ({ ...(prev ?? {}), ...patch }));
+    onProfileChange(patch);
+  }, [onProfileChange]);
+
+  useEffect(() => {
+    if (!initialProfile) return;
+    setProfile(initialProfile);
     setProfileLoaded(true);
+  }, [initialProfile]);
+
+  useEffect(() => {
+    if (!isAuthed || profileLoaded) return;
+
+    let cancelled = false;
+
     void (async () => {
+      setProfileLoaded(true);
       try {
         const res = await supabase
           .from("profiles")
@@ -54,22 +70,29 @@ export function SettingsProfileStatusSection({
           .maybeSingle();
 
         if (res.error) {
-          // status_emoji / status_sticker_url columns may not exist yet
           const msg = (res.error.message ?? "").toLowerCase();
           if (msg.includes("does not exist") || msg.includes("column")) {
-            setProfile({});
+            if (!cancelled) setProfile({});
             return;
           }
           throw res.error;
         }
-        setProfile(res.data ?? {});
-      } catch {
-        setProfile({});
+
+        if (!cancelled) {
+          setProfile(res.data ?? {});
+        }
+      } catch (error) {
+        logger.error("[SettingsProfileStatusSection] profile preload failed", { error, userId: user?.id });
+        if (!cancelled) setProfile({});
       }
     })();
-  }
 
-  const updateField = async (field: "status_emoji" | "status_sticker_url", value: string | null) => {
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthed, profileLoaded, user]);
+
+  const updateField = async (field: "status_emoji" | "status_sticker_url", value: string | null): Promise<boolean> => {
     if (!isAuthed) return;
     setSaving(true);
     try {
@@ -78,9 +101,11 @@ export function SettingsProfileStatusSection({
         .update({ [field]: value })
         .eq("user_id", user!.id);
       if (error) throw error;
-      setProfile((prev) => ({ ...(prev ?? {}), [field]: value }));
+      applyProfilePatch({ [field]: value });
+      return true;
     } catch (e) {
-      toast({ title: "Статус", description: e instanceof Error ? e.message : String(e) });
+      toast({ title: "Статус", description: getErrorMessage(e) });
+      return false;
     } finally {
       setSaving(false);
     }
@@ -95,7 +120,7 @@ export function SettingsProfileStatusSection({
         onBack={onBack}
         onClose={onBack}
       />
-      <div className="flex-1 overflow-y-auto native-scroll pb-8">
+      <div className="flex-1 pb-8">
         <StickersAndReactionsCenter userId={user?.id ?? null} isDark={isDark} />
         <div className="px-4 grid gap-3">
           {/* Status emoji */}
@@ -202,9 +227,9 @@ export function SettingsProfileStatusSection({
                         .eq("user_id", user!.id);
                       if (updError) throw updError;
 
-                      setProfile((prev) => ({ ...(prev ?? {}), status_sticker_url: publicUrl }));
-                    } catch {
-                      toast({ title: "Стикер", description: "Не удалось загрузить стикер. Попробуйте снова." });
+                      applyProfilePatch({ status_sticker_url: publicUrl });
+                    } catch (e) {
+                      toast({ title: "Стикер", description: getErrorMessage(e) || "Не удалось загрузить стикер. Попробуйте снова." });
                     } finally {
                       setSaving(false);
                       e.currentTarget.value = "";
@@ -220,20 +245,9 @@ export function SettingsProfileStatusSection({
           open={emojiPickerOpen}
           onOpenChange={setEmojiPickerOpen}
           onEmojiSelect={async (emoji) => {
-            if (!isAuthed) return;
-            setSaving(true);
-            try {
-              const { error } = await supabase
-                .from("profiles")
-                .update({ status_emoji: emoji })
-                .eq("user_id", user!.id);
-              if (error) throw error;
-              setProfile((prev) => ({ ...(prev ?? {}), status_emoji: emoji }));
+            const updated = await updateField("status_emoji", emoji);
+            if (updated) {
               setEmojiPickerOpen(false);
-            } catch (e) {
-              toast({ title: "Эмодзи", description: e instanceof Error ? e.message : String(e) });
-            } finally {
-              setSaving(false);
             }
           }}
         />

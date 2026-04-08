@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import { CartesianGrid, Line, LineChart, XAxis, YAxis, Bar, BarChart, ResponsiveContainer } from "recharts";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
-import { cn } from "@/lib/utils";
+import { cn, getErrorMessage } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
@@ -96,7 +96,7 @@ export function SettingsStatisticsSection({
       const data = await getCreatorInsights(30);
       setCreatorInsights(data);
     } catch (e) {
-      toast({ title: "Статистика", description: e instanceof Error ? e.message : String(e) });
+      toast({ title: "Статистика", description: getErrorMessage(e) });
     } finally {
       insightsLoadingRef.current = false;
       setCreatorInsightsLoading(false);
@@ -122,7 +122,7 @@ export function SettingsStatisticsSection({
       if (error) throw error;
       setReels(data ?? []);
     } catch (e) {
-      toast({ title: "Контент", description: e instanceof Error ? e.message : String(e) });
+      toast({ title: "Контент", description: getErrorMessage(e) });
     } finally {
       setReelsLoading(false);
     }
@@ -171,7 +171,7 @@ export function SettingsStatisticsSection({
     return (
       <>
         {renderHeader("Статистика")}
-        <div className="flex-1 overflow-y-auto native-scroll pb-8">
+        <div className="flex-1 pb-8">
           <div className={cn(
             "mx-4 backdrop-blur-xl rounded-2xl border overflow-hidden",
             isDark ? "settings-dark-card" : "bg-card/80 border-white/20",
@@ -187,7 +187,7 @@ export function SettingsStatisticsSection({
                     const data = await getCreatorInsights(30);
                     setCreatorInsights(data);
                   } catch (e) {
-                    toast({ title: "Статистика", description: e instanceof Error ? e.message : String(e) });
+                    toast({ title: "Статистика", description: getErrorMessage(e) });
                   } finally {
                     setCreatorInsightsLoading(false);
                   }
@@ -218,7 +218,7 @@ export function SettingsStatisticsSection({
                     const data = await getCreatorInsights(30);
                     setCreatorInsights(data);
                   } catch (e) {
-                    toast({ title: "Подписчики", description: e instanceof Error ? e.message : String(e) });
+                    toast({ title: "Подписчики", description: getErrorMessage(e) });
                   } finally {
                     setFollowersGenderLoading(false);
                   }
@@ -244,7 +244,7 @@ export function SettingsStatisticsSection({
     return (
       <>
         {renderHeader("Рекомендации")}
-        <div className="flex-1 overflow-y-auto native-scroll pb-8">
+        <div className="flex-1 pb-8">
           <div className="px-5 pt-2 pb-4">
             <p className={cn("text-sm", isDark ? "text-white/60" : "text-white/70")}>
               Посмотрите рекомендации прямо из первоисточника, которые помогут вам творить, развиваться и процветать.
@@ -311,7 +311,7 @@ export function SettingsStatisticsSection({
             <RefreshCw className={cn("w-4 h-4", creatorInsightsLoading && "animate-spin")} />
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto native-scroll pb-10">
+        <div className="flex-1 pb-10">
           <div className="px-5 pt-2 pb-4">
             <p className={cn("text-2xl font-semibold", isDark ? "text-white" : "text-white")}>У вас был удачный период!</p>
             <p className={cn("text-sm mt-2", isDark ? "text-white/60" : "text-white/70")}>
@@ -449,7 +449,7 @@ export function SettingsStatisticsSection({
     return (
       <>
         {renderHeader("Контент")}
-        <div className="flex-1 overflow-y-auto native-scroll pb-8">
+        <div className="flex-1 pb-8">
           {/* Content filter pills */}
           <div className="px-4 pt-2 pb-3 flex gap-2">
             {(["all", "30d"] as const).map((f) => (
@@ -585,7 +585,7 @@ export function SettingsStatisticsSection({
             <RefreshCw className={cn("w-4 h-4", creatorInsightsLoading && "animate-spin")} />
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto native-scroll pb-8">
+        <div className="flex-1 pb-8">
           <div className="px-4 pt-2 pb-3 flex items-center justify-between">
             <div className={cn(
               "px-4 py-2 rounded-full text-sm",

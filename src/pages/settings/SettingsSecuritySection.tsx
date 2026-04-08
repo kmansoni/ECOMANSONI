@@ -85,7 +85,7 @@ export function SettingsSecuritySection({
       if (error) throw error;
       setMfaFactors([...(data?.all ?? [])]);
     } catch (e) {
-      toast({ title: "2FA", description: e instanceof Error ? e.message : String(e) });
+      toast({ title: "2FA", description: getErrorMessage(e) });
     } finally {
       setMfaLoading(false);
     }
@@ -108,7 +108,7 @@ export function SettingsSecuritySection({
     return (
       <>
         <SettingsHeader title="Безопасность" isDark={isDark} currentScreen="security" onBack={onBack} onClose={onBack} />
-        <div className="flex-1 overflow-y-auto native-scroll">
+        <div className="flex-1">
           <div className={cn("mx-4", cardCls)}>
             <SettingsMenuItem icon={<Key className={iconCls} />} label="Код-пароль" isDark={isDark} onClick={() => onNavigate("security_passcode")} />
             <SettingsMenuItem icon={<Shield className={iconCls} />} label="Облачный пароль" isDark={isDark} onClick={() => onNavigate("security_cloud_password")} />
@@ -131,7 +131,7 @@ export function SettingsSecuritySection({
     return (
       <>
         <SettingsHeader title="Сайты" isDark={isDark} currentScreen="security_sites" onBack={onBack} onClose={onBack} />
-        <div className="flex-1 overflow-y-auto native-scroll pb-8">
+        <div className="flex-1 pb-8">
           <PrivacySecurityCenter mode="sites" isDark={isDark} />
         </div>
       </>
@@ -143,7 +143,7 @@ export function SettingsSecuritySection({
     return (
       <>
         <SettingsHeader title="Код-пароль" isDark={isDark} currentScreen="security_passcode" onBack={onBack} onClose={onBack} />
-        <div className="flex-1 overflow-y-auto native-scroll pb-8">
+        <div className="flex-1 pb-8">
           <PrivacySecurityCenter mode="passcode" isDark={isDark} />
         </div>
       </>
@@ -155,7 +155,7 @@ export function SettingsSecuritySection({
     return (
       <>
         <SettingsHeader title="Облачный пароль" isDark={isDark} currentScreen="security_cloud_password" onBack={onBack} onClose={onBack} />
-        <div className="flex-1 overflow-y-auto native-scroll pb-8">
+        <div className="flex-1 pb-8">
           <PrivacySecurityCenter mode="cloud_password" isDark={isDark} />
         </div>
       </>
@@ -167,7 +167,7 @@ export function SettingsSecuritySection({
     return (
       <>
         <SettingsHeader title="Защита аккаунта" isDark={isDark} currentScreen="security_account_protection" onBack={onBack} onClose={onBack} />
-        <div className="flex-1 overflow-y-auto native-scroll pb-8">
+        <div className="flex-1 pb-8">
           <PrivacySecurityCenter mode="account_protection" isDark={isDark} />
         </div>
       </>
@@ -179,7 +179,7 @@ export function SettingsSecuritySection({
     return (
       <>
         <SettingsHeader title="Активные сеансы" isDark={isDark} currentScreen="security_sessions" onBack={onBack} onClose={onBack} />
-        <div className="flex-1 overflow-y-auto native-scroll pb-8">
+        <div className="flex-1 pb-8">
           <div className="px-4">
             <div className={cardCls}>
               <div className="px-5 py-4">
@@ -308,7 +308,7 @@ export function SettingsSecuritySection({
   return (
     <>
       <SettingsHeader title="Двухфакторная аутентификация" isDark={isDark} currentScreen="security_2fa" onBack={onBack} onClose={onBack} />
-      <div className="flex-1 overflow-y-auto native-scroll pb-8">
+      <div className="flex-1 pb-8">
         <div className="px-4">
           <div className={cardCls}>
             <div className="px-5 py-4">
@@ -336,7 +336,7 @@ export function SettingsSecuritySection({
                       setMfaCode("");
                       setMfaChallengeId(null);
                     } catch (e) {
-                      toast({ title: "2FA", description: e instanceof Error ? e.message : String(e) });
+                      toast({ title: "2FA", description: getErrorMessage(e) });
                     } finally {
                       setMfaLoading(false);
                     }
@@ -432,7 +432,7 @@ export function SettingsSecuritySection({
                           setMfaChallengeId(null);
                           await loadMfaState();
                         } catch (e) {
-                          toast({ title: "2FA", description: e instanceof Error ? e.message : String(e) });
+                          toast({ title: "2FA", description: getErrorMessage(e) });
                         } finally {
                           setMfaLoading(false);
                         }
@@ -475,7 +475,7 @@ export function SettingsSecuritySection({
                       toast({ title: "2FA", description: "2FA отключена." });
                       await loadMfaState();
                     } catch (e) {
-                      toast({ title: "2FA", description: e instanceof Error ? e.message : String(e) });
+                      toast({ title: "2FA", description: getErrorMessage(e) });
                     } finally {
                       setMfaLoading(false);
                     }

@@ -25,7 +25,7 @@ export function SettingsAccessibilitySection({ isDark, onBack }: SectionProps) {
         onBack={onBack}
         onClose={onBack}
       />
-      <div className="flex-1 overflow-y-auto native-scroll">
+      <div className="flex-1">
         <div
           className={cn(
             "mx-4 backdrop-blur-xl rounded-2xl border overflow-hidden",

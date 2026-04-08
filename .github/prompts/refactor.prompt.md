@@ -1,6 +1,6 @@
 ---
-description: "Рефакторинг и декомпозиция: анализ → план → реализация → review → верификация"
-agent: orchestrator
+description: "Рефакторинг и декомпозиция через канонический режим Mansoni: анализ → план → реализация → review → верификация"
+agent: mansoni
 ---
 
 # Рефакторинг
@@ -9,6 +9,9 @@ agent: orchestrator
 
 ## Входные данные
 - **Scope**: ${input:Что рефакторить — файл, компонент, модуль или описание проблемы}
+
+## Runtime bootstrap
+- Сразу в начале установи workflow context: `node .claude/helpers/workflow-context.cjs workflow refactor`
 
 ## Обязательные шаги
 
@@ -22,7 +25,7 @@ agent: orchestrator
 - 3 подхода: минимальный / чистый / прагматичный
 - Таблица компромиссов
 - Рекомендация с обоснованием
-- **Жди подтверждения от пользователя**
+- Если задача не двусмысленна, переходи к реализации без дополнительного подтверждения
 
 ### 3. Реализация
 - Следуй выбранному подходу
@@ -36,4 +39,7 @@ agent: orchestrator
 
 ### 5. Верификация
 - `npx tsc -p tsconfig.app.json --noEmit` → 0 ошибок
+- Зафиксируй evidence typecheck: `node .claude/helpers/workflow-context.cjs evidence tsc "tsc ok after refactor"`
+- Зафиксируй evidence сохранения поведения: `node .claude/helpers/workflow-context.cjs evidence manual "public api and behavior preserved"`
+- После подтверждения, что поведение сохранено, зафиксируй review verdict: `node .claude/helpers/workflow-context.cjs review-verdict PASS`
 - Итог: что изменено, сколько строк до/после, что улучшено

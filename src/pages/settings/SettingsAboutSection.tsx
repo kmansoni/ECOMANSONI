@@ -18,7 +18,7 @@ export function SettingsAboutSection({ isDark, onNavigate: _onNavigate, onBack }
         onBack={onBack}
         onClose={onBack}
       />
-      <div className="flex-1 overflow-y-auto native-scroll">
+      <div className="flex-1">
         <div className="p-8 flex flex-col items-center">
           <div
             className={cn(

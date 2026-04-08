@@ -1,0 +1,4 @@
+- После миграции `20260319110000_unify_call_tables_v1.sql` `public.video_calls` стал VIEW над `public.calls`, где `c.state AS status`.
+- Realtime подписки для звонков должны слушать физическую таблицу `calls`, а не view `video_calls`, иначе входящие/завершённые/принятые звонки могут не обновлять UI.
+- Для realtime payload нужна нормализация `status: row.state ?? row.status`, потому что из `calls` приходит поле `state`.
+- Активные runtime-хуки, где это критично: `src/hooks/useIncomingCalls.ts`, `src/hooks/useVideoCallSfu.ts`, `src/hooks/useVideoCall.ts`, `src/hooks/useCallHistory.tsx`.

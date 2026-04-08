@@ -34,7 +34,7 @@ Push/PR → Lint → Typecheck → Unit Tests → Integration Tests
 
 ## 4.2 GitHub Actions Workflow
 
-Файл: `.github/workflows/email-router.yml`
+Отдельный workflow-файл для `email-router` в текущем репозитории не хранится. Ниже приведён референсный шаблон CI/CD для `services/email-router`, который должен встраиваться в актуальные workflow из `.github/workflows/`.
 
 ```yaml
 name: Email Router CI/CD
@@ -406,7 +406,7 @@ docker run --rm \
 Для тестового запуска в CI используются специальные тестовые значения:
 
 ```bash
-# .github/workflows/email-router.yml (env секция jobs.test)
+# reference workflow snippet (env секция jobs.test)
 NODE_ENV: test
 DATABASE_URL: postgres://emailuser:testpassword@localhost:5432/emaildb_test
 REDIS_URL: redis://localhost:6379
@@ -555,7 +555,7 @@ curl -s http://localhost:3100/ready | jq .
 
 ```bash
 # Посмотреть историю деплоев в GitHub Actions
-# https://github.com/org/repo/actions/workflows/email-router.yml
+# Откройте актуальный workflow из .github/workflows/ для текущего репозитория
 
 # Или через Docker history
 docker image history ghcr.io/org/email-router:main --format "{{.CreatedAt}} {{.Comment}}"

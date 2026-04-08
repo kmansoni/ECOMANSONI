@@ -144,6 +144,7 @@ C4Context
 | Раздел | Путь | Описание |
 |---|---|---|
 | **Архитектура системы** | [`architecture/`](architecture/README.md) | C4 Model (Context, Container, Component), паттерны, деплоймент |
+| **Ruflo Inside Mansoni** | [`architecture/RUFLO_INSIDE_MANSONI.md`](architecture/RUFLO_INSIDE_MANSONI.md) | Каноническая схема гибрида: Ruflo как runtime, Mansoni как policy/domain layer |
 | **Ядро оркестратора** | [`orchestrator-core/`](orchestrator-core/README.md) | Алгоритм декомпозиции, планировщик, маршрутизатор |
 | **Рой агентов** | [`agents/`](agents/README.md) | Роли агентов, протоколы взаимодействия, специализации |
 | **Терминальные навыки** | [`terminal-skills/`](terminal-skills/README.md) | Выполнение команд, sandbox, управление процессами |
@@ -166,6 +167,7 @@ C4Context
 | Раздел | Готовность | Статус |
 |---|---|---|
 | [architecture/](architecture/README.md) | 100% | ✅ Готово |
+| [architecture/RUFLO_INSIDE_MANSONI.md](architecture/RUFLO_INSIDE_MANSONI.md) | 100% | ✅ Готово |
 | [context-window/](context-window/README.md) | 100% | ✅ Готово |
 | [orchestrator-core/](orchestrator-core/README.md) | 100% | ✅ Готово |
 | [agents/](agents/README.md) | 100% | ✅ Готово |

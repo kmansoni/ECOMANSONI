@@ -9,6 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
+import { listArchivedStories } from "@/lib/story-archive";
 import { SettingsHeader, SettingsMenuItem, SettingsPostsList } from "./helpers";
 import type { SectionProps, SettingsPostItem, SettingsStoryItem, SettingsLiveArchiveItem } from "./types";
 
@@ -24,13 +25,6 @@ interface PostRow {
   likes_count: number | null;
   comments_count: number | null;
   post_media: PostMediaRow[] | null;
-}
-
-interface StoryArchiveRow {
-  id: string;
-  media_url: string | null;
-  created_at: string;
-  archived_at: string | null;
 }
 
 interface ArchivedPostRefRow {
@@ -51,11 +45,6 @@ interface QueryResult<T> {
   error: unknown;
 }
 
-interface StoriesQuery {
-  eq(column: string, value: unknown): StoriesQuery;
-  order(column: string, options: { ascending: boolean }): Promise<QueryResult<StoryArchiveRow>>;
-}
-
 interface LiveSessionsQuery {
   eq(column: string, value: unknown): LiveSessionsQuery;
   not(column: string, operator: string, value: unknown): LiveSessionsQuery;
@@ -64,7 +53,6 @@ interface LiveSessionsQuery {
 }
 
 interface LightweightArchiveClient {
-  from(table: "stories"): { select(columns: string): StoriesQuery };
   from(table: "live_sessions"): { select(columns: string): LiveSessionsQuery };
 }
 
@@ -111,19 +99,15 @@ export function SettingsArchiveSection({ isDark, currentScreen, onNavigate, onBa
     if (!user?.id) return;
     setStoriesLoading(true);
     try {
-      const archiveClient = supabase as unknown as LightweightArchiveClient;
-      const { data, error } = await archiveClient
-        .from("stories")
-        .select("id, media_url, created_at, archived_at")
-        .eq("user_id", user.id)
-        .eq("is_archived", true)
-        .order("archived_at", { ascending: false });
-      if (error) throw error;
-      const rows = data ?? [];
-      setStories(rows.map((r) => ({
-        id: String(r.id), media_url: r.media_url ?? null,
-        created_at: r.created_at, archived_at: r.archived_at ?? null,
-      })));
+      const rows = await listArchivedStories(user.id);
+      setStories(rows.map((row) => {
+        return {
+          id: String(row.story_id),
+          media_url: row.media_url ?? null,
+          created_at: row.created_at,
+          archived_at: row.archived_at ?? null,
+        };
+      }));
     } catch (e) {
       toast({ title: "Архив историй", description: getErrorMessage(e) });
     } finally { setStoriesLoading(false); }
@@ -175,7 +159,7 @@ export function SettingsArchiveSection({ isDark, currentScreen, onNavigate, onBa
     return (
       <>
         <SettingsHeader title="Архив историй" isDark={isDark} currentScreen="archive_stories" onBack={onBack} onClose={onBack} />
-        <div className="flex-1 overflow-y-auto native-scroll pb-8">
+        <div className="flex-1 pb-8">
           <div className="px-4">
             <div className={cn("backdrop-blur-xl rounded-2xl border overflow-hidden", isDark ? "settings-dark-card" : "bg-card/80 border-white/20")}>
               <div className="px-5 py-4">
@@ -216,7 +200,7 @@ export function SettingsArchiveSection({ isDark, currentScreen, onNavigate, onBa
     return (
       <>
         <SettingsHeader title="Архив постов" isDark={isDark} currentScreen="archive_posts" onBack={onBack} onClose={onBack} />
-        <div className="flex-1 overflow-y-auto native-scroll pb-8">
+        <div className="flex-1 pb-8">
           <div className="px-4">
             <div className={cn("backdrop-blur-xl rounded-2xl border overflow-hidden", isDark ? "settings-dark-card" : "bg-card/80 border-white/20")}>
               <div className="px-5 py-4">
@@ -235,7 +219,7 @@ export function SettingsArchiveSection({ isDark, currentScreen, onNavigate, onBa
     return (
       <>
         <SettingsHeader title="Архив трансляций" isDark={isDark} currentScreen="archive_live" onBack={onBack} onClose={onBack} />
-        <div className="flex-1 overflow-y-auto native-scroll pb-8">
+        <div className="flex-1 pb-8">
           <div className="px-4">
             <div className={cn("backdrop-blur-xl rounded-2xl border overflow-hidden", isDark ? "settings-dark-card" : "bg-card/80 border-white/20")}>
               <div className="px-5 py-4">
@@ -270,7 +254,7 @@ export function SettingsArchiveSection({ isDark, currentScreen, onNavigate, onBa
   return (
     <>
       <SettingsHeader title="Архив" isDark={isDark} currentScreen="archive" onBack={onBack} onClose={onBack} />
-      <div className="flex-1 overflow-y-auto native-scroll">
+      <div className="flex-1">
         <div className={cn("mx-4 backdrop-blur-xl rounded-2xl border overflow-hidden", isDark ? "settings-dark-card" : "bg-card/80 border-white/20")}>
           <SettingsMenuItem
             icon={<Archive className={cn("w-5 h-5", isDark ? "text-white/60" : "text-muted-foreground")} />}

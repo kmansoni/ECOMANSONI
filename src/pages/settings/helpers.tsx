@@ -125,13 +125,40 @@ interface PostsListProps {
   isDark: boolean;
 }
 
+function SettingsPostThumbnail({ mediaUrl, title, isDark }: { mediaUrl: string | null | undefined; title: string; isDark: boolean }) {
+  const [broken, setBroken] = React.useState(false);
+
+  if (!mediaUrl || broken) {
+    return (
+      <div
+        className={cn(
+          "w-full h-full flex items-center justify-center text-xs text-center px-2",
+          isDark ? "text-white/50 bg-white/5" : "text-white/70 bg-muted/60",
+        )}
+      >
+        Нет медиа
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={mediaUrl}
+      alt={title}
+      className="w-full h-full object-cover"
+      loading="lazy"
+      onError={() => setBroken(true)}
+    />
+  );
+}
+
 export function SettingsPostsList({ rows, loading, emptyText, isDark }: PostsListProps): React.ReactElement {
   const navigate = useNavigate();
 
   if (loading) {
     return (
       <p className={cn("px-5 py-4 text-sm", isDark ? "text-white/60" : "text-white/70")}>
-        Loading...
+        Загрузка...
       </p>
     );
   }
@@ -161,19 +188,15 @@ export function SettingsPostsList({ rows, loading, emptyText, isDark }: PostsLis
               isDark ? "border-white/10" : "border-white/20",
             )}
           >
-            {post.media_url ? (
-              <img src={post.media_url} alt="post" className="w-full h-full object-cover" />
-            ) : (
-              <div
-                className={cn("w-full h-full grid place-items-center text-xs", isDark ? "text-white/50" : "text-white/70")}
-              >
-                No media
-              </div>
-            )}
+            <SettingsPostThumbnail
+              mediaUrl={post.media_url}
+              title={post.content?.trim() || "Публикация без текста"}
+              isDark={isDark}
+            />
           </div>
           <div className="min-w-0 flex-1">
             <p className={cn("font-medium truncate", isDark ? "text-white" : "text-white")}>
-              {post.content?.trim() || "Post without text"}
+              {post.content?.trim() || "Публикация без текста"}
             </p>
             <p className={cn("text-xs mt-1", isDark ? "text-white/60" : "text-white/70")}>
               {new Date(post.created_at).toLocaleDateString("ru-RU")} · ❤ {post.likes_count ?? 0} · 💬{" "}

@@ -2,22 +2,37 @@
  * src/hooks/useRecoveryEmail.ts
  * Hook for Recovery Email (2FA backup): send code, verify, get, remove.
  */
-import { useState, useCallback } from "react";
+import { useCallback, useState } from "react";
+import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
+import { logger } from "@/lib/logger";
+import { getErrorMessage } from "@/lib/utils";
 
 export interface RecoveryEmailInfo {
   email: string;
   verified: boolean;
 }
 
+export type RecoveryEmailActionResult =
+  | { ok: true }
+  | { ok: false; error: string };
+
 export function useRecoveryEmail() {
+  const { user } = useAuth();
   const [recoveryEmail, setRecoveryEmailState] = useState<RecoveryEmailInfo | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [codeSent, setCodeSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const fail = useCallback((message: string): RecoveryEmailActionResult => {
+    setError(message);
+    return { ok: false, error: message };
+  }, []);
+
   /** Send verification code to the given email */
-  const setRecoveryEmail = useCallback(async (email: string): Promise<boolean> => {
+  const setRecoveryEmail = useCallback(async (email: string): Promise<RecoveryEmailActionResult> => {
+    if (!user?.id) return fail("Необходимо войти в аккаунт.");
+
     setIsLoading(true);
     setError(null);
     try {
@@ -28,52 +43,35 @@ export function useRecoveryEmail() {
       const data = res.data as { success?: boolean; error?: string };
       if (data?.error) throw new Error(data.error);
       setCodeSent(true);
-      return true;
+      return { ok: true };
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-      return false;
+      const message = getErrorMessage(err);
+      logger.error("[useRecoveryEmail] send-code failed", { userId: user.id, error: err });
+      return fail(message);
     } finally {
       setIsLoading(false);
     }
-  }, []);
-
-  /** Verify the 6-digit code received by email */
-  const verifyCode = useCallback(async (code: string): Promise<boolean> => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const res = await supabase.functions.invoke("recovery-email", {
-        body: { action: "verify", code },
-      });
-      if (res.error) throw new Error(res.error.message ?? "Verification failed");
-      const data = res.data as { success?: boolean; verified?: boolean; error?: string };
-      if (data?.error) throw new Error(data.error);
-      setCodeSent(false);
-      // Refresh local state
-      await getRecoveryEmail();
-      return true;
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-      return false;
-    } finally {
-      setIsLoading(false);
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [fail, user?.id]);
 
   /** Get current recovery email status from DB */
   const getRecoveryEmail = useCallback(async (): Promise<RecoveryEmailInfo | null> => {
+    if (!user?.id) {
+      setRecoveryEmailState(null);
+      setCodeSent(false);
+      setError(null);
+      return null;
+    }
+
     setIsLoading(true);
     setError(null);
     try {
       const { data, error: dbError } = await supabase
         .from("recovery_emails")
         .select("email, verified")
-        .single();
+        .eq("user_id", user.id)
+        .maybeSingle();
 
-      if (dbError && dbError.code !== "PGRST116") {
-        // PGRST116 = no rows
-        throw dbError;
-      }
+      if (dbError) throw dbError;
 
       if (!data) {
         setRecoveryEmailState(null);
@@ -87,32 +85,63 @@ export function useRecoveryEmail() {
       setRecoveryEmailState(info);
       return info;
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      const message = getErrorMessage(err);
+      logger.error("[useRecoveryEmail] getRecoveryEmail failed", { userId: user.id, error: err });
+      setError(message);
       return null;
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [user?.id]);
 
-  /** Remove recovery email entirely */
-  const removeRecoveryEmail = useCallback(async (): Promise<boolean> => {
+  /** Verify the 6-digit code received by email */
+  const verifyCode = useCallback(async (code: string): Promise<RecoveryEmailActionResult> => {
+    if (!user?.id) return fail("Необходимо войти в аккаунт.");
+
     setIsLoading(true);
     setError(null);
     try {
-      const { error: dbError } = await supabase.from("recovery_emails").delete().neq("user_id", "");
-      // The RLS ensures only own row is deleted; .neq filter is a non-restrictive pass-through
-      // since we need at least one filter for PostgREST
-      if (dbError) throw dbError;
-      setRecoveryEmailState(null);
+      const res = await supabase.functions.invoke("recovery-email", {
+        body: { action: "verify", code },
+      });
+      if (res.error) throw new Error(res.error.message ?? "Verification failed");
+      const data = res.data as { success?: boolean; verified?: boolean; error?: string };
+      if (data?.error) throw new Error(data.error);
       setCodeSent(false);
-      return true;
+      await getRecoveryEmail();
+      return { ok: true };
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-      return false;
+      const message = getErrorMessage(err);
+      logger.error("[useRecoveryEmail] verify-code failed", { userId: user.id, error: err });
+      return fail(message);
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [fail, getRecoveryEmail, user?.id]);
+
+  /** Remove recovery email entirely */
+  const removeRecoveryEmail = useCallback(async (): Promise<RecoveryEmailActionResult> => {
+    if (!user?.id) return fail("Необходимо войти в аккаунт.");
+
+    setIsLoading(true);
+    setError(null);
+    try {
+      const { error: dbError } = await supabase
+        .from("recovery_emails")
+        .delete()
+        .eq("user_id", user.id);
+      if (dbError) throw dbError;
+      setRecoveryEmailState(null);
+      setCodeSent(false);
+      return { ok: true };
+    } catch (err) {
+      const message = getErrorMessage(err);
+      logger.error("[useRecoveryEmail] removeRecoveryEmail failed", { userId: user.id, error: err });
+      return fail(message);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [fail, user?.id]);
 
   return {
     recoveryEmail,

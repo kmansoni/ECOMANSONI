@@ -43,6 +43,8 @@ user-invocable: true
 ### Фаза 3: SuperApp-специфические проверки
 Touch targets, dark mode, accessibility, performance UX.
 
+Если scope UI-центричный, дополнительно включай семантическую проверку: интерактивы должны быть на `<button>`, навигация на `<nav>`, основные секции на `<main>`/`<section>`/`<article>`, а не на декоративных `div`.
+
 ### Фаза 4: Вердикт и отчёт
 Выставь оценку по каждому направлению и общий вердикт.
 
@@ -215,6 +217,13 @@ Touch targets, dark mode, accessibility, performance UX.
 | Keyboard navigation | Все действия доступны через Tab + Enter/Space | Ищи `onClick` без `onKeyDown` на не-button элементах (`div`, `span`) |
 | Screen reader | Динамический контент объявляется через `aria-live` | Ищи toast/notification без `role="alert"` или `aria-live` |
 | Semantic HTML | Используются `<button>`, `<nav>`, `<main>`, `<article>`, не `<div onClick>` | Ищи `<div onClick=` или `<span onClick=` без `role="button"` |
+
+### Semantic HTML Pass
+
+- [ ] Нет `div`/`span` с кликом там, где должен быть `<button>`
+- [ ] Landmark-структура страницы читается screen reader-ом
+- [ ] Заголовки идут без скачков уровня (`h1` → `h3` без причины = ошибка)
+- [ ] Иконка без текста получает `aria-label`, а не только tooltip
 
 ### Performance UX
 

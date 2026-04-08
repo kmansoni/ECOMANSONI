@@ -48,19 +48,43 @@ services/       — Standalone сервисы (notification-router, email-router
 scripts/        — CI/CD, деплой, утилиты
 ```
 
-## Система агентов
+## Рой агентов (Swarm Architecture)
 
-Проект использует специализированных агентов с многопроходным пайплайном:
+33 агента работают как единый рой с общим мозгом (`/memories/session/swarm/`).
+Протокол: `.github/skills/swarm-protocol/SKILL.md`
+
+### Ядро
 
 | Агент | Роль |
 |---|---|
-| **orchestrator** | Автономный маршрутизатор — полные права на код, терминал, файлы, MCP. НЕ спрашивает подтверждений |
-| **architect** | Проектирование архитектуры, исследование аналогов, спецификации |
-| **codesmith** | Production-ready реализация по спецификации |
-| **review** | Аудит кода: 8 направлений, confidence scoring 0-100 |
-| **debug** | Систематическая диагностика: REPRODUCE → ISOLATE → ROOT CAUSE → FIX → VERIFY |
-| **ask** | Ответы на вопросы с полным контекстом из реального кода |
-| **Explore** | Быстрое исследование кодовой базы (read-only) |
+| **mansoni** | Основной агент проекта. Каноническая точка входа в режим `mansoni-core`: Ruflo-first orchestration + skills Mansoni + quality gates |
+| **mansoni-core** | Явный алиас усиленного core-режима для ручного выбора в picker |
+
+### Специалисты (10)
+
+| Агент | Роль |
+|---|---|
+| **mansoni-architect** | Проектирование архитектуры, спецификации, ADR |
+| **mansoni-coder** | Production-ready реализация по спецификации |
+| **mansoni-debugger** | REPRODUCE → ISOLATE → ROOT CAUSE → FIX → VERIFY |
+| **mansoni-devops** | CI/CD, деплой, мониторинг, Supabase CLI |
+| **mansoni-researcher** | Read-only исследование кодовой базы и доменов |
+| **mansoni-reviewer** | Аудит по 8 направлениям, scoring 0-100 (PASS/RISKY/FAIL) |
+| **mansoni-tester** | Браузерное тестирование через Playwright MCP |
+| **mansoni-security-engineer** | OWASP Top 10, пентест, STRIDE-A, RLS, E2EE |
+| **mansoni-performance-engineer** | Core Web Vitals, bundle, profiling, SQL |
+
+### Доменные координаторы (10)
+
+messenger, social, commerce, crm, dating, insurance, taxi, streaming, realestate, ai
+
+### Имплементаторы CodeSmith (10)
+
+api, auth, e2ee, mobile, react, realtime, supabase, testing, typescript + базовый codesmith
+
+### Узкие аудиторы (3)
+
+reviewer-architecture, reviewer-database, reviewer-security
 
 ### Автономность оркестратора
 
@@ -73,8 +97,8 @@ scripts/        — CI/CD, деплой, утилиты
 ### Пайплайн для фич
 
 ```
-Explore (исследование) → Architect (спецификация) → CodeSmith (реализация)
-  → Review (аудит, цикл до PASS, макс. 3 итерации) → tsc verify
+mansoni-researcher → mansoni-architect → mansoni-coder → codesmith-{...}
+  → mansoni-reviewer → reviewer-{security|database} → mansoni-tester → tsc verify
 ```
 
 ## Каталог скиллов

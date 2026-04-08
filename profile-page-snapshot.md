@@ -1,0 +1,51 @@
+- generic [ref=e2]:
+  - link "Перейти к основному контенту" [ref=e3] [cursor=pointer]:
+    - /url: "#main-content"
+  - region "Notifications (F8)":
+    - list
+  - region "Notifications alt+T"
+  - generic [ref=e11]:
+    - main [ref=e12]:
+      - generic [ref=e14]:
+        - generic [ref=e15]:
+          - heading "Настройки" [level=2] [ref=e16]
+          - button [ref=e17] [cursor=pointer]:
+            - img [ref=e18]
+        - generic [ref=e21]:
+          - generic [ref=e22]:
+            - paragraph [ref=e23]: Аккаунт
+            - generic [ref=e24]
+          - generic [ref=e45]:
+            - paragraph [ref=e46]: Настройки
+            - generic [ref=e47]
+          - generic [ref=e154]:
+            - paragraph [ref=e155]: Поддержка
+            - generic [ref=e156]
+          - button "Выйти" [ref=e171] [cursor=pointer]:
+            - img [ref=e172]
+            - generic [ref=e175]: Выйти
+    - generic [ref=e177]:
+      - navigation [ref=e178]:
+        - link "Лента" [ref=e179] [cursor=pointer]:
+          - /url: /
+          - img [ref=e181]
+          - generic [ref=e184]: Лента
+        - link "Reels" [ref=e185] [cursor=pointer]:
+          - /url: /reels
+          - img [ref=e187]
+          - generic [ref=e189]: Reels
+        - link "Уведомления" [ref=e190] [cursor=pointer]:
+          - /url: /notifications
+          - img [ref=e192]
+          - generic [ref=e195]: Уведомления
+        - link "Чаты" [ref=e196] [cursor=pointer]:
+          - /url: /chats
+          - img [ref=e198]
+          - generic [ref=e200]: Чаты
+        - link "Профиль" [ref=e201] [cursor=pointer]:
+          - /url: /profile
+          - img [ref=e203]
+          - generic [ref=e206]: Профиль
+      - link "AR" [ref=e207] [cursor=pointer]:
+        - /url: /ar
+        - generic [ref=e209]: AR

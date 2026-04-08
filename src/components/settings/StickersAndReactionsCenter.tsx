@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { cn } from "@/lib/utils";
+import { cn, getErrorMessage } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 import {
   archiveStickerPack,
@@ -75,7 +75,7 @@ export function StickersAndReactionsCenter({ userId, isDark }: Props) {
     } catch (error) {
       toast({
         title: "Стикеры и эмодзи",
-        description: error instanceof Error ? error.message : String(error),
+        description: getErrorMessage(error),
       });
     } finally {
       setLoading(false);
@@ -92,7 +92,7 @@ export function StickersAndReactionsCenter({ userId, isDark }: Props) {
       await installStickerPack(userId, packId);
       await refreshAll();
     } catch (error) {
-      toast({ title: "Установка набора", description: error instanceof Error ? error.message : String(error) });
+      toast({ title: "Установка набора", description: getErrorMessage(error) });
     }
   };
 
@@ -102,7 +102,7 @@ export function StickersAndReactionsCenter({ userId, isDark }: Props) {
       await archiveStickerPack(userId, packId);
       await refreshAll();
     } catch (error) {
-      toast({ title: "Архивирование набора", description: error instanceof Error ? error.message : String(error) });
+      toast({ title: "Архивирование набора", description: getErrorMessage(error) });
     }
   };
 
@@ -112,7 +112,7 @@ export function StickersAndReactionsCenter({ userId, isDark }: Props) {
       await bulkRestoreStickerPacks(userId, archivedPacks.map((pack) => pack.id));
       await refreshAll();
     } catch (error) {
-      toast({ title: "Восстановление архива", description: error instanceof Error ? error.message : String(error) });
+      toast({ title: "Восстановление архива", description: getErrorMessage(error) });
     }
   };
 
@@ -124,7 +124,7 @@ export function StickersAndReactionsCenter({ userId, isDark }: Props) {
       const next = await updateUserEmojiPreferences(userId, patch);
       setEmojiPrefs(next);
     } catch (error) {
-      toast({ title: "Настройки эмодзи", description: error instanceof Error ? error.message : String(error) });
+      toast({ title: "Настройки эмодзи", description: getErrorMessage(error) });
     }
   };
 
@@ -134,7 +134,7 @@ export function StickersAndReactionsCenter({ userId, isDark }: Props) {
       const next = await setUserQuickReaction(userId, emoji);
       setQuickReaction(next.emoji);
     } catch (error) {
-      toast({ title: "Быстрая реакция", description: error instanceof Error ? error.message : String(error) });
+      toast({ title: "Быстрая реакция", description: getErrorMessage(error) });
     }
   };
 

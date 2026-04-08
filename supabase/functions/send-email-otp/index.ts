@@ -59,6 +59,28 @@ function isGmailOrIcloudDomain(domain: string): boolean {
   return domain === "gmail.com" || domain === "googlemail.com" || domain === "icloud.com" || domain === "me.com" || domain === "mac.com";
 }
 
+function resolveEmailRouterSendUrl(emailRouterUrl: string): string {
+  const normalized = emailRouterUrl.replace(/\/+$/, "");
+  if (/\/send$/i.test(normalized)) return normalized;
+  return `${normalized}/v1/email/send`;
+}
+
+async function cleanupOtpCode(
+  supabase: ReturnType<typeof createClient>,
+  email: string,
+  code: string,
+): Promise<void> {
+  const { error } = await supabase
+    .from("email_otp_codes")
+    .delete()
+    .eq("email", email)
+    .eq("code", code);
+
+  if (error) {
+    console.error("[send-email-otp] Failed to cleanup OTP after delivery error:", error);
+  }
+}
+
 Deno.serve(async (req: Request) => {
   // CORS preflight
   const corsResp = handleCors(req);
@@ -192,7 +214,7 @@ Deno.serve(async (req: Request) => {
   //
   // Keep the route explicit here so OTP flow matches the deployed router.
   try {
-    const sendUrl = `${emailRouterUrl.replace(/\/$/, "")}/send`;
+    const sendUrl = resolveEmailRouterSendUrl(emailRouterUrl);
     const recipientDomain = emailDomain(email);
     const isPriorityMailbox = isGmailOrIcloudDomain(recipientDomain);
     const maxAttemptsRaw = Number(Deno.env.get("EMAIL_OTP_MAX_ATTEMPTS") ?? "8");
@@ -233,6 +255,7 @@ Deno.serve(async (req: Request) => {
       "Content-Type": "application/json",
     };
     if (emailRouterIngestKey) {
+      headers["x-ingest-key"] = emailRouterIngestKey;
       headers["X-API-Key"] = emailRouterIngestKey;
     }
 
@@ -261,12 +284,11 @@ Deno.serve(async (req: Request) => {
         sendUrl,
         body: errText,
       });
-      // Delivery was not accepted — remove OTP so user can retry immediately.
-      await supabase.from("email_otp_codes").delete().eq("email", email);
+      await cleanupOtpCode(supabase, email, code);
       return jsonResp(origin, {
-        error: "OTP_DELIVERY_FAILED",
-        message: "Не удалось отправить код. Попробуйте еще раз.",
-      }, 502);
+        error: "Email service unavailable",
+        message: "Сервис отправки писем временно недоступен. Повторите попытку позже.",
+      }, 503);
     } else {
       console.info("[send-email-otp] email-router accepted request", {
         status: upstream.status,
@@ -276,11 +298,10 @@ Deno.serve(async (req: Request) => {
     }
   } catch (err) {
     console.error("[send-email-otp] email-router fetch failed:", err);
-    // Delivery was not attempted successfully — remove OTP so user can retry.
-    await supabase.from("email_otp_codes").delete().eq("email", email);
+    await cleanupOtpCode(supabase, email, code);
     return jsonResp(origin, {
-      error: "OTP_DELIVERY_FAILED",
-      message: "Сервис отправки недоступен. Попробуйте еще раз.",
+      error: "Email service unavailable",
+      message: "Сервис отправки писем временно недоступен. Повторите попытку позже.",
     }, 503);
   }
 

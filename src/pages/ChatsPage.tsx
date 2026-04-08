@@ -4,6 +4,8 @@ import { Search, Check, CheckCheck, LogIn, MessageCircle, Megaphone, Users, Phon
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { GradientAvatar } from "@/components/ui/gradient-avatar";
+import { ChatLastMessagePreview } from "@/components/chat/ChatLastMessagePreview";
+import { ChatPresenceDot } from "@/components/chat/ChatPresenceDot";
 import { ChatConversation } from "@/components/chat/ChatConversation";
 import { ChatStories } from "@/components/chat/ChatStories";
 import { ChatSearchSheet } from "@/components/chat/ChatSearchSheet";
@@ -31,20 +33,11 @@ import { toast } from "sonner";
 import { pbkdf2Hash, verifyPasscodeHash } from "@/lib/passcode";
 import { useArchivedChats } from "@/hooks/useArchivedChats";
 import { usePinnedChats } from "@/hooks/usePinnedChats";
-import { useE2EEncryption } from "@/hooks/useE2EEncryption";
-import type { EncryptedPayload } from "@/hooks/useE2EEncryption";
 import { motion, AnimatePresence } from "framer-motion";
 import { clearHandledChatsQueryParams, parseChatsQueryActions } from "@/lib/chat/deepLinkQuery";
+import { fallbackNameFromUserId } from "@/lib/chat/fallback-name-from-user-id";
 import { logger } from "@/lib/logger";
 import { EmergencySOSSheet } from "@/components/chat/EmergencySOSSheet";
-import { OnlineDot } from "@/components/ui/OnlineDot";
-import { useUserPresenceStatus } from "@/hooks/useUserPresenceStatus";
-
-/** Lightweight presence dot for chat list avatars */
-function ChatPresenceDot({ userId }: { userId?: string | null }) {
-  const { isOnline } = useUserPresenceStatus(userId);
-  return <OnlineDot isOnline={isOnline} size="sm" />;
-}
 
 
 interface LocationState {
@@ -64,12 +57,6 @@ interface TypingBroadcastPayload {
   };
 }
 
-function fallbackNameFromUserId(userId: string | null | undefined, fallback = "User"): string {
-  const normalized = String(userId || "").trim();
-  if (!normalized) return fallback;
-  return normalized.slice(0, 8);
-}
-
 // Animation constants
 const HEADER_BASE_HEIGHT = 56;
 const PRIMARY_TABS_HEIGHT = 40;
@@ -77,92 +64,6 @@ const FILTERS_HEIGHT = 44;
 const CREATE_ACTIONS_HEIGHT = 44;
 const STORIES_ROW_HEIGHT = 92;
 const CHAT_LIST_PLACEHOLDER_COUNT = 6;
-
-function parseEncryptedPayload(content: unknown): EncryptedPayload | null {
-  if (typeof content !== "string") return null;
-  const trimmed = content.trim();
-  if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) return null;
-  try {
-    const parsed = JSON.parse(trimmed) as Partial<EncryptedPayload>;
-    const isValid = (
-      typeof parsed === "object" &&
-      parsed !== null &&
-      typeof parsed.v === "number" &&
-      typeof parsed.iv === "string" &&
-      typeof parsed.ct === "string" &&
-      typeof parsed.tag === "string" &&
-      typeof parsed.epoch === "number" &&
-      typeof parsed.kid === "string"
-    );
-      return isValid ? (parsed as EncryptedPayload) : null;
-  } catch (_parseError) {
-      return null;
-  }
-}
-
-function LastMessagePreview({
-  conversationId,
-  lastMessage,
-  isMyMessage,
-  activityText,
-}: {
-  conversationId: string;
-  lastMessage: Conversation["last_message"];
-  isMyMessage: boolean;
-  activityText: string | null;
-}) {
-  const encryptedPayload = useMemo(
-    () => parseEncryptedPayload(lastMessage?.content),
-    [lastMessage?.content]
-  );
-  const { decryptContent } = useE2EEncryption(conversationId);
-  const [decryptedPreview, setDecryptedPreview] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setDecryptedPreview(null);
-
-    if (!encryptedPayload || !lastMessage?.sender_id) return;
-
-    const run = async () => {
-      const plain = await decryptContent(encryptedPayload, lastMessage.sender_id);
-      if (!cancelled) {
-        setDecryptedPreview(plain && plain.trim() ? plain : "Зашифрованное сообщение");
-      }
-    };
-
-    void run();
-    return () => {
-      cancelled = true;
-    };
-  }, [decryptContent, encryptedPayload, lastMessage?.sender_id]);
-
-  const locationFromContent = useMemo(() => {
-    if (lastMessage?.location_lat != null) return true;
-    try {
-      const parsed = lastMessage?.content && JSON.parse(lastMessage.content);
-      return parsed?.kind === 'location';
-    } catch { return false; }
-  }, [lastMessage?.content, lastMessage?.location_lat]);
-
-  const previewText = activityText
-    ? activityText
-    : lastMessage?.location_lat != null || locationFromContent
-      ? "📍 Геолокация"
-      : lastMessage?.media_type === "video_circle"
-        ? "🎥 Видеосообщение"
-        : lastMessage?.media_type === "voice"
-          ? "🎤 Голосовое сообщение"
-          : lastMessage?.media_type === "video"
-            ? "🎬 Видео"
-            : lastMessage?.media_url
-              ? "📷 Фото"
-              : encryptedPayload
-                ? decryptedPreview || "Зашифрованное сообщение"
-                : (lastMessage?.content || "Нет сообщений");
-
-  return <>{isMyMessage && !activityText ? `Вы: ${previewText}` : previewText}</>;
-}
 
 export function ChatsPage() {
   const navigate = useNavigate();
@@ -174,7 +75,7 @@ export function ChatsPage() {
   const { channels, loading: channelsLoading, refetch: refetchChannels } = useChannels();
   const { groups, loading: groupsLoading, refetch: refetchGroups } = useGroupChats();
   const { createConversation } = useCreateConversation();
-  const { folders, itemsByFolderId, refetch: refetchFolders } = useChatFolders();
+  const { folders, itemsByFolderId } = useChatFolders();
   const { settings } = useUserSettings();
   const { calls, missedCalls, profilesById, loading: callsLoading } = useCallHistory();
   const { startCall } = useVideoCallContext();
@@ -439,7 +340,7 @@ export function ChatsPage() {
   const chatListRef = useRef<HTMLDivElement>(null);
   
   // Pull-down expand hook for stories
-  const { expandProgress, isExpanded, toggleExpanded } = usePullDownExpand(chatListRef, {
+  const { expandProgress, toggleExpanded } = usePullDownExpand(chatListRef, {
     threshold: 80,
     collapseScrollThreshold: 10,
   });
@@ -1743,7 +1644,7 @@ export function ChatsPage() {
                                     : "text-muted-foreground dark:text-white/50"
                                 )}
                               >
-                                <LastMessagePreview
+                                <ChatLastMessagePreview
                                   conversationId={conv.id}
                                   lastMessage={lastMessage}
                                   isMyMessage={isMyMessage}

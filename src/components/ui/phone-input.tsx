@@ -1,5 +1,5 @@
 import * as React from "react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Phone } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -62,24 +62,19 @@ const countries: Country[] = [
   { code: "ZA", name: "ЮАР", dialCode: "27", flag: "🇿🇦" },
 ];
 
-// Detect country from phone number
 const detectCountry = (digits: string): Country | null => {
   if (!digits || digits.length === 0) return null;
   
-  // Check for special patterns first (Kazakhstan vs Russia)
   if (digits.startsWith('7')) {
     if (digits.length >= 2) {
       const secondDigit = digits[1];
-      // Kazakhstan: +7 6XX, +7 7XX
       if (secondDigit === '6' || secondDigit === '7') {
         return countries.find(c => c.code === 'KZ') || null;
       }
     }
-    // Default to Russia for +7
     return countries.find(c => c.code === 'RU') || null;
   }
   
-  // Sort by dialCode length (longest first) to match more specific codes first
   const sortedCountries = [...countries].sort((a, b) => b.dialCode.length - a.dialCode.length);
   
   for (const country of sortedCountries) {
@@ -91,11 +86,9 @@ const detectCountry = (digits: string): Country | null => {
   return null;
 };
 
-// Format phone number with proper spacing
 const formatPhoneNumber = (digits: string): string => {
   if (!digits) return '+';
   
-  // Handle Russian/Kazakh numbers
   if (digits.startsWith('7') || digits.startsWith('8')) {
     const normalized = '7' + digits.slice(1);
     let formatted = '+7';
@@ -106,7 +99,6 @@ const formatPhoneNumber = (digits: string): string => {
     return formatted;
   }
   
-  // Handle other countries - generic format
   const country = detectCountry(digits);
   if (country) {
     const dialCodeLen = country.dialCode.length;
@@ -127,6 +119,7 @@ interface PhoneInputProps {
   placeholder?: string;
   required?: boolean;
   className?: string;
+  id?: string;
 }
 
 function guessDeviceCountryCode(): string | null {
@@ -134,7 +127,6 @@ function guessDeviceCountryCode(): string | null {
     const locale = (navigator.languages?.[0] || navigator.language || "").trim();
     if (!locale) return null;
 
-    // Examples: "ru-RU", "en-US", "pt-BR"
     const parts = locale.replace("_", "-").split("-");
     const region = parts.length >= 2 ? parts[1]?.toUpperCase() : "";
     if (!region) return null;
@@ -153,38 +145,33 @@ function guessDefaultCountry(): Country {
   return countries.find((c) => c.code === "RU") ?? countries[0]!;
 }
 
-export function PhoneInput({ value, onChange, placeholder, required, className }: PhoneInputProps) {
+export function PhoneInput({ value, onChange, placeholder, required, className, id }: PhoneInputProps) {
   const [displayValue, setDisplayValue] = useState('+');
   const [detectedCountry, setDetectedCountry] = useState<Country | null>(null);
+  // Стабильная ссылка на onChange — предотвращает re-trigger useEffect при нестабильном callback
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     let inputValue = e.target.value;
     
-    // Ensure it starts with +
     if (!inputValue.startsWith('+')) {
       inputValue = '+' + inputValue.replace(/[^0-9]/g, '');
     }
     
-    // Extract digits only
     const digits = inputValue.replace(/\D/g, '');
-    
-    // Normalize 8 to 7 for Russian numbers
     const normalizedDigits = digits.startsWith('8') ? '7' + digits.slice(1) : digits;
-    
-    // Limit to 15 digits (max international phone number length)
     const limitedDigits = normalizedDigits.slice(0, 15);
     
-    // Detect country
     const country = detectCountry(limitedDigits);
     setDetectedCountry(country);
     
-    // Format and display
     const formatted = formatPhoneNumber(limitedDigits);
     setDisplayValue(formatted);
-    onChange('+' + limitedDigits);
+    onChangeRef.current('+' + limitedDigits);
   };
 
-  // Initialize with + on mount
+  // Инициализация при маунте или изменении value
   useEffect(() => {
     if (value) {
       const digits = value.replace(/\D/g, '');
@@ -193,38 +180,40 @@ export function PhoneInput({ value, onChange, placeholder, required, className }
       return;
     }
 
-    // Device-based default: prefill with dial code (so user doesn't have to type it).
     const fallback = guessDefaultCountry();
     const digits = fallback.dialCode;
     setDetectedCountry(fallback);
     setDisplayValue('+' + digits);
-    onChange('+' + digits);
-  }, [value, onChange]);
+    onChangeRef.current('+' + digits);
+  }, [value]);
 
   return (
     <div className={cn("relative", className)}>
       <div className="relative flex items-center">
-        {/* Flag indicator */}
         <div className="absolute left-4 flex items-center justify-center pointer-events-none h-full">
           {detectedCountry ? (
             <span 
               className="text-lg leading-none text-white flex items-center" 
               style={{ fontFamily: "'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif" }}
+              aria-hidden="true"
             >
               {detectedCountry.flag}
             </span>
           ) : (
-            <Phone className="w-5 h-5 text-white/50" />
+            <Phone className="w-5 h-5 text-white/50" aria-hidden="true" />
           )}
         </div>
 
-        {/* Phone input */}
         <input
+          id={id}
           type="tel"
+          inputMode="tel"
+          autoComplete="tel"
           value={displayValue}
           onChange={handleChange}
           placeholder={placeholder || (detectedCountry ? `+${detectedCountry.dialCode} (___) ___-__-__` : "+7 (___) ___-__-__")}
           required={required}
+          aria-label="Номер телефона"
           className="w-full pl-14 pr-4 h-14 bg-transparent border border-white/20 rounded-2xl text-white placeholder:text-white/40 focus:border-white/40 focus:outline-none focus:ring-0"
         />
       </div>

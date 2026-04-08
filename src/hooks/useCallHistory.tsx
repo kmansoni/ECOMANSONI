@@ -97,7 +97,7 @@ export function useCallHistory() {
       .channel(`video-calls-caller:${user.id}`)
       .on(
         "postgres_changes" as any,
-        { event: "*", schema: "public", table: "video_calls", filter: `caller_id=eq.${user.id}` },
+        { event: "*", schema: "public", table: "calls", filter: `caller_id=eq.${user.id}` },
         () => void fetchCalls(),
       )
       .subscribe();
@@ -106,7 +106,7 @@ export function useCallHistory() {
       .channel(`video-calls-callee:${user.id}`)
       .on(
         "postgres_changes" as any,
-        { event: "*", schema: "public", table: "video_calls", filter: `callee_id=eq.${user.id}` },
+        { event: "*", schema: "public", table: "calls", filter: `callee_id=eq.${user.id}` },
         () => void fetchCalls(),
       )
       .subscribe();

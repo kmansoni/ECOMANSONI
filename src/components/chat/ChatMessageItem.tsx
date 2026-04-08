@@ -45,7 +45,7 @@ import {
 
 // ── Types ──────────────────────────────────────────────────────────────
 
-interface MessageStyleConfig {
+export interface MessageStyleConfig {
   bubbleClass: string;
   densityStyles: {
     gap: string;
@@ -61,7 +61,7 @@ interface MessageStyleConfig {
   linkPreviewEnabled: boolean;
 }
 
-interface MessageCallbacks {
+export interface MessageCallbacks {
   onReply: (messageId: string) => void;
   onDelete: (messageId: string) => Promise<void>;
   onReaction: (messageId: string, emoji: string) => void;

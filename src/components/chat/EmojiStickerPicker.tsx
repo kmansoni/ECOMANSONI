@@ -1,5 +1,6 @@
-import EmojiPicker, { EmojiStyle, EmojiClickData, Theme, Categories } from "emoji-picker-react";
+import EmojiPicker, { EmojiStyle, EmojiClickData, Theme } from "emoji-picker-react";
 import { useTheme } from "next-themes";
+import { EMOJI_PICKER_CATEGORIES } from "./emoji-picker-categories";
 
 interface EmojiStickerPickerProps {
   open: boolean;
@@ -41,17 +42,7 @@ export function EmojiStickerPicker({
           lazyLoadEmojis={true}
           previewConfig={{ showPreview: false }}
           searchPlaceHolder="Поиск эмодзи"
-          categories={[
-            { name: "Недавние", category: Categories.SUGGESTED },
-            { name: "Смайлики", category: Categories.SMILEYS_PEOPLE },
-            { name: "Животные", category: Categories.ANIMALS_NATURE },
-            { name: "Еда", category: Categories.FOOD_DRINK },
-            { name: "Путешествия", category: Categories.TRAVEL_PLACES },
-            { name: "Активности", category: Categories.ACTIVITIES },
-            { name: "Объекты", category: Categories.OBJECTS },
-            { name: "Символы", category: Categories.SYMBOLS },
-            { name: "Флаги", category: Categories.FLAGS },
-          ]}
+          categories={EMOJI_PICKER_CATEGORIES}
         />
       </div>
       

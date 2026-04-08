@@ -356,7 +356,7 @@ Timeout: 30 сек
 
 | Функция | Статус | Файл |
 |---------|--------|------|
-| Отправка email | ✅ | `email-router/src/routes/email.ts` |
+| Отправка email | ✅ | `services/email-router/src/routes/email.ts` |
 | Получение (IMAP) | ⚠️ Настраивается | `SmtpSettingsPanel.tsx` |
 | Треды сообщений | ✅ | `email_threads` table |
 | Папки (inbox/sent/draft/spam/trash) | ✅ | `folder` column |

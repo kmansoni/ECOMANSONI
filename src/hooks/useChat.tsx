@@ -11,6 +11,7 @@ import { getLastChatSchemaProbe } from "@/lib/chat/schemaProbe";
 import { isTableMissingError } from "@/lib/utils/isTableMissingError";
 import { uploadMedia } from "@/lib/mediaUpload";
 import { buildChatBodyEnvelope, sendMessageV1 } from "@/lib/chat/sendMessageV1";
+import { parseJsonRecord } from "@/lib/chat/decode";
 import { sanitizeReceivedText } from "@/lib/text-encoding";
 import { canonicalizeOutgoingChatText } from "@/lib/chat/textPipeline";
 import {
@@ -144,6 +145,51 @@ function decodeChatFullSnapshotMessages(value: unknown): ChatFullSnapshotMessage
     .filter((row): row is ChatFullSnapshotMessage => row !== null);
 }
 
+function applyLegacyEnvelopeFallback(message: ChatMessage): ChatMessage {
+  const envelope = parseJsonRecord(message.content);
+  if (!envelope) return message;
+
+  const kind = getStringField(envelope, "kind");
+  if (!kind) return message;
+
+  const fallbackMediaType = message.media_type ?? (
+    kind === "media"
+      ? getStringField(envelope, "media_type")
+      : ["poll", "sticker", "gif", "gift", "contact", "document"].includes(kind)
+        ? kind
+        : null
+  );
+  const fallbackMediaUrl = message.media_url ?? getStringField(envelope, "media_url");
+  const fallbackPollId = message.poll_id ?? (kind === "poll" ? getStringField(envelope, "poll_id") : null);
+  const fallbackLocationLat = message.location_lat ?? (kind === "location" ? getNumberField(envelope, "lat") : null);
+  const fallbackLocationLng = message.location_lng ?? (kind === "location" ? getNumberField(envelope, "lng") : null);
+  const fallbackLocationAccuracy = message.location_accuracy_m ?? (kind === "location" ? getNumberField(envelope, "accuracy_m") : null);
+  const fallbackLocationIsLive = message.location_is_live ?? (kind === "location" ? getBooleanField(envelope, "is_live") : null);
+
+  if (
+    fallbackMediaType === message.media_type &&
+    fallbackMediaUrl === message.media_url &&
+    fallbackPollId === message.poll_id &&
+    fallbackLocationLat === message.location_lat &&
+    fallbackLocationLng === message.location_lng &&
+    fallbackLocationAccuracy === message.location_accuracy_m &&
+    fallbackLocationIsLive === message.location_is_live
+  ) {
+    return message;
+  }
+
+  return {
+    ...message,
+    media_type: fallbackMediaType ?? message.media_type ?? null,
+    media_url: fallbackMediaUrl ?? message.media_url ?? null,
+    poll_id: fallbackPollId ?? message.poll_id ?? null,
+    location_lat: fallbackLocationLat ?? message.location_lat ?? null,
+    location_lng: fallbackLocationLng ?? message.location_lng ?? null,
+    location_accuracy_m: fallbackLocationAccuracy ?? message.location_accuracy_m ?? null,
+    location_is_live: fallbackLocationIsLive ?? message.location_is_live ?? null,
+  };
+}
+
 function decodeRealtimeChatMessage(value: unknown): ChatMessage | null {
   if (!isRecord(value)) return null;
 
@@ -152,7 +198,7 @@ function decodeRealtimeChatMessage(value: unknown): ChatMessage | null {
   const senderId = getStringField(value, "sender_id");
   if (!id || !conversationId || !senderId) return null;
 
-  return {
+  return applyLegacyEnvelopeFallback({
     id,
     client_msg_id: getStringField(value, "client_msg_id"),
     conversation_id: conversationId,
@@ -171,7 +217,12 @@ function decodeRealtimeChatMessage(value: unknown): ChatMessage | null {
     disappear_at: getStringField(value, "disappear_at"),
     disappeared: getBooleanField(value, "disappeared"),
     is_silent: getBooleanField(value, "is_silent"),
-  };
+    poll_id: getStringField(value, "poll_id"),
+    location_lat: getNumberField(value, "location_lat"),
+    location_lng: getNumberField(value, "location_lng"),
+    location_accuracy_m: getNumberField(value, "location_accuracy_m"),
+    location_is_live: getBooleanField(value, "location_is_live"),
+  });
 }
 
 function decodeRealtimeDeletedChatMessage(value: unknown): { id: string } | null {
@@ -509,7 +560,7 @@ export function useConversations() {
         if (lastMessagesRes.error) throw lastMessagesRes.error;
         for (const m of lastMessagesRes.data || []) {
           const id = String(m.id);
-          lastMessagesById.set(id, {
+          lastMessagesById.set(id, applyLegacyEnvelopeFallback({
             id,
             conversation_id: String(m.conversation_id),
             sender_id: String(m.sender_id || ""),
@@ -522,7 +573,7 @@ export function useConversations() {
             duration_seconds: (m.duration_seconds ?? null) as number | null,
             shared_post_id: (m.shared_post_id ?? null) as string | null,
             shared_reel_id: (m.shared_reel_id ?? null) as string | null,
-          });
+          }));
         }
       }
 
@@ -554,7 +605,7 @@ export function useConversations() {
         const lastFromDb = lastMessageId ? lastMessagesById.get(lastMessageId) : undefined;
         const seqSource = lastFromDb?.seq ?? getNumberField(row, "last_seq") ?? 0;
         const lastMessage: ChatMessage | undefined = lastMessageId
-          ? {
+          ? applyLegacyEnvelopeFallback({
               id: lastMessageId,
               conversation_id: getStringField(row, "conversation_id") ?? "",
               sender_id: String(lastFromDb?.sender_id || getStringField(row, "last_sender_id") || ""),
@@ -567,7 +618,7 @@ export function useConversations() {
               duration_seconds: lastFromDb?.duration_seconds ?? null,
               shared_post_id: lastFromDb?.shared_post_id ?? null,
               shared_reel_id: lastFromDb?.shared_reel_id ?? null,
-            }
+            })
           : undefined;
 
         return {
@@ -775,10 +826,10 @@ export function useMessages(conversationId: string | null) {
 
       if (error) throw error;
 
-      const serverMessages = sortMessages((data || []).map(m => ({
-        ...m,
-        content: sanitizeReceivedText(m.content)
-      })) as ChatMessage[]);
+      const serverMessages = sortMessages((data || []).map((m) => applyLegacyEnvelopeFallback({
+        ...(m as ChatMessage),
+        content: sanitizeReceivedText(m.content),
+      })));
       const serverClientIds = new Set(
         serverMessages
           .map((m) => (typeof m.client_msg_id === "string" ? m.client_msg_id : null))

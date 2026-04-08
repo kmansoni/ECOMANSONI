@@ -393,7 +393,7 @@ graph TD
 | `.env.example` | **Изменить** | Убрать `VITE_EMAIL_ROUTER_API_KEY`, обновить комментарии |
 | `.env` / `.env.local` | **Изменить** | Убрать `VITE_EMAIL_ROUTER_API_KEY`, добавить `VITE_EMAIL_ROUTER_DIRECT=true` для dev |
 | `netlify.toml` | **Без изменений** | Netlify не участвует в проксировании |
-| `email-router/*` | **Без изменений** | Email-router остаётся as-is |
+| `services/email-router/*` | **Без изменений** | Канонический email-router остаётся as-is |
 
 ---
 

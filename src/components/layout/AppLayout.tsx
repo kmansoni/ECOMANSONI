@@ -13,6 +13,7 @@ import type { ContentType } from "@/hooks/useMediaEditor";
 
 const BOTTOM_NAV_BAR_HEIGHT_PX = 56;
 const BOTTOM_NAV_OUTER_GAP_PX = 8;
+const SETTINGS_BOTTOM_NAV_RESERVE_PX = BOTTOM_NAV_BAR_HEIGHT_PX + BOTTOM_NAV_OUTER_GAP_PX;
 
 export function AppLayout() {
   const isMobile = useIsMobile();
@@ -36,6 +37,7 @@ function MobileLayout() {
     location.pathname.startsWith("/profile") ||
     location.pathname.startsWith("/user/") ||
     location.pathname.startsWith("/contact/");
+  const isSettingsPage = location.pathname.startsWith("/settings");
 
   // Hide bottom nav on creation pages
   const isCreationPage =
@@ -79,7 +81,12 @@ function MobileLayout() {
             overscrollBehavior: 'contain',
             touchAction: 'pan-y',
             isolation: 'isolate',
-            paddingBottom: `calc(${BOTTOM_NAV_BAR_HEIGHT_PX + BOTTOM_NAV_OUTER_GAP_PX}px + env(safe-area-inset-bottom, 0px))`,
+            paddingBottom: isSettingsPage
+              ? 'calc(16px + env(safe-area-inset-bottom, 0px))'
+              : `calc(${BOTTOM_NAV_BAR_HEIGHT_PX + BOTTOM_NAV_OUTER_GAP_PX}px + env(safe-area-inset-bottom, 0px))`,
+            marginBottom: isSettingsPage && !shouldHideMobile
+              ? `calc(${SETTINGS_BOTTOM_NAV_RESERVE_PX}px + env(safe-area-inset-bottom, 0px))`
+              : undefined,
           }}
         >
           <Outlet />

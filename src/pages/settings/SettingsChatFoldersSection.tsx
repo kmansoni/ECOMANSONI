@@ -215,7 +215,7 @@ export function SettingsChatFoldersSection({
     return (
       <>
         <SettingsHeader title={editingFolderId ? "Изменить папку" : "Новая папка"} onBack={onBack} onClose={onBack} isDark={isDark} currentScreen={currentScreen} />
-        <div className="flex-1 overflow-y-auto native-scroll pb-8">
+        <div className="flex-1 pb-8">
           <div className="px-4 grid gap-3">
             <div
               className={cn(
@@ -471,7 +471,7 @@ export function SettingsChatFoldersSection({
   return (
     <>
       <SettingsHeader title="Папки с чатами" onBack={onBack} onClose={onBack} isDark={isDark} currentScreen={currentScreen} />
-      <div className="flex-1 overflow-y-auto native-scroll pb-8">
+      <div className="flex-1 pb-8">
         <div className="px-4 grid gap-3">
           <div
             className={cn(

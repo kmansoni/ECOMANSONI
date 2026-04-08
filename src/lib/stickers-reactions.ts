@@ -50,6 +50,24 @@ const DEFAULT_EMOJI_PREFERENCES: Omit<UserEmojiPreferences, "user_id" | "updated
 
 const DEFAULT_QUICK_REACTION = "❤️";
 
+function isConflictLikeError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+
+  const record = error as Record<string, unknown>;
+  const details = [record.code, record.message, record.details, record.hint]
+    .filter((value): value is string => typeof value === "string")
+    .join(" ")
+    .toLowerCase();
+
+  return (
+    details.includes("23505") ||
+    details.includes("409") ||
+    details.includes("duplicate") ||
+    details.includes("unique") ||
+    details.includes("conflict")
+  );
+}
+
 function withEmojiDefaults(row: Partial<UserEmojiPreferences>): UserEmojiPreferences {
   return {
     ...DEFAULT_EMOJI_PREFERENCES,
@@ -178,7 +196,22 @@ export async function getOrCreateUserEmojiPreferences(userId: string): Promise<U
     .insert({ user_id: userId })
     .select("*")
     .single();
-  if (insertError) throw insertError;
+
+  if (insertError) {
+    if (!isConflictLikeError(insertError)) {
+      throw insertError;
+    }
+
+    const { data: retried, error: retryError } = await supabase
+      .from("user_emoji_preferences")
+      .select("*")
+      .eq("user_id", userId)
+      .single();
+
+    if (retryError) throw retryError;
+    return withEmojiDefaults(retried as Partial<UserEmojiPreferences>);
+  }
+
   return withEmojiDefaults(data as Partial<UserEmojiPreferences>);
 }
 

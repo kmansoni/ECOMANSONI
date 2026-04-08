@@ -223,6 +223,8 @@ export function useIncomingCalls(options: UseIncomingCallsOptions = {}) {
     logger.info("incoming_calls.setup", { userId: user.id });
 
     // === REALTIME SUBSCRIPTION (primary) ===
+    // NB: video_calls — это VIEW над calls. Realtime слушает WAL на ТАБЛИЦЕ calls,
+    // поэтому подписываемся на "calls" и маппим state→status.
     const channel = supabase
       .channel(`incoming-video-calls-${user.id}`)
       .on(
@@ -230,11 +232,12 @@ export function useIncomingCalls(options: UseIncomingCallsOptions = {}) {
         {
           event: "INSERT",
           schema: "public",
-          table: "video_calls",
+          table: "calls",
           filter: `callee_id=eq.${user.id}`,
         },
         async (payload) => {
-          const call = payload.new as VideoCall;
+          const raw = payload.new as Record<string, unknown>;
+          const call = { ...raw, status: raw.state ?? raw.status } as VideoCall;
           // Check call age - ignore calls older than 60 seconds
           const callAge = Date.now() - new Date(call.created_at).getTime();
           if (callAge > 60000 || call.status !== "ringing") {
@@ -254,11 +257,12 @@ export function useIncomingCalls(options: UseIncomingCallsOptions = {}) {
         {
           event: "UPDATE",
           schema: "public",
-          table: "video_calls",
+          table: "calls",
           filter: `callee_id=eq.${user.id}`,
         },
         (payload) => {
-          const updated = payload.new as VideoCall;
+          const raw = payload.new as Record<string, unknown>;
+          const updated = { ...raw, status: raw.state ?? raw.status } as VideoCall;
           
           // Clear incoming call if it was answered, declined, ended, or missed
           if (["answered", "active", "connected", "declined", "ended", "missed"].includes(updated.status)) {

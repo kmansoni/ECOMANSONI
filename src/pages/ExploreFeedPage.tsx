@@ -13,24 +13,22 @@ export function ExploreFeedPage() {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const hasScrolled = useRef(false);
 
-  // Fetch posts on mount
   useEffect(() => {
     fetchExplorePosts();
   }, [fetchExplorePosts]);
 
-  // Scroll to selected post once posts are loaded
+  // Скролл к выбранному посту после загрузки — через rAF вместо хрупкого setTimeout
   useEffect(() => {
     if (explorePosts.length > 0 && postIndex && !hasScrolled.current) {
       const index = parseInt(postIndex, 10);
       if (!isNaN(index) && index >= 0 && index < explorePosts.length) {
-        // Small delay to ensure elements are rendered
-        setTimeout(() => {
+        requestAnimationFrame(() => {
           const element = document.getElementById(`explore-post-${index}`);
           if (element) {
             element.scrollIntoView({ behavior: "instant", block: "start" });
             hasScrolled.current = true;
           }
-        }, 50);
+        });
       }
     }
   }, [explorePosts, postIndex]);
@@ -38,14 +36,13 @@ export function ExploreFeedPage() {
   const formatTimeAgo = (dateStr: string) => {
     try {
       return formatDistanceToNow(new Date(dateStr), { addSuffix: true, locale: ru });
-    } catch (_err) {
+    } catch {
       return "";
     }
   };
 
   return (
     <div className="min-h-screen bg-background pb-20" ref={scrollContainerRef}>
-      {/* Header */}
       <header className="sticky top-0 z-30 bg-background/95 backdrop-blur-sm border-b border-border safe-area-top">
         <div className="flex items-center h-12 px-4">
           <button
@@ -58,7 +55,6 @@ export function ExploreFeedPage() {
         </div>
       </header>
 
-      {/* Posts Feed */}
       {exploring ? (
         <div className="flex items-center justify-center py-20">
           <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
@@ -86,7 +82,6 @@ export function ExploreFeedPage() {
                 isLiked={post.is_liked}
                 hideLikes={post.hide_likes_count}
                 commentsDisabled={post.comments_disabled}
-                
                 timeAgo={formatTimeAgo(post.created_at)}
               />
             </div>
