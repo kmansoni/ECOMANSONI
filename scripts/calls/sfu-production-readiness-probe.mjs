@@ -193,8 +193,8 @@ async function probeEndpoint(endpoint, tokenA, tokenB) {
 
     t = Date.now();
     await Promise.all([
-      sendAndAck(A, "E2EE_CAPS", { insertableStreams: true, sframe: true }),
-      sendAndAck(B, "E2EE_CAPS", { insertableStreams: true, sframe: true }),
+      sendAndAck(A, "E2EE_CAPS", { insertableStreams: true, sframe: true, doubleRatchet: true }),
+      sendAndAck(B, "E2EE_CAPS", { insertableStreams: true, sframe: true, doubleRatchet: true }),
     ]);
     stage.e2eeCapsMs = Date.now() - t;
 

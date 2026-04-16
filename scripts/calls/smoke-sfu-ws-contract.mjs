@@ -171,6 +171,7 @@ async function runEndpointSmoke(endpoint) {
   const e2eeCapsMsgId = send("E2EE_CAPS", {
     insertableStreams: true,
     sframe: true,
+    doubleRatchet: true,
   });
   await expectAckOk(ws, e2eeCapsMsgId, STEP_TIMEOUT_MS);
 
