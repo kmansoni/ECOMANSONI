@@ -1221,7 +1221,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       lastCallsBootstrapErrorRef.current = null;
       return client;
     } catch (err) {
-      logger.warn("[VideoCallContext] calls-v2 connect/bootstrap failed", err);
+      logger.error("[VideoCallContext] calls-v2 connect/bootstrap failed", err);
       lastCallsBootstrapErrorRef.current = err instanceof Error ? err : new Error(String(err));
       client.close();
       return null;
