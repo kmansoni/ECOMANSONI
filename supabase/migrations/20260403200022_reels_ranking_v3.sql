@@ -78,8 +78,8 @@ DECLARE
 BEGIN
   -- ── Определяем exploration ratio ──────────────────────────────────────────
   SELECT EXISTS (
-    SELECT 1 FROM public.user_author_affinity
-    WHERE user_id = v_user_id
+    SELECT 1 FROM public.user_author_affinity uaa
+    WHERE uaa.user_id = v_user_id
     LIMIT 1
   ) INTO v_has_affinity;
 
