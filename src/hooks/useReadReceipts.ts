@@ -116,7 +116,10 @@ export function useReadReceipts(conversationId: string | null) {
     }
   }, [conversationId, user]);
 
-  // Добавить сообщение в очередь прочитанных
+  // Добавить сообщение в очередь прочитанных.
+  // Батчинг на 2s: в активной переписке пользователь читает десятки
+  // сообщений за секунды — окно 2s объединяет их в один UPDATE и
+  // снимает нагрузку с Realtime (один broadcast вместо десятков).
   const markAsRead = useCallback(
     (messageId: string) => {
       batchReadQueue.current.add(messageId);
@@ -127,7 +130,7 @@ export function useReadReceipts(conversationId: string | null) {
       batchTimerRef.current = window.setTimeout(() => {
         void flushReadBatch();
         batchTimerRef.current = null;
-      }, 500);
+      }, 2000);
     },
     [flushReadBatch]
   );
@@ -148,14 +151,22 @@ export function useReadReceipts(conversationId: string | null) {
     []
   );
 
-  // Очистка при размонтировании
+  // Очистка при размонтировании. Окно 2s может оставить не-flushed ids,
+  // поэтому при уходе из чата делаем финальный сброс, чтобы read receipts
+  // не потерялись до следующего открытия чата.
   useEffect(() => {
     return () => {
       if (batchTimerRef.current) {
         window.clearTimeout(batchTimerRef.current);
+        batchTimerRef.current = null;
+      }
+      if (batchReadQueue.current.size > 0) {
+        void flushReadBatch();
       }
     };
-  }, []);
+    // flushReadBatch зависит от conversationId/user — при их смене сбросим
+    // именно для уходящего чата, что является корректным поведением.
+  }, [flushReadBatch]);
 
   return { markAsDelivered, markAsRead, getMessageStatus, setLocalStatus };
 }

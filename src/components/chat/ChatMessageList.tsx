@@ -1,8 +1,42 @@
-import { useMemo, useLayoutEffect } from "react";
+import { useMemo, useLayoutEffect, useCallback } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ChatMessageItem, type MessageStyleConfig, type MessageCallbacks } from "./ChatMessageItem";
 import { AlbumBubble } from "./AlbumBubble";
 import { buildAlbumMap } from "@/lib/chat/albumGrouping";
+
+/**
+ * Оценка высоты сообщения до реального замера через measureElement.
+ * Точная оценка уменьшает скачки скролла при первом рендере и
+ * уменьшает overscan-перерисовки в виртуализаторе.
+ *
+ * Реальные измерения кешируются virtualizer'ом автоматически по data-index,
+ * поэтому эта функция работает только на первой отрисовке каждого ряда.
+ */
+function estimateMessageHeight(msg: any): number {
+  if (!msg) return 64;
+  const mediaType = msg.media_type as string | null | undefined;
+
+  // Альбомы группируются в ChatMessageList и имеют собственный рендер,
+  // здесь оцениваем только индивидуальные сообщения.
+  if (mediaType === "voice") return 72;
+  if (mediaType === "video_circle") return 240;
+  if (mediaType === "sticker" || mediaType === "gif") return 140;
+  if (mediaType === "image") return 280;
+  if (mediaType === "video") return 280;
+  if (mediaType === "gift") return 200;
+  if (mediaType === "poll") return 180;
+  if (mediaType === "document") return 88;
+  if (mediaType === "contact") return 88;
+  if (msg.shared_post_id) return 260;
+  if (msg.location_lat != null || msg.location_lng != null) return 96;
+
+  // Текст: оценка по длине; учитываем перенос и padding бабла.
+  const len = (msg.content?.length ?? 0) | 0;
+  if (len > 400) return 180;
+  if (len > 200) return 120;
+  if (len > 80) return 84;
+  return 56;
+}
 
 interface MessageListProps {
   messages: any[];
@@ -99,10 +133,15 @@ function VirtualizedMessageList({
   contextMenuMessageId, decryptedCache, senderProfiles, style, callbacks,
   scrollContainerRef, messagesEndRef,
 }: MessageListProps) {
+  const estimateSize = useCallback(
+    (index: number) => estimateMessageHeight(messages[index]),
+    [messages],
+  );
+
   const virtualizer = useVirtualizer({
     count: messages.length,
     getScrollElement: () => scrollContainerRef.current,
-    estimateSize: () => 64,
+    estimateSize,
     overscan: 8,
   });
 

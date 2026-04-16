@@ -327,7 +327,10 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
   });
 
   // ── Props for ChatMessageItem ──────────────────────────────────
-  const messageStyleConfig = {
+  // Стабильные ссылки критичны: ChatMessageItem обёрнут в React.memo,
+  // и при пересоздании этих объектов на каждом рендере мемоизация
+  // становится бесполезной (ссылочное сравнение падает).
+  const messageStyleConfig = useMemo(() => ({
     bubbleClass,
     densityStyles,
     fontSizeSetting: chatSettings.font_size as "small" | "medium" | "large" | undefined,
@@ -337,9 +340,19 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
     autoDownloadVideos,
     mediaTapEnabled,
     linkPreviewEnabled: globalSettings.link_preview_enabled,
-  };
+  }), [
+    bubbleClass,
+    densityStyles,
+    chatSettings.font_size,
+    chatSettings.bubble_style,
+    messageCornerRadius,
+    autoDownloadPhotos,
+    autoDownloadVideos,
+    mediaTapEnabled,
+    globalSettings.link_preview_enabled,
+  ]);
 
-  const messageCallbacks = {
+  const messageCallbacks = useMemo(() => ({
     onReply: handleMessageReply,
     onDelete: async (msgId: string) => {
       const result = await deleteMessage(msgId);
@@ -359,7 +372,24 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
     voicePlaybackRate,
     getWaveformHeights,
     renderText,
-  };
+  }), [
+    handleMessageReply,
+    deleteMessage,
+    handleMessageReaction,
+    handleMessageLongPressStart,
+    handleMessageLongPressEnd,
+    setManualMediaLoaded,
+    setViewingImage,
+    setViewingVideo,
+    toggleSelected,
+    getReactions,
+    getMessageStatus,
+    toggleVoicePlay,
+    cycleVoiceSpeed,
+    voicePlaybackRate,
+    getWaveformHeights,
+    renderText,
+  ]);
 
   return (
     <div className="fixed inset-0 flex flex-col bg-background z-[200]">

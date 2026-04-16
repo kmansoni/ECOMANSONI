@@ -5,7 +5,7 @@
  * gif, gift, poll, document, self-destruct, shared post, video circle).
  * Extracted from ChatConversation.tsx renderMessages.map() body.
  */
-import { Fragment, useMemo } from "react";
+import { Fragment, memo, useMemo } from "react";
 import { Play, Pause, CheckCheck, MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -100,7 +100,7 @@ export interface ChatMessageItemProps {
 
 // ── Component ──────────────────────────────────────────────────────────
 
-export function ChatMessageItem({
+function ChatMessageItemInner({
   message,
   prevMessage,
   userId,
@@ -186,6 +186,21 @@ export function ChatMessageItem({
   const shouldTreatAsEncrypted =
     Boolean(message.is_encrypted) || Boolean(parseEncryptedPayload(message.content));
   const hasDecryptedEntry = Object.prototype.hasOwnProperty.call(decryptedCache, message.id);
+
+  // Мемоизация тяжёлого regex-парсинга URL. Пересчитывается только когда
+  // реально меняется текст, состояние шифрования или настройка превью.
+  const firstLinkUrl = useMemo<string | null>(() => {
+    if (!linkPreviewEnabled || shouldTreatAsEncrypted) return null;
+    const urls = extractUrls(message.content || "");
+    return urls.length > 0 ? urls[0] : null;
+  }, [linkPreviewEnabled, shouldTreatAsEncrypted, message.content]);
+
+  // Реакции читаются из store родителя; кешируем результат на рендер, чтобы
+  // не дёргать коллбек дважды (один раз для условия, второй для рендера).
+  const msgReactions = useMemo(
+    () => getReactions(message.id),
+    [getReactions, message.id],
+  );
 
   const showAvatar = !isOwn && (!prevMessage || prevMessage.sender_id !== message.sender_id);
   const showSenderName = isGroup && !isOwn && showAvatar;
@@ -493,7 +508,7 @@ export function ChatMessageItem({
         messageId={message.id}
         onToggleReaction={onReaction}
         disabled={selectionMode}
-        hasReaction={getReactions(message.id).some((r) => r.emoji === "❤️" && r.hasReacted)}
+        hasReaction={msgReactions.some((r) => r.emoji === "❤️" && r.hasReacted)}
       >
         <div className={cn("flex flex-col flex-1 min-w-0", isOwn ? "items-end" : "items-start")}>
           <div
@@ -590,10 +605,9 @@ export function ChatMessageItem({
                     : renderText(normalizeBrokenVerticalText(sanitizeReceivedText(message.content)), userId)
                   }
                 </p>
-                {linkPreviewEnabled && !shouldTreatAsEncrypted && (() => {
-                  const urls = extractUrls(message.content || "");
-                  return urls.length > 0 ? <LinkPreview key={urls[0]} url={urls[0]} enabled={linkPreviewEnabled} /> : null;
-                })()}
+                {linkPreviewEnabled && !shouldTreatAsEncrypted && firstLinkUrl ? (
+                  <LinkPreview key={firstLinkUrl} url={firstLinkUrl} enabled={linkPreviewEnabled} />
+                ) : null}
               </>
             )}
 
@@ -606,19 +620,16 @@ export function ChatMessageItem({
           </div>
 
           {/* Reactions */}
-          {(() => {
-            const msgReactions = getReactions(message.id);
-            return msgReactions.length > 0 ? (
-              <MessageReactions
-                messageId={message.id}
-                reactions={msgReactions}
-                showPicker={false}
-                onPickerClose={() => {}}
-                onReactionChange={() => {}}
-                onToggle={onReaction}
-              />
-            ) : null;
-          })()}
+          {msgReactions.length > 0 ? (
+            <MessageReactions
+              messageId={message.id}
+              reactions={msgReactions}
+              showPicker={false}
+              onPickerClose={() => {}}
+              onReactionChange={() => {}}
+              onToggle={onReaction}
+            />
+          ) : null}
 
           {renderTimestamp()}
         </div>
@@ -672,3 +683,55 @@ export function ChatMessageItem({
     </Fragment>
   );
 }
+
+// ── Memoized wrapper ───────────────────────────────────────────────────
+//
+// Chat lists rerender on каждое новое сообщение, typing, read receipt,
+// selection mutation, decryption ACK. Без memo весь список перерисовывается
+// O(N) раз на каждое событие. Custom compare смотрит ТОЛЬКО на те поля,
+// которые влияют на конкретный ряд: message identity, пер-сообщение флаги
+// в Set'ах, свой ключ в decryptedCache/senderProfiles. Остальные props
+// (style, callbacks) должны быть стабильны в parent'е.
+
+function arePropsEqual(prev: ChatMessageItemProps, next: ChatMessageItemProps): boolean {
+  const m = next.message;
+  const p = prev.message;
+
+  // Идентичность сообщения — самая частая причина обновления
+  if (p !== m) return false;
+  if (prev.prevMessage !== next.prevMessage) return false;
+
+  // Скалярные поля
+  if (prev.userId !== next.userId) return false;
+  if (prev.conversationId !== next.conversationId) return false;
+  if (prev.chatAvatar !== next.chatAvatar) return false;
+  if (prev.isGroup !== next.isGroup) return false;
+  if (prev.selectionMode !== next.selectionMode) return false;
+
+  // Set-поля — сравниваем только то, что касается ЭТОГО сообщения
+  const id = m.id;
+  if (prev.selectedIds.has(id) !== next.selectedIds.has(id)) return false;
+  if (prev.manualMediaLoaded.has(id) !== next.manualMediaLoaded.has(id)) return false;
+
+  // Одиночные ID-сравнения
+  const prevPlaying = prev.playingVoice === id;
+  const nextPlaying = next.playingVoice === id;
+  if (prevPlaying !== nextPlaying) return false;
+
+  const prevCtx = prev.contextMenuMessageId === id;
+  const nextCtx = next.contextMenuMessageId === id;
+  if (prevCtx !== nextCtx) return false;
+
+  // Пер-сообщение ключи в объектах-картах
+  if (prev.decryptedCache[id] !== next.decryptedCache[id]) return false;
+  const senderId = m.sender_id;
+  if (prev.senderProfiles[senderId] !== next.senderProfiles[senderId]) return false;
+
+  // Агрегаты — предполагаем, что parent мемоизирует их ссылки
+  if (prev.style !== next.style) return false;
+  if (prev.callbacks !== next.callbacks) return false;
+
+  return true;
+}
+
+export const ChatMessageItem = memo(ChatMessageItemInner, arePropsEqual);
