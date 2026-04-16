@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - server/calls-ws/**
+      - server/sfu/**
       - infra/calls/**
       - .github/workflows/deploy-calls-sfu.yml
   workflow_dispatch:
