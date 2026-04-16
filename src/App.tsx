@@ -99,6 +99,7 @@ const PostDetailPage = lazy(() => import("@/pages/PostDetailPage").then(m => ({ 
 const AuthPage = lazy(() => import("@/pages/AuthPage").then(m => ({ default: m.AuthPage })));
 const NotFound = lazy(() => import("@/pages/NotFound"));
 const DevPanelPage = lazy(() => import("@/pages/DevPanelPage"));
+const CrisisMeshPage = lazy(() => import("@/pages/CrisisMeshPage"));
 const SettingsPage = lazy(() => import("@/pages/SettingsPage").then(m => ({ default: m.SettingsPage })));
 const CRMPage = lazy(() => import("@/pages/CRMPage").then(m => ({ default: m.CRMPage })));
 const CRMDashboard = lazy(() => import("@/pages/CRMDashboard").then(m => ({ default: m.CRMDashboard })));
@@ -842,6 +843,13 @@ const App = () => {
                 <Route path="/dev" element={
                   <Suspense fallback={<PageLoader />}>
                     <DevPanelPage />
+                  </Suspense>
+                } />
+
+                {/* Crisis Mesh — оффлайн-мессенджер для кризисных ситуаций */}
+                <Route path="/crisis-mesh" element={
+                  <Suspense fallback={<PageLoader />}>
+                    <CrisisMeshPage />
                   </Suspense>
                 } />
                 

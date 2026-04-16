@@ -10,7 +10,7 @@
 // measurable latency spikes in the encrypt/decrypt hot path.
 // Chunked fromCharCode.apply stays O(n) and avoids call-stack overflow on large buffers.
 export function toBase64(buf: ArrayBuffer | Uint8Array): string {
-  const bytes = buf instanceof ArrayBuffer ? new Uint8Array(buf) : buf;
+  const bytes = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
   const CHUNK = 8192;
   let binary = '';
   for (let i = 0; i < bytes.length; i += CHUNK) {

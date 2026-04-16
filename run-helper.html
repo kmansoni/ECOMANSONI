@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Run Batch</title>
+</head>
+<body>
+  <script>
+    var shell = new ActiveXObject("WScript.Shell");
+    try {
+      shell.Run('cmd /c "C:\\Users\\manso\\Desktop\\разработка\\mansoni\\run-hidden.bat"', 0, false);
+      document.body.innerHTML = "<h1>Chrome launched successfully</h1>";
+    } catch(e) {
+      document.body.innerHTML = "<h1>Error: " + e.message + "</h1>";
+    }
+  </script>
+</body>
+</html>
