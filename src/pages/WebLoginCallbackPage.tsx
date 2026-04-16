@@ -323,7 +323,7 @@ export function WebLoginCallbackPage() {
         <div className="p-6 text-center border-b border-gray-800 space-y-3">
           <div className="flex items-center justify-center gap-3">
             {si.site_icon ? (
-              <img
+              <img loading="lazy"
                 src={si.site_icon}
                 alt={si.site_name}
                 className="w-10 h-10 rounded-xl"

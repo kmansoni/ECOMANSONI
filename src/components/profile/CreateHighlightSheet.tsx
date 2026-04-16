@@ -4,6 +4,7 @@ import { X, Loader2, Check } from "lucide-react";
 import { toast } from "sonner";
 import { createHighlight } from "@/hooks/useProfile";
 import { supabase } from "@/integrations/supabase/client";
+import { dbLoose } from "@/lib/supabase";
 
 interface CreateHighlightSheetProps {
   isOpen: boolean;
@@ -23,7 +24,7 @@ export function CreateHighlightSheet({ isOpen, onClose, userId, onCreated }: Cre
   const fetchStories = useCallback(async () => {
     setLoadingStories(true);
     try {
-      const { data } = await (supabase as any)
+      const { data } = await dbLoose
         .from("stories")
         .select("*")
         .eq("user_id", userId)
@@ -135,7 +136,7 @@ export function CreateHighlightSheet({ isOpen, onClose, userId, onCreated }: Cre
                           className="relative aspect-[9/16] rounded-xl overflow-hidden"
                         >
                           {story.media_url && (
-                            <img
+                            <img loading="lazy"
                               src={story.media_url}
                               alt=""
                               className="w-full h-full object-cover"

@@ -80,7 +80,7 @@ export function ChatHeader({
               size="sm"
             />
             {otherStatusStickerUrl ? (
-              <img
+              <img loading="lazy"
                 src={otherStatusStickerUrl}
                 alt="status sticker"
                 className="absolute -bottom-2 -left-2 w-9 h-9 rounded-xl object-cover bg-white/10 border border-white/20"

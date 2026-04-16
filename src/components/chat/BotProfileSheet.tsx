@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Bot, Plus, MessageSquare } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
+import { dbLoose } from "@/lib/supabase";
 import { Bot as BotType, BotCommand } from '@/hooks/useBots';
 
 interface BotProfileSheetProps {
@@ -23,13 +23,13 @@ export const BotProfileSheet: React.FC<BotProfileSheetProps> = ({
 
   useEffect(() => {
     if (!bot) return;
-    (supabase as any)
+    dbLoose
       .from('bot_commands')
       .select('*')
       .eq('bot_id', bot.id)
       .order('sort_order')
-      .then(({ data }: { data: BotCommand[] | null }) => {
-        if (data) setCommands(data);
+      .then(({ data }) => {
+        if (data) setCommands(data as BotCommand[]);
       });
   }, [bot]);
 
@@ -64,7 +64,7 @@ export const BotProfileSheet: React.FC<BotProfileSheetProps> = ({
             <div className="flex items-center gap-4 mb-6">
               <div className="w-16 h-16 rounded-2xl bg-blue-500/20 border-2 border-blue-500/40 flex items-center justify-center overflow-hidden flex-shrink-0">
                 {bot.avatar_url
-                  ? <img src={bot.avatar_url} alt={bot.display_name} className="w-full h-full object-cover" />
+                  ? <img loading="lazy" src={bot.avatar_url} alt={bot.display_name} className="w-full h-full object-cover" />
                   : <Bot size={28} className="text-blue-400" />
                 }
               </div>

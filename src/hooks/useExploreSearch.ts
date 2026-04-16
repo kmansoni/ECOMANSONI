@@ -148,7 +148,7 @@ export function useExploreSearch() {
           .select('id, content, image_urls, likes_count, comments_count, profiles(username, avatar_url)')
           .ilike('content', `%${query}%`)
           .limit(20);
-        const posts = (rawPosts ?? []) as PostSearchRow[];
+        const posts = (rawPosts ?? []) as unknown as PostSearchRow[];
         results.posts = posts.map((p) => ({
           id: p.id,
           content: p.content ?? '',
@@ -183,19 +183,19 @@ export function useExploreSearch() {
   const getSearchHistory = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
-    const { data } = await (supabase as any)
+    const { data } = await dbLoose
       .from('search_history')
       .select('*')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .limit(20);
-    setHistory(data || []);
+    setHistory((data || []) as SearchHistoryItem[]);
   }, []);
 
   const clearSearchHistory = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
-    await (supabase as any)
+    await dbLoose
       .from('search_history')
       .delete()
       .eq('user_id', user.id);
@@ -203,7 +203,7 @@ export function useExploreSearch() {
   }, []);
 
   const deleteSearchHistoryItem = useCallback(async (id: string) => {
-    await (supabase as any)
+    await dbLoose
       .from('search_history')
       .delete()
       .eq('id', id);
@@ -211,13 +211,13 @@ export function useExploreSearch() {
   }, []);
 
   const getTrendingHashtags = useCallback(async () => {
-    const { data } = await (supabase as any)
+    const { data } = await dbLoose
       .from('trending_hashtags')
       .select('*')
       .order('recent_count', { ascending: false })
       .limit(20);
     if (data && data.length > 0) {
-      setTrending(data);
+      setTrending(data as TrendingHashtag[]);
     } else {
       // Fallback: get from hashtags table
       const { data: tags } = await supabase
@@ -293,7 +293,7 @@ export function useExploreSearch() {
   ) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
-    await (supabase as any)
+    await dbLoose
       .from('search_history')
       .insert({
         user_id: user.id,

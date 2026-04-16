@@ -32,6 +32,11 @@ import {
   callAnthropicStreaming,
   type AnthropicMessage,
 } from "@/lib/ai/anthropic-client";
+import {
+  isFreeProviderConfigured,
+  callFreeProvider,
+  getFreeProviderName,
+} from "@/lib/ai/free-providers";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -486,6 +491,9 @@ export function AIAssistantPage() {
             // Throw to trigger fallback logic
             throw anthropicErr;
           }
+        } else if (isFreeProviderConfigured()) {
+          // ── Бесплатный AI провайдер (Groq / Gemini / OpenRouter / HF) ────
+          resp = await callFreeProvider(historyForApi, ARIA_SYSTEM_PROMPT, controller.signal);
         } else if (EDGE_CHAT_URL && SUPABASE_ANON_KEY) {
           // ── Edge Function call (aria-chat with orchestrator) ──────────────
           const { data: sessionData } = await supabase.auth.getSession();

@@ -146,11 +146,10 @@ export function CustomEmojiPicker({ open, onClose, onSelect, onOpenBrowser }: Cu
                         title={`:${emoji.shortcode}:`}
                         aria-label={`Эмодзи ${emoji.shortcode}`}
                       >
-                        <img
-                          src={emoji.image_url}
+                        <img loading="lazy" src={emoji.image_url}
                           alt={emoji.shortcode}
                           className="w-8 h-8 object-contain"
-                          loading="lazy"
+                          
                         />
                       </button>
                     ))}
@@ -186,12 +185,11 @@ export function CustomEmojiPicker({ open, onClose, onSelect, onOpenBrowser }: Cu
                   </div>
                   <div className="flex gap-1.5 overflow-x-auto pb-1">
                     {pack.emojis.slice(0, 8).map((emoji) => (
-                      <img
-                        key={emoji.id}
+                      <img loading="lazy" key={emoji.id}
                         src={emoji.image_url}
                         alt={emoji.shortcode}
                         className="w-8 h-8 rounded object-contain shrink-0"
-                        loading="lazy"
+                        
                       />
                     ))}
                     {pack.emojis.length > 8 && (

@@ -26,6 +26,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
+import { dbLoose } from "@/lib/supabase";
 
 interface UseFollowReturn {
   isFollowing: boolean;
@@ -55,7 +56,7 @@ export function useFollow(targetUserId: string | null | undefined): UseFollowRet
 
     let cancelled = false;
     const checkFollow = async () => {
-      const { data, error } = await (supabase as any)
+      const { data, error } = await dbLoose
         .from("followers")
         .select("id")
         .eq("follower_id", user.id)
@@ -89,7 +90,7 @@ export function useFollow(targetUserId: string | null | undefined): UseFollowRet
 
     try {
       if (wasFollowing) {
-        const { error } = await (supabase as any)
+        const { error } = await dbLoose
           .from("followers")
           .delete()
           .eq("follower_id", user.id)
@@ -97,7 +98,7 @@ export function useFollow(targetUserId: string | null | undefined): UseFollowRet
         if (error) throw error;
       } else {
         // upsert prevents duplicate key error on race condition
-        const { error } = await (supabase as any)
+        const { error } = await dbLoose
           .from("followers")
           .upsert(
             { follower_id: user.id, following_id: targetUserId },

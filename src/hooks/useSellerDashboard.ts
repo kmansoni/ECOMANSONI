@@ -8,6 +8,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { logger } from '@/lib/logger';
+import { dbLoose } from "@/lib/supabase";
 
 export interface SellerStats {
   totalRevenue: number;
@@ -35,8 +36,6 @@ interface SellerReview {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const db = supabase as any;
-
 export function useSellerDashboard() {
   const { user } = useAuth();
   const [stats, setStats] = useState<SellerStats>({
@@ -57,7 +56,7 @@ export function useSellerDashboard() {
 
     try {
       // 1. Получить магазин пользователя
-      const { data: shop, error: shopErr } = await db.from('shops')
+      const { data: shop, error: shopErr } = await dbLoose.from('shops')
         .select('id')
         .eq('owner_id', user.id)
         .maybeSingle();
@@ -69,7 +68,7 @@ export function useSellerDashboard() {
       }
 
       // 2. Заказы магазина
-      const { data: orders } = await db.from('shop_orders')
+      const { data: orders } = await dbLoose.from('shop_orders')
         .select('id, total_amount, status, created_at, items')
         .eq('shop_id', shop.id)
         .order('created_at', { ascending: false })
@@ -86,7 +85,7 @@ export function useSellerDashboard() {
       const returnRate = totalOrders > 0 ? Math.round((returned / totalOrders) * 100) : 0;
 
       // 4. Товары магазина
-      const { data: products } = await db.from('shop_products')
+      const { data: products } = await dbLoose.from('shop_products')
         .select('id, name')
         .eq('shop_id', shop.id)
         .limit(100);
@@ -95,7 +94,7 @@ export function useSellerDashboard() {
       const productIds = (products ?? []).map(p => p.id);
       let reviewData: SellerReview[] = [];
       if (productIds.length > 0) {
-        const { data: reviews } = await db.from('product_reviews')
+        const { data: reviews } = await dbLoose.from('product_reviews')
           .select('id, rating, text, product_id, created_at')
           .in('product_id', productIds)
           .order('created_at', { ascending: false })

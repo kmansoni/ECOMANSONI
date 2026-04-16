@@ -27,8 +27,6 @@
 
 type LogLevel = "debug" | "info" | "warn" | "error";
 
-type LogContext = Record<string, unknown> | undefined;
-
 const LEVEL_RANK: Record<LogLevel, number> = {
   debug: 0,
   info: 1,
@@ -37,16 +35,16 @@ const LEVEL_RANK: Record<LogLevel, number> = {
 };
 
 function resolveMinLevel(): LogLevel {
-  const env = (import.meta as any)?.env?.VITE_LOG_LEVEL ?? "";
+  const env = import.meta.env.VITE_LOG_LEVEL ?? "";
   const lvl = String(env).toLowerCase() as LogLevel;
-  return lvl in LEVEL_RANK ? lvl : (import.meta as any)?.env?.DEV ? "debug" : "error";
+  return lvl in LEVEL_RANK ? lvl : import.meta.env.DEV ? "debug" : "error";
 }
 
 const MIN_LEVEL = LEVEL_RANK[resolveMinLevel()];
 
 function resolveSampleRate(level: LogLevel): number {
-  const byLevel = (import.meta as any)?.env?.[`VITE_LOG_SAMPLE_${level.toUpperCase()}`];
-  const global = (import.meta as any)?.env?.VITE_LOG_SAMPLE_RATE;
+  const byLevel = import.meta.env[`VITE_LOG_SAMPLE_${level.toUpperCase()}`];
+  const global = import.meta.env.VITE_LOG_SAMPLE_RATE;
   const raw = byLevel ?? global;
   const parsed = Number(raw);
   if (!Number.isFinite(parsed)) return 1;
@@ -70,7 +68,7 @@ function getSessionCorrelationId(): string {
 }
 
 function toSafeContext(context: unknown): Record<string, unknown> | undefined {
-  if (!context) return undefined;
+  if (context == null) return undefined;
   if (typeof context !== "object") return { value: context };
   if (context instanceof Error) {
     return {
@@ -82,11 +80,16 @@ function toSafeContext(context: unknown): Record<string, unknown> | undefined {
   return { ...(context as Record<string, unknown>) };
 }
 
+type SentryHub = {
+  captureException(err: Error, opts?: { extra?: Record<string, unknown> }): void;
+  captureMessage(msg: string, opts?: { level: string; extra?: Record<string, unknown> }): void;
+};
+
 // Lazy Sentry capture — avoids importing Sentry at module level
 function trySentryCapture(level: "warn" | "error", message: string, context?: unknown): void {
   try {
     // Dynamic require to avoid hard Sentry dependency at bundle time
-    const Sentry = (window as any).__SENTRY__;
+    const Sentry = (globalThis as unknown as { __SENTRY__?: SentryHub }).__SENTRY__;
     if (!Sentry) return;
     if (level === "error") {
       const err = context instanceof Error ? context : new Error(message);
@@ -128,7 +131,7 @@ function emit(
     ...(ctx ? { context: ctx } : {}),
   };
 
-  const c = (globalThis as any)?.console;
+  const c = globalThis.console;
 
   const safeWrite = (method: "debug" | "info" | "warn" | "error" | "log") => {
     try {

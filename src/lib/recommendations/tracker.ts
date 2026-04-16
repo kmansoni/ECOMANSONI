@@ -5,6 +5,7 @@
 
 import { supabase } from '@/integrations/supabase/client';
 import { logger } from '@/lib/logger';
+import { dbLoose } from "@/lib/supabase";
 
 export type ContentType = 'post' | 'reel' | 'story' | 'profile' | 'hashtag';
 export type InteractionType = 'view' | 'like' | 'comment' | 'share' | 'save' | 'follow' | 'dwell_time' | 'skip';
@@ -50,7 +51,7 @@ async function flush() {
   }));
 
   try {
-    await (supabase as any).from('user_interactions').insert(rows);
+    await dbLoose.from('user_interactions').insert(rows);
   } catch (err) {
     logger.warn('[tracker] flush error', { error: err });
   }

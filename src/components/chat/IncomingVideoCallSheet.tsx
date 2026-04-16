@@ -15,7 +15,7 @@ export function IncomingVideoCallSheet({ call, onAccept, onDecline }: IncomingVi
   const isVideoCall = call.call_type === "video";
 
   return (
-    <div className="fixed inset-0 bg-gradient-to-b from-primary/90 to-primary z-[100] flex flex-col items-center justify-between py-16 safe-area-inset">
+    <div className="fixed inset-0 bg-gradient-to-b from-primary/90 to-primary z-[100] flex flex-col items-center justify-between py-16 safe-area-inset animate-in fade-in duration-300">
       {/* Call type indicator */}
       <div className="flex items-center gap-2 bg-white/20 px-4 py-2 rounded-full">
         {isVideoCall ? (

@@ -18,8 +18,7 @@ import { useState, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
 import { logger } from "@/lib/logger";
-
-const db = supabase as any;
+import { dbLoose } from "@/lib/supabase";
 
 const PAY_DEBOUNCE_MS = 2000;
 
@@ -64,7 +63,7 @@ export function usePaidMessages() {
       setError(null);
 
       try {
-        const { error: updateError } = await db
+        const { error: updateError } = await dbLoose
           .from("profiles")
           .update({ paid_message_stars: stars })
           .eq("id", user.id);
@@ -91,7 +90,7 @@ export function usePaidMessages() {
    */
   const getPaidMessagePrice = useCallback(
     async (userId: string): Promise<number> => {
-      const { data, error: fetchError } = await db
+      const { data, error: fetchError } = await dbLoose
         .from("profiles")
         .select("paid_message_stars")
         .eq("id", userId)
@@ -165,7 +164,7 @@ export function usePaidMessages() {
     async (limit = 20, offset = 0): Promise<PaidMessageTransaction[]> => {
       if (!user) return [];
 
-      const { data, error: fetchError } = await db
+      const { data, error: fetchError } = await dbLoose
         .from("paid_message_transactions")
         .select("*")
         .or(`sender_id.eq.${user.id},recipient_id.eq.${user.id}`)

@@ -5,7 +5,7 @@
  * Creator создаёт канал → подписчики читают → реакции разрешены всем.
  */
 import { useState, useEffect, useCallback, useRef } from "react";
-import { supabase } from "@/lib/supabase";
+import { supabase, dbLoose } from "@/lib/supabase";
 import { useAuth } from "./useAuth";
 import { logger } from "@/lib/logger";
 import { toast } from "sonner";
@@ -364,26 +364,16 @@ export function useBroadcastMessages(channelId: string | null) {
       return;
     }
 
+    const cid = channelId;
     let cancelled = false;
 
     async function load() {
       setLoading(true);
       try {
-        const db = supabase as unknown as {
-          from(t: string): {
-            select(c: string): {
-              eq(col: string, val: string): {
-                order(col: string, opts: { ascending: boolean }): {
-                  limit(n: number): Promise<{ data: unknown[] | null; error: unknown }>;
-                };
-              };
-            };
-          };
-        };
-        const { data, error } = await db
+        const { data, error } = await dbLoose
           .from("broadcast_channel_messages")
           .select("id, channel_id, sender_id, text, media_url, created_at")
-          .eq("channel_id", channelId)
+          .eq("channel_id", cid)
           .order("created_at", { ascending: true })
           .limit(PAGE_SIZE);
 

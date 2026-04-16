@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { dbLoose } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { checkHashtagsAllowedForText } from '@/lib/hashtagModeration';
@@ -131,7 +132,7 @@ export function usePosts(filter: FeedFilter = 'all') {
         views_count: Number(post.views_count ?? 0),
         likes_count: Number(post.likes_count ?? 0),
         comments_count: Number(post.comments_count ?? 0),
-        saves_count: Number((post as any).saves_count ?? 0),
+        saves_count: Number((post as typeof post & { saves_count?: number | null }).saves_count ?? 0),
         shares_count: Number(post.shares_count ?? 0),
         author: profilesMap.get(post.author_id) ? {
           id: post.author_id,
@@ -171,7 +172,7 @@ export function usePosts(filter: FeedFilter = 'all') {
           'postgres_changes',
           { event: 'INSERT', schema: 'public', table: 'posts' },
           (payload) => {
-            const inserted = payload.new as any;
+            const inserted = payload.new;
             scheduleInsertSync(() => {
               void (async () => {
                 try {
@@ -224,7 +225,7 @@ export function usePosts(filter: FeedFilter = 'all') {
                     views_count: Number(postRow.views_count ?? 0),
                     likes_count: Number(postRow.likes_count ?? 0),
                     comments_count: Number(postRow.comments_count ?? 0),
-                    saves_count: Number((postRow as any).saves_count ?? 0),
+                    saves_count: Number((postRow as NonNullable<typeof postRow> & { saves_count?: number | null }).saves_count ?? 0),
                     shares_count: Number(postRow.shares_count ?? 0),
                     author: profile
                       ? { id: profile.user_id, display_name: profile.display_name ?? null, avatar_url: profile.avatar_url ?? null }
@@ -248,7 +249,7 @@ export function usePosts(filter: FeedFilter = 'all') {
           'postgres_changes',
           { event: 'UPDATE', schema: 'public', table: 'posts' },
           (payload) => {
-            const updatedPost = payload.new as any;
+            const updatedPost = payload.new as typeof payload.new & { saves_count?: number };
             // Update post in place without changing order
             setPosts(prev => {
               const index = prev.findIndex(post => post.id === updatedPost.id);
@@ -259,11 +260,11 @@ export function usePosts(filter: FeedFilter = 'all') {
               newPosts[index] = { 
                 ...newPosts[index], 
                 // Only update specific fields to prevent position jumps
-                views_count: updatedPost.views_count,
-                likes_count: updatedPost.likes_count,
-                comments_count: updatedPost.comments_count,
-                saves_count: updatedPost.saves_count,
-                shares_count: updatedPost.shares_count,
+                views_count: updatedPost.views_count ?? prev[index].views_count,
+                likes_count: updatedPost.likes_count ?? prev[index].likes_count,
+                comments_count: updatedPost.comments_count ?? prev[index].comments_count,
+                saves_count: updatedPost.saves_count ?? prev[index].saves_count,
+                shares_count: updatedPost.shares_count ?? prev[index].shares_count,
                 content: updatedPost.content,
                 is_published: updatedPost.is_published
               };
@@ -275,7 +276,7 @@ export function usePosts(filter: FeedFilter = 'all') {
           'postgres_changes',
           { event: 'DELETE', schema: 'public', table: 'posts' },
           (payload) => {
-            const deletedPost = payload.old as any;
+            const deletedPost = payload.old;
             setPosts(prev => prev.filter(post => post.id !== deletedPost.id));
           }
         )
@@ -346,7 +347,7 @@ export function usePostActions() {
         type: url.includes('.mp4') || url.includes('.webm') ? 'video' : 'image',
       }));
 
-      const { data: post, error: postError } = await (supabase as any).rpc('create_post_v1', {
+      const { data: post, error: postError } = await dbLoose.rpc('create_post_v1', {
         p_content: content,
         p_visibility: 'public',
         p_media: mediaItems,

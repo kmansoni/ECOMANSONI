@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { supabase } from "@/lib/supabase";
+import { dbLoose } from "@/lib/supabase";
 import { useAuth } from "./useAuth";
 import { toast } from "sonner";
 import { logger } from "@/lib/logger";
@@ -63,7 +63,7 @@ export function useGifts() {
     fetchingCatalog.current = true;
     try {
       const data = await withRetry(async () => {
-        const { data, error } = await (supabase as any)
+        const { data, error } = await dbLoose
           .from("gift_catalog")
           .select("*")
           .eq("is_available", true)
@@ -71,7 +71,7 @@ export function useGifts() {
         if (error) throw error;
         return data;
       });
-      catalogCache = data ?? [];
+      catalogCache = (data ?? []) as GiftCatalogItem[];
       setCatalog(catalogCache!);
     } catch (e) {
       logger.error("[useGifts] fetchCatalog error after retries", { error: e });
@@ -83,13 +83,13 @@ export function useGifts() {
   const fetchReceivedGifts = useCallback(async () => {
     if (!user) return;
     try {
-      const { data } = await (supabase as any)
+      const { data } = await dbLoose
         .from("sent_gifts")
         .select("*, gift:gift_catalog(*)")
         .eq("recipient_id", user.id)
         .order("created_at", { ascending: false })
         .limit(50);
-      setReceivedGifts(data ?? []);
+      setReceivedGifts((data ?? []) as SentGift[]);
     } catch (e) {
       logger.error("[useGifts] fetchReceivedGifts error", { error: e });
     }
@@ -98,13 +98,13 @@ export function useGifts() {
   const fetchSentGifts = useCallback(async () => {
     if (!user) return;
     try {
-      const { data } = await (supabase as any)
+      const { data } = await dbLoose
         .from("sent_gifts")
         .select("*, gift:gift_catalog(*)")
         .eq("sender_id", user.id)
         .order("created_at", { ascending: false })
         .limit(50);
-      setSentGifts(data ?? []);
+      setSentGifts((data ?? []) as SentGift[]);
     } catch (e) {
       logger.error("[useGifts] fetchSentGifts error", { error: e });
     }
@@ -131,7 +131,7 @@ export function useGifts() {
     }): Promise<{ ok: boolean; error?: string; sentGiftId?: string; giftEmoji?: string; giftName?: string }> => {
       if (!user) return { ok: false, error: "not_authenticated" };
       try {
-        const { data, error } = await (supabase as any).rpc("send_gift_v1", {
+        const { data: rpcRaw, error } = await dbLoose.rpc("send_gift_v1", {
           p_sender_id: user.id,
           p_recipient_id: params.recipientId,
           p_gift_id: params.giftId,
@@ -142,6 +142,7 @@ export function useGifts() {
           logger.error("[useGifts] send_gift_v1 error", { error });
           return { ok: false, error: error.message };
         }
+        const data = rpcRaw as { ok?: boolean; error?: string; sent_gift_id?: string; gift_emoji?: string; gift_name?: string } | null;
         if (!data?.ok) {
           return { ok: false, error: data?.error ?? "unknown" };
         }
@@ -162,7 +163,7 @@ export function useGifts() {
     async (sentGiftId: string) => {
       if (!user) return;
       try {
-        await (supabase as any)
+        await dbLoose
           .from("sent_gifts")
           .update({ is_opened: true, opened_at: new Date().toISOString() })
           .eq("id", sentGiftId)

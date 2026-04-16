@@ -1,3 +1,4 @@
+import { dbLoose } from "@/lib/supabase";
 import { supabase } from "./supabase";
 
 export type Profession = 
@@ -314,7 +315,7 @@ class CRMLib {
   }
 
   private async rpcCall<T = unknown>(fn: string, params?: Record<string, unknown>): Promise<T> {
-    const { data, error } = await (supabase as any).rpc(fn, params ?? {});
+    const { data, error } = await dbLoose.rpc(fn, params ?? {});
     if (error) throw error;
     return data as T;
   }

@@ -7,6 +7,7 @@ import { getDemoBotsUsersWithStories, isDemoId } from '@/lib/demo/demoBots';
 import { fetchUserBriefMap, resolveUserBrief } from '@/lib/users/userBriefs';
 import { showErrorToast, handleApiError, errors } from '@/lib/errors';
 import { logger } from '@/lib/logger';
+import { dbLoose } from "@/lib/supabase";
 
 export interface Story {
   id: string;
@@ -76,7 +77,7 @@ export function useStories() {
       if (stories.length === 0) {
         // Return only own user placeholder if no stories
         if (user) {
-          const briefMap = await fetchUserBriefMap([user.id], supabase as any);
+          const briefMap = await fetchUserBriefMap([user.id]);
           const ownBrief = resolveUserBrief(user.id, briefMap);
           const { data: profileData } = await supabase
             .from('profiles')
@@ -104,7 +105,7 @@ export function useStories() {
 
       // Get unique author IDs
       const authorIds = [...new Set(stories.map(s => s.author_id))];
-      const briefMap = await fetchUserBriefMap(authorIds, supabase as any);
+      const briefMap = await fetchUserBriefMap(authorIds);
 
       // Fetch profile verification flags for authors
       const { data: profilesData, error: profilesError } = await supabase

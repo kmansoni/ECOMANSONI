@@ -16,6 +16,7 @@ import { logger } from "@/lib/logger";
 import { StoryEditorToolbar } from "./StoryEditorToolbar";
 import type { StickerType } from "@/components/feed/StoryStickerPicker";
 import type { TextLayer } from "@/components/feed/storyTextModel";
+import { dbLoose } from "@/lib/supabase";
 
 // ---------------------------------------------------------------------------
 // Типы
@@ -140,7 +141,7 @@ export function StoryCreator({ isOpen, onClose, onPublished }: StoryCreatorProps
 
       const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
-      const { data: story, error } = await (supabase as any)
+      const { data: story, error } = await dbLoose
         .from("stories")
         .insert({
           author_id: user.id,
@@ -164,7 +165,7 @@ export function StoryCreator({ isOpen, onClose, onPublished }: StoryCreatorProps
           position_x: s.x, position_y: s.y,
           rotation: 0, scale: 1, data: s.data, z_index: i,
         }));
-        const { error: stErr } = await (supabase as any).from("story_stickers").insert(rows);
+        const { error: stErr } = await dbLoose.from("story_stickers").insert(rows);
         if (stErr) logger.error("[StoryCreator] Ошибка стикеров", { error: stErr });
       }
 

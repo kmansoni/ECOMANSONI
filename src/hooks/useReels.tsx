@@ -8,11 +8,14 @@ import { fetchUserBriefMap, resolveUserBrief } from "@/lib/users/userBriefs";
 import { toggleReelLike as _toggleReelLike } from "@/lib/likes";
 import { logger } from "@/lib/logger";
 import { OperationMutex, showErrorToast, handleApiError } from "@/lib/errors";
+import type { Database } from "@/integrations/supabase/types";
+
+type ReelRow = Database["public"]["Tables"]["reels"]["Row"];
 
 function safeRandomUUID(): string {
   try {
-    if (typeof crypto !== "undefined" && typeof (crypto as any).randomUUID === "function") {
-      return (crypto as any).randomUUID();
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return crypto.randomUUID();
     }
   } catch (error) {
     logger.warn("[useReels] randomUUID unavailable, using fallback", { error });
@@ -29,7 +32,7 @@ function normalizeUrlish(value: unknown): string {
 }
 
 function normalizeSupabaseBaseUrl(): string {
-  const raw = normalizeUrlish((import.meta as any)?.env?.VITE_SUPABASE_URL);
+  const raw = normalizeUrlish(import.meta.env?.VITE_SUPABASE_URL);
   return raw.replace(/\/+$/, "");
 }
 
@@ -115,15 +118,21 @@ export interface Reel {
 export type ReelsFeedMode = "reels" | "friends";
 
 function isMissingColumnError(error: unknown, columnName: string): boolean {
-  const code = String((error as any)?.code ?? "");
-  const message = String((error as any)?.message ?? "").toLowerCase();
+  const code = typeof error === "object" && error !== null && "code" in error ? String(error.code ?? "") : "";
+  const message = typeof error === "object" && error !== null && "message" in error
+    ? String(error.message ?? "").toLowerCase()
+    : "";
   return code === "42703" && message.includes(String(columnName).toLowerCase());
+}
+
+function isEdgeFeedPayload(value: unknown): value is { ok?: boolean; data?: ReelRow[] } {
+  return typeof value === "object" && value !== null;
 }
 
 const PAGE_SIZE = 10;
 
-function getAnonSessionId(user: any): string | null {
-  if (user) return null;
+function getAnonSessionId(user: any): string | undefined {
+  if (user) return undefined;
   let anonSessionId = sessionStorage.getItem("reels_anon_session_id");
   if (!anonSessionId) {
     anonSessionId = safeRandomUUID();
@@ -184,20 +193,20 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
             },
           });
 
-          if (!error && data && (data as any).ok === true) {
-            return ((data as any).data ?? []) as any[];
+          if (!error && isEdgeFeedPayload(data) && data.ok === true) {
+            return Array.isArray(data.data) ? data.data : [];
           }
           logger.warn("[useReels] reels-feed invoke failed", { error, feedMode, offset, limit });
         } catch (e) {
           logger.warn("[useReels] reels-feed invoke exception", { error: e });
         }
 
-        return [] as any[];
+        return [];
       };
 
       const fetchReelsFallback = async () => {
         const buildBaseQuery = () => {
-          let query = (supabase as any)
+          let query = supabase
             .from("reels")
             .select("*")
             .order("created_at", { ascending: false })
@@ -214,9 +223,9 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
         // Try with moderation filters first
         try {
           const baseQuery = buildBaseQuery();
-          if (!baseQuery) return [] as any[];
+          if (!baseQuery) return [];
 
-          const queryWithModeration = (supabase as any)
+          const queryWithModeration = supabase
             .from("reels")
             .select("*")
             .neq("moderation_status", "blocked")
@@ -231,7 +240,7 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
             : queryWithModeration;
 
           const res = await withFilter;
-          if (!res.error) return (res.data || []) as any[];
+          if (!res.error) return res.data || [];
 
           // Moderation columns might not exist — fall through to simple query
           logger.warn("[useReels] moderation-filtered query failed, trying without moderation", { error: res.error });
@@ -242,17 +251,17 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
         // Fallback: query without moderation columns
         try {
           const simpleQuery = buildBaseQuery();
-          if (!simpleQuery) return [] as any[];
+          if (!simpleQuery) return [];
 
           const res = await simpleQuery;
           if (res.error) {
             logger.warn("[useReels] simple reels query failed", { error: res.error });
-            return [] as any[];
+            return [];
           }
-          return (res.data || []) as any[];
+          return res.data || [];
         } catch (e) {
           logger.warn("[useReels] simple reels query exception", { error: e });
-          return [] as any[];
+          return [];
         }
       };
 
@@ -260,7 +269,7 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
         const fetchRequestId = safeRandomUUID();
 
         const sessionId = getAnonSessionId(user);
-        let rpc = await (supabase as any).rpc("get_reels_feed_v2", {
+        let rpc = await supabase.rpc("get_reels_feed_v2", {
           p_limit: limit,
           p_offset: offset,
           p_session_id: sessionId,
@@ -271,7 +280,7 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
         });
 
         if (rpc.error) {
-          rpc = await (supabase as any).rpc("get_reels_feed_v2", {
+          rpc = await supabase.rpc("get_reels_feed_v2", {
             p_limit: limit,
             p_offset: offset,
             p_session_id: sessionId,
@@ -325,7 +334,7 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
 
       const feedReelIds = normalizedRows.map((r: any) => r.id) as string[];
       const authorIds = [...new Set(normalizedRows.map((r: any) => r.author_id))] as string[];
-        const briefMap = await fetchUserBriefMap(authorIds, supabase as any);
+        const briefMap = await fetchUserBriefMap(authorIds);
 
       let profiles: Array<{ user_id: string; verified?: boolean | null }> = [];
       if (authorIds.length) {
@@ -359,9 +368,9 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
       if (user && feedReelIds.length) {
         try {
           const [likesRes, savesRes, repostsRes] = await Promise.all([
-            (supabase as any).from("reel_likes").select("reel_id").eq("user_id", user.id).in("reel_id", feedReelIds),
-            (supabase as any).from("reel_saves").select("reel_id").eq("user_id", user.id).in("reel_id", feedReelIds),
-            (supabase as any).from("reel_reposts").select("reel_id").eq("user_id", user.id).in("reel_id", feedReelIds),
+            supabase.from("reel_likes").select("reel_id").eq("user_id", user.id).in("reel_id", feedReelIds),
+            supabase.from("reel_saves").select("reel_id").eq("user_id", user.id).in("reel_id", feedReelIds),
+            supabase.from("reel_reposts").select("reel_id").eq("user_id", user.id).in("reel_id", feedReelIds),
           ]);
           userLikedReels = (likesRes.data || []).map((l: any) => l.reel_id);
           userSavedReels = (savesRes.data || []).map((s: any) => s.reel_id);
@@ -431,7 +440,7 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
       setHasMore((raw?.length || 0) >= PAGE_SIZE);
 
       if (isGuestMode()) {
-        const demo = getDemoBotsReels() as any as Reel[];
+        const demo = getDemoBotsReels() as Reel[];
         const withoutDemo = enriched.reels.filter((r) => !String(r.id).startsWith("demo_"));
         setReels([...demo, ...withoutDemo]);
         setHasMore(false);
@@ -592,7 +601,7 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
         const isCurrentlySaved = savedReels.has(reelId);
         try {
           if (isCurrentlySaved) {
-            const { error } = await (supabase as any)
+            const { error } = await supabase
               .from("reel_saves")
               .delete()
               .eq("reel_id", reelId)
@@ -612,7 +621,7 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
               ),
             );
           } else {
-            const { error } = await (supabase as any)
+            const { error } = await supabase
               .from("reel_saves")
               .insert({ reel_id: reelId, user_id: user.id });
             if (error) throw error;
@@ -681,14 +690,14 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
 
         try {
           if (isCurrentlyReposted) {
-            const { error } = await (supabase as any)
+            const { error } = await supabase
               .from("reel_reposts")
               .delete()
               .eq("reel_id", reelId)
               .eq("user_id", user.id);
             if (error) throw error;
           } else {
-            const { error } = await (supabase as any)
+            const { error } = await supabase
               .from("reel_reposts")
               .insert({ reel_id: reelId, user_id: user.id });
             if (error) throw error;
@@ -730,7 +739,7 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
         return;
       }
       try {
-        await (supabase as any).from("reel_shares").insert({
+        await supabase.from("reel_shares").insert({
           reel_id: reelId,
           user_id: user.id,
           target_type: targetType,
@@ -769,7 +778,7 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
     if (isDemoId(reelId)) return;
     try {
       const sessionId = getAnonSessionId(user);
-      await (supabase as any).rpc("record_reel_view", {
+      await supabase.rpc("record_reel_view", {
         p_reel_id: reelId,
         p_session_id: sessionId,
       });
@@ -792,14 +801,14 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
       if (isDemoId(reelId)) return;
       try {
         const sessionId = getAnonSessionId(user);
-        await (supabase as any).rpc("record_reel_impression_v2", {
+        await supabase.rpc("record_reel_impression_v2", {
           p_reel_id: reelId,
           p_session_id: sessionId,
-          p_request_id: params?.request_id ?? null,
-          p_position: params?.position ?? null,
+          p_request_id: params?.request_id ?? undefined,
+          p_position: params?.position ?? undefined,
           p_source: params?.source ?? "reels",
-          p_algorithm_version: params?.algorithm_version ?? null,
-          p_score: params?.score ?? null,
+          p_algorithm_version: params?.algorithm_version ?? undefined,
+          p_score: params?.score ?? undefined,
         });
 
         const ownerId = resolveReelOwnerId(reelId);
@@ -833,7 +842,7 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
       if (isDemoId(reelId)) return;
       try {
         const sessionId = getAnonSessionId(user);
-        await (supabase as any).rpc("record_reel_viewed", {
+        await supabase.rpc("record_reel_viewed", {
           p_reel_id: reelId,
           p_session_id: sessionId,
         });
@@ -871,7 +880,7 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
       if (isDemoId(reelId)) return;
       try {
         const sessionId = getAnonSessionId(user);
-        await (supabase as any).rpc("record_reel_watched", {
+        await supabase.rpc("record_reel_watched", {
           p_reel_id: reelId,
           p_watch_duration_seconds: watchDurationSeconds,
           p_reel_duration_seconds: reelDurationSeconds,
@@ -911,7 +920,7 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
       if (isDemoId(reelId)) return;
       try {
         const sessionId = getAnonSessionId(user);
-        await (supabase as any).rpc("record_reel_skip", {
+        await supabase.rpc("record_reel_skip", {
           p_reel_id: reelId,
           p_skipped_at_second: skippedAtSecond,
           p_reel_duration_seconds: reelDurationSeconds,
@@ -960,7 +969,7 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
       if (isDemoId(reelId)) return;
       try {
         const sessionId = getAnonSessionId(user);
-        await (supabase as any).rpc("set_reel_feedback", {
+        await supabase.rpc("set_reel_feedback", {
           p_reel_id: reelId,
           p_feedback: feedback,
           p_session_id: sessionId,
@@ -996,19 +1005,19 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
     try {
       if (!clientPublishId) return { data: null, error: "Missing client_publish_id" };
 
-      const { data, error } = await (supabase as any).rpc("create_reel_v1", {
+      const { data, error } = await supabase.rpc("create_reel_v1", {
         p_client_publish_id: clientPublishId,
         p_video_url: videoPath,
-        p_thumbnail_url: thumbnailUrl ?? null,
-        p_description: description ?? null,
-        p_music_title: musicTitle ?? null,
-        p_music_track_id: options?.musicTrackId ?? null,
-        p_effect_preset: options?.effectPreset ?? null,
+        p_thumbnail_url: thumbnailUrl ?? undefined,
+        p_description: description ?? undefined,
+        p_music_title: musicTitle ?? undefined,
+        p_music_track_id: options?.musicTrackId ?? undefined,
+        p_effect_preset: options?.effectPreset ?? undefined,
         p_face_enhance: options?.faceEnhance ?? false,
         p_ai_enhance: options?.aiEnhance ?? false,
-        p_max_duration_sec: options?.maxDurationSec ?? null,
+        p_max_duration_sec: options?.maxDurationSec ?? undefined,
         p_visibility: options?.visibility ?? 'public',
-        p_location_name: options?.locationName ?? null,
+        p_location_name: options?.locationName ?? undefined,
         p_tagged_users: Array.isArray(options?.taggedUsers) ? options?.taggedUsers : [],
         p_allow_comments: options?.allowComments ?? true,
         p_allow_remix: options?.allowRemix ?? true,
@@ -1018,8 +1027,8 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
 
       await fetchReels();
       return { data, error: null };
-    } catch (error: any) {
-      return { data: null, error: error.message };
+    } catch (error: unknown) {
+      return { data: null, error: error instanceof Error ? error.message : "Не удалось создать reel" };
     }
   }, [user, fetchReels]);
 
@@ -1032,7 +1041,7 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
     const channel = supabase
       .channel('reels-likes-comments-rt')
       .on(
-        "postgres_changes" as any,
+        "postgres_changes",
         { event: "INSERT", schema: "public", table: "reel_likes" },
         (payload: any) => {
           const row = payload.new;
@@ -1045,7 +1054,7 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
         },
       )
       .on(
-        "postgres_changes" as any,
+        "postgres_changes",
         { event: "DELETE", schema: "public", table: "reel_likes" },
         (payload: any) => {
           const row = payload.old;
@@ -1058,7 +1067,7 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
         },
       )
       .on(
-        "postgres_changes" as any,
+        "postgres_changes",
         { event: "INSERT", schema: "public", table: "reel_comments" },
         (payload: any) => {
           const reelId = payload.new?.reel_id;
@@ -1070,7 +1079,7 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
         },
       )
       .on(
-        "postgres_changes" as any,
+        "postgres_changes",
         { event: "DELETE", schema: "public", table: "reel_comments" },
         (payload: any) => {
           const reelId = payload.old?.reel_id;

@@ -57,7 +57,7 @@ const AuthorAvatar = memo<{ avatarUrl: string | null; username: string; onClick:
         aria-label={`Профиль @${username}`}
       >
         {avatarUrl && !imgFailed ? (
-          <img
+          <img loading="lazy"
             src={avatarUrl}
             alt={username}
             className="w-full h-full object-cover"

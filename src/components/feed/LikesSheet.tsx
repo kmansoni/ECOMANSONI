@@ -85,7 +85,7 @@ function LikerRow({ liker, currentUserId, onNavigate }: LikerRowProps) {
         aria-label={`Профиль ${liker.username}`}
       >
         {liker.avatarUrl ? (
-          <img
+          <img loading="lazy"
             src={liker.avatarUrl}
             alt={liker.username}
             className="w-11 h-11 rounded-full object-cover"

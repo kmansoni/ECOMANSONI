@@ -12,6 +12,7 @@ export function useUserHasStories(userId?: string) {
   useEffect(() => {
     if (!userId) return;
 
+    const uid = userId;
     const controller = new AbortController();
 
     async function check() {
@@ -19,7 +20,7 @@ export function useUserHasStories(userId?: string) {
         const { count, error } = await supabase
           .from("stories")
           .select("*", { count: "exact", head: true })
-          .eq("author_id", userId)
+          .eq("author_id", uid)
           .gt("expires_at", new Date().toISOString())
           .limit(1)
           .abortSignal(controller.signal);

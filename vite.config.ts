@@ -13,6 +13,13 @@ export default defineConfig(({ mode }) => ({
     hmr: {
       overlay: true,
     },
+    proxy: mode === "development" ? {
+      "/functions/v1": {
+        target: process.env.VITE_SUPABASE_URL || "http://127.0.0.1:54321",
+        changeOrigin: true,
+        secure: true,
+      },
+    } : undefined,
   },
   plugins: [react()],
   resolve: {

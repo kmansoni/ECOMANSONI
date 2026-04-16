@@ -104,7 +104,7 @@ export default function GuidePage() {
 
       {/* Cover */}
       {guide.cover_url && (
-        <img src={guide.cover_url} alt={guide.title} className="w-full aspect-video object-cover" />
+        <img loading="lazy" src={guide.cover_url} alt={guide.title} className="w-full aspect-video object-cover" />
       )}
 
       {/* Description */}
@@ -130,7 +130,7 @@ export default function GuidePage() {
               className="bg-card rounded-2xl overflow-hidden"
             >
               {post?.image_url && (
-                <img src={post.image_url} alt="" className="w-full aspect-square object-cover" />
+                <img loading="lazy" src={post.image_url} alt="" className="w-full aspect-square object-cover" />
               )}
               <div className="p-3">
                 {item.note && <p className="text-foreground text-sm mb-1">{item.note}</p>}

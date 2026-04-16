@@ -63,7 +63,7 @@ export function GradientAvatar({
 
   if (avatarUrl && !imageFailed) {
     return (
-      <img
+      <img loading="lazy"
         src={avatarUrl}
         alt={name}
         onError={() => setImageFailed(true)}

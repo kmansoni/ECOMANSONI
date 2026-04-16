@@ -4,6 +4,7 @@ import { useAuth } from "./useAuth";
 import { useUnifiedCounterStore } from "@/stores/useUnifiedCounterStore";
 import { isChatProtocolV11EnabledForUser } from "@/lib/chat/protocolV11";
 import { logger } from "@/lib/logger";
+import { dbLoose } from "@/lib/supabase";
 
 export function useUnreadChats() {
   const { user } = useAuth();
@@ -11,16 +12,17 @@ export function useUnreadChats() {
 
   const refetch = useCallback(async () => {
     if (!user) return;
+    const fetchStarted = Date.now();
     try {
       if (isChatProtocolV11EnabledForUser(user.id)) {
-        const { data, error } = await (supabase as any)
+        const { data, error } = await dbLoose
           .from("chat_inbox_projection")
           .select("dialog_id, unread_count")
           .eq("user_id", user.id);
         if (error) throw error;
         const rows = (Array.isArray(data) ? data : []) as Array<{ dialog_id: string; unread_count: number | null }>;
         const total = rows.reduce((sum, row) => sum + Number(row.unread_count || 0), 0);
-        useUnifiedCounterStore.getState().setChatsUnread(total);
+        useUnifiedCounterStore.getState().setChatsUnread(total, fetchStarted);
         return;
       }
 
@@ -30,7 +32,7 @@ export function useUnreadChats() {
         .eq("user_id", user.id);
 
       if (!participants || participants.length === 0) {
-        useUnifiedCounterStore.getState().setChatsUnread(0);
+        useUnifiedCounterStore.getState().setChatsUnread(0, fetchStarted);
         return;
       }
 
@@ -45,7 +47,7 @@ export function useUnreadChats() {
         totalUnread += count || 0;
       }
 
-      useUnifiedCounterStore.getState().setChatsUnread(totalUnread);
+      useUnifiedCounterStore.getState().setChatsUnread(totalUnread, fetchStarted);
     } catch (error) {
       logger.error("[useUnreadChats] Ошибка получения счётчика непрочитанных", { error });
     }

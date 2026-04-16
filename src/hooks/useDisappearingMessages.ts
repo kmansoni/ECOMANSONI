@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { supabase } from "@/lib/supabase";
+import { dbLoose } from "@/lib/supabase";
 import { toast } from "sonner";
 
 export const AVAILABLE_TIMERS: (number | null)[] = [null, 30, 60, 300, 3600, 86400, 604800];
@@ -19,7 +19,7 @@ export function useDisappearingMessages(conversationId: string | null) {
   useEffect(() => {
     if (!conversationId) return;
     setLoading(true);
-    (supabase as any)
+    dbLoose
       .from("conversations")
       .select("default_disappear_timer")
       .eq("id", conversationId)
@@ -35,7 +35,7 @@ export function useDisappearingMessages(conversationId: string | null) {
   const setConversationTimer = useCallback(
     async (seconds: number | null) => {
       if (!conversationId) return;
-      const { error } = await (supabase as any)
+      const { error } = await dbLoose
         .from("conversations")
         .update({ default_disappear_timer: seconds })
         .eq("id", conversationId);

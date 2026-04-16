@@ -1,9 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
-import { supabase } from '@/lib/supabase';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { dbLoose } from "@/lib/supabase";
 import { useAuth } from './useAuth';
 import { logger } from '@/lib/logger';
-
-const supabaseAny = supabase as any;
 
 export interface ThreadMessage {
   id: string;
@@ -43,7 +41,7 @@ export function useThreadMessages(rootMessageId: string | null) {
       setError(null);
 
       // Fetch root message
-      const { data: rootData, error: rootError } = await supabaseAny
+      const { data: rootData, error: rootError } = await dbLoose
         .from('messages')
         .select(`
           *,
@@ -55,7 +53,7 @@ export function useThreadMessages(rootMessageId: string | null) {
       if (rootError) throw rootError;
 
       // Fetch all replies in the thread (messages with same thread_root_message_id)
-      const { data: repliesData, error: repliesError } = await supabaseAny
+      const { data: repliesData, error: repliesError } = await dbLoose
         .from('messages')
         .select(`
           *,
@@ -87,6 +85,10 @@ export function useThreadMessages(rootMessageId: string | null) {
     }
   }, [rootMessageId, user]);
 
+  // Stable ref so realtime callback never captures stale fetchThread
+  const fetchThreadRef = useRef(fetchThread);
+  fetchThreadRef.current = fetchThread;
+
   useEffect(() => {
     fetchThread();
   }, [fetchThread]);
@@ -95,7 +97,9 @@ export function useThreadMessages(rootMessageId: string | null) {
   useEffect(() => {
     if (!rootMessageId) return;
 
-    const channel = supabaseAny
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const channel = dbLoose
       .channel(`thread:${rootMessageId}`)
       .on(
         'postgres_changes',
@@ -106,15 +110,18 @@ export function useThreadMessages(rootMessageId: string | null) {
           filter: `thread_root_message_id=eq.${rootMessageId}`,
         },
         () => {
-          fetchThread();
+          // Debounce rapid INSERT bursts (e.g. paste of multiple messages)
+          if (debounceTimer) clearTimeout(debounceTimer);
+          debounceTimer = setTimeout(() => fetchThreadRef.current(), 300);
         }
       )
       .subscribe();
 
     return () => {
-      supabaseAny.removeChannel(channel);
+      if (debounceTimer) clearTimeout(debounceTimer);
+      dbLoose.removeChannel(channel);
     };
-  }, [rootMessageId, fetchThread]);
+  }, [rootMessageId]);
 
   const sendReply = useCallback(
     async (content: string, replyToMessageId?: string) => {
@@ -126,10 +133,10 @@ export function useThreadMessages(rootMessageId: string | null) {
       const replyToId = replyToMessageId || rootMessageId;
       const threadRootId = rootMessageId;
 
-      const { data, error } = await supabaseAny
+      const { data, error } = await dbLoose
         .from('messages')
         .insert({
-          conversation_id: (await supabaseAny
+          conversation_id: (await dbLoose
             .from('messages')
             .select('conversation_id')
             .eq('id', rootMessageId)
@@ -152,7 +159,7 @@ export function useThreadMessages(rootMessageId: string | null) {
   const muteThread = useCallback(async () => {
     if (!user || !rootMessageId) return;
 
-    const { error } = await supabaseAny.from('threads_muted').insert({
+    const { error } = await dbLoose.from('threads_muted').insert({
       user_id: user.id,
       message_id: rootMessageId,
     });
@@ -165,7 +172,7 @@ export function useThreadMessages(rootMessageId: string | null) {
   const unmuteThread = useCallback(async () => {
     if (!user || !rootMessageId) return;
 
-    const { error } = await supabaseAny
+    const { error } = await dbLoose
       .from('threads_muted')
       .delete()
       .eq('user_id', user.id)
@@ -204,13 +211,13 @@ export function useThreadBadge(conversationId: string | null) {
         // Fetch all thread replies + last-read timestamps in one query batch.
         // thread_read_positions stores (user_id, thread_root_message_id, last_read_at).
         const [repliesResult, readResult] = await Promise.all([
-          supabaseAny
+          dbLoose
             .from('messages')
             .select('id, thread_root_message_id, created_at')
             .eq('conversation_id', conversationId)
             .not('thread_root_message_id', 'is', null)
             .order('created_at', { ascending: false }),
-          supabaseAny
+          dbLoose
             .from('thread_read_positions')
             .select('thread_root_message_id, last_read_at')
             .eq('user_id', user!.id)

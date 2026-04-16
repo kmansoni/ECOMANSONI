@@ -6,31 +6,12 @@ import { getSupabaseRuntimeConfig } from "@/lib/supabaseRuntimeConfig";
 export const supabase = mainSupabase;
 
 /**
- * Type-safe escape hatch for Supabase tables/RPCs not yet in the generated
- * Database schema. Uses permissive `unknown` row/args/returns while preserving
- * valid query builder methods (`from`, `insert`, `update`, `rpc`, etc.).
+ * Escape hatch for Supabase tables/RPCs not yet in the generated Database
+ * schema. Uses `any` database type so postgrest-js returns `any` for all
+ * queries instead of `unknown`/`{}`.
  */
-type LooseRow = Record<string, unknown>;
-type LooseFunction = {
-	Args: Record<string, unknown>;
-	Returns: unknown;
-};
-type LooseDatabase = {
-	public: {
-		Tables: Record<string, {
-			Row: LooseRow;
-			Insert: LooseRow;
-			Update: LooseRow;
-			Relationships: [];
-		}>;
-		Views: Record<string, never>;
-		Functions: Record<string, LooseFunction>;
-		Enums: Record<string, never>;
-		CompositeTypes: Record<string, never>;
-	};
-};
-
-type LooseClient = SupabaseClient<LooseDatabase>;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type LooseClient = SupabaseClient<any, 'public', any>;
 export const dbLoose: LooseClient = mainSupabase as unknown as LooseClient;
 
 // Environment values for direct access when needed.

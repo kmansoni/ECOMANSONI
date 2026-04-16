@@ -124,7 +124,7 @@ export function MusicPicker({ open, onClose, onSelect }: MusicPickerProps) {
                       {/* Cover */}
                       <div className="w-11 h-11 rounded-lg bg-zinc-700 flex-shrink-0 overflow-hidden">
                         {track.cover_url ? (
-                          <img src={track.cover_url} alt={track.title} className="w-full h-full object-cover" />
+                          <img loading="lazy" src={track.cover_url} alt={track.title} className="w-full h-full object-cover" />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center">
                             <Music className="w-4 h-4 text-zinc-500" />

@@ -20,7 +20,7 @@
  *  - No coordinates stored client-side between sends.
  */
 
-import { supabase } from "@/lib/supabase";
+import { dbLoose } from "@/lib/supabase";
 import { sendMessageV1, buildChatBodyEnvelope } from "@/lib/chat/sendMessageV1";
 import type { SendMessageV1Result } from "@/lib/chat/sendMessageV1";
 
@@ -176,7 +176,7 @@ export async function sendLiveLocation(
       if (!active) return false;
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error } = await (supabase as any).rpc("update_live_location_v1", {
+      const { error } = await dbLoose.rpc("update_live_location_v1", {
         p_message_id: messageId,
         p_lat: newCoords.lat,
         p_lng: newCoords.lng,
@@ -205,7 +205,7 @@ export async function sendLiveLocation(
       if (!active) return;
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error } = await (supabase as any).rpc("stop_live_location_v1", {
+      const { error } = await dbLoose.rpc("stop_live_location_v1", {
         p_message_id: messageId,
       });
 

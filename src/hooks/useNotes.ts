@@ -1,4 +1,4 @@
-import { supabase } from "@/integrations/supabase/client";
+import { dbLoose } from "@/lib/supabase";
 
 export interface StatusNote {
   user_id: string;
@@ -26,7 +26,7 @@ export async function sendNoteReaction(
   noteOwnerId: string,
   emoji: string
 ): Promise<void> {
-  const { error } = await (supabase as any)
+  const { error } = await dbLoose
     .from("note_reactions")
     .upsert(
       { reactor_id: reactorId, note_owner_id: noteOwnerId, emoji },
@@ -39,7 +39,7 @@ export async function deleteNoteReaction(
   reactorId: string,
   noteOwnerId: string
 ): Promise<void> {
-  const { error } = await (supabase as any)
+  const { error } = await dbLoose
     .from("note_reactions")
     .delete()
     .eq("reactor_id", reactorId)
@@ -53,7 +53,7 @@ export async function getNoteReactions(
   noteOwnerIds: string[]
 ): Promise<Record<string, string>> {
   if (!noteOwnerIds.length) return {};
-  const { data } = await (supabase as any)
+  const { data } = await dbLoose
     .from("note_reactions")
     .select("note_owner_id, emoji")
     .eq("reactor_id", reactorId)
@@ -67,7 +67,7 @@ export async function getNoteReactions(
 
 export async function createNote(userId: string, text: string, emoji?: string): Promise<void> {
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-  const { error } = await (supabase as any)
+  const { error } = await dbLoose
     .from("user_status_notes")
     .upsert({
       user_id: userId,
@@ -80,7 +80,7 @@ export async function createNote(userId: string, text: string, emoji?: string): 
 }
 
 export async function deleteNote(userId: string): Promise<void> {
-  const { error } = await (supabase as any)
+  const { error } = await dbLoose
     .from("user_status_notes")
     .delete()
     .eq("user_id", userId);
@@ -89,10 +89,10 @@ export async function deleteNote(userId: string): Promise<void> {
 
 export async function getNotes(userIds: string[]): Promise<StatusNote[]> {
   if (!userIds.length) return [];
-  const { data } = await (supabase as any)
+  const { data } = await dbLoose
     .from("user_status_notes")
     .select("*, profiles(id, username, avatar_url)")
     .in("user_id", userIds)
     .gt("expires_at", new Date().toISOString());
-  return (data ?? []).map((n: any) => ({ ...n, profile: n.profiles }));
+  return (data ?? []).map((n) => ({ ...n, profile: n.profiles })) as StatusNote[];
 }

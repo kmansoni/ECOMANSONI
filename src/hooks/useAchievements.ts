@@ -12,6 +12,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 import { logger } from '@/lib/logger';
+import { dbLoose } from "@/lib/supabase";
 
 export interface Achievement {
   id: string;
@@ -27,9 +28,6 @@ interface BadgeCriteria {
   type: string;
   threshold: number;
 }
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const db = supabase as any;
 
 export function useAchievements(userId: string) {
   const { user } = useAuth();
@@ -47,7 +45,7 @@ export function useAchievements(userId: string) {
     try {
       setLoading(true);
 
-      const { data: allBadges, error: badgesErr } = await db
+      const { data: allBadges, error: badgesErr } = await dbLoose
         .from('achievement_badges')
         .select('id, slug, name, description, icon_emoji, category')
         .order('created_at', { ascending: true })
@@ -58,7 +56,7 @@ export function useAchievements(userId: string) {
         return;
       }
 
-      const { data: userBadges, error: ubErr } = await db
+      const { data: userBadges, error: ubErr } = await dbLoose
         .from('user_badges')
         .select('badge_id, earned_at')
         .eq('user_id', userId)
@@ -99,10 +97,10 @@ export function useAchievements(userId: string) {
     try {
       // Загрузка метрик пользователя параллельно
       const [postsRes, reelsRes, followersRes, likesRes] = await Promise.all([
-        db.from('posts').select('id', { count: 'exact', head: true }).eq('author_id', userId).eq('is_published', true),
-        db.from('posts').select('id', { count: 'exact', head: true }).eq('author_id', userId).eq('type', 'reel'),
-        db.from('followers').select('id', { count: 'exact', head: true }).eq('following_id', userId),
-        db.from('posts').select('likes_count').eq('author_id', userId).eq('is_published', true).limit(1000),
+        dbLoose.from('posts').select('id', { count: 'exact', head: true }).eq('author_id', userId).eq('is_published', true),
+        dbLoose.from('posts').select('id', { count: 'exact', head: true }).eq('author_id', userId).eq('type', 'reel'),
+        dbLoose.from('followers').select('id', { count: 'exact', head: true }).eq('following_id', userId),
+        dbLoose.from('posts').select('likes_count').eq('author_id', userId).eq('is_published', true).limit(1000),
       ]);
 
       const postsCount = postsRes.count ?? 0;
@@ -124,7 +122,7 @@ export function useAchievements(userId: string) {
       let grantedCount = 0;
 
       for (const badge of unearnedBadges) {
-        const { data: badgeRow } = await db
+        const { data: badgeRow } = await dbLoose
           .from('achievement_badges')
           .select('criteria')
           .eq('id', badge.id)
@@ -137,7 +135,7 @@ export function useAchievements(userId: string) {
 
         const currentValue = metricsMap[criteria.type] ?? 0;
         if (currentValue >= criteria.threshold) {
-          const { error: grantErr } = await db
+          const { error: grantErr } = await dbLoose
             .from('user_badges')
             .upsert({ user_id: userId, badge_id: badge.id }, { onConflict: 'user_id,badge_id' });
 

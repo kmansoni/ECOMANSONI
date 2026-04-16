@@ -75,7 +75,7 @@ function loadRegistry(): CompiledRegistry {
     // In Node.js (including Vitest jsdom), read from file
     const isNodeRuntime =
       typeof process !== "undefined" &&
-      !!(process as any).versions?.node;
+      !!(process as unknown as { versions?: { node?: string } }).versions?.node;
 
     if (isNodeRuntime) {
       const registryPath = path.join(process.cwd(), "supabase", "registry.json");
@@ -105,7 +105,7 @@ export function getRegistry(): CompiledRegistry {
 export const registry = new Proxy({} as CompiledRegistry, {
   get(target, prop) {
     const reg = loadRegistry();
-    return (reg as any)[prop];
+    return reg[prop as keyof CompiledRegistry];
   },
 });
 
@@ -154,7 +154,7 @@ export function isMaintenanceTransitionForbidden(from: string, to: string): bool
  * Helper: get rate limit for key
  */
 export function getRateLimit(key: string): number {
-  const limit = (getRegistry().config.rateLimiting as any)[key];
+  const limit = getRegistry().config.rateLimiting[key];
   if (!limit) {
     throw new Error(`Rate limit not found: ${key}`);
   }
@@ -178,7 +178,7 @@ export function getRetentionDays(classification: string): number {
  * Helper: get RPC function signature
  */
 export function getRpcFunctionSignature(rpcName: string): string | undefined {
-  const rpc = (getRegistry().config.rpcFunctions as any)[rpcName];
+  const rpc = getRegistry().config.rpcFunctions[rpcName];
   return rpc?.signature;
 }
 
@@ -186,7 +186,7 @@ export function getRpcFunctionSignature(rpcName: string): string | undefined {
  * Helper: get query endpoint signature
  */
 export function getQueryEndpointSignature(endpointName: string): string | undefined {
-  const endpoint = (getRegistry().config.queryEndpoints as any)[endpointName];
+  const endpoint = getRegistry().config.queryEndpoints[endpointName];
   return endpoint?.signature;
 }
 

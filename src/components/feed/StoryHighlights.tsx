@@ -141,7 +141,7 @@ export function StoryHighlights({
               className="w-16 h-16 rounded-full ring-2 ring-border overflow-hidden"
             >
               {h.cover_url ? (
-                <img
+                <img loading="lazy"
                   src={h.cover_url}
                   alt={h.title}
                   className="w-full h-full object-cover"
@@ -182,7 +182,7 @@ export function StoryHighlights({
               className="mx-auto w-24 h-24 rounded-full border-2 border-dashed border-muted-foreground/40 overflow-hidden flex items-center justify-center bg-muted/30"
             >
               {coverPreview ? (
-                <img src={coverPreview} alt="cover" className="w-full h-full object-cover" />
+                <img loading="lazy" src={coverPreview} alt="cover" className="w-full h-full object-cover" />
               ) : (
                 <div className="flex flex-col items-center gap-1">
                   <Plus className="w-6 h-6 text-muted-foreground" />

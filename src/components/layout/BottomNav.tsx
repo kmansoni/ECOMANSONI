@@ -418,7 +418,7 @@ export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function Bottom
                   isAccountOperationInProgress && "opacity-70"
                 )}
               >
-                <img
+                <img loading="lazy"
                   src={avatar}
                   alt={displayName}
                   className="w-12 h-12 rounded-full object-cover"

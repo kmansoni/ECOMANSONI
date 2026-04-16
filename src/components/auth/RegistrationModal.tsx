@@ -151,7 +151,7 @@ export function RegistrationModal({ isOpen, onClose, phone, email: initialEmail,
       <div className="w-full max-w-md rounded-2xl border border-border bg-card text-card-foreground shadow-xl max-h-[92vh] overflow-y-auto p-5 sm:p-6">
         <div className="flex justify-between items-center mb-4">
           <div className="flex items-center gap-3">
-            <img src={logo} alt="Logo" className="w-8 h-8 object-contain" />
+            <img loading="lazy" src={logo} alt="Logo" className="w-8 h-8 object-contain" />
             <h2 className="text-xl font-bold text-foreground">Завершите регистрацию</h2>
           </div>
           <button

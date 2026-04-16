@@ -223,7 +223,7 @@ export function CameraCaptureSheet({
           captured.type === "video" ? (
             <video src={captured.previewUrl} className="absolute inset-0 w-full h-full object-cover" controls playsInline />
           ) : (
-            <img src={captured.previewUrl} alt="captured" className="absolute inset-0 w-full h-full object-cover" />
+            <img loading="lazy" src={captured.previewUrl} alt="captured" className="absolute inset-0 w-full h-full object-cover" />
           )
         )}
 

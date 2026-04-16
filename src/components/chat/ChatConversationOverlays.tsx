@@ -1,4 +1,4 @@
-import type { Dispatch, SetStateAction, RefObject, ChangeEvent } from "react";
+import type { Dispatch, SetStateAction, Ref, ChangeEvent } from "react";
 import { toast } from "sonner";
 import { logger } from "@/lib/logger";
 import { Button } from "@/components/ui/button";
@@ -62,7 +62,7 @@ export interface ChatConversationOverlaysProps {
 
   showAttachmentSheet: boolean;
   setShowAttachmentSheet: (v: boolean) => void;
-  handleAttachment: (file: File, type?: string) => Promise<void>;
+  handleAttachment: (file: File, type: 'image' | 'video' | 'document') => Promise<void>;
   handleAlbumFiles: (files: File[], types: ("image" | "video")[]) => void;
   handleLocationSelect: () => Promise<void>;
   showContactSheet: boolean;
@@ -72,7 +72,7 @@ export interface ChatConversationOverlaysProps {
   setShowAlbumPreview: (v: boolean) => void;
   albumFiles: File[];
   setAlbumFiles: Dispatch<SetStateAction<File[]>>;
-  albumInputRef: RefObject<HTMLInputElement | null>;
+  albumInputRef: Ref<HTMLInputElement>;
   handleAlbumAddMore: () => void;
   handleAlbumAddMoreChange: (e: ChangeEvent<HTMLInputElement>) => void;
   handleAlbumSend: (caption: string) => Promise<void>;
@@ -94,8 +94,8 @@ export interface ChatConversationOverlaysProps {
 
   showTimerPicker: boolean;
   setShowTimerPicker: (v: boolean) => void;
-  defaultTimer: number;
-  setConversationTimer: (v: number) => void;
+  defaultTimer: number | null;
+  setConversationTimer: (v: number | null) => void;
 
   selectionMode: boolean;
   selectedIds: Set<string>;

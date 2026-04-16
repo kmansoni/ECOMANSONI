@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { supabase } from "@/lib/supabase";
+import { supabase, dbLoose } from "@/lib/supabase";
 import { Heart, MessageCircle, ChevronRight, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { fetchUserBriefMap, resolveUserBrief } from "@/lib/users/userBriefs";
@@ -64,7 +64,7 @@ export function SharedPostCard({ postId, isOwn, messageId, onDelete }: SharedPos
         }
 
         const authorId = String((postData as any).author_id || "");
-        const briefMap = await fetchUserBriefMap([authorId], supabase as any);
+        const briefMap = await fetchUserBriefMap([authorId]);
         const profile = resolveUserBrief(authorId, briefMap);
 
         // Fetch post media (first image only for preview)
@@ -175,7 +175,7 @@ export function SharedPostCard({ postId, isOwn, messageId, onDelete }: SharedPos
         {/* Image preview */}
         {imageUrl && (
           <div className="relative media-frame media-frame--preview">
-            <img
+            <img loading="lazy"
               src={imageUrl}
               alt=""
               className="media-object media-object--fill media-object--cover"
@@ -188,7 +188,7 @@ export function SharedPostCard({ postId, isOwn, messageId, onDelete }: SharedPos
         <div className="p-3">
           {/* Author info */}
           <div className="flex items-center gap-2 mb-2">
-            <img
+            <img loading="lazy"
               src={post.author?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${post.author_id}`}
               alt={authorName}
               className="w-6 h-6 rounded-full object-cover"

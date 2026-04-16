@@ -27,6 +27,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'; // useRef уж
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { logger } from '@/lib/logger';
+import { dbLoose } from "@/lib/supabase";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -167,7 +168,7 @@ async function fetchPublicFeedPage(
   cursor: FeedCursor | null,
   pageSize: number,
 ): Promise<FeedResponse> {
-  let query = (supabase as any)
+  let query = dbLoose
     .from("posts")
     .select(
       "id, author_id, content, created_at, likes_count, comments_count, shares_count, views_count, post_media(id, media_url, media_type, sort_order)",
@@ -197,7 +198,7 @@ async function fetchPublicFeedPage(
   let profilesByUserId = new Map<string, PublicProfileRow>();
 
   if (authorIds.length > 0) {
-    const { data: profileRows, error: profilesError } = await (supabase as any)
+    const { data: profileRows, error: profilesError } = await dbLoose
       .from("profiles")
       .select("user_id, display_name, avatar_url, verified")
       .in("user_id", authorIds);

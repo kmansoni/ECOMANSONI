@@ -99,7 +99,7 @@ export async function fetchVerifications(userId: string): Promise<Verification[]
   if (error) throw error;
   return (data || []).map((v) => ({
     type: v.verification_type,
-    is_active: v.is_active,
+    is_active: v.is_active ?? false,
     verified_at: v.verified_at,
   }));
 }

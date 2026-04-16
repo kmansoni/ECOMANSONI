@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
+import { dbLoose } from "@/lib/supabase";
 
 export function useRestrictions() {
   const { user } = useAuth();
@@ -10,7 +11,7 @@ export function useRestrictions() {
   useEffect(() => {
     if (!user) return;
     (async () => {
-      const { data } = await (supabase as any)
+      const { data } = await dbLoose
         .from("restricted_users")
         .select("restricted_id")
         .eq("user_id", user.id);
@@ -24,7 +25,7 @@ export function useRestrictions() {
   const restrictUser = useCallback(
     async (restrictedId: string) => {
       if (!user) return;
-      await (supabase as any)
+      await dbLoose
         .from("restricted_users")
         .insert({ user_id: user.id, restricted_id: restrictedId });
       setRestrictedIds((prev) => new Set([...prev, restrictedId]));
@@ -35,7 +36,7 @@ export function useRestrictions() {
   const unrestrictUser = useCallback(
     async (restrictedId: string) => {
       if (!user) return;
-      await (supabase as any)
+      await dbLoose
         .from("restricted_users")
         .delete()
         .eq("user_id", user.id)

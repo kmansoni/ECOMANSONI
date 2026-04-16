@@ -69,7 +69,7 @@ export function SwipeCard({ profile, onSwipe, isTop, stackIndex }: SwipeCardProp
       <div className="relative w-full h-full rounded-2xl overflow-hidden bg-zinc-800 shadow-xl select-none">
         {/* Фото */}
         {currentPhoto ? (
-          <img
+          <img loading="lazy"
             src={currentPhoto}
             alt={profile.display_name ?? 'Фото анкеты'}
             className="w-full h-full object-cover pointer-events-none"

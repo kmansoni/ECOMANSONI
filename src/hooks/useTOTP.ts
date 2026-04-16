@@ -9,6 +9,7 @@
 
 import { useCallback, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { dbLoose } from "@/lib/supabase";
 
 export interface TOTPSetupResult {
   otpauthUrl: string;
@@ -62,7 +63,7 @@ export function useTOTP() {
 
   const checkEnabled = useCallback(async (): Promise<boolean> => {
      
-    const { data, error: dbErr } = await (supabase as any)
+    const { data, error: dbErr } = await dbLoose
       .from("user_totp_secrets")
       .select("is_enabled")
       .maybeSingle();

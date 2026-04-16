@@ -15,6 +15,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { logger } from "@/lib/logger";
+import { dbLoose } from "@/lib/supabase";
 
 export type ReportTarget = "message" | "user" | "group" | "channel";
 
@@ -50,7 +51,7 @@ export function ReportSheet({ open, onOpenChange, targetType, targetId, messageP
 
     setSubmitting(true);
     try {
-      const { error } = await (supabase as any).from("reports").insert({
+      const { error } = await dbLoose.from("reports").insert({
         reporter_id: user.id,
         target_type: targetType,
         target_id: targetId,

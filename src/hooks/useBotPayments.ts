@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { dbLoose } from "@/lib/supabase";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -75,7 +76,7 @@ export function useBotPayments(): UseBotPaymentsReturn {
 
     const load = async () => {
        
-      const { data, error: qErr } = await (supabase as any)
+      const { data, error: qErr } = await dbLoose
         .from("payment_invoices")
         .select("*")
         .eq("user_id", user.id)

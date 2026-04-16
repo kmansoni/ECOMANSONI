@@ -101,11 +101,10 @@ export const TemplatesPanel = React.memo(function TemplatesPanel({
                 aria-label={`Применить шаблон: ${template.title}`}
               >
                 {template.thumbnail_url ? (
-                  <img
-                    src={template.thumbnail_url}
+                  <img loading="lazy" src={template.thumbnail_url}
                     alt={template.title}
                     className="w-full aspect-[9/16] object-cover"
-                    loading="lazy"
+                    
                   />
                 ) : (
                   <div className="w-full aspect-[9/16] bg-gradient-to-br from-violet-600/20 to-indigo-600/20 flex items-center justify-center">

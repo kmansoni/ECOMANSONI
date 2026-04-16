@@ -27,21 +27,20 @@ export function isSupabaseConfigured(): boolean {
 function getEdgeFunctionUrl(fnName: string): string {
   const runtimeConfig = getSupabaseRuntimeConfig();
   const supabaseUrl = stripTrailingSlash(normalizeEnv(runtimeConfig.supabaseUrl));
-  if (supabaseUrl) {
-    return `${supabaseUrl}/functions/v1/${fnName}`;
+  if (!supabaseUrl) {
+    throw new Error(`[backendEndpoints] VITE_SUPABASE_URL не задан — невозможно построить URL для ${fnName}`);
   }
-  return `https://lfkbgnbjxskspsownvjm.supabase.co/functions/v1/${fnName}`;
+  return `${supabaseUrl}/functions/v1/${fnName}`;
 }
 
 function getEdgeFunctionUrls(fnName: string): string[] {
   const urls: string[] = [];
   const runtimeConfig = getSupabaseRuntimeConfig();
   const runtimeUrl = stripTrailingSlash(normalizeEnv(runtimeConfig.supabaseUrl));
-  if (runtimeUrl) {
-    pushUnique(urls, `${runtimeUrl}/functions/v1/${fnName}`);
+  if (!runtimeUrl) {
+    throw new Error(`[backendEndpoints] VITE_SUPABASE_URL не задан — невозможно построить URL для ${fnName}`);
   }
-  // Emergency fallback for current primary project ref.
-  pushUnique(urls, `https://lfkbgnbjxskspsownvjm.supabase.co/functions/v1/${fnName}`);
+  pushUnique(urls, `${runtimeUrl}/functions/v1/${fnName}`);
   return urls;
 }
 

@@ -17,7 +17,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => {
   const single = vi.fn();
   const maybeSingle = vi.fn();
-  const orderFn = vi.fn(() => Promise.resolve({ data: [], error: null }));
+  const orderFn = vi.fn((): Promise<{ data: unknown; error: unknown }> => Promise.resolve({ data: [], error: null }));
 
   // is() can be terminal (await) OR chained (.order()).
   // Return a vi.fn() that produces a thenable-with-order so both patterns work.
@@ -41,7 +41,7 @@ const mocks = vi.hoisted(() => {
   const updateFn = vi.fn((_patch: unknown) => makeChain());
   const deleteFn = vi.fn(() => makeChain());
   const insertFn = vi.fn(() => ({ select: vi.fn((_cols?: string) => makeChain()) }));
-  const upsertFn = vi.fn(() => Promise.resolve({ data: null, error: null }));
+  const upsertFn = vi.fn((): Promise<{ data: unknown; error: unknown }> => Promise.resolve({ data: null, error: null }));
 
   const fromFn = vi.fn(() => ({
     select: selectFn,

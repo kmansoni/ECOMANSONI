@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { supabase } from "@/lib/supabase";
+import { dbLoose } from "@/lib/supabase";
 import { logger } from "@/lib/logger";
 import { useAuth } from "./useAuth";
 import type { GifItem } from "@/lib/chat/gifService";
@@ -24,7 +24,7 @@ export function useSavedGifs() {
     if (!user) return;
     setLoading(true);
     try {
-      const { data, error } = await (supabase as any)
+      const { data, error } = await dbLoose
         .from("user_saved_gifs")
         .select("*")
         .eq("user_id", user.id)
@@ -46,7 +46,7 @@ export function useSavedGifs() {
   const saveGif = useCallback(
     async (gif: GifItem) => {
       if (!user) return;
-      const { error } = await (supabase as any).from("user_saved_gifs").upsert({
+      const { error } = await dbLoose.from("user_saved_gifs").upsert({
         user_id: user.id,
         gif_url: gif.url,
         preview_url: gif.previewUrl,
@@ -62,7 +62,7 @@ export function useSavedGifs() {
   const removeGif = useCallback(
     async (gifUrl: string) => {
       if (!user) return;
-      const { error } = await (supabase as any)
+      const { error } = await dbLoose
         .from("user_saved_gifs")
         .delete()
         .eq("user_id", user.id)

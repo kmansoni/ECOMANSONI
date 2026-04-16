@@ -79,7 +79,7 @@ function useTrackReels(trackTitle: string | undefined) {
         const { data, error: fetchError, count } = await query;
         if (fetchError) throw fetchError;
 
-        const rows = (data ?? []) as Array<{
+        const rows = (data ?? []) as unknown as Array<{
           id: string;
           thumbnail_url: string | null;
           video_url: string;
@@ -149,11 +149,10 @@ function ReelGridItem({ reel, onClick }: { reel: TrackReel; onClick: () => void 
       aria-label={`Reel от @${reel.author?.username ?? "unknown"}`}
     >
       {reel.thumbnail_url ? (
-        <img
-          src={reel.thumbnail_url}
+        <img loading="lazy" src={reel.thumbnail_url}
           alt=""
           className="w-full h-full object-cover"
-          loading="lazy"
+          
         />
       ) : (
         <div className="w-full h-full flex items-center justify-center bg-white/5">

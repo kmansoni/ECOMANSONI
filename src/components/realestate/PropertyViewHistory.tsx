@@ -162,11 +162,10 @@ export function PropertyViewHistory({ onSelectProperty, propertyDetails }: Prope
                 {/* Фото */}
                 <div className="w-20 h-20 rounded-lg bg-muted shrink-0 overflow-hidden">
                   {details?.imageUrl ? (
-                    <img
-                      src={details.imageUrl}
+                    <img loading="lazy" src={details.imageUrl}
                       alt={details.title}
                       className="w-full h-full object-cover"
-                      loading="lazy"
+                      
                     />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center">

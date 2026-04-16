@@ -81,7 +81,7 @@ export function MediaAlbumPreview({ files, onRemove, onAddMore, onSend, onCancel
                   playsInline
                 />
               ) : (
-                <img src={p.url} alt="" className="w-full h-full object-cover" />
+                <img loading="lazy" src={p.url} alt="" className="w-full h-full object-cover" />
               )}
               <button
                 onClick={() => onRemove(idx)}

@@ -1,4 +1,4 @@
-import { supabase } from "@/lib/supabase";
+import { supabase, dbLoose } from "@/lib/supabase";
 import { logger } from "../logger";
 
 export type ChatSchemaProbeV2 = {
@@ -53,7 +53,7 @@ export async function runChatSchemaProbeOnce(): Promise<ChatSchemaProbeV2 | null
       return null;
     }
 
-    const res = await (supabase as any).rpc("chat_schema_probe_v2");
+    const res = await dbLoose.rpc("chat_schema_probe_v2");
     const error = (res as any)?.error;
     const data = (res as any)?.data;
     if (error) {

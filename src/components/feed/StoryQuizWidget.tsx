@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { supabase } from "@/integrations/supabase/client";
+import { dbLoose } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 
 interface StoryQuizWidgetProps {
@@ -19,7 +19,7 @@ export function StoryQuizWidget({ quizId, question, options, correctIndex }: Sto
     if (answered || !user) return;
     setSelected(index);
     setAnswered(true);
-    await (supabase as any)
+    await dbLoose
       .from("story_quiz_answers")
       .upsert({ quiz_id: quizId, user_id: user.id, selected_index: index });
   };

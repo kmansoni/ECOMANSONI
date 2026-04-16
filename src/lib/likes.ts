@@ -10,6 +10,7 @@
  */
 
 import { supabase } from "@/integrations/supabase/client";
+import { dbLoose } from "@/lib/supabase";
 import { logger } from "@/lib/logger";
 
 // ---------------------------------------------------------------------------
@@ -62,14 +63,14 @@ export async function toggleReelLike(
 ): Promise<LikeResult> {
   try {
     if (isCurrentlyLiked) {
-      const { error } = await (supabase as any)
+      const { error } = await dbLoose
         .from("reel_likes")
         .delete()
         .eq("reel_id", reelId)
         .eq("user_id", userId);
       if (error) throw error;
     } else {
-      const { error } = await (supabase as any)
+      const { error } = await dbLoose
         .from("reel_likes")
         .insert({ reel_id: reelId, user_id: userId });
       if (error) throw error;
@@ -93,14 +94,14 @@ export async function toggleCommentLike(
 ): Promise<LikeResult> {
   try {
     if (isCurrentlyLiked) {
-      const { error } = await (supabase as any)
+      const { error } = await dbLoose
         .from("comment_likes")
         .delete()
         .eq("comment_id", commentId)
         .eq("user_id", userId);
       if (error) throw error;
     } else {
-      const { error } = await (supabase as any)
+      const { error } = await dbLoose
         .from("comment_likes")
         .insert({ comment_id: commentId, user_id: userId });
       if (error) throw error;
@@ -142,13 +143,13 @@ export async function batchGetReelLikes(
 ): Promise<Set<string>> {
   if (reelIds.length === 0) return new Set();
   try {
-    const { data, error } = await (supabase as any)
+    const { data, error } = await dbLoose
       .from("reel_likes")
       .select("reel_id")
       .eq("user_id", userId)
       .in("reel_id", reelIds);
     if (error) throw error;
-    return new Set((data || []).map((d: any) => d.reel_id));
+    return new Set((data || []).map((d) => d.reel_id as string));
   } catch (err) {
     logger.error("[likes] batchGetReelLikes error", { error: err });
     return new Set();

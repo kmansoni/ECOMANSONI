@@ -36,7 +36,7 @@ export function GifMessage({ gifUrl, width, height, previewUrl }: GifMessageProp
             poster={previewUrl}
           />
         ) : (
-          <img
+          <img loading="lazy"
             src={gifUrl}
             alt="GIF"
             className="w-full h-full object-cover"
@@ -64,7 +64,7 @@ export function GifMessage({ gifUrl, width, height, previewUrl }: GifMessageProp
               className="max-w-full max-h-full"
             />
           ) : (
-            <img src={gifUrl} alt="GIF" className="max-w-full max-h-full" />
+            <img loading="lazy" src={gifUrl} alt="GIF" className="max-w-full max-h-full" />
           )}
           <button
             className="absolute top-4 right-4 text-white/80 hover:text-white text-3xl font-light"

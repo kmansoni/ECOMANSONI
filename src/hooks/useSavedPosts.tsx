@@ -2,6 +2,7 @@ import { useCallback, useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './useAuth';
+import { dbLoose } from "@/lib/supabase";
 
 export function useSavedPosts() {
   const { user } = useAuth();
@@ -13,7 +14,7 @@ export function useSavedPosts() {
     queryKey: savedIdsQueryKey,
     enabled: !!user?.id,
     queryFn: async () => {
-      const { data, error } = await (supabase as any)
+      const { data, error } = await dbLoose
         .from("saved_posts")
         .select("post_id")
         .eq("user_id", user!.id);
@@ -36,7 +37,7 @@ export function useSavedPosts() {
     queryFn: async () => {
       if (!user?.id) return [];
 
-      const { data: savedData, error: savedError } = await (supabase as any)
+      const { data: savedData, error: savedError } = await dbLoose
         .from("saved_posts")
         .select("post_id, created_at")
         .eq("user_id", user.id)
@@ -90,7 +91,7 @@ export function useSavedPosts() {
   const saveMutation = useMutation({
     mutationFn: async (postId: string) => {
       if (!user?.id) throw new Error("Not authenticated");
-      const { error } = await (supabase as any)
+      const { error } = await dbLoose
         .from("saved_posts")
         .insert({ user_id: user.id, post_id: postId });
       if (error) throw error;
@@ -109,7 +110,7 @@ export function useSavedPosts() {
   const unsaveMutation = useMutation({
     mutationFn: async (postId: string) => {
       if (!user?.id) throw new Error("Not authenticated");
-      const { error } = await (supabase as any)
+      const { error } = await dbLoose
         .from("saved_posts")
         .delete()
         .eq("user_id", user.id)

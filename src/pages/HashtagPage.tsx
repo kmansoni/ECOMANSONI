@@ -149,7 +149,7 @@ export function HashtagPage() {
                     className="aspect-square relative overflow-hidden bg-muted"
                   >
                     {it?.thumbnail_url ? (
-                      <img
+                      <img loading="lazy"
                         src={normalizeReelMediaUrl(it.thumbnail_url, "reels-media") || it.thumbnail_url}
                         alt=""
                         className="w-full h-full object-cover"

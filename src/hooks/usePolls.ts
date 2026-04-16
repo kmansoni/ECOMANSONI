@@ -46,18 +46,26 @@ export function usePolls(conversationId: string | null) {
   const loadPoll = useCallback(async (pollId: string): Promise<Poll | null> => {
     if (!user) return null;
 
-    const pollRes = await (supabase as any).from("message_polls").select("*").eq("id", pollId).single();
-    const optRes = await (supabase as any).from("poll_options").select("*").eq("poll_id", pollId).order("option_index");
-    const voteRes = await (supabase as any).from("poll_votes").select("option_id").eq("poll_id", pollId).eq("user_id", user.id);
+    const pollRes = await supabase.from("message_polls").select("*").eq("id", pollId).single();
+    const optRes = await supabase.from("poll_options").select("*").eq("poll_id", pollId).order("option_index");
+    const voteRes = await supabase.from("poll_votes").select("option_id").eq("poll_id", pollId).eq("user_id", user.id);
 
     if (pollRes.error || !pollRes.data) return null;
 
-    const options: PollOption[] = optRes.data || [];
-    const myVotes: string[] = (voteRes.data || []).map((v: any) => v.option_id);
+    const options: PollOption[] = (optRes.data || []).map(o => ({
+      ...o,
+      voter_count: o.voter_count ?? 0,
+    }));
+    const myVotes: string[] = (voteRes.data || []).map((vote) => vote.option_id);
     const totalVotes = options.reduce((sum: number, o: PollOption) => sum + (o.voter_count || 0), 0);
 
     const poll: Poll = {
       ...pollRes.data,
+      poll_type: (pollRes.data.poll_type ?? "regular") as Poll['poll_type'],
+      allows_multiple: pollRes.data.allows_multiple ?? false,
+      is_anonymous: pollRes.data.is_anonymous ?? false,
+      is_closed: pollRes.data.is_closed ?? false,
+      created_at: pollRes.data.created_at ?? new Date().toISOString(),
       options,
       my_votes: myVotes,
       total_votes: totalVotes,
@@ -72,7 +80,7 @@ export function usePolls(conversationId: string | null) {
     async (input: CreatePollInput): Promise<string | null> => {
       if (!user || !conversationId) return null;
 
-      const { data: poll, error } = await (supabase as any)
+      const { data: poll, error } = await supabase
         .from("message_polls")
         .insert({
           conversation_id: conversationId,
@@ -97,7 +105,7 @@ export function usePolls(conversationId: string | null) {
         voter_count: 0,
       }));
 
-      await (supabase as any).from("poll_options").insert(optionsData);
+      await supabase.from("poll_options").insert(optionsData);
 
       await loadPoll(poll.id);
       return poll.id;
@@ -109,7 +117,7 @@ export function usePolls(conversationId: string | null) {
   const vote = useCallback(
     async (pollId: string, optionId: string) => {
       if (!user) return;
-      await (supabase as any).rpc("vote_poll_v1", {
+      await supabase.rpc("vote_poll_v1", {
         p_poll_id: pollId,
         p_option_id: optionId,
         p_user_id: user.id,
@@ -127,13 +135,13 @@ export function usePolls(conversationId: string | null) {
       if (!poll) return;
 
       for (const optionId of poll.my_votes) {
-        await (supabase as any)
+        await supabase
           .from("poll_votes")
           .delete()
           .eq("poll_id", pollId)
           .eq("option_id", optionId)
           .eq("user_id", user.id);
-        await (supabase as any)
+        await supabase
           .from("poll_options")
           .update({ voter_count: Math.max(0, (poll.options.find((o) => o.id === optionId)?.voter_count || 1) - 1) })
           .eq("id", optionId);
@@ -146,7 +154,7 @@ export function usePolls(conversationId: string | null) {
   // Закрыть опрос
   const closePoll = useCallback(
     async (pollId: string) => {
-      await (supabase as any)
+      await supabase
         .from("message_polls")
         .update({ is_closed: true })
         .eq("id", pollId);
@@ -167,7 +175,7 @@ export function usePolls(conversationId: string | null) {
   // Realtime подписка
   useEffect(() => {
     if (!conversationId) return;
-    const channel = (supabase as any)
+    const channel = supabase
       .channel(`polls:${conversationId}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "poll_options" }, (payload: any) => {
         const pollId = payload.new?.poll_id || payload.old?.poll_id;
@@ -177,7 +185,7 @@ export function usePolls(conversationId: string | null) {
       })
       .subscribe();
     return () => {
-      (supabase as any).removeChannel(channel);
+      supabase.removeChannel(channel);
     };
   }, [conversationId, loadPoll]);
 

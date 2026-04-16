@@ -332,7 +332,7 @@ export function SettingsSecuritySection({
                     try {
                       const { data, error } = await authClient.mfa.enroll({ factorType: "totp" });
                       if (error) throw error;
-                      setMfaEnroll(data);
+                      setMfaEnroll(data ?? null);
                       setMfaCode("");
                       setMfaChallengeId(null);
                     } catch (e) {
@@ -358,7 +358,7 @@ export function SettingsSecuritySection({
                 <div className="mt-4 flex items-center justify-center">
                   {mfaEnroll.totp?.qr_code ? (
                     mfaQrImageSrc ? (
-                      <img
+                      <img loading="lazy"
                         src={mfaQrImageSrc}
                         alt="2FA QR"
                         className={cn("rounded-xl border p-3 bg-white", isDark ? "border-white/10" : "border-white/20")}
@@ -418,7 +418,7 @@ export function SettingsSecuritySection({
                             factorId: mfaEnroll.id,
                           });
                           if (chErr) throw chErr;
-                          const challengeId = challenge?.id;
+                          const challengeId = challenge?.id ?? null;
                           setMfaChallengeId(challengeId);
                           const { error: vErr } = await authClient.mfa.verify({
                             factorId: mfaEnroll.id,

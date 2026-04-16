@@ -117,7 +117,7 @@ export const BusinessGreetingOverlay: React.FC<BusinessGreetingOverlayProps> = (
           {/* Avatar + name */}
           <div className="flex items-center gap-4 pt-2">
             {avatarUrl ? (
-              <img
+              <img loading="lazy"
                 src={avatarUrl}
                 alt={account.business_name}
                 className="w-16 h-16 rounded-2xl object-cover"

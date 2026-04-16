@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { supabase } from "@/lib/supabase";
+import { supabase, dbLoose } from "@/lib/supabase";
 import { useAuth } from "./useAuth";
 import { checkHashtagsAllowedForText } from "@/lib/hashtagModeration";
 import { fetchUserBriefMap, resolveUserBrief } from "@/lib/users/userBriefs";
@@ -69,7 +69,7 @@ export function useReelComments(reelId: string) {
 
       // Fetch author profiles
       const authorIds = [...new Set(commentRows.map((c) => c.author_id))];
-      const briefMap = await fetchUserBriefMap(authorIds, supabase as any);
+      const briefMap = await fetchUserBriefMap(authorIds);
       const { data: profilesData } = await supabase
         .from("profiles")
         .select("user_id, verified")

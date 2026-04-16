@@ -12,6 +12,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 import { logger } from '@/lib/logger';
+import { dbLoose } from "@/lib/supabase";
 
 export interface DatingProfile {
   id: string;
@@ -47,8 +48,6 @@ interface DatingFiltersState {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const db = supabase as any;
-
 export function useDating() {
   const { user } = useAuth();
   const [cards, setCards] = useState<DatingProfile[]>([]);
@@ -68,7 +67,7 @@ export function useDating() {
   const loadMyProfile = useCallback(async () => {
     if (!user) return;
 
-    const { data, error } = await db.from('dating_profiles')
+    const { data, error } = await dbLoose.from('dating_profiles')
       .select('id, user_id, bio, photos, age, gender, interests, max_distance_km, min_age, max_age, is_active')
       .eq('user_id', user.id)
       .maybeSingle();
@@ -93,7 +92,7 @@ export function useDating() {
   const loadSwipedIds = useCallback(async () => {
     if (!user) return;
 
-    const { data } = await db.from('dating_swipes')
+    const { data } = await dbLoose.from('dating_swipes')
       .select('swiped_id')
       .eq('swiper_id', user.id)
       .limit(1000);
@@ -107,7 +106,7 @@ export function useDating() {
   const loadCards = useCallback(async () => {
     if (!user) return;
 
-    const { data, error } = await db.from('dating_profiles')
+    const { data, error } = await dbLoose.from('dating_profiles')
       .select('id, user_id, bio, photos, age, gender, interests')
       .eq('is_active', true)
       .neq('user_id', user.id)
@@ -136,7 +135,7 @@ export function useDating() {
   const loadMatches = useCallback(async () => {
     if (!user) return;
 
-    const { data, error } = await db.from('dating_matches')
+    const { data, error } = await dbLoose.from('dating_matches')
       .select('id, user1_id, user2_id, matched_at, is_active')
       .eq('is_active', true)
       .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`)
@@ -181,7 +180,7 @@ export function useDating() {
     setCards(prev => prev.filter(c => c.user_id !== targetUserId));
     swipedIdsRef.current.add(targetUserId);
 
-    const { error } = await db.from('dating_swipes')
+    const { error } = await dbLoose.from('dating_swipes')
       .insert({
         swiper_id: user.id,
         swiped_id: targetUserId,
@@ -196,7 +195,7 @@ export function useDating() {
 
     // Проверить, есть ли мэтч (trigger создаёт запись автоматически)
     if (direction === 'like' || direction === 'superlike') {
-      const { data: matchData } = await db.from('dating_matches')
+      const { data: matchData } = await dbLoose.from('dating_matches')
         .select('id')
         .or(`and(user1_id.eq.${LEAST(user.id, targetUserId)},user2_id.eq.${GREATEST(user.id, targetUserId)})`)
         .maybeSingle();
@@ -218,7 +217,7 @@ export function useDating() {
   }) => {
     if (!user) return;
 
-    const { data, error } = await db.from('dating_profiles')
+    const { data, error } = await dbLoose.from('dating_profiles')
       .upsert({
         user_id: user.id,
         ...updates,

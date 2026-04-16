@@ -12,6 +12,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 import { logger } from '@/lib/logger';
+import { dbLoose } from "@/lib/supabase";
 
 export interface GridPosition {
   post_id: string;
@@ -19,8 +20,6 @@ export interface GridPosition {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const db = supabase as any;
-
 export function useGridReorder(userId: string) {
   const { user } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
@@ -49,7 +48,7 @@ export function useGridReorder(userId: string) {
     setLoading(true);
     try {
       const updates = positions.map((pos) =>
-        db
+        dbLoose
           .from('posts')
           .update({ grid_sort_order: pos.sort_order })
           .eq('id', pos.post_id)

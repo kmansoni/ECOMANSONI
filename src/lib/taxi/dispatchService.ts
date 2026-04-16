@@ -30,12 +30,11 @@
  *   Яндекс Go: ML-scoring (мы используем упрощённый linear scoring)
  */
 
-import { supabase as _supabase } from "@/lib/supabase";
+import { dbLoose } from "@/lib/supabase";
 import type { LatLng, VehicleClass } from "@/types/taxi";
 import { calculateDistance } from "./calculations";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const supabase = _supabase as any;
+const supabase = dbLoose;
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 

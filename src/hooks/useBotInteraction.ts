@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { supabase } from '@/lib/supabase';
+import { dbLoose } from '@/lib/supabase';
 
 export interface InlineKeyboardButton {
   text: string;
@@ -22,14 +22,14 @@ export function useBotInteraction(conversationId: string | null) {
     if (!conversationId) return;
     // Отправить команду боту через webhook или обработать встроенно
     try {
-      const { data: bot } = await (supabase as any)
+      const { data: bot } = await dbLoose
         .from('bots')
         .select('webhook_url, api_token')
         .eq('id', botId)
         .single();
 
       if (bot?.webhook_url) {
-        await fetch(bot.webhook_url, {
+        await fetch(bot.webhook_url as string, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -48,14 +48,14 @@ export function useBotInteraction(conversationId: string | null) {
   const handleInlineCallback = useCallback(async (callbackData: string, messageId: string, botId: string) => {
     if (!conversationId) return;
     try {
-      const { data: bot } = await (supabase as any)
+      const { data: bot } = await dbLoose
         .from('bots')
         .select('webhook_url')
         .eq('id', botId)
         .single();
 
       if (bot?.webhook_url) {
-        await fetch(bot.webhook_url, {
+        await fetch(bot.webhook_url as string, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -75,7 +75,7 @@ export function useBotInteraction(conversationId: string | null) {
   const loadKeyboardForMessage = useCallback(async (messageId: string) => {
     if (botKeyboards[messageId]) return botKeyboards[messageId];
 
-    const { data } = await (supabase as any)
+    const { data } = await dbLoose
       .from('bot_inline_keyboards')
       .select('*')
       .eq('message_id', messageId)
@@ -92,15 +92,16 @@ export function useBotInteraction(conversationId: string | null) {
   const getBotCommandsForConversation = useCallback(async (): Promise<BotCommandEntry[]> => {
     if (!conversationId) return [];
 
-    const { data: botConvs } = await (supabase as any)
+    const { data: botConvs } = await dbLoose
       .from('bot_conversations')
       .select('bot_id, bots(display_name, username)')
       .eq('conversation_id', conversationId);
 
     if (!botConvs?.length) return [];
 
-    const botIds = botConvs.map((bc: any) => bc.bot_id);
-    const { data: commands } = await (supabase as any)
+    const rows = botConvs as Array<{ bot_id: string; bots?: { display_name?: string } }>;
+    const botIds = rows.map(bc => bc.bot_id);
+    const { data: commands } = await dbLoose
       .from('bot_commands')
       .select('*')
       .in('bot_id', botIds)
@@ -108,8 +109,9 @@ export function useBotInteraction(conversationId: string | null) {
 
     if (!commands) return [];
 
-    return commands.map((cmd: any) => {
-      const botConv = botConvs.find((bc: any) => bc.bot_id === cmd.bot_id);
+    const cmds = commands as Array<{ command: string; description: string; bot_id: string }>;
+    return cmds.map(cmd => {
+      const botConv = rows.find(bc => bc.bot_id === cmd.bot_id);
       return {
         command: cmd.command,
         description: cmd.description,

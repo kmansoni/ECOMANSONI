@@ -145,7 +145,7 @@ export function MediaDragReorder({
         >
           {/* Медиа */}
           {item.type === "image" ? (
-            <img
+            <img loading="lazy"
               src={item.thumbnailUrl ?? item.url}
               alt=""
               className="w-full h-full object-cover pointer-events-none"
@@ -154,7 +154,7 @@ export function MediaDragReorder({
           ) : (
             <div className="w-full h-full bg-black relative">
               {item.thumbnailUrl && (
-                <img src={item.thumbnailUrl} alt="" className="w-full h-full object-cover" />
+                <img loading="lazy" src={item.thumbnailUrl} alt="" className="w-full h-full object-cover" />
               )}
               <div className="absolute inset-0 flex items-center justify-center">
                 <Play className="w-6 h-6 text-white fill-white" />

@@ -119,10 +119,9 @@ export function ProfileGrid({ items, loading, type, onItemClick }: ProfileGridPr
             className="relative aspect-square overflow-hidden bg-muted group disabled:cursor-default"
           >
             {imageUrl ? (
-              <img
-                src={imageUrl}
+              <img loading="lazy" src={imageUrl}
                 alt=""
-                loading="lazy"
+                
                 onError={() => rotateToNextVariant(key, variantsCount, failedIndex)}
                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
               />

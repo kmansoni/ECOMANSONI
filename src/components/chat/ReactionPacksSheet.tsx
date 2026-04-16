@@ -54,7 +54,7 @@ function PackCard({ pack, items, onInstall, onUninstall, actionLoading }: PackCa
         {/* Cover */}
         <div className="w-12 h-12 rounded-xl overflow-hidden bg-white/10 flex items-center justify-center flex-shrink-0">
           {pack.cover_url ? (
-            <img
+            <img loading="lazy"
               src={pack.cover_url}
               alt={pack.name}
               className="w-full h-full object-cover"
@@ -112,7 +112,7 @@ function PackCard({ pack, items, onInstall, onUninstall, actionLoading }: PackCa
                 title={item.emoji}
               >
                 {item.image_url ? (
-                  <img
+                  <img loading="lazy"
                     src={item.image_url}
                     alt={item.emoji}
                     className="w-6 h-6 object-contain"
@@ -164,7 +164,7 @@ function InstalledRow({
       <div className="flex items-center gap-3">
         <div className="w-10 h-10 rounded-xl overflow-hidden bg-white/10 flex items-center justify-center flex-shrink-0">
           {pack.cover_url ? (
-            <img src={pack.cover_url} alt={pack.name} className="w-full h-full object-cover" />
+            <img loading="lazy" src={pack.cover_url} alt={pack.name} className="w-full h-full object-cover" />
           ) : (
             <Package className="w-5 h-5 text-white/40" />
           )}
@@ -219,7 +219,7 @@ function InstalledRow({
                 className="w-7 h-7 flex-shrink-0 flex items-center justify-center text-lg rounded hover:bg-white/10 select-none"
               >
                 {item.image_url ? (
-                  <img src={item.image_url} alt={item.emoji} className="w-5 h-5 object-contain" />
+                  <img loading="lazy" src={item.image_url} alt={item.emoji} className="w-5 h-5 object-contain" />
                 ) : (
                   item.emoji
                 )}

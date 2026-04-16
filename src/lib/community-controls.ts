@@ -110,7 +110,7 @@ export async function createChannelInviteToken(
 ): Promise<string> {
   const { data, error } = await supabase.rpc("create_channel_invite", {
     _channel_id: channelId,
-    _max_uses: maxUses ?? null,
+    _max_uses: maxUses ?? undefined,
     _ttl_hours: ttlHours,
   });
   if (error && isTableMissingError(error)) {
@@ -127,7 +127,7 @@ export async function createGroupInviteToken(
 ): Promise<string> {
   const { data, error } = await supabase.rpc("create_group_invite", {
     _group_id: groupId,
-    _max_uses: maxUses ?? null,
+    _max_uses: maxUses ?? undefined,
     _ttl_hours: ttlHours,
   });
   if (error && isTableMissingError(error)) {

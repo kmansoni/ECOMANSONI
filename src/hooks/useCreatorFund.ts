@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import { dbLoose } from "@/lib/supabase";
 
 export interface CreatorFundAccount {
   id: string;
@@ -40,17 +41,17 @@ export function useCreatorFund() {
     setLoading(true);
 
     Promise.all([
-      (supabase as any)
+      dbLoose
         .from('creator_fund_accounts')
         .select('*')
         .eq('user_id', user.id)
         .maybeSingle(),
-      (supabase as any)
+      dbLoose
         .from('creator_fund_payouts')
         .select('*')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false }),
-      (supabase as any)
+      dbLoose
         .from('creator_fund_daily_earnings')
         .select('*')
         .eq('user_id', user.id)
@@ -73,7 +74,7 @@ export function useCreatorFund() {
       if (amount > balance) throw new Error('Недостаточно средств');
       if (amount < 500) throw new Error('Минимальная сумма выплаты — 500 ₽');
 
-      const { data, error } = await (supabase as any)
+      const { data, error } = await dbLoose
         .from('creator_fund_payouts')
         .insert({ user_id: user.id, amount, method, status: 'pending' })
         .select()

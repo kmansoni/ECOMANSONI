@@ -504,8 +504,7 @@ export function UserProfilePage() {
                   return (
                     <div key={post.id} className="aspect-square relative group cursor-pointer overflow-hidden bg-muted">
                       {imageUrl ? (
-                        <img
-                          src={imageUrl}
+                        <img loading="lazy" src={imageUrl}
                           alt={`Post ${post.id}`}
                           className="w-full h-full object-cover"
                         />
@@ -566,8 +565,7 @@ export function UserProfilePage() {
                   {userReels.map((reel) => (
                     <div key={reel.id} className="aspect-square relative overflow-hidden bg-muted/40">
                       {reel.thumbnail_url ? (
-                        <img
-                          src={reel.thumbnail_url}
+                        <img                            src={reel.thumbnail_url}
                           alt=""
                           className="w-full h-full object-cover"
                           loading="lazy"

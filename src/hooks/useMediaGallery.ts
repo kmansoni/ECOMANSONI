@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import { fetchUserBriefMap, resolveUserBrief } from '@/lib/users/userBriefs';
+import { dbLoose } from "@/lib/supabase";
 
 export type MediaFilterType = 'all' | 'photos' | 'videos' | 'files' | 'voice' | 'links';
 
@@ -113,7 +114,7 @@ export function useMediaGallery(conversationId: string) {
         if (filterType === 'voice' || filterType === 'all') {
           const senderIds = [...new Set(rows.map((r) => r.sender_id as string).filter(Boolean))];
           if (senderIds.length > 0) {
-            const briefMap = await fetchUserBriefMap(senderIds, supabase as any);
+            const briefMap = await fetchUserBriefMap(senderIds);
             senderNameMap = new Map(
               senderIds.map((senderId) => {
                 const brief = resolveUserBrief(senderId, briefMap);

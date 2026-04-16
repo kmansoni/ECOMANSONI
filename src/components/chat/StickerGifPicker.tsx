@@ -286,7 +286,7 @@ export function StickerGifPicker({
                   }`}
                 >
                   {pack.thumbnail_url ? (
-                    <img src={pack.thumbnail_url} alt={pack.title} className="w-full h-full object-contain" />
+                    <img loading="lazy" src={pack.thumbnail_url} alt={pack.title} className="w-full h-full object-contain" />
                   ) : (
                     <div className={`w-full h-full flex items-center justify-center text-xs font-bold ${isDark ? "bg-white/10 text-white" : "bg-black/10 text-black"}`}>
                       {pack.title.charAt(0).toUpperCase()}
@@ -424,7 +424,7 @@ export function StickerGifPicker({
           onClick={() => setPreviewSticker(null)}
         >
           <div className="bg-[#1c1c1e] rounded-3xl p-4 shadow-2xl">
-            <img src={previewSticker.file_url} alt="стикер" className="w-48 h-48 object-contain" />
+            <img loading="lazy" src={previewSticker.file_url} alt="стикер" className="w-48 h-48 object-contain" />
           </div>
         </div>
       )}

@@ -8,6 +8,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { logger } from '@/lib/logger';
+import { dbLoose } from "@/lib/supabase";
 
 export interface MapPost {
   id: string;
@@ -27,8 +28,6 @@ export interface MapBounds {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const db = supabase as any;
-
 export function usePostsMap(bounds?: MapBounds) {
   const [posts, setPosts] = useState<MapPost[]>([]);
   const [loading, setLoading] = useState(false);
@@ -37,7 +36,7 @@ export function usePostsMap(bounds?: MapBounds) {
     try {
       setLoading(true);
 
-      let query = db
+      let query = dbLoose
         .from('posts')
         .select('id, latitude, longitude, author_id, created_at, content, post_media(media_url, media_type, sort_order)')
         .eq('is_published', true)

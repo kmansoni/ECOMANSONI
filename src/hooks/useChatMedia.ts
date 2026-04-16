@@ -7,7 +7,7 @@ interface ChatMediaDeps {
   conversationId: string;
   sendMediaMessage: (
     file: File,
-    mediaType: string,
+    mediaType: 'voice' | 'video_circle' | 'image' | 'video' | 'document',
     duration?: number,
     opts?: { albumId?: string; caption?: string },
   ) => Promise<unknown>;

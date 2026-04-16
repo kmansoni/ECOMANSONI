@@ -9,7 +9,7 @@
 import { useCallback, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { supabase } from '@/lib/supabase';
+import { supabase, dbLoose } from "@/lib/supabase";
 import { useAuth } from '@/hooks/useAuth';
 import { logger } from '@/lib/logger';
 
@@ -34,9 +34,8 @@ export interface CartItem {
 const CART_QUERY_KEY = ['cart'] as const;
 
 async function fetchCart(userId: string): Promise<CartItem[]> {
-  const { data, error } = await (supabase as unknown as { from: (t: string) => unknown })
+  const { data, error } = await dbLoose
     .from('shop_cart_items')
-    // @ts-expect-error — таблица не в сгенерированных типах
     .select('id, user_id, product_id, quantity, created_at, product:shop_products(id, name, price, currency, image_url, is_available)')
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
@@ -75,7 +74,7 @@ export function useCart() {
   const addToCartMutation = useMutation({
     mutationFn: async ({ productId, quantity = 1 }: { productId: string; quantity?: number }) => {
       if (!user) throw new Error('Требуется авторизация');
-      const { data, error } = await (supabase as any)
+      const { data, error } = await dbLoose
         .from('shop_cart_items')
         .upsert(
           { user_id: user.id, product_id: productId, quantity },
@@ -100,7 +99,7 @@ export function useCart() {
   const updateQuantityMutation = useMutation({
     mutationFn: async ({ itemId, quantity }: { itemId: string; quantity: number }) => {
       if (quantity < 1) throw new Error('Количество должно быть >= 1');
-      const { data, error } = await (supabase as any)
+      const { data, error } = await dbLoose
         .from('shop_cart_items')
         .update({ quantity })
         .eq('id', itemId)
@@ -130,7 +129,7 @@ export function useCart() {
 
   const removeFromCartMutation = useMutation({
     mutationFn: async (itemId: string) => {
-      const { error } = await (supabase as any)
+      const { error } = await dbLoose
         .from('shop_cart_items')
         .delete()
         .eq('id', itemId);
@@ -158,7 +157,7 @@ export function useCart() {
   const clearCartMutation = useMutation({
     mutationFn: async () => {
       if (!user) throw new Error('Требуется авторизация');
-      const { error } = await (supabase as any)
+      const { error } = await dbLoose
         .from('shop_cart_items')
         .delete()
         .eq('user_id', user.id);

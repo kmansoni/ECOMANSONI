@@ -14,6 +14,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { getIceServers, getMediaConstraints, clearIceServerCache } from "@/lib/webrtc-config";
 import { logger } from "@/lib/logger";
+import { toast } from "sonner";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import type { Json } from "@/integrations/supabase/types";
 
@@ -319,6 +320,9 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
       });
       if (insertError) {
         warn("DB signal insert RLS/constraint error:", { error: insertError, callId, signalType, sender_id: user.id });
+        if (["offer", "answer"].includes(signalType)) {
+          logger.error("video_call.critical_signal_db_failed", { signalType, callId });
+        }
       } else {
         log(`Saved ${signalType} to DB`);
       }
@@ -521,8 +525,9 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
 
         case "ice-candidate":
           if (!peerConnectionRef.current) {
-            // Buffer candidate for later
-            pendingCandidatesRef.current.push(signalData as RTCIceCandidateInit);
+            if (pendingCandidatesRef.current.length < 100) {
+              pendingCandidatesRef.current.push(signalData as RTCIceCandidateInit);
+            }
             return;
           }
           if (peerConnectionRef.current.remoteDescription) {
@@ -546,6 +551,11 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
       }
     } catch (err) {
       warn("Error handling signal:", err);
+      if (["offer", "answer", "ice-candidate"].includes(signalType)) {
+        logger.error("video_call.critical_signal_failed", { signalType, err });
+        toast.error("Проблема со звонком. Попробуйте снова.");
+        await cleanup("signal_processing_error");
+      }
     }
   }, [user, currentCall, sendSignal, cleanup, log, warn, options]);
 
@@ -848,8 +858,15 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
       log("Call record created:", callData.id.slice(0, 8));
 
       const call: VideoCall = {
-        ...callData,
+        id: callData.id ?? '',
+        caller_id: callData.caller_id ?? user.id,
+        callee_id: callData.callee_id ?? calleeId,
+        conversation_id: callData.conversation_id ?? null,
         call_type: callType,
+        status: callData.status ?? 'ringing',
+        created_at: callData.created_at ?? new Date().toISOString(),
+        started_at: callData.started_at ?? null,
+        ended_at: callData.ended_at ?? null,
       };
       setCurrentCall(call);
 
@@ -1322,7 +1339,7 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
           .eq("id", currentCall.id)
           .single();
 
-        if (data && ["declined", "ended", "missed"].includes(data.status)) {
+        if (data?.status && ["declined", "ended", "missed"].includes(data.status)) {
           log("Poll detected call ended:", data.status);
           handleCallStatusUpdate(data.status);
         }

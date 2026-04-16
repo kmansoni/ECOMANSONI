@@ -20,6 +20,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { getSupabaseRuntimeConfig } from "@/lib/supabaseRuntimeConfig";
+import { dbLoose } from "@/lib/supabase";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -113,7 +114,7 @@ export function useLoginNotifications() {
   // ── Fetch login history (last 20 events) ──────────────────────────────────
   const fetchLoginEvents = useCallback(async () => {
      
-    const { data, error: dbErr } = await (supabase as any)
+    const { data, error: dbErr } = await dbLoose
       .from("login_events")
       .select("*")
       .order("created_at", { ascending: false })
@@ -128,7 +129,7 @@ export function useLoginNotifications() {
   // ── Fetch known devices ───────────────────────────────────────────────────
   const fetchKnownDevices = useCallback(async () => {
      
-    const { data, error: dbErr } = await (supabase as any)
+    const { data, error: dbErr } = await dbLoose
       .from("known_devices")
       .select("*")
       .order("last_seen_at", { ascending: false });
@@ -186,7 +187,7 @@ export function useLoginNotifications() {
   const revokeDevice = useCallback(
     async (id: string): Promise<boolean> => {
        
-      const { error: dbErr } = await (supabase as any)
+      const { error: dbErr } = await dbLoose
         .from("known_devices")
         .delete()
         .eq("id", id);

@@ -176,7 +176,7 @@ export function SettingsArchiveSection({ isDark, currentScreen, onNavigate, onBa
                     <div key={s.id} className={cn("px-5 py-4 border-b flex items-center gap-3", isDark ? "border-white/10" : "border-white/20")}>
                       <div className={cn("w-14 h-14 rounded-xl overflow-hidden border shrink-0", isDark ? "border-white/10" : "border-white/20")}>
                         {s.media_url
-                          ? <img src={s.media_url} alt="story" className="w-full h-full object-cover" />
+                          ? <img loading="lazy" src={s.media_url} alt="story" className="w-full h-full object-cover" />
                           : <div className={cn("w-full h-full grid place-items-center text-xs", isDark ? "text-white/50" : "text-white/70")}>Нет медиа</div>}
                       </div>
                       <div className="min-w-0 flex-1">

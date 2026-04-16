@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
 import { fetchUserBriefMap, resolveUserBrief } from "@/lib/users/userBriefs";
+import { dbLoose } from "@/lib/supabase";
 
 export interface StoryViewer {
   viewer_id: string;
@@ -53,7 +54,7 @@ export function useStoryViews(storyId?: string, authorId?: string) {
           if (!cancelled && data) {
             const viewerIds = data.map((v) => v.viewer_id);
             if (viewerIds.length > 0) {
-              const briefMap = await fetchUserBriefMap(viewerIds, supabase as any);
+              const briefMap = await fetchUserBriefMap(viewerIds);
               const enriched: StoryViewer[] = data.map((v) => ({
                 viewer_id: v.viewer_id,
                 viewed_at: v.viewed_at ?? new Date().toISOString(),

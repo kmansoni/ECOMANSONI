@@ -25,7 +25,7 @@ import { useGroupMembers, useGroupMessages } from "@/hooks/useGroupChats";
 import { useCommunityGlobalSettings, useCommunityInvites } from "@/hooks/useCommunityControls";
 import { useChatOpen } from "@/contexts/ChatOpenContext";
 import { useTypingIndicator } from "@/hooks/useTypingIndicator";
-import { supabase } from "@/lib/supabase";
+import { supabase, dbLoose } from "@/lib/supabase";
 import { GradientAvatar } from "@/components/ui/gradient-avatar";
 import { InviteQrDialog } from "@/components/chat/InviteQrDialog";
 import { rotateGroupMembershipAfterRemoval } from "@/lib/e2ee/groupMembershipRotation";
@@ -171,7 +171,7 @@ export function GroupConversation({ group, onBack, onLeave }: GroupConversationP
           setActiveTopic(general.id);
           // group_topics не в генерированных типах
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const { error: topicError } = await (supabase as any)
+          const { error: topicError } = await dbLoose
             .from("group_topics")
             .update({ is_general: true })
             .eq("id", general.id);

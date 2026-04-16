@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { supabase } from '@/lib/supabase';
+import { dbLoose } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 
 export interface Bot {
@@ -39,7 +39,7 @@ export function useBots() {
     if (!user) return;
     setLoading(true);
     try {
-      const { data } = await (supabase as any)
+      const { data } = await dbLoose
         .from('bots')
         .select('*')
         .eq('owner_id', user.id)
@@ -60,7 +60,7 @@ export function useBots() {
     description?: string;
   }) => {
     if (!user) return null;
-    const { data, error } = await (supabase as any)
+    const { data, error } = await dbLoose
       .from('bots')
       .insert({ ...params, owner_id: user.id })
       .select()
@@ -73,14 +73,14 @@ export function useBots() {
   }, [user]);
 
   const deleteBot = useCallback(async (botId: string) => {
-    const { error } = await (supabase as any).from('bots').delete().eq('id', botId) as UntypedResult<unknown>;
+    const { error } = await dbLoose.from('bots').delete().eq('id', botId) as UntypedResult<unknown>;
     if (!error) setMyBots(prev => prev.filter(b => b.id !== botId));
     return !error;
   }, []);
 
   const regenerateToken = useCallback(async (botId: string) => {
     const newToken = crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '');
-    const { error } = await (supabase as any)
+    const { error } = await dbLoose
       .from('bots')
       .update({ api_token: newToken })
       .eq('id', botId) as UntypedResult<unknown>;
@@ -92,7 +92,7 @@ export function useBots() {
   }, []);
 
   const addCommand = useCallback(async (botId: string, command: string, description: string) => {
-    const { data, error } = await (supabase as any)
+    const { data, error } = await dbLoose
       .from('bot_commands')
       .insert({ bot_id: botId, command, description })
       .select()
@@ -102,20 +102,20 @@ export function useBots() {
   }, []);
 
   const removeCommand = useCallback(async (commandId: string) => {
-    const { error } = await (supabase as any).from('bot_commands').delete().eq('id', commandId) as UntypedResult<unknown>;
+    const { error } = await dbLoose.from('bot_commands').delete().eq('id', commandId) as UntypedResult<unknown>;
     return !error;
   }, []);
 
   const addBotToChat = useCallback(async (botId: string, conversationId: string) => {
     if (!user) return false;
-    const { error } = await (supabase as any)
+    const { error } = await dbLoose
       .from('bot_conversations')
       .insert({ bot_id: botId, conversation_id: conversationId, added_by: user.id }) as UntypedResult<unknown>;
     return !error;
   }, [user]);
 
   const getBotCommands = useCallback(async (botId: string): Promise<BotCommand[]> => {
-    const { data } = await (supabase as any)
+    const { data } = await dbLoose
       .from('bot_commands')
       .select('*')
       .eq('bot_id', botId)

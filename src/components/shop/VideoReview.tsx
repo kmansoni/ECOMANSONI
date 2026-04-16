@@ -8,7 +8,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { Video, Upload, StopCircle, Play, Trash2, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { supabase } from '@/lib/supabase';
+import { supabase, dbLoose } from "@/lib/supabase";
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/useAuth';
 import { logger } from '@/lib/logger';
@@ -186,7 +186,7 @@ export function VideoReview({ productId, reviewId, onVideoUploaded }: VideoRevie
 
       // Если есть reviewId — прикрепляем к существующему отзыву
       if (reviewId) {
-        const { error: updateError } = await (supabase as any)
+        const { error: updateError } = await dbLoose
           .from('product_reviews')
           .update({ video_url: videoUrl })
           .eq('id', reviewId);

@@ -47,7 +47,7 @@ function SavedMessageBubble({ message, onDelete, currentUserId }: SavedMessageBu
       {message.sender_name && (
         <div className="flex items-center gap-2 self-end mr-1">
           {message.sender_avatar ? (
-            <img
+            <img loading="lazy"
               src={message.sender_avatar}
               className="w-4 h-4 rounded-full object-cover"
               alt={message.sender_name}
@@ -75,7 +75,7 @@ function SavedMessageBubble({ message, onDelete, currentUserId }: SavedMessageBu
       >
         {/* Media */}
         {message.media_url && message.media_type?.startsWith("image") && (
-          <img
+          <img loading="lazy"
             src={message.media_url}
             alt="media"
             className="rounded-lg mb-1 max-w-full max-h-60 object-cover"

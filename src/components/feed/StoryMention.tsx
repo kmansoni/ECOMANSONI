@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import { dbLoose } from "@/lib/supabase";
 import { motion } from "framer-motion";
 
 interface StoryMentionProps {
@@ -20,7 +20,7 @@ export function StoryMention({ userId, username, avatarUrl, interactive = true }
       className="flex items-center gap-1.5 bg-white/90 backdrop-blur-sm text-black rounded-2xl px-3 py-1.5 shadow-lg"
     >
       {avatarUrl && (
-        <img src={avatarUrl} alt={username} className="w-5 h-5 rounded-full object-cover" />
+        <img loading="lazy" src={avatarUrl} alt={username} className="w-5 h-5 rounded-full object-cover" />
       )}
       <span className="text-sm font-semibold">@{username}</span>
     </motion.button>
@@ -35,17 +35,17 @@ interface StoryMentionPickerProps {
 
 export function StoryMentionPicker({ onSelect, onClose }: StoryMentionPickerProps) {
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<any[]>([]);
+  const [results, setResults] = useState<Array<{ id: string; username: string; avatar_url: string }>>([]);
 
   const search = async (q: string) => {
     setQuery(q);
     if (!q) { setResults([]); return; }
-    const { data } = await (supabase as any)
+    const { data } = await dbLoose
       .from("profiles")
       .select("id, username, avatar_url")
       .ilike("username", `%${q}%`)
       .limit(10);
-    setResults(data || []);
+    setResults((data || []) as Array<{ id: string; username: string; avatar_url: string }>);
   };
 
   return (
@@ -64,7 +64,7 @@ export function StoryMentionPicker({ onSelect, onClose }: StoryMentionPickerProp
             onClick={() => { onSelect(u); onClose(); }}
             className="flex items-center gap-2 w-full hover:bg-zinc-800 rounded-lg px-2 py-1.5"
           >
-            <img
+            <img loading="lazy"
               src={u.avatar_url || `https://i.pravatar.cc/40?u=${u.id}`}
               alt={u.username}
               className="w-8 h-8 rounded-full"

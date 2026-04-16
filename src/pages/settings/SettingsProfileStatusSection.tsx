@@ -93,13 +93,13 @@ export function SettingsProfileStatusSection({
   }, [isAuthed, profileLoaded, user]);
 
   const updateField = async (field: "status_emoji" | "status_sticker_url", value: string | null): Promise<boolean> => {
-    if (!isAuthed) return;
+    if (!isAuthed || !user) return false;
     setSaving(true);
     try {
       const { error } = await supabase
         .from("profiles")
         .update({ [field]: value })
-        .eq("user_id", user!.id);
+        .eq("user_id", user.id);
       if (error) throw error;
       applyProfilePatch({ [field]: value });
       return true;
@@ -175,7 +175,7 @@ export function SettingsProfileStatusSection({
 
               {profile?.status_sticker_url ? (
                 <div className="mt-3 flex items-center gap-3">
-                  <img
+                  <img loading="lazy"
                     src={profile.status_sticker_url}
                     alt="status sticker"
                     className="w-16 h-16 rounded-2xl object-cover bg-white/10 border border-white/20"

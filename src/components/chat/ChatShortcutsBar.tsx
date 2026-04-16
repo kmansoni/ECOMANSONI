@@ -100,11 +100,10 @@ function ShortcutAvatar({ shortcut, onTap, onRemove }: ShortcutAvatarProps) {
           {/* Avatar circle (40px) */}
           <div className="relative w-10 h-10 rounded-full overflow-hidden bg-white/10 ring-2 ring-white/10 flex items-center justify-center">
             {shortcut.icon_url ? (
-              <img
-                src={shortcut.icon_url}
+              <img loading="lazy" src={shortcut.icon_url}
                 alt={shortcut.label}
                 className="w-full h-full object-cover"
-                loading="lazy"
+                
               />
             ) : (
               <span className="text-sm font-semibold text-white/80">

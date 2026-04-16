@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { fetchUserBriefMap, resolveUserBrief } from "@/lib/users/userBriefs";
 import { logger } from "@/lib/logger";
+import { dbLoose } from "@/lib/supabase";
 
 export type CallRecord = {
   id: string;
@@ -59,7 +60,7 @@ export function useCallHistory() {
       );
 
       if (otherIds.length) {
-        const briefMap = await fetchUserBriefMap(otherIds, supabase as any);
+        const briefMap = await fetchUserBriefMap(otherIds);
         const map: Record<string, CallProfile> = {};
         for (const userId of otherIds) {
           const brief = resolveUserBrief(userId, briefMap);

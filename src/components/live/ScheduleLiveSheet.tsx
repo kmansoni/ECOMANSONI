@@ -100,7 +100,7 @@ export function ScheduleLiveSheet({ onClose, onScheduled }: Props) {
           <label className="text-sm text-white/60 mb-1 block">Обложка (необязательно)</label>
           <label className="cursor-pointer">
             {coverPreview ? (
-              <img src={coverPreview} alt="cover" className="w-full h-32 object-cover rounded-xl" />
+              <img loading="lazy" src={coverPreview} alt="cover" className="w-full h-32 object-cover rounded-xl" />
             ) : (
               <div className="w-full h-32 bg-zinc-800 rounded-xl flex flex-col items-center justify-center gap-2 border border-dashed border-white/20">
                 <ImageIcon className="w-8 h-8 text-white/30" />

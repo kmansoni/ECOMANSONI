@@ -283,7 +283,7 @@ export function ProfilePage() {
           {activeTab === "reels" && (
             <>
               <ProfileGrid
-                items={myReels}
+                items={myReels.map(r => ({ id: r.id, thumbnail_url: r.thumbnail_url ?? undefined }))}
                 loading={myReelsLoading && myReels.length === 0}
                 type="reels"
                 onItemClick={(item) => {

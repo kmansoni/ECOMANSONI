@@ -2,9 +2,7 @@
  * useHiddenWords — управление скрытыми словами пользователя
  */
 import { useState, useEffect, useCallback } from "react";
-import { supabase } from "@/lib/supabase";
-
-const db = supabase as any;
+import { supabase, dbLoose } from "@/lib/supabase";
 
 interface HiddenWord {
   id: string;
@@ -21,7 +19,7 @@ export function useHiddenWords() {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-      const { data } = await db.from("user_hidden_words")
+      const { data } = await dbLoose.from("user_hidden_words")
         .select("*")
         .eq("user_id", user.id)
         .order("created_at", { ascending: false });
@@ -36,7 +34,7 @@ export function useHiddenWords() {
     if (!trimmed) return;
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
-    const { data, error } = await db.from("user_hidden_words")
+    const { data, error } = await dbLoose.from("user_hidden_words")
       .insert({ user_id: user.id, word: trimmed })
       .select()
       .single();
@@ -44,7 +42,7 @@ export function useHiddenWords() {
   }, []);
 
   const removeWord = useCallback(async (id: string) => {
-    await db.from("user_hidden_words").delete().eq("id", id);
+    await dbLoose.from("user_hidden_words").delete().eq("id", id);
     setWords((prev) => prev.filter((w) => w.id !== id));
   }, []);
 

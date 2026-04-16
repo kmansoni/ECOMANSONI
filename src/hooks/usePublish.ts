@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { supabase, dbLoose } from "@/lib/supabase";
 import { useNavigate } from "react-router-dom";
 import { uploadMedia, type MediaBucket } from "@/lib/mediaUpload";
 
@@ -74,7 +74,7 @@ export function usePublish() {
       const tags = hashtags ?? extractHashtags(content);
       const normalizedContent = [content, ...tags.map((tag) => `#${tag}`)].filter(Boolean).join(" ").trim() || content;
 
-      const { data, error } = await (supabase as any).rpc("create_post_v1", {
+      const { data, error } = await dbLoose.rpc("create_post_v1", {
         p_content: normalizedContent,
         p_visibility: visibility,
         p_media: mediaItems,
@@ -108,7 +108,7 @@ export function usePublish() {
 
       const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
-      const { data, error } = await (supabase as any).from("stories").insert({
+      const { data, error } = await dbLoose.from("stories").insert({
         user_id: user.id,
         media_url: url,
         media_type: file.type.startsWith("video/") ? "video" : "image",
@@ -150,7 +150,7 @@ export function usePublish() {
       const normalizedDescription = [description, ...tags.map((tag) => `#${tag}`)].filter(Boolean).join(" ").trim() || description;
       void coverTimestamp;
 
-      const { data, error } = await (supabase as any).rpc("create_reel_v1", {
+      const { data, error } = await dbLoose.rpc("create_reel_v1", {
         p_client_publish_id: clientPublishId,
         p_video_url: videoUrl,
         p_thumbnail_url: null,
@@ -176,7 +176,7 @@ export function usePublish() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Не авторизован");
 
-      const { data, error } = await (supabase as any).from("live_sessions").insert({
+      const { data, error } = await dbLoose.from("live_sessions").insert({
         creator_id: user.id,
         title,
         category,

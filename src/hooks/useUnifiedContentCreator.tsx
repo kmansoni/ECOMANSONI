@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { dbLoose } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import type { ContentType } from './useMediaEditor';
 import { uploadMedia } from '@/lib/mediaUpload';
@@ -167,8 +168,8 @@ export function useUnifiedContentCreator(): UseUnifiedContentCreatorReturn {
         const isScheduled = !!scheduledAt;
 
         // Create post record first
-        const { data: post, error: postError } = await (supabase
-          .from('posts' as any)
+        const { data: post, error: postError } = await dbLoose
+          .from('posts')
           .insert({
             author_id: user.id,
             content: caption || null,
@@ -178,7 +179,7 @@ export function useUnifiedContentCreator(): UseUnifiedContentCreatorReturn {
             comments_disabled: opts?.commentsDisabled ?? false,
           })
           .select()
-          .single() as any);
+          .single();
 
         if (postError) throw postError;
 
@@ -188,8 +189,8 @@ export function useUnifiedContentCreator(): UseUnifiedContentCreatorReturn {
 
         // Create media record
         const mediaType = file.type.startsWith('video/') ? 'video' : 'image';
-        const { data: media, error: mediaError } = await (supabase
-          .from('post_media' as any)
+        const { data: media, error: mediaError } = await dbLoose
+          .from('post_media')
           .insert({
             post_id: post.id,
             media_url: publicUrl,
@@ -197,7 +198,7 @@ export function useUnifiedContentCreator(): UseUnifiedContentCreatorReturn {
             sort_order: 0,
           })
           .select()
-          .single() as any);
+          .single();
 
         if (mediaError) throw mediaError;
 
@@ -257,7 +258,7 @@ export function useUnifiedContentCreator(): UseUnifiedContentCreatorReturn {
         const uploadResult = await uploadMedia(file, { bucket: 'reels-media', path: objectPath });
         const publicUrl = uploadResult.url;
 
-        const { data: reel, error: reelError } = await (supabase as any).rpc('create_reel_v1', {
+        const { data: reel, error: reelError } = await dbLoose.rpc('create_reel_v1', {
           p_client_publish_id: clientPublishId,
           p_video_url: publicUrl,
           p_thumbnail_url: null,
@@ -312,8 +313,8 @@ export function useUnifiedContentCreator(): UseUnifiedContentCreatorReturn {
       setError(null);
 
       try {
-        const { data: session, error: sessionError } = await (supabase
-          .from('live_sessions' as any)
+        const { data: session, error: sessionError } = await dbLoose
+          .from('live_sessions')
           .insert({
             creator_id: user.id,
             title,
@@ -323,7 +324,7 @@ export function useUnifiedContentCreator(): UseUnifiedContentCreatorReturn {
             is_public: true,
           })
           .select()
-          .single() as any);
+          .single();
 
         if (sessionError) throw sessionError;
 

@@ -600,7 +600,7 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
             {isPreviewVideo ? (
               <video src={previewUrl} className="w-full h-full object-cover" controls playsInline />
             ) : (
-              <img src={previewUrl} alt="preview" className="w-full h-full object-cover" />
+              <img loading="lazy" src={previewUrl} alt="preview" className="w-full h-full object-cover" />
             )}
           </div>
         )}

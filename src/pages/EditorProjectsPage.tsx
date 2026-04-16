@@ -195,11 +195,10 @@ function ProjectCard({ project, onOpen, onDuplicate, onDelete }: ProjectCardProp
       {/* Thumbnail */}
       <div className="relative aspect-video overflow-hidden">
         {project.thumbnail_url ? (
-          <img
-            src={project.thumbnail_url}
+          <img loading="lazy" src={project.thumbnail_url}
             alt={project.title}
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-            loading="lazy"
+            
           />
         ) : (
           <div className={cn('w-full h-full bg-gradient-to-br', gradient, 'flex items-center justify-center')}>

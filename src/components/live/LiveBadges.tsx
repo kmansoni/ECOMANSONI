@@ -235,7 +235,7 @@ export function LiveTopBadgers({ liveSessionId }: LiveTopBadgersProps) {
     if (!data) return;
 
     interface BadgeRow { sender_id: string; amount_stars: number; profiles: { username: string; avatar_url: string | null } | null }
-    const rows = data as BadgeRow[];
+    const rows = data as unknown as BadgeRow[];
 
     // Агрегируем по sender_id
     const map = new Map<string, { username: string; avatar_url: string | null; total_stars: number }>();

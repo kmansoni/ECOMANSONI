@@ -120,7 +120,7 @@ export function SettingsStatisticsSection({
       }
       const { data, error } = await q;
       if (error) throw error;
-      setReels(data ?? []);
+      setReels((data ?? []).map(r => ({ ...r, created_at: r.created_at ?? new Date().toISOString() })));
     } catch (e) {
       toast({ title: "Контент", description: getErrorMessage(e) });
     } finally {
@@ -505,7 +505,7 @@ export function SettingsStatisticsSection({
                   {/* Thumbnail + title row */}
                   <div className="flex items-start gap-3 px-4 pt-4 pb-3">
                     {r.thumbnail_url ? (
-                      <img
+                      <img loading="lazy"
                         src={r.thumbnail_url}
                         alt=""
                         className="w-14 h-14 rounded-xl object-cover flex-shrink-0 bg-black/20"

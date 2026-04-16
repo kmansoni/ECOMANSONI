@@ -197,7 +197,7 @@ export function ARFilterCamera({ onCapture, onClose }: ARFilterCameraProps) {
       <div className="fixed inset-0 bg-black z-50 flex flex-col">
         <div className="flex-1 relative">
           {capturedImage && (
-            <img src={capturedImage} className="w-full h-full object-contain" alt="Снимок" />
+            <img loading="lazy" src={capturedImage} className="w-full h-full object-contain" alt="Снимок" />
           )}
           {capturedVideo && (
             <video src={capturedVideo} controls className="w-full h-full object-contain" />

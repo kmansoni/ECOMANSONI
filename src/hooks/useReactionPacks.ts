@@ -1,10 +1,9 @@
 import { useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
+import { dbLoose } from "@/lib/supabase";
 
 // DB types not yet regenerated â use `any` until `supabase gen types` runs
-const db = supabase as any;
-
 // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 // Domain types
 // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
@@ -58,7 +57,7 @@ export function useReactionPacks() {
       setLoading(true);
       setError(null);
       try {
-        let query = db
+        let query = dbLoose
           .from("reaction_packs")
           .select("*")
           .eq("is_public", true)
@@ -75,7 +74,7 @@ export function useReactionPacks() {
         if (!user?.id) return data ?? [];
 
         // Mark which packs the current user has installed
-        const { data: installed } = await db
+        const { data: installed } = await dbLoose
           .from("user_reaction_packs")
           .select("pack_id")
           .eq("user_id", user.id);
@@ -106,7 +105,7 @@ export function useReactionPacks() {
     setError(null);
     try {
       // JOIN via user_reaction_packs â reaction_packs
-      const { data, error: qErr } = await db
+      const { data, error: qErr } = await dbLoose
         .from("user_reaction_packs")
         .select(
           `
@@ -142,7 +141,7 @@ export function useReactionPacks() {
       setLoading(true);
       setError(null);
       try {
-        const { data, error: qErr } = await db
+        const { data, error: qErr } = await dbLoose
           .from("reaction_pack_items")
           .select("*")
           .eq("pack_id", packId)
@@ -169,7 +168,7 @@ export function useReactionPacks() {
       setError(null);
       try {
         // Determine max sort_order for user
-        const { data: existing } = await db
+        const { data: existing } = await dbLoose
           .from("user_reaction_packs")
           .select("sort_order")
           .eq("user_id", user.id)
@@ -179,7 +178,7 @@ export function useReactionPacks() {
         const nextOrder =
           existing && existing.length > 0 ? existing[0].sort_order + 1 : 0;
 
-        const { error: insertErr } = await db
+        const { error: insertErr } = await dbLoose
           .from("user_reaction_packs")
           .insert({ user_id: user.id, pack_id: packId, sort_order: nextOrder });
 
@@ -187,7 +186,7 @@ export function useReactionPacks() {
 
         // Increment install_count â idempotent via upsert approach:
         // We do it after successful insert to avoid phantom increments
-        await db.rpc("increment_reaction_pack_install", { p_pack_id: packId }).maybeSingle();
+        await dbLoose.rpc("increment_reaction_pack_install", { p_pack_id: packId }).maybeSingle();
         // rpc is best-effort; if it fails we still succeeded in installing
 
         return true;
@@ -211,7 +210,7 @@ export function useReactionPacks() {
       setLoading(true);
       setError(null);
       try {
-        const { error: delErr } = await db
+        const { error: delErr } = await dbLoose
           .from("user_reaction_packs")
           .delete()
           .eq("user_id", user.id)
@@ -219,7 +218,7 @@ export function useReactionPacks() {
 
         if (delErr) throw delErr;
 
-        await db.rpc("decrement_reaction_pack_install", { p_pack_id: packId }).maybeSingle();
+        await dbLoose.rpc("decrement_reaction_pack_install", { p_pack_id: packId }).maybeSingle();
 
         return true;
       } catch (err: any) {
@@ -243,7 +242,7 @@ export function useReactionPacks() {
       setLoading(true);
       setError(null);
       try {
-        const { data, error: insErr } = await db
+        const { data, error: insErr } = await dbLoose
           .from("reaction_packs")
           .insert({
             name: name.trim(),
@@ -279,7 +278,7 @@ export function useReactionPacks() {
       setError(null);
       try {
         // Determine max sort_order inside this pack
-        const { data: existing } = await db
+        const { data: existing } = await dbLoose
           .from("reaction_pack_items")
           .select("sort_order")
           .eq("pack_id", packId)
@@ -289,7 +288,7 @@ export function useReactionPacks() {
         const nextOrder =
           existing && existing.length > 0 ? existing[0].sort_order + 1 : 0;
 
-        const { data, error: insErr } = await db
+        const { data, error: insErr } = await dbLoose
           .from("reaction_pack_items")
           .insert({
             pack_id: packId,
@@ -320,7 +319,7 @@ export function useReactionPacks() {
       setLoading(true);
       setError(null);
       try {
-        const { error: delErr } = await db
+        const { error: delErr } = await dbLoose
           .from("reaction_pack_items")
           .delete()
           .eq("id", itemId);
@@ -345,7 +344,7 @@ export function useReactionPacks() {
   > => {
     if (!user?.id) return [];
     try {
-      const { data, error: qErr } = await db
+      const { data, error: qErr } = await dbLoose
         .from("user_reaction_packs")
         .select(
           `
@@ -366,7 +365,7 @@ export function useReactionPacks() {
 
       const result: InstalledReaction[] = [];
       for (const row of data ?? []) {
-        const pack = row.reaction_packs;
+        const pack = row.reaction_packs as unknown as { id: string; name: string; reaction_pack_items: { emoji: string; image_url: string }[] } | null;
         if (!pack) continue;
         for (const item of pack.reaction_pack_items ?? []) {
           result.push({

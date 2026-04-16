@@ -115,7 +115,7 @@ export function CollabInvite({ postId, onClose }: CollabInviteProps) {
                   key={user.id}
                   className="flex items-center gap-3 p-3 rounded-xl hover:bg-white/5 transition-colors"
                 >
-                  <img
+                  <img loading="lazy"
                     src={user.avatar_url ?? `https://i.pravatar.cc/150?u=${user.id}`}
                     alt={user.display_name ?? ''}
                     className="w-10 h-10 rounded-full object-cover"

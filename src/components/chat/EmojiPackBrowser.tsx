@@ -161,12 +161,11 @@ export function EmojiPackBrowser({ onBack }: EmojiPackBrowserProps) {
                 {/* Emoji preview */}
                 <div className="flex gap-2 overflow-x-auto pb-1">
                   {pack.emojis.slice(0, 10).map((emoji) => (
-                    <img
-                      key={emoji.id}
+                    <img loading="lazy" key={emoji.id}
                       src={emoji.image_url}
                       alt={emoji.shortcode}
                       className="w-10 h-10 rounded-lg object-contain shrink-0 bg-white/5"
-                      loading="lazy"
+                      
                     />
                   ))}
                   {pack.emojis.length > 10 && (

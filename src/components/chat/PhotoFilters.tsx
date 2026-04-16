@@ -29,7 +29,7 @@ function FilterPreview({ filter, imageUrl, isActive, onClick }: FilterPreviewPro
   return (
     <button onClick={onClick} className="flex flex-col items-center gap-1 flex-shrink-0">
       <div className={`w-16 h-16 rounded-xl overflow-hidden border-2 transition-all ${isActive ? 'border-blue-500 scale-105' : 'border-transparent'}`}>
-        <img
+        <img loading="lazy"
           src={imageUrl}
           alt={filter.label}
           className="w-full h-full object-cover"

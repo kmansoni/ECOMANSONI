@@ -169,7 +169,7 @@ export function PostContextMenu({
               {/* Превью поста */}
               {thumbnailUrl && (
                 <div className="w-full h-32 overflow-hidden">
-                  <img src={thumbnailUrl} alt="" className="w-full h-full object-cover" />
+                  <img loading="lazy" src={thumbnailUrl} alt="" className="w-full h-full object-cover" />
                 </div>
               )}
 

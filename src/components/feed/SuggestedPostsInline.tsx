@@ -33,7 +33,7 @@ export function SuggestedPostsInline() {
         .limit(8);
       if (data) {
         interface PostRow { id: string; image_url: string; likes_count: number | null; profiles: { id: string; username: string; avatar_url: string | null } | null }
-        const rows = data as PostRow[];
+        const rows = data as unknown as PostRow[];
         setPosts(
           rows.map((p) => ({
             id: p.id,
@@ -62,14 +62,14 @@ export function SuggestedPostsInline() {
             onClick={() => navigate(`/post/${post.id}`)}
             className="flex-shrink-0 w-32 rounded-xl overflow-hidden relative"
           >
-            <img
+            <img loading="lazy"
               src={post.image_url}
               alt=""
               className="w-32 h-40 object-cover"
             />
             <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 p-2">
               <div className="flex items-center gap-1">
-                <img
+                <img loading="lazy"
                   src={post.author.avatar_url}
                   alt={post.author.username}
                   className="w-5 h-5 rounded-full border border-white"

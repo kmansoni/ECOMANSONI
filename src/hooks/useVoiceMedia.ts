@@ -3,7 +3,7 @@ import { logger } from "@/lib/logger";
 
 interface UseVoiceMediaArgs {
   conversationId: string;
-  sendMediaMessage: (file: File, type: string, duration?: number) => Promise<unknown>;
+  sendMediaMessage: (file: File, type: 'voice' | 'video_circle' | 'image' | 'video' | 'document', duration?: number) => Promise<unknown>;
   typingOnKeyDown: () => void;
   typingOnStop: () => void;
 }

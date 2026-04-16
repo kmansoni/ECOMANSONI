@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { dbLoose } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 
 export interface CollabInvite {
@@ -31,7 +31,7 @@ export function useCollabs() {
     setLoading(true);
     setError(null);
     try {
-      const { data, error: err } = await (supabase as any)
+      const { data, error: err } = await dbLoose
         .from('post_collabs')
         .insert({
           post_id: postId,
@@ -57,7 +57,7 @@ export function useCollabs() {
     if (!user) throw new Error('Необходима авторизация');
     setLoading(true);
     try {
-      const { error: err } = await (supabase as any)
+      const { error: err } = await dbLoose
         .from('post_collabs')
         .update({ status: 'accepted' })
         .eq('id', collabId)
@@ -72,7 +72,7 @@ export function useCollabs() {
     if (!user) throw new Error('Необходима авторизация');
     setLoading(true);
     try {
-      const { error: err } = await (supabase as any)
+      const { error: err } = await dbLoose
         .from('post_collabs')
         .update({ status: 'declined' })
         .eq('id', collabId)
@@ -86,7 +86,7 @@ export function useCollabs() {
   const getMyCollabInvites = useCallback(async (): Promise<CollabInvite[]> => {
     if (!user) return [];
     const selectFields = 'id,post_id,inviter_id,invitee_id,status,created_at,inviter:profiles!post_collabs_inviter_id_fkey(id,display_name,avatar_url),invitee:profiles!post_collabs_invitee_id_fkey(id,display_name,avatar_url)';
-    const { data, error: err } = await (supabase as any)
+    const { data, error: err } = await dbLoose
       .from('post_collabs')
       .select(selectFields)
       .eq('invitee_id', user.id)
@@ -97,19 +97,19 @@ export function useCollabs() {
       setError("Не удалось загрузить приглашения. Попробуйте снова.");
       return [];
     }
-    return (data ?? []) as CollabInvite[];
+    return (data ?? []) as unknown as CollabInvite[];
   }, [user]);
 
   const getPostCollabs = useCallback(async (postId: string): Promise<CollabInvite[]> => {
     const selectFields = 'id,post_id,inviter_id,invitee_id,status,created_at,inviter:profiles!post_collabs_inviter_id_fkey(id,display_name,avatar_url),invitee:profiles!post_collabs_invitee_id_fkey(id,display_name,avatar_url)';
-    const { data, error: err } = await (supabase as any)
+    const { data, error: err } = await dbLoose
       .from('post_collabs')
       .select(selectFields)
       .eq('post_id', postId)
       .eq('status', 'accepted');
 
     if (err) return [];
-    return (data ?? []) as CollabInvite[];
+    return (data ?? []) as unknown as CollabInvite[];
   }, []);
 
   return {

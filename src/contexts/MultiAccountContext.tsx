@@ -16,6 +16,8 @@ import {
   pruneAccountsIndex,
   setActiveAccountId,
   upsertAccountIndex,
+  readTokens,
+  writeTokens,
   type AccountId,
   type AccountIndexEntry,
   type AccountProfileSnapshot,
@@ -372,8 +374,20 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
   const activateSessionForAccount = React.useCallback(async (accountId: AccountId) => {
     let refreshToken = runtimeRefreshTokensRef.current[accountId];
 
-    // If we don't have runtime token (for example after page reload),
-    // try to activate by server-side session_id using auth service.
+    // Fallback 1: read from encrypted vault (survives page reload)
+    if (!refreshToken) {
+      try {
+        const stored = await readTokens(accountId);
+        if (stored?.refreshToken) {
+          refreshToken = stored.refreshToken;
+          logDebug(`activateSession: restored refreshToken from vault for ${accountId}`);
+        }
+      } catch {
+        logDebug(`activateSession: vault read failed for ${accountId}`);
+      }
+    }
+
+    // Fallback 2: activate by server-side session_id using auth service
     if (!refreshToken) {
       const sessionId = accountContainer.getAccount(accountId)?.session_id;
       if (sessionId) {
@@ -413,6 +427,15 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
     if (!data?.session) throw new Error("missing_session");
 
     runtimeRefreshTokensRef.current[accountId] = data.session.refresh_token;
+
+    // Persist to encrypted vault so tokens survive page reload
+    void writeTokens(accountId, {
+      accessToken: data.session.access_token,
+      refreshToken: data.session.refresh_token,
+      expiresAt: data.session.expires_at ?? 0,
+    }).catch((err) => {
+      logger.warn('[MultiAccount] writeTokens failed', { accountId, err });
+    });
 
     setActiveAccountId(accountId);
     setActiveAccountState(accountId);
@@ -687,6 +710,13 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
         
         void upsertDeviceAccountLink(accountId);
         runtimeRefreshTokensRef.current[accountId] = session.refresh_token;
+
+        // Persist tokens to encrypted vault
+        void writeTokens(accountId, {
+          accessToken: session.access_token,
+          refreshToken: session.refresh_token,
+          expiresAt: session.expires_at ?? 0,
+        }).catch(() => {});
 
         setActiveAccountId(accountId);
         setActiveAccountState(accountId);

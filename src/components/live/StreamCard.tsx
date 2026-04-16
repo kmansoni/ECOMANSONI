@@ -36,11 +36,10 @@ export const StreamCard = React.memo(function StreamCard({
       {/* Thumbnail */}
       <div className="relative aspect-video bg-zinc-800">
         {stream.replay_thumbnail_url ? (
-          <img
-            src={stream.replay_thumbnail_url}
+          <img loading="lazy" src={stream.replay_thumbnail_url}
             alt={stream.title}
             className="absolute inset-0 h-full w-full object-cover group-hover:scale-105 transition-transform duration-300"
-            loading="lazy"
+            
           />
         ) : (
           <div className="absolute inset-0 flex items-center justify-center text-zinc-600">

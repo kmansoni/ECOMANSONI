@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { dbLoose } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import { logger } from "@/lib/logger";
 
@@ -36,7 +36,7 @@ export function useChannelUserSettings(channelId: string | null) {
     }
     setLoading(true);
     try {
-      const { data, error } = await (supabase as any)
+      const { data, error } = await dbLoose
         .from("channel_user_settings")
         .select("channel_id,user_id,notifications_enabled,muted_until")
         .eq("channel_id", channelId)
@@ -95,7 +95,7 @@ export function useChannelUserSettings(channelId: string | null) {
             : (settings?.muted_until ?? null),
       };
 
-      const { error } = await (supabase as any)
+      const { error } = await dbLoose
         .from("channel_user_settings")
         .upsert(payload, { onConflict: "channel_id,user_id" });
       if (error) throw error;

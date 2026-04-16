@@ -21,6 +21,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { dbLoose } from "@/lib/supabase";
 
 export interface LiveProduct {
   id: string;
@@ -53,7 +54,7 @@ export function LiveShoppingOverlay({
   // Подписка на пины товаров (для зрителей)
   useEffect(() => {
     const db = supabase as unknown as { channel: (name: string) => { on: (...args: unknown[]) => { subscribe: () => unknown }; }; removeChannel: (ch: unknown) => void };
-    const channel = db
+    const channel = dbLoose
       .channel(`live_shopping_${liveSessionId}`)
       .on("broadcast", { event: "product_pin" }, (payload: { payload?: { product?: LiveProduct | null } }) => {
         if (payload.payload?.product) {
@@ -64,14 +65,13 @@ export function LiveShoppingOverlay({
       })
       .subscribe();
 
-    return () => { db.removeChannel(channel); };
+    return () => { dbLoose.removeChannel(channel); };
   }, [liveSessionId]);
 
   // Загрузка товаров хоста
   const loadMyProducts = async () => {
     if (!user) return;
-    const db = supabase as any;
-    const { data: shop } = await db
+    const { data: shop } = await dbLoose
       .from("shops")
       .select("id")
       .eq("owner_id", user.id)
@@ -79,7 +79,7 @@ export function LiveShoppingOverlay({
 
     if (!shop) return;
 
-    const { data: products } = await db
+    const { data: products } = await dbLoose
       .from("shop_products")
       .select("id, name, price, currency, images, in_stock")
       .eq("shop_id", shop.id)
@@ -101,17 +101,15 @@ export function LiveShoppingOverlay({
 
   const handlePinProduct = async (product: LiveProduct) => {
     setIsPinning(true);
-    const db = supabase as any;
-
     // Broadcast всем зрителям
-    await db.channel(`live_shopping_${liveSessionId}`).send({
+    await dbLoose.channel(`live_shopping_${liveSessionId}`).send({
       type: "broadcast",
       event: "product_pin",
       payload: { product },
     });
 
     // Сохраняем в БД
-    await db.from("live_shopping_pins").upsert(
+    await dbLoose.from("live_shopping_pins").upsert(
       {
         live_session_id: liveSessionId,
         product_id: product.id,
@@ -129,13 +127,12 @@ export function LiveShoppingOverlay({
   };
 
   const handleUnpin = async () => {
-    const db = supabase as any;
-    await db.channel(`live_shopping_${liveSessionId}`).send({
+    await dbLoose.channel(`live_shopping_${liveSessionId}`).send({
       type: "broadcast",
       event: "product_pin",
       payload: { product: null },
     });
-    await db
+    await dbLoose
       .from("live_shopping_pins")
       .update({ is_active: false })
       .eq("live_session_id", liveSessionId);
@@ -172,7 +169,7 @@ export function LiveShoppingOverlay({
               {/* Изображение */}
               <div className="w-14 h-14 rounded-xl overflow-hidden flex-shrink-0 bg-muted">
                 {pinnedProduct.image_url ? (
-                  <img
+                  <img loading="lazy"
                     src={pinnedProduct.image_url}
                     alt={pinnedProduct.title}
                     className="w-full h-full object-cover"
@@ -267,7 +264,7 @@ export function LiveShoppingOverlay({
                   >
                     <div className="w-12 h-12 rounded-lg overflow-hidden bg-muted flex-shrink-0">
                       {product.image_url ? (
-                        <img src={product.image_url} alt={product.title} className="w-full h-full object-cover" />
+                        <img loading="lazy" src={product.image_url} alt={product.title} className="w-full h-full object-cover" />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center">
                           <ShoppingBag className="w-5 h-5 text-muted-foreground" />

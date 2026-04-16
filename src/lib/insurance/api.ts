@@ -1,4 +1,4 @@
-import { supabase } from "@/integrations/supabase/client";
+import { dbLoose, supabase } from "@/lib/supabase";
 import type {
   InsuranceCategory,
   InsuranceCompanyFull,
@@ -29,7 +29,7 @@ import type {
   PurchaseResult,
 } from "@/types/insurance-providers";
 
-const db = supabase as any;
+const db = dbLoose;
 
 type AnyCalculationRequest =
   | OsagoCalculationRequest
@@ -89,26 +89,26 @@ class InsuranceApiClient {
       single?: boolean;
     },
   ): Promise<T> {
-    let query = (supabase as any)
+    let query = db
       .from(table)
       .select(options?.select ?? "*");
 
     if (options?.eq) {
       for (const [col, val] of options.eq) {
-        query = (query as any).eq(col, val);
+        query = query.eq(col, val);
       }
     }
 
     if (options?.order) {
-      query = (query as any).order(options.order[0], options.order[1]);
+      query = query.order(options.order[0], options.order[1]);
     }
 
     if (options?.limit) {
-      query = (query as any).limit(options.limit);
+      query = query.limit(options.limit);
     }
 
     const { data, error } = options?.single
-      ? await (query as any).single()
+      ? await query.single()
       : await query;
 
     if (error) {
@@ -205,7 +205,7 @@ class InsuranceApiClient {
   ): Promise<InsuranceApplication> {
     const { data: result, error } = await db
       .from("insurance_applications")
-      .insert(data as any)
+      .insert(data as Record<string, unknown>)
       .select()
       .single();
 
@@ -251,7 +251,7 @@ class InsuranceApiClient {
   ): Promise<InsuranceApplication> {
     const { data, error } = await db
       .from("insurance_applications")
-      .update(updates as any)
+      .update(updates as Record<string, unknown>)
       .eq("id", id)
       .select()
       .single();
@@ -301,7 +301,7 @@ class InsuranceApiClient {
   async createClaim(data: Partial<InsuranceClaim>): Promise<InsuranceClaim> {
     const { data: result, error } = await db
       .from("insurance_claims")
-      .insert(data as any)
+      .insert(data as Record<string, unknown>)
       .select()
       .single();
 
@@ -454,7 +454,7 @@ class InsuranceApiClient {
   ): Promise<InsuranceReview> {
     const { data: result, error } = await db
       .from("insurance_reviews")
-      .insert(data as any)
+      .insert(data as Record<string, unknown>)
       .select()
       .single();
 

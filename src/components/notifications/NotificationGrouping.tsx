@@ -49,7 +49,7 @@ export function GroupedNotificationItem({ group }: Props) {
               className="absolute w-7 h-7 rounded-full bg-zinc-700 border-2 border-black overflow-hidden"
               style={{ left: i * 8, top: i * 8 }}
             >
-              {avatar && <img src={avatar} alt="" className="w-full h-full object-cover" />}
+              {avatar && <img loading="lazy" src={avatar} alt="" className="w-full h-full object-cover" />}
             </div>
           );
         })}

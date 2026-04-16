@@ -263,14 +263,13 @@ export function SearchPage() {
                         aria-label="Открыть Reels"
                       >
                         {r?.thumbnail_url ? (
-                          <img
-                            src={
+                          <img loading="lazy" src={
                               normalizeReelMediaUrl(r.thumbnail_url, "reels-media") ||
                               String(r.thumbnail_url)
                             }
                             alt=""
                             className="w-full h-full object-cover"
-                            loading="lazy"
+                            
                           />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center text-muted-foreground">
@@ -367,8 +366,7 @@ export function SearchPage() {
                       className="aspect-square relative group cursor-pointer overflow-hidden bg-muted"
                       onClick={() => handlePostClick(index)}
                     >
-                      <img
-                        src={post.media?.[0]?.media_url}
+                      <img loading="lazy"                         src={post.media?.[0]?.media_url}
                         alt=""
                         className="w-full h-full object-cover transition-transform group-hover:scale-105"
                       />

@@ -107,7 +107,7 @@ export const OfferCard: React.FC<OfferCardProps> = memo(({
             {/* Логотип компании (заглушка) */}
             <div className="text-2xl" aria-hidden="true">
               {company.logo_url ? (
-                <img
+                <img loading="lazy"
                   src={company.logo_url}
                   alt={company.name}
                   className="w-10 h-10 object-contain"

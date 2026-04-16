@@ -24,13 +24,13 @@ export function CollabBadge({ collaborator, primaryAuthor }: CollabBadgeProps) {
       {/* Double avatar stack */}
       <div className="flex -space-x-2">
         {primaryAuthor && (
-          <img
+          <img loading="lazy"
             src={primaryAuthor.avatar_url ?? `https://i.pravatar.cc/150?u=${primaryAuthor.id}`}
             alt={primaryAuthor.display_name ?? ''}
             className="w-5 h-5 rounded-full border border-zinc-800 object-cover z-0"
           />
         )}
-        <img
+        <img loading="lazy"
           src={collaborator.avatar_url ?? `https://i.pravatar.cc/150?u=${collaborator.id}`}
           alt={username}
           className="w-5 h-5 rounded-full border border-zinc-800 object-cover z-10"

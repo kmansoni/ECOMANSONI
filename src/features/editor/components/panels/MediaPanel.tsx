@@ -187,7 +187,7 @@ export const MediaPanel = React.memo(function MediaPanel({
                   aria-label={asset.name}
                 >
                   {asset.thumbnail_url ? (
-                    <img
+                    <img loading="lazy"
                       src={asset.thumbnail_url}
                       alt={asset.name}
                       className="w-full aspect-video object-cover"

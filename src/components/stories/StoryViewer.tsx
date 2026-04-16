@@ -217,7 +217,7 @@ export function StoryViewer({
               onLoadedMetadata={(e) => setVideoLoaded(e.currentTarget.duration)}
             />
           ) : (
-            <img
+            <img loading="lazy"
               src={currentStory.media_url}
               alt={`История ${currentUser.display_name}`}
               className="w-full h-full object-cover"
@@ -259,7 +259,7 @@ export function StoryViewer({
         {/* Заголовок: аватар + имя + время */}
         <div className="absolute top-6 left-0 right-0 z-30 px-3 flex items-center gap-3">
           <div className="flex items-center gap-3 flex-1 min-w-0">
-            <img
+            <img loading="lazy"
               src={
                 currentUser.avatar_url ??
                 `https://i.pravatar.cc/150?u=${currentUser.user_id}`
@@ -346,7 +346,7 @@ export function StoryViewer({
                   )}
                   {viewers.map((v) => (
                     <div key={v.viewer_id} className="flex items-center gap-2">
-                      <img
+                      <img loading="lazy"
                         src={
                           v.avatar_url ??
                           `https://i.pravatar.cc/40?u=${v.viewer_id}`

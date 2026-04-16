@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { dbLoose } from "@/lib/supabase";
 
 export interface DeliveryAddress {
   fullName: string;
@@ -48,7 +49,7 @@ export function useCheckout() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Не авторизован');
 
-      const { data: order, error } = await (supabase as any)
+      const { data: order, error } = await dbLoose
         .from('shop_orders')
         .insert({
           user_id: user.id,
@@ -75,7 +76,7 @@ export function useCheckout() {
   }, []);
 
   const getOrderStatus = useCallback(async (orderId: string) => {
-    const { data, error } = await (supabase as any)
+    const { data, error } = await dbLoose
       .from('shop_orders')
       .select('*')
       .eq('id', orderId)
@@ -87,7 +88,7 @@ export function useCheckout() {
   const getMyOrders = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return [];
-    const { data } = await (supabase as any)
+    const { data } = await dbLoose
       .from('shop_orders')
       .select('*')
       .eq('user_id', user.id)
@@ -96,7 +97,7 @@ export function useCheckout() {
   }, []);
 
   const cancelOrder = useCallback(async (orderId: string) => {
-    const { error } = await (supabase as any)
+    const { error } = await dbLoose
       .from('shop_orders')
       .update({ status: 'cancelled' })
       .eq('id', orderId);

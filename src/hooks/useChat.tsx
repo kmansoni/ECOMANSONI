@@ -581,7 +581,7 @@ export function useConversations() {
         const participantsRaw = getArrayField(row, "participants");
         return participantsRaw
           .map((participant) => isRecord(participant) ? getStringField(participant, "user_id") : null)
-          .filter(Boolean);
+          .filter((x): x is string => x !== null);
       }))];
       const participantBriefMap = await fetchUserBriefMap(participantIds, briefClient);
 
@@ -687,7 +687,13 @@ export function useConversations() {
               scheduleConversationsRefetch();
             }
           )
-          .subscribe()
+          .subscribe((status) => {
+            if (status === "SUBSCRIBED") { scheduleConversationsRefetch(); return; }
+            if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+              logger.warn("chat.conversations_realtime_failed", { status, protocol: v11 ? "v11" : "legacy" });
+              scheduleConversationsRefetch();
+            }
+          })
       : supabase
           // Subscribe to conversation_participants filtered by current user —
           // fires only when this user's conversations change (new message bumps updated_at).
@@ -716,7 +722,13 @@ export function useConversations() {
               scheduleConversationsRefetch();
             }
           )
-          .subscribe();
+          .subscribe((status) => {
+            if (status === "SUBSCRIBED") { scheduleConversationsRefetch(); return; }
+            if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+              logger.warn("chat.conversations_realtime_failed", { status, protocol: "legacy" });
+              scheduleConversationsRefetch();
+            }
+          });
 
     return () => {
       if (refetchTimerRef.current != null) {
@@ -1251,9 +1263,14 @@ export function useMessages(conversationId: string | null) {
           }
         )
         .subscribe((status) => {
-          if (status === "SUBSCRIBED") return;
+          if (status === "SUBSCRIBED") {
+            // Catch-up: подбираем сообщения, пришедшие пока подписка устанавливалась
+            lastRealtimeEventAtRef.current = Date.now();
+            void fetchMessages();
+            return;
+          }
           if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-            // Fallback: if Realtime is flaky (VPN / captive portals), keep chat usable.
+            logger.warn("chat.realtime_subscription_failed", { conversationId, status });
             void fetchMessages();
           }
         });
@@ -1285,7 +1302,7 @@ export function useMessages(conversationId: string | null) {
         (payload) => {
           const receipt = decodeChatReceipt(payload.new);
           const seq = receipt?.clientWriteSeq ?? null;
-          if (!Number.isFinite(seq)) return;
+          if (seq === null || !Number.isFinite(seq)) return;
           const latency = recoveryServiceRef.current?.acknowledgeReceipt(
             seq,
             receipt?.deviceId ?? ""

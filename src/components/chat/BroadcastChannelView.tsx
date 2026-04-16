@@ -220,11 +220,10 @@ function BroadcastMessageBubble({ message }: { message: BroadcastMessage }) {
     <div className="bg-card border rounded-xl px-4 py-3 max-w-full">
       <p className="text-sm whitespace-pre-wrap break-words">{message.text}</p>
       {message.media_url && (
-        <img
-          src={message.media_url}
+        <img loading="lazy" src={message.media_url}
           alt="Медиа в сообщении"
           className="mt-2 rounded-lg max-h-60 object-cover"
-          loading="lazy"
+          
         />
       )}
       <p className="text-xs text-muted-foreground mt-1">{timeStr}</p>

@@ -269,7 +269,7 @@ export function ImageViewer({ src, alt = "Image", onClose }: ImageViewerProps) {
         onTouchEnd={onTouchEnd}
         style={{ touchAction: "none" }}
       >
-        <img
+        <img loading="lazy"
           ref={imgRef}
           src={src}
           alt={alt}

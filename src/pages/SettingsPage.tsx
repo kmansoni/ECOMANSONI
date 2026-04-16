@@ -58,6 +58,7 @@ import { SettingsAccessibilitySection } from "./settings/SettingsAccessibilitySe
 import { SettingsLanguageSection } from "./settings/SettingsLanguageSection";
 import { SettingsMainSection } from "./settings/SettingsMainSection";
 import { SettingsCloseFriendsSection } from "./settings/SettingsCloseFriendsSection";
+import { SettingsAccountsSection } from "./settings/SettingsAccountsSection";
 
 type ProfileState = {
   user_id?: string;
@@ -297,6 +298,10 @@ export function SettingsPage() {
       // close_friends — manage close friends list
       case "close_friends":
         return <SettingsCloseFriendsSection {...sectionProps} />;
+
+      // accounts — multi-account switching
+      case "accounts":
+        return <SettingsAccountsSection {...sectionProps} />;
 
       default:
         return (

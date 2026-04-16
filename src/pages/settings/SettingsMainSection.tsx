@@ -4,7 +4,7 @@
  * Extracted from SettingsPage.tsx — the main settings menu screen.
  * Renders grouped menu items (Account, Settings, Support, Logout).
  */
-import { Moon, Bell, Lock, HelpCircle, Info, LogOut, Shield, Archive, Clock, Bookmark, Users, Smartphone, Database, AlertCircle, BarChart3, Accessibility, Globe, BadgeCheck, Smile, Phone } from "lucide-react";
+import { Moon, Bell, Lock, HelpCircle, Info, LogOut, Shield, Archive, Clock, Bookmark, Users, Smartphone, Database, AlertCircle, BarChart3, Accessibility, Globe, BadgeCheck, Smile, Phone, UserPlus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SettingsHeader, SettingsMenuItem } from "./helpers";
 import type { Screen, SectionProps } from "./types";
@@ -54,6 +54,7 @@ export function SettingsMainSection({
             isDark ? "settings-dark-card" : "bg-card/80 border-white/20",
           )}>
             <SettingsMenuItem icon={icon(Bookmark)} label="Сохранённое" isDark={isDark} onClick={nav("saved")} />
+            <SettingsMenuItem icon={icon(UserPlus)} label="Мои аккаунты" isDark={isDark} onClick={nav("accounts")} />
             <SettingsMenuItem icon={icon(Archive)} label="Архив" isDark={isDark} onClick={nav("archive")} />
             <SettingsMenuItem icon={icon(Clock)} label="Ваша активность" isDark={isDark} onClick={nav("activity")} />
           </div>

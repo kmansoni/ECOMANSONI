@@ -11,6 +11,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { dbLoose } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import { logger } from "@/lib/logger";
 import { fetchUserBriefMap, resolveUserBrief } from "@/lib/users/userBriefs";
@@ -121,7 +122,7 @@ export function useSupergroup(conversationId: string): UseSupergroup {
 
     const loadAll = async () => {
       // Settings
-      const { data: settingsData, error: settingsErr } = await (supabase as any)
+      const { data: settingsData, error: settingsErr } = await supabase
         .from("supergroup_settings")
         .select("*")
         .eq("conversation_id", conversationId)
@@ -134,7 +135,7 @@ export function useSupergroup(conversationId: string): UseSupergroup {
       if (!cancelled) setSettings(settingsData as SupergroupSettings | null);
 
       // Join requests (admins only — RLS will filter for non-admins)
-      const { data: requestsData } = await (supabase as any)
+      const { data: requestsData } = await supabase
         .from("join_requests")
         .select(`
           *,
@@ -144,17 +145,17 @@ export function useSupergroup(conversationId: string): UseSupergroup {
         .eq("status", "pending")
         .order("created_at", { ascending: true });
 
-      if (!cancelled) setJoinRequests((requestsData as JoinRequest[]) ?? []);
+      if (!cancelled) setJoinRequests((requestsData as unknown as JoinRequest[]) ?? []);
 
       // Member count + current user role
-      const { data: participantRows, count } = await (supabase as any)
+      const { data: participantRows, count } = await supabase
         .from("conversation_participants")
         .select("user_id, role", { count: "exact" })
         .eq("conversation_id", conversationId);
 
       if (!cancelled) {
         setMembersCount(count ?? 0);
-        const myRow = (participantRows as any[])?.find((r: any) => r.user_id === user?.id);
+        const myRow = (participantRows ?? []).find((row) => row.user_id === user?.id);
         setCurrentUserRole((myRow?.role as MemberRole) ?? null);
       }
       if (!cancelled) setIsLoading(false);
@@ -167,7 +168,7 @@ export function useSupergroup(conversationId: string): UseSupergroup {
   // Realtime: join requests
   useEffect(() => {
     if (!conversationId) return;
-    const channel = (supabase as any)
+    const channel = supabase
       .channel(`supergroup_requests:${conversationId}`)
       .on(
         "postgres_changes",
@@ -177,17 +178,18 @@ export function useSupergroup(conversationId: string): UseSupergroup {
           table: "join_requests",
           filter: `conversation_id=eq.${conversationId}`,
         },
-        (payload: { eventType: string; new: JoinRequest; old: { id: string } }) => {
-          if (payload.eventType === "INSERT") {
-            setJoinRequests(prev => [...prev, payload.new]);
-          } else if (payload.eventType === "UPDATE") {
+        (payload) => {
+          const p = payload as unknown as { eventType: string; new: JoinRequest; old: { id: string } };
+          if (p.eventType === "INSERT") {
+            setJoinRequests(prev => [...prev, p.new]);
+          } else if (p.eventType === "UPDATE") {
             setJoinRequests(prev =>
               prev
-                .map(r => r.id === payload.new.id ? payload.new : r)
-                .filter(r => r.status === "pending") // remove non-pending from list
+                .map(r => r.id === p.new.id ? p.new : r)
+                .filter(r => r.status === "pending")
             );
-          } else if (payload.eventType === "DELETE") {
-            setJoinRequests(prev => prev.filter(r => r.id !== payload.old.id));
+          } else if (p.eventType === "DELETE") {
+            setJoinRequests(prev => prev.filter(r => r.id !== p.old.id));
           }
         }
       )
@@ -198,7 +200,7 @@ export function useSupergroup(conversationId: string): UseSupergroup {
   const updateSettings = useCallback(
     async (patch: Partial<Omit<SupergroupSettings, "conversation_id" | "created_at" | "updated_at">>) => {
       if (!conversationId) return;
-      const { data, error: err } = await (supabase as any)
+      const { data, error: err } = await supabase
         .from("supergroup_settings")
         .update(patch)
         .eq("conversation_id", conversationId)
@@ -217,7 +219,7 @@ export function useSupergroup(conversationId: string): UseSupergroup {
   const approveRequest = useCallback(
     async (requestId: string) => {
       if (!user) return;
-      const { error: err } = await (supabase as any)
+      const { error: err } = await supabase
         .from("join_requests")
         .update({
           status: "approved",
@@ -239,7 +241,7 @@ export function useSupergroup(conversationId: string): UseSupergroup {
   const rejectRequest = useCallback(
     async (requestId: string) => {
       if (!user) return;
-      const { error: err } = await (supabase as any)
+      const { error: err } = await supabase
         .from("join_requests")
         .update({
           status: "rejected",
@@ -266,7 +268,7 @@ export function useSupergroup(conversationId: string): UseSupergroup {
         if (membersCount >= (settings?.max_members ?? 200000)) {
           throw new Error("supergroup_full");
         }
-        const { error: err } = await (supabase as any)
+        const { error: err } = await supabase
           .from("conversation_participants")
           .insert({ conversation_id: conversationId, user_id: user.id, role: "member" });
         if (err) throw new Error(err.message);
@@ -275,7 +277,7 @@ export function useSupergroup(conversationId: string): UseSupergroup {
       }
 
       // Submit join request
-      const { error: err } = await (supabase as any)
+      const { error: err } = await supabase
         .from("join_requests")
         .insert({
           conversation_id: conversationId,
@@ -290,7 +292,7 @@ export function useSupergroup(conversationId: string): UseSupergroup {
   );
 
   const convertToSupergroup = useCallback(async () => {
-    const { error: err } = await (supabase as any)
+    const { error: err } = await supabase
       .rpc("convert_group_to_supergroup", { p_conversation_id: conversationId });
 
     if (err) {
@@ -299,7 +301,7 @@ export function useSupergroup(conversationId: string): UseSupergroup {
     }
 
     // Reload settings
-    const { data } = await (supabase as any)
+    const { data } = await supabase
       .from("supergroup_settings")
       .select("*")
       .eq("conversation_id", conversationId)
@@ -312,7 +314,7 @@ export function useSupergroup(conversationId: string): UseSupergroup {
     if (!conversationId) return;
     setMembersLoading(true);
     try {
-      const { data, error: err } = await (supabase as any)
+      const { data, error: err } = await supabase
         .from("conversation_participants")
         .select("user_id, role, joined_at")
         .eq("conversation_id", conversationId)
@@ -322,9 +324,9 @@ export function useSupergroup(conversationId: string): UseSupergroup {
 
       const rows = (data as Array<{ user_id: string; role: MemberRole; joined_at: string }>) ?? [];
       const userIds = rows.map(r => r.user_id);
-      const briefMap = userIds.length > 0 ? await fetchUserBriefMap(userIds, supabase as any) : new Map();
+      const briefMap = userIds.length > 0 ? await fetchUserBriefMap(userIds) : new Map();
 
-      const { data: permissionsRows, error: permissionsErr } = await (supabase as any)
+      const { data: permissionsRows, error: permissionsErr } = await supabase
         .from("supergroup_member_permissions")
         .select("user_id, can_send_messages, can_send_media, can_send_links, muted_until")
         .eq("conversation_id", conversationId)
@@ -373,7 +375,7 @@ export function useSupergroup(conversationId: string): UseSupergroup {
   const updateMemberRole = useCallback(
     async (userId: string, role: MemberRole) => {
       if (!conversationId) return;
-      const { error: err } = await (supabase as any)
+      const { error: err } = await supabase
         .from("conversation_participants")
         .update({ role })
         .eq("conversation_id", conversationId)
@@ -401,7 +403,7 @@ export function useSupergroup(conversationId: string): UseSupergroup {
       if (patch.can_send_links !== undefined) payload.can_send_links = patch.can_send_links;
       if (patch.muted_until !== undefined) payload.muted_until = patch.muted_until;
 
-      const { error: err } = await (supabase as any)
+      const { error: err } = await dbLoose
         .from("supergroup_member_permissions")
         .upsert(payload, { onConflict: "conversation_id,user_id" });
 
@@ -427,7 +429,7 @@ export function useSupergroup(conversationId: string): UseSupergroup {
   const removeMember = useCallback(
     async (userId: string) => {
       if (!conversationId) return;
-      const { error: err } = await (supabase as any)
+      const { error: err } = await supabase
         .from("conversation_participants")
         .delete()
         .eq("conversation_id", conversationId)

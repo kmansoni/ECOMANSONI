@@ -1,10 +1,9 @@
 import { useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
+import { dbLoose } from "@/lib/supabase";
 
 // DB types not yet regenerated Ã¢ use `any` until `supabase gen types` runs
-const db = supabase as any;
-
 // Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢
 // Domain types
 // Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢
@@ -38,7 +37,7 @@ export function useChatShortcuts() {
     setLoading(true);
     setError(null);
     try {
-      const { data, error: qErr } = await db
+      const { data, error: qErr } = await dbLoose
         .from("chat_shortcuts")
         .select("*")
         .eq("user_id", user.id)
@@ -68,7 +67,7 @@ export function useChatShortcuts() {
       setError(null);
       try {
         // Determine max sort_order for this user
-        const { data: existing } = await db
+        const { data: existing } = await dbLoose
           .from("chat_shortcuts")
           .select("sort_order")
           .eq("user_id", user.id)
@@ -78,7 +77,7 @@ export function useChatShortcuts() {
         const nextOrder =
           existing && existing.length > 0 ? existing[0].sort_order + 1 : 0;
 
-        const { data, error: insErr } = await db
+        const { data, error: insErr } = await dbLoose
           .from("chat_shortcuts")
           .insert({
             user_id: user.id,
@@ -116,7 +115,7 @@ export function useChatShortcuts() {
       setLoading(true);
       setError(null);
       try {
-        const { error: delErr } = await db
+        const { error: delErr } = await dbLoose
           .from("chat_shortcuts")
           .delete()
           .eq("user_id", user.id)
@@ -149,7 +148,7 @@ export function useChatShortcuts() {
       try {
         // Build promises for each update
         const updates = shortcuts.map(({ id, sort_order }) =>
-          db
+          dbLoose
             .from("chat_shortcuts")
             .update({ sort_order })
             .eq("id", id)
@@ -177,7 +176,7 @@ export function useChatShortcuts() {
     async (chatId: string): Promise<boolean> => {
       if (!user?.id) return false;
       try {
-        const { data } = await db
+        const { data } = await dbLoose
           .from("chat_shortcuts")
           .select("id")
           .eq("user_id", user.id)

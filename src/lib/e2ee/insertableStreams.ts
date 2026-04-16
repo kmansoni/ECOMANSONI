@@ -288,8 +288,23 @@ export class MediaEncryptor {
 
     const blob = new Blob([source], { type: 'application/javascript' });
     const url = URL.createObjectURL(blob);
-    const worker = new Worker(url);
+    let worker: Worker;
+    try {
+      worker = new Worker(url);
+    } catch (err) {
+      URL.revokeObjectURL(url);
+      throw new Error(
+        `[MediaEncryptor] RTCRtpScriptTransform worker creation failed (${navigator.userAgent.slice(0, 40)}): ${err instanceof Error ? err.message : String(err)}. ` +
+        'E2EE requires either Insertable Streams (Chrome 86+) or RTCRtpScriptTransform with Worker support.'
+      );
+    }
     URL.revokeObjectURL(url);
+
+    worker.onerror = (ev) => {
+      logger.error('[E2EE] ScriptTransform worker error', { message: ev.message, filename: ev.filename, trackId });
+      this.stats.encryptionErrors++;
+      this.config.onError?.(new Error(`ScriptTransform worker error: ${ev.message}`), 'encrypt');
+    };
 
     worker.onmessage = (event) => {
       const data = event.data as { type?: string; direction?: 'encrypt' | 'decrypt'; size?: number; message?: string };
@@ -320,6 +335,8 @@ export class MediaEncryptor {
    */
   setupSenderTransform(sender: RTCRtpSender, trackId: string): void {
     this.removeTransform(trackId);
+    const method = MediaEncryptor.getTransformMethod();
+    logger.debug('[E2EE] setupSenderTransform', { trackId, method });
 
     // Method 1: Insertable Streams via createEncodedStreams (Chrome 86+, Edge)
     if (typeof (sender as RTCRtpSenderWithStreams).createEncodedStreams === 'function') {
@@ -385,6 +402,8 @@ export class MediaEncryptor {
    */
   setupReceiverTransform(receiver: RTCRtpReceiver, trackId: string, peerId: string): void {
     this.removeTransform(trackId);
+    const method = MediaEncryptor.getTransformMethod();
+    logger.debug('[E2EE] setupReceiverTransform', { trackId, peerId, method });
 
     // Method 1: Insertable Streams via createEncodedStreams (Chrome 86+, Edge)
     if (typeof (receiver as RTCRtpReceiverWithStreams).createEncodedStreams === 'function') {
@@ -502,6 +521,22 @@ export class MediaEncryptor {
       'createEncodedStreams' in RTCRtpSender.prototype;
     const hasScriptTransform = 'RTCRtpScriptTransform' in globalThis;
     return hasEncodedStreams || hasScriptTransform;
+  }
+
+  /**
+   * Определить какой конкретно путь E2EE доступен:
+   * - 'encodedStreams' — Chrome 86+, наиболее надёжный
+   * - 'scriptTransform' — Firefox/Safari, менее стабильный
+   * - null — E2EE недоступен
+   */
+  static getTransformMethod(): 'encodedStreams' | 'scriptTransform' | null {
+    if (typeof RTCRtpSender !== 'undefined' && 'createEncodedStreams' in RTCRtpSender.prototype) {
+      return 'encodedStreams';
+    }
+    if ('RTCRtpScriptTransform' in globalThis) {
+      return 'scriptTransform';
+    }
+    return null;
   }
 
   /**

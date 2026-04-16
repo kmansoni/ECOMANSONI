@@ -119,7 +119,7 @@ export default function ARFilterGalleryPage() {
                 className="bg-zinc-900 rounded-2xl overflow-hidden"
               >
                 {filter.preview_url ? (
-                  <img src={filter.preview_url} alt={filter.name} className="w-full h-40 object-cover" />
+                  <img loading="lazy" src={filter.preview_url} alt={filter.name} className="w-full h-40 object-cover" />
                 ) : (
                   <div className="w-full h-40 bg-gradient-to-br from-purple-900 to-pink-900 flex items-center justify-center">
                     <Sparkles className="w-10 h-10 text-white/50" />

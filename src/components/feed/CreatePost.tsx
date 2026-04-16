@@ -9,7 +9,7 @@ export function CreatePost() {
   return (
     <>
       <div className="px-4 py-3 bg-card border-b border-border flex items-center gap-3">
-        <img
+        <img loading="lazy"
           src="https://i.pravatar.cc/150?img=32"
           alt="Your avatar"
           className="w-10 h-10 rounded-full object-cover flex-shrink-0"

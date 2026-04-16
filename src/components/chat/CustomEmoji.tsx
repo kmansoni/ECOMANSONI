@@ -91,7 +91,7 @@ export function CustomEmoji({
         style={{ width: size, height: size }}
         title="Доступно с Premium"
       >
-        <img
+        <img loading="lazy"
           src={src}
           alt={alt ?? emojiId}
           className="blur-sm opacity-50"
@@ -117,7 +117,7 @@ export function CustomEmoji({
 
   // Static emoji
   return (
-    <img
+    <img loading="lazy"
       src={src}
       alt={alt ?? emojiId}
       className="inline-block align-middle"

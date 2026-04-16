@@ -1,6 +1,6 @@
 import { useState, useRef } from "react";
 import { motion } from "framer-motion";
-import { supabase } from "@/integrations/supabase/client";
+import { dbLoose } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 
 interface StoryEmojiSliderProps {
@@ -26,7 +26,7 @@ export function StoryEmojiSlider({
     if (voted || !user) return;
     setVoted(true);
     setValue(v);
-    await (supabase as any)
+    await dbLoose
       .from("story_emoji_slider_votes")
       .upsert({ slider_id: sliderId, user_id: user.id, value: v });
     // Update avg optimistically

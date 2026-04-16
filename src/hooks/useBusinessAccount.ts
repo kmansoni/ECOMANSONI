@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { dbLoose } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -122,7 +122,7 @@ export function useBusinessAccount(): UseBusinessAccountReturn {
 
     const load = async () => {
       setIsLoading(true);
-      const { data, error: qErr } = await (supabase as any)
+      const { data, error: qErr } = await dbLoose
         .from("business_accounts")
         .select("*")
         .eq("user_id", user.id)
@@ -133,7 +133,7 @@ export function useBusinessAccount(): UseBusinessAccountReturn {
       } else if (data) {
         setAccount(data);
         // Load chat labels
-        const { data: labels } = await (supabase as any)
+        const { data: labels } = await dbLoose
           .from("business_chat_labels")
           .select("*")
           .eq("business_id", data.id) as UntypedResult<ChatLabel[]>;
@@ -151,7 +151,7 @@ export function useBusinessAccount(): UseBusinessAccountReturn {
     setIsLoading(true);
     setError(null);
     try {
-      const { data: created, error: insertErr } = await (supabase as any)
+      const { data: created, error: insertErr } = await dbLoose
         .from("business_accounts")
         .insert({ ...data, user_id: user.id, quick_replies: [], labels: [] })
         .select()
@@ -176,7 +176,7 @@ export function useBusinessAccount(): UseBusinessAccountReturn {
     setIsLoading(true);
     setError(null);
     try {
-      const { data: updated, error: updateErr } = await (supabase as any)
+      const { data: updated, error: updateErr } = await dbLoose
         .from("business_accounts")
         .update(data)
         .eq("id", account.id)
@@ -202,7 +202,7 @@ export function useBusinessAccount(): UseBusinessAccountReturn {
     if (!user || !account) return { ok: false, error: "no_account" };
     setIsLoading(true);
     try {
-      const { error: delErr } = await (supabase as any)
+      const { error: delErr } = await dbLoose
         .from("business_accounts")
         .delete()
         .eq("id", account.id)
@@ -236,7 +236,7 @@ export function useBusinessAccount(): UseBusinessAccountReturn {
 
   const addLabel = useCallback(async (chatId: string, label: string, color = "#3b82f6"): Promise<{ ok: boolean; error?: string }> => {
     if (!account) return { ok: false, error: "no_account" };
-    const { data: created, error: insertErr } = await (supabase as any)
+    const { data: created, error: insertErr } = await dbLoose
       .from("business_chat_labels")
       .insert({ business_id: account.id, chat_id: chatId, label, color })
       .select()
@@ -248,7 +248,7 @@ export function useBusinessAccount(): UseBusinessAccountReturn {
 
   const removeLabel = useCallback(async (chatId: string, label: string): Promise<{ ok: boolean; error?: string }> => {
     if (!account) return { ok: false, error: "no_account" };
-    const { error: delErr } = await (supabase as any)
+    const { error: delErr } = await dbLoose
       .from("business_chat_labels")
       .delete()
       .eq("business_id", account.id)
@@ -261,7 +261,7 @@ export function useBusinessAccount(): UseBusinessAccountReturn {
 
   const reloadStats = useCallback(async () => {
     if (!account) return;
-    const { data } = await (supabase as any).rpc("get_business_stats", { p_business_id: account.id }) as UntypedResult<BusinessStatsResponse>;
+    const { data } = await dbLoose.rpc("get_business_stats", { p_business_id: account.id }) as UntypedResult<BusinessStatsResponse>;
     if (data?.ok) {
       setStats({
         chats_today: data.chats_today ?? 0,

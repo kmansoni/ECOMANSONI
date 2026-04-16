@@ -13,6 +13,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 import { logger } from '@/lib/logger';
+import { dbLoose } from "@/lib/supabase";
 
 export interface Testimonial {
   id: string;
@@ -28,9 +29,6 @@ export interface Testimonial {
     username: string | null;
   };
 }
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const db = supabase as any;
 
 export function useTestimonials(userId: string) {
   const { user } = useAuth();
@@ -50,7 +48,7 @@ export function useTestimonials(userId: string) {
       setLoading(true);
 
       // Одобренные
-      const { data: approved, error: apprErr } = await db
+      const { data: approved, error: apprErr } = await dbLoose
         .from('testimonials')
         .select('id, author_id, target_user_id, text, is_approved, created_at')
         .eq('target_user_id', userId)
@@ -68,7 +66,7 @@ export function useTestimonials(userId: string) {
 
       let profileMap = new Map<string, { id: string; display_name: string | null; avatar_url: string | null; username: string | null }>();
       if (authorIds.length > 0) {
-        const { data: profiles } = await db
+        const { data: profiles } = await dbLoose
           .from('profiles')
           .select('id, display_name, avatar_url, username')
           .in('id', authorIds)
@@ -85,7 +83,7 @@ export function useTestimonials(userId: string) {
 
       // Pending — только для владельца
       if (isOwner) {
-        const { data: pending, error: pendErr } = await db
+        const { data: pending, error: pendErr } = await dbLoose
           .from('testimonials')
           .select('id, author_id, target_user_id, text, is_approved, created_at')
           .eq('target_user_id', userId)
@@ -101,7 +99,7 @@ export function useTestimonials(userId: string) {
         const pendingAuthorIds = [...new Set(pendingList.map((t) => t.author_id))].filter((id) => !profileMap.has(id));
 
         if (pendingAuthorIds.length > 0) {
-          const { data: moreProfiles } = await db
+          const { data: moreProfiles } = await dbLoose
             .from('profiles')
             .select('id, display_name, avatar_url, username')
             .in('id', pendingAuthorIds)
@@ -150,7 +148,7 @@ export function useTestimonials(userId: string) {
 
     try {
       setLoading(true);
-      const { error } = await db
+      const { error } = await dbLoose
         .from('testimonials')
         .insert({
           author_id: user.id,
@@ -182,7 +180,7 @@ export function useTestimonials(userId: string) {
     if (!user || user.id !== userId) return;
 
     try {
-      const { error } = await db
+      const { error } = await dbLoose
         .from('testimonials')
         .update({ is_approved: true })
         .eq('id', testimonialId)
@@ -205,7 +203,7 @@ export function useTestimonials(userId: string) {
     if (!user || user.id !== userId) return;
 
     try {
-      const { error } = await db
+      const { error } = await dbLoose
         .from('testimonials')
         .delete()
         .eq('id', testimonialId)

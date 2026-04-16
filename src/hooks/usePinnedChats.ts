@@ -11,7 +11,7 @@
  */
 
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { supabase } from "@/lib/supabase";
+import { supabase, dbLoose } from "@/lib/supabase";
 import { probeSupabase } from "@/lib/supabaseProbe";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
@@ -67,7 +67,7 @@ export function usePinnedChats(): UsePinnedChatsReturn {
   const [loading, setLoading] = useState(false);
   const [useLS, setUseLS] = useState(false);
 
-  const isMissingSettingsTableError = useCallback((error: any) => {
+  const isMissingSettingsTableError = useCallback((error: { message?: string; details?: string; code?: string; status?: number } | null) => {
     const msg = String(error?.message ?? "").toLowerCase();
     const details = String(error?.details ?? "").toLowerCase();
     const code = String(error?.code ?? "");
@@ -95,7 +95,7 @@ export function usePinnedChats(): UsePinnedChatsReturn {
     if (!userId) return;
     setLoading(true);
     try {
-      const { data, error } = await (supabase as any)
+      const { data, error } = await dbLoose
         .from("user_chat_settings")
         .select("conversation_id, pin_order")
         .eq("user_id", userId)
@@ -152,7 +152,7 @@ export function usePinnedChats(): UsePinnedChatsReturn {
     const channel = supabase
       .channel(`pinned_chats:${userId}`)
       .on(
-        "postgres_changes" as any,
+        "postgres_changes" as const,
         {
           event: "*",
           schema: "public",
@@ -201,7 +201,7 @@ export function usePinnedChats(): UsePinnedChatsReturn {
         return;
       }
 
-      const { error } = await (supabase as any)
+      const { error } = await dbLoose
         .from("user_chat_settings")
         .upsert(
           {
@@ -256,7 +256,7 @@ export function usePinnedChats(): UsePinnedChatsReturn {
         return;
       }
 
-      const { error } = await (supabase as any)
+      const { error } = await dbLoose
         .from("user_chat_settings")
         .upsert(
           {
@@ -315,7 +315,7 @@ export function usePinnedChats(): UsePinnedChatsReturn {
         pin_order: idx,
       }));
 
-      const { error } = await (supabase as any)
+      const { error } = await dbLoose
         .from("user_chat_settings")
         .upsert(upserts, { onConflict: "user_id,conversation_id" });
 

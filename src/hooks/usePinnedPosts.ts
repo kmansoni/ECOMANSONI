@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { dbLoose } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { logger } from "@/lib/logger";
@@ -46,7 +46,7 @@ export function usePinnedPosts(userId?: string) {
 
     setLoading(true);
     try {
-      const { data: pinnedRows, error: pinnedError } = await (supabase as any)
+      const { data: pinnedRows, error: pinnedError } = await dbLoose
         .from("pinned_posts")
         .select("id, post_id, position, pinned_at")
         .eq("user_id", targetUserId)
@@ -65,7 +65,7 @@ export function usePinnedPosts(userId?: string) {
         return;
       }
 
-      const { data: postsData, error: postsError } = await (supabase as any)
+      const { data: postsData, error: postsError } = await dbLoose
         .from("posts")
         .select("id")
         .eq("is_published", true)
@@ -77,7 +77,7 @@ export function usePinnedPosts(userId?: string) {
 
       const visiblePostIds = new Set(((postsData ?? []) as Array<{ id: string }>).map((post) => String(post.id)));
 
-      const { data: mediaRows, error: mediaError } = await (supabase as any)
+      const { data: mediaRows, error: mediaError } = await dbLoose
         .from("post_media")
         .select("post_id, media_url, media_type")
         .in("post_id", postIds)
@@ -150,7 +150,7 @@ export function usePinnedPosts(userId?: string) {
       }
 
       const nextPosition = pinnedPosts.reduce((max, item) => Math.max(max, Number(item.position ?? 0)), -1) + 1;
-      const { error } = await (supabase as any).from("pinned_posts").insert({
+      const { error } = await dbLoose.from("pinned_posts").insert({
         user_id: user.id,
         post_id: postId,
         position: nextPosition,
@@ -175,7 +175,7 @@ export function usePinnedPosts(userId?: string) {
         return false;
       }
 
-      const { error } = await (supabase as any)
+      const { error } = await dbLoose
         .from("pinned_posts")
         .delete()
         .eq("id", pinnedId)

@@ -3,6 +3,7 @@ import { X, Star, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { PaymentInvoice } from "@/hooks/useBotPayments";
 import { supabase } from "@/integrations/supabase/client";
+import { dbLoose } from "@/lib/supabase";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -93,7 +94,7 @@ export const PaymentSheet = ({
     const loadData = async () => {
       // Stars balance
       if (invoice.currency === "XTR") {
-        const { data, error } = await (supabase as any)
+        const { data, error } = await dbLoose
           .from("user_stars")
           .select("balance")
           .eq("user_id", invoice.user_id)
@@ -125,7 +126,7 @@ export const PaymentSheet = ({
 
       // Bot info
        
-      const { data: bot } = await (supabase as any)
+      const { data: bot } = await dbLoose
         .from("bots")
         .select("id, name, username, avatar_url")
         .eq("id", invoice.bot_id)
@@ -192,7 +193,7 @@ export const PaymentSheet = ({
         <div className="flex items-center justify-between px-5 pt-5 pb-3">
           <div className="flex items-center gap-3">
             {botInfo?.avatar_url ? (
-              <img
+              <img loading="lazy"
                 src={botInfo.avatar_url}
                 alt={botInfo.name}
                 className="w-10 h-10 rounded-full object-cover"

@@ -27,11 +27,11 @@ export function TaggedPostsGrid({ userId, onPostClick }: TaggedPostsGridProps) {
           .eq("user_id", userId)
           .order("created_at", { ascending: false })
           .limit(30);
-        const rows = (data ?? []) as Array<{ post_id: string; posts: { image_url: string | null } | null }>;
+        const rows = (data ?? []) as unknown as Array<{ post_id: string; posts: { image_url: string | null } | null }>;
         setPosts(
           rows.map((d) => ({
             post_id: d.post_id,
-            image_url: d.posts?.image_url,
+            image_url: d.posts?.image_url ?? undefined,
           }))
         );
       } finally {
@@ -65,7 +65,7 @@ export function TaggedPostsGrid({ userId, onPostClick }: TaggedPostsGridProps) {
           className="aspect-square bg-muted overflow-hidden"
         >
           {post.image_url && (
-            <img src={post.image_url} alt="" className="w-full h-full object-cover" />
+            <img loading="lazy" src={post.image_url} alt="" className="w-full h-full object-cover" />
           )}
         </button>
       ))}

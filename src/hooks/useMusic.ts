@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { dbLoose } from '@/lib/supabase';
 
 export interface MusicTrack {
   id: string;
@@ -31,20 +31,20 @@ export function useMusic() {
   useEffect(() => {
     setLoading(true);
     Promise.all([
-      (supabase as any)
+      dbLoose
         .from('music_tracks')
         .select('*')
         .order('use_count', { ascending: false })
         .limit(50),
-      (supabase as any)
+      dbLoose
         .from('music_tracks')
         .select('*')
         .eq('is_trending', true)
         .order('use_count', { ascending: false })
         .limit(20),
     ]).then(([allRes, trendRes]) => {
-      setTracks(allRes.data ?? []);
-      setTrending(trendRes.data ?? []);
+      setTracks((allRes.data ?? []) as MusicTrack[]);
+      setTrending((trendRes.data ?? []) as MusicTrack[]);
     }).finally(() => setLoading(false));
   }, []);
 
@@ -52,7 +52,7 @@ export function useMusic() {
     if (!query.trim()) {
       return tracks;
     }
-    const { data } = await (supabase as any)
+    const { data } = await dbLoose
       .from('music_tracks')
       .select('*')
       .or(`title.ilike.%${query}%,artist.ilike.%${query}%`)
@@ -62,7 +62,7 @@ export function useMusic() {
 
   const addToStory = useCallback(
     async (storyId: string, trackId: string, startTime: number, duration: number) => {
-      const { data, error } = await (supabase as any)
+      const { data, error } = await dbLoose
         .from('story_music')
         .upsert(
           { story_id: storyId, track_id: trackId, start_time: startTime, duration },
@@ -77,7 +77,7 @@ export function useMusic() {
   );
 
   const getStoryMusic = useCallback(async (storyId: string) => {
-    const { data } = await (supabase as any)
+    const { data } = await dbLoose
       .from('story_music')
       .select('*, track:music_tracks(*)')
       .eq('story_id', storyId)

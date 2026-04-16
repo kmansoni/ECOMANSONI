@@ -1,4 +1,4 @@
-import { supabase } from "@/lib/supabase";
+import { supabase, dbLoose } from "@/lib/supabase";
 
 export type DarkThemeMode = "system" | "light" | "dark";
 export type EnergySaverMode = "off" | "auto" | "manual";
@@ -43,8 +43,6 @@ export type UserEnergySaverSettings = {
   updated_at: string;
   created_at: string;
 };
-
-const supabaseAny = supabase as any;
 
 const APPEARANCE_DEFAULTS: Omit<UserAppearanceSettings, "user_id" | "updated_at" | "created_at"> = {
   chat_theme_id: "night",
@@ -108,7 +106,7 @@ export async function updateAppearanceSettings(
   _userId: string,
   patch: Partial<Omit<UserAppearanceSettings, "user_id" | "updated_at" | "created_at">>,
 ): Promise<UserAppearanceSettings> {
-  const { data, error } = await supabaseAny.rpc("update_my_appearance_settings", {
+  const { data, error } = await dbLoose.rpc("update_my_appearance_settings", {
     p_chat_theme_id: patch.chat_theme_id ?? null,
     p_chat_wallpaper_id: patch.chat_wallpaper_id ?? null,
     p_personal_color_primary: patch.personal_color_primary ?? null,
@@ -126,7 +124,7 @@ export async function updateAppearanceSettings(
 }
 
 export async function listAppIconCatalog(): Promise<AppIconCatalogItem[]> {
-  const { data, error } = await supabaseAny
+  const { data, error } = await dbLoose
     .from("app_icon_catalog")
     .select("id, name, icon_url, is_premium, is_active, sort_order")
     .eq("is_active", true)
@@ -136,7 +134,7 @@ export async function listAppIconCatalog(): Promise<AppIconCatalogItem[]> {
 }
 
 export async function getOrCreateUserAppIconSelection(userId: string): Promise<string> {
-  const { data: existing, error } = await supabaseAny
+  const { data: existing, error } = await dbLoose
     .from("user_app_icon_selection")
     .select("icon_id")
     .eq("user_id", userId)
@@ -144,7 +142,7 @@ export async function getOrCreateUserAppIconSelection(userId: string): Promise<s
   if (error) throw error;
   if (existing?.icon_id) return existing.icon_id as string;
 
-  const { data, error: insertError } = await supabaseAny
+  const { data, error: insertError } = await dbLoose
     .from("user_app_icon_selection")
     .insert({ user_id: userId, icon_id: "main" })
     .select("icon_id")
@@ -155,14 +153,14 @@ export async function getOrCreateUserAppIconSelection(userId: string): Promise<s
 
 export async function setUserAppIconSelection(userId: string, iconId: string): Promise<void> {
   void userId;
-  const { error } = await supabaseAny.rpc("set_my_app_icon_selection", {
+  const { error } = await dbLoose.rpc("set_my_app_icon_selection", {
     p_icon_id: iconId,
   });
   if (error) throw error;
 }
 
 export async function getOrCreateEnergySaverSettings(userId: string): Promise<UserEnergySaverSettings> {
-  const { data: existing, error } = await supabaseAny
+  const { data: existing, error } = await dbLoose
     .from("user_energy_saver_settings")
     .select("*")
     .eq("user_id", userId)
@@ -170,7 +168,7 @@ export async function getOrCreateEnergySaverSettings(userId: string): Promise<Us
   if (error) throw error;
   if (existing) return withEnergyDefaults(existing as Partial<UserEnergySaverSettings>);
 
-  const { data, error: insertError } = await supabaseAny
+  const { data, error: insertError } = await dbLoose
     .from("user_energy_saver_settings")
     .insert({ user_id: userId })
     .select("*")
@@ -183,7 +181,7 @@ export async function updateEnergySaverSettings(
   _userId: string,
   patch: Partial<Omit<UserEnergySaverSettings, "user_id" | "updated_at" | "created_at">>,
 ): Promise<UserEnergySaverSettings> {
-  const { data, error } = await supabaseAny.rpc("update_my_energy_saver_settings", {
+  const { data, error } = await dbLoose.rpc("update_my_energy_saver_settings", {
     p_mode: patch.mode ?? null,
     p_battery_threshold_percent: patch.battery_threshold_percent ?? null,
     p_autoplay_video: patch.autoplay_video ?? null,

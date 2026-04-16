@@ -73,7 +73,7 @@ export function ForYouSection({ className = '' }: ForYouSectionProps) {
             aria-label={`${item.contentType === 'reel' ? 'Reels' : 'Пост'} от автора`}
           >
             {item.thumbnail ? (
-              <img
+              <img loading="lazy"
                 src={item.thumbnail}
                 alt=""
                 className="w-full h-full object-cover transition-transform group-hover:scale-105"

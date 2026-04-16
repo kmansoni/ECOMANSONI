@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { dbLoose } from "@/lib/supabase";
 
 export function useWishlist() {
   const [wishlistIds, setWishlistIds] = useState<Set<string>>(new Set());
@@ -10,7 +11,7 @@ export function useWishlist() {
     void (async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-      const { data } = await (supabase as any)
+      const { data } = await dbLoose
         .from('wishlists')
         .select('product_id')
         .eq('user_id', user.id);
@@ -22,7 +23,7 @@ export function useWishlist() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
     setWishlistIds(prev => new Set([...prev, productId]));
-    const { error } = await (supabase as any)
+    const { error } = await dbLoose
       .from('wishlists')
       .insert({ user_id: user.id, product_id: productId });
     if (error) {
@@ -37,7 +38,7 @@ export function useWishlist() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
     setWishlistIds(prev => { const n = new Set(prev); n.delete(productId); return n; });
-    await (supabase as any)
+    await dbLoose
       .from('wishlists')
       .delete()
       .eq('user_id', user.id)
@@ -47,7 +48,7 @@ export function useWishlist() {
   const getWishlist = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return [];
-    const { data } = await (supabase as any)
+    const { data } = await dbLoose
       .from('wishlists')
       .select('product_id, created_at')
       .eq('user_id', user.id)

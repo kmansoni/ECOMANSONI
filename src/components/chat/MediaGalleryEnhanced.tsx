@@ -125,8 +125,7 @@ function MediaViewer({ items, initialIndex, onClose, onDownload }: MediaViewerPr
       {/* Media area */}
       <div className="flex-1 relative flex items-center justify-center overflow-hidden">
         {(current.type === 'image') && (
-          <img
-            ref={imageRef}
+          <img loading="lazy" ref={imageRef}
             src={current.url}
             alt={current.filename ?? 'медиа'}
             className="max-h-full max-w-full object-contain select-none transition-transform duration-200"
@@ -363,8 +362,7 @@ export function MediaGalleryEnhanced({
                         className="relative aspect-square bg-zinc-800 overflow-hidden group"
                       >
                         {item.type === 'image' && (
-                          <img
-                            src={item.url}
+                          <img                              src={item.url}
                             alt={item.filename ?? ''}
                             className="w-full h-full object-cover transition-transform group-hover:scale-105"
                             loading="lazy"

@@ -56,7 +56,7 @@ export const AnimatedSticker = memo(function AnimatedSticker({
 
   // webp, tgs, png, gif and everything else → <img>
   return (
-    <img
+    <img loading="lazy"
       src={url}
       alt={alt}
       width={px}
@@ -173,7 +173,7 @@ function LottieSticker({
 
   if (fallback) {
     return (
-      <img
+      <img loading="lazy"
         src={url}
         alt={alt}
         width={px}

@@ -142,11 +142,10 @@ function SettingsPostThumbnail({ mediaUrl, title, isDark }: { mediaUrl: string |
   }
 
   return (
-    <img
-      src={mediaUrl}
+    <img loading="lazy" src={mediaUrl}
       alt={title}
       className="w-full h-full object-cover"
-      loading="lazy"
+      
       onError={() => setBroken(true)}
     />
   );

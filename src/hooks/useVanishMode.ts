@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { logger } from '@/lib/logger';
 import { VANISH_DELETE_DELAY_MS } from '@/lib/timing';
+import { dbLoose } from "@/lib/supabase";
 
 const VANISH_KEY_PREFIX = 'vanish_mode_';
 
@@ -44,7 +45,7 @@ export function useVanishMode(conversationId: string) {
       try {
         // Получаем сообщения которые прочитаны обоими участниками (read_at не null)
         // и которые отправлены НЕ текущим пользователем (чтобы удалять только прочитанные)
-        const { data: messages, error: fetchError } = await (supabase as any)
+        const { data: messages, error: fetchError } = await dbLoose
           .from('messages')
           .select('id, read_at, sender_id')
           .eq('conversation_id', conversationId)
@@ -68,7 +69,7 @@ export function useVanishMode(conversationId: string) {
 
         if (readIds.length === 0) return;
 
-        const { error: deleteError } = await (supabase as any)
+        const { error: deleteError } = await dbLoose
           .from('messages')
           .delete()
           .in('id', readIds)

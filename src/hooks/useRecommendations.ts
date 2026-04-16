@@ -9,6 +9,7 @@ import {
   type UserEmbedding,
 } from '@/lib/recommendations/engine';
 import { logger } from '@/lib/logger';
+import { dbLoose } from "@/lib/supabase";
 
 // Утилиты
 function extractHashtags(text: string): string[] {
@@ -69,7 +70,7 @@ export function useRecommendations() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      const { data, error } = await (supabase as any)
+      const { data, error } = await dbLoose
         .from('user_embeddings')
         .select('*')
         .eq('user_id', user.id)
@@ -108,7 +109,7 @@ export function useRecommendations() {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-      const { count } = await (supabase as any)
+      const { count } = await dbLoose
         .from('user_interactions')
         .select('*', { count: 'exact', head: true })
         .eq('user_id', user.id);
@@ -155,7 +156,7 @@ export function useRecommendations() {
       }
 
       const collaborativeMap = new Map<string, number>();
-      const { data: similar } = await (supabase as any)
+      const { data: similar } = await dbLoose
         .from('similar_users')
         .select('similar_user_id, similarity_score')
         .eq('user_id', user.id)
@@ -203,7 +204,7 @@ export function useRecommendations() {
       const followingIds = new Set<string>((following ?? []).map((f) => f.following_id));
       followingIds.add(user.id);
 
-      const { data: similar } = await (supabase as any)
+      const { data: similar } = await dbLoose
         .from('similar_users')
         .select('similar_user_id, similarity_score')
         .eq('user_id', user.id)
@@ -258,7 +259,7 @@ export function useRecommendations() {
         likesCount: r.likes_count ?? 0,
         commentsCount: r.comments_count ?? 0,
         sharesCount: 0,
-        createdAt: r.created_at,
+        createdAt: r.created_at ?? new Date().toISOString(),
       }));
 
       const trendingMap = new Map<string, number>(items.map((i) => [i.id, i.engagementRate]));
@@ -273,13 +274,13 @@ export function useRecommendations() {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return [];
-      const { data } = await (supabase as any)
+      const { data } = await dbLoose
         .from('recommended_content')
         .select('content_id, score, reason')
         .eq('user_id', user.id)
         .order('score', { ascending: false })
         .limit(limit);
-      return data ?? [];
+      return (data ?? []) as unknown as ContentItem[];
     } catch {
       return [];
     }

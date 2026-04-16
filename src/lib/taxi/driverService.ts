@@ -37,7 +37,7 @@
  *   available ──goOffline──► offline
  */
 
-import { supabase as _supabase } from "@/lib/supabase";
+import { dbLoose } from "@/lib/supabase";
 import type {
   DriverProfile,
   DriverStatus,
@@ -49,7 +49,7 @@ import type {
 import { DRIVER_ACCEPTANCE_TIMEOUT_SECONDS } from "./constants";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const supabase = _supabase as any;
+const supabase = dbLoose;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

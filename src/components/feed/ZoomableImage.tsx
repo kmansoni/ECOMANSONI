@@ -37,7 +37,7 @@ export function ZoomableImage({ src, alt, className, onPress, onLoad }: Zoomable
       style={{ touchAction: isZoomed ? "none" : "pan-y" }}
     >
       <div ref={ref} style={style} className="w-full h-full">
-        <img
+        <img loading="lazy"
           src={src}
           alt={alt ?? ""}
           className="w-full h-full object-cover select-none"

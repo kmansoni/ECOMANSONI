@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { dbLoose } from "@/lib/supabase";
 
 export type MediaFilter = "all" | "photo" | "video" | "file" | "link" | "voice";
 export type DateFilter = "all" | "today" | "week" | "month" | "custom";
@@ -77,7 +78,7 @@ export function useMessageSearch(conversationId?: string) {
       }
       setLoading(true);
 
-      let q = (supabase as any)
+      let q = dbLoose
         .from("messages")
         .select(
           `id, content, sender_id, conversation_id, created_at, media_type, media_url,

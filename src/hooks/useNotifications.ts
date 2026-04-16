@@ -62,7 +62,7 @@ interface NotificationsClient {
     select: (columns: string, options?: { count?: "exact"; head?: boolean }) => {
       eq: (column: string, value: string | boolean) => {
         eq?: (column: string, value: string | boolean) => QueryResult<NotificationRow[]>;
-        order?: (column: string, options: { ascending: boolean }) => {
+        order: (column: string, options: { ascending: boolean }) => {
           range: (from: number, to: number) => QueryResult<NotificationRow[]>;
         };
       };
@@ -138,13 +138,14 @@ export function useNotifications() {
 
   const getNotifications = useCallback(async (pageNum = 0) => {
     if (!user) return [];
+    const uid = user.id;
     try {
       const from = pageNum * PAGE_SIZE;
       const to = from + PAGE_SIZE - 1;
       const { data, error } = await db
         .from("notifications")
         .select("*")
-        .eq("user_id", user.id)
+        .eq("user_id", uid)
         .order("created_at", { ascending: false })
         .range(from, to);
 

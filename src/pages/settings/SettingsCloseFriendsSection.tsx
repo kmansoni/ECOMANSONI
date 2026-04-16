@@ -180,11 +180,10 @@ export function SettingsCloseFriendsSection({
                     )}
                   >
                     {follower.avatar_url ? (
-                      <img
-                        src={follower.avatar_url}
+                      <img loading="lazy" src={follower.avatar_url}
                         alt=""
                         className="w-full h-full object-cover"
-                        loading="lazy"
+                        
                       />
                     ) : (
                       <div className="w-full h-full bg-muted flex items-center justify-center text-muted-foreground text-sm font-medium">

@@ -7,6 +7,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { logger } from '@/lib/logger';
+import { dbLoose } from "@/lib/supabase";
 
 export interface RatingDistribution {
   1: number;
@@ -33,8 +34,6 @@ export interface SellerReviewItem {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const db = supabase as any;
-
 export function useSellerRating(sellerId: string) {
   const [rating, setRating] = useState<SellerRatingData>({
     average: 0,
@@ -57,7 +56,7 @@ export function useSellerRating(sellerId: string) {
 
       try {
         // 1. Получить товары продавца (через магазин)
-        const { data: shop } = await db.from('shops')
+        const { data: shop } = await dbLoose.from('shops')
           .select('id')
           .eq('owner_id', sellerId)
           .maybeSingle();
@@ -68,7 +67,7 @@ export function useSellerRating(sellerId: string) {
         }
 
         // 2. ID товаров
-        const { data: products } = await db.from('shop_products')
+        const { data: products } = await dbLoose.from('shop_products')
           .select('id')
           .eq('shop_id', shop.id)
           .limit(200);
@@ -80,7 +79,7 @@ export function useSellerRating(sellerId: string) {
         }
 
         // 3. Отзывы
-        const { data: reviewsData } = await db.from('product_reviews')
+        const { data: reviewsData } = await dbLoose.from('product_reviews')
           .select('id, user_id, text, rating, created_at, profiles(username, avatar_url)')
           .in('product_id', productIds)
           .order('created_at', { ascending: false })
@@ -88,15 +87,18 @@ export function useSellerRating(sellerId: string) {
 
         if (cancelled) return;
 
-        const allReviews = (reviewsData ?? []).map(r => ({
-          id: r.id,
-          user_id: r.user_id,
-          text: r.text,
-          rating: r.rating,
-          created_at: r.created_at,
-          username: r.profiles?.username,
-          avatar_url: r.profiles?.avatar_url,
-        }));
+        const allReviews = (reviewsData ?? []).map(r => {
+          const profile = r.profiles as unknown as { username: string | null; avatar_url: string | null } | null;
+          return {
+            id: r.id,
+            user_id: r.user_id,
+            text: r.text,
+            rating: r.rating,
+            created_at: r.created_at,
+            username: profile?.username ?? undefined,
+            avatar_url: profile?.avatar_url ?? undefined,
+          };
+        });
 
         setReviews(allReviews);
 

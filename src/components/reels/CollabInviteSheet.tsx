@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input';
 import { useCollabReels } from '@/hooks/useCollabReels';
 import { toast } from 'sonner';
 import { logger } from '@/lib/logger';
+import { dbLoose } from "@/lib/supabase";
 
 interface UserResult {
   id: string;
@@ -28,8 +29,6 @@ interface CollabInviteSheetProps {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const db = supabase as any;
-
 export function CollabInviteSheet({ open, onOpenChange, reelId }: CollabInviteSheetProps) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<UserResult[]>([]);
@@ -44,7 +43,7 @@ export function CollabInviteSheet({ open, onOpenChange, reelId }: CollabInviteSh
     }
     setSearching(true);
     try {
-      const { data, error } = await db
+      const { data, error } = await dbLoose
         .from('profiles')
         .select('id, display_name, avatar_url, username')
         .or(`display_name.ilike.%${q}%,username.ilike.%${q}%`)
@@ -134,7 +133,7 @@ export function CollabInviteSheet({ open, onOpenChange, reelId }: CollabInviteSh
                   exit={{ opacity: 0 }}
                   className="flex items-center gap-3 p-3 rounded-lg hover:bg-muted/50 transition-colors"
                 >
-                  <img
+                  <img loading="lazy"
                     src={user.avatar_url ?? `https://ui-avatars.com/api/?name=${encodeURIComponent(user.display_name ?? 'U')}&background=random`}
                     alt={user.display_name ?? ''}
                     className="w-10 h-10 rounded-full object-cover"

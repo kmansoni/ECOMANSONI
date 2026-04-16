@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Search, User, Hash, MapPin } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { dbLoose } from "@/lib/supabase";
 
 interface Suggestion {
   type: "user" | "hashtag" | "location";
@@ -35,25 +36,25 @@ export function SearchSuggestions({ query, visible, onSelect }: SearchSuggestion
         const results: Suggestion[] = [];
 
         // Search users
-        const { data: users } = await (supabase as any)
+        const { data: users } = await dbLoose
           .from("profiles")
           .select("id, username, full_name, avatar_url")
           .or(`username.ilike.%${q}%,full_name.ilike.%${q}%`)
           .limit(3);
         if (users) {
-          for (const u of users) {
+          for (const u of users as Array<Record<string, string | null>>) {
             results.push({
               type: "user",
-              id: u.id,
+              id: u.id ?? "",
               label: u.username ?? "",
               sublabel: u.full_name ?? "",
-              avatar: u.avatar_url,
+              avatar: u.avatar_url ?? undefined,
             });
           }
         }
 
         // Search hashtags (from posts)
-        const { data: posts } = await (supabase as any)
+        const { data: posts } = await dbLoose
           .from("posts")
           .select("id, hashtags")
           .not("hashtags", "is", null)
@@ -75,17 +76,17 @@ export function SearchSuggestions({ query, visible, onSelect }: SearchSuggestion
         }
 
         // Search locations
-        const { data: locations } = await (supabase as any)
+        const { data: locations } = await dbLoose
           .from("locations")
           .select("id, name, address")
           .ilike("name", `%${q}%`)
           .limit(2);
         if (locations) {
-          for (const loc of locations) {
+          for (const loc of locations as Array<Record<string, string | null>>) {
             results.push({
               type: "location",
-              id: loc.id,
-              label: loc.name,
+              id: loc.id ?? "",
+              label: loc.name ?? "",
               sublabel: loc.address ?? "",
             });
           }
@@ -122,7 +123,7 @@ export function SearchSuggestions({ query, visible, onSelect }: SearchSuggestion
           >
             {s.type === "user" ? (
               s.avatar ? (
-                <img src={s.avatar} alt="" className="w-8 h-8 rounded-full object-cover flex-shrink-0" />
+                <img loading="lazy" src={s.avatar} alt="" className="w-8 h-8 rounded-full object-cover flex-shrink-0" />
               ) : (
                 <div className="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center flex-shrink-0">
                   <User className="w-4 h-4 text-zinc-400" />

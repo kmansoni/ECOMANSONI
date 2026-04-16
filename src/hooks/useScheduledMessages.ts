@@ -1,9 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
-import { supabase } from '@/lib/supabase';
+import { supabase, dbLoose } from "@/lib/supabase";
 import { logger } from '@/lib/logger';
 import { useAuth } from './useAuth';
-
-const supabaseAny = supabase as any;
 
 export interface ScheduledMessage {
   id: string;
@@ -48,7 +46,7 @@ export function useScheduledMessages(conversationId?: string | null) {
       setLoading(true);
       setError(null);
 
-      let query = supabaseAny
+      let query = dbLoose
         .from('scheduled_messages')
         .select('*')
         .eq('user_id', user.id)
@@ -135,7 +133,7 @@ export function useScheduledMessages(conversationId?: string | null) {
       thread_root_message_id: input.thread_root_message_id ?? null,
     };
 
-    const { data, error: insertError } = await supabaseAny
+    const { data, error: insertError } = await dbLoose
       .from('scheduled_messages')
       .insert(payload)
       .select('*')
@@ -154,7 +152,7 @@ export function useScheduledMessages(conversationId?: string | null) {
       throw new Error('Not authenticated');
     }
 
-    const { error: updateError } = await supabaseAny
+    const { error: updateError } = await dbLoose
       .from('scheduled_messages')
       .update({ status: 'cancelled' })
       .eq('id', id)
@@ -171,7 +169,7 @@ export function useScheduledMessages(conversationId?: string | null) {
   const deleteScheduledMessage = useCallback(async (id: string) => {
     if (!user) throw new Error('Not authenticated');
 
-    const { error: deleteError } = await supabaseAny
+    const { error: deleteError } = await dbLoose
       .from('scheduled_messages')
       .delete()
       .eq('id', id)
@@ -185,7 +183,7 @@ export function useScheduledMessages(conversationId?: string | null) {
     async (id: string, updates: Partial<Pick<ScheduledMessage, 'content' | 'scheduled_for'>>) => {
       if (!user) throw new Error('Not authenticated');
 
-      const { data, error: updateError } = await supabaseAny
+      const { data, error: updateError } = await dbLoose
         .from('scheduled_messages')
         .update(updates)
         .eq('id', id)
@@ -210,7 +208,7 @@ export function useScheduledMessages(conversationId?: string | null) {
       if (!user) throw new Error('Not authenticated');
 
       // Mark as instant send (set scheduled_for to now, backend processes it)
-      const { error: updateError } = await supabaseAny
+      const { error: updateError } = await dbLoose
         .from('scheduled_messages')
         .update({
           scheduled_for: new Date().toISOString(),

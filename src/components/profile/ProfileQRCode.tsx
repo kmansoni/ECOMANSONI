@@ -61,7 +61,7 @@ export function ProfileQRCode({ isOpen, onClose, username, userId, avatarUrl }: 
 
             <div className="flex flex-col items-center gap-2">
               {avatarUrl && (
-                <img src={avatarUrl} alt={username} className="w-14 h-14 rounded-full object-cover" />
+                <img loading="lazy" src={avatarUrl} alt={username} className="w-14 h-14 rounded-full object-cover" />
               )}
               <p className="text-black font-semibold text-lg">@{username}</p>
             </div>

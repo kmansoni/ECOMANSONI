@@ -1,4 +1,4 @@
-import { supabase } from "@/lib/supabase";
+import { dbLoose } from "@/lib/supabase";
 
 function hashToBucket(input: string): number {
   let h = 0x811c9dc5;
@@ -125,7 +125,7 @@ async function flushMetricQueue(): Promise<void> {
     const batch = metricQueue.splice(0, METRIC_MAX_BATCH);
     await Promise.all(
       batch.map((item) =>
-        (supabase as any).rpc("chat_ingest_client_metric_v11", {
+        dbLoose.rpc("chat_ingest_client_metric_v11", {
           p_name: item.name,
           p_value: item.value,
           p_labels: item.labels,

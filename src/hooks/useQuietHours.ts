@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { dbLoose } from "@/lib/supabase";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -141,7 +142,7 @@ export function useQuietHours() {
 
     try {
       setIsLoading(true);
-      const { data, error: fetchErr } = await (supabase as any)
+      const { data, error: fetchErr } = await dbLoose
         .from(TABLE)
         .select(
           "quiet_hours_enabled, quiet_start, quiet_end, quiet_days, timezone, exceptions"
@@ -187,7 +188,7 @@ export function useQuietHours() {
       const next: QuietHoursSettings = { ...settings, ...patch };
       setSettings(next);  // optimistic
 
-      const { error: upsertErr } = await (supabase as any)
+      const { error: upsertErr } = await dbLoose
         .from(TABLE)
         .upsert(
           {

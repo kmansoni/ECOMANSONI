@@ -18,10 +18,9 @@ import { useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
 import { logger } from "@/lib/logger";
+import { dbLoose } from "@/lib/supabase";
 
 // Using `any` cast until Supabase types are regenerated with new tables
-const db = supabase as any;
-
 export interface ChannelBoostLevel {
   currentLevel: number;
   totalBoosts: number;
@@ -101,7 +100,7 @@ export function useChannelBoost() {
         const expiresAt = new Date(Date.now() + BOOST_DURATION_MS).toISOString();
         const boostLevel = starsToBoostLevel(starsAmount);
 
-        const { error: upsertError } = await db
+        const { error: upsertError } = await dbLoose
           .from("channel_boosts")
           .upsert(
             {
@@ -136,7 +135,7 @@ export function useChannelBoost() {
    */
   const getBoostLevel = useCallback(
     async (channelId: string): Promise<ChannelBoostLevel | null> => {
-      const { data, error: fetchError } = await db
+      const { data, error: fetchError } = await dbLoose
         .from("channel_boost_levels")
         .select("*")
         .eq("channel_id", channelId)
@@ -152,7 +151,7 @@ export function useChannelBoost() {
 
       // Count distinct active boosters
       const now = new Date().toISOString();
-      const { count } = await db
+      const { count } = await dbLoose
         .from("channel_boosts")
         .select("id", { count: "exact", head: true })
         .eq("channel_id", channelId)
@@ -176,7 +175,7 @@ export function useChannelBoost() {
       if (!user) return null;
 
       const now = new Date().toISOString();
-      const { data, error: fetchError } = await db
+      const { data, error: fetchError } = await dbLoose
         .from("channel_boosts")
         .select("*")
         .eq("channel_id", channelId)
@@ -210,7 +209,7 @@ export function useChannelBoost() {
   const topBoosters = useCallback(
     async (channelId: string, limit = 10): Promise<TopBooster[]> => {
       const now = new Date().toISOString();
-      const { data, error: fetchError } = await db
+      const { data, error: fetchError } = await dbLoose
         .from("channel_boosts")
         .select("user_id, stars_spent, boost_level, expires_at")
         .eq("channel_id", channelId)

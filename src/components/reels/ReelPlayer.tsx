@@ -500,7 +500,7 @@ function ReelPlayerInner({
           className="absolute inset-0 z-[2] pointer-events-none"
           aria-hidden="true"
         >
-          <img
+          <img loading="lazy"
             src={thumbnailUrl}
             alt=""
             className="w-full h-full object-cover"

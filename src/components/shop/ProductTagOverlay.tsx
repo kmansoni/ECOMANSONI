@@ -53,9 +53,9 @@ export function ProductTagOverlay({ tags }: ProductTagOverlayProps) {
 
                 {/* Product image */}
                 <div className="aspect-square bg-zinc-800 overflow-hidden">
-                  {tag.product.image_url ? (
-                    <img
-                      src={tag.product.image_url}
+                {(() => { const img = tag.product && Array.isArray(tag.product.images) ? String(tag.product.images[0] ?? '') : null; return img ? (
+                    <img loading="lazy"
+                      src={img}
                       alt={tag.product.name}
                       className="w-full h-full object-cover"
                     />
@@ -63,7 +63,7 @@ export function ProductTagOverlay({ tags }: ProductTagOverlayProps) {
                     <div className="w-full h-full flex items-center justify-center">
                       <ShoppingBag className="w-8 h-8 text-zinc-600" />
                     </div>
-                  )}
+                  ); })()}
                 </div>
 
                 {/* Info */}

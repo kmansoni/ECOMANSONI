@@ -163,7 +163,7 @@ export function ProfileLinks({ userId, isOwner, links, onRefresh }: ProfileLinks
             className="flex items-center gap-3 bg-muted/30 rounded-xl px-3 py-2"
           >
             {/* Favicon */}
-            <img
+            <img loading="lazy"
               src={getFavicon(link.url)}
               alt=""
               className="w-5 h-5 rounded-sm flex-shrink-0"

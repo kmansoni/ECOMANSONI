@@ -4,6 +4,7 @@ import { Bookmark, UserPlus, UserMinus, Flag, Link2, Pin } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useSavedPosts } from "@/hooks/useSavedPosts";
 import { supabase } from "@/integrations/supabase/client";
+import { dbLoose } from "@/lib/supabase";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
@@ -68,7 +69,7 @@ export function PostOptionsSheet({
         return;
       }
 
-      const { data, error } = await (supabase as any)
+      const { data, error } = await dbLoose
         .from("pinned_posts")
         .select("id, post_id, position")
         .eq("user_id", user.id)
@@ -163,7 +164,7 @@ export function PostOptionsSheet({
     setPinLoading(true);
     try {
       if (pinnedEntry) {
-        const { error } = await (supabase as any)
+        const { error } = await dbLoose
           .from("pinned_posts")
           .delete()
           .eq("id", pinnedEntry.id)
@@ -178,7 +179,7 @@ export function PostOptionsSheet({
         }
 
         const nextPosition = pinnedRows.reduce((max, row) => Math.max(max, Number(row.position ?? 0)), -1) + 1;
-        const { error } = await (supabase as any).from("pinned_posts").insert({
+        const { error } = await dbLoose.from("pinned_posts").insert({
           user_id: user.id,
           post_id: postId,
           position: nextPosition,
@@ -188,7 +189,7 @@ export function PostOptionsSheet({
         toast.success("Пост закреплён");
       }
 
-      const { data: refreshedRows } = await (supabase as any)
+      const { data: refreshedRows } = await dbLoose
         .from("pinned_posts")
         .select("id, post_id, position")
         .eq("user_id", user.id)

@@ -1,4 +1,4 @@
-import { supabase } from "@/integrations/supabase/client";
+import { dbLoose } from "@/lib/supabase";
 
 export interface Guide {
   id: string;
@@ -20,7 +20,7 @@ export interface GuideItem {
 }
 
 export async function getGuides(authorId: string): Promise<Guide[]> {
-  const { data } = await (supabase as any)
+  const { data } = await dbLoose
     .from("guides")
     .select("*")
     .eq("author_id", authorId)
@@ -29,7 +29,7 @@ export async function getGuides(authorId: string): Promise<Guide[]> {
 }
 
 export async function getGuideItems(guideId: string): Promise<GuideItem[]> {
-  const { data } = await (supabase as any)
+  const { data } = await dbLoose
     .from("guide_items")
     .select("*")
     .eq("guide_id", guideId)
@@ -44,7 +44,7 @@ export async function createGuide(params: {
   cover_url?: string;
   type?: string;
 }): Promise<Guide> {
-  const { data, error } = await (supabase as any)
+  const { data, error } = await dbLoose
     .from("guides")
     .insert(params)
     .select()
@@ -54,7 +54,7 @@ export async function createGuide(params: {
 }
 
 export async function deleteGuide(guideId: string): Promise<void> {
-  const { error } = await (supabase as any)
+  const { error } = await dbLoose
     .from("guides")
     .delete()
     .eq("id", guideId);
@@ -68,7 +68,7 @@ export async function addToGuide(params: {
   note?: string;
   position?: number;
 }): Promise<GuideItem> {
-  const { data, error } = await (supabase as any)
+  const { data, error } = await dbLoose
     .from("guide_items")
     .insert(params)
     .select()
@@ -78,7 +78,7 @@ export async function addToGuide(params: {
 }
 
 export async function removeFromGuide(itemId: string): Promise<void> {
-  const { error } = await (supabase as any)
+  const { error } = await dbLoose
     .from("guide_items")
     .delete()
     .eq("id", itemId);

@@ -1,4 +1,4 @@
-import { supabase } from "@/lib/supabase";
+import { dbLoose } from "@/lib/supabase";
 
 export type ChannelRole = "owner" | "admin" | "member" | "guest";
 
@@ -75,7 +75,7 @@ export function canCapability(
 }
 
 export async function fetchChannelCapabilityCatalog(): Promise<ChannelCapability[]> {
-  const { data, error } = await (supabase as any)
+  const { data, error } = await dbLoose
     .from("channel_capability_catalog")
     .select("key, domain, title, description, is_active, default_params")
     .eq("is_active", true)
@@ -89,7 +89,7 @@ export async function fetchChannelCapabilityCatalog(): Promise<ChannelCapability
 export async function fetchChannelRoleCapabilities(
   role: ChannelRole,
 ): Promise<ChannelRoleCapability[]> {
-  const { data, error } = await (supabase as any)
+  const { data, error } = await dbLoose
     .from("channel_role_capabilities")
     .select("role, capability_key, is_allowed")
     .eq("role", role);
@@ -101,7 +101,7 @@ export async function fetchChannelRoleCapabilities(
 export async function fetchChannelCapabilityOverrides(
   channelId: string,
 ): Promise<ChannelCapabilityOverride[]> {
-  const { data, error } = await (supabase as any)
+  const { data, error } = await dbLoose
     .from("channel_capability_overrides")
     .select("id, channel_id, capability_key, is_enabled, params, created_by, created_at, updated_at")
     .eq("channel_id", channelId);
@@ -115,7 +115,7 @@ export async function checkChannelCapabilityViaRpc(
   userId: string,
   capabilityKey: string,
 ): Promise<boolean> {
-  const { data, error } = await (supabase as any).rpc("channel_has_capability", {
+  const { data, error } = await dbLoose.rpc("channel_has_capability", {
     _channel_id: channelId,
     _user_id: userId,
     _capability_key: capabilityKey,
@@ -131,7 +131,7 @@ export async function upsertChannelCapabilityOverride(input: {
   isEnabled: boolean;
   params?: Record<string, unknown>;
 }): Promise<void> {
-  const { error } = await (supabase as any).from("channel_capability_overrides").upsert(
+  const { error } = await dbLoose.from("channel_capability_overrides").upsert(
     {
       channel_id: input.channelId,
       capability_key: input.capabilityKey,

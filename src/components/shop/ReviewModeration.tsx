@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
-import { supabase } from '@/lib/supabase';
+import { dbLoose } from "@/lib/supabase";
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -78,18 +78,26 @@ export function ReviewModeration({ shopId }: ReviewModerationProps) {
 
     setLoading(true);
     try {
-      let query = (supabase as any)
+      // Сначала получаем ID товаров магазина
+      const { data: shopProducts } = await dbLoose
+        .from('shop_products')
+        .select('id')
+        .eq('shop_id', shopId);
+
+      const productIds = (shopProducts ?? []).map((p: { id: string }) => p.id);
+      if (productIds.length === 0) {
+        setReviews([]);
+        return;
+      }
+
+      let query = dbLoose
         .from('product_reviews')
         .select(`
           id, product_id, user_id, rating, text, video_url,
           moderation_status, seller_reply, seller_reply_at, created_at,
           profiles(username, avatar_url)
         `)
-        .in('product_id', (supabase as any)
-          .from('shop_products')
-          .select('id')
-          .eq('shop_id', shopId)
-        )
+        .in('product_id', productIds)
         .order('created_at', { ascending: false })
         .limit(PAGE_SIZE);
 
@@ -103,14 +111,15 @@ export function ReviewModeration({ shopId }: ReviewModerationProps) {
       if (error) throw error;
 
       // Получаем названия товаров отдельным запросом
-      const productIds = [...new Set((data ?? []).map((r: ModeratableReview) => r.product_id))];
+      const rows = (data ?? []) as unknown as ModeratableReview[];
+      const reviewProductIds = [...new Set(rows.map(r => r.product_id))];
       let productNames: Record<string, string> = {};
 
-      if (productIds.length > 0) {
-        const { data: products } = await (supabase as any)
+      if (reviewProductIds.length > 0) {
+        const { data: products } = await dbLoose
           .from('shop_products')
           .select('id, name')
-          .in('id', productIds)
+          .in('id', reviewProductIds)
           .limit(100);
 
         if (products) {
@@ -121,7 +130,7 @@ export function ReviewModeration({ shopId }: ReviewModerationProps) {
       }
 
       setReviews(
-        (data ?? []).map((r: ModeratableReview) => ({
+        rows.map(r => ({
           ...r,
           product_name: productNames[r.product_id] ?? 'Товар',
         })),
@@ -143,7 +152,7 @@ export function ReviewModeration({ shopId }: ReviewModerationProps) {
   const updateStatus = useCallback(async (reviewId: string, status: ModerationStatus) => {
     setSubmitting(reviewId);
     try {
-      const { error } = await (supabase as any)
+      const { error } = await dbLoose
         .from('product_reviews')
         .update({ moderation_status: status })
         .eq('id', reviewId);
@@ -171,7 +180,7 @@ export function ReviewModeration({ shopId }: ReviewModerationProps) {
     setSubmitting(reviewId);
     try {
       const now = new Date().toISOString();
-      const { error } = await (supabase as any)
+      const { error } = await dbLoose
         .from('product_reviews')
         .update({ seller_reply: replyText.trim(), seller_reply_at: now })
         .eq('id', reviewId);
@@ -302,7 +311,7 @@ function ReviewCard({
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
           {review.profiles?.avatar_url ? (
-            <img
+            <img loading="lazy"
               src={review.profiles.avatar_url}
               alt=""
               className="w-8 h-8 rounded-full object-cover shrink-0"

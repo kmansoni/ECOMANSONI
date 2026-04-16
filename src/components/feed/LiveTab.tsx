@@ -114,7 +114,7 @@ export function LiveTab() {
           {/* Превью */}
           <div className="aspect-video bg-gray-900 relative flex items-center justify-center">
             {session.thumbnail_url ? (
-              <img
+              <img loading="lazy"
                 src={session.thumbnail_url}
                 alt={session.title}
                 className="w-full h-full object-cover"

@@ -17,6 +17,7 @@ import { GradientAvatar } from "@/components/ui/gradient-avatar";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { logger } from "@/lib/logger";
+import { dbLoose } from "@/lib/supabase";
 
 interface GroupMember {
   id: string;
@@ -53,7 +54,7 @@ export function GroupCallInviteSheet({ groupId, currentParticipantIds, onInvite,
         };
 
          
-        const { data, error } = await (supabase as any)
+        const { data, error } = await dbLoose
           .from("group_members")
           .select(`
             user_id,
@@ -68,7 +69,7 @@ export function GroupCallInviteSheet({ groupId, currentParticipantIds, onInvite,
         if (error) throw error;
         if (cancelled) return;
 
-        const mapped: GroupMember[] = ((data ?? []) as RawRow[])
+        const mapped: GroupMember[] = ((data ?? []) as unknown as RawRow[])
           .map((row) => ({
             id: row.user_id,
             displayName: row.profiles?.display_name ?? "Участник",

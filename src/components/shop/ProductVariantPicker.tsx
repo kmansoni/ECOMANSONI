@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Minus, Plus } from 'lucide-react';
+import { dbLoose } from "@/lib/supabase";
 
 interface ProductVariant {
   id: string;
@@ -26,13 +27,14 @@ export function ProductVariantPicker({ productId, basePrice = 0, onVariantChange
 
   useEffect(() => {
     void (async () => {
-      const { data } = await (supabase as any)
+      const { data } = await dbLoose
         .from('product_variants')
         .select('*')
         .eq('product_id', productId)
         .order('price');
-      setVariants(data ?? []);
-      if (data?.length) setSelectedId(data[0].id);
+      const rows = (data ?? []) as ProductVariant[];
+      setVariants(rows);
+      if (rows.length) setSelectedId(rows[0].id);
       setLoading(false);
     })();
   }, [productId]);

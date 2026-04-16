@@ -88,7 +88,7 @@ export function CreateShopSheet({ open, onClose, onCreated }: CreateShopSheetPro
                   className="w-20 h-20 rounded-2xl bg-zinc-800 border-2 border-dashed border-zinc-600 overflow-hidden flex items-center justify-center relative"
                 >
                   {logoPreview ? (
-                    <img src={logoPreview} alt="logo" className="w-full h-full object-cover" />
+                    <img loading="lazy" src={logoPreview} alt="logo" className="w-full h-full object-cover" />
                   ) : (
                     <div className="flex flex-col items-center gap-1 text-zinc-500">
                       <Upload className="w-5 h-5" />

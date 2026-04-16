@@ -76,7 +76,7 @@ export function MatchOverlay({ profile, onClose }: MatchOverlayProps) {
             >
               <div className="w-20 h-20 rounded-full overflow-hidden border-3 border-pink-500 bg-zinc-700">
                 {profile.photos[0] ? (
-                  <img
+                  <img loading="lazy"
                     src={profile.photos[0]}
                     alt={profile.display_name ?? 'Партнёр'}
                     className="w-full h-full object-cover"

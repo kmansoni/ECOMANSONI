@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { logger } from "@/lib/logger";
+import { dbLoose } from "@/lib/supabase";
 
 const BUBBLE_SIZE = 200;
 const MAX_DURATION_MS = 60_000;
@@ -114,8 +115,7 @@ export function VideoMessageBubble({
     if (!user || hasViewed || isOwn) return;
     setHasViewed(true);
     onViewed?.();
-    const db = supabase as any;
-    await db
+    await dbLoose
       .from("video_messages")
       .update({ viewed_by: [...viewedBy, user.id] })
       .eq("id", messageId);

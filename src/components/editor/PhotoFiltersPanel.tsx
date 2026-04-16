@@ -39,7 +39,7 @@ export function PhotoFiltersPanel({ imageUrl, selected, intensity, onSelectFilte
               "relative w-16 h-16 rounded-xl overflow-hidden border-2 transition-all",
               selected === idx ? "border-primary" : "border-transparent",
             )}>
-              <img
+              <img loading="lazy"
                 src={imageUrl}
                 alt={f.name}
                 className="w-full h-full object-cover"

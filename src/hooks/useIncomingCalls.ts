@@ -9,6 +9,7 @@ import {
 } from "@/lib/platform/callWakeStrategy";
 import type { WakeLockHandle } from "@/lib/platform/wakelock";
 import { fetchUserBriefMap, resolveUserBrief } from "@/lib/users/userBriefs";
+import { dbLoose } from "@/lib/supabase";
 
 interface UseIncomingCallsOptions {
   onIncomingCall?: (call: VideoCall) => void;
@@ -150,7 +151,7 @@ export function useIncomingCalls(options: UseIncomingCallsOptions = {}) {
     logger.info("incoming_calls.process", { callId: call.id, callType: call.call_type });
     notifiedCallsRef.current.add(call.id);
 
-    const briefMap = await fetchUserBriefMap([call.caller_id], supabase as any);
+    const briefMap = await fetchUserBriefMap([call.caller_id]);
     const callerBrief = resolveUserBrief(call.caller_id, briefMap);
 
     const callWithProfile: VideoCall = {

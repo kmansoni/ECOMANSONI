@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { dbLoose } from "@/lib/supabase";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -113,7 +114,7 @@ export function useDndStatus() {
 
     try {
       setIsLoading(true);
-      const { data, error: fetchErr } = await (supabase as any)
+      const { data, error: fetchErr } = await dbLoose
         .from(TABLE)
         .select("dnd_enabled, dnd_until, dnd_exceptions, dnd_allow_calls, dnd_auto_reply")
         .eq("user_id", user.id)
@@ -153,7 +154,7 @@ export function useDndStatus() {
       const next: DndSettings = { ...settings, ...patch };
       setSettings(next);  // optimistic update
 
-      const { error: upsertErr } = await (supabase as any)
+      const { error: upsertErr } = await dbLoose
         .from(TABLE)
         .upsert(
           {

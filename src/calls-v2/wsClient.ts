@@ -230,6 +230,7 @@ export class CallsWsClient {
 
     const maxAttempts = this.config.reconnect?.maxAttempts ?? this.config.maxReconnectAttempts ?? 12;
     if (this.reconnectAttempts >= maxAttempts) {
+      logger.error('[CallsWsClient] reconnect exhausted', { maxAttempts });
       this.setConnectionState('failed');
       return;
     }

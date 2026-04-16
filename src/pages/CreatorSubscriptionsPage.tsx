@@ -333,7 +333,7 @@ export default function CreatorSubscriptionsPage() {
               {mySubscribers.map((sub) => (
                 <div key={sub.id} className="flex items-center gap-3 p-3 bg-muted/30 rounded-xl">
                   <Avatar className="w-10 h-10">
-                    <AvatarImage src={sub.profiles?.avatar_url} />
+                    <AvatarImage src={sub.profiles?.avatar_url ?? undefined} />
                     <AvatarFallback>
                       {sub.profiles?.username?.charAt(0).toUpperCase()}
                     </AvatarFallback>
@@ -341,7 +341,7 @@ export default function CreatorSubscriptionsPage() {
                   <div className="flex-1">
                     <p className="font-medium text-sm">{sub.profiles?.username}</p>
                     <p className="text-xs text-muted-foreground">
-                      с {new Date(sub.started_at).toLocaleDateString("ru")}
+                      с {sub.started_at ? new Date(sub.started_at).toLocaleDateString("ru") : "—"}
                     </p>
                   </div>
                   <span className="text-sm font-semibold text-green-500">

@@ -63,7 +63,7 @@ export function useChatFolders() {
 
       if (foldersRes.error) throw foldersRes.error;
 
-      const fetched = ((foldersRes.data ?? []) as any) as ChatFolder[];
+      const fetched = (foldersRes.data ?? []) as ChatFolder[];
 
       // Ensure system tabs exist (Supabase-backed): All / Chats / Groups / Channels
       const bySystemKind = new Map<string, ChatFolder>();
@@ -97,10 +97,10 @@ export function useChatFolders() {
           .order("sort_order", { ascending: true })
           .order("created_at", { ascending: true });
         if (again.error) throw again.error;
-        const nextFolders = (again.data ?? []) as any;
+        const nextFolders = (again.data ?? []) as ChatFolder[];
         setFolders(nextFolders);
 
-        const ids = (nextFolders as any[]).map((f) => f?.id).filter((id) => typeof id === "string" && id);
+        const ids = nextFolders.map((f) => f.id).filter((id) => typeof id === "string" && id);
         if (ids.length) {
           const itemsRes = await supabase
             .from("chat_folder_items")
@@ -108,12 +108,12 @@ export function useChatFolders() {
             .in("folder_id", ids)
             .order("created_at", { ascending: true });
           if (itemsRes.error) throw itemsRes.error;
-          setItems((itemsRes.data ?? []) as any);
+          setItems((itemsRes.data ?? []) as ChatFolderItem[]);
         } else {
           setItems([]);
         }
       } else {
-        setFolders(fetched as any);
+        setFolders(fetched);
 
         const ids = fetched.map((f) => f.id).filter((id) => typeof id === "string" && id);
         if (ids.length) {
@@ -123,7 +123,7 @@ export function useChatFolders() {
             .in("folder_id", ids)
             .order("created_at", { ascending: true });
           if (itemsRes.error) throw itemsRes.error;
-          setItems((itemsRes.data ?? []) as any);
+          setItems((itemsRes.data ?? []) as ChatFolderItem[]);
         } else {
           setItems([]);
         }

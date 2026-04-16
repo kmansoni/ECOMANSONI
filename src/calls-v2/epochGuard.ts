@@ -38,6 +38,11 @@ export class EpochGuard {
 
   private violationHandler: ViolationHandler | null = null;
   private readonly strict: boolean;
+  private mediaBlockTimer: ReturnType<typeof setTimeout> | null = null;
+  private preAdvanceEpoch: number = 0;
+
+  /** Max time media can stay blocked during rekey before auto-rollback (ms) */
+  private static readonly MEDIA_BLOCK_SAFETY_MS = 45_000;
 
   /**
    * @param strict — if true, guard assertions throw; if false, log warnings only.
@@ -80,6 +85,7 @@ export class EpochGuard {
     }
     this.state.currentEpoch = epoch;
     this.state.e2eeReady = true;
+    this.clearMediaBlockTimer();
     this.recomputeMediaAllowed();
   }
 
@@ -94,10 +100,23 @@ export class EpochGuard {
       );
       return;
     }
+    this.preAdvanceEpoch = this.state.currentEpoch;
     this.state.currentEpoch = newEpoch;
     // Disable media during key transition (fail-closed)
     this.state.e2eeReady = false;
     this.state.mediaAllowed = false;
+
+    // Defense-in-depth: if rekey machinery fails to call rollback/markE2eeReady
+    // within safety window, auto-recover to prevent permanent media block.
+    this.clearMediaBlockTimer();
+    this.mediaBlockTimer = setTimeout(() => {
+      if (!this.state.mediaAllowed && this.preAdvanceEpoch > 0) {
+        logger.error(
+          `[EpochGuard] SAFETY: media blocked >${EpochGuard.MEDIA_BLOCK_SAFETY_MS}ms, auto-rollback to epoch ${this.preAdvanceEpoch}`
+        );
+        this.rollbackFailedEpoch(this.preAdvanceEpoch);
+      }
+    }, EpochGuard.MEDIA_BLOCK_SAFETY_MS);
   }
 
   markDisconnected(): void {
@@ -105,6 +124,7 @@ export class EpochGuard {
     this.state.roomJoined = false;
     this.state.e2eeReady = false;
     this.state.mediaAllowed = false;
+    this.clearMediaBlockTimer();
   }
 
   /**
@@ -120,6 +140,7 @@ export class EpochGuard {
     }
     this.state.currentEpoch = previousEpoch;
     this.state.e2eeReady = true;
+    this.clearMediaBlockTimer();
     this.recomputeMediaAllowed();
   }
 
@@ -127,6 +148,7 @@ export class EpochGuard {
     this.state.roomJoined = false;
     this.state.e2eeReady = false;
     this.state.mediaAllowed = false;
+    this.clearMediaBlockTimer();
     // M-2: DO NOT reset currentEpoch — epoch monotonicity must hold across sessions.
     // Resetting to 0 would allow epoch rollback attacks on reconnect.
   }
@@ -209,6 +231,13 @@ export class EpochGuard {
       this.state.authenticated &&
       this.state.roomJoined &&
       this.state.e2eeReady;
+  }
+
+  private clearMediaBlockTimer(): void {
+    if (this.mediaBlockTimer) {
+      clearTimeout(this.mediaBlockTimer);
+      this.mediaBlockTimer = null;
+    }
   }
 
   private recordViolation(msg: string): void {

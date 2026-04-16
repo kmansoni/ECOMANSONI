@@ -29,7 +29,7 @@ function TestimonialCard({ testimonial }: { testimonial: Testimonial }) {
     >
       {/* Автор */}
       <div className="flex items-center gap-2">
-        <img
+        <img loading="lazy"
           src={author?.avatar_url ?? `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random`}
           alt={name}
           className="w-8 h-8 rounded-full object-cover"
@@ -75,7 +75,7 @@ function PendingCard({
       className="p-4 rounded-xl bg-card border border-border space-y-3"
     >
       <div className="flex items-center gap-2">
-        <img
+        <img loading="lazy"
           src={author?.avatar_url ?? `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random`}
           alt={name}
           className="w-8 h-8 rounded-full object-cover"

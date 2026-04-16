@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { supabase } from "@/lib/supabase";
+import { supabase, dbLoose } from "@/lib/supabase";
 import { useAuth } from "./useAuth";
 import { logger } from "@/lib/logger";
 
@@ -35,7 +35,7 @@ export function useStickers() {
     if (!user) return;
     setLoading(true);
     try {
-      const { data, error } = await (supabase as any)
+      const { data, error } = await supabase
         .from("user_sticker_packs")
         .select("position, sticker_packs(*)")
         .eq("user_id", user.id)
@@ -55,7 +55,7 @@ export function useStickers() {
   const loadRecentStickers = useCallback(async () => {
     if (!user) return;
     try {
-      const { data, error } = await (supabase as any)
+      const { data, error } = await supabase
         .from("user_recent_stickers")
         .select("stickers(*)")
         .eq("user_id", user.id)
@@ -80,7 +80,7 @@ export function useStickers() {
     async (packId: string) => {
       if (!user) return;
       const maxPos = installedPacks.length;
-      const { error } = await (supabase as any).from("user_sticker_packs").upsert({
+      const { error } = await supabase.from("user_sticker_packs").upsert({
         user_id: user.id,
         pack_id: packId,
         position: maxPos,
@@ -88,7 +88,7 @@ export function useStickers() {
       if (!error) {
         await loadInstalledPacks();
         // increment install_count
-        await (supabase as any).rpc("increment_sticker_pack_install", { pack_id: packId }).maybeSingle();
+        await dbLoose.rpc("increment_sticker_pack_install", { pack_id: packId });
       }
     },
     [user, installedPacks.length, loadInstalledPacks]
@@ -97,7 +97,7 @@ export function useStickers() {
   const removePack = useCallback(
     async (packId: string) => {
       if (!user) return;
-      const { error } = await (supabase as any)
+      const { error } = await supabase
         .from("user_sticker_packs")
         .delete()
         .eq("user_id", user.id)
@@ -108,7 +108,7 @@ export function useStickers() {
   );
 
   const getPackStickers = useCallback(async (packId: string): Promise<Sticker[]> => {
-    const { data, error } = await (supabase as any)
+    const { data, error } = await supabase
       .from("stickers")
       .select("*")
       .eq("pack_id", packId)
@@ -120,7 +120,7 @@ export function useStickers() {
   const trackUsage = useCallback(
     async (stickerId: string) => {
       if (!user) return;
-      await (supabase as any).from("user_recent_stickers").upsert({
+      await supabase.from("user_recent_stickers").upsert({
         user_id: user.id,
         sticker_id: stickerId,
         used_at: new Date().toISOString(),
@@ -128,7 +128,7 @@ export function useStickers() {
       });
       // Also update used_at & use_count via raw SQL would be ideal,
       // but upsert above resets. Do a follow-up update:
-      await (supabase as any)
+      await supabase
         .from("user_recent_stickers")
         .update({ used_at: new Date().toISOString() })
         .eq("user_id", user.id)
@@ -139,7 +139,7 @@ export function useStickers() {
   );
 
   const searchByEmoji = useCallback(async (emoji: string): Promise<Sticker[]> => {
-    const { data, error } = await (supabase as any)
+    const { data, error } = await supabase
       .from("stickers")
       .select("*")
       .eq("emoji", emoji)

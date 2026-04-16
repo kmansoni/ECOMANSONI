@@ -235,7 +235,7 @@ export function TripComplaintSheet({ open, onClose, rideId }: TripComplaintSheet
             <div className="flex gap-2 flex-wrap">
               {previews.map((url, i) => (
                 <div key={url} className="relative w-20 h-20 rounded-xl overflow-hidden group">
-                  <img
+                  <img loading="lazy"
                     src={url}
                     alt={`Фото ${i + 1}`}
                     className="w-full h-full object-cover"

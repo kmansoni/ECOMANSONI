@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { announceToScreenReader } from '@/lib/accessibility/a11y';
 import { logger } from '@/lib/logger';
+import { dbLoose } from "@/lib/supabase";
 
 export type FontSize = 'sm' | 'md' | 'lg' | 'xl';
 export type ColorFilter = 'none' | 'protanopia' | 'deuteranopia' | 'tritanopia';
@@ -88,7 +89,7 @@ export function useAccessibility() {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
-        const { error } = await (supabase as any)
+        const { error } = await dbLoose
           .from('user_settings')
           .upsert(
             { user_id: user.id, accessibility: { ...loadFromStorage(), ...partial } },

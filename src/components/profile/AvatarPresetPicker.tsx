@@ -99,7 +99,7 @@ export function AvatarPresetPicker({ selectedUrl, onSelect }: AvatarPresetPicker
             )}
             title={`${item.name}${item.motion === "animated" ? " (анимированный)" : ""}`}
           >
-            <img
+            <img loading="lazy"
               src={item.avatarUrl}
               alt={item.name}
               className="w-full aspect-square rounded-lg object-cover"

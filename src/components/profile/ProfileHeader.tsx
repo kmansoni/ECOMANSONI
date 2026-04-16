@@ -276,9 +276,9 @@ export function ProfileHeader({
         {/* Business action buttons */}
         {!isOwnProfile && profileMeta?.account_type === "business" && (
           <BusinessActionButtons
-            email={profileMeta?.action_email}
-            phone={profileMeta?.action_phone}
-            address={profileMeta?.action_address}
+            email={profileMeta?.action_email ?? undefined}
+            phone={profileMeta?.action_phone ?? undefined}
+            address={profileMeta?.action_address ?? undefined}
           />
         )}
 

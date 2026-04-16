@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { CreateContentModal } from "@/components/feed/CreateContentModal";
 import { FollowersSheet } from "./FollowersSheet";
-import { EditProfileSheet } from "./EditProfileSheet";
+import { EditProfileSheet, type ProfileData } from "./EditProfileSheet";
 import { CreateHighlightSheet } from "./CreateHighlightSheet";
 import { ProfileMenu } from "./ProfileMenu";
 import { ProfileQRCode } from "./ProfileQRCode";
@@ -37,7 +37,7 @@ interface ProfileModalsProps {
 
   showEditProfile: boolean;
   onCloseEditProfile: () => void;
-  onProfileSaved: (updated: Record<string, unknown>) => void;
+  onProfileSaved: (updated: ProfileData) => void;
 
   showMenu: boolean;
   onCloseMenu: () => void;
@@ -119,7 +119,7 @@ export function ProfileModals({
           onClose={onCloseEditProfile}
           profile={profile}
           userId={userId}
-          onSaved={onProfileSaved}
+          onSaved={(data) => onProfileSaved(data)}
         />
       )}
 

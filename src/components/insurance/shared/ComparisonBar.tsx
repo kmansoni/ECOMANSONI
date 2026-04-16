@@ -52,7 +52,7 @@ export function ComparisonBar({
                   >
                     <div className="w-10 h-10 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center overflow-hidden">
                       {item.product.company?.logo_url ? (
-                        <img
+                        <img loading="lazy"
                           src={item.product.company.logo_url}
                           alt={item.product.company.name}
                           className="w-full h-full object-contain p-1"

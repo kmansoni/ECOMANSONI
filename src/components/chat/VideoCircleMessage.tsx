@@ -17,7 +17,7 @@ function fmtTime(s: number) {
 }
 
 export function VideoCircleMessage({ videoUrl, duration, isOwn }: VideoCircleMessageProps) {
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   const [playing, setPlaying] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [time, setTime] = useState(0);

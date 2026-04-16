@@ -132,7 +132,7 @@ export function MiniAppListPage({ className }: MiniAppListPageProps) {
               {/* Icon */}
               <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center overflow-hidden">
                 {app.icon_url ? (
-                  <img 
+                  <img loading="lazy" 
                     src={app.icon_url} 
                     alt={app.title}
                     className="w-12 h-12 object-cover"

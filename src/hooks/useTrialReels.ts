@@ -13,6 +13,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 import { logger } from '@/lib/logger';
+import { dbLoose } from "@/lib/supabase";
 
 export interface TrialStats {
   views: number;
@@ -44,9 +45,6 @@ const EMPTY_STATS: TrialStats = {
   completionRate: 0,
 };
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const db = supabase as any;
-
 export function useTrialReels() {
   const { user } = useAuth();
   const [myTrials, setMyTrials] = useState<TrialReel[]>([]);
@@ -57,7 +55,7 @@ export function useTrialReels() {
 
     try {
       setLoading(true);
-      const { data, error } = await db
+      const { data, error } = await dbLoose
         .from('posts')
         .select('id, content, is_trial, trial_audience_percent, trial_started_at, trial_ended_at, trial_stats, created_at')
         .eq('author_id', user.id)
@@ -97,7 +95,7 @@ export function useTrialReels() {
 
     try {
       setLoading(true);
-      const { error } = await db
+      const { error } = await dbLoose
         .from('posts')
         .update({
           is_trial: true,
@@ -130,7 +128,7 @@ export function useTrialReels() {
 
     try {
       setLoading(true);
-      const { error } = await db
+      const { error } = await dbLoose
         .from('posts')
         .update({
           is_trial: false,
@@ -158,7 +156,7 @@ export function useTrialReels() {
 
   const getTrialStats = useCallback(async (postId: string): Promise<TrialStats> => {
     try {
-      const { data, error } = await db
+      const { data, error } = await dbLoose
         .from('posts')
         .select('trial_stats, views_count, likes_count, comments_count, shares_count')
         .eq('id', postId)

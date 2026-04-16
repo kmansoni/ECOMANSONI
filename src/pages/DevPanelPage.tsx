@@ -175,7 +175,16 @@ export default function DevPanelPage() {
         .select("*")
         .order("created_at", { ascending: false })
         .limit(50);
-      setCalls(callsData || []);
+      setCalls((callsData || []).map(row => ({
+        id: row.id ?? '',
+        caller_id: row.caller_id ?? '',
+        callee_id: row.callee_id ?? '',
+        call_type: row.call_type ?? '',
+        status: row.status ?? '',
+        created_at: row.created_at ?? '',
+        started_at: row.started_at,
+        ended_at: row.ended_at,
+      })));
       
       // Load debug signals
       const { data: debugData } = await supabase
@@ -529,7 +538,7 @@ export default function DevPanelPage() {
                   <Card key={profile.id}>
                     <CardContent className="p-3 flex items-center gap-3">
                       {profile.avatar_url ? (
-                        <img 
+                        <img loading="lazy" 
                           src={profile.avatar_url} 
                           alt="" 
                           className="w-10 h-10 rounded-full object-cover"

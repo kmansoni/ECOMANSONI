@@ -310,7 +310,7 @@ export function ReelShareSheet({ reelId, isOpen, onClose }: ReelShareSheetProps)
                       aria-label={`Отправить ${contact.name}`}
                     >
                       {contact.avatar_url ? (
-                        <img
+                        <img loading="lazy"
                           src={contact.avatar_url}
                           alt=""
                           className="w-12 h-12 rounded-full object-cover flex-shrink-0"

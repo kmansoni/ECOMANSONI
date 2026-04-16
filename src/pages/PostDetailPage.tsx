@@ -288,7 +288,7 @@ export function PostDetailPage() {
                 }}
               />
             ) : (
-              <img
+              <img loading="lazy"
                 src={currentMedia?.media_url}
                 alt=""
                 className="media-object media-object--fill media-object--cover"

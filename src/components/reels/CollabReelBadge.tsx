@@ -32,7 +32,7 @@ export function CollabReelBadge({ primaryAuthor, collaborator }: CollabReelBadge
           className="relative z-0"
           aria-label={`Профиль ${primaryName}`}
         >
-          <img
+          <img loading="lazy"
             src={primaryAuthor.avatar_url ?? `https://ui-avatars.com/api/?name=${encodeURIComponent(primaryName)}&background=random`}
             alt={primaryName}
             className="w-6 h-6 rounded-full border-2 border-background object-cover"
@@ -43,7 +43,7 @@ export function CollabReelBadge({ primaryAuthor, collaborator }: CollabReelBadge
           className="relative z-10"
           aria-label={`Профиль ${collabName}`}
         >
-          <img
+          <img loading="lazy"
             src={collaborator.avatar_url ?? `https://ui-avatars.com/api/?name=${encodeURIComponent(collabName)}&background=random`}
             alt={collabName}
             className="w-6 h-6 rounded-full border-2 border-background object-cover"

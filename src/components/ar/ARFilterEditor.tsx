@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { X, Check, Camera, Sliders } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { dbLoose } from "@/lib/supabase";
 
 interface ARFilterEditorProps {
   onClose?: () => void;
@@ -58,7 +59,7 @@ export function ARFilterEditor({ onClose, onPublish }: ARFilterEditorProps) {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { toast.error('Войдите в аккаунт'); return; }
 
-      const { data, error } = await (supabase as any)
+      const { data, error } = await dbLoose
         .from('ar_filters')
         .insert({
           creator_id: user.id,

@@ -8,13 +8,14 @@ import { parseEncryptedPayload } from "@/components/chat/chatConversationHelpers
 import { logger } from "@/lib/logger";
 import type { ChatMessage } from "@/hooks/useChat";
 import type { ReplyKeyboardButton } from "@/components/chat/ReplyKeyboard";
+import type { EncryptedPayload } from "@/lib/e2ee/crypto";
 
 interface UseChatDataLoadingParams {
   conversationId: string;
   user: { id: string } | null;
   messages: ChatMessage[];
   isGroup?: boolean;
-  decryptContent: (payload: unknown, senderId: string) => Promise<string>;
+  decryptContent: (payload: EncryptedPayload, senderId: string) => Promise<string | null>;
   messageRefs: RefObject<Record<string, HTMLDivElement | null>>;
 }
 
@@ -104,7 +105,7 @@ export function useChatDataLoading({
   }, [messages, hiddenIds]);
 
   const scrollToMessage = useCallback((messageId: string) => {
-    const el = messageRefs.current[messageId];
+    const el = messageRefs.current?.[messageId];
     el?.scrollIntoView({ behavior: "smooth", block: "center" });
   }, [messageRefs]);
 

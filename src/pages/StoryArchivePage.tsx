@@ -152,7 +152,7 @@ export default function StoryArchivePage() {
                     className="relative aspect-[9/16] overflow-hidden bg-muted"
                   >
                     {story.media_type === "image" && story.media_url ? (
-                      <img
+                      <img loading="lazy"
                         src={story.media_url}
                         alt=""
                         className="w-full h-full object-cover"
@@ -196,15 +196,15 @@ export default function StoryArchivePage() {
           <div className="flex-1 relative">
             {selectedStory.media_type === "video" ? (
               <video
-                src={selectedStory.media_url}
+                src={selectedStory.media_url ?? undefined}
                 autoPlay
                 playsInline
                 loop
                 className="w-full h-full object-cover"
               />
             ) : (
-              <img
-                src={selectedStory.media_url}
+              <img loading="lazy"
+                src={selectedStory.media_url ?? undefined}
                 alt=""
                 className="w-full h-full object-cover"
               />
@@ -279,7 +279,7 @@ export default function StoryArchivePage() {
                       className="flex items-center gap-3 w-full p-3 rounded-xl hover:bg-zinc-800 transition-colors"
                     >
                       {hl.cover_url ? (
-                        <img src={hl.cover_url} alt="" className="w-12 h-12 rounded-full object-cover" />
+                        <img loading="lazy" src={hl.cover_url} alt="" className="w-12 h-12 rounded-full object-cover" />
                       ) : (
                         <div className="w-12 h-12 rounded-full bg-zinc-800" />
                       )}

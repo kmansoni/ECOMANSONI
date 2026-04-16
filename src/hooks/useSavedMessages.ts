@@ -11,10 +11,9 @@
  */
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { supabase } from "@/lib/supabase";
+import { supabase, dbLoose } from "@/lib/supabase";
 import { logger } from "@/lib/logger";
 
-const sb = supabase as any;
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 
@@ -93,7 +92,7 @@ let supabaseAvailable: boolean | null = null;
 async function probeSupabase(): Promise<boolean> {
   if (supabaseAvailable !== null) return supabaseAvailable;
   try {
-    const { error } = await sb
+    const { error } = await dbLoose
       .from("saved_messages")
       .select("id")
       .limit(1);
@@ -139,7 +138,7 @@ export function useSavedMessages(options: UseSavedMessagesOptions = {}): UseSave
       setLoading(true);
       setError(null);
       try {
-        let query = sb
+        let query = dbLoose
           .from("saved_messages")
           .select("*")
           .eq("user_id", userId)
@@ -352,7 +351,7 @@ export function useSavedMessages(options: UseSavedMessagesOptions = {}): UseSave
       }
 
       // Supabase path — let DB handle unique constraint
-      const { error: insertError } = await sb
+      const { error: insertError } = await dbLoose
         .from("saved_messages")
         .insert({
           user_id: userId,
@@ -408,7 +407,7 @@ export function useSavedMessages(options: UseSavedMessagesOptions = {}): UseSave
         return;
       }
 
-      const { error: delError } = await sb
+      const { error: delError } = await dbLoose
         .from("saved_messages")
         .delete()
         .eq("id", id)

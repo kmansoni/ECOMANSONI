@@ -6,6 +6,7 @@ import { supabase, dbLoose } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import { useE2EEncryption } from '@/hooks/useE2EEncryption';
 import type { EncryptedPayload } from '@/hooks/useE2EEncryption';
+import { parseEncryptedPayload } from '@/components/chat/chatConversationHelpers';
 import { NotesBar } from '@/components/chat/NotesBar';
 
 interface ChatItem {
@@ -48,28 +49,6 @@ interface ProfileRow {
 interface ConversationParticipantRow {
   conversation_id: string;
   profiles?: ProfileRow | null;
-}
-
-function parseEncryptedPayload(content: unknown): EncryptedPayload | null {
-  if (typeof content !== 'string') return null;
-  const trimmed = content.trim();
-  if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) return null;
-  try {
-    const parsed = JSON.parse(trimmed) as Partial<EncryptedPayload>;
-    const isValid = (
-      typeof parsed === 'object' &&
-      parsed !== null &&
-      typeof parsed.v === 'number' &&
-      typeof parsed.iv === 'string' &&
-      typeof parsed.ct === 'string' &&
-      typeof parsed.tag === 'string' &&
-      typeof parsed.epoch === 'number' &&
-      typeof parsed.kid === 'string'
-    );
-    return isValid ? (parsed as EncryptedPayload) : null;
-  } catch (_err) {
-    return null;
-  }
 }
 
 function getLastMessagePreview(msg?: ChatItem['last_message'], currentUserId?: string, fallbackText?: string) {
@@ -171,7 +150,7 @@ function ChatListItem({
         {/* Аватар с онлайн-индикатором */}
         <div className="relative flex-shrink-0">
           {chat.other_user.avatar_url ? (
-            <img
+            <img loading="lazy"
               src={chat.other_user.avatar_url}
               alt=""
               className="w-12 h-12 rounded-full object-cover"

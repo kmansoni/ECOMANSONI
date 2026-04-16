@@ -240,7 +240,7 @@ export function ContactProfilePage() {
             </Avatar>
 
             {profile?.status_sticker_url ? (
-              <img
+              <img loading="lazy"
                 src={profile.status_sticker_url}
                 alt="status sticker"
                 className="absolute -bottom-2 -left-2 w-12 h-12 rounded-2xl object-cover bg-white/10 border border-white/20"

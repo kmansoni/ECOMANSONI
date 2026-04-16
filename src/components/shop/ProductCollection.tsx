@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { ChevronRight } from 'lucide-react';
+import { dbLoose } from "@/lib/supabase";
 
 interface CollectionProduct {
   id: string;
@@ -40,16 +41,14 @@ export function ProductCollection({ collectionId, collection: collectionProp, on
     void (async () => {
       // shop_collections, shop_collection_items, products — нет в сгенерированных типах Supabase
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const db = supabase as any;
-
-      const { data: col } = await db
+      const { data: col } = await dbLoose
         .from('shop_collections')
         .select('*')
         .eq('id', collectionId)
         .single();
       setCollection(col);
 
-      const { data: items } = await db
+      const { data: items } = await dbLoose
         .from('shop_collection_items')
         .select('product_id, position')
         .eq('collection_id', collectionId)
@@ -57,7 +56,7 @@ export function ProductCollection({ collectionId, collection: collectionProp, on
 
       if (items?.length) {
         const ids = items.map((i: { product_id: string }) => i.product_id);
-        const { data: prods } = await db
+        const { data: prods } = await dbLoose
           .from('products')
           .select('id, name, price, image_url')
           .in('id', ids);
@@ -88,7 +87,7 @@ export function ProductCollection({ collectionId, collection: collectionProp, on
       {/* Cover */}
       {collection.cover_url && (
         <div className="relative h-32 rounded-2xl overflow-hidden">
-          <img src={collection.cover_url} alt={collection.name} className="w-full h-full object-cover" />
+          <img loading="lazy" src={collection.cover_url} alt={collection.name} className="w-full h-full object-cover" />
           <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
         </div>
       )}
@@ -103,7 +102,7 @@ export function ProductCollection({ collectionId, collection: collectionProp, on
               className="shrink-0 w-36 bg-zinc-900 rounded-2xl overflow-hidden text-left hover:bg-zinc-800 transition-colors"
             >
               {product.image_url ? (
-                <img src={product.image_url} alt={product.name} className="w-full h-36 object-cover" />
+                <img loading="lazy" src={product.image_url} alt={product.name} className="w-full h-36 object-cover" />
               ) : (
                 <div className="w-full h-36 bg-zinc-800" />
               )}

@@ -124,7 +124,7 @@ export function ChatMediaEditor({ imageFile, onSend, onCancel }: ChatMediaEditor
           style={{ touchAction: activeTool === 'draw' ? 'none' : 'auto' }}
         >
           {imageUrl && (
-            <img
+            <img loading="lazy"
               ref={imageRef}
               src={imageUrl}
               alt="edit"

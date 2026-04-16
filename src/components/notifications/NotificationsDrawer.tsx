@@ -119,7 +119,7 @@ export function NotificationsDrawer({ open, onOpenChange }: NotificationsDrawerP
                   >
                     <div className="relative">
                       {notification.actor?.avatar_url ? (
-                        <img
+                        <img loading="lazy"
                           src={notification.actor.avatar_url}
                           alt=""
                           className="w-10 h-10 rounded-full object-cover"

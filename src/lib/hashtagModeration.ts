@@ -1,4 +1,4 @@
-import { supabase } from "@/lib/supabase";
+import { dbLoose } from "@/lib/supabase";
 import { extractNormalizedHashtags, formatHashtag, type HashtagStatus } from "@/lib/hashtags";
 import { logger } from "./logger";
 
@@ -73,7 +73,7 @@ export async function checkHashtagsAllowedForText(text: string): Promise<
 
   try {
     // Note: Supabase generated types may lag behind migrations; use `as any`.
-    const { data: rows, error } = await (supabase as any)
+    const { data: rows, error } = await dbLoose
       .from("hashtags")
       .select("normalized_tag,status,tag")
       .in("normalized_tag", uniqueLimited);

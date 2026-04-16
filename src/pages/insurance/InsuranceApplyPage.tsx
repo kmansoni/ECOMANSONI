@@ -133,19 +133,19 @@ const FormStep: React.FC<{
     
     switch (category) {
       case "osago":
-        return <OsagoApplicationForm data={formData as unknown as import("@/components/insurance/forms/osagoFormModel").OsagoFormData} onChange={handleFormChange as any} />;
+        return <OsagoApplicationForm data={formData as unknown as import("@/components/insurance/forms/osagoFormModel").OsagoFormData} onChange={handleFormChange} />;
       case "kasko":
-        return <KaskoApplicationForm data={formData as unknown as import("@/components/insurance/forms/kaskoFormModel").KaskoFormData} onChange={handleFormChange as any} />;
+        return <KaskoApplicationForm data={formData as unknown as import("@/components/insurance/forms/kaskoFormModel").KaskoFormData} onChange={handleFormChange} />;
       case "dms":
-        return <DmsApplicationForm data={formData as unknown as import("@/components/insurance/forms/dmsFormModel").DmsFormData} onChange={handleFormChange as any} />;
+        return <DmsApplicationForm data={formData as unknown as import("@/components/insurance/forms/dmsFormModel").DmsFormData} onChange={handleFormChange} />;
       case "travel":
-        return <TravelApplicationForm data={formData as unknown as import("@/components/insurance/forms/travelFormModel").TravelFormData} onChange={handleFormChange as any} />;
+        return <TravelApplicationForm data={formData as unknown as import("@/components/insurance/forms/travelFormModel").TravelFormData} onChange={handleFormChange} />;
       case "property":
-        return <PropertyApplicationForm data={formData as unknown as import("@/components/insurance/forms/propertyFormModel").PropertyFormData} onChange={handleFormChange as any} />;
+        return <PropertyApplicationForm data={formData as unknown as import("@/components/insurance/forms/propertyFormModel").PropertyFormData} onChange={handleFormChange} />;
       case "mortgage":
-        return <MortgageApplicationForm data={formData as unknown as import("@/components/insurance/forms/mortgageFormModel").MortgageFormData} onChange={handleFormChange as any} />;
+        return <MortgageApplicationForm data={formData as unknown as import("@/components/insurance/forms/mortgageFormModel").MortgageFormData} onChange={handleFormChange} />;
       case "life":
-        return <LifeApplicationForm data={formData as unknown as import("@/components/insurance/forms/lifeFormModel").LifeFormData} onChange={handleFormChange as any} />;
+        return <LifeApplicationForm data={formData as unknown as import("@/components/insurance/forms/lifeFormModel").LifeFormData} onChange={handleFormChange} />;
       default:
         return null;
     }
@@ -170,7 +170,7 @@ const FormStep: React.FC<{
 const OffersStep: React.FC<{
   offers: ReturnType<typeof useInsuranceApply>["offers"];
   selectedOffer: ReturnType<typeof useInsuranceApply>["selectedOffer"];
-  onSelect: (offer: ReturnType<typeof useInsuranceApply>["selectedOffer"]) => void;
+  onSelect: (offer: ReturnType<typeof useInsuranceApply>["offers"][number]) => void;
 }> = ({ offers, selectedOffer, onSelect }) => (
   <div className="space-y-4">
     <p className="text-sm text-muted-foreground">

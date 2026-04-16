@@ -452,7 +452,7 @@ export function ChatMessageItem({
               if (mediaTapEnabled) onViewImage(message.media_url!);
             }}
           >
-            <img src={message.media_url} alt="Изображение" className="media-object" />
+            <img loading="lazy" src={message.media_url} alt="Изображение" className="media-object" />
           </div>
           {renderTimestamp()}
         </div>

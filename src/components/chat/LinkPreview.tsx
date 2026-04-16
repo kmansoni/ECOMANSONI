@@ -80,12 +80,12 @@ export function LinkPreview({ url, enabled = true }: LinkPreviewProps) {
     >
       {/* Hero image */}
       {data.image && (
-        <div className="w-full max-h-[180px] overflow-hidden">
+        <div className="w-full max-h-[180px] overflow-hidden" style={{ aspectRatio: '16/9' }}>
           <img
+            loading="lazy"
             src={data.image}
             alt={data.title ?? "Preview"}
-            className="w-full object-cover"
-            loading="lazy"
+            className="w-full h-full object-cover"
             onError={(e) => {
               (e.currentTarget as HTMLImageElement).style.display = "none";
             }}
@@ -114,10 +114,10 @@ export function LinkPreview({ url, enabled = true }: LinkPreviewProps) {
           <div className="flex items-center gap-1.5 pt-0.5">
             {data.favicon && (
               <img
+                loading="lazy"
                 src={data.favicon}
                 alt=""
                 className="w-3.5 h-3.5 rounded-sm object-contain"
-                loading="lazy"
                 onError={(e) => {
                   (e.currentTarget as HTMLImageElement).style.display = "none";
                 }}

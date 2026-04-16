@@ -9,6 +9,7 @@ interface ProductCardProps {
 }
 
 export function ProductCard({ product, onBuy, onDetails }: ProductCardProps) {
+  const imageUrl = Array.isArray(product.images) ? String(product.images[0] ?? '') : null;
   const formattedPrice = new Intl.NumberFormat('ru-RU', {
     style: 'currency',
     currency: product.currency || 'RUB',
@@ -23,9 +24,9 @@ export function ProductCard({ product, onBuy, onDetails }: ProductCardProps) {
     >
       {/* Image */}
       <div className="aspect-square bg-zinc-800 overflow-hidden relative">
-        {product.image_url ? (
-          <img
-            src={product.image_url}
+        {imageUrl ? (
+          <img loading="lazy"
+            src={imageUrl}
             alt={product.name}
             className="w-full h-full object-cover"
           />
@@ -36,11 +37,11 @@ export function ProductCard({ product, onBuy, onDetails }: ProductCardProps) {
         )}
         {/* Badge */}
         <div className={`absolute top-2 right-2 text-xs font-medium px-2 py-0.5 rounded-full ${
-          product.is_available
+          product.in_stock
             ? 'bg-green-500/20 text-green-400 border border-green-500/30'
             : 'bg-red-500/20 text-red-400 border border-red-500/30'
         }`}>
-          {product.is_available ? 'В наличии' : 'Нет в наличии'}
+          {product.in_stock ? 'В наличии' : 'Нет в наличии'}
         </div>
       </div>
 
@@ -50,7 +51,7 @@ export function ProductCard({ product, onBuy, onDetails }: ProductCardProps) {
         <p className="text-base font-bold text-white">{formattedPrice}</p>
 
         <div className="flex gap-2">
-          {product.is_available ? (
+          {product.in_stock ? (
             <button
               onClick={() => onBuy?.(product)}
               className="flex-1 flex items-center justify-center gap-1.5 bg-white text-black text-xs font-semibold py-2 rounded-xl active:scale-95 transition-transform"

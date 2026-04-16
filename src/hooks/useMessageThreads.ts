@@ -3,11 +3,30 @@
 // ============================================================================
 
 import { useState, useCallback } from 'react';
-import { supabase } from '@/lib/supabase';
+import { supabase, dbLoose } from '@/lib/supabase';
 import { useAuth } from './useAuth';
 import { logger } from '@/lib/logger';
 
-const supabaseAny = supabase as any;
+type ThreadMessageRow = ThreadMessage & {
+  sender?: Array<{
+    display_name: string | null;
+    avatar_url: string | null;
+  }> | null;
+};
+
+function mapThreadMessage(row: ThreadMessageRow): ThreadMessage {
+  const sender = Array.isArray(row.sender) && row.sender[0]
+    ? {
+        display_name: row.sender[0].display_name,
+        avatar_url: row.sender[0].avatar_url,
+      }
+    : undefined;
+
+  return {
+    ...row,
+    sender,
+  };
+}
 
 export interface ThreadMessage {
   id: string;
@@ -45,7 +64,7 @@ export function useMessageThreads(conversationId: string | null) {
 
     try {
       // Get root message
-      const { data: rootMessage, error: rootError } = await supabaseAny
+      const { data: rootMessage, error: rootError } = await dbLoose
         .from('messages')
         .select(`
           *,
@@ -57,7 +76,7 @@ export function useMessageThreads(conversationId: string | null) {
       if (rootError) throw rootError;
 
       // Get all replies in thread
-      const { data: replies, error: repliesError } = await supabaseAny
+      const { data: replies, error: repliesError } = await dbLoose
         .from('messages')
         .select(`
           *,
@@ -68,25 +87,9 @@ export function useMessageThreads(conversationId: string | null) {
 
       if (repliesError) throw repliesError;
 
-      const mappedRoot: ThreadMessage = {
-        ...(rootMessage as any),
-        sender: (rootMessage as any).sender?.[0]
-          ? {
-              display_name: (rootMessage as any).sender[0].display_name,
-              avatar_url: (rootMessage as any).sender[0].avatar_url,
-            }
-          : undefined,
-      };
+      const mappedRoot = mapThreadMessage(rootMessage as unknown as ThreadMessageRow);
 
-      const mappedReplies: ThreadMessage[] = (replies || []).map((message: any) => ({
-        ...message,
-        sender: message.sender?.[0]
-          ? {
-              display_name: message.sender[0].display_name,
-              avatar_url: message.sender[0].avatar_url,
-            }
-          : undefined,
-      }));
+      const mappedReplies: ThreadMessage[] = (replies || []).map((message) => mapThreadMessage(message as unknown as ThreadMessageRow));
 
       return {
         rootMessage: mappedRoot,
@@ -115,7 +118,7 @@ export function useMessageThreads(conversationId: string | null) {
       throw new Error('Message content is empty');
     }
 
-    const { data, error: insertError } = await supabaseAny
+    const { data, error: insertError } = await dbLoose
       .from('messages')
       .insert({
         conversation_id: conversationId,
@@ -132,15 +135,7 @@ export function useMessageThreads(conversationId: string | null) {
 
     if (insertError) throw insertError;
 
-    return {
-      ...(data as any),
-      sender: (data as any).sender?.[0]
-        ? {
-            display_name: (data as any).sender[0].display_name,
-            avatar_url: (data as any).sender[0].avatar_url,
-          }
-        : undefined,
-    };
+    return mapThreadMessage(data as unknown as ThreadMessageRow);
   }, [user, conversationId]);
 
   const listThreadRoots = useCallback(async (): Promise<ThreadMessage[]> => {
@@ -152,7 +147,7 @@ export function useMessageThreads(conversationId: string | null) {
     setError(null);
 
     try {
-      const { data, error: listError } = await supabaseAny
+      const { data, error: listError } = await dbLoose
         .from('messages')
         .select(`
           *,
@@ -164,15 +159,7 @@ export function useMessageThreads(conversationId: string | null) {
 
       if (listError) throw listError;
 
-      return (data || []).map((message: any) => ({
-        ...message,
-        sender: message.sender?.[0]
-          ? {
-              display_name: message.sender[0].display_name,
-              avatar_url: message.sender[0].avatar_url,
-            }
-          : undefined,
-      }));
+      return (data || []).map((message) => mapThreadMessage(message as unknown as ThreadMessageRow));
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to load threads';
       setError(msg);

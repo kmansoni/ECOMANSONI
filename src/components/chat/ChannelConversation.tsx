@@ -96,7 +96,7 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
     disableNotifications,
     enableNotifications,
   } = useChannelUserSettings(channel.id);
-  const [isMember, setIsMember] = useState(channel.is_member);
+  const [isMember, setIsMember] = useState(channel.is_member ?? false);
   const [draftPost, setDraftPost] = useState("");
   const [editingChannelMsg, setEditingChannelMsg] = useState<{ id: string; content: string } | null>(null);
   const [contextMenuChannelMsg, setContextMenuChannelMsg] = useState<{
@@ -815,12 +815,17 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
     }
   };
 
-  const handleAttachment = async (file: File, type: "image" | "video" | "document") => {
+  const handleAttachment = async (file: File, type?: string) => {
     if (!user) return;
     if (!canCreatePosts) {
       toast.error("Для публикации нужны права");
       return;
     }
+
+    const mediaType: "image" | "video" | "document" | "voice" | "video_circle" =
+      type === "image" || type === "video" || type === "voice" || type === "video_circle"
+        ? type
+        : "document";
 
     try {
       setSendingPost(true);
@@ -830,7 +835,7 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
         return;
       }
 
-      await sendMediaMessage(file, type, { silent: silentPublish });
+      await sendMediaMessage(file, mediaType, { silent: silentPublish });
       toast.success(type === "document" ? "Документ отправлен" : "Медиа опубликовано");
     } catch (e) {
       logger.error("[ChannelConversation] Failed to send channel media", { channelId: channel.id, type, error: e });
@@ -1342,7 +1347,7 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
                       aria-label="Открыть изображение"
                     >
                       <div className="media-frame media-frame--channel">
-                        <img src={msg.media_url} alt="" className="media-object media-object--fill" />
+                        <img loading="lazy" src={msg.media_url} alt="" className="media-object media-object--fill" />
                       </div>
                     </button>
                   )}

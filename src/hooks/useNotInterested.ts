@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { dbLoose } from "@/lib/supabase";
 
 export type ContentType = 'post' | 'reel' | 'user' | 'hashtag';
 export type NotInterestedReason = 'not_interested' | 'dont_suggest' | 'irrelevant';
@@ -14,7 +15,7 @@ export function useNotInterested() {
 
       setDismissed(prev => new Set([...prev, contentId]));
 
-      await (supabase as any)
+      await dbLoose
         .from('not_interested')
         .upsert({
           user_id: user.id,
@@ -37,7 +38,7 @@ export function useNotInterested() {
         return next;
       });
 
-      await (supabase as any)
+      await dbLoose
         .from('not_interested')
         .delete()
         .eq('user_id', user.id)
@@ -52,7 +53,7 @@ export function useNotInterested() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return [];
 
-      const { data } = await (supabase as any)
+      const { data } = await dbLoose
         .from('not_interested')
         .select('content_id')
         .eq('user_id', user.id)

@@ -4,6 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useRecommendations } from '@/hooks/useRecommendations';
 import { tracker } from '@/lib/recommendations/tracker';
 import { DismissedSuggestion } from './DismissedSuggestion';
+import { dbLoose } from "@/lib/supabase";
 
 interface SuggestedUser {
   id: string;
@@ -38,7 +39,18 @@ export function SuggestedUsers({ className = '' }: SuggestedUsersProps) {
       setLoading(true);
       try {
         const result = await getRecommendedUsers(15);
-        setUsers(result);
+        setUsers(
+          result
+            .filter((u): u is typeof u & { username: string } => u.username !== null)
+            .map((u) => ({
+              id: u.id,
+              username: u.username,
+              full_name: u.full_name ?? undefined,
+              avatar_url: u.avatar_url ?? undefined,
+              reason: u.reason,
+              similarityScore: u.similarityScore,
+            })),
+        );
       } finally {
         setLoading(false);
       }
@@ -50,7 +62,7 @@ export function SuggestedUsers({ className = '' }: SuggestedUsersProps) {
   async function handleFollow(userId: string) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
-    await (supabase as any).from('followers').upsert({ follower_id: user.id, following_id: userId });
+    await dbLoose.from('followers').upsert({ follower_id: user.id, following_id: userId });
     tracker.trackFollow(userId);
     setFollowedIds((prev) => new Set([...prev, userId]));
   }
@@ -105,7 +117,7 @@ export function SuggestedUsers({ className = '' }: SuggestedUsersProps) {
 
             <div className="w-14 h-14 rounded-full overflow-hidden bg-muted flex items-center justify-center mt-2">
               {user.avatar_url ? (
-                <img
+                <img loading="lazy"
                   src={user.avatar_url}
                   alt={`Аватар ${user.username}`}
                   className="w-full h-full object-cover"

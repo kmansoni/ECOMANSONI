@@ -20,7 +20,7 @@ function createPostIcon(thumbnailUrl: string): L.DivIcon {
   const hasThumb = thumbnailUrl && thumbnailUrl.length > 0;
   const html = hasThumb
     ? `<div style="width:44px;height:44px;border-radius:8px;overflow:hidden;border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.2);">
-        <img src="${thumbnailUrl}" alt="" style="width:100%;height:100%;object-fit:cover;" />
+        <img loading="lazy" src="${thumbnailUrl}" alt="" style="width:100%;height:100%;object-fit:cover;" />
        </div>`
     : `<div style="width:44px;height:44px;border-radius:8px;background:#6366f1;border:2px solid #fff;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,0.2);">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>

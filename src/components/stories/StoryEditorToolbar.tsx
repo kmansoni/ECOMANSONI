@@ -104,12 +104,12 @@ export function StoryEditorToolbar({
             playsInline
           />
         ) : (
-          <img src={mediaPreview} alt="Превью" className="w-full h-full object-cover" />
+          <img loading="lazy" src={mediaPreview} alt="Превью" className="w-full h-full object-cover" />
         )}
 
         {/* Рисунок поверх */}
         {drawingOverlay && (
-          <img
+          <img loading="lazy"
             src={drawingOverlay}
             alt=""
             className="absolute inset-0 w-full h-full object-cover pointer-events-none"

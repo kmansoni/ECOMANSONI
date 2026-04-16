@@ -41,10 +41,9 @@ function GridCell({ post, large }: { post: ExplorePost; large?: boolean }) {
       onMouseLeave={() => setHovered(false)}
     >
       {imgUrl ? (
-        <img
-          src={imgUrl}
+        <img loading="lazy" src={imgUrl}
           alt=""
-          loading="lazy"
+          
           className="w-full h-full object-cover"
         />
       ) : (

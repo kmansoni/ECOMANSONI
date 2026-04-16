@@ -8,11 +8,14 @@ import { repairBrokenLineWrapArtifacts } from "@/lib/chat/textPipeline";
  * Возвращает `null` при любой ошибке парсинга или невалидной структуре.
  */
 export function parseEncryptedPayload(content: unknown): EncryptedPayload | null {
+  if (typeof content !== "string") return null;
+  const trimmed = content.trim();
+  if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) return null;
   try {
-    const parsed = JSON.parse(String(content ?? ""));
+    const parsed = JSON.parse(trimmed);
     if (
       parsed &&
-      parsed.v === 2 &&
+      typeof parsed.v === "number" &&
       typeof parsed.iv === "string" &&
       typeof parsed.ct === "string" &&
       typeof parsed.tag === "string" &&
@@ -21,8 +24,7 @@ export function parseEncryptedPayload(content: unknown): EncryptedPayload | null
     ) {
       return parsed as EncryptedPayload;
     }
-  } catch (error) {
-    logger.debug("chat: parse encrypted payload failed", { error });
+  } catch {
     return null;
   }
   return null;

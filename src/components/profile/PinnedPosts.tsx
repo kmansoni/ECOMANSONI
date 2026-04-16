@@ -67,7 +67,7 @@ export function PinnedPosts({ userId, isOwner, pinnedPosts, onPostPress, onRefre
               className="w-full h-full"
             >
               {pinned.post?.media_url ? (
-                <img
+                <img loading="lazy"
                   src={pinned.post.thumbnail_url ?? pinned.post.media_url}
                   alt="Pinned post"
                   className="w-full h-full object-cover"

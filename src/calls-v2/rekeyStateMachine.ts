@@ -7,7 +7,7 @@
  * - IDLE → REKEY_PENDING: initiateRekey() (leader only)
  * - REKEY_PENDING → KEY_DELIVERY: onRekeyBeginAcked() (server acknowledged REKEY_BEGIN)
  * - KEY_DELIVERY → REKEY_COMMITTED: onQuorumReached() (all peers KEY_ACK'd)
- * - KEY_DELIVERY → IDLE: onRekeyAbort() (deadline exceeded or peer left)
+ * - KEY_DELIVERY|REKEY_PENDING → IDLE: onRekeyAbort() (deadline exceeded or peer left)
  * - REKEY_COMMITTED → COOLDOWN: activateEpoch()
  * - COOLDOWN → IDLE: cooldown elapsed
  *
@@ -120,6 +120,10 @@ export class RekeyStateMachine {
     return this.pendingEpoch;
   }
 
+  getActivePeerIds(): Set<string> {
+    return new Set(this.activePeers);
+  }
+
   /**
    * Register active peers.
    * In KEY_DELIVERY state, re-evaluates quorum.
@@ -204,6 +208,13 @@ export class RekeyStateMachine {
       timestamp: now,
     });
 
+    // Safety: deadline covers REKEY_PENDING phase too — if server never ACKs
+    // REKEY_BEGIN, media would stay blocked forever without this timer.
+    this.deadlineTimer = setTimeout(
+      () => this.onDeadlineExceeded(),
+      this.config.rekeyDeadlineMs
+    );
+
     return newEpoch;
   }
 
@@ -221,6 +232,8 @@ export class RekeyStateMachine {
 
     this.state = 'KEY_DELIVERY';
 
+    // Restart deadline for KEY_DELIVERY phase (full timeout from ACK)
+    this.clearDeadlineTimer();
     this.deadlineTimer = setTimeout(
       () => this.onDeadlineExceeded(),
       this.config.rekeyDeadlineMs
@@ -464,22 +477,28 @@ export class RekeyStateMachine {
   }
 
   private onDeadlineExceeded(): void {
-    if (this.state !== 'KEY_DELIVERY') return;
+    if (this.state === 'IDLE' || this.state === 'COOLDOWN') return;
 
-    const unacked = Array.from(this.peerAcks.entries())
-      .filter(
-        ([peerId, status]) => !status.acked && this.activePeers.has(peerId)
-      )
-      .map(([peerId]) => peerId);
+    const phase = this.state; // REKEY_PENDING | KEY_DELIVERY | REKEY_COMMITTED
+
+    const unacked = this.state === 'KEY_DELIVERY'
+      ? Array.from(this.peerAcks.entries())
+          .filter(([pid, s]) => !s.acked && this.activePeers.has(pid))
+          .map(([pid]) => pid)
+      : [];
+
+    const reason = phase === 'REKEY_PENDING'
+      ? 'Server did not ACK REKEY_BEGIN in time'
+      : `Unacked peers: ${unacked.join(', ')}`;
 
     this.emitEvent({
       type: 'DEADLINE_EXCEEDED',
       epoch: this.pendingEpoch,
       timestamp: Date.now(),
-      reason: `Unacked peers: ${unacked.join(', ')}`,
+      reason,
     });
 
-    this.abortRekey(`Deadline exceeded. Unacked: ${unacked.join(', ')}`);
+    this.abortRekey(`Deadline exceeded (${phase}). ${reason}`);
   }
 
   private clearDeadlineTimer(): void {

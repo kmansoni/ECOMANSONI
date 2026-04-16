@@ -6,8 +6,9 @@ import { toast } from "sonner";
 import { uploadAvatar } from "@/hooks/useProfile";
 import { supabase } from "@/integrations/supabase/client";
 import { NamePronunciationRecorder } from "./NamePronunciationRecorder";
+import { dbLoose } from "@/lib/supabase";
 
-interface ProfileData {
+export interface ProfileData {
   display_name?: string | null;
   username?: string | null;
   bio?: string | null;
@@ -70,7 +71,7 @@ export function EditProfileSheet({ isOpen, onClose, profile, userId, onSaved }: 
     }
     setSaving(true);
     try {
-      const { error } = await (supabase as any)
+      const { error } = await dbLoose
         .from("profiles")
         .update({
           display_name: form.display_name.trim() || null,

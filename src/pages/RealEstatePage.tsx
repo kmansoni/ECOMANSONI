@@ -354,7 +354,7 @@ export function RealEstatePage() {
                       onClick={() => navigate(`/realestate/${property.id}`)}
                     >
                       <div className="relative rounded-2xl overflow-hidden mb-3">
-                        <img
+                        <img loading="lazy"
                           src={getPropertyImage(property)}
                           alt={property.title}
                           className="w-full h-40 object-cover"
@@ -442,7 +442,7 @@ export function RealEstatePage() {
                     onClick={() => navigate(`/realestate/${property.id}`)}
                   >
                     <div className="relative">
-                      <img
+                      <img loading="lazy"
                         src={getPropertyImage(property)}
                         alt={property.title}
                         className="w-full h-48 object-cover"

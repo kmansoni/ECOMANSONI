@@ -87,7 +87,7 @@ export function ServicesMenu() {
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild>
         <button className="flex items-center justify-center w-9 h-9 rounded-lg hover:bg-muted/70 backdrop-blur-sm transition-colors">
-          <img 
+          <img loading="lazy" 
             src={logoImage} 
             alt="Menu" 
             className="w-7 h-7 object-contain"

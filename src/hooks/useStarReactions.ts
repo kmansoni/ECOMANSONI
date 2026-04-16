@@ -18,8 +18,7 @@ import { useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
 import { logger } from "@/lib/logger";
-
-const db = supabase as any;
+import { dbLoose } from "@/lib/supabase";
 
 export interface StarReaction {
   id: string;
@@ -73,7 +72,7 @@ export function useStarReactions() {
         }
 
         // Step 2: Upsert reaction record
-        const { error: upsertError } = await db.from("star_reactions").upsert(
+        const { error: upsertError } = await dbLoose.from("star_reactions").upsert(
           {
             message_id: messageId,
             user_id: user.id,
@@ -112,7 +111,7 @@ export function useStarReactions() {
       setError(null);
 
       try {
-        const { error: deleteError } = await db
+        const { error: deleteError } = await dbLoose
           .from("star_reactions")
           .delete()
           .eq("message_id", messageId)
@@ -139,7 +138,7 @@ export function useStarReactions() {
    */
   const getStarReactions = useCallback(
     async (messageId: string): Promise<StarReaction[]> => {
-      const { data, error: fetchError } = await db
+      const { data, error: fetchError } = await dbLoose
         .from("star_reactions")
         .select("*")
         .eq("message_id", messageId)
@@ -169,7 +168,7 @@ export function useStarReactions() {
   const totalStarsOnMessage = useCallback(async (messageId: string): Promise<number> => {
     // Aggregate via select sum — note: Supabase JS does not support SQL aggregates directly
     // We fetch all and sum client-side (acceptable for typical message reaction counts < 1000 rows)
-    const { data, error: fetchError } = await db
+    const { data, error: fetchError } = await dbLoose
       .from("star_reactions")
       .select("stars_amount")
       .eq("message_id", messageId);

@@ -13,6 +13,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 import { logger } from '@/lib/logger';
+import { dbLoose } from "@/lib/supabase";
 
 export interface ReelCollaborator {
   id: string;
@@ -41,9 +42,6 @@ export interface CollabInviteItem {
   };
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const db = supabase as any;
-
 export function useCollabReels() {
   const { user } = useAuth();
   const [myInvites, setMyInvites] = useState<CollabInviteItem[]>([]);
@@ -53,7 +51,7 @@ export function useCollabReels() {
     if (!user) return;
 
     try {
-      const { data, error } = await db
+      const { data, error } = await dbLoose
         .from('reel_collaborators')
         .select('id, reel_id, collaborator_id, status, created_at')
         .eq('collaborator_id', user.id)
@@ -89,7 +87,7 @@ export function useCollabReels() {
 
     try {
       setLoading(true);
-      const { error } = await db
+      const { error } = await dbLoose
         .from('reel_collaborators')
         .insert({ reel_id: reelId, collaborator_id: collaboratorId, status: 'pending' });
 
@@ -117,7 +115,7 @@ export function useCollabReels() {
 
     try {
       setLoading(true);
-      const { error } = await db
+      const { error } = await dbLoose
         .from('reel_collaborators')
         .update({ status: accept ? 'accepted' : 'declined' })
         .eq('id', inviteId)
@@ -141,7 +139,7 @@ export function useCollabReels() {
 
   const getCollaborators = useCallback(async (reelId: string): Promise<ReelCollaborator[]> => {
     try {
-      const { data, error } = await db
+      const { data, error } = await dbLoose
         .from('reel_collaborators')
         .select('id, reel_id, collaborator_id, status, created_at')
         .eq('reel_id', reelId)
@@ -158,7 +156,7 @@ export function useCollabReels() {
       if (collabs.length === 0) return [];
 
       const ids = collabs.map((c) => c.collaborator_id);
-      const { data: profiles } = await db
+      const { data: profiles } = await dbLoose
         .from('profiles')
         .select('id, display_name, avatar_url, username')
         .in('id', ids)

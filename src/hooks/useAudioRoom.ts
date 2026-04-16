@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { logger } from '@/lib/logger';
+import { dbLoose } from "@/lib/supabase";
 
 export interface AudioRoom {
   id: string;
@@ -38,7 +39,6 @@ export interface AudioRoomParticipant {
 }
 
 export function useAudioRoom(roomId?: string) {
-  const sb = supabase as any;
   const { user } = useAuth();
   const [room, setRoom] = useState<AudioRoom | null>(null);
   const [participants, setParticipants] = useState<AudioRoomParticipant[]>([]);
@@ -54,7 +54,7 @@ export function useAudioRoom(roomId?: string) {
     if (!roomId) return;
     setLoading(true);
     try {
-      const { data } = await sb
+      const { data } = await dbLoose
         .from('audio_rooms')
         .select('*, host:profiles!audio_rooms_host_id_fkey(username, full_name, avatar_url)')
         .eq('id', roomId)
@@ -67,7 +67,7 @@ export function useAudioRoom(roomId?: string) {
 
   const fetchParticipants = useCallback(async () => {
     if (!roomId) return;
-    const { data } = await sb
+    const { data } = await dbLoose
       .from('audio_room_participants')
       .select('*, profile:profiles!audio_room_participants_user_id_fkey(username, full_name, avatar_url)')
       .eq('room_id', roomId)
@@ -96,7 +96,7 @@ export function useAudioRoom(roomId?: string) {
 
   const createRoom = async (title: string, description?: string, scheduledAt?: string) => {
     if (!user) return null;
-    const { data, error } = await sb
+    const { data, error } = await dbLoose
       .from('audio_rooms')
       .insert({
         title,
@@ -111,9 +111,10 @@ export function useAudioRoom(roomId?: string) {
       .select()
       .single();
     if (error) { logger.error("[useAudioRoom] create error", { error }); return null; }
+    const roomId = (data as Record<string, unknown>)?.id as string;
     // Auto-join as host
-    await sb.from('audio_room_participants').insert({
-      room_id: data.id,
+    await dbLoose.from('audio_room_participants').insert({
+      room_id: roomId,
       user_id: user.id,
       role: 'host',
       is_muted: false,
@@ -124,7 +125,7 @@ export function useAudioRoom(roomId?: string) {
 
   const joinRoom = async (rid: string) => {
     if (!user) return;
-    await sb.from('audio_room_participants').upsert({
+    await dbLoose.from('audio_room_participants').upsert({
       room_id: rid,
       user_id: user.id,
       role: 'listener',
@@ -132,15 +133,14 @@ export function useAudioRoom(roomId?: string) {
       hand_raised: false,
     }, { onConflict: 'room_id,user_id' });
     // increment listener count
-    await sb.rpc('increment_audio_room_listeners', { room_id: rid }).catch((error: unknown) => {
-      logger.warn('[useAudioRoom] Failed to increment listeners', { roomId: rid, error });
-    });
+    try { await dbLoose.rpc('increment_audio_room_listeners', { room_id: rid }); }
+    catch (error) { logger.warn('[useAudioRoom] Failed to increment listeners', { roomId: rid, error }); }
     fetchParticipants();
   };
 
   const leaveRoom = async () => {
     if (!user || !roomId) return;
-    await sb
+    await dbLoose
       .from('audio_room_participants')
       .delete()
       .eq('room_id', roomId)
@@ -149,7 +149,7 @@ export function useAudioRoom(roomId?: string) {
 
   const requestToSpeak = async () => {
     if (!user || !roomId) return;
-    await sb
+    await dbLoose
       .from('audio_room_participants')
       .update({ hand_raised: true })
       .eq('room_id', roomId)
@@ -158,7 +158,7 @@ export function useAudioRoom(roomId?: string) {
 
   const promoteToSpeaker = async (userId: string) => {
     if (!roomId) return;
-    await sb
+    await dbLoose
       .from('audio_room_participants')
       .update({ role: 'speaker', hand_raised: false })
       .eq('room_id', roomId)
@@ -167,7 +167,7 @@ export function useAudioRoom(roomId?: string) {
 
   const demoteToListener = async (userId: string) => {
     if (!roomId) return;
-    await sb
+    await dbLoose
       .from('audio_room_participants')
       .update({ role: 'listener' })
       .eq('room_id', roomId)
@@ -176,7 +176,7 @@ export function useAudioRoom(roomId?: string) {
 
   const endRoom = async () => {
     if (!roomId) return;
-    await sb
+    await dbLoose
       .from('audio_rooms')
       .update({ status: 'ended', ended_at: new Date().toISOString() })
       .eq('id', roomId);
@@ -186,7 +186,7 @@ export function useAudioRoom(roomId?: string) {
     if (!user || !roomId) return;
     const newMuted = !isMuted;
     setIsMuted(newMuted);
-    await sb
+    await dbLoose
       .from('audio_room_participants')
       .update({ is_muted: newMuted })
       .eq('room_id', roomId)
@@ -213,7 +213,6 @@ export function useAudioRoom(roomId?: string) {
 
 // Hook for listing audio rooms
 export function useAudioRooms() {
-  const sb = supabase as any;
   const [liveRooms, setLiveRooms] = useState<AudioRoom[]>([]);
   const [scheduledRooms, setScheduledRooms] = useState<AudioRoom[]>([]);
   const [loading, setLoading] = useState(true);
@@ -221,7 +220,7 @@ export function useAudioRooms() {
   const fetchRooms = useCallback(async () => {
     setLoading(true);
     try {
-      const { data } = await sb
+      const { data } = await dbLoose
         .from('audio_rooms')
         .select('*, host:profiles!audio_rooms_host_id_fkey(username, full_name, avatar_url)')
         .in('status', ['live', 'scheduled'])

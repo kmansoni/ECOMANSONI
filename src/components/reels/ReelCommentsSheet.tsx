@@ -102,7 +102,7 @@ function Avatar({
   }
 
   return (
-    <img
+    <img loading="lazy"
       src={src}
       alt={name}
       width={size}

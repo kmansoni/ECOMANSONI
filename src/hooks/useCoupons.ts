@@ -11,6 +11,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 import { logger } from '@/lib/logger';
+import { dbLoose } from "@/lib/supabase";
 
 export interface Coupon {
   id: string;
@@ -46,8 +47,6 @@ export interface CreateCouponInput {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const db = supabase as any;
-
 export function useCoupons() {
   const { user } = useAuth();
   const [myCoupons, setMyCoupons] = useState<Coupon[]>([]);
@@ -57,12 +56,13 @@ export function useCoupons() {
   useEffect(() => {
     if (!user) return;
 
+    const userId = user.id;
     let cancelled = false;
 
     async function load() {
-      const { data, error } = await db.from('coupons')
+      const { data, error } = await dbLoose.from('coupons')
         .select('id, code, description, discount_type, discount_value, min_order_amount, max_uses, used_count, valid_from, valid_until, is_active, created_by, created_at')
-        .eq('created_by', user.id)
+        .eq('created_by', userId)
         .order('created_at', { ascending: false })
         .limit(100);
 
@@ -85,7 +85,7 @@ export function useCoupons() {
     }
 
     try {
-      const { data: coupon, error } = await db.from('coupons')
+      const { data: coupon, error } = await dbLoose.from('coupons')
         .select('id, code, description, discount_type, discount_value, min_order_amount, max_uses, used_count, valid_from, valid_until, is_active, created_by, created_at')
         .eq('code', code.trim().toUpperCase())
         .eq('is_active', true)
@@ -127,7 +127,7 @@ export function useCoupons() {
 
       // Проверка, не использовал ли пользователь уже этот купон
       if (user) {
-        const { data: usage } = await db.from('coupon_usages')
+        const { data: usage } = await dbLoose.from('coupon_usages')
           .select('id')
           .eq('coupon_id', coupon.id)
           .eq('user_id', user.id)
@@ -177,7 +177,7 @@ export function useCoupons() {
 
     setLoading(true);
     try {
-      const { data, error } = await db.from('coupons')
+      const { data, error } = await dbLoose.from('coupons')
         .insert({
           code: input.code.trim().toUpperCase(),
           description: input.description || null,
@@ -217,7 +217,7 @@ export function useCoupons() {
 
   // Деактивация купона
   const deactivateCoupon = useCallback(async (couponId: string) => {
-    const { error } = await db.from('coupons')
+    const { error } = await dbLoose.from('coupons')
       .update({ is_active: false })
       .eq('id', couponId);
 

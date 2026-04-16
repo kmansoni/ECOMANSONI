@@ -72,7 +72,7 @@ export default function ShopPage() {
           <div className="-mt-10 mb-3">
             <div className="w-20 h-20 rounded-2xl bg-zinc-800 border-4 border-black overflow-hidden">
               {shop.logo_url ? (
-                <img src={shop.logo_url} alt={shop.name} className="w-full h-full object-cover" />
+                <img loading="lazy" src={shop.logo_url} alt={shop.name} className="w-full h-full object-cover" />
               ) : (
                 <div className="w-full h-full flex items-center justify-center">
                   <Store className="w-8 h-8 text-zinc-600" />

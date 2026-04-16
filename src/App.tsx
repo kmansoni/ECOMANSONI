@@ -123,6 +123,7 @@ const PeopleNearbyPage = lazy(() => import("./pages/PeopleNearbyPage").then(m =>
 const BusinessAccountPage = lazy(() => import("./pages/BusinessAccountPage"));
 const OrderDetailPage = lazy(() => import("@/pages/OrderDetailPage"));
 const AIAssistantPage = lazy(() => import("@/pages/AIAssistantPage"));
+const GodmodePage = lazy(() => import("@/pages/GodmodePage"));
 const ServiceBugsPage = lazy(() => import("@/pages/ServiceBugsPage").then(m => ({ default: m.ServiceBugsPage })));
 
 // Batch 5: new pages
@@ -345,6 +346,13 @@ const App = () => {
                     </Suspense>
                   } />
                 </Route>
+
+                {/* G0DM0D3 — публичный, использует свой API key */}
+                <Route path="/godmode" element={
+                  <Suspense fallback={<PageLoader />}>
+                    <GodmodePage />
+                  </Suspense>
+                } />
                 
                 {/* Protected routes - require authentication */}
                 <Route element={<ProtectedRoute />}>
@@ -776,6 +784,7 @@ const App = () => {
                         <AIAssistantPage />
                       </Suspense>
                     } />
+
                     <Route path="/create" element={
                       <Suspense fallback={<PageLoader />}>
                         <CreateCenterPage />

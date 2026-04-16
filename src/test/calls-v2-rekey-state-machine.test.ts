@@ -90,6 +90,20 @@ describe('RekeyStateMachine', () => {
     expect(sm.getState()).toBe('IDLE');
   });
 
+  it('Deadline in REKEY_PENDING → abort if server never ACKs', () => {
+    sm.setActivePeers(['peer1']);
+    sm.initiateRekey();
+    expect(sm.getState()).toBe('REKEY_PENDING');
+
+    // Never call onRekeyBeginAcked — simulate server not responding
+    vi.advanceTimersByTime(10_000);
+    expect(sm.getState()).toBe('IDLE');
+
+    const events = sm.getEventLog().map(e => e.type);
+    expect(events).toContain('DEADLINE_EXCEEDED');
+    expect(events).toContain('REKEY_ABORTED');
+  });
+
   it('Anti-replay: duplicate messageId rejected', () => {
     sm.setActivePeers(['peer1']);
     sm.initiateRekey();

@@ -150,7 +150,7 @@ export function BotListPage({ className }: BotListPageProps) {
               {/* Avatar */}
               <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
                 {bot.avatar_url ? (
-                  <img 
+                  <img loading="lazy" 
                     src={bot.avatar_url} 
                     alt={bot.display_name}
                     className="w-12 h-12 rounded-full object-cover"

@@ -1,5 +1,5 @@
 import { useCallback, useRef, useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase';
+import { supabase, dbLoose } from "@/lib/supabase";
 import { useAuth } from './useAuth';
 
 export type DeliveryStatus = 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
@@ -13,15 +13,13 @@ export function useReadReceipts(conversationId: string | null) {
   const [statusMap, setStatusMap] = useState<MessageStatusMap>({});
   const batchReadQueue = useRef<Set<string>>(new Set());
   const batchTimerRef = useRef<number | null>(null);
-  const supabaseAny = supabase as any;
-
   // Загружаем статусы при монтировании
   useEffect(() => {
     if (!conversationId || !user) return;
 
     const loadStatuses = async () => {
       try {
-        const { data, error } = await supabaseAny
+        const { data, error } = await dbLoose
           .from('messages')
           .select('id, delivery_status')
           .eq('conversation_id', conversationId)
@@ -40,7 +38,7 @@ export function useReadReceipts(conversationId: string | null) {
     };
 
     void loadStatuses();
-  }, [conversationId, user, supabaseAny]);
+  }, [conversationId, user]);
 
   // Realtime подписка на изменения статусов
   useEffect(() => {
@@ -80,7 +78,7 @@ export function useReadReceipts(conversationId: string | null) {
     async (messageIds: string[]) => {
       if (!messageIds.length) return;
       try {
-        await supabaseAny
+        await dbLoose
           .from('messages')
           .update({
             delivery_status: 'delivered',
@@ -93,7 +91,7 @@ export function useReadReceipts(conversationId: string | null) {
         // ignore
       }
     },
-    [conversationId, user, supabaseAny]
+    [conversationId, user]
   );
 
   // Пакетная отправка read events каждые 500ms
@@ -103,7 +101,7 @@ export function useReadReceipts(conversationId: string | null) {
     batchReadQueue.current.clear();
 
     try {
-      await supabaseAny
+      await dbLoose
         .from('messages')
         .update({
           delivery_status: 'read',
@@ -116,7 +114,7 @@ export function useReadReceipts(conversationId: string | null) {
     } catch {
       // ignore
     }
-  }, [conversationId, user, supabaseAny]);
+  }, [conversationId, user]);
 
   // Добавить сообщение в очередь прочитанных
   const markAsRead = useCallback(

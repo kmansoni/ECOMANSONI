@@ -19,7 +19,7 @@ export async function getHighlights(userId: string): Promise<Highlight[]> {
     .order('position', { ascending: true });
 
   if (error) throw error;
-  return data || [];
+  return (data || []).map(h => ({ ...h, position: h.position ?? 0, created_at: h.created_at ?? new Date().toISOString() }));
 }
 
 export async function createHighlight(
@@ -58,7 +58,7 @@ export async function createHighlight(
     }
   }
 
-  return highlight;
+  return { ...highlight, position: highlight.position ?? 0, created_at: highlight.created_at ?? new Date().toISOString() };
 }
 
 export async function deleteHighlight(id: string): Promise<void> {

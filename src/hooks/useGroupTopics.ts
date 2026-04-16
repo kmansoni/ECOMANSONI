@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { supabase } from '@/lib/supabase';
+import { supabase, dbLoose } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 
 export interface GroupTopic {
@@ -28,7 +28,7 @@ export function useGroupTopics(groupId: string | null) {
     if (!groupId) return;
     setLoading(true);
     try {
-      const { data, error } = await (supabase as any)
+      const { data, error } = await dbLoose
         .from('group_topics')
         .select('*')
         .eq('group_id', groupId)
@@ -75,7 +75,7 @@ export function useGroupTopics(groupId: string | null) {
   }) => {
     if (!groupId || !user) return null;
 
-    const { data, error } = await (supabase as any)
+    const { data, error } = await dbLoose
       .from('group_topics')
       .insert({
         group_id: groupId,
@@ -102,7 +102,7 @@ export function useGroupTopics(groupId: string | null) {
     icon_color?: string;
     description?: string;
   }) => {
-    const { error } = await (supabase as any)
+    const { error } = await dbLoose
       .from('group_topics')
       .update(params)
       .eq('id', topicId);
@@ -117,7 +117,7 @@ export function useGroupTopics(groupId: string | null) {
     const topic = topics.find(t => t.id === topicId);
     if (!topic || topic.is_general) return false;
 
-    const { error } = await (supabase as any)
+    const { error } = await dbLoose
       .from('group_topics')
       .delete()
       .eq('id', topicId);
@@ -133,7 +133,7 @@ export function useGroupTopics(groupId: string | null) {
     if (!topic) return false;
 
     const newState = !topic.is_closed;
-    const { error } = await (supabase as any)
+    const { error } = await dbLoose
       .from('group_topics')
       .update({ is_closed: newState })
       .eq('id', topicId);
@@ -152,7 +152,7 @@ export function useGroupTopics(groupId: string | null) {
     });
 
     for (const upd of updates) {
-      await (supabase as any)
+      await dbLoose
         .from('group_topics')
         .update({ sort_order: upd.sort_order })
         .eq('id', upd.id);

@@ -24,12 +24,9 @@
  *   - Signals expire after 24h (TTL enforced by DB scheduled cleanup).
  */
 
-import { supabase as _supabase } from "@/lib/supabase";
+import { dbLoose } from "@/lib/supabase";
 
-// emergency_signals migration is newer than generated Supabase types.
-// Keep the escape hatch scoped to this service until types are regenerated.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const supabase = _supabase as any;
+const supabase = dbLoose;
 
 // ── Enums ─────────────────────────────────────────────────────────────────────
 

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { logger } from '@/lib/logger';
+import { dbLoose } from "@/lib/supabase";
 
 export interface RecommendedUser {
   user_id: string;
@@ -30,7 +31,7 @@ export function useRecommendedUsers(limit: number = 10) {
       setError(null);
 
       // Вызываем функцию из БД с user_id
-      const { data, error: fetchError } = await (supabase as any)
+      const { data, error: fetchError } = await dbLoose
         .rpc('get_recommended_users_for_new_user', { 
           p_user_id: user.id,
           limit_count: limit 
@@ -52,7 +53,7 @@ export function useRecommendedUsers(limit: number = 10) {
     if (!user?.id) return;
 
     try {
-      await (supabase as any).rpc('save_user_contacts', {
+      await dbLoose.rpc('save_user_contacts', {
         p_user_id: user.id,
         p_contacts_phones: phoneNumbers
       });
@@ -70,7 +71,7 @@ export function useRecommendedUsers(limit: number = 10) {
     if (!user?.id) return;
 
     try {
-      await (supabase as any).rpc('revoke_contacts_access', {
+      await dbLoose.rpc('revoke_contacts_access', {
         p_user_id: user.id
       });
       

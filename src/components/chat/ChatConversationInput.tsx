@@ -27,7 +27,7 @@ interface ChatConversationInputProps {
   mentionTrigger: { query: string; triggerStart: number } | null;
   mentionSuggestions: MentionUser[];
   mentionActiveIndex: number;
-  inputRef: RefObject<HTMLTextAreaElement | null>;
+  inputRef: RefObject<HTMLTextAreaElement>;
   replyKeyboard: ReplyKeyboardButton[][] | null;
 
   setInputText: React.Dispatch<React.SetStateAction<string>>;

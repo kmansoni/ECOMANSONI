@@ -152,7 +152,7 @@ function UserRow({ user, navigate, showFollow }: { user: SearchResultUser; navig
     >
       <div className="w-11 h-11 rounded-full overflow-hidden bg-neutral-800 shrink-0">
         {user.avatar_url ? (
-          <img src={user.avatar_url} alt={user.username} className="w-full h-full object-cover" />
+          <img loading="lazy" src={user.avatar_url} alt={user.username} className="w-full h-full object-cover" />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-neutral-500 text-lg font-bold">
             {(user.display_name || user.username || '?')[0].toUpperCase()}

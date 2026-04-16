@@ -169,8 +169,7 @@ export function AIStickerSheet({ open, onOpenChange, onSendSticker }: AIStickerS
                 className="flex flex-col items-center gap-3"
               >
                 <div className="w-40 h-40 rounded-2xl overflow-hidden border dark:border-gray-700 bg-white">
-                  <img
-                    src={previewUrl}
+                  <img loading="lazy" src={previewUrl}
                     alt={previewPrompt}
                     className="w-full h-full object-contain"
                   />
@@ -236,8 +235,7 @@ export function AIStickerSheet({ open, onOpenChange, onSendSticker }: AIStickerS
                         className="w-20 h-20 rounded-xl overflow-hidden border dark:border-gray-700 bg-white hover:ring-2 hover:ring-primary transition-all min-h-[44px] min-w-[44px]"
                         aria-label={`Стикер: ${sticker.prompt}`}
                       >
-                        <img
-                          src={sticker.image_url}
+                        <img                            src={sticker.image_url}
                           alt={sticker.prompt}
                           className="w-full h-full object-contain"
                           loading="lazy"

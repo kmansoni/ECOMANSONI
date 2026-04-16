@@ -1,7 +1,7 @@
 import type { LatLng } from '@/types/taxi';
 import type { SpeedCamera } from '@/types/navigation';
 import { calculateDistance } from '@/lib/taxi/calculations';
-import { supabase } from '@/lib/supabase';
+import { dbLoose } from "@/lib/supabase";
 import { logger } from '@/lib/logger';
 
 // Камеры Москвы и СПб — статичный набор, расширяется через nav_speed_cameras в Supabase
@@ -30,7 +30,7 @@ export async function loadSpeedCameras(): Promise<SpeedCamera[]> {
   try {
     // ⚠️ таблица может не существовать, поэтому обходим строгую типизацию
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const client = supabase as any;
+    const client = dbLoose;
     const { data, error } = await client.from('nav_speed_cameras')
       .select('id, lat, lng, speed_limit, direction, type')
       .limit(500);

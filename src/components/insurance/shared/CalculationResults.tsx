@@ -100,7 +100,7 @@ export function CalculationResults({
                     {/* Лого */}
                     <div className="w-12 h-12 rounded-lg bg-white/5 flex items-center justify-center flex-shrink-0 overflow-hidden">
                       {result.provider_logo ? (
-                        <img
+                        <img loading="lazy"
                           src={result.provider_logo}
                           alt={result.provider_name}
                           className="w-full h-full object-contain p-1"

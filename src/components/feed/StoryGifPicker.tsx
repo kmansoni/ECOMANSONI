@@ -109,7 +109,7 @@ export function StoryGifPicker({ isOpen, onClose, onSelect }: StoryGifPickerProp
                           className="w-full h-auto block"
                         />
                       ) : (
-                        <img src={gif.previewUrl} alt={gif.title || "GIF"} className="w-full h-auto block" />
+                        <img loading="lazy" src={gif.previewUrl} alt={gif.title || "GIF"} className="w-full h-auto block" />
                       )}
                     </button>
                   );

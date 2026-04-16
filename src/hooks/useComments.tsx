@@ -51,8 +51,8 @@ export function useComments(postId: string) {
 
     try {
       // Fetch comments - using type assertion until types.ts is regenerated
-      const { data: commentsData, error: commentsError } = await (supabase
-        .from("comments" as any)
+      const { data: commentsData, error: commentsError } = await supabase
+        .from("comments")
         .select(`
           id,
           post_id,
@@ -63,7 +63,7 @@ export function useComments(postId: string) {
           created_at
         `)
         .eq("post_id", postId)
-        .order("created_at", { ascending: true }) as any);
+        .order("created_at", { ascending: true });
 
       if (commentsError) throw commentsError;
 
@@ -77,7 +77,7 @@ export function useComments(postId: string) {
 
       // Get unique author IDs
       const authorIds = [...new Set(typedComments.map((c) => c.author_id))];
-      const briefMap = await fetchUserBriefMap(authorIds, supabase as any);
+      const briefMap = await fetchUserBriefMap(authorIds);
 
       // Fetch author verification flags only
       const { data: profiles, error: profilesError } = await supabase
@@ -94,14 +94,14 @@ export function useComments(postId: string) {
       // Check which comments the current user has liked
       let likedCommentIds: Set<string> = new Set();
       if (user) {
-        const { data: likes, error: likesError } = await (supabase
-          .from("comment_likes" as any)
+        const { data: likes, error: likesError } = await supabase
+          .from("comment_likes")
           .select("comment_id")
           .eq("user_id", user.id)
           .in(
             "comment_id",
             typedComments.map((c) => c.id)
-          ) as any);
+          );
 
         if (!likesError && likes) {
           const typedLikes = likes as CommentLikeRow[];
@@ -141,7 +141,7 @@ export function useComments(postId: string) {
       });
 
       setComments(topLevel);
-    } catch (err: any) {
+    } catch (err: unknown) {
       logger.error("[useComments] Error fetching comments", { error: err });
       setError("Не удалось загрузить комментарии. Попробуйте снова.");
     } finally {
@@ -169,8 +169,8 @@ export function useComments(postId: string) {
         return { error: `HASHTAG_BLOCKED:${("blockedTags" in hashtagVerdict ? hashtagVerdict.blockedTags : []).join(", ")}` };
       }
 
-      const { data, error } = await (supabase
-        .from("comments" as any)
+      const { data, error } = await supabase
+        .from("comments")
         .insert({
           post_id: postId,
           author_id: user.id,
@@ -178,7 +178,7 @@ export function useComments(postId: string) {
           content,
         })
         .select()
-        .single() as any);
+        .single();
 
       if (error) throw error;
 
@@ -216,9 +216,9 @@ export function useComments(postId: string) {
       }
 
       return { error: null, comment: data };
-    } catch (err: any) {
+    } catch (err: unknown) {
       logger.error("[useComments] Error adding comment", { error: err });
-      return { error: err.message || "Ошибка добавления комментария" };
+      return { error: err instanceof Error ? err.message : "Ошибка добавления комментария" };
     }
   };
 
@@ -292,19 +292,19 @@ export function useComments(postId: string) {
     });
 
     try {
-      const { error } = await (supabase
-        .from("comments" as any)
+      const { error } = await supabase
+        .from("comments")
         .delete()
         .eq("id", commentId)
-        .eq("author_id", user.id) as any);
+        .eq("author_id", user.id);
 
       if (error) throw error;
       return { error: null };
-    } catch (err: any) {
+    } catch (err: unknown) {
       // Откат при ошибке
       setComments(prevComments);
       logger.error("[useComments] Error deleting comment", { error: err });
-      return { error: err.message || "Ошибка удаления" };
+      return { error: err instanceof Error ? err.message : "Ошибка удаления" };
     }
   };
 

@@ -99,7 +99,7 @@ export function FeedHeader() {
         <div className="flex items-center w-full justify-between">
           <ServicesMenu />
           <div className="flex items-center gap-1.5">
-            <img src={logoSrc} alt="" className="w-7 h-7" />
+            <img loading="lazy" src={logoSrc} alt="" className="w-7 h-7" />
             <span className="font-serif text-xl font-bold text-foreground tracking-tight">mansoni</span>
           </div>
           <button
@@ -181,8 +181,7 @@ export function FeedHeader() {
               <div className="w-full h-full rounded-full bg-background p-[2px]">
                 <div className="w-full h-full rounded-full overflow-hidden bg-muted flex items-center justify-center">
                   {user.avatar_url ? (
-                    <img
-                      src={user.avatar_url}
+                    <img                        src={user.avatar_url}
                       alt={user.display_name || ''}
                       className="w-full h-full object-cover rounded-full"
                       loading="lazy"

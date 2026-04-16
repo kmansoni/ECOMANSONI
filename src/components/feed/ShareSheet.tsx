@@ -9,7 +9,7 @@ import { useGroupChats } from "@/hooks/useGroupChats";
 import { useChannels } from "@/hooks/useChannels";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
-import { supabase } from "@/lib/supabase";
+import { supabase, dbLoose } from "@/lib/supabase";
 import { buildChatBodyEnvelope, sendMessageV1 } from "@/lib/chat/sendMessageV1";
 import { logger } from "@/lib/logger";
 import {
@@ -152,8 +152,7 @@ export function ShareSheet({
         } else if (type === "group") {
           // Send to group chat via authoritative RPC + follow-up shared_post_id
           const sendGroup = async () => {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const { data, error } = await supabase.rpc("send_group_message_v1" as any, {
+            const { data, error } = await dbLoose.rpc("send_group_message_v1", {
               p_group_id: id,
               p_content: "📤 Поделился публикацией",
               p_media_url: null,
@@ -170,8 +169,7 @@ export function ShareSheet({
         } else if (type === "channel") {
           // Send to channel via authoritative RPC + follow-up shared_post_id
           const sendChannel = async () => {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const { data, error } = await supabase.rpc("send_channel_message_v1" as any, {
+            const { data, error } = await dbLoose.rpc("send_channel_message_v1", {
               p_channel_id: id,
               p_content: "📤 Поделился публикацией",
               p_silent: false,

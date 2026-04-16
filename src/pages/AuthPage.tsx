@@ -729,7 +729,7 @@ export function AuthPage() {
                 
                 {/* Logo */}
                 <div className="absolute inset-0 flex items-center justify-center">
-                  <img 
+                  <img loading="lazy" 
                     src={logo} 
                     alt="Logo" 
                     className="w-20 h-20 object-contain drop-shadow-lg"

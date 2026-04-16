@@ -120,7 +120,7 @@ export function PropertyDetailPage() {
 
         {/* Image */}
         <div className="flex-1 flex items-center justify-center relative">
-          <img
+          <img loading="lazy"
             src={images[currentImage]}
             alt=""
             className="max-w-full max-h-full object-contain"
@@ -195,7 +195,7 @@ export function PropertyDetailPage() {
       {/* Image Gallery */}
       <div className="relative" onClick={() => setShowGallery(true)}>
         <div className="aspect-[4/3] bg-muted overflow-hidden">
-          <img
+          <img loading="lazy"
             src={images[currentImage]}
             alt=""
             className="w-full h-full object-cover"

@@ -34,10 +34,9 @@ function GridThumbnail({ item }: { item: ProfileGridItem }) {
 
   return (
     <>
-      <img
-        src={url}
+      <img loading="lazy" src={url}
         alt=""
-        loading="lazy"
+        
         className="w-full h-full object-cover"
       />
       {isVideo && (

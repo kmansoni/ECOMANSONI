@@ -154,7 +154,7 @@ function GifSticker({ data, scale }: { data: Record<string, unknown>; scale: num
           className="w-full h-auto rounded-xl shadow-md"
         />
       ) : (
-        <img
+        <img loading="lazy"
           src={previewUrl}
           alt="GIF"
           className="w-full h-auto rounded-xl shadow-md"

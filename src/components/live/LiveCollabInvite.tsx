@@ -21,6 +21,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { dbLoose } from "@/lib/supabase";
 
 export interface CollabSession {
   id: string;
@@ -55,9 +56,7 @@ export function LiveCollabInvite({ liveSessionId, isHost, onCollabStarted }: Liv
     if (!user || isHost) return;
     // live_collab_sessions не в генерированных типах
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const db = supabase as any;
-
-    const channel = db
+    const channel = dbLoose
       .channel(`collab_invite_${user.id}`)
       .on(
         "postgres_changes",
@@ -75,7 +74,7 @@ export function LiveCollabInvite({ liveSessionId, isHost, onCollabStarted }: Liv
       )
       .subscribe();
 
-    return () => { db.removeChannel(channel); };
+    return () => { dbLoose.removeChannel(channel); };
   }, [user, isHost]);
 
   // Подписка на изменение статуса (для хоста)
@@ -83,9 +82,7 @@ export function LiveCollabInvite({ liveSessionId, isHost, onCollabStarted }: Liv
     if (!user || !isHost) return;
     // live_collab_sessions не в генерированных типах
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const db = supabase as any;
-
-    const channel = db
+    const channel = dbLoose
       .channel(`collab_status_${liveSessionId}`)
       .on(
         "postgres_changes",
@@ -106,7 +103,7 @@ export function LiveCollabInvite({ liveSessionId, isHost, onCollabStarted }: Liv
       )
       .subscribe();
 
-    return () => { db.removeChannel(channel); };
+    return () => { dbLoose.removeChannel(channel); };
   }, [user, isHost, liveSessionId, onCollabStarted]);
 
   const handleSearch = async (query: string) => {
@@ -124,8 +121,7 @@ export function LiveCollabInvite({ liveSessionId, isHost, onCollabStarted }: Liv
   const sendInvite = async (guestId: string) => {
     if (!user) return;
     setIsSending(true);
-    const db = supabase as any;
-    const { error } = await db.from("live_collab_sessions").insert({
+    const { error } = await dbLoose.from("live_collab_sessions").insert({
       host_id: user.id,
       guest_id: guestId,
       live_session_id: liveSessionId,
@@ -139,8 +135,7 @@ export function LiveCollabInvite({ liveSessionId, isHost, onCollabStarted }: Liv
 
   const respondToInvite = async (accept: boolean) => {
     if (!pendingInvite) return;
-    const db = supabase as any;
-    const { error } = await db
+    const { error } = await dbLoose
       .from("live_collab_sessions")
       .update({
         status: accept ? "active" : "declined",
@@ -236,7 +231,7 @@ export function LiveCollabInvite({ liveSessionId, isHost, onCollabStarted }: Liv
                 onClick={() => sendInvite(profile.id)}
               >
                 <Avatar className="w-10 h-10">
-                  <AvatarImage src={profile.avatar_url} />
+                  <AvatarImage src={profile.avatar_url ?? undefined} />
                   <AvatarFallback>{profile.username?.charAt(0).toUpperCase()}</AvatarFallback>
                 </Avatar>
                 <div className="flex-1">

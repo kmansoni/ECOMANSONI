@@ -105,7 +105,7 @@ export function useSearch() {
 
       // Primary path: server-side RPC with SECURITY DEFINER.
       // This keeps search working even when profiles RLS differs across environments.
-      const rpcResult = await (supabase as any).rpc("search_user_profiles", {
+      const rpcResult = await supabase.rpc("search_user_profiles", {
         p_query: safeQuery,
         p_limit: 20,
       });
@@ -151,7 +151,7 @@ export function useSearch() {
       // Check if current user is following these users
       let followingIds: string[] = [];
       if (user) {
-        const { data: following } = await (supabase as any)
+        const { data: following } = await supabase
           .from("followers")
           .select("following_id")
           .eq("follower_id", user.id);
@@ -246,7 +246,7 @@ export function useSearch() {
       let includesSavesColumn = true;
       let data: any[] | null = null;
       let error: any = null;
-      ({ data, error } = await (supabase as any)
+      ({ data, error } = await supabase
         .from("posts")
         .select(selectWithSaves)
         .eq("is_published", true)
@@ -257,7 +257,7 @@ export function useSearch() {
       const isMissingSavesColumn = !!error && /(saves_count|column)/i.test(errorText);
       if (isMissingSavesColumn) {
         includesSavesColumn = false;
-        const retry = await (supabase as any)
+        const retry = await supabase
           .from("posts")
           .select(selectBase)
           .eq("is_published", true)
@@ -275,7 +275,7 @@ export function useSearch() {
       
       // Fetch author identity + verification
       const authorIds = [...new Set(postsWithMedia.map((p: any) => p.author_id))];
-      const briefMap = await fetchUserBriefMap(authorIds, supabase as any);
+      const briefMap = await fetchUserBriefMap(authorIds);
       const postIds = postsWithMedia.map((p: any) => p.id);
       const { data: profiles } = await supabase
         .from("profiles")
@@ -322,7 +322,7 @@ export function useSearch() {
       // Fetch current user's likes for Explore posts so the UI heart state is correct on first render.
       let likedIds = new Set<string>();
       if (user && postIds.length > 0) {
-        const { data: likes } = await (supabase as any)
+        const { data: likes } = await supabase
           .from("post_likes")
           .select("post_id")
           .eq("user_id", user.id)
@@ -375,7 +375,7 @@ export function useSearch() {
   const fetchTrendingHashtags = useCallback(async () => {
     setTrendingLoading(true);
     try {
-      const { data, error } = await (supabase as any).rpc("get_trending_hashtags_v1", {
+      const { data, error } = await supabase.rpc("get_trending_hashtags_v1", {
         p_limit: 12,
       });
       if (error) throw error;
@@ -391,15 +391,15 @@ export function useSearch() {
   const fetchExplorePage = useCallback(async () => {
     setExplorePageLoading(true);
     try {
-      const { data, error } = await (supabase as any).rpc("get_explore_page_v2", {
+      const { data, error } = await supabase.rpc("get_explore_page_v2", {
         p_segment_id: "seg_default",
         p_locale: navigator.language || "ru-RU",
-        p_country: null,
+        p_country: undefined,
         p_allow_stale: true,
         p_force_refresh: false,
       });
       if (error) throw error;
-      setExplorePage((data || null) as ExplorePagePayload | null);
+      setExplorePage((data || null) as unknown as ExplorePagePayload | null);
     } catch (error) {
       logger.error("[useSearch] Ошибка загрузки страницы explore", { error });
       setExplorePage(null);
@@ -416,14 +416,14 @@ export function useSearch() {
 
     try {
       if (targetUser.isFollowing) {
-        const { error } = await (supabase as any)
+        const { error } = await supabase
           .from("followers")
           .delete()
           .eq("follower_id", user.id)
           .eq("following_id", targetUserId);
         if (error) throw error;
       } else {
-        const { error } = await (supabase as any)
+        const { error } = await supabase
           .from("followers")
           .insert({
             follower_id: user.id,

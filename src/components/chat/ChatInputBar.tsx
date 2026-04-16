@@ -40,7 +40,7 @@ interface ChatInputBarProps {
   mentionSuggestions: MentionUser[];
   mentionActiveIndex: number;
 
-  inputRef: React.RefObject<HTMLTextAreaElement | null>;
+  inputRef: React.Ref<HTMLTextAreaElement>;
 
   onInputChange: (value: string, caretPos?: number) => void;
   onSend: (silent?: boolean, overrideText?: string) => void;

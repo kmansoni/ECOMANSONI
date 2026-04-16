@@ -101,11 +101,10 @@ export const StickersPanel = React.memo(function StickersPanel({
                 onClick={() => onAddSticker(sticker)}
                 aria-label={`Добавить стикер: ${sticker.name}`}
               >
-                <img
-                  src={sticker.thumbnail_url ?? sticker.file_url}
+                <img loading="lazy" src={sticker.thumbnail_url ?? sticker.file_url}
                   alt={sticker.name}
                   className="w-full h-full object-contain"
-                  loading="lazy"
+                  
                 />
               </button>
             ))}

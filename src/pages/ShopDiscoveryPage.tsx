@@ -107,7 +107,7 @@ export default function ShopDiscoveryPage() {
                 className="bg-zinc-900 rounded-2xl overflow-hidden text-left hover:bg-zinc-800 transition-colors"
               >
                 {shop.avatar_url ? (
-                  <img src={shop.avatar_url} alt={shop.name} className="w-full h-24 object-cover" />
+                  <img loading="lazy" src={shop.avatar_url} alt={shop.name} className="w-full h-24 object-cover" />
                 ) : (
                   <div className="w-full h-24 bg-zinc-800 flex items-center justify-center">
                     <Store className="w-8 h-8 text-zinc-600" />

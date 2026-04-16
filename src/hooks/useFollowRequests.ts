@@ -1,3 +1,4 @@
+import { dbLoose } from "@/lib/supabase";
 import { supabase } from "@/integrations/supabase/client";
 
 export interface FollowRequest {
@@ -15,7 +16,7 @@ export interface FollowRequest {
 }
 
 export async function getRequests(targetId: string): Promise<FollowRequest[]> {
-  const { data } = await (supabase as any)
+  const { data } = await dbLoose
     .from("follow_requests")
     .select("*, profiles!follow_requests_requester_id_fkey(id, username, full_name, avatar_url)")
     .eq("target_id", targetId)
@@ -28,7 +29,7 @@ export async function getRequests(targetId: string): Promise<FollowRequest[]> {
 }
 
 export async function acceptRequest(requestId: string): Promise<void> {
-  const { error } = await (supabase as any)
+  const { error } = await dbLoose
     .from("follow_requests")
     .update({ status: "accepted" })
     .eq("id", requestId);
@@ -36,7 +37,7 @@ export async function acceptRequest(requestId: string): Promise<void> {
 }
 
 export async function rejectRequest(requestId: string): Promise<void> {
-  const { error } = await (supabase as any)
+  const { error } = await dbLoose
     .from("follow_requests")
     .update({ status: "rejected" })
     .eq("id", requestId);
@@ -44,14 +45,14 @@ export async function rejectRequest(requestId: string): Promise<void> {
 }
 
 export async function sendRequest(requesterId: string, targetId: string): Promise<void> {
-  const { error } = await (supabase as any)
+  const { error } = await dbLoose
     .from("follow_requests")
     .upsert({ requester_id: requesterId, target_id: targetId, status: "pending" });
   if (error) throw error;
 }
 
 export async function cancelRequest(requesterId: string, targetId: string): Promise<void> {
-  const { error } = await (supabase as any)
+  const { error } = await dbLoose
     .from("follow_requests")
     .delete()
     .eq("requester_id", requesterId)

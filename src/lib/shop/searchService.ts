@@ -17,10 +17,9 @@
  *   - SQL injection через parameterized queries Supabase
  */
 
-import { supabase as _supabase } from "@/lib/supabase";
+import { dbLoose } from "@/lib/supabase";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const supabase = _supabase as any;
+const supabase = dbLoose;
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 

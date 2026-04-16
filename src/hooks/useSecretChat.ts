@@ -61,7 +61,7 @@ interface SecretChatDbClient {
     };
     update: (payload: unknown) => {
       eq: (column: string, value: string) => {
-        select?: (columns: string) => { single: () => DbResult<unknown> };
+        select: (columns: string) => { single: () => DbResult<unknown> };
       };
     };
     upsert: (payload: unknown) => DbResult<null>;

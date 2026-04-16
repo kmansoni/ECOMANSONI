@@ -153,7 +153,7 @@ export function NotesBar({ chatUserIds }: NotesBarProps) {
                   disabled={isOwn}
                 >
                   {note.profile?.avatar_url ? (
-                    <img src={note.profile.avatar_url} alt="" className="w-12 h-12 rounded-full object-cover" />
+                    <img loading="lazy" src={note.profile.avatar_url} alt="" className="w-12 h-12 rounded-full object-cover" />
                   ) : (
                     <div className="w-12 h-12 rounded-full bg-zinc-700 flex items-center justify-center text-white text-lg font-semibold">
                       {note.profile?.username?.[0]?.toUpperCase() ?? "?"}

@@ -4,7 +4,7 @@
  */
 import React, { useState, useRef } from "react";
 import { X, Search, UserCheck } from "lucide-react";
-import { supabase } from "@/lib/supabase";
+import { dbLoose } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 
 export interface PeopleTag {
@@ -62,7 +62,7 @@ export function PeopleTagOverlay({ tags, mediaIndex, onAddTag, onRemoveTag, show
     if (q.length < 2) { setSearchResults([]); return; }
     setSearching(true);
     try {
-      const { data } = await (supabase as any)
+      const { data } = await dbLoose
         .from("profiles")
         .select("id, username, display_name, avatar_url")
         .ilike("username", `%${q}%`)
@@ -101,7 +101,7 @@ export function PeopleTagOverlay({ tags, mediaIndex, onAddTag, onRemoveTag, show
           <div className="relative flex flex-col items-center">
             <div className="bg-black/80 backdrop-blur-sm text-white text-xs px-2 py-1 rounded-full flex items-center gap-1.5 shadow-lg">
               {tag.avatar_url && (
-                <img src={tag.avatar_url} alt="" className="w-4 h-4 rounded-full object-cover" />
+                <img loading="lazy" src={tag.avatar_url} alt="" className="w-4 h-4 rounded-full object-cover" />
               )}
               <span>@{tag.username}</span>
               {!readOnly && (
@@ -155,7 +155,7 @@ export function PeopleTagOverlay({ tags, mediaIndex, onAddTag, onRemoveTag, show
                   className="w-full flex items-center gap-3 px-2 py-2 rounded-xl hover:bg-white/10 transition-colors text-left"
                 >
                   {u.avatar_url ? (
-                    <img src={u.avatar_url} alt="" className="w-8 h-8 rounded-full object-cover" />
+                    <img loading="lazy" src={u.avatar_url} alt="" className="w-8 h-8 rounded-full object-cover" />
                   ) : (
                     <div className="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center">
                       <UserCheck className="w-4 h-4 text-white/40" />

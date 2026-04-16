@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { supabase } from "@/lib/supabase";
+import { supabase, dbLoose } from "@/lib/supabase";
 import { logger } from "@/lib/logger";
 import { useAuth } from "./useAuth";
 import { toast } from "sonner";
@@ -39,11 +39,15 @@ export function useStars() {
   const [dailyNextAt, setDailyNextAt] = useState<Date | null>(null);
   const [starsUnavailable, setStarsUnavailable] = useState(false);
 
-  const isOptionalStarsError = (error: any): boolean => {
-    const code = String(error?.code ?? "");
-    const status = Number(error?.status ?? 0);
-    const message = String(error?.message ?? "").toLowerCase();
-    const details = String(error?.details ?? "").toLowerCase();
+  const isOptionalStarsError = (error: unknown): boolean => {
+    const code = typeof error === "object" && error !== null && "code" in error ? String(error.code ?? "") : "";
+    const status = typeof error === "object" && error !== null && "status" in error ? Number(error.status ?? 0) : 0;
+    const message = typeof error === "object" && error !== null && "message" in error
+      ? String(error.message ?? "").toLowerCase()
+      : "";
+    const details = typeof error === "object" && error !== null && "details" in error
+      ? String(error.details ?? "").toLowerCase()
+      : "";
     return (
       code === "42P01" ||
       code === "PGRST204" ||
@@ -60,7 +64,7 @@ export function useStars() {
     if (!user || starsUnavailable) return;
     try {
       const data = await withRetry(async () => {
-        const { data, error } = await (supabase as any)
+        const { data, error } = await supabase
           .from("user_stars")
           .select("balance")
           .eq("user_id", user.id)
@@ -86,13 +90,13 @@ export function useStars() {
   const fetchTransactions = useCallback(async () => {
     if (!user || starsUnavailable) return;
     try {
-      const { data } = await (supabase as any)
+      const { data } = await supabase
         .from("star_transactions")
         .select("*")
         .eq("user_id", user.id)
         .order("created_at", { ascending: false })
         .limit(50);
-      setTransactions(data ?? []);
+      setTransactions((data ?? []).map(r => ({ ...r, created_at: r.created_at ?? new Date().toISOString() })));
     } catch {
       setTransactions([]);
     }
@@ -129,7 +133,7 @@ export function useStars() {
     if (!user || starsUnavailable) return;
     try {
       // Upsert user_stars
-      await (supabase as any)
+      await supabase
         .from("user_stars")
         .upsert(
           { user_id: user.id, balance: amount, total_earned: amount },
@@ -139,22 +143,22 @@ export function useStars() {
           }
         );
       // We use a raw update instead to properly increment
-      await (supabase as any).rpc("add_stars_to_user", {
-        p_user_id: user.id,
-        p_amount: amount,
-        p_description: description,
-      }).then(async () => {
-        // fallback: direct update
-      }).catch(async () => {
+      try {
+        await dbLoose.rpc("add_stars_to_user", {
+          p_user_id: user.id,
+          p_amount: amount,
+          p_description: description,
+        });
+      } catch {
         // Fallback if RPC not available: direct insert/update
-        const { data: existing } = await (supabase as any)
+        const { data: existing } = await supabase
           .from("user_stars")
           .select("balance, total_earned")
           .eq("user_id", user.id)
           .maybeSingle();
 
         if (existing) {
-          await (supabase as any)
+          await supabase
             .from("user_stars")
             .update({
               balance: existing.balance + amount,
@@ -163,12 +167,12 @@ export function useStars() {
             })
             .eq("user_id", user.id);
         } else {
-          await (supabase as any)
+          await supabase
             .from("user_stars")
             .insert({ user_id: user.id, balance: amount, total_earned: amount });
         }
 
-        await (supabase as any)
+        await supabase
           .from("star_transactions")
           .insert({
             user_id: user.id,
@@ -176,7 +180,7 @@ export function useStars() {
             type: "purchase",
             description,
           });
-      });
+      }
 
       await fetchBalance();
       await fetchTransactions();
@@ -190,14 +194,14 @@ export function useStars() {
   const claimDailyBonus = useCallback(async () => {
     if (!user || !canClaimDaily || starsUnavailable) return;
     try {
-      const { data: existing } = await (supabase as any)
+      const { data: existing } = await supabase
         .from("user_stars")
         .select("balance, total_earned")
         .eq("user_id", user.id)
         .maybeSingle();
 
       if (existing) {
-        await (supabase as any)
+        await supabase
           .from("user_stars")
           .update({
             balance: existing.balance + DAILY_BONUS_AMOUNT,
@@ -206,12 +210,12 @@ export function useStars() {
           })
           .eq("user_id", user.id);
       } else {
-        await (supabase as any)
+        await supabase
           .from("user_stars")
           .insert({ user_id: user.id, balance: DAILY_BONUS_AMOUNT, total_earned: DAILY_BONUS_AMOUNT });
       }
 
-      await (supabase as any)
+      await supabase
         .from("star_transactions")
         .insert({
           user_id: user.id,

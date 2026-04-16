@@ -10,7 +10,7 @@
  * - Подбор объектов через RPC match_properties_for_client
  */
 
-import { supabase } from '@/lib/supabase';
+import { supabase, dbLoose } from "@/lib/supabase";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -341,7 +341,7 @@ export const RE_DOC_TYPES: Array<{ value: REDocType; label: string }> = [
 class CRMRealEstateAPI {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private sb = supabase as any;
+  private sb = dbLoose;
 
   private async rpc<T>(fn: string, params?: Record<string, unknown>): Promise<T> {
     const { data, error } = await this.sb.rpc(fn, params ?? {});

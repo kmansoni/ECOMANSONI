@@ -47,6 +47,7 @@ export type Screen =
   | "branded_content_info"
   | "help"
   | "close_friends"
+  | "accounts"
   | "about";
 
 export type SettingsPostItem = {

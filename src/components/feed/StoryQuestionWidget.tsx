@@ -2,7 +2,7 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Send } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { supabase } from "@/integrations/supabase/client";
+import { dbLoose } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 
 interface StoryQuestion {
@@ -26,7 +26,7 @@ export function StoryQuestionWidget({ question, className }: StoryQuestionWidget
   const handleSend = async () => {
     if (!answer.trim() || !user || loading) return;
     setLoading(true);
-    const { error } = await (supabase as any)
+    const { error } = await dbLoose
       .from('story_question_answers')
       .insert({
         question_id: question.id,

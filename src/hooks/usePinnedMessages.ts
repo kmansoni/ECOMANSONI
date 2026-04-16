@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { supabase } from '@/lib/supabase';
+import { supabase, dbLoose } from "@/lib/supabase";
 import { useAuth } from './useAuth';
 import { toast } from 'sonner';
 import { logger } from '@/lib/logger';
@@ -19,8 +19,6 @@ export interface PinnedMessage {
 }
 
 const MAX_PINS = 10;
-const supabaseAny = supabase as any;
-
 export function usePinnedMessages(conversationId: string | null) {
   const { user } = useAuth();
   const [pinnedMessages, setPinnedMessages] = useState<PinnedMessage[]>([]);
@@ -67,7 +65,7 @@ export function usePinnedMessages(conversationId: string | null) {
   }, []);
 
   const fetchWithoutJoin = useCallback(async () => {
-    const { data, error } = await supabaseAny
+    const { data, error } = await dbLoose
       .from('pinned_messages')
       .select('id, message_id, conversation_id, pinned_by, pin_position, pinned_at')
       .eq('conversation_id', conversationId)
@@ -82,7 +80,7 @@ export function usePinnedMessages(conversationId: string | null) {
 
     let messagesById = new Map<string, any>();
     if (ids.length > 0) {
-      const { data: messagesData } = await supabaseAny
+      const { data: messagesData } = await dbLoose
         .from('messages')
         .select('id, content, media_type, sender_id, created_at')
         .in('id', ids);
@@ -104,7 +102,7 @@ export function usePinnedMessages(conversationId: string | null) {
     setLoading(true);
     try {
       if (supportsJoinRef.current) {
-        const { data, error } = await supabaseAny
+        const { data, error } = await dbLoose
           .from('pinned_messages')
           .select(`
             id,
@@ -199,7 +197,7 @@ export function usePinnedMessages(conversationId: string | null) {
       const nextPosition = pinnedMessages.length + 1;
 
       try {
-        const { error } = await supabaseAny
+        const { error } = await dbLoose
           .from('pinned_messages')
           .upsert(
             {
@@ -234,7 +232,7 @@ export function usePinnedMessages(conversationId: string | null) {
       if (tableUnavailableRef.current) return;
 
       try {
-        const { error } = await supabaseAny
+        const { error } = await dbLoose
           .from('pinned_messages')
           .delete()
           .eq('message_id', messageId)
@@ -268,7 +266,7 @@ export function usePinnedMessages(conversationId: string | null) {
         }));
 
         for (const upd of updates) {
-          await supabaseAny
+          await dbLoose
             .from('pinned_messages')
             .update({ pin_position: upd.pin_position })
             .eq('message_id', upd.message_id)

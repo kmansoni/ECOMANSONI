@@ -34,7 +34,7 @@ export function CompanyCard({
           {/* Лого */}
           <div className="w-14 h-14 rounded-xl bg-white/5 flex items-center justify-center flex-shrink-0 overflow-hidden border border-white/5">
             {company.logo_url ? (
-              <img
+              <img loading="lazy"
                 src={company.logo_url}
                 alt={company.name}
                 className="w-full h-full object-contain p-2"

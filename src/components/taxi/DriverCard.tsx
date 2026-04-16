@@ -55,7 +55,7 @@ export function DriverCard({
         {/* Аватар */}
         <div className="relative flex-shrink-0">
           {driver.photo ? (
-            <img
+            <img loading="lazy"
               src={driver.photo}
               alt={driver.name}
               className="w-14 h-14 rounded-2xl object-cover"

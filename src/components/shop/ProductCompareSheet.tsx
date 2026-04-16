@@ -97,23 +97,18 @@ function CompareTable({ products, onRemove }: { products: ShopProduct[]; onRemov
   const rows: { label: string; getValue: (p: ShopProduct) => string; highlight: 'min' | 'max' | 'none' }[] = [
     {
       label: 'Цена',
-      getValue: p => formatPrice(p.price, p.currency),
+      getValue: p => formatPrice(p.price, p.currency ?? undefined),
       highlight: 'min',
     },
     {
       label: 'Наличие',
-      getValue: p => p.is_available ? '✓ В наличии' : '✗ Нет',
+      getValue: p => p.in_stock ? '✓ В наличии' : '✗ Нет',
       highlight: 'none',
     },
     {
       label: 'Категория',
       getValue: p => p.category ?? '—',
       highlight: 'none',
-    },
-    {
-      label: 'Остаток',
-      getValue: p => p.stock_count !== null ? `${p.stock_count} шт.` : '—',
-      highlight: 'max',
     },
   ];
 
@@ -134,8 +129,8 @@ function CompareTable({ products, onRemove }: { products: ShopProduct[]; onRemov
                     <Trash2 className="w-3 h-3 text-zinc-400 hover:text-red-400" />
                   </button>
                   <div className="w-16 h-16 mx-auto rounded-lg bg-zinc-800 overflow-hidden mb-2">
-                    {product.image_url ? (
-                      <img src={product.image_url} alt={product.name} className="w-full h-full object-cover" />
+                    {Array.isArray(product.images) && product.images[0] ? (
+                      <img loading="lazy" src={String(product.images[0])} alt={product.name} className="w-full h-full object-cover" />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center text-zinc-600 text-xs">
                         Фото
@@ -199,9 +194,8 @@ function shouldHighlight(
   }
 
   if (row.highlight === 'max') {
-    const values = all.map(p => p.stock_count ?? 0);
-    const productVal = product.stock_count ?? 0;
-    return productVal === Math.max(...values) && new Set(values).size > 1 && productVal > 0;
+    const values = all.map(p => p.price);
+    return product.price === Math.max(...values) && new Set(values).size > 1;
   }
 
   return false;

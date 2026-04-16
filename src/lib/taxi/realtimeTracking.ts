@@ -21,12 +21,11 @@
  *   every 3 seconds until channel reconnects.
  */
 
-import { supabase as _supabase } from "@/lib/supabase";
+import { dbLoose } from "@/lib/supabase";
 import type { LatLng } from "@/types/taxi";
 import { DRIVER_LOCATION_UPDATE_INTERVAL_MS } from "./constants";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const supabase = _supabase as any;
+const supabase = dbLoose;
 
 export interface DriverLocationUpdate {
   driverId: string;

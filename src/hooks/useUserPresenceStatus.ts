@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase, dbLoose } from "@/lib/supabase";
 import { formatLastSeen, isOnline as isOnlineFromLastSeen } from "@/hooks/usePresence";
 import { getErrorMessage } from "@/lib/utils";
 import { PRESENCE_POLL_MS } from "@/lib/timing";
@@ -17,7 +17,7 @@ export function useUserPresenceStatus(userId?: string | null) {
     let interval: number | undefined;
 
     const fetchLastSeen = async () => {
-      const res = await supabase
+      const res = await dbLoose
         .from("profiles")
         .select("last_seen_at, status_emoji, status_sticker_url")
         .eq("user_id", userId)
@@ -34,14 +34,14 @@ export function useUserPresenceStatus(userId?: string | null) {
           msg.includes("column");
 
         if (looksLikeMissingColumn) {
-          const res2 = await supabase
+          const res2 = await dbLoose
             .from("profiles")
             .select("last_seen_at")
             .eq("user_id", userId)
             .maybeSingle();
           if (!active) return;
           if (res2.error) return;
-          setLastSeenAt((res2.data as any)?.last_seen_at ?? null);
+          setLastSeenAt((res2.data?.last_seen_at as string | null) ?? null);
           setStatusEmoji(null);
           setStatusStickerUrl(null);
         }
@@ -49,9 +49,9 @@ export function useUserPresenceStatus(userId?: string | null) {
         return;
       }
 
-      setLastSeenAt((res.data as any)?.last_seen_at ?? null);
-      setStatusEmoji((res.data as any)?.status_emoji ?? null);
-      setStatusStickerUrl((res.data as any)?.status_sticker_url ?? null);
+      setLastSeenAt((res.data?.last_seen_at as string | null) ?? null);
+      setStatusEmoji((res.data?.status_emoji as string | null) ?? null);
+      setStatusStickerUrl((res.data?.status_sticker_url as string | null) ?? null);
     };
 
     void fetchLastSeen();
@@ -60,7 +60,7 @@ export function useUserPresenceStatus(userId?: string | null) {
     const channel = supabase
       .channel(`presence:profile:${userId}`)
       .on(
-        "postgres_changes" as any,
+        "postgres_changes",
         {
           event: "UPDATE",
           schema: "public",

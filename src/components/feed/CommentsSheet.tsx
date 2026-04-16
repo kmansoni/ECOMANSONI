@@ -221,7 +221,7 @@ export function CommentsSheet({
           
           <div className="p-4 flex items-start gap-3 safe-area-bottom">
             {user?.user_metadata?.avatar_url ? (
-              <img
+              <img loading="lazy"
                 src={user.user_metadata.avatar_url}
                 alt="Вы"
                 className="w-9 h-9 rounded-full object-cover flex-shrink-0 mt-1"
@@ -291,7 +291,7 @@ function CommentItem({
   return (
     <div className="flex gap-3">
       {avatarUrl ? (
-        <img
+        <img loading="lazy"
           src={avatarUrl}
           alt={comment.author.display_name}
           className={cn(

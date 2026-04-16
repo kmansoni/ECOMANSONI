@@ -114,7 +114,7 @@ export default function LocationPage() {
             {posts.map(post => (
               <div key={post.id} className="aspect-square bg-muted overflow-hidden">
                 {post.image_url && (
-                  <img src={post.image_url} alt="" className="w-full h-full object-cover" />
+                  <img loading="lazy" src={post.image_url} alt="" className="w-full h-full object-cover" />
                 )}
               </div>
             ))}

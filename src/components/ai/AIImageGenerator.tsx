@@ -193,11 +193,10 @@ export function AIImageGenerator() {
             className="flex flex-col gap-3"
           >
             <div className="relative rounded-xl overflow-hidden border dark:border-gray-700">
-              <img
-                src={result.url}
+              <img loading="lazy" src={result.url}
                 alt={result.revisedPrompt}
                 className="w-full aspect-square object-cover"
-                loading="lazy"
+                
               />
             </div>
 
@@ -259,11 +258,10 @@ export function AIImageGenerator() {
                 className="rounded-lg overflow-hidden border dark:border-gray-700 hover:ring-2 hover:ring-primary transition-all min-h-[44px] min-w-[44px]"
                 aria-label={`Генерация: ${img.prompt}`}
               >
-                <img
-                  src={img.url}
+                <img loading="lazy" src={img.url}
                   alt={img.prompt}
                   className="w-full aspect-square object-cover"
-                  loading="lazy"
+                  
                 />
               </button>
             ))}

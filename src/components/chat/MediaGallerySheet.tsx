@@ -6,6 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { ImageViewer } from "./ImageViewer";
 import { fetchUserBriefMap, resolveUserBrief } from "@/lib/users/userBriefs";
 import { logger } from "@/lib/logger";
+import { dbLoose } from "@/lib/supabase";
 
 interface MediaItem {
   id: string;
@@ -101,7 +102,7 @@ export function MediaGallerySheet({ isOpen, onClose, conversationId, userId, tit
           if (messages && messages.length > 0) {
             // Get sender profiles for voice messages
             const senderIds = [...new Set(messages.map(m => m.sender_id))];
-            const briefMap = await fetchUserBriefMap(senderIds as string[], supabase as any);
+            const briefMap = await fetchUserBriefMap(senderIds as string[]);
             const senderNameMap = new Map(
               senderIds
                 .filter(Boolean)
@@ -265,11 +266,10 @@ export function MediaGallerySheet({ isOpen, onClose, conversationId, userId, tit
         onClick={() => setViewingImage(item.url)}
         className="aspect-square relative overflow-hidden bg-white/5"
       >
-        <img
-          src={item.url}
+        <img loading="lazy" src={item.url}
           alt=""
           className="w-full h-full object-cover"
-          loading="lazy"
+          
         />
       </button>
     );

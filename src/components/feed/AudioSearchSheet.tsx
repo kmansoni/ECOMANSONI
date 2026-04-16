@@ -185,7 +185,7 @@ export function AudioSearchSheet({ isOpen, onClose, onSelectTrack, mode = "searc
                   {/* Обложка */}
                   <div className="relative w-12 h-12 rounded-xl overflow-hidden bg-muted flex-shrink-0">
                     {track.cover_url ? (
-                      <img src={track.cover_url} alt={track.title} className="w-full h-full object-cover" />
+                      <img loading="lazy" src={track.cover_url} alt={track.title} className="w-full h-full object-cover" />
                     ) : (
                       <div className="w-full h-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
                         <Music className="w-5 h-5 text-white" />

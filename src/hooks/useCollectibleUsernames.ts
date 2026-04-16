@@ -1,10 +1,9 @@
 import { useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
+import { dbLoose } from "@/lib/supabase";
 
 // DB types not yet regenerated Ã¢ use `any` until `supabase gen types` runs
-const db = supabase as any;
-
 // Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢
 // Domain types
 // Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢Ã¢
@@ -55,7 +54,7 @@ export function useCollectibleUsernames() {
       setLoading(true);
       setError(null);
       try {
-        let query = db
+        let query = dbLoose
           .from("collectible_usernames")
           .select("*")
           .eq("is_for_sale", true)
@@ -92,7 +91,7 @@ export function useCollectibleUsernames() {
     setLoading(true);
     setError(null);
     try {
-      const { data, error: qErr } = await db
+      const { data, error: qErr } = await dbLoose
         .from("collectible_usernames")
         .select("*")
         .eq("owner_id", user.id)
@@ -162,7 +161,7 @@ export function useCollectibleUsernames() {
       setLoading(true);
       setError(null);
       try {
-        const { error: updErr } = await db
+        const { error: updErr } = await dbLoose
           .from("collectible_usernames")
           .update({
             is_for_sale: true,
@@ -192,7 +191,7 @@ export function useCollectibleUsernames() {
       setLoading(true);
       setError(null);
       try {
-        const { error: updErr } = await db
+        const { error: updErr } = await dbLoose
           .from("collectible_usernames")
           .update({ is_for_sale: false, listed_at: null })
           .eq("id", usernameId)
@@ -218,7 +217,7 @@ export function useCollectibleUsernames() {
       setLoading(true);
       setError(null);
       try {
-        const { data, error: qErr } = await db
+        const { data, error: qErr } = await dbLoose
           .from("username_transactions")
           .select(
             `
@@ -253,7 +252,7 @@ export function useCollectibleUsernames() {
       setError(null);
       try {
         // First verify ownership
-        const { data: cu, error: selErr } = await db
+        const { data: cu, error: selErr } = await dbLoose
           .from("collectible_usernames")
           .select("username")
           .eq("id", usernameId)

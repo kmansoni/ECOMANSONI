@@ -164,12 +164,13 @@ export function useDeliveryStatus(conversationId: string | null): {
         (payload) => {
           const updated = decodeDeliveryStatusMessageUpdate(payload.new);
           if (!updated?.id || !updated?.delivery_status) return;
+          const ds = updated.delivery_status;
           // Отслеживаем только собственные сообщения
           if (updated.sender_id !== user.id) return;
 
           setStatusMap((prev) => {
-            if (prev[updated.id] === updated.delivery_status) return prev;
-            return { ...prev, [updated.id]: updated.delivery_status };
+            if (prev[updated.id] === ds) return prev;
+            return { ...prev, [updated.id]: ds };
           });
         }
       )

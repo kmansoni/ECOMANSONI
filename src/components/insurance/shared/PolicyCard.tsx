@@ -86,7 +86,7 @@ export function PolicyCard({
         <div className="mb-3 pb-3 border-b border-white/5">
           <div className="flex items-center gap-2">
             {policy.company?.logo_url ? (
-              <img
+              <img loading="lazy"
                 src={policy.company.logo_url}
                 alt={policy.company.name}
                 className="w-5 h-5 object-contain rounded"

@@ -37,6 +37,7 @@ describe("reels-arbiter journal contract (P1)", () => {
   const realNow = Date.now;
 
   async function loadTick() {
+    // @ts-expect-error — .mjs без деклараций
     const mod = await import("../../server/reels-arbiter/index.mjs");
     return (mod as { tick: (args: unknown) => Promise<void> }).tick;
   }

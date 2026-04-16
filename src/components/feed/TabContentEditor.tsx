@@ -87,7 +87,7 @@ export function TabContentEditor({
         {/* CRITICAL FIX #3: Adjustments + Filter применяются к preview */}
         {previewUrl && (
           <div className="relative group">
-            <img
+            <img loading="lazy"
               src={previewUrl}
               alt="Preview"
               className="w-full aspect-square object-cover rounded-lg"
@@ -249,7 +249,7 @@ export function TabContentEditor({
     return (
       <div className="space-y-3 bg-zinc-900/50 rounded-lg p-4 max-h-96 overflow-y-auto">
         {previewUrl && (
-          <img
+          <img loading="lazy"
             src={previewUrl}
             alt="Preview"
             className="w-full aspect-square object-cover rounded-lg"

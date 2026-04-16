@@ -3,9 +3,7 @@
  * Автосохранение каждые 30 секунд
  */
 import { useState, useEffect, useCallback, useRef } from "react";
-import { supabase } from "@/lib/supabase";
-
-const db = supabase as any;
+import { supabase, dbLoose } from "@/lib/supabase";
 
 export interface Draft {
   id: string;
@@ -26,7 +24,7 @@ export function useDrafts(type?: Draft["type"]) {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-      let q = db.from("content_drafts").select("*").eq("user_id", user.id).order("updated_at", { ascending: false });
+      let q = dbLoose.from("content_drafts").select("*").eq("user_id", user.id).order("updated_at", { ascending: false });
       if (type) q = q.eq("type", type);
       const { data } = await q;
       setDrafts((data || []) as Draft[]);
@@ -38,7 +36,7 @@ export function useDrafts(type?: Draft["type"]) {
   const saveDraft = useCallback(async (draft: Omit<Draft, "id" | "created_at" | "updated_at">) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return null;
-    const { data, error } = await db.from("content_drafts").insert({
+    const { data, error } = await dbLoose.from("content_drafts").insert({
       user_id: user.id,
       type: draft.type,
       content: draft.content,
@@ -53,7 +51,7 @@ export function useDrafts(type?: Draft["type"]) {
   }, []);
 
   const updateDraft = useCallback(async (id: string, updates: Partial<Pick<Draft, "content" | "media" | "metadata">>) => {
-    const { data, error } = await db.from("content_drafts")
+    const { data, error } = await dbLoose.from("content_drafts")
       .update({ ...updates, updated_at: new Date().toISOString() })
       .eq("id", id)
       .select()
@@ -64,12 +62,12 @@ export function useDrafts(type?: Draft["type"]) {
   }, []);
 
   const deleteDraft = useCallback(async (id: string) => {
-    await db.from("content_drafts").delete().eq("id", id);
+    await dbLoose.from("content_drafts").delete().eq("id", id);
     setDrafts((prev) => prev.filter((d) => d.id !== id));
   }, []);
 
   const getDraftById = useCallback(async (id: string): Promise<Draft | null> => {
-    const { data } = await db.from("content_drafts").select("*").eq("id", id).single();
+    const { data } = await dbLoose.from("content_drafts").select("*").eq("id", id).single();
     return data as Draft | null;
   }, []);
 

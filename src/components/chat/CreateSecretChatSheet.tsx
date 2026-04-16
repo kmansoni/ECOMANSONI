@@ -7,6 +7,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useSecretChat } from "@/hooks/useSecretChat";
 import { GradientAvatar } from "@/components/ui/gradient-avatar";
+import { dbLoose } from "@/lib/supabase";
 
 interface Contact {
   id: string;
@@ -40,7 +41,7 @@ export function CreateSecretChatSheet({ open, onOpenChange, onCreated }: CreateS
 
   useEffect(() => {
     if (!open || !user) return;
-    (supabase as any)
+    dbLoose
       .from("profiles")
       .select("id, display_name, avatar_url")
       .neq("id", user.id)

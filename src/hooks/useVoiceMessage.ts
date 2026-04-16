@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { uploadMedia } from '@/lib/mediaUpload';
 import { logger } from '@/lib/logger';
+import { dbLoose } from "@/lib/supabase";
 
 interface VoiceRecordingResult {
   blob: Blob;
@@ -130,7 +131,7 @@ export function useVoiceMessage() {
       const audioUrl = result.url;
 
       // Создаём сообщение
-      const { data: message, error: msgError } = await (supabase as any)
+      const { data: message, error: msgError } = await dbLoose
         .from('messages')
         .insert({
           conversation_id: conversationId,
@@ -145,7 +146,7 @@ export function useVoiceMessage() {
       if (msgError) throw msgError;
 
       // Создаём запись голосового сообщения
-      const { data: voiceMsg, error: voiceError } = await (supabase as any)
+      const { data: voiceMsg, error: voiceError } = await dbLoose
         .from('voice_messages')
         .insert({
           message_id: message.id,

@@ -1,3 +1,4 @@
+import { dbLoose } from "@/lib/supabase";
 import { supabase } from "@/integrations/supabase/client";
 
 export type InternalSmsMessage = {
@@ -11,7 +12,7 @@ export type InternalSmsMessage = {
 };
 
 export async function sendInternalSms(recipientId: string, body: string) {
-  const { data, error } = await (supabase as any).rpc("send_internal_sms_v1", {
+  const { data, error } = await dbLoose.rpc("send_internal_sms_v1", {
     p_recipient_id: recipientId,
     p_body: body,
   });
@@ -19,7 +20,7 @@ export async function sendInternalSms(recipientId: string, body: string) {
 }
 
 export async function listInternalSmsBetween(userA: string, userB: string, limit = 100) {
-  const { data, error } = await (supabase as any)
+  const { data, error } = await dbLoose
     .from("internal_sms_messages")
     .select("id, sender_id, recipient_id, body, delivered_at, read_at, created_at")
     .or(
@@ -32,7 +33,7 @@ export async function listInternalSmsBetween(userA: string, userB: string, limit
 }
 
 export async function markInternalSmsRead(messageId: string) {
-  const { data, error } = await (supabase as any)
+  const { data, error } = await dbLoose
     .from("internal_sms_messages")
     .update({ read_at: new Date().toISOString() })
     .eq("id", messageId)

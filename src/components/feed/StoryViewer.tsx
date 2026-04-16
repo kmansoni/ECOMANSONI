@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { X, Volume2, VolumeX, Eye } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { dbLoose } from "@/lib/supabase";
 import { useStoryViews } from "@/hooks/useStoryViews";
 import { cn } from "@/lib/utils";
 import { useStories, type UserWithStories, type Story } from "@/hooks/useStories";
@@ -160,7 +161,7 @@ function StoryWidgetsLayer({ storyId, currentUser }: { storyId: string; currentU
                 className="w-full h-auto rounded-xl shadow-md"
               />
             ) : (
-              <img src={previewUrl} alt="GIF sticker" className="w-full h-auto rounded-xl shadow-md" />
+              <img loading="lazy" src={previewUrl} alt="GIF sticker" className="w-full h-auto rounded-xl shadow-md" />
             )}
           </div>
         );
@@ -639,7 +640,7 @@ export function StoryViewer({ usersWithStories, initialUserIndex, isOpen, onClos
               }}
             />
           ) : (
-            <img
+            <img loading="lazy"
               src={story.media_url}
               alt={`${currentUser.display_name}'s story`}
               className="w-full h-full object-cover"
@@ -698,7 +699,7 @@ export function StoryViewer({ usersWithStories, initialUserIndex, isOpen, onClos
             }}
             aria-label="Open profile"
           >
-            <img
+            <img loading="lazy"
               src={currentUser.avatar_url || `https://i.pravatar.cc/150?u=${currentUser.user_id}`}
               alt={currentUser.display_name || ''}
               className="w-9 h-9 rounded-full border-2 border-white/50 object-cover flex-shrink-0"
@@ -766,7 +767,7 @@ export function StoryViewer({ usersWithStories, initialUserIndex, isOpen, onClos
                   {viewers.length === 0 && <p className="text-white/50 text-sm text-center">Нет просмотров</p>}
                   {viewers.map(v => (
                     <div key={v.viewer_id} className="flex items-center gap-2">
-                      <img
+                      <img loading="lazy"
                         src={v.avatar_url || `https://i.pravatar.cc/40?u=${v.viewer_id}`}
                         className="w-7 h-7 rounded-full object-cover"
                         alt=""
@@ -785,15 +786,15 @@ export function StoryViewer({ usersWithStories, initialUserIndex, isOpen, onClos
                 e.preventDefault();
                 if (!replyText.trim() || !user) return;
                 try {
-                  await (supabase as any).from("story_replies").insert({
+                  await dbLoose.from("story_replies").insert({
                     story_id: story.id,
                     sender_id: user.id,
                     recipient_id: story.author_id,
                     message: replyText.trim(),
                   });
                   setReplyText("");
-                } catch {
-                  // ignore
+                } catch (err) {
+                  logger.warn("[StoryViewer] reply insert failed", { err });
                 }
               }}
             >

@@ -13,6 +13,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { dbLoose } from "@/lib/supabase";
 
 const PAGE_SIZE = 30;
 
@@ -63,7 +64,7 @@ export function usePostLikes(postId: string | null): UsePostLikesResult {
       try {
         // post_likes: { post_id, user_id, created_at }
         // profiles:   { id, username, display_name, avatar_url, is_verified }
-        let query = (supabase as any)
+        let query = dbLoose
           .from("post_likes")
           .select(
             `
@@ -93,7 +94,7 @@ export function usePostLikes(postId: string | null): UsePostLikesResult {
         const { data, error: fetchError } = await query;
         if (fetchError) throw fetchError;
 
-        const rows = (data ?? []) as Array<{
+        const rows = (data ?? []) as unknown as Array<{
           user_id: string;
           created_at: string;
           profiles: {

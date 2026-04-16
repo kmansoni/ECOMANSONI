@@ -3,6 +3,7 @@ import { Star, Camera, Send } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
+import { dbLoose } from "@/lib/supabase";
 
 interface Review {
   id: string;
@@ -54,7 +55,7 @@ export function ProductReviews({ productId }: ProductReviewsProps) {
   useEffect(() => {
     void (async () => {
       setLoading(true);
-      const { data } = await (supabase as any)
+      const { data } = await dbLoose
         .from('product_reviews')
         .select('*, profiles(username, avatar_url)')
         .eq('product_id', productId)
@@ -71,7 +72,7 @@ export function ProductReviews({ productId }: ProductReviewsProps) {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { toast.error('Войдите в аккаунт'); return; }
 
-      const { data, error } = await (supabase as any)
+      const { data, error } = await dbLoose
         .from('product_reviews')
         .insert({ product_id: productId, user_id: user.id, rating, text, photos: [] })
         .select('*, profiles(username, avatar_url)')
@@ -149,7 +150,7 @@ export function ProductReviews({ productId }: ProductReviewsProps) {
             <div key={review.id} className="bg-zinc-900 rounded-2xl p-4">
               <div className="flex items-center gap-2 mb-2">
                 {review.profiles?.avatar_url ? (
-                  <img src={review.profiles.avatar_url} alt="" className="w-7 h-7 rounded-full object-cover" />
+                  <img loading="lazy" src={review.profiles.avatar_url} alt="" className="w-7 h-7 rounded-full object-cover" />
                 ) : (
                   <div className="w-7 h-7 rounded-full bg-zinc-700" />
                 )}
@@ -165,7 +166,7 @@ export function ProductReviews({ productId }: ProductReviewsProps) {
               {review.photos?.length > 0 && (
                 <div className="flex gap-2 mt-3 overflow-x-auto">
                   {review.photos.map((photo, i) => (
-                    <img key={i} src={photo} alt="" className="w-20 h-20 rounded-xl object-cover shrink-0" />
+                    <img loading="lazy" key={i} src={photo} alt="" className="w-20 h-20 rounded-xl object-cover shrink-0" />
                   ))}
                 </div>
               )}

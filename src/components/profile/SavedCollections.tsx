@@ -77,7 +77,7 @@ export function SavedCollections() {
         .from("saved_collection_items")
         .select("post_id, posts(image_url)")
         .eq("collection_id", collectionId);
-      setCollectionPosts(data ?? []);
+      setCollectionPosts((data ?? []) as unknown as CollectionPost[]);
     } finally {
       setPostsLoading(false);
     }
@@ -104,7 +104,7 @@ export function SavedCollections() {
             {collectionPosts.map(cp => (
               <div key={cp.post_id} className="aspect-square bg-muted">
                 {cp.posts?.image_url && (
-                  <img src={cp.posts.image_url} alt="" className="w-full h-full object-cover" />
+                  <img loading="lazy" src={cp.posts.image_url} alt="" className="w-full h-full object-cover" />
                 )}
               </div>
             ))}
@@ -170,7 +170,7 @@ export function SavedCollections() {
               className="aspect-square bg-muted rounded-2xl overflow-hidden relative"
             >
               {col.cover_url ? (
-                <img src={col.cover_url} alt={col.name} className="w-full h-full object-cover" />
+                <img loading="lazy" src={col.cover_url} alt={col.name} className="w-full h-full object-cover" />
               ) : (
                 <div className="w-full h-full flex items-center justify-center">
                   <Folder className="w-8 h-8 text-muted-foreground" />

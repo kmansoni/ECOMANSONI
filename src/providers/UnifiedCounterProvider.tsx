@@ -4,6 +4,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useUnifiedCounterStore } from "@/stores/useUnifiedCounterStore";
 import { isChatProtocolV11EnabledForUser } from "@/lib/chat/protocolV11";
 import { logger } from "@/lib/logger";
+import { dbLoose } from "@/lib/supabase";
 
 const RESYNC_INTERVAL_MS = 45_000;
 const VISIBILITY_RESYNC_THRESHOLD_MS = 15_000;
@@ -13,7 +14,7 @@ const VISIBILITY_RESYNC_THRESHOLD_MS = 15_000;
  * ──────────────────────────────────────────────────────────── */
 
 async function fetchNotificationsUnread(userId: string): Promise<number> {
-  const { count, error } = await (supabase as any)
+  const { count, error } = await dbLoose
     .from("notifications")
     .select("*", { count: "exact", head: true })
     .eq("user_id", userId)
@@ -26,7 +27,7 @@ async function fetchNotificationsUnread(userId: string): Promise<number> {
 }
 
 async function fetchChatsUnreadV11(userId: string): Promise<number> {
-  const { data, error } = await (supabase as any)
+  const { data, error } = await dbLoose
     .from("chat_inbox_projection")
     .select("dialog_id, unread_count")
     .eq("user_id", userId);
@@ -92,27 +93,30 @@ export function UnifiedCounterProvider({ children }: { children: ReactNode }) {
     const resyncAll = async () => {
       if (!isMountedRef.current) return;
       const state = store.getState();
+      const now = Date.now();
 
       // Notifications
-      if (Date.now() - state.lastSyncAt.notifications > 10_000) {
+      if (now - state.lastSyncAt.notifications > 10_000) {
+        const fetchStarted = Date.now();
         const nCount = await fetchNotificationsUnread(userId);
         if (isMountedRef.current) {
-          store.getState().setNotificationsUnread(nCount);
+          store.getState().setNotificationsUnread(nCount, fetchStarted);
         }
       }
 
       // Chats
-      if (Date.now() - state.lastSyncAt.chats > 10_000) {
+      if (now - state.lastSyncAt.chats > 10_000) {
+        const fetchStarted = Date.now();
         if (isV11) {
           const cCount = await fetchChatsUnreadV11(userId);
           if (isMountedRef.current) {
-            store.getState().setChatsUnread(cCount);
+            store.getState().setChatsUnread(cCount, fetchStarted);
           }
         } else {
           const { total, conversationIds } = await fetchChatsUnreadLegacy(userId);
           participantIdsRef.current = conversationIds;
           if (isMountedRef.current) {
-            store.getState().setChatsUnread(total);
+            store.getState().setChatsUnread(total, fetchStarted);
           }
         }
       }
@@ -140,6 +144,8 @@ export function UnifiedCounterProvider({ children }: { children: ReactNode }) {
       .subscribe();
 
     /* ── Realtime: Chats ────────────────────────────────────── */
+    let chatDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
     const chatsChannel = isV11
       ? supabase
           .channel("unified-chats-rt")
@@ -152,12 +158,16 @@ export function UnifiedCounterProvider({ children }: { children: ReactNode }) {
               filter: `user_id=eq.${userId}`,
             },
             () => {
-              // Full refetch on any projection change (same as current v1.1 behavior)
-              void fetchChatsUnreadV11(userId).then((count) => {
-                if (isMountedRef.current) {
-                  store.getState().setChatsUnread(count);
-                }
-              });
+              // Debounce rapid projection changes (batch messages, mark-all-read)
+              if (chatDebounceTimer) clearTimeout(chatDebounceTimer);
+              chatDebounceTimer = setTimeout(() => {
+                const fetchStarted = Date.now();
+                void fetchChatsUnreadV11(userId).then((count) => {
+                  if (isMountedRef.current) {
+                    store.getState().setChatsUnread(count, fetchStarted);
+                  }
+                });
+              }, 500);
             },
           )
           .subscribe()
@@ -200,6 +210,7 @@ export function UnifiedCounterProvider({ children }: { children: ReactNode }) {
 
     /* ── Cleanup ────────────────────────────────────────────── */
     return () => {
+      if (chatDebounceTimer) clearTimeout(chatDebounceTimer);
       supabase.removeChannel(notifChannel);
       supabase.removeChannel(chatsChannel);
       clearInterval(intervalId);

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { X, Image, MapPin, Users, Smile, MoreHorizontal, ChevronDown, Loader2, Wand2 } from "lucide-react";
+import { X, Image, ChevronDown, Loader2, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/hooks/useAuth";
@@ -218,7 +218,7 @@ export function CreatePostSheet({ isOpen, onClose }: CreatePostSheetProps) {
       <div className="flex-1 overflow-y-auto native-scroll">
         {/* Author */}
         <div className="flex items-center gap-3 px-4 py-3">
-          <img
+          <img loading="lazy"
             src={`https://i.pravatar.cc/150?u=${user?.id}`}
             alt="Your avatar"
             className="w-10 h-10 rounded-full object-cover"
@@ -249,7 +249,7 @@ export function CreatePostSheet({ isOpen, onClose }: CreatePostSheetProps) {
             <div className="grid grid-cols-2 gap-2">
               {selectedImages.map((image, index) => (
                 <div key={index} className="relative aspect-square rounded-xl overflow-hidden group">
-                  <img
+                  <img loading="lazy"
                     src={image.preview}
                     alt={`Selected ${index + 1}`}
                     className="w-full h-full object-cover"
@@ -300,36 +300,8 @@ export function CreatePostSheet({ isOpen, onClose }: CreatePostSheetProps) {
               >
                 <Image className="w-5 h-5 text-green-500" />
               </button>
-              <button className="w-10 h-10 rounded-full bg-blue-500/10 flex items-center justify-center">
-                <Users className="w-5 h-5 text-blue-500" />
-              </button>
-              <button className="w-10 h-10 rounded-full bg-yellow-500/10 flex items-center justify-center">
-                <Smile className="w-5 h-5 text-yellow-500" />
-              </button>
-              <button className="w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center">
-                <MapPin className="w-5 h-5 text-red-500" />
-              </button>
-              <button className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
-                <MoreHorizontal className="w-5 h-5 text-muted-foreground" />
-              </button>
             </div>
           </div>
-        </div>
-
-        {/* Options */}
-        <div className="px-4 pb-6 space-y-1">
-          <button className="w-full flex items-center justify-between py-3 border-b border-border">
-            <span className="text-sm">Добавить музыку</span>
-            <ChevronDown className="w-5 h-5 text-muted-foreground -rotate-90" />
-          </button>
-          <button className="w-full flex items-center justify-between py-3 border-b border-border">
-            <span className="text-sm">Настройки аудитории</span>
-            <ChevronDown className="w-5 h-5 text-muted-foreground -rotate-90" />
-          </button>
-          <button className="w-full flex items-center justify-between py-3 border-b border-border">
-            <span className="text-sm">Расширенные настройки</span>
-            <ChevronDown className="w-5 h-5 text-muted-foreground -rotate-90" />
-          </button>
         </div>
       </div>
 

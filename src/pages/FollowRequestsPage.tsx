@@ -89,7 +89,7 @@ export default function FollowRequestsPage() {
                 {/* Avatar */}
                 <button onClick={() => navigate(`/user/${req.requester_id}`)}>
                   {req.requester?.avatar_url ? (
-                    <img src={req.requester.avatar_url} alt="" className="w-12 h-12 rounded-full object-cover" />
+                    <img loading="lazy" src={req.requester.avatar_url} alt="" className="w-12 h-12 rounded-full object-cover" />
                   ) : (
                     <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-violet-500 flex items-center justify-center text-white font-semibold">
                       {req.requester?.username?.[0]?.toUpperCase() ?? "?"}

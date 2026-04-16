@@ -123,7 +123,7 @@ export function SelfDestructMedia({
             onClick={startCountdown}
           >
             {mediaType === "image" ? (
-              <img
+              <img loading="lazy"
                 src={mediaUrl}
                 alt="self-destruct"
                 className="w-full max-w-[280px] max-h-[280px] object-cover blur-xl brightness-50 rounded-xl"
@@ -153,7 +153,7 @@ export function SelfDestructMedia({
             className="relative"
           >
             {mediaType === "image" ? (
-              <img
+              <img loading="lazy"
                 src={mediaUrl}
                 alt="self-destruct"
                 className="w-full max-w-[280px] max-h-[280px] object-cover rounded-xl"

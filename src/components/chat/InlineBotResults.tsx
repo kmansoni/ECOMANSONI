@@ -9,7 +9,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Bot, Image, FileText, MapPin, X } from "lucide-react";
-import { supabase } from "@/lib/supabase";
+import { dbLoose } from "@/lib/supabase";
 import { logger } from "@/lib/logger";
 
 export interface InlineBotResult {
@@ -69,7 +69,7 @@ export function InlineBotResults({ botUsername, query, onSelectResult, onDismiss
 
     try {
       // Call bot API for inline query results
-      const { data, error: rpcError } = await (supabase as any).rpc("bot_inline_query", {
+      const { data, error: rpcError } = await dbLoose.rpc("bot_inline_query", {
         bot_username: botUsername,
         query_text: query,
         limit_count: 20,
@@ -156,7 +156,7 @@ export function InlineBotResults({ botUsername, query, onSelectResult, onDismiss
               className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-white/5 transition-colors text-left"
             >
               {result.thumbnailUrl ? (
-                <img src={result.thumbnailUrl} alt="" className="w-10 h-10 rounded-lg object-cover flex-shrink-0" />
+                <img loading="lazy" src={result.thumbnailUrl} alt="" className="w-10 h-10 rounded-lg object-cover flex-shrink-0" />
               ) : (
                 <div className="w-10 h-10 rounded-lg bg-white/10 flex items-center justify-center flex-shrink-0">
                   <Icon className="w-5 h-5 text-white/40" />

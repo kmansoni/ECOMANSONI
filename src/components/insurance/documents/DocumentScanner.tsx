@@ -272,7 +272,7 @@ export function DocumentScanner({ documentType, onRecognized, onClose }: Documen
               className="space-y-4"
             >
               <div className="rounded-xl overflow-hidden">
-                <img src={imageData} alt="Документ" className="w-full object-contain max-h-64" />
+                <img loading="lazy" src={imageData} alt="Документ" className="w-full object-contain max-h-64" />
               </div>
               <p className="text-sm text-muted-foreground text-center">
                 Убедитесь, что документ хорошо виден и читаемый

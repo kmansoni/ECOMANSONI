@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
 import { checkText } from "@/lib/moderation/textFilter";
 import { logger } from "@/lib/logger";
+import { dbLoose } from "@/lib/supabase";
 
 export type ReportReason =
   | "spam"
@@ -38,7 +39,7 @@ export function useContentModeration() {
       description?: string
     ): Promise<ContentReport | null> => {
       if (!user) return null;
-      const { data, error } = await (supabase as any)
+      const { data, error } = await dbLoose
         .from("content_reports")
         .insert({
           reporter_id: user.id,
@@ -69,7 +70,7 @@ export function useContentModeration() {
 
   const getMyReports = useCallback(async (): Promise<ContentReport[]> => {
     if (!user) return [];
-    const { data, error } = await (supabase as any)
+    const { data, error } = await dbLoose
       .from("content_reports")
       .select("*")
       .eq("reporter_id", user.id)

@@ -207,7 +207,7 @@ export function SettingsActivitySection({ isDark, currentScreen, onNavigate, onB
                       <button key={item.id} onClick={() => navigate("/reels")}
                         className={cn("w-full px-5 py-4 text-left border-b flex items-center gap-3", isDark ? "border-white/10 hover:bg-white/5" : "border-white/20 hover:bg-muted/30")}>
                         <div className={cn("w-14 h-14 rounded-xl overflow-hidden border shrink-0", isDark ? "border-white/10" : "border-white/20")}>
-                          {item.reel_thumbnail_url ? <img src={item.reel_thumbnail_url} alt="reel" className="w-full h-full object-cover" />
+                          {item.reel_thumbnail_url ? <img loading="lazy" src={item.reel_thumbnail_url} alt="reel" className="w-full h-full object-cover" />
                             : <div className={cn("w-full h-full grid place-items-center text-xs", isDark ? "text-white/50" : "text-white/70")}>Reel</div>}
                         </div>
                         <div className="min-w-0 flex-1">
