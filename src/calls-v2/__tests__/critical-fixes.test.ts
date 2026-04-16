@@ -159,6 +159,7 @@ describe('C-1: ICE restart on transport failed', () => {
 // ─── C-2: requireSenderReceiverAccessForE2ee defaults to true ────────────────
 describe('C-2: requireSenderReceiverAccessForE2ee default', () => {
   it('defaults to true (strict E2EE enforcement)', () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { Device } = require('mediasoup-client') as { Device: new () => unknown };
     void Device;
     // Access private field via casting

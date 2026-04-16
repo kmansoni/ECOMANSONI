@@ -80,7 +80,7 @@ export function VideoCircleMessage({ videoUrl, duration, isOwn }: VideoCircleMes
       el.currentTime = timeRef.current;
       el.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
     };
-    el.readyState >= 1 ? seek() : el.addEventListener('loadedmetadata', seek, { once: true });
+    if (el.readyState >= 1) seek(); else el.addEventListener('loadedmetadata', seek, { once: true });
   }, []);
 
   const borderColor = isOwn ? "border-primary" : "border-muted-foreground/30";
