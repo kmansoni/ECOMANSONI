@@ -794,7 +794,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       }
       await client.e2eeCaps({
         insertableStreams: hasInsertableStreams,
-        sframe: (REQUIRE_SFRAME || FRAME_E2EE_ADVERTISE_SFRAME) && hasInsertableStreams,
+        sframe: hasInsertableStreams,
         doubleRatchet: true,
         supportedCipherSuites: ["DOUBLE_RATCHET_P256_AES128GCM"],
       });
