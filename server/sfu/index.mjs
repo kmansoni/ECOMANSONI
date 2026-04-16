@@ -206,6 +206,31 @@ function verifyJoinToken(joinToken, expectedRoomId) {
   }
 }
 
+const CALLS_JOIN_TOKEN_TTL_SEC = Math.max(30, Number(process.env.CALLS_JOIN_TOKEN_TTL_SEC ?? "600"));
+
+function issueJoinToken({ roomId, callId, allowedUserIds = [] }) {
+  const normalized = Array.isArray(allowedUserIds)
+    ? allowedUserIds.filter((id) => typeof id === "string" && id.trim()).map((id) => id.trim())
+    : [];
+  const payload = {
+    roomId,
+    callId,
+    allowedUserIds: normalized,
+    jti: uuid(),
+    exp: Math.floor(Date.now() / 1000) + CALLS_JOIN_TOKEN_TTL_SEC,
+  };
+  const encodedPayload = Buffer.from(JSON.stringify(payload))
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+  const sig = crypto
+    .createHmac("sha256", getJoinTokenSecret())
+    .update(encodedPayload)
+    .digest("base64url");
+  return `${encodedPayload}.${sig}`;
+}
+
 function isObject(value) {
   return !!value && typeof value === "object";
 }
@@ -572,18 +597,21 @@ wss.on("connection", (ws, req) => {
 
       case "ROOM_CREATE": {
         if (!ensureAuth()) return;
-        // S2: joinToken verification for ROOM_CREATE too
-        const createTokenPayload = verifyJoinToken(frame.payload?.joinToken);
-        if (!createTokenPayload) {
-          ack(ws, frame.msgId, false, wsError("UNAUTHORIZED", "Invalid or missing joinToken for ROOM_CREATE", {}, false));
-          return;
-        }
-        const roomId = frame.payload?.roomId ?? createTokenPayload.roomId ?? `room_${uuid().slice(0, 8)}`;
-        const callId = frame.payload?.callId ?? createTokenPayload.callId ?? `call_${uuid().slice(0, 8)}`;
+        const roomId = frame.payload?.roomId ?? `room_${uuid().slice(0, 8)}`;
+        const callId = frame.payload?.callId ?? `call_${uuid().slice(0, 8)}`;
         const preferredRegion = frame.payload?.preferredRegion ?? REGION;
+        const allowedUserIds = Array.isArray(frame.payload?.allowedUserIds)
+          ? frame.payload.allowedUserIds.filter((id) => typeof id === "string" && id.trim())
+          : [];
+        if (!allowedUserIds.includes(conn.userId)) {
+          allowedUserIds.push(conn.userId);
+        }
+
         const room = ensureRoom(roomId, callId, preferredRegion);
         const created = await mediaPlane.createRoom(roomId);
         room.routerRtpCapabilities = created?.routerRtpCapabilities ?? { codecs: [] };
+
+        const joinToken = issueJoinToken({ roomId, callId, allowedUserIds });
 
         send(ws, {
           v: 1,
@@ -591,7 +619,16 @@ wss.on("connection", (ws, req) => {
           msgId: uuid(),
           ts: nowMs(),
           seq: conn.expectedSeq++,
-          payload: { roomId: room.roomId, callId: room.callId, region: room.region, nodeId: room.nodeId, epoch: room.epoch, memberSetVersion: room.memberSetVersion },
+          payload: { roomId: room.roomId, callId: room.callId, region: room.region, nodeId: room.nodeId, epoch: room.epoch, memberSetVersion: room.memberSetVersion, joinToken },
+        });
+
+        send(ws, {
+          v: 1,
+          type: "ROOM_JOIN_SECRET",
+          msgId: uuid(),
+          ts: nowMs(),
+          seq: conn.expectedSeq++,
+          payload: { roomId: room.roomId, joinToken },
         });
 
         ack(ws, frame.msgId, true);
