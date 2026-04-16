@@ -1907,6 +1907,18 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
           });
         });
 
+        // Set initial E2EE epoch key before producing (H-6: fail-closed requires key)
+        if (REQUIRE_SFRAME && CallMediaEncryption.isSupported()) {
+          const kx = callKeyExchangeRef.current;
+          const enc = callMediaEncryptionRef.current;
+          if (kx && enc) {
+            const epoch = e2eeEpochRef.current ?? 0;
+            const epochKey = await kx.createEpochKey(epoch);
+            await enc.setEncryptionKey(epochKey);
+            logger.info("[VideoCallContext] calls-v2 initial E2EE key set", { roomId, epoch });
+          }
+        }
+
         // Produce all live local tracks + attach SFrame sender transforms
         const tracks = stream.getTracks().filter((track) => track.readyState === "live");
         for (const track of tracks) {
