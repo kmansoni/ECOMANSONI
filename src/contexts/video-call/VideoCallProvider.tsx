@@ -1480,10 +1480,11 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       mediaBootstrapBlockedUntilRef.current.set(roomId, now + MEDIA_BOOTSTRAP_RETRY_BACKOFF_MS);
       mediaBootstrapErrorLogAtRef.current.set(roomId, now);
 
-      markMediaBootstrapFailed("calls_v2_media_bootstrap_failed", {
+      markMediaBootstrapFailed(`calls_v2_media_bootstrap_failed: ${error instanceof Error ? error.message : String(error)}`, {
         roomId,
         callId,
         message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
       });
 
       if (shouldLog) {
@@ -1940,7 +1941,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         mediaBootstrapToastShownRef.current.delete(roomId);
         logger.info("[VideoCallContext] calls-v2 media-bootstrap:done", { roomId, trackCount: tracks.length });
       } catch (err) {
-        logger.warn("[VideoCallContext] calls-v2 media bootstrap failed", err);
+        logger.error("[VideoCallContext] calls-v2 media bootstrap failed", err);
         reportMediaBootstrapFailure(roomId, callId, err);
       }
     },

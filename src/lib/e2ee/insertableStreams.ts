@@ -227,6 +227,7 @@ export class MediaEncryptor {
       });
 
       self.addEventListener('rtctransform', (event) => {
+        try {
         const transformer = event.transformer;
         const options = transformer.options || {};
         const operation = options.operation;
@@ -283,6 +284,9 @@ export class MediaEncryptor {
         });
 
         transformer.readable.pipeThrough(t).pipeTo(transformer.writable).catch((err) => { self.postMessage({ type: 'pipe_error', message: String(err) }); });
+        } catch (initErr) {
+          self.postMessage({ type: 'error', direction: 'encrypt', message: 'rtctransform init: ' + String(initErr) });
+        }
       });
     `;
 
