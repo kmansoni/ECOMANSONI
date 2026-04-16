@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { Car, ShoppingBag, Home, Shield, Briefcase, Building2, TrendingUp, Plane, Hotel, Film, Dumbbell, GraduationCap, Music, Truck, Users, Mail, Bot, Navigation, Bug, Radio, Clapperboard } from "lucide-react";
+import { Car, ShoppingBag, Home, Shield, Briefcase, Building2, TrendingUp, Plane, Hotel, Film, Dumbbell, GraduationCap, Music, Truck, Users, Mail, Bot, Navigation, Bug, Radio, Clapperboard, Siren } from "lucide-react";
 import logoImage from "@/assets/logo.png";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
@@ -46,6 +46,7 @@ const services: ServiceItem[] = [
   { id: "live", name: "Прямой эфир", icon: Radio, route: "/live/explore", available: true },
   { id: "navigation", name: "Навигация", icon: Navigation, route: "/navigation", available: true },
   { id: "taxi", name: "Такси", icon: Car, route: "/taxi", available: true },
+  { id: "crisis-mesh", name: "Crisis Mesh", icon: Siren, route: "/crisis-mesh", available: true },
   // Not routed yet: keep in "Coming Soon" to avoid dead-click UX.
   { id: "carsharing", name: "Каршеринг", icon: Car, available: false },
   { id: "delivery", name: "Доставка", icon: Truck, available: false },
