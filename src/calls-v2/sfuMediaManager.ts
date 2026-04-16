@@ -7,6 +7,11 @@ import {
   type RelaySelectionEvent,
 } from './relayStats';
 
+// Chrome Insertable Streams: encodedInsertableStreams не входит в стандарт RTCConfiguration
+interface RTCConfigE2EE extends RTCConfiguration {
+  encodedInsertableStreams?: boolean;
+}
+
 /**
  * SFU Media Manager — управляет mediasoup-client Device lifecycle.
  *
@@ -187,6 +192,8 @@ export class SfuMediaManager {
       iceCandidates: options.iceCandidates,
       dtlsParameters: options.dtlsParameters,
       ...(options.iceServers && options.iceServers.length > 0 ? { iceServers: options.iceServers } : {}),
+      // encodedInsertableStreams конфликтует с RTCRtpScriptTransform — включаем только для legacy Chrome
+      ...(!('RTCRtpScriptTransform' in globalThis) ? { additionalSettings: { encodedInsertableStreams: true } as Partial<RTCConfigE2EE> } : {}),
     });
 
     this.sendTransport.on('connect', ({ dtlsParameters }, callback, errback) => {
@@ -244,6 +251,8 @@ export class SfuMediaManager {
       iceCandidates: options.iceCandidates,
       dtlsParameters: options.dtlsParameters,
       ...(options.iceServers && options.iceServers.length > 0 ? { iceServers: options.iceServers } : {}),
+      // encodedInsertableStreams конфликтует с RTCRtpScriptTransform — включаем только для legacy Chrome
+      ...(!('RTCRtpScriptTransform' in globalThis) ? { additionalSettings: { encodedInsertableStreams: true } as unknown as Partial<RTCConfiguration> } : {}),
     });
 
     this.recvTransport.on('connect', ({ dtlsParameters }, callback, errback) => {

@@ -338,44 +338,8 @@ export class MediaEncryptor {
     const method = MediaEncryptor.getTransformMethod();
     logger.debug('[E2EE] setupSenderTransform', { trackId, method });
 
-    // Method 1: Insertable Streams via createEncodedStreams (Chrome 86+, Edge)
-    // try/catch: после produce() кадры уже могут течь — Chrome кидает "Too late"
-    if (typeof (sender as RTCRtpSenderWithStreams).createEncodedStreams === 'function') {
-      try {
-        const { readable, writable } = (sender as RTCRtpSenderWithStreams).createEncodedStreams!() as TransformEntry;
-
-        const transformStream = new TransformStream({
-          transform: async (frame: EncodedFrame, controller: TransformStreamDefaultController<EncodedFrame>) => {
-            try {
-              const encryptedData = await this.sframeContext.encryptFrame(frame.data as ArrayBuffer);
-              frame.data = encryptedData;
-              this.stats.encryptedFrames++;
-              this.config.onFrame?.('encrypt', encryptedData.byteLength);
-              controller.enqueue(frame);
-            } catch (error) {
-              this.stats.encryptionErrors++;
-              this.config.onError?.(error as Error, 'encrypt');
-              // НЕ передаём незашифрованный кадр — безопаснее потерять кадр, чем слить открытые данные
-            }
-          },
-        });
-
-        const abortController = new AbortController();
-        readable.pipeThrough(transformStream).pipeTo(writable, { signal: abortController.signal }).catch((err: unknown) => {
-          if ((err as { name?: string } | null)?.name === 'AbortError') return;
-          logger.error('[MediaEncryptor] Sender pipe error — recovery needed', { error: err, trackId });
-          this.removeTransform(trackId);
-          this.config.onPipeBreak?.({ trackId, direction: 'encrypt' });
-        });
-
-        this.activeTransforms.set(trackId, { readable, writable, abortController });
-        return;
-      } catch (e) {
-        logger.warn('[MediaEncryptor] createEncodedStreams failed (sender), fallback to RTCRtpScriptTransform', e);
-      }
-    }
-
-    // Method 2: RTCRtpScriptTransform (Firefox/Safari compatible path, also Chrome 118+ fallback)
+    // Method 1: RTCRtpScriptTransform (Chrome 118+, Firefox 117+, Safari 15.4+)
+    // Приоритетный путь: не конфликтует с encodedInsertableStreams, нет timing-проблем
     if ('RTCRtpScriptTransform' in globalThis) {
       const senderWithStreams = sender as RTCRtpSenderWithStreams;
       const RTCRtpScriptTransformCtor = (globalThis as GlobalWithScriptTransform).RTCRtpScriptTransform!;
@@ -395,9 +359,45 @@ export class MediaEncryptor {
       return;
     }
 
+    // Method 2: createEncodedStreams (legacy Chrome 86–117)
+    // Требует encodedInsertableStreams: true на PeerConnection
+    if (typeof (sender as RTCRtpSenderWithStreams).createEncodedStreams === 'function') {
+      try {
+        const { readable, writable } = (sender as RTCRtpSenderWithStreams).createEncodedStreams!() as TransformEntry;
+
+        const transformStream = new TransformStream({
+          transform: async (frame: EncodedFrame, controller: TransformStreamDefaultController<EncodedFrame>) => {
+            try {
+              const encryptedData = await this.sframeContext.encryptFrame(frame.data as ArrayBuffer);
+              frame.data = encryptedData;
+              this.stats.encryptedFrames++;
+              this.config.onFrame?.('encrypt', encryptedData.byteLength);
+              controller.enqueue(frame);
+            } catch (error) {
+              this.stats.encryptionErrors++;
+              this.config.onError?.(error as Error, 'encrypt');
+            }
+          },
+        });
+
+        const abortController = new AbortController();
+        readable.pipeThrough(transformStream).pipeTo(writable, { signal: abortController.signal }).catch((err: unknown) => {
+          if ((err as { name?: string } | null)?.name === 'AbortError') return;
+          logger.error('[MediaEncryptor] Sender pipe error — recovery needed', { error: err, trackId });
+          this.removeTransform(trackId);
+          this.config.onPipeBreak?.({ trackId, direction: 'encrypt' });
+        });
+
+        this.activeTransforms.set(trackId, { readable, writable, abortController });
+        return;
+      } catch (e) {
+        logger.warn('[MediaEncryptor] createEncodedStreams failed (sender)', e);
+      }
+    }
+
     // C-4: No E2EE transform support at all — fail-closed
     throw new Error(
-      '[MediaEncryptor] Neither Insertable Streams (createEncodedStreams) nor RTCRtpScriptTransform ' +
+      '[MediaEncryptor] Neither RTCRtpScriptTransform nor createEncodedStreams ' +
       'is supported on this browser. E2EE media encryption unavailable.'
     );
   }
@@ -410,8 +410,30 @@ export class MediaEncryptor {
     const method = MediaEncryptor.getTransformMethod();
     logger.debug('[E2EE] setupReceiverTransform', { trackId, peerId, method });
 
-    // Method 1: Insertable Streams via createEncodedStreams (Chrome 86+, Edge)
-    // try/catch: после produce() кадры уже могут течь — Chrome кидает "Too late"
+    // Method 1: RTCRtpScriptTransform (Chrome 118+, Firefox 117+, Safari 15.4+)
+    if ('RTCRtpScriptTransform' in globalThis) {
+      const receiverWithStreams = receiver as RTCRtpReceiverWithStreams;
+      const RTCRtpScriptTransformCtor = (globalThis as GlobalWithScriptTransform).RTCRtpScriptTransform!;
+      const worker = this._createScriptWorker(trackId);
+      receiverWithStreams.transform = new RTCRtpScriptTransformCtor(worker, {
+        operation: 'decrypt',
+        trackId,
+        peerId,
+      });
+
+      const keyState = this.currentDecryptionKeys.get(peerId);
+      if (keyState) {
+        worker.postMessage({
+          type: 'setDecryptionKey',
+          key: keyState.key,
+          keyId: keyState.keyId,
+          peerId,
+        });
+      }
+      return;
+    }
+
+    // Method 2: createEncodedStreams (legacy Chrome 86–117)
     if (typeof (receiver as RTCRtpReceiverWithStreams).createEncodedStreams === 'function') {
       try {
         const { readable, writable } = (receiver as RTCRtpReceiverWithStreams).createEncodedStreams!() as TransformEntry;
@@ -448,36 +470,13 @@ export class MediaEncryptor {
         this.activeTransforms.set(trackId, { readable, writable, abortController });
         return;
       } catch (e) {
-        logger.warn('[MediaEncryptor] createEncodedStreams failed (receiver), fallback to RTCRtpScriptTransform', e);
+        logger.warn('[MediaEncryptor] createEncodedStreams failed (receiver)', e);
       }
-    }
-
-    // Method 2: RTCRtpScriptTransform (Firefox/Safari compatible path, also Chrome 118+ fallback)
-    if ('RTCRtpScriptTransform' in globalThis) {
-      const receiverWithStreams = receiver as RTCRtpReceiverWithStreams;
-      const RTCRtpScriptTransformCtor = (globalThis as GlobalWithScriptTransform).RTCRtpScriptTransform!;
-      const worker = this._createScriptWorker(trackId);
-      receiverWithStreams.transform = new RTCRtpScriptTransformCtor(worker, {
-        operation: 'decrypt',
-        trackId,
-        peerId,
-      });
-
-      const keyState = this.currentDecryptionKeys.get(peerId);
-      if (keyState) {
-        worker.postMessage({
-          type: 'setDecryptionKey',
-          key: keyState.key,
-          keyId: keyState.keyId,
-          peerId,
-        });
-      }
-      return;
     }
 
     // C-4: No E2EE transform support — fail-closed
     throw new Error(
-      '[MediaEncryptor] Neither Insertable Streams (createEncodedStreams) nor RTCRtpScriptTransform ' +
+      '[MediaEncryptor] Neither RTCRtpScriptTransform nor createEncodedStreams ' +
       'is supported on this browser. E2EE media decryption unavailable.'
     );
   }
@@ -535,11 +534,12 @@ export class MediaEncryptor {
    * - null — E2EE недоступен
    */
   static getTransformMethod(): 'encodedStreams' | 'scriptTransform' | null {
-    if (typeof RTCRtpSender !== 'undefined' && 'createEncodedStreams' in RTCRtpSender.prototype) {
-      return 'encodedStreams';
-    }
+    // RTCRtpScriptTransform приоритетнее: работает без encodedInsertableStreams и без timing-проблем
     if ('RTCRtpScriptTransform' in globalThis) {
       return 'scriptTransform';
+    }
+    if (typeof RTCRtpSender !== 'undefined' && 'createEncodedStreams' in RTCRtpSender.prototype) {
+      return 'encodedStreams';
     }
     return null;
   }

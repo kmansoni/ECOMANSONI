@@ -832,6 +832,11 @@ wss.on("connection", (ws, req) => {
           ack(ws, frame.msgId, false, wsError("VALIDATION_FAILED", "dtlsParameters must be non-empty with fingerprints", {}, false));
           return;
         }
+        // Идемпотентный guard: повторный TRANSPORT_CONNECT — просто ACK
+        if (transport.connected) {
+          ack(ws, frame.msgId, true);
+          return;
+        }
         await mediaPlane.connectTransport(room.roomId, transportId, frame.payload?.dtlsParameters ?? {});
         transport.connected = true;
         ack(ws, frame.msgId, true);
