@@ -142,4 +142,60 @@ describe('EpochGuard', () => {
     expect(state.currentEpoch).toBe(2);
     expect(state.mediaAllowed).toBe(true);
   });
+
+  // ─── Regression: rollbackFailedEpoch observability (BUG #3) ─────────────
+  it('rollbackFailedEpoch() успешно откатывает epoch после неудачной эскалации', () => {
+    guard.markAuthenticated();
+    guard.markRoomJoined(1);
+    guard.markE2eeReady(1);
+    expect(guard.getEpoch()).toBe(1);
+    expect(guard.isMediaAllowed()).toBe(true);
+
+    // Imitate начало rekey: epoch advanced → media blocked
+    guard.markEpochAdvanced(2);
+    expect(guard.isMediaAllowed()).toBe(false);
+
+    // Rekey не удался → откат на 1
+    guard.rollbackFailedEpoch(1);
+    expect(guard.getEpoch()).toBe(1);
+    expect(guard.isE2eeReady()).toBe(true);
+    expect(guard.isMediaAllowed()).toBe(true);
+  });
+
+  it('rollbackFailedEpoch() с target > current → violation, не делает rollback вперёд', () => {
+    guard.markAuthenticated();
+    guard.markRoomJoined(1);
+    guard.markE2eeReady(1);
+
+    const violations: string[] = [];
+    guard.onViolation((v) => violations.push(v));
+
+    // Попытка "откатиться" на 5 при current=1 — невалидно
+    guard.rollbackFailedEpoch(5);
+
+    expect(guard.getEpoch()).toBe(1); // не изменился
+    expect(violations.some((v) => v.includes('rollbackFailedEpoch'))).toBe(true);
+  });
+
+  it('rollbackFailedEpoch() идемпотентен при повторном вызове с той же целью', () => {
+    // BUG #3: safety-таймер и abortRekey могут оба дёрнуть rollbackFailedEpoch;
+    // повторный вызов должен быть безопасен (не ломать состояние, не давать violation).
+    guard.markAuthenticated();
+    guard.markRoomJoined(1);
+    guard.markE2eeReady(1);
+    guard.markEpochAdvanced(2);
+
+    const violations: string[] = [];
+    guard.onViolation((v) => violations.push(v));
+
+    guard.rollbackFailedEpoch(1);
+    const firstEpoch = guard.getEpoch();
+    const firstAllowed = guard.isMediaAllowed();
+
+    // Повторный вызов — должен быть silent no-op
+    guard.rollbackFailedEpoch(1);
+    expect(guard.getEpoch()).toBe(firstEpoch);
+    expect(guard.isMediaAllowed()).toBe(firstAllowed);
+    expect(violations.length).toBe(0); // повторный вызов не должен генерировать violation
+  });
 });

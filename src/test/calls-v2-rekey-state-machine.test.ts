@@ -258,4 +258,47 @@ describe('RekeyStateMachine', () => {
     vi.advanceTimersByTime(200);
     expect(sm.getState()).toBe('IDLE');
   });
+
+  // ─── Regression: late-joiner в REKEY_PENDING требует ACK после onRekeyBeginAcked ───
+  it('addPeer() during REKEY_PENDING: late-joiner учитывается в квор', () => {
+    // Фикс BUG #2: раньше addPeer работал только в KEY_DELIVERY, из-за чего
+    // пиры, подключившиеся между initiateRekey() и onRekeyBeginAcked(), молча
+    // игнорировались → квор считался по устаревшему списку пиров.
+    sm.setActivePeers(['peer1']);
+    sm.initiateRekey();
+    // peer2 подключается ДО onRekeyBeginAcked (в REKEY_PENDING)
+    sm.addPeer('peer2');
+    sm.onRekeyBeginAcked(1);
+    expect(sm.getState()).toBe('KEY_DELIVERY');
+
+    sm.onKeyAckReceived('peer1', 1, 'ack1');
+    // Без фикса: квор бы сложился на одном peer1
+    expect(sm.getState()).toBe('KEY_DELIVERY');
+
+    sm.onKeyAckReceived('peer2', 1, 'ack2');
+    expect(sm.getState()).toBe('REKEY_COMMITTED');
+  });
+
+  // ─── Regression: setActivePeers() в REKEY_PENDING делает ресинхронизацию ───
+  it('setActivePeers() during REKEY_PENDING: добавляет новых, удаляет ушедших', () => {
+    // Фикс BUG #2: раньше setActivePeers в REKEY_PENDING игнорировался
+    // целиком — состояние peerAcks отставало от актуального списка пиров.
+    sm.setActivePeers(['peer1', 'peer2']);
+    sm.initiateRekey();
+
+    // Ресинхронизация в REKEY_PENDING: peer2 ушёл, peer3 пришёл
+    sm.setActivePeers(['peer1', 'peer3']);
+    sm.onRekeyBeginAcked(1);
+
+    sm.onKeyAckReceived('peer1', 1, 'a1');
+    expect(sm.getState()).toBe('KEY_DELIVERY'); // peer3 ещё не заACKал
+
+    // ACK от peer2 должен быть проигнорирован — его уже нет в активных
+    const staleAck = sm.onKeyAckReceived('peer2', 1, 'stale');
+    expect(staleAck).toBe(false);
+    expect(sm.getState()).toBe('KEY_DELIVERY');
+
+    sm.onKeyAckReceived('peer3', 1, 'a3');
+    expect(sm.getState()).toBe('REKEY_COMMITTED');
+  });
 });

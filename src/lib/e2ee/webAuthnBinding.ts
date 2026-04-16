@@ -50,14 +50,27 @@ const IDB_DB    = 'e2ee-webauthn';
 // ─── PRF Availability Check ──────────────────────────────────────────────────
 
 /**
- * Проверяет поддержку PRF extension в браузере.
- * Safari < 17.4 и Firefox < 119 не поддерживают PRF.
+ * Best-effort проверка того, что браузер поддерживает WebAuthn API,
+ * на котором теоретически может работать PRF extension.
+ *
+ * ВАЖНО: это НЕ гарантирует реальную поддержку PRF — спецификация не даёт
+ * способа проверить её без попытки создания credential с
+ * `extensions: { prf: {} }` и анализа `getClientExtensionResults().prf`.
+ * Такая проверка требует взаимодействия с пользователем и potential user-visible
+ * prompt, поэтому здесь проверяем только наличие `PublicKeyCredential`.
+ *
+ * Используется как быстрый gate перед более дорогими операциями;
+ * реальное отсутствие PRF выявится позже при попытке registerWebAuthnBinding.
+ *
+ * Возвращает false в SSR / no-WebAuthn средах (Safari <13, Firefox без WebAuthn).
  */
 export function isWebAuthnPRFSupported(): boolean {
+  if (typeof navigator === 'undefined' || typeof window === 'undefined') {
+    return false;
+  }
   return (
-    typeof navigator !== 'undefined' &&
     typeof navigator.credentials === 'object' &&
-    typeof (window?.PublicKeyCredential as any)?.isConditionalMediationAvailable === 'function'
+    typeof window.PublicKeyCredential === 'function'
   );
 }
 

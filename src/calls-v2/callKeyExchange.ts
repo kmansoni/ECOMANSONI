@@ -111,6 +111,28 @@ export class CallKeyExchange {
   }
 
   /**
+   * Вернуть стабильный sessionId этой сессии ключей.
+   * Используется при сборке senderIdentity в KEY_PACKAGE —
+   * должен совпадать с sessionId, который подписан ECDSA-подписью.
+   *
+   * @throws Error если identity не установлена (конструктор гарантирует установку,
+   *   но метод сохраняет явную проверку на случай будущих рефакторингов).
+   */
+  getSessionId(): string {
+    if (!this.identity?.sessionId) {
+      throw new Error('[CallKeyExchange] getSessionId: identity is not initialized');
+    }
+    return this.identity.sessionId;
+  }
+
+  /**
+   * Вернуть userId/deviceId этой сессии — используется в VideoCallProvider при сборке senderIdentity.
+   */
+  getIdentity(): CallIdentity {
+    return { ...this.identity };
+  }
+
+  /**
    * Экспортировать наш ECDH public key в base64 (65-byte uncompressed P-256).
    * Передаётся пирам через senderPublicKey в KEY_PACKAGE.
    */

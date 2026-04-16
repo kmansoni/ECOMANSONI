@@ -278,16 +278,6 @@ function isValidTransportCreatedPayload(
   return true;
 }
 
-function toBase64Utf8(value: string): string {
-  return btoa(
-    encodeURIComponent(value).replace(/%([0-9A-F]{2})/gi, (_, hex) =>
-      String.fromCharCode(parseInt(hex, 16))
-    )
-  );
-}
-// Suppress "declared but never used" — toBase64Utf8 is a utility kept for future use
-void toBase64Utf8;
-
 function makeRandomB64(size: number): string {
   const buf = new Uint8Array(size);
   crypto.getRandomValues(buf);
@@ -986,6 +976,11 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
             // for them. We send our senderPublicKey so the leader can ECDH back to us.
             // ciphertext = our senderPublicKey again (discovery packet; no epoch key wrapped yet).
             // Leader on receipt will createKeyPackage(our_pub, epoch) and send back wrapped epoch key.
+            const sessionIdForDiscovery = callKeyExchangeRef.current?.getSessionId();
+            if (!sessionIdForDiscovery) {
+              logger.error("[VideoCallContext] KEY_PACKAGE discovery aborted: CallKeyExchange not initialized");
+              return;
+            }
             void client.keyPackage({
               roomId,
               targetDeviceId: leaderDeviceId,
@@ -997,7 +992,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
               senderIdentity: {
                 userId: user?.id ?? "",
                 deviceId: getStableCallsDeviceId(),
-                sessionId: (callKeyExchangeRef.current as unknown as { identity?: { sessionId?: string } })?.identity?.sessionId ?? crypto.randomUUID(),
+                sessionId: sessionIdForDiscovery,
                 // identityPubKeyJwk is passed as part of senderIdentity for ECDSA verification
                 ...({ identityPubKeyJwk } as Record<string, unknown>),
               },
@@ -1107,6 +1102,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
 
                       // createKeyPackage uses ECDH with sender's public key
                       const pkg = await keyExchange.createKeyPackage(senderPublicKeyB64, epoch);
+                      const leaderSessionId = keyExchange.getSessionId();
                       void client.keyPackage({
                         roomId,
                         targetDeviceId: senderDeviceId,
@@ -1118,7 +1114,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
                         senderIdentity: {
                           userId: user?.id ?? "",
                           deviceId: getStableCallsDeviceId(),
-                          sessionId: (callKeyExchangeRef.current as unknown as { identity?: { sessionId?: string } })?.identity?.sessionId ?? crypto.randomUUID(),
+                          sessionId: leaderSessionId,
                         },
                       }).catch((err) => {
                         logger.warn("[VideoCallContext] leader KEY_PACKAGE response failed", err);
@@ -1196,25 +1192,28 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
 
       // B: receive call.invite from the WS relay so incoming calls don't need
       // Supabase Realtime / DB polling as the primary delivery channel.
-      client.on("call.invite" as never, (frame) => {
-        const p = (frame as { payload?: Record<string, unknown> }).payload ?? {};
+      client.on("call.invite", (frame) => {
+        const p = (frame.payload ?? {}) as Record<string, unknown>;
         const callId = p.callId as string | undefined;
         const callType = (p.callType ?? p.call_type) as string | undefined;
         if (!callId) return;
         // Construct a minimal VideoCall-compatible shape so existing callee
         // UI (banner + ringtone) works without a DB round-trip.
-        const syntheticCall = {
+        const syntheticCall: VideoCall & { calls_v2_room_id: string | null; calls_v2_join_token: string | null } = {
           id: callId,
-          caller_id: p.from as string ?? "",
+          caller_id: (p.from as string | undefined) ?? "",
           callee_id: user?.id ?? "",
-          call_type: (callType === "voice" ? "audio" : (callType ?? "audio")) as "audio" | "video",
-          status: "ringing" as const,
+          conversation_id: (p.conversationId as string | undefined) ?? null,
+          call_type: callType === "voice" ? "audio" : (callType === "video" ? "video" : "audio"),
+          status: "ringing",
           created_at: new Date().toISOString(),
-          calls_v2_room_id: (p.callsV2RoomId ?? null) as string | null,
-          calls_v2_join_token: (p.callsV2JoinToken ?? null) as string | null,
+          started_at: null,
+          ended_at: null,
+          calls_v2_room_id: (p.callsV2RoomId as string | null | undefined) ?? null,
+          calls_v2_join_token: (p.callsV2JoinToken as string | null | undefined) ?? null,
         };
         logger.info("[VideoCallContext] WS call.invite received", { callId: callId.slice(0, 8) });
-        setPendingIncomingCall(syntheticCall as never);
+        setPendingIncomingCall(syntheticCall);
       });
 
       callsWsRef.current = client;
@@ -1287,11 +1286,11 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
 
           // Persist room bootstrap hints for callee-side answer flow.
           const { error: persistRoomError } = await supabase
-            .from("video_calls" as never)
+            .from("video_calls")
             .update({
               calls_v2_room_id: roomId,
               calls_v2_join_token: joinToken ?? null,
-            } as never)
+            })
             .eq("id", callId);
           if (persistRoomError) {
             logger.warn("[VideoCallContext] calls-v2 room hints persist failed", {
@@ -2041,19 +2040,15 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       };
       try {
         const { data: freshCall } = await supabase
-          .from("video_calls" as never)
-          .select("id, calls_v2_room_id, calls_v2_join_token" as never)
+          .from("video_calls")
+          .select("id, calls_v2_room_id, calls_v2_join_token")
           .eq("id", call.id)
           .maybeSingle();
-        if (freshCall && typeof freshCall === "object") {
-          const fresh = freshCall as {
-            calls_v2_room_id?: string | null;
-            calls_v2_join_token?: string | null;
-          };
+        if (freshCall) {
           resolvedCall = {
             ...resolvedCall,
-            calls_v2_room_id: fresh.calls_v2_room_id ?? null,
-            calls_v2_join_token: fresh.calls_v2_join_token ?? null,
+            calls_v2_room_id: freshCall.calls_v2_room_id ?? null,
+            calls_v2_join_token: freshCall.calls_v2_join_token ?? null,
           };
         }
       } catch (roomHintError) {

@@ -40,6 +40,13 @@ export class EpochGuard {
   private readonly strict: boolean;
   private mediaBlockTimer: ReturnType<typeof setTimeout> | null = null;
   private preAdvanceEpoch: number = 0;
+  /**
+   * BUG #3 fix: защита от повторного rollback.
+   * JS однопоточен, поэтому реального race нет, но таймер безопасности и abortRekey
+   * могут оба вызвать rollbackFailedEpoch — флаг позволяет явно обнаружить и залогировать это.
+   * Также защищает от будущих реентрантных вызовов (если появится async-поведение).
+   */
+  private rollbackInProgress: boolean = false;
 
   /** Max time media can stay blocked during rekey before auto-rollback (ms) */
   private static readonly MEDIA_BLOCK_SAFETY_MS = 45_000;
@@ -130,18 +137,33 @@ export class EpochGuard {
   /**
    * Откат неудавшегося rekey: восстанавливает epoch и e2eeReady к предыдущему значению.
    * Вызывается при DEADLINE_EXCEEDED / REKEY_ABORTED, когда новый epoch не был подтверждён.
+   *
+   * BUG #3 fix: логирует повторный вызов (например, из safety-таймера и abortRekey одновременно).
+   * Повторный вызов и так был безопасен (monotonic guard ниже), но теперь мы это наблюдаем.
    */
   rollbackFailedEpoch(previousEpoch: number): void {
+    if (this.rollbackInProgress) {
+      logger.warn('[EpochGuard] rollback already in progress, skipping duplicate call', {
+        previousEpoch,
+        currentEpoch: this.state.currentEpoch,
+      });
+      return;
+    }
     if (previousEpoch > this.state.currentEpoch) {
       this.recordViolation(
         `rollbackFailedEpoch: target ${previousEpoch} > current ${this.state.currentEpoch}`
       );
       return;
     }
-    this.state.currentEpoch = previousEpoch;
-    this.state.e2eeReady = true;
-    this.clearMediaBlockTimer();
-    this.recomputeMediaAllowed();
+    this.rollbackInProgress = true;
+    try {
+      this.state.currentEpoch = previousEpoch;
+      this.state.e2eeReady = true;
+      this.clearMediaBlockTimer();
+      this.recomputeMediaAllowed();
+    } finally {
+      this.rollbackInProgress = false;
+    }
   }
 
   markRoomLeft(): void {

@@ -132,6 +132,11 @@ export class RekeyStateMachine {
    * M-5: During KEY_DELIVERY, setActivePeers is blocked to prevent race conditions
    * where a full peer list replacement could bypass pending ACK requirements.
    * Use addPeer/removePeer during active key delivery instead.
+   *
+   * BUG #2 fix: During REKEY_PENDING, setActivePeers MUST resync peerAcks to reflect
+   * the current peer list — otherwise late joiners (added between initiateRekey and
+   * onRekeyBeginAcked) are missing from peerAcks and quorum is incorrectly reached
+   * without their KEY_ACK.
    */
   setActivePeers(peerIds: string[]): void {
     if (this.state === 'KEY_DELIVERY') {
@@ -142,16 +147,38 @@ export class RekeyStateMachine {
       );
       return;
     }
-    this.activePeers = new Set(peerIds);
-    // Re-check quorum if state transitions to KEY_DELIVERY afterward (REKEY_PENDING case)
+    const next = new Set(peerIds);
+    this.activePeers = next;
+
+    if (this.state === 'REKEY_PENDING') {
+      // Add entries for new peers
+      for (const peerId of next) {
+        if (!this.peerAcks.has(peerId)) {
+          this.peerAcks.set(peerId, { peerId, acked: false });
+        }
+      }
+      // Drop entries for peers that are no longer active
+      for (const peerId of Array.from(this.peerAcks.keys())) {
+        if (!next.has(peerId)) {
+          this.peerAcks.delete(peerId);
+        }
+      }
+    }
   }
 
   addPeer(peerId: string): void {
     this.activePeers.add(peerId);
-    // Late-joiner in KEY_DELIVERY: must ACK before quorum — add pending entry
-    if (this.state === 'KEY_DELIVERY') {
+    // BUG #2 fix: add to peerAcks not only in KEY_DELIVERY but also in REKEY_PENDING —
+    // otherwise a peer joining between initiateRekey() and onRekeyBeginAcked() is
+    // silently excluded from the quorum and will receive UNKNOWN_PEER on KEY_ACK.
+    if (this.state === 'REKEY_PENDING' || this.state === 'KEY_DELIVERY') {
       if (!this.peerAcks.has(peerId)) {
         this.peerAcks.set(peerId, { peerId, acked: false });
+      }
+      // If we're already delivering keys and this was the only pending peer
+      // (e.g., empty room + first joiner acks immediately), recompute quorum.
+      if (this.state === 'KEY_DELIVERY') {
+        this.checkQuorum();
       }
     }
   }

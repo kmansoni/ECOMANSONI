@@ -200,4 +200,37 @@ describe('CallKeyExchange', () => {
     // Bob пытается обработать пакет зашифрованный для Charlie → должна быть ошибка
     await expect(bob.processKeyPackage(pkg)).rejects.toThrow();
   });
+
+  // ─── Regression: getSessionId() (BUG #1) ──────────────────────────────
+  it('getSessionId() возвращает sessionId из identity после initialize()', async () => {
+    await alice.initialize();
+    expect(alice.getSessionId()).toBe(aliceIdentity.sessionId);
+  });
+
+  it('getSessionId() бросает ошибку если identity.sessionId пуст', () => {
+    // Фикс BUG #1: раньше VideoCallProvider доставал identity?.sessionId с
+    // приведением к unknown, и в случае отсутствия подменял на
+    // crypto.randomUUID() — это ломало continuity sessionId между
+    // discovery KEY_PACKAGE и последующими сообщениями (leader не мог
+    // сопоставить пира). Теперь явный throw вместо тихого UUID.
+    const broken = new CallKeyExchange({ userId: 'x', deviceId: 'y', sessionId: '' });
+    expect(() => broken.getSessionId()).toThrow(/identity is not initialized/);
+  });
+
+  it('getIdentity() возвращает копию identity, не ссылку', async () => {
+    await alice.initialize();
+    const id1 = alice.getIdentity();
+    const id2 = alice.getIdentity();
+    expect(id1).toEqual(aliceIdentity);
+    expect(id1).not.toBe(id2); // разные объекты (копии)
+  });
+
+  it('getSessionId() стабилен между вызовами (не генерирует новый UUID)', async () => {
+    await alice.initialize();
+    const s1 = alice.getSessionId();
+    const s2 = alice.getSessionId();
+    const s3 = alice.getSessionId();
+    expect(s1).toBe(s2);
+    expect(s2).toBe(s3);
+  });
 });

@@ -630,21 +630,53 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
       if (!active || active.id !== activeCallId) return;
 
       void (async () => {
-        const { data } = await supabase
-          .from("video_calls" as never)
-          .select("*" as never)
-          .eq("id", activeCallId)
-          .maybeSingle();
+        try {
+          const { data, error } = await supabase
+            .from("video_calls")
+            .select("*")
+            .eq("id", activeCallId)
+            .maybeSingle();
 
-        if (data && typeof data === "object") {
-          applyCallRowUpdate(data as VideoCall);
+          if (error) {
+            logger.warn("video_call_sfu.poll_reconciliation_error", {
+              error,
+              callId: activeCallId,
+            });
+            return;
+          }
+          if (data) {
+            applyCallRowUpdate(data as VideoCall);
+          }
+        } catch (err) {
+          // BUG #4 fix: catch network/auth errors so Supabase rejections don't
+          // surface as unhandledrejection and kill the polling loop.
+          logger.warn("video_call_sfu.poll_reconciliation_failed", {
+            error: err,
+            callId: activeCallId,
+          });
         }
       })();
     }, 1500);
 
     return () => {
       window.clearInterval(pollTimer);
-      supabase.removeChannel(channel);
+      try {
+        const result = supabase.removeChannel(channel) as unknown;
+        // removeChannel may return a Promise in newer supabase-js — guard the rejection.
+        if (result && typeof (result as { catch?: unknown }).catch === "function") {
+          (result as Promise<unknown>).catch((err) => {
+            logger.warn("video_call_sfu.remove_channel_failed", {
+              error: err,
+              callId: activeCallId,
+            });
+          });
+        }
+      } catch (err) {
+        logger.warn("video_call_sfu.remove_channel_threw", {
+          error: err,
+          callId: activeCallId,
+        });
+      }
     };
   }, [applyCallRowUpdate, currentCall?.id, user?.id]);
 
