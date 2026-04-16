@@ -1,4 +1,5 @@
 import type { Dispatch, SetStateAction, Ref, ChangeEvent } from "react";
+import { useMemo } from "react";
 import { toast } from "sonner";
 import { logger } from "@/lib/logger";
 import { Button } from "@/components/ui/button";
@@ -28,6 +29,7 @@ import { buildChatBodyEnvelope, sendMessageV1 } from "@/lib/chat/sendMessageV1";
 import type { ChatMessage } from "@/hooks/useChat";
 import type { PinnedMessage } from "@/hooks/usePinnedMessages";
 import type { ScheduledMessage } from "@/hooks/useScheduledMessages";
+import type { LocalSearchMessage } from "@/hooks/useMessageSearch";
 
 interface DeleteDialogState {
   open: boolean;
@@ -139,6 +141,13 @@ export interface ChatConversationOverlaysProps {
   showMessageSearch: boolean;
   setShowMessageSearch: (v: boolean) => void;
 
+  /**
+   * Расшифрованный кэш сообщений для локального поиска в E2EE-чате.
+   * Если задан — MessageSearchSheet ищет по нему, минуя серверный ilike.
+   */
+  decryptedCache?: Record<string, string | null>;
+  senderProfiles?: Record<string, { display_name: string | null; avatar_url: string | null }>;
+
   showCreatePoll: boolean;
   setShowCreatePoll: (v: boolean) => void;
 
@@ -173,10 +182,40 @@ export function ChatConversationOverlays({
   showSchedulePicker, setShowSchedulePicker, pendingScheduleContent, setPendingScheduleContent,
   scheduleMessage, setInputText,
   showMessageSearch, setShowMessageSearch,
+  decryptedCache, senderProfiles,
   showCreatePoll, setShowCreatePoll,
   showChatSettings, setShowChatSettings,
   showJumpToPicker, setShowJumpToPicker,
 }: ChatConversationOverlaysProps) {
+  // Локальный индекс для E2EE-поиска — вычисляется только когда поиск открыт,
+  // чтобы не пересобирать его на каждом рендере чата.
+  const localSearchMessages = useMemo<LocalSearchMessage[] | undefined>(() => {
+    if (!showMessageSearch || !decryptedCache) return undefined;
+    const result: LocalSearchMessage[] = [];
+    for (const m of messages) {
+      const decrypted = decryptedCache[m.id];
+      // Для E2EE сообщений без расшифровки — пропускаем (не можем искать по шифротексту).
+      // Для plaintext (systems, shared posts) — используем m.content.
+      const text = typeof decrypted === "string" && decrypted.length > 0
+        ? decrypted
+        : (m.is_encrypted ? "" : m.content ?? "");
+      if (!text) continue;
+      const profile = senderProfiles?.[m.sender_id];
+      result.push({
+        id: m.id,
+        decryptedText: text,
+        sender_id: m.sender_id,
+        sender_name: profile?.display_name ?? null,
+        sender_avatar: profile?.avatar_url ?? null,
+        conversation_id: m.conversation_id,
+        created_at: m.created_at,
+        media_type: m.media_type ?? null,
+        media_url: m.media_url ?? null,
+      });
+    }
+    return result;
+  }, [showMessageSearch, decryptedCache, senderProfiles, messages]);
+
   return (
     <>
       <AlertDialog
@@ -456,6 +495,7 @@ export function ChatConversationOverlays({
         onOpenChange={setShowMessageSearch}
         conversationId={conversationId}
         onSelectMessage={(msgId) => scrollToMessage(msgId)}
+        localMessages={localSearchMessages}
       />
 
       {conversationId && (

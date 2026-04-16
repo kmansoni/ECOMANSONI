@@ -639,6 +639,8 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
         setInputText={setInputText}
         showMessageSearch={showMessageSearch}
         setShowMessageSearch={setShowMessageSearch}
+        decryptedCache={decryptedCache}
+        senderProfiles={senderProfiles}
         showCreatePoll={showCreatePoll}
         setShowCreatePoll={setShowCreatePoll}
         showChatSettings={showChatSettings}

@@ -3,7 +3,12 @@ import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { X, Search } from "lucide-react";
 import { format } from "date-fns";
 import { ru } from "date-fns/locale";
-import { useMessageSearch, MediaFilter, DateFilter } from "@/hooks/useMessageSearch";
+import {
+  useMessageSearch,
+  MediaFilter,
+  DateFilter,
+  LocalSearchMessage,
+} from "@/hooks/useMessageSearch";
 import { GradientAvatar } from "@/components/ui/gradient-avatar";
 
 interface MessageSearchSheetProps {
@@ -11,6 +16,11 @@ interface MessageSearchSheetProps {
   onOpenChange: (open: boolean) => void;
   conversationId?: string;
   onSelectMessage?: (messageId: string, conversationId: string) => void;
+  /**
+   * Локально расшифрованные сообщения E2EE-чата. Если передан — поиск идёт по
+   * ним вместо серверного ilike (по шифротексту он бесполезен).
+   */
+  localMessages?: LocalSearchMessage[];
 }
 
 const MEDIA_FILTERS: { label: string; value: MediaFilter }[] = [
@@ -44,10 +54,10 @@ function HighlightedText({ text }: { text: string }) {
   );
 }
 
-export function MessageSearchSheet({ open, onOpenChange, conversationId, onSelectMessage }: MessageSearchSheetProps) {
+export function MessageSearchSheet({ open, onOpenChange, conversationId, onSelectMessage, localMessages }: MessageSearchSheetProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
-  const { results, loading, search, filters, setFilters, loadMore, totalCount } = useMessageSearch(conversationId);
+  const { results, loading, search, filters, setFilters, loadMore, totalCount } = useMessageSearch(conversationId, localMessages);
 
   useEffect(() => {
     if (open) {

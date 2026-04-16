@@ -1,18 +1,13 @@
 /**
- * useLinkPreview — extracts URLs from text and fetches OG metadata.
- *
- * Security contract:
- * - URL extraction uses a strict regex; no eval, no innerHTML.
- * - External fetch is proxied through own VITE_LINK_PREVIEW_API_URL endpoint (CORS-safe, read-only).
- *   Response format: { contents: string } (HTML body of the target URL).
- * - Cache key is URL + TTL epoch; stale entries are evicted on read.
- * - No credentials/cookies forwarded; SSRF surface is browser-constrained.
+ * useLinkPreview — извлекает URL из текста и тянет OG-метаданные
+ * через Edge Function `link-preview` (SSRF-защита + серверный кэш на 24h).
  */
 
+import { supabase } from "@/integrations/supabase/client";
 import { logger } from "@/lib/logger";
 
-const CACHE_KEY_PREFIX = "lp_v1:";
-const CACHE_TTL_MS = 30 * 60 * 1000; // 30 min
+const CACHE_KEY_PREFIX = "lp_v2:";
+const CACHE_TTL_MS = 30 * 60 * 1000;
 
 export interface LinkPreviewData {
   url: string;
@@ -24,17 +19,14 @@ export interface LinkPreviewData {
   fetchedAt: number;
 }
 
-// Strict URL regex — matches http(s) URLs only, no javascript:/data: attack surface.
 const URL_REGEX = /https?:\/\/[^\s"'<>()[\]{}]+/gi;
 
 export function extractUrls(text: string): string[] {
   const raw = text.match(URL_REGEX);
   if (!raw) return [];
-  // Deduplicate while preserving first-occurrence order.
   const seen = new Set<string>();
   const result: string[] = [];
   for (const u of raw) {
-    // Strip trailing punctuation that is commonly attached to URLs in prose.
     const cleaned = u.replace(/[.,!?;:]+$/, "");
     if (!seen.has(cleaned)) {
       seen.add(cleaned);
@@ -89,72 +81,17 @@ function parseFavicon(url: string): string {
   }
 }
 
-/**
- * Parses OG/meta tags from raw HTML string without using DOMParser in workers
- * (safe for all environments). Uses regex — content is never rendered.
- */
-function parseOGFromHTML(
-  html: string,
-  url: string
-): Omit<LinkPreviewData, "fetchedAt"> {
-  const domain = parseDomain(url);
-  const favicon = parseFavicon(url);
-
-  const getMeta = (property: string): string | null => {
-    // og:property or name=property patterns
-    const ogMatch = html.match(
-      new RegExp(
-        `<meta[^>]*property=["']og:${property}["'][^>]*content=["']([^"']+)["']`,
-        "i"
-      )
-    );
-    if (ogMatch?.[1]) return ogMatch[1];
-    const ogMatch2 = html.match(
-      new RegExp(
-        `<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:${property}["']`,
-        "i"
-      )
-    );
-    if (ogMatch2?.[1]) return ogMatch2[1];
-    const nameMatch = html.match(
-      new RegExp(
-        `<meta[^>]*name=["']${property}["'][^>]*content=["']([^"']+)["']`,
-        "i"
-      )
-    );
-    if (nameMatch?.[1]) return nameMatch[1];
-    return null;
-  };
-
-  const titleTagMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
-  const title =
-    getMeta("title") || (titleTagMatch ? titleTagMatch[1].trim() : null);
-  const description = getMeta("description");
-  const image = getMeta("image");
-
-  // Resolve relative images
-  let resolvedImage = image;
-  if (image && !image.startsWith("http")) {
-    try {
-      resolvedImage = new URL(image, url).href;
-    } catch (error) {
-      logger.warn("[useLinkPreview] Failed to resolve relative OG image", { url, image, error });
-      resolvedImage = null;
-    }
-  }
-
-  return {
-    url,
-    title: title ? title.slice(0, 120) : null,
-    description: description ? description.slice(0, 300) : null,
-    image: resolvedImage,
-    favicon,
-    domain,
-  };
-}
-
-// In-flight deduplication: prevents N concurrent fetches for the same URL.
 const inFlight = new Map<string, Promise<LinkPreviewData>>();
+
+interface EdgeResponse {
+  url?: string;
+  domain?: string;
+  title?: string | null;
+  description?: string | null;
+  image?: string | null;
+  favicon?: string | null;
+  fetchedAt?: number;
+}
 
 export async function fetchPreview(url: string): Promise<LinkPreviewData> {
   const cached = readCache(url);
@@ -165,27 +102,29 @@ export async function fetchPreview(url: string): Promise<LinkPreviewData> {
 
   const p = (async (): Promise<LinkPreviewData> => {
     try {
-      // Use own CORS proxy — endpoint must return { contents: string }.
-      const linkPreviewApi = (import.meta.env as Record<string, string>).VITE_LINK_PREVIEW_API_URL ?? "";
-      if (!linkPreviewApi) {
-        throw new Error("link-preview:api-url-missing — set VITE_LINK_PREVIEW_API_URL");
+      const { data, error } = await supabase.functions.invoke<EdgeResponse>(
+        "link-preview",
+        { body: { url } },
+      );
+      if (error) throw error;
+      if (!data || typeof data !== "object") {
+        throw new Error("link-preview:empty-response");
       }
-      const proxyUrl = `${linkPreviewApi}?url=${encodeURIComponent(url)}`;
-      const res = await fetch(proxyUrl, {
-        signal: AbortSignal.timeout(8000),
-      });
-      if (!res.ok) throw new Error(`proxy ${res.status}`);
-      const json = await res.json();
-      const html: string =
-        typeof json?.contents === "string" ? json.contents : "";
-      const parsed = parseOGFromHTML(html, url);
-      const data: LinkPreviewData = { ...parsed, fetchedAt: Date.now() };
-      writeCache(data);
-      return data;
+
+      const result: LinkPreviewData = {
+        url: data.url ?? url,
+        title: data.title ?? null,
+        description: data.description ?? null,
+        image: data.image ?? null,
+        favicon: data.favicon ?? parseFavicon(url),
+        domain: data.domain ?? parseDomain(url),
+        fetchedAt: typeof data.fetchedAt === "number" ? data.fetchedAt : Date.now(),
+      };
+      writeCache(result);
+      return result;
     } catch (error) {
       logger.warn("[useLinkPreview] fetchPreview fallback activated", { url, error });
-      // Fallback: domain + favicon only — never throw, graceful degradation.
-      const fallback: LinkPreviewData = {
+      return {
         url,
         title: null,
         description: null,
@@ -194,8 +133,6 @@ export async function fetchPreview(url: string): Promise<LinkPreviewData> {
         domain: parseDomain(url),
         fetchedAt: Date.now(),
       };
-      // Do NOT cache failures — allow retry on next render.
-      return fallback;
     }
   })();
 
@@ -207,13 +144,12 @@ export async function fetchPreview(url: string): Promise<LinkPreviewData> {
   }
 }
 
-// Debounce helper — prevents spamming the proxy on every keystroke.
 const debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 export function fetchPreviewDebounced(
   url: string,
   callback: (data: LinkPreviewData) => void,
-  delayMs = 400
+  delayMs = 400,
 ): () => void {
   const existing = debounceTimers.get(url);
   if (existing) clearTimeout(existing);
@@ -224,7 +160,6 @@ export function fetchPreviewDebounced(
   }, delayMs);
   debounceTimers.set(url, t);
 
-  // Return cleanup function
   return () => {
     clearTimeout(t);
     debounceTimers.delete(url);
