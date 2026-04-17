@@ -301,6 +301,13 @@ export interface KeyPackagePayload {
   /** C-3 fix: REQUIRED — sender ECDH P-256 public key (base64 uncompressed 65 bytes) */
   senderPublicKey: string;      // was optional — made required to prevent null crash in processKeyPackage
   salt: string;                 // base64 random 32-byte HKDF salt (H-1) — made required
+  /**
+   * Sender ECDSA P-256 signing public key (raw uncompressed, base64, 65 bytes).
+   * Required: receiver регистрирует его через CallKeyExchange.registerPeerSigningKey()
+   * до вызова processKeyPackage(), иначе верификация подписи невозможна.
+   * Optional (undefined) допускается только для бэккомпат со старыми клиентами.
+   */
+  senderSigningPublicKey?: string;
   senderIdentity: {             // required for ECDSA sig verification in processKeyPackage
     userId: string;
     deviceId: string;
