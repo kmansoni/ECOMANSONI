@@ -120,6 +120,7 @@ export async function buildE2EKeyGroup(
 
   // Export identity public key for recipients to verify signature
   const identityPubSpki = await crypto.subtle.exportKey('spki', identityPublicKey);
+  const identityPubB64 = toBase64(identityPubSpki);
 
   const ekg: Omit<E2EKeyGroup, 'signature' | 'identityPublicKey'> = {
     participantId,
@@ -129,7 +130,9 @@ export async function buildE2EKeyGroup(
     timestamp,
   };
 
-  const payload = _canonicalPayload({ ...ekg, identityPublicKey: '' });
+  // FIX: canonical payload при sign ОБЯЗАН содержать тот же identityPublicKey,
+  // что и при verify в processE2EKeyGroup — иначе подпись всегда невалидна.
+  const payload = _canonicalPayload({ ...ekg, identityPublicKey: identityPubB64 });
   const sigBuf = await crypto.subtle.sign(
     { name: 'ECDSA', hash: 'SHA-256' },
     identitySigningKey,
@@ -139,7 +142,7 @@ export async function buildE2EKeyGroup(
   return {
     ekg: {
       ...ekg,
-      identityPublicKey: toBase64(identityPubSpki),
+      identityPublicKey: identityPubB64,
       signature: toBase64(sigBuf),
     },
     ephemeralPrivateKey: ephemeralPair.privateKey,
