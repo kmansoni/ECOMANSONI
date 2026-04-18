@@ -1502,10 +1502,16 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
   const rebuildRemoteStream = useCallback(() => {
     const manager = sfuManagerRef.current;
     if (!manager) {
+      logger.debug('[VideoCallContext] rebuildRemoteStream: no sfuManager');
       setRemoteMediaStream(null);
       return;
     }
     const tracks = manager.getAllRemoteTracks().filter((track) => track.readyState === "live");
+    logger.debug('[VideoCallContext] rebuildRemoteStream', {
+      liveTracks: tracks.length,
+      trackKinds: tracks.map(t => t.kind).join(', '),
+      trackStates: tracks.map(t => `${t.kind}:${t.readyState}`).join(', '),
+    });
     if (tracks.length === 0) {
       setRemoteMediaStream(null);
       return;
@@ -1926,13 +1932,21 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         consumerAddedUnsubRef.current = client.on("CONSUMER_ADDED", (frame) => {
           const p = frame.payload as import('@/calls-v2/types').ConsumedPayload | undefined;
           if (!p || p.roomId !== roomId) return;
+          
+          logger.debug('[VideoCallContext] CONSUMER_ADDED received', {
+            consumerId: p.consumerId,
+            producerId: p.producerId,
+            kind: p.kind,
+            roomId: roomId.slice(0, 8),
+          });
+          
           void sfuManager.consume({
             id: p.consumerId,
             producerId: p.producerId,
             kind: p.kind as import('mediasoup-client').types.MediaKind,
             rtpParameters: p.rtpParameters as import('mediasoup-client').types.RtpParameters,
           }).then((consumer) => {
-            logger.info("[VideoCallContext] calls-v2 consumer:created", { roomId, consumerId: consumer.id, kind: consumer.kind });
+            logger.info("[VideoCallContext] calls-v2 consumer:created", { roomId, consumerId: consumer.id, kind: consumer.kind, trackId: consumer.track?.id, trackKind: consumer.track?.kind, trackState: consumer.track?.readyState });
             // Сохранить params для возможного E2EE pipe recovery
             consumerCreateParamsRef.current.set(consumer.id, p);
             // Attach E2EE receiver transform (Insertable Streams) — fail-closed: frames dropped without key
@@ -1944,10 +1958,11 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
               }
             }
             return client.consumerResume({ roomId, consumerId: consumer.id }).then(() => {
+              logger.debug('[VideoCallContext] consumerResume done, calling rebuildRemoteStream');
               rebuildRemoteStream();
             });
           }).catch((err) => {
-            logger.warn("[VideoCallContext] calls-v2 consume/resume failed", err);
+            logger.error("[VideoCallContext] calls-v2 consume/resume failed", err);
           });
         });
 

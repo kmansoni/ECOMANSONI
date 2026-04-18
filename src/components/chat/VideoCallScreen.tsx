@@ -217,6 +217,20 @@ export function VideoCallScreen({
   const isVideoCall = call ? call.call_type === "video" : true;
   const isConnected = isCallConnected(callState);
 
+  // Determine if we have remote audio tracks
+  const hasRemoteAudio = isConnected && remoteStream && remoteStream.getAudioTracks().length > 0;
+  
+  // Attach remote audio - always play remote audio when available (both video and audio calls)
+  useEffect(() => {
+    if (audioOutRef.current && remoteStream) {
+      logger.debug('video-call-screen: attaching remote audio', {
+        hasRemoteAudio,
+        tracks: remoteStream.getTracks().map(t => `${t.kind}:${t.readyState}`).join(", "),
+      });
+      audioOutRef.current.srcObject = remoteStream;
+    }
+  }, [remoteStream, hasRemoteAudio]);
+
   // Determine if we have remote video to show
   const hasRemoteVideo = isConnected && remoteStream && remoteStream.getVideoTracks().length > 0;
 
@@ -599,9 +613,9 @@ export function VideoCallScreen({
           )}
         </div>
 
-        {/* Audio element for audio calls */}
+        {/* Audio element for remote audio - always play when available */}
         {/* Аудиовыход с поддержкой setSinkId */}
-        {!isVideoCall && remoteStream && (
+        {hasRemoteAudio && (
           <audio ref={audioOutRef} autoPlay playsInline />
         )}
 

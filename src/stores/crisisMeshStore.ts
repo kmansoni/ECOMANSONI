@@ -81,8 +81,13 @@ export const useCrisisMeshStore = create<CrisisMeshStore>((set, get) => ({
       return;
     }
 
-    const { identity, privateKey } = await bootstrapIdentity(displayName);
-    const engine = new CrisisMeshEngine({ identity, privateKey, transport });
+    const { identity, ed25519PrivateKey, ecdhPrivateKey } = await bootstrapIdentity(displayName);
+    const engine = new CrisisMeshEngine({
+      identity,
+      privateKey: ed25519PrivateKey,
+      ecdhPrivateKey,
+      transport,
+    });
 
     engine.on((ev) => handleEngineEvent(set, get, ev));
     set({ engine, identity });
@@ -170,6 +175,7 @@ function handleEngineEvent(
 
     case 'message-dropped':
     case 'message-sent':
+    case 'handshake-completed':
       break;
   }
 }

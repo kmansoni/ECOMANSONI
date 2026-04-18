@@ -30,6 +30,18 @@ import type {
   CatalogResponse,
   ModelInfo,
   ModelTypesResponse,
+  CcmCalcRequest,
+  CcmCalcResponse,
+  CcmCalcResult,
+  CcmError,
+  InvoiceRequest,
+  InvoiceResponse,
+  InvoiceListFilters,
+  InvoiceListResponse,
+  InvoiceStatus,
+  DocumentType,
+  DocumentUploadResponse,
+  DocumentInfo,
 } from '../types';
 
 /** Environment для API */
@@ -135,197 +147,7 @@ export class SoglasieClient {
     return response.blob() as unknown as T;
   }
 
-  // ═══════════════════════════════════════════════════════════
-  // ЭТАП 1: Проверка КБМ 2.0
-  // ═══════════════════════════════════════════════════════════
-
-  /**
-   * Проверка КБМ водителей через сервис РСА 2.0
-   * 
-   * @see https://wiki.soglasie.ru/partners/integration/services/kbmservice2.0/start
-   * 
-   * @param request - данные для проверки КБМ
-   * @returns КБМ и связанные данные
-   */
-  async checkKbm(request: KbmRequest): Promise<KbmResponse> {
-    return this.request('/rsaproxy/api/osago/v1/kbm', {
-      method: 'POST',
-      body: JSON.stringify(request),
-    });
-  }
-
-  // ═══════════════════════════════════════════════════════════
-  // ЭТАП 3: Загрузка заявления
-  // ═══════════════════════════════════════════════════════════
-
-  /**
-   * Загрузка заявления Е-ОСАГО
-   * 
-   * @see https://wiki.soglasie.ru/partners/integration/products/eosago/load
-   * 
-   * @param application - полные данные заявления
-   * @returns policyId - идентификатор заявления
-   */
-  async loadApplication(application: EosagoApplication): Promise<ApplicationResponse> {
-    return this.request('/online/api/eosago', {
-      method: 'POST',
-      auth: this.authHeaderWithSubUser,
-      body: JSON.stringify(application),
-    });
-  }
-
-  /**
-   * Загрузка черновика (без проверки РСА)
-   * Используется для тестирования
-   * 
-   * @param application - данные заявления
-   * @returns policyId
-   */
-  async loadApplicationDraft(application: EosagoApplication): Promise<ApplicationResponse> {
-    return this.request('/online/api/eosago?test=true', {
-      method: 'POST',
-      auth: this.authHeaderWithSubUser,
-      body: JSON.stringify(application),
-    });
-  }
-
-  // ═══════════════════════════════════════════════════════════
-  // ЭТАП 4: Проверка статуса заявления
-  // ═══════════════════════════════════════════════════════════
-
-  /**
-   * Получение статуса загруженного заявления
-   * 
-   * @see https://wiki.soglasie.ru/partners/integration/products/eosago/status
-   * 
-   * @param policyId - идентификатор заявления
-   * @param options - дополнительные параметры
-   * @returns статус и данные заявления
-   */
-  async getStatus(policyId: number, options?: StatusOptions): Promise<EosagoStatusResponse> {
-    const params = new URLSearchParams();
-    if (options?.akv) params.set('akv', 'true');
-    if (options?.overlimit) params.set('overlimit', 'true');
-
-    const query = params.toString();
-    return this.request(`/online/api/eosago/${policyId}/status${query ? '?' + query : ''}`);
-  }
-
-  /**
-   * Ожидание достижения целевого статуса
-   * 
-   * @param policyId - идентификатор заявления
-   * @param targetStatuses - целевые статусы
-   * @param options - опции
-   * @returns финальный статус
-   */
-  async waitForStatus(
-    policyId: number,
-    targetStatuses: string[],
-    options: WaitOptions = {}
-  ): Promise<EosagoStatusResponse> {
-    const { maxAttempts = 30, intervalMs = 3000 } = options;
-
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      const status = await this.getStatus(policyId);
-      const currentStatus = status.policy?.status || status.status;
-
-      if (targetStatuses.includes(currentStatus)) {
-        return status;
-      }
-
-      if (status.status === 'ERROR') {
-        throw new SoglasieError(
-          status.lastError || 'Processing failed',
-          500,
-          status
-        );
-      }
-
-      await new Promise((resolve) => setTimeout(resolve, intervalMs));
-    }
-
-    throw new SoglasieError(
-      `Timeout waiting for status: ${targetStatuses.join(', ')}`,
-      408
-    );
-  }
-
-  // ═══════════════════════════════════════════════════════════
-  // ЭТАП 5: Скачивание ПФ заявления
-  // ═══════════════════════════════════════════════════════════
-
-  /**
-   * Скачивание ПФ заявления
-   * 
-   * @see https://wiki.soglasie.ru/partners/integration/products/eosago/docdownload
-   * 
-   * @param policyId - идентификатор заявления
-   * @returns PDF файл
-   */
-  async downloadApplicationPdf(policyId: number): Promise<Blob> {
-    const response = await fetch(
-      `${this.baseUrl}/online/api/eosago/${policyId}/notice`,
-      {
-        headers: { Authorization: this.authHeader },
-      }
-    );
-
-    if (!response.ok) {
-      throw new SoglasieError(
-        `Failed to download application PDF: ${response.status}`,
-        response.status
-      );
-    }
-
-    return response.blob();
-  }
-
-  // ═══════════════════════════════════════════════════════════
-  // ЭТАП 6: Перевод в статус "Оформление прекращено"
-  // ═══════════════════════════════════════════════════════════
-
-  /**
-   * Перевод заявления в статус "Оформление прекращено"
-   * 
-   * @see https://wiki.soglasie.ru/partners/integration/products/eosago/stop
-   * 
-   * @param policyId - идентификатор заявления
-   */
-  async suspendApplication(policyId: number): Promise<void> {
-    const response = await fetch(
-      `${this.baseUrl}/online/api/eosago/${policyId}/suspend`,
-      {
-        method: 'PUT',
-        headers: { Authorization: this.authHeader },
-      }
-    );
-
-    if (!response.ok) {
-      throw new SoglasieError(
-        `Failed to suspend application: ${response.status}`,
-        response.status
-      );
-    }
-  }
-
-  // ═══════════════════════════════════════════════════════════
-  // ЭТАП 7: Получение ссылки на оплату
-  // ═══════════════════════════════════════════════════════════
-
-  /**
-   * Получение ссылки на оплату полиса
-   * 
-   * @see https://wiki.soglasie.ru/partners/integration/products/eosago/linktopay
-   * 
-   * @param policyId - идентификатор заявления
-   * @returns ссылка на оплату
-   */
-  async getPayLink(policyId: number): Promise<PayLinkResponse> {
-    return this.request(`/online/api/eosago/${policyId}/paylink`);
-  }
-
-  // ═════════════════���═���═══════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
   // ЭТАП 8: Запись данных об успешной оплате
   // ═══════════════════════════════════════════════════════════
 
@@ -343,6 +165,68 @@ export class SoglasieClient {
       auth: this.authHeaderWithSubUser,
       body: JSON.stringify(acquiring),
     });
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // Этап 9: Счета для ЮЛ
+  // ═══════════════════════════════════════════════════════════
+
+  /**
+   * Создание счета для юридического лица
+   * 
+   * @see https://wiki.soglasie.ru/partners/integration/products/eosago/invoice
+   * 
+   * @param policyId - ID заявления
+   * @param data - данные счета
+   * @returns созданный счет
+   */
+  async createInvoice(policyId: number, data: InvoiceRequest): Promise<InvoiceResponse> {
+    return this.request('/online/api/invoice', {
+      method: 'POST',
+      auth: this.authHeaderWithSubUser,
+      body: JSON.stringify({ ...data, policyId }),
+    });
+  }
+
+  /**
+   * Получение счета по ID
+   * 
+   * @param invoiceId - ID счета
+   * @returns данные счета
+   */
+  async getInvoice(invoiceId: number): Promise<InvoiceResponse> {
+    return this.request(`/online/api/invoice/${invoiceId}`);
+  }
+
+  /**
+   * Аннулирование счета
+   * 
+   * @param invoiceId - ID счета
+   */
+  async cancelInvoice(invoiceId: number): Promise<void> {
+    await this.request(`/online/api/invoice/${invoiceId}/cancel`, {
+      method: 'PUT',
+      auth: this.authHeaderWithSubUser,
+    });
+  }
+
+  /**
+   * Получение списка счетов с фильтрами
+   * 
+   * @param filters - параметры фильтрации
+   * @returns список счетов
+   */
+  async getInvoiceList(filters?: InvoiceListFilters): Promise<InvoiceListResponse> {
+    const params = new URLSearchParams();
+    if (filters?.status) params.set('status', filters.status);
+    if (filters?.policyId) params.set('policyId', String(filters.policyId));
+    if (filters?.dateFrom) params.set('dateFrom', filters.dateFrom);
+    if (filters?.dateTo) params.set('dateTo', filters.dateTo);
+    if (filters?.limit) params.set('limit', String(filters.limit));
+    if (filters?.offset) params.set('offset', String(filters.offset));
+
+    const query = params.toString();
+    return this.request(`/online/api/invoice${query ? '?' + query : ''}`);
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -373,6 +257,84 @@ export class SoglasieClient {
     }
 
     return response.blob();
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // Этап 11: Загрузка документов
+  // ═══════════════════════════════════════════════════════════
+
+  /**
+   * Загрузка документа к заявлению
+   * 
+   * @see https://wiki.soglasie.ru/partners/integration/products/eosago/documentupload
+   * 
+   * @param policyId - ID заявления
+   * @param file - файл для загрузки
+   * @param docType - тип документа
+   * @param fileName - имя файла (опционально)
+   * @returns данные загруженного документа
+   */
+  async uploadDocument(
+    policyId: number,
+    file: Blob | File,
+    docType: DocumentType,
+    fileName?: string
+  ): Promise<DocumentUploadResponse> {
+    const formData = new FormData();
+    formData.append('file', file, fileName || file.name);
+    formData.append('docType', docType);
+
+    const response = await fetch(
+      `${this.baseUrl}/online/api/eosago/${policyId}/documents`,
+      {
+        method: 'POST',
+        headers: { Authorization: this.authHeader },
+        body: formData,
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new SoglasieError(
+        error.error || `Failed to upload document: ${response.status}`,
+        response.status,
+        error
+      );
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Получение документа по ID
+   * 
+   * @param documentId - ID документа
+   * @returns данные документа
+   */
+  async getDocument(documentId: number): Promise<DocumentInfo> {
+    return this.request(`/online/api/documents/${documentId}`);
+  }
+
+  /**
+   * Получение списка документов заявления
+   * 
+   * @param policyId - ID заявления
+   * @returns список документов
+   */
+  async getDocuments(policyId: number): Promise<DocumentInfo[]> {
+    return this.request(`/online/api/eosago/${policyId}/documents`);
+  }
+
+  /**
+   * Удаление документа
+   * 
+   * @param policyId - ID заявления
+   * @param documentId - ID документа
+   */
+  async deleteDocument(policyId: number, documentId: number): Promise<void> {
+    await this.request(`/online/api/documents/${documentId}`, {
+      method: 'DELETE',
+    });
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -461,6 +423,67 @@ export const PENDING_STATUSES = [
   ApplicationStatus.RSA_SIGN,
   ApplicationStatus.RSA_SIGNED,
 ] as const;
+
+/** Статусы CCM (расчет премии) */
+export const CcmStatus = {
+  OK: 0,
+  ERROR: 1,
+  PROCESSING: 2,
+} as const;
+
+/**
+ * Создание запроса расчета премии CCM
+ * 
+ * @param options - параметры для создания запроса
+ * @returns готовый CcmCalcRequest
+ */
+export function createCcmRequest(options: {
+  subUser: string;
+  dateBeg: string;
+  dateEnd: string;
+  documentType: string;
+  driverLimit: 0 | 1;
+  kbmRequestId?: string;
+  vin?: string;
+  modelCode?: number;
+  power?: number;
+  periodUse?: number;
+  stream?: number;
+  isTrailer?: 0 | 1;
+  prolongation?: 0 | 1;
+  termInsurance?: number;
+  territory?: string;
+  ownerType?: 1001 | 1002 | 1003 | 1004;
+  vehicleType?: 1 | 2 | 3 | 4 | 5;
+  isForeign?: 0 | 1;
+  kbm?: number;
+  additionalParams?: { brief: string; val: string }[];
+}): CcmCalcRequest {
+  return {
+    contract: {
+      subuser: options.subUser,
+      datebeg: options.dateBeg,
+      dateend: options.dateEnd,
+      ВидДокумента: options.documentType,
+      ДопускБезОграничений: options.driverLimit,
+      ИДРасчетаКБМ: options.kbmRequestId,
+      VIN: options.vin,
+      МодельТС: options.modelCode,
+      Мощность: options.power,
+      ПериодИсп: options.periodUse,
+      ПотокВвода: options.stream || 24,
+      ПризнСтрахПрицеп: options.isTrailer || 0,
+      Пролонгация: options.prolongation,
+      СрокСтрах: options.termInsurance,
+      ТерриторияИспользования: options.territory,
+      ТипСобственникаТС: options.ownerType,
+      ТипТСОСАГО: options.vehicleType,
+      ТСИностранное: options.isForeign,
+      Кбм: options.kbm,
+    },
+    params: options.additionalParams,
+  };
+}
 
 /**
  * Фабрика создания клиента

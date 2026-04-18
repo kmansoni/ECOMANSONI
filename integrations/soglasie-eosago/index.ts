@@ -5,7 +5,7 @@
  */
 
 // Client
-export { SoglasieClient, createClient, type SoglasieConfig, type Environment, type StatusOptions, type WaitOptions, SoglasieError, ApplicationStatus, FINAL_STATUSES, PAYABLE_STATUSES, PENDING_STATUSES } from './lib/client';
+export { SoglasieClient, createClient, type SoglasieConfig, type Environment, type StatusOptions, type WaitOptions, SoglasieError, ApplicationStatus, FINAL_STATUSES, PAYABLE_STATUSES, PENDING_STATUSES, CcmStatus, createCcmRequest } from './lib/client';
 
 // Types
 export type {
@@ -50,11 +50,20 @@ export type {
   OwnerType,
   VehicleType,
   GoalUse,
+  InvoiceRequest,
+  InvoiceResponse,
+  InvoiceStatus,
+  InvoiceListFilters,
+  InvoiceListResponse,
+  CcmCalcRequest,
+  CcmCalcResponse,
+  CcmCalcResult,
+  DocumentUploadRequest,
+  DocumentUploadResponse,
+  DocumentInfo,
 } from './lib/types';
 
-export { DocumentType, VehicleDocumentType, VehicleTypeCode, OwnerTypeCode, GoalUseCode } from './lib/types';
-
-export type { ModelInfo as CarMark, ModelInfo as CarModel } from './lib/types';
+export { DocumentType, VehicleDocumentType, VehicleTypeCode, OwnerTypeCode, GoalUseCode, InvoiceStatusCode, CcmConstants } from './lib/types';
 
 // Workflow
 export { EosagoWorkflow, type WorkflowOptions as EosagoWorkflowOptions, type WorkflowResult as EosagoWorkflowResult, ApplicationStatus as EosagoStatus } from './lib/workflow';

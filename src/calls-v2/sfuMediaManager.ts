@@ -398,9 +398,25 @@ export class SfuMediaManager {
 
   /** Получить все remote tracks */
   getAllRemoteTracks(): MediaStreamTrack[] {
-    return Array.from(this.consumers.values())
+    const tracks = Array.from(this.consumers.values())
       .filter((c) => !c.closed)
-      .map((c) => c.track);
+      .map((c) => c.track)
+      .filter((t): t is MediaStreamTrack => t != null && t.kind !== undefined);
+    
+    // Debug logging for audio tracks
+    const audioTracks = tracks.filter(t => t.kind === 'audio');
+    const videoTracks = tracks.filter(t => t.kind === 'video');
+    logger.debug('[SfuMediaManager] getAllRemoteTracks', {
+      totalConsumers: this.consumers.size,
+      closedConsumers: Array.from(this.consumers.values()).filter(c => c.closed).length,
+      liveTracks: tracks.length,
+      audioTracks: audioTracks.length,
+      videoTracks: videoTracks.length,
+      trackKinds: tracks.map(t => t.kind).join(', '),
+      trackStates: tracks.map(t => `${t.kind}:${t.readyState}`).join(', '),
+    });
+    
+    return tracks;
   }
 
   /** Resume consumer (после начального paused состояния) */
