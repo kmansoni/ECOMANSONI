@@ -67,20 +67,23 @@ class Typography:
     font_bold: int = 700
 
 
-@dataclass
 class Spacing:
     """Отступы."""
-    0: str = "0"
-    1: str = "0.25rem"
-    2: str = "0.5rem"
-    3: str = "0.75rem"
-    4: str = "1rem"
-    5: str = "1.25rem"
-    6: str = "1.5rem"
-    8: str = "2rem"
-    10: str = "2.5rem"
-    12: str = "3rem"
-    16: str = "4rem"
+    # Using string keys to avoid numeric attribute issues
+    _0: str = "0"
+    _1: str = "0.25rem"
+    _2: str = "0.5rem"
+    _3: str = "0.75rem"
+    _4: str = "1rem"
+    _5: str = "1.25rem"
+    _6: str = "1.5rem"
+    _8: str = "2rem"
+    _10: str = "2.5rem"
+    _12: str = "3rem"
+    _16: str = "4rem"
+    
+    def get(self, key: str) -> str:
+        return getattr(self, f"_{key}", "0")
 
 
 @dataclass
@@ -88,12 +91,12 @@ class BorderRadius:
     """Радиусы границ."""
     none: str = "0"
     sm: str = "0.125rem"
-    DEFAULT: str = "0.25rem"
+    DEFAULT_radius: str = "0.25rem"  # Renamed to avoid shadowing
     md: str = "0.375rem"
     lg: str = "0.5rem"
     xl: str = "0.75rem"
-    2xl: str = "1rem"
-    3xl: str = "1.5rem"
+    _2xl: str = "1rem"
+    _3xl: str = "1.5rem"
     full: str = "9999px"
 
 

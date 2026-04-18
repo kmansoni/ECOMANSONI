@@ -939,7 +939,7 @@ def _tool_fact_check(claim: str) -> str:
     
     from .research_system import WebResearcher
     
-    researcher = WebResearcher(result=rm.researcher.web_search)
+    researcher = WebResearcher(web_search=rm.researcher.web_search)
     result = researcher.fact_check(claim)
     
     lines = [

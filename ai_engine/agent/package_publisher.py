@@ -41,7 +41,7 @@ class PackageInfo:
     author: str = ""
     license: str = "MIT"
     repository: str = ""
-    keywords: list[str] = None
+    keywords: Optional[list[str]] = None
 
 
 class PackagePublisher:
@@ -57,6 +57,7 @@ class PackagePublisher:
 
     def __init__(self):
         self.token = None
+        self.repo = ""  # For GitHub releases
 
     def set_token(self, token: str, registry: Registry) -> None:
         """Установить токен."""

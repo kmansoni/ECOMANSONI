@@ -88,6 +88,8 @@ class RoomManager:
         """Клиент покидает комнату."""
         if room_id in self.rooms and client_id in self.rooms[room_id]:
             self.rooms[room_id].remove(client_id)
+            if client_id in self.clients and room_id in self.clients[client_id].rooms:
+                self.clients[client_id].rooms.remove(room_id)
             logger.info(f"Client {client_id} left room {room_id}")
     
     def leave_all_rooms(self, client_id: str) -> None:
@@ -100,19 +102,18 @@ class RoomManager:
         """Получить клиентов в комнате."""
         return list(self.rooms.get(room_id, set()))
     
-    def broadcast_to_room(self, room_id: str, message: dict, exclude: str = None) -> None:
+    async def broadcast_to_room(self, room_id: str, message: dict, exclude: str = None) -> None:
         """Broadcast в комнату."""
         for client_id in self.get_clients_in_room(room_id):
             if client_id != exclude:
-                self.send_to_client(client_id, message)
+                await self.send_to_client(client_id, message)
     
-    def send_to_client(self, client_id: str, message: dict) -> None:
+    async def send_to_client(self, client_id: str, message: dict) -> None:
         """Отправить сообщение клиенту."""
         if client_id in self.clients:
             client = self.clients[client_id]
-            # asyncio future - actual sending handled by server
             if hasattr(client.socket, 'send'):
-                asyncio.create_task(client.socket.send(json.dumps(message)))
+                await client.socket.send(json.dumps(message))
     
     def register_client(self, client_id: str, socket: Any) -> None:
         """Зарегистрировать клиента."""
@@ -186,8 +187,9 @@ class WebSocketServer:
             logger.error(f"Client error: {e}")
         finally:
             self.rooms.unregister_client(client_id)
+            self.last_heartbeat.pop(client_id, None)
             logger.info(f"Client disconnected: {client_id}")
-            
+
             if self.on_disconnect:
                 self.on_disconnect(client_id)
     
@@ -210,18 +212,18 @@ class WebSocketServer:
         elif msg_type == "chat":
             room_id = payload.get("room")
             message = payload.get("message")
-            
+
             if room_id:
-                self.rooms.broadcast_to_room(
+                await self.rooms.broadcast_to_room(
                     room_id,
                     {"type": "chat", "payload": {"message": message, "from": client_id}},
                     exclude=client_id,
                 )
-        
+
         elif msg_type == "typing":
             room_id = payload.get("room")
             if room_id:
-                self.rooms.broadcast_to_room(
+                await self.rooms.broadcast_to_room(
                     room_id,
                     {"type": "typing", "payload": {"user": client_id}},
                     exclude=client_id,
@@ -236,7 +238,7 @@ class WebSocketServer:
     
     async def send_to(self, client_id: str, msg_type: str, payload: dict) -> None:
         """Отправить сообщение."""
-        self.rooms.send_to_client(client_id, {"type": msg_type, "payload": payload})
+        await self.rooms.send_to_client(client_id, {"type": msg_type, "payload": payload})
     
     async def broadcast(self, msg_type: str, payload: dict) -> None:
         """Broadcast всем."""

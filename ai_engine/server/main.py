@@ -48,7 +48,7 @@ logger = logging.getLogger("aria")
 async def _lifespan(app: FastAPI):
     """Start background task scheduler on startup, stop on shutdown."""
     from ai_engine.server.background_tasks import BackgroundTaskScheduler
-    scheduler = BackgroundTaskScheduler(generate_fn=aria_generate)
+    scheduler = BackgroundTaskScheduler(generate_fn=_safe_aria_generate)
     try:
         await scheduler.start()
         logger.info("ARIA background scheduler started")
@@ -619,7 +619,7 @@ async def chat_completions(
     try:
         response_text = await asyncio.get_event_loop().run_in_executor(
             None,
-            lambda: aria_generate(prompt, request.max_tokens, request.temperature),
+            lambda: _safe_aria_generate(prompt, request.max_tokens, request.temperature),
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Generation error: {str(e)}")

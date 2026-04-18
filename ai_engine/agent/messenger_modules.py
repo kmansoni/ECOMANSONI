@@ -206,9 +206,12 @@ class WebSocketChatServer:
         # Отправить получателю
         chat_id = data.get("chat_id")
         
-        # Найти получателя
-        from .storage import ChatStorage
-        storage = ChatStorage()
+        # Найти получателя (try local import first, then use self.storage)
+        try:
+            from .storage import ChatStorage
+            storage = ChatStorage()
+        except ImportError:
+            storage = self.storage  # Use class instance
         chat = storage.get_chat(chat_id)
         
         if chat:

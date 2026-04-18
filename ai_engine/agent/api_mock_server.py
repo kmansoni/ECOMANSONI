@@ -16,6 +16,7 @@ import logging
 import random
 import re
 import time
+import uuid
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Optional
@@ -87,9 +88,6 @@ class DynamicResponse:
             value = DynamicResponse.generate(value, context)
         
         return value
-
-
-import uuid
 
 
 class MockServer:

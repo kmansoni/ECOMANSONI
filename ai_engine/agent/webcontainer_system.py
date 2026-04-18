@@ -42,8 +42,8 @@ class FileMount:
 class ContainerConfig:
     """Конфиг WebContainer."""
     name: str = "app"
-    packageManager: str = "npm"
-    nodeVersion: str = "18"
+    package_manager: str = "npm"  # Fixed: was camelCase
+    node_version: str = "18"    # Fixed: was camelCase
 
 
 class WebContainerRuntime:
@@ -53,7 +53,8 @@ class WebContainerRuntime:
     Позволяет запускать Node.js прямо в браузере без сервера.
     """
 
-    def __init__(self):
+    def __init__(self, name: str = "app"):
+        self.name = name  # Fixed: was missing
         self.status = ContainerStatus.STOPPED
         self.files: dict[str, str] = {}
         self.dependencies: dict = {}

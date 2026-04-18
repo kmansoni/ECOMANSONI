@@ -76,7 +76,7 @@ from .auto_code_generator import (
 # NEW: DevOps System
 from .devops_system import (
     DevOpsSystem, CommandExecutor, DeploymentManager,
-    DatabaseMigrator, HealthChecker,
+    DatabaseMigrator, HealthChecker as DevOpsHealthChecker,
     DeployTarget, CommandType, CommandResult,
     get_devops,
 )
@@ -112,18 +112,15 @@ from .ci_cd_system import (
 # NEW: Monitoring
 from .monitoring_system import (
     MonitoringSystem, SentryMonitor, PrometheusMetrics,
-    HealthChecker, SentryConfig, Metric,
+    HealthChecker as MonitoringHealthChecker, SentryConfig, Metric,
     get_monitoring_system, setup_sentry,
 )
 
-from .research_system import (
-    ResearchManager,
-    WebResearcher,
-    BookReader,
-    ResearchSource,
-    ResearchQuery,
-    SourceType,
-    get_research_manager,
+# NEW: Verbose Logging
+from .verbose_logging import (
+    VerboseLogger, StepTracker, ProgressBar, Spinner,
+    Colors, format_duration, format_size, format_table,
+    format_list, log_step, log_result, logged,
 )
 
 __all__ = [
@@ -179,4 +176,73 @@ __all__ = [
     "ResearchQuery",
     "SourceType",
     "get_research_manager",
+
+    # DevOps System
+    "DevOpsSystem",
+    "CommandExecutor",
+    "DeploymentManager",
+    "DatabaseMigrator",
+    "DevOpsHealthChecker",
+    "DeployTarget",
+    "CommandType",
+    "CommandResult",
+    "get_devops",
+
+    # Security Scanner
+    "SecurityScanner",
+    "DependencyScanner",
+    "SSLCertChecker",
+    "Vulnerability",
+    "ScanResult",
+    "VulnType",
+    "Severity",
+    "get_security_scanner",
+
+    # Performance Audit
+    "PerformanceAuditor",
+    "LighthouseAuditor",
+    "BundleAnalyzer",
+    "PerformanceReport",
+    "WebVitalsResult",
+    "get_performance_auditor",
+
+    # Voice AI
+    "VoiceAI",
+    "WhisperSTT",
+    "TTSEngine",
+    "TranscriptionResult",
+    "SpeechResult",
+    "TTSProvider",
+    "get_voice_ai",
+
+    # CI/CD
+    "CICDSystem",
+    "WorkflowRun",
+    "PipelineStatus",
+    "WorkflowTemplates",
+    "get_ci_cd",
+
+    # Monitoring
+    "MonitoringSystem",
+    "SentryMonitor",
+    "PrometheusMetrics",
+    "MonitoringHealthChecker",
+    "SentryConfig",
+    "Metric",
+    "get_monitoring_system",
+    "setup_sentry",
+    
+    # Verbose Logging
+    "VerboseLogger",
+    "StepTracker",
+    "ProgressBar",
+    "Spinner",
+    "Colors",
+    "format_duration",
+    "format_size",
+    "format_table",
+    "format_list",
+    "log_step",
+    "log_result",
+    "logged",
 ]
