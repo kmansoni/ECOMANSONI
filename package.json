@@ -74,6 +74,8 @@
     "osm:download": "python scripts/download_osm_data.py",
     "osm:process": "python scripts/process_osm.py",
     "osm:tiles": "python scripts/generate_tiles.py",
+    "osm:fetch:ru": "node ./scripts/fetch-osm-data.mjs --region=russia-cities --extra",
+    "osm:fetch:prod": "node ./scripts/fetch-osm-data.mjs --region=production-core --extra",
     "osm:world:process": "node ./scripts/process-world-geodata.mjs"
   },
   "dependencies": {

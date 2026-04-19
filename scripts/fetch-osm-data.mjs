@@ -26,6 +26,40 @@ const GRAPH_PATH = path.join(ROOT, 'public', 'data', 'osm', 'graph.json');
 
 const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
 
+const RUSSIA_CORE_CITIES = [
+  { name: 'Москва', bbox: [55.14, 36.80, 56.02, 37.97] },
+  { name: 'СПб', bbox: [59.8, 30.0, 60.1, 30.6] },
+  { name: 'Казань', bbox: [55.7, 48.9, 55.9, 49.3] },
+  { name: 'Новосибирск', bbox: [54.85, 82.7, 55.1, 83.15] },
+  { name: 'Екатеринбург', bbox: [56.7, 60.4, 56.95, 60.8] },
+  { name: 'Нижний Новгород', bbox: [56.2, 43.7, 56.4, 44.1] },
+  { name: 'Краснодар', bbox: [44.95, 38.85, 45.15, 39.15] },
+  { name: 'Ростов-на-Дону', bbox: [47.15, 39.5, 47.35, 39.85] },
+  { name: 'Сочи', bbox: [43.5, 39.6, 43.7, 39.9] },
+  { name: 'Воронеж', bbox: [51.55, 39.05, 51.75, 39.35] },
+  { name: 'Самара', bbox: [53.1, 50.0, 53.3, 50.3] },
+  { name: 'Уфа', bbox: [54.65, 55.85, 54.85, 56.15] },
+  { name: 'Пермь', bbox: [57.9, 55.95, 58.1, 56.35] },
+  { name: 'Волгоград', bbox: [48.55, 44.3, 48.85, 44.65] },
+  { name: 'Челябинск', bbox: [55.05, 61.3, 55.25, 61.55] },
+  { name: 'Омск', bbox: [54.9, 73.2, 55.1, 73.5] },
+  { name: 'Красноярск', bbox: [55.95, 92.7, 56.1, 93.1] },
+  { name: 'Тюмень', bbox: [57.1, 65.4, 57.25, 65.7] },
+];
+
+const INTERNATIONAL_HUB_CITIES = [
+  { name: 'Дубай', bbox: [25.00, 55.06, 25.36, 55.55] },
+  { name: 'Абу-Даби', bbox: [24.28, 54.25, 24.62, 54.65] },
+  { name: 'Берлин', bbox: [52.33, 13.08, 52.68, 13.77] },
+  { name: 'Стамбул', bbox: [40.80, 28.45, 41.35, 29.45] },
+  { name: 'Минск', bbox: [53.78, 27.34, 54.02, 27.76] },
+  { name: 'Алматы', bbox: [43.15, 76.75, 43.40, 77.15] },
+  { name: 'Тбилиси', bbox: [41.62, 44.63, 41.84, 44.93] },
+  { name: 'Ереван', bbox: [40.10, 44.36, 40.27, 44.65] },
+  { name: 'Астана', bbox: [51.05, 71.20, 51.24, 71.65] },
+  { name: 'Ташкент', bbox: [41.18, 69.05, 41.42, 69.43] },
+];
+
 // ─── Regions ────────────────────────────────────────────────────────────────
 const REGIONS = {
   moscow: {
@@ -46,26 +80,15 @@ const REGIONS = {
   },
   'russia-cities': {
     name: 'Крупные города РФ',
-    cities: [
-      { name: 'Москва', bbox: [55.14, 36.80, 56.02, 37.97] },
-      { name: 'СПб', bbox: [59.8, 30.0, 60.1, 30.6] },
-      { name: 'Казань', bbox: [55.7, 48.9, 55.9, 49.3] },
-      { name: 'Новосибирск', bbox: [54.85, 82.7, 55.1, 83.15] },
-      { name: 'Екатеринбург', bbox: [56.7, 60.4, 56.95, 60.8] },
-      { name: 'Нижний Новгород', bbox: [56.2, 43.7, 56.4, 44.1] },
-      { name: 'Краснодар', bbox: [44.95, 38.85, 45.15, 39.15] },
-      { name: 'Ростов-на-Дону', bbox: [47.15, 39.5, 47.35, 39.85] },
-      { name: 'Сочи', bbox: [43.5, 39.6, 43.7, 39.9] },
-      { name: 'Воронеж', bbox: [51.55, 39.05, 51.75, 39.35] },
-      { name: 'Самара', bbox: [53.1, 50.0, 53.3, 50.3] },
-      { name: 'Уфа', bbox: [54.65, 55.85, 54.85, 56.15] },
-      { name: 'Пермь', bbox: [57.9, 55.95, 58.1, 56.35] },
-      { name: 'Волгоград', bbox: [48.55, 44.3, 48.85, 44.65] },
-      { name: 'Челябинск', bbox: [55.05, 61.3, 55.25, 61.55] },
-      { name: 'Омск', bbox: [54.9, 73.2, 55.1, 73.5] },
-      { name: 'Красноярск', bbox: [55.95, 92.7, 56.1, 93.1] },
-      { name: 'Тюмень', bbox: [57.1, 65.4, 57.25, 65.7] },
-    ],
+    cities: RUSSIA_CORE_CITIES,
+  },
+  'international-hubs': {
+    name: 'Международные хабы',
+    cities: INTERNATIONAL_HUB_CITIES,
+  },
+  'production-core': {
+    name: 'Production core (RU + international hubs)',
+    cities: [...RUSSIA_CORE_CITIES, ...INTERNATIONAL_HUB_CITIES],
   },
 };
 
@@ -500,22 +523,28 @@ async function main() {
   const regionArg = process.argv.find(a => a.startsWith('--region='))?.split('=')[1] || 'moscow';
   const roadsOnly = process.argv.includes('--roads-only');
   const extraData = process.argv.includes('--extra');
-  const region = REGIONS[regionArg];
+  const selectedRegions = regionArg.split(',').map(v => v.trim()).filter(Boolean);
+  const regions = selectedRegions.map((name) => ({ key: name, config: REGIONS[name] })).filter((entry) => entry.config);
 
-  if (!region) {
-    console.error(`Регион не найден: ${regionArg}. Доступные: ${Object.keys(REGIONS).join(', ')}`);
+  if (regions.length !== selectedRegions.length || regions.length === 0) {
+    const missing = selectedRegions.filter((name) => !REGIONS[name]);
+    console.error(`Регион не найден: ${missing.join(', ')}. Доступные: ${Object.keys(REGIONS).join(', ')}`);
     process.exit(1);
   }
 
-  console.log(`\n🗺️  Скачивание данных OSM: ${region.name}${roadsOnly ? ' (только дороги)' : ''}${extraData ? ' + доп. данные' : ''}\n`);
+  console.log(`\n🗺️  Скачивание данных OSM: ${regions.map((entry) => entry.config.name).join(' + ')}${roadsOnly ? ' (только дороги)' : ''}${extraData ? ' + доп. данные' : ''}\n`);
 
   // Ensure output dirs
   fs.mkdirSync(OUT_DIR, { recursive: true });
   fs.mkdirSync(path.dirname(GRAPH_PATH), { recursive: true });
 
-  const bboxes = region.cities
-    ? region.cities.map(c => ({ name: c.name, bbox: c.bbox }))
-    : [{ name: region.name, bbox: region.bbox }];
+  const bboxes = dedupRegions(
+    regions.flatMap(({ key, config }) =>
+      config.cities
+        ? config.cities.map(c => ({ regionKey: key, regionName: config.name, name: c.name, bbox: c.bbox }))
+        : [{ regionKey: key, regionName: config.name, name: config.name, bbox: config.bbox }],
+    ),
+  );
 
   let allPOIs = [];
   let allAddresses = [];
@@ -526,8 +555,8 @@ async function main() {
   let allGraphElements = [];
   let allRoadDetails = [];
 
-  for (const { name, bbox } of bboxes) {
-    console.log(`\n📍 ${name} [${bbox.join(', ')}]\n`);
+  for (const { regionKey, regionName, name, bbox } of bboxes) {
+    console.log(`\n📍 ${name} (${regionName}/${regionKey}) [${bbox.join(', ')}]\n`);
 
     // POIs
     if (!roadsOnly) {
@@ -663,6 +692,25 @@ async function main() {
     writeJSON(path.join(OUT_DIR, 'road_signs.json'), allRoadSigns);
     console.log(`  ✅ road_signs.json — ${allRoadSigns.length} дорожных знаков (${fileSize(path.join(OUT_DIR, 'road_signs.json'))})`);
   }
+
+  const coverageManifest = {
+    generatedAt: new Date().toISOString(),
+    regionArg,
+    regions: bboxes.map(({ regionKey, regionName, name, bbox }) => ({ regionKey, regionName, name, bbox })),
+    counts: {
+      pois: allPOIs.length,
+      addresses: allAddresses.length,
+      speedCameras: allCameras.length,
+      trafficLights: allTrafficLights.length,
+      speedBumps: allSpeedBumps.length,
+      roadSigns: allRoadSigns.length,
+      graphNodes: Object.keys(graph.nodes).length,
+      graphEdges: graph.edges.length,
+    },
+  };
+  writeJSON(path.join(OUT_DIR, 'coverage_manifest.json'), coverageManifest);
+  console.log(`  ✅ coverage_manifest.json — ${coverageManifest.regions.length} регионов (${fileSize(path.join(OUT_DIR, 'coverage_manifest.json'))})`);
+
   writeJSON(GRAPH_PATH, graph);
   console.log(`  ✅ graph.json — ${Object.keys(graph.nodes).length} узлов (${fileSize(GRAPH_PATH)})`);
 
@@ -695,6 +743,16 @@ async function main() {
   console.log(`  Узлы:     ${Object.keys(graph.nodes).length.toLocaleString()}`);
   console.log(`  Рёбра:    ${graph.edges.length.toLocaleString()}`);
   console.log('═══════════════════════════════════════\n');
+}
+
+function dedupRegions(items) {
+  const seen = new Set();
+  return items.filter((item) => {
+    const key = `${item.name}:${item.bbox.join(',')}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function dedup(arr) {
