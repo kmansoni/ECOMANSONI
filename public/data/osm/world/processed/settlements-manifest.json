@@ -1,0 +1,10 @@
+[
+  {
+    "countryCode": "AD",
+    "countryName": "Andorra",
+    "count": 72,
+    "target": "settlements/AD.json",
+    "topPlace": "Andorra la Vella",
+    "topPopulation": 20430
+  }
+]

@@ -46,6 +46,7 @@
     "migrations:lint": "node ./scripts/sql/lint-migration-governance.mjs",
     "encoding:check-bom": "node ./scripts/encoding/check-bom.mjs",
     "encoding:normalize": "node ./scripts/encoding/normalize-utf8.mjs --write",
+    "osm:world": "node ./scripts/export-world-geodata.mjs",
     "registry:compile": "npx ts-node src/lib/registry/compile.ts",
     "registry:verify": "npx ts-node src/lib/registry/validate.ts",
     "registry:watch": "npx tsx watch src/lib/registry/compile.ts",
@@ -72,7 +73,8 @@
     "diag:24x7:soft": "node ./scripts/diagnostics/run-24x7.mjs --soft-fail",
     "osm:download": "python scripts/download_osm_data.py",
     "osm:process": "python scripts/process_osm.py",
-    "osm:tiles": "python scripts/generate_tiles.py"
+    "osm:tiles": "python scripts/generate_tiles.py",
+    "osm:world:process": "node ./scripts/process-world-geodata.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.0.1",
@@ -129,6 +131,7 @@
     "livekit-client": "^2.17.2",
     "lottie-web": "^5.13.0",
     "lucide-react": "^0.462.0",
+    "maplibre-gl": "^5.23.0",
     "mediasoup-client": "^3.18.7",
     "next-themes": "^0.3.0",
     "qrcode": "^1.5.4",

@@ -141,6 +141,10 @@ const TaxiDriverPage = lazy(() => import("./pages/taxi/TaxiDriverPage"));
 
 // Amap navigation module (lazy)
 const AmapPage = lazy(() => import("@/pages/amap/AmapPage"));
+const NavigatorSettingsPage = lazy(() => import("@/pages/navigation/NavigatorSettingsPage"));
+const BusinessRegistrationPage = lazy(() => import("@/pages/navigation/BusinessRegistrationPage"));
+const TripHistoryPage = lazy(() => import("@/pages/navigation/TripHistoryPage"));
+const QuantumTransportLabPage = lazy(() => import("@/pages/navigation/QuantumTransportLabPage"));
 
 // Video Editor module (lazy)
 const EditorProjectsPage = lazy(() => import("@/pages/EditorProjectsPage"));
@@ -160,6 +164,7 @@ const SecurityAdminJitPage = lazy(() => import("@/pages/admin/SecurityAdminJitPa
 const AdminVerificationsPage = lazy(() => import("@/pages/admin/AdminVerificationsPage").then(m => ({ default: m.AdminVerificationsPage })));
 const AdminStaffProfilesPage = lazy(() => import("@/pages/admin/AdminStaffProfilesPage").then(m => ({ default: m.AdminStaffProfilesPage })));
 const AdminHashtagModerationPage = lazy(() => import("@/pages/admin/AdminHashtagModerationPage").then(m => ({ default: m.AdminHashtagModerationPage })));
+const AdminBusinessModerationPage = lazy(() => import("@/pages/admin/AdminBusinessModerationPage").then(m => ({ default: m.AdminBusinessModerationPage })));
 const KpiDashboardPage = lazy(() => import("@/pages/admin/KpiDashboardPage").then(m => ({ default: m.KpiDashboardPage })));
 const ModerationQueuePage = lazy(() => import("@/pages/admin/ModerationQueuePage").then(m => ({ default: m.ModerationQueuePage })));
 const AppealsPage = lazy(() => import("@/pages/admin/AppealsPage").then(m => ({ default: m.AppealsPage })));
@@ -324,6 +329,11 @@ const App = () => {
                   <Route path="/admin/hashtags" element={
                     <Suspense fallback={<PageLoader />}>
                       <AdminHashtagModerationPage />
+                    </Suspense>
+                  } />
+                  <Route path="/admin/business-moderation" element={
+                    <Suspense fallback={<PageLoader />}>
+                      <AdminBusinessModerationPage />
                     </Suspense>
                   } />
                   <Route path="/admin/jit" element={
@@ -838,6 +848,26 @@ const App = () => {
                     </Suspense>
                   } />
                   <Route path="/navigation" element={<Navigate to="/amap" replace />} />
+                  <Route path="/navigator-settings" element={
+                    <Suspense fallback={<PageLoader />}>
+                      <NavigatorSettingsPage />
+                    </Suspense>
+                  } />
+                  <Route path="/business-registration" element={
+                    <Suspense fallback={<PageLoader />}>
+                      <BusinessRegistrationPage />
+                    </Suspense>
+                  } />
+                  <Route path="/trip-history" element={
+                    <Suspense fallback={<PageLoader />}>
+                      <TripHistoryPage />
+                    </Suspense>
+                  } />
+                  <Route path="/navigation-lab" element={
+                    <Suspense fallback={<PageLoader />}>
+                      <QuantumTransportLabPage />
+                    </Suspense>
+                  } />
                 </Route>
                 
                 {/* Dev Panel - public route with its own auth */}

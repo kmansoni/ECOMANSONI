@@ -65,9 +65,45 @@ export function usePOISearch(options: UsePOISearchOptions = {}): UsePOISearchRes
 }
 
 async function searchOSM(query: string, near?: LatLng): Promise<POI[]> {
-  const lat = near?.lat ?? 39.9042;
-  const lng = near?.lng ?? 116.4074;
-  
+  const lat = near?.lat ?? 55.7558;
+  const lng = near?.lng ?? 37.6173;
+
+  // 1) OFFLINE FIRST — try local data
+  try {
+    const resp = await fetch('/data/osm/processed/search_index.json');
+    if (resp.ok) {
+      const index: Array<{
+        id: string; name: string; display: string;
+        tokens: string[]; lat: number; lon: number; category: string;
+      }> = await resp.json();
+
+      if (index.length > 0) {
+        const q = query.toLowerCase().trim();
+        const scored = index
+          .filter(e => e.name.toLowerCase().includes(q) || e.tokens.some(t => t.includes(q) || q.includes(t)))
+          .map(e => {
+            const dist = Math.sqrt((e.lat - lat) ** 2 + (e.lon - lng) ** 2);
+            return { ...e, dist };
+          })
+          .sort((a, b) => a.dist - b.dist)
+          .slice(0, 20);
+
+        if (scored.length > 0) {
+          return scored.map(item => ({
+            id: item.id,
+            name: item.name,
+            address: item.display,
+            position: { lat: item.lat, lng: item.lon },
+            type: item.category,
+          }));
+        }
+      }
+    }
+  } catch {
+    // offline data not available, fall through
+  }
+
+  // 2) Nominatim fallback (network required)
   const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&lat=${lat}&lon=${lng}&limit=20&addressdetails=1`;
   
   const response = await fetch(url, {

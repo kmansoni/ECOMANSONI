@@ -1,6 +1,9 @@
 export { MapProvider, useMap } from './components/MapContext';
 export type { IMapContext } from './components/MapContext';
 export { default as AmapMap } from './components/AmapMap';
+export { default as OpenMap } from './components/OpenMap';
+export { TILE_PROVIDERS } from './components/OpenMap';
+export type { OpenMapProps, TileProviderKey } from './components/OpenMap';
 export { default as MapExample } from './components/MapExample';
 export type { AmapMapProps } from './components/AmapMap';
 

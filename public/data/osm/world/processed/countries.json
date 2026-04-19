@@ -1,0 +1,28 @@
+[
+  {
+    "isoA2": "AD",
+    "isoA3": "AND",
+    "isoNumeric": "020",
+    "fips": "AN",
+    "name": "Andorra",
+    "capital": "Andorra la Vella",
+    "areaSqKm": 468,
+    "population": 77006,
+    "continent": "EU",
+    "tld": ".ad",
+    "currencyCode": "EUR",
+    "currencyName": "Euro",
+    "phone": "376",
+    "postalCodeFormat": "AD###",
+    "postalCodeRegex": "^(?:AD)*(\\d{3})$",
+    "languages": [
+      "ca"
+    ],
+    "geonameId": "3041565",
+    "neighbors": [
+      "ES",
+      "FR"
+    ],
+    "equivalentFipsCode": null
+  }
+]

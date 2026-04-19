@@ -466,6 +466,12 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
     hardResetQueryClient();
   }, [accountContainer, hardResetQueryClient]);
 
+  // Ref to avoid re-running the init effect when activateSessionForAccount reference changes
+  const activateSessionRef = React.useRef(activateSessionForAccount);
+  React.useEffect(() => {
+    activateSessionRef.current = activateSessionForAccount;
+  }, [activateSessionForAccount]);
+
   const switchAccount = React.useCallback(async (accountId: AccountId) => {
     if (!accountId) return;
     if (activeAccountId === accountId) return;
@@ -682,7 +688,7 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
         }
 
         try {
-          await withTimeout(activateSessionForAccount(candidate), 5000, "initActivate");
+          await withTimeout(activateSessionRef.current(candidate), 5000, "initActivate");
         } catch {
           if (!cancelled) {
             setAccounts(upsertAccountIndex({ accountId: candidate, requiresReauth: true }));
@@ -697,7 +703,18 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
     return () => {
       cancelled = true;
     };
-  }, [activateSessionForAccount]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Safety: guarantee loading resolves even if init effect is cancelled mid-flight
+  React.useEffect(() => {
+    if (!loading) return;
+    const timer = window.setTimeout(() => {
+      logger.warn('[MultiAccount] safety timer: forcing loading=false after 8s');
+      setLoading(false);
+    }, 8_000);
+    return () => window.clearTimeout(timer);
+  }, [loading]);
 
   React.useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_evt, session) => {

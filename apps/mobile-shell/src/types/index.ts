@@ -42,7 +42,7 @@ export interface POI {
   distance?: number;
 }
 
-export type MapProvider = 'amap';
+export type MapProvider = 'amap' | 'osm' | 'leaflet';
 
 export interface MapProviderConfig {
   provider: MapProvider;

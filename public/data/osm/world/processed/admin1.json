@@ -1,0 +1,72 @@
+[
+  {
+    "code": "AD.06",
+    "countryCode": "AD",
+    "admin1Code": "06",
+    "admin2Code": null,
+    "name": "Sant Julià de Loria",
+    "asciiName": "Sant Julia de Loria",
+    "geonameId": "3039162",
+    "level": 1
+  },
+  {
+    "code": "AD.05",
+    "countryCode": "AD",
+    "admin1Code": "05",
+    "admin2Code": null,
+    "name": "Ordino",
+    "asciiName": "Ordino",
+    "geonameId": "3039676",
+    "level": 1
+  },
+  {
+    "code": "AD.04",
+    "countryCode": "AD",
+    "admin1Code": "04",
+    "admin2Code": null,
+    "name": "La Massana",
+    "asciiName": "La Massana",
+    "geonameId": "3040131",
+    "level": 1
+  },
+  {
+    "code": "AD.03",
+    "countryCode": "AD",
+    "admin1Code": "03",
+    "admin2Code": null,
+    "name": "Encamp",
+    "asciiName": "Encamp",
+    "geonameId": "3040684",
+    "level": 1
+  },
+  {
+    "code": "AD.02",
+    "countryCode": "AD",
+    "admin1Code": "02",
+    "admin2Code": null,
+    "name": "Canillo",
+    "asciiName": "Canillo",
+    "geonameId": "3041203",
+    "level": 1
+  },
+  {
+    "code": "AD.07",
+    "countryCode": "AD",
+    "admin1Code": "07",
+    "admin2Code": null,
+    "name": "Andorra la Vella",
+    "asciiName": "Andorra la Vella",
+    "geonameId": "3041566",
+    "level": 1
+  },
+  {
+    "code": "AD.08",
+    "countryCode": "AD",
+    "admin1Code": "08",
+    "admin2Code": null,
+    "name": "Escaldes-Engordany",
+    "asciiName": "Escaldes-Engordany",
+    "geonameId": "3338529",
+    "level": 1
+  }
+]

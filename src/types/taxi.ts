@@ -298,3 +298,26 @@ export interface DriverRating {
   comment?: string;
   createdAt: string;
 }
+
+// === Мультимодальное сравнение такси ===
+
+export interface TaxiRouteEstimateRequest {
+  pickup: LatLng;
+  destination: LatLng;
+  viaPoints?: LatLng[];
+  passengerCount: number;
+  paymentMethod: PaymentMethod;
+}
+
+export interface TaxiRouteEstimateResponse {
+  direct: TariffEstimate;
+  fromViaPoints: Array<{
+    from: LatLng;
+    toDestination: TariffEstimate;
+    savings: {
+      timeSavedSeconds: number;
+      moneySavedRub: number;
+      distanceSavedKm: number;
+    };
+  }>;
+}
