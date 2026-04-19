@@ -29,6 +29,13 @@ interface InternalMarker {
   element?: HTMLDivElement | null;
 }
 
+declare global {
+  interface Window {
+    AMap: any;
+    AMapUI: any;
+  }
+}
+
 function AmapMap({
   camera: propCamera,
   userLocation: propUserLocation,
@@ -67,78 +74,112 @@ function AmapMap({
     if (!containerRef.current || typeof window === 'undefined') return;
     
     let map: any = null;
-    let L: any = null;
-    let maplibregl: any = null;
+    let amapLoaded = false;
+    
+    const mapTypeMap: Record<string, string> = {
+      standard: 'normal',
+      satellite: 'satellite',
+      night: 'night',
+      navigation: 'normal',
+    };
     
     const initMap = async () => {
       try {
-        const linkEl = document.createElement('link');
-        linkEl.rel = 'stylesheet';
-        linkEl.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-        document.head.appendChild(linkEl);
+        // Load Amap JS API
+        const amapKey = process.env.AMAP_WEB_KEY || 'YOUR_AMAP_KEY';
         
-        const LModule = await import('leaflet');
-        L = LModule.default || LModule;
+        if (!window.AMap) {
+          const script = document.createElement('script');
+          script.src = `https://webapi.amap.com/maps?v=2.0&key=${amapKey}`;
+          script.async = true;
+          
+          await new Promise((resolve, reject) => {
+            script.onload = resolve;
+            script.onerror = reject;
+            document.head.appendChild(script);
+          });
+        }
+        
+        amapLoaded = true;
+        const AMap = window.AMap;
         
         const mapContainer = containerRef.current;
         if (!mapContainer) return;
         
-        map = L.map(mapContainer, {
-          center: [currentCamera.center.lat, currentCamera.center.lng],
+        map = new AMap.Map(mapContainer, {
+          center: [currentCamera.center.lng, currentCamera.center.lat],
           zoom: currentCamera.zoom,
-          zoomControl: false,
-          attributionControl: false,
+          mapStyle: `amap://styles/${mapTypeMap[mapType] || 'normal'}`,
+          showCompass: showsCompass,
+          showScale: showsScale,
+          pitch: 0,
+          rotation: 0,
+          viewMode: '2D',
+          zoomEnable: true,
+          dragEnable: true,
+          keyboardEnable: false,
         });
         
-        const tileUrls: Record<string, string> = {
-          standard: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-          night: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-          satellite: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-          navigation: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-        };
-        
-        const tileUrl = tileUrls[mapType] || tileUrls.standard;
-        const tileLayer = L.tileLayer(tileUrl, {
-          maxZoom: 19,
-          subdomains: mapType === 'standard' ? 'abcd' : undefined,
+        // Create layers
+        markersLayerRef.current = new AMap.LabelsLayer({
+          zIndex: 100,
+          collision: false,
         });
+        map.add(markersLayerRef.current);
         
-        tileLayer.addTo(map);
-        
-        L.control.zoom({ position: 'bottomright' }).addTo(map);
-        L.control.attribution({ position: 'bottomleft', prefix: false }).addTo(map);
+        routeLayerRef.current = new AMap.LabelsLayer({
+          zIndex: 50,
+          collision: false,
+        });
+        map.add(routeLayerRef.current);
         
         map.on('click', (e: any) => {
           if (onMapClick) {
-            onMapClick({ lat: e.latlng.lat, lng: e.latlng.lng });
+            onMapClick({ lat: e.lnglat.getLat(), lng: e.lnglat.getLng() });
           }
         });
-        
-        markersLayerRef.current = L.layerGroup().addTo(map);
-        routeLayerRef.current = L.layerGroup().addTo(map);
         
         mapRef.current = map;
         setIsMapReady(true);
         
-        if (showsUserLocation && navigator.geolocation) {
-          startGeolocation();
+        if (showsUserLocation && !propUserLocation && navigator.geolocation) {
+          startGeolocation(map, AMap);
         }
       } catch (err) {
         console.error('[AmapMap] Failed to initialize map:', err);
+        // Fallback to simple initialization
+        initFallback();
       }
+    };
+    
+    const initFallback = () => {
+      // Fallback if Amap fails - create placeholder
+      const container = containerRef.current;
+      if (container) {
+        container.innerHTML = `
+          <div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#f0f0f0;color:#666;">
+            <div style="text-align:center;">
+              <div style="font-size:48px;margin-bottom:16px;">🗺️</div>
+              <div style="font-size:16px;">Amap Map</div>
+              <div style="font-size:12px;color:#999;margin-top:8px;">${currentCamera.center.lat.toFixed(4)}, ${currentCamera.center.lng.toFixed(4)}</div>
+            </div>
+          </div>
+        `;
+      }
+      setIsMapReady(true);
     };
     
     initMap();
     
     return () => {
       if (mapRef.current) {
-        mapRef.current.remove();
+        mapRef.current.destroy();
         mapRef.current = null;
       }
     };
-  }, []);
+  }, [currentCamera.center.lat, currentCamera.center.lng, currentCamera.zoom, mapType, propUserLocation, showsCompass, showsScale, showsUserLocation]);
 
-  const startGeolocation = useCallback(() => {
+  const startGeolocation = useCallback((map: any, AMap: any) => {
     if (!navigator.geolocation) return;
     
     const watchId = navigator.geolocation.watchPosition(
@@ -159,21 +200,49 @@ function AmapMap({
           onUserLocationChange(location);
         }
         
-        if (userMarkerRef.current && mapRef.current) {
-          userMarkerRef.current.setLatLng([location.position.lat, location.position.lng]);
-        } else if (mapRef.current) {
-          const icon = L.divIcon({
-            html: `<div style="width:24px;height:24px;background:#3B82F6;border:3px solid white;border-radius:50%;box-shadow:0 2px 8px rgba(0,0,0,0.3)"></div>`,
-            iconSize: [24, 24],
-            iconAnchor: [12, 12],
-            className: '',
+        // Update or create marker
+        const lnglat = new AMap.LngLat(location.position.lng, location.position.lat);
+        
+        if (userMarkerRef.current) {
+          userMarkerRef.current.setPosition(lnglat);
+        } else {
+          const markerContent = document.createElement('div');
+          markerContent.className = 'amap-user-marker';
+          markerContent.innerHTML = `
+            <div style="
+              width: 24px;
+              height: 24px;
+              background: #3B82F6;
+              border: 3px solid white;
+              border-radius: 50%;
+              box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+              position: relative;
+            ">
+              <div style="
+                position: absolute;
+                top: -8px;
+                left: 50%;
+                transform: translateX(-50%);
+                width: 0;
+                height: 0;
+                border-left: 6px solid transparent;
+                border-right: 6px solid transparent;
+                border-bottom: 8px solid #3B82F6;
+              "></div>
+            </div>
+          `;
+          
+          userMarkerRef.current = new AMap.Marker({
+            position: lnglat,
+            content: markerContent,
+            offset: new AMap.Pixel(-12, -12),
+            zIndex: 200,
           });
-          userMarkerRef.current = L.marker([location.position.lat, location.position.lng], { icon })
-            .addTo(mapRef.current);
+          map.add(userMarkerRef.current);
         }
         
         if (isTracking && mapRef.current) {
-          mapRef.current.setView([location.position.lat, location.position.lng], mapRef.current.getZoom());
+          mapRef.current.setCenter(lnglat);
         }
       },
       (error) => {
@@ -188,75 +257,166 @@ function AmapMap({
   useEffect(() => {
     if (!isMapReady || !mapRef.current) return;
     
-    mapRef.current.setView(
-      [currentCamera.center.lat, currentCamera.center.lng],
-      currentCamera.zoom,
-      { animate: true }
+    const AMap = window.AMap;
+    if (!AMap) return;
+    
+    mapRef.current.setCenter(
+      new AMap.LngLat(currentCamera.center.lng, currentCamera.center.lat)
     );
+    mapRef.current.setZoom(currentCamera.zoom);
   }, [currentCamera, isMapReady]);
 
   useEffect(() => {
     if (!isMapReady || !mapRef.current || !markersLayerRef.current) return;
-    markersLayerRef.current.clearLayers();
     
-    const L = (window as any).L;
-    if (!L) return;
+    const AMap = window.AMap;
+    if (!AMap) return;
+    
+    markersLayerRef.current.removeAll();
     
     for (const marker of propMarkers) {
-      const el = document.createElement('div');
-      el.className = 'amap-marker';
-      el.innerHTML = marker.icon || `<div style="width:32px;height:32px;background:#F43F5E;border:2px solid white;border-radius:50%;box-shadow:0 2px 8px rgba(0,0,0,0.3)"></div>`;
+      const markerContent = document.createElement('div');
+      markerContent.className = 'amap-marker';
+      markerContent.innerHTML = marker.icon || `
+        <div style="
+          width: 32px;
+          height: 32px;
+          background: #F43F5E;
+          border: 2px solid white;
+          border-radius: 50%;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        ">
+          <div style="width: 12px;height: 12px;background: white;border-radius: 50%;"></div>
+        </div>
+      `;
       
-      const icon = L.divIcon({
-        html: el.innerHTML,
-        iconSize: [32, 32],
-        iconAnchor: [16, 32],
-        className: '',
+      const amapMarker = new AMap.Marker({
+        position: new AMap.LngLat(marker.position.lng, marker.position.lat),
+        content: markerContent,
+        offset: new AMap.Pixel(-16, -32),
+        zIndex: 100,
       });
       
-      const leafletMarker = L.marker([marker.position.lat, marker.position.lng], { icon });
+      // Add click handler
+      if (marker.onPress || onMarkerPress) {
+        amapMarker.on('click', () => {
+          if (marker.onPress) marker.onPress();
+          if (onMarkerPress) onMarkerPress(marker);
+        });
+      }
       
+      // Add info window if title or subtitle
       if (marker.title || marker.subtitle) {
-        leafletMarker.bindPopup(`<b>${marker.title || ''}</b><br/>${marker.subtitle || ''}`);
+        const infoWindow = new AMap.InfoWindow({
+          content: `
+            <div style="padding: 8px; max-width: 200px;">
+              ${marker.title ? `<div style="font-weight: bold; margin-bottom: 4px;">${marker.title}</div>` : ''}
+              ${marker.subtitle ? `<div style="color: #666;">${marker.subtitle}</div>` : ''}
+            </div>
+          `,
+          offset: new AMap.Pixel(0, -30),
+        });
+        amapMarker.on('mouseover', () => {
+          infoWindow.open(mapRef.current, amapMarker.getPosition());
+        });
       }
       
-      if (marker.onPress) {
-        leafletMarker.on('click', marker.onPress);
-      }
-      
-      if (onMarkerPress) {
-        leafletMarker.on('click', () => onMarkerPress(marker));
-      }
-      
-      leafletMarker.addTo(markersLayerRef.current);
+      markersLayerRef.current.add(amapMarker);
     }
   }, [propMarkers, isMapReady, onMarkerPress]);
 
   useEffect(() => {
     if (!isMapReady || !mapRef.current || !routeLayerRef.current) return;
-    routeLayerRef.current.clearLayers();
     
-    const L = (window as any).L;
-    if (!L || !propRoute || propRoute.points.length < 2) return;
+    const AMap = window.AMap;
+    routeLayerRef.current.removeAll();
+    if (!AMap || !propRoute || propRoute.points.length < 2) return;
     
-    const latlngs = propRoute.points.map(p => [p.lat, p.lng] as [number, number]);
+    const path = propRoute.points.map(p => new AMap.LngLat(p.lng, p.lat));
     const color = propRoute.color || '#3B82F6';
     const width = propRoute.width || 6;
     
-    L.polyline(latlngs, {
-      color,
-      weight: width,
-      opacity: 0.9,
-      smoothFactor: 2,
-      lineCap: 'round',
+    const polyline = new AMap.Polyline({
+      path,
+      strokeColor: color,
+      strokeWeight: width,
+      strokeOpacity: 0.9,
+      strokeStyle: 'solid',
+      strokeDasharray: [],
       lineJoin: 'round',
-    }).addTo(routeLayerRef.current);
+      lineCap: 'round',
+    });
     
+    routeLayerRef.current.add(polyline);
+    
+    // Fit bounds to route
     if (propRoute.points.length >= 2) {
-      const bounds = L.latLngBounds(latlngs);
-      mapRef.current.fitBounds(bounds, { padding: [50, 50], maxZoom: 16 });
+      mapRef.current.setFitView([polyline], true, [50, 50, 50, 50], 16);
     }
   }, [propRoute, isMapReady]);
+
+  useEffect(() => {
+    if (!isMapReady || !mapRef.current || !showsUserLocation) return;
+
+    const AMap = window.AMap;
+    if (!AMap) return;
+
+    const location = propUserLocation ?? internalUserLocation;
+    if (!location) {
+      if (userMarkerRef.current) {
+        mapRef.current.remove(userMarkerRef.current);
+        userMarkerRef.current = null;
+      }
+      return;
+    }
+
+    const lnglat = new AMap.LngLat(location.position.lng, location.position.lat);
+
+    if (userMarkerRef.current) {
+      userMarkerRef.current.setPosition(lnglat);
+    } else {
+      const markerContent = document.createElement('div');
+      markerContent.className = 'amap-user-marker';
+      markerContent.innerHTML = `
+        <div style="
+          width: 24px;
+          height: 24px;
+          background: #3B82F6;
+          border: 3px solid white;
+          border-radius: 50%;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+          position: relative;
+        ">
+          <div style="
+            position: absolute;
+            top: -8px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 0;
+            height: 0;
+            border-left: 6px solid transparent;
+            border-right: 6px solid transparent;
+            border-bottom: 8px solid #3B82F6;
+          "></div>
+        </div>
+      `;
+
+      userMarkerRef.current = new AMap.Marker({
+        position: lnglat,
+        content: markerContent,
+        offset: new AMap.Pixel(-12, -12),
+        zIndex: 200,
+      });
+      mapRef.current.add(userMarkerRef.current);
+    }
+
+    if (isTracking) {
+      mapRef.current.setCenter(lnglat);
+    }
+  }, [internalUserLocation, isMapReady, isTracking, propUserLocation, showsUserLocation]);
 
   return (
     <div

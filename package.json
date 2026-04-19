@@ -69,7 +69,10 @@
     "test:calls:e2ee": "node --no-deprecation ./node_modules/vitest/vitest.mjs run src/test/calls-v2-key-exchange.test.ts src/test/calls-v2-rekey-state-machine.test.ts src/test/calls-v2-epoch-guard.test.ts src/test/calls-v2-relay-candidate.test.ts",
     "calls:e2ee:gate": "node scripts/calls/e2ee-sfu-integration-gate.mjs && npm run test:calls:e2ee",
     "diag:24x7": "node ./scripts/diagnostics/run-24x7.mjs",
-    "diag:24x7:soft": "node ./scripts/diagnostics/run-24x7.mjs --soft-fail"
+    "diag:24x7:soft": "node ./scripts/diagnostics/run-24x7.mjs --soft-fail",
+    "osm:download": "python scripts/download_osm_data.py",
+    "osm:process": "python scripts/process_osm.py",
+    "osm:tiles": "python scripts/generate_tiles.py"
   },
   "dependencies": {
     "@capacitor/android": "^8.0.1",

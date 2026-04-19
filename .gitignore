@@ -42,6 +42,7 @@ dist/
 tsc_errors.txt
 tsc-output.txt
 vite_errors.txt
+*.tsbuildinfo
 
 # Copilot chat exports
 ## GitHub Copilot Chat.md

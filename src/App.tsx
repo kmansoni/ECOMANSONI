@@ -139,8 +139,8 @@ const TaxiHistoryPage = lazy(() => import("./pages/taxi/TaxiHistoryPage"));
 const TaxiSettingsPage = lazy(() => import("./pages/taxi/TaxiSettingsPage"));
 const TaxiDriverPage = lazy(() => import("./pages/taxi/TaxiDriverPage"));
 
-// Navigation module (lazy)
-const NavigationPage = lazy(() => import("@/pages/navigation/NavigationPage"));
+// Amap navigation module (lazy)
+const AmapPage = lazy(() => import("@/pages/amap/AmapPage"));
 
 // Video Editor module (lazy)
 const EditorProjectsPage = lazy(() => import("@/pages/EditorProjectsPage"));
@@ -831,12 +831,13 @@ const App = () => {
                     </Suspense>
                   } />
 
-                  {/* Navigation — fullscreen, outside AppLayout */}
-                  <Route path="/navigation" element={
+                  {/* Amap — fullscreen, outside AppLayout */}
+                  <Route path="/amap" element={
                     <Suspense fallback={<PageLoader />}>
-                      <NavigationPage />
+                      <AmapPage />
                     </Suspense>
                   } />
+                  <Route path="/navigation" element={<Navigate to="/amap" replace />} />
                 </Route>
                 
                 {/* Dev Panel - public route with its own auth */}

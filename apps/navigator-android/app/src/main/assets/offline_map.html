@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body, html { margin: 0; padding: 0; height: 100%; }
+        #map {
+            width: 100%;
+            height: 100%;
+            background: #f0f0f0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: sans-serif;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div id="map">
+        Оффлайн-карта<br>
+        (используйте JavaScript API для Leaflet/OpenLayers)
+    </div>
+    <script>
+        function setUserLocation(lat, lon) {
+            console.log("User location: " + lat + ", " + lon);
+        }
+        function addMarker(lat, lon, title) {
+            console.log("Marker at: " + lat + ", " + lon);
+        }
+    </script>
+</body>
+</html>

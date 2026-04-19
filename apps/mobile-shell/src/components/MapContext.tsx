@@ -29,7 +29,7 @@ export function useMap(): IMapContext {
   const ctx = useContext(MapContext);
   if (!ctx) {
     return {
-      provider: 'leaflet',
+      provider: 'amap',
       camera: defaultCamera,
       userLocation: null,
       isTracking: false,
@@ -46,7 +46,7 @@ export function useMap(): IMapContext {
 }
 
 export function MapProvider({ 
-  provider = 'leaflet', 
+  provider = 'amap', 
   children 
 }: MapProviderProps) {
   const [camera, setCameraState] = useState<MapCamera>(defaultCamera);
