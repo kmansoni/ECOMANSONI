@@ -1,26 +1,13 @@
 import type { LatLng } from '@/types/taxi';
-import type { NavRoute, RouteSegment, Maneuver, ManeuverType, TrafficLevel } from '@/types/navigation';
+import type { NavRoute, RouteSegment, Maneuver, ManeuverType, TrafficLevel, TravelMode, MultiModalRoute, TransitRoutingOptions } from '@/types/navigation';
+import { useNavigatorSettings } from '@/stores/navigatorSettingsStore';
+import { loadOsmGraph, type OSMGraph, type OSMGraphEdge, type OSMGraphNode } from '@/lib/navigation/osmGraph';
 
 const OSRM_BASE = 'https://router.project-osrm.org/route/v1/driving';
 
-interface GraphNode {
-  lat: number;
-  lon: number;
-}
-
-interface GraphEdge {
-  fromNode: string;
-  toNode: string;
-  distance: number;
-  speed: number;
-  highway: string;
-  name: string;
-}
-
-interface LocalGraph {
-  nodes: Record<string, GraphNode>;
-  edges: GraphEdge[];
-}
+type GraphNode = OSMGraphNode;
+type GraphEdge = OSMGraphEdge;
+type LocalGraph = OSMGraph;
 
 let localGraph: LocalGraph | null = null;
 let graphLoadAttempted = false;
@@ -30,13 +17,14 @@ async function loadLocalGraph(): Promise<LocalGraph | null> {
   graphLoadAttempted = true;
   
   try {
-    const response = await fetch('/data/osm/graph.json');
-    if (!response.ok) {
+    const parsedGraph = await loadOsmGraph();
+    if (!parsedGraph) {
       console.log('[Routing] Local graph not found');
       return null;
     }
-    const parsedGraph = (await response.json()) as LocalGraph;
     localGraph = parsedGraph;
+    _spatialGrid = null; // reset spatial index
+    _adjList = null; // reset adjacency list
     console.log('[Routing] Loaded local graph:', 
       Object.keys(parsedGraph.nodes).length, 'nodes,', 
       parsedGraph.edges.length, 'edges');
@@ -47,71 +35,208 @@ async function loadLocalGraph(): Promise<LocalGraph | null> {
   }
 }
 
+// ─── Spatial grid for fast nearest-node lookup ─────────────────────────────
+let _spatialGrid: Map<string, string[]> | null = null;
+const GRID_SIZE = 0.005; // ~500m cells
+
+function buildSpatialGrid(nodes: Record<string, GraphNode>): Map<string, string[]> {
+  if (_spatialGrid) return _spatialGrid;
+  _spatialGrid = new Map();
+  for (const [id, node] of Object.entries(nodes)) {
+    const key = `${Math.floor(node.lat / GRID_SIZE)},${Math.floor(node.lon / GRID_SIZE)}`;
+    let arr = _spatialGrid.get(key);
+    if (!arr) { arr = []; _spatialGrid.set(key, arr); }
+    arr.push(id);
+  }
+  return _spatialGrid;
+}
+
 function findNearestNode(lat: number, lon: number, nodes: Record<string, GraphNode>): string | null {
+  const grid = buildSpatialGrid(nodes);
+  const cellLat = Math.floor(lat / GRID_SIZE);
+  const cellLon = Math.floor(lon / GRID_SIZE);
+
   let minDist = Infinity;
   let nearest: string | null = null;
-  
-  for (const [id, node] of Object.entries(nodes)) {
-    const dist = Math.sqrt((node.lat - lat) ** 2 + (node.lon - lon) ** 2);
-    if (dist < minDist) {
-      minDist = dist;
-      nearest = id;
+
+  // Search 3x3 neighborhood
+  for (let dLat = -1; dLat <= 1; dLat++) {
+    for (let dLon = -1; dLon <= 1; dLon++) {
+      const key = `${cellLat + dLat},${cellLon + dLon}`;
+      const ids = grid.get(key);
+      if (!ids) continue;
+      for (const id of ids) {
+        const node = nodes[id];
+        const dist = (node.lat - lat) ** 2 + (node.lon - lon) ** 2;
+        if (dist < minDist) { minDist = dist; nearest = id; }
+      }
     }
   }
-  
+
+  // Fallback: if no node found in neighborhood, expand to 5x5
+  if (!nearest) {
+    for (let dLat = -2; dLat <= 2; dLat++) {
+      for (let dLon = -2; dLon <= 2; dLon++) {
+        const key = `${cellLat + dLat},${cellLon + dLon}`;
+        const ids = grid.get(key);
+        if (!ids) continue;
+        for (const id of ids) {
+          const node = nodes[id];
+          const dist = (node.lat - lat) ** 2 + (node.lon - lon) ** 2;
+          if (dist < minDist) { minDist = dist; nearest = id; }
+        }
+      }
+    }
+  }
+
   return nearest;
 }
 
-function dijkstra(
+// ─── Adjacency list (built once per graph load) ────────────────────────────
+let _adjList: Map<string, GraphEdge[]> | null = null;
+
+function getAdjacencyList(edges: GraphEdge[]): Map<string, GraphEdge[]> {
+  if (_adjList) return _adjList;
+  _adjList = new Map();
+  for (const edge of edges) {
+    let arr = _adjList.get(edge.fromNode);
+    if (!arr) { arr = []; _adjList.set(edge.fromNode, arr); }
+    arr.push(edge);
+  }
+  return _adjList;
+}
+
+// ─── Binary Min-Heap for Dijkstra ──────────────────────────────────────────
+class MinHeap {
+  private heap: [number, string][] = []; // [distance, nodeId]
+
+  push(dist: number, id: string): void {
+    this.heap.push([dist, id]);
+    this._bubbleUp(this.heap.length - 1);
+  }
+
+  pop(): [number, string] | undefined {
+    if (this.heap.length === 0) return undefined;
+    const top = this.heap[0];
+    const last = this.heap.pop()!;
+    if (this.heap.length > 0) {
+      this.heap[0] = last;
+      this._sinkDown(0);
+    }
+    return top;
+  }
+
+  get size(): number { return this.heap.length; }
+
+  private _bubbleUp(i: number): void {
+    while (i > 0) {
+      const parent = (i - 1) >> 1;
+      if (this.heap[i][0] >= this.heap[parent][0]) break;
+      [this.heap[i], this.heap[parent]] = [this.heap[parent], this.heap[i]];
+      i = parent;
+    }
+  }
+
+  private _sinkDown(i: number): void {
+    const n = this.heap.length;
+    while (true) {
+      let smallest = i;
+      const left = 2 * i + 1, right = 2 * i + 2;
+      if (left < n && this.heap[left][0] < this.heap[smallest][0]) smallest = left;
+      if (right < n && this.heap[right][0] < this.heap[smallest][0]) smallest = right;
+      if (smallest === i) break;
+      [this.heap[i], this.heap[smallest]] = [this.heap[smallest], this.heap[i]];
+      i = smallest;
+    }
+  }
+}
+
+// Типы дорог для фильтрации
+const TOLL_HIGHWAYS = new Set(['motorway', 'toll', 'motorway_link']);
+const UNPAVED_ROADS = new Set(['track', 'path', 'unpaved', 'dirt']);
+const HIGHWAY_ROADS = new Set(['motorway', 'motorway_link', 'trunk', 'trunk_link']);
+
+interface RoutePreferences {
+  avoidTolls: boolean;
+  avoidUnpaved: boolean;
+  avoidHighways: boolean;
+}
+
+function getRoutePreferences(): RoutePreferences {
+  const state = useNavigatorSettings.getState();
+  return {
+    avoidTolls: state.avoidTolls,
+    avoidUnpaved: state.avoidUnpaved,
+    avoidHighways: state.avoidHighways,
+  };
+}
+
+// Штраф за нежелательные типы дорог (умножитель расстояния)
+function getEdgePenalty(edge: GraphEdge, prefs: RoutePreferences): number {
+  let penalty = 1.0;
+  if (prefs.avoidTolls && TOLL_HIGHWAYS.has(edge.highway)) penalty += 10;
+  if (prefs.avoidUnpaved && UNPAVED_ROADS.has(edge.highway)) penalty += 10;
+  if (prefs.avoidHighways && HIGHWAY_ROADS.has(edge.highway)) penalty += 5;
+  return penalty;
+}
+
+// A* эвристика — расстояние по прямой до цели (в км)
+function heuristic(nodeId: string, endNodeId: string, nodes: Record<string, GraphNode>): number {
+  const a = nodes[nodeId];
+  const b = nodes[endNodeId];
+  if (!a || !b) return 0;
+  const dlat = (a.lat - b.lat) * 111.32;
+  const dlng = (a.lon - b.lon) * 111.32 * Math.cos(a.lat * Math.PI / 180);
+  return Math.sqrt(dlat * dlat + dlng * dlng);
+}
+
+function aStarRoute(
   nodes: Record<string, GraphNode>,
   edges: GraphEdge[],
   startNodeId: string,
   endNodeId: string
 ): GraphEdge[] | null {
-  const distances: Record<string, number> = {};
-  const previous: Record<string, string | null> = {};
-  const visited: Set<string> = new Set();
-  
-  for (const id in nodes) {
-    distances[id] = id === startNodeId ? 0 : Infinity;
-    previous[id] = null;
-  }
-  
-  while (visited.size < Object.keys(nodes).length) {
-    let minDist = Infinity;
-    let currentNode: string | null = null;
-    
-    for (const id in distances) {
-      if (!visited.has(id) && distances[id] < minDist) {
-        minDist = distances[id];
-        currentNode = id;
-      }
-    }
-    
-    if (currentNode === null || currentNode === endNodeId) break;
+  const adj = getAdjacencyList(edges);
+  const prefs = getRoutePreferences();
+  const gScore: Record<string, number> = { [startNodeId]: 0 };
+  const previous: Record<string, string | null> = { [startNodeId]: null };
+  const visited = new Set<string>();
+  const pq = new MinHeap();
+
+  pq.push(heuristic(startNodeId, endNodeId, nodes), startNodeId);
+
+  while (pq.size > 0) {
+    const [, currentNode] = pq.pop()!;
+
+    if (currentNode === endNodeId) break;
+    if (visited.has(currentNode)) continue;
     visited.add(currentNode);
-    
-    const outgoing = edges.filter(e => e.fromNode === currentNode);
+
+    const currentG = gScore[currentNode] ?? Infinity;
+    const outgoing = adj.get(currentNode) ?? [];
     for (const edge of outgoing) {
-      const newDist = distances[currentNode] + edge.distance;
-      if (newDist < distances[edge.toNode]) {
-        distances[edge.toNode] = newDist;
+      const penalty = getEdgePenalty(edge, prefs);
+      const newG = currentG + edge.distance * penalty;
+      if (newG < (gScore[edge.toNode] ?? Infinity)) {
+        gScore[edge.toNode] = newG;
         previous[edge.toNode] = currentNode;
+        const fScore = newG + heuristic(edge.toNode, endNodeId, nodes);
+        pq.push(fScore, edge.toNode);
       }
     }
   }
-  
-  if (!previous[endNodeId]) return null;
-  
+
+  if (previous[endNodeId] === undefined) return null;
+
   const path: GraphEdge[] = [];
   let current: string | null = endNodeId;
   while (current !== null && previous[current] !== null) {
     const from: string = previous[current] as string;
-    const edge = edges.find(e => e.fromNode === from && e.toNode === current);
+    const edge = (adj.get(from) ?? []).find(e => e.toNode === current);
     if (edge) path.unshift(edge);
     current = from;
   }
-  
+
   return path;
 }
 
@@ -225,7 +350,7 @@ export async function fetchRouteOffline(
     throw new Error('Could not find nearest nodes');
   }
   
-  const path = dijkstra(graph.nodes, graph.edges, fromNodeId, toNodeId);
+  const path = aStarRoute(graph.nodes, graph.edges, fromNodeId, toNodeId);
   
   if (!path || path.length === 0) {
     throw new Error('No path found');
@@ -287,26 +412,24 @@ function parseManeuverType(type: string, modifier?: string): ManeuverType {
 }
 
 function estimateTraffic(hour: number = new Date().getHours()): TrafficLevel {
-  const r = Math.random();
-
+  // Детерминированная оценка трафика по времени суток
   if ((hour >= 7 && hour < 10) || (hour >= 17 && hour < 20)) {
-    // час пик
-    if (r < 0.1) return 'congested';
-    if (r < 0.4) return 'slow';
-    return 'moderate';
+    return 'slow'; // час пик
   }
   if (hour >= 10 && hour < 17) {
-    if (r < 0.5) return 'free';
-    if (r < 0.8) return 'moderate';
-    return 'slow';
+    return 'moderate'; // рабочее время
   }
-  // ночь
-  if (r < 0.7) return 'free';
-  if (r < 0.9) return 'moderate';
-  return 'slow';
+  if (hour >= 22 || hour < 6) {
+    return 'free'; // ночь
+  }
+  return 'moderate'; // вечер / утро
 }
 
-function chunkRoute(points: LatLng[], segmentCount: number): RouteSegment[] {
+function chunkRoute(
+  points: LatLng[],
+  segmentCount: number,
+  trafficSegments?: { centerLat: number; centerLon: number; congestionLevel: TrafficLevel; confidence: number }[],
+): RouteSegment[] {
   if (points.length < 2) return [];
   const chunkSize = Math.max(2, Math.floor(points.length / segmentCount));
   const segments: RouteSegment[] = [];
@@ -315,9 +438,29 @@ function chunkRoute(points: LatLng[], segmentCount: number): RouteSegment[] {
     const end = Math.min(i + chunkSize, points.length);
     const chunk = points.slice(i, end);
     if (chunk.length >= 2) {
+      // Определяем трафик: реальный (из GPS-проб) или детерминированный fallback
+      let traffic: TrafficLevel = estimateTraffic();
+
+      if (trafficSegments && trafficSegments.length > 0) {
+        const midIdx = Math.floor(chunk.length / 2);
+        const mid = chunk[midIdx];
+        const threshold = 0.003; // ~330м
+        let bestDist = Infinity;
+        for (const seg of trafficSegments) {
+          const dLat = Math.abs(seg.centerLat - mid.lat);
+          const dLon = Math.abs(seg.centerLon - mid.lng);
+          if (dLat > threshold || dLon > threshold) continue;
+          const dist = dLat * dLat + dLon * dLon;
+          if (dist < bestDist && seg.confidence >= 0.3) {
+            bestDist = dist;
+            traffic = seg.congestionLevel;
+          }
+        }
+      }
+
       segments.push({
         points: chunk,
-        traffic: estimateTraffic(),
+        traffic,
         speedLimit: [40, 60, 80, 100][Math.floor(Math.random() * 4)],
       });
     }
@@ -360,33 +503,109 @@ function parseOSRMRoute(raw: OSRMRoute, id: string): NavRoute {
 export async function fetchRoute(
   from: LatLng,
   to: LatLng,
-  alternatives = true
-): Promise<{ main: NavRoute; alternatives: NavRoute[] }> {
-  // Try offline first
+  alternatives = true,
+  mode: TravelMode = 'car',
+  transitOptions?: TransitRoutingOptions
+): Promise<{ main: NavRoute; alternatives: NavRoute[]; multimodal?: MultiModalRoute }> {
+  // Pedestrian mode — use pedestrian graph + A*
+  if (mode === 'pedestrian') {
+    const { buildPedestrianRoute } = await import('./pedestrianMode');
+    try {
+      const main = await buildPedestrianRoute(from, to);
+      return { main, alternatives: [] };
+    } catch (e) {
+      console.warn('[Routing] Pedestrian route failed, falling back to car:', e);
+      // Fall through to car routing with warning
+    }
+  }
+
+  // Transit mode — use TransitRouter (RAPTOR)
+  if (mode === 'transit' || mode === 'multimodal') {
+    try {
+      const { transitRouter } = await import('./transitRouter');
+      const result = await transitRouter.buildTransitRoute(from, to, transitOptions);
+      // Return the first transit segment's walk route as NavRoute fallback
+      const mainSegment = result.main.segments.find(s => s.geometry && s.geometry.length > 0);
+      const fallbackRoute: NavRoute = {
+        id: result.main.id,
+        segments: result.main.segments
+          .filter(s => s.geometry && s.geometry.length >= 2)
+          .map(s => ({ points: s.geometry!, traffic: 'free' as TrafficLevel, speedLimit: null })),
+        maneuvers: [],
+        totalDistanceMeters: result.main.totalDistanceMeters,
+        totalDurationSeconds: result.main.totalDurationSeconds,
+        geometry: result.main.segments.flatMap(s => s.geometry ?? []),
+      };
+      return { main: fallbackRoute, alternatives: [], multimodal: result.main };
+    } catch (e) {
+      console.warn('[Routing] Transit route failed, falling back to car:', e);
+    }
+  }
+
+  // Car mode (default) — offline first, OSRM fallback
+  // 1) OFFLINE FIRST — local Dijkstra routing
   try {
-    return await fetchRouteOffline(from, to);
+    const result = await fetchRouteOffline(from, to);
+    console.log('[Routing] Offline route found');
+    return result;
   } catch (e) {
-    console.log('[Routing] Falling back to OSRM:', e);
+    console.log('[Routing] Offline unavailable:', e);
   }
   
-  // Fallback to OSRM
-  const coords = `${from.lng},${from.lat};${to.lng},${to.lat}`;
-  const url = `${OSRM_BASE}/${coords}?overview=full&geometries=geojson&steps=true&alternatives=${alternatives}`;
+  // 2) OSRM fallback (only when offline graph not loaded yet)
+  try {
+    const coords = `${from.lng},${from.lat};${to.lng},${to.lat}`;
+    const url = `${OSRM_BASE}/${coords}?overview=full&geometries=geojson&steps=true&alternatives=${alternatives}`;
 
-  const resp = await fetch(url);
-  if (!resp.ok) throw new Error(`OSRM error: ${resp.status}`);
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`OSRM error: ${resp.status}`);
 
-  const data = await resp.json();
-  if (data.code !== 'Ok' || !data.routes?.length) {
-    throw new Error('No route found');
+    const data = await resp.json();
+    if (data.code !== 'Ok' || !data.routes?.length) {
+      throw new Error('No route found');
+    }
+
+    const main = parseOSRMRoute(data.routes[0], 'main');
+    const alts = (data.routes as OSRMRoute[])
+      .slice(1, 4)
+      .map((r, i) => parseOSRMRoute(r, `alt-${i}`));
+
+    return { main, alternatives: alts };
+  } catch (osrmErr) {
+    console.warn('[Routing] OSRM also failed:', osrmErr);
+    throw new Error('Нет доступных маршрутов. Загрузите оффлайн данные: node scripts/fetch-osm-data.mjs');
+  }
+}
+
+// ─── Spatial off-route проверка O(1) вместо O(n) ───────────────────────────
+const ROUTE_GRID_SIZE = 0.0005; // ~50м ячейки
+
+/**
+ * Строит spatial grid по точкам маршрута для быстрой проверки on-route.
+ * Возвращает функцию isOnRoute(position) → boolean.
+ */
+export function buildRouteProximityChecker(
+  routeGeometry: LatLng[],
+  thresholdKm: number = 0.05
+): (position: LatLng) => boolean {
+  const grid = new Set<string>();
+  const expand = Math.ceil(thresholdKm / (ROUTE_GRID_SIZE * 111)); // кол-во ячеек для расширения
+
+  for (const p of routeGeometry) {
+    const cellLat = Math.floor(p.lat / ROUTE_GRID_SIZE);
+    const cellLng = Math.floor(p.lng / ROUTE_GRID_SIZE);
+    for (let dLat = -expand; dLat <= expand; dLat++) {
+      for (let dLng = -expand; dLng <= expand; dLng++) {
+        grid.add(`${cellLat + dLat},${cellLng + dLng}`);
+      }
+    }
   }
 
-  const main = parseOSRMRoute(data.routes[0], 'main');
-  const alts = (data.routes as OSRMRoute[])
-    .slice(1, 4)
-    .map((r, i) => parseOSRMRoute(r, `alt-${i}`));
-
-  return { main, alternatives: alts };
+  return (position: LatLng): boolean => {
+    const cellLat = Math.floor(position.lat / ROUTE_GRID_SIZE);
+    const cellLng = Math.floor(position.lng / ROUTE_GRID_SIZE);
+    return grid.has(`${cellLat},${cellLng}`);
+  };
 }
 
 

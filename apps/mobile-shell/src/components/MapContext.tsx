@@ -12,7 +12,7 @@ import type {
 } from '../types';
 
 const defaultCamera: MapCamera = {
-  center: { lat: 39.9042, lng: 116.4074 }, // Beijing
+  center: { lat: 55.7558, lng: 37.6173 }, // Moscow
   zoom: 15,
   heading: 0,
   tilt: 0,
@@ -29,7 +29,7 @@ export function useMap(): IMapContext {
   const ctx = useContext(MapContext);
   if (!ctx) {
     return {
-      provider: 'amap',
+      provider: 'osm',
       camera: defaultCamera,
       userLocation: null,
       isTracking: false,
@@ -46,7 +46,7 @@ export function useMap(): IMapContext {
 }
 
 export function MapProvider({ 
-  provider = 'amap', 
+  provider = 'osm', 
   children 
 }: MapProviderProps) {
   const [camera, setCameraState] = useState<MapCamera>(defaultCamera);
@@ -147,8 +147,8 @@ async function searchPOIOSM(query: string, near?: LatLng): Promise<POI[]> {
   
   // Fallback to Nominatim
   try {
-    const lat = near?.lat ?? 39.9042;
-    const lng = near?.lng ?? 116.4074;
+    const lat = near?.lat ?? 55.7558;
+    const lng = near?.lng ?? 37.6173;
     const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&lat=${lat}&lon=${lng}&limit=10`;
     
     const response = await fetch(url, {

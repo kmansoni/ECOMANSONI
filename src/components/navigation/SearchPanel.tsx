@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { ArrowLeft, Search, Home, Briefcase, Star, Clock, MapPin, X, Plus, Building2, Store } from 'lucide-react';
+import { ArrowLeft, Search, Home, Briefcase, Star, Clock, MapPin, X, Plus, Building2, Store, Mic } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { SavedPlace } from '@/types/navigation';
 import type { LatLng } from '@/types/taxi';
@@ -7,6 +7,7 @@ import type { FiasAddress } from '@/types/fias';
 import { POI_CATEGORY_ICONS, POI_CATEGORY_LABELS } from '@/types/fias';
 import { suggestAddress, suggestOrganization, type OrganizationResult } from '@/lib/navigation/dadata';
 import { searchPOIs, type POIResult } from '@/lib/navigation/places';
+import { useVoiceInput } from '@/hooks/navigation/useVoiceInput';
 
 type SearchTab = 'address' | 'organization' | 'poi';
 
@@ -50,10 +51,19 @@ export function SearchPanel({
   const [loading, setLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const voice = useVoiceInput({ lang: 'ru-RU', continuous: false, interimResults: true });
 
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
+
+  // Когда голосовой ввод завершается — вставить текст в поле
+  useEffect(() => {
+    if (voice.finalTranscript && voice.state === 'idle') {
+      setQuery(voice.finalTranscript);
+      performSearch(voice.finalTranscript, tab);
+    }
+  }, [voice.finalTranscript, voice.state]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const performSearch = useCallback(async (text: string, currentTab: SearchTab) => {
     if (text.length < 2) {
@@ -170,9 +180,24 @@ export function SearchPanel({
             {query && (
               <button
                 onClick={() => { setQuery(''); setAddressResults([]); setOrgResults([]); setPOIResults([]); }}
-                className="absolute right-3 top-1/2 -translate-y-1/2"
+                className="absolute right-10 top-1/2 -translate-y-1/2"
               >
                 <X className="w-4 h-4 text-gray-500" />
+              </button>
+            )}
+            {/* Кнопка голосового ввода */}
+            {voice.isSupported && (
+              <button
+                onClick={() => voice.state === 'listening' ? voice.stopListening() : voice.startListening()}
+                className={cn(
+                  'absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded-lg flex items-center justify-center transition-colors',
+                  voice.state === 'listening'
+                    ? 'bg-blue-500/30 text-blue-400'
+                    : 'text-gray-500 hover:text-blue-400 hover:bg-white/5',
+                )}
+                aria-label="Голосовой ввод"
+              >
+                <Mic className="w-4 h-4" />
               </button>
             )}
           </div>

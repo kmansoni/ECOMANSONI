@@ -3,8 +3,9 @@ import type { SpeedCamera } from '@/types/navigation';
 import { calculateDistance } from '@/lib/taxi/calculations';
 import { dbLoose } from "@/lib/supabase";
 import { logger } from '@/lib/logger';
+import { getOfflineSpeedCameras } from './offlineSearch';
 
-// Камеры Москвы и СПб — статичный набор, расширяется через nav_speed_cameras в Supabase
+// Камеры Москвы и СПб — статичный набор, расширяется через offline data / Supabase
 const BUILTIN_CAMERAS: SpeedCamera[] = [
   { id: 'cam-1', location: { lat: 55.7558, lng: 37.6173 }, speedLimit: 60, direction: 0, type: 'fixed' },
   { id: 'cam-2', location: { lat: 55.7620, lng: 37.6250 }, speedLimit: 60, direction: 90, type: 'fixed' },
@@ -24,12 +25,31 @@ const BUILTIN_CAMERAS: SpeedCamera[] = [
 let _cameras: SpeedCamera[] = BUILTIN_CAMERAS;
 let _loaded = false;
 
-/** Загружает камеры из Supabase (таблица nav_speed_cameras). Если таблица не существует — fallback на встроенные */
+/** Загружает камеры: offline JSON → Supabase → встроенные */
 export async function loadSpeedCameras(): Promise<SpeedCamera[]> {
   if (_loaded) return _cameras;
+
+  // 1) Offline data (downloaded from OSM)
   try {
-    // ⚠️ таблица может не существовать, поэтому обходим строгую типизацию
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const offlineCams = await getOfflineSpeedCameras();
+    if (offlineCams.length > 0) {
+      _cameras = offlineCams.map(c => ({
+        id: c.id,
+        location: { lat: c.lat, lng: c.lon },
+        speedLimit: c.speedLimit,
+        direction: c.direction,
+        type: c.type as SpeedCamera['type'],
+      }));
+      _loaded = true;
+      logger.debug(`[speedCameras] Загружено ${_cameras.length} камер из offline данных`);
+      return _cameras;
+    }
+  } catch {
+    // offline not available
+  }
+
+  // 2) Supabase (if available)
+  try {
     const client = dbLoose;
     const { data, error } = await client.from('nav_speed_cameras')
       .select('id, lat, lng, speed_limit, direction, type')
@@ -48,6 +68,8 @@ export async function loadSpeedCameras(): Promise<SpeedCamera[]> {
   } catch (err) {
     logger.debug('[speedCameras] nav_speed_cameras недоступна, используем встроенные', err);
   }
+
+  // 3) Fallback to builtin
   _loaded = true;
   return _cameras;
 }

@@ -1,8 +1,13 @@
 /**
- * DaData API client — ФИАС address suggestions + organization search.
+ * Address search — multi-provider geocoding system.
  *
- * API key is read from VITE_DADATA_API_KEY env variable.
- * Falls back to Nominatim when key is missing or requests fail.
+ * Priority:
+ *   1. Offline local data (OSM) — instant, no network
+ *   2. Photon (Komoot) — free, no key, all world, fast autocomplete
+ *   3. DaData — Russian FIAS addresses (needs API key)
+ *   4. Nominatim — free, all world, fallback
+ *
+ * All providers run in parallel for best results.
  */
 
 import type {
@@ -11,11 +16,13 @@ import type {
   DaDataOrgSuggestion,
   FiasAddress,
 } from '@/types/fias';
+import { searchOffline, reverseGeocode as offlineReverseGeocode } from './offlineSearch';
 
 const DADATA_SUGGEST_URL = 'https://suggestions.dadata.ru/suggestions/api/4_1/rs/suggest/address';
 const DADATA_FIND_URL = 'https://suggestions.dadata.ru/suggestions/api/4_1/rs/findById/address';
 const DADATA_ORG_URL = 'https://suggestions.dadata.ru/suggestions/api/4_1/rs/suggest/party';
 const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
+const PHOTON_URL = 'https://photon.komoot.io/api';
 
 function getToken(): string | null {
   return (import.meta as unknown as Record<string, Record<string, string>>).env?.VITE_DADATA_API_KEY ?? null;
@@ -75,30 +82,119 @@ export async function suggestAddress(
 ): Promise<FiasAddress[]> {
   if (!query.trim()) return [];
 
-  const token = getToken();
+  // Запускаем offline + online ПАРАЛЛЕЛЬНО (не блокируем на offline)
+  const offlinePromise = searchOffline(query, undefined, count).catch(() => [] as Awaited<ReturnType<typeof searchOffline>>);
+  const onlinePromise = suggestAddressOnline(query, count).catch(() => [] as FiasAddress[]);
 
-  // If no DaData token, fallback to Nominatim
-  if (!token) {
-    return suggestAddressNominatim(query, count);
-  }
+  const [offlineResults, onlineResults] = await Promise.all([offlinePromise, onlinePromise]);
 
-  try {
-    const resp = await fetch(DADATA_SUGGEST_URL, {
-      method: 'POST',
-      headers: headers(),
-      body: JSON.stringify({ query, count }),
+  // Объединяем: offline первые, затем online (без дублей)
+  const merged: FiasAddress[] = [];
+  const seen = new Set<string>();
+
+  // Offline → FiasAddress
+  for (const r of offlineResults) {
+    const key = `${r.position.lat.toFixed(5)},${r.position.lng.toFixed(5)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push({
+      value: r.name,
+      unrestrictedValue: r.display,
+      fiasId: null,
+      fiasLevel: null,
+      kladrId: null,
+      postalCode: null,
+      country: 'Россия',
+      regionFiasId: null,
+      region: null,
+      regionType: null,
+      cityFiasId: null,
+      city: null,
+      cityType: null,
+      streetFiasId: null,
+      street: null,
+      streetType: null,
+      house: null,
+      houseType: null,
+      block: null,
+      blockType: null,
+      flat: null,
+      flatType: null,
+      geoLat: r.position.lat,
+      geoLon: r.position.lng,
+      okato: null,
+      oktmo: null,
+      timezone: null,
+      qcGeo: null,
+      qcComplete: null,
+      qcHouse: null,
     });
-
-    if (!resp.ok) throw new Error(`DaData ${resp.status}`);
-
-    const data: { suggestions: DaDataSuggestion[] } = await resp.json();
-    return data.suggestions.map((s) =>
-      parseAddress(s.data, s.value, s.unrestricted_value)
-    );
-  } catch {
-    // Fallback to Nominatim
-    return suggestAddressNominatim(query, count);
   }
+
+  // Online results
+  for (const addr of onlineResults) {
+    if (addr.geoLat && addr.geoLon) {
+      const key = `${addr.geoLat.toFixed(5)},${addr.geoLon.toFixed(5)}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+    }
+    merged.push(addr);
+  }
+
+  return merged.slice(0, count);
+}
+
+/** Онлайн поиск: Photon + DaData + Nominatim параллельно */
+async function suggestAddressOnline(
+  query: string,
+  count: number,
+): Promise<FiasAddress[]> {
+  const promises: Promise<FiasAddress[]>[] = [];
+
+  // 1) Photon (бесплатный, весь мир, быстрый)
+  promises.push(suggestAddressPhoton(query, count).catch(() => []));
+
+  // 2) DaData (если есть ключ — лучшие результаты для России)
+  const token = getToken();
+  if (token) {
+    promises.push(
+      fetch(DADATA_SUGGEST_URL, {
+        method: 'POST',
+        headers: headers(),
+        body: JSON.stringify({ query, count }),
+      })
+        .then(async (resp) => {
+          if (!resp.ok) return [];
+          const data: { suggestions: DaDataSuggestion[] } = await resp.json();
+          return data.suggestions.map((s) =>
+            parseAddress(s.data, s.value, s.unrestricted_value)
+          );
+        })
+        .catch(() => [])
+    );
+  }
+
+  // 3) Nominatim (fallback, весь мир)
+  promises.push(suggestAddressNominatim(query, Math.min(count, 3)).catch(() => []));
+
+  const results = await Promise.all(promises);
+
+  // Объединяем без дублей (по координатам)
+  const merged: FiasAddress[] = [];
+  const seen = new Set<string>();
+
+  for (const batch of results) {
+    for (const addr of batch) {
+      if (addr.geoLat && addr.geoLon) {
+        const key = `${addr.geoLat.toFixed(4)},${addr.geoLon.toFixed(4)}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+      }
+      merged.push(addr);
+    }
+  }
+
+  return merged.slice(0, count);
 }
 
 // ── Find by FIAS ID ──────────────────────────────────────────────────────────
@@ -185,6 +281,115 @@ export async function suggestOrganization(
   }
 }
 
+// ── Photon geocoder (Komoot) — бесплатный, весь мир ─────────────────────────
+
+interface PhotonFeature {
+  geometry: { coordinates: [number, number] };
+  properties: {
+    name?: string;
+    housenumber?: string;
+    street?: string;
+    district?: string;
+    city?: string;
+    state?: string;
+    country?: string;
+    postcode?: string;
+    osm_id?: number;
+    osm_type?: string;
+    type?: string;
+  };
+}
+
+interface PhotonResponse {
+  features: PhotonFeature[];
+}
+
+async function suggestAddressPhoton(query: string, count: number): Promise<FiasAddress[]> {
+  try {
+    const params = new URLSearchParams({
+      q: query,
+      limit: String(Math.min(count, 10)),
+      lang: 'ru',
+    });
+
+    // Если нет явного указания города, добавляем bias к Москве
+    const hasCity = /москв|питер|санкт|спб|екатер|новосиб|казан/i.test(query);
+    if (!hasCity) {
+      params.set('lat', '55.75');
+      params.set('lon', '37.62');
+      params.set('zoom', '12');
+    }
+
+    const resp = await fetch(`${PHOTON_URL}?${params}`, {
+      headers: { 'User-Agent': 'MansoniNav/1.0' },
+      signal: AbortSignal.timeout(5000),
+    });
+
+    if (!resp.ok) return [];
+
+    const data: PhotonResponse = await resp.json();
+
+    return data.features
+      .filter(f => f.geometry?.coordinates)
+      .map(f => {
+        const p = f.properties;
+        const [lon, lat] = f.geometry.coordinates;
+
+        // Формируем читаемый адрес
+        const parts: string[] = [];
+        if (p.street) {
+          parts.push(p.street);
+          if (p.housenumber) parts.push(p.housenumber);
+        } else if (p.name) {
+          parts.push(p.name);
+        }
+
+        const displayParts: string[] = [];
+        if (p.city && p.city !== p.name) displayParts.push(p.city);
+        if (p.district) displayParts.push(p.district);
+        if (p.street) displayParts.push(p.street);
+        if (p.housenumber) displayParts.push(p.housenumber);
+        if (!p.street && p.name) displayParts.push(p.name);
+
+        return {
+          value: parts.join(', ') || p.name || '',
+          unrestrictedValue: displayParts.join(', ') || p.name || '',
+          fiasId: null,
+          fiasLevel: null,
+          kladrId: null,
+          postalCode: p.postcode || null,
+          country: p.country || 'Россия',
+          regionFiasId: null,
+          region: p.state || null,
+          regionType: null,
+          cityFiasId: null,
+          city: p.city || null,
+          cityType: null,
+          streetFiasId: null,
+          street: p.street || null,
+          streetType: null,
+          house: p.housenumber || null,
+          houseType: null,
+          block: null,
+          blockType: null,
+          flat: null,
+          flatType: null,
+          geoLat: lat,
+          geoLon: lon,
+          okato: null,
+          oktmo: null,
+          timezone: null,
+          qcGeo: null,
+          qcComplete: null,
+          qcHouse: null,
+        };
+      })
+      .filter(a => a.value.length > 0);
+  } catch {
+    return [];
+  }
+}
+
 // ── Nominatim fallback ───────────────────────────────────────────────────────
 
 interface NominatimResult {
@@ -195,43 +400,73 @@ interface NominatimResult {
 
 async function suggestAddressNominatim(query: string, count: number): Promise<FiasAddress[]> {
   try {
-    const url = `${NOMINATIM_URL}?format=json&q=${encodeURIComponent(query)}&limit=${count}&accept-language=ru&countrycodes=ru`;
-    const resp = await fetch(url);
-    if (!resp.ok) return [];
+    // Добавляем "Москва" если нет явного города в запросе
+    const hasCity = /москв|питер|санкт|спб|мск|екатер|новосиб|казан|нижн|самар|ростов|уф[аеы]|красноярск|ворон|перм|волгоград/i.test(query);
+    const searchQuery = hasCity ? query : `Москва, ${query}`;
 
-    const data: NominatimResult[] = await resp.json();
-    return data.map((r) => ({
-      value: r.display_name.split(',').slice(0, 3).join(',').trim(),
-      unrestrictedValue: r.display_name,
-      fiasId: null,
-      fiasLevel: null,
-      kladrId: null,
-      postalCode: null,
-      country: 'Россия',
-      regionFiasId: null,
-      region: null,
-      regionType: null,
-      cityFiasId: null,
-      city: null,
-      cityType: null,
-      streetFiasId: null,
-      street: null,
-      streetType: null,
-      house: null,
-      houseType: null,
-      block: null,
-      blockType: null,
-      flat: null,
-      flatType: null,
-      geoLat: parseFloat(r.lat),
-      geoLon: parseFloat(r.lon),
-      okato: null,
-      oktmo: null,
-      timezone: null,
-      qcGeo: null,
-      qcComplete: null,
-      qcHouse: null,
-    }));
+    // Пробуем несколько вариантов запроса
+    const queries = [searchQuery];
+    // Вариант без "улица/ул." — Nominatim лучше ищет без типа
+    const withoutType = searchQuery.replace(/\b(ул\.|улица|пр-т|проспект|пер\.|переулок)\s*/gi, '');
+    if (withoutType !== searchQuery) queries.push(withoutType);
+    // Вариант: улица [name] (если типа нет, добавляем)
+    if (!/\b(ул\.|улица|пр-т|проспект|пер\.|переулок|бул\.|бульвар|ш\.|шоссе|пл\.|площадь|наб\.|набережная)\b/i.test(query)) {
+      const parts = query.trim().split(/\s+/);
+      if (parts.length >= 2) {
+        queries.push(hasCity ? query : `Москва, ${parts[0]} улица ${parts.slice(1).join(' ')}`);
+      }
+    }
+
+    const allResults: FiasAddress[] = [];
+    const seen = new Set<string>();
+
+    for (const q of queries) {
+      const url = `${NOMINATIM_URL}?format=json&q=${encodeURIComponent(q)}&limit=${count}&accept-language=ru&countrycodes=ru`;
+      const resp = await fetch(url);
+      if (!resp.ok) continue;
+
+      const data: NominatimResult[] = await resp.json();
+      for (const r of data) {
+        const key = `${parseFloat(r.lat).toFixed(5)},${parseFloat(r.lon).toFixed(5)}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        allResults.push({
+          value: r.display_name.split(',').slice(0, 3).join(',').trim(),
+          unrestrictedValue: r.display_name,
+          fiasId: null,
+          fiasLevel: null,
+          kladrId: null,
+          postalCode: null,
+          country: 'Россия',
+          regionFiasId: null,
+          region: null,
+          regionType: null,
+          cityFiasId: null,
+          city: null,
+          cityType: null,
+          streetFiasId: null,
+          street: null,
+          streetType: null,
+          house: null,
+          houseType: null,
+          block: null,
+          blockType: null,
+          flat: null,
+          flatType: null,
+          geoLat: parseFloat(r.lat),
+          geoLon: parseFloat(r.lon),
+          okato: null,
+          oktmo: null,
+          timezone: null,
+          qcGeo: null,
+          qcComplete: null,
+          qcHouse: null,
+        });
+      }
+      if (allResults.length >= count) break;
+    }
+
+    return allResults.slice(0, count);
   } catch {
     return [];
   }

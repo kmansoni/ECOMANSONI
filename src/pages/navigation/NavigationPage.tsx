@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Volume2, VolumeX, Car, Search, Flag, CheckCircle2, Bookmark } from 'lucide-react';
+import { ArrowLeft, Volume2, VolumeX, Car, Search, Flag, CheckCircle2, Bookmark, Settings, AlertTriangle, Mic, Clock, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useGeolocation } from '@/hooks/navigation/useGeolocation';
 import { useNavigation } from '@/hooks/navigation/useNavigation';
@@ -10,8 +10,16 @@ import { RouteOverview } from '@/components/navigation/RouteOverview';
 import { NavigationPanel } from '@/components/navigation/NavigationPanel';
 import { AddPlaceSheet } from '@/components/navigation/AddPlaceSheet';
 import { SavePlaceSheet } from '@/components/navigation/SavePlaceSheet';
+import { ReportEventSheet } from '@/components/navigation/ReportEventSheet';
+import { VoiceSearchSheet } from '@/components/navigation/VoiceSearchSheet';
+import { TrafficWidget } from '@/components/navigation/TrafficWidget';
+import { TravelModeToggle } from '@/components/navigation/TravelModeToggle';
+import { TransitTimeline } from '@/components/navigation/TransitTimeline';
+import { TaxiComparisonPanel } from '@/components/navigation/TaxiComparisonPanel';
+import { QuantumInsightsPanel } from '@/components/navigation/QuantumInsightsPanel';
 import { loadSpeedCameras, getCamerasOnRoute } from '@/lib/navigation/speedCameras';
-import type { SavedPlace } from '@/types/navigation';
+import { loadOfflineData } from '@/lib/navigation/offlineSearch';
+import type { SavedPlace, TravelMode } from '@/types/navigation';
 
 const glassBtn = cn(
   'w-11 h-11 rounded-xl',
@@ -24,12 +32,15 @@ const glassBtn = cn(
 export default function NavigationPage() {
   const routerNav = useNavigate();
   const geo = useGeolocation();
-  const nav = useNavigation();
+  const [travelMode, setTravelMode] = useState<TravelMode>('car');
+  const nav = useNavigation({ travelMode });
   const [showAddPlace, setShowAddPlace] = useState(false);
   const [savePlaceTarget, setSavePlaceTarget] = useState<SavedPlace | null>(null);
+  const [showReportEvent, setShowReportEvent] = useState(false);
+  const [showVoiceSearch, setShowVoiceSearch] = useState(false);
 
-  // Загрузить камеры при монтировании
-  useEffect(() => { loadSpeedCameras(); }, []);
+  // Загрузить камеры и оффлайн данные при монтировании
+  useEffect(() => { loadOfflineData(); loadSpeedCameras(); }, []);
 
   // Start GPS on mount
   useEffect(() => {
@@ -68,6 +79,17 @@ export default function NavigationPage() {
         alternativeRoutes={nav.alternativeRoutes}
         speedCameras={routeCameras}
         destinationMarker={nav.destination?.coordinates ?? null}
+        isNavigating={nav.phase === 'navigating'}
+        speed={nav.currentSpeed}
+        speedLimit={nav.speedLimit}
+        nearbyCamera={nav.nearbyCamera}
+        nextManeuver={nav.nextInstruction}
+        laneGuidance={nav.laneGuidance}
+        distanceToNextTurn={nav.distanceToNextTurn}
+        remainingDistance={nav.remainingDistance}
+        totalDistance={nav.route?.totalDistanceMeters}
+        roadName={nav.nextInstruction?.streetName}
+        route={nav.route}
         onCenterOnUser={() => {
           if (geo.position) nav.updatePosition(geo.position, geo.heading, geo.speed);
         }}
@@ -82,6 +104,33 @@ export default function NavigationPage() {
         </button>
 
         <div className="flex items-center gap-2">
+          {/* Виджет пробок (баллы) */}
+          <TrafficWidget position={nav.currentPosition ?? geo.position} />
+
+          {/* Переключатель режима поездки */}
+          <TravelModeToggle value={travelMode} onChange={setTravelMode} />
+
+          {/* Navigator Settings */}
+          <button onClick={() => routerNav('/navigator-settings')} className={glassBtn} aria-label="Настройки навигатора">
+            <Settings className="h-5 w-5 text-gray-300" />
+          </button>
+
+          {/* Историю поездок */}
+          <button onClick={() => routerNav('/trip-history')} className={glassBtn} aria-label="История поездок">
+            <Clock className="h-5 w-5 text-gray-300" />
+          </button>
+
+          <button onClick={() => routerNav('/navigation-lab')} className={glassBtn} aria-label="Quantum Transport Lab">
+            <Sparkles className="h-5 w-5 text-cyan-300" />
+          </button>
+
+          {/* Report road event */}
+          {nav.phase === 'navigating' && (
+            <button onClick={() => setShowReportEvent(true)} className={glassBtn} aria-label="Сообщить о событии">
+              <AlertTriangle className="h-5 w-5 text-amber-400" />
+            </button>
+          )}
+
           {/* Voice toggle */}
           {typeof window !== 'undefined' && window.speechSynthesis && (
             <button onClick={nav.toggleVoice} className={glassBtn} aria-label="Голос">
@@ -116,7 +165,14 @@ export default function NavigationPage() {
           )}
         >
           <Search className="w-5 h-5 text-gray-400" />
-          <span className="text-gray-400 text-sm">Куда едем?</span>
+          <span className="text-gray-400 text-sm flex-1 text-left">Куда едем?</span>
+          <button
+            onClick={(e) => { e.stopPropagation(); setShowVoiceSearch(true); }}
+            className="w-9 h-9 rounded-lg bg-blue-500/20 flex items-center justify-center hover:bg-blue-500/30 transition-colors"
+            aria-label="Голосовой поиск"
+          >
+            <Mic className="w-4 h-4 text-blue-400" />
+          </button>
         </button>
       )}
 
@@ -135,31 +191,74 @@ export default function NavigationPage() {
 
       {/* Phase: Route preview */}
       {nav.phase === 'route_preview' && nav.route && (
-        <RouteOverview
-          route={nav.route}
-          alternatives={nav.alternativeRoutes}
-          loading={nav.loading}
-          onSelectRoute={nav.selectRoute}
-          onStart={nav.startNavigation}
-          onCancel={nav.stopNavigation}
-        />
+        <>
+          <div className="absolute bottom-[10.5rem] left-3 right-3 z-[845]">
+            <QuantumInsightsPanel
+              superposition={nav.quantumSuperposition}
+              twinSimulation={nav.twinSimulation}
+              swarmRecommendation={nav.swarmRecommendation}
+              timeAccount={nav.timeAccount}
+            />
+          </div>
+
+          <RouteOverview
+            route={nav.route}
+            alternatives={nav.alternativeRoutes}
+            loading={nav.loading}
+            onSelectRoute={nav.selectRoute}
+            onStart={nav.startNavigation}
+            onCancel={nav.stopNavigation}
+          />
+
+          {/* Transit timeline for transit/multimodal modes */}
+          {(travelMode === 'transit' || travelMode === 'multimodal') && nav.multimodalRoute && (
+            <div className="absolute bottom-[220px] left-3 right-3 z-[850] max-h-[40vh] overflow-y-auto rounded-2xl">
+              <TransitTimeline route={nav.multimodalRoute} />
+            </div>
+          )}
+
+          {/* Taxi price comparison from transfer points */}
+          {nav.destination && nav.currentPosition && (travelMode === 'transit' || travelMode === 'multimodal') && nav.multimodalRoute && (
+            <div className="absolute bottom-[180px] left-3 right-3 z-[840]">
+              <TaxiComparisonPanel
+                pickup={nav.currentPosition}
+                destination={nav.destination.coordinates}
+                viaPoints={nav.multimodalRoute.segments
+                  .filter(s => s.mode === 'transit' && s.toStop)
+                  .map(s => s.toStop!.location)}
+              />
+            </div>
+          )}
+        </>
       )}
 
       {/* Phase: Navigating */}
       {nav.phase === 'navigating' && (
-        <NavigationPanel
-          speed={nav.currentSpeed}
-          speedLimit={nav.speedLimit}
-          nextInstruction={nav.nextInstruction}
-          followingInstruction={nav.followingInstruction}
-          distanceToNextTurn={nav.distanceToNextTurn}
-          remainingDistance={nav.remainingDistance}
-          remainingTime={nav.remainingTime}
-          eta={nav.eta}
-          nearbyCamera={nav.nearbyCamera}
-          currentPosition={nav.currentPosition}
-          onStop={nav.stopNavigation}
-        />
+        <>
+          <div className="absolute bottom-[11.5rem] left-3 right-3 z-[845]">
+            <QuantumInsightsPanel
+              superposition={nav.quantumSuperposition}
+              twinSimulation={nav.twinSimulation}
+              swarmRecommendation={nav.swarmRecommendation}
+              timeAccount={nav.timeAccount}
+              compact
+            />
+          </div>
+
+          <NavigationPanel
+            speed={nav.currentSpeed}
+            speedLimit={nav.speedLimit}
+            nextInstruction={nav.nextInstruction}
+            followingInstruction={nav.followingInstruction}
+            distanceToNextTurn={nav.distanceToNextTurn}
+            remainingDistance={nav.remainingDistance}
+            remainingTime={nav.remainingTime}
+            eta={nav.eta}
+            nearbyCamera={nav.nearbyCamera}
+            currentPosition={nav.currentPosition}
+            onStop={nav.stopNavigation}
+          />
+        </>
       )}
 
       {/* Phase: Arrived */}
@@ -240,6 +339,23 @@ export default function NavigationPage() {
           </div>
         </div>
       )}
+
+      {/* Report road event sheet */}
+      <ReportEventSheet
+        open={showReportEvent}
+        onClose={() => setShowReportEvent(false)}
+        location={nav.currentPosition}
+      />
+
+      {/* Голосовой поиск адреса */}
+      <VoiceSearchSheet
+        open={showVoiceSearch}
+        onClose={() => setShowVoiceSearch(false)}
+        onSelectDestination={(place) => {
+          setShowVoiceSearch(false);
+          nav.selectDestination(place);
+        }}
+      />
     </div>
   );
 }

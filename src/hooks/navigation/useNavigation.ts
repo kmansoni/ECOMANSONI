@@ -6,8 +6,11 @@ import type {
   Maneuver,
   SpeedCamera,
   SavedPlace,
+  TravelMode,
+  MultiModalRoute,
+  TransitRoutingOptions,
 } from '@/types/navigation';
-import { fetchRoute } from '@/lib/navigation/routing';
+import { fetchRoute, buildRouteProximityChecker } from '@/lib/navigation/routing';
 import { getManeuverInstruction, getVoiceInstruction, formatETA } from '@/lib/navigation/turnInstructions';
 import { getNearbyCamera, getCameraDistance } from '@/lib/navigation/speedCameras';
 import { calculateDistance } from '@/lib/taxi/calculations';
@@ -15,6 +18,22 @@ import { getSavedPlaces, getSearchHistory, saveSearchEntry } from '@/lib/navigat
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { logger } from '@/lib/logger';
+import {
+  speakNavigation,
+  speakTurn,
+  speakCamera,
+  speakArrival,
+  speakReroute,
+} from '@/lib/navigation/voiceAssistant';
+import { startTrafficCollection, stopTrafficCollection, addTrafficProbe } from '@/lib/navigation/trafficCollector';
+import {
+  startTripRecording,
+  updateTripPosition,
+  endTripRecording,
+} from '@/lib/navigation/tripHistory';
+import { getLaneGuidance, loadLaneData } from '@/lib/navigation/laneAssist';
+import { quantumTransportService } from '@/lib/navigation/quantumTransportService';
+import type { RouteSuperposition, TwinSimulationResult, SwarmRecommendation, TimeAccount } from '@/types/quantum-transport';
 
 function getSavedCenter(): LatLng | null {
   try {
@@ -30,10 +49,18 @@ const MOSCOW_CENTER: LatLng = { lat: 55.7558, lng: 37.6173 };
 
 const OFF_ROUTE_THRESHOLD_KM = 0.05; // 50m
 const MANEUVER_COMPLETE_KM = 0.03; // 30m
+
+interface UseNavigationOptions {
+  travelMode?: TravelMode;
+  transitOptions?: TransitRoutingOptions;
+}
 const ARRIVAL_THRESHOLD_KM = 0.03; // 30m
 const VOICE_WARN_DISTANCES = [500, 200, 50]; // meters
 
-export function useNavigation() {
+export function useNavigation(options?: UseNavigationOptions) {
+  const travelMode = options?.travelMode ?? 'car';
+  const transitOptions = options?.transitOptions;
+
   const [phase, setPhase] = useState<NavigationPhase>('idle');
   const [currentPosition, setCurrentPosition] = useState<LatLng | null>(null);
   const [currentHeading, setCurrentHeading] = useState(0);
@@ -41,15 +68,21 @@ export function useNavigation() {
   const [destination, setDestination] = useState<SavedPlace | null>(null);
   const [route, setRoute] = useState<NavRoute | null>(null);
   const [alternativeRoutes, setAlternativeRoutes] = useState<NavRoute[]>([]);
+  const [multimodalRoute, setMultimodalRoute] = useState<MultiModalRoute | null>(null);
   const [currentManeuverIndex, setCurrentManeuverIndex] = useState(0);
   const [speedLimit, setSpeedLimit] = useState<number | null>(null);
   const [nearbyCamera, setNearbyCamera] = useState<SpeedCamera | null>(null);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [isNorthUp, setIsNorthUp] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [quantumSuperposition, setQuantumSuperposition] = useState<RouteSuperposition | null>(null);
+  const [twinSimulation, setTwinSimulation] = useState<TwinSimulationResult | null>(null);
+  const [swarmRecommendation, setSwarmRecommendation] = useState<SwarmRecommendation | null>(null);
+  const [timeAccount, setTimeAccount] = useState<TimeAccount | null>(null);
 
   const voiceSpokenRef = useRef<Set<string>>(new Set());
   const recalcTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isOnRouteRef = useRef<((pos: LatLng) => boolean) | null>(null);
 
   const [favorites, setFavorites] = useState<SavedPlace[]>([]);
   const [recents, setRecents] = useState<SavedPlace[]>([]);
@@ -77,8 +110,36 @@ export function useNavigation() {
       if (history.length > 0) {
         setRecents(history);
       }
+
+      const account = await quantumTransportService.initUser(user.id).catch(() => null);
+      if (!cancelled) {
+        setTimeAccount(account);
+      }
     })();
     return () => { cancelled = true; };
+  }, [travelMode]);
+
+  useEffect(() => {
+    const insights = quantumTransportService.buildLiveInsights({
+      route,
+      alternatives: alternativeRoutes,
+      userId,
+      travelMode,
+      origin: currentPosition,
+      destination: destination?.coordinates ?? null,
+    });
+    setQuantumSuperposition(insights.quantumSuperposition);
+    setTwinSimulation(insights.twinSimulation);
+    setSwarmRecommendation(insights.swarmRecommendation);
+    setTimeAccount(insights.timeAccount);
+  }, [route, alternativeRoutes, userId, travelMode, currentPosition, destination]);
+
+  useEffect(() => () => {
+    quantumTransportService.clearLiveSession();
+  }, []);
+
+  useEffect(() => {
+    void loadLaneData();
   }, []);
 
   // Derived values
@@ -100,14 +161,14 @@ export function useNavigation() {
 
   const eta = formatETA(remainingTime);
 
-  // Speak voice instruction
-  const speak = useCallback((text: string) => {
-    if (!voiceEnabled || !window.speechSynthesis) return;
-    const u = new SpeechSynthesisUtterance(text);
-    u.lang = 'ru-RU';
-    u.rate = 1.05;
-    window.speechSynthesis.speak(u);
-  }, [voiceEnabled]);
+  const laneGuidance = route && currentPosition
+    ? getLaneGuidance(nextInstruction, distanceToNextTurn, currentPosition, route.geometry)
+    : null;
+
+  // Speak voice instruction — uses enhanced voice assistant
+  const speak = useCallback((text: string, eventType: 'turn' | 'camera' | 'arrival' | 'reroute' | 'info' = 'info') => {
+    speakNavigation(text, eventType);
+  }, []);
 
   // Open search
   const openSearch = useCallback(() => setPhase('search'), []);
@@ -118,6 +179,7 @@ export function useNavigation() {
     setDestination(place);
     setPhase('route_preview');
     setLoading(true);
+    const startedAt = performance.now();
 
     // Add to recents (local + Supabase)
     setRecents((prev) => {
@@ -137,7 +199,7 @@ export function useNavigation() {
     const from = currentPosition ?? getSavedCenter() ?? MOSCOW_CENTER;
 
     try {
-      const result = await fetchRoute(from, place.coordinates);
+      const result = await fetchRoute(from, place.coordinates, true, travelMode, transitOptions);
       // Fill in Russian instructions
       result.main.maneuvers.forEach((m) => {
         m.instruction = getManeuverInstruction(m.type, m.streetName);
@@ -149,25 +211,45 @@ export function useNavigation() {
       });
       setRoute(result.main);
       setAlternativeRoutes(result.alternatives);
+      setMultimodalRoute(result.multimodal ?? null);
+      // Строим spatial index для off-route проверки O(1)
+      isOnRouteRef.current = buildRouteProximityChecker(result.main.geometry);
+      quantumTransportService.recordRouteBuild({ success: true, latencyMs: performance.now() - startedAt, travelMode, destinationId: place.id, userId });
     } catch (err) {
       logger.error('[useNavigation] Ошибка построения маршрута', err);
       toast.error('Не удалось построить маршрут, проверьте подключение');
+      quantumTransportService.recordRouteBuild({
+        success: false,
+        latencyMs: performance.now() - startedAt,
+        travelMode,
+        destinationId: place.id,
+        userId,
+        errorType: 'route_build_failed',
+      });
       setRoute(null);
       setAlternativeRoutes([]);
       setPhase('idle');
     } finally {
       setLoading(false);
     }
-  }, [currentPosition]);
+  }, [currentPosition, travelMode, transitOptions, userId]);
 
   // Select alternative route
   const selectRoute = useCallback((routeId: string) => {
     const alt = alternativeRoutes.find((r) => r.id === routeId);
     if (alt && route) {
+      if (userId) {
+        void quantumTransportService.trackRouteSelection({
+          selectedRoute: alt,
+          alternatives: [route, ...alternativeRoutes.filter((r) => r.id !== routeId)],
+          userId,
+          travelMode,
+        }).catch(() => {});
+      }
       setAlternativeRoutes((prev) => [route, ...prev.filter((r) => r.id !== routeId)]);
       setRoute(alt);
     }
-  }, [alternativeRoutes, route]);
+  }, [alternativeRoutes, route, userId, travelMode]);
 
   // Start navigation
   const startNavigation = useCallback(() => {
@@ -175,11 +257,30 @@ export function useNavigation() {
     setPhase('navigating');
     setCurrentManeuverIndex(0);
     voiceSpokenRef.current.clear();
-    speak('Маршрут построен. Начните движение.');
-  }, [route, speak]);
+    speakNavigation('Маршрут построен. Начните движение.', 'info');
+    // Запуск crowdsourced сбора GPS-проб для трафика
+    startTrafficCollection();
+    // Начать запись поездки
+    if (currentPosition && destination) {
+      startTripRecording(
+        currentPosition,
+        'Текущее местоположение',
+        '',
+        destination,
+        route,
+      );
+    }
+    quantumTransportService.handleNavigationStart(userId, route.id);
+  }, [route, speak, currentPosition, destination, userId]);
 
   // Stop navigation
   const stopNavigation = useCallback(() => {
+    // Сохранить поездку перед очисткой
+    const wasNavigating = phase === 'navigating' || phase === 'arrived';
+    if (wasNavigating) {
+      const status = phase === 'arrived' ? 'completed' : 'cancelled';
+      endTripRecording(status).catch(() => {});
+    }
     setPhase('idle');
     setRoute(null);
     setAlternativeRoutes([]);
@@ -189,7 +290,10 @@ export function useNavigation() {
     setSpeedLimit(null);
     voiceSpokenRef.current.clear();
     window.speechSynthesis?.cancel();
-  }, []);
+    // Остановить сбор GPS-проб
+    stopTrafficCollection();
+    quantumTransportService.clearLiveSession();
+  }, [phase]);
 
   // Toggle voice
   const toggleVoice = useCallback(() => {
@@ -207,6 +311,10 @@ export function useNavigation() {
     setCurrentSpeed(speed);
     // сохраняем последний известный центр
     try { localStorage.setItem('nav_last_center', JSON.stringify(pos)); } catch { /* quota */ }
+    // Отправляем GPS-пробу для crowdsourced трафика
+    addTrafficProbe(pos, speed, heading, null);
+    // Обновляем запись поездки
+    updateTripPosition(pos, speed);
   }, []);
 
   // Navigation logic: maneuver progression, off-route, cameras
@@ -217,8 +325,17 @@ export function useNavigation() {
     if (destination) {
       const distToDest = calculateDistance(currentPosition, destination.coordinates);
       if (distToDest < ARRIVAL_THRESHOLD_KM) {
-        speak('Вы прибыли в пункт назначения');
+        speakArrival();
         setPhase('arrived');
+        // Завершить запись поездки
+        endTripRecording('completed').catch(() => {});
+        if (userId && route) {
+          setTimeAccount(quantumTransportService.handleNavigationArrival({
+            userId,
+            route,
+            alternatives: alternativeRoutes,
+          }));
+        }
         return;
       }
     }
@@ -238,7 +355,7 @@ export function useNavigation() {
         const key = `${currentManeuverIndex}-${threshold}`;
         if (distM <= threshold && distM > threshold - 30 && !voiceSpokenRef.current.has(key)) {
           voiceSpokenRef.current.add(key);
-          speak(getVoiceInstruction(nextInstruction.type, distM, nextInstruction.streetName));
+          speakTurn(getVoiceInstruction(nextInstruction.type, distM, nextInstruction.streetName), distM);
           break;
         }
       }
@@ -253,7 +370,7 @@ export function useNavigation() {
       const key = `cam-${cam.id}`;
       if (camDist < 500 && !voiceSpokenRef.current.has(key)) {
         voiceSpokenRef.current.add(key);
-        speak(`Внимание, камера. Ограничение ${cam.speedLimit} километров в час.`);
+        speakCamera(cam.speedLimit, camDist);
       }
     } else {
       // Use route segment speed limit
@@ -263,28 +380,31 @@ export function useNavigation() {
       setSpeedLimit(seg?.speedLimit ?? null);
     }
 
-    // Off-route detection
-    const onRoute = route.geometry.some(
-      (p) => calculateDistance(currentPosition!, p) < OFF_ROUTE_THRESHOLD_KM
-    );
+    // Off-route: O(1) spatial grid проверка
+    const onRoute = isOnRouteRef.current
+      ? isOnRouteRef.current(currentPosition!)
+      : route.geometry.some(
+          (p) => calculateDistance(currentPosition!, p) < OFF_ROUTE_THRESHOLD_KM
+        );
     if (!onRoute && !recalcTimeoutRef.current) {
       recalcTimeoutRef.current = setTimeout(async () => {
-        speak('Перестроение маршрута');
+        speakReroute();
         try {
-          const result = await fetchRoute(currentPosition!, destination!.coordinates, false);
+          const result = await fetchRoute(currentPosition!, destination!.coordinates, false, travelMode, transitOptions);
           result.main.maneuvers.forEach((m) => {
             m.instruction = getManeuverInstruction(m.type, m.streetName);
           });
           setRoute(result.main);
           setCurrentManeuverIndex(0);
           voiceSpokenRef.current.clear();
+          isOnRouteRef.current = buildRouteProximityChecker(result.main.geometry);
         } catch {
           // keep current route
         }
         recalcTimeoutRef.current = null;
       }, 3000);
     }
-  }, [currentPosition, currentHeading, phase]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [currentPosition, currentHeading, phase, userId, route, alternativeRoutes]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Reload favorites from Supabase
   const reloadFavorites = useCallback(async () => {
@@ -303,6 +423,7 @@ export function useNavigation() {
     destination,
     route,
     alternativeRoutes,
+    multimodalRoute,
     currentManeuverIndex,
     nextInstruction,
     followingInstruction,
@@ -310,11 +431,16 @@ export function useNavigation() {
     remainingDistance,
     remainingTime,
     eta,
+    laneGuidance,
     speedLimit,
     nearbyCamera,
     voiceEnabled,
     isNorthUp,
     loading,
+    quantumSuperposition,
+    twinSimulation,
+    swarmRecommendation,
+    timeAccount,
     favorites,
     recents,
     userId,
