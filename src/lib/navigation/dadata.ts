@@ -104,7 +104,7 @@ export async function suggestAddress(
       fiasLevel: null,
       kladrId: null,
       postalCode: null,
-      country: 'Россия',
+      country: null,
       regionFiasId: null,
       region: null,
       regionType: null,

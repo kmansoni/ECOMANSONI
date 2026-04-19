@@ -93,6 +93,17 @@ let _cameras: LocalSpeedCamera[] | null = null;
 let _settlements: LocalSettlement[] | null = null;
 let _loadPromise: Promise<void> | null = null;
 let _loadedRegions: Set<string> = new Set();
+let _allRegionsLoaded = false;
+let _allRegionsPromise: Promise<void> | null = null;
+
+interface SettlementManifestEntry {
+  countryCode: string;
+  countryName: string;
+  count: number;
+  target: string;
+  topPlace: string | null;
+  topPopulation: number;
+}
 
 // ─── Data loading ───────────────────────────────────────────────────────────
 
@@ -131,8 +142,8 @@ export async function loadOfflineData(): Promise<boolean> {
 
     console.log(`[OfflineSearch] Загружено: ${_searchIndex.length} записей, ${pois?.length ?? 0} POI, ${addresses?.length ?? 0} адресов, ${cameras?.length ?? 0} камер`);
 
-    // Preload common regions in background
-    preloadCommonRegions().catch(() => {});
+    // Preload common regions — AWAIT so cities are available immediately
+    await preloadCommonRegions().catch(() => {});
   })();
 
   await _loadPromise;
@@ -203,11 +214,57 @@ export async function loadRegionSettlements(countryCode: string): Promise<boolea
 }
 
 /**
- * Preload common regions (Russia, UAE, US, etc.)
+ * Preload common regions (Russia, CIS, popular destinations)
  */
 export async function preloadCommonRegions(): Promise<void> {
-  const commonRegions = ['RU', 'AE', 'US', 'DE', 'GB', 'FR', 'TR', 'UA', 'BY', 'KZ'];
+  const commonRegions = [
+    'RU', 'AE', 'US', 'DE', 'GB', 'FR', 'TR', 'UA', 'BY', 'KZ',
+    'UZ', 'GE', 'AM', 'AZ', 'TJ', 'KG', 'MD', 'TM', // CIS
+    'IT', 'ES', 'CN', 'JP', 'KR', 'TH', 'IN', 'BR',  // Popular
+    'EG', 'IL', 'CY', 'GR', 'PL', 'CZ', 'AT', 'NL',  // Travel
+  ];
   await Promise.all(commonRegions.map(code => loadRegionSettlements(code).catch(() => false)));
+}
+
+/**
+ * Load ALL available regions from manifest.
+ * Called on-demand when initial search returns too few city results.
+ */
+export async function loadAllRegions(): Promise<void> {
+  if (_allRegionsLoaded) return;
+  if (_allRegionsPromise) {
+    await _allRegionsPromise;
+    return;
+  }
+
+  _allRegionsPromise = (async () => {
+    const manifest = await fetchJSON<SettlementManifestEntry[]>(
+      '/data/osm/world/processed/settlements-manifest.json'
+    );
+    if (!manifest) return;
+
+    const unloaded = manifest
+      .filter(e => !_loadedRegions.has(e.countryCode))
+      .map(e => e.countryCode);
+
+    if (unloaded.length === 0) {
+      _allRegionsLoaded = true;
+      return;
+    }
+
+    console.log(`[OfflineSearch] Загружаем оставшиеся ${unloaded.length} регионов...`);
+
+    // Load in batches of 20 to avoid overwhelming the browser
+    for (let i = 0; i < unloaded.length; i += 20) {
+      const batch = unloaded.slice(i, i + 20);
+      await Promise.all(batch.map(code => loadRegionSettlements(code).catch(() => false)));
+    }
+
+    _allRegionsLoaded = true;
+    console.log(`[OfflineSearch] Все регионы загружены. Итого ${_loadedRegions.size} стран, ${_searchIndex?.length ?? 0} записей в индексе`);
+  })();
+
+  await _allRegionsPromise;
 }
 
 /**
@@ -272,9 +329,31 @@ export async function searchOffline(
 
   if (queryTokens.length === 0) return [];
 
+  let results = _runSearch(_searchIndex, queryTokens, q, near, limit, categoryFilter);
+
+  // If few city results and not all regions loaded — load remaining and retry
+  const cityCount = results.filter(r => r.type === 'city').length;
+  if (cityCount < 3 && !_allRegionsLoaded && q.length >= 3) {
+    await loadAllRegions();
+    if (_searchIndex) {
+      results = _runSearch(_searchIndex, queryTokens, q, near, limit, categoryFilter);
+    }
+  }
+
+  return results;
+}
+
+function _runSearch(
+  index: SearchEntry[],
+  queryTokens: string[],
+  q: string,
+  near: LatLng | undefined,
+  limit: number,
+  categoryFilter: string | undefined,
+): SearchResult[] {
   const results: SearchResult[] = [];
 
-  for (const entry of _searchIndex) {
+  for (const entry of index) {
     if (categoryFilter && entry.category !== categoryFilter) continue;
 
     // Token match score
