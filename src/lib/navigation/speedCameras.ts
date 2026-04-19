@@ -25,24 +25,41 @@ const BUILTIN_CAMERAS: SpeedCamera[] = [
 let _cameras: SpeedCamera[] = BUILTIN_CAMERAS;
 let _loaded = false;
 
+function mergeCameraSets(...groups: SpeedCamera[][]): SpeedCamera[] {
+  const merged: SpeedCamera[] = [];
+  const seen = new Set<string>();
+
+  for (const group of groups) {
+    for (const cam of group) {
+      const key = `${cam.location.lat.toFixed(5)}:${cam.location.lng.toFixed(5)}:${cam.type}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push(cam);
+    }
+  }
+
+  return merged;
+}
+
 /** Загружает камеры: offline JSON → Supabase → встроенные */
 export async function loadSpeedCameras(): Promise<SpeedCamera[]> {
   if (_loaded) return _cameras;
+
+  let merged = [...BUILTIN_CAMERAS];
 
   // 1) Offline data (downloaded from OSM)
   try {
     const offlineCams = await getOfflineSpeedCameras();
     if (offlineCams.length > 0) {
-      _cameras = offlineCams.map(c => ({
+      const mappedOffline = offlineCams.map(c => ({
         id: c.id,
         location: { lat: c.lat, lng: c.lon },
         speedLimit: c.speedLimit,
         direction: c.direction,
         type: c.type as SpeedCamera['type'],
       }));
-      _loaded = true;
-      logger.debug(`[speedCameras] Загружено ${_cameras.length} камер из offline данных`);
-      return _cameras;
+      merged = mergeCameraSets(mappedOffline, merged);
+      logger.debug(`[speedCameras] Загружено ${mappedOffline.length} камер из offline данных`);
     }
   } catch {
     // offline not available
@@ -57,19 +74,21 @@ export async function loadSpeedCameras(): Promise<SpeedCamera[]> {
     if (error) throw error;
     if (data?.length) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      _cameras = (data as any[]).map((row) => ({
+      const mappedSupabase = (data as any[]).map((row) => ({
         id: String(row.id),
         location: { lat: Number(row.lat), lng: Number(row.lng) },
         speedLimit: Number(row.speed_limit),
         direction: Number(row.direction),
         type: (String(row.type) as SpeedCamera['type']) || 'fixed',
       }));
+      merged = mergeCameraSets(mappedSupabase, merged);
     }
   } catch (err) {
     logger.debug('[speedCameras] nav_speed_cameras недоступна, используем встроенные', err);
   }
 
   // 3) Fallback to builtin
+  _cameras = merged;
   _loaded = true;
   return _cameras;
 }

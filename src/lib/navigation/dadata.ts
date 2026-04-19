@@ -37,6 +37,24 @@ function headers(): Record<string, string> {
   };
 }
 
+function hasExplicitGeoIntent(query: string): boolean {
+  return /,|\b(казан|санкт|питер|спб|дуба|берлин|ростов|екатер|новосиб|нижн|самар|уф[аеы]|краснояр|воронеж|перм|волгоград|омск|тюм|челяб|сочи|дубай|berlin|dubai|saint petersburg|st petersburg|rostov|kazan|moscow|london|paris|rome|madrid|istanbul|tokyo|seoul|beijing)\b/i.test(query);
+}
+
+function isStreetLevelQuery(query: string): boolean {
+  return /\b(ул\.?|улица|проспект|пр-т|переулок|пер\.?|бульвар|бул\.?|шоссе|ш\.?|площадь|пл\.?|набережная|наб\.?|дом|д\.?|корпус|корп\.?|строение|стр\.?|avenue|street|st\.?|road|rd\.?|boulevard|blvd\.?|lane|ln\.?|drive|dr\.?)\b/i.test(query);
+}
+
+function applyLocalBias(params: URLSearchParams, near?: { lat: number; lng: number }, query?: string): void {
+  if (!near) return;
+  if (query && hasExplicitGeoIntent(query)) return;
+  if (query && !isStreetLevelQuery(query) && query.trim().length < 6) return;
+
+  params.set('lat', String(near.lat));
+  params.set('lon', String(near.lng));
+  params.set('zoom', '12');
+}
+
 // ── Parse DaData → FiasAddress ───────────────────────────────────────────────
 
 function parseAddress(raw: DaDataAddressData, value: string, unrestricted: string): FiasAddress {
@@ -78,67 +96,82 @@ function parseAddress(raw: DaDataAddressData, value: string, unrestricted: strin
 
 export async function suggestAddress(
   query: string,
-  count = 8
+  count = 8,
+  near?: { lat: number; lng: number }
 ): Promise<FiasAddress[]> {
   if (!query.trim()) return [];
 
+  const explicitGeoIntent = hasExplicitGeoIntent(query);
+
   // Запускаем offline + online ПАРАЛЛЕЛЬНО (не блокируем на offline)
-  const offlinePromise = searchOffline(query, undefined, count).catch(() => [] as Awaited<ReturnType<typeof searchOffline>>);
-  const onlinePromise = suggestAddressOnline(query, count).catch(() => [] as FiasAddress[]);
+  const offlinePromise = searchOffline(query, near, count * 2)
+    .then((rows) => rows.filter((row) => row.type === 'city' || row.type === 'address').slice(0, count))
+    .catch(() => [] as Awaited<ReturnType<typeof searchOffline>>);
+  const onlinePromise = suggestAddressOnline(query, count, near).catch(() => [] as FiasAddress[]);
 
   const [offlineResults, onlineResults] = await Promise.all([offlinePromise, onlinePromise]);
+
+  const orderedOfflineResults = explicitGeoIntent
+    ? [...offlineResults].sort((a, b) => Number(b.type === 'city') - Number(a.type === 'city'))
+    : offlineResults;
+  const orderedSources = explicitGeoIntent
+    ? [orderedOfflineResults, onlineResults]
+    : [orderedOfflineResults, onlineResults];
 
   // Объединяем: offline первые, затем online (без дублей)
   const merged: FiasAddress[] = [];
   const seen = new Set<string>();
 
   // Offline → FiasAddress
-  for (const r of offlineResults) {
-    const key = `${r.position.lat.toFixed(5)},${r.position.lng.toFixed(5)}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    merged.push({
-      value: r.name,
-      unrestrictedValue: r.display,
-      fiasId: null,
-      fiasLevel: null,
-      kladrId: null,
-      postalCode: null,
-      country: null,
-      regionFiasId: null,
-      region: null,
-      regionType: null,
-      cityFiasId: null,
-      city: null,
-      cityType: null,
-      streetFiasId: null,
-      street: null,
-      streetType: null,
-      house: null,
-      houseType: null,
-      block: null,
-      blockType: null,
-      flat: null,
-      flatType: null,
-      geoLat: r.position.lat,
-      geoLon: r.position.lng,
-      okato: null,
-      oktmo: null,
-      timezone: null,
-      qcGeo: null,
-      qcComplete: null,
-      qcHouse: null,
-    });
-  }
+  for (const source of orderedSources) {
+    for (const item of source) {
+      if ('position' in item) {
+        const key = `${item.position.lat.toFixed(5)},${item.position.lng.toFixed(5)}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        merged.push({
+          value: item.name,
+          unrestrictedValue: item.display,
+          fiasId: null,
+          fiasLevel: null,
+          kladrId: null,
+          postalCode: null,
+          country: 'Offline',
+          regionFiasId: null,
+          region: null,
+          regionType: null,
+          cityFiasId: null,
+          city: item.type === 'city' ? item.name : null,
+          cityType: item.type === 'city' ? 'city' : null,
+          streetFiasId: null,
+          street: null,
+          streetType: null,
+          house: null,
+          houseType: null,
+          block: null,
+          blockType: null,
+          flat: null,
+          flatType: null,
+          geoLat: item.position.lat,
+          geoLon: item.position.lng,
+          okato: null,
+          oktmo: null,
+          timezone: null,
+          qcGeo: null,
+          qcComplete: null,
+          qcHouse: null,
+        });
+        continue;
+      }
 
-  // Online results
-  for (const addr of onlineResults) {
-    if (addr.geoLat && addr.geoLon) {
-      const key = `${addr.geoLat.toFixed(5)},${addr.geoLon.toFixed(5)}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
+      const addr = item;
+      if (addr.geoLat && addr.geoLon) {
+        const key = `${addr.geoLat.toFixed(5)},${addr.geoLon.toFixed(5)}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+      }
+      merged.push(addr);
     }
-    merged.push(addr);
   }
 
   return merged.slice(0, count);
@@ -148,11 +181,12 @@ export async function suggestAddress(
 async function suggestAddressOnline(
   query: string,
   count: number,
+  near?: { lat: number; lng: number },
 ): Promise<FiasAddress[]> {
   const promises: Promise<FiasAddress[]>[] = [];
 
   // 1) Photon (бесплатный, весь мир, быстрый)
-  promises.push(suggestAddressPhoton(query, count).catch(() => []));
+  promises.push(suggestAddressPhoton(query, count, near).catch(() => []));
 
   // 2) DaData (если есть ключ — лучшие результаты для России)
   const token = getToken();
@@ -175,7 +209,7 @@ async function suggestAddressOnline(
   }
 
   // 3) Nominatim (fallback, весь мир)
-  promises.push(suggestAddressNominatim(query, Math.min(count, 3)).catch(() => []));
+  promises.push(suggestAddressNominatim(query, Math.min(count, 3), near).catch(() => []));
 
   const results = await Promise.all(promises);
 
@@ -304,7 +338,11 @@ interface PhotonResponse {
   features: PhotonFeature[];
 }
 
-async function suggestAddressPhoton(query: string, count: number): Promise<FiasAddress[]> {
+async function suggestAddressPhoton(
+  query: string,
+  count: number,
+  near?: { lat: number; lng: number },
+): Promise<FiasAddress[]> {
   try {
     const params = new URLSearchParams({
       q: query,
@@ -312,13 +350,7 @@ async function suggestAddressPhoton(query: string, count: number): Promise<FiasA
       lang: 'ru',
     });
 
-    // Если нет явного указания города, добавляем bias к Москве
-    const hasCity = /москв|питер|санкт|спб|екатер|новосиб|казан/i.test(query);
-    if (!hasCity) {
-      params.set('lat', '55.75');
-      params.set('lon', '37.62');
-      params.set('zoom', '12');
-    }
+    applyLocalBias(params, near, query);
 
     const resp = await fetch(`${PHOTON_URL}?${params}`, {
       headers: { 'User-Agent': 'MansoniNav/1.0' },
@@ -358,7 +390,7 @@ async function suggestAddressPhoton(query: string, count: number): Promise<FiasA
           fiasLevel: null,
           kladrId: null,
           postalCode: p.postcode || null,
-          country: p.country || 'Россия',
+          country: p.country || 'Unknown',
           regionFiasId: null,
           region: p.state || null,
           regionType: null,
@@ -398,11 +430,13 @@ interface NominatimResult {
   lon: string;
 }
 
-async function suggestAddressNominatim(query: string, count: number): Promise<FiasAddress[]> {
+async function suggestAddressNominatim(
+  query: string,
+  count: number,
+  near?: { lat: number; lng: number },
+): Promise<FiasAddress[]> {
   try {
-    // Добавляем "Москва" если нет явного города в запросе
-    const hasCity = /москв|питер|санкт|спб|мск|екатер|новосиб|казан|нижн|самар|ростов|уф[аеы]|красноярск|ворон|перм|волгоград/i.test(query);
-    const searchQuery = hasCity ? query : `Москва, ${query}`;
+    const searchQuery = query;
 
     // Пробуем несколько вариантов запроса
     const queries = [searchQuery];
@@ -413,7 +447,7 @@ async function suggestAddressNominatim(query: string, count: number): Promise<Fi
     if (!/\b(ул\.|улица|пр-т|проспект|пер\.|переулок|бул\.|бульвар|ш\.|шоссе|пл\.|площадь|наб\.|набережная)\b/i.test(query)) {
       const parts = query.trim().split(/\s+/);
       if (parts.length >= 2) {
-        queries.push(hasCity ? query : `Москва, ${parts[0]} улица ${parts.slice(1).join(' ')}`);
+        queries.push(`${parts[0]} street ${parts.slice(1).join(' ')}`);
       }
     }
 
@@ -421,7 +455,19 @@ async function suggestAddressNominatim(query: string, count: number): Promise<Fi
     const seen = new Set<string>();
 
     for (const q of queries) {
-      const url = `${NOMINATIM_URL}?format=json&q=${encodeURIComponent(q)}&limit=${count}&accept-language=ru&countrycodes=ru`;
+      const params = new URLSearchParams({
+        format: 'jsonv2',
+        q,
+        limit: String(count),
+        'accept-language': 'ru',
+        addressdetails: '1',
+      });
+      if (near && !hasExplicitGeoIntent(query) && isStreetLevelQuery(query)) {
+        params.set('lat', String(near.lat));
+        params.set('lon', String(near.lng));
+      }
+
+      const url = `${NOMINATIM_URL}?${params.toString()}`;
       const resp = await fetch(url);
       if (!resp.ok) continue;
 
@@ -437,7 +483,7 @@ async function suggestAddressNominatim(query: string, count: number): Promise<Fi
           fiasLevel: null,
           kladrId: null,
           postalCode: null,
-          country: 'Россия',
+          country: 'Unknown',
           regionFiasId: null,
           region: null,
           regionType: null,

@@ -9,6 +9,10 @@ import { dbLoose } from '@/lib/supabase';
 import type { LatLng } from '@/types/taxi';
 import type { SavedPlace } from '@/types/navigation';
 import type { POICategory } from '@/types/fias';
+import { searchOffline } from './offlineSearch';
+
+const PHOTON_URL = 'https://photon.komoot.io/api';
+const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
 
 // ── Типы строк (таблицы вне сгенерированной схемы) ──────────────────────────
 
@@ -43,6 +47,172 @@ interface POIRow {
   location: unknown;
   is_verified: boolean | null;
   owner_id: string | null;
+}
+
+interface PhotonPlaceFeature {
+  geometry: { coordinates: [number, number] };
+  properties: {
+    name?: string;
+    city?: string;
+    country?: string;
+    street?: string;
+    housenumber?: string;
+    postcode?: string;
+    osm_id?: number;
+    type?: string;
+  };
+}
+
+interface PhotonPlaceResponse {
+  features: PhotonPlaceFeature[];
+}
+
+interface NominatimPlaceResult {
+  place_id: number;
+  display_name: string;
+  lat: string;
+  lon: string;
+  type?: string;
+  class?: string;
+  name?: string;
+}
+
+function hasExplicitGeoIntent(query: string): boolean {
+  return /,|\b(казан|санкт|питер|спб|дуба|берлин|ростов|екатер|новосиб|нижн|самар|уф[аеы]|краснояр|воронеж|перм|волгоград|омск|тюм|челяб|сочи|berlin|dubai|saint petersburg|rostov|kazan|moscow|london|paris|rome|madrid|istanbul|tokyo|seoul|beijing)\b/i.test(query);
+}
+
+function makePOIKey(name: string, coordinates: LatLng): string {
+  return `${name.toLowerCase()}::${coordinates.lat.toFixed(4)}::${coordinates.lng.toFixed(4)}`;
+}
+
+function dedupePOIs(...groups: POIResult[][]): POIResult[] {
+  const merged: POIResult[] = [];
+  const seen = new Set<string>();
+
+  for (const group of groups) {
+    for (const poi of group) {
+      const key = makePOIKey(poi.name, poi.coordinates);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push(poi);
+    }
+  }
+
+  return merged;
+}
+
+async function searchOfflinePOIs(query: string, limit: number, near?: LatLng): Promise<POIResult[]> {
+  if (hasExplicitGeoIntent(query)) {
+    return [];
+  }
+
+  const results = await searchOffline(query, near, limit * 2);
+  return results
+    .filter((item) => item.type === 'poi')
+    .slice(0, limit)
+    .map((item) => ({
+      id: item.id,
+      name: item.name,
+      category: item.category,
+      subcategory: null,
+      address: item.display,
+      phone: null,
+      website: null,
+      rating: null,
+      reviewCount: 0,
+      coordinates: item.position,
+      isVerified: true,
+      ownerId: null,
+    }));
+}
+
+async function searchPhotonPOIs(query: string, limit: number, near?: LatLng): Promise<POIResult[]> {
+  try {
+    const params = new URLSearchParams({
+      q: query,
+      limit: String(Math.min(limit, 10)),
+      lang: 'ru',
+    });
+
+    if (near && !hasExplicitGeoIntent(query)) {
+      params.set('lat', String(near.lat));
+      params.set('lon', String(near.lng));
+      params.set('zoom', '12');
+    }
+
+    const resp = await fetch(`${PHOTON_URL}?${params.toString()}`, {
+      headers: { 'User-Agent': 'MansoniNav/1.0' },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!resp.ok) return [];
+
+    const data: PhotonPlaceResponse = await resp.json();
+    return data.features
+      .filter((feature) => feature.geometry?.coordinates && feature.properties?.name)
+      .map((feature) => {
+        const [lng, lat] = feature.geometry.coordinates;
+        const props = feature.properties;
+        const address = [props.city, props.street, props.housenumber].filter(Boolean).join(', ');
+
+        return {
+          id: `photon-${props.osm_id ?? `${lat}-${lng}`}`,
+          name: props.name ?? 'POI',
+          category: props.type ?? 'place',
+          subcategory: null,
+          address: address || props.country || null,
+          phone: null,
+          website: null,
+          rating: null,
+          reviewCount: 0,
+          coordinates: { lat, lng },
+          isVerified: false,
+          ownerId: null,
+        };
+      });
+  } catch {
+    return [];
+  }
+}
+
+async function searchNominatimPOIs(query: string, limit: number, near?: LatLng): Promise<POIResult[]> {
+  try {
+    const params = new URLSearchParams({
+      format: 'jsonv2',
+      q: query,
+      limit: String(Math.min(limit, 10)),
+      'accept-language': 'ru',
+      addressdetails: '1',
+    });
+
+    if (near && !hasExplicitGeoIntent(query)) {
+      params.set('lat', String(near.lat));
+      params.set('lon', String(near.lng));
+    }
+
+    const resp = await fetch(`${NOMINATIM_URL}?${params.toString()}`, {
+      headers: { 'User-Agent': 'MansoniNav/1.0' },
+      signal: AbortSignal.timeout(6000),
+    });
+    if (!resp.ok) return [];
+
+    const data: NominatimPlaceResult[] = await resp.json();
+    return data.map((item) => ({
+      id: `nominatim-${item.place_id}`,
+      name: item.name || item.display_name.split(',')[0]?.trim() || query,
+      category: item.type || item.class || 'place',
+      subcategory: null,
+      address: item.display_name,
+      phone: null,
+      website: null,
+      rating: null,
+      reviewCount: 0,
+      coordinates: { lat: parseFloat(item.lat), lng: parseFloat(item.lon) },
+      isVerified: false,
+      ownerId: null,
+    }));
+  } catch {
+    return [];
+  }
 }
 
 // ── Saved Places (nav_saved_places) ──────────────────────────────────────────
@@ -253,19 +423,40 @@ function mapPOIRow(row: POIRow): POIResult {
 
 export async function searchPOIs(
   query: string,
-  limit = 20
+  limit = 20,
+  near?: LatLng,
 ): Promise<POIResult[]> {
   if (!query.trim()) return [];
 
-  const { data, error } = await dbLoose
-    .from('nav_pois')
-    .select('*')
-    .ilike('name', `%${query}%`)
-    .order('rating', { ascending: false, nullsFirst: false })
-    .limit(limit);
+  const explicitGeoIntent = hasExplicitGeoIntent(query);
 
-  if (error || !data) return [];
-  return (data as unknown as POIRow[]).map(mapPOIRow);
+  const manualPromise = (async (): Promise<POIResult[]> => {
+    try {
+      const { data, error } = await dbLoose
+        .from('nav_pois')
+        .select('*')
+        .ilike('name', `%${query}%`)
+        .order('rating', { ascending: false, nullsFirst: false })
+        .limit(limit);
+
+      return error || !data ? [] : (data as unknown as POIRow[]).map(mapPOIRow);
+    } catch {
+      return [];
+    }
+  })();
+
+  const [manualResults, offlineResults, photonResults, nominatimResults] = await Promise.all([
+    manualPromise,
+    searchOfflinePOIs(query, limit, near),
+    searchPhotonPOIs(query, limit, near),
+    searchNominatimPOIs(query, Math.min(limit, 8), near),
+  ]);
+
+  const groups = explicitGeoIntent
+    ? [photonResults, nominatimResults, manualResults, offlineResults]
+    : [manualResults, offlineResults, photonResults, nominatimResults];
+
+  return dedupePOIs(...groups).slice(0, limit);
 }
 
 export async function getMyPOIs(userId: string): Promise<POIResult[]> {

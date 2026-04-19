@@ -75,13 +75,13 @@ export function SearchPanel({
     setLoading(true);
     try {
       if (currentTab === 'address') {
-        const results = await suggestAddress(text);
+        const results = await suggestAddress(text, 8, currentPosition ?? undefined);
         setAddressResults(results);
       } else if (currentTab === 'organization') {
         const results = await suggestOrganization(text);
         setOrgResults(results);
       } else {
-        const results = await searchPOIs(text);
+        const results = await searchPOIs(text, 20, currentPosition ?? undefined);
         setPOIResults(results);
       }
     } catch (err) {
