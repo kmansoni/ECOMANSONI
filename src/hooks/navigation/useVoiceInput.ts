@@ -7,11 +7,12 @@
  * финальный текст возвращается через onResult.
  */
 import { useState, useCallback, useRef, useEffect } from 'react';
+import { getCurrentLanguageCode } from '@/lib/localization/appLocale';
 
 export type VoiceInputState = 'idle' | 'listening' | 'processing' | 'error';
 
 interface UseVoiceInputOptions {
-  /** Язык распознавания (по умолчанию ru-RU) */
+  /** Язык распознавания (по умолчанию runtime locale) */
   lang?: string;
   /** Непрерывное распознавание (по умолчанию false — одна фраза) */
   continuous?: boolean;
@@ -19,7 +20,7 @@ interface UseVoiceInputOptions {
   interimResults?: boolean;
 }
 
-interface UseVoiceInputReturn {
+export interface UseVoiceInputReturn {
   /** Текущее состояние */
   state: VoiceInputState;
   /** Распознанный текст (обновляется в реальном времени) */
@@ -44,10 +45,11 @@ interface UseVoiceInputReturn {
 
 export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInputReturn {
   const {
-    lang = 'ru-RU',
+    lang = getCurrentLanguageCode() === 'ru' ? 'ru-RU' : 'en-US',
     continuous = false,
     interimResults = true,
   } = options;
+  const isRussianUi = lang.toLowerCase().startsWith('ru');
 
   const [state, setState] = useState<VoiceInputState>('idle');
   const [transcript, setTranscript] = useState('');
@@ -75,7 +77,7 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
 
   const startListening = useCallback(() => {
     if (!isSupported) {
-      setError('Распознавание речи не поддерживается в этом браузере');
+      setError(isRussianUi ? 'Распознавание речи не поддерживается в этом браузере' : 'Speech recognition is not supported in this browser');
       setState('error');
       return;
     }
@@ -95,7 +97,7 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
 
     const SpeechRecognitionClass = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognitionClass) {
-      setError('SpeechRecognition недоступен');
+      setError(isRussianUi ? 'SpeechRecognition недоступен' : 'SpeechRecognition is unavailable');
       setState('error');
       return;
     }
@@ -152,16 +154,16 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
       if (isStoppingRef.current) return; // Игнорируем ошибки при остановке
 
       const errorMessages: Record<string, string> = {
-        'no-speech': 'Речь не обнаружена. Попробуйте ещё раз.',
-        'audio-capture': 'Микрофон не найден. Проверьте подключение.',
-        'not-allowed': 'Доступ к микрофону запрещён. Разрешите в настройках браузера.',
-        'network': 'Ошибка сети. Проверьте подключение к интернету.',
-        'aborted': 'Распознавание отменено.',
-        'language-not-supported': 'Язык не поддерживается.',
-        'service-not-allowed': 'Сервис распознавания недоступен.',
+        'no-speech': isRussianUi ? 'Речь не обнаружена. Попробуйте ещё раз.' : 'No speech detected. Please try again.',
+        'audio-capture': isRussianUi ? 'Микрофон не найден. Проверьте подключение.' : 'No microphone detected. Check your device.',
+        'not-allowed': isRussianUi ? 'Доступ к микрофону запрещён. Разрешите в настройках браузера.' : 'Microphone access is blocked. Allow it in your browser settings.',
+        'network': isRussianUi ? 'Ошибка сети. Проверьте подключение к интернету.' : 'Network error. Check your internet connection.',
+        'aborted': isRussianUi ? 'Распознавание отменено.' : 'Recognition was cancelled.',
+        'language-not-supported': isRussianUi ? 'Язык не поддерживается.' : 'This language is not supported.',
+        'service-not-allowed': isRussianUi ? 'Сервис распознавания недоступен.' : 'Speech recognition service is unavailable.',
       };
 
-      const msg = errorMessages[event.error] || `Ошибка распознавания: ${event.error}`;
+      const msg = errorMessages[event.error] || (isRussianUi ? `Ошибка распознавания: ${event.error}` : `Recognition error: ${event.error}`);
       setError(msg);
       setState('error');
     };
@@ -182,10 +184,10 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
     try {
       recognition.start();
     } catch (e) {
-      setError('Не удалось запустить распознавание речи');
+      setError(isRussianUi ? 'Не удалось запустить распознавание речи' : 'Failed to start speech recognition');
       setState('error');
     }
-  }, [isSupported, lang, continuous, interimResults]);
+  }, [continuous, interimResults, isRussianUi, isSupported, lang]);
 
   const stopListening = useCallback(() => {
     if (recognitionRef.current) {

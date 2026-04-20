@@ -62,6 +62,7 @@ export interface LocalAddress {
   postcode: string;
   lat: number;
   lon: number;
+  countryCode?: string;
 }
 
 export interface LocalSpeedCamera {
@@ -92,10 +93,17 @@ let _pois: LocalPOI[] | null = null;
 let _addresses: LocalAddress[] | null = null;
 let _cameras: LocalSpeedCamera[] | null = null;
 let _settlements: LocalSettlement[] | null = null;
+let _worldAddresses: LocalAddress[] | null = null;
 let _loadPromise: Promise<void> | null = null;
 let _loadedRegions: Set<string> = new Set();
+let _loadedAddressRegions: Set<string> = new Set();
 let _allRegionsLoaded = false;
 let _allRegionsPromise: Promise<void> | null = null;
+let _allWorldAddressRegionsLoaded = false;
+let _allWorldAddressRegionsPromise: Promise<void> | null = null;
+let _worldAddressManifest: WorldAddressManifestEntry[] | null = null;
+let _worldAddressManifestPromise: Promise<WorldAddressManifestEntry[] | null> | null = null;
+let _offlineAddressDatasetVersion = 0;
 
 interface SettlementManifestEntry {
   countryCode: string;
@@ -105,6 +113,35 @@ interface SettlementManifestEntry {
   topPlace: string | null;
   topPopulation: number;
 }
+
+interface WorldAddressManifestEntry {
+  countryCode: string;
+  countryName: string;
+  count: number;
+  target: string;
+}
+
+type WorldAddressRecord = Partial<LocalAddress> & {
+  address?: string;
+  display?: string;
+  houseNumber?: string;
+  house_number?: string;
+  locality?: string;
+  postalCode?: string;
+  postal_code?: string;
+  latitude?: number;
+  longitude?: number;
+  country_code?: string;
+};
+
+const COMMON_WORLD_REGIONS = [
+  'RU', 'AE', 'US', 'DE', 'GB', 'FR', 'TR', 'UA', 'BY', 'KZ',
+  'UZ', 'GE', 'AM', 'AZ', 'TJ', 'KG', 'MD', 'TM',
+  'IT', 'ES', 'CN', 'JP', 'KR', 'TH', 'IN', 'BR',
+  'EG', 'IL', 'CY', 'GR', 'PL', 'CZ', 'AT', 'NL',
+];
+
+const ADDRESS_HINT_RE = /\d|\b(ул\.?|улица|street|st\.?|ave\.?|avenue|road|rd\.?|blvd\.?|boulevard|lane|ln\.?|drive|dr\.?|пр-т|проспект|пер\.?|переулок|бул\.?|бульвар|ш\.?|шоссе|наб\.?|набережная|house|building|дом|д\.?|корпус|к\.?|строение|стр\.?)\b/i;
 
 // ─── Data loading ───────────────────────────────────────────────────────────
 
@@ -140,11 +177,15 @@ export async function loadOfflineData(): Promise<boolean> {
     _pois = pois;
     _addresses = addresses;
     _cameras = cameras;
+    _offlineAddressDatasetVersion += 1;
 
     console.log(`[OfflineSearch] Загружено: ${_searchIndex.length} записей, ${pois?.length ?? 0} POI, ${addresses?.length ?? 0} адресов, ${cameras?.length ?? 0} камер`);
 
     // Preload common regions — AWAIT so cities are available immediately
-    await preloadCommonRegions().catch(() => {});
+    await Promise.all([
+      preloadCommonRegions().catch(() => {}),
+      preloadCommonWorldAddressRegions().catch(() => {}),
+    ]);
   })();
 
   await _loadPromise;
@@ -153,6 +194,88 @@ export async function loadOfflineData(): Promise<boolean> {
 
 export function isOfflineDataLoaded(): boolean {
   return _searchIndex != null;
+}
+
+export function getLoadedOfflineAddresses(): LocalAddress[] {
+  return [
+    ...(_addresses ?? []),
+    ...(_worldAddresses ?? []),
+  ];
+}
+
+export function getOfflineAddressDatasetVersion(): number {
+  return _offlineAddressDatasetVersion;
+}
+
+function looksLikeStreetAddressQuery(query: string, queryTokens: string[]): boolean {
+  return ADDRESS_HINT_RE.test(query) || queryTokens.length >= 2;
+}
+
+function buildSearchEntryFromAddress(address: LocalAddress): SearchEntry {
+  const full = address.full?.trim() || [address.street, address.house, address.city].filter(Boolean).join(', ');
+  return {
+    id: `world-address-${address.id}`,
+    type: 'address',
+    name: `${address.street}${address.house ? ` ${address.house}` : ''}`.trim() || full,
+    display: full,
+    tokens: [
+      full,
+      address.street,
+      address.house,
+      address.city,
+      address.postcode,
+      address.countryCode,
+    ]
+      .filter(Boolean)
+      .flatMap((value) => String(value).toLowerCase().split(/[^\wа-яё]+/i))
+      .filter(Boolean),
+    lat: address.lat,
+    lon: address.lon,
+    category: 'address',
+    countryCode: address.countryCode,
+  };
+}
+
+function normalizeWorldAddressRecord(record: WorldAddressRecord, fallbackCountryCode: string): LocalAddress | null {
+  const street = String(record.street ?? '').trim();
+  const city = String(record.city ?? record.locality ?? '').trim();
+  const house = String(record.house ?? record.houseNumber ?? record.house_number ?? '').trim();
+  const full = String(record.full ?? record.address ?? record.display ?? '').trim()
+    || [street, house, city].filter(Boolean).join(', ');
+  const lat = Number(record.lat ?? record.latitude);
+  const lon = Number(record.lon ?? record.longitude);
+
+  if (!full || !Number.isFinite(lat) || !Number.isFinite(lon)) {
+    return null;
+  }
+
+  return {
+    id: String(record.id ?? full).trim(),
+    full,
+    street,
+    house,
+    city,
+    postcode: String(record.postcode ?? record.postalCode ?? record.postal_code ?? '').trim(),
+    lat,
+    lon,
+    countryCode: String(record.countryCode ?? record.country_code ?? fallbackCountryCode).trim() || fallbackCountryCode,
+  };
+}
+
+async function loadWorldAddressManifest(): Promise<WorldAddressManifestEntry[] | null> {
+  if (_worldAddressManifest) return _worldAddressManifest;
+  if (_worldAddressManifestPromise) return _worldAddressManifestPromise;
+
+  _worldAddressManifestPromise = fetchJSON<WorldAddressManifestEntry[]>(
+    staticDataUrl('/data/osm/world/processed/address-manifest.json')
+  ).then((manifest) => {
+    _worldAddressManifest = manifest ?? null;
+    return _worldAddressManifest;
+  }).finally(() => {
+    _worldAddressManifestPromise = null;
+  });
+
+  return _worldAddressManifestPromise;
 }
 
 // ─── Settlement/Region loading ────────────────────────────────────────────────
@@ -218,13 +341,91 @@ export async function loadRegionSettlements(countryCode: string): Promise<boolea
  * Preload common regions (Russia, CIS, popular destinations)
  */
 export async function preloadCommonRegions(): Promise<void> {
-  const commonRegions = [
-    'RU', 'AE', 'US', 'DE', 'GB', 'FR', 'TR', 'UA', 'BY', 'KZ',
-    'UZ', 'GE', 'AM', 'AZ', 'TJ', 'KG', 'MD', 'TM', // CIS
-    'IT', 'ES', 'CN', 'JP', 'KR', 'TH', 'IN', 'BR',  // Popular
-    'EG', 'IL', 'CY', 'GR', 'PL', 'CZ', 'AT', 'NL',  // Travel
-  ];
-  await Promise.all(commonRegions.map(code => loadRegionSettlements(code).catch(() => false)));
+  await Promise.all(COMMON_WORLD_REGIONS.map(code => loadRegionSettlements(code).catch(() => false)));
+}
+
+export async function loadRegionWorldAddresses(countryCode: string): Promise<boolean> {
+  const code = countryCode.toUpperCase();
+  if (_loadedAddressRegions.has(code)) {
+    return true;
+  }
+
+  const manifest = await loadWorldAddressManifest();
+  if (!manifest?.some((entry) => entry.countryCode === code)) {
+    return false;
+  }
+
+  const addressRecords = await fetchJSON<WorldAddressRecord[]>(staticDataUrl(`/data/osm/world/processed/addresses/${code}.json`));
+  if (!addressRecords || addressRecords.length === 0) {
+    console.log(`[OfflineSearch] Нет мировых адресов для региона: ${code}`);
+    return false;
+  }
+
+  const normalizedAddresses = addressRecords
+    .map((record) => normalizeWorldAddressRecord(record, code))
+    .filter((record): record is LocalAddress => record != null);
+
+  if (normalizedAddresses.length === 0) {
+    return false;
+  }
+
+  if (!_worldAddresses) {
+    _worldAddresses = [];
+  }
+
+  _worldAddresses.push(...normalizedAddresses);
+  _loadedAddressRegions.add(code);
+  _offlineAddressDatasetVersion += 1;
+
+  const newEntries = normalizedAddresses.map(buildSearchEntryFromAddress);
+  _searchIndex = _searchIndex ? [..._searchIndex, ...newEntries] : newEntries;
+
+  console.log(`[OfflineSearch] Загружено ${normalizedAddresses.length} мировых адресов для ${code}`);
+  return true;
+}
+
+export async function preloadCommonWorldAddressRegions(): Promise<void> {
+  const manifest = await loadWorldAddressManifest();
+  if (!manifest?.length) return;
+
+  const availableCodes = new Set(manifest.map((entry) => entry.countryCode));
+  const regionsToLoad = COMMON_WORLD_REGIONS.filter((code) => availableCodes.has(code));
+  await Promise.all(regionsToLoad.map((code) => loadRegionWorldAddresses(code).catch(() => false)));
+}
+
+export async function loadAllWorldAddressRegions(): Promise<void> {
+  if (_allWorldAddressRegionsLoaded) return;
+  if (_allWorldAddressRegionsPromise) {
+    await _allWorldAddressRegionsPromise;
+    return;
+  }
+
+  _allWorldAddressRegionsPromise = (async () => {
+    const manifest = await loadWorldAddressManifest();
+    if (!manifest?.length) return;
+
+    const unloaded = manifest
+      .filter((entry) => !_loadedAddressRegions.has(entry.countryCode))
+      .map((entry) => entry.countryCode);
+
+    if (unloaded.length === 0) {
+      _allWorldAddressRegionsLoaded = true;
+      return;
+    }
+
+    console.log(`[OfflineSearch] Загружаем оставшиеся ${unloaded.length} world address-регионов...`);
+
+    for (let i = 0; i < unloaded.length; i += 10) {
+      const batch = unloaded.slice(i, i + 10);
+      await Promise.all(batch.map((code) => loadRegionWorldAddresses(code).catch(() => false)));
+    }
+
+    _allWorldAddressRegionsLoaded = true;
+  })().finally(() => {
+    _allWorldAddressRegionsPromise = null;
+  });
+
+  await _allWorldAddressRegionsPromise;
 }
 
 /**
@@ -331,6 +532,24 @@ export async function searchOffline(
   if (queryTokens.length === 0) return [];
 
   let results = _runSearch(_searchIndex, queryTokens, q, near, limit, categoryFilter);
+
+  const isAddressLike = looksLikeStreetAddressQuery(q, queryTokens);
+  const addressCount = results.filter((result) => result.type === 'address').length;
+
+  if (isAddressLike && addressCount < 3) {
+    await preloadCommonWorldAddressRegions();
+    if (_searchIndex) {
+      results = _runSearch(_searchIndex, queryTokens, q, near, limit, categoryFilter);
+    }
+  }
+
+  const refreshedAddressCount = results.filter((result) => result.type === 'address').length;
+  if (isAddressLike && refreshedAddressCount === 0 && !_allWorldAddressRegionsLoaded && q.length >= 3) {
+    await loadAllWorldAddressRegions();
+    if (_searchIndex) {
+      results = _runSearch(_searchIndex, queryTokens, q, near, limit, categoryFilter);
+    }
+  }
 
   // If few city results and not all regions loaded — load remaining and retry
   const cityCount = results.filter(r => r.type === 'city').length;

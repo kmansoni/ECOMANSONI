@@ -6,15 +6,34 @@
 
 | Компонент | Статус | Файл |
 |-----------|--------|------|
-| GeoNames allCountries.txt | ✅ Есть (13M записей) | `public/data/osm/world/sources/geonames/allCountries.txt` |
+| GeoNames allCountries.zip | ✅ Есть | `public/data/osm/world/sources/geonames/allCountries.zip` |
+| GeoNames allCountries.txt | ✅ Есть после extract | `public/data/osm/world/sources/geonames/allCountries.txt` |
 | Страны (countryInfo.txt) | ✅ Есть | `public/data/osm/world/sources/geonames/countryInfo.txt` |
 | Административные коды | ✅ Есть | `admin1CodesASCII.txt`, `admin2Codes.txt` |
-| **Settlements (RU)** | ❌ НЕТ | Нужно экспортировать |
-| **Settlements (другие страны)** | ❌ НЕТ | Нужно экспортировать |
-| Addresses (addresses.json) | ⚠️ Частично | Только Москва |
+| **Settlements (world)** | ✅ Есть | `world/processed/settlements/*.json`, 237 shard-файлов |
+| Settlements manifest | ✅ Есть | `world/processed/settlements-manifest.json` |
+| **World addresses** | ❌ НЕТ | `world/processed/addresses/*.json` отсутствуют |
+| Address manifest | ❌ НЕТ | `world/processed/address-manifest.json` отсутствует |
+| Local `processed/addresses.json` | ⚠️ Частично | Локальный/региональный слой, не мировой |
 
 ### Проблема
-Скрипт `process-world-geodata.mjs` запускался с фильтром `--country=AD` (Андорра), поэтому данные только для Андорры.
+Изначально `process-world-geodata.mjs` действительно был прогнан только с `--country=AD`, поэтому runtime видел лишь Андорру. Сейчас этот перекос исправлен: на static host уже опубликован полноценный world settlements слой. Оставшийся пробел теперь другой: street-level мировой address layer по-прежнему не сгенерирован и не разложен по shard-файлам.
+
+### Что уже сделано
+
+- `process-world-geodata.mjs` успешно прогнан на полном GeoNames дампе с `--min-population=1000`
+- На AdminVPS разложено `237` settlement-shard файлов в `/opt/mansoni/static-data/osm/world/processed/settlements`
+- Публичная раздача подтверждена через `https://mansoni.ru/data/osm/world/processed/settlements-manifest.json`
+- В frontend убран безусловный московский bias голосового поиска
+- В `offlineSearch.ts` добавлена поддержка world address shards, если они появятся на static host
+- В голосовом поиске включён нормальный мировой online fallback по умолчанию
+
+### Что ещё отсутствует
+
+- Нет `world/processed/addresses/*.json`
+- Нет `world/processed/address-manifest.json`
+- Нет штатного planet-scale exporter-а street-address слоя в текущем repo
+- Поэтому мировой offline street-address поиск пока возможен только там, где появятся world address shards; иначе используется global online fallback (Photon/Nominatim/DaData)
 
 ---
 
@@ -44,6 +63,8 @@ done
 ### Фаза 2: Экспорт адресов из OSM (PBF)
 
 **Источник:** Geofabrik (уже настроено в `export-world-geodata.mjs`)
+
+**Статус:** не реализовано в production data pipeline. В репозитории нет готового экспортера, который уже сегодня генерирует `world/processed/addresses/<CC>.json` + `address-manifest.json`.
 
 **Страны с PBF:**
 - `russia-latest.osm.pbf` (~200MB)
@@ -90,12 +111,17 @@ osmium export russia-addresses.osm.pbf --format=json --geometry-type=point > add
 
 #### 4.1. offlineSearch.ts
 ```typescript
-// Текущая загрузка (проблема)
+// Текущая база всегда включает локальный processed/addresses.json
 const addresses = await fetch('/data/osm/processed/addresses.json');
 
-// Новая загрузка (по регионам)
+// Дополнительно поддерживается мировой address layer, если он разложен на static host
 async function loadRegion(countryCode: string) {
   const resp = await fetch(`/data/osm/world/processed/settlements/${countryCode}.json`);
+  return resp.json();
+}
+
+async function loadWorldAddresses(countryCode: string) {
+  const resp = await fetch(`/data/osm/world/processed/addresses/${countryCode}.json`);
   return resp.json();
 }
 ```
@@ -127,7 +153,18 @@ const countryCode = getCountryCode(position.lat, position.lon);
 - ✅ Поиск "Ростов-на-Дону" — найдено
 - ✅ Поиск "Дубай" — найдено
 - ✅ Поиск "Великент" — найдено
-- ✅ Поиск "Красная площадь" — нужен OSM PBF экспорт
+- ⚠️ Поиск "Красная площадь" / street-level world address — требует world address layer или online fallback
+
+---
+
+## ФАКТИЧЕСКАЯ PROD-СХЕМА НА СЕЙЧАС
+
+1. Offline local search: `processed/search_index.json` + `processed/addresses.json`
+2. World city fallback: `world/processed/settlements/*.json`
+3. World address fallback: `world/processed/addresses/*.json` только если данные появятся
+4. Online global fallback: Photon / Nominatim / DaData
+
+Именно поэтому после текущих изменений навигатор уже перестал быть `Moscow-only`, но полностью planet-scale offline street-address search ещё упирается в отсутствие самих datasets, а не в UI или ранжирование.
 
 ---
 

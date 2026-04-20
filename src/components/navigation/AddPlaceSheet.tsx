@@ -3,9 +3,11 @@ import { ArrowLeft, Search, X, Plus, Building2, Phone, Globe, Clock } from 'luci
 import { cn } from '@/lib/utils';
 import type { LatLng } from '@/types/taxi';
 import type { FiasAddress, POICategory } from '@/types/fias';
-import { POI_CATEGORY_LABELS, POI_CATEGORY_ICONS } from '@/types/fias';
+import { getPoiCategoryLabel, POI_CATEGORY_ICONS } from '@/types/fias';
 import { suggestAddress, suggestOrganization, type OrganizationResult } from '@/lib/navigation/dadata';
 import { addPOI } from '@/lib/navigation/places';
+import { useUserSettings } from '@/contexts/UserSettingsContext';
+import { navText } from '@/lib/navigation/navigationUi';
 
 interface AddPlaceSheetProps {
   userId: string;
@@ -22,6 +24,8 @@ const CATEGORIES: POICategory[] = [
 ];
 
 export function AddPlaceSheet({ userId, onClose, onAdded }: AddPlaceSheetProps) {
+  const { settings } = useUserSettings();
+  const languageCode = settings?.language_code ?? null;
   const [step, setStep] = useState<Step>('search');
   const [query, setQuery] = useState('');
   const [orgResults, setOrgResults] = useState<OrganizationResult[]>([]);
@@ -136,7 +140,7 @@ export function AddPlaceSheet({ userId, onClose, onAdded }: AddPlaceSheetProps) 
           <ArrowLeft className="w-5 h-5 text-white" />
         </button>
         <h2 className="text-white font-semibold text-sm">
-          {step === 'search' ? 'Добавить место' : step === 'manual' ? 'Новое место' : 'Подтверждение'}
+          {step === 'search' ? navText('Добавить место', 'Add place', languageCode) : step === 'manual' ? navText('Новое место', 'New place', languageCode) : navText('Подтверждение', 'Confirm', languageCode)}
         </h2>
       </div>
 
@@ -149,7 +153,7 @@ export function AddPlaceSheet({ userId, onClose, onAdded }: AddPlaceSheetProps) 
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
               <input
                 type="text"
-                placeholder="Найти организацию по ИНН или названию..."
+                placeholder={navText('Найти организацию по ИНН или названию...', 'Find a business by tax ID or name...', languageCode)}
                 value={query}
                 onChange={(e) => handleOrgInput(e.target.value)}
                 className={cn(
@@ -177,8 +181,8 @@ export function AddPlaceSheet({ userId, onClose, onAdded }: AddPlaceSheetProps) 
             >
               <Plus className="w-5 h-5 text-blue-400" />
               <div className="text-left">
-                <p className="text-sm text-blue-400 font-medium">Добавить вручную</p>
-                <p className="text-xs text-gray-500">Название, категория, адрес</p>
+                <p className="text-sm text-blue-400 font-medium">{navText('Добавить вручную', 'Add manually', languageCode)}</p>
+                <p className="text-xs text-gray-500">{navText('Название, категория, адрес', 'Name, category, address', languageCode)}</p>
               </div>
             </button>
 
@@ -201,7 +205,7 @@ export function AddPlaceSheet({ userId, onClose, onAdded }: AddPlaceSheetProps) 
                   <p className="text-sm text-white truncate">{org.name}</p>
                   {org.address && <p className="text-xs text-gray-500 truncate">{org.address}</p>}
                   <div className="flex items-center gap-2 mt-0.5">
-                    {org.inn && <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-800 text-gray-400">ИНН: {org.inn}</span>}
+                    {org.inn && <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-800 text-gray-400">TIN: {org.inn}</span>}
                     {org.phone && <span className="text-[10px] text-gray-500">{org.phone}</span>}
                   </div>
                 </div>
@@ -215,12 +219,12 @@ export function AddPlaceSheet({ userId, onClose, onAdded }: AddPlaceSheetProps) 
           <div className="p-4 space-y-4">
             {/* Name */}
             <div>
-              <label className="text-xs text-gray-400 mb-1 block">Название *</label>
+              <label className="text-xs text-gray-400 mb-1 block">{navText('Название', 'Name', languageCode)} *</label>
               <input
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="Магазин «Продукты»"
+                placeholder={navText('Магазин «Продукты»', 'Corner store', languageCode)}
                 className={cn(
                   'w-full h-11 px-4 rounded-xl',
                   'bg-gray-800/80 border border-white/10',
@@ -232,7 +236,7 @@ export function AddPlaceSheet({ userId, onClose, onAdded }: AddPlaceSheetProps) 
 
             {/* Category */}
             <div>
-              <label className="text-xs text-gray-400 mb-1 block">Категория</label>
+              <label className="text-xs text-gray-400 mb-1 block">{navText('Категория', 'Category', languageCode)}</label>
               <div className="grid grid-cols-4 gap-1.5">
                 {CATEGORIES.map((cat) => (
                   <button
@@ -246,7 +250,7 @@ export function AddPlaceSheet({ userId, onClose, onAdded }: AddPlaceSheetProps) 
                     )}
                   >
                     <span className="text-base">{POI_CATEGORY_ICONS[cat]}</span>
-                    <span className="truncate w-full text-center">{POI_CATEGORY_LABELS[cat]}</span>
+                    <span className="truncate w-full text-center">{getPoiCategoryLabel(cat, languageCode)}</span>
                   </button>
                 ))}
               </div>
@@ -254,13 +258,13 @@ export function AddPlaceSheet({ userId, onClose, onAdded }: AddPlaceSheetProps) 
 
             {/* Address with FIAS autocomplete */}
             <div className="relative">
-              <label className="text-xs text-gray-400 mb-1 block">Адрес *</label>
+              <label className="text-xs text-gray-400 mb-1 block">{navText('Адрес', 'Address', languageCode)} *</label>
               <input
                 type="text"
                 value={addrQuery}
                 onChange={(e) => handleAddrInput(e.target.value)}
                 onFocus={() => addrSuggestions.length > 0 && setShowAddrDropdown(true)}
-                placeholder="Начните вводить адрес..."
+                placeholder={navText('Начните вводить адрес...', 'Start typing the address...', languageCode)}
                 className={cn(
                   'w-full h-11 px-4 rounded-xl',
                   'bg-gray-800/80 border border-white/10',
@@ -284,15 +288,15 @@ export function AddPlaceSheet({ userId, onClose, onAdded }: AddPlaceSheetProps) 
               )}
               {addressCoords && (
                 <p className="text-[10px] text-green-400 mt-1">
-                  Координаты: {addressCoords.lat.toFixed(6)}, {addressCoords.lng.toFixed(6)}
-                  {fiasId && <span className="text-gray-500 ml-2">ФИАС: {fiasId.substring(0, 8)}...</span>}
+                  {navText('Coordinates', 'Coordinates', languageCode)}: {addressCoords.lat.toFixed(6)}, {addressCoords.lng.toFixed(6)}
+                  {fiasId && <span className="text-gray-500 ml-2">FIAS: {fiasId.substring(0, 8)}...</span>}
                 </p>
               )}
             </div>
 
             {/* Phone */}
             <div>
-              <label className="text-xs text-gray-400 mb-1 block">Телефон</label>
+              <label className="text-xs text-gray-400 mb-1 block">{navText('Телефон', 'Phone', languageCode)}</label>
               <div className="relative">
                 <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
                 <input
@@ -312,7 +316,7 @@ export function AddPlaceSheet({ userId, onClose, onAdded }: AddPlaceSheetProps) 
 
             {/* Website */}
             <div>
-              <label className="text-xs text-gray-400 mb-1 block">Сайт</label>
+              <label className="text-xs text-gray-400 mb-1 block">{navText('Сайт', 'Website', languageCode)}</label>
               <div className="relative">
                 <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
                 <input
@@ -335,13 +339,13 @@ export function AddPlaceSheet({ userId, onClose, onAdded }: AddPlaceSheetProps) 
               <div className="flex gap-2">
                 {inn && (
                   <div className="flex-1 px-3 py-2 bg-gray-800/50 rounded-lg">
-                    <p className="text-[10px] text-gray-500">ИНН</p>
+                    <p className="text-[10px] text-gray-500">TIN</p>
                     <p className="text-xs text-white">{inn}</p>
                   </div>
                 )}
                 {ogrn && (
                   <div className="flex-1 px-3 py-2 bg-gray-800/50 rounded-lg">
-                    <p className="text-[10px] text-gray-500">ОГРН</p>
+                    <p className="text-[10px] text-gray-500">OGRN</p>
                     <p className="text-xs text-white">{ogrn}</p>
                   </div>
                 )}
@@ -366,7 +370,7 @@ export function AddPlaceSheet({ userId, onClose, onAdded }: AddPlaceSheetProps) 
               ) : (
                 <>
                   <Plus className="w-5 h-5" />
-                  Добавить место
+                  {navText('Добавить место', 'Add place', languageCode)}
                 </>
               )}
             </button>

@@ -11,7 +11,8 @@ import {
   geoErrorToKey,
   type GeoCoords,
 } from "@/lib/chat/sendLocation";
-import { getStyleUrl } from "@/lib/map/vectorTileProvider";
+import { applyMapThemeEnhancements, getStyleUrl } from "@/lib/map/vectorTileProvider";
+import { useUserSettings } from "@/contexts/UserSettingsContext";
 import "maplibre-gl/dist/maplibre-gl.css";
 
 interface LocationShareSheetProps {
@@ -33,6 +34,7 @@ const LIVE_DURATIONS = [
 const DEFAULT_CENTER: [number, number] = [37.6173, 55.7558];
 
 export function LocationShareSheet({ isOpen, onClose, conversationId, onSent }: LocationShareSheetProps) {
+  const { settings } = useUserSettings();
   const [loading, setLoading] = useState(false);
   const [gettingLocation, setGettingLocation] = useState(false);
   const [coords, setCoords] = useState<GeoCoords | null>(null);
@@ -90,6 +92,14 @@ export function LocationShareSheet({ isOpen, onClose, conversationId, onSent }: 
         attributionControl: false,
       });
 
+      const applyLocalizedStyle = () => {
+        if (!map.isStyleLoaded()) return;
+        applyMapThemeEnhancements(map, 'dark', settings?.language_code ?? null);
+      };
+
+      map.on('load', applyLocalizedStyle);
+      map.on('styledata', applyLocalizedStyle);
+
       map.addControl(new ml.default.NavigationControl({ showCompass: false }), "top-right");
 
       // User marker
@@ -117,7 +127,7 @@ export function LocationShareSheet({ isOpen, onClose, conversationId, onSent }: 
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen]);
+  }, [isOpen, settings?.language_code]);
 
   // Fly to user position once acquired
   useEffect(() => {

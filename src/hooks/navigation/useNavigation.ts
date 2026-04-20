@@ -35,7 +35,9 @@ import {
 } from '@/lib/navigation/tripHistory';
 import { getLaneGuidance, loadLaneData } from '@/lib/navigation/laneAssist';
 import { quantumTransportService } from '@/lib/navigation/quantumTransportService';
+import { useNavigatorSettings } from '@/stores/navigatorSettingsStore';
 import type { RouteSuperposition, TwinSimulationResult, SwarmRecommendation, TimeAccount } from '@/types/quantum-transport';
+import { recordFallbackUsage, recordRerouteLatency, recordRouteBuildLatency } from '@/lib/navigation/navigationKpi';
 
 function getSavedCenter(): LatLng | null {
   try {
@@ -68,6 +70,8 @@ export function useNavigation(options?: UseNavigationOptions) {
   const effectiveTransitOptions = travelMode === 'metro'
     ? { ...transitOptions, transitTypes: metroTransitTypes, maxTransfers: transitOptions?.maxTransfers ?? 3 }
     : transitOptions;
+  const voiceEnabled = useNavigatorSettings((state) => state.voiceEnabled);
+  const setVoiceEnabled = useNavigatorSettings((state) => state.setVoiceEnabled);
   const previewModeKey = JSON.stringify({
     travelMode,
     transitTypes: effectiveTransitOptions?.transitTypes ?? [],
@@ -91,7 +95,6 @@ export function useNavigation(options?: UseNavigationOptions) {
   const [currentManeuverIndex, setCurrentManeuverIndex] = useState(0);
   const [speedLimit, setSpeedLimit] = useState<number | null>(null);
   const [nearbyCamera, setNearbyCamera] = useState<SpeedCamera | null>(null);
-  const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [isNorthUp, setIsNorthUp] = useState(false);
   const [loading, setLoading] = useState(false);
   const [quantumSuperposition, setQuantumSuperposition] = useState<RouteSuperposition | null>(null);
@@ -107,6 +110,11 @@ export function useNavigation(options?: UseNavigationOptions) {
   const [favorites, setFavorites] = useState<SavedPlace[]>([]);
   const [recents, setRecents] = useState<SavedPlace[]>([]);
   const [userId, setUserId] = useState<string | null>(null);
+
+  const handleTripFinalizePersistError = useCallback((error: unknown, status: 'completed' | 'cancelled') => {
+    logger.warn('[useNavigation] Не удалось сохранить завершение поездки', { status, error });
+    toast.error('Поездка не сохранена');
+  }, []);
 
   // Load user, favorites, and recents from Supabase
   useEffect(() => {
@@ -220,6 +228,10 @@ export function useNavigation(options?: UseNavigationOptions) {
 
     try {
       const result = await fetchRoute(from, place.coordinates, true, travelMode, effectiveTransitOptions, pedestrianOptions);
+      recordRouteBuildLatency(performance.now() - startedAt, result.source);
+      if (result.source !== 'navigation_server' && (travelMode === 'car' || travelMode === 'taxi')) {
+        recordFallbackUsage('routing', `select_destination:${result.source}`);
+      }
       // Fill in Russian instructions
       result.main.maneuvers.forEach((m) => {
         m.instruction = getManeuverInstruction(m.type, m.streetName);
@@ -267,6 +279,9 @@ export function useNavigation(options?: UseNavigationOptions) {
       try {
         const result = await fetchRoute(from, destination.coordinates, true, travelMode, effectiveTransitOptions, pedestrianOptions);
         if (cancelled) return;
+        if (result.source !== 'navigation_server' && (travelMode === 'car' || travelMode === 'taxi')) {
+          recordFallbackUsage('routing', `preview_rebuild:${result.source}`);
+        }
         result.main.maneuvers.forEach((m) => {
           m.instruction = getManeuverInstruction(m.type, m.streetName);
         });
@@ -340,7 +355,9 @@ export function useNavigation(options?: UseNavigationOptions) {
     const wasNavigating = phase === 'navigating' || phase === 'arrived';
     if (wasNavigating) {
       const status = phase === 'arrived' ? 'completed' : 'cancelled';
-      endTripRecording(status).catch(() => {});
+      endTripRecording(status).catch((error) => {
+        handleTripFinalizePersistError(error, status);
+      });
     }
     setPhase('idle');
     setRoute(null);
@@ -356,13 +373,13 @@ export function useNavigation(options?: UseNavigationOptions) {
     // Остановить сбор GPS-проб
     stopTrafficCollection();
     quantumTransportService.clearLiveSession();
-  }, [phase]);
+  }, [handleTripFinalizePersistError, phase]);
 
   // Toggle voice
   const toggleVoice = useCallback(() => {
-    setVoiceEnabled((v) => !v);
+    setVoiceEnabled(!voiceEnabled);
     if (voiceEnabled) window.speechSynthesis?.cancel();
-  }, [voiceEnabled]);
+  }, [setVoiceEnabled, voiceEnabled]);
 
   // Toggle orientation
   const toggleOrientation = useCallback(() => setIsNorthUp((v) => !v), []);
@@ -391,7 +408,9 @@ export function useNavigation(options?: UseNavigationOptions) {
         speakArrival();
         setPhase('arrived');
         // Завершить запись поездки
-        endTripRecording('completed').catch(() => {});
+        endTripRecording('completed').catch((error) => {
+          handleTripFinalizePersistError(error, 'completed');
+        });
         if (userId && route) {
           setTimeAccount(quantumTransportService.handleNavigationArrival({
             userId,
@@ -452,8 +471,13 @@ export function useNavigation(options?: UseNavigationOptions) {
     if (!onRoute && !recalcTimeoutRef.current) {
       recalcTimeoutRef.current = setTimeout(async () => {
         speakReroute();
+        const rerouteStarted = performance.now();
         try {
           const result = await fetchRoute(currentPosition!, destination!.coordinates, false, travelMode, effectiveTransitOptions, pedestrianOptions);
+          recordRerouteLatency(performance.now() - rerouteStarted, result.source);
+          if (result.source !== 'navigation_server' && (travelMode === 'car' || travelMode === 'taxi')) {
+            recordFallbackUsage('routing', `reroute:${result.source}`);
+          }
           result.main.maneuvers.forEach((m) => {
             m.instruction = getManeuverInstruction(m.type, m.streetName);
           });
@@ -463,11 +487,12 @@ export function useNavigation(options?: UseNavigationOptions) {
           isOnRouteRef.current = buildRouteProximityChecker(result.main.geometry);
         } catch {
           // keep current route
+          recordFallbackUsage('routing', 'reroute_failed_keep_current');
         }
         recalcTimeoutRef.current = null;
       }, 3000);
     }
-  }, [currentPosition, currentHeading, effectiveTransitOptions, pedestrianOptions, phase, userId, route, alternativeRoutes, travelMode]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [alternativeRoutes, currentHeading, currentPosition, destination, effectiveTransitOptions, handleTripFinalizePersistError, pedestrianOptions, phase, route, travelMode, userId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Reload favorites from Supabase
   const reloadFavorites = useCallback(async () => {

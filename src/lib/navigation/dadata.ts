@@ -17,6 +17,7 @@ import type {
   FiasAddress,
 } from '@/types/fias';
 import { searchOffline, reverseGeocode as offlineReverseGeocode } from './offlineSearch';
+import { getRequestLanguageHeader } from '@/lib/localization/appLocale';
 
 const DADATA_SUGGEST_URL = 'https://suggestions.dadata.ru/suggestions/api/4_1/rs/suggest/address';
 const DADATA_FIND_URL = 'https://suggestions.dadata.ru/suggestions/api/4_1/rs/findById/address';
@@ -53,6 +54,10 @@ function applyLocalBias(params: URLSearchParams, near?: { lat: number; lng: numb
   params.set('lat', String(near.lat));
   params.set('lon', String(near.lng));
   params.set('zoom', '12');
+}
+
+export interface AddressSuggestOptions {
+  allowOnline?: boolean;
 }
 
 // ── Parse DaData → FiasAddress ───────────────────────────────────────────────
@@ -97,17 +102,22 @@ function parseAddress(raw: DaDataAddressData, value: string, unrestricted: strin
 export async function suggestAddress(
   query: string,
   count = 8,
-  near?: { lat: number; lng: number }
+  near?: { lat: number; lng: number },
+  options: AddressSuggestOptions = {},
 ): Promise<FiasAddress[]> {
   if (!query.trim()) return [];
 
+  const { allowOnline = true } = options;
+
   const explicitGeoIntent = hasExplicitGeoIntent(query);
 
-  // Запускаем offline + online ПАРАЛЛЕЛЬНО (не блокируем на offline)
+  // Запускаем offline-first; online провайдеры только если явно разрешены.
   const offlinePromise = searchOffline(query, near, count * 2)
     .then((rows) => rows.filter((row) => row.type === 'city' || row.type === 'address').slice(0, count))
     .catch(() => [] as Awaited<ReturnType<typeof searchOffline>>);
-  const onlinePromise = suggestAddressOnline(query, count, near).catch(() => [] as FiasAddress[]);
+  const onlinePromise = allowOnline
+    ? suggestAddressOnline(query, count, near).catch(() => [] as FiasAddress[])
+    : Promise.resolve([] as FiasAddress[]);
 
   const [offlineResults, onlineResults] = await Promise.all([offlinePromise, onlinePromise]);
 
@@ -344,10 +354,11 @@ async function suggestAddressPhoton(
   near?: { lat: number; lng: number },
 ): Promise<FiasAddress[]> {
   try {
+    const requestLanguage = getRequestLanguageHeader();
     const params = new URLSearchParams({
       q: query,
       limit: String(Math.min(count, 10)),
-      lang: 'ru',
+      lang: requestLanguage,
     });
 
     applyLocalBias(params, near, query);
@@ -436,6 +447,7 @@ async function suggestAddressNominatim(
   near?: { lat: number; lng: number },
 ): Promise<FiasAddress[]> {
   try {
+    const requestLanguage = getRequestLanguageHeader();
     const searchQuery = query;
 
     // Пробуем несколько вариантов запроса
@@ -459,7 +471,7 @@ async function suggestAddressNominatim(
         format: 'jsonv2',
         q,
         limit: String(count),
-        'accept-language': 'ru',
+        'accept-language': requestLanguage,
         addressdetails: '1',
       });
       if (near && !hasExplicitGeoIntent(query) && isStreetLevelQuery(query)) {

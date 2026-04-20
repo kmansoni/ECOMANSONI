@@ -2,14 +2,27 @@
  * trafficProvider.ts — Получение реальных данных о пробках.
  *
  * Источники (каскад):
- * 1. Supabase (crowdsourced GPS от пользователей) — реальное время
- * 2. Детерминированная оценка по времени суток — fallback
+ * 1. navigation_server traffic API — приоритетный backend
+ * 2. Supabase (crowdsourced GPS от пользователей) — fallback
+ * 3. Детерминированная оценка по времени суток — fallback
  *
  * Обновляет данные каждые 2 минуты для текущей области карты.
  */
 import { dbLoose } from '@/lib/supabase';
 import type { LatLng } from '@/types/taxi';
 import type { TrafficLevel } from '@/types/navigation';
+import { attemptBackendRequest, getBooleanEnv, getNavigationServerAuthHeaders, getNavigationServerBaseUrl, getNumberEnv } from '@/lib/navigation/backendAvailability';
+import { recordFallbackUsage } from '@/lib/navigation/navigationKpi';
+import { navText } from '@/lib/navigation/navigationUi';
+
+const ENV = (import.meta as unknown as { env?: Record<string, string | undefined> }).env ?? {};
+const NAV_SERVER_URL = getNavigationServerBaseUrl(ENV.VITE_NAV_SERVER_URL);
+const NAV_SERVER_ENABLED = getBooleanEnv(ENV.VITE_NAV_SERVER_ENABLED, Boolean((ENV.VITE_NAV_SERVER_URL ?? '').trim()));
+const NAV_SERVER_TIMEOUT_MS = getNumberEnv(ENV.VITE_NAV_SERVER_TIMEOUT_MS, 1800);
+const NAV_SERVER_RETRIES = getNumberEnv(ENV.VITE_NAV_SERVER_RETRIES, 1);
+const NAV_SERVER_RETRY_DELAY_MS = getNumberEnv(ENV.VITE_NAV_SERVER_RETRY_DELAY_MS, 250);
+const NAV_SERVER_CB_FAILURE_THRESHOLD = getNumberEnv(ENV.VITE_NAV_SERVER_CB_FAILURE_THRESHOLD, 3);
+const NAV_SERVER_CB_COOLDOWN_MS = getNumberEnv(ENV.VITE_NAV_SERVER_CB_COOLDOWN_MS, 30_000);
 
 // ── Типы ────────────────────────────────────────────────────────────────────
 export interface TrafficSegment {
@@ -46,11 +59,111 @@ const CACHE_TTL_MS = 120_000; // 2 минуты
 function mapCongestion(level: string): TrafficLevel {
   switch (level) {
     case 'free': return 'free';
+    case 'free_flow': return 'free';
+    case 'light': return 'moderate';
     case 'moderate': return 'moderate';
     case 'slow': return 'slow';
+    case 'heavy': return 'congested';
+    case 'standstill': return 'congested';
     case 'congested': return 'congested';
     default: return 'unknown';
   }
+}
+
+function averageCenterFromGeometry(geometry: unknown): { lat: number; lon: number } {
+  const coords = (geometry as { coordinates?: unknown[] } | null)?.coordinates;
+  if (!Array.isArray(coords) || coords.length === 0) {
+    return { lat: 0, lon: 0 };
+  }
+
+  const pairs: Array<[number, number]> = [];
+  const collectPairs = (value: unknown): void => {
+    if (!Array.isArray(value)) return;
+    if (value.length >= 2 && typeof value[0] === 'number' && typeof value[1] === 'number') {
+      pairs.push([value[0], value[1]]);
+      return;
+    }
+    for (const child of value) collectPairs(child);
+  };
+  collectPairs(coords);
+
+  if (pairs.length === 0) {
+    return { lat: 0, lon: 0 };
+  }
+
+  let latSum = 0;
+  let lonSum = 0;
+  let count = 0;
+  for (const point of pairs) {
+    const lon = Number(point[0]);
+    const lat = Number(point[1]);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+    latSum += lat;
+    lonSum += lon;
+    count += 1;
+  }
+  if (count === 0) return { lat: 0, lon: 0 };
+  return { lat: latSum / count, lon: lonSum / count };
+}
+
+function mapNavServerRow(row: Record<string, unknown>): TrafficSegment {
+  const center = averageCenterFromGeometry(row.geometry);
+  const speed = Number(row.speed_kmh ?? row.avg_speed_kmh ?? 0);
+  const freeFlow = Number(row.free_flow_speed_kmh ?? row.free_flow_kmh ?? 60);
+  return {
+    h3Index: String(row.h3_cell ?? row.h3_index ?? row.road_segment_id ?? ''),
+    avgSpeedKmh: speed,
+    medianSpeedKmh: row.median_speed_kmh != null ? Number(row.median_speed_kmh) : (Number.isFinite(speed) ? speed : null),
+    freeFlowKmh: freeFlow,
+    congestionLevel: mapCongestion(String(row.congestion_level ?? 'unknown')),
+    sampleCount: Number(row.sample_count ?? 0),
+    confidence: Number(row.confidence ?? 0),
+    centerLat: Number(row.center_lat ?? center.lat ?? 0),
+    centerLon: Number(row.center_lon ?? center.lon ?? 0),
+    updatedAt: String(row.measured_at ?? row.updated_at ?? new Date().toISOString()),
+  };
+}
+
+async function fetchTrafficFromNavigationServer(
+  minLat: number,
+  minLon: number,
+  maxLat: number,
+  maxLon: number,
+): Promise<TrafficSegment[]> {
+  const response = await attemptBackendRequest<{ success?: boolean; segments?: Record<string, unknown>[] }>({
+    service: 'traffic',
+    enabled: NAV_SERVER_ENABLED,
+    baseUrl: NAV_SERVER_URL,
+    timeoutMs: NAV_SERVER_TIMEOUT_MS,
+    retries: NAV_SERVER_RETRIES,
+    retryDelayMs: NAV_SERVER_RETRY_DELAY_MS,
+    failureThreshold: NAV_SERVER_CB_FAILURE_THRESHOLD,
+    cooldownMs: NAV_SERVER_CB_COOLDOWN_MS,
+    request: async (signal) => {
+      const params = new URLSearchParams({
+        min_lat: String(minLat),
+        min_lng: String(minLon),
+        max_lat: String(maxLat),
+        max_lng: String(maxLon),
+      });
+      const res = await fetch(`${NAV_SERVER_URL}/api/v1/nav/traffic/area?${params.toString()}`, {
+        method: 'GET',
+        headers: await getNavigationServerAuthHeaders(),
+        signal,
+      });
+      if (!res.ok) {
+        throw new Error(`navigation_server_traffic_${res.status}`);
+      }
+      return res.json() as Promise<{ success?: boolean; segments?: Record<string, unknown>[] }>;
+    },
+  });
+
+  if (!response.ok || !response.data?.success || !Array.isArray(response.data.segments)) {
+    const reason = response.reason ?? 'traffic_no_data';
+    throw new Error(`navigation_server_traffic_unavailable:${reason}`);
+  }
+
+  return response.data.segments.map(mapNavServerRow);
 }
 
 // ── Получить трафик из Supabase ─────────────────────────────────────────────
@@ -70,6 +183,17 @@ export async function fetchTrafficInBbox(
     _lastBbox[2] >= maxLat && _lastBbox[3] >= maxLon
   ) {
     return _cachedSegments;
+  }
+
+  try {
+    const serverSegments = await fetchTrafficFromNavigationServer(minLat, minLon, maxLat, maxLon);
+    _cachedSegments = serverSegments;
+    _lastFetchTime = now;
+    _lastBbox = [minLat, minLon, maxLat, maxLon];
+    return serverSegments;
+  } catch (serverErr) {
+    recordFallbackUsage('traffic', `supabase_rpc_after_navigation_server:${serverErr instanceof Error ? serverErr.message : String(serverErr)}`);
+    console.warn('[trafficProvider] navigation_server fallback:', serverErr);
   }
 
   try {
@@ -170,7 +294,7 @@ export function calculateTrafficOverview(segments: TrafficSegment[]): TrafficOve
     const fallback = estimateTrafficByTime();
     return {
       score: fallback === 'free' ? 1 : fallback === 'moderate' ? 4 : 7,
-      label: fallback === 'free' ? 'Свободно' : fallback === 'moderate' ? 'Умеренно' : 'Пробки',
+      label: fallback === 'free' ? navText('Свободно', 'Clear') : fallback === 'moderate' ? navText('Умеренно', 'Moderate') : navText('Пробки', 'Congested'),
       color: fallback === 'free' ? '#00E676' : fallback === 'moderate' ? '#FFAB00' : '#FF6D00',
       segmentCount: 0,
     };
@@ -197,11 +321,11 @@ export function calculateTrafficOverview(segments: TrafficSegment[]): TrafficOve
   let label: string;
   let color: string;
 
-  if (clampedScore <= 2) { label = 'Свободно'; color = '#00E676'; }
-  else if (clampedScore <= 4) { label = 'Почти свободно'; color = '#76FF03'; }
-  else if (clampedScore <= 6) { label = 'Затруднения'; color = '#FFAB00'; }
-  else if (clampedScore <= 8) { label = 'Пробки'; color = '#FF6D00'; }
-  else { label = 'Серьёзные пробки'; color = '#F44336'; }
+  if (clampedScore <= 2) { label = navText('Свободно', 'Clear'); color = '#00E676'; }
+  else if (clampedScore <= 4) { label = navText('Почти свободно', 'Mostly clear'); color = '#76FF03'; }
+  else if (clampedScore <= 6) { label = navText('Затруднения', 'Delays'); color = '#FFAB00'; }
+  else if (clampedScore <= 8) { label = navText('Пробки', 'Congested'); color = '#FF6D00'; }
+  else { label = navText('Серьёзные пробки', 'Severe congestion'); color = '#F44336'; }
 
   return {
     score: clampedScore,

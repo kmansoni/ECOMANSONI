@@ -3,6 +3,8 @@ import { cn } from '@/lib/utils';
 import type { MultiModalRoute, NavRoute, TravelMode } from '@/types/navigation';
 import { formatDistance, formatDuration, formatETA } from '@/lib/navigation/turnInstructions';
 import { getCamerasOnRoute } from '@/lib/navigation/speedCameras';
+import { useUserSettings } from '@/contexts/UserSettingsContext';
+import { formatRouteVariants, formatTransfers, formatTransitLines, navText } from '@/lib/navigation/navigationUi';
 
 interface RouteOverviewProps {
   route: NavRoute;
@@ -16,37 +18,37 @@ interface RouteOverviewProps {
   onCancel: () => void;
 }
 
-function getModeMeta(travelMode: TravelMode): { label: string; description: string; icon: typeof Map } {
+function getModeMeta(travelMode: TravelMode, languageCode?: string | null): { label: string; description: string; icon: typeof Map } {
   switch (travelMode) {
     case 'taxi':
-      return { label: 'Такси', description: 'Быстрый выезд с переходом к заказу машины', icon: CarTaxiFront };
+      return { label: navText('Такси', 'Taxi', languageCode), description: navText('Быстрый выезд с переходом к заказу машины', 'Quick launch into ride booking', languageCode), icon: CarTaxiFront };
     case 'pedestrian':
-      return { label: 'Пешком', description: 'Пеший маршрут без пересадок и дорожного трафика', icon: Footprints };
+      return { label: navText('Пешком', 'Walking', languageCode), description: navText('Пеший маршрут без пересадок и дорожного трафика', 'Walking route without transfers or road traffic', languageCode), icon: Footprints };
     case 'transit':
-      return { label: 'Общественный транспорт', description: 'Маршрут с линиями ОТ, остановками и пересадками', icon: Train };
+      return { label: navText('Общественный транспорт', 'Public transit', languageCode), description: navText('Маршрут с линиями ОТ, остановками и пересадками', 'Route with transit lines, stops, and transfers', languageCode), icon: Train };
     case 'metro':
-      return { label: 'Метро', description: 'Маршрут с акцентом на подземку и быстрые пересадки', icon: Train };
+      return { label: navText('Метро', 'Metro', languageCode), description: navText('Маршрут с акцентом на подземку и быстрые пересадки', 'Route focused on subway and quick transfers', languageCode), icon: Train };
     case 'multimodal':
-      return { label: 'Мультимодальный', description: 'Комбинация пеших участков, ОТ и доступных пересадок', icon: Map };
+      return { label: navText('Мультимодальный', 'Multimodal', languageCode), description: navText('Комбинация пеших участков, ОТ и доступных пересадок', 'Combination of walking, transit, and available transfers', languageCode), icon: Map };
     case 'car':
     default:
-      return { label: 'Авто', description: 'Классический автомобильный маршрут с учётом дорожной ситуации', icon: Map };
+      return { label: navText('Авто', 'Car', languageCode), description: navText('Классический автомобильный маршрут с учётом дорожной ситуации', 'Classic car route with live traffic context', languageCode), icon: Map };
   }
 }
 
-function getDefaultActionLabel(travelMode: TravelMode): string {
+function getDefaultActionLabel(travelMode: TravelMode, languageCode?: string | null): string {
   switch (travelMode) {
     case 'taxi':
-      return 'К заказу такси';
+      return navText('К заказу такси', 'Book taxi', languageCode);
     case 'pedestrian':
-      return 'Начать пеший маршрут';
+      return navText('Начать пеший маршрут', 'Start walking route', languageCode);
     case 'transit':
     case 'metro':
     case 'multimodal':
-      return 'Начать сопровождение';
+      return navText('Начать сопровождение', 'Start guidance', languageCode);
     case 'car':
     default:
-      return 'Поехали';
+      return navText('Поехали', 'Let\'s go', languageCode);
   }
 }
 
@@ -54,10 +56,12 @@ function RouteCard({
   route,
   isMain,
   onSelect,
+  languageCode,
 }: {
   route: NavRoute;
   isMain: boolean;
   onSelect: () => void;
+  languageCode?: string | null;
 }) {
   const cameras = getCamerasOnRoute(route.geometry);
 
@@ -81,7 +85,7 @@ function RouteCard({
           </span>
           {isMain && (
             <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-500/20 text-green-400 font-medium">
-              Лучший
+              {navText('Лучший', 'Best', languageCode)}
             </span>
           )}
         </div>
@@ -93,12 +97,12 @@ function RouteCard({
       <div className="flex items-center gap-3 mt-2 text-xs text-gray-500">
         <div className="flex items-center gap-1">
           <Clock className="w-3 h-3" />
-          <span>Прибытие: {formatETA(route.totalDurationSeconds)}</span>
+          <span>{navText('Прибытие', 'Arrival', languageCode)}: {formatETA(route.totalDurationSeconds)}</span>
         </div>
         {cameras.length > 0 && (
           <div className="flex items-center gap-1 text-red-400">
             <Camera className="w-3 h-3" />
-            <span>{cameras.length} камер</span>
+            <span>{cameras.length} {navText('камер', 'cameras', languageCode)}</span>
           </div>
         )}
       </div>
@@ -117,9 +121,11 @@ export function RouteOverview({
   primaryActionLabel,
   onCancel,
 }: RouteOverviewProps) {
-  const modeMeta = getModeMeta(travelMode);
+  const { settings } = useUserSettings();
+  const languageCode = settings?.language_code ?? null;
+  const modeMeta = getModeMeta(travelMode, languageCode);
   const ModeIcon = modeMeta.icon;
-  const actionLabel = primaryActionLabel ?? getDefaultActionLabel(travelMode);
+  const actionLabel = primaryActionLabel ?? getDefaultActionLabel(travelMode, languageCode);
   const transitSegments = multimodalRoute?.segments.filter((segment) => segment.mode === 'transit') ?? [];
 
   return (
@@ -151,7 +157,7 @@ export function RouteOverview({
           </div>
           <div className="flex items-center gap-1 text-sm text-gray-400">
             <Route className="w-4 h-4" />
-            <span>{alternatives.length + 1} вариант{alternatives.length > 0 ? 'а' : ''}</span>
+            <span>{formatRouteVariants(alternatives.length + 1, languageCode)}</span>
           </div>
         </div>
 
@@ -169,23 +175,23 @@ export function RouteOverview({
           )}
           {multimodalRoute && multimodalRoute.transfers > 0 && (
             <span className="rounded-full border border-cyan-400/20 bg-cyan-500/10 px-2.5 py-1 text-cyan-200">
-              {multimodalRoute.transfers} пересад.
+              {formatTransfers(multimodalRoute.transfers, languageCode)}
             </span>
           )}
           {transitSegments.length > 0 && (
             <span className="rounded-full border border-fuchsia-400/20 bg-fuchsia-500/10 px-2.5 py-1 text-fuchsia-200">
-              {transitSegments.length} линий ОТ
+              {formatTransitLines(transitSegments.length, languageCode)}
             </span>
           )}
           {multimodalRoute && (
             <span className="rounded-full border border-lime-400/20 bg-lime-500/10 px-2.5 py-1 text-lime-200">
-              Эко {multimodalRoute.ecoScore}/10
+              {navText('Эко', 'Eco', languageCode)} {multimodalRoute.ecoScore}/10
             </span>
           )}
         </div>
 
         {/* Main route */}
-        <RouteCard route={route} isMain onSelect={() => {}} />
+        <RouteCard route={route} isMain onSelect={() => {}} languageCode={languageCode} />
 
         {/* Alternatives */}
         {alternatives.length > 0 && (
@@ -196,6 +202,7 @@ export function RouteOverview({
                 route={alt}
                 isMain={false}
                 onSelect={() => onSelectRoute(alt.id)}
+                languageCode={languageCode}
               />
             ))}
           </div>
@@ -212,7 +219,7 @@ export function RouteOverview({
               'transition-all active:scale-[0.98] hover:bg-gray-700'
             )}
           >
-            Отмена
+            {navText('Отмена', 'Cancel', languageCode)}
           </button>
           <button
             onClick={onPrimaryAction}

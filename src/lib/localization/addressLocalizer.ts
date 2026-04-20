@@ -8,9 +8,9 @@ import { dbLoose } from '@/lib/supabase';
 
 // ── Типы ──
 
-export type Locale = 'ru-RU' | 'en-US' | 'uk-UA' | 'kk-KZ' | 'uz-Latn-UZ' | 'de-DE' | 'fr-FR' | 'zh-CN' | 'ja-JP' | 'ar-SA';
+export type Locale = 'ru-RU' | 'en-US' | 'uk-UA' | 'kk-KZ' | 'uz-Latn-UZ' | 'de-DE' | 'fr-FR' | 'zh-CN' | 'ja-JP' | 'ar-SA' | 'tr-TR' | 'es-ES';
 
-type LocaleLang = 'ru' | 'en' | 'uk' | 'kk' | 'uz' | 'de' | 'fr' | 'zh' | 'ja' | 'ar';
+type LocaleLang = 'ru' | 'en' | 'uk' | 'kk' | 'uz' | 'de' | 'fr' | 'zh' | 'ja' | 'ar' | 'tr' | 'es';
 
 export type AddressComponentType = 'street' | 'avenue' | 'square' | 'metro' | 'park' | 'building' | 'district' | 'city' | 'region';
 
@@ -40,6 +40,8 @@ export interface MultiLanguageName {
   zh?: string;
   ja?: string;
   ar?: string;
+  tr?: string;
+  es?: string;
   [key: string]: string | undefined;
 }
 
@@ -55,16 +57,16 @@ const CYR_TO_LAT: Record<string, string> = {
 
 // Типы улиц: перевод на основные языки
 const STREET_TYPE_TRANSLATIONS: Record<string, Record<LocaleLang, string>> = {
-  'улица':     { ru: 'улица', en: 'Street', uk: 'вулиця', kk: 'көше', uz: "ko'cha", de: 'Straße', fr: 'Rue', zh: '街', ja: '通り', ar: 'شارع' },
-  'проспект':  { ru: 'проспект', en: 'Avenue', uk: 'проспект', kk: 'даңғыл', uz: 'prospekt', de: 'Allee', fr: 'Avenue', zh: '大道', ja: '大通り', ar: 'شارع' },
-  'переулок':  { ru: 'переулок', en: 'Lane', uk: 'провулок', kk: 'тұйық', uz: "tor ko'cha", de: 'Gasse', fr: 'Ruelle', zh: '巷', ja: '路地', ar: 'زقاق' },
-  'бульвар':   { ru: 'бульвар', en: 'Boulevard', uk: 'бульвар', kk: 'бульвар', uz: 'bulvar', de: 'Boulevard', fr: 'Boulevard', zh: '大街', ja: 'ブルバード', ar: 'جادة' },
-  'площадь':   { ru: 'площадь', en: 'Square', uk: 'площа', kk: 'алаң', uz: 'maydon', de: 'Platz', fr: 'Place', zh: '广场', ja: '広場', ar: 'ميدان' },
-  'шоссе':     { ru: 'шоссе', en: 'Highway', uk: 'шосе', kk: 'тас жол', uz: "shosse", de: 'Chaussee', fr: 'Route', zh: '公路', ja: '高速道路', ar: 'طريق سريع' },
-  'набережная': { ru: 'набережная', en: 'Embankment', uk: 'набережна', kk: 'жағалау', uz: 'sohibqiron', de: 'Ufer', fr: 'Quai', zh: '堤岸', ja: '河岸', ar: 'كورنيش' },
-  'тупик':     { ru: 'тупик', en: 'Cul-de-sac', uk: 'тупик', kk: 'тұйық', uz: "tupik", de: 'Sackgasse', fr: 'Impasse', zh: '死胡同', ja: '袋小路', ar: 'طريق مسدود' },
-  'дом':       { ru: 'д.', en: '', uk: 'буд.', kk: 'үй', uz: 'uy', de: 'Nr.', fr: 'n°', zh: '号', ja: '番地', ar: 'رقم' },
-  'корпус':    { ru: 'к.', en: 'bldg.', uk: 'корп.', kk: 'корп.', uz: 'korpus', de: 'Geb.', fr: 'bât.', zh: '栋', ja: '棟', ar: 'مبنى' },
+  'улица':     { ru: 'улица', en: 'Street', uk: 'вулиця', kk: 'көше', uz: "ko'cha", de: 'Straße', fr: 'Rue', zh: '街', ja: '通り', ar: 'شارع', tr: 'Sokak', es: 'Calle' },
+  'проспект':  { ru: 'проспект', en: 'Avenue', uk: 'проспект', kk: 'даңғыл', uz: 'prospekt', de: 'Allee', fr: 'Avenue', zh: '大道', ja: '大通り', ar: 'شارع', tr: 'Bulvar', es: 'Avenida' },
+  'переулок':  { ru: 'переулок', en: 'Lane', uk: 'провулок', kk: 'тұйық', uz: "tor ko'cha", de: 'Gasse', fr: 'Ruelle', zh: '巷', ja: '路地', ar: 'زقاق', tr: 'Geçit', es: 'Pasaje' },
+  'бульвар':   { ru: 'бульвар', en: 'Boulevard', uk: 'бульвар', kk: 'бульвар', uz: 'bulvar', de: 'Boulevard', fr: 'Boulevard', zh: '大街', ja: 'ブルバード', ar: 'جادة', tr: 'Bulvar', es: 'Bulevar' },
+  'площадь':   { ru: 'площадь', en: 'Square', uk: 'площа', kk: 'алаң', uz: 'maydon', de: 'Platz', fr: 'Place', zh: '广场', ja: '広場', ar: 'ميدان', tr: 'Meydan', es: 'Plaza' },
+  'шоссе':     { ru: 'шоссе', en: 'Highway', uk: 'шосе', kk: 'тас жол', uz: "shosse", de: 'Chaussee', fr: 'Route', zh: '公路', ja: '高速道路', ar: 'طريق سريع', tr: 'Karayolu', es: 'Carretera' },
+  'набережная': { ru: 'набережная', en: 'Embankment', uk: 'набережна', kk: 'жағалау', uz: 'sohibqiron', de: 'Ufer', fr: 'Quai', zh: '堤岸', ja: '河岸', ar: 'كورنيش', tr: 'Rıhtım', es: 'Malecón' },
+  'тупик':     { ru: 'тупик', en: 'Cul-de-sac', uk: 'тупик', kk: 'тұйық', uz: "tupik", de: 'Sackgasse', fr: 'Impasse', zh: '死胡同', ja: '袋小路', ar: 'طريق مسدود', tr: 'Çıkmaz', es: 'Callejón sin salida' },
+  'дом':       { ru: 'д.', en: '', uk: 'буд.', kk: 'үй', uz: 'uy', de: 'Nr.', fr: 'n°', zh: '号', ja: '番地', ar: 'رقم', tr: 'No', es: 'n.º' },
+  'корпус':    { ru: 'к.', en: 'bldg.', uk: 'корп.', kk: 'корп.', uz: 'korpus', de: 'Geb.', fr: 'bât.', zh: '栋', ja: '棟', ar: 'مبنى', tr: 'Blok', es: 'bloque' },
 };
 
 // ── Кэш ──
@@ -126,6 +128,8 @@ function getSystemLocale(): Locale {
   if (lang.startsWith('zh')) return 'zh-CN';
   if (lang.startsWith('ja')) return 'ja-JP';
   if (lang.startsWith('ar')) return 'ar-SA';
+  if (lang.startsWith('tr')) return 'tr-TR';
+  if (lang.startsWith('es')) return 'es-ES';
   if (lang.startsWith('en')) return 'en-US';
   return 'ru-RU';
 }

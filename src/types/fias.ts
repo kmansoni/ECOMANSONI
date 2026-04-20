@@ -1,5 +1,7 @@
 /** ФИАС / DaData types */
 
+import { navText } from '@/lib/navigation/navigationUi';
+
 export interface FiasAddress {
   /** Полный адрес строкой */
   value: string;
@@ -174,6 +176,31 @@ export const POI_CATEGORY_LABELS: Record<POICategory, string> = {
   government: 'Госучреждение',
   other: 'Другое',
 };
+
+export function getPoiCategoryLabel(category: POICategory, languageCode?: string | null): string {
+  switch (category) {
+    case 'shop': return navText('Магазин', 'Shop', languageCode);
+    case 'cafe': return navText('Кафе', 'Cafe', languageCode);
+    case 'restaurant': return navText('Ресторан', 'Restaurant', languageCode);
+    case 'pharmacy': return navText('Аптека', 'Pharmacy', languageCode);
+    case 'fuel': return navText('Заправка', 'Fuel', languageCode);
+    case 'bank': return navText('Банк', 'Bank', languageCode);
+    case 'atm': return navText('Банкомат', 'ATM', languageCode);
+    case 'hospital': return navText('Больница', 'Hospital', languageCode);
+    case 'hotel': return navText('Отель', 'Hotel', languageCode);
+    case 'parking': return navText('Парковка', 'Parking', languageCode);
+    case 'car_wash': return navText('Автомойка', 'Car wash', languageCode);
+    case 'car_service': return navText('Автосервис', 'Auto service', languageCode);
+    case 'beauty': return navText('Красота', 'Beauty', languageCode);
+    case 'gym': return navText('Фитнес', 'Fitness', languageCode);
+    case 'education': return navText('Образование', 'Education', languageCode);
+    case 'office': return navText('Офис', 'Office', languageCode);
+    case 'government': return navText('Госучреждение', 'Government', languageCode);
+    case 'other':
+    default:
+      return navText('Другое', 'Other', languageCode);
+  }
+}
 
 export const POI_CATEGORY_ICONS: Record<POICategory, string> = {
   shop: '🛒',

@@ -5,6 +5,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { LatLng } from '@/types/taxi';
+import { navText } from '@/lib/navigation/navigationUi';
 
 export type RoadEventType =
   | 'accident'           // ДТП
@@ -36,22 +37,56 @@ export interface RoadEvent {
   photoUrl?: string;
 }
 
-export const ROAD_EVENT_LABELS: Record<RoadEventType, { label: string; emoji: string; duration: number }> = {
-  accident:      { label: 'ДТП', emoji: '🚨', duration: 2 * 60 * 60 * 1000 },
-  police:        { label: 'Пост ДПС', emoji: '👮', duration: 4 * 60 * 60 * 1000 },
-  road_works:    { label: 'Дорожные работы', emoji: '🚧', duration: 24 * 60 * 60 * 1000 },
-  traffic_jam:   { label: 'Пробка', emoji: '🚗', duration: 1 * 60 * 60 * 1000 },
-  hazard:        { label: 'Опасность', emoji: '⚠️', duration: 6 * 60 * 60 * 1000 },
-  speed_camera:  { label: 'Камера', emoji: '📸', duration: 30 * 24 * 60 * 60 * 1000 },
-  pothole:       { label: 'Яма', emoji: '🕳️', duration: 7 * 24 * 60 * 60 * 1000 },
-  fog:           { label: 'Туман', emoji: '🌫️', duration: 4 * 60 * 60 * 1000 },
-  ice:           { label: 'Гололёд', emoji: '🧊', duration: 12 * 60 * 60 * 1000 },
-  flood:         { label: 'Затопление', emoji: '🌊', duration: 12 * 60 * 60 * 1000 },
-  closed_road:   { label: 'Дорога закрыта', emoji: '🚫', duration: 24 * 60 * 60 * 1000 },
-  detour:        { label: 'Объезд', emoji: '↩️', duration: 24 * 60 * 60 * 1000 },
-  fuel_price:    { label: 'Цена бензина', emoji: '⛽', duration: 7 * 24 * 60 * 60 * 1000 },
-  other:         { label: 'Другое', emoji: '📌', duration: 2 * 60 * 60 * 1000 },
+interface RoadEventInfo {
+  label: string;
+  emoji: string;
+  duration: number;
+}
+
+interface RoadEventDefinition {
+  labelRu: string;
+  labelEn: string;
+  emoji: string;
+  duration: number;
+}
+
+const ROAD_EVENT_DEFINITIONS: Record<RoadEventType, RoadEventDefinition> = {
+  accident:      { labelRu: 'ДТП', labelEn: 'Accident', emoji: '🚨', duration: 2 * 60 * 60 * 1000 },
+  police:        { labelRu: 'Пост ДПС', labelEn: 'Police checkpoint', emoji: '👮', duration: 4 * 60 * 60 * 1000 },
+  road_works:    { labelRu: 'Дорожные работы', labelEn: 'Road works', emoji: '🚧', duration: 24 * 60 * 60 * 1000 },
+  traffic_jam:   { labelRu: 'Пробка', labelEn: 'Traffic jam', emoji: '🚗', duration: 1 * 60 * 60 * 1000 },
+  hazard:        { labelRu: 'Опасность', labelEn: 'Hazard', emoji: '⚠️', duration: 6 * 60 * 60 * 1000 },
+  speed_camera:  { labelRu: 'Камера', labelEn: 'Speed camera', emoji: '📸', duration: 30 * 24 * 60 * 60 * 1000 },
+  pothole:       { labelRu: 'Яма', labelEn: 'Pothole', emoji: '🕳️', duration: 7 * 24 * 60 * 60 * 1000 },
+  fog:           { labelRu: 'Туман', labelEn: 'Fog', emoji: '🌫️', duration: 4 * 60 * 60 * 1000 },
+  ice:           { labelRu: 'Гололёд', labelEn: 'Ice', emoji: '🧊', duration: 12 * 60 * 60 * 1000 },
+  flood:         { labelRu: 'Затопление', labelEn: 'Flooding', emoji: '🌊', duration: 12 * 60 * 60 * 1000 },
+  closed_road:   { labelRu: 'Дорога закрыта', labelEn: 'Road closed', emoji: '🚫', duration: 24 * 60 * 60 * 1000 },
+  detour:        { labelRu: 'Объезд', labelEn: 'Detour', emoji: '↩️', duration: 24 * 60 * 60 * 1000 },
+  fuel_price:    { labelRu: 'Цена бензина', labelEn: 'Fuel price', emoji: '⛽', duration: 7 * 24 * 60 * 60 * 1000 },
+  other:         { labelRu: 'Другое', labelEn: 'Other', emoji: '📌', duration: 2 * 60 * 60 * 1000 },
 };
+
+export const ROAD_EVENT_LABELS: Record<RoadEventType, RoadEventInfo> = Object.fromEntries(
+  Object.entries(ROAD_EVENT_DEFINITIONS).map(([type, info]) => [type, { label: info.labelEn, emoji: info.emoji, duration: info.duration }]),
+) as Record<RoadEventType, RoadEventInfo>;
+
+export function getRoadEventLabels(languageCode?: string | null): Record<RoadEventType, RoadEventInfo> {
+  return Object.fromEntries(
+    Object.entries(ROAD_EVENT_DEFINITIONS).map(([type, info]) => [
+      type,
+      {
+        label: navText(info.labelRu, info.labelEn, languageCode),
+        emoji: info.emoji,
+        duration: info.duration,
+      },
+    ]),
+  ) as Record<RoadEventType, RoadEventInfo>;
+}
+
+export function getRoadEventInfo(type: RoadEventType, languageCode?: string | null): RoadEventInfo {
+  return getRoadEventLabels(languageCode)[type];
+}
 
 interface RoadEventsState {
   events: RoadEvent[];

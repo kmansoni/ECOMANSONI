@@ -6,6 +6,8 @@ import type {
   SwarmRecommendation,
   TimeAccount,
 } from '@/types/quantum-transport';
+import { useUserSettings } from '@/contexts/UserSettingsContext';
+import { navText } from '@/lib/navigation/navigationUi';
 
 interface QuantumInsightsPanelProps {
   superposition: RouteSuperposition | null;
@@ -24,6 +26,8 @@ export function QuantumInsightsPanel({
   compact = false,
   className,
 }: QuantumInsightsPanelProps) {
+  const { settings } = useUserSettings();
+  const languageCode = settings?.language_code ?? null;
   if (!superposition && !twinSimulation && !swarmRecommendation && !timeAccount) {
     return null;
   }
@@ -33,36 +37,36 @@ export function QuantumInsightsPanel({
       ? {
           key: 'superposition',
           icon: Sparkles,
-          title: 'Квантовый фронт',
-          value: `${superposition.paretoFront.filter((point) => point.rank === 0).length} недоминир.`,
-          note: `${superposition.waveFunctions.length} вариантов`,
+          title: navText('Квантовый фронт', 'Quantum frontier', languageCode),
+          value: `${superposition.paretoFront.filter((point) => point.rank === 0).length} ${navText('недоминир.', 'non-dominated', languageCode)}`,
+          note: `${superposition.waveFunctions.length} ${navText('вариантов', 'variants', languageCode)}`,
         }
       : null,
     twinSimulation
       ? {
           key: 'twin',
           icon: Brain,
-          title: 'Цифровой двойник',
+          title: navText('Цифровой двойник', 'Digital twin', languageCode),
           value: `${Math.round(twinSimulation.completionProbability * 100)}%`,
-          note: `стресс ${Math.round(twinSimulation.predictedState.stress * 100)}%`,
+          note: `${navText('стресс', 'stress', languageCode)} ${Math.round(twinSimulation.predictedState.stress * 100)}%`,
         }
       : null,
     swarmRecommendation
       ? {
           key: 'swarm',
           icon: Users,
-          title: 'Роевой совет',
+          title: navText('Роевой совет', 'Swarm advice', languageCode),
           value: swarmRecommendation.suggestedMode,
-          note: `${Math.round(swarmRecommendation.collectiveBenefit.trafficReductionPercent)}% меньше трафика`,
+          note: `${Math.round(swarmRecommendation.collectiveBenefit.trafficReductionPercent)}% ${navText('меньше трафика', 'less traffic', languageCode)}`,
         }
       : null,
     timeAccount
       ? {
           key: 'time',
           icon: Wallet,
-          title: 'Банк времени',
-          value: `${timeAccount.balanceMinutes} мин`,
-          note: `тренд ${timeAccount.monthlyTrend >= 0 ? '+' : ''}${timeAccount.monthlyTrend} мин/мес`,
+          title: navText('Банк времени', 'Time bank', languageCode),
+          value: `${timeAccount.balanceMinutes} ${navText('мин', 'min', languageCode)}`,
+          note: `${navText('тренд', 'trend', languageCode)} ${timeAccount.monthlyTrend >= 0 ? '+' : ''}${timeAccount.monthlyTrend} ${navText('мин/мес', 'min/month', languageCode)}`,
         }
       : null,
   ].filter((item): item is NonNullable<typeof item> => item !== null);
@@ -77,7 +81,7 @@ export function QuantumInsightsPanel({
     >
       <div className="mb-3 flex items-center gap-2">
         <Sparkles className="h-4 w-4 text-cyan-400" />
-        <span className="text-sm font-semibold text-white">Quantum Transport</span>
+        <span className="text-sm font-semibold text-white">{navText('Квантовый транспорт', 'Quantum Transport', languageCode)}</span>
       </div>
 
       <div className={cn('grid gap-2', compact ? 'grid-cols-2' : 'grid-cols-1')}>

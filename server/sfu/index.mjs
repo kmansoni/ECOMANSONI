@@ -2,6 +2,7 @@ import http from "node:http";
 import crypto from "node:crypto";
 import WebSocket, { WebSocketServer } from "ws";
 import { createClient } from "@supabase/supabase-js";
+import { IS_PROD_LIKE, readJoinTokenSecretConfig, validateSfuStartupEnv } from "./env.mjs";
 import { createMediaPlaneController } from "./mediaPlane.mjs";
 
 const PORT = Number(process.env.SFU_PORT ?? "8888");
@@ -12,22 +13,21 @@ const E2EE_REQUIRED_DEFAULT = (() => {
   return !(raw === "0" || raw === "false" || raw === "off");
 })();
 const HEARTBEAT_SEC = Math.max(5, Number(process.env.SFU_HEARTBEAT_SEC ?? "10"));
-const IS_PROD = process.env.NODE_ENV === "production";
-const CALLS_DEV_INSECURE_AUTH = !IS_PROD && process.env.CALLS_DEV_INSECURE_AUTH === "1";
-const REQUIRE_MEDIASOUP_IN_PROD = IS_PROD && process.env.SFU_REQUIRE_MEDIASOUP !== "0";
+const CALLS_DEV_INSECURE_AUTH = !IS_PROD_LIKE && process.env.CALLS_DEV_INSECURE_AUTH === "1";
+const REQUIRE_MEDIASOUP_IN_PROD = IS_PROD_LIKE && process.env.SFU_REQUIRE_MEDIASOUP !== "0";
 const requireSFrame = (() => {
   const raw = String(process.env.SFU_REQUIRE_SFRAME ?? "").trim().toLowerCase();
   if (raw === "1" || raw === "true" || raw === "on") return true;
   if (raw === "0" || raw === "false" || raw === "off") return false;
-  return IS_PROD;
+  return IS_PROD_LIKE;
 })();
 const requireDoubleRatchet = (() => {
   const raw = String(process.env.SFU_REQUIRE_DOUBLE_RATCHET ?? "").trim().toLowerCase();
   if (raw === "1" || raw === "true" || raw === "on") return true;
   if (raw === "0" || raw === "false" || raw === "off") return false;
-  return IS_PROD;
+  return IS_PROD_LIKE;
 })();
-const REQUIRE_SECURE_WS = IS_PROD && process.env.SFU_REQUIRE_SECURE_WS !== "0";
+const REQUIRE_SECURE_WS = IS_PROD_LIKE && process.env.SFU_REQUIRE_SECURE_WS !== "0";
 const TRUSTED_PROXIES = new Set(
   (process.env.SFU_TRUSTED_PROXIES || "")
     .split(",")
@@ -41,6 +41,8 @@ const MAX_PARTICIPANTS_PER_ROOM = (() => {
   const raw = Number(process.env.CALLS_MAX_PARTICIPANTS_PER_ROOM ?? "50");
   return Number.isFinite(raw) && raw >= 2 ? Math.floor(raw) : 50;
 })();
+
+validateSfuStartupEnv();
 
 /**
  * E2EE rate limiting — per-process sliding window.
@@ -94,10 +96,6 @@ setInterval(() => {
   }
 }, E2EE_RATE_WINDOW * 2).unref?.();
 
-if (IS_PROD && !CALLS_DEV_INSECURE_AUTH && (!SUPABASE_URL || !SUPABASE_AUTH_KEY)) {
-  throw new Error("[sfu] hard auth requires SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY/SUPABASE_ANON_KEY in production");
-}
-
 const supabaseAuthClient = SUPABASE_URL && SUPABASE_AUTH_KEY
   ? createClient(SUPABASE_URL, SUPABASE_AUTH_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
   : null;
@@ -149,26 +147,21 @@ setInterval(() => {
 
 // ── joinToken verification (shared secret with calls-ws) ──────────────
 let cachedJoinTokenSecret = null;
-const CALLS_JOIN_TOKEN_SKIP = !IS_PROD && process.env.CALLS_JOIN_TOKEN_SKIP === "1";
+const CALLS_JOIN_TOKEN_SKIP = !IS_PROD_LIKE && process.env.CALLS_JOIN_TOKEN_SKIP === "1";
 
 function getJoinTokenSecret() {
   if (cachedJoinTokenSecret) return cachedJoinTokenSecret;
-  const explicit = process.env.CALLS_JOIN_TOKEN_SECRET;
-  if (explicit && explicit.length >= 32) {
-    cachedJoinTokenSecret = explicit;
+  const resolved = readJoinTokenSecretConfig();
+  if (resolved) {
+    if (resolved.source === "SUPABASE_JWT_SECRET") {
+      const scope = IS_PROD_LIKE ? "production-like environment" : "non-prod environment";
+      console.warn(`[sfu] Missing CALLS_JOIN_TOKEN_SECRET, using SUPABASE_JWT_SECRET fallback in ${scope}`);
+    }
+    cachedJoinTokenSecret = resolved.secret;
     return cachedJoinTokenSecret;
   }
-  const jwtSecret = process.env.SUPABASE_JWT_SECRET;
-  if (jwtSecret && jwtSecret.length >= 32) {
-    console.warn("[sfu] Missing CALLS_JOIN_TOKEN_SECRET, using SUPABASE_JWT_SECRET fallback");
-    cachedJoinTokenSecret = jwtSecret;
-    return cachedJoinTokenSecret;
-  }
-  if (IS_PROD) {
-    const emergency = crypto.randomBytes(48).toString("base64url");
-    console.error("[sfu] CRITICAL: no join-token secret in production; using ephemeral secret");
-    cachedJoinTokenSecret = emergency;
-    return cachedJoinTokenSecret;
+  if (IS_PROD_LIKE) {
+    throw new Error("[sfu] join-token secret unavailable after startup validation");
   }
   cachedJoinTokenSecret = "dev-only-join-token-secret";
   return cachedJoinTokenSecret;
@@ -309,6 +302,13 @@ function ack(ws, ackOfMsgId, ok = true, error) {
     ack: { ackOfMsgId, ok, error },
     payload: {},
   });
+}
+
+function logOperationError(operation, { roomId = null, deviceId = null, consumerId = null, error } = {}) {
+  console.error(
+    `[sfu] operation failed: operation=${operation} roomId=${roomId ?? "-"} deviceId=${deviceId ?? "-"} consumerId=${consumerId ?? "-"}`,
+    error
+  );
 }
 
 const rooms = new Map();
@@ -1006,7 +1006,23 @@ wss.on("connection", (ws, req) => {
         // In mediasoup mode, resume the consumer. In fallback mode, no-op — just ack.
         const consumerId = frame.payload?.consumerId;
         if (mediaPlane.mode === "mediasoup" && consumerId && typeof mediaPlane.resumeConsumer === "function") {
-          await mediaPlane.resumeConsumer(room.roomId, consumerId).catch(() => {});
+          try {
+            await mediaPlane.resumeConsumer(room.roomId, consumerId);
+          } catch (error) {
+            logOperationError("resumeConsumer", {
+              roomId: room.roomId,
+              deviceId: conn.deviceId,
+              consumerId,
+              error,
+            });
+            ack(ws, frame.msgId, false, wsError("CONSUMER_RESUME_FAILED", "Failed to resume consumer", {
+              roomId: room.roomId,
+              deviceId: conn.deviceId,
+              consumerId,
+              operation: "resumeConsumer",
+            }, true));
+            return;
+          }
         }
         ack(ws, frame.msgId, true);
         return;
@@ -1170,7 +1186,13 @@ wss.on("connection", (ws, req) => {
         const roomId = frame.payload?.roomId ?? conn.roomId;
         const room = rooms.get(roomId);
         if (room && conn.deviceId && room.peers.has(conn.deviceId)) {
-          mediaPlane.removePeer(room.roomId, conn.deviceId).catch(() => {});
+          mediaPlane.removePeer(room.roomId, conn.deviceId).catch((error) => {
+            logOperationError("removePeer", {
+              roomId: room.roomId,
+              deviceId: conn.deviceId,
+              error,
+            });
+          });
           room.peers.delete(conn.deviceId);
           room.memberSetVersion += 1;
           bumpRoomVersion(room);
@@ -1187,7 +1209,13 @@ wss.on("connection", (ws, req) => {
             payload: { roomId: room.roomId, userId: conn.userId, deviceId: conn.deviceId },
           });
           if (room.peers.size === 0) {
-            mediaPlane.closeRoom(room.roomId).catch(() => {});
+            mediaPlane.closeRoom(room.roomId).catch((error) => {
+              logOperationError("closeRoom", {
+                roomId: room.roomId,
+                deviceId: conn.deviceId,
+                error,
+              });
+            });
             rooms.delete(roomId);
           }
           conn.roomId = null;
@@ -1219,7 +1247,13 @@ wss.on("connection", (ws, req) => {
     if (conn.roomId && conn.deviceId) {
       const room = rooms.get(conn.roomId);
       if (room && room.peers.has(conn.deviceId)) {
-        mediaPlane.removePeer(room.roomId, conn.deviceId).catch(() => {});
+        mediaPlane.removePeer(room.roomId, conn.deviceId).catch((error) => {
+          logOperationError("removePeer", {
+            roomId: room.roomId,
+            deviceId: conn.deviceId,
+            error,
+          });
+        });
         room.peers.delete(conn.deviceId);
         room.memberSetVersion += 1;
         bumpRoomVersion(room);
@@ -1239,7 +1273,13 @@ wss.on("connection", (ws, req) => {
         });
 
         if (room.peers.size === 0) {
-          mediaPlane.closeRoom(room.roomId).catch(() => {});
+          mediaPlane.closeRoom(room.roomId).catch((error) => {
+            logOperationError("closeRoom", {
+              roomId: room.roomId,
+              deviceId: conn.deviceId,
+              error,
+            });
+          });
           rooms.delete(conn.roomId);
         }
       }

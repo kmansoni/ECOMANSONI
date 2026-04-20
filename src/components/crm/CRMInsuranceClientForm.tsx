@@ -4,7 +4,7 @@
  */
 import { useState } from "react";
 import { X, Save, User, Phone, Mail, MapPin, Car, FileText, Calendar } from "lucide-react";
-import { supabase } from "@/lib/supabase";
+import { dbLoose, supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { logger } from "@/lib/logger";
 
@@ -90,7 +90,7 @@ export function CRMInsuranceClientForm({ initial, onClose, onSaved }: Props) {
       let saved: InsuranceClient;
 
       if (isEdit && initial?.id) {
-        const { data, error } = await supabase
+        const { data, error } = await dbLoose
           .from('crm_insurance_clients')
           .update({ ...row, updated_at: new Date().toISOString() })
           .eq('id', initial.id)
@@ -100,7 +100,7 @@ export function CRMInsuranceClientForm({ initial, onClose, onSaved }: Props) {
         saved = data as InsuranceClient;
         toast.success('Клиент обновлён');
       } else {
-        const { data, error } = await supabase
+        const { data, error } = await dbLoose
           .from('crm_insurance_clients')
           .insert(row)
           .select()

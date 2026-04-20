@@ -25,16 +25,28 @@ import type {
   TrustServiceConfig,
   TrustContext,
 } from './types';
+import { getTrustEnforcementEnv } from './env';
 
 export class TrustService {
   private supabase: any;
   private config: TrustServiceConfig;
 
   constructor(config: TrustServiceConfig) {
-    this.config = config;
+    const supabaseUrl = config.supabaseUrl.trim();
+    const supabaseServiceRoleKey = config.supabaseServiceRoleKey.trim();
+
+    if (!supabaseUrl || !supabaseServiceRoleKey) {
+      throw new Error('[TrustService] Supabase URL and service role key are required');
+    }
+
+    this.config = {
+      ...config,
+      supabaseUrl,
+      supabaseServiceRoleKey,
+    };
     this.supabase = createClient(
-      config.supabaseUrl,
-      config.supabaseServiceRoleKey,
+      supabaseUrl,
+      supabaseServiceRoleKey,
       {
         auth: { persistSession: false },
       }
@@ -360,16 +372,13 @@ let trustServiceInstance: TrustService | null = null;
 
 export function getTrustService(): TrustService {
   if (!trustServiceInstance) {
+    const env = getTrustEnforcementEnv();
     const config = {
-      supabaseUrl: process.env.VITE_SUPABASE_URL || '',
-      supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
-      enableMonitoring: process.env.TRUST_SERVICE_MONITORING === 'true',
+      supabaseUrl: env.supabaseUrl,
+      supabaseServiceRoleKey: env.supabaseServiceRoleKey,
+      enableMonitoring: env.enableMonitoring,
       defaultTier: 'B' as RiskTier,
     };
-
-    if (!config.supabaseUrl || !config.supabaseServiceRoleKey) {
-      throw new Error('Missing Supabase credentials for TrustService');
-    }
 
     trustServiceInstance = new TrustService(config);
   }

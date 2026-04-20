@@ -23,6 +23,7 @@ import { HMMMapMatcher, initMapMatcher } from '@/lib/navigation/mapMatcher';
 import { getLaneGraph, getLaneRecommendation, type LaneGraph } from '@/lib/navigation/laneGraph';
 import { loadOsmGraph, type OSMGraph } from '@/lib/navigation/osmGraph';
 import { getRoad3DRenderer, type Road3DRenderer } from '@/lib/navigation/road3DRenderer';
+import { recordFallbackUsage, recordPipelineConfidence } from '@/lib/navigation/navigationKpi';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -127,6 +128,7 @@ export function useAmapNavigation(
           await matcherRef.current.init();
         } else {
           errors.push('Map matching: failed to load graph');
+          recordFallbackUsage('pipeline', 'map_matching_init_failed');
         }
       }
 
@@ -138,6 +140,7 @@ export function useAmapNavigation(
           laneGraphRef.current = await getLaneGraph(graph);
         } else {
           errors.push('Lane guidance: failed to load graph');
+          recordFallbackUsage('pipeline', 'lane_graph_init_failed');
         }
       }
 
@@ -149,8 +152,10 @@ export function useAmapNavigation(
 
       if (errors.length > 0) {
         console.warn('[AmapNav] Initialization warnings:', errors);
+        recordPipelineConfidence(0.45, 'amap_pipeline', true, errors.join('; '));
       } else {
         console.log('[AmapNav] Pipeline fully initialized');
+        recordPipelineConfidence(1, 'amap_pipeline', false, 'initialized');
       }
     }
 
@@ -184,6 +189,12 @@ export function useAmapNavigation(
       // Step 2: Map Matching
       if (matcherRef.current?.isReady && filtered) {
         matched = matcherRef.current.match(filtered);
+      }
+
+      if (filtered) {
+        const confidence = matched?.confidence ?? 0;
+        const fallback = !matched;
+        recordPipelineConfidence(confidence, 'amap_live', fallback, fallback ? 'using_kalman_without_map_match' : 'matched');
       }
 
       // Step 3: Lane Recommendation

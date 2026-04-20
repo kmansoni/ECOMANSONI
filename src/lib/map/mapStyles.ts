@@ -1,4 +1,5 @@
 import type maplibregl from 'maplibre-gl';
+import { getMapLabelTextFieldExpression } from '@/lib/localization/appLocale';
 
 export type ProductionMapMode =
   | 'dark'
@@ -234,7 +235,7 @@ export function getBuildingExtrusionColorExpression(mode: ProductionMapMode): ma
   ];
 }
 
-export function applyProductionStyleEnhancements(map: maplibregl.Map, mode: ProductionMapMode): void {
+export function applyProductionStyleEnhancements(map: maplibregl.Map, mode: ProductionMapMode, languageCode?: string | null): void {
   const style = map.getStyle();
   if (!style?.layers?.length) return;
 
@@ -248,15 +249,16 @@ export function applyProductionStyleEnhancements(map: maplibregl.Map, mode: Prod
     }
   }
 
-  localizeAndSharpenLabels(map, mode);
+  localizeAndSharpenLabels(map, mode, languageCode);
   applyOverlayLayers(map, mode);
 }
 
-function localizeAndSharpenLabels(map: maplibregl.Map, mode: ProductionMapMode): void {
+function localizeAndSharpenLabels(map: maplibregl.Map, mode: ProductionMapMode, languageCode?: string | null): void {
   const style = map.getStyle();
   if (!style?.layers) return;
 
   const palette = getProductionPalette(mode);
+  const textFieldExpression = getMapLabelTextFieldExpression(languageCode);
   for (const layer of style.layers) {
     if (layer.type !== 'symbol') continue;
     if (layer.id.startsWith('nav-layer-') || layer.id.startsWith('enhanced-') || layer.id.startsWith('route-seg-')) continue;
@@ -277,7 +279,7 @@ function localizeAndSharpenLabels(map: maplibregl.Map, mode: ProductionMapMode):
 
     if (!isShield && !isHouseNumber) {
       try {
-        map.setLayoutProperty(layer.id, 'text-field', ['coalesce', ['get', 'name:ru'], ['get', 'name:latin'], ['get', 'name']]);
+        map.setLayoutProperty(layer.id, 'text-field', textFieldExpression);
       } catch {
         // Preserve provider-specific expressions when not supported.
       }

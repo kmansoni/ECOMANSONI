@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState, memo } from 'react';
-import { Crosshair, ZoomIn, ZoomOut, Compass, Navigation2, Box, Square } from 'lucide-react';
+import { LocateFixed, ZoomIn, ZoomOut, Compass, Navigation2, Box, Square } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { LatLng } from '@/types/taxi';
 import type { RouteSegment, SpeedCamera, NavRoute, Maneuver, ManeuverType, NavigationLaneGuidance, LaneTurn, MultiModalRoute } from '@/types/navigation';
 import { MapLibre3D } from './MapLibre3D';
 import { GreenWaveOverlay } from './GreenWaveOverlay';
 import { useNavigatorSettings } from '@/stores/navigatorSettingsStore';
+import { useUserSettings } from '@/contexts/UserSettingsContext';
+import { navText } from '@/lib/navigation/navigationUi';
 
 interface NavigatorMapProps {
   center: LatLng;
@@ -17,6 +19,7 @@ interface NavigatorMapProps {
   alternativeRoutes: NavRoute[];
   speedCameras: SpeedCamera[];
   destinationMarker: LatLng | null;
+  recenterTrigger?: number;
   // Navigation-specific overlays
   isNavigating?: boolean;
   speed?: number;
@@ -95,7 +98,7 @@ function laneTurnToGlyph(turn: LaneTurn): string {
 }
 
 // ─── Speedometer ────────────────────────────────────────────────────────────
-function SpeedometerOverlay({ speed, speedLimit }: { speed: number; speedLimit: number | null }) {
+function SpeedometerOverlay({ speed, speedLimit, languageCode }: { speed: number; speedLimit: number | null; languageCode?: string | null }) {
   const isOver = speedLimit != null && speed > speedLimit;
   return (
     <div className="absolute top-20 left-3 z-[1000] flex flex-col items-center gap-2">
@@ -112,7 +115,7 @@ function SpeedometerOverlay({ speed, speedLimit }: { speed: number; speedLimit: 
         )}>
           {Math.round(speed)}
         </span>
-        <span className="text-[10px] text-gray-400 mt-0.5">km/h</span>
+        <span className="text-[10px] text-gray-400 mt-0.5">{navText('км/ч', 'km/h', languageCode)}</span>
       </div>
 
       {/* Speed limit sign */}
@@ -126,7 +129,7 @@ function SpeedometerOverlay({ speed, speedLimit }: { speed: number; speedLimit: 
 }
 
 // ─── Camera warning ─────────────────────────────────────────────────────────
-function CameraWarningOverlay({ camera, userPosition }: { camera: SpeedCamera; userPosition: LatLng | null }) {
+function CameraWarningOverlay({ camera, userPosition, languageCode }: { camera: SpeedCamera; userPosition: LatLng | null; languageCode?: string | null }) {
   const dist = userPosition
     ? Math.round(Math.sqrt(
         Math.pow((camera.location.lat - userPosition.lat) * 111320, 2) +
@@ -143,7 +146,7 @@ function CameraWarningOverlay({ camera, userPosition }: { camera: SpeedCamera; u
         'animate-pulse'
       )}>
         {dist != null && (
-          <span className="text-white font-bold text-sm">{dist}м</span>
+          <span className="text-white font-bold text-sm">{dist} {navText('м', 'm', languageCode)}</span>
         )}
         <div className="w-8 h-8 rounded-full border-2 border-red-500 bg-white flex items-center justify-center">
           <span className="text-xs font-black text-red-600">{camera.speedLimit}</span>
@@ -179,7 +182,7 @@ function RouteProgressBar({ remaining, total }: { remaining: number; total: numb
 }
 
 // ─── Lane guidance (top arrows like Amap) ───────────────────────────────────
-function LaneGuidance({ guidance, maneuverType, distance }: { guidance?: NavigationLaneGuidance | null; maneuverType?: ManeuverType; distance?: number }) {
+function LaneGuidance({ guidance, maneuverType, distance, languageCode }: { guidance?: NavigationLaneGuidance | null; maneuverType?: ManeuverType; distance?: number; languageCode?: string | null }) {
   if (guidance && guidance.lanes.length > 0) {
     const urgencyClasses = guidance.urgency === 'critical'
       ? 'bg-red-950/80 border-red-400/40'
@@ -220,7 +223,7 @@ function LaneGuidance({ guidance, maneuverType, distance }: { guidance?: Navigat
         </div>
         <div className="mt-2 flex items-center justify-between gap-3 text-[11px] text-white/85">
           <span className="font-medium">{guidance.message}</span>
-          <span className="whitespace-nowrap opacity-80">{guidance.source === 'osm' ? 'OSM lanes' : 'Fallback'}{distance != null ? ` • ${Math.round(distance)} м` : ''}</span>
+          <span className="whitespace-nowrap opacity-80">{guidance.source === 'osm' ? navText('Полосы OSM', 'OSM lanes', languageCode) : navText('Резерв', 'Fallback', languageCode)}{distance != null ? ` • ${Math.round(distance)} ${navText('м', 'm', languageCode)}` : ''}</span>
         </div>
       </div>
     );
@@ -280,6 +283,7 @@ export const NavigatorMap = memo(function NavigatorMap({
   alternativeRoutes,
   speedCameras,
   destinationMarker,
+  recenterTrigger = 0,
   isNavigating = false,
   speed = 0,
   speedLimit,
@@ -298,6 +302,8 @@ export const NavigatorMap = memo(function NavigatorMap({
   onMapClick,
   className,
 }: NavigatorMapProps) {
+  const { settings } = useUserSettings();
+  const languageCode = settings?.language_code ?? null;
   const [cameraState, setCameraState] = useState({ center, zoom });
   const [is3D, setIs3D] = useState(true);
   const navSettings = useNavigatorSettings();
@@ -339,6 +345,7 @@ export const NavigatorMap = memo(function NavigatorMap({
         selectedMultimodalSegmentIndex={selectedMultimodalSegmentIndex}
         speedCameras={navSettings.showSpeedCameras ? speedCameras : []}
         destinationMarker={destinationMarker}
+        recenterTrigger={recenterTrigger}
         nextManeuver={nextManeuver ?? null}
         mapStyle={navSettings.mapViewMode === 'satellite' ? 'satellite'
           : navSettings.mapViewMode === 'hybrid' ? 'hybrid'
@@ -360,6 +367,7 @@ export const NavigatorMap = memo(function NavigatorMap({
               guidance={laneGuidance}
               maneuverType={nextManeuver?.type}
               distance={distanceToNextTurn}
+              languageCode={languageCode}
             />
           )}
 
@@ -372,11 +380,11 @@ export const NavigatorMap = memo(function NavigatorMap({
           />
 
           {/* Speedometer */}
-          <SpeedometerOverlay speed={speed} speedLimit={speedLimit ?? null} />
+          <SpeedometerOverlay speed={speed} speedLimit={speedLimit ?? null} languageCode={languageCode} />
 
           {/* Speed camera warning */}
           {nearbyCamera && (
-            <CameraWarningOverlay camera={nearbyCamera} userPosition={userPosition} />
+            <CameraWarningOverlay camera={nearbyCamera} userPosition={userPosition} languageCode={languageCode} />
           )}
 
           {/* Route progress bar */}
@@ -404,44 +412,12 @@ export const NavigatorMap = memo(function NavigatorMap({
           )}
         </>
       )}
-
-      {/* Right controls */}
-      <div className={cn(
-        'absolute right-3 z-[1000] flex flex-col gap-2',
-        isNavigating ? 'bottom-[19rem]' : 'bottom-[14.5rem]'
-      )}>
-        <button
-          onClick={() => navSettings.setShowTrafficFlowOverlay(!navSettings.showTrafficFlowOverlay)}
-          className={cn(
-            'px-3 h-9 rounded-xl text-xs font-semibold backdrop-blur-md border transition-all text-left',
-            navSettings.showTrafficFlowOverlay
-              ? 'bg-amber-500/20 border-amber-300/40 text-amber-100'
-              : 'bg-gray-900/75 border-white/10 text-gray-400 hover:bg-gray-800/85'
-          )}
-          aria-label="Пробки"
-        >
-          Пробки
-        </button>
-        <button
-          onClick={() => navSettings.setShowTransitOverlay(!navSettings.showTransitOverlay)}
-          className={cn(
-            'px-3 h-9 rounded-xl text-xs font-semibold backdrop-blur-md border transition-all text-left',
-            navSettings.showTransitOverlay
-              ? 'bg-cyan-500/20 border-cyan-300/40 text-cyan-100'
-              : 'bg-gray-900/75 border-white/10 text-gray-400 hover:bg-gray-800/85'
-          )}
-          aria-label="Метро и ОТ"
-        >
-          Метро/ОТ
-        </button>
-      </div>
-
       <div className={cn(
         'absolute right-3 z-[1000] flex flex-col gap-2',
         isNavigating ? 'bottom-52' : 'bottom-36'
       )}>
         {onToggleOrientation && (
-          <button onClick={onToggleOrientation} className={glassBtn} aria-label="Ориентация">
+          <button onClick={onToggleOrientation} className={glassBtn} aria-label={navText('Ориентация', 'Orientation', languageCode)}>
             <Compass className={cn('h-5 w-5', isNorthUp ? 'text-gray-400' : 'text-blue-400')} />
           </button>
         )}
@@ -449,22 +425,22 @@ export const NavigatorMap = memo(function NavigatorMap({
         <button
           onClick={() => setIs3D(v => !v)}
           className={glassBtn}
-          aria-label={is3D ? 'Переключить на 2D' : 'Переключить на 3D'}
+          aria-label={is3D ? navText('Переключить на 2D', 'Switch to 2D', languageCode) : navText('Переключить на 3D', 'Switch to 3D', languageCode)}
         >
           {is3D
             ? <Box className="h-5 w-5 text-blue-400" />
             : <Square className="h-5 w-5 text-gray-400" />
           }
         </button>
-        <button onClick={handleZoomIn} className={glassBtn} aria-label="Приблизить">
+        <button onClick={handleZoomIn} className={glassBtn} aria-label={navText('Приблизить', 'Zoom in', languageCode)}>
           <ZoomIn className="h-5 w-5 text-white" />
         </button>
-        <button onClick={handleZoomOut} className={glassBtn} aria-label="Отдалить">
+        <button onClick={handleZoomOut} className={glassBtn} aria-label={navText('Отдалить', 'Zoom out', languageCode)}>
           <ZoomOut className="h-5 w-5 text-white" />
         </button>
         {onCenterOnUser && (
-          <button onClick={onCenterOnUser} className={glassBtn} aria-label="Моё местоположение">
-            <Crosshair className="h-5 w-5 text-blue-400" />
+          <button onClick={onCenterOnUser} className={glassBtn} aria-label={navText('Центрировать на мне', 'Center on me', languageCode)}>
+            <LocateFixed className="h-5 w-5 text-sky-400" />
           </button>
         )}
       </div>

@@ -271,27 +271,27 @@ export function preprocessCH(osmGraph: OSMGraph): CHGraph {
 
   for (let i = 0; i < osmGraph.edges.length; i++) {
     const edge = osmGraph.edges[i];
-    const fromNode = osmGraph.nodes[edge.from];
-    const toNode = osmGraph.nodes[edge.to];
+    const fromNode = osmGraph.nodes[edge.fromNode];
+    const toNode = osmGraph.nodes[edge.toNode];
     if (!fromNode || !toNode) continue;
 
     const { weight } = getEdgeWeight(edge, fromNode, toNode);
 
-    let fwdArr = adj.get(edge.from);
+    let fwdArr = adj.get(edge.fromNode);
     if (!fwdArr) {
       fwdArr = [];
-      adj.set(edge.from, fwdArr);
+      adj.set(edge.fromNode, fwdArr);
     }
-    fwdArr.push({ to: edge.to, weight, edgeIdx: i });
+    fwdArr.push({ to: edge.toNode, weight, edgeIdx: i });
 
     // Bidirectional for non-motorways
     if (edge.highway !== 'motorway' && edge.highway !== 'motorway_link') {
-      let revArr = adj.get(edge.to);
+      let revArr = adj.get(edge.toNode);
       if (!revArr) {
         revArr = [];
-        adj.set(edge.to, revArr);
+        adj.set(edge.toNode, revArr);
       }
-      revArr.push({ to: edge.from, weight, edgeIdx: i });
+      revArr.push({ to: edge.fromNode, weight, edgeIdx: i });
     }
   }
 
@@ -310,14 +310,14 @@ export function preprocessCH(osmGraph: OSMGraph): CHGraph {
   // Add original edges
   for (let i = 0; i < osmGraph.edges.length; i++) {
     const edge = osmGraph.edges[i];
-    const fromNode = osmGraph.nodes[edge.from];
-    const toNode = osmGraph.nodes[edge.to];
+    const fromNode = osmGraph.nodes[edge.fromNode];
+    const toNode = osmGraph.nodes[edge.toNode];
     if (!fromNode || !toNode) continue;
 
     const { weight, distance } = getEdgeWeight(edge, fromNode, toNode);
     const chEdge: CHEdge = {
-      from: edge.from,
-      to: edge.to,
+      from: edge.fromNode,
+      to: edge.toNode,
       weight,
       distance,
       shortcutVia: null,

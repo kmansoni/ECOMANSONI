@@ -15,6 +15,8 @@ import { memo, useMemo, type FC } from 'react';
 import type { LaneRecommendation } from '@/lib/navigation/laneGraph';
 import type { SpeedCamera, Maneuver, NavigationState, RouteSegment, TrafficLevel } from '@/types/navigation';
 import type { MatchedPosition } from '@/lib/navigation/mapMatcher';
+import { useUserSettings } from '@/contexts/UserSettingsContext';
+import { navText } from '@/lib/navigation/navigationUi';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -59,7 +61,8 @@ SpeedLimitBadge.displayName = 'SpeedLimitBadge';
 const SpeedIndicator: FC<{
   speed: number;
   speedLimit: number | null;
-}> = memo(({ speed, speedLimit }) => {
+  languageCode?: string | null;
+}> = memo(({ speed, speedLimit, languageCode }) => {
   const displaySpeed = Math.round(speed);
 
   let colorClass = 'text-white';
@@ -74,7 +77,7 @@ const SpeedIndicator: FC<{
       <span className={`text-4xl font-bold tabular-nums ${colorClass}`}>
         {displaySpeed}
       </span>
-      <span className="text-xs text-white/60 -mt-1">km/h</span>
+      <span className="text-xs text-white/60 -mt-1">{navText('км/ч', 'km/h', languageCode)}</span>
     </div>
   );
 });
@@ -84,13 +87,14 @@ SpeedIndicator.displayName = 'SpeedIndicator';
 const CameraCountdown: FC<{
   camera: SpeedCamera | null;
   distanceMeters: number;
-}> = memo(({ camera, distanceMeters }) => {
+  languageCode?: string | null;
+}> = memo(({ camera, distanceMeters, languageCode }) => {
   if (!camera || distanceMeters > 2000) return null;
 
   const distText =
     distanceMeters >= 1000
-      ? `${(distanceMeters / 1000).toFixed(1)}km`
-      : `${Math.round(distanceMeters)}m`;
+      ? `${(distanceMeters / 1000).toFixed(1)} ${navText('км', 'km', languageCode)}`
+      : `${Math.round(distanceMeters)} ${navText('м', 'm', languageCode)}`;
 
   const isClose = distanceMeters < 500;
 
@@ -279,21 +283,22 @@ const BottomInfoBar: FC<{
   remainingTime: number;
   eta: string;
   roadName: string;
-}> = memo(({ remainingDistance, remainingTime, eta, roadName }) => {
+  languageCode?: string | null;
+}> = memo(({ remainingDistance, remainingTime, eta, roadName, languageCode }) => {
   const distText =
     remainingDistance >= 1000
-      ? `${(remainingDistance / 1000).toFixed(1)}km`
-      : `${Math.round(remainingDistance)}m`;
+      ? `${(remainingDistance / 1000).toFixed(1)} ${navText('км', 'km', languageCode)}`
+      : `${Math.round(remainingDistance)} ${navText('м', 'm', languageCode)}`;
 
   const timeText = useMemo(() => {
     const mins = Math.ceil(remainingTime / 60);
     if (mins >= 60) {
       const h = Math.floor(mins / 60);
       const m = mins % 60;
-      return `${h}ч.${m.toString().padStart(2, '0')}мин`;
+      return navText(`${h}ч ${m.toString().padStart(2, '0')}мин`, `${h}h ${m.toString().padStart(2, '0')}m`, languageCode);
     }
-    return `${mins}мин`;
-  }, [remainingTime]);
+    return navText(`${mins}мин`, `${mins}m`, languageCode);
+  }, [remainingTime, languageCode]);
 
   return (
     <div className="fixed bottom-0 left-0 right-0 z-50 bg-gradient-to-t from-black/90 to-transparent safe-area-bottom">
@@ -306,7 +311,7 @@ const BottomInfoBar: FC<{
           <span className="text-2xl font-bold text-white tabular-nums">{timeText}</span>
           <span className="text-lg text-white/70 tabular-nums">{distText}</span>
           <span className="text-lg text-white/60 ml-auto tabular-nums">
-            {eta} Прибытие
+            {eta} {navText('Прибытие', 'Arrival', languageCode)}
           </span>
         </div>
       </div>
@@ -323,6 +328,8 @@ export const NavigationHUD: FC<NavigationHUDProps> = memo(({
   laneRecommendation,
   routeSegments,
 }) => {
+  const { settings } = useUserSettings();
+  const languageCode = settings?.language_code ?? null;
   if (state.phase !== 'navigating') return null;
 
   const speedLimit = matchedPosition?.speedLimit ?? state.speedLimit;
@@ -350,13 +357,13 @@ export const NavigationHUD: FC<NavigationHUDProps> = memo(({
 
       {/* Left side: Speed + Speed limit */}
       <div className="fixed left-4 top-24 z-50 flex flex-col items-center gap-3">
-        <SpeedIndicator speed={state.currentSpeed} speedLimit={speedLimit} />
+        <SpeedIndicator speed={state.currentSpeed} speedLimit={speedLimit} languageCode={languageCode} />
         <SpeedLimitBadge speedLimit={speedLimit} currentSpeed={state.currentSpeed} />
       </div>
 
       {/* Camera countdown (top center-right) */}
       <div className="fixed top-20 right-16 z-50">
-        <CameraCountdown camera={state.nearbyCamera} distanceMeters={cameraDistance} />
+        <CameraCountdown camera={state.nearbyCamera} distanceMeters={cameraDistance} languageCode={languageCode} />
       </div>
 
       {/* Right side: Route progress bar */}
@@ -372,6 +379,7 @@ export const NavigationHUD: FC<NavigationHUDProps> = memo(({
         remainingTime={state.remainingTime}
         eta={state.eta}
         roadName={roadName}
+        languageCode={languageCode}
       />
     </div>
   );

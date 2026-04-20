@@ -6,6 +6,7 @@
  */
 
 import { dbLoose } from '@/lib/supabase';
+import { getRequestLanguageHeader } from '@/lib/localization/appLocale';
 import type { LatLng } from '@/types/taxi';
 import type { SavedPlace } from '@/types/navigation';
 import type { POICategory } from '@/types/fias';
@@ -128,10 +129,11 @@ async function searchOfflinePOIs(query: string, limit: number, near?: LatLng): P
 
 async function searchPhotonPOIs(query: string, limit: number, near?: LatLng): Promise<POIResult[]> {
   try {
+    const requestLanguage = getRequestLanguageHeader();
     const params = new URLSearchParams({
       q: query,
       limit: String(Math.min(limit, 10)),
-      lang: 'ru',
+      lang: requestLanguage,
     });
 
     if (near && !hasExplicitGeoIntent(query)) {
@@ -176,11 +178,12 @@ async function searchPhotonPOIs(query: string, limit: number, near?: LatLng): Pr
 
 async function searchNominatimPOIs(query: string, limit: number, near?: LatLng): Promise<POIResult[]> {
   try {
+    const requestLanguage = getRequestLanguageHeader();
     const params = new URLSearchParams({
       format: 'jsonv2',
       q: query,
       limit: String(Math.min(limit, 10)),
-      'accept-language': 'ru',
+      'accept-language': requestLanguage,
       addressdetails: '1',
     });
 

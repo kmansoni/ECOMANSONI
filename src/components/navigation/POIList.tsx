@@ -1,7 +1,9 @@
 import { MapPin, Navigation, Star, Phone, ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { POIResult } from '@/lib/navigation/places';
-import { POI_CATEGORY_ICONS, POI_CATEGORY_LABELS } from '@/types/fias';
+import { getPoiCategoryLabel, POI_CATEGORY_ICONS, type POICategory } from '@/types/fias';
+import { useUserSettings } from '@/contexts/UserSettingsContext';
+import { navText } from '@/lib/navigation/navigationUi';
 
 interface POIListProps {
   pois: POIResult[];
@@ -11,13 +13,15 @@ interface POIListProps {
 }
 
 export function POIList({ pois, onNavigate, onSelect, className }: POIListProps) {
+  const { settings } = useUserSettings();
+  const languageCode = settings?.language_code ?? null;
   if (pois.length === 0) return null;
 
   return (
     <div className={cn('space-y-2', className)}>
       {pois.map((poi) => {
         const catIcon = POI_CATEGORY_ICONS[poi.category as keyof typeof POI_CATEGORY_ICONS] ?? '📍';
-        const catLabel = POI_CATEGORY_LABELS[poi.category as keyof typeof POI_CATEGORY_LABELS] ?? poi.category;
+        const catLabel = getPoiCategoryLabel(poi.category as POICategory, languageCode);
 
         return (
           <div
@@ -84,7 +88,7 @@ export function POIList({ pois, onNavigate, onSelect, className }: POIListProps)
                       className="flex items-center gap-1 text-[10px] text-blue-400 hover:text-blue-300"
                     >
                       <ExternalLink className="w-2.5 h-2.5" />
-                      Сайт
+                      {navText('Сайт', 'Website', languageCode)}
                     </a>
                   )}
                 </div>
@@ -99,7 +103,7 @@ export function POIList({ pois, onNavigate, onSelect, className }: POIListProps)
                   'flex items-center justify-center',
                   'hover:bg-green-500/30 transition-colors'
                 )}
-                aria-label="Проложить маршрут"
+                aria-label={navText('Проложить маршрут', 'Navigate', languageCode)}
               >
                 <Navigation className="w-4 h-4 text-green-400" />
               </button>

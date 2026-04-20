@@ -177,8 +177,8 @@ export function buildLaneGraph(osmGraph: OSMGraph): LaneGraph {
 
   for (let i = 0; i < osmGraph.edges.length; i++) {
     const edge = osmGraph.edges[i];
-    const fromNode = osmGraph.nodes[edge.from];
-    const toNode = osmGraph.nodes[edge.to];
+    const fromNode = osmGraph.nodes[edge.fromNode];
+    const toNode = osmGraph.nodes[edge.toNode];
     if (!fromNode || !toNode) continue;
 
     // Determine lane count and turn info
@@ -190,7 +190,7 @@ export function buildLaneGraph(osmGraph: OSMGraph): LaneGraph {
     // Check raw lane data from OSM
     if (_rawLaneData) {
       // Try matching by way ID (if edge has wayId)
-      const edgeKey = `${(edge as { wayId?: number }).wayId ?? 0}:forward`;
+      const edgeKey = `${edge.wayId ?? 0}:forward`;
       const rawData = _rawLaneData.get(edgeKey);
       if (rawData) {
         laneCount = rawData.laneCount || laneCount;
@@ -250,17 +250,17 @@ export function buildLaneGraph(osmGraph: OSMGraph): LaneGraph {
 
   for (let i = 0; i < osmGraph.edges.length; i++) {
     const edge = osmGraph.edges[i];
-    let arr = edgesByFromNode.get(edge.from);
+    let arr = edgesByFromNode.get(edge.fromNode);
     if (!arr) {
       arr = [];
-      edgesByFromNode.set(edge.from, arr);
+      edgesByFromNode.set(edge.fromNode, arr);
     }
     arr.push(i);
 
-    arr = edgesByToNode.get(edge.to);
+    arr = edgesByToNode.get(edge.toNode);
     if (!arr) {
       arr = [];
-      edgesByToNode.set(edge.to, arr);
+      edgesByToNode.set(edge.toNode, arr);
     }
     arr.push(i);
   }
@@ -463,14 +463,14 @@ function maneuverToLaneDirection(maneuverType: ManeuverType | null): LaneDirecti
   const mapping: Partial<Record<ManeuverType, LaneDirection>> = {
     'turn-left': 'left',
     'turn-right': 'right',
-    'slight-left': 'slight_left',
-    'slight-right': 'slight_right',
-    'sharp-left': 'sharp_left',
-    'sharp-right': 'sharp_right',
+    'turn-slight-left': 'slight_left',
+    'turn-slight-right': 'slight_right',
+    'turn-sharp-left': 'sharp_left',
+    'turn-sharp-right': 'sharp_right',
     'straight': 'through',
     'merge-left': 'merge_to_left',
     'merge-right': 'merge_to_right',
-    'u-turn': 'reverse',
+    uturn: 'reverse',
     'fork-left': 'slight_left',
     'fork-right': 'slight_right',
     'ramp-left': 'slight_left',

@@ -9,11 +9,15 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Mic, MicOff, X, Search, MapPin, RotateCcw, Loader2, Brain, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useVoiceInput } from '@/hooks/navigation/useVoiceInput';
-import { resolveVoiceAddress, learnCorrection, buildStreetIndex, normalizeVoiceText } from '@/lib/navigation/voiceAddressResolver';
-import type { SearchResult } from '@/lib/navigation/offlineSearch';
 import { suggestAddress } from '@/lib/navigation/dadata';
+import { resolveVoiceAddress, learnCorrection, buildStreetIndex, mapOfflineSearchResultToFiasAddress, rememberLearnedAddress } from '@/lib/navigation/voiceAddressResolver';
+import { recordVoiceSearchLearningEvent, recordVoiceSelectionFeedback } from '@/lib/navigation/voiceLearningSync';
+import { useNavigatorSettings } from '@/stores/navigatorSettingsStore';
+import type { SearchResult } from '@/lib/navigation/offlineSearch';
 import type { SavedPlace } from '@/types/navigation';
 import type { FiasAddress } from '@/types/fias';
+import { useUserSettings } from '@/contexts/UserSettingsContext';
+import { formatCheckedVariants, formatNavigationDistance, getNavigationSpeechLocale, navText } from '@/lib/navigation/navigationUi';
 
 interface VoiceSearchSheetProps {
   open: boolean;
@@ -22,7 +26,11 @@ interface VoiceSearchSheetProps {
 }
 
 export function VoiceSearchSheet({ open, onClose, onSelectDestination }: VoiceSearchSheetProps) {
-  const voice = useVoiceInput({ lang: 'ru-RU', continuous: false, interimResults: true });
+  const { settings } = useUserSettings();
+  const languageCode = settings?.language_code ?? null;
+  const voice = useVoiceInput({ lang: getNavigationSpeechLocale(languageCode), continuous: false, interimResults: true });
+  const voiceAllowOnlineFallback = useNavigatorSettings((state) => state.voiceAllowOnlineFallback);
+  const voiceLearningEnabled = useNavigatorSettings((state) => state.voiceLearningEnabled);
   const [offlineResults, setOfflineResults] = useState<SearchResult[]>([]);
   const [dadataResults, setDadataResults] = useState<FiasAddress[]>([]);
   const [searching, setSearching] = useState(false);
@@ -75,33 +83,25 @@ export function VoiceSearchSheet({ open, onClose, onSelectDestination }: VoiceSe
         setUsedLearning(resolved.usedLearning);
         setQueryVariants(resolved.queryVariants);
 
-        // 2. Онлайн поиск по НЕСКОЛЬКИМ вариантам запроса (DaData + Nominatim)
-        // Берём до 3 лучших вариантов и ищем параллельно
-        const bestVariants = resolved.queryVariants.slice(0, 3);
-        if (bestVariants.length === 0) bestVariants.push(voice.finalTranscript);
+        const localResults = resolved.results
+          .filter((result) => result.type === 'address' || result.type === 'city')
+          .map(mapOfflineSearchResultToFiasAddress)
+          .slice(0, 8);
 
-        try {
-          const allOnline = await Promise.all(
-            bestVariants.map(q => suggestAddress(q, 5).catch(() => [] as FiasAddress[]))
-          );
+        const looksLikeConcreteAddress = /\d|\b(ул\.?|улица|street|st\.?|ave\.?|avenue|road|rd\.?|дом|д\.?|house|building|корпус|к\.?|стр\.?)\b/i.test(resolved.normalizedText || voice.finalTranscript);
+        const hasOfflineAddress = localResults.some((result) => result.value.length > 0 && /\d/.test(result.value));
 
-          // Объединяем без дублей
-          const merged: FiasAddress[] = [];
-          const seen = new Set<string>();
-          for (const batch of allOnline) {
-            for (const addr of batch) {
-              const key = addr.geoLat && addr.geoLon
-                ? `${addr.geoLat.toFixed(5)},${addr.geoLon.toFixed(5)}`
-                : addr.value;
-              if (seen.has(key)) continue;
-              seen.add(key);
-              merged.push(addr);
-            }
-          }
-          setDadataResults(merged.slice(0, 8));
-        } catch {
-          setDadataResults([]);
-        }
+        const fallbackResults = voiceAllowOnlineFallback && (localResults.length === 0 || (looksLikeConcreteAddress && !hasOfflineAddress))
+          ? await suggestAddress(resolved.normalizedText || voice.finalTranscript, 8, undefined, { allowOnline: true })
+          : [];
+
+        const finalResults = localResults.length > 0 ? [...localResults, ...fallbackResults].slice(0, 8) : fallbackResults;
+        setDadataResults(finalResults);
+        recordVoiceSearchLearningEvent({
+          transcript: voice.finalTranscript,
+          resolved,
+          chosenAddress: finalResults[0] ?? null,
+        });
       } catch {
         setOfflineResults([]);
         setDadataResults([]);
@@ -113,7 +113,7 @@ export function VoiceSearchSheet({ open, onClose, onSelectDestination }: VoiceSe
     return () => {
       if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
     };
-  }, [voice.finalTranscript, voice.alternatives]);
+  }, [voice.finalTranscript, voice.alternatives, voiceAllowOnlineFallback]);
 
   const handleSelectAddress = useCallback((addr: FiasAddress) => {
     if (!addr.geoLat || !addr.geoLon) return;
@@ -122,7 +122,18 @@ export function VoiceSearchSheet({ open, onClose, onSelectDestination }: VoiceSe
 
     // Обучение: запоминаем что пользователь сказал и что выбрал
     if (voice.finalTranscript && addr.value) {
-      learnCorrection(voice.finalTranscript, addr.value);
+      if (voiceLearningEnabled) {
+        learnCorrection(voice.finalTranscript, addr.value);
+        rememberLearnedAddress(voice.finalTranscript, {
+          name: addr.value.split(',')[0] || addr.value,
+          display: addr.unrestrictedValue || addr.value,
+          coordinates: { lat: addr.geoLat, lng: addr.geoLon },
+        });
+      }
+      recordVoiceSelectionFeedback({
+        heardText: voice.finalTranscript,
+        selectedAddress: addr,
+      });
     }
 
     const place: SavedPlace = {
@@ -147,7 +158,18 @@ export function VoiceSearchSheet({ open, onClose, onSelectDestination }: VoiceSe
 
     // Обучение
     if (voice.finalTranscript && result.display) {
-      learnCorrection(voice.finalTranscript, result.display);
+      if (voiceLearningEnabled) {
+        learnCorrection(voice.finalTranscript, result.display);
+        rememberLearnedAddress(voice.finalTranscript, {
+          name: result.name,
+          display: result.display,
+          coordinates: { lat: result.position.lat, lng: result.position.lng },
+        });
+      }
+      recordVoiceSelectionFeedback({
+        heardText: voice.finalTranscript,
+        selectedAddress: mapOfflineSearchResultToFiasAddress(result),
+      });
     }
 
     const place: SavedPlace = {
@@ -162,7 +184,7 @@ export function VoiceSearchSheet({ open, onClose, onSelectDestination }: VoiceSe
       onSelectDestination(place);
       onClose();
     }, 500);
-  }, [onSelectDestination, onClose, voice.finalTranscript]);
+  }, [onSelectDestination, onClose, voice.finalTranscript, voiceLearningEnabled]);
 
   const handleRetry = useCallback(() => {
     voice.reset();
@@ -195,7 +217,7 @@ export function VoiceSearchSheet({ open, onClose, onSelectDestination }: VoiceSe
       <div className="relative z-10 flex flex-col h-full pt-safe">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3">
-          <h2 className="text-white font-semibold text-lg">Голосовой поиск</h2>
+          <h2 className="text-white font-semibold text-lg">{navText('Голосовой поиск', 'Voice search', languageCode)}</h2>
           <button
             onClick={onClose}
             className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center"
@@ -247,14 +269,14 @@ export function VoiceSearchSheet({ open, onClose, onSelectDestination }: VoiceSe
             isListening ? 'text-blue-400' : hasError ? 'text-red-400' : 'text-gray-400',
           )}>
             {isListening
-              ? 'Слушаю... Назовите адрес'
+              ? navText('Слушаю... Назовите адрес', 'Listening... Say the address', languageCode)
               : isProcessing
-                ? 'Обрабатываю...'
+                ? navText('Обрабатываю...', 'Processing...', languageCode)
                 : hasError
                   ? voice.error
                   : confirmed
-                    ? 'Маршрут строится...'
-                    : 'Нажмите на микрофон и назовите адрес'}
+                    ? navText('Маршрут строится...', 'Building route...', languageCode)
+                    : navText('Нажмите на микрофон и назовите адрес', 'Tap the microphone and say the address', languageCode)}
           </p>
 
           {/* Распознанный текст */}
@@ -275,7 +297,7 @@ export function VoiceSearchSheet({ open, onClose, onSelectDestination }: VoiceSe
               {wasNormalized && (
                 <div className="flex items-center justify-center gap-1.5 mt-2 pt-2 border-t border-white/5">
                   <Brain className="w-3.5 h-3.5 text-purple-400" />
-                  <span className="text-purple-400 text-xs">Понял как: </span>
+                  <span className="text-purple-400 text-xs">{navText('Понял как:', 'Understood as:', languageCode)} </span>
                   <span className="text-purple-300 text-xs font-medium">{normalizedText}</span>
                 </div>
               )}
@@ -284,7 +306,7 @@ export function VoiceSearchSheet({ open, onClose, onSelectDestination }: VoiceSe
               {usedLearning && (
                 <div className="flex items-center justify-center gap-1.5 mt-1.5">
                   <Sparkles className="w-3 h-3 text-amber-400" />
-                  <span className="text-amber-400/70 text-[10px]">Использованы прошлые коррекции</span>
+                  <span className="text-amber-400/70 text-[10px]">{navText('Использованы прошлые коррекции', 'Past corrections were used', languageCode)}</span>
                 </div>
               )}
             </div>
@@ -293,7 +315,7 @@ export function VoiceSearchSheet({ open, onClose, onSelectDestination }: VoiceSe
           {/* Альтернативные распознавания */}
           {voice.alternatives.length > 0 && !searching && !hasResults && (
             <div className="w-full max-w-md mb-4">
-              <p className="text-[10px] text-gray-600 text-center mb-1">Также слышу:</p>
+              <p className="text-[10px] text-gray-600 text-center mb-1">{navText('Также слышу:', 'Also hearing:', languageCode)}</p>
               <div className="flex flex-wrap justify-center gap-1">
                 {voice.alternatives.slice(0, 3).map((alt, i) => (
                   <span key={i} className="px-2 py-0.5 rounded-full bg-white/5 text-gray-500 text-[10px]">
@@ -308,7 +330,7 @@ export function VoiceSearchSheet({ open, onClose, onSelectDestination }: VoiceSe
           {searching && (
             <div className="flex items-center gap-2 mb-4">
               <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />
-              <span className="text-sm text-gray-400">Анализирую адрес...</span>
+              <span className="text-sm text-gray-400">{navText('Анализирую адрес...', 'Analyzing address...', languageCode)}</span>
             </div>
           )}
 
@@ -320,7 +342,7 @@ export function VoiceSearchSheet({ open, onClose, onSelectDestination }: VoiceSe
                 <>
                   <p className="text-xs text-gray-500 uppercase tracking-wider px-1 mb-2 flex items-center gap-1.5">
                     <Brain className="w-3 h-3" />
-                    Найдено в базе
+                    {navText('Найдено в базе', 'Found offline', languageCode)}
                   </p>
                   {offlineResults.slice(0, 8).map((result, i) => (
                     <button
@@ -338,7 +360,7 @@ export function VoiceSearchSheet({ open, onClose, onSelectDestination }: VoiceSe
                         <p className="text-white text-sm font-medium truncate">{result.display}</p>
                         {result.distance != null && (
                           <p className="text-gray-600 text-[10px] mt-0.5">
-                            {result.distance < 1 ? `${Math.round(result.distance * 1000)} м` : `${result.distance.toFixed(1)} км`}
+                            {formatNavigationDistance(result.distance * 1000, languageCode)}
                           </p>
                         )}
                       </div>
@@ -361,7 +383,7 @@ export function VoiceSearchSheet({ open, onClose, onSelectDestination }: VoiceSe
                 <>
                   <p className="text-xs text-gray-500 uppercase tracking-wider px-1 mb-2 mt-3 flex items-center gap-1.5">
                     <Search className="w-3 h-3" />
-                    Онлайн результаты
+                    {navText('Резервный онлайн-поиск', 'Online fallback search', languageCode)}
                   </p>
                   {dadataResults.map((addr, i) => (
                     <button
@@ -394,7 +416,7 @@ export function VoiceSearchSheet({ open, onClose, onSelectDestination }: VoiceSe
           {confirmed && (
             <div className="flex items-center gap-2 text-green-400">
               <Search className="w-5 h-5" />
-              <span className="text-sm font-medium">Строим маршрут...</span>
+              <span className="text-sm font-medium">{navText('Строим маршрут...', 'Building route...', languageCode)}</span>
             </div>
           )}
 
@@ -402,11 +424,11 @@ export function VoiceSearchSheet({ open, onClose, onSelectDestination }: VoiceSe
           {voice.finalTranscript && !searching && !hasResults && !confirmed && voice.state === 'idle' && (
             <div className="text-center">
               <p className="text-gray-500 text-sm">
-                Адрес не найден. Попробуйте сказать точнее.
+                {navText('Адрес не найден. Попробуйте сказать точнее.', 'Address not found. Try saying it more precisely.', languageCode)}
               </p>
               {queryVariants.length > 1 && (
                 <p className="text-gray-600 text-[10px] mt-2">
-                  Проверено {queryVariants.length} вариантов запроса
+                  {formatCheckedVariants(queryVariants.length, languageCode)}
                 </p>
               )}
             </div>
@@ -427,14 +449,14 @@ export function VoiceSearchSheet({ open, onClose, onSelectDestination }: VoiceSe
             )}
           >
             <RotateCcw className="w-4 h-4" />
-            Повторить
+            {navText('Повторить', 'Retry', languageCode)}
           </button>
 
           {/* Не поддерживается */}
           {!voice.isSupported && (
             <div className="flex-1 h-12 rounded-xl bg-red-500/10 border border-red-500/30 flex items-center justify-center">
               <span className="text-red-400 text-xs text-center px-2">
-                Голосовой ввод не поддерживается в этом браузере
+                {navText('Голосовой ввод не поддерживается в этом браузере', 'Voice input is not supported in this browser', languageCode)}
               </span>
             </div>
           )}

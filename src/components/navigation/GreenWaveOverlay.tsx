@@ -13,6 +13,8 @@ import {
   getNearbyTrafficLights,
   type GreenWaveRecommendation,
 } from '@/lib/navigation/trafficLightTiming';
+import { useUserSettings } from '@/contexts/UserSettingsContext';
+import { navText } from '@/lib/navigation/navigationUi';
 
 interface GreenWaveOverlayProps {
   userPosition: LatLng | null;
@@ -27,6 +29,8 @@ export const GreenWaveOverlay = memo(function GreenWaveOverlay({
   route,
   isNavigating,
 }: GreenWaveOverlayProps) {
+  const { settings } = useUserSettings();
+  const languageCode = settings?.language_code ?? null;
   const [recommendation, setRecommendation] = useState<GreenWaveRecommendation | null>(null);
 
   useEffect(() => {
@@ -85,9 +89,9 @@ export const GreenWaveOverlay = memo(function GreenWaveOverlay({
       )}
     >
       <Zap className={cn('w-4 h-4', isGood ? 'text-green-400' : shouldSpeedUp ? 'text-blue-400' : 'text-amber-400')} />
-      <span className="text-sm font-semibold">{recommendation.suggestedSpeedKmh} км/ч</span>
+      <span className="text-sm font-semibold">{recommendation.suggestedSpeedKmh} {navText('км/ч', 'km/h', languageCode)}</span>
       <span className="text-xs opacity-70">
-        {isGood ? '✓ зелёная волна' : recommendation.message}
+        {isGood ? navText('✓ зелёная волна', '✓ green wave', languageCode) : recommendation.message}
       </span>
     </div>
   );

@@ -10,6 +10,7 @@
 
 import type maplibregl from 'maplibre-gl';
 import { applyProductionStyleEnhancements, getProductionPalette, type ProductionMapMode } from './mapStyles';
+import { getMapLabelTextFieldExpression } from '@/lib/localization/appLocale';
 
 // ── Style URLs ──────────────────────────────────────────────────────────────
 
@@ -158,6 +159,7 @@ export function addEnhancedRoadLayers(
   labelSizeMultiplier: number = 1.0,
   highContrast: boolean = false,
   theme: MapTheme = 'dark',
+  languageCode?: string | null,
 ) {
   const style = map.getStyle();
   if (!style?.sources) return;
@@ -190,7 +192,7 @@ export function addEnhancedRoadLayers(
        'source-layer': 'transportation_name',
        minzoom: 12,
        layout: {
-         'text-field': ['coalesce', ['get', 'name:ru'], ['get', 'name:latin'], ['get', 'name']],
+         'text-field': getMapLabelTextFieldExpression(languageCode) as unknown as maplibregl.ExpressionSpecification,
          'text-font': ['Noto Sans Bold', 'Noto Sans Regular', 'Open Sans Bold'],
          'text-size': [
            'interpolate', ['linear'], ['zoom'],
@@ -286,8 +288,8 @@ export function addEnhancedRoadLayers(
   }
 }
 
-export function applyMapThemeEnhancements(map: maplibregl.Map, theme: MapTheme = 'dark') {
-  applyProductionStyleEnhancements(map, theme);
+export function applyMapThemeEnhancements(map: maplibregl.Map, theme: MapTheme = 'dark', languageCode?: string | null) {
+  applyProductionStyleEnhancements(map, theme, languageCode);
 }
 
 // ── Terrain (3D relief) ─────────────────────────────────────────────────────

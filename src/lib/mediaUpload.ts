@@ -381,7 +381,23 @@ export async function uploadMedia(
   }
 
   const jwt = await getJwt();
-  return uploadViaMediaServer(uploadFile, options, jwt);
+  try {
+    return await uploadViaMediaServer(uploadFile, options, jwt);
+  } catch (error) {
+    if (
+      error instanceof MediaUploadError &&
+      (error.code === 'NETWORK' || error.code === 'SERVER_ERROR')
+    ) {
+      logger.warn('[mediaUpload] media-server unavailable, falling back to Supabase Storage', {
+        bucket: options.bucket,
+        code: error.code,
+        status: error.status,
+      });
+      return uploadViaSupabase(uploadFile, options);
+    }
+
+    throw error;
+  }
 }
 
 /**

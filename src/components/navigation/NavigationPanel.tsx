@@ -6,6 +6,8 @@ import { SpeedDisplay } from './SpeedDisplay';
 import { TurnInstruction } from './TurnInstruction';
 import { formatDistance, formatDuration, formatETA } from '@/lib/navigation/turnInstructions';
 import { getCameraDistance } from '@/lib/navigation/speedCameras';
+import { useUserSettings } from '@/contexts/UserSettingsContext';
+import { navText } from '@/lib/navigation/navigationUi';
 
 interface NavigationPanelProps {
   speed: number;
@@ -34,6 +36,8 @@ export function NavigationPanel({
   currentPosition,
   onStop,
 }: NavigationPanelProps) {
+  const { settings } = useUserSettings();
+  const languageCode = settings?.language_code ?? null;
   const [isMinimized, setIsMinimized] = useState(false);
   const idleTimerRef = useRef<ReturnType<typeof setTimeout>>();
   const touchTimerRef = useRef<number>(0);
@@ -75,8 +79,8 @@ export function NavigationPanel({
         )}>
           <Camera className="w-6 h-6 text-white shrink-0" />
           <div className="flex-1">
-            <p className="text-white font-bold text-sm">Камера через {formatDistance(cameraDist)}</p>
-            <p className="text-red-100 text-xs">Ограничение {nearbyCamera.speedLimit} км/ч</p>
+            <p className="text-white font-bold text-sm">{navText('Камера через', 'Camera ahead in', languageCode)} {formatDistance(cameraDist)}</p>
+            <p className="text-red-100 text-xs">{navText('Ограничение', 'Limit', languageCode)} {nearbyCamera.speedLimit} {navText('км/ч', 'km/h', languageCode)}</p>
           </div>
           <div className="w-10 h-10 rounded-full border-[2.5px] border-white bg-white flex items-center justify-center">
             <span className="text-sm font-bold text-red-600">{nearbyCamera.speedLimit}</span>
@@ -164,7 +168,7 @@ export function NavigationPanel({
                 {/* ETA */}
                 <div className="text-right">
                   <div className="text-2xl font-bold text-white tabular-nums">{eta}</div>
-                  <div className="text-xs text-gray-500">прибытие</div>
+                  <div className="text-xs text-gray-500">{navText('прибытие', 'arrival', languageCode)}</div>
                 </div>
               </div>
 
@@ -180,7 +184,7 @@ export function NavigationPanel({
                 )}
               >
                 <X className="w-4 h-4" />
-                Завершить маршрут
+                {navText('Завершить маршрут', 'End route', languageCode)}
               </button>
             </div>
           </>

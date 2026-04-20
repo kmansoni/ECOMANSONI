@@ -1,5 +1,7 @@
 import { memo } from 'react';
 import { cn } from '@/lib/utils';
+import { useUserSettings } from '@/contexts/UserSettingsContext';
+import { navText } from '@/lib/navigation/navigationUi';
 import type { SafetyAssessment } from '@/lib/navigation/safetyScore';
 
 interface SafetyBadgeProps {
@@ -8,19 +10,20 @@ interface SafetyBadgeProps {
   className?: string;
 }
 
-const LABELS: Record<SafetyAssessment['label'], string> = {
-  safe: 'Безопасно',
-  moderate: 'Умеренно',
-  caution: 'Осторожно',
-  unsafe: 'Небезопасно',
-};
-
 export const SafetyBadge = memo(function SafetyBadge({
   assessment,
   compact = false,
   className,
 }: SafetyBadgeProps) {
+  const { settings } = useUserSettings();
+  const languageCode = settings?.language_code ?? null;
   const pct = Math.round(assessment.overallScore * 100);
+  const labels: Record<SafetyAssessment['label'], string> = {
+    safe: navText('Безопасно', 'Safe', languageCode),
+    moderate: navText('Умеренно', 'Moderate', languageCode),
+    caution: navText('Осторожно', 'Caution', languageCode),
+    unsafe: navText('Небезопасно', 'Unsafe', languageCode),
+  };
 
   if (compact) {
     return (
@@ -42,13 +45,13 @@ export const SafetyBadge = memo(function SafetyBadge({
         <div className="flex items-center gap-2">
           <span className="text-base">🛡️</span>
           <span className="text-sm font-medium" style={{ color: assessment.color }}>
-            Безопасность: {pct}%
+            {navText('Безопасность', 'Safety', languageCode)}: {pct}%
           </span>
         </div>
         <span className="text-xs px-2 py-0.5 rounded-full"
           style={{ backgroundColor: `${assessment.color}20`, color: assessment.color }}
         >
-          {LABELS[assessment.label]}
+          {labels[assessment.label]}
         </span>
       </div>
 

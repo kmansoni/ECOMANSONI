@@ -2,11 +2,11 @@
  * vehicleMarkers.ts — SVG generators for different vehicle types as navigation markers.
  * Each vehicle is rendered as a top-down SVG for the map with 3D-like styling.
  */
-import { VEHICLE_MARKERS } from '@/stores/navigatorSettingsStore';
+import { getVehicleMarkerDefinition } from '@/stores/navigatorSettingsStore';
 
 /** Returns a data URL for a vehicle SVG marker */
 export function getVehicleMarkerSVG(vehicleId: string, heading: number = 0): string {
-  const vehicle = VEHICLE_MARKERS.find(v => v.id === vehicleId);
+  const vehicle = getVehicleMarkerDefinition(vehicleId);
   if (!vehicle) return getDefaultCarSVG('#3b82f6', heading);
 
   switch (vehicle.category) {
@@ -61,24 +61,16 @@ function getCarSVG(color: string, heading: number, type: 'car' | 'suv' | 'sport'
       </linearGradient>
     </defs>
     <g transform="translate(30,30) rotate(${heading}) translate(-${w/2},-${h/2})" filter="url(#shadow)">
-      <!-- Body -->
       <rect x="0" y="0" width="${w}" height="${h}" rx="${bodyRx}" fill="url(#bodyGrad)" stroke="${darken(color, 30)}" stroke-width="1"/>
-      <!-- Windshield -->
       <rect x="4" y="6" width="${w-8}" height="8" rx="3" fill="url(#windshield)" opacity="0.8"/>
-      <!-- Rear window -->
       <rect x="4" y="${h-14}" width="${w-8}" height="7" rx="3" fill="url(#windshield)" opacity="0.6"/>
-      <!-- Roof -->
       <rect x="5" y="${roofY}" width="${w-10}" height="${roofH}" rx="4" fill="${lighten(color, 10)}" opacity="0.5"/>
-      <!-- Headlights -->
       <circle cx="5" cy="3" r="2" fill="#ffe082"/>
       <circle cx="${w-5}" cy="3" r="2" fill="#ffe082"/>
-      <!-- Taillights -->
       <circle cx="5" cy="${h-3}" r="2" fill="#ef5350"/>
       <circle cx="${w-5}" cy="${h-3}" r="2" fill="#ef5350"/>
-      <!-- Direction arrow -->
       <polygon points="${w/2},0 ${w/2-3},6 ${w/2+3},6" fill="white" opacity="0.9"/>
     </g>
-    <!-- Pulse ring -->
     <circle cx="30" cy="30" r="25" fill="none" stroke="${color}" stroke-width="2" opacity="0.3">
       <animate attributeName="r" from="20" to="30" dur="2s" repeatCount="indefinite"/>
       <animate attributeName="opacity" from="0.5" to="0" dur="2s" repeatCount="indefinite"/>
@@ -95,20 +87,15 @@ function getTruckSVG(color: string, heading: number): string {
       </filter>
     </defs>
     <g transform="translate(30,30) rotate(${heading}) translate(-15,-25)" filter="url(#shadow)">
-      <!-- Cabin -->
       <rect x="2" y="0" width="26" height="16" rx="4" fill="${lighten(color, 15)}"/>
       <rect x="5" y="2" width="20" height="8" rx="2" fill="#4fc3f7" opacity="0.7"/>
-      <!-- Cargo -->
       <rect x="0" y="16" width="30" height="34" rx="3" fill="${color}" stroke="${darken(color, 30)}" stroke-width="1"/>
       <line x1="0" y1="26" x2="30" y2="26" stroke="${darken(color, 20)}" stroke-width="0.5" opacity="0.5"/>
       <line x1="0" y1="36" x2="30" y2="36" stroke="${darken(color, 20)}" stroke-width="0.5" opacity="0.5"/>
-      <!-- Headlights -->
       <rect x="4" y="0" width="3" height="2" rx="1" fill="#ffe082"/>
       <rect x="23" y="0" width="3" height="2" rx="1" fill="#ffe082"/>
-      <!-- Taillights -->
       <rect x="3" y="48" width="4" height="2" rx="1" fill="#ef5350"/>
       <rect x="23" y="48" width="4" height="2" rx="1" fill="#ef5350"/>
-      <!-- Arrow -->
       <polygon points="15,0 12,5 18,5" fill="white" opacity="0.9"/>
     </g>
   </svg>`;
@@ -123,17 +110,11 @@ function getMotorcycleSVG(color: string, heading: number): string {
       </filter>
     </defs>
     <g transform="translate(30,30) rotate(${heading}) translate(-6,-18)" filter="url(#shadow)">
-      <!-- Body -->
       <rect x="2" y="4" width="8" height="28" rx="4" fill="${color}"/>
-      <!-- Front wheel -->
       <ellipse cx="6" cy="3" rx="5" ry="3" fill="#333" stroke="#555" stroke-width="1"/>
-      <!-- Rear wheel -->
       <ellipse cx="6" cy="33" rx="5" ry="3" fill="#333" stroke="#555" stroke-width="1"/>
-      <!-- Headlight -->
       <circle cx="6" cy="1" r="2" fill="#ffe082"/>
-      <!-- Rider silhouette -->
       <ellipse cx="6" cy="16" rx="4" ry="5" fill="${darken(color, 20)}" opacity="0.7"/>
-      <!-- Arrow -->
       <polygon points="6,0 4,4 8,4" fill="white" opacity="0.9"/>
     </g>
     <circle cx="30" cy="30" r="20" fill="none" stroke="${color}" stroke-width="1.5" opacity="0.3">
@@ -152,19 +133,12 @@ function getBicycleSVG(color: string, heading: number): string {
       </filter>
     </defs>
     <g transform="translate(30,30) rotate(${heading}) translate(-5,-15)" filter="url(#shadow)">
-      <!-- Frame -->
       <line x1="5" y1="5" x2="5" y2="25" stroke="${color}" stroke-width="2.5" stroke-linecap="round"/>
-      <!-- Handlebars -->
       <line x1="1" y1="4" x2="9" y2="4" stroke="${color}" stroke-width="2" stroke-linecap="round"/>
-      <!-- Front wheel -->
       <circle cx="5" cy="2" r="3" fill="none" stroke="#666" stroke-width="1.5"/>
-      <!-- Rear wheel -->
       <circle cx="5" cy="28" r="3" fill="none" stroke="#666" stroke-width="1.5"/>
-      <!-- Seat -->
       <line x1="3" y1="12" x2="7" y2="12" stroke="${darken(color, 20)}" stroke-width="2" stroke-linecap="round"/>
-      <!-- Rider dot -->
       <circle cx="5" cy="10" r="2.5" fill="${color}" opacity="0.6"/>
-      <!-- Arrow -->
       <polygon points="5,0 3,3 7,3" fill="white" opacity="0.8"/>
     </g>
   </svg>`;
@@ -192,18 +166,12 @@ function getAircraftSVG(color: string, heading: number): string {
       </filter>
     </defs>
     <g transform="translate(30,30) rotate(${heading}) translate(-30,-30)" filter="url(#shadow)">
-      <!-- Fuselage -->
       <ellipse cx="30" cy="30" rx="5" ry="20" fill="${color}"/>
-      <!-- Wings -->
       <polygon points="30,20 10,32 30,28 50,32" fill="${lighten(color, 15)}" opacity="0.9"/>
-      <!-- Tail -->
       <polygon points="30,48 24,52 30,50 36,52" fill="${lighten(color, 10)}" opacity="0.8"/>
-      <!-- Cockpit -->
       <ellipse cx="30" cy="14" rx="3" ry="4" fill="#4fc3f7" opacity="0.8"/>
-      <!-- Nose -->
       <polygon points="30,10 28,14 32,14" fill="white" opacity="0.7"/>
     </g>
-    <!-- Shadow ring -->
     <ellipse cx="30" cy="32" rx="22" ry="8" fill="rgba(0,0,0,0.15)"/>
   </svg>`;
   return svgToDataURL(svg);
@@ -233,7 +201,6 @@ function getNavigationArrowSVG(color: string, heading: number): string {
   return svgToDataURL(svg);
 }
 
-// ─── Color helpers ──────────────────────────────────────────────────────────
 function lighten(hex: string, percent: number): string {
   const num = parseInt(hex.replace('#', ''), 16);
   const r = Math.min(255, ((num >> 16) & 0xff) + Math.round(255 * percent / 100));

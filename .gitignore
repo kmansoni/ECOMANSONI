@@ -36,6 +36,7 @@ node_modules
 
 # Frontend build output
 dist/
+public/modules/
 *.zip
 
 # Build/CI log artifacts
@@ -84,9 +85,13 @@ crisis-mesh-messenger/
 # Python cache artifacts
 __pycache__/
 *.py[cod]
+*.db
 
 # Python virtual environment
 .venv/
+
+# Local AI runtime data
+ai_engine/data/
 
 # Kilo Code AI workspace (worktrees, node_modules)
 .kilocode/

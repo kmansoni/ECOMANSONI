@@ -17,6 +17,7 @@ import type {
   RiskTier,
   RateLimitDecision,
 } from './types';
+import { getTrustEnforcementEnv } from './env';
 
 export interface RateLimitConfig {
   algo: 'token_bucket' | 'fixed_window' | 'sliding_window';
@@ -73,17 +74,25 @@ return { allowed, tostring(current), tostring(newTokens), tostring(lastTs), tost
     supabaseServiceRoleKey: string,
     redisUrl?: string
   ) {
+    const normalizedSupabaseUrl = supabaseUrl.trim();
+    const normalizedSupabaseServiceRoleKey = supabaseServiceRoleKey.trim();
+    const normalizedRedisUrl = redisUrl?.trim();
+
+    if (!normalizedSupabaseUrl || !normalizedSupabaseServiceRoleKey) {
+      throw new Error('[RateLimiter] Supabase URL and service role key are required');
+    }
+
     this.supabase = createClient(
-      supabaseUrl,
-      supabaseServiceRoleKey,
+      normalizedSupabaseUrl,
+      normalizedSupabaseServiceRoleKey,
       {
         auth: { persistSession: false },
       }
     );
 
-    if (redisUrl) {
+    if (normalizedRedisUrl) {
       try {
-        this.redis = new Redis(redisUrl);
+        this.redis = new Redis(normalizedRedisUrl);
         this.redis.on('error', (err) => {
           console.warn('[RateLimiter] Redis connection error:', err.message);
           this.redisEnabled = false;
@@ -373,18 +382,12 @@ let rateLimiterInstance: RateLimiter | null = null;
 
 export function getRateLimiter(): RateLimiter {
   if (!rateLimiterInstance) {
-    const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
-    const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-    const redisUrl = process.env.REDIS_URL;
-
-    if (!supabaseUrl || !supabaseServiceRoleKey) {
-      throw new Error('Missing Supabase credentials for RateLimiter');
-    }
+    const env = getTrustEnforcementEnv();
 
     rateLimiterInstance = new RateLimiter(
-      supabaseUrl,
-      supabaseServiceRoleKey,
-      redisUrl
+      env.supabaseUrl,
+      env.supabaseServiceRoleKey,
+      env.redisUrl
     );
   }
 

@@ -27,12 +27,15 @@ import type { InsuranceCategory } from "@/types/insurance";
 const HERO_CATEGORY_ROUTES: Record<InsuranceCategory, string> = {
   osago: "/insurance/osago",
   kasko: "/insurance/kasko",
+  mini_kasko: "/insurance/kasko",
   property: "/insurance/property",
   travel: "/insurance/travel",
   mortgage: "/insurance/mortgage",
   life: "/insurance/life",
   health: "/insurance/dms",
   dms: "/insurance/dms",
+  auto: "/insurance/osago",
+  osgop: "/insurance/osago",
 };
 
 const ADVANTAGES = [

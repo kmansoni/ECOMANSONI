@@ -4,12 +4,12 @@
 import { useState } from 'react';
 import { X, Send, Camera, MapPin } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useRoadEvents, ROAD_EVENT_LABELS, type RoadEventType, type RoadEvent } from '@/stores/roadEventsStore';
+import { useRoadEvents, getRoadEventInfo, getRoadEventLabels, type RoadEventType, type RoadEvent } from '@/stores/roadEventsStore';
 import { supabase, dbLoose } from '@/lib/supabase';
 import { toast } from 'sonner';
 import type { LatLng } from '@/types/taxi';
-
-const EVENT_TYPES = Object.entries(ROAD_EVENT_LABELS) as [RoadEventType, typeof ROAD_EVENT_LABELS[RoadEventType]][];
+import { useUserSettings } from '@/contexts/UserSettingsContext';
+import { navText } from '@/lib/navigation/navigationUi';
 
 interface ReportEventSheetProps {
   open: boolean;
@@ -19,9 +19,13 @@ interface ReportEventSheetProps {
 
 export function ReportEventSheet({ open, onClose, location }: ReportEventSheetProps) {
   const { addEvent } = useRoadEvents();
+  const { settings } = useUserSettings();
+  const languageCode = settings?.language_code ?? null;
   const [selectedType, setSelectedType] = useState<RoadEventType | null>(null);
   const [description, setDescription] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const eventLabels = getRoadEventLabels(languageCode);
+  const eventTypes = Object.entries(eventLabels) as [RoadEventType, typeof eventLabels[RoadEventType]][];
 
   if (!open) return null;
 
@@ -31,7 +35,7 @@ export function ReportEventSheet({ open, onClose, location }: ReportEventSheetPr
     setSubmitting(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      const eventInfo = ROAD_EVENT_LABELS[selectedType];
+      const eventInfo = getRoadEventInfo(selectedType, languageCode);
       
       const event: RoadEvent = {
         id: `evt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -63,12 +67,12 @@ export function ReportEventSheet({ open, onClose, location }: ReportEventSheetPr
         // Offline — event saved locally, will sync later
       }
 
-      toast.success(`${eventInfo.emoji} ${eventInfo.label} отмечено на карте`);
+      toast.success(`${eventInfo.emoji} ${navText('Отметка добавлена на карту', 'Added to the map', languageCode)}`);
       onClose();
       setSelectedType(null);
       setDescription('');
     } catch (err) {
-      toast.error('Не удалось отправить событие');
+      toast.error(navText('Не удалось отправить событие', 'Failed to send the event', languageCode));
     } finally {
       setSubmitting(false);
     }
@@ -82,7 +86,7 @@ export function ReportEventSheet({ open, onClose, location }: ReportEventSheetPr
         <div className="w-10 h-1 bg-gray-600 rounded-full mx-auto mb-4" />
         
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-bold text-white">Сообщить о событии</h2>
+          <h2 className="text-lg font-bold text-white">{navText('Сообщить о событии', 'Report an event', languageCode)}</h2>
           <button onClick={onClose} className="p-2 rounded-lg hover:bg-white/10">
             <X className="h-5 w-5 text-gray-400" />
           </button>
@@ -97,7 +101,7 @@ export function ReportEventSheet({ open, onClose, location }: ReportEventSheetPr
 
         {/* Event type grid */}
         <div className="grid grid-cols-3 gap-2 mb-4">
-          {EVENT_TYPES.map(([type, info]) => (
+          {eventTypes.map(([type, info]) => (
             <button
               key={type}
               onClick={() => setSelectedType(type)}
@@ -116,7 +120,7 @@ export function ReportEventSheet({ open, onClose, location }: ReportEventSheetPr
 
         {/* Description */}
         <textarea
-          placeholder="Комментарий (необязательно)"
+          placeholder={navText('Комментарий (необязательно)', 'Comment (optional)', languageCode)}
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           className="w-full p-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500 resize-none h-20 text-sm focus:outline-none focus:border-blue-500"
@@ -135,7 +139,7 @@ export function ReportEventSheet({ open, onClose, location }: ReportEventSheetPr
           )}
         >
           <Send className="h-4 w-4" />
-          {submitting ? 'Отправка...' : 'Отправить'}
+          {submitting ? navText('Отправка...', 'Sending...', languageCode) : navText('Отправить', 'Send', languageCode)}
         </button>
       </div>
     </div>

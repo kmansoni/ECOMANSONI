@@ -17,7 +17,7 @@ import {
   Calendar, DollarSign, AlertTriangle, Clock, FileText,
   BarChart2, Target, Activity, User,
 } from "lucide-react";
-import { supabase } from "@/lib/supabase";
+import { dbLoose, supabase } from "@/lib/supabase";
 import { logger } from "@/lib/logger";
 import { CRMInsuranceClientForm } from "@/components/crm/CRMInsuranceClientForm";
 
@@ -167,16 +167,16 @@ export function CRMInsuranceDashboard() {
       const uid = user.id;
 
       // Load clients
-      const { data: clientsData, error: cErr } = await supabase
+      const { data: clientsData, error: cErr } = await dbLoose
         .from('crm_insurance_clients')
         .select('*')
         .eq('user_id', uid)
         .order('created_at', { ascending: false });
       if (cErr) throw cErr;
-      setClients(clientsData ?? []);
+      setClients((clientsData ?? []) as InsuranceClient[]);
 
       // Load policies
-      const { data: policiesData, error: pErr } = await supabase
+      const { data: policiesData, error: pErr } = await dbLoose
         .from('crm_insurance_policies')
         .select('*')
         .eq('user_id', uid)
@@ -280,7 +280,7 @@ export function CRMInsuranceDashboard() {
         notes: policyForm.notes || null,
       };
 
-      const { data, error } = await supabase
+      const { data, error } = await dbLoose
         .from('crm_insurance_policies')
         .insert(row)
         .select()
@@ -305,7 +305,7 @@ export function CRMInsuranceDashboard() {
   const handleMoveStage = async () => {
     if (!movingPolicy || !moveStage) return;
     try {
-      const { error } = await supabase
+      const { error } = await dbLoose
         .from('crm_insurance_policies')
         .update({ stage: moveStage, updated_at: new Date().toISOString() })
         .eq('id', movingPolicy.id);
@@ -325,7 +325,7 @@ export function CRMInsuranceDashboard() {
   const handleDeletePolicy = async (id: string) => {
     if (!confirm('Удалить полис?')) return;
     try {
-      const { error } = await supabase.from('crm_insurance_policies').delete().eq('id', id);
+      const { error } = await dbLoose.from('crm_insurance_policies').delete().eq('id', id);
       if (error) throw error;
       setPolicies(prev => prev.filter(p => p.id !== id));
       toast.success('Полис удалён');
@@ -339,7 +339,7 @@ export function CRMInsuranceDashboard() {
   const handleDeleteClient = async (id: string) => {
     if (!confirm('Удалить клиента?')) return;
     try {
-      const { error } = await supabase.from('crm_insurance_clients').delete().eq('id', id);
+      const { error } = await dbLoose.from('crm_insurance_clients').delete().eq('id', id);
       if (error) throw error;
       setClients(prev => prev.filter(c => c.id !== id));
       toast.success('Клиент удалён');

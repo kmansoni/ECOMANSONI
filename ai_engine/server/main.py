@@ -37,6 +37,7 @@ from ai_engine.learning.feedback_store import (
     FeedbackStore, FeedbackRecord, FeedbackRating,
 )
 from ai_engine.learning.reward_model import RewardModel
+from ai_engine.voice_learning import VoiceLearningConfig, VoiceLearningService
 
 logger = logging.getLogger("aria")
 
@@ -120,9 +121,14 @@ class ChatCompletionRequest(BaseModel):
 
 _feedback_store: Optional[FeedbackStore] = None
 _reward_model: Optional[RewardModel] = None
+_voice_learning_service: Optional[VoiceLearningService] = None
 
 _FEEDBACK_DB  = os.environ.get("ARIA_FEEDBACK_DB",  "aria_feedback.db")
 _REWARD_CKPT  = os.environ.get("ARIA_REWARD_CKPT",  "aria_reward_model.json")
+_VOICE_LEARNING_DB = os.environ.get(
+    "ARIA_VOICE_LEARNING_DB",
+    os.path.join(PROJECT_ROOT, "ai_engine", "data", "voice_learning.db"),
+)
 _USER_ID_SALT = os.environ.get("ARIA_USER_ID_SALT") or hashlib.sha256(API_KEY.encode("utf-8")).hexdigest()
 # Флаг: автоматически запускать обучение при накоплении N новых пар
 _AUTO_TRAIN_THRESHOLD = int(os.environ.get("ARIA_AUTO_TRAIN_THRESHOLD", "50"))
@@ -146,6 +152,15 @@ def get_reward_model() -> RewardModel:
     if _reward_model is None:
         _reward_model = RewardModel(checkpoint_path=_REWARD_CKPT)
     return _reward_model
+
+
+def get_voice_learning_service() -> VoiceLearningService:
+    global _voice_learning_service
+    if _voice_learning_service is None:
+        _voice_learning_service = VoiceLearningService(
+            VoiceLearningConfig(db_path=_VOICE_LEARNING_DB)
+        )
+    return _voice_learning_service
 
 
 # ─── Lazy-loaded singletons ───────────────────────────────────────────────────
@@ -705,6 +720,37 @@ class TrainTriggerRequest(BaseModel):
     epochs:       int            = Field(default=3, ge=1, le=20)
 
 
+class VoiceUtteranceRequest(BaseModel):
+    user_id: str
+    transcript: str = Field(..., min_length=1, max_length=4096)
+    language_code: Optional[str] = Field(default=None, max_length=16)
+    accent_tag: Optional[str] = Field(default=None, max_length=64)
+    audio_path: Optional[str] = Field(default=None, max_length=2048)
+    user_context: dict[str, str] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class VoiceSearchLogRequest(BaseModel):
+    user_id: str
+    query: str = Field(..., min_length=1, max_length=2048)
+    user_context: dict[str, str] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class VoiceCorrectionRequest(BaseModel):
+    utterance_id: Optional[str] = None
+    corrected_transcript: str = Field(..., min_length=1, max_length=4096)
+    corrected_address: Optional[dict[str, Any]] = None
+    user_context: dict[str, str] = Field(default_factory=dict)
+    feedback_type: str = Field(default="explicit_correction", max_length=64)
+
+
+class VoiceValidationRequest(BaseModel):
+    transcript: str = Field(..., min_length=1, max_length=4096)
+    locale_hint: Optional[str] = Field(default=None, max_length=16)
+    user_context: dict[str, str] = Field(default_factory=dict)
+
+
 # ─── Learning Routes ──────────────────────────────────────────────────────────
 
 @app.post("/v1/feedback", status_code=202)
@@ -1005,6 +1051,72 @@ async def learning_stats(_: None = Depends(verify_api_key)):
         "auto_train_threshold": _AUTO_TRAIN_THRESHOLD,
         "feedback_db": str(_FEEDBACK_DB),
     }
+
+
+@app.post("/v1/voice/utterances", status_code=202)
+async def ingest_voice_utterance(
+    req: VoiceUtteranceRequest,
+    _: None = Depends(verify_api_key),
+):
+    service = get_voice_learning_service()
+    return service.ingest_utterance(
+        user_id=req.user_id,
+        transcript=req.transcript,
+        source="voice",
+        language_code=req.language_code,
+        accent_tag=req.accent_tag,
+        audio_path=req.audio_path,
+        user_context=req.user_context,
+        metadata=req.metadata,
+    )
+
+
+@app.post("/v1/voice/search/log", status_code=202)
+async def ingest_search_query(
+    req: VoiceSearchLogRequest,
+    _: None = Depends(verify_api_key),
+):
+    service = get_voice_learning_service()
+    return service.log_search_query(
+        user_id=req.user_id,
+        query=req.query,
+        user_context=req.user_context,
+        metadata=req.metadata,
+    )
+
+
+@app.post("/v1/voice/correction", status_code=202)
+async def submit_voice_correction(
+    req: VoiceCorrectionRequest,
+    _: None = Depends(verify_api_key),
+):
+    service = get_voice_learning_service()
+    return service.submit_correction(
+        utterance_id=req.utterance_id,
+        corrected_transcript=req.corrected_transcript,
+        corrected_address=req.corrected_address,
+        user_context=req.user_context,
+        feedback_type=req.feedback_type,
+    )
+
+
+@app.post("/v1/voice/addresses/validate")
+async def validate_voice_address(
+    req: VoiceValidationRequest,
+    _: None = Depends(verify_api_key),
+):
+    service = get_voice_learning_service()
+    return service.validate_address(
+        transcript=req.transcript,
+        locale_hint=req.locale_hint,
+        user_context=req.user_context,
+    )
+
+
+@app.get("/v1/voice/model/status")
+async def get_voice_model_status(_: None = Depends(verify_api_key)):
+    service = get_voice_learning_service()
+    return service.get_status()
 
 
 # ─── Safety singleton ────────────────────────────────────────────────────────

@@ -16,9 +16,9 @@
  *     → генерация variant queries → ранжирование → результаты
  */
 
-import { searchOffline, loadOfflineData, type LocalAddress, type SearchResult } from './offlineSearch';
-import { staticDataUrl } from './staticDataUrl';
+import { searchOffline, loadOfflineData, getLoadedOfflineAddresses, getOfflineAddressDatasetVersion, type LocalAddress, type SearchResult } from './offlineSearch';
 import type { LatLng } from '@/types/taxi';
+import type { FiasAddress } from '@/types/fias';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 1. НОРМАЛИЗАЦИЯ ГОЛОСОВОГО ТЕКСТА
@@ -242,6 +242,7 @@ let _allStreets: StreetEntry[] | null = null;
 /** Индекс построен */
 let _indexReady = false;
 let _indexPromise: Promise<void> | null = null;
+let _streetIndexVersion = -1;
 
 function makeTrigrams(s: string): Set<string> {
   const padded = `  ${s.toLowerCase()}  `;
@@ -298,24 +299,21 @@ function damerauLevenshtein(a: string, b: string): number {
 
 /** Строит индекс улиц из локальной базы адресов */
 export async function buildStreetIndex(): Promise<void> {
-  if (_indexReady) return;
+  const datasetVersion = getOfflineAddressDatasetVersion();
+  if (_indexReady && _streetIndexVersion === datasetVersion) return;
   if (_indexPromise) { await _indexPromise; return; }
 
   _indexPromise = (async () => {
     await loadOfflineData();
 
-    // Загружаем адреса напрямую
-    let addresses: LocalAddress[] | null = null;
-    try {
-      const resp = await fetch(staticDataUrl('/data/osm/processed/addresses.json'));
-      if (resp.ok) addresses = await resp.json();
-    } catch { /* fallback */ }
+    const addresses = getLoadedOfflineAddresses();
 
     if (!addresses || addresses.length === 0) {
       console.warn('[VoiceResolver] Нет адресов для построения индекса');
       _allStreets = [];
       _phoneticIndex = new Map();
       _indexReady = true;
+      _streetIndexVersion = datasetVersion;
       return;
     }
 
@@ -366,9 +364,12 @@ export async function buildStreetIndex(): Promise<void> {
     _allStreets = streets;
     _phoneticIndex = phonIdx;
     _indexReady = true;
+    _streetIndexVersion = datasetVersion;
 
     console.log(`[VoiceResolver] Индекс улиц: ${streets.length} уникальных названий`);
-  })();
+  })().finally(() => {
+    _indexPromise = null;
+  });
 
   await _indexPromise;
 }
@@ -497,6 +498,8 @@ export function findMatchingStreets(query: string, limit = 5): StreetMatch[] {
 
 const LEARN_STORAGE_KEY = 'voice_address_corrections';
 const MAX_CORRECTIONS = 500;
+const LEARNED_ADDRESS_STORAGE_KEY = 'voice_address_learned_places';
+const MAX_LEARNED_ADDRESSES = 300;
 
 interface LearnedCorrection {
   /** Что услышала Speech API */
@@ -508,6 +511,18 @@ interface LearnedCorrection {
   /** Сколько раз пользователь сделал эту коррекцию */
   count: number;
   /** Последнее использование (timestamp) */
+  lastUsed: number;
+}
+
+interface LearnedAddressPlace {
+  heard: string;
+  heardNormalized: string;
+  heardPhonetic: string;
+  selectedName: string;
+  selectedDisplay: string;
+  lat: number;
+  lng: number;
+  count: number;
   lastUsed: number;
 }
 
@@ -527,6 +542,26 @@ function saveCorrections(corrections: LearnedCorrection[]): void {
     corrections.sort((a, b) => b.count * 10 + b.lastUsed - (a.count * 10 + a.lastUsed));
     const trimmed = corrections.slice(0, MAX_CORRECTIONS);
     localStorage.setItem(LEARN_STORAGE_KEY, JSON.stringify(trimmed));
+  } catch { /* quota exceeded — ок */ }
+}
+
+function loadLearnedAddresses(): LearnedAddressPlace[] {
+  try {
+    const raw = localStorage.getItem(LEARNED_ADDRESS_STORAGE_KEY);
+    if (!raw) return [];
+    return JSON.parse(raw) as LearnedAddressPlace[];
+  } catch {
+    return [];
+  }
+}
+
+function saveLearnedAddresses(entries: LearnedAddressPlace[]): void {
+  try {
+    entries.sort((a, b) => b.count * 10 + b.lastUsed - (a.count * 10 + a.lastUsed));
+    localStorage.setItem(
+      LEARNED_ADDRESS_STORAGE_KEY,
+      JSON.stringify(entries.slice(0, MAX_LEARNED_ADDRESSES)),
+    );
   } catch { /* quota exceeded — ок */ }
 }
 
@@ -553,6 +588,47 @@ export function learnCorrection(heardText: string, selectedAddress: string): voi
   }
 
   saveCorrections(corrections);
+}
+
+export function rememberLearnedAddress(
+  heardText: string,
+  selected: {
+    name: string;
+    display: string;
+    coordinates: LatLng;
+  },
+): void {
+  const heard = heardText.toLowerCase().trim();
+  const heardNormalized = normalizeVoiceText(heardText);
+  if (!heard || !selected.name || !selected.display) return;
+
+  const entries = loadLearnedAddresses();
+  const existing = entries.find((entry) => (
+    entry.heardNormalized === heardNormalized &&
+    Math.abs(entry.lat - selected.coordinates.lat) < 0.00001 &&
+    Math.abs(entry.lng - selected.coordinates.lng) < 0.00001
+  ));
+
+  if (existing) {
+    existing.count += 1;
+    existing.lastUsed = Date.now();
+    existing.selectedName = selected.name;
+    existing.selectedDisplay = selected.display;
+  } else {
+    entries.push({
+      heard,
+      heardNormalized,
+      heardPhonetic: russianPhoneticKey(heardNormalized),
+      selectedName: selected.name,
+      selectedDisplay: selected.display,
+      lat: selected.coordinates.lat,
+      lng: selected.coordinates.lng,
+      count: 1,
+      lastUsed: Date.now(),
+    });
+  }
+
+  saveLearnedAddresses(entries);
 }
 
 /** Найти ранее изученные коррекции для текста */
@@ -592,6 +668,71 @@ function findLearnedCorrections(text: string): string[] {
   return results.slice(0, 3).map(r => r.actual);
 }
 
+function findLearnedAddressPlaces(text: string, near?: LatLng): SearchResult[] {
+  const entries = loadLearnedAddresses();
+  if (entries.length === 0) return [];
+
+  const normalized = normalizeVoiceText(text);
+  const phonKey = russianPhoneticKey(normalized);
+  const ranked: Array<SearchResult & { rank: number }> = [];
+
+  for (const entry of entries) {
+    let rank = 0;
+
+    if (entry.heardNormalized === normalized) {
+      rank += 1.5;
+    }
+
+    if (normalized.includes(entry.heardNormalized) || entry.heardNormalized.includes(normalized)) {
+      rank += 0.7;
+    }
+
+    if (phonKey && entry.heardPhonetic) {
+      const dist = damerauLevenshtein(phonKey, entry.heardPhonetic);
+      const maxLen = Math.max(phonKey.length, entry.heardPhonetic.length);
+      const sim = maxLen > 0 ? 1 - dist / maxLen : 0;
+      if (sim > 0.55) {
+        rank += sim;
+      }
+    }
+
+    if (rank <= 0.5) continue;
+
+    if (near) {
+      const km = haversineKm(near.lat, near.lng, entry.lat, entry.lng);
+      rank += Math.max(0, 0.25 - Math.min(km, 50) / 250);
+    }
+
+    rank += Math.min(entry.count * 0.08, 0.4);
+
+    ranked.push({
+      id: `learned-${entry.lat.toFixed(5)}-${entry.lng.toFixed(5)}`,
+      type: 'address',
+      name: entry.selectedName,
+      display: entry.selectedDisplay,
+      position: { lat: entry.lat, lng: entry.lng },
+      category: 'learned_address',
+      score: 2 + rank,
+      rank,
+    });
+  }
+
+  ranked.sort((a, b) => b.rank - a.rank);
+  return ranked.slice(0, 5).map(({ rank: _rank, ...result }) => result);
+}
+
+function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const toRad = (value: number) => (value * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const originLat = toRad(lat1);
+  const targetLat = toRad(lat2);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(originLat) * Math.cos(targetLat) * Math.sin(dLon / 2) ** 2;
+  return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // 6. ГЕНЕРАТОР ВАРИАНТОВ ЗАПРОСА
 // ═══════════════════════════════════════════════════════════════════════════
@@ -615,6 +756,38 @@ const COMMON_MISRECOGNITIONS: [RegExp, ReplacementValue][] = [
     return `${a} ${b}`;
   }],
 ];
+
+const STREET_ALIASES: Record<string, string[]> = {
+  'чароитовая': ['чароитовая улица', 'ул. чароитовая'],
+  'чароитовая улица': ['ул. чароитовая'],
+  'александры монаховой': ['улица александры монаховой', 'ул. александры монаховой'],
+  'василия ощепкова': ['улица василия ощепкова', 'ул. василия ощепкова'],
+  'эдварда грига': ['улица эдварда грига', 'ул. эдварда грига'],
+  'лобановский лес': ['улица лобановский лес', 'ул. лобановский лес'],
+  'потаповская роща': ['улица потаповская роща', 'ул. потаповская роща'],
+  'скандинавский': ['скандинавский бульвар'],
+  'липовый парк': ['улица липовый парк'],
+  'зиларт': ['жилой комплекс зиларт', 'зиларт'],
+  'бунинские луга': ['бунинские луга', 'жк бунинские луга'],
+  'саларьево парк': ['саларьево парк', 'жк саларьево парк'],
+  'новая москва': ['тинао'],
+};
+
+function addAliasVariants(input: string, variants: Set<string>): void {
+  const normalizedInput = input.toLowerCase().trim();
+  for (const [alias, expansions] of Object.entries(STREET_ALIASES)) {
+    if (!normalizedInput.includes(alias)) continue;
+
+    for (const expansion of expansions) {
+      if (normalizedInput === alias) {
+        variants.add(expansion);
+        continue;
+      }
+
+      variants.add(normalizedInput.replace(alias, expansion));
+    }
+  }
+}
 
 /** Типичные замены букв при нечётком произношении */
 const PHONETIC_ALTERNATES: [string, string[]][] = [
@@ -647,9 +820,8 @@ export function generateQueryVariants(rawText: string): string[] {
   // Оригинальный raw (на случай если нормализация сломала)
   variants.add(rawText.toLowerCase().trim());
 
-  // Вариант с "Москва" (для Nominatim)
-  const withCity = `Москва, ${normalized}`;
-  variants.add(withCity);
+  addAliasVariants(normalized, variants);
+  addAliasVariants(rawText, variants);
 
   // Вариант с развёрнутым "к.N" → "корпус N"
   const withCorpus = normalized.replace(/\bк\.?\s*(\d+)/gi, 'корпус $1');
@@ -701,6 +873,7 @@ export function generateQueryVariants(rawText: string): string[] {
     .trim();
   if (withoutType !== normalized && withoutType.length > 2) {
     variants.add(withoutType);
+    addAliasVariants(withoutType, variants);
   }
 
   return Array.from(variants).filter(v => v.length >= 2);
@@ -732,6 +905,46 @@ export interface VoiceResolveResult {
   normalizedText: string;
   /** Были ли использованы learned corrections */
   usedLearning: boolean;
+  /** Результаты из локально изученных адресов */
+  learnedResults: SearchResult[];
+}
+
+export function mapOfflineSearchResultToFiasAddress(result: SearchResult): FiasAddress {
+  const houseMatch = result.display.match(/(?:д\.?\s*)?(\d+[а-яa-z0-9/-]*)/i);
+  const corpusMatch = result.display.match(/(?:к\.?|корпус)\s*(\d+[а-яa-z0-9/-]*)/i);
+
+  return {
+    value: result.name,
+    unrestrictedValue: result.display,
+    fiasId: null,
+    fiasLevel: null,
+    kladrId: null,
+    postalCode: null,
+    country: 'Offline',
+    regionFiasId: null,
+    region: null,
+    regionType: null,
+    cityFiasId: null,
+    city: result.type === 'city' ? result.name : null,
+    cityType: result.type === 'city' ? 'city' : null,
+    streetFiasId: null,
+    street: result.type === 'address' ? result.name : null,
+    streetType: null,
+    house: houseMatch?.[1] ?? null,
+    houseType: houseMatch ? 'дом' : null,
+    block: corpusMatch?.[1] ?? null,
+    blockType: corpusMatch ? 'корпус' : null,
+    flat: null,
+    flatType: null,
+    geoLat: result.position.lat,
+    geoLon: result.position.lng,
+    okato: null,
+    oktmo: null,
+    timezone: null,
+    qcGeo: null,
+    qcComplete: null,
+    qcHouse: null,
+  };
 }
 
 /**
@@ -763,10 +976,17 @@ export async function resolveVoiceAddress(
   }
 
   const queryVariants = Array.from(allVariants);
-  const usedLearning = findLearnedCorrections(voiceText).length > 0;
+  const learnedCorrectionVariants = findLearnedCorrections(voiceText);
+  const learnedResults = findLearnedAddressPlaces(voiceText, near);
+  const usedLearning = learnedCorrectionVariants.length > 0 || learnedResults.length > 0;
 
   // Ищем по каждому варианту
   const allResults = new Map<string, SearchResult & { _boostCount: number }>();
+
+  for (const learnedResult of learnedResults) {
+    const key = `${learnedResult.id}-${learnedResult.type}`;
+    allResults.set(key, { ...learnedResult, _boostCount: 2 });
+  }
 
   for (const q of queryVariants) {
     const found = await searchOffline(q, near, 10);
@@ -806,5 +1026,6 @@ export async function resolveVoiceAddress(
     queryVariants,
     normalizedText,
     usedLearning,
+    learnedResults,
   };
 }

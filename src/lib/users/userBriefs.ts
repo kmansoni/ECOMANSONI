@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import { logger } from "@/lib/logger";
+import { normalizeAvatarUrl } from "@/lib/mediaUrl";
 
 export interface UserBrief {
   user_id: string;
@@ -54,7 +55,7 @@ function toUserBrief(userId: string, source?: UserBriefLike | null): UserBrief {
       normalizeText(source?.display_name) ??
       normalizeText(source?.full_name) ??
       fallback.display_name,
-    avatar_url: normalizeText(source?.avatar_url),
+    avatar_url: normalizeAvatarUrl(source?.avatar_url) || null,
     username: normalizeText(source?.username) ?? fallback.username,
   };
 }

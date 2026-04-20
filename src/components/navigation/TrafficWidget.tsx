@@ -15,6 +15,8 @@ import {
   calculateTrafficOverview,
   type TrafficOverview,
 } from '@/lib/navigation/trafficProvider';
+import { useUserSettings } from '@/contexts/UserSettingsContext';
+import { navText } from '@/lib/navigation/navigationUi';
 
 interface TrafficWidgetProps {
   position: LatLng | null;
@@ -22,9 +24,11 @@ interface TrafficWidgetProps {
 }
 
 export function TrafficWidget({ position, className }: TrafficWidgetProps) {
+  const { settings } = useUserSettings();
+  const languageCode = settings?.language_code ?? null;
   const [overview, setOverview] = useState<TrafficOverview>({
     score: 0,
-    label: 'Загрузка...',
+    label: navText('Загрузка...', 'Loading...', languageCode),
     color: '#42A5F5',
     segmentCount: 0,
   });
@@ -59,7 +63,7 @@ export function TrafficWidget({ position, className }: TrafficWidgetProps) {
           'shadow-lg shadow-black/30',
           'relative overflow-hidden',
         )}
-        aria-label={`Пробки: ${overview.score} баллов`}
+        aria-label={`${navText('Пробки', 'Traffic', languageCode)}: ${overview.score}`}
       >
         {overview.score > 0 ? (
           <span
@@ -105,8 +109,8 @@ export function TrafficWidget({ position, className }: TrafficWidgetProps) {
               <p className="text-white text-sm font-semibold">{overview.label}</p>
               <p className="text-gray-500 text-xs">
                 {overview.segmentCount > 0
-                  ? `${overview.segmentCount} сегментов`
-                  : 'Нет данных от пользователей'}
+                  ? `${overview.segmentCount} ${navText('сегментов', 'segments', languageCode)}`
+                  : navText('Нет данных от пользователей', 'No user traffic data', languageCode)}
               </p>
             </div>
           </div>
@@ -127,7 +131,7 @@ export function TrafficWidget({ position, className }: TrafficWidgetProps) {
           </div>
 
           <p className="text-gray-600 text-[10px] mt-2 text-center">
-            Данные от пользователей Amap
+            {navText('Данные от пользователей Amap', 'Crowdsourced Amap traffic data', languageCode)}
           </p>
         </div>
       )}

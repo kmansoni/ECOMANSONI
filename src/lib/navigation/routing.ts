@@ -2,10 +2,19 @@ import type { LatLng } from '@/types/taxi';
 import type { NavRoute, RouteSegment, Maneuver, ManeuverType, TrafficLevel, TravelMode, MultiModalRoute, TransitRoutingOptions, PedestrianRoutingOptions } from '@/types/navigation';
 import { useNavigatorSettings } from '@/stores/navigatorSettingsStore';
 import { loadOsmGraph, type OSMGraph, type OSMGraphEdge, type OSMGraphNode } from '@/lib/navigation/osmGraph';
+import { attemptBackendRequest, getBooleanEnv, getNavigationServerAuthHeaders, getNavigationServerBaseUrl, getNumberEnv } from '@/lib/navigation/backendAvailability';
+import { recordFallbackUsage } from '@/lib/navigation/navigationKpi';
 
 const ENV = (import.meta as unknown as { env?: Record<string, string | undefined> }).env ?? {};
 const OSRM_BASE = ENV.VITE_OSRM_URL ?? 'https://router.project-osrm.org/route/v1/driving';
 export const OSRM_FOOT_BASE = ENV.VITE_OSRM_FOOT_URL ?? 'https://router.project-osrm.org/route/v1/foot';
+const NAV_SERVER_URL = getNavigationServerBaseUrl(ENV.VITE_NAV_SERVER_URL);
+const NAV_SERVER_ENABLED = getBooleanEnv(ENV.VITE_NAV_SERVER_ENABLED, Boolean((ENV.VITE_NAV_SERVER_URL ?? '').trim()));
+const NAV_SERVER_TIMEOUT_MS = getNumberEnv(ENV.VITE_NAV_SERVER_TIMEOUT_MS, 1800);
+const NAV_SERVER_RETRIES = getNumberEnv(ENV.VITE_NAV_SERVER_RETRIES, 1);
+const NAV_SERVER_RETRY_DELAY_MS = getNumberEnv(ENV.VITE_NAV_SERVER_RETRY_DELAY_MS, 250);
+const NAV_SERVER_CB_FAILURE_THRESHOLD = getNumberEnv(ENV.VITE_NAV_SERVER_CB_FAILURE_THRESHOLD, 3);
+const NAV_SERVER_CB_COOLDOWN_MS = getNumberEnv(ENV.VITE_NAV_SERVER_CB_COOLDOWN_MS, 30_000);
 
 type GraphNode = OSMGraphNode;
 type GraphEdge = OSMGraphEdge;
@@ -384,6 +393,61 @@ interface OSRMRoute {
   geometry: { coordinates: [number, number][] };
 }
 
+interface NavServerManeuver {
+  type: number;
+  instruction: string;
+  distance_m: number;
+  duration_s: number;
+  begin_shape_index: number;
+  street_names?: string[];
+}
+
+interface NavServerLeg {
+  maneuvers: NavServerManeuver[];
+}
+
+interface NavServerRoute {
+  distance_m: number;
+  duration_s: number;
+  geometry: { coordinates: [number, number][] };
+  legs?: NavServerLeg[];
+}
+
+interface NavServerRouteEnvelope {
+  success?: boolean;
+  data?: {
+    routes?: NavServerRoute[];
+  };
+}
+
+export type RouteFetchSource = 'navigation_server' | 'offline' | 'osrm' | 'pedestrian' | 'transit';
+
+type RouteFetchResult = { main: NavRoute; alternatives: NavRoute[]; multimodal?: MultiModalRoute; source: RouteFetchSource };
+
+export type { RouteFetchResult };
+
+function parseValhallaManeuverType(type: number): ManeuverType {
+  switch (type) {
+    case 0: return 'straight';
+    case 1: return 'keep-right';
+    case 2: return 'turn-right';
+    case 3: return 'turn-sharp-right';
+    case 4: return 'uturn';
+    case 5: return 'turn-sharp-left';
+    case 6: return 'turn-left';
+    case 7: return 'keep-left';
+    case 8: return 'uturn';
+    case 9: return 'merge-right';
+    case 10: return 'merge-left';
+    case 11: return 'ramp-right';
+    case 12: return 'ramp-left';
+    case 13: return 'keep-right';
+    case 14: return 'keep-left';
+    case 15: return 'arrive';
+    default: return 'straight';
+  }
+}
+
 function parseManeuverType(type: string, modifier?: string): ManeuverType {
   if (type === 'depart') return 'depart';
   if (type === 'arrive') return 'arrive';
@@ -502,6 +566,93 @@ function parseOSRMRoute(raw: OSRMRoute, id: string): NavRoute {
   };
 }
 
+function parseNavServerRoute(raw: NavServerRoute, id: string): NavRoute {
+  const geometry = (raw.geometry?.coordinates ?? []).map(([lng, lat]) => ({ lat, lng }));
+  const maneuvers: Maneuver[] = [];
+
+  const legs = raw.legs ?? [];
+  for (const leg of legs) {
+    for (const step of leg.maneuvers ?? []) {
+      const point = geometry[Math.min(Math.max(step.begin_shape_index ?? 0, 0), Math.max(geometry.length - 1, 0))] ?? geometry[0];
+      if (!point) continue;
+      maneuvers.push({
+        type: parseValhallaManeuverType(step.type),
+        instruction: '',
+        streetName: step.street_names?.[0] ?? '',
+        distanceMeters: Number(step.distance_m ?? 0),
+        durationSeconds: Number(step.duration_s ?? 0),
+        location: point,
+      });
+    }
+  }
+
+  const segmentCount = Math.max(5, Math.floor(geometry.length / 30));
+  const segments = chunkRoute(geometry, segmentCount);
+
+  return {
+    id,
+    segments,
+    maneuvers,
+    totalDistanceMeters: Number(raw.distance_m ?? 0),
+    totalDurationSeconds: Number(raw.duration_s ?? 0),
+    geometry,
+  };
+}
+
+async function fetchRouteFromNavigationServer(
+  from: LatLng,
+  to: LatLng,
+  alternatives: boolean,
+  mode: TravelMode,
+): Promise<{ main: NavRoute; alternatives: NavRoute[] }> {
+  const prefs = useNavigatorSettings.getState();
+  const avoid: Array<'tolls' | 'highways' | 'unpaved'> = [];
+  if (prefs.avoidTolls) avoid.push('tolls');
+  if (prefs.avoidHighways) avoid.push('highways');
+  if (prefs.avoidUnpaved) avoid.push('unpaved');
+
+  const response = await attemptBackendRequest<NavServerRouteEnvelope>({
+    service: 'routing',
+    enabled: NAV_SERVER_ENABLED,
+    baseUrl: NAV_SERVER_URL,
+    timeoutMs: NAV_SERVER_TIMEOUT_MS,
+    retries: NAV_SERVER_RETRIES,
+    retryDelayMs: NAV_SERVER_RETRY_DELAY_MS,
+    failureThreshold: NAV_SERVER_CB_FAILURE_THRESHOLD,
+    cooldownMs: NAV_SERVER_CB_COOLDOWN_MS,
+    request: async (signal) => {
+      const headers = await getNavigationServerAuthHeaders();
+      const res = await fetch(`${NAV_SERVER_URL}/api/v1/nav/route`, {
+        method: 'POST',
+        headers,
+        signal,
+        body: JSON.stringify({
+          origin: { lat: from.lat, lng: from.lng },
+          destination: { lat: to.lat, lng: to.lng },
+          costing: mode === 'taxi' ? 'auto' : mode === 'car' ? 'auto' : 'pedestrian',
+          alternatives: alternatives ? 2 : 0,
+          avoid,
+          language: 'ru-RU',
+        }),
+      });
+      if (!res.ok) {
+        throw new Error(`navigation_server_route_${res.status}`);
+      }
+      return res.json() as Promise<NavServerRouteEnvelope>;
+    },
+  });
+
+  if (!response.ok || !response.data?.success || !response.data.data?.routes?.length) {
+    const reason = response.reason ?? 'route_no_data';
+    throw new Error(`navigation_server_unavailable:${reason}`);
+  }
+
+  const routes = response.data.data.routes;
+  const main = parseNavServerRoute(routes[0], 'main');
+  const alts = routes.slice(1, 4).map((item, idx) => parseNavServerRoute(item, `alt-${idx}`));
+  return { main, alternatives: alts };
+}
+
 export async function fetchRoute(
   from: LatLng,
   to: LatLng,
@@ -509,7 +660,7 @@ export async function fetchRoute(
   mode: TravelMode = 'car',
   transitOptions?: TransitRoutingOptions,
   pedestrianOptions?: PedestrianRoutingOptions,
-): Promise<{ main: NavRoute; alternatives: NavRoute[]; multimodal?: MultiModalRoute }> {
+): Promise<RouteFetchResult> {
   const effectiveMode: TravelMode = mode === 'taxi' ? 'car' : mode;
 
   // Pedestrian mode — use pedestrian graph + A*
@@ -517,7 +668,7 @@ export async function fetchRoute(
     const { buildPedestrianRoute } = await import('./pedestrianMode');
     try {
       const main = await buildPedestrianRoute(from, to, pedestrianOptions);
-      return { main, alternatives: [] };
+      return { main, alternatives: [], source: 'pedestrian' };
     } catch (e) {
       console.warn('[Routing] Pedestrian route failed, falling back to car:', e);
       // Fall through to car routing with warning
@@ -536,8 +687,7 @@ export async function fetchRoute(
           }
         : (transitOptions ?? {});
       const result = await transitRouter.buildTransitRoute(from, to, mergedTransitOptions);
-      // Return the first transit segment's walk route as NavRoute fallback
-      const mainSegment = result.main.segments.find(s => s.geometry && s.geometry.length > 0);
+      // Return transit geometry as NavRoute-compatible structure
       const fallbackRoute: NavRoute = {
         id: result.main.id,
         segments: result.main.segments
@@ -548,23 +698,33 @@ export async function fetchRoute(
         totalDurationSeconds: result.main.totalDurationSeconds,
         geometry: result.main.segments.flatMap(s => s.geometry ?? []),
       };
-      return { main: fallbackRoute, alternatives: [], multimodal: result.main };
+      return { main: fallbackRoute, alternatives: [], multimodal: result.main, source: 'transit' };
     } catch (e) {
       console.warn('[Routing] Transit route failed, falling back to car:', e);
     }
   }
 
-  // Car mode (default) — offline first, OSRM fallback
-  // 1) OFFLINE FIRST — local Dijkstra routing
+  // Car mode (default) — navigation_server first, then offline, then OSRM
+  // 1) BACKEND PRIORITY — navigation_server
+  try {
+    const result = await fetchRouteFromNavigationServer(from, to, alternatives, 'car');
+    return { ...result, source: 'navigation_server' };
+  } catch (e) {
+    recordFallbackUsage('routing', `navigation_server_unavailable:${e instanceof Error ? e.message : String(e)}`);
+    console.log('[Routing] navigation_server unavailable:', e);
+  }
+
+  // 2) OFFLINE fallback — local Dijkstra routing
   try {
     const result = await fetchRouteOffline(from, to);
     console.log('[Routing] Offline route found');
-    return result;
+    recordFallbackUsage('routing', 'offline_after_navigation_server');
+    return { ...result, source: 'offline' };
   } catch (e) {
     console.log('[Routing] Offline unavailable:', e);
   }
   
-  // 2) OSRM fallback (only when offline graph not loaded yet)
+  // 3) OSRM fallback
   try {
     const coords = `${from.lng},${from.lat};${to.lng},${to.lat}`;
     const baseParams = `overview=full&geometries=geojson&steps=true&alternatives=${alternatives}`;
@@ -602,7 +762,8 @@ export async function fetchRoute(
       .slice(1, 4)
       .map((r, i) => parseOSRMRoute(r, `alt-${i}`));
 
-    return { main, alternatives: alts };
+    recordFallbackUsage('routing', 'osrm_after_navigation_server_offline');
+    return { main, alternatives: alts, source: 'osrm' };
   } catch (osrmErr) {
     console.warn('[Routing] OSRM also failed:', osrmErr);
     throw new Error('Нет доступных маршрутов. Загрузите оффлайн данные: node scripts/fetch-osm-data.mjs');
@@ -639,5 +800,3 @@ export function buildRouteProximityChecker(
     return grid.has(`${cellLat},${cellLng}`);
   };
 }
-
-

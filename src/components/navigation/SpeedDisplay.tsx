@@ -1,4 +1,6 @@
 import { cn } from '@/lib/utils';
+import { useUserSettings } from '@/contexts/UserSettingsContext';
+import { formatNavigationSpeedUnit } from '@/lib/navigation/navigationUi';
 
 interface SpeedDisplayProps {
   speed: number;
@@ -7,6 +9,8 @@ interface SpeedDisplayProps {
 }
 
 export function SpeedDisplay({ speed, speedLimit, className }: SpeedDisplayProps) {
+  const { settings } = useUserSettings();
+  const languageCode = settings?.language_code ?? null;
   const displaySpeed = Math.round(speed);
   const isOverspeed = speedLimit != null && speed > speedLimit + 5; // 5 km/h tolerance for GPS noise
 
@@ -31,7 +35,7 @@ export function SpeedDisplay({ speed, speedLimit, className }: SpeedDisplayProps
       </div>
 
       {/* Unit */}
-      <span className="text-[10px] text-gray-400 font-medium -mt-0.5">км/ч</span>
+      <span className="text-[10px] text-gray-400 font-medium -mt-0.5">{formatNavigationSpeedUnit(languageCode)}</span>
     </div>
   );
 }

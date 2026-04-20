@@ -1,0 +1,1210 @@
+open C:\Users\manso\.supabase\profile: The system cannot find the file specified.
+Loading project ref from file: supabase\.temp\project-ref
+Using connection pooler: postgresql://postgres.lfkbgnbjxskspsownvjm@aws-1-eu-west-1.pooler.supabase.com:5432/postgres
+Initialising login role...
+Using access token from env var...
+Supabase CLI 2.93.0
+Using profile: supabase (supabase.co)
+Connecting to remote database...
+2026/04/20 22:02:18 PG Send: {"Type":"StartupMessage","ProtocolVersion":196608,"Parameters":{"database":"postgres","user":"cli_login_postgres.lfkbgnbjxskspsownvjm"}}
+2026/04/20 22:02:19 PG Recv: {"Type":"AuthenticationSASL","AuthMechanisms":["SCRAM-SHA-256"]}
+2026/04/20 22:02:19 PG Send: {"Type":"SASLInitialResponse","AuthMechanism":"SCRAM-SHA-256","Data":"n,,n=,r=U5bYvIeXC1u/g3j/xkrUlonN"}
+2026/04/20 22:02:19 PG Recv: {"Type":"AuthenticationSASLContinue","Data":"r=U5bYvIeXC1u/g3j/xkrUlonNRUF0Q21MUXZXWDljdURINFg0U01PNDBEa0d6QVJBPT0=,s=jPaCi8/fsvtPHhPSpeVZsw==,i=4096"}
+2026/04/20 22:02:19 PG Send: {"Type":"SASLResponse","Data":"c=biws,r=U5bYvIeXC1u/g3j/xkrUlonNRUF0Q21MUXZXWDljdURINFg0U01PNDBEa0d6QVJBPT0=,p=f53ysC2vKU1aLzKWqeyXS5fg8F1imRmgEMcueWNDjZQ="}
+2026/04/20 22:02:19 PG Recv: {"Type":"AuthenticationSASLFinal","Data":"v=ffadIoQKquKnwmXQQ6g417lvZOx+dB73qlLN0n2jtsA="}
+2026/04/20 22:02:19 PG Recv: {"Type":"AuthenticationOK"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParameterStatus","Name":"DateStyle","Value":"ISO, MDY"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParameterStatus","Name":"IntervalStyle","Value":"postgres"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParameterStatus","Name":"TimeZone","Value":"UTC"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParameterStatus","Name":"application_name","Value":"Supavisor"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParameterStatus","Name":"client_encoding","Value":"UTF8"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParameterStatus","Name":"default_transaction_read_only","Value":"off"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParameterStatus","Name":"in_hot_standby","Value":"off"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParameterStatus","Name":"integer_datetimes","Value":"on"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParameterStatus","Name":"is_superuser","Value":"off"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParameterStatus","Name":"scram_iterations","Value":"4096"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParameterStatus","Name":"server_encoding","Value":"UTF8"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParameterStatus","Name":"server_version","Value":"17.6"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParameterStatus","Name":"session_authorization","Value":"cli_login_postgres"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParameterStatus","Name":"standard_conforming_strings","Value":"on"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BackendKeyData","ProcessID":1198897821,"SecretKey":1392764623}
+2026/04/20 22:02:19 PG Recv: {"Type":"ReadyForQuery","TxStatus":"I"}
+2026/04/20 22:02:19 PG Send: {"Type":"Query","String":"SET SESSION ROLE postgres"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"SET"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ReadyForQuery","TxStatus":"I"}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"lrupsc_1_0","Query":"SELECT version FROM supabase_migrations.schema_migrations ORDER BY version","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"S","Name":"lrupsc_1_0"}
+2026/04/20 22:02:19 PG Send: {"Type":"Sync"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParameterDescription","ParameterOIDs":[]}
+2026/04/20 22:02:19 PG Recv: {"Type":"RowDescription","Fields":[{"Name":"version","TableOID":17459,"TableAttributeNumber":1,"DataTypeOID":25,"DataTypeSize":-1,"TypeModifier":-1,"Format":0}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"ReadyForQuery","TxStatus":"I"}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"lrupsc_1_0","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[0]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Sync"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"RowDescription","Fields":[{"Name":"version","TableOID":17459,"TableAttributeNumber":1,"DataTypeOID":25,"DataTypeSize":-1,"TypeModifier":-1,"Format":0}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260101000000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260118165346"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260118165423"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260118165611"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260118165635"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260121221911"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260122181412"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260122181730"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260122193530"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260122194344"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260122195214"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260122195502"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260122205023"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260123012546"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260123013611"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260123014321"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260123015203"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260123020801"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260123020844"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260123035900"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260123041531"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260123192218"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260123192253"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260123192554"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260126134718"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260126140645"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260126141102"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260126141144"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260126153856"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260126173551"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260126180611"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260126181945"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260126182344"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260126183634"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260126183920"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260126190045"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260126190146"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260126191616"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260126192010"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260126192748"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260127000000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260127022953"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260201205620"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260202221730"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260202225010"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260203042421"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260219090000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260219090500"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260219091000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260219091500"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260219092000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260219101000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260219121000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260219152000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260219193000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260219210000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260220090000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260220110000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260220123000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260220130000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260220143000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260220154500"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260220170000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260220183000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260220200000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260220213000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260220225000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260220230000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260220230001"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260220230010"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260220230100"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260220231000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260220231500"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260220232000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260220235000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260220235500"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260220235600"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260220235700"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260220235800"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260220240000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260220241000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260220242000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260220243000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260220244000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260220245000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260220246000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260221090000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260221103000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260221120000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260221132000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260221140000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260221143000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260221152000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260221154000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260221155000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260221160000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260221161000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260221170000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260221180000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260221191000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260221191500"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260221192500"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260221194000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260221194100"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260221194200"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260221195000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260221195100"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260221195200"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260221231000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260221233000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260222010000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260222013000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260222121000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260222124000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260222132000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260222180000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260222184000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260222190000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260222191000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260222203000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260222203500"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260222203600"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260222214000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260222220000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260222223000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260222230000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260222232000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260222233000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260222234000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260222234100"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260222235000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260222236000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260222236100"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260222236200"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260222236300"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260222236400"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260222236500"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260222236600"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260222236700"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260222237000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260222238000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260222239000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260223001000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260223002000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260223003000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260223003100"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260223004000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260223005000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260223006000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260223090000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260223120000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260223131000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260223170000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260223180000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260223200000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260223201000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260223203000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260223203500"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224000000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224001000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224002000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224003000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224004000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224005000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224007000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224008000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224009000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224010000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224010001"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224010002"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224010003"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224010004"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224011000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224020001"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224020002"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224020003"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224020004"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224020005"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224020006"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224020007"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224020008"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224020009"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224020010"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224080000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224081000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224082000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224083000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224084000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224090000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224091000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224093000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224094000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224095000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224096000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224100000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224111000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224112000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224113000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224120000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224121000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224130000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224140000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224140001"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224151150"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224151717"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224152000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224153000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224154000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224161000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224162000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224163000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224164000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224170000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224171000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224180000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224181000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224190000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224191000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224192000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224200000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224201000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224202000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224250000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224250100"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224250200"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224250300"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260224300000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260225014000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260225023000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260226010000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260226011000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260226120000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260226130000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260226142000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260228183000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260228190000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260228193000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260229000000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260229000001"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260229001000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260301120000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260301133000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260301142000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260301143000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260301144000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260301145000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260301150000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260301151000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260301152000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260301170000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260301183000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260301190000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260301193000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260301200000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260301203000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260301210000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260301211000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260303000000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260303000100"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260303000200"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260303000300"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260303000400"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260303000500"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260303000600"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260303000700"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260303113000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260303143000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260303150000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260303200000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260303201000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260303202000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260303203000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260303204000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260303205000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260303206000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260303207000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260303208000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260303209000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260303210000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260303211000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260303212000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260303213000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260304060000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260304103000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260307000001"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260307000002"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260307000003"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260307000004"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260307000005"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260307000006"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260307000007"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260307000008"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260307000009"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260307000010"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260307100001"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260307100002"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260307100003"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260307100004"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260307100005"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260307100006"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260307100007"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260307100008"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260307100009"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260307100010"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260307100011"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260308000001"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260308000002"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260308000003"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260308000004"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260308000005"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260308000006"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260308000007"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260308000008"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260308000009"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260308000010"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260308000011"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260308000012"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260308000013"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260308000014"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260308000015"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260308000016"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260308000017"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260308001000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260308002000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260308003000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260308004000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260308005000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260308006000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260308010000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260308010001"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260308113000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260309000001"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260309000002"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260309000003"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260309000004"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260309000005"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260309000006"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260309000007"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260309000008"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260309000009"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260309000010"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260309000011"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260309000012"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260309113000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260310000000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260310000001"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260310111411"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260310113000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260310121000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260310234000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260310235000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260311000000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260311000001"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260311000002"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260311000003"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260311000004"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260311000005"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260311010000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260311020000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260311030000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260311040000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260311050000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260311060000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260311070000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260311100001"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260311100002"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260311100003"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260311193000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260311200001"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260311200002"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260311200003"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260311210000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260312000000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260312120000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260312224500"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260313104000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260313113000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260313124500"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260313125500"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260313184432"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260313223000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260314000001"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260314000002"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260314000003"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260314103000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260314154000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260314184500"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260314190000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260314193000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260318195500"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260319010000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260319090000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260319100000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260319110000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260319123000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260319130000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260319143000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260324090000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260327121000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260327134500"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260327150000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260329200820"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260330000001"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260330100000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260330200000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260330200001"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260331100000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260331200000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260401100000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260402100000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260402120000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260403100000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260403100001"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260403100002"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260403120000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260403180000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260403200000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260403200001"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260403200002"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260403200003"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260403200004"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260403200005"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260403200006"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260403200007"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260403200008"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260403200009"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260403200010"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260403200011"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260403200012"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260403200013"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260403200014"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260403200015"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260403200016"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260403200017"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260403200018"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260403200019"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260403200020"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260403200021"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260403200022"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260403200023"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260403200024"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260403200025"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260403200026"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260403200027"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260404120000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260404152433"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260405100000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260405110000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260406100000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260406110000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260406120000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260406130000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260408123000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260410000000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260411120000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260411140000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260411150000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260416100000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260417000000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260418000000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260419000000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260419100000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260420000000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260420010000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260420020000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260420030000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260420100000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260420193000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260420194000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"DataRow","Values":[{"text":"20260421000000"}]}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"SELECT 470"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ReadyForQuery","TxStatus":"I"}
+Skipping migration README.md... (file name must match pattern "<timestamp>_name.sql")
+Do you want to push these migrations to the remote database?
+ тАв 20260420230000_voice_learning_platform_foundation.sql
+ тАв 20260420233000_voice_learning_settings_and_rpc.sql
+
+ [Y/n] y
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"SET lock_timeout = '4s'","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"CREATE SCHEMA IF NOT EXISTS supabase_migrations","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"CREATE TABLE IF NOT EXISTS supabase_migrations.schema_migrations (version text NOT NULL PRIMARY KEY)","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"ALTER TABLE supabase_migrations.schema_migrations ADD COLUMN IF NOT EXISTS statements text[]","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"ALTER TABLE supabase_migrations.schema_migrations ADD COLUMN IF NOT EXISTS name text","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Sync"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"SET"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Severity":"NOTICE","SeverityUnlocalized":"NOTICE","Code":"42P06","Message":"schema \"supabase_migrations\" already exists, skipping","Detail":"","Hint":"","Position":0,"InternalPosition":0,"InternalQuery":"","Where":"","SchemaName":"","TableName":"","ColumnName":"","DataTypeName":"","ConstraintName":"","File":"schemacmds.c","Line":132,"Routine":"CreateSchemaCommand","UnknownFields":null}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"CREATE SCHEMA"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Severity":"NOTICE","SeverityUnlocalized":"NOTICE","Code":"42P07","Message":"relation \"schema_migrations\" already exists, skipping","Detail":"","Hint":"","Position":0,"InternalPosition":0,"InternalQuery":"","Where":"","SchemaName":"","TableName":"","ColumnName":"","DataTypeName":"","ConstraintName":"","File":"parse_utilcmd.c","Line":207,"Routine":"transformCreateStmt","UnknownFields":null}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"CREATE TABLE"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Severity":"NOTICE","SeverityUnlocalized":"NOTICE","Code":"42701","Message":"column \"statements\" of relation \"schema_migrations\" already exists, skipping","Detail":"","Hint":"","Position":0,"InternalPosition":0,"InternalQuery":"","Where":"","SchemaName":"","TableName":"","ColumnName":"","DataTypeName":"","ConstraintName":"","File":"tablecmds.c","Line":7471,"Routine":"check_for_column_name_collision","UnknownFields":null}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"ALTER TABLE"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Severity":"NOTICE","SeverityUnlocalized":"NOTICE","Code":"42701","Message":"column \"name\" of relation \"schema_migrations\" already exists, skipping","Detail":"","Hint":"","Position":0,"InternalPosition":0,"InternalQuery":"","Where":"","SchemaName":"","TableName":"","ColumnName":"","DataTypeName":"","ConstraintName":"","File":"tablecmds.c","Line":7471,"Routine":"check_for_column_name_collision","UnknownFields":null}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"ALTER TABLE"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ReadyForQuery","TxStatus":"I"}
+Applying migration 20260420230000_voice_learning_platform_foundation.sql...
+2026/04/20 22:02:19 PG Send: {"Type":"Query","String":"RESET ALL"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"RESET"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ReadyForQuery","TxStatus":"I"}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"-- =============================================================================\r\n-- Autonomous Voice Learning Platform Foundation\r\n-- Multilingual voice ingestion, address parsing feedback, hotspot learning,\r\n-- and model status persistence for navigation and search intelligence.\r\n-- =============================================================================\r\n\r\nCREATE TABLE IF NOT EXISTS public.nav_voice_utterances (\r\n    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\r\n    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,\r\n    user_id_hash TEXT,\r\n    audio_storage_path TEXT,\r\n    transcript_draft TEXT NOT NULL,\r\n    transcript_final TEXT,\r\n    language_code TEXT,\r\n    accent_tag TEXT,\r\n    source TEXT NOT NULL CHECK (source IN ('voice', 'search_text', 'synthetic', 'correction')),\r\n    novelty_score NUMERIC(4,3) NOT NULL DEFAULT 0,\r\n    parsed_address JSONB NOT NULL DEFAULT '{}'::jsonb,\r\n    validation_status TEXT NOT NULL DEFAULT 'pending_review'\r\n        CHECK (validation_status IN ('confirmed', 'provisional', 'pending_review', 'rejected')),\r\n    validation_payload JSONB NOT NULL DEFAULT '{}'::jsonb,\r\n    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,\r\n    created_at TIMESTAMPTZ NOT NULL DEFAULT now()\r\n)","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"COMMENT ON TABLE public.nav_voice_utterances IS 'Raw and normalized voice/search utterances used for multilingual ASR, address parsing, and self-learning.'","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"CREATE INDEX IF NOT EXISTS idx_nav_voice_utterances_user_created\r\n    ON public.nav_voice_utterances(user_id, created_at DESC)","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"CREATE INDEX IF NOT EXISTS idx_nav_voice_utterances_source_created\r\n    ON public.nav_voice_utterances(source, created_at DESC)","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"CREATE INDEX IF NOT EXISTS idx_nav_voice_utterances_validation_status\r\n    ON public.nav_voice_utterances(validation_status, created_at DESC)","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"CREATE TABLE IF NOT EXISTS public.nav_voice_training_samples (\r\n    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\r\n    utterance_id UUID REFERENCES public.nav_voice_utterances(id) ON DELETE CASCADE,\r\n    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,\r\n    transcript_final TEXT NOT NULL,\r\n    address_json JSONB NOT NULL DEFAULT '{}'::jsonb,\r\n    novelty_score NUMERIC(4,3) NOT NULL DEFAULT 0,\r\n    confidence NUMERIC(4,3) NOT NULL DEFAULT 0,\r\n    is_valid BOOLEAN NOT NULL DEFAULT false,\r\n    validation_source TEXT NOT NULL DEFAULT 'rule_geocoder_ensemble',\r\n    sample_source TEXT NOT NULL DEFAULT 'voice'\r\n        CHECK (sample_source IN ('voice', 'search_text', 'synthetic', 'user_correction', 'voice_hotspot')),\r\n    created_at TIMESTAMPTZ NOT NULL DEFAULT now()\r\n)","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"COMMENT ON TABLE public.nav_voice_training_samples IS 'Curated training set promoted from raw voice/search data after validation or user correction.'","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"CREATE INDEX IF NOT EXISTS idx_nav_voice_training_samples_user_created\r\n    ON public.nav_voice_training_samples(user_id, created_at DESC)","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"CREATE INDEX IF NOT EXISTS idx_nav_voice_training_samples_valid_conf\r\n    ON public.nav_voice_training_samples(is_valid, confidence DESC, created_at DESC)","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"CREATE TABLE IF NOT EXISTS public.nav_voice_feedback (\r\n    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\r\n    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,\r\n    utterance_id UUID REFERENCES public.nav_voice_utterances(id) ON DELETE CASCADE,\r\n    sample_id UUID REFERENCES public.nav_voice_training_samples(id) ON DELETE SET NULL,\r\n    corrected_transcript TEXT,\r\n    corrected_address JSONB NOT NULL DEFAULT '{}'::jsonb,\r\n    feedback_type TEXT NOT NULL\r\n        CHECK (feedback_type IN ('explicit_correction', 'implicit_accept', 'reject', 'hotspot_confirm', 'hotspot_reject')),\r\n    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,\r\n    created_at TIMESTAMPTZ NOT NULL DEFAULT now()\r\n)","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"COMMENT ON TABLE public.nav_voice_feedback IS 'User supervision loop for ASR, address parsing, and hotspot confirmation.'","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"CREATE INDEX IF NOT EXISTS idx_nav_voice_feedback_user_created\r\n    ON public.nav_voice_feedback(user_id, created_at DESC)","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"CREATE INDEX IF NOT EXISTS idx_nav_voice_feedback_utterance\r\n    ON public.nav_voice_feedback(utterance_id, created_at DESC)\r\n    WHERE utterance_id IS NOT NULL","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"CREATE TABLE IF NOT EXISTS public.nav_address_patterns (\r\n    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\r\n    country_code TEXT,\r\n    city TEXT,\r\n    street TEXT NOT NULL,\r\n    house_number TEXT,\r\n    corpus TEXT,\r\n    building TEXT,\r\n    structure TEXT,\r\n    pattern_type TEXT NOT NULL DEFAULT 'house_number',\r\n    frequency INTEGER NOT NULL DEFAULT 1 CHECK (frequency \u003e= 1),\r\n    first_seen TIMESTAMPTZ NOT NULL DEFAULT now(),\r\n    last_seen TIMESTAMPTZ NOT NULL DEFAULT now(),\r\n    is_confirmed BOOLEAN NOT NULL DEFAULT false,\r\n    confirmation_source TEXT,\r\n    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,\r\n    CONSTRAINT nav_address_patterns_unique UNIQUE (country_code, city, street, house_number, corpus, building, structure)\r\n)","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"COMMENT ON TABLE public.nav_address_patterns IS 'Canonical and provisional address-pattern memory, including rare house-corpus structures and new-building variants.'","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"CREATE INDEX IF NOT EXISTS idx_nav_address_patterns_city_street\r\n    ON public.nav_address_patterns(city, street, last_seen DESC)","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"CREATE INDEX IF NOT EXISTS idx_nav_address_patterns_confirmed_freq\r\n    ON public.nav_address_patterns(is_confirmed, frequency DESC, last_seen DESC)","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"CREATE TABLE IF NOT EXISTS public.nav_address_hotspots (\r\n    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\r\n    utterance_id UUID REFERENCES public.nav_voice_utterances(id) ON DELETE CASCADE,\r\n    user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,\r\n    transcript TEXT NOT NULL,\r\n    parsed_address JSONB NOT NULL,\r\n    novelty_score NUMERIC(4,3) NOT NULL,\r\n    reasons JSONB NOT NULL DEFAULT '[]'::jsonb,\r\n    text_variants JSONB NOT NULL DEFAULT '[]'::jsonb,\r\n    synthetic_jobs JSONB NOT NULL DEFAULT '[]'::jsonb,\r\n    status TEXT NOT NULL DEFAULT 'queued'\r\n        CHECK (status IN ('queued', 'synthesized', 'validated', 'deployed', 'rejected')),\r\n    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),\r\n    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()\r\n)","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"COMMENT ON TABLE public.nav_address_hotspots IS 'Rare-address and novelty-learning queue for targeted synthetic augmentation and rapid fine-tuning.'","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"CREATE INDEX IF NOT EXISTS idx_nav_address_hotspots_status_created\r\n    ON public.nav_address_hotspots(status, created_at DESC)","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"CREATE INDEX IF NOT EXISTS idx_nav_address_hotspots_novelty\r\n    ON public.nav_address_hotspots(novelty_score DESC, created_at DESC)","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"CREATE TABLE IF NOT EXISTS public.nav_voice_model_versions (\r\n    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\r\n    model_type TEXT NOT NULL CHECK (model_type IN ('acoustic', 'language', 'ner', 'accent', 'voice_platform')),\r\n    version_tag TEXT NOT NULL,\r\n    deployment_state TEXT NOT NULL DEFAULT 'candidate'\r\n        CHECK (deployment_state IN ('candidate', 'canary', 'active', 'rolled_back', 'archived')),\r\n    metrics JSONB NOT NULL DEFAULT '{}'::jsonb,\r\n    training_data_hash TEXT,\r\n    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),\r\n    deployed_at TIMESTAMPTZ\r\n)","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"COMMENT ON TABLE public.nav_voice_model_versions IS 'Registry of ASR, address NER, accent, and voice-learning platform versions with rollout metadata.'","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"CREATE INDEX IF NOT EXISTS idx_nav_voice_model_versions_type_created\r\n    ON public.nav_voice_model_versions(model_type, created_at DESC)","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"CREATE INDEX IF NOT EXISTS idx_nav_voice_model_versions_state\r\n    ON public.nav_voice_model_versions(deployment_state, created_at DESC)","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"ALTER TABLE public.nav_voice_utterances ENABLE ROW LEVEL SECURITY","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"ALTER TABLE public.nav_voice_training_samples ENABLE ROW LEVEL SECURITY","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"ALTER TABLE public.nav_voice_feedback ENABLE ROW LEVEL SECURITY","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"ALTER TABLE public.nav_address_patterns ENABLE ROW LEVEL SECURITY","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"ALTER TABLE public.nav_address_hotspots ENABLE ROW LEVEL SECURITY","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"ALTER TABLE public.nav_voice_model_versions ENABLE ROW LEVEL SECURITY","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"DROP POLICY IF EXISTS \"nav_voice_utterances_select_own\" ON public.nav_voice_utterances","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"CREATE POLICY \"nav_voice_utterances_select_own\"\r\n    ON public.nav_voice_utterances FOR SELECT\r\n    TO authenticated\r\n    USING (user_id = auth.uid())","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"DROP POLICY IF EXISTS \"nav_voice_utterances_insert_own\" ON public.nav_voice_utterances","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"CREATE POLICY \"nav_voice_utterances_insert_own\"\r\n    ON public.nav_voice_utterances FOR INSERT\r\n    TO authenticated\r\n    WITH CHECK (user_id = auth.uid())","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"DROP POLICY IF EXISTS \"nav_voice_utterances_service_all\" ON public.nav_voice_utterances","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"CREATE POLICY \"nav_voice_utterances_service_all\"\r\n    ON public.nav_voice_utterances FOR ALL\r\n    TO service_role\r\n    USING (true)\r\n    WITH CHECK (true)","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"DROP POLICY IF EXISTS \"nav_voice_training_samples_select_own\" ON public.nav_voice_training_samples","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"CREATE POLICY \"nav_voice_training_samples_select_own\"\r\n    ON public.nav_voice_training_samples FOR SELECT\r\n    TO authenticated\r\n    USING (user_id = auth.uid())","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"DROP POLICY IF EXISTS \"nav_voice_training_samples_insert_own\" ON public.nav_voice_training_samples","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"CREATE POLICY \"nav_voice_training_samples_insert_own\"\r\n    ON public.nav_voice_training_samples FOR INSERT\r\n    TO authenticated\r\n    WITH CHECK (user_id = auth.uid())","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"DROP POLICY IF EXISTS \"nav_voice_training_samples_service_all\" ON public.nav_voice_training_samples","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"CREATE POLICY \"nav_voice_training_samples_service_all\"\r\n    ON public.nav_voice_training_samples FOR ALL\r\n    TO service_role\r\n    USING (true)\r\n    WITH CHECK (true)","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"DROP POLICY IF EXISTS \"nav_voice_feedback_select_own\" ON public.nav_voice_feedback","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"CREATE POLICY \"nav_voice_feedback_select_own\"\r\n    ON public.nav_voice_feedback FOR SELECT\r\n    TO authenticated\r\n    USING (user_id = auth.uid())","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"DROP POLICY IF EXISTS \"nav_voice_feedback_insert_own\" ON public.nav_voice_feedback","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"CREATE POLICY \"nav_voice_feedback_insert_own\"\r\n    ON public.nav_voice_feedback FOR INSERT\r\n    TO authenticated\r\n    WITH CHECK (user_id = auth.uid())","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"DROP POLICY IF EXISTS \"nav_voice_feedback_service_all\" ON public.nav_voice_feedback","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"CREATE POLICY \"nav_voice_feedback_service_all\"\r\n    ON public.nav_voice_feedback FOR ALL\r\n    TO service_role\r\n    USING (true)\r\n    WITH CHECK (true)","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"DROP POLICY IF EXISTS \"nav_address_patterns_read_authenticated\" ON public.nav_address_patterns","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"CREATE POLICY \"nav_address_patterns_read_authenticated\"\r\n    ON public.nav_address_patterns FOR SELECT\r\n    TO authenticated\r\n    USING (true)","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"DROP POLICY IF EXISTS \"nav_address_patterns_service_all\" ON public.nav_address_patterns","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"CREATE POLICY \"nav_address_patterns_service_all\"\r\n    ON public.nav_address_patterns FOR ALL\r\n    TO service_role\r\n    USING (true)\r\n    WITH CHECK (true)","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"DROP POLICY IF EXISTS \"nav_address_hotspots_select_own_or_service\" ON public.nav_address_hotspots","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"CREATE POLICY \"nav_address_hotspots_select_own_or_service\"\r\n    ON public.nav_address_hotspots FOR SELECT\r\n    TO authenticated\r\n    USING (user_id = auth.uid())","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"DROP POLICY IF EXISTS \"nav_address_hotspots_insert_own\" ON public.nav_address_hotspots","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"CREATE POLICY \"nav_address_hotspots_insert_own\"\r\n    ON public.nav_address_hotspots FOR INSERT\r\n    TO authenticated\r\n    WITH CHECK (user_id = auth.uid())","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"DROP POLICY IF EXISTS \"nav_address_hotspots_service_all\" ON public.nav_address_hotspots","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"CREATE POLICY \"nav_address_hotspots_service_all\"\r\n    ON public.nav_address_hotspots FOR ALL\r\n    TO service_role\r\n    USING (true)\r\n    WITH CHECK (true)","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"DROP POLICY IF EXISTS \"nav_voice_model_versions_read_authenticated\" ON public.nav_voice_model_versions","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"CREATE POLICY \"nav_voice_model_versions_read_authenticated\"\r\n    ON public.nav_voice_model_versions FOR SELECT\r\n    TO authenticated\r\n    USING (true)","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"DROP POLICY IF EXISTS \"nav_voice_model_versions_service_all\" ON public.nav_voice_model_versions","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"CREATE POLICY \"nav_voice_model_versions_service_all\"\r\n    ON public.nav_voice_model_versions FOR ALL\r\n    TO service_role\r\n    USING (true)\r\n    WITH CHECK (true)","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"INSERT INTO public.nav_voice_model_versions (model_type, version_tag, deployment_state, metrics, training_data_hash)\r\nSELECT\r\n    'voice_platform',\r\n    'foundation-v1',\r\n    'candidate',\r\n    jsonb_build_object(\r\n        'wer_target', 0.10,\r\n        'address_f1_target', 0.95,\r\n        'hotspot_response_hours', 48,\r\n        'novelty_recall_target', 0.80\r\n    ),\r\n    'foundation-bootstrap'\r\nWHERE NOT EXISTS (\r\n    SELECT 1\r\n    FROM public.nav_voice_model_versions\r\n    WHERE model_type = 'voice_platform'\r\n      AND version_tag = 'foundation-v1'\r\n)","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"INSERT INTO supabase_migrations.schema_migrations(version, name, statements) VALUES($1, $2, $3)","ParameterOIDs":[25,25,1009]}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":[0,0,1],"Parameters":[{"text":"20260420230000"},{"text":"voice_learning_platform_foundation"},{"binary":"0000000100000000000000190000004000000001000004d12d2d203d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d0d0a2d2d204175746f6e6f6d6f757320566f696365204c6561726e696e6720506c6174666f726d20466f756e646174696f6e0d0a2d2d204d756c74696c696e6775616c20766f69636520696e67657374696f6e2c20616464726573732070617273696e6720666565646261636b2c20686f7473706f74206c6561726e696e672c0d0a2d2d20616e64206d6f64656c207374617475732070657273697374656e636520666f72206e617669676174696f6e20616e642073656172636820696e74656c6c6967656e63652e0d0a2d2d203d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d0d0a0d0a435245415445205441424c45204946204e4f5420455849535453207075626c69632e6e61765f766f6963655f7574746572616e63657320280d0a2020202069642055554944205052494d415259204b45592044454641554c542067656e5f72616e646f6d5f7575696428292c0d0a20202020757365725f69642055554944205245464552454e43455320617574682e757365727328696429204f4e2044454c45544520434153434144452c0d0a20202020757365725f69645f6861736820544558542c0d0a20202020617564696f5f73746f726167655f7061746820544558542c0d0a202020207472616e7363726970745f64726166742054455854204e4f54204e554c4c2c0d0a202020207472616e7363726970745f66696e616c20544558542c0d0a202020206c616e67756167655f636f646520544558542c0d0a20202020616363656e745f74616720544558542c0d0a20202020736f757263652054455854204e4f54204e554c4c20434845434b2028736f7572636520494e202827766f696365272c20277365617263685f74657874272c202773796e746865746963272c2027636f7272656374696f6e2729292c0d0a202020206e6f76656c74795f73636f7265204e554d4552494328342c3329204e4f54204e554c4c2044454641554c5420302c0d0a202020207061727365645f61646472657373204a534f4e42204e4f54204e554c4c2044454641554c5420277b7d273a3a6a736f6e622c0d0a2020202076616c69646174696f6e5f7374617475732054455854204e4f54204e554c4c2044454641554c54202770656e64696e675f726576696577270d0a2020202020202020434845434b202876616c69646174696f6e5f73746174757320494e202827636f6e6669726d6564272c202770726f766973696f6e616c272c202770656e64696e675f726576696577272c202772656a65637465642729292c0d0a2020202076616c69646174696f6e5f7061796c6f6164204a534f4e42204e4f54204e554c4c2044454641554c5420277b7d273a3a6a736f6e622c0d0a202020206d65746164617461204a534f4e42204e4f54204e554c4c2044454641554c5420277b7d273a3a6a736f6e622c0d0a20202020637265617465645f61742054494d455354414d50545a204e4f54204e554c4c2044454641554c54206e6f7728290d0a290000009b434f4d4d454e54204f4e205441424c45207075626c69632e6e61765f766f6963655f7574746572616e636573204953202752617720616e64206e6f726d616c697a656420766f6963652f736561726368207574746572616e636573207573656420666f72206d756c74696c696e6775616c204153522c20616464726573732070617273696e672c20616e642073656c662d6c6561726e696e672e270000007e43524541544520494e444558204946204e4f5420455849535453206964785f6e61765f766f6963655f7574746572616e6365735f757365725f637265617465640d0a202020204f4e207075626c69632e6e61765f766f6963655f7574746572616e63657328757365725f69642c20637265617465645f61742044455343290000007f43524541544520494e444558204946204e4f5420455849535453206964785f6e61765f766f6963655f7574746572616e6365735f736f757263655f637265617465640d0a202020204f4e207075626c69632e6e61765f766f6963655f7574746572616e63657328736f757263652c20637265617465645f61742044455343290000008d43524541544520494e444558204946204e4f5420455849535453206964785f6e61765f766f6963655f7574746572616e6365735f76616c69646174696f6e5f7374617475730d0a202020204f4e207075626c69632e6e61765f766f6963655f7574746572616e6365732876616c69646174696f6e5f7374617475732c20637265617465645f61742044455343290000030f435245415445205441424c45204946204e4f5420455849535453207075626c69632e6e61765f766f6963655f747261696e696e675f73616d706c657320280d0a2020202069642055554944205052494d415259204b45592044454641554c542067656e5f72616e646f6d5f7575696428292c0d0a202020207574746572616e63655f69642055554944205245464552454e434553207075626c69632e6e61765f766f6963655f7574746572616e63657328696429204f4e2044454c45544520434153434144452c0d0a20202020757365725f69642055554944205245464552454e43455320617574682e757365727328696429204f4e2044454c45544520434153434144452c0d0a202020207472616e7363726970745f66696e616c2054455854204e4f54204e554c4c2c0d0a20202020616464726573735f6a736f6e204a534f4e42204e4f54204e554c4c2044454641554c5420277b7d273a3a6a736f6e622c0d0a202020206e6f76656c74795f73636f7265204e554d4552494328342c3329204e4f54204e554c4c2044454641554c5420302c0d0a20202020636f6e666964656e6365204e554d4552494328342c3329204e4f54204e554c4c2044454641554c5420302c0d0a2020202069735f76616c696420424f4f4c45414e204e4f54204e554c4c2044454641554c542066616c73652c0d0a2020202076616c69646174696f6e5f736f757263652054455854204e4f54204e554c4c2044454641554c54202772756c655f67656f636f6465725f656e73656d626c65272c0d0a2020202073616d706c655f736f757263652054455854204e4f54204e554c4c2044454641554c542027766f696365270d0a2020202020202020434845434b202873616d706c655f736f7572636520494e202827766f696365272c20277365617263685f74657874272c202773796e746865746963272c2027757365725f636f7272656374696f6e272c2027766f6963655f686f7473706f742729292c0d0a20202020637265617465645f61742054494d455354414d50545a204e4f54204e554c4c2044454641554c54206e6f7728290d0a2900000095434f4d4d454e54204f4e205441424c45207075626c69632e6e61765f766f6963655f747261696e696e675f73616d706c657320495320274375726174656420747261696e696e67207365742070726f6d6f7465642066726f6d2072617720766f6963652f73656172636820646174612061667465722076616c69646174696f6e206f72207573657220636f7272656374696f6e2e270000008a43524541544520494e444558204946204e4f5420455849535453206964785f6e61765f766f6963655f747261696e696e675f73616d706c65735f757365725f637265617465640d0a202020204f4e207075626c69632e6e61765f766f6963655f747261696e696e675f73616d706c657328757365725f69642c20637265617465645f61742044455343290000009a43524541544520494e444558204946204e4f5420455849535453206964785f6e61765f766f6963655f747261696e696e675f73616d706c65735f76616c69645f636f6e660d0a202020204f4e207075626c69632e6e61765f766f6963655f747261696e696e675f73616d706c65732869735f76616c69642c20636f6e666964656e636520444553432c20637265617465645f6174204445534329000002c1435245415445205441424c45204946204e4f5420455849535453207075626c69632e6e61765f766f6963655f666565646261636b20280d0a2020202069642055554944205052494d415259204b45592044454641554c542067656e5f72616e646f6d5f7575696428292c0d0a20202020757365725f69642055554944204e4f54204e554c4c205245464552454e43455320617574682e757365727328696429204f4e2044454c45544520434153434144452c0d0a202020207574746572616e63655f69642055554944205245464552454e434553207075626c69632e6e61765f766f6963655f7574746572616e63657328696429204f4e2044454c45544520434153434144452c0d0a2020202073616d706c655f69642055554944205245464552454e434553207075626c69632e6e61765f766f6963655f747261696e696e675f73616d706c657328696429204f4e2044454c45544520534554204e554c4c2c0d0a20202020636f727265637465645f7472616e73637269707420544558542c0d0a20202020636f727265637465645f61646472657373204a534f4e42204e4f54204e554c4c2044454641554c5420277b7d273a3a6a736f6e622c0d0a20202020666565646261636b5f747970652054455854204e4f54204e554c4c0d0a2020202020202020434845434b2028666565646261636b5f7479706520494e2028276578706c696369745f636f7272656374696f6e272c2027696d706c696369745f616363657074272c202772656a656374272c2027686f7473706f745f636f6e6669726d272c2027686f7473706f745f72656a6563742729292c0d0a202020206d65746164617461204a534f4e42204e4f54204e554c4c2044454641554c5420277b7d273a3a6a736f6e622c0d0a20202020637265617465645f61742054494d455354414d50545a204e4f54204e554c4c2044454641554c54206e6f7728290d0a2900000079434f4d4d454e54204f4e205441424c45207075626c69632e6e61765f766f6963655f666565646261636b204953202755736572207375706572766973696f6e206c6f6f7020666f72204153522c20616464726573732070617273696e672c20616e6420686f7473706f7420636f6e6669726d6174696f6e2e270000007a43524541544520494e444558204946204e4f5420455849535453206964785f6e61765f766f6963655f666565646261636b5f757365725f637265617465640d0a202020204f4e207075626c69632e6e61765f766f6963655f666565646261636b28757365725f69642c20637265617465645f6174204445534329000000a043524541544520494e444558204946204e4f5420455849535453206964785f6e61765f766f6963655f666565646261636b5f7574746572616e63650d0a202020204f4e207075626c69632e6e61765f766f6963655f666565646261636b287574746572616e63655f69642c20637265617465645f61742044455343290d0a202020205748455245207574746572616e63655f6964204953204e4f54204e554c4c000002e4435245415445205441424c45204946204e4f5420455849535453207075626c69632e6e61765f616464726573735f7061747465726e7320280d0a2020202069642055554944205052494d415259204b45592044454641554c542067656e5f72616e646f6d5f7575696428292c0d0a20202020636f756e7472795f636f646520544558542c0d0a202020206369747920544558542c0d0a202020207374726565742054455854204e4f54204e554c4c2c0d0a20202020686f7573655f6e756d62657220544558542c0d0a20202020636f7270757320544558542c0d0a202020206275696c64696e6720544558542c0d0a2020202073747275637475726520544558542c0d0a202020207061747465726e5f747970652054455854204e4f54204e554c4c2044454641554c542027686f7573655f6e756d626572272c0d0a202020206672657175656e637920494e5445474552204e4f54204e554c4c2044454641554c54203120434845434b20286672657175656e6379203e3d2031292c0d0a2020202066697273745f7365656e2054494d455354414d50545a204e4f54204e554c4c2044454641554c54206e6f7728292c0d0a202020206c6173745f7365656e2054494d455354414d50545a204e4f54204e554c4c2044454641554c54206e6f7728292c0d0a2020202069735f636f6e6669726d656420424f4f4c45414e204e4f54204e554c4c2044454641554c542066616c73652c0d0a20202020636f6e6669726d6174696f6e5f736f7572636520544558542c0d0a202020206d65746164617461204a534f4e42204e4f54204e554c4c2044454641554c5420277b7d273a3a6a736f6e622c0d0a20202020434f4e53545241494e54206e61765f616464726573735f7061747465726e735f756e6971756520554e495155452028636f756e7472795f636f64652c20636974792c207374726565742c20686f7573655f6e756d6265722c20636f727075732c206275696c64696e672c20737472756374757265290d0a29000000a5434f4d4d454e54204f4e205441424c45207075626c69632e6e61765f616464726573735f7061747465726e73204953202743616e6f6e6963616c20616e642070726f766973696f6e616c20616464726573732d7061747465726e206d656d6f72792c20696e636c7564696e67207261726520686f7573652d636f72707573207374727563747572657320616e64206e65772d6275696c64696e672076617269616e74732e270000008143524541544520494e444558204946204e4f5420455849535453206964785f6e61765f616464726573735f7061747465726e735f636974795f7374726565740d0a202020204f4e207075626c69632e6e61765f616464726573735f7061747465726e7328636974792c207374726565742c206c6173745f7365656e2044455343290000009443524541544520494e444558204946204e4f5420455849535453206964785f6e61765f616464726573735f7061747465726e735f636f6e6669726d65645f667265710d0a202020204f4e207075626c69632e6e61765f616464726573735f7061747465726e732869735f636f6e6669726d65642c206672657175656e637920444553432c206c6173745f7365656e204445534329000002fe435245415445205441424c45204946204e4f5420455849535453207075626c69632e6e61765f616464726573735f686f7473706f747320280d0a2020202069642055554944205052494d415259204b45592044454641554c542067656e5f72616e646f6d5f7575696428292c0d0a202020207574746572616e63655f69642055554944205245464552454e434553207075626c69632e6e61765f766f6963655f7574746572616e63657328696429204f4e2044454c45544520434153434144452c0d0a20202020757365725f69642055554944205245464552454e43455320617574682e757365727328696429204f4e2044454c45544520534554204e554c4c2c0d0a202020207472616e7363726970742054455854204e4f54204e554c4c2c0d0a202020207061727365645f61646472657373204a534f4e42204e4f54204e554c4c2c0d0a202020206e6f76656c74795f73636f7265204e554d4552494328342c3329204e4f54204e554c4c2c0d0a20202020726561736f6e73204a534f4e42204e4f54204e554c4c2044454641554c5420275b5d273a3a6a736f6e622c0d0a20202020746578745f76617269616e7473204a534f4e42204e4f54204e554c4c2044454641554c5420275b5d273a3a6a736f6e622c0d0a2020202073796e7468657469635f6a6f6273204a534f4e42204e4f54204e554c4c2044454641554c5420275b5d273a3a6a736f6e622c0d0a202020207374617475732054455854204e4f54204e554c4c2044454641554c542027717565756564270d0a2020202020202020434845434b202873746174757320494e202827717565756564272c202773796e74686573697a6564272c202776616c696461746564272c20276465706c6f796564272c202772656a65637465642729292c0d0a20202020637265617465645f61742054494d455354414d50545a204e4f54204e554c4c2044454641554c54206e6f7728292c0d0a20202020757064617465645f61742054494d455354414d50545a204e4f54204e554c4c2044454641554c54206e6f7728290d0a2900000094434f4d4d454e54204f4e205441424c45207075626c69632e6e61765f616464726573735f686f7473706f74732049532027526172652d6164647265737320616e64206e6f76656c74792d6c6561726e696e6720717565756520666f722074617267657465642073796e746865746963206175676d656e746174696f6e20616e642072617069642066696e652d74756e696e672e270000007f43524541544520494e444558204946204e4f5420455849535453206964785f6e61765f616464726573735f686f7473706f74735f7374617475735f637265617465640d0a202020204f4e207075626c69632e6e61765f616464726573735f686f7473706f7473287374617475732c20637265617465645f61742044455343290000008443524541544520494e444558204946204e4f5420455849535453206964785f6e61765f616464726573735f686f7473706f74735f6e6f76656c74790d0a202020204f4e207075626c69632e6e61765f616464726573735f686f7473706f7473286e6f76656c74795f73636f726520444553432c20637265617465645f61742044455343290000023f435245415445205441424c45204946204e4f5420455849535453207075626c69632e6e61765f766f6963655f6d6f64656c5f76657273696f6e7320280d0a2020202069642055554944205052494d415259204b45592044454641554c542067656e5f72616e646f6d5f7575696428292c0d0a202020206d6f64656c5f747970652054455854204e4f54204e554c4c20434845434b20286d6f64656c5f7479706520494e20282761636f7573746963272c20276c616e6775616765272c20276e6572272c2027616363656e74272c2027766f6963655f706c6174666f726d2729292c0d0a2020202076657273696f6e5f7461672054455854204e4f54204e554c4c2c0d0a202020206465706c6f796d656e745f73746174652054455854204e4f54204e554c4c2044454641554c54202763616e646964617465270d0a2020202020202020434845434b20286465706c6f796d656e745f737461746520494e20282763616e646964617465272c202763616e617279272c2027616374697665272c2027726f6c6c65645f6261636b272c202761726368697665642729292c0d0a202020206d657472696373204a534f4e42204e4f54204e554c4c2044454641554c5420277b7d273a3a6a736f6e622c0d0a20202020747261696e696e675f646174615f6861736820544558542c0d0a20202020637265617465645f61742054494d455354414d50545a204e4f54204e554c4c2044454641554c54206e6f7728292c0d0a202020206465706c6f7965645f61742054494d455354414d50545a0d0a2900000097434f4d4d454e54204f4e205441424c45207075626c69632e6e61765f766f6963655f6d6f64656c5f76657273696f6e7320495320275265676973747279206f66204153522c2061646472657373204e45522c20616363656e742c20616e6420766f6963652d6c6561726e696e6720706c6174666f726d2076657273696f6e73207769746820726f6c6c6f7574206d657461646174612e270000008943524541544520494e444558204946204e4f5420455849535453206964785f6e61765f766f6963655f6d6f64656c5f76657273696f6e735f747970655f637265617465640d0a202020204f4e207075626c69632e6e61765f766f6963655f6d6f64656c5f76657273696f6e73286d6f64656c5f747970652c20637265617465645f61742044455343290000008843524541544520494e444558204946204e4f5420455849535453206964785f6e61765f766f6963655f6d6f64656c5f76657273696f6e735f73746174650d0a202020204f4e207075626c69632e6e61765f766f6963655f6d6f64656c5f76657273696f6e73286465706c6f796d656e745f73746174652c20637265617465645f617420444553432900000041414c544552205441424c45207075626c69632e6e61765f766f6963655f7574746572616e63657320454e41424c4520524f57204c4556454c20534543555249545900000047414c544552205441424c45207075626c69632e6e61765f766f6963655f747261696e696e675f73616d706c657320454e41424c4520524f57204c4556454c2053454355524954590000003f414c544552205441424c45207075626c69632e6e61765f766f6963655f666565646261636b20454e41424c4520524f57204c4556454c20534543555249545900000041414c544552205441424c45207075626c69632e6e61765f616464726573735f7061747465726e7320454e41424c4520524f57204c4556454c20534543555249545900000041414c544552205441424c45207075626c69632e6e61765f616464726573735f686f7473706f747320454e41424c4520524f57204c4556454c20534543555249545900000045414c544552205441424c45207075626c69632e6e61765f766f6963655f6d6f64656c5f76657273696f6e7320454e41424c4520524f57204c4556454c2053454355524954590000005644524f5020504f4c4943592049462045584953545320226e61765f766f6963655f7574746572616e6365735f73656c6563745f6f776e22204f4e207075626c69632e6e61765f766f6963655f7574746572616e6365730000009643524541544520504f4c49435920226e61765f766f6963655f7574746572616e6365735f73656c6563745f6f776e220d0a202020204f4e207075626c69632e6e61765f766f6963655f7574746572616e63657320464f522053454c4543540d0a20202020544f2061757468656e746963617465640d0a202020205553494e472028757365725f6964203d20617574682e7569642829290000005644524f5020504f4c4943592049462045584953545320226e61765f766f6963655f7574746572616e6365735f696e736572745f6f776e22204f4e207075626c69632e6e61765f766f6963655f7574746572616e6365730000009b43524541544520504f4c49435920226e61765f766f6963655f7574746572616e6365735f696e736572745f6f776e220d0a202020204f4e207075626c69632e6e61765f766f6963655f7574746572616e63657320464f5220494e534552540d0a20202020544f2061757468656e746963617465640d0a202020205749544820434845434b2028757365725f6964203d20617574682e7569642829290000005744524f5020504f4c4943592049462045584953545320226e61765f766f6963655f7574746572616e6365735f736572766963655f616c6c22204f4e207075626c69632e6e61765f766f6963655f7574746572616e6365730000009a43524541544520504f4c49435920226e61765f766f6963655f7574746572616e6365735f736572766963655f616c6c220d0a202020204f4e207075626c69632e6e61765f766f6963655f7574746572616e63657320464f5220414c4c0d0a20202020544f20736572766963655f726f6c650d0a202020205553494e47202874727565290d0a202020205749544820434845434b202874727565290000006244524f5020504f4c4943592049462045584953545320226e61765f766f6963655f747261696e696e675f73616d706c65735f73656c6563745f6f776e22204f4e207075626c69632e6e61765f766f6963655f747261696e696e675f73616d706c6573000000a243524541544520504f4c49435920226e61765f766f6963655f747261696e696e675f73616d706c65735f73656c6563745f6f776e220d0a202020204f4e207075626c69632e6e61765f766f6963655f747261696e696e675f73616d706c657320464f522053454c4543540d0a20202020544f2061757468656e746963617465640d0a202020205553494e472028757365725f6964203d20617574682e7569642829290000006244524f5020504f4c4943592049462045584953545320226e61765f766f6963655f747261696e696e675f73616d706c65735f696e736572745f6f776e22204f4e207075626c69632e6e61765f766f6963655f747261696e696e675f73616d706c6573000000a743524541544520504f4c49435920226e61765f766f6963655f747261696e696e675f73616d706c65735f696e736572745f6f776e220d0a202020204f4e207075626c69632e6e61765f766f6963655f747261696e696e675f73616d706c657320464f5220494e534552540d0a20202020544f2061757468656e746963617465640d0a202020205749544820434845434b2028757365725f6964203d20617574682e7569642829290000006344524f5020504f4c4943592049462045584953545320226e61765f766f6963655f747261696e696e675f73616d706c65735f736572766963655f616c6c22204f4e207075626c69632e6e61765f766f6963655f747261696e696e675f73616d706c6573000000a643524541544520504f4c49435920226e61765f766f6963655f747261696e696e675f73616d706c65735f736572766963655f616c6c220d0a202020204f4e207075626c69632e6e61765f766f6963655f747261696e696e675f73616d706c657320464f5220414c4c0d0a20202020544f20736572766963655f726f6c650d0a202020205553494e47202874727565290d0a202020205749544820434845434b202874727565290000005244524f5020504f4c4943592049462045584953545320226e61765f766f6963655f666565646261636b5f73656c6563745f6f776e22204f4e207075626c69632e6e61765f766f6963655f666565646261636b0000009243524541544520504f4c49435920226e61765f766f6963655f666565646261636b5f73656c6563745f6f776e220d0a202020204f4e207075626c69632e6e61765f766f6963655f666565646261636b20464f522053454c4543540d0a20202020544f2061757468656e746963617465640d0a202020205553494e472028757365725f6964203d20617574682e7569642829290000005244524f5020504f4c4943592049462045584953545320226e61765f766f6963655f666565646261636b5f696e736572745f6f776e22204f4e207075626c69632e6e61765f766f6963655f666565646261636b0000009743524541544520504f4c49435920226e61765f766f6963655f666565646261636b5f696e736572745f6f776e220d0a202020204f4e207075626c69632e6e61765f766f6963655f666565646261636b20464f5220494e534552540d0a20202020544f2061757468656e746963617465640d0a202020205749544820434845434b2028757365725f6964203d20617574682e7569642829290000005344524f5020504f4c4943592049462045584953545320226e61765f766f6963655f666565646261636b5f736572766963655f616c6c22204f4e207075626c69632e6e61765f766f6963655f666565646261636b0000009643524541544520504f4c49435920226e61765f766f6963655f666565646261636b5f736572766963655f616c6c220d0a202020204f4e207075626c69632e6e61765f766f6963655f666565646261636b20464f5220414c4c0d0a20202020544f20736572766963655f726f6c650d0a202020205553494e47202874727565290d0a202020205749544820434845434b202874727565290000005e44524f5020504f4c4943592049462045584953545320226e61765f616464726573735f7061747465726e735f726561645f61757468656e7469636174656422204f4e207075626c69632e6e61765f616464726573735f7061747465726e730000008e43524541544520504f4c49435920226e61765f616464726573735f7061747465726e735f726561645f61757468656e74696361746564220d0a202020204f4e207075626c69632e6e61765f616464726573735f7061747465726e7320464f522053454c4543540d0a20202020544f2061757468656e746963617465640d0a202020205553494e47202874727565290000005744524f5020504f4c4943592049462045584953545320226e61765f616464726573735f7061747465726e735f736572766963655f616c6c22204f4e207075626c69632e6e61765f616464726573735f7061747465726e730000009a43524541544520504f4c49435920226e61765f616464726573735f7061747465726e735f736572766963655f616c6c220d0a202020204f4e207075626c69632e6e61765f616464726573735f7061747465726e7320464f5220414c4c0d0a20202020544f20736572766963655f726f6c650d0a202020205553494e47202874727565290d0a202020205749544820434845434b202874727565290000006144524f5020504f4c4943592049462045584953545320226e61765f616464726573735f686f7473706f74735f73656c6563745f6f776e5f6f725f7365727669636522204f4e207075626c69632e6e61765f616464726573735f686f7473706f7473000000a143524541544520504f4c49435920226e61765f616464726573735f686f7473706f74735f73656c6563745f6f776e5f6f725f73657276696365220d0a202020204f4e207075626c69632e6e61765f616464726573735f686f7473706f747320464f522053454c4543540d0a20202020544f2061757468656e746963617465640d0a202020205553494e472028757365725f6964203d20617574682e7569642829290000005644524f5020504f4c4943592049462045584953545320226e61765f616464726573735f686f7473706f74735f696e736572745f6f776e22204f4e207075626c69632e6e61765f616464726573735f686f7473706f74730000009b43524541544520504f4c49435920226e61765f616464726573735f686f7473706f74735f696e736572745f6f776e220d0a202020204f4e207075626c69632e6e61765f616464726573735f686f7473706f747320464f5220494e534552540d0a20202020544f2061757468656e746963617465640d0a202020205749544820434845434b2028757365725f6964203d20617574682e7569642829290000005744524f5020504f4c4943592049462045584953545320226e61765f616464726573735f686f7473706f74735f736572766963655f616c6c22204f4e207075626c69632e6e61765f616464726573735f686f7473706f74730000009a43524541544520504f4c49435920226e61765f616464726573735f686f7473706f74735f736572766963655f616c6c220d0a202020204f4e207075626c69632e6e61765f616464726573735f686f7473706f747320464f5220414c4c0d0a20202020544f20736572766963655f726f6c650d0a202020205553494e47202874727565290d0a202020205749544820434845434b202874727565290000006644524f5020504f4c4943592049462045584953545320226e61765f766f6963655f6d6f64656c5f76657273696f6e735f726561645f61757468656e7469636174656422204f4e207075626c69632e6e61765f766f6963655f6d6f64656c5f76657273696f6e730000009643524541544520504f4c49435920226e61765f766f6963655f6d6f64656c5f76657273696f6e735f726561645f61757468656e74696361746564220d0a202020204f4e207075626c69632e6e61765f766f6963655f6d6f64656c5f76657273696f6e7320464f522053454c4543540d0a20202020544f2061757468656e746963617465640d0a202020205553494e47202874727565290000005f44524f5020504f4c4943592049462045584953545320226e61765f766f6963655f6d6f64656c5f76657273696f6e735f736572766963655f616c6c22204f4e207075626c69632e6e61765f766f6963655f6d6f64656c5f76657273696f6e73000000a243524541544520504f4c49435920226e61765f766f6963655f6d6f64656c5f76657273696f6e735f736572766963655f616c6c220d0a202020204f4e207075626c69632e6e61765f766f6963655f6d6f64656c5f76657273696f6e7320464f5220414c4c0d0a20202020544f20736572766963655f726f6c650d0a202020205553494e47202874727565290d0a202020205749544820434845434b2028747275652900000228494e5345525420494e544f207075626c69632e6e61765f766f6963655f6d6f64656c5f76657273696f6e7320286d6f64656c5f747970652c2076657273696f6e5f7461672c206465706c6f796d656e745f73746174652c206d6574726963732c20747261696e696e675f646174615f68617368290d0a53454c4543540d0a2020202027766f6963655f706c6174666f726d272c0d0a2020202027666f756e646174696f6e2d7631272c0d0a202020202763616e646964617465272c0d0a202020206a736f6e625f6275696c645f6f626a656374280d0a2020202020202020277765725f746172676574272c20302e31302c0d0a202020202020202027616464726573735f66315f746172676574272c20302e39352c0d0a202020202020202027686f7473706f745f726573706f6e73655f686f757273272c2034382c0d0a2020202020202020276e6f76656c74795f726563616c6c5f746172676574272c20302e38300d0a20202020292c0d0a2020202027666f756e646174696f6e2d626f6f747374726170270d0a5748455245204e4f542045584953545320280d0a2020202053454c45435420310d0a2020202046524f4d207075626c69632e6e61765f766f6963655f6d6f64656c5f76657273696f6e730d0a202020205748455245206d6f64656c5f74797065203d2027766f6963655f706c6174666f726d270d0a202020202020414e442076657273696f6e5f746167203d2027666f756e646174696f6e2d7631270d0a29"}],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Sync"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"CREATE TABLE"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"COMMENT"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"CREATE INDEX"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"CREATE INDEX"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"CREATE INDEX"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"CREATE TABLE"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"COMMENT"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"CREATE INDEX"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"CREATE INDEX"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"CREATE TABLE"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"COMMENT"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"CREATE INDEX"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"CREATE INDEX"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"CREATE TABLE"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"COMMENT"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"CREATE INDEX"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"CREATE INDEX"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"CREATE TABLE"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"COMMENT"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"CREATE INDEX"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"CREATE INDEX"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"CREATE TABLE"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"COMMENT"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"CREATE INDEX"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"CREATE INDEX"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"ALTER TABLE"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"ALTER TABLE"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"ALTER TABLE"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"ALTER TABLE"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"ALTER TABLE"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"ALTER TABLE"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Severity":"NOTICE","SeverityUnlocalized":"NOTICE","Code":"00000","Message":"policy \"nav_voice_utterances_select_own\" for relation \"public.nav_voice_utterances\" does not exist, skipping","Detail":"","Hint":"","Position":0,"InternalPosition":0,"InternalQuery":"","Where":"","SchemaName":"","TableName":"","ColumnName":"","DataTypeName":"","ConstraintName":"","File":"dropcmds.c","Line":523,"Routine":"does_not_exist_skipping","UnknownFields":null}
+NOTICE (00000): policy "nav_voice_utterances_select_own" for relation "public.nav_voice_utterances" does not exist, skipping
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"DROP POLICY"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"CREATE POLICY"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Severity":"NOTICE","SeverityUnlocalized":"NOTICE","Code":"00000","Message":"policy \"nav_voice_utterances_insert_own\" for relation \"public.nav_voice_utterances\" does not exist, skipping","Detail":"","Hint":"","Position":0,"InternalPosition":0,"InternalQuery":"","Where":"","SchemaName":"","TableName":"","ColumnName":"","DataTypeName":"","ConstraintName":"","File":"dropcmds.c","Line":523,"Routine":"does_not_exist_skipping","UnknownFields":null}
+NOTICE (00000): policy "nav_voice_utterances_insert_own" for relation "public.nav_voice_utterances" does not exist, skipping
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"DROP POLICY"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"CREATE POLICY"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Severity":"NOTICE","SeverityUnlocalized":"NOTICE","Code":"00000","Message":"policy \"nav_voice_utterances_service_all\" for relation \"public.nav_voice_utterances\" does not exist, skipping","Detail":"","Hint":"","Position":0,"InternalPosition":0,"InternalQuery":"","Where":"","SchemaName":"","TableName":"","ColumnName":"","DataTypeName":"","ConstraintName":"","File":"dropcmds.c","Line":523,"Routine":"does_not_exist_skipping","UnknownFields":null}
+NOTICE (00000): policy "nav_voice_utterances_service_all" for relation "public.nav_voice_utterances" does not exist, skipping
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"DROP POLICY"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"CREATE POLICY"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Severity":"NOTICE","SeverityUnlocalized":"NOTICE","Code":"00000","Message":"policy \"nav_voice_training_samples_select_own\" for relation \"public.nav_voice_training_samples\" does not exist, skipping","Detail":"","Hint":"","Position":0,"InternalPosition":0,"InternalQuery":"","Where":"","SchemaName":"","TableName":"","ColumnName":"","DataTypeName":"","ConstraintName":"","File":"dropcmds.c","Line":523,"Routine":"does_not_exist_skipping","UnknownFields":null}
+NOTICE (00000): policy "nav_voice_training_samples_select_own" for relation "public.nav_voice_training_samples" does not exist, skipping
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"DROP POLICY"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"CREATE POLICY"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Severity":"NOTICE","SeverityUnlocalized":"NOTICE","Code":"00000","Message":"policy \"nav_voice_training_samples_insert_own\" for relation \"public.nav_voice_training_samples\" does not exist, skipping","Detail":"","Hint":"","Position":0,"InternalPosition":0,"InternalQuery":"","Where":"","SchemaName":"","TableName":"","ColumnName":"","DataTypeName":"","ConstraintName":"","File":"dropcmds.c","Line":523,"Routine":"does_not_exist_skipping","UnknownFields":null}
+NOTICE (00000): policy "nav_voice_training_samples_insert_own" for relation "public.nav_voice_training_samples" does not exist, skipping
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"DROP POLICY"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"CREATE POLICY"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Severity":"NOTICE","SeverityUnlocalized":"NOTICE","Code":"00000","Message":"policy \"nav_voice_training_samples_service_all\" for relation \"public.nav_voice_training_samples\" does not exist, skipping","Detail":"","Hint":"","Position":0,"InternalPosition":0,"InternalQuery":"","Where":"","SchemaName":"","TableName":"","ColumnName":"","DataTypeName":"","ConstraintName":"","File":"dropcmds.c","Line":523,"Routine":"does_not_exist_skipping","UnknownFields":null}
+NOTICE (00000): policy "nav_voice_training_samples_service_all" for relation "public.nav_voice_training_samples" does not exist, skipping
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"DROP POLICY"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"CREATE POLICY"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Severity":"NOTICE","SeverityUnlocalized":"NOTICE","Code":"00000","Message":"policy \"nav_voice_feedback_select_own\" for relation \"public.nav_voice_feedback\" does not exist, skipping","Detail":"","Hint":"","Position":0,"InternalPosition":0,"InternalQuery":"","Where":"","SchemaName":"","TableName":"","ColumnName":"","DataTypeName":"","ConstraintName":"","File":"dropcmds.c","Line":523,"Routine":"does_not_exist_skipping","UnknownFields":null}
+NOTICE (00000): policy "nav_voice_feedback_select_own" for relation "public.nav_voice_feedback" does not exist, skipping
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"DROP POLICY"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"CREATE POLICY"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Severity":"NOTICE","SeverityUnlocalized":"NOTICE","Code":"00000","Message":"policy \"nav_voice_feedback_insert_own\" for relation \"public.nav_voice_feedback\" does not exist, skipping","Detail":"","Hint":"","Position":0,"InternalPosition":0,"InternalQuery":"","Where":"","SchemaName":"","TableName":"","ColumnName":"","DataTypeName":"","ConstraintName":"","File":"dropcmds.c","Line":523,"Routine":"does_not_exist_skipping","UnknownFields":null}
+NOTICE (00000): policy "nav_voice_feedback_insert_own" for relation "public.nav_voice_feedback" does not exist, skipping
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"DROP POLICY"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"CREATE POLICY"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Severity":"NOTICE","SeverityUnlocalized":"NOTICE","Code":"00000","Message":"policy \"nav_voice_feedback_service_all\" for relation \"public.nav_voice_feedback\" does not exist, skipping","Detail":"","Hint":"","Position":0,"InternalPosition":0,"InternalQuery":"","Where":"","SchemaName":"","TableName":"","ColumnName":"","DataTypeName":"","ConstraintName":"","File":"dropcmds.c","Line":523,"Routine":"does_not_exist_skipping","UnknownFields":null}
+NOTICE (00000): policy "nav_voice_feedback_service_all" for relation "public.nav_voice_feedback" does not exist, skipping
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"DROP POLICY"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"CREATE POLICY"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Severity":"NOTICE","SeverityUnlocalized":"NOTICE","Code":"00000","Message":"policy \"nav_address_patterns_read_authenticated\" for relation \"public.nav_address_patterns\" does not exist, skipping","Detail":"","Hint":"","Position":0,"InternalPosition":0,"InternalQuery":"","Where":"","SchemaName":"","TableName":"","ColumnName":"","DataTypeName":"","ConstraintName":"","File":"dropcmds.c","Line":523,"Routine":"does_not_exist_skipping","UnknownFields":null}
+NOTICE (00000): policy "nav_address_patterns_read_authenticated" for relation "public.nav_address_patterns" does not exist, skipping
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"DROP POLICY"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"CREATE POLICY"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Severity":"NOTICE","SeverityUnlocalized":"NOTICE","Code":"00000","Message":"policy \"nav_address_patterns_service_all\" for relation \"public.nav_address_patterns\" does not exist, skipping","Detail":"","Hint":"","Position":0,"InternalPosition":0,"InternalQuery":"","Where":"","SchemaName":"","TableName":"","ColumnName":"","DataTypeName":"","ConstraintName":"","File":"dropcmds.c","Line":523,"Routine":"does_not_exist_skipping","UnknownFields":null}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"DROP POLICY"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"CREATE POLICY"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+NOTICE (00000): policy "nav_address_patterns_service_all" for relation "public.nav_address_patterns" does not exist, skipping
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Severity":"NOTICE","SeverityUnlocalized":"NOTICE","Code":"00000","Message":"policy \"nav_address_hotspots_select_own_or_service\" for relation \"public.nav_address_hotspots\" does not exist, skipping","Detail":"","Hint":"","Position":0,"InternalPosition":0,"InternalQuery":"","Where":"","SchemaName":"","TableName":"","ColumnName":"","DataTypeName":"","ConstraintName":"","File":"dropcmds.c","Line":523,"Routine":"does_not_exist_skipping","UnknownFields":null}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"DROP POLICY"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"CREATE POLICY"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+NOTICE (00000): policy "nav_address_hotspots_select_own_or_service" for relation "public.nav_address_hotspots" does not exist, skipping
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Severity":"NOTICE","SeverityUnlocalized":"NOTICE","Code":"00000","Message":"policy \"nav_address_hotspots_insert_own\" for relation \"public.nav_address_hotspots\" does not exist, skipping","Detail":"","Hint":"","Position":0,"InternalPosition":0,"InternalQuery":"","Where":"","SchemaName":"","TableName":"","ColumnName":"","DataTypeName":"","ConstraintName":"","File":"dropcmds.c","Line":523,"Routine":"does_not_exist_skipping","UnknownFields":null}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"DROP POLICY"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"CREATE POLICY"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Severity":"NOTICE","SeverityUnlocalized":"NOTICE","Code":"00000","Message":"policy \"nav_address_hotspots_service_all\" for relation \"public.nav_address_hotspots\" does not exist, skipping","Detail":"","Hint":"","Position":0,"InternalPosition":0,"InternalQuery":"","Where":"","SchemaName":"","TableName":"","ColumnName":"","DataTypeName":"","ConstraintName":"","File":"dropcmds.c","Line":523,"Routine":"does_not_exist_skipping","UnknownFields":null}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"DROP POLICY"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"CREATE POLICY"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+NOTICE (00000): policy "nav_address_hotspots_insert_own" for relation "public.nav_address_hotspots" does not exist, skipping
+NOTICE (00000): policy "nav_address_hotspots_service_all" for relation "public.nav_address_hotspots" does not exist, skipping
+2026/04/20 22:02:19 PG Recv: {"Severity":"NOTICE","SeverityUnlocalized":"NOTICE","Code":"00000","Message":"policy \"nav_voice_model_versions_read_authenticated\" for relation \"public.nav_voice_model_versions\" does not exist, skipping","Detail":"","Hint":"","Position":0,"InternalPosition":0,"InternalQuery":"","Where":"","SchemaName":"","TableName":"","ColumnName":"","DataTypeName":"","ConstraintName":"","File":"dropcmds.c","Line":523,"Routine":"does_not_exist_skipping","UnknownFields":null}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"DROP POLICY"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"CREATE POLICY"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+NOTICE (00000): policy "nav_voice_model_versions_read_authenticated" for relation "public.nav_voice_model_versions" does not exist, skipping
+2026/04/20 22:02:19 PG Recv: {"Severity":"NOTICE","SeverityUnlocalized":"NOTICE","Code":"00000","Message":"policy \"nav_voice_model_versions_service_all\" for relation \"public.nav_voice_model_versions\" does not exist, skipping","Detail":"","Hint":"","Position":0,"InternalPosition":0,"InternalQuery":"","Where":"","SchemaName":"","TableName":"","ColumnName":"","DataTypeName":"","ConstraintName":"","File":"dropcmds.c","Line":523,"Routine":"does_not_exist_skipping","UnknownFields":null}
+NOTICE (00000): policy "nav_voice_model_versions_service_all" for relation "public.nav_voice_model_versions" does not exist, skipping
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"DROP POLICY"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"CREATE POLICY"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"INSERT 0 1"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"INSERT 0 1"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ReadyForQuery","TxStatus":"I"}
+Applying migration 20260420233000_voice_learning_settings_and_rpc.sql...
+2026/04/20 22:02:19 PG Send: {"Type":"Query","String":"RESET ALL"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"RESET"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ReadyForQuery","TxStatus":"I"}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"-- =============================================================================\r\n-- Navigator voice-learning production settings and RPCs\r\n-- =============================================================================\r\n\r\nALTER TABLE public.navigator_settings\r\n  ADD COLUMN IF NOT EXISTS voice_learning_enabled BOOLEAN NOT NULL DEFAULT true,\r\n  ADD COLUMN IF NOT EXISTS voice_backend_sync_enabled BOOLEAN NOT NULL DEFAULT true,\r\n  ADD COLUMN IF NOT EXISTS voice_allow_online_fallback BOOLEAN NOT NULL DEFAULT false","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"CREATE OR REPLACE FUNCTION public.upsert_navigator_settings(\r\n  p_user_id UUID,\r\n  p_settings JSONB\r\n)\r\nRETURNS JSONB\r\nLANGUAGE plpgsql\r\nSECURITY DEFINER\r\nSET search_path = public\r\nAS $$\r\nDECLARE\r\n  result RECORD;\r\nBEGIN\r\n  IF auth.uid() IS DISTINCT FROM p_user_id THEN\r\n    RAISE EXCEPTION 'unauthorized';\r\n  END IF;\r\n\r\n  INSERT INTO navigator_settings (user_id)\r\n  VALUES (p_user_id)\r\n  ON CONFLICT (user_id) DO NOTHING;\r\n\r\n  UPDATE navigator_settings\r\n  SET\r\n    sound_mode = COALESCE((p_settings-\u003e\u003e'sound_mode'), sound_mode),\r\n    volume = COALESCE((p_settings-\u003e\u003e'volume')::int, volume),\r\n    mute_other_apps = COALESCE((p_settings-\u003e\u003e'mute_other_apps')::bool, mute_other_apps),\r\n    selected_voice = COALESCE((p_settings-\u003e\u003e'selected_voice'), selected_voice),\r\n    voice_enabled = COALESCE((p_settings-\u003e\u003e'voice_enabled')::bool, voice_enabled),\r\n    voice_learning_enabled = COALESCE((p_settings-\u003e\u003e'voice_learning_enabled')::bool, voice_learning_enabled),\r\n    voice_backend_sync_enabled = COALESCE((p_settings-\u003e\u003e'voice_backend_sync_enabled')::bool, voice_backend_sync_enabled),\r\n    voice_allow_online_fallback = COALESCE((p_settings-\u003e\u003e'voice_allow_online_fallback')::bool, voice_allow_online_fallback),\r\n    avoid_tolls = COALESCE((p_settings-\u003e\u003e'avoid_tolls')::bool, avoid_tolls),\r\n    avoid_unpaved = COALESCE((p_settings-\u003e\u003e'avoid_unpaved')::bool, avoid_unpaved),\r\n    avoid_highways = COALESCE((p_settings-\u003e\u003e'avoid_highways')::bool, avoid_highways),\r\n    selected_vehicle = COALESCE((p_settings-\u003e\u003e'selected_vehicle'), selected_vehicle),\r\n    map_view_mode = COALESCE((p_settings-\u003e\u003e'map_view_mode'), map_view_mode),\r\n    nav_theme = COALESCE((p_settings-\u003e\u003e'nav_theme'), nav_theme),\r\n    show_3d_buildings = COALESCE((p_settings-\u003e\u003e'show_3d_buildings')::bool, show_3d_buildings),\r\n    show_traffic_lights = COALESCE((p_settings-\u003e\u003e'show_traffic_lights')::bool, show_traffic_lights),\r\n    show_speed_bumps = COALESCE((p_settings-\u003e\u003e'show_speed_bumps')::bool, show_speed_bumps),\r\n    show_road_signs = COALESCE((p_settings-\u003e\u003e'show_road_signs')::bool, show_road_signs),\r\n    show_lanes = COALESCE((p_settings-\u003e\u003e'show_lanes')::bool, show_lanes),\r\n    show_speed_cameras = COALESCE((p_settings-\u003e\u003e'show_speed_cameras')::bool, show_speed_cameras),\r\n    show_poi = COALESCE((p_settings-\u003e\u003e'show_poi')::bool, show_poi),\r\n    show_panorama = COALESCE((p_settings-\u003e\u003e'show_panorama')::bool, show_panorama),\r\n    label_size_multiplier = COALESCE((p_settings-\u003e\u003e'label_size_multiplier')::numeric, label_size_multiplier),\r\n    high_contrast_labels = COALESCE((p_settings-\u003e\u003e'high_contrast_labels')::bool, high_contrast_labels)\r\n  WHERE user_id = p_user_id;\r\n\r\n  SELECT * INTO result FROM navigator_settings WHERE user_id = p_user_id;\r\n  RETURN to_jsonb(result);\r\nEND;\r\n$$","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"CREATE OR REPLACE FUNCTION public.nav_record_voice_learning_event(\r\n  p_transcript_draft TEXT,\r\n  p_transcript_final TEXT DEFAULT NULL,\r\n  p_language_code TEXT DEFAULT 'ru',\r\n  p_accent_tag TEXT DEFAULT NULL,\r\n  p_source TEXT DEFAULT 'voice',\r\n  p_novelty_score NUMERIC DEFAULT 0,\r\n  p_parsed_address JSONB DEFAULT '{}'::jsonb,\r\n  p_validation_status TEXT DEFAULT 'pending_review',\r\n  p_validation_payload JSONB DEFAULT '{}'::jsonb,\r\n  p_metadata JSONB DEFAULT '{}'::jsonb\r\n)\r\nRETURNS UUID\r\nLANGUAGE plpgsql\r\nSECURITY DEFINER\r\nSET search_path = public\r\nAS $$\r\nDECLARE\r\n  v_user_id UUID := auth.uid();\r\n  v_id UUID;\r\nBEGIN\r\n  IF v_user_id IS NULL THEN\r\n    RAISE EXCEPTION 'unauthorized';\r\n  END IF;\r\n\r\n  INSERT INTO public.nav_voice_utterances (\r\n    user_id,\r\n    transcript_draft,\r\n    transcript_final,\r\n    language_code,\r\n    accent_tag,\r\n    source,\r\n    novelty_score,\r\n    parsed_address,\r\n    validation_status,\r\n    validation_payload,\r\n    metadata\r\n  ) VALUES (\r\n    v_user_id,\r\n    p_transcript_draft,\r\n    p_transcript_final,\r\n    p_language_code,\r\n    p_accent_tag,\r\n    p_source,\r\n    COALESCE(p_novelty_score, 0),\r\n    COALESCE(p_parsed_address, '{}'::jsonb),\r\n    COALESCE(p_validation_status, 'pending_review'),\r\n    COALESCE(p_validation_payload, '{}'::jsonb),\r\n    COALESCE(p_metadata, '{}'::jsonb)\r\n  ) RETURNING id INTO v_id;\r\n\r\n  IF COALESCE(p_novelty_score, 0) \u003e= 0.6 THEN\r\n    INSERT INTO public.nav_address_hotspots (\r\n      utterance_id,\r\n      user_id,\r\n      transcript,\r\n      parsed_address,\r\n      novelty_score,\r\n      reasons,\r\n      text_variants,\r\n      synthetic_jobs,\r\n      status\r\n    ) VALUES (\r\n      v_id,\r\n      v_user_id,\r\n      COALESCE(p_transcript_final, p_transcript_draft),\r\n      COALESCE(p_parsed_address, '{}'::jsonb),\r\n      COALESCE(p_novelty_score, 0),\r\n      COALESCE(p_metadata-\u003e'novelty_reasons', '[]'::jsonb),\r\n      COALESCE(p_metadata-\u003e'query_variants', '[]'::jsonb),\r\n      COALESCE(p_metadata-\u003e'synthetic_jobs', '[]'::jsonb),\r\n      'queued'\r\n    );\r\n  END IF;\r\n\r\n  RETURN v_id;\r\nEND;\r\n$$","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"CREATE OR REPLACE FUNCTION public.nav_record_voice_feedback(\r\n  p_utterance_id UUID,\r\n  p_corrected_transcript TEXT,\r\n  p_corrected_address JSONB DEFAULT '{}'::jsonb,\r\n  p_feedback_type TEXT DEFAULT 'explicit_correction',\r\n  p_sample_source TEXT DEFAULT 'user_correction',\r\n  p_validation_source TEXT DEFAULT 'user_selection',\r\n  p_confidence NUMERIC DEFAULT 0.99,\r\n  p_novelty_score NUMERIC DEFAULT 0\r\n)\r\nRETURNS JSONB\r\nLANGUAGE plpgsql\r\nSECURITY DEFINER\r\nSET search_path = public\r\nAS $$\r\nDECLARE\r\n  v_user_id UUID := auth.uid();\r\n  v_sample_id UUID;\r\n  v_feedback_id UUID;\r\nBEGIN\r\n  IF v_user_id IS NULL THEN\r\n    RAISE EXCEPTION 'unauthorized';\r\n  END IF;\r\n\r\n  INSERT INTO public.nav_voice_training_samples (\r\n    utterance_id,\r\n    user_id,\r\n    transcript_final,\r\n    address_json,\r\n    novelty_score,\r\n    confidence,\r\n    is_valid,\r\n    validation_source,\r\n    sample_source\r\n  ) VALUES (\r\n    p_utterance_id,\r\n    v_user_id,\r\n    p_corrected_transcript,\r\n    COALESCE(p_corrected_address, '{}'::jsonb),\r\n    COALESCE(p_novelty_score, 0),\r\n    COALESCE(p_confidence, 0.99),\r\n    true,\r\n    p_validation_source,\r\n    p_sample_source\r\n  ) RETURNING id INTO v_sample_id;\r\n\r\n  INSERT INTO public.nav_voice_feedback (\r\n    user_id,\r\n    utterance_id,\r\n    sample_id,\r\n    corrected_transcript,\r\n    corrected_address,\r\n    feedback_type\r\n  ) VALUES (\r\n    v_user_id,\r\n    p_utterance_id,\r\n    v_sample_id,\r\n    p_corrected_transcript,\r\n    COALESCE(p_corrected_address, '{}'::jsonb),\r\n    p_feedback_type\r\n  ) RETURNING id INTO v_feedback_id;\r\n\r\n  INSERT INTO public.nav_address_patterns (\r\n    country_code,\r\n    city,\r\n    street,\r\n    house_number,\r\n    corpus,\r\n    building,\r\n    structure,\r\n    pattern_type,\r\n    frequency,\r\n    is_confirmed,\r\n    confirmation_source,\r\n    metadata\r\n  ) VALUES (\r\n    NULLIF(COALESCE(p_corrected_address-\u003e\u003e'country', p_corrected_address-\u003e\u003e'country_code'), ''),\r\n    NULLIF(COALESCE(p_corrected_address-\u003e\u003e'locality', p_corrected_address-\u003e\u003e'city'), ''),\r\n    COALESCE(NULLIF(p_corrected_address-\u003e\u003e'road', ''), p_corrected_transcript),\r\n    NULLIF(p_corrected_address-\u003e\u003e'house_number', ''),\r\n    NULLIF(COALESCE(p_corrected_address-\u003e\u003e'corpus', p_corrected_address-\u003e\u003e'block'), ''),\r\n    NULLIF(p_corrected_address-\u003e\u003e'building', ''),\r\n    NULLIF(p_corrected_address-\u003e\u003e'structure', ''),\r\n    CASE WHEN COALESCE(p_corrected_address-\u003e\u003e'corpus', p_corrected_address-\u003e\u003e'block', '') \u003c\u003e '' THEN 'house_corpus' ELSE 'house_number' END,\r\n    1,\r\n    true,\r\n    p_validation_source,\r\n    jsonb_build_object('source', p_sample_source)\r\n  )\r\n  ON CONFLICT (country_code, city, street, house_number, corpus, building, structure)\r\n  DO UPDATE SET\r\n    frequency = public.nav_address_patterns.frequency + 1,\r\n    last_seen = now(),\r\n    is_confirmed = true,\r\n    confirmation_source = EXCLUDED.confirmation_source,\r\n    metadata = public.nav_address_patterns.metadata || EXCLUDED.metadata;\r\n\r\n  RETURN jsonb_build_object(\r\n    'sample_id', v_sample_id,\r\n    'feedback_id', v_feedback_id\r\n  );\r\nEND;\r\n$$","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"REVOKE ALL ON FUNCTION public.nav_record_voice_learning_event(TEXT, TEXT, TEXT, TEXT, TEXT, NUMERIC, JSONB, TEXT, JSONB, JSONB) FROM PUBLIC","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"GRANT EXECUTE ON FUNCTION public.nav_record_voice_learning_event(TEXT, TEXT, TEXT, TEXT, TEXT, NUMERIC, JSONB, TEXT, JSONB, JSONB) TO authenticated","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"REVOKE ALL ON FUNCTION public.nav_record_voice_feedback(UUID, TEXT, JSONB, TEXT, TEXT, TEXT, NUMERIC, NUMERIC) FROM PUBLIC","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"GRANT EXECUTE ON FUNCTION public.nav_record_voice_feedback(UUID, TEXT, JSONB, TEXT, TEXT, TEXT, NUMERIC, NUMERIC) TO authenticated","ParameterOIDs":null}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":null,"Parameters":[],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Parse","Name":"","Query":"INSERT INTO supabase_migrations.schema_migrations(version, name, statements) VALUES($1, $2, $3)","ParameterOIDs":[25,25,1009]}
+2026/04/20 22:02:19 PG Send: {"Type":"Bind","DestinationPortal":"","PreparedStatement":"","ParameterFormatCodes":[0,0,1],"Parameters":[{"text":"20260420233000"},{"text":"voice_learning_settings_and_rpc"},{"binary":"0000000100000000000000190000000800000001000002042d2d203d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d0d0a2d2d204e6176696761746f7220766f6963652d6c6561726e696e672070726f64756374696f6e2073657474696e677320616e6420525043730d0a2d2d203d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d0d0a0d0a414c544552205441424c45207075626c69632e6e6176696761746f725f73657474696e67730d0a202041444420434f4c554d4e204946204e4f542045584953545320766f6963655f6c6561726e696e675f656e61626c656420424f4f4c45414e204e4f54204e554c4c2044454641554c5420747275652c0d0a202041444420434f4c554d4e204946204e4f542045584953545320766f6963655f6261636b656e645f73796e635f656e61626c656420424f4f4c45414e204e4f54204e554c4c2044454641554c5420747275652c0d0a202041444420434f4c554d4e204946204e4f542045584953545320766f6963655f616c6c6f775f6f6e6c696e655f66616c6c6261636b20424f4f4c45414e204e4f54204e554c4c2044454641554c542066616c736500000ac2435245415445204f52205245504c4143452046554e4354494f4e207075626c69632e7570736572745f6e6176696761746f725f73657474696e6773280d0a2020705f757365725f696420555549442c0d0a2020705f73657474696e6773204a534f4e420d0a290d0a52455455524e53204a534f4e420d0a4c414e475541474520706c706773716c0d0a534543555249545920444546494e45520d0a534554207365617263685f70617468203d207075626c69630d0a41532024240d0a4445434c4152450d0a2020726573756c74205245434f52443b0d0a424547494e0d0a2020494620617574682e75696428292049532044495354494e43542046524f4d20705f757365725f6964205448454e0d0a20202020524149534520455843455054494f4e2027756e617574686f72697a6564273b0d0a2020454e442049463b0d0a0d0a2020494e5345525420494e544f206e6176696761746f725f73657474696e67732028757365725f6964290d0a202056414c5545532028705f757365725f6964290d0a20204f4e20434f4e464c4943542028757365725f69642920444f204e4f5448494e473b0d0a0d0a2020555044415445206e6176696761746f725f73657474696e67730d0a20205345540d0a20202020736f756e645f6d6f6465203d20434f414c455343452828705f73657474696e67732d3e3e27736f756e645f6d6f646527292c20736f756e645f6d6f6465292c0d0a20202020766f6c756d65203d20434f414c455343452828705f73657474696e67732d3e3e27766f6c756d6527293a3a696e742c20766f6c756d65292c0d0a202020206d7574655f6f746865725f61707073203d20434f414c455343452828705f73657474696e67732d3e3e276d7574655f6f746865725f6170707327293a3a626f6f6c2c206d7574655f6f746865725f61707073292c0d0a2020202073656c65637465645f766f696365203d20434f414c455343452828705f73657474696e67732d3e3e2773656c65637465645f766f69636527292c2073656c65637465645f766f696365292c0d0a20202020766f6963655f656e61626c6564203d20434f414c455343452828705f73657474696e67732d3e3e27766f6963655f656e61626c656427293a3a626f6f6c2c20766f6963655f656e61626c6564292c0d0a20202020766f6963655f6c6561726e696e675f656e61626c6564203d20434f414c455343452828705f73657474696e67732d3e3e27766f6963655f6c6561726e696e675f656e61626c656427293a3a626f6f6c2c20766f6963655f6c6561726e696e675f656e61626c6564292c0d0a20202020766f6963655f6261636b656e645f73796e635f656e61626c6564203d20434f414c455343452828705f73657474696e67732d3e3e27766f6963655f6261636b656e645f73796e635f656e61626c656427293a3a626f6f6c2c20766f6963655f6261636b656e645f73796e635f656e61626c6564292c0d0a20202020766f6963655f616c6c6f775f6f6e6c696e655f66616c6c6261636b203d20434f414c455343452828705f73657474696e67732d3e3e27766f6963655f616c6c6f775f6f6e6c696e655f66616c6c6261636b27293a3a626f6f6c2c20766f6963655f616c6c6f775f6f6e6c696e655f66616c6c6261636b292c0d0a2020202061766f69645f746f6c6c73203d20434f414c455343452828705f73657474696e67732d3e3e2761766f69645f746f6c6c7327293a3a626f6f6c2c2061766f69645f746f6c6c73292c0d0a2020202061766f69645f756e7061766564203d20434f414c455343452828705f73657474696e67732d3e3e2761766f69645f756e706176656427293a3a626f6f6c2c2061766f69645f756e7061766564292c0d0a2020202061766f69645f6869676877617973203d20434f414c455343452828705f73657474696e67732d3e3e2761766f69645f686967687761797327293a3a626f6f6c2c2061766f69645f6869676877617973292c0d0a2020202073656c65637465645f76656869636c65203d20434f414c455343452828705f73657474696e67732d3e3e2773656c65637465645f76656869636c6527292c2073656c65637465645f76656869636c65292c0d0a202020206d61705f766965775f6d6f6465203d20434f414c455343452828705f73657474696e67732d3e3e276d61705f766965775f6d6f646527292c206d61705f766965775f6d6f6465292c0d0a202020206e61765f7468656d65203d20434f414c455343452828705f73657474696e67732d3e3e276e61765f7468656d6527292c206e61765f7468656d65292c0d0a2020202073686f775f33645f6275696c64696e6773203d20434f414c455343452828705f73657474696e67732d3e3e2773686f775f33645f6275696c64696e677327293a3a626f6f6c2c2073686f775f33645f6275696c64696e6773292c0d0a2020202073686f775f747261666669635f6c6967687473203d20434f414c455343452828705f73657474696e67732d3e3e2773686f775f747261666669635f6c696768747327293a3a626f6f6c2c2073686f775f747261666669635f6c6967687473292c0d0a2020202073686f775f73706565645f62756d7073203d20434f414c455343452828705f73657474696e67732d3e3e2773686f775f73706565645f62756d707327293a3a626f6f6c2c2073686f775f73706565645f62756d7073292c0d0a2020202073686f775f726f61645f7369676e73203d20434f414c455343452828705f73657474696e67732d3e3e2773686f775f726f61645f7369676e7327293a3a626f6f6c2c2073686f775f726f61645f7369676e73292c0d0a2020202073686f775f6c616e6573203d20434f414c455343452828705f73657474696e67732d3e3e2773686f775f6c616e657327293a3a626f6f6c2c2073686f775f6c616e6573292c0d0a2020202073686f775f73706565645f63616d65726173203d20434f414c455343452828705f73657474696e67732d3e3e2773686f775f73706565645f63616d6572617327293a3a626f6f6c2c2073686f775f73706565645f63616d65726173292c0d0a2020202073686f775f706f69203d20434f414c455343452828705f73657474696e67732d3e3e2773686f775f706f6927293a3a626f6f6c2c2073686f775f706f69292c0d0a2020202073686f775f70616e6f72616d61203d20434f414c455343452828705f73657474696e67732d3e3e2773686f775f70616e6f72616d6127293a3a626f6f6c2c2073686f775f70616e6f72616d61292c0d0a202020206c6162656c5f73697a655f6d756c7469706c696572203d20434f414c455343452828705f73657474696e67732d3e3e276c6162656c5f73697a655f6d756c7469706c69657227293a3a6e756d657269632c206c6162656c5f73697a655f6d756c7469706c696572292c0d0a20202020686967685f636f6e74726173745f6c6162656c73203d20434f414c455343452828705f73657474696e67732d3e3e27686967685f636f6e74726173745f6c6162656c7327293a3a626f6f6c2c20686967685f636f6e74726173745f6c6162656c73290d0a2020574845524520757365725f6964203d20705f757365725f69643b0d0a0d0a202053454c454354202a20494e544f20726573756c742046524f4d206e6176696761746f725f73657474696e677320574845524520757365725f6964203d20705f757365725f69643b0d0a202052455455524e20746f5f6a736f6e6228726573756c74293b0d0a454e443b0d0a242400000805435245415445204f52205245504c4143452046554e4354494f4e207075626c69632e6e61765f7265636f72645f766f6963655f6c6561726e696e675f6576656e74280d0a2020705f7472616e7363726970745f647261667420544558542c0d0a2020705f7472616e7363726970745f66696e616c20544558542044454641554c54204e554c4c2c0d0a2020705f6c616e67756167655f636f646520544558542044454641554c5420277275272c0d0a2020705f616363656e745f74616720544558542044454641554c54204e554c4c2c0d0a2020705f736f7572636520544558542044454641554c542027766f696365272c0d0a2020705f6e6f76656c74795f73636f7265204e554d455249432044454641554c5420302c0d0a2020705f7061727365645f61646472657373204a534f4e422044454641554c5420277b7d273a3a6a736f6e622c0d0a2020705f76616c69646174696f6e5f73746174757320544558542044454641554c54202770656e64696e675f726576696577272c0d0a2020705f76616c69646174696f6e5f7061796c6f6164204a534f4e422044454641554c5420277b7d273a3a6a736f6e622c0d0a2020705f6d65746164617461204a534f4e422044454641554c5420277b7d273a3a6a736f6e620d0a290d0a52455455524e5320555549440d0a4c414e475541474520706c706773716c0d0a534543555249545920444546494e45520d0a534554207365617263685f70617468203d207075626c69630d0a41532024240d0a4445434c4152450d0a2020765f757365725f69642055554944203a3d20617574682e75696428293b0d0a2020765f696420555549443b0d0a424547494e0d0a2020494620765f757365725f6964204953204e554c4c205448454e0d0a20202020524149534520455843455054494f4e2027756e617574686f72697a6564273b0d0a2020454e442049463b0d0a0d0a2020494e5345525420494e544f207075626c69632e6e61765f766f6963655f7574746572616e63657320280d0a20202020757365725f69642c0d0a202020207472616e7363726970745f64726166742c0d0a202020207472616e7363726970745f66696e616c2c0d0a202020206c616e67756167655f636f64652c0d0a20202020616363656e745f7461672c0d0a20202020736f757263652c0d0a202020206e6f76656c74795f73636f72652c0d0a202020207061727365645f616464726573732c0d0a2020202076616c69646174696f6e5f7374617475732c0d0a2020202076616c69646174696f6e5f7061796c6f61642c0d0a202020206d657461646174610d0a2020292056414c55455320280d0a20202020765f757365725f69642c0d0a20202020705f7472616e7363726970745f64726166742c0d0a20202020705f7472616e7363726970745f66696e616c2c0d0a20202020705f6c616e67756167655f636f64652c0d0a20202020705f616363656e745f7461672c0d0a20202020705f736f757263652c0d0a20202020434f414c4553434528705f6e6f76656c74795f73636f72652c2030292c0d0a20202020434f414c4553434528705f7061727365645f616464726573732c20277b7d273a3a6a736f6e62292c0d0a20202020434f414c4553434528705f76616c69646174696f6e5f7374617475732c202770656e64696e675f72657669657727292c0d0a20202020434f414c4553434528705f76616c69646174696f6e5f7061796c6f61642c20277b7d273a3a6a736f6e62292c0d0a20202020434f414c4553434528705f6d657461646174612c20277b7d273a3a6a736f6e62290d0a2020292052455455524e494e4720696420494e544f20765f69643b0d0a0d0a2020494620434f414c4553434528705f6e6f76656c74795f73636f72652c203029203e3d20302e36205448454e0d0a20202020494e5345525420494e544f207075626c69632e6e61765f616464726573735f686f7473706f747320280d0a2020202020207574746572616e63655f69642c0d0a202020202020757365725f69642c0d0a2020202020207472616e7363726970742c0d0a2020202020207061727365645f616464726573732c0d0a2020202020206e6f76656c74795f73636f72652c0d0a202020202020726561736f6e732c0d0a202020202020746578745f76617269616e74732c0d0a20202020202073796e7468657469635f6a6f62732c0d0a2020202020207374617475730d0a20202020292056414c55455320280d0a202020202020765f69642c0d0a202020202020765f757365725f69642c0d0a202020202020434f414c4553434528705f7472616e7363726970745f66696e616c2c20705f7472616e7363726970745f6472616674292c0d0a202020202020434f414c4553434528705f7061727365645f616464726573732c20277b7d273a3a6a736f6e62292c0d0a202020202020434f414c4553434528705f6e6f76656c74795f73636f72652c2030292c0d0a202020202020434f414c4553434528705f6d657461646174612d3e276e6f76656c74795f726561736f6e73272c20275b5d273a3a6a736f6e62292c0d0a202020202020434f414c4553434528705f6d657461646174612d3e2771756572795f76617269616e7473272c20275b5d273a3a6a736f6e62292c0d0a202020202020434f414c4553434528705f6d657461646174612d3e2773796e7468657469635f6a6f6273272c20275b5d273a3a6a736f6e62292c0d0a20202020202027717565756564270d0a20202020293b0d0a2020454e442049463b0d0a0d0a202052455455524e20765f69643b0d0a454e443b0d0a242400000bd1435245415445204f52205245504c4143452046554e4354494f4e207075626c69632e6e61765f7265636f72645f766f6963655f666565646261636b280d0a2020705f7574746572616e63655f696420555549442c0d0a2020705f636f727265637465645f7472616e73637269707420544558542c0d0a2020705f636f727265637465645f61646472657373204a534f4e422044454641554c5420277b7d273a3a6a736f6e622c0d0a2020705f666565646261636b5f7479706520544558542044454641554c5420276578706c696369745f636f7272656374696f6e272c0d0a2020705f73616d706c655f736f7572636520544558542044454641554c542027757365725f636f7272656374696f6e272c0d0a2020705f76616c69646174696f6e5f736f7572636520544558542044454641554c542027757365725f73656c656374696f6e272c0d0a2020705f636f6e666964656e6365204e554d455249432044454641554c5420302e39392c0d0a2020705f6e6f76656c74795f73636f7265204e554d455249432044454641554c5420300d0a290d0a52455455524e53204a534f4e420d0a4c414e475541474520706c706773716c0d0a534543555249545920444546494e45520d0a534554207365617263685f70617468203d207075626c69630d0a41532024240d0a4445434c4152450d0a2020765f757365725f69642055554944203a3d20617574682e75696428293b0d0a2020765f73616d706c655f696420555549443b0d0a2020765f666565646261636b5f696420555549443b0d0a424547494e0d0a2020494620765f757365725f6964204953204e554c4c205448454e0d0a20202020524149534520455843455054494f4e2027756e617574686f72697a6564273b0d0a2020454e442049463b0d0a0d0a2020494e5345525420494e544f207075626c69632e6e61765f766f6963655f747261696e696e675f73616d706c657320280d0a202020207574746572616e63655f69642c0d0a20202020757365725f69642c0d0a202020207472616e7363726970745f66696e616c2c0d0a20202020616464726573735f6a736f6e2c0d0a202020206e6f76656c74795f73636f72652c0d0a20202020636f6e666964656e63652c0d0a2020202069735f76616c69642c0d0a2020202076616c69646174696f6e5f736f757263652c0d0a2020202073616d706c655f736f757263650d0a2020292056414c55455320280d0a20202020705f7574746572616e63655f69642c0d0a20202020765f757365725f69642c0d0a20202020705f636f727265637465645f7472616e7363726970742c0d0a20202020434f414c4553434528705f636f727265637465645f616464726573732c20277b7d273a3a6a736f6e62292c0d0a20202020434f414c4553434528705f6e6f76656c74795f73636f72652c2030292c0d0a20202020434f414c4553434528705f636f6e666964656e63652c20302e3939292c0d0a20202020747275652c0d0a20202020705f76616c69646174696f6e5f736f757263652c0d0a20202020705f73616d706c655f736f757263650d0a2020292052455455524e494e4720696420494e544f20765f73616d706c655f69643b0d0a0d0a2020494e5345525420494e544f207075626c69632e6e61765f766f6963655f666565646261636b20280d0a20202020757365725f69642c0d0a202020207574746572616e63655f69642c0d0a2020202073616d706c655f69642c0d0a20202020636f727265637465645f7472616e7363726970742c0d0a20202020636f727265637465645f616464726573732c0d0a20202020666565646261636b5f747970650d0a2020292056414c55455320280d0a20202020765f757365725f69642c0d0a20202020705f7574746572616e63655f69642c0d0a20202020765f73616d706c655f69642c0d0a20202020705f636f727265637465645f7472616e7363726970742c0d0a20202020434f414c4553434528705f636f727265637465645f616464726573732c20277b7d273a3a6a736f6e62292c0d0a20202020705f666565646261636b5f747970650d0a2020292052455455524e494e4720696420494e544f20765f666565646261636b5f69643b0d0a0d0a2020494e5345525420494e544f207075626c69632e6e61765f616464726573735f7061747465726e7320280d0a20202020636f756e7472795f636f64652c0d0a20202020636974792c0d0a202020207374726565742c0d0a20202020686f7573655f6e756d6265722c0d0a20202020636f727075732c0d0a202020206275696c64696e672c0d0a202020207374727563747572652c0d0a202020207061747465726e5f747970652c0d0a202020206672657175656e63792c0d0a2020202069735f636f6e6669726d65642c0d0a20202020636f6e6669726d6174696f6e5f736f757263652c0d0a202020206d657461646174610d0a2020292056414c55455320280d0a202020204e554c4c494628434f414c4553434528705f636f727265637465645f616464726573732d3e3e27636f756e747279272c20705f636f727265637465645f616464726573732d3e3e27636f756e7472795f636f646527292c202727292c0d0a202020204e554c4c494628434f414c4553434528705f636f727265637465645f616464726573732d3e3e276c6f63616c697479272c20705f636f727265637465645f616464726573732d3e3e276369747927292c202727292c0d0a20202020434f414c45534345284e554c4c494628705f636f727265637465645f616464726573732d3e3e27726f6164272c202727292c20705f636f727265637465645f7472616e736372697074292c0d0a202020204e554c4c494628705f636f727265637465645f616464726573732d3e3e27686f7573655f6e756d626572272c202727292c0d0a202020204e554c4c494628434f414c4553434528705f636f727265637465645f616464726573732d3e3e27636f72707573272c20705f636f727265637465645f616464726573732d3e3e27626c6f636b27292c202727292c0d0a202020204e554c4c494628705f636f727265637465645f616464726573732d3e3e276275696c64696e67272c202727292c0d0a202020204e554c4c494628705f636f727265637465645f616464726573732d3e3e27737472756374757265272c202727292c0d0a2020202043415345205748454e20434f414c4553434528705f636f727265637465645f616464726573732d3e3e27636f72707573272c20705f636f727265637465645f616464726573732d3e3e27626c6f636b272c20272729203c3e202727205448454e2027686f7573655f636f727075732720454c53452027686f7573655f6e756d6265722720454e442c0d0a20202020312c0d0a20202020747275652c0d0a20202020705f76616c69646174696f6e5f736f757263652c0d0a202020206a736f6e625f6275696c645f6f626a6563742827736f75726365272c20705f73616d706c655f736f75726365290d0a2020290d0a20204f4e20434f4e464c4943542028636f756e7472795f636f64652c20636974792c207374726565742c20686f7573655f6e756d6265722c20636f727075732c206275696c64696e672c20737472756374757265290d0a2020444f20555044415445205345540d0a202020206672657175656e6379203d207075626c69632e6e61765f616464726573735f7061747465726e732e6672657175656e6379202b20312c0d0a202020206c6173745f7365656e203d206e6f7728292c0d0a2020202069735f636f6e6669726d6564203d20747275652c0d0a20202020636f6e6669726d6174696f6e5f736f75726365203d204558434c554445442e636f6e6669726d6174696f6e5f736f757263652c0d0a202020206d65746164617461203d207075626c69632e6e61765f616464726573735f7061747465726e732e6d65746164617461207c7c204558434c554445442e6d657461646174613b0d0a0d0a202052455455524e206a736f6e625f6275696c645f6f626a656374280d0a202020202773616d706c655f6964272c20765f73616d706c655f69642c0d0a2020202027666565646261636b5f6964272c20765f666565646261636b5f69640d0a2020293b0d0a454e443b0d0a24240000008b5245564f4b4520414c4c204f4e2046554e4354494f4e207075626c69632e6e61765f7265636f72645f766f6963655f6c6561726e696e675f6576656e7428544558542c20544558542c20544558542c20544558542c20544558542c204e554d455249432c204a534f4e422c20544558542c204a534f4e422c204a534f4e42292046524f4d205055424c4943000000934752414e542045584543555445204f4e2046554e4354494f4e207075626c69632e6e61765f7265636f72645f766f6963655f6c6561726e696e675f6576656e7428544558542c20544558542c20544558542c20544558542c20544558542c204e554d455249432c204a534f4e422c20544558542c204a534f4e422c204a534f4e422920544f2061757468656e746963617465640000007a5245564f4b4520414c4c204f4e2046554e4354494f4e207075626c69632e6e61765f7265636f72645f766f6963655f666565646261636b28555549442c20544558542c204a534f4e422c20544558542c20544558542c20544558542c204e554d455249432c204e554d45524943292046524f4d205055424c4943000000824752414e542045584543555445204f4e2046554e4354494f4e207075626c69632e6e61765f7265636f72645f766f6963655f666565646261636b28555549442c20544558542c204a534f4e422c20544558542c20544558542c20544558542c204e554d455249432c204e554d455249432920544f2061757468656e74696361746564"}],"ResultFormatCodes":[]}
+2026/04/20 22:02:19 PG Send: {"Type":"Describe","ObjectType":"P","Name":""}
+2026/04/20 22:02:19 PG Send: {"Type":"Execute","Portal":"","MaxRows":0}
+2026/04/20 22:02:19 PG Send: {"Type":"Sync"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"ALTER TABLE"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"CREATE FUNCTION"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"CREATE FUNCTION"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"CREATE FUNCTION"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"REVOKE"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"GRANT"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"REVOKE"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"GRANT"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ParseComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"BindComplete"}
+2026/04/20 22:02:19 PG Recv: {"Type":"NoData"}
+2026/04/20 22:02:19 PG Recv: {"Type":"CommandComplete","CommandTag":"INSERT 0 1"}
+2026/04/20 22:02:19 PG Recv: {"Type":"ReadyForQuery","TxStatus":"I"}
+Finished supabase db push.
+2026/04/20 22:02:19 PG Send: {"Type":"Terminate"}
+2026/04/20 22:02:19 HTTP POST: https://eu.i.posthog.com/batch/

@@ -9,6 +9,8 @@ import { ArrowLeft, Building2, User, Briefcase, Send, MapPin, Phone, Globe, Cloc
 import { cn } from '@/lib/utils';
 import { supabase, dbLoose } from '@/lib/supabase';
 import { toast } from 'sonner';
+import { useUserSettings } from '@/contexts/UserSettingsContext';
+import { navText } from '@/lib/navigation/navigationUi';
 
 type BusinessType = 'ip' | 'ooo' | 'self_employed';
 
@@ -70,6 +72,8 @@ const initialForm: BusinessForm = {
 
 export default function BusinessRegistrationPage() {
   const routerNav = useNavigate();
+  const { settings } = useUserSettings();
+  const languageCode = settings?.language_code ?? null;
   const [step, setStep] = useState(0); // 0: type selection, 1: details, 2: confirmation
   const [form, setForm] = useState<BusinessForm>(initialForm);
   const [submitting, setSubmitting] = useState(false);
@@ -80,7 +84,7 @@ export default function BusinessRegistrationPage() {
 
   const handleSubmit = async () => {
     if (!form.name || !form.inn || !form.address || !form.phone || !form.category) {
-      toast.error('Заполните обязательные поля');
+      toast.error(navText('Заполните обязательные поля', 'Fill in the required fields', languageCode));
       return;
     }
 
@@ -88,7 +92,7 @@ export default function BusinessRegistrationPage() {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
-        toast.error('Необходимо авторизоваться');
+        toast.error(navText('Необходимо авторизоваться', 'You need to sign in', languageCode));
         return;
       }
 
@@ -113,10 +117,10 @@ export default function BusinessRegistrationPage() {
 
       if (error) throw error;
 
-      toast.success('Заявка отправлена на модерацию');
+      toast.success(navText('Заявка отправлена на модерацию', 'Application submitted for review', languageCode));
       setStep(2);
     } catch (err: any) {
-      toast.error(`Ошибка: ${err.message || 'Не удалось отправить'}`);
+      toast.error(`${navText('Ошибка', 'Error', languageCode)}: ${err.message || navText('Не удалось отправить', 'Failed to submit', languageCode)}`);
     } finally {
       setSubmitting(false);
     }
@@ -129,9 +133,9 @@ export default function BusinessRegistrationPage() {
           <ArrowLeft className="h-5 w-5" />
         </button>
         <h1 className="text-lg font-semibold">
-          {step === 0 && 'Регистрация бизнеса'}
-          {step === 1 && 'Данные бизнеса'}
-          {step === 2 && 'Заявка отправлена'}
+          {step === 0 && navText('Регистрация бизнеса', 'Business registration', languageCode)}
+          {step === 1 && navText('Данные бизнеса', 'Business details', languageCode)}
+          {step === 2 && navText('Заявка отправлена', 'Application submitted', languageCode)}
         </h1>
       </header>
 
@@ -140,8 +144,7 @@ export default function BusinessRegistrationPage() {
         {step === 0 && (
           <div className="space-y-4">
             <p className="text-sm text-gray-400 mb-4">
-              Выберите форму бизнеса для размещения на карте навигатора.
-              После проверки модератором ваш бизнес станет виден всем пользователям.
+              {navText('Выберите форму бизнеса для размещения на карте навигатора. После проверки модератором ваш бизнес станет виден всем пользователям.', 'Choose the business type to place on the navigator map. After moderator review, your business will become visible to all users.', languageCode)}
             </p>
 
             {BUSINESS_TYPES.map((bt) => (
@@ -158,8 +161,8 @@ export default function BusinessRegistrationPage() {
                   {bt.icon}
                 </div>
                 <div className="text-left">
-                  <p className="font-semibold text-lg">{bt.label}</p>
-                  <p className="text-sm text-gray-400">{bt.desc}</p>
+                  <p className="font-semibold text-lg">{bt.id === 'self_employed' ? navText('Самозанятый', 'Self-employed', languageCode) : bt.label}</p>
+                  <p className="text-sm text-gray-400">{bt.id === 'ip' ? navText('Индивидуальный предприниматель', 'Individual entrepreneur', languageCode) : bt.id === 'ooo' ? navText('Общество с ограниченной ответственностью', 'Limited liability company', languageCode) : navText('Налог на профессиональный доход', 'Professional income tax payer', languageCode)}</p>
                 </div>
               </button>
             ))}
@@ -169,10 +172,10 @@ export default function BusinessRegistrationPage() {
         {/* Step 1: Business details form */}
         {step === 1 && (
           <div className="space-y-4">
-            <FormField label="Название *" icon={<Building2 className="h-4 w-4" />}>
+            <FormField label={`${navText('Название', 'Name', languageCode)} *`} icon={<Building2 className="h-4 w-4" />}>
               <input
                 type="text"
-                placeholder="Как будет отображаться на карте"
+                placeholder={navText('Как будет отображаться на карте', 'How it will appear on the map', languageCode)}
                 value={form.name}
                 onChange={e => update('name', e.target.value)}
                 className="form-input"
@@ -180,10 +183,10 @@ export default function BusinessRegistrationPage() {
               />
             </FormField>
 
-            <FormField label="Юридическое название" icon={<Briefcase className="h-4 w-4" />}>
+            <FormField label={navText('Юридическое название', 'Legal name', languageCode)} icon={<Briefcase className="h-4 w-4" />}>
               <input
                 type="text"
-                placeholder={form.businessType === 'ip' ? 'ИП Иванов И.И.' : 'ООО "Компания"'}
+                placeholder={form.businessType === 'ip' ? navText('ИП Иванов И.И.', 'IE Smith J.J.', languageCode) : navText('ООО "Компания"', 'LLC "Company"', languageCode)}
                 value={form.legalName}
                 onChange={e => update('legalName', e.target.value)}
                 className="form-input"
@@ -191,10 +194,10 @@ export default function BusinessRegistrationPage() {
               />
             </FormField>
 
-            <FormField label="ИНН *" icon={<Briefcase className="h-4 w-4" />}>
+            <FormField label="TIN *" icon={<Briefcase className="h-4 w-4" />}>
               <input
                 type="text"
-                placeholder={form.businessType === 'ooo' ? '10 цифр' : '12 цифр'}
+                placeholder={form.businessType === 'ooo' ? navText('10 цифр', '10 digits', languageCode) : navText('12 цифр', '12 digits', languageCode)}
                 value={form.inn}
                 onChange={e => update('inn', e.target.value.replace(/\D/g, ''))}
                 className="form-input"
@@ -204,10 +207,10 @@ export default function BusinessRegistrationPage() {
             </FormField>
 
             {form.businessType !== 'self_employed' && (
-              <FormField label="ОГРН / ОГРНИП" icon={<Briefcase className="h-4 w-4" />}>
+              <FormField label="OGRN / OGRNIP" icon={<Briefcase className="h-4 w-4" />}>
                 <input
                   type="text"
-                  placeholder={form.businessType === 'ooo' ? '13 цифр' : '15 цифр'}
+                  placeholder={form.businessType === 'ooo' ? navText('13 цифр', '13 digits', languageCode) : navText('15 цифр', '15 digits', languageCode)}
                   value={form.ogrn}
                   onChange={e => update('ogrn', e.target.value.replace(/\D/g, ''))}
                   className="form-input"
@@ -217,10 +220,10 @@ export default function BusinessRegistrationPage() {
               </FormField>
             )}
 
-            <FormField label="Адрес *" icon={<MapPin className="h-4 w-4" />}>
+            <FormField label={`${navText('Адрес', 'Address', languageCode)} *`} icon={<MapPin className="h-4 w-4" />}>
               <input
                 type="text"
-                placeholder="Москва, ул. Примерная, д. 1"
+                placeholder={navText('Москва, ул. Примерная, д. 1', '123 Example St, Moscow', languageCode)}
                 value={form.address}
                 onChange={e => update('address', e.target.value)}
                 className="form-input"
@@ -228,20 +231,34 @@ export default function BusinessRegistrationPage() {
               />
             </FormField>
 
-            <FormField label="Категория *" icon={<Building2 className="h-4 w-4" />}>
+            <FormField label={`${navText('Категория', 'Category', languageCode)} *`} icon={<Building2 className="h-4 w-4" />}>
               <select
                 value={form.category}
                 onChange={e => update('category', e.target.value)}
                 className="form-input bg-gray-800"
               >
-                <option value="">Выберите категорию</option>
+                <option value="">{navText('Выберите категорию', 'Choose a category', languageCode)}</option>
                 {CATEGORIES.map(c => (
-                  <option key={c} value={c}>{c}</option>
+                  <option key={c} value={c}>
+                    {c === 'Кафе / Ресторан' ? navText('Кафе / Ресторан', 'Cafe / Restaurant', languageCode)
+                      : c === 'Магазин' ? navText('Магазин', 'Store', languageCode)
+                        : c === 'Автосервис' ? navText('Автосервис', 'Auto service', languageCode)
+                          : c === 'Салон красоты' ? navText('Салон красоты', 'Beauty salon', languageCode)
+                            : c === 'Медицина' ? navText('Медицина', 'Healthcare', languageCode)
+                              : c === 'Образование' ? navText('Образование', 'Education', languageCode)
+                                : c === 'Юридические услуги' ? navText('Юридические услуги', 'Legal services', languageCode)
+                                  : c === 'Финансы' ? navText('Финансы', 'Finance', languageCode)
+                                    : c === 'Спорт и фитнес' ? navText('Спорт и фитнес', 'Sports and fitness', languageCode)
+                                      : c === 'Доставка' ? navText('Доставка', 'Delivery', languageCode)
+                                        : c === 'Гостиница' ? navText('Гостиница', 'Hotel', languageCode)
+                                          : c === 'Развлечения' ? navText('Развлечения', 'Entertainment', languageCode)
+                                            : navText('Другое', 'Other', languageCode)}
+                  </option>
                 ))}
               </select>
             </FormField>
 
-            <FormField label="Телефон *" icon={<Phone className="h-4 w-4" />}>
+            <FormField label={`${navText('Телефон', 'Phone', languageCode)} *`} icon={<Phone className="h-4 w-4" />}>
               <input
                 type="tel"
                 placeholder="+7 (999) 123-45-67"
@@ -252,7 +269,7 @@ export default function BusinessRegistrationPage() {
               />
             </FormField>
 
-            <FormField label="Сайт" icon={<Globe className="h-4 w-4" />}>
+            <FormField label={navText('Сайт', 'Website', languageCode)} icon={<Globe className="h-4 w-4" />}>
               <input
                 type="url"
                 placeholder="https://example.com"
@@ -262,19 +279,19 @@ export default function BusinessRegistrationPage() {
               />
             </FormField>
 
-            <FormField label="Часы работы" icon={<Clock className="h-4 w-4" />}>
+            <FormField label={navText('Часы работы', 'Working hours', languageCode)} icon={<Clock className="h-4 w-4" />}>
               <input
                 type="text"
-                placeholder="Пн-Пт 9:00-18:00, Сб 10:00-15:00"
+                placeholder={navText('Пн-Пт 9:00-18:00, Сб 10:00-15:00', 'Mon-Fri 9:00-18:00, Sat 10:00-15:00', languageCode)}
                 value={form.workingHours}
                 onChange={e => update('workingHours', e.target.value)}
                 className="form-input"
               />
             </FormField>
 
-            <FormField label="Описание" icon={<Building2 className="h-4 w-4" />}>
+            <FormField label={navText('Описание', 'Description', languageCode)} icon={<Building2 className="h-4 w-4" />}>
               <textarea
-                placeholder="Краткое описание деятельности"
+                placeholder={navText('Краткое описание деятельности', 'Short business description', languageCode)}
                 value={form.description}
                 onChange={e => update('description', e.target.value)}
                 className="form-input resize-none h-24"
@@ -294,7 +311,7 @@ export default function BusinessRegistrationPage() {
               )}
             >
               <Send className="h-4 w-4" />
-              {submitting ? 'Отправка...' : 'Отправить на модерацию'}
+              {submitting ? navText('Отправка...', 'Sending...', languageCode) : navText('Отправить на модерацию', 'Submit for review', languageCode)}
             </button>
           </div>
         )}
@@ -305,16 +322,15 @@ export default function BusinessRegistrationPage() {
             <div className="w-20 h-20 rounded-full bg-green-500/20 flex items-center justify-center mb-6">
               <Building2 className="h-10 w-10 text-green-400" />
             </div>
-            <h2 className="text-2xl font-bold mb-2">Заявка отправлена!</h2>
+            <h2 className="text-2xl font-bold mb-2">{navText('Заявка отправлена!', 'Application submitted!', languageCode)}</h2>
             <p className="text-gray-400 max-w-sm mb-8">
-              Ваша заявка на регистрацию бизнеса «{form.name}» будет рассмотрена модератором
-              в течение 1-3 рабочих дней. Вы получите уведомление о результате.
+              {navText(`Ваша заявка на регистрацию бизнеса «${form.name}» будет рассмотрена модератором в течение 1-3 рабочих дней. Вы получите уведомление о результате.`, `Your application to register the business “${form.name}” will be reviewed by a moderator within 1-3 business days. You will receive a notification with the result.`, languageCode)}
             </p>
             <button
               onClick={() => routerNav(-1)}
               className="px-8 py-3 rounded-xl bg-white/10 hover:bg-white/15 font-medium transition-colors"
             >
-              Вернуться
+              {navText('Вернуться', 'Go back', languageCode)}
             </button>
           </div>
         )}

@@ -25,6 +25,8 @@ import {
   type TransitType,
   type TransitStop,
 } from '@/hooks/useTransitRoutes';
+import { useUserSettings } from '@/contexts/UserSettingsContext';
+import { navText } from '@/lib/navigation/navigationUi';
 
 // ─── Конфигурация типов транспорта ───────────────────────────────────────────
 
@@ -103,12 +105,23 @@ function StopCard({ stop, isLast, color }: { stop: TransitStop; isLast: boolean;
 function RouteCard({
   route,
   onSelectRoute,
+  languageCode,
 }: {
   route: TransitRoute;
   onSelectRoute?: (route: TransitRoute) => void;
+  languageCode?: string | null;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const config = TRANSIT_TYPE_CONFIG[route.route_type];
+  const config = {
+    ...TRANSIT_TYPE_CONFIG[route.route_type],
+    label: navText(TRANSIT_TYPE_CONFIG[route.route_type].label, {
+      'Автобус': 'Bus',
+      'Троллейбус': 'Trolleybus',
+      'Трамвай': 'Tram',
+      'Метро': 'Metro',
+      'Электричка': 'Suburban rail',
+    }[TRANSIT_TYPE_CONFIG[route.route_type].label] ?? TRANSIT_TYPE_CONFIG[route.route_type].label, languageCode),
+  };
   const sortedStops = useMemo(
     () => [...route.stops].sort((a, b) => a.order - b.order),
     [route.stops]
@@ -135,7 +148,7 @@ function RouteCard({
           'min-h-[44px] transition-colors'
         )}
         aria-expanded={expanded}
-        aria-label={`Маршрут ${route.route_number} — ${route.name}`}
+        aria-label={`${navText('Маршрут', 'Route', languageCode)} ${route.route_number} — ${route.name}`}
       >
         {/* Номер маршрута */}
         <div
@@ -156,7 +169,7 @@ function RouteCard({
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium text-white truncate">{route.name}</p>
           <p className="text-xs text-zinc-500">
-            {config.label} · {route.stops.length} остановок
+            {config.label} · {route.stops.length} {navText('остановок', 'stops', languageCode)}
           </p>
         </div>
 
@@ -174,7 +187,7 @@ function RouteCard({
                 'flex items-center justify-center',
                 'text-zinc-500 hover:text-white hover:bg-white/10'
               )}
-              aria-label={`Показать на карте маршрут ${route.route_number}`}
+              aria-label={`${navText('Показать на карте маршрут', 'Show route on map', languageCode)} ${route.route_number}`}
             >
               <MapPin className="w-4 h-4" />
             </button>
@@ -191,7 +204,7 @@ function RouteCard({
       {/* Остановки (раскрываемый блок) */}
       {expanded && sortedStops.length > 0 && (
         <div className="px-4 pb-3 pt-1 border-t border-zinc-800/60">
-          <p className="text-xs text-zinc-500 mb-2">Остановки маршрута</p>
+          <p className="text-xs text-zinc-500 mb-2">{navText('Остановки маршрута', 'Route stops', languageCode)}</p>
           <div className="max-h-[200px] overflow-y-auto">
             {sortedStops.map((stop, i) => (
               <StopCard
@@ -207,7 +220,7 @@ function RouteCard({
 
       {expanded && sortedStops.length === 0 && (
         <div className="px-4 pb-3 border-t border-zinc-800/60">
-          <p className="text-xs text-zinc-500 py-2 text-center">Нет данных об остановках</p>
+          <p className="text-xs text-zinc-500 py-2 text-center">{navText('Нет данных об остановках', 'No stop data available', languageCode)}</p>
         </div>
       )}
     </div>
@@ -223,6 +236,8 @@ interface TransitRoutesProps {
 
 export function TransitRoutes({ onSelectRoute, className }: TransitRoutesProps) {
   const { routes, loading, error, searchRoutes, refresh } = useTransitRoutes();
+  const { settings } = useUserSettings();
+  const languageCode = settings?.language_code ?? null;
 
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<TransitRoute[] | null>(null);
@@ -290,7 +305,7 @@ export function TransitRoutes({ onSelectRoute, className }: TransitRoutesProps) 
           className="border-zinc-700 text-zinc-300 hover:bg-zinc-800"
         >
           <RefreshCw className="w-4 h-4 mr-1.5" />
-          Повторить
+          {navText('Повторить', 'Retry', languageCode)}
         </Button>
       </div>
     );
@@ -305,14 +320,14 @@ export function TransitRoutes({ onSelectRoute, className }: TransitRoutesProps) 
           type="text"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Номер маршрута..."
+          placeholder={navText('Номер маршрута...', 'Route number...', languageCode)}
           className={cn(
             'w-full pl-10 pr-4 py-2.5 rounded-xl text-sm',
             'bg-zinc-900 border border-zinc-800 text-white',
             'placeholder:text-zinc-600 outline-none',
             'focus:border-blue-500/50 transition-colors'
           )}
-          aria-label="Поиск по номеру маршрута"
+          aria-label={navText('Поиск по номеру маршрута', 'Search by route number', languageCode)}
         />
         {searching && (
           <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 animate-spin" />
@@ -335,7 +350,7 @@ export function TransitRoutes({ onSelectRoute, className }: TransitRoutesProps) 
             )}
             aria-pressed={filter === ft.value}
           >
-            {ft.label}
+            {ft.value === 'all' ? navText('Все', 'All', languageCode) : ft.value === 'bus' ? navText('Автобусы', 'Buses', languageCode) : ft.value === 'trolleybus' ? navText('Троллейбусы', 'Trolleybuses', languageCode) : ft.value === 'tram' ? navText('Трамваи', 'Trams', languageCode) : ft.value === 'metro' ? navText('Метро', 'Metro', languageCode) : navText('Электрички', 'Suburban rail', languageCode)}
           </button>
         ))}
       </div>
@@ -346,8 +361,8 @@ export function TransitRoutes({ onSelectRoute, className }: TransitRoutesProps) 
           <Bus className="w-10 h-10 text-zinc-700" />
           <p className="text-sm text-zinc-500">
             {searchQuery.trim()
-              ? `Маршруты по запросу «${searchQuery}» не найдены`
-              : 'Нет доступных маршрутов'}
+              ? `${navText('Маршруты по запросу', 'No routes found for', languageCode)} «${searchQuery}»`
+              : navText('Нет доступных маршрутов', 'No routes available', languageCode)}
           </p>
         </div>
       )}
@@ -359,6 +374,7 @@ export function TransitRoutes({ onSelectRoute, className }: TransitRoutesProps) 
             key={route.id}
             route={route}
             onSelectRoute={onSelectRoute}
+            languageCode={languageCode}
           />
         ))}
       </div>

@@ -164,7 +164,7 @@ export function useStories() {
         
         users.push({
           user_id: user.id,
-          display_name: brief?.display_name || 'Вы',
+          display_name: 'Вы',
           avatar_url: brief?.avatar_url ?? null,
           verified: profile?.verified || false,
           stories: ownStories,

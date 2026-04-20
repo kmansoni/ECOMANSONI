@@ -8,37 +8,42 @@ import {
   Trash2, ChevronRight, Car, Calendar, TrendingUp,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useUserSettings } from '@/contexts/UserSettingsContext';
+import { navText } from '@/lib/navigation/navigationUi';
 import { getTripHistory, deleteTrip, type TripRecord } from '@/lib/navigation/tripHistory';
 
-function formatDuration(seconds: number): string {
-  if (seconds < 60) return `${seconds} сек`;
+function formatDuration(seconds: number, languageCode?: string | null): string {
+  if (seconds < 60) return `${seconds} ${navText('сек', 'sec', languageCode)}`;
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
-  if (h > 0) return `${h} ч ${m} мин`;
-  return `${m} мин`;
+  if (h > 0) return `${h} ${navText('ч', 'h', languageCode)} ${m} ${navText('мин', 'min', languageCode)}`;
+  return `${m} ${navText('мин', 'min', languageCode)}`;
 }
 
-function formatDistance(meters: number): string {
-  if (meters < 1000) return `${meters} м`;
-  return `${(meters / 1000).toFixed(1)} км`;
+function formatDistance(meters: number, languageCode?: string | null): string {
+  if (meters < 1000) return `${meters} ${navText('м', 'm', languageCode)}`;
+  return `${(meters / 1000).toFixed(1)} ${navText('км', 'km', languageCode)}`;
 }
 
-function formatDate(iso: string): string {
+function formatDate(iso: string, languageCode?: string | null): string {
   const d = new Date(iso);
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const tripDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
   const diff = (today.getTime() - tripDay.getTime()) / 86400000;
 
-  const time = d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+  const locale = (languageCode ?? 'ru').toLowerCase().startsWith('en') ? 'en-US' : 'ru-RU';
+  const time = d.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
 
-  if (diff === 0) return `Сегодня, ${time}`;
-  if (diff === 1) return `Вчера, ${time}`;
+  if (diff === 0) return `${navText('Сегодня', 'Today', languageCode)}, ${time}`;
+  if (diff === 1) return `${navText('Вчера', 'Yesterday', languageCode)}, ${time}`;
   if (diff < 7) {
-    const days = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+    const days = (languageCode ?? '').toLowerCase().startsWith('en')
+      ? ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+      : ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
     return `${days[d.getDay()]}, ${time}`;
   }
-  return d.toLocaleDateString('ru-RU', {
+  return d.toLocaleDateString(locale, {
     day: 'numeric', month: 'short', year: d.getFullYear() !== now.getFullYear() ? 'numeric' : undefined,
   }) + `, ${time}`;
 }
@@ -59,10 +64,12 @@ function TripCard({
   trip,
   onDelete,
   onRepeat,
+  languageCode,
 }: {
   trip: TripRecord;
   onDelete: (id: string) => void;
   onRepeat: (trip: TripRecord) => void;
+  languageCode?: string | null;
 }) {
   const [showActions, setShowActions] = useState(false);
 
@@ -78,10 +85,10 @@ function TripCard({
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2 text-xs text-gray-400">
           <Calendar className="w-3 h-3" />
-          <span>{formatDate(trip.startedAt)}</span>
+          <span>{formatDate(trip.startedAt, languageCode)}</span>
           {trip.endedAt && (
             <span className="text-gray-600">
-              → {new Date(trip.endedAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+              → {new Date(trip.endedAt).toLocaleTimeString((languageCode ?? '').toLowerCase().startsWith('en') ? 'en-US' : 'ru-RU', { hour: '2-digit', minute: '2-digit' })}
             </span>
           )}
         </div>
@@ -113,20 +120,20 @@ function TripCard({
       <div className="flex items-center gap-3 text-xs text-gray-400">
         <span className="flex items-center gap-1">
           <Route className="w-3 h-3" />
-          {formatDistance(trip.distanceMeters)}
+          {formatDistance(trip.distanceMeters, languageCode)}
         </span>
         <span className="flex items-center gap-1">
           <Clock className="w-3 h-3" />
-          {formatDuration(trip.durationSeconds)}
+          {formatDuration(trip.durationSeconds, languageCode)}
         </span>
         <span className="flex items-center gap-1">
           <Gauge className="w-3 h-3" />
-          {trip.avgSpeedKmh} км/ч
+          {trip.avgSpeedKmh} {navText('км/ч', 'km/h', languageCode)}
         </span>
         {trip.maxSpeedKmh > 0 && (
           <span className="flex items-center gap-1 text-gray-500">
             <TrendingUp className="w-3 h-3" />
-            макс {trip.maxSpeedKmh}
+            {navText('макс', 'max', languageCode)} {trip.maxSpeedKmh}
           </span>
         )}
       </div>
@@ -143,7 +150,7 @@ function TripCard({
             )}
           >
             <Navigation2 className="w-3.5 h-3.5" />
-            Повторить
+            {navText('Повторить', 'Repeat', languageCode)}
           </button>
           <button
             onClick={(e) => { e.stopPropagation(); onDelete(trip.id); }}
@@ -163,7 +170,7 @@ function TripCard({
 
 // ── Stats Summary ────────────────────────────────────────────────────────────
 
-function StatsSummary({ trips }: { trips: TripRecord[] }) {
+function StatsSummary({ trips, languageCode }: { trips: TripRecord[]; languageCode?: string | null }) {
   const totalKm = trips.reduce((s, t) => s + t.distanceMeters, 0) / 1000;
   const totalTime = trips.reduce((s, t) => s + t.durationSeconds, 0);
   const totalTrips = trips.length;
@@ -174,10 +181,10 @@ function StatsSummary({ trips }: { trips: TripRecord[] }) {
   return (
     <div className="grid grid-cols-4 gap-2 mb-4">
       {[
-        { label: 'Поездок', value: totalTrips, icon: Car },
-        { label: 'Км', value: Math.round(totalKm), icon: Route },
-        { label: 'Часов', value: Math.round(totalTime / 3600), icon: Clock },
-        { label: 'Ср. скорость', value: `${avgSpeed}`, icon: Gauge },
+        { label: navText('Поездок', 'Trips', languageCode), value: totalTrips, icon: Car },
+        { label: navText('Км', 'Km', languageCode), value: Math.round(totalKm), icon: Route },
+        { label: navText('Часов', 'Hours', languageCode), value: Math.round(totalTime / 3600), icon: Clock },
+        { label: navText('Ср. скорость', 'Avg speed', languageCode), value: `${avgSpeed}`, icon: Gauge },
       ].map(({ label, value, icon: Icon }) => (
         <div
           key={label}
@@ -199,6 +206,8 @@ function StatsSummary({ trips }: { trips: TripRecord[] }) {
 
 export default function TripHistoryPage() {
   const routerNav = useNavigate();
+  const { settings } = useUserSettings();
+  const languageCode = settings?.language_code ?? null;
   const [trips, setTrips] = useState<TripRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -231,7 +240,7 @@ export default function TripHistoryPage() {
   // Group trips by date
   const grouped = trips.reduce<Record<string, TripRecord[]>>((acc, trip) => {
     const d = new Date(trip.startedAt);
-    const key = d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
+    const key = d.toLocaleDateString((languageCode ?? '').toLowerCase().startsWith('en') ? 'en-US' : 'ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
     (acc[key] ||= []).push(trip);
     return acc;
   }, {});
@@ -244,14 +253,14 @@ export default function TripHistoryPage() {
           <button onClick={() => routerNav(-1)} className="p-2 -ml-2 hover:bg-white/5 rounded-lg">
             <ArrowLeft className="w-5 h-5" />
           </button>
-          <h1 className="text-lg font-bold">История поездок</h1>
-          <span className="text-xs text-gray-500 ml-auto">{trips.length} поездок</span>
+          <h1 className="text-lg font-bold">{navText('История поездок', 'Trip history', languageCode)}</h1>
+          <span className="text-xs text-gray-500 ml-auto">{trips.length} {navText('поездок', 'trips', languageCode)}</span>
         </div>
       </div>
 
       <div className="px-4 py-4">
         {/* Stats */}
-        {trips.length > 0 && <StatsSummary trips={trips} />}
+        {trips.length > 0 && <StatsSummary trips={trips} languageCode={languageCode} />}
 
         {/* Loading */}
         {loading && (
@@ -264,9 +273,9 @@ export default function TripHistoryPage() {
         {!loading && trips.length === 0 && (
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <MapPin className="w-12 h-12 text-gray-700 mb-4" />
-            <h2 className="text-lg font-semibold text-gray-300 mb-1">Нет поездок</h2>
+            <h2 className="text-lg font-semibold text-gray-300 mb-1">{navText('Нет поездок', 'No trips yet', languageCode)}</h2>
             <p className="text-sm text-gray-500 max-w-xs">
-              Начните навигацию, и ваши поездки будут сохраняться автоматически с точной датой и временем.
+              {navText('Начните навигацию, и ваши поездки будут сохраняться автоматически с точной датой и временем.', 'Start navigation and your trips will be saved automatically with accurate date and time.', languageCode)}
             </p>
             <button
               onClick={() => routerNav('/navigation')}
@@ -276,7 +285,7 @@ export default function TripHistoryPage() {
                 'transition-colors shadow-lg shadow-blue-500/20',
               )}
             >
-              Начать навигацию
+              {navText('Начать навигацию', 'Start navigation', languageCode)}
             </button>
           </div>
         )}
@@ -294,6 +303,7 @@ export default function TripHistoryPage() {
                   trip={trip}
                   onDelete={handleDelete}
                   onRepeat={handleRepeat}
+                  languageCode={languageCode}
                 />
               ))}
             </div>

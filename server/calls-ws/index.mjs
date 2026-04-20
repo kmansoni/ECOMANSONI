@@ -1,31 +1,30 @@
 import http from "node:http";
 import crypto from "node:crypto";
-import fs from "node:fs";
-import path from "node:path";
-import { safeParseInt } from "./utils.mjs";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 import WebSocket, { WebSocketServer } from "ws";
 import { createStoreFromEnv } from "./store/index.mjs";
 import { createRateLimiter, DEFAULT_RATE_LIMITS } from "./rateLimit.mjs";
 import { createJwtGuard } from "./jwtGuard.mjs";
+import { logger as baseLogger } from "./logger.mjs";
+import {
+  CALLS_DEV_INSECURE_AUTH,
+  IS_PROD_LIKE,
+  getJoinTokenSecret,
+  getSupabaseAuthEnv,
+  readPositiveIntEnv,
+  validateStartupEnv,
+} from "./env.mjs";
 
-const PORT = Number(process.env.CALLS_WS_PORT ?? "8787");
-const NODE_ENV = String(process.env.NODE_ENV ?? "").toLowerCase();
-const ENV = String(process.env.ENV ?? "").toLowerCase();
-const IS_PROD_LIKE = NODE_ENV === "production" || ENV === "prod" || ENV === "production";
-const CALLS_DEV_INSECURE_AUTH = process.env.CALLS_DEV_INSECURE_AUTH === "1";
-if (CALLS_DEV_INSECURE_AUTH && IS_PROD_LIKE) {
-  throw new Error("CALLS_DEV_INSECURE_AUTH is forbidden in production-like environments");
-}
-if (CALLS_DEV_INSECURE_AUTH) {
-  console.warn("[SECURITY] WARNING: CALLS_DEV_INSECURE_AUTH is enabled — DO NOT USE IN PRODUCTION");
-}
+const logger = baseLogger.child({ context: "index" });
 
-const MAX_PAYLOAD_BYTES = safeParseInt(process.env.CALLS_WS_MAX_PAYLOAD_BYTES, 65536);
-const JWT_REVALIDATE_SEC = safeParseInt(process.env.CALLS_WS_JWT_REVALIDATE_SEC, 60);
-const MAX_CONNECTIONS_PER_IP = safeParseInt(process.env.CALLS_WS_MAX_CONNECTIONS_PER_IP, 10);
-const MAX_PARTICIPANTS_PER_ROOM = Math.max(2, safeParseInt(process.env.CALLS_MAX_PARTICIPANTS_PER_ROOM, 50));
+validateStartupEnv();
+
+const PORT = readPositiveIntEnv("CALLS_WS_PORT", 8787, { min: 1, max: 65535 });
+const MAX_PAYLOAD_BYTES = readPositiveIntEnv("CALLS_WS_MAX_PAYLOAD_BYTES", 65536);
+const JWT_REVALIDATE_SEC = readPositiveIntEnv("CALLS_WS_JWT_REVALIDATE_SEC", 60);
+const MAX_CONNECTIONS_PER_IP = readPositiveIntEnv("CALLS_WS_MAX_CONNECTIONS_PER_IP", 10);
+const MAX_PARTICIPANTS_PER_ROOM = readPositiveIntEnv("CALLS_MAX_PARTICIPANTS_PER_ROOM", 50, { min: 2 });
 const REQUIRE_SFRAME_CAPS = process.env.CALLS_REQUIRE_SFRAME_CAPS !== "0";
 const REQUIRE_DOUBLE_RATCHET_CAPS = process.env.CALLS_REQUIRE_DOUBLE_RATCHET_CAPS !== "0";
 const REQUIRE_SECURE_TRANSPORT = IS_PROD_LIKE && process.env.CALLS_WS_REQUIRE_SECURE_TRANSPORT !== "0";
@@ -60,70 +59,6 @@ const GATEWAY_DEFAULT_CODECS = [
 const TRUSTED_PROXIES = new Set(
   (process.env.CALLS_WS_TRUSTED_PROXIES || "").split(",").map((s) => s.trim()).filter(Boolean)
 );
-
-let cachedSupabaseEnv = null;
-
-function normalizeEnvValue(value) {
-  if (typeof value !== "string") return "";
-  return value.trim().replace(/^['"]+|['"]+$/g, "").trim();
-}
-
-function parseDotEnvFile(filePath) {
-  try {
-    if (!fs.existsSync(filePath)) return {};
-    const text = fs.readFileSync(filePath, "utf8");
-    const map = {};
-    for (const rawLine of text.split(/\r?\n/)) {
-      const line = rawLine.trim();
-      if (!line || line.startsWith("#")) continue;
-      const eq = line.indexOf("=");
-      if (eq <= 0) continue;
-      const key = line.slice(0, eq).trim();
-      const value = normalizeEnvValue(line.slice(eq + 1));
-      if (key) map[key] = value;
-    }
-    return map;
-  } catch {
-    return {};
-  }
-}
-
-function resolveSupabaseAuthEnv() {
-  if (cachedSupabaseEnv) return cachedSupabaseEnv;
-
-  const root = process.cwd();
-  const envFromFiles = {
-    ...parseDotEnvFile(path.join(root, ".env")),
-    ...parseDotEnvFile(path.join(root, ".env.local")),
-    ...parseDotEnvFile(path.join(root, ".env.production")),
-  };
-
-  const read = (...keys) => {
-    for (const key of keys) {
-      const envValue = normalizeEnvValue(process.env[key]);
-      if (envValue) return envValue;
-      const fileValue = normalizeEnvValue(envFromFiles[key]);
-      if (fileValue) return fileValue;
-    }
-    return "";
-  };
-
-  cachedSupabaseEnv = {
-    supabaseUrl: read("SUPABASE_URL", "VITE_SUPABASE_URL"),
-    supabaseAnonKey: read(
-      "SUPABASE_ANON_KEY",
-      "SUPABASE_PUBLISHABLE_KEY",
-      "VITE_SUPABASE_PUBLISHABLE_KEY",
-      "VITE_SUPABASE_ANON_KEY",
-    ),
-  };
-
-  if (!cachedSupabaseEnv.supabaseUrl || !cachedSupabaseEnv.supabaseAnonKey) {
-    console.error("[calls-ws] Missing Supabase auth env vars; auth validation is fail-closed");
-  }
-
-  return cachedSupabaseEnv;
-}
 
 /**
  * C-2: Resolve the real client IP from the request.
@@ -171,9 +106,9 @@ function isSecureTransport(req) {
     .toLowerCase();
   return proto === "https" || proto === "wss";
 }
-const CALLS_JOIN_TOKEN_TTL_SEC = Math.max(30, Number(process.env.CALLS_JOIN_TOKEN_TTL_SEC ?? "600"));
-const KEY_TTL_MS = Math.max(15_000, Number(process.env.CALLS_KEY_TTL_MS ?? "120000"));
-const DEDUP_TTL_MS = Math.max(30_000, Number(process.env.CALLS_DEDUP_TTL_SEC ?? "600") * 1000);
+const CALLS_JOIN_TOKEN_TTL_SEC = readPositiveIntEnv("CALLS_JOIN_TOKEN_TTL_SEC", 600, { min: 30 });
+const KEY_TTL_MS = readPositiveIntEnv("CALLS_KEY_TTL_MS", 120000, { min: 15000 });
+const DEDUP_TTL_MS = readPositiveIntEnv("CALLS_DEDUP_TTL_SEC", 600, { min: 30 }) * 1000;
 const { store, degraded } = await createStoreFromEnv();
 
 const GW_HELLO_PAYLOAD = {
@@ -273,7 +208,6 @@ const rooms = new Map(); // roomId -> { callId, region, nodeId, epoch, memberSet
 const deviceSockets = new Map(); // deviceId -> ws
 const userDeviceSockets = new Map(); // userId -> Set<deviceIds> (for broadcast when to_device unknown)
 const deviceOwners = new Map(); // deviceId -> userId (anti-squatting guard)
-let cachedJoinTokenSecret = null;
 
 function normalizeDeviceId(value) {
   if (typeof value !== "string") return null;
@@ -400,40 +334,6 @@ function getTurnIceServersPublic() {
   return urls.length ? [{ urls }] : [];
 }
 
-function getJoinTokenSecret() {
-  if (cachedJoinTokenSecret) return cachedJoinTokenSecret;
-
-  const explicit = process.env.CALLS_JOIN_TOKEN_SECRET;
-  if (explicit && explicit.length >= 32) {
-    cachedJoinTokenSecret = explicit;
-    return cachedJoinTokenSecret;
-  }
-
-  const supabaseJwtSecret = process.env.SUPABASE_JWT_SECRET;
-  if (supabaseJwtSecret && supabaseJwtSecret.length >= 32) {
-    if (IS_PROD_LIKE) {
-      console.warn("[calls-ws] Missing CALLS_JOIN_TOKEN_SECRET, using SUPABASE_JWT_SECRET fallback in production-like environment");
-    } else {
-      console.warn("[calls-ws] Using SUPABASE_JWT_SECRET fallback for join token signing in non-prod environment");
-    }
-    cachedJoinTokenSecret = supabaseJwtSecret;
-    return cachedJoinTokenSecret;
-  }
-
-  if (IS_PROD_LIKE) {
-    // Fallback keeps process alive; tokens issued before restart become invalid,
-    // but this is safer than crashing the signaling service.
-    const emergencySecret = crypto.randomBytes(48).toString("base64url");
-    console.error("[calls-ws] CRITICAL: Missing CALLS_JOIN_TOKEN_SECRET and SUPABASE_JWT_SECRET in production-like environment; using ephemeral in-memory join token secret");
-    cachedJoinTokenSecret = emergencySecret;
-    return cachedJoinTokenSecret;
-  }
-
-  console.warn("[calls-ws] Using development-only join token secret (non-prod only)");
-  cachedJoinTokenSecret = "dev-only-join-token-secret";
-  return cachedJoinTokenSecret;
-}
-
 function encodeBase64Url(raw) {
   return Buffer.from(raw)
     .toString("base64")
@@ -533,7 +433,7 @@ async function validateSupabaseAccessToken(accessToken) {
     } catch { /* fallback ниже */ }
     return { ok: true, userId: `dev_${String(accessToken).slice(0, 8)}` };
   }
-  const { supabaseUrl, supabaseAnonKey } = resolveSupabaseAuthEnv();
+  const { supabaseUrl, supabaseAnonKey } = getSupabaseAuthEnv();
   if (!supabaseUrl || !supabaseAnonKey) {
     return { ok: false, userId: null, reason: "missing_supabase_env" };
   }
@@ -1095,18 +995,42 @@ wss.on("connection", (ws, req) => {
           if (targetWs && targetWs.readyState === WebSocket.OPEN) {
             send(targetWs, { ...frame, ts: nowMs() });
             delivered = 1;
-            console.log(`[calls-ws] call.invite routed to specific device: callId=${callId}, toDevice=${toDevice}`);
+            logger.info(
+              { event: "call_signal.route_specific_device", signalType: "call.invite", callId, toDevice },
+              `[calls-ws] call.invite routed to specific device: callId=${callId}, toDevice=${toDevice}`
+            );
           } else {
             delivered = deliverToUserDevices(toUser, frame);
-            console.log(`[calls-ws] call.invite stale to_device fallback: callId=${callId}, toUser=${toUser.slice(0, 8)}, delivered=${delivered}`);
+            logger.info(
+              {
+                event: "call_signal.stale_device_fallback",
+                signalType: "call.invite",
+                callId,
+                toUser: toUser.slice(0, 8),
+                delivered,
+              },
+              `[calls-ws] call.invite stale to_device fallback: callId=${callId}, toUser=${toUser.slice(0, 8)}, delivered=${delivered}`
+            );
           }
         } else {
           delivered = deliverToUserDevices(toUser, frame);
-          console.log(`[calls-ws] call.invite broadcast: callId=${callId}, toUser=${toUser.slice(0, 8)}, delivered=${delivered}`);
+          logger.info(
+            {
+              event: "call_signal.broadcast",
+              signalType: "call.invite",
+              callId,
+              toUser: toUser.slice(0, 8),
+              delivered,
+            },
+            `[calls-ws] call.invite broadcast: callId=${callId}, toUser=${toUser.slice(0, 8)}, delivered=${delivered}`
+          );
         }
 
         if (delivered === 0) {
-          console.log(`[calls-ws] call.invite: no online devices for user ${toUser.slice(0, 8)}`);
+          logger.info(
+            { event: "call_signal.no_online_devices", signalType: "call.invite", callId, toUser: toUser.slice(0, 8) },
+            `[calls-ws] call.invite: no online devices for user ${toUser.slice(0, 8)}`
+          );
         }
 
         // Return ACK regardless of delivery success (best effort — peer might be offline)
@@ -1138,18 +1062,42 @@ wss.on("connection", (ws, req) => {
           if (targetWs && targetWs.readyState === WebSocket.OPEN) {
             send(targetWs, { ...frame, ts: nowMs() });
             delivered = 1;
-            console.log(`[calls-ws] ${sigType} routed to specific device: callId=${callId}, toDevice=${toDevice}`);
+            logger.info(
+              { event: "call_signal.route_specific_device", signalType: sigType, callId, toDevice },
+              `[calls-ws] ${sigType} routed to specific device: callId=${callId}, toDevice=${toDevice}`
+            );
           } else {
             delivered = deliverToUserDevices(toUser, frame);
-            console.log(`[calls-ws] ${sigType} stale to_device fallback: callId=${callId}, toUser=${toUser.slice(0, 8)}, delivered=${delivered}`);
+            logger.info(
+              {
+                event: "call_signal.stale_device_fallback",
+                signalType: sigType,
+                callId,
+                toUser: toUser.slice(0, 8),
+                delivered,
+              },
+              `[calls-ws] ${sigType} stale to_device fallback: callId=${callId}, toUser=${toUser.slice(0, 8)}, delivered=${delivered}`
+            );
           }
         } else {
           delivered = deliverToUserDevices(toUser, frame);
-          console.log(`[calls-ws] ${sigType} broadcast: callId=${callId}, toUser=${toUser.slice(0, 8)}, delivered=${delivered}`);
+          logger.info(
+            {
+              event: "call_signal.broadcast",
+              signalType: sigType,
+              callId,
+              toUser: toUser.slice(0, 8),
+              delivered,
+            },
+            `[calls-ws] ${sigType} broadcast: callId=${callId}, toUser=${toUser.slice(0, 8)}, delivered=${delivered}`
+          );
         }
 
         if (delivered === 0) {
-          console.log(`[calls-ws] ${sigType}: no online devices for user ${toUser.slice(0, 8)}`);
+          logger.info(
+            { event: "call_signal.no_online_devices", signalType: sigType, callId, toUser: toUser.slice(0, 8) },
+            `[calls-ws] ${sigType}: no online devices for user ${toUser.slice(0, 8)}`
+          );
         }
 
         return ack(ws, frame.msgId, true);
@@ -1568,7 +1516,10 @@ wss.on("connection", (ws, req) => {
     } catch (err) {
       // S-03: isolate store/Redis errors — do not let them surface as unhandled
       // promise rejections and crash the gateway process.
-      console.error("[calls-ws] Unhandled error in message handler:", err);
+      logger.error(
+        { event: "ws.message.unhandled_error", error: err },
+        "[calls-ws] Unhandled error in message handler:"
+      );
     }
   });
 
@@ -1602,5 +1553,8 @@ wss.on("connection", (ws, req) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`[calls-ws] listening on ws://localhost:${PORT}`);
+  logger.info(
+    { event: "server.listen", port: PORT },
+    `[calls-ws] listening on ws://localhost:${PORT}`
+  );
 });

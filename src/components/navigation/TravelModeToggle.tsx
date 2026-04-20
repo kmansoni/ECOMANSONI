@@ -1,6 +1,8 @@
 import { memo } from 'react';
 import { cn } from '@/lib/utils';
 import type { TravelMode } from '@/types/navigation';
+import { useUserSettings } from '@/contexts/UserSettingsContext';
+import { navText } from '@/lib/navigation/navigationUi';
 
 interface TravelModeToggleProps {
   value: TravelMode;
@@ -8,20 +10,22 @@ interface TravelModeToggleProps {
   className?: string;
 }
 
-const MODES: Array<{ id: TravelMode; emoji: string; label: string }> = [
-  { id: 'car', emoji: '🚗', label: 'Авто' },
-  { id: 'taxi', emoji: '🚕', label: 'Такси' },
-  { id: 'pedestrian', emoji: '🚶', label: 'Пешком' },
-  { id: 'transit', emoji: '🚌', label: 'Транзит' },
-  { id: 'metro', emoji: '🚇', label: 'Метро' },
-  { id: 'multimodal', emoji: '🔀', label: 'Мульти' },
-];
-
 export const TravelModeToggle = memo(function TravelModeToggle({
   value,
   onChange,
   className,
 }: TravelModeToggleProps) {
+  const { settings } = useUserSettings();
+  const languageCode = settings?.language_code ?? null;
+  const modes: Array<{ id: TravelMode; emoji: string; label: string }> = [
+    { id: 'car', emoji: '🚗', label: navText('Авто', 'Car', languageCode) },
+    { id: 'taxi', emoji: '🚕', label: navText('Такси', 'Taxi', languageCode) },
+    { id: 'pedestrian', emoji: '🚶', label: navText('Пешком', 'Walk', languageCode) },
+    { id: 'transit', emoji: '🚌', label: navText('Транзит', 'Transit', languageCode) },
+    { id: 'metro', emoji: '🚇', label: navText('Метро', 'Metro', languageCode) },
+    { id: 'multimodal', emoji: '🔀', label: navText('Мульти', 'Multi', languageCode) },
+  ];
+
   return (
     <div
       className={cn(
@@ -31,7 +35,7 @@ export const TravelModeToggle = memo(function TravelModeToggle({
         className
       )}
     >
-      {MODES.map(mode => (
+      {modes.map(mode => (
         <button
           key={mode.id}
           onClick={() => onChange(mode.id)}

@@ -127,6 +127,7 @@ const OrderDetailPage = lazy(() => import("@/pages/OrderDetailPage"));
 const AIAssistantPage = lazy(() => import("@/pages/AIAssistantPage"));
 const GodmodePage = lazy(() => import("@/pages/GodmodePage"));
 const ServiceBugsPage = lazy(() => import("@/pages/ServiceBugsPage").then(m => ({ default: m.ServiceBugsPage })));
+const MusicPage = lazy(() => import("@/pages/MusicPage"));
 
 // Batch 5: new pages
 const WebLoginCallbackPage = lazy(() => import("@/pages/WebLoginCallbackPage").then(m => ({ default: m.WebLoginCallbackPage })));
@@ -142,7 +143,6 @@ const TaxiDriverPage = lazy(() => import("./pages/taxi/TaxiDriverPage"));
 
 // Amap navigation module (lazy)
 const AmapPage = lazy(() => import("@/pages/amap/AmapPage"));
-const NavigatorSettingsPage = lazy(() => import("@/pages/navigation/NavigatorSettingsPage"));
 const BusinessRegistrationPage = lazy(() => import("@/pages/navigation/BusinessRegistrationPage"));
 const TripHistoryPage = lazy(() => import("@/pages/navigation/TripHistoryPage"));
 const QuantumTransportLabPage = lazy(() => import("@/pages/navigation/QuantumTransportLabPage"));
@@ -169,6 +169,7 @@ const AdminBusinessModerationPage = lazy(() => import("@/pages/admin/AdminBusine
 const KpiDashboardPage = lazy(() => import("@/pages/admin/KpiDashboardPage").then(m => ({ default: m.KpiDashboardPage })));
 const ModerationQueuePage = lazy(() => import("@/pages/admin/ModerationQueuePage").then(m => ({ default: m.ModerationQueuePage })));
 const AppealsPage = lazy(() => import("@/pages/admin/AppealsPage").then(m => ({ default: m.AppealsPage })));
+const AdminSoglasieSettingsPage = lazy(() => import("@/pages/admin/AdminSoglasieSettingsPage").then(m => ({ default: m.AdminSoglasieSettingsPage })));
 
 // Deep link handler — must be inside BrowserRouter
 function DeepLinkHandler() {
@@ -355,6 +356,16 @@ const App = () => {
                   <Route path="/admin/appeals" element={
                     <Suspense fallback={<PageLoader />}>
                       <AppealsPage />
+                    </Suspense>
+                  } />
+                  <Route path="/admin/insurance-soglasie" element={
+                    <Suspense fallback={<PageLoader />}>
+                      <AdminSoglasieSettingsPage />
+                    </Suspense>
+                  } />
+                  <Route path="/admin/navigation-lab" element={
+                    <Suspense fallback={<PageLoader />}>
+                      <QuantumTransportLabPage />
                     </Suspense>
                   } />
                 </Route>
@@ -775,6 +786,12 @@ const App = () => {
                         <ServiceBugsPage />
                       </Suspense>
                     } />
+                    {/* ─── Music Module ─────────────────────── */}
+                    <Route path="/services/music" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <MusicPage />
+                      </Suspense>
+                    } />
                     {/* ─── Taxi Module ─────────────────────── */}
                     <Route path="/taxi" element={
                       <Suspense fallback={<PageLoader />}>
@@ -847,18 +864,6 @@ const App = () => {
                     </Suspense>
                   } />
 
-                  {/* Amap — fullscreen, outside AppLayout */}
-                  <Route path="/amap" element={
-                    <Suspense fallback={<PageLoader />}>
-                      <AmapPage />
-                    </Suspense>
-                  } />
-                  <Route path="/navigation" element={<Navigate to="/amap" replace />} />
-                  <Route path="/navigator-settings" element={
-                    <Suspense fallback={<PageLoader />}>
-                      <NavigatorSettingsPage />
-                    </Suspense>
-                  } />
                   <Route path="/business-registration" element={
                     <Suspense fallback={<PageLoader />}>
                       <BusinessRegistrationPage />
@@ -869,12 +874,15 @@ const App = () => {
                       <TripHistoryPage />
                     </Suspense>
                   } />
-                  <Route path="/navigation-lab" element={
-                    <Suspense fallback={<PageLoader />}>
-                      <QuantumTransportLabPage />
-                    </Suspense>
-                  } />
                 </Route>
+
+                {/* Amap / Navigation — fullscreen public entry */}
+                <Route path="/amap" element={
+                  <Suspense fallback={<PageLoader />}>
+                    <AmapPage />
+                  </Suspense>
+                } />
+                <Route path="/navigation" element={<Navigate to="/amap" replace />} />
                 
                 {/* Dev Panel - public route with its own auth */}
                 <Route path="/dev" element={

@@ -7,7 +7,7 @@
  * - On change: debounced upsert to Supabase (optimistic local, async remote)
  * - On logout: keep localStorage for offline use
  */
-import { supabase } from '@/integrations/supabase/client';
+import { supabase, dbLoose } from '@/lib/supabase';
 import { useNavigatorSettings } from '@/stores/navigatorSettingsStore';
 import type { SoundMode, VoiceId, MapViewMode, NavTheme } from '@/stores/navigatorSettingsStore';
 
@@ -22,6 +22,9 @@ interface NavigatorSettingsRow {
   mute_other_apps: boolean;
   selected_voice: VoiceId;
   voice_enabled: boolean;
+  voice_learning_enabled: boolean;
+  voice_backend_sync_enabled: boolean;
+  voice_allow_online_fallback: boolean;
   avoid_tolls: boolean;
   avoid_unpaved: boolean;
   avoid_highways: boolean;
@@ -49,6 +52,9 @@ function rowToState(row: NavigatorSettingsRow) {
     muteOtherApps: row.mute_other_apps,
     selectedVoice: row.selected_voice,
     voiceEnabled: row.voice_enabled,
+    voiceLearningEnabled: row.voice_learning_enabled ?? true,
+    voiceBackendSyncEnabled: row.voice_backend_sync_enabled ?? true,
+    voiceAllowOnlineFallback: row.voice_allow_online_fallback ?? true,
     avoidTolls: row.avoid_tolls,
     avoidUnpaved: row.avoid_unpaved,
     avoidHighways: row.avoid_highways,
@@ -77,6 +83,9 @@ function stateToPayload() {
     mute_other_apps: s.muteOtherApps,
     selected_voice: s.selectedVoice,
     voice_enabled: s.voiceEnabled,
+    voice_learning_enabled: s.voiceLearningEnabled,
+    voice_backend_sync_enabled: s.voiceBackendSyncEnabled,
+    voice_allow_online_fallback: s.voiceAllowOnlineFallback,
     avoid_tolls: s.avoidTolls,
     avoid_unpaved: s.avoidUnpaved,
     avoid_highways: s.avoidHighways,
@@ -102,7 +111,7 @@ function stateToPayload() {
  */
 export async function hydrateNavigatorSettings(userId: string): Promise<void> {
   try {
-    const { data, error } = await (supabase as any)
+    const { data, error } = await dbLoose
       .from('navigator_settings')
       .select('*')
       .eq('user_id', userId)
@@ -131,7 +140,7 @@ export async function hydrateNavigatorSettings(userId: string): Promise<void> {
 export async function pushNavigatorSettings(userId: string): Promise<void> {
   try {
     const payload = stateToPayload();
-    const { error } = await (supabase as any).rpc('upsert_navigator_settings', {
+    const { error } = await dbLoose.rpc('upsert_navigator_settings', {
       p_user_id: userId,
       p_settings: payload,
     });

@@ -8,10 +8,13 @@ export interface OSMGraphNode {
 export interface OSMGraphEdge {
   fromNode: string;
   toNode: string;
+  from?: string;
+  to?: string;
   distance: number;
   speed: number;
   highway: string;
   name: string;
+  wayId?: number;
 }
 
 export interface OSMGraph {
@@ -21,6 +24,25 @@ export interface OSMGraph {
 
 let graphCache: OSMGraph | null = null;
 let graphPromise: Promise<OSMGraph | null> | null = null;
+
+function normalizeGraph(graph: OSMGraph): OSMGraph {
+  return {
+    ...graph,
+    edges: graph.edges
+      .map((edge) => {
+        const fromNode = edge.fromNode ?? edge.from;
+        const toNode = edge.toNode ?? edge.to;
+        if (!fromNode || !toNode) return null;
+
+        return {
+          ...edge,
+          fromNode,
+          toNode,
+        };
+      })
+      .filter((edge): edge is OSMGraphEdge => edge !== null),
+  };
+}
 
 export async function loadOsmGraph(forceReload = false): Promise<OSMGraph | null> {
   if (!forceReload && graphCache) return graphCache;
@@ -34,7 +56,7 @@ export async function loadOsmGraph(forceReload = false): Promise<OSMGraph | null
         return null;
       }
 
-      const graph = await response.json() as OSMGraph;
+      const graph = normalizeGraph(await response.json() as OSMGraph);
       graphCache = graph;
       return graph;
     } catch (error) {

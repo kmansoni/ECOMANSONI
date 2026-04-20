@@ -89,8 +89,8 @@ function buildEdgeGrid(graph: OSMGraph): Map<string, number[]> {
 
   for (let i = 0; i < graph.edges.length; i++) {
     const edge = graph.edges[i];
-    const fromNode = graph.nodes[edge.from];
-    const toNode = graph.nodes[edge.to];
+    const fromNode = graph.nodes[edge.fromNode];
+    const toNode = graph.nodes[edge.toNode];
     if (!fromNode || !toNode) continue;
 
     // Rasterize the edge bbox into grid cells
@@ -214,8 +214,8 @@ function findCandidates(
         seen.add(ei);
 
         const edge = graph.edges[ei];
-        const fromNode = graph.nodes[edge.from];
-        const toNode = graph.nodes[edge.to];
+        const fromNode = graph.nodes[edge.fromNode];
+        const toNode = graph.nodes[edge.toNode];
         if (!fromNode || !toNode) continue;
 
         const proj = projectOntoSegment(lat, lng, fromNode.lat, fromNode.lon, toNode.lat, toNode.lon);
@@ -266,8 +266,8 @@ function estimateRouteDistance(
   // If same edge, distance is along-edge
   if (fromEdge.edgeIndex === toEdge.edgeIndex) {
     const edge = fromEdge.edge;
-    const fromNode = graph.nodes[edge.from];
-    const toNode = graph.nodes[edge.to];
+    const fromNode = graph.nodes[edge.fromNode];
+    const toNode = graph.nodes[edge.toNode];
     if (!fromNode || !toNode) return Infinity;
     const edgeLen = haversineM(
       { lat: fromNode.lat, lng: fromNode.lon },
@@ -277,8 +277,8 @@ function estimateRouteDistance(
   }
 
   // BFS with limited depth to find shortest path between endpoints
-  const startNodeId = fromEdge.edge.to; // end of from-edge
-  const endNodeId = toEdge.edge.from; // start of to-edge
+  const startNodeId = fromEdge.edge.toNode; // end of from-edge
+  const endNodeId = toEdge.edge.fromNode; // start of to-edge
 
   if (startNodeId === endNodeId) {
     return 0;
@@ -340,8 +340,8 @@ function buildAdjacency(graph: OSMGraph): Map<string, Array<{ to: string; weight
   _adjGraph = graph;
 
   for (const edge of graph.edges) {
-    const fromNode = graph.nodes[edge.from];
-    const toNode = graph.nodes[edge.to];
+    const fromNode = graph.nodes[edge.fromNode];
+    const toNode = graph.nodes[edge.toNode];
     if (!fromNode || !toNode) continue;
 
     const dist = haversineM(
@@ -349,21 +349,21 @@ function buildAdjacency(graph: OSMGraph): Map<string, Array<{ to: string; weight
       { lat: toNode.lat, lng: toNode.lon },
     );
 
-    let arr = _adj.get(edge.from);
+    let arr = _adj.get(edge.fromNode);
     if (!arr) {
       arr = [];
-      _adj.set(edge.from, arr);
+      _adj.set(edge.fromNode, arr);
     }
-    arr.push({ to: edge.to, weight: dist });
+    arr.push({ to: edge.toNode, weight: dist });
 
     // Assume bidirectional unless highway=motorway/trunk (simplified)
     if (edge.highway !== 'motorway' && edge.highway !== 'motorway_link') {
-      let revArr = _adj.get(edge.to);
+      let revArr = _adj.get(edge.toNode);
       if (!revArr) {
         revArr = [];
-        _adj.set(edge.to, revArr);
+        _adj.set(edge.toNode, revArr);
       }
-      revArr.push({ to: edge.from, weight: dist });
+      revArr.push({ to: edge.fromNode, weight: dist });
     }
   }
 

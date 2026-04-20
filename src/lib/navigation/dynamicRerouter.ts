@@ -8,6 +8,7 @@ import type { LatLng } from '@/types/taxi';
 import type { NavRoute } from '@/types/navigation';
 import { fetchTrafficAround } from './trafficProvider';
 import type { TrafficSegment } from './trafficProvider';
+import { recordFallbackUsage } from './navigationKpi';
 
 const REROUTE_CHECK_INTERVAL_MS = 10_000; // check every 10s
 const MIN_REROUTE_INTERVAL_MS = 120_000;  // don't reroute more than once per 2min
@@ -93,6 +94,10 @@ export class DynamicRerouter {
     try {
       const { fetchRoute } = await import('./routing');
       const result = await fetchRoute(pos, dest, true, 'car');
+
+      if (result.source !== 'navigation_server') {
+        recordFallbackUsage('routing', `dynamic_rerouter:${result.source}`);
+      }
 
       if (!result.main || !this.currentRoute) return;
 

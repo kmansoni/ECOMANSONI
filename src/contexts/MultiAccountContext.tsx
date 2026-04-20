@@ -733,7 +733,12 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
           accessToken: session.access_token,
           refreshToken: session.refresh_token,
           expiresAt: session.expires_at ?? 0,
-        }).catch(() => {});
+        }).catch((err) => {
+          logger.warn('[MultiAccount] writeTokens failed after auth state change', { accountId, err });
+          toast.error('Не удалось сохранить вход', {
+            description: 'После перезагрузки может потребоваться войти снова.',
+          });
+        });
 
         setActiveAccountId(accountId);
         setActiveAccountState(accountId);

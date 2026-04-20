@@ -15,13 +15,14 @@ import type { LatLng } from '@/types/taxi';
 import type { Maneuver, RouteSegment, SpeedCamera, NavRoute, TrafficLevel, MultiModalRoute } from '@/types/navigation';
 import { useNavigatorSettings } from '@/stores/navigatorSettingsStore';
 import { getVehicleMarkerSVG } from '@/lib/navigation/vehicleMarkers';
-import { useRoadEvents, ROAD_EVENT_LABELS } from '@/stores/roadEventsStore';
+import { useRoadEvents, getRoadEventInfo } from '@/stores/roadEventsStore';
 import { getRelevantMapObjects, loadRoadFeatures } from '@/lib/navigation/roadFeatures';
 import { getStyleUrl, addEnhancedRoadLayers, addTerrain, applyMapThemeEnhancements, type MapTheme } from '@/lib/map/vectorTileProvider';
 import { ensureNavigationLayers, updateNavigationObjectSource } from '@/lib/map/navigationLayers';
 import { getNearbyTrafficLights, type TrafficLightStatus } from '@/lib/navigation/trafficLightTiming';
 import { getBuildingExtrusionColorExpression, getProductionPalette } from '@/lib/map/mapStyles';
 import { fetchTrafficInBbox, type TrafficSegment } from '@/lib/navigation/trafficProvider';
+import { useUserSettings } from '@/contexts/UserSettingsContext';
 
 // ─── Style URLs: auto-detect MapTiler or fallback to CartoDB ────────────────
 const STYLES = {
@@ -77,6 +78,7 @@ export interface MapLibre3DProps {
   selectedMultimodalSegmentIndex?: number | null;
   speedCameras: SpeedCamera[];
   destinationMarker: LatLng | null;
+  recenterTrigger?: number;
   nextManeuver?: Maneuver | null;
   mapStyle?: MapStyle;
   onMapClick?: (latlng: LatLng) => void;
@@ -98,6 +100,7 @@ export const MapLibre3D = memo(function MapLibre3D({
   selectedMultimodalSegmentIndex = null,
   speedCameras,
   destinationMarker,
+  recenterTrigger = 0,
   nextManeuver = null,
   mapStyle = 'dark',
   onMapClick,
@@ -114,6 +117,8 @@ export const MapLibre3D = memo(function MapLibre3D({
   // Get settings for vehicle marker + display toggles
   const navSettings = useNavigatorSettings();
   const { events: roadEvents } = useRoadEvents();
+  const { settings } = useUserSettings();
+  const languageCode = settings?.language_code ?? null;
 
   // Navigation pitch: 60° for Amap-like tilt, 0° for top-down
   const pitch = propPitch ?? (isNavigating ? 60 : 0);
@@ -140,12 +145,12 @@ export const MapLibre3D = memo(function MapLibre3D({
     const applyManagedLayers = () => {
       if (!map.isStyleLoaded()) return;
 
-      applyMapThemeEnhancements(map, mapStyle);
+      applyMapThemeEnhancements(map, mapStyle, languageCode);
 
       if (navSettings.show3DBuildings) {
         add3DBuildings(map, mapStyle);
       }
-      addEnhancedRoadLayers(map, navSettings.labelSizeMultiplier, navSettings.highContrastLabels, mapStyle);
+      addEnhancedRoadLayers(map, navSettings.labelSizeMultiplier, navSettings.highContrastLabels, mapStyle, languageCode);
       ensureNavigationLayers(map, {
         labelSizeMultiplier: navSettings.labelSizeMultiplier,
         highContrast: navSettings.highContrastLabels,
@@ -182,7 +187,7 @@ export const MapLibre3D = memo(function MapLibre3D({
       setIsReady(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-   }, [mapStyle]);
+  }, [languageCode, mapStyle]);
 
    // ── Dynamic label updates when settings change ────────────────────────────
    useEffect(() => {
@@ -322,6 +327,20 @@ export const MapLibre3D = memo(function MapLibre3D({
       });
     }
   }, [center.lat, center.lng, zoom, pitch, bearing, isNavigating, userPosition, isReady]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !isReady || !userPosition) return;
+
+    map.easeTo({
+      center: [userPosition.lng, userPosition.lat],
+      zoom: Math.max(map.getZoom(), isNavigating ? 16.5 : 15.5),
+      pitch,
+      bearing,
+      duration: 900,
+      easing: (t) => 1 - Math.pow(1 - t, 3),
+    });
+  }, [recenterTrigger, isReady, userPosition, isNavigating, pitch, bearing]);
 
   // ── Route rendering ───────────────────────────────────────────────────────
   useEffect(() => {
@@ -489,7 +508,7 @@ export const MapLibre3D = memo(function MapLibre3D({
     const activeEvents = roadEvents.filter(e => e.expiresAt > now);
 
     activeEvents.forEach((evt) => {
-      const info = ROAD_EVENT_LABELS[evt.type];
+      const info = getRoadEventInfo(evt.type, languageCode);
       if (!info) return;
 
       const el = document.createElement('div');
