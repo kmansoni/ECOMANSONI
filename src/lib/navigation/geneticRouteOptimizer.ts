@@ -91,8 +91,10 @@ function estimateObjectives(genes: RouteGene[]): RouteObjectives {
 
   const modeStats: Record<TravelMode, { speedKmh: number; costPerKm: number; co2PerKm: number; safety: number; comfort: number }> = {
     car: { speedKmh: 35, costPerKm: 12, co2PerKm: 180, safety: 0.7, comfort: 0.8 },
+    taxi: { speedKmh: 35, costPerKm: 24, co2PerKm: 190, safety: 0.74, comfort: 0.85 },
     pedestrian: { speedKmh: 5, costPerKm: 0, co2PerKm: 0, safety: 0.8, comfort: 0.6 },
     transit: { speedKmh: 25, costPerKm: 3, co2PerKm: 30, safety: 0.9, comfort: 0.5 },
+    metro: { speedKmh: 40, costPerKm: 2.5, co2PerKm: 18, safety: 0.94, comfort: 0.68 },
     multimodal: { speedKmh: 20, costPerKm: 6, co2PerKm: 60, safety: 0.8, comfort: 0.6 },
   };
 
@@ -147,7 +149,7 @@ function createRandomChromosome(
   intermediateNodes: string[],
   generation: number
 ): RouteChromosome {
-  const modes: TravelMode[] = ['car', 'pedestrian', 'transit', 'multimodal'];
+  const modes: TravelMode[] = ['car', 'taxi', 'pedestrian', 'transit', 'metro', 'multimodal'];
   const genes: RouteGene[] = [];
 
   // Start gene
@@ -296,7 +298,7 @@ function mutate(
       // Change mode of a random intermediate gene
       if (genes.length > 2) {
         const idx = randInt(1, genes.length - 2);
-        const modes: TravelMode[] = ['car', 'pedestrian', 'transit', 'multimodal'];
+        const modes: TravelMode[] = ['car', 'taxi', 'pedestrian', 'transit', 'metro', 'multimodal'];
         genes[idx].mode = modes[randInt(0, modes.length - 1)];
       }
       break;
@@ -306,7 +308,7 @@ function mutate(
       if (intermediateNodes.length > 0 && genes.length < 10) {
         const newNode = intermediateNodes[randInt(0, intermediateNodes.length - 1)];
         const idx = randInt(1, genes.length - 1);
-        const modes: TravelMode[] = ['car', 'pedestrian', 'transit', 'multimodal'];
+        const modes: TravelMode[] = ['car', 'taxi', 'pedestrian', 'transit', 'metro', 'multimodal'];
         genes.splice(idx, 0, {
           nodeId: newNode,
           mode: modes[randInt(0, modes.length - 1)],

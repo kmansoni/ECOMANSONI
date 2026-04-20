@@ -596,7 +596,9 @@ function findLearnedCorrections(text: string): string[] {
 // ═══════════════════════════════════════════════════════════════════════════
 
 /** Общие ошибки распознавания русской речи (Speech API) */
-const COMMON_MISRECOGNITIONS: [RegExp, string][] = [
+type ReplacementValue = string | ((match: string, a: string, b: string) => string);
+
+const COMMON_MISRECOGNITIONS: [RegExp, ReplacementValue][] = [
   // Типичные ошибки Google Speech для русского
   [/\bулица\s+ленин а\b/gi, 'улица Ленина'],
   [/\bарбат ская\b/gi, 'Арбатская'],
@@ -606,7 +608,7 @@ const COMMON_MISRECOGNITIONS: [RegExp, string][] = [
   [/\bстрой\s+(\d+)/gi, 'стр. $1'],
   // "Каблук" → "Каблук" (оставляем), "Каблуков" → "Каблукова"
   // Пробелы в середине слов (частая ошибка)
-  [/(\w{2,})\s{1}(\w{1,3})\b/gi, (_, a: string, b: string) => {
+  [/(\w{2,})\s{1}(\w{1,3})\b/gi, (match: string, a: string, b: string) => {
     // Если вторая часть похожа на окончание — склеиваем
     if (b.length <= 3 && /^[а-яё]+$/.test(b)) return a + b;
     return `${a} ${b}`;

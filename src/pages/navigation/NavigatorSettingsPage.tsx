@@ -344,7 +344,9 @@ export default function NavigatorSettingsPage() {
               {/* Toggle switches */}
               {[
                 { label: '3D здания', value: settings.show3DBuildings, setter: settings.setShow3DBuildings },
+                { label: 'Поток пробок', value: settings.showTrafficFlowOverlay, setter: settings.setShowTrafficFlowOverlay },
                 { label: 'Светофоры', value: settings.showTrafficLights, setter: settings.setShowTrafficLights },
+                { label: 'Слои метро и ОТ', value: settings.showTransitOverlay, setter: settings.setShowTransitOverlay },
                 { label: 'Лежачие полицейские', value: settings.showSpeedBumps, setter: settings.setShowSpeedBumps },
                 { label: 'Дорожные знаки', value: settings.showRoadSigns, setter: settings.setShowRoadSigns },
                 { label: 'Полосы движения', value: settings.showLanes, setter: settings.setShowLanes },

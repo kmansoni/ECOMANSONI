@@ -6,7 +6,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { ArrowLeft, Building2, Check, X, Clock, Eye, Filter, RefreshCw } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
-import { supabase } from '@/lib/supabase';
+import { supabase, dbLoose } from '@/lib/supabase';
 import { toast } from 'sonner';
 
 interface BusinessRegistration {
@@ -50,7 +50,7 @@ export function AdminBusinessModerationPage() {
   const fetchRegistrations = useCallback(async () => {
     setLoading(true);
     try {
-      let query = supabase
+      let query = dbLoose
         .from('business_registrations')
         .select('*')
         .order('created_at', { ascending: false });
@@ -61,7 +61,7 @@ export function AdminBusinessModerationPage() {
 
       const { data, error } = await query;
       if (error) throw error;
-      setRegistrations(data || []);
+      setRegistrations((data as BusinessRegistration[] | null) || []);
     } catch (err: any) {
       toast.error(`Ошибка загрузки: ${err.message}`);
     } finally {
@@ -74,7 +74,7 @@ export function AdminBusinessModerationPage() {
   const handleApprove = async (id: string) => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      const { error } = await supabase
+      const { error } = await dbLoose
         .from('business_registrations')
         .update({
           status: 'approved',
@@ -99,7 +99,7 @@ export function AdminBusinessModerationPage() {
     }
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      const { error } = await supabase
+      const { error } = await dbLoose
         .from('business_registrations')
         .update({
           status: 'rejected',

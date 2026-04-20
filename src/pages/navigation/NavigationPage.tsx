@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Volume2, VolumeX, Car, Search, Flag, CheckCircle2, Bookmark, Settings, AlertTriangle, Mic, Clock, Sparkles } from 'lucide-react';
+import { ArrowLeft, Volume2, VolumeX, Search, Flag, CheckCircle2, Bookmark, Settings, AlertTriangle, Mic, Clock, Sparkles, Footprints } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useGeolocation } from '@/hooks/navigation/useGeolocation';
 import { useNavigation } from '@/hooks/navigation/useNavigation';
@@ -17,9 +17,11 @@ import { TravelModeToggle } from '@/components/navigation/TravelModeToggle';
 import { TransitTimeline } from '@/components/navigation/TransitTimeline';
 import { TaxiComparisonPanel } from '@/components/navigation/TaxiComparisonPanel';
 import { QuantumInsightsPanel } from '@/components/navigation/QuantumInsightsPanel';
+import { MetroMapViewer } from '@/components/navigation/MetroMapViewer';
 import { loadSpeedCameras, getCamerasOnRoute } from '@/lib/navigation/speedCameras';
 import { loadOfflineData } from '@/lib/navigation/offlineSearch';
-import type { SavedPlace, TravelMode } from '@/types/navigation';
+import type { SavedPlace, TravelMode, PedestrianRoutingOptions } from '@/types/navigation';
+import { useNavigatorSettings, type MapViewMode } from '@/stores/navigatorSettingsStore';
 
 const glassBtn = cn(
   'w-11 h-11 rounded-xl',
@@ -29,11 +31,34 @@ const glassBtn = cn(
   'shadow-lg shadow-black/30'
 );
 
+const QUICK_MAP_MODES: Array<{ id: MapViewMode; label: string }> = [
+  { id: 'standard', label: 'Схема' },
+  { id: 'satellite', label: 'Спутник' },
+  { id: 'hybrid', label: 'Гибрид' },
+  { id: 'terrain', label: 'Рельеф' },
+];
+
+const MODE_LABELS: Record<TravelMode, string> = {
+  car: 'Авто',
+  taxi: 'Такси',
+  pedestrian: 'Пешком',
+  transit: 'ОТ',
+  metro: 'Метро',
+  multimodal: 'Мультимодально',
+};
+
 export default function NavigationPage() {
   const routerNav = useNavigate();
   const geo = useGeolocation();
+  const navSettings = useNavigatorSettings();
   const [travelMode, setTravelMode] = useState<TravelMode>('car');
-  const nav = useNavigation({ travelMode });
+  const [pedestrianOptions, setPedestrianOptions] = useState<PedestrianRoutingOptions>({
+    avoidStairs: false,
+    preferElevators: false,
+    maxSlopePercent: 12,
+  });
+  const [selectedTransitSegmentIndex, setSelectedTransitSegmentIndex] = useState<number | null>(null);
+  const nav = useNavigation({ travelMode, pedestrianOptions });
   const [showAddPlace, setShowAddPlace] = useState(false);
   const [savePlaceTarget, setSavePlaceTarget] = useState<SavedPlace | null>(null);
   const [showReportEvent, setShowReportEvent] = useState(false);
@@ -66,6 +91,56 @@ export default function NavigationPage() {
     [nav.route]
   );
 
+  const metroCity = useMemo(() => {
+    const metroSegment = nav.multimodalRoute?.segments.find((segment) => segment.trip?.routeType === 'metro');
+    return metroSegment?.fromStop?.city?.trim().toLowerCase() || metroSegment?.toStop?.city?.trim().toLowerCase() || 'moscow';
+  }, [nav.multimodalRoute]);
+
+  const metroStations = useMemo(() => {
+    const metroSegments = nav.multimodalRoute?.segments.filter((segment) => segment.trip?.routeType === 'metro') ?? [];
+    const first = metroSegments[0];
+    const last = metroSegments[metroSegments.length - 1];
+    return {
+      fromStationId: first?.fromStop?.stopId,
+      toStationId: last?.toStop?.stopId,
+    };
+  }, [nav.multimodalRoute]);
+
+  const transitLikeMode = travelMode === 'transit' || travelMode === 'multimodal' || travelMode === 'metro';
+  const taxiLikeMode = travelMode === 'taxi';
+  const quickModeRecommendations = useMemo(() => {
+    if (!nav.route) return [] as Array<{ mode: TravelMode; reason: string }>;
+
+    const distanceMeters = nav.route.totalDistanceMeters;
+    const hasMetroPath = Boolean(nav.multimodalRoute?.segments.some((segment) => segment.trip?.routeType === 'metro'));
+    const candidates: Array<{ mode: TravelMode; reason: string }> = [];
+
+    if (distanceMeters <= 2500 && travelMode !== 'pedestrian') {
+      candidates.push({ mode: 'pedestrian', reason: 'Короткая дистанция без ожидания транспорта' });
+    }
+    if (distanceMeters >= 1800 && travelMode !== 'taxi') {
+      candidates.push({ mode: 'taxi', reason: 'Быстрый старт без пересадок и парковки' });
+    }
+    if (distanceMeters >= 2500 && travelMode !== 'transit') {
+      candidates.push({ mode: 'transit', reason: 'Можно снизить стоимость поездки' });
+    }
+    if (hasMetroPath && travelMode !== 'metro') {
+      candidates.push({ mode: 'metro', reason: 'Есть маршрут через метро с устойчивым ETA' });
+    }
+    if (distanceMeters >= 3000 && travelMode !== 'car') {
+      candidates.push({ mode: 'car', reason: 'Подходит прямой автомобильный маршрут' });
+    }
+    if ((hasMetroPath || distanceMeters >= 2500) && travelMode !== 'multimodal') {
+      candidates.push({ mode: 'multimodal', reason: 'Комбинация пешего пути и транспорта' });
+    }
+
+    return candidates.filter((item, index, array) => array.findIndex((entry) => entry.mode === item.mode) === index).slice(0, 3);
+  }, [nav.multimodalRoute, nav.route, travelMode]);
+
+  useEffect(() => {
+    setSelectedTransitSegmentIndex(null);
+  }, [travelMode, nav.destination?.id, nav.multimodalRoute?.id, nav.phase]);
+
   return (
     <div className="relative w-full h-screen overflow-hidden bg-gray-950">
       {/* Full-screen map */}
@@ -90,11 +165,13 @@ export default function NavigationPage() {
         totalDistance={nav.route?.totalDistanceMeters}
         roadName={nav.nextInstruction?.streetName}
         route={nav.route}
+        multimodalRoute={nav.multimodalRoute}
+        selectedMultimodalSegmentIndex={selectedTransitSegmentIndex}
         onCenterOnUser={() => {
           if (geo.position) nav.updatePosition(geo.position, geo.heading, geo.speed);
         }}
         onToggleOrientation={nav.toggleOrientation}
-        className="absolute inset-0"
+        className="absolute inset-0 z-[1]"
       />
 
       {/* Header controls */}
@@ -141,14 +218,50 @@ export default function NavigationPage() {
             </button>
           )}
 
-          {/* Taxi shortcut (only in idle) */}
-          {nav.phase === 'idle' && (
-            <button onClick={() => routerNav('/taxi')} className={glassBtn} aria-label="Такси">
-              <Car className="h-5 w-5 text-amber-400" />
-            </button>
-          )}
+
         </div>
       </div>
+
+      {(nav.phase === 'route_preview' || nav.phase === 'navigating') && (
+        <div className="absolute top-[4.8rem] left-3 z-[860] flex max-w-[calc(100vw-1.5rem)] gap-1 overflow-x-auto rounded-2xl border border-white/10 bg-gray-950/78 p-1 backdrop-blur-md shadow-lg shadow-black/30">
+          {QUICK_MAP_MODES.map((mode) => (
+            <button
+              key={mode.id}
+              onClick={() => navSettings.setMapViewMode(mode.id)}
+              className={cn(
+                'shrink-0 rounded-xl px-3 py-2 text-xs font-semibold transition-colors',
+                navSettings.mapViewMode === mode.id
+                  ? 'bg-blue-500/20 text-blue-200 border border-blue-400/30'
+                  : 'text-gray-400 hover:bg-white/5 hover:text-gray-200 border border-transparent'
+              )}
+            >
+              {mode.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {nav.phase === 'route_preview' && nav.route && quickModeRecommendations.length > 0 && (
+        <div className="absolute top-[8.4rem] left-3 z-[850] w-[min(430px,calc(100vw-1.5rem))] rounded-2xl border border-white/10 bg-gray-950/86 p-3 backdrop-blur-md shadow-xl shadow-black/30">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-400">Быстрое переключение</p>
+          <div className="mt-2 space-y-2">
+            {quickModeRecommendations.map((item) => (
+              <button
+                key={item.mode}
+                onClick={() => setTravelMode(item.mode)}
+                disabled={nav.loading}
+                className="flex w-full items-center justify-between rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-left transition-colors hover:bg-white/10 disabled:opacity-50"
+              >
+                <div>
+                  <p className="text-sm font-semibold text-white">{MODE_LABELS[item.mode]}</p>
+                  <p className="text-xs text-gray-400">{item.reason}</p>
+                </div>
+                <span className="text-xs text-blue-300">Перестроить</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Phase: Idle — search bar */}
       {nav.phase === 'idle' && (
@@ -204,21 +317,96 @@ export default function NavigationPage() {
           <RouteOverview
             route={nav.route}
             alternatives={nav.alternativeRoutes}
+            travelMode={travelMode}
+            multimodalRoute={nav.multimodalRoute}
             loading={nav.loading}
             onSelectRoute={nav.selectRoute}
-            onStart={nav.startNavigation}
+            onPrimaryAction={travelMode === 'taxi' ? () => routerNav('/taxi') : nav.startNavigation}
+            primaryActionLabel={travelMode === 'taxi' ? 'К заказу такси' : undefined}
             onCancel={nav.stopNavigation}
           />
 
           {/* Transit timeline for transit/multimodal modes */}
-          {(travelMode === 'transit' || travelMode === 'multimodal') && nav.multimodalRoute && (
+          {transitLikeMode && nav.multimodalRoute && (
             <div className="absolute bottom-[220px] left-3 right-3 z-[850] max-h-[40vh] overflow-y-auto rounded-2xl">
-              <TransitTimeline route={nav.multimodalRoute} />
+              <TransitTimeline
+                route={nav.multimodalRoute}
+                selectedSegmentIndex={selectedTransitSegmentIndex}
+                onSelectSegment={setSelectedTransitSegmentIndex}
+              />
+            </div>
+          )}
+
+          {travelMode === 'metro' && metroStations.fromStationId && metroStations.toStationId && (
+            <div className="absolute top-[8.5rem] right-3 z-[845] w-[min(420px,calc(100vw-1.5rem))] max-h-[42vh] overflow-hidden rounded-2xl border border-white/10 bg-gray-950/88 backdrop-blur-md shadow-xl shadow-black/35">
+              <MetroMapViewer
+                city={metroCity}
+                fromStation={metroStations.fromStationId}
+                toStation={metroStations.toStationId}
+                className="p-3"
+              />
+            </div>
+          )}
+
+          {travelMode === 'pedestrian' && (
+            <div className="absolute bottom-[180px] left-3 right-3 z-[840] rounded-2xl border border-white/10 bg-gray-950/88 p-3 backdrop-blur-md shadow-lg shadow-black/30">
+              <div className="flex items-center gap-2">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-green-500/15 text-green-300">
+                  <Footprints className="h-4 w-4" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-white">Пеший профиль</p>
+                  <p className="text-xs text-gray-400">Настройки сразу перестраивают маршрут пешком</p>
+                </div>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  onClick={() => setPedestrianOptions((prev) => ({ ...prev, avoidStairs: !prev.avoidStairs }))}
+                  className={cn(
+                    'rounded-xl px-3 py-2 text-xs font-semibold transition-colors',
+                    pedestrianOptions.avoidStairs
+                      ? 'bg-green-500/20 text-green-200 border border-green-400/30'
+                      : 'bg-white/5 text-gray-300 border border-white/10 hover:bg-white/10'
+                  )}
+                >
+                  Без лестниц
+                </button>
+                <button
+                  onClick={() => setPedestrianOptions((prev) => ({ ...prev, preferElevators: !prev.preferElevators }))}
+                  className={cn(
+                    'rounded-xl px-3 py-2 text-xs font-semibold transition-colors',
+                    pedestrianOptions.preferElevators
+                      ? 'bg-cyan-500/20 text-cyan-100 border border-cyan-400/30'
+                      : 'bg-white/5 text-gray-300 border border-white/10 hover:bg-white/10'
+                  )}
+                >
+                  Предпочесть лифты
+                </button>
+              </div>
+              <div className="mt-3">
+                <p className="mb-2 text-xs font-medium text-gray-400">Максимальный уклон</p>
+                <div className="flex gap-2">
+                  {[8, 12, 16].map((slope) => (
+                    <button
+                      key={slope}
+                      onClick={() => setPedestrianOptions((prev) => ({ ...prev, maxSlopePercent: slope }))}
+                      className={cn(
+                        'rounded-xl px-3 py-2 text-xs font-semibold transition-colors',
+                        pedestrianOptions.maxSlopePercent === slope
+                          ? 'bg-amber-500/20 text-amber-100 border border-amber-400/30'
+                          : 'bg-white/5 text-gray-300 border border-white/10 hover:bg-white/10'
+                      )}
+                    >
+                      до {slope}%
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           )}
 
           {/* Taxi price comparison from transfer points */}
-          {nav.destination && nav.currentPosition && (travelMode === 'transit' || travelMode === 'multimodal') && nav.multimodalRoute && (
+          {nav.destination && nav.currentPosition && transitLikeMode && nav.multimodalRoute && (
             <div className="absolute bottom-[180px] left-3 right-3 z-[840]">
               <TaxiComparisonPanel
                 pickup={nav.currentPosition}
@@ -226,6 +414,17 @@ export default function NavigationPage() {
                 viaPoints={nav.multimodalRoute.segments
                   .filter(s => s.mode === 'transit' && s.toStop)
                   .map(s => s.toStop!.location)}
+              />
+            </div>
+          )}
+
+          {nav.destination && nav.currentPosition && taxiLikeMode && (
+            <div className="absolute bottom-[180px] left-3 right-3 z-[840]">
+              <TaxiComparisonPanel
+                pickup={nav.currentPosition}
+                destination={nav.destination.coordinates}
+                viaPoints={[]}
+                onSelectDirect={() => routerNav('/taxi')}
               />
             </div>
           )}

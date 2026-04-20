@@ -8,6 +8,9 @@
  * Also provides production MapLibre style with enhanced road rendering.
  */
 
+import type maplibregl from 'maplibre-gl';
+import { applyProductionStyleEnhancements, getProductionPalette, type ProductionMapMode } from './mapStyles';
+
 // ── Style URLs ──────────────────────────────────────────────────────────────
 
 function getMapTilerKey(): string | null {
@@ -18,7 +21,7 @@ function getMapTilerKey(): string | null {
   }
 }
 
-export type MapTheme = 'dark' | 'light' | 'satellite' | 'streets';
+export type MapTheme = ProductionMapMode;
 
 interface StyleConfig {
   url: string;
@@ -47,9 +50,34 @@ export function getMapStyles(): Record<MapTheme, StyleConfig> {
         name: 'MapTiler Satellite',
         isVector: true,
       },
+      hybrid: {
+        url: `https://api.maptiler.com/maps/hybrid/style.json?key=${key}`,
+        name: 'MapTiler Hybrid',
+        isVector: true,
+      },
+      terrain: {
+        url: `https://api.maptiler.com/maps/outdoor-v2/style.json?key=${key}`,
+        name: 'MapTiler Terrain',
+        isVector: true,
+      },
       streets: {
         url: `https://api.maptiler.com/maps/streets-v2/style.json?key=${key}`,
         name: 'MapTiler Streets',
+        isVector: true,
+      },
+      voyager: {
+        url: `https://api.maptiler.com/maps/dataviz-light/style.json?key=${key}`,
+        name: 'MapTiler Voyager Alias',
+        isVector: true,
+      },
+      positron: {
+        url: `https://api.maptiler.com/maps/dataviz-light/style.json?key=${key}`,
+        name: 'MapTiler Positron Alias',
+        isVector: true,
+      },
+      darkNolabels: {
+        url: `https://api.maptiler.com/maps/dataviz-dark/style.json?key=${key}`,
+        name: 'MapTiler Dark Alias',
         isVector: true,
       },
     };
@@ -72,9 +100,34 @@ export function getMapStyles(): Record<MapTheme, StyleConfig> {
       name: 'CartoDB Voyager',
       isVector: true,
     },
+    hybrid: {
+      url: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
+      name: 'CartoDB Hybrid Fallback',
+      isVector: true,
+    },
+    terrain: {
+      url: 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json',
+      name: 'CartoDB Terrain Fallback',
+      isVector: true,
+    },
     streets: {
       url: 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json',
       name: 'CartoDB Voyager',
+      isVector: true,
+    },
+    voyager: {
+      url: 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json',
+      name: 'CartoDB Voyager Alias',
+      isVector: true,
+    },
+    positron: {
+      url: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
+      name: 'CartoDB Positron Alias',
+      isVector: true,
+    },
+    darkNolabels: {
+      url: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
+      name: 'CartoDB Dark Alias',
       isVector: true,
     },
   };
@@ -103,10 +156,12 @@ export function hasMapTiler(): boolean {
 export function addEnhancedRoadLayers(
   map: maplibregl.Map,
   labelSizeMultiplier: number = 1.0,
-  highContrast: boolean = false
+  highContrast: boolean = false,
+  theme: MapTheme = 'dark',
 ) {
   const style = map.getStyle();
   if (!style?.sources) return;
+  const palette = getProductionPalette(theme);
 
   // Find vector source
   const sourceId = Object.keys(style.sources).find(k =>
@@ -116,10 +171,7 @@ export function addEnhancedRoadLayers(
 
    // ── Enhanced street names (bigger, more readable) ────────────────────
    try {
-     // Remove existing road labels to replace with better ones
-     const existingLabels = style.layers?.filter(l =>
-       l.id.includes('road') && l.type === 'symbol' && !l.id.includes('highway')
-     ) ?? [];
+     removeLayerIfExists(map, 'enhanced-road-labels');
 
      // Compute scaled sizes
      const baseSizes = [11, 13, 15, 17, 19];
@@ -139,7 +191,7 @@ export function addEnhancedRoadLayers(
        minzoom: 12,
        layout: {
          'text-field': ['coalesce', ['get', 'name:ru'], ['get', 'name:latin'], ['get', 'name']],
-         'text-font': ['Noto Sans Regular'],
+         'text-font': ['Noto Sans Bold', 'Noto Sans Regular', 'Open Sans Bold'],
          'text-size': [
            'interpolate', ['linear'], ['zoom'],
            12, s12,
@@ -158,8 +210,8 @@ export function addEnhancedRoadLayers(
          'text-keep-upright': true,
        },
        paint: {
-         'text-color': 'rgba(255, 255, 255, 0.95)',
-         'text-halo-color': 'rgba(0, 0, 0, 0.95)',
+         'text-color': palette.roadLabelText,
+         'text-halo-color': palette.labelHalo,
          'text-halo-width': haloWidth,
          'text-halo-blur': haloBlur,
        },
@@ -170,6 +222,7 @@ export function addEnhancedRoadLayers(
 
    // ── House numbers at high zoom ──────────────────────────────────────
    try {
+     removeLayerIfExists(map, 'enhanced-house-numbers');
      const baseHNSizes = [10, 13, 15];
      const scaledHNSizes = baseHNSizes.map(s => s * labelSizeMultiplier);
      const [hn16, hn18, hn20] = scaledHNSizes;
@@ -182,7 +235,7 @@ export function addEnhancedRoadLayers(
        minzoom: 16,
        layout: {
          'text-field': ['get', 'housenumber'],
-         'text-font': ['Noto Sans Regular'],
+         'text-font': ['Noto Sans Regular', 'Noto Sans Bold', 'Open Sans Bold'],
          'text-size': [
            'interpolate', ['linear'], ['zoom'],
            16, hn16,
@@ -194,8 +247,8 @@ export function addEnhancedRoadLayers(
          'text-keep-upright': true,
        },
        paint: {
-         'text-color': 'rgba(255, 255, 255, 0.9)',
-         'text-halo-color': 'rgba(0, 0, 0, 0.9)',
+         'text-color': palette.houseNumberText,
+         'text-halo-color': palette.houseNumberHalo,
          'text-halo-width': highContrast ? 3 : 2,
          'text-halo-blur': highContrast ? 0 : 0.5,
        },
@@ -206,6 +259,7 @@ export function addEnhancedRoadLayers(
 
   // ── Speed limit labels on major roads ───────────────────────────────
   try {
+    removeLayerIfExists(map, 'enhanced-speed-labels');
     map.addLayer({
       id: 'enhanced-speed-labels',
       type: 'symbol',
@@ -215,21 +269,25 @@ export function addEnhancedRoadLayers(
       filter: ['has', 'maxspeed'],
       layout: {
         'text-field': ['concat', ['get', 'maxspeed'], ''],
-        'text-font': ['Noto Sans Bold'],
+        'text-font': ['Open Sans Bold', 'Noto Sans Regular'],
         'text-size': 10,
         'symbol-placement': 'line',
         'symbol-spacing': 500,
         'text-allow-overlap': false,
       },
       paint: {
-        'text-color': '#FF5252',
-        'text-halo-color': 'rgba(255, 255, 255, 0.9)',
+        'text-color': palette.speedLabelText,
+        'text-halo-color': palette.speedLabelHalo,
         'text-halo-width': 2,
       },
     });
   } catch (e) {
     console.warn('[VectorTiles] Speed labels:', e);
   }
+}
+
+export function applyMapThemeEnhancements(map: maplibregl.Map, theme: MapTheme = 'dark') {
+  applyProductionStyleEnhancements(map, theme);
 }
 
 // ── Terrain (3D relief) ─────────────────────────────────────────────────────
@@ -271,5 +329,8 @@ export function getAutoTheme(): MapTheme {
   return (hour >= 6 && hour < 20) ? 'light' : 'dark';
 }
 
-// Re-export for type usage elsewhere
-import type maplibregl from 'maplibre-gl';
+function removeLayerIfExists(map: maplibregl.Map, layerId: string) {
+  if (map.getLayer(layerId)) {
+    map.removeLayer(layerId);
+  }
+}

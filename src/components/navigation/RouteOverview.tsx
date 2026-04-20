@@ -1,16 +1,53 @@
-import { Clock, Route, Zap, ChevronRight, Camera } from 'lucide-react';
+import { Clock, Route, Zap, ChevronRight, Camera, Footprints, Train, CarTaxiFront, Map } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { NavRoute } from '@/types/navigation';
+import type { MultiModalRoute, NavRoute, TravelMode } from '@/types/navigation';
 import { formatDistance, formatDuration, formatETA } from '@/lib/navigation/turnInstructions';
 import { getCamerasOnRoute } from '@/lib/navigation/speedCameras';
 
 interface RouteOverviewProps {
   route: NavRoute;
   alternatives: NavRoute[];
+  travelMode: TravelMode;
+  multimodalRoute?: MultiModalRoute | null;
   loading: boolean;
   onSelectRoute: (id: string) => void;
-  onStart: () => void;
+  onPrimaryAction: () => void;
+  primaryActionLabel?: string;
   onCancel: () => void;
+}
+
+function getModeMeta(travelMode: TravelMode): { label: string; description: string; icon: typeof Map } {
+  switch (travelMode) {
+    case 'taxi':
+      return { label: 'Такси', description: 'Быстрый выезд с переходом к заказу машины', icon: CarTaxiFront };
+    case 'pedestrian':
+      return { label: 'Пешком', description: 'Пеший маршрут без пересадок и дорожного трафика', icon: Footprints };
+    case 'transit':
+      return { label: 'Общественный транспорт', description: 'Маршрут с линиями ОТ, остановками и пересадками', icon: Train };
+    case 'metro':
+      return { label: 'Метро', description: 'Маршрут с акцентом на подземку и быстрые пересадки', icon: Train };
+    case 'multimodal':
+      return { label: 'Мультимодальный', description: 'Комбинация пеших участков, ОТ и доступных пересадок', icon: Map };
+    case 'car':
+    default:
+      return { label: 'Авто', description: 'Классический автомобильный маршрут с учётом дорожной ситуации', icon: Map };
+  }
+}
+
+function getDefaultActionLabel(travelMode: TravelMode): string {
+  switch (travelMode) {
+    case 'taxi':
+      return 'К заказу такси';
+    case 'pedestrian':
+      return 'Начать пеший маршрут';
+    case 'transit':
+    case 'metro':
+    case 'multimodal':
+      return 'Начать сопровождение';
+    case 'car':
+    default:
+      return 'Поехали';
+  }
 }
 
 function RouteCard({
@@ -69,7 +106,22 @@ function RouteCard({
   );
 }
 
-export function RouteOverview({ route, alternatives, loading, onSelectRoute, onStart, onCancel }: RouteOverviewProps) {
+export function RouteOverview({
+  route,
+  alternatives,
+  travelMode,
+  multimodalRoute = null,
+  loading,
+  onSelectRoute,
+  onPrimaryAction,
+  primaryActionLabel,
+  onCancel,
+}: RouteOverviewProps) {
+  const modeMeta = getModeMeta(travelMode);
+  const ModeIcon = modeMeta.icon;
+  const actionLabel = primaryActionLabel ?? getDefaultActionLabel(travelMode);
+  const transitSegments = multimodalRoute?.segments.filter((segment) => segment.mode === 'transit') ?? [];
+
   return (
     <div className={cn(
       'absolute bottom-0 left-0 right-0 z-[900]',
@@ -85,12 +137,51 @@ export function RouteOverview({ route, alternatives, loading, onSelectRoute, onS
 
       <div className="px-4 pb-4">
         {/* Route summary header */}
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-white font-semibold">Маршрут</h3>
+        <div className="flex items-start justify-between gap-3 mb-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center">
+                <ModeIcon className="w-4 h-4 text-blue-300" />
+              </div>
+              <div>
+                <h3 className="text-white font-semibold">{modeMeta.label}</h3>
+                <p className="text-xs text-gray-400 mt-0.5">{modeMeta.description}</p>
+              </div>
+            </div>
+          </div>
           <div className="flex items-center gap-1 text-sm text-gray-400">
             <Route className="w-4 h-4" />
             <span>{alternatives.length + 1} вариант{alternatives.length > 0 ? 'а' : ''}</span>
           </div>
+        </div>
+
+        <div className="mb-3 flex flex-wrap gap-2 text-xs">
+          <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-gray-200">
+            {formatDuration(route.totalDurationSeconds)}
+          </span>
+          <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-gray-200">
+            {formatDistance(route.totalDistanceMeters)}
+          </span>
+          {multimodalRoute?.fare != null && (
+            <span className="rounded-full border border-emerald-400/20 bg-emerald-500/10 px-2.5 py-1 text-emerald-300">
+              {multimodalRoute.fare} ₽
+            </span>
+          )}
+          {multimodalRoute && multimodalRoute.transfers > 0 && (
+            <span className="rounded-full border border-cyan-400/20 bg-cyan-500/10 px-2.5 py-1 text-cyan-200">
+              {multimodalRoute.transfers} пересад.
+            </span>
+          )}
+          {transitSegments.length > 0 && (
+            <span className="rounded-full border border-fuchsia-400/20 bg-fuchsia-500/10 px-2.5 py-1 text-fuchsia-200">
+              {transitSegments.length} линий ОТ
+            </span>
+          )}
+          {multimodalRoute && (
+            <span className="rounded-full border border-lime-400/20 bg-lime-500/10 px-2.5 py-1 text-lime-200">
+              Эко {multimodalRoute.ecoScore}/10
+            </span>
+          )}
         </div>
 
         {/* Main route */}
@@ -124,7 +215,7 @@ export function RouteOverview({ route, alternatives, loading, onSelectRoute, onS
             Отмена
           </button>
           <button
-            onClick={onStart}
+            onClick={onPrimaryAction}
             disabled={loading}
             className={cn(
               'flex-[2] h-12 rounded-xl',
@@ -137,7 +228,7 @@ export function RouteOverview({ route, alternatives, loading, onSelectRoute, onS
             )}
           >
             <Zap className="w-5 h-5" />
-            Поехали
+            {actionLabel}
             <ChevronRight className="w-4 h-4" />
           </button>
         </div>

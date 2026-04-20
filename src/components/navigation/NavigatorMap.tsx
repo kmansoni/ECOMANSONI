@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, memo } from 'react';
 import { Crosshair, ZoomIn, ZoomOut, Compass, Navigation2, Box, Square } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { LatLng } from '@/types/taxi';
-import type { RouteSegment, SpeedCamera, NavRoute, Maneuver, ManeuverType, NavigationLaneGuidance, LaneTurn } from '@/types/navigation';
+import type { RouteSegment, SpeedCamera, NavRoute, Maneuver, ManeuverType, NavigationLaneGuidance, LaneTurn, MultiModalRoute } from '@/types/navigation';
 import { MapLibre3D } from './MapLibre3D';
 import { GreenWaveOverlay } from './GreenWaveOverlay';
 import { useNavigatorSettings } from '@/stores/navigatorSettingsStore';
@@ -29,6 +29,8 @@ interface NavigatorMapProps {
   totalDistance?: number;
   roadName?: string;
   route?: NavRoute | null;
+  multimodalRoute?: MultiModalRoute | null;
+  selectedMultimodalSegmentIndex?: number | null;
   onCenterOnUser?: () => void;
   onToggleOrientation?: () => void;
   onMapClick?: (latlng: LatLng) => void;
@@ -289,6 +291,8 @@ export const NavigatorMap = memo(function NavigatorMap({
   totalDistance,
   roadName,
   route,
+  multimodalRoute,
+  selectedMultimodalSegmentIndex = null,
   onCenterOnUser,
   onToggleOrientation,
   onMapClick,
@@ -331,9 +335,18 @@ export const NavigatorMap = memo(function NavigatorMap({
         userPosition={userPosition}
         routeSegments={routeSegments}
         route={route}
-        speedCameras={speedCameras}
+        multimodalRoute={multimodalRoute ?? null}
+        selectedMultimodalSegmentIndex={selectedMultimodalSegmentIndex}
+        speedCameras={navSettings.showSpeedCameras ? speedCameras : []}
         destinationMarker={destinationMarker}
         nextManeuver={nextManeuver ?? null}
+        mapStyle={navSettings.mapViewMode === 'satellite' ? 'satellite'
+          : navSettings.mapViewMode === 'hybrid' ? 'hybrid'
+          : navSettings.mapViewMode === 'terrain' ? 'terrain'
+          : navSettings.mapViewMode === 'light' ? 'light'
+          : navSettings.mapViewMode === '3d' ? 'dark'
+          : navSettings.navTheme === 'light' ? 'light'
+          : 'dark'}
         onMapClick={onMapClick}
         className="w-full h-full"
       />
@@ -393,6 +406,36 @@ export const NavigatorMap = memo(function NavigatorMap({
       )}
 
       {/* Right controls */}
+      <div className={cn(
+        'absolute right-3 z-[1000] flex flex-col gap-2',
+        isNavigating ? 'bottom-[19rem]' : 'bottom-[14.5rem]'
+      )}>
+        <button
+          onClick={() => navSettings.setShowTrafficFlowOverlay(!navSettings.showTrafficFlowOverlay)}
+          className={cn(
+            'px-3 h-9 rounded-xl text-xs font-semibold backdrop-blur-md border transition-all text-left',
+            navSettings.showTrafficFlowOverlay
+              ? 'bg-amber-500/20 border-amber-300/40 text-amber-100'
+              : 'bg-gray-900/75 border-white/10 text-gray-400 hover:bg-gray-800/85'
+          )}
+          aria-label="Пробки"
+        >
+          Пробки
+        </button>
+        <button
+          onClick={() => navSettings.setShowTransitOverlay(!navSettings.showTransitOverlay)}
+          className={cn(
+            'px-3 h-9 rounded-xl text-xs font-semibold backdrop-blur-md border transition-all text-left',
+            navSettings.showTransitOverlay
+              ? 'bg-cyan-500/20 border-cyan-300/40 text-cyan-100'
+              : 'bg-gray-900/75 border-white/10 text-gray-400 hover:bg-gray-800/85'
+          )}
+          aria-label="Метро и ОТ"
+        >
+          Метро/ОТ
+        </button>
+      </div>
+
       <div className={cn(
         'absolute right-3 z-[1000] flex flex-col gap-2',
         isNavigating ? 'bottom-52' : 'bottom-36'

@@ -104,10 +104,11 @@ export function getNearbyCamera(position: LatLng, heading: number): SpeedCamera 
     const dist = calculateDistance(position, cam.location);
     if (dist > WARN_RADIUS_KM) continue;
 
-    // камера впереди? (±60° от курса)
+    // камера впереди? (±60° от курса) — handle 360° wrap-around
     const bearing = getBearing(position, cam.location);
-    const diff = Math.abs(normalizeDeg(bearing - heading));
-    if (diff > 60) continue;
+    const rawDiff = normalizeDeg(bearing - heading);
+    const angleDiff = rawDiff > 180 ? 360 - rawDiff : rawDiff;
+    if (angleDiff > 60) continue;
 
     if (dist < closestDist) {
       closestDist = dist;

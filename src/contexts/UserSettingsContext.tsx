@@ -9,6 +9,7 @@ import {
 } from "@/lib/user-settings";
 import { cleanupInactiveSessions, computeSessionKey, heartbeatMySession, upsertMySession } from "@/lib/sessions";
 import { supabase } from "@/integrations/supabase/client";
+import { startNavigatorSettingsSync } from "@/lib/navigation/navigatorSettingsSync";
 
 type UserSettingsContextValue = {
   settings: UserSettings | null;
@@ -161,6 +162,13 @@ export function UserSettingsProvider({ children }: { children: React.ReactNode }
 
     return unsubscribe;
   }, [setTheme, userId]);
+
+  // Sync navigator settings (sound, route, map, display) to Supabase
+  React.useEffect(() => {
+    if (!userId) return;
+    const unsub = startNavigatorSettingsSync(userId);
+    return unsub;
+  }, [userId]);
 
   const value = React.useMemo<UserSettingsContextValue>(
     () => ({

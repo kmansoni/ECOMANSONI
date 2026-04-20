@@ -8,14 +8,21 @@
  */
 
 // Bump when caching behavior changes or to evict stale deployed shells/chunks.
-const CACHE_VERSION = 'v3';
+const CACHE_VERSION = 'v4';
 const MEDIA_CACHE = `media-${CACHE_VERSION}`;
 const STATIC_CACHE = `static-${CACHE_VERSION}`;
+const TILE_CACHE = `tiles-${CACHE_VERSION}`;
 const MAX_MEDIA_CACHE_ITEMS = 200;
+const MAX_TILE_CACHE_ITEMS = 1500;
 const MAX_MEDIA_CACHE_SIZE_BYTES = 500 * 1024 * 1024; // 500 MB
 
 // Паттерны URL для Supabase Storage (медиа)
 const SUPABASE_STORAGE_PATTERN = /supabase\.co\/storage\/v1\/object\/(public|sign)\//;
+const MAP_TILE_HOSTS = new Set([
+  'api.maptiler.com',
+  'basemaps.cartocdn.com',
+  'fonts.openmaptiles.org',
+]);
 
 // Статические ресурсы для предзагрузки
 const STATIC_PRECACHE = [
@@ -40,7 +47,7 @@ self.addEventListener('activate', (event) => {
     caches.keys().then((keys) => {
       return Promise.all(
         keys
-          .filter((key) => key !== MEDIA_CACHE && key !== STATIC_CACHE)
+          .filter((key) => key !== MEDIA_CACHE && key !== STATIC_CACHE && key !== TILE_CACHE)
           .map((key) => caches.delete(key))
       );
     }).then(() => self.clients.claim())
@@ -56,13 +63,19 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(request.url);
 
-  // 1. Supabase Storage медиа → Stale While Revalidate
-  if (SUPABASE_STORAGE_PATTERN.test(request.url)) {
-    event.respondWith(staleWhileRevalidate(request, MEDIA_CACHE));
+  // 1. Vector tiles, glyphs, sprites, map styles -> Stale While Revalidate
+  if (isMapTileRequest(url)) {
+    event.respondWith(staleWhileRevalidate(request, TILE_CACHE, MAX_TILE_CACHE_ITEMS));
     return;
   }
 
-  // 2. Supabase API / Realtime → Network First без кэширования.
+  // 2. Supabase Storage медиа → Stale While Revalidate
+  if (SUPABASE_STORAGE_PATTERN.test(request.url)) {
+    event.respondWith(staleWhileRevalidate(request, MEDIA_CACHE, MAX_MEDIA_CACHE_ITEMS));
+    return;
+  }
+
+  // 3. Supabase API / Realtime → Network First без кэширования.
   // Ответы REST API содержат персональные данные пользователя (сообщения,
   // профили, TOTP-статус). Кэшировать их нельзя: данные остались бы в
   // STATIC_CACHE после выхода из аккаунта, видимыми через DevTools → Cache Storage.
@@ -71,7 +84,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 3. Статические ресурсы приложения → Cache First
+  // 4. Статические ресурсы приложения → Cache First
   // HTML shell intentionally excluded to avoid stale chunk references after deploy.
   if (
     url.pathname.match(/\.(js|css|woff2?|ttf|otf|eot|ico|png|svg|webp|jpg|jpeg|gif)$/)
@@ -80,14 +93,14 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 4. Навигационные запросы (SPA) → Network First для свежего index.html.
+  // 5. Навигационные запросы (SPA) → Network First для свежего index.html.
   // Это предотвращает ситуацию, когда старый shell ссылается на уже удаленные чанки.
   if (request.mode === 'navigate') {
     event.respondWith(networkFirst(request));
     return;
   }
 
-  // 5. Остальное → Network First
+  // 6. Остальное → Network First
   event.respondWith(networkFirst(request));
 });
 
@@ -124,14 +137,14 @@ function canStoreInCache(request, response) {
  * Stale While Revalidate: возвращаем кэш немедленно, фоново обновляем.
  * После обновления — LRU eviction по размеру и количеству.
  */
-async function staleWhileRevalidate(request, cacheName) {
+async function staleWhileRevalidate(request, cacheName, maxItems) {
   const cache = await caches.open(cacheName);
   const cached = await cache.match(request);
 
   const fetchAndUpdate = fetch(request).then(async (response) => {
     if (canStoreInCache(request, response)) {
       await cache.put(request, response.clone());
-      await evictMediaCache(cache);
+      await evictCache(cache, maxItems);
     }
     return response;
   }).catch(() => cached || new Response('Offline', { status: 503 }));
@@ -182,16 +195,27 @@ async function networkOnly(request) {
  * Cache API не предоставляет метаданные о размере файлов нативно,
  * поэтому используем приближённую эвристику через количество записей.
  */
-async function evictMediaCache(cache) {
+async function evictCache(cache, maxItems) {
   const keys = await cache.keys();
   const count = keys.length;
 
-  if (count > MAX_MEDIA_CACHE_ITEMS) {
-    const excess = count - MAX_MEDIA_CACHE_ITEMS;
+  if (count > maxItems) {
+    const excess = count - maxItems;
     // Удаляем самые старые (первые в списке, т.к. Cache API добавляет новые в конец)
     const toDelete = keys.slice(0, excess);
     await Promise.all(toDelete.map((key) => cache.delete(key)));
   }
+}
+
+function isMapTileRequest(url) {
+  if (!MAP_TILE_HOSTS.has(url.hostname)) return false;
+
+  return /\.(pbf|mvt|png|jpg|jpeg|webp|json)$/i.test(url.pathname)
+    || url.pathname.includes('/tiles/')
+    || url.pathname.includes('/maps/')
+    || url.pathname.includes('/sprites/')
+    || url.pathname.includes('/sprite')
+    || url.pathname.includes('/fonts/');
 }
 
 // ─── PUSH ────────────────────────────────────────────────────────────────────

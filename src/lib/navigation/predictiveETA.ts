@@ -253,7 +253,9 @@ export async function loadHistoricalPatterns(
 function getBaseVariance(mode: TravelMode): number {
   switch (mode) {
     case 'car': return 0.2;
+    case 'taxi': return 0.22;
     case 'transit': return 0.15;
+    case 'metro': return 0.1;
     case 'pedestrian': return 0.08;
     case 'multimodal': return 0.25;
     default: return 0.2;
@@ -269,17 +271,23 @@ function getTrafficMultiplier(
     return { factor: 1.0, uncertainty: 0, description: 'Пешеходы не зависят от трафика' };
   }
 
+  if (mode === 'metro') {
+    return { factor: 1.0, uncertainty: 0.06, description: 'Метро почти не зависит от дорожного трафика' };
+  }
+
   const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
 
   // Morning rush: 7-10
   if (!isWeekend && hour >= 7 && hour < 10) {
     if (mode === 'car') return { factor: 1.45, uncertainty: 0.25, description: 'Утренний час пик' };
+    if (mode === 'taxi') return { factor: 1.5, uncertainty: 0.28, description: 'Утренний час пик для такси' };
     if (mode === 'transit') return { factor: 1.15, uncertainty: 0.15, description: 'Утренний час пик ОТ' };
   }
 
   // Evening rush: 17-20
   if (!isWeekend && hour >= 17 && hour < 20) {
     if (mode === 'car') return { factor: 1.55, uncertainty: 0.3, description: 'Вечерний час пик' };
+    if (mode === 'taxi') return { factor: 1.6, uncertainty: 0.32, description: 'Вечерний час пик для такси' };
     if (mode === 'transit') return { factor: 1.2, uncertainty: 0.15, description: 'Вечерний час пик ОТ' };
   }
 

@@ -63,9 +63,9 @@ export const GreenWaveOverlay = memo(function GreenWaveOverlay({
     return () => { cancelled = true; clearInterval(id); };
   }, [isNavigating, userPosition?.lat, userPosition?.lng, currentSpeed, route]);
 
-  if (!recommendation || !recommendation.recommendedSpeed) return null;
+  if (!recommendation || !recommendation.suggestedSpeedKmh) return null;
 
-  const diff = recommendation.recommendedSpeed - currentSpeed;
+  const diff = recommendation.suggestedSpeedKmh - currentSpeed;
   const shouldSpeedUp = diff > 5;
   const shouldSlowDown = diff < -5;
   const isGood = Math.abs(diff) <= 5;
@@ -85,7 +85,7 @@ export const GreenWaveOverlay = memo(function GreenWaveOverlay({
       )}
     >
       <Zap className={cn('w-4 h-4', isGood ? 'text-green-400' : shouldSpeedUp ? 'text-blue-400' : 'text-amber-400')} />
-      <span className="text-sm font-semibold">{recommendation.recommendedSpeed} км/ч</span>
+      <span className="text-sm font-semibold">{recommendation.suggestedSpeedKmh} км/ч</span>
       <span className="text-xs opacity-70">
         {isGood ? '✓ зелёная волна' : recommendation.message}
       </span>

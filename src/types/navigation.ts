@@ -4,7 +4,7 @@ export type NavigationPhase = 'idle' | 'search' | 'route_preview' | 'navigating'
 
 // === Мультимодальный навигатор ===
 
-export type TravelMode = 'car' | 'pedestrian' | 'transit' | 'multimodal';
+export type TravelMode = 'car' | 'taxi' | 'pedestrian' | 'transit' | 'metro' | 'multimodal';
 
 export type TransitType = 'bus' | 'trolleybus' | 'tram' | 'metro' | 'suburban' | 'ferry' | 'cable_car';
 
@@ -104,6 +104,7 @@ export interface RealTimeVehicle {
 
 export interface TransitRoutingOptions {
   modes?: TravelMode[];
+  transitTypes?: TransitType[];
   maxTransfers?: number;
   departureTime?: Date;
   arrivalTime?: Date;

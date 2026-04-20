@@ -10,8 +10,10 @@ interface TravelModeToggleProps {
 
 const MODES: Array<{ id: TravelMode; emoji: string; label: string }> = [
   { id: 'car', emoji: '🚗', label: 'Авто' },
+  { id: 'taxi', emoji: '🚕', label: 'Такси' },
   { id: 'pedestrian', emoji: '🚶', label: 'Пешком' },
   { id: 'transit', emoji: '🚌', label: 'Транзит' },
+  { id: 'metro', emoji: '🚇', label: 'Метро' },
   { id: 'multimodal', emoji: '🔀', label: 'Мульти' },
 ];
 
@@ -23,7 +25,7 @@ export const TravelModeToggle = memo(function TravelModeToggle({
   return (
     <div
       className={cn(
-        'flex items-center gap-0.5 p-0.5 rounded-xl',
+      'flex items-center gap-0.5 p-0.5 rounded-xl flex-wrap',
         'bg-gray-900/80 backdrop-blur-md border border-white/10',
         'shadow-lg shadow-black/30',
         className
@@ -34,7 +36,7 @@ export const TravelModeToggle = memo(function TravelModeToggle({
           key={mode.id}
           onClick={() => onChange(mode.id)}
           className={cn(
-            'w-9 h-9 rounded-lg flex items-center justify-center',
+            'min-w-9 h-9 px-2 rounded-lg flex items-center justify-center gap-1',
             'transition-all text-base',
             value === mode.id
               ? 'bg-blue-500/30 shadow-inner'
@@ -43,7 +45,8 @@ export const TravelModeToggle = memo(function TravelModeToggle({
           aria-label={mode.label}
           title={mode.label}
         >
-          {mode.emoji}
+          <span>{mode.emoji}</span>
+          <span className="text-[10px] text-gray-200 hidden xl:inline">{mode.label}</span>
         </button>
       ))}
     </div>

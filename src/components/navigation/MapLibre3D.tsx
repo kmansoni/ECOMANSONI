@@ -12,20 +12,24 @@ import { useEffect, useRef, useState, memo } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import type { LatLng } from '@/types/taxi';
-import type { Maneuver, RouteSegment, SpeedCamera, NavRoute, TrafficLevel } from '@/types/navigation';
+import type { Maneuver, RouteSegment, SpeedCamera, NavRoute, TrafficLevel, MultiModalRoute } from '@/types/navigation';
 import { useNavigatorSettings } from '@/stores/navigatorSettingsStore';
 import { getVehicleMarkerSVG } from '@/lib/navigation/vehicleMarkers';
 import { useRoadEvents, ROAD_EVENT_LABELS } from '@/stores/roadEventsStore';
 import { getRelevantMapObjects, loadRoadFeatures } from '@/lib/navigation/roadFeatures';
-import { getStyleUrl, addEnhancedRoadLayers, addTerrain, type MapTheme } from '@/lib/map/vectorTileProvider';
+import { getStyleUrl, addEnhancedRoadLayers, addTerrain, applyMapThemeEnhancements, type MapTheme } from '@/lib/map/vectorTileProvider';
 import { ensureNavigationLayers, updateNavigationObjectSource } from '@/lib/map/navigationLayers';
 import { getNearbyTrafficLights, type TrafficLightStatus } from '@/lib/navigation/trafficLightTiming';
+import { getBuildingExtrusionColorExpression, getProductionPalette } from '@/lib/map/mapStyles';
+import { fetchTrafficInBbox, type TrafficSegment } from '@/lib/navigation/trafficProvider';
 
 // ─── Style URLs: auto-detect MapTiler or fallback to CartoDB ────────────────
 const STYLES = {
   dark: getStyleUrl('dark'),
   light: getStyleUrl('light'),
   satellite: getStyleUrl('satellite'),
+  hybrid: getStyleUrl('hybrid'),
+  terrain: getStyleUrl('terrain'),
   streets: getStyleUrl('streets'),
   // Legacy keys for compatibility
   voyager: getStyleUrl('light'),
@@ -43,6 +47,13 @@ const TRAFFIC_COLORS: Record<TrafficLevel, string> = {
   congested: '#F44336',
   unknown: '#42A5F5',
 };
+
+const TRAFFIC_OVERLAY_SOURCE_ID = 'traffic-overlay-source';
+const TRAFFIC_OVERLAY_LAYER_ID = 'traffic-overlay-layer';
+const TRANSIT_OVERLAY_SOURCE_ID = 'transit-overlay-source';
+const TRANSIT_LINE_LAYER_ID = 'transit-overlay-lines';
+const TRANSIT_STATION_LAYER_ID = 'transit-overlay-stations';
+const TRANSIT_LABEL_LAYER_ID = 'transit-overlay-labels';
 
 // ─── Traffic light colors ───────────────────────────────────────────────────
 const TL_COLORS = {
@@ -62,6 +73,8 @@ export interface MapLibre3DProps {
   userPosition: LatLng | null;
   routeSegments: RouteSegment[];
   route?: NavRoute | null;
+  multimodalRoute?: MultiModalRoute | null;
+  selectedMultimodalSegmentIndex?: number | null;
   speedCameras: SpeedCamera[];
   destinationMarker: LatLng | null;
   nextManeuver?: Maneuver | null;
@@ -81,6 +94,8 @@ export const MapLibre3D = memo(function MapLibre3D({
   userPosition,
   routeSegments,
   route = null,
+  multimodalRoute = null,
+  selectedMultimodalSegmentIndex = null,
   speedCameras,
   destinationMarker,
   nextManeuver = null,
@@ -122,20 +137,23 @@ export const MapLibre3D = memo(function MapLibre3D({
       maxPitch: 70,
     });
 
-    map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-left');
-
     const applyManagedLayers = () => {
       if (!map.isStyleLoaded()) return;
 
+      applyMapThemeEnhancements(map, mapStyle);
+
       if (navSettings.show3DBuildings) {
-        add3DBuildings(map);
+        add3DBuildings(map, mapStyle);
       }
-      addEnhancedRoadLayers(map, navSettings.labelSizeMultiplier, navSettings.highContrastLabels);
+      addEnhancedRoadLayers(map, navSettings.labelSizeMultiplier, navSettings.highContrastLabels, mapStyle);
       ensureNavigationLayers(map, {
         labelSizeMultiplier: navSettings.labelSizeMultiplier,
         highContrast: navSettings.highContrastLabels,
+        theme: mapStyle,
       });
-      addTerrain(map);
+      if (mapStyle === 'terrain' || mapStyle === 'dark') {
+        addTerrain(map);
+      }
     };
 
     map.on('load', () => {
@@ -174,6 +192,7 @@ export const MapLibre3D = memo(function MapLibre3D({
      ensureNavigationLayers(map, {
        labelSizeMultiplier: navSettings.labelSizeMultiplier,
        highContrast: navSettings.highContrastLabels,
+       theme: mapStyle,
      });
 
      // Compute scaled sizes
@@ -218,6 +237,66 @@ export const MapLibre3D = memo(function MapLibre3D({
        // Layer not yet created
      }
     }, [navSettings.labelSizeMultiplier, navSettings.highContrastLabels, isReady]);
+
+  // ── City-wide traffic overlay ────────────────────────────────────────────
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !isReady) return;
+
+    if (!navSettings.showTrafficFlowOverlay) {
+      removeTrafficOverlay(map);
+      return;
+    }
+
+    let disposed = false;
+    let timer: ReturnType<typeof setInterval> | null = null;
+
+    const refreshTrafficOverlay = async () => {
+      try {
+        const bounds = map.getBounds();
+        const segments = await fetchTrafficInBbox(
+          bounds.getSouth(),
+          bounds.getWest(),
+          bounds.getNorth(),
+          bounds.getEast(),
+        );
+        if (disposed) return;
+        upsertTrafficOverlay(map, segments);
+      } catch (error) {
+        console.warn('[MapLibre3D] Traffic overlay update failed:', error);
+      }
+    };
+
+    void refreshTrafficOverlay();
+    map.on('moveend', refreshTrafficOverlay);
+    timer = setInterval(() => {
+      void refreshTrafficOverlay();
+    }, 120_000);
+
+    return () => {
+      disposed = true;
+      map.off('moveend', refreshTrafficOverlay);
+      if (timer) clearInterval(timer);
+      removeTrafficOverlay(map);
+    };
+  }, [isReady, mapStyle, navSettings.showTrafficFlowOverlay]);
+
+  // ── Transit and metro overlay ───────────────────────────────────────────
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !isReady) return;
+
+    if (!navSettings.showTransitOverlay || !multimodalRoute || multimodalRoute.segments.length === 0) {
+      removeTransitOverlay(map);
+      return;
+    }
+
+    upsertTransitOverlay(map, multimodalRoute, selectedMultimodalSegmentIndex);
+
+    return () => {
+      removeTransitOverlay(map);
+    };
+  }, [isReady, mapStyle, multimodalRoute, navSettings.showTransitOverlay, selectedMultimodalSegmentIndex]);
 
    // ── Sync camera ───────────────────────────────────────────────────────────
   useEffect(() => {
@@ -540,7 +619,6 @@ export const MapLibre3D = memo(function MapLibre3D({
           0%, 100% { opacity: 1; }
           50% { opacity: 0.8; }
         }
-        .maplibregl-ctrl-attrib { font-size: 10px !important; opacity: 0.5; }
         .maplibregl-canvas { outline: none; }
       `}</style>
     </div>
@@ -549,9 +627,10 @@ export const MapLibre3D = memo(function MapLibre3D({
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-function add3DBuildings(map: maplibregl.Map) {
+function add3DBuildings(map: maplibregl.Map, mapStyle: MapStyle) {
   const layers = map.getStyle()?.layers;
   if (!layers) return;
+  const palette = getProductionPalette(mapStyle);
 
   // Find the first label layer to insert buildings underneath
   let labelLayerId: string | undefined;
@@ -578,6 +657,10 @@ function add3DBuildings(map: maplibregl.Map) {
   if (!sourceId) return;
 
   try {
+    if (map.getLayer('3d-buildings')) {
+      map.removeLayer('3d-buildings');
+    }
+
     map.addLayer(
       {
         id: '3d-buildings',
@@ -586,16 +669,31 @@ function add3DBuildings(map: maplibregl.Map) {
         type: 'fill-extrusion',
         minzoom: 14,
         paint: {
-          'fill-extrusion-color': [
-            'interpolate', ['linear'], ['get', 'render_height'],
-            0, '#1a1a2e',
-            50, '#16213e',
-            100, '#0f3460',
-            200, '#1a1a4e',
-          ],
+          'fill-extrusion-color': getBuildingExtrusionColorExpression(mapStyle),
           'fill-extrusion-height': ['coalesce', ['get', 'render_height'], ['get', 'height'], 10],
           'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], 0],
-          'fill-extrusion-opacity': 0.7,
+          'fill-extrusion-opacity': mapStyle === 'satellite' || mapStyle === 'hybrid' ? 0.45 : 0.82,
+          'fill-extrusion-vertical-gradient': true,
+        },
+      },
+      labelLayerId,
+    );
+
+    if (map.getLayer('3d-buildings-outline')) {
+      map.removeLayer('3d-buildings-outline');
+    }
+
+    map.addLayer(
+      {
+        id: '3d-buildings-outline',
+        source: sourceId,
+        'source-layer': 'building',
+        type: 'line',
+        minzoom: 14,
+        paint: {
+          'line-color': palette.buildingLine,
+          'line-width': ['interpolate', ['linear'], ['zoom'], 14, 0.5, 18, 1.5],
+          'line-opacity': 0.65,
         },
       },
       labelLayerId,
@@ -621,6 +719,236 @@ function removeRouteLayers(map: maplibregl.Map) {
   sourceIds.forEach(id => {
     try { map.removeSource(id); } catch { /* ignore */ }
   });
+}
+
+function upsertTrafficOverlay(map: maplibregl.Map, segments: TrafficSegment[]) {
+  const data = {
+    type: 'FeatureCollection' as const,
+    features: segments.map((segment) => ({
+      type: 'Feature' as const,
+      properties: {
+        congestion: segment.congestionLevel,
+        confidence: segment.confidence,
+        sampleCount: segment.sampleCount,
+      },
+      geometry: {
+        type: 'Point' as const,
+        coordinates: [segment.centerLon, segment.centerLat],
+      },
+    })),
+  };
+
+  const existingSource = map.getSource(TRAFFIC_OVERLAY_SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
+  if (existingSource) {
+    existingSource.setData(data);
+  } else {
+    map.addSource(TRAFFIC_OVERLAY_SOURCE_ID, {
+      type: 'geojson',
+      data,
+    });
+  }
+
+  if (!map.getLayer(TRAFFIC_OVERLAY_LAYER_ID)) {
+    const beforeId = map.getStyle().layers?.find((layer) => layer.type === 'symbol')?.id;
+    map.addLayer({
+      id: TRAFFIC_OVERLAY_LAYER_ID,
+      type: 'circle',
+      source: TRAFFIC_OVERLAY_SOURCE_ID,
+      paint: {
+        'circle-color': [
+          'match',
+          ['get', 'congestion'],
+          'free', TRAFFIC_COLORS.free,
+          'moderate', '#EAB308',
+          'slow', TRAFFIC_COLORS.slow,
+          'congested', TRAFFIC_COLORS.congested,
+          TRAFFIC_COLORS.unknown,
+        ],
+        'circle-radius': [
+          'interpolate', ['linear'], ['zoom'],
+          8, ['+', 3, ['*', ['coalesce', ['get', 'confidence'], 0.3], 4]],
+          14, ['+', 6, ['*', ['coalesce', ['get', 'confidence'], 0.3], 6]],
+          18, ['+', 10, ['*', ['coalesce', ['get', 'confidence'], 0.3], 8]],
+        ],
+        'circle-opacity': [
+          'match',
+          ['get', 'congestion'],
+          'free', 0.18,
+          'moderate', 0.28,
+          'slow', 0.34,
+          'congested', 0.42,
+          0.2,
+        ],
+        'circle-stroke-color': 'rgba(15, 23, 42, 0.72)',
+        'circle-stroke-width': 0.75,
+      },
+    }, beforeId);
+  }
+}
+
+function removeTrafficOverlay(map: maplibregl.Map) {
+  if (map.getLayer(TRAFFIC_OVERLAY_LAYER_ID)) {
+    try { map.removeLayer(TRAFFIC_OVERLAY_LAYER_ID); } catch { /* ignore */ }
+  }
+
+  if (map.getSource(TRAFFIC_OVERLAY_SOURCE_ID)) {
+    try { map.removeSource(TRAFFIC_OVERLAY_SOURCE_ID); } catch { /* ignore */ }
+  }
+}
+
+function upsertTransitOverlay(map: maplibregl.Map, multimodalRoute: MultiModalRoute, selectedSegmentIndex: number | null) {
+  const stationFeatures = new Map<string, GeoJSON.Feature<GeoJSON.Point>>();
+  const features: GeoJSON.Feature[] = multimodalRoute.segments.flatMap((segment, index) => {
+    const segmentCoordinates = (segment.geometry && segment.geometry.length >= 2
+      ? segment.geometry
+      : [segment.from, segment.to]
+    ).map((point) => [point.lng, point.lat]);
+
+    if (segment.fromStop) {
+      stationFeatures.set(segment.fromStop.stopId, {
+        type: 'Feature',
+        properties: {
+          kind: 'station',
+          name: segment.fromStop.name,
+          routeType: segment.trip?.routeType ?? 'transit',
+          routeColor: segment.trip?.routeColor ?? '#38BDF8',
+        },
+        geometry: {
+          type: 'Point',
+          coordinates: [segment.fromStop.location.lng, segment.fromStop.location.lat],
+        },
+      });
+    }
+
+    if (segment.toStop) {
+      stationFeatures.set(segment.toStop.stopId, {
+        type: 'Feature',
+        properties: {
+          kind: 'station',
+          name: segment.toStop.name,
+          routeType: segment.trip?.routeType ?? 'transit',
+          routeColor: segment.trip?.routeColor ?? '#38BDF8',
+        },
+        geometry: {
+          type: 'Point',
+          coordinates: [segment.toStop.location.lng, segment.toStop.location.lat],
+        },
+      });
+    }
+
+    return [{
+      type: 'Feature' as const,
+      properties: {
+        kind: 'segment',
+        segmentIndex: index,
+        isSelected: selectedSegmentIndex === index,
+        segmentMode: segment.mode,
+        routeType: segment.trip?.routeType ?? segment.mode,
+        routeName: segment.trip?.routeName ?? null,
+        routeColor: segment.trip?.routeColor ?? (segment.trip?.routeType === 'metro' ? '#38BDF8' : '#A78BFA'),
+      },
+      geometry: {
+        type: 'LineString' as const,
+        coordinates: segmentCoordinates,
+      },
+    }];
+  });
+
+  const data = {
+    type: 'FeatureCollection' as const,
+    features: [...features, ...stationFeatures.values()],
+  };
+
+  const existingSource = map.getSource(TRANSIT_OVERLAY_SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
+  if (existingSource) {
+    existingSource.setData(data);
+  } else {
+    map.addSource(TRANSIT_OVERLAY_SOURCE_ID, {
+      type: 'geojson',
+      data,
+    });
+  }
+
+  const beforeId = map.getStyle().layers?.find((layer) => layer.type === 'symbol')?.id;
+
+  if (!map.getLayer(TRANSIT_LINE_LAYER_ID)) {
+    map.addLayer({
+      id: TRANSIT_LINE_LAYER_ID,
+      type: 'line',
+      source: TRANSIT_OVERLAY_SOURCE_ID,
+      filter: ['==', ['geometry-type'], 'LineString'],
+      layout: {
+        'line-join': 'round',
+        'line-cap': 'round',
+      },
+      paint: {
+        'line-color': ['coalesce', ['get', 'routeColor'], '#38BDF8'],
+        'line-width': [
+          'interpolate', ['linear'], ['zoom'],
+          10, ['case', ['boolean', ['get', 'isSelected'], false], 6, ['match', ['get', 'routeType'], 'metro', 4, 'walk', 2, 3]],
+          15, ['case', ['boolean', ['get', 'isSelected'], false], 10, ['match', ['get', 'routeType'], 'metro', 7, 'walk', 3, 5]],
+          18, ['case', ['boolean', ['get', 'isSelected'], false], 12, ['match', ['get', 'routeType'], 'metro', 9, 'walk', 4, 6]],
+        ],
+        'line-opacity': ['case', ['boolean', ['get', 'isSelected'], false], 1, ['match', ['get', 'routeType'], 'walk', 0.5, 0.88]],
+        'line-dasharray': [
+          'match', ['get', 'routeType'],
+          'walk', ['literal', [0.8, 1.2]],
+          'bus', ['literal', [1.2, 0.9]],
+          'tram', ['literal', [1.1, 0.8]],
+          ['literal', [1, 0]],
+        ],
+      },
+    }, beforeId);
+  }
+
+  if (!map.getLayer(TRANSIT_STATION_LAYER_ID)) {
+    map.addLayer({
+      id: TRANSIT_STATION_LAYER_ID,
+      type: 'circle',
+      source: TRANSIT_OVERLAY_SOURCE_ID,
+      filter: ['==', ['geometry-type'], 'Point'],
+      paint: {
+        'circle-radius': ['interpolate', ['linear'], ['zoom'], 10, 3, 15, 5, 18, 7],
+        'circle-color': ['coalesce', ['get', 'routeColor'], '#38BDF8'],
+        'circle-stroke-color': '#E2E8F0',
+        'circle-stroke-width': 1.5,
+      },
+    }, beforeId);
+  }
+
+  if (!map.getLayer(TRANSIT_LABEL_LAYER_ID)) {
+    map.addLayer({
+      id: TRANSIT_LABEL_LAYER_ID,
+      type: 'symbol',
+      source: TRANSIT_OVERLAY_SOURCE_ID,
+      minzoom: 12,
+      filter: ['==', ['geometry-type'], 'Point'],
+      layout: {
+        'text-field': ['get', 'name'],
+        'text-font': ['Noto Sans Bold', 'Arial Unicode MS Bold'],
+        'text-size': ['interpolate', ['linear'], ['zoom'], 12, 10, 16, 12],
+        'text-offset': [0, 1.1],
+        'text-anchor': 'top',
+      },
+      paint: {
+        'text-color': '#F8FAFC',
+        'text-halo-color': 'rgba(15, 23, 42, 0.92)',
+        'text-halo-width': 1.5,
+      },
+    });
+  }
+}
+
+function removeTransitOverlay(map: maplibregl.Map) {
+  for (const layerId of [TRANSIT_LABEL_LAYER_ID, TRANSIT_STATION_LAYER_ID, TRANSIT_LINE_LAYER_ID]) {
+    if (map.getLayer(layerId)) {
+      try { map.removeLayer(layerId); } catch { /* ignore */ }
+    }
+  }
+
+  if (map.getSource(TRANSIT_OVERLAY_SOURCE_ID)) {
+    try { map.removeSource(TRANSIT_OVERLAY_SOURCE_ID); } catch { /* ignore */ }
+  }
 }
 
 function applySmoothRotation(element: HTMLDivElement, nextHeading: number) {

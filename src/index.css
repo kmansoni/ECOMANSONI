@@ -60,6 +60,13 @@ body::-webkit-scrollbar,
   display: none;
 }
 
+/* ── Hide map attribution controls ────────────────────────── */
+.maplibregl-ctrl-attrib,
+.mapboxgl-ctrl-attrib,
+.leaflet-control-attribution {
+  display: none !important;
+}
+
 /* ── PlatformLayout root ───────────────────────────────────── */
 .platform-root {
   display: flex;

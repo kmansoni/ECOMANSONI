@@ -140,8 +140,10 @@ export function predictUserState(
   // Mode impact
   const modeEffects: Record<TravelMode, { energy: number; stress: number; satisfaction: number }> = {
     car: { energy: -0.05, stress: 0.15, satisfaction: 0.05 },
+    taxi: { energy: -0.03, stress: 0.08, satisfaction: 0.1 },
     pedestrian: { energy: -0.15, stress: -0.10, satisfaction: 0.10 },
     transit: { energy: -0.05, stress: 0.05, satisfaction: 0 },
+    metro: { energy: -0.04, stress: 0.02, satisfaction: 0.06 },
     multimodal: { energy: -0.10, stress: 0.10, satisfaction: 0.05 },
   };
   const me = modeEffects[conditions.mode] ?? modeEffects.car;
@@ -468,8 +470,10 @@ function getCircadianEnergy(hour: number): number {
 function modeDescription(mode: TravelMode): string {
   switch (mode) {
     case 'car': return 'Автомобиль — комфорт, но стресс в пробках';
+    case 'taxi': return 'Такси — минимум организационных усилий, но дороже поездки на авто';
     case 'pedestrian': return 'Пешком — активный отдых, но утомляет';
     case 'transit': return 'Общественный транспорт — нейтрально';
+    case 'metro': return 'Метро — быстро и стабильно, но с пересадками и платформами';
     case 'multimodal': return 'Мультимодальный — разнообразно, но пересадки';
     default: return '';
   }

@@ -117,7 +117,9 @@ interface NavigatorSettingsState {
   mapViewMode: MapViewMode;
   navTheme: NavTheme;
   show3DBuildings: boolean;
+  showTrafficFlowOverlay: boolean;
   showTrafficLights: boolean;
+  showTransitOverlay: boolean;
   showSpeedBumps: boolean;
   showRoadSigns: boolean;
   showLanes: boolean;
@@ -140,7 +142,9 @@ interface NavigatorSettingsState {
   setMapViewMode: (mode: MapViewMode) => void;
   setNavTheme: (theme: NavTheme) => void;
   setShow3DBuildings: (v: boolean) => void;
+  setShowTrafficFlowOverlay: (v: boolean) => void;
   setShowTrafficLights: (v: boolean) => void;
+  setShowTransitOverlay: (v: boolean) => void;
   setShowSpeedBumps: (v: boolean) => void;
   setShowRoadSigns: (v: boolean) => void;
   setShowLanes: (v: boolean) => void;
@@ -167,7 +171,9 @@ export const useNavigatorSettings = create<NavigatorSettingsState>()(
       mapViewMode: 'standard',
       navTheme: 'dark',
       show3DBuildings: true,
+      showTrafficFlowOverlay: true,
       showTrafficLights: true,
+      showTransitOverlay: true,
       showSpeedBumps: true,
       showRoadSigns: true,
       showLanes: true,
@@ -190,7 +196,9 @@ export const useNavigatorSettings = create<NavigatorSettingsState>()(
       setMapViewMode: (mode) => set({ mapViewMode: mode }),
       setNavTheme: (theme) => set({ navTheme: theme }),
       setShow3DBuildings: (v) => set({ show3DBuildings: v }),
+      setShowTrafficFlowOverlay: (v) => set({ showTrafficFlowOverlay: v }),
       setShowTrafficLights: (v) => set({ showTrafficLights: v }),
+      setShowTransitOverlay: (v) => set({ showTransitOverlay: v }),
       setShowSpeedBumps: (v) => set({ showSpeedBumps: v }),
       setShowRoadSigns: (v) => set({ showRoadSigns: v }),
       setShowLanes: (v) => set({ showLanes: v }),

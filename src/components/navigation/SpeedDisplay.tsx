@@ -8,7 +8,7 @@ interface SpeedDisplayProps {
 
 export function SpeedDisplay({ speed, speedLimit, className }: SpeedDisplayProps) {
   const displaySpeed = Math.round(speed);
-  const isOverspeed = speedLimit != null && speed > speedLimit;
+  const isOverspeed = speedLimit != null && speed > speedLimit + 5; // 5 km/h tolerance for GPS noise
 
   return (
     <div className={cn('flex flex-col items-center gap-1', className)}>

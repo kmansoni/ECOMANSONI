@@ -214,8 +214,7 @@ export const TaxiMap = memo(function TaxiMap({
       subdomains: 'abcd',
     }).addTo(map);
 
-    // Мелкая атрибуция в углу
-    L.control.attribution({ position: 'bottomleft', prefix: false }).addTo(map);
+
 
     if (onMapClick) {
       map.on('click', (e: L.LeafletMouseEvent) => {

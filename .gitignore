@@ -96,3 +96,8 @@ __pycache__/
 
 # Research screenshots
 inssmart-*.png
+
+# Large OSM/GeoNames data files (use build scripts to regenerate)
+public/data/osm/world/sources/
+public/data/osm/world/processed/settlements/*.json
+public/data/osm/graph.json

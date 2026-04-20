@@ -7,7 +7,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Building2, User, Briefcase, Send, MapPin, Phone, Globe, Clock, Upload } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { supabase } from '@/lib/supabase';
+import { supabase, dbLoose } from '@/lib/supabase';
 import { toast } from 'sonner';
 
 type BusinessType = 'ip' | 'ooo' | 'self_employed';
@@ -92,7 +92,7 @@ export default function BusinessRegistrationPage() {
         return;
       }
 
-      const { error } = await supabase.from('business_registrations').insert({
+      const { error } = await dbLoose.from('business_registrations').insert({
         user_id: user.id,
         business_type: form.businessType,
         name: form.name,

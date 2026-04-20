@@ -87,12 +87,15 @@ export type VoiceEventType = 'turn' | 'camera' | 'police' | 'sign' | 'speedbump'
 function shouldSpeak(eventType: VoiceEventType, soundMode: SoundMode): boolean {
   if (soundMode === 'mute') return false;
   if (soundMode === 'all') return true;
-  
+
+  // speed_warning is SAFETY-CRITICAL — always audible in non-mute modes
+  if (eventType === 'speed_warning') return true;
+
   switch (soundMode) {
     case 'cameras': return eventType === 'camera';
     case 'turns': return eventType === 'turn' || eventType === 'arrival' || eventType === 'reroute';
     case 'police': return eventType === 'police';
-    case 'signs': return eventType === 'sign';
+    case 'signs': return eventType === 'sign' || eventType === 'speedbump';
     default: return false;
   }
 }

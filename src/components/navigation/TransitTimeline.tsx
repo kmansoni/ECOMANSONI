@@ -5,6 +5,7 @@ import type { MultiModalRoute, MultiModalSegment, TransitType } from '@/types/na
 interface TransitTimelineProps {
   route: MultiModalRoute;
   onSelectSegment?: (index: number) => void;
+  selectedSegmentIndex?: number | null;
   className?: string;
 }
 
@@ -36,15 +37,17 @@ function SegmentItem({
   index,
   isLast,
   onSelect,
+  isSelected,
 }: {
   segment: MultiModalSegment;
   index: number;
   isLast: boolean;
   onSelect?: () => void;
+  isSelected?: boolean;
 }) {
   if (segment.mode === 'walk') {
-    return (
-      <div className="flex items-start gap-3">
+    const content = (
+      <div className="flex items-start gap-3 w-full text-left">
         <div className="flex flex-col items-center">
           <div className="w-8 h-8 rounded-full bg-green-500/20 flex items-center justify-center text-sm">
             🚶
@@ -59,6 +62,20 @@ function SegmentItem({
         </div>
       </div>
     );
+
+    if (!onSelect) return content;
+
+    return (
+      <button
+        onClick={onSelect}
+        className={cn(
+          'w-full rounded-lg p-1 -m-1 transition-colors',
+          isSelected ? 'bg-green-500/10 ring-1 ring-green-400/30' : 'hover:bg-white/5'
+        )}
+      >
+        {content}
+      </button>
+    );
   }
 
   if (segment.mode === 'transit' && segment.trip) {
@@ -68,7 +85,10 @@ function SegmentItem({
     return (
       <button
         onClick={onSelect}
-        className="flex items-start gap-3 w-full text-left hover:bg-white/5 rounded-lg transition-colors p-1 -m-1"
+        className={cn(
+          'flex items-start gap-3 w-full text-left rounded-lg transition-colors p-1 -m-1',
+          isSelected ? 'bg-cyan-500/10 ring-1 ring-cyan-400/30' : 'hover:bg-white/5'
+        )}
       >
         <div className="flex flex-col items-center">
           <div
@@ -105,8 +125,8 @@ function SegmentItem({
   }
 
   // Car segment
-  return (
-    <div className="flex items-start gap-3">
+  const content = (
+    <div className="flex items-start gap-3 w-full text-left">
       <div className="flex flex-col items-center">
         <div className="w-8 h-8 rounded-full bg-amber-500/20 flex items-center justify-center text-sm">
           🚗
@@ -119,11 +139,26 @@ function SegmentItem({
       </div>
     </div>
   );
+
+  if (!onSelect) return content;
+
+  return (
+    <button
+      onClick={onSelect}
+      className={cn(
+        'w-full rounded-lg p-1 -m-1 transition-colors',
+        isSelected ? 'bg-amber-500/10 ring-1 ring-amber-400/30' : 'hover:bg-white/5'
+      )}
+    >
+      {content}
+    </button>
+  );
 }
 
 export const TransitTimeline = memo(function TransitTimeline({
   route,
   onSelectSegment,
+  selectedSegmentIndex = null,
   className,
 }: TransitTimelineProps) {
   return (
@@ -158,6 +193,7 @@ export const TransitTimeline = memo(function TransitTimeline({
             index={i}
             isLast={i === route.segments.length - 1}
             onSelect={onSelectSegment ? () => onSelectSegment(i) : undefined}
+            isSelected={selectedSegmentIndex === i}
           />
         ))}
       </div>

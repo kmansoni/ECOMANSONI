@@ -4,10 +4,12 @@ import type {
   NavigationPhase,
   NavRoute,
   Maneuver,
+  PedestrianRoutingOptions,
   SpeedCamera,
   SavedPlace,
   TravelMode,
   MultiModalRoute,
+  TransitType,
   TransitRoutingOptions,
 } from '@/types/navigation';
 import { fetchRoute, buildRouteProximityChecker } from '@/lib/navigation/routing';
@@ -53,6 +55,7 @@ const MANEUVER_COMPLETE_KM = 0.03; // 30m
 interface UseNavigationOptions {
   travelMode?: TravelMode;
   transitOptions?: TransitRoutingOptions;
+  pedestrianOptions?: PedestrianRoutingOptions;
 }
 const ARRIVAL_THRESHOLD_KM = 0.03; // 30m
 const VOICE_WARN_DISTANCES = [500, 200, 50]; // meters
@@ -60,6 +63,22 @@ const VOICE_WARN_DISTANCES = [500, 200, 50]; // meters
 export function useNavigation(options?: UseNavigationOptions) {
   const travelMode = options?.travelMode ?? 'car';
   const transitOptions = options?.transitOptions;
+  const pedestrianOptions = options?.pedestrianOptions;
+  const metroTransitTypes: TransitType[] = ['metro'];
+  const effectiveTransitOptions = travelMode === 'metro'
+    ? { ...transitOptions, transitTypes: metroTransitTypes, maxTransfers: transitOptions?.maxTransfers ?? 3 }
+    : transitOptions;
+  const previewModeKey = JSON.stringify({
+    travelMode,
+    transitTypes: effectiveTransitOptions?.transitTypes ?? [],
+    maxTransfers: effectiveTransitOptions?.maxTransfers ?? null,
+    minimize: effectiveTransitOptions?.minimize ?? null,
+    wheelchairAccessible: effectiveTransitOptions?.wheelchairAccessible ?? null,
+    includeTaxiAlternatives: effectiveTransitOptions?.includeTaxiAlternatives ?? null,
+    avoidStairs: pedestrianOptions?.avoidStairs ?? false,
+    preferElevators: pedestrianOptions?.preferElevators ?? false,
+    maxSlopePercent: pedestrianOptions?.maxSlopePercent ?? null,
+  });
 
   const [phase, setPhase] = useState<NavigationPhase>('idle');
   const [currentPosition, setCurrentPosition] = useState<LatLng | null>(null);
@@ -83,6 +102,7 @@ export function useNavigation(options?: UseNavigationOptions) {
   const voiceSpokenRef = useRef<Set<string>>(new Set());
   const recalcTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isOnRouteRef = useRef<((pos: LatLng) => boolean) | null>(null);
+  const previewModeKeyRef = useRef<string | null>(null);
 
   const [favorites, setFavorites] = useState<SavedPlace[]>([]);
   const [recents, setRecents] = useState<SavedPlace[]>([]);
@@ -199,7 +219,7 @@ export function useNavigation(options?: UseNavigationOptions) {
     const from = currentPosition ?? getSavedCenter() ?? MOSCOW_CENTER;
 
     try {
-      const result = await fetchRoute(from, place.coordinates, true, travelMode, transitOptions);
+      const result = await fetchRoute(from, place.coordinates, true, travelMode, effectiveTransitOptions, pedestrianOptions);
       // Fill in Russian instructions
       result.main.maneuvers.forEach((m) => {
         m.instruction = getManeuverInstruction(m.type, m.streetName);
@@ -212,6 +232,7 @@ export function useNavigation(options?: UseNavigationOptions) {
       setRoute(result.main);
       setAlternativeRoutes(result.alternatives);
       setMultimodalRoute(result.multimodal ?? null);
+      previewModeKeyRef.current = previewModeKey;
       // Строим spatial index для off-route проверки O(1)
       isOnRouteRef.current = buildRouteProximityChecker(result.main.geometry);
       quantumTransportService.recordRouteBuild({ success: true, latencyMs: performance.now() - startedAt, travelMode, destinationId: place.id, userId });
@@ -232,7 +253,47 @@ export function useNavigation(options?: UseNavigationOptions) {
     } finally {
       setLoading(false);
     }
-  }, [currentPosition, travelMode, transitOptions, userId]);
+  }, [currentPosition, effectiveTransitOptions, pedestrianOptions, previewModeKey, travelMode, userId]);
+
+  useEffect(() => {
+    if (phase !== 'route_preview' || !destination || !route) return;
+    if (previewModeKeyRef.current === previewModeKey) return;
+
+    let cancelled = false;
+    const from = currentPosition ?? getSavedCenter() ?? MOSCOW_CENTER;
+    setLoading(true);
+
+    void (async () => {
+      try {
+        const result = await fetchRoute(from, destination.coordinates, true, travelMode, effectiveTransitOptions, pedestrianOptions);
+        if (cancelled) return;
+        result.main.maneuvers.forEach((m) => {
+          m.instruction = getManeuverInstruction(m.type, m.streetName);
+        });
+        result.alternatives.forEach((alt) => {
+          alt.maneuvers.forEach((m) => {
+            m.instruction = getManeuverInstruction(m.type, m.streetName);
+          });
+        });
+        setRoute(result.main);
+        setAlternativeRoutes(result.alternatives);
+        setMultimodalRoute(result.multimodal ?? null);
+        isOnRouteRef.current = buildRouteProximityChecker(result.main.geometry);
+        previewModeKeyRef.current = previewModeKey;
+      } catch (err) {
+        if (!cancelled) {
+          logger.error('[useNavigation] Ошибка перестроения превью маршрута', err);
+          toast.error('Не удалось обновить маршрут для выбранного режима');
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentPosition, destination, effectiveTransitOptions, pedestrianOptions, phase, previewModeKey, route, travelMode]);
 
   // Select alternative route
   const selectRoute = useCallback((routeId: string) => {
@@ -285,9 +346,11 @@ export function useNavigation(options?: UseNavigationOptions) {
     setRoute(null);
     setAlternativeRoutes([]);
     setDestination(null);
+    setMultimodalRoute(null);
     setCurrentManeuverIndex(0);
     setNearbyCamera(null);
     setSpeedLimit(null);
+    previewModeKeyRef.current = null;
     voiceSpokenRef.current.clear();
     window.speechSynthesis?.cancel();
     // Остановить сбор GPS-проб
@@ -390,7 +453,7 @@ export function useNavigation(options?: UseNavigationOptions) {
       recalcTimeoutRef.current = setTimeout(async () => {
         speakReroute();
         try {
-          const result = await fetchRoute(currentPosition!, destination!.coordinates, false, travelMode, transitOptions);
+          const result = await fetchRoute(currentPosition!, destination!.coordinates, false, travelMode, effectiveTransitOptions, pedestrianOptions);
           result.main.maneuvers.forEach((m) => {
             m.instruction = getManeuverInstruction(m.type, m.streetName);
           });
@@ -404,7 +467,7 @@ export function useNavigation(options?: UseNavigationOptions) {
         recalcTimeoutRef.current = null;
       }, 3000);
     }
-  }, [currentPosition, currentHeading, phase, userId, route, alternativeRoutes]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [currentPosition, currentHeading, effectiveTransitOptions, pedestrianOptions, phase, userId, route, alternativeRoutes, travelMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Reload favorites from Supabase
   const reloadFavorites = useCallback(async () => {

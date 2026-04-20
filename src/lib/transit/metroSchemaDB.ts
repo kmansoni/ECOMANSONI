@@ -6,6 +6,7 @@
 
 import { dbLoose } from '@/lib/supabase';
 import { addressLocalizer } from '@/lib/localization/addressLocalizer';
+import type { MultiLanguageName } from '@/lib/localization/addressLocalizer';
 import type { LatLng } from '@/types/taxi';
 
 // ── Типы ──
@@ -21,7 +22,7 @@ export interface MetroLine {
 export interface MetroStation {
   id: string;
   name: string;
-  names: Record<string, string>; // { ru: "Киевская", en: "Kiyevskaya", ... }
+  names: MultiLanguageName;
   lineId: string;
   lineColor: string;
   location: LatLng;
@@ -179,7 +180,7 @@ async function fetchMetroCityFromDB(cityName: string): Promise<MetroCity | null>
     const stations: MetroStation[] = (stops as Record<string, unknown>[]).map(s => ({
       id: String(s.stop_id),
       name: String(s.stop_name),
-      names: { ru: String(s.stop_name) },
+      names: { primary: String(s.stop_name), ru: String(s.stop_name) },
       lineId: '', // will be filled from stop_times
       lineColor: '#888',
       location: { lat: Number(s.stop_lat), lng: Number(s.stop_lon) },
@@ -429,7 +430,7 @@ export function buildMetroRoute(
 
 /** Локализовать название станции */
 export function localizeStationName(station: MetroStation): string {
-  return addressLocalizer.localizeMetroStation(station.name, station.names as Record<string, string>);
+  return addressLocalizer.localizeMetroStation(station.name, station.names);
 }
 
 /** Список доступных городов с метро */

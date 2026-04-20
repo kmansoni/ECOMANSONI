@@ -354,14 +354,18 @@ class QuantumTransportService {
     ).length;
     const modeCostPerKm: Record<TravelMode, number> = {
       car: 8,
+      taxi: 20,
       pedestrian: 0,
       transit: 2.5,
+      metro: 2,
       multimodal: 4,
     };
     const modeEcoFactor: Record<TravelMode, number> = {
       car: 4,
+      taxi: 3.5,
       pedestrian: 10,
       transit: 8,
+      metro: 9,
       multimodal: 7,
     };
 

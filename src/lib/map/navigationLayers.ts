@@ -1,6 +1,7 @@
 import type maplibregl from 'maplibre-gl';
 import type { Feature, FeatureCollection, GeoJsonProperties, Point } from 'geojson';
 import type { NavigationMapObject } from '@/types/navigation';
+import { getProductionPalette, type ProductionMapMode } from './mapStyles';
 
 const NAV_SOURCE_ID = 'nav-objects-source';
 const NAV_LAYER_PREFIX = 'nav-layer-';
@@ -8,6 +9,7 @@ const NAV_LAYER_PREFIX = 'nav-layer-';
 interface EnsureNavigationLayersOptions {
   labelSizeMultiplier?: number;
   highContrast?: boolean;
+  theme?: ProductionMapMode;
 }
 
 type NavigationLayerSpec = maplibregl.LayerSpecification & {
@@ -29,7 +31,8 @@ export function ensureNavigationLayers(
   const sourceLayers = getSourceLayers(style, sourceId);
   const beforeId = findFirstSymbolLayerId(style);
   const labelSizeMultiplier = options.labelSizeMultiplier ?? 1;
-  const haloColor = options.highContrast ? 'rgba(15, 23, 42, 0.96)' : 'rgba(15, 23, 42, 0.86)';
+  const palette = getProductionPalette(options.theme ?? 'dark');
+  const haloColor = palette.labelHalo;
 
   addOrReplaceLayer(map, {
     id: `${NAV_LAYER_PREFIX}road-casing`,
@@ -40,7 +43,7 @@ export function ensureNavigationLayers(
     minzoom: 8,
     layout: { 'line-cap': 'round', 'line-join': 'round' },
     paint: {
-      'line-color': ['case', ['==', ['get', 'brunnel'], 'tunnel'], 'rgba(72, 85, 99, 0.45)', 'rgba(15, 23, 42, 0.82)'],
+      'line-color': ['case', ['==', ['get', 'brunnel'], 'tunnel'], palette.tunnelCasing, palette.roadCasing],
       'line-width': [
         'interpolate', ['linear'], ['zoom'],
         8, ['match', ['get', 'class'], 'motorway', 5, 'trunk', 4.5, 'primary', 4, 'secondary', 3.5, 'tertiary', 3, 'street', 2.5, 2],
@@ -66,12 +69,12 @@ export function ensureNavigationLayers(
         'gravel', '#B45309',
         'dirt', '#92400E',
         ['case',
-          ['==', ['get', 'class'], 'motorway'], '#60A5FA',
-          ['==', ['get', 'class'], 'trunk'], '#38BDF8',
-          ['==', ['get', 'class'], 'primary'], '#67E8F9',
-          ['==', ['get', 'class'], 'secondary'], '#A5F3FC',
-          ['==', ['get', 'class'], 'service'], '#D6D3D1',
-          '#E2E8F0',
+          ['==', ['get', 'class'], 'motorway'], palette.motorwayRoad,
+          ['==', ['get', 'class'], 'trunk'], palette.trunkRoad,
+          ['==', ['get', 'class'], 'primary'], palette.primaryRoad,
+          ['==', ['get', 'class'], 'secondary'], palette.secondaryRoad,
+          ['==', ['get', 'class'], 'service'], palette.serviceRoad,
+          palette.localRoad,
         ],
       ],
       'line-width': [
@@ -92,7 +95,7 @@ export function ensureNavigationLayers(
     minzoom: 12,
     layout: { 'line-cap': 'round', 'line-join': 'round' },
     paint: {
-      'line-color': '#FDE68A',
+      'line-color': palette.centerLine,
       'line-width': ['interpolate', ['linear'], ['zoom'], 12, 0.8, 17, 2],
       'line-dasharray': [2, 2],
       'line-opacity': 0.75,
@@ -108,7 +111,7 @@ export function ensureNavigationLayers(
     minzoom: 12,
     layout: { 'line-cap': 'round', 'line-join': 'round' },
     paint: {
-      'line-color': 'rgba(248, 250, 252, 0.9)',
+      'line-color': palette.labelText,
       'line-width': ['interpolate', ['linear'], ['zoom'], 12, 4, 17, 14],
       'line-blur': 0.6,
       'line-opacity': 0.22,
@@ -125,7 +128,7 @@ export function ensureNavigationLayers(
     minzoom: 12,
     layout: { 'line-cap': 'round', 'line-join': 'round' },
     paint: {
-      'line-color': 'rgba(148, 163, 184, 0.85)',
+      'line-color': palette.tunnelCasing,
       'line-width': ['interpolate', ['linear'], ['zoom'], 12, 2.6, 17, 8],
       'line-dasharray': [1.5, 1.5],
       'line-opacity': 0.65,
@@ -142,13 +145,13 @@ export function ensureNavigationLayers(
     layout: {
       'text-field': ['get', 'ref'],
       'symbol-placement': 'line-center',
-      'text-font': ['Noto Sans Bold'],
+      'text-font': ['Open Sans Bold', 'Noto Sans Regular'],
       'text-size': ['interpolate', ['linear'], ['zoom'], 9, 9 * labelSizeMultiplier, 15, 12 * labelSizeMultiplier],
       'text-padding': 2,
       'text-allow-overlap': false,
     },
     paint: {
-      'text-color': '#F8FAFC',
+      'text-color': palette.shieldText,
       'text-halo-color': haloColor,
       'text-halo-width': 2,
       'text-halo-blur': 0.3,
@@ -164,13 +167,13 @@ export function ensureNavigationLayers(
     minzoom: 13,
     layout: {
       'text-field': ['get', 'iconText'],
-      'text-font': ['Noto Sans Bold'],
+      'text-font': ['Open Sans Bold', 'Noto Sans Regular'],
       'text-size': 11,
       'text-offset': [0, 0],
       'text-allow-overlap': false,
     },
     paint: {
-      'text-color': '#CBD5E1',
+      'text-color': palette.houseNumberText,
       'text-halo-color': haloColor,
       'text-halo-width': 2,
     },
@@ -184,12 +187,12 @@ export function ensureNavigationLayers(
     minzoom: 12,
     layout: {
       'text-field': ['get', 'iconText'],
-      'text-font': ['Noto Sans Bold'],
+      'text-font': ['Open Sans Bold', 'Noto Sans Regular'],
       'text-size': 13,
       'text-allow-overlap': false,
     },
     paint: {
-      'text-color': '#F8FAFC',
+      'text-color': palette.labelText,
       'text-halo-color': haloColor,
       'text-halo-width': 2.2,
     },
@@ -203,13 +206,13 @@ export function ensureNavigationLayers(
     minzoom: 11,
     layout: {
       'text-field': ['get', 'iconText'],
-      'text-font': ['Noto Sans Bold'],
+      'text-font': ['Open Sans Bold', 'Noto Sans Regular'],
       'text-size': 15,
       'text-allow-overlap': true,
       'text-ignore-placement': false,
     },
     paint: {
-      'text-color': ['case', ['==', ['get', 'kind'], 'speed_camera'], '#FCA5A5', '#F8FAFC'],
+      'text-color': ['case', ['==', ['get', 'kind'], 'speed_camera'], '#FCA5A5', palette.labelText],
       'text-halo-color': haloColor,
       'text-halo-width': 2.5,
       'text-halo-blur': 0.2,

@@ -1,9 +1,11 @@
 import type { LatLng } from '@/types/taxi';
-import type { NavRoute, RouteSegment, Maneuver, ManeuverType, TrafficLevel, TravelMode, MultiModalRoute, TransitRoutingOptions } from '@/types/navigation';
+import type { NavRoute, RouteSegment, Maneuver, ManeuverType, TrafficLevel, TravelMode, MultiModalRoute, TransitRoutingOptions, PedestrianRoutingOptions } from '@/types/navigation';
 import { useNavigatorSettings } from '@/stores/navigatorSettingsStore';
 import { loadOsmGraph, type OSMGraph, type OSMGraphEdge, type OSMGraphNode } from '@/lib/navigation/osmGraph';
 
-const OSRM_BASE = 'https://router.project-osrm.org/route/v1/driving';
+const ENV = (import.meta as unknown as { env?: Record<string, string | undefined> }).env ?? {};
+const OSRM_BASE = ENV.VITE_OSRM_URL ?? 'https://router.project-osrm.org/route/v1/driving';
+export const OSRM_FOOT_BASE = ENV.VITE_OSRM_FOOT_URL ?? 'https://router.project-osrm.org/route/v1/foot';
 
 type GraphNode = OSMGraphNode;
 type GraphEdge = OSMGraphEdge;
@@ -461,7 +463,7 @@ function chunkRoute(
       segments.push({
         points: chunk,
         traffic,
-        speedLimit: [40, 60, 80, 100][Math.floor(Math.random() * 4)],
+        speedLimit: null, // Real speed limits from OSRM annotations or OSM maxspeed tags
       });
     }
     if (end >= points.length) break;
@@ -505,13 +507,16 @@ export async function fetchRoute(
   to: LatLng,
   alternatives = true,
   mode: TravelMode = 'car',
-  transitOptions?: TransitRoutingOptions
+  transitOptions?: TransitRoutingOptions,
+  pedestrianOptions?: PedestrianRoutingOptions,
 ): Promise<{ main: NavRoute; alternatives: NavRoute[]; multimodal?: MultiModalRoute }> {
+  const effectiveMode: TravelMode = mode === 'taxi' ? 'car' : mode;
+
   // Pedestrian mode — use pedestrian graph + A*
-  if (mode === 'pedestrian') {
+  if (effectiveMode === 'pedestrian') {
     const { buildPedestrianRoute } = await import('./pedestrianMode');
     try {
-      const main = await buildPedestrianRoute(from, to);
+      const main = await buildPedestrianRoute(from, to, pedestrianOptions);
       return { main, alternatives: [] };
     } catch (e) {
       console.warn('[Routing] Pedestrian route failed, falling back to car:', e);
@@ -520,10 +525,17 @@ export async function fetchRoute(
   }
 
   // Transit mode — use TransitRouter (RAPTOR)
-  if (mode === 'transit' || mode === 'multimodal') {
+  if (effectiveMode === 'transit' || effectiveMode === 'multimodal' || effectiveMode === 'metro') {
     try {
       const { transitRouter } = await import('./transitRouter');
-      const result = await transitRouter.buildTransitRoute(from, to, transitOptions);
+      const mergedTransitOptions: TransitRoutingOptions = effectiveMode === 'metro'
+        ? {
+            ...transitOptions,
+            transitTypes: ['metro'],
+            maxTransfers: transitOptions?.maxTransfers ?? 3,
+          }
+        : (transitOptions ?? {});
+      const result = await transitRouter.buildTransitRoute(from, to, mergedTransitOptions);
       // Return the first transit segment's walk route as NavRoute fallback
       const mainSegment = result.main.segments.find(s => s.geometry && s.geometry.length > 0);
       const fallbackRoute: NavRoute = {
@@ -555,10 +567,30 @@ export async function fetchRoute(
   // 2) OSRM fallback (only when offline graph not loaded yet)
   try {
     const coords = `${from.lng},${from.lat};${to.lng},${to.lat}`;
-    const url = `${OSRM_BASE}/${coords}?overview=full&geometries=geojson&steps=true&alternatives=${alternatives}`;
+    const baseParams = `overview=full&geometries=geojson&steps=true&alternatives=${alternatives}`;
 
-    const resp = await fetch(url);
-    if (!resp.ok) throw new Error(`OSRM error: ${resp.status}`);
+    // Apply route preferences to OSRM exclude param
+    const prefs = useNavigatorSettings.getState();
+    const excludes: string[] = [];
+    if (prefs.avoidTolls) excludes.push('toll');
+    if (prefs.avoidHighways) excludes.push('motorway');
+    const excludeParam = excludes.length > 0 ? `&exclude=${excludes.join(',')}` : '';
+
+    // Try with full params first, progressively strip unsupported features
+    const urlVariants = [
+      `${OSRM_BASE}/${coords}?${baseParams}&annotations=duration,speed${excludeParam}`,
+      ...(excludeParam ? [`${OSRM_BASE}/${coords}?${baseParams}&annotations=duration,speed`] : []),
+      `${OSRM_BASE}/${coords}?${baseParams}`,
+    ];
+
+    let resp: Response | null = null;
+    for (const url of urlVariants) {
+      resp = await fetch(url);
+      if (resp.ok) break;
+      console.warn(`[Routing] OSRM rejected: ${resp.status}, trying simpler request`);
+    }
+
+    if (!resp || !resp.ok) throw new Error(`OSRM error: ${resp?.status}`);
 
     const data = await resp.json();
     if (data.code !== 'Ok' || !data.routes?.length) {

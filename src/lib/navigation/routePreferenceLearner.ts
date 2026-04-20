@@ -305,8 +305,8 @@ class RoutePreferenceLearner {
   }
 
   private classifyCluster(weights: RouteWeights, ctx: TripContext): UserCluster {
-    if (ctx.travelMode === 'car' && weights.time > 0.3) return 'commuter_car';
-    if (ctx.travelMode === 'transit' && weights.transfers > 0.15) return 'transit_rider';
+    if ((ctx.travelMode === 'car' || ctx.travelMode === 'taxi') && weights.time > 0.3) return 'commuter_car';
+    if ((ctx.travelMode === 'transit' || ctx.travelMode === 'metro') && weights.transfers > 0.15) return 'transit_rider';
     if (ctx.travelMode === 'pedestrian' && weights.eco > 0.15) return 'pedestrian_eco';
     if (weights.cost > 0.3) return 'budget_optimizer';
     return 'multimodal_flexible';

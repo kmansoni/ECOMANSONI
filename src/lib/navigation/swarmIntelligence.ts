@@ -99,7 +99,7 @@ function getZoneDemand(fromZone: string, toZone: string, timeSlot: number): Zone
   if (cached) return cached;
 
   const matching: TravelIntention[] = [];
-  const modeDistribution: Record<TravelMode, number> = { car: 0, pedestrian: 0, transit: 0, multimodal: 0 };
+  const modeDistribution: Record<TravelMode, number> = { car: 0, taxi: 0, pedestrian: 0, transit: 0, metro: 0, multimodal: 0 };
 
   for (const [, intention] of intentionStore) {
     if (intention.fromZone !== fromZone || intention.toZone !== toZone) continue;
@@ -142,7 +142,7 @@ function getZoneCapacity(fromZone: string, toZone: string): ZoneCapacity {
     roadCapacity: 2000,           // vehicles/hour (typical arterial road)
     metroCapacity: 5000,          // passengers/hour (single direction)
     busCapacity: 800,             // passengers/hour (4 buses × 200 pax)
-    currentLoad: { car: 0, pedestrian: 0, transit: 0, multimodal: 0 },
+    currentLoad: { car: 0, taxi: 0, pedestrian: 0, transit: 0, metro: 0, multimodal: 0 },
   };
 }
 
@@ -172,8 +172,10 @@ function baseTravelTime(fromZone: string, toZone: string, mode: TravelMode): num
 
   const speedKmh: Record<TravelMode, number> = {
     car: 30,
+    taxi: 30,
     pedestrian: 5,
     transit: 25,
+    metro: 38,
     multimodal: 22,
   };
 
@@ -188,8 +190,10 @@ function baseTravelCost(fromZone: string, toZone: string, mode: TravelMode): num
 
   const costPerKm: Record<TravelMode, number> = {
     car: 12,      // fuel + depreciation
+    taxi: 24,
     pedestrian: 0,
     transit: 3,   // average metro/bus fare per km
+    metro: 2.5,
     multimodal: 5,
   };
 
@@ -198,7 +202,7 @@ function baseTravelCost(fromZone: string, toZone: string, mode: TravelMode): num
 
 /** CO2 per km by mode (grams) */
 const CO2_PER_KM: Record<TravelMode, number> = {
-  car: 120, pedestrian: 0, transit: 30, multimodal: 50,
+  car: 120, taxi: 125, pedestrian: 0, transit: 30, metro: 18, multimodal: 50,
 };
 
 /**

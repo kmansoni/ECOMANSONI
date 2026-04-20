@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { X, Send, Camera, MapPin } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useRoadEvents, ROAD_EVENT_LABELS, type RoadEventType, type RoadEvent } from '@/stores/roadEventsStore';
-import { supabase } from '@/lib/supabase';
+import { supabase, dbLoose } from '@/lib/supabase';
 import { toast } from 'sonner';
 import type { LatLng } from '@/types/taxi';
 
@@ -50,7 +50,7 @@ export function ReportEventSheet({ open, onClose, location }: ReportEventSheetPr
 
       // Try to sync to Supabase
       try {
-        await supabase.from('road_events').insert({
+        await dbLoose.from('road_events').insert({
           id: event.id,
           type: event.type,
           lat: event.location.lat,

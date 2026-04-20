@@ -92,6 +92,7 @@ class TransitRouterEngine {
     const maxTransfers = opts.maxTransfers ?? 2;
     const departureTime = opts.departureTime ?? new Date();
     const departureSecs = departureTime.getHours() * 3600 + departureTime.getMinutes() * 60;
+    const allowedTransitTypes = opts.transitTypes?.length ? new Set(opts.transitTypes) : null;
 
     // 1. Find nearby stops from origin and destination
     const [fromStops, toStops] = await Promise.all([
@@ -108,6 +109,9 @@ class TransitRouterEngine {
       loadGTFSRoutes(this.city),
       loadGTFSCalendar(this.city),
     ]);
+    const filteredRoutes = allowedTransitTypes
+      ? routes.filter((route) => allowedTransitTypes.has(route.type))
+      : routes;
 
     // Active service IDs for departure date
     const activeServices = new Set(
@@ -123,7 +127,7 @@ class TransitRouterEngine {
     for (const fs of fromStops.slice(0, 8)) {
       for (const ts of toStops.slice(0, 8)) {
         const directTrips = await this.findDirectTrips(
-          fs.stop, ts.stop, routes, activeServices, departureSecs
+          fs.stop, ts.stop, filteredRoutes, activeServices, departureSecs
         );
 
         for (const tc of directTrips.slice(0, 3)) {
@@ -148,7 +152,7 @@ class TransitRouterEngine {
     // 1-transfer routes
     if (maxTransfers >= 1 && candidates.length < 5) {
       const transferCandidates = await this.findOneTransferRoutes(
-        from, to, fromStops, toStops, routes, activeServices, departureSecs
+        from, to, fromStops, toStops, filteredRoutes, activeServices, departureSecs
       );
       candidates.push(...transferCandidates);
     }
@@ -164,9 +168,13 @@ class TransitRouterEngine {
       throw new Error('Маршруты общественного транспорта не найдены');
     }
 
+    const resolvedTravelMode: TravelMode = allowedTransitTypes?.size === 1 && allowedTransitTypes.has('metro')
+      ? 'metro'
+      : 'transit';
+
     const toMultiModal = (c: RouteCandidate, idx: number): MultiModalRoute => ({
       id: `transit-${Date.now()}-${idx}`,
-      travelMode: 'transit' as TravelMode,
+      travelMode: resolvedTravelMode,
       segments: c.segments,
       totalDistanceMeters: c.totalDistance,
       totalDurationSeconds: c.totalDuration,
