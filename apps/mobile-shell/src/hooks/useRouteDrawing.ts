@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import type { LatLng, MapRoute } from '../types';
+import { staticDataUrl } from '../lib/staticDataUrl';
 
 interface UseRouteDrawingOptions {
   onRouteCalculated?: (route: MapRoute) => void;
@@ -71,7 +72,7 @@ async function calculateRoute(
 ): Promise<MapRoute> {
   // 1) OFFLINE FIRST — try local Dijkstra graph
   try {
-    const graphResp = await fetch('/data/osm/graph.json');
+    const graphResp = await fetch(staticDataUrl('/data/osm/graph.json'));
     if (graphResp.ok) {
       const graph = await graphResp.json() as {
         nodes: Record<string, { lat: number; lon: number }>;

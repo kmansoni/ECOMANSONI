@@ -6,6 +6,7 @@
  */
 
 import type { LatLng } from '@/types/taxi';
+import { staticDataUrl } from './staticDataUrl';
 import type {
   LaneTurn,
   ManeuverType,
@@ -38,7 +39,7 @@ const roadLaneIndex = new Map<string, RoadLaneData>();
  */
 export async function loadLaneData(): Promise<void> {
   try {
-    const resp = await fetch('/data/osm/processed/road_details.json');
+    const resp = await fetch(staticDataUrl('/data/osm/processed/road_details.json'));
     if (!resp.ok) return;
     const data: RoadLaneData[] = await resp.json();
     for (const rd of data) {

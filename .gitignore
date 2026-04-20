@@ -97,7 +97,8 @@ __pycache__/
 # Research screenshots
 inssmart-*.png
 
-# Large OSM/GeoNames data files (use build scripts to regenerate)
-public/data/osm/world/sources/
-public/data/osm/world/processed/settlements/*.json
-public/data/osm/graph.json
+# Generated OSM/GeoNames runtime data lives on AdminVPS, not in git.
+public/data/osm/**
+!public/data/osm/world/
+!public/data/osm/world/README.txt
+!public/data/osm/world/download-geofabrik.ps1

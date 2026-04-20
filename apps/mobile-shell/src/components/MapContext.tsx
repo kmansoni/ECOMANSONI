@@ -10,6 +10,7 @@ import type {
   LatLng,
   IMapContext 
 } from '../types';
+import { staticDataUrl } from '../lib/staticDataUrl';
 
 const defaultCamera: MapCamera = {
   center: { lat: 55.7558, lng: 37.6173 }, // Moscow
@@ -125,7 +126,7 @@ async function searchPOIAmap(query: string, near?: LatLng): Promise<POI[]> {
 async function searchPOIOSM(query: string, near?: LatLng): Promise<POI[]> {
   // Try offline first
   try {
-    const poisResponse = await fetch('/data/osm/processed/pois.json');
+    const poisResponse = await fetch(staticDataUrl('/data/osm/processed/pois.json'));
     if (poisResponse.ok) {
       const pois = await poisResponse.json();
       const q = query.toLowerCase();

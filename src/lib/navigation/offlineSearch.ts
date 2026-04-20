@@ -5,6 +5,7 @@
  */
 
 import type { LatLng } from '@/types/taxi';
+import { staticDataUrl } from './staticDataUrl';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -129,10 +130,10 @@ export async function loadOfflineData(): Promise<boolean> {
     console.log('[OfflineSearch] Загрузка локальных данных...');
 
     const [index, pois, addresses, cameras] = await Promise.all([
-      fetchJSON<SearchEntry[]>('/data/osm/processed/search_index.json'),
-      fetchJSON<LocalPOI[]>('/data/osm/processed/pois.json'),
-      fetchJSON<LocalAddress[]>('/data/osm/processed/addresses.json'),
-      fetchJSON<LocalSpeedCamera[]>('/data/osm/processed/speed_cameras.json'),
+      fetchJSON<SearchEntry[]>(staticDataUrl('/data/osm/processed/search_index.json')),
+      fetchJSON<LocalPOI[]>(staticDataUrl('/data/osm/processed/pois.json')),
+      fetchJSON<LocalAddress[]>(staticDataUrl('/data/osm/processed/addresses.json')),
+      fetchJSON<LocalSpeedCamera[]>(staticDataUrl('/data/osm/processed/speed_cameras.json')),
     ]);
 
     _searchIndex = index ?? [];
@@ -166,7 +167,7 @@ export async function loadRegionSettlements(countryCode: string): Promise<boolea
   }
 
   const code = countryCode.toUpperCase();
-  const settlements = await fetchJSON<LocalSettlement[]>(`/data/osm/world/processed/settlements/${code}.json`);
+  const settlements = await fetchJSON<LocalSettlement[]>(staticDataUrl(`/data/osm/world/processed/settlements/${code}.json`));
 
   if (!settlements || settlements.length === 0) {
     console.log(`[OfflineSearch] Нет данных для региона: ${code}`);
@@ -239,7 +240,7 @@ export async function loadAllRegions(): Promise<void> {
 
   _allRegionsPromise = (async () => {
     const manifest = await fetchJSON<SettlementManifestEntry[]>(
-      '/data/osm/world/processed/settlements-manifest.json'
+      staticDataUrl('/data/osm/world/processed/settlements-manifest.json')
     );
     if (!manifest) return;
 

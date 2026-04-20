@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import type { POI, LatLng } from '../types';
+import { staticDataUrl } from '../lib/staticDataUrl';
 
 interface UsePOISearchOptions {
   provider?: 'osm' | 'amap';
@@ -70,7 +71,7 @@ async function searchOSM(query: string, near?: LatLng): Promise<POI[]> {
 
   // 1) OFFLINE FIRST — try local data
   try {
-    const resp = await fetch('/data/osm/processed/search_index.json');
+    const resp = await fetch(staticDataUrl('/data/osm/processed/search_index.json'));
     if (resp.ok) {
       const index: Array<{
         id: string; name: string; display: string;

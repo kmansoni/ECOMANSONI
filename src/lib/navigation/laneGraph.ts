@@ -17,6 +17,7 @@
 import type { LatLng } from '@/types/taxi';
 import type { OSMGraph, OSMGraphEdge } from './osmGraph';
 import type { ManeuverType } from '@/types/navigation';
+import { staticDataUrl } from './staticDataUrl';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -135,7 +136,7 @@ let _rawLaneData: Map<string, RawLaneData> | null = null;
 /** Load lane data from OSM preprocessing output. */
 export async function loadLaneGraphData(): Promise<boolean> {
   try {
-    const resp = await fetch('/data/osm/processed/road_details.json');
+    const resp = await fetch(staticDataUrl('/data/osm/processed/road_details.json'));
     if (!resp.ok) return false;
     const data: RawLaneData[] = await resp.json();
     _rawLaneData = new Map();

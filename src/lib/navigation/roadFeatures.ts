@@ -3,6 +3,7 @@
  * светофоры, лежачие полицейские, дорожные знаки.
  * Данные загружаются из локальных JSON-файлов (скачиваются скриптом fetch-osm-data.mjs).
  */
+import { staticDataUrl } from './staticDataUrl';
 import type { LatLng } from '@/types/taxi';
 import type { NavRoute, NavigationMapObject, RouteObjectRelevance, SpeedCamera } from '@/types/navigation';
 import { calculateDistance } from '@/lib/taxi/calculations';
@@ -69,10 +70,10 @@ export async function loadRoadFeatures(): Promise<void> {
   _loaded = true;
 
   const results = await Promise.allSettled([
-    fetch('/data/osm/traffic_lights.json').then(r => r.ok ? r.json() : []),
-    fetch('/data/osm/speed_bumps.json').then(r => r.ok ? r.json() : []),
-    fetch('/data/osm/road_signs.json').then(r => r.ok ? r.json() : []),
-    fetch('/data/osm/processed/pois.json').then(r => r.ok ? r.json() : []),
+    fetch(staticDataUrl('/data/osm/traffic_lights.json')).then(r => r.ok ? r.json() : []),
+    fetch(staticDataUrl('/data/osm/speed_bumps.json')).then(r => r.ok ? r.json() : []),
+    fetch(staticDataUrl('/data/osm/road_signs.json')).then(r => r.ok ? r.json() : []),
+    fetch(staticDataUrl('/data/osm/processed/pois.json')).then(r => r.ok ? r.json() : []),
   ]);
 
   if (results[0].status === 'fulfilled' && Array.isArray(results[0].value)) {

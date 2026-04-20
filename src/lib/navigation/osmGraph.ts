@@ -1,3 +1,5 @@
+import { staticDataUrl } from './staticDataUrl';
+
 export interface OSMGraphNode {
   lat: number;
   lon: number;
@@ -26,7 +28,7 @@ export async function loadOsmGraph(forceReload = false): Promise<OSMGraph | null
 
   graphPromise = (async () => {
     try {
-      const response = await fetch('/data/osm/graph.json');
+      const response = await fetch(staticDataUrl('/data/osm/graph.json'));
       if (!response.ok) {
         console.warn('[OSMGraph] graph.json is unavailable');
         return null;

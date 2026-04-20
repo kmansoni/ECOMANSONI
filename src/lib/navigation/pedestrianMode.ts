@@ -1,5 +1,6 @@
 import type { LatLng } from '@/types/taxi';
 import type { NavRoute, RouteSegment, Maneuver, ManeuverType, PedestrianRoutingOptions } from '@/types/navigation';
+import { staticDataUrl } from './staticDataUrl';
 
 // Pedestrian speed weighting by road type (lower = more walkable)
 const PEDESTRIAN_WEIGHTS: Record<string, number> = {
@@ -349,9 +350,9 @@ export async function loadPedestrianGraph(): Promise<PedestrianGraph | null> {
 
   try {
     // Try pedestrian-specific graph first, then fall back to car graph
-    let response = await fetch('/data/osm/pedestrian-graph.json');
+    let response = await fetch(staticDataUrl('/data/osm/pedestrian-graph.json'));
     if (!response.ok) {
-      response = await fetch('/data/osm/graph.json');
+      response = await fetch(staticDataUrl('/data/osm/graph.json'));
     }
     if (!response.ok) {
       console.log('[PedestrianMode] No graph available');

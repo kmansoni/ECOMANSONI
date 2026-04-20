@@ -17,6 +17,7 @@
  */
 
 import { searchOffline, loadOfflineData, type LocalAddress, type SearchResult } from './offlineSearch';
+import { staticDataUrl } from './staticDataUrl';
 import type { LatLng } from '@/types/taxi';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -306,7 +307,7 @@ export async function buildStreetIndex(): Promise<void> {
     // Загружаем адреса напрямую
     let addresses: LocalAddress[] | null = null;
     try {
-      const resp = await fetch('/data/osm/processed/addresses.json');
+      const resp = await fetch(staticDataUrl('/data/osm/processed/addresses.json'));
       if (resp.ok) addresses = await resp.json();
     } catch { /* fallback */ }
 
