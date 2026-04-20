@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   Car,
   Shield,
@@ -22,65 +22,18 @@ import { InsuranceReelsBanner } from "@/components/insurance/media/InsuranceReel
 import { InsuranceAdPricing } from "@/components/insurance/media/InsuranceAdPricing";
 import { DownloadAppBanner } from "@/components/insurance/shared/DownloadAppBanner";
 import { DraftsList } from "@/components/insurance/drafts/DraftsList";
+import type { InsuranceCategory } from "@/types/insurance";
 
-const CALCULATOR_LINKS = [
-  {
-    href: "/insurance/osago",
-    label: "ОСАГО",
-    icon: Car,
-    color: "text-blue-400",
-    bg: "bg-blue-500/10",
-    badge: "Обязательное",
-  },
-  {
-    href: "/insurance/kasko",
-    label: "КАСКО",
-    icon: Shield,
-    color: "text-violet-400",
-    bg: "bg-violet-500/10",
-    badge: null,
-  },
-  {
-    href: "/insurance/dms",
-    label: "ДМС",
-    icon: Stethoscope,
-    color: "text-emerald-400",
-    bg: "bg-emerald-500/10",
-    badge: null,
-  },
-  {
-    href: "/insurance/travel",
-    label: "Путешествия",
-    icon: Plane,
-    color: "text-sky-400",
-    bg: "bg-sky-500/10",
-    badge: null,
-  },
-  {
-    href: "/insurance/property",
-    label: "Имущество",
-    icon: Home,
-    color: "text-amber-400",
-    bg: "bg-amber-500/10",
-    badge: null,
-  },
-  {
-    href: "/insurance/mortgage",
-    label: "Ипотечное",
-    icon: Building2,
-    color: "text-orange-400",
-    bg: "bg-orange-500/10",
-    badge: null,
-  },
-  {
-    href: "/insurance/life",
-    label: "Жизнь",
-    icon: Heart,
-    color: "text-rose-400",
-    bg: "bg-rose-500/10",
-    badge: null,
-  },
-];
+const HERO_CATEGORY_ROUTES: Record<InsuranceCategory, string> = {
+  osago: "/insurance/osago",
+  kasko: "/insurance/kasko",
+  property: "/insurance/property",
+  travel: "/insurance/travel",
+  mortgage: "/insurance/mortgage",
+  life: "/insurance/life",
+  health: "/insurance/dms",
+  dms: "/insurance/dms",
+};
 
 const ADVANTAGES = [
   {
@@ -112,6 +65,12 @@ const STATS = [
 ];
 
 export default function InsuranceHomePage() {
+  const navigate = useNavigate();
+
+  const handleHeroCategoryClick = (category: InsuranceCategory) => {
+    navigate(HERO_CATEGORY_ROUTES[category] ?? "/insurance/osago");
+  };
+
   useEffect(() => {
     document.title = "Страхование — Сравните и оформите полис";
   }, []);
@@ -119,7 +78,10 @@ export default function InsuranceHomePage() {
   return (
     <div className="min-h-screen bg-background pb-24">
       {/* Hero */}
-      <InsuranceHero />
+      <InsuranceHero
+        onCategoryClick={handleHeroCategoryClick}
+        onCalculatorClick={() => navigate("/insurance/osago")}
+      />
 
       {/* Stories */}
       <div className="pt-4 pb-1">
@@ -127,33 +89,6 @@ export default function InsuranceHomePage() {
       </div>
 
       <div className="px-4 space-y-8 pt-4">
-        {/* Quick calculators */}
-        <section>
-          <h2 className="text-lg font-semibold mb-4">Рассчитать стоимость</h2>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            {CALCULATOR_LINKS.map((item) => {
-              const Icon = item.icon;
-              return (
-                <Link key={item.href} to={item.href}>
-                  <Card className="h-full border-border/50 bg-card hover:bg-card/80 active:scale-95 transition-all duration-150">
-                    <CardContent className="p-4 flex flex-col gap-2">
-                      <div className={`w-10 h-10 rounded-xl ${item.bg} flex items-center justify-center`}>
-                        <Icon className={`w-5 h-5 ${item.color}`} />
-                      </div>
-                      <p className="text-sm font-medium leading-tight">{item.label}</p>
-                      {item.badge && (
-                        <Badge variant="secondary" className="text-xs w-fit">
-                          {item.badge}
-                        </Badge>
-                      )}
-                    </CardContent>
-                  </Card>
-                </Link>
-              );
-            })}
-          </div>
-        </section>
-
         {/* Drafts */}
         <DraftsList />
 
