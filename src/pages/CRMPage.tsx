@@ -71,6 +71,11 @@ export function CRMPage() {
       navigate('/crm/realestate');
       return;
     }
+    // Insurance gets dedicated Insurance CRM
+    if (professionId === 'insurance') {
+      navigate('/crm/insurance');
+      return;
+    }
     navigate(`/crm/dashboard?profession=${professionId}`);
   };
 

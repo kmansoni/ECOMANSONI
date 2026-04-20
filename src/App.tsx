@@ -106,6 +106,7 @@ const CRMDashboard = lazy(() => import("@/pages/CRMDashboard").then(m => ({ defa
 const CRMHRDashboard = lazy(() => import("@/pages/CRMHRDashboard").then(m => ({ default: m.CRMHRDashboard })));
 const CRMAutoDashboard = lazy(() => import("@/pages/CRMAutoDashboard").then(m => ({ default: m.CRMAutoDashboard })));
 const CRMRealEstateDashboard = lazy(() => import("@/pages/CRMRealEstateDashboard").then(m => ({ default: m.CRMRealEstateDashboard })));
+const CRMInsuranceDashboard = lazy(() => import("@/pages/CRMInsuranceDashboard").then(m => ({ default: m.CRMInsuranceDashboard })));
 const EmailPage = lazy(() => import("@/pages/EmailPage").then(m => ({ default: m.EmailPage })));
 const EmailSettingsPage = lazy(() => import("@/pages/EmailSettingsPage").then(m => ({ default: m.EmailSettingsPage })));
 const CommandPalette = lazy(() => import("@/components/CommandPalette").then(m => ({ default: m.CommandPalette })));
@@ -750,6 +751,11 @@ const App = () => {
                     <Route path="/crm/realestate" element={
                       <Suspense fallback={<PageLoader />}>
                         <CRMRealEstateDashboard />
+                      </Suspense>
+                    } />
+                    <Route path="/crm/insurance" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <CRMInsuranceDashboard />
                       </Suspense>
                     } />
                     <Route path="/email/settings" element={
