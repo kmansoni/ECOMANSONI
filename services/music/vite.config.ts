@@ -10,7 +10,7 @@ export default defineConfig({
     outDir: resolve(__dirname, 'dist'),
     emptyOutDir: true,
     lib: {
-      entry: resolve(__dirname, 'src/index.ts'),
+      entry: resolve(__dirname, 'src/module.tsx'),
       name: 'MusicModule',
       formats: ['es'], // только ES modules для динамического импорта
       fileName: 'index',

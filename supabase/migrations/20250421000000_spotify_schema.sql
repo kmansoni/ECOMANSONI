@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS public.music_albums (
   total_tracks int DEFAULT 0,
   label text,
   created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now(),
   PRIMARY KEY (id)
 );
 
@@ -64,7 +65,7 @@ CREATE INDEX IF NOT EXISTS idx_music_tracks_popularity ON public.music_tracks(po
 -- ==================== PLAYLISTS ====================
 CREATE TABLE IF NOT EXISTS public.music_playlists (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
-  user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE,
+  user_id uuid DEFAULT auth.uid() REFERENCES auth.users(id) ON DELETE CASCADE,
   name text NOT NULL,
   description text,
   cover_url text,
@@ -85,7 +86,7 @@ CREATE TABLE IF NOT EXISTS public.music_playlist_tracks (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   playlist_id uuid REFERENCES public.music_playlists(id) ON DELETE CASCADE,
   track_id uuid REFERENCES public.music_tracks(id) ON DELETE CASCADE,
-  user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE, -- кто добавил
+  user_id uuid DEFAULT auth.uid() REFERENCES auth.users(id) ON DELETE CASCADE, -- кто добавил
   position int NOT NULL,
   added_at timestamptz DEFAULT now(),
   PRIMARY KEY (id),
@@ -99,7 +100,7 @@ CREATE INDEX IF NOT EXISTS idx_music_playlist_tracks_track ON public.music_playl
 -- ==================== PLAY HISTORY ====================
 CREATE TABLE IF NOT EXISTS public.music_play_history (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
-  user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE,
+  user_id uuid DEFAULT auth.uid() REFERENCES auth.users(id) ON DELETE CASCADE,
   track_id uuid REFERENCES public.music_tracks(id) ON DELETE CASCADE,
   played_at timestamptz DEFAULT now(),
   duration_ms int, -- сколько прослушал (из середины)
@@ -117,7 +118,7 @@ CREATE INDEX IF NOT EXISTS idx_music_play_history_played ON public.music_play_hi
 -- ==================== LIKES ====================
 CREATE TABLE IF NOT EXISTS public.music_likes (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
-  user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE,
+  user_id uuid DEFAULT auth.uid() REFERENCES auth.users(id) ON DELETE CASCADE,
   track_id uuid REFERENCES public.music_tracks(id) ON DELETE CASCADE,
   created_at timestamptz DEFAULT now(),
   PRIMARY KEY (id),
@@ -130,7 +131,7 @@ CREATE INDEX IF NOT EXISTS idx_music_likes_track ON public.music_likes(track_id)
 -- ==================== SUBSCRIPTIONS (Stripe) ====================
 CREATE TABLE IF NOT EXISTS public.music_subscriptions (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
-  user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE,
+  user_id uuid DEFAULT auth.uid() REFERENCES auth.users(id) ON DELETE CASCADE,
   stripe_customer_id text UNIQUE,
   stripe_subscription_id text UNIQUE,
   stripe_price_id text,
@@ -148,7 +149,7 @@ CREATE INDEX IF NOT EXISTS idx_music_subscriptions_stripe ON public.music_subscr
 -- ==================== DOWNLOADS (оффлайн) ====================
 CREATE TABLE IF NOT EXISTS public.music_downloads (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
-  user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE,
+  user_id uuid DEFAULT auth.uid() REFERENCES auth.users(id) ON DELETE CASCADE,
   track_id uuid REFERENCES public.music_tracks(id) ON DELETE CASCADE,
   downloaded_at timestamptz DEFAULT now(),
   file_path text, -- путь в Storage
@@ -187,12 +188,58 @@ CREATE POLICY "Public read access for tracks" ON public.music_tracks
 CREATE POLICY "Public read access for public playlists" ON public.music_playlists
   FOR SELECT USING (is_public = true);
 
-CREATE POLICY "Users can manage own playlists" ON public.music_playlists
-  FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "Users can view own playlists" ON public.music_playlists
+  FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert own playlists" ON public.music_playlists
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update own playlists" ON public.music_playlists
+  FOR UPDATE USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete own playlists" ON public.music_playlists
+  FOR DELETE USING (auth.uid() = user_id);
 
 -- Playlist tracks: доступ через плейлист
-CREATE POLICY "Users can manage playlist tracks" ON public.music_playlist_tracks
-  FOR ALL USING (
+CREATE POLICY "Users can view playlist tracks" ON public.music_playlist_tracks
+  FOR SELECT USING (
+    EXISTS (
+      SELECT 1 FROM public.music_playlists
+      WHERE music_playlists.id = music_playlist_tracks.playlist_id
+        AND (music_playlists.is_public = true OR music_playlists.user_id = auth.uid())
+    )
+  );
+
+CREATE POLICY "Users can insert playlist tracks" ON public.music_playlist_tracks
+  FOR INSERT WITH CHECK (
+    auth.uid() = user_id AND
+    EXISTS (
+      SELECT 1 FROM public.music_playlists
+      WHERE music_playlists.id = music_playlist_tracks.playlist_id
+        AND music_playlists.user_id = auth.uid()
+    )
+  );
+
+CREATE POLICY "Users can update playlist tracks" ON public.music_playlist_tracks
+  FOR UPDATE USING (
+    EXISTS (
+      SELECT 1 FROM public.music_playlists
+      WHERE music_playlists.id = music_playlist_tracks.playlist_id
+        AND music_playlists.user_id = auth.uid()
+    )
+  )
+  WITH CHECK (
+    auth.uid() = user_id AND
+    EXISTS (
+      SELECT 1 FROM public.music_playlists
+      WHERE music_playlists.id = music_playlist_tracks.playlist_id
+        AND music_playlists.user_id = auth.uid()
+    )
+  );
+
+CREATE POLICY "Users can delete playlist tracks" ON public.music_playlist_tracks
+  FOR DELETE USING (
     EXISTS (
       SELECT 1 FROM public.music_playlists
       WHERE music_playlists.id = music_playlist_tracks.playlist_id
@@ -201,20 +248,35 @@ CREATE POLICY "Users can manage playlist tracks" ON public.music_playlist_tracks
   );
 
 -- Play history: пользователь только свои
-CREATE POLICY "Users can manage own history" ON public.music_play_history
-  FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "Users can view own history" ON public.music_play_history
+  FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert own history" ON public.music_play_history
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
 
 -- Likes: пользователь только свои
-CREATE POLICY "Users can manage own likes" ON public.music_likes
-  FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "Users can view own likes" ON public.music_likes
+  FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert own likes" ON public.music_likes
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete own likes" ON public.music_likes
+  FOR DELETE USING (auth.uid() = user_id);
 
 -- Subscriptions: пользователь только свои
-CREATE POLICY "Users can manage own subscriptions" ON public.music_subscriptions
-  FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "Users can view own subscriptions" ON public.music_subscriptions
+  FOR SELECT USING (auth.uid() = user_id);
 
 -- Downloads: пользователь только свои
-CREATE POLICY "Users can manage own downloads" ON public.music_downloads
-  FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "Users can view own downloads" ON public.music_downloads
+  FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert own downloads" ON public.music_downloads
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete own downloads" ON public.music_downloads
+  FOR DELETE USING (auth.uid() = user_id);
 
 -- ==================== STORAGE ====================
 -- Создаём bucket для аудиофайлов
@@ -243,7 +305,7 @@ CREATE POLICY "Service can upload audio" ON storage.objects
 -- ==================== FUNCTIONS ====================
 -- Функция: добавить прослушивание
 CREATE OR REPLACE FUNCTION public.record_track_play(
-  p_user_id uuid,
+  p_user_id uuid DEFAULT auth.uid(),
   p_track_id uuid,
   p_duration_ms int DEFAULT NULL,
   p_device text DEFAULT 'mobile',
@@ -254,6 +316,10 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 AS $$
 BEGIN
+  IF p_user_id IS NULL THEN
+    RETURN;
+  END IF;
+
   INSERT INTO public.music_play_history (
     user_id, track_id, played_at, duration_ms, completed, device
   ) VALUES (
@@ -288,10 +354,11 @@ AS $$
     t.id,
     t.title,
     a.name as artist_name,
-    t.cover_url,
+    al.cover_url,
     (t.popularity / 100.0) as score
   FROM public.music_tracks t
   JOIN public.music_artists a ON t.artist_id = a.id
+  LEFT JOIN public.music_albums al ON al.id = t.album_id
   WHERE t.id NOT IN (
     SELECT track_id
     FROM public.music_play_history
@@ -300,6 +367,34 @@ AS $$
   )
   ORDER BY t.popularity DESC, RANDOM()
   LIMIT p_limit;
+$$;
+
+CREATE OR REPLACE FUNCTION public.reorder_playlist_tracks(
+  p_playlist_id uuid
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  WITH ordered AS (
+    SELECT id, row_number() OVER (ORDER BY position, added_at, id) AS new_position
+    FROM public.music_playlist_tracks
+    WHERE playlist_id = p_playlist_id
+  )
+  UPDATE public.music_playlist_tracks playlist_track
+  SET position = ordered.new_position
+  FROM ordered
+  WHERE ordered.id = playlist_track.id;
+
+  UPDATE public.music_playlists
+  SET tracks_count = (
+    SELECT count(*)::int
+    FROM public.music_playlist_tracks
+    WHERE playlist_id = p_playlist_id
+  )
+  WHERE id = p_playlist_id;
+END;
 $$;
 
 -- ==================== TRIGGERS ====================

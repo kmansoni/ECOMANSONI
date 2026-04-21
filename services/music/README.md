@@ -1,6 +1,6 @@
-# 🎵 Music Module — Mansoni
+# Music Module — Mansoni
 
-Динамически загружаемый музыкальный сервис для платформы Mansoni.
+Динамически загружаемый музыкальный сервис для платформы Mansoni. Текущая версия уже работает не только на demo-store: модуль умеет читать треки, плейлисты, лайки и загрузки из Supabase, использовать JWT от основного приложения и падать обратно в demo-данные только как fallback.
 
 ## 📁 Структура
 
@@ -11,8 +11,8 @@ mansoni/
 │       ├── src/
 │       │   ├── pages/      # Страницы: Home, Playlist, Track, Search
 │       │   ├── components/ # Компоненты: Player, TrackList, PlaylistCard
-│       │   ├── store/      # Zustand store (демо-данные)
-│       │   ├── lib/        # Supabase client
+│       │   ├── store/      # Zustand store (playback + liked/downloaded state)
+│       │   ├── lib/        # Supabase client, data hooks, offline cache
 │       │   └── styles/     # CSS стили
 │       ├── manifest.json   # Манифест модуля
 │       ├── vite.config.ts  # Конфиг сборки
@@ -53,8 +53,13 @@ cp services/music/.env.example services/music/.env
 
 ```env
 VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_ANON_KEY=your-anon-key
+VITE_SUPABASE_PUBLISHABLE_KEY=your-publishable-key
+
+# fallback, если проект ещё не переведён на publishable key
+# VITE_SUPABASE_ANON_KEY=your-anon-key
 ```
+
+Модуль поддерживает оба варианта ключа, но сначала ищет `VITE_SUPABASE_PUBLISHABLE_KEY`, потому что именно его использует основной Mansoni.
 
 ### 3. Сборка модуля
 
@@ -71,12 +76,23 @@ npm run build:modules
 
 ### 4. Применение миграций Supabase
 
-Откройте **Supabase Dashboard** → **SQL Editor** и выполните:
+Для нового окружения требуется базовая музыкальная схема:
 
 ```sql
--- Вставьте содержимое файла:
 supabase/migrations/20250421000000_spotify_schema.sql
 ```
+
+Для уже существующих окружений с частично развернутой старой музыкальной схемой нужен recovery/patch слой:
+
+```sql
+supabase/migrations/20260421130000_music_remote_schema_recovery.sql
+supabase/migrations/20260421120000_music_module_hardening.sql
+```
+
+Порядок важен:
+1. `20250421000000_spotify_schema.sql` для чистой базы.
+2. `20260421130000_music_remote_schema_recovery.sql` если удалённая база уже содержит старые `music_tracks/music_playlists/music_playlist_tracks` в плоском формате.
+3. `20260421120000_music_module_hardening.sql` для RLS/RPC hardening.
 
 Или через CLI:
 
@@ -97,7 +113,7 @@ npm run dev
 
 Откройте: http://localhost:5173/services/music
 
-## 📦 Что делает модуль
+## Что делает модуль
 
 ### В режиме **Native (Android/iOS через Capacitor)**:
 1. При первом заходе в `/services/music` → проверяет, установлен ли модуль
@@ -112,13 +128,17 @@ npm run dev
 2. Если нет → fallback на CDN URL
 3. Динамический `import()` → нативный React
 
-## 🗂️ API
+## Интеграция
 
-Музыкальный модуль использует **Supabase** напрямую (в будущем через Mansoni Auth).
+Музыкальный модуль использует **Supabase напрямую** для read/write-сценариев и может использовать **music-api** для серверных маршрутов, где нужен service-role, signed URLs или централизованная авторизация.
 
-### Зависимости:
+### JWT bootstrap
+
+Основное приложение передаёт JWT через query string `?token=...` при загрузке модуля. Входная точка [services/music/src/index.tsx](services/music/src/index.tsx) сохраняет токен через `setMansoniToken()` и после этого модуль создаёт Supabase client уже с корректным `Authorization` header.
+
+### Зависимости
 - `@supabase/supabase-js` — для работы с БД
-- `zustand` — локальное состояние (queue, currentTrack)
+- `zustand` — локальное состояние (queue, currentTrack, liked/downloaded ids)
 - `lucide-react` — иконки
 - `react-router-dom` — роутинг внутри модуля
 
@@ -128,7 +148,16 @@ npm run dev
 - `/track/:id` — страница трека
 - `/search` — поиск
 
-## 🔐 Безопасность
+## Что уже реализовано
+
+- Загрузка реальных треков и плейлистов из Supabase с fallback на demo-данные.
+- Лайки и загрузки (downloads) с синхронизацией в Supabase.
+- Оффлайн-кэш аудио через Cache Storage.
+- Учёт проигрываний через RPC `record_track_play()`.
+- Поддержка прямого открытия страниц трека/плейлиста без предварительно прогретого store.
+- API-сервер для playlists/likes/downloads/search/stream/subscription.
+
+## Безопасность
 
 ### Миграция включает:
 - **RLS** на всех таблицах
@@ -137,15 +166,15 @@ npm run dev
 - **Storage bucket** `music` с политиками:
   - Чтение: аутентифицированные пользователи
   - Запись: service_role
-- **Функции**: `record_track_play()`, `get_music_recommendations()`
+- **Функции**: `record_track_play()`, `get_music_recommendations()`, `reorder_playlist_tracks()`
 - **Триггеры**: автообновление `updated_at`
 
-### Аутентификация:
+### Аутентификация
 - Модуль получает `window.__MANSONI_TOKEN__` от Mansoni
 - Передаёт в Supabase через кастомный header (настраивается в `supabase.ts`)
 - RLS использует `auth.uid()` из JWT
 
-## 🛠️ Разработка модуля
+## Локальная разработка
 
 ### Локальный dev сервер:
 
@@ -154,49 +183,22 @@ cd services/music
 npm run dev  # http://localhost:3001
 ```
 
-### Добавление новых треков:
+### Demo fallback
 
-В `services/music/src/store/useMusicStore.ts` (временно, пока нет бэкенда):
+Demo-данные больше не должны редактироваться прямо в store. Если нужен fallback-набор, он лежит в [services/music/src/lib/demoMusicData.ts](services/music/src/lib/demoMusicData.ts).
 
-```ts
-playlists: [
-  {
-    id: '1',
-    name: 'Новый плейлист',
-    tracks: [
-      {
-        id: 'new1',
-        title: 'Song Title',
-        artist: 'Artist',
-        album: 'Album',
-        duration: 180,
-        coverUrl: 'https://...',
-        audioUrl: 'https://...',
-      },
-    ],
-  },
-]
-```
+Реальная загрузка данных уже реализована в [services/music/src/lib/useMusicData.ts](services/music/src/lib/useMusicData.ts), а mutation-сценарии вынесены в [services/music/src/lib/useMusicActions.ts](services/music/src/lib/useMusicActions.ts).
 
-### Подключение к реальному Supabase:
+### Основные файлы
 
-Замените демо-данные в store на реальные запросы:
+- [services/music/src/lib/supabase.ts](services/music/src/lib/supabase.ts) — token-aware Supabase client.
+- [services/music/src/lib/useMusicData.ts](services/music/src/lib/useMusicData.ts) — read-side hooks.
+- [services/music/src/lib/useMusicActions.ts](services/music/src/lib/useMusicActions.ts) — like/download mutations.
+- [services/music/src/lib/offlineAudioCache.ts](services/music/src/lib/offlineAudioCache.ts) — оффлайн-аудио.
+- [services/music/src/components/AudioPlayer.tsx](services/music/src/components/AudioPlayer.tsx) — playback + play-history RPC.
+- [services/music-api/src/server.ts](services/music-api/src/server.ts) — серверный API.
 
-```ts
-import { supabase } from '@/lib/supabase';
-
-// В компоненте:
-const { data } = await supabase
-  .from('music_tracks')
-  .select(`
-    id, title, duration_ms,
-    music_artists(name),
-    music_albums(cover_url)
-  `)
-  .limit(20);
-```
-
-## 📦 Сборка и деплой
+## Сборка и деплой
 
 ### Сборка всех модулей:
 
@@ -226,7 +228,7 @@ https://cdn.mansoni.com/modules/music/music-module.js
 3. Загрузите новый `music-module.js` на CDN
 4. При следующем запуске модуля пользователи получат обновление автоматически
 
-## 🔧 Отладка
+## Отладка
 
 ### Просмотр установленных модулей (Capacitor):
 ```js
@@ -246,7 +248,13 @@ await moduleLoader.clearAllModules();
 localStorage.setItem('debug', 'module-loader');
 ```
 
-## 📱 Нативные платформы
+## Ограничения текущего шага
+
+- Если Supabase-проект открыт только в read-only режиме, recovery/hardening миграции применить нельзя даже при готовом SQL.
+- Без recovery-модуль будет откатываться на demo/fallback в тех местах, где ожидает нормализованные `music_artists/music_albums/...`.
+- Remote smoke-test имеет смысл только после применения recovery-моделей и RLS.
+
+## Нативные платформы
 
 ### Android (Capacitor):
 - Модули хранятся в `/data/data/com.mansoni/files/modules/`
@@ -256,7 +264,11 @@ localStorage.setItem('debug', 'module-loader');
 - Хранение: `Library/Application Support/modules/`
 - Ограничение: WKWebView не поддерживает `eval()`, используется Blob URL
 
-## 🎯 Планы развития
+## Дальше
+
+1. Применить recovery и hardening миграции в write-capable Supabase-сеансе.
+2. Залить/синхронизировать реальный музыкальный каталог, если в проекте ещё нет сидов.
+3. Прогнать живой тест через `MusicPage` с реальным Mansoni JWT.
 
 - [ ] Добавить бэкенд `services/music-api` (Express) для аутентификации через Mansoni JWT
 - [ ] Интеграция с Spotify Web API для треков

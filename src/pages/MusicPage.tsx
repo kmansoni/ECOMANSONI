@@ -16,6 +16,8 @@ const MUSIC_MANIFEST: ModuleManifest = {
   entryComponent: 'default',
 };
 
+const MUSIC_MODULE_URL = import.meta.env.VITE_MUSIC_MODULE_URL || '/modules/music/music-module.js';
+
 export function MusicPage() {
   const [Component, setComponent] = useState<React.ComponentType | null>(null);
   const [status, setStatus] = useState<'checking' | 'downloading' | 'loading' | 'ready' | 'error'>('checking');
@@ -77,15 +79,14 @@ export function MusicPage() {
         console.log('Local module not found, trying CDN...');
       }
 
-      // Попытка 2: CDN URL
-      const cdnUrl = import.meta.env.VITE_MUSIC_MODULE_URL || 'http://localhost:3080/modules/music-module.js';
-      const module = await import(/* webpackIgnore: true */ cdnUrl);
+      // Попытка 2: production URL из env или same-origin asset
+      const module = await import(/* webpackIgnore: true */ MUSIC_MODULE_URL);
       const Comp = MUSIC_MANIFEST.entryComponent === 'default' ? module.default : module[MUSIC_MANIFEST.entryComponent!];
       setComponent(() => Comp);
       setStatus('ready');
     } catch (err: any) {
       console.error('Failed to load music module:', err);
-      setError('Не удалось загрузить музыкальный модуль. Проверьте, доступен ли CDN или соберите модуль.');
+      setError('Не удалось загрузить музыкальный модуль. Проверьте VITE_MUSIC_MODULE_URL или наличие /modules/music/music-module.js в production-сборке.');
       setStatus('error');
     }
   }

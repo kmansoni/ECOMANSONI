@@ -1,13 +1,19 @@
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, Play, Shuffle, Clock } from 'lucide-react';
+import { Play, Shuffle } from 'lucide-react';
 import { useMusicStore } from '../store/useMusicStore';
 import TrackList from '../components/TrackList';
+import { useMusicData } from '../lib/useMusicData';
 
 export default function PlaylistPage() {
   const { id } = useParams<{ id: string }>();
-  const { playlists, playTrack, setQueue, playTrackAtIndex } = useMusicStore();
+  const { playlists, playTrack, setQueue } = useMusicStore();
+  const { playlists: fetchedPlaylists, loading } = useMusicData();
 
-  const playlist = playlists.find((p) => p.id === id);
+  const playlist = playlists.find((p) => p.id === id) || fetchedPlaylists.find((p) => p.id === id);
+
+  if (loading && !playlist) {
+    return <div className="flex items-center justify-center h-full text-slate-300">Загрузка плейлиста...</div>;
+  }
 
   if (!playlist) {
     return (

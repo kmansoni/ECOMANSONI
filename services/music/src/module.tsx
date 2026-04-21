@@ -1,6 +1,6 @@
-import React from 'react';
-import ReactDOM from 'react-dom/client';
-import App from './App';
+import { useEffect } from 'react';
+import { MusicAppRoutes } from './App';
+import AudioPlayer from './components/AudioPlayer';
 import './styles/index.css';
 import { setMansoniToken } from './lib/supabase';
 
@@ -17,10 +17,15 @@ function bootstrapMansoniIntegration() {
   }
 }
 
-bootstrapMansoniIntegration();
+export default function MusicModule() {
+  useEffect(() => {
+    bootstrapMansoniIntegration();
+  }, []);
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
-);
+  return (
+    <>
+      <MusicAppRoutes />
+      <AudioPlayer />
+    </>
+  );
+}

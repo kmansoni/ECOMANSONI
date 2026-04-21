@@ -81,9 +81,12 @@
   },
   "dependencies": {
     "@capacitor/android": "^8.0.1",
+    "@capacitor/camera": "^8.1.0",
     "@capacitor/cli": "^8.0.1",
     "@capacitor/core": "^8.0.1",
+    "@capacitor/device": "^8.0.2",
     "@capacitor/filesystem": "^8.1.2",
+    "@capacitor/geolocation": "^8.2.0",
     "@capacitor/haptics": "^8.0.1",
     "@capacitor/ios": "^8.1.0",
     "@cesdk/cesdk-js": "^1.67.0",

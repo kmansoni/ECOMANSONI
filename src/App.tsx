@@ -787,7 +787,7 @@ const App = () => {
                       </Suspense>
                     } />
                     {/* ─── Music Module ─────────────────────── */}
-                    <Route path="/services/music" element={
+                    <Route path="/services/music/*" element={
                       <Suspense fallback={<PageLoader />}>
                         <MusicPage />
                       </Suspense>

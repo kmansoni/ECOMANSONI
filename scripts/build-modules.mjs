@@ -16,6 +16,7 @@ import { existsSync } from 'fs';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const projectRoot = resolve(__dirname, '..');
+const ROOT_VITE_BIN = join(projectRoot, 'node_modules', 'vite', 'bin', 'vite.js');
 
 // Modules to build (add new modules here)
 const MODULES = [
@@ -23,8 +24,7 @@ const MODULES = [
     id: 'music',
     path: 'services/music',
     entryFile: 'music-module.js',
-    // Optional: CDN URL for production deployment
-    cdnUrl: 'https://cdn.mansoni.com/modules/music/music-module.js',
+    cdnUrl: '/modules/music/music-module.js',
   },
   // Add more modules: taxi, editor, etc.
   // { id: 'taxi', path: 'services/taxi', entryFile: 'taxi-module.js' },
@@ -36,9 +36,9 @@ const PUBLIC_MODULES_DIR = join(projectRoot, 'public', 'modules');
 async function runCommand(command, args, cwd) {
   return new Promise((resolve, reject) => {
     const proc = spawn(command, args, {
-      cwd: join(projectRoot, cwd),
+      cwd,
       stdio: 'inherit',
-      shell: true,
+      shell: false,
     });
     proc.on('close', (code) => {
       if (code === 0) resolve(true);
@@ -53,17 +53,15 @@ async function buildModule(module) {
   const modulePath = join(projectRoot, module.path);
 
   try {
-    // Step 1: Install dependencies (if node_modules missing)
-    if (!existsSync(join(modulePath, 'node_modules'))) {
-      console.log(`   Installing dependencies for ${module.id}...`);
-      await runCommand('npm', ['install'], modulePath);
+    if (!existsSync(ROOT_VITE_BIN)) {
+      throw new Error(`Root Vite binary not found: ${ROOT_VITE_BIN}`);
     }
 
-    // Step 2: Build the module (Vite)
+    // Step 1: Build the module with the root toolchain
     console.log(`   Building ${module.id}...`);
-    await runCommand('npm', ['run', 'build'], modulePath);
+    await runCommand(process.execPath, [ROOT_VITE_BIN, 'build', '--config', join(modulePath, 'vite.config.ts')], modulePath);
 
-    // Step 3: Locate built file
+    // Step 2: Locate built file
     const builtFile = join(modulePath, 'dist', module.entryFile);
     if (!existsSync(builtFile)) {
       // Try alternative: Vite lib build outputs index.js
@@ -77,13 +75,13 @@ async function buildModule(module) {
 
     const sourceFile = existsSync(builtFile) ? builtFile : join(modulePath, 'dist', 'index.js');
 
-    // Step 4: Create module output directory
+    // Step 3: Create module output directory
     const moduleOutDir = join(DIST_DIR, module.id);
     const modulePublicDir = join(PUBLIC_MODULES_DIR, module.id);
     await mkdir(moduleOutDir, { recursive: true });
     await mkdir(modulePublicDir, { recursive: true });
 
-    // Step 5: Copy built JS to dist/modules/<id>/
+    // Step 4: Copy built JS to dist/modules/<id>/
     const destFile = join(moduleOutDir, module.entryFile);
     const publicDestFile = join(modulePublicDir, module.entryFile);
     await copyFile(sourceFile, destFile);
@@ -92,7 +90,7 @@ async function buildModule(module) {
     console.log(`   ✓ Module built: ${destFile}`);
     console.log(`   ✓ Public copy: ${publicDestFile}`);
 
-    // Step 6: Generate manifest for this module
+    // Step 5: Generate manifest for this module
     const stats = await (await import('fs')).promises.stat(sourceFile);
     const manifest = {
       id: module.id,
@@ -130,13 +128,19 @@ async function main() {
 
     // Build each module
     const builtManifests = [];
+    let failedCount = 0;
     for (const module of MODULES) {
       try {
         const manifest = await buildModule(module);
         builtManifests.push(manifest);
       } catch (err) {
         console.error(`Skipping ${module.id} due to errors`);
+        failedCount += 1;
       }
+    }
+
+    if (failedCount > 0 || builtManifests.length !== MODULES.length) {
+      throw new Error(`Built ${builtManifests.length}/${MODULES.length} modules successfully`);
     }
 
     // Generate aggregate manifest for all modules

@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { DEMO_PLAYLISTS, DEMO_TRACKS } from '../lib/demoMusicData';
 
-interface Track {
+export interface Track {
   id: string;
   title: string;
   artist: string;
@@ -11,7 +12,7 @@ interface Track {
   audioUrl: string;
 }
 
-interface Playlist {
+export interface Playlist {
   id: string;
   name: string;
   description: string;
@@ -24,15 +25,35 @@ interface MusicState {
   isPlaying: boolean;
   volume: number;
   queue: Track[];
+  tracks: Track[];
   playlists: Playlist[];
+  likedTrackIds: string[];
+  downloadedTrackIds: string[];
+  
+  // Data from Supabase
+  loading: boolean;
+  error: string | null;
+  isDemo: boolean;
+  
+  // Set data from API
+  setTracks: (tracks: Track[]) => void;
+  setPlaylists: (playlists: Playlist[]) => void;
+  setLikedTrackIds: (trackIds: string[]) => void;
+  setDownloadedTrackIds: (trackIds: string[]) => void;
+  setLoading: (loading: boolean) => void;
+  setError: (error: string | null) => void;
+  setIsDemo: (isDemo: boolean) => void;
 
   // Actions
   playTrack: (track: Track) => void;
+  playTrackAtIndex: (index: number) => void;
   pauseTrack: () => void;
   resumeTrack: () => void;
   setVolume: (volume: number) => void;
   setQueue: (tracks: Track[]) => void;
   addToQueue: (track: Track) => void;
+  removeFromQueue: (trackId: string) => void;
+  clearQueue: () => void;
 }
 
 export const useMusicStore = create<MusicState>()(
@@ -42,64 +63,31 @@ export const useMusicStore = create<MusicState>()(
       isPlaying: false,
       volume: 0.8,
       queue: [],
+      tracks: DEMO_TRACKS,
+      playlists: DEMO_PLAYLISTS,
+      likedTrackIds: [],
+      downloadedTrackIds: [],
+      loading: false,
+      error: null,
+      isDemo: true,
 
-      playlists: [
-        {
-          id: '1',
-          name: 'Популярные треки',
-          description: 'Лучшие треки недели',
-          coverUrl: 'https://picsum.photos/seed/music1/300/300',
-          tracks: [
-            {
-              id: 't1',
-              title: 'Midnight Dreams',
-              artist: 'Luna Star',
-              album: 'Starlight',
-              duration: 234,
-              coverUrl: 'https://picsum.photos/seed/t1/300/300',
-              audioUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',
-            },
-            {
-              id: 't2',
-              title: 'Electric Pulse',
-              artist: 'Neon Waves',
-              album: 'Cyber City',
-              duration: 198,
-              coverUrl: 'https://picsum.photos/seed/t2/300/300',
-              audioUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3',
-            },
-            {
-              id: 't3',
-              title: 'Ocean Waves',
-              artist: 'Chill Vibes',
-              album: 'Relaxation',
-              duration: 267,
-              coverUrl: 'https://picsum.photos/seed/t3/300/300',
-              audioUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3',
-            },
-          ],
-        },
-        {
-          id: '2',
-          name: 'Рабочая музыка',
-          description: 'Фокус и концентрация',
-          coverUrl: 'https://picsum.photos/seed/music2/300/300',
-          tracks: [
-            {
-              id: 't4',
-              title: 'Deep Focus',
-              artist: 'Brain Waves',
-              album: 'Productivity',
-              duration: 320,
-              coverUrl: 'https://picsum.photos/seed/t4/300/300',
-              audioUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3',
-            },
-          ],
-        },
-      ],
+      setTracks: (tracks) => set({ tracks }),
+      setPlaylists: (playlists) => set({ playlists }),
+      setLikedTrackIds: (likedTrackIds) => set({ likedTrackIds }),
+      setDownloadedTrackIds: (downloadedTrackIds) => set({ downloadedTrackIds }),
+      setLoading: (loading) => set({ loading }),
+      setError: (error) => set({ error }),
+      setIsDemo: (isDemo) => set({ isDemo }),
 
       playTrack: (track) => {
         set({ currentTrack: track, isPlaying: true });
+      },
+
+      playTrackAtIndex: (index) => {
+        const { queue } = get();
+        if (index >= 0 && index < queue.length) {
+          set({ currentTrack: queue[index], isPlaying: true });
+        }
       },
 
       pauseTrack: () => {
@@ -121,12 +109,24 @@ export const useMusicStore = create<MusicState>()(
       addToQueue: (track) => {
         set((state) => ({ queue: [...state.queue, track] }));
       },
+
+      removeFromQueue: (trackId) => {
+        set((state) => ({ 
+          queue: state.queue.filter(t => t.id !== trackId)
+        }));
+      },
+
+      clearQueue: () => {
+        set({ queue: [] });
+      },
     }),
     {
       name: 'music-storage',
       partialize: (state) => ({
         volume: state.volume,
         queue: state.queue,
+        likedTrackIds: state.likedTrackIds,
+        downloadedTrackIds: state.downloadedTrackIds,
       }),
     }
   )

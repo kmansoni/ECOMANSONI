@@ -1,22 +1,58 @@
-import { useState } from 'react';
-import { Search } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Search, Loader2 } from 'lucide-react';
 import { useMusicStore } from '../store/useMusicStore';
+import { useMusicData } from '../lib/useMusicData';
+import type { Track } from '../store/useMusicStore';
 import TrackList from '../components/TrackList';
 
 export default function SearchPage() {
   const [query, setQuery] = useState('');
-  const { playlists } = useMusicStore();
+  const [results, setResults] = useState<Track[]>([]);
+  const [searching, setSearching] = useState(false);
+  const { playlists, isDemo } = useMusicStore();
+  const { searchTracks } = useMusicData();
 
-  // Простой поиск по всем трекам
-  const allTracks = playlists.flatMap((p) => p.tracks);
-  const results = query
-    ? allTracks.filter(
-        (track) =>
-          track.title.toLowerCase().includes(query.toLowerCase()) ||
-          track.artist.toLowerCase().includes(query.toLowerCase()) ||
-          track.album.toLowerCase().includes(query.toLowerCase())
-      )
-    : [];
+  // Demo search fallback
+  const demoSearch = useCallback((q: string) => {
+    const allTracks = playlists.flatMap((p) => p.tracks);
+    const lowerQuery = q.toLowerCase();
+    return allTracks.filter(
+      (track) =>
+        track.title.toLowerCase().includes(lowerQuery) ||
+        track.artist.toLowerCase().includes(lowerQuery) ||
+        track.album.toLowerCase().includes(lowerQuery)
+    );
+  }, [playlists]);
+
+  // Search handler with Supabase
+  useEffect(() => {
+    if (!query.trim()) {
+      setResults([]);
+      return;
+    }
+
+    async function doSearch() {
+      setSearching(true);
+      try {
+        // Try Supabase first, fallback to demo
+        const supabaseResults = await searchTracks(query);
+        if (supabaseResults.length > 0) {
+          setResults(supabaseResults);
+        } else if (isDemo) {
+          setResults(demoSearch(query));
+        }
+      } catch {
+        // Fallback to demo
+        setResults(demoSearch(query));
+      } finally {
+        setSearching(false);
+      }
+    }
+
+    // Debounce search
+    const timer = setTimeout(doSearch, 300);
+    return () => clearTimeout(timer);
+  }, [query, searchTracks, isDemo, demoSearch]);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-900 to-black text-white p-6">
@@ -38,16 +74,24 @@ export default function SearchPage() {
         {/* Results */}
         {query && (
           <div>
-            <h2 className="text-xl font-semibold mb-4">
-              Результаты для "{query}" ({results.length})
-            </h2>
-            {results.length > 0 ? (
-              <TrackList tracks={results} />
-            ) : (
-              <div className="text-center py-12 text-slate-400">
-                <p>Ничего не найдено</p>
-                <p className="text-sm mt-2">Попробуйте другие ключевые слова</p>
+            {searching ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="w-6 h-6 animate-spin text-purple-500" />
               </div>
+            ) : (
+              <>
+                <h2 className="text-xl font-semibold mb-4">
+                  Результаты для "{query}" ({results.length})
+                </h2>
+                {results.length > 0 ? (
+                  <TrackList tracks={results} />
+                ) : (
+                  <div className="text-center py-12 text-slate-400">
+                    <p>Ничего не найдено</p>
+                    <p className="text-sm mt-2">Попробуйте другие ключевые слова</p>
+                  </div>
+                )}
+              </>
             )}
           </div>
         )}

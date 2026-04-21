@@ -61,6 +61,11 @@ scripts/.temp/
 
 # Local app temp
 tmp/
+.supabase-migration-list.txt
+.supabase-db-push.txt
+.tmp_schema_query.ps1
+.typecheck-current.txt
+dist-deploy.tar.gz
 
 # Local scratch/archive
 .archive/

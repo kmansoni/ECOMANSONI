@@ -1,7 +1,8 @@
-import { Play, Pause, MoreHorizontal, Heart } from 'lucide-react';
+import { Play, Pause, MoreHorizontal, Heart, Download } from 'lucide-react';
 import { useMusicStore } from '../store/useMusicStore';
 import type { Track } from '../store/useMusicStore';
 import { useState } from 'react';
+import { useMusicActions } from '../lib/useMusicActions';
 
 interface TrackListProps {
   tracks: Track[];
@@ -9,7 +10,18 @@ interface TrackListProps {
 }
 
 export default function TrackList({ tracks, showAlbum = true }: TrackListProps) {
-  const { currentTrack, isPlaying, playTrack, pauseTrack, resumeTrack } = useMusicStore();
+  const {
+    currentTrack,
+    isPlaying,
+    playTrack,
+    pauseTrack,
+    resumeTrack,
+    setQueue,
+    likedTrackIds,
+    downloadedTrackIds,
+  } = useMusicStore();
+  const { toggleLike, toggleDownload } = useMusicActions();
+  const [pendingTrackId, setPendingTrackId] = useState<string | null>(null);
 
   function formatDuration(seconds: number): string {
     const mins = Math.floor(seconds / 60);
@@ -25,6 +37,8 @@ export default function TrackList({ tracks, showAlbum = true }: TrackListProps) 
         resumeTrack();
       }
     } else {
+      // Set queue and play track
+      setQueue(tracks);
       playTrack(track);
     }
   }
@@ -42,6 +56,8 @@ export default function TrackList({ tracks, showAlbum = true }: TrackListProps) 
       {/* Tracks */}
       {tracks.map((track, index) => {
         const isCurrentTrack = currentTrack?.id === track.id;
+        const isLiked = likedTrackIds.includes(track.id);
+        const isDownloaded = downloadedTrackIds.includes(track.id);
 
         return (
           <div
@@ -109,12 +125,32 @@ export default function TrackList({ tracks, showAlbum = true }: TrackListProps) 
                 <MoreHorizontal className="w-4 h-4" />
               </button>
               <button
-                onClick={(e) => {
+                onClick={async (e) => {
                   e.stopPropagation();
+                  setPendingTrackId(track.id);
+                  try {
+                    await toggleLike(track.id);
+                  } finally {
+                    setPendingTrackId(null);
+                  }
                 }}
-                className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:text-red-500"
+                className={`opacity-0 group-hover:opacity-100 transition-opacity p-1 ${isLiked ? 'text-red-500 opacity-100' : 'hover:text-red-500'}`}
               >
-                <Heart className="w-4 h-4" />
+                <Heart className={`w-4 h-4 ${isLiked ? 'fill-current' : ''}`} />
+              </button>
+              <button
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  setPendingTrackId(track.id);
+                  try {
+                    await toggleDownload(track);
+                  } finally {
+                    setPendingTrackId(null);
+                  }
+                }}
+                className={`opacity-0 group-hover:opacity-100 transition-opacity p-1 ${isDownloaded ? 'text-emerald-400 opacity-100' : 'hover:text-emerald-400'}`}
+              >
+                <Download className={`w-4 h-4 ${pendingTrackId === track.id ? 'animate-pulse' : ''}`} />
               </button>
             </div>
           </div>

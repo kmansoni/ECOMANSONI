@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "description": "Music streaming module for Mansoni — Spotify-like experience",
-  "main": "src/index.ts",
+  "main": "src/module.tsx",
   "scripts": {
     "dev": "vite --port 3001",
     "build": "vite build --outDir dist",

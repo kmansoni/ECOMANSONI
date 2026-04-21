@@ -1,22 +1,33 @@
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, Play, Pause, Heart, MoreHorizontal } from 'lucide-react';
+import { ArrowLeft, Play, Pause, Heart, MoreHorizontal, Download } from 'lucide-react';
 import { useMusicStore } from '../store/useMusicStore';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { useMusicData } from '../lib/useMusicData';
+import { useMusicActions } from '../lib/useMusicActions';
 
 export default function TrackPage() {
   const { id } = useParams<{ id: string }>();
-  const { playlists, playTrack, currentTrack, isPlaying, pauseTrack, resumeTrack } = useMusicStore();
-  const [isLiked, setIsLiked] = useState(false);
+  const { playlists, tracks, playTrack, currentTrack, isPlaying, pauseTrack, resumeTrack, likedTrackIds, downloadedTrackIds } = useMusicStore();
+  const { tracks: fetchedTracks, playlists: fetchedPlaylists } = useMusicData();
+  const { toggleLike, toggleDownload } = useMusicActions();
+  const [actionError, setActionError] = useState<string | null>(null);
 
-  // Находим трек во всех плейлистах
-  let track = null;
-  for (const playlist of playlists) {
-    const found = playlist.tracks.find((t) => t.id === id);
-    if (found) {
-      track = found;
-      break;
+  const allTracks = useMemo(() => {
+    const merged = new Map<string, (typeof tracks)[number]>();
+
+    for (const track of [
+      ...tracks,
+      ...fetchedTracks,
+      ...playlists.flatMap((playlist) => playlist.tracks),
+      ...fetchedPlaylists.flatMap((playlist) => playlist.tracks),
+    ]) {
+      merged.set(track.id, track);
     }
-  }
+
+    return Array.from(merged.values());
+  }, [tracks, fetchedTracks, playlists, fetchedPlaylists]);
+
+  const track = allTracks.find((item) => item.id === id) || null;
 
   if (!track) {
     return (
@@ -30,6 +41,8 @@ export default function TrackPage() {
   }
 
   const isCurrentTrack = currentTrack?.id === track.id;
+  const isLiked = likedTrackIds.includes(track.id);
+  const isDownloaded = downloadedTrackIds.includes(track.id);
 
   function handlePlay() {
     if (isCurrentTrack) {
@@ -40,6 +53,24 @@ export default function TrackPage() {
       }
     } else {
       playTrack(track);
+    }
+  }
+
+  async function handleToggleLike() {
+    try {
+      setActionError(null);
+      await toggleLike(track.id);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Не удалось обновить лайк');
+    }
+  }
+
+  async function handleToggleDownload() {
+    try {
+      setActionError(null);
+      await toggleDownload(track);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Не удалось обновить офлайн-доступ');
     }
   }
 
@@ -102,16 +133,25 @@ export default function TrackPage() {
           </button>
 
           <button
-            onClick={() => setIsLiked(!isLiked)}
+            onClick={handleToggleLike}
             className={`p-3 rounded-full border transition-colors ${isLiked ? 'bg-red-500/20 border-red-500 text-red-500' : 'border-slate-600 hover:border-slate-500'}`}
           >
             <Heart className={`w-5 h-5 ${isLiked ? 'fill-current' : ''}`} />
+          </button>
+
+          <button
+            onClick={handleToggleDownload}
+            className={`p-3 rounded-full border transition-colors ${isDownloaded ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400' : 'border-slate-600 hover:border-slate-500'}`}
+          >
+            <Download className="w-5 h-5" />
           </button>
 
           <button className="p-3 rounded-full border border-slate-600 hover:border-slate-500 transition-colors">
             <MoreHorizontal className="w-5 h-5" />
           </button>
         </div>
+
+        {actionError ? <p className="mt-4 text-sm text-red-400">{actionError}</p> : null}
 
         {/* Рекомендации (простые) */}
         <div className="mt-12">

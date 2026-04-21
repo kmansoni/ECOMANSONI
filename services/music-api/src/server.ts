@@ -1,161 +1,291 @@
-import express from 'express';
 import cors from 'cors';
-import helmet from 'helmet';
+import express, { type NextFunction, type Request, type Response } from 'express';
 import rateLimit from 'express-rate-limit';
+import helmet from 'helmet';
+import jwt, { type JwtPayload } from 'jsonwebtoken';
 import { createClient } from '@supabase/supabase-js';
-import jwt from 'jsonwebtoken';
-import { v4 as uuidv4 } from 'uuid';
 import * as zod from 'zod';
 
-const app = express();
-const PORT = process.env.PORT || 3080;
-
-// ============ MIDDLEWARE ============
-
-// Security
-app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-      imgSrc: ["'self'", "data:", "https://*.supabase.co", "https://*.amazonaws.com"],
-    },
-  },
-}));
-
-// CORS — allow Mansoni frontend and music-frontend dev
-app.use(cors({
-  origin: (origin, callback) => {
-    const allowed = [
-      process.env.MANSONI_URL,
-      process.env.MUSIC_FRONTEND_URL,
-      'http://localhost:5173',
-      'http://localhost:3001',
-    ].filter(Boolean);
-    
-    if (!origin || allowed.some(a => origin.startsWith(a))) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  credentials: true,
-}));
-
-app.use(express.json());
-
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 100,
-  message: 'Too many requests',
+const envSchema = zod.object({
+  SUPABASE_URL: zod.string().min(1),
+  SUPABASE_SERVICE_ROLE_KEY: zod.string().min(1),
+  MANSONI_JWT_SECRET: zod.string().min(1),
+  PORT: zod.string().optional(),
+  MANSONI_URL: zod.string().optional(),
+  MUSIC_FRONTEND_URL: zod.string().optional(),
 });
-app.use('/api/', limiter);
 
-// ============ SUPABASE ============
+const env = envSchema.parse(process.env);
+const app = express();
+const PORT = Number(env.PORT || 3080);
 
-const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+type AuthUser = JwtPayload & { id: string };
 
-// ============ JWT AUTH MIDDLEWARE ============
-
-// Verify Mansoni JWT (shared secret)
-function verifyMansoniToken(req, res, next) {
-  const authHeader = req.headers.authorization;
-  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
-  
-  if (!token) {
-    // Try from query param (for iframe)
-    const tokenFromQuery = req.query.token as string;
-    if (tokenFromQuery) {
-      req.user = verifyToken(tokenFromQuery);
-      return next();
-    }
-    
-    return res.status(401).json({ error: 'No token provided' });
-  }
-
-  const decoded = verifyToken(token);
-  if (!decoded) {
-    return res.status(401).json({ error: 'Invalid token' });
-  }
-
-  req.user = decoded;
-  next();
+interface AuthenticatedRequest extends Request {
+  user?: AuthUser;
 }
 
-function verifyToken(token: string): any {
+const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY);
+
+const trackMutationSchema = zod.object({
+  track_id: zod.string().uuid(),
+});
+
+const playlistSchema = zod.object({
+  name: zod.string().min(1).max(200),
+  description: zod.string().max(2000).optional(),
+  is_public: zod.boolean().default(false),
+});
+
+const playlistUpdateSchema = playlistSchema.partial();
+
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-inline'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", 'data:', 'https://*.supabase.co', 'https://*.amazonaws.com'],
+        mediaSrc: ["'self'", 'blob:', 'https://*.supabase.co', 'https://*.amazonaws.com'],
+      },
+    },
+  }),
+);
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      const allowed = [env.MANSONI_URL, env.MUSIC_FRONTEND_URL, 'http://localhost:5173', 'http://localhost:3001'].filter(
+        (value): value is string => Boolean(value),
+      );
+      if (!origin || allowed.some((value) => origin.startsWith(value))) {
+        callback(null, true);
+        return;
+      }
+
+      callback(new Error('Not allowed by CORS'));
+    },
+    credentials: true,
+  }),
+);
+
+app.use(express.json());
+app.use(
+  '/api/',
+  rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 120,
+    message: 'Too many requests',
+  }),
+);
+
+function getTokenFromRequest(req: Request): string | null {
+  const header = req.headers.authorization;
+  if (header?.startsWith('Bearer ')) {
+    return header.slice(7);
+  }
+
+  if (typeof req.query.token === 'string') {
+    return req.query.token;
+  }
+
+  return null;
+}
+
+function verifyToken(token: string): AuthUser | null {
   try {
-    return jwt.verify(token, process.env.MANSONI_JWT_SECRET!);
+    const decoded = jwt.verify(token, env.MANSONI_JWT_SECRET);
+    if (typeof decoded === 'string') {
+      return null;
+    }
+
+    const id = typeof decoded.sub === 'string' ? decoded.sub : typeof decoded.id === 'string' ? decoded.id : null;
+    if (!id) {
+      return null;
+    }
+
+    return { ...decoded, id };
   } catch {
     return null;
   }
 }
 
-// ============ ROUTES ============
+function optionalAuth(req: AuthenticatedRequest, _res: Response, next: NextFunction) {
+  const token = getTokenFromRequest(req);
+  if (!token) {
+    next();
+    return;
+  }
 
-// Health check
-app.get('/health', (req, res) => {
+  const decoded = verifyToken(token);
+  if (decoded) {
+    req.user = decoded;
+  }
+
+  next();
+}
+
+function requireAuth(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  optionalAuth(req, res, () => {
+    if (!req.user) {
+      res.status(401).json({ error: 'No token provided or token is invalid' });
+      return;
+    }
+
+    next();
+  });
+}
+
+function sendError(res: Response, error: unknown, status = 500) {
+  const message = error instanceof Error ? error.message : 'Unexpected error';
+  res.status(status).json({ error: message });
+}
+
+async function resolveAudioUrl(audioUrl: string): Promise<string> {
+  if (/^https?:\/\//i.test(audioUrl)) {
+    return audioUrl;
+  }
+
+  const storagePath = audioUrl.replace(/^music\//, '');
+  const { data, error } = await supabase.storage.from('music').createSignedUrl(storagePath, 60 * 60);
+  if (error) {
+    throw error;
+  }
+
+  return data.signedUrl;
+}
+
+async function searchTrackRows(query: string, limit: number) {
+  const [tracksResult, artistsResult, albumsResult] = await Promise.all([
+    supabase
+      .from('music_tracks')
+      .select(`
+        id, title, duration_ms, explicit, play_count, popularity, created_at, preview_url, audio_url,
+        artist:music_artists(name, image_url),
+        album:music_albums(title, cover_url)
+      `)
+      .ilike('title', `%${query}%`)
+      .limit(limit),
+    supabase.from('music_artists').select('id').ilike('name', `%${query}%`).limit(10),
+    supabase.from('music_albums').select('id').ilike('title', `%${query}%`).limit(10),
+  ]);
+
+  if (tracksResult.error) throw tracksResult.error;
+  if (artistsResult.error) throw artistsResult.error;
+  if (albumsResult.error) throw albumsResult.error;
+
+  const extraRows: Record<string, unknown>[] = [];
+  const artistIds = (artistsResult.data || []).map((artist) => artist.id);
+  const albumIds = (albumsResult.data || []).map((album) => album.id);
+
+  if (artistIds.length > 0) {
+    const { data, error } = await supabase
+      .from('music_tracks')
+      .select(`
+        id, title, duration_ms, explicit, play_count, popularity, created_at, preview_url, audio_url,
+        artist:music_artists(name, image_url),
+        album:music_albums(title, cover_url)
+      `)
+      .in('artist_id', artistIds)
+      .limit(limit);
+
+    if (error) throw error;
+    extraRows.push(...(data || []));
+  }
+
+  if (albumIds.length > 0) {
+    const { data, error } = await supabase
+      .from('music_tracks')
+      .select(`
+        id, title, duration_ms, explicit, play_count, popularity, created_at, preview_url, audio_url,
+        artist:music_artists(name, image_url),
+        album:music_albums(title, cover_url)
+      `)
+      .in('album_id', albumIds)
+      .limit(limit);
+
+    if (error) throw error;
+    extraRows.push(...(data || []));
+  }
+
+  const deduped = new Map<string, Record<string, unknown>>();
+  for (const row of [...(tracksResult.data || []), ...extraRows]) {
+    deduped.set(String(row.id), row);
+  }
+
+  return Array.from(deduped.values()).slice(0, limit);
+}
+
+app.get('/health', (_req, res) => {
   res.json({ status: 'ok', service: 'music-api', timestamp: new Date().toISOString() });
 });
 
-// ============ TRACKS ============
-
-// GET /api/tracks — list all tracks (public)
-app.get('/api/tracks', async (req, res) => {
+app.get('/api/me', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
-    const { page = 1, limit = 20, artist, search } = req.query;
-    
-    let query = supabase
-      .from('music_tracks')
-      .select(`
-        id, title, duration_ms, explicit, play_count, created_at,
-        music_artists(name, image_url),
-        music_albums(title, cover_url)
-      `, { count: 'exact' })
-      .order('play_count', { ascending: false })
-      .range((Number(page) - 1) * Number(limit), Number(page) * Number(limit) - 1);
-
-    if (search) {
-      query = query.ilike('title', `%${search}%`);
-    }
-    if (artist) {
-      query = query.eq('artist_id', artist);
-    }
-
-    const { data, error, count } = await query;
+    const { data, error } = await supabase
+      .from('music_subscriptions')
+      .select('status, current_period_end')
+      .eq('user_id', req.user!.id)
+      .maybeSingle();
 
     if (error) throw error;
-    res.json({ 
-      data, 
-      pagination: { page: Number(page), limit: Number(limit), total: count || 0 }
-    });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    res.json({ data: { userId: req.user!.id, subscription: data } });
+  } catch (error) {
+    sendError(res, error);
   }
 });
 
-// GET /api/tracks/:id — single track
-app.get('/api/tracks/:id', async (req, res) => {
+app.get('/api/tracks', async (req, res) => {
+  try {
+    const page = Number(req.query.page || 1);
+    const limit = Number(req.query.limit || 20);
+    let query = supabase
+      .from('music_tracks')
+      .select(
+        `
+          id, title, duration_ms, explicit, play_count, popularity, created_at, preview_url, audio_url,
+          artist:music_artists(name, image_url),
+          album:music_albums(title, cover_url)
+        `,
+        { count: 'exact' },
+      )
+      .order('play_count', { ascending: false })
+      .order('popularity', { ascending: false })
+      .range((page - 1) * limit, page * limit - 1);
+
+    if (typeof req.query.search === 'string' && req.query.search.trim()) {
+      query = query.ilike('title', `%${req.query.search.trim()}%`);
+    }
+
+    if (typeof req.query.artist === 'string' && req.query.artist) {
+      query = query.eq('artist_id', req.query.artist);
+    }
+
+    const { data, error, count } = await query;
+    if (error) throw error;
+
+    res.json({ data, pagination: { page, limit, total: count || 0 } });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+app.get('/api/tracks/:id', optionalAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const { id } = req.params;
-    
     const { data, error } = await supabase
       .from('music_tracks')
       .select(`
         id, title, duration_ms, explicit, preview_url, audio_url, waveform_data,
-        music_artists(id, name, image_url, genres),
-        music_albums(id, title, cover_url, release_date)
+        artist:music_artists(id, name, image_url, genres),
+        album:music_albums(id, title, cover_url, release_date)
       `)
       .eq('id', id)
       .single();
 
     if (error) throw error;
-    
-    // Record play if user is authenticated
+
     if (req.user) {
       await supabase.rpc('record_track_play', {
         p_user_id: req.user.id,
@@ -165,121 +295,81 @@ app.get('/api/tracks/:id', async (req, res) => {
     }
 
     res.json({ data });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
+  } catch (error) {
+    sendError(res, error);
   }
 });
 
-// ============ STREAMING ============
-
-// GET /api/stream/:id — get streaming URL (signed)
-app.get('/api/stream/:id', verifyMansoniToken, async (req, res) => {
+app.get('/api/stream/:id', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const { id } = req.params;
-    
-    // Get track
-    const { data: track, error } = await supabase
-      .from('music_tracks')
-      .select('id, title, audio_url')
-      .eq('id', id)
-      .single();
-
+    const { data: track, error } = await supabase.from('music_tracks').select('id, title, audio_url').eq('id', id).single();
     if (error || !track) {
-      return res.status(404).json({ error: 'Track not found' });
+      res.status(404).json({ error: 'Track not found' });
+      return;
     }
 
-    // Generate signed URL (if using Supabase Storage)
-    // For now, return public URL (configure signed URLs in production)
-    res.json({ 
-      url: track.audio_url,
-      track: { id: track.id, title: track.title }
-    });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    const url = await resolveAudioUrl(track.audio_url);
+    res.json({ url, track: { id: track.id, title: track.title } });
+  } catch (error) {
+    sendError(res, error);
   }
 });
 
-// ============ PLAYLISTS ============
-
-// GET /api/playlists — user's playlists
-app.get('/api/playlists', verifyMansoniToken, async (req, res) => {
+app.get('/api/playlists', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const { data, error } = await supabase
       .from('music_playlists')
       .select('*')
-      .eq('user_id', req.user.id)
+      .eq('user_id', req.user!.id)
       .order('updated_at', { ascending: false });
 
     if (error) throw error;
     res.json({ data });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
+  } catch (error) {
+    sendError(res, error);
   }
 });
 
-// GET /api/playlists/:id — playlist with tracks
-app.get('/api/playlists/:id', async (req, res) => {
+app.get('/api/playlists/:id', optionalAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const { id } = req.params;
-    
-    const { data: playlist, error } = await supabase
-      .from('music_playlists')
-      .select('*')
-      .eq('id', id)
-      .single();
-
+    const { data: playlist, error } = await supabase.from('music_playlists').select('*').eq('id', id).single();
     if (error) throw error;
 
-    // Check if user owns playlist or it's public
-    const isOwner = req.user && playlist.user_id === req.user.id;
+    const isOwner = req.user?.id === playlist.user_id;
     if (!playlist.is_public && !isOwner) {
-      return res.status(403).json({ error: 'Access denied' });
+      res.status(403).json({ error: 'Access denied' });
+      return;
     }
 
-    // Get tracks with positions
     const { data: tracks, error: tracksError } = await supabase
       .from('music_playlist_tracks')
       .select(`
         id, position, added_at,
         music_tracks(
-          id, title, duration_ms,
-          music_artists(name),
-          music_albums(cover_url)
+          id, title, duration_ms, preview_url, audio_url,
+          artist:music_artists(name),
+          album:music_albums(cover_url, title)
         )
       `)
       .eq('playlist_id', id)
       .order('position', { ascending: true });
 
     if (tracksError) throw tracksError;
-
-    res.json({ 
-      data: { ...playlist, tracks: tracks?.map(t => ({
-        id: t.id,
-        position: t.position,
-        added_at: t.added_at,
-        track: t.music_tracks
-      })) }
-    });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    res.json({ data: { ...playlist, tracks } });
+  } catch (error) {
+    sendError(res, error);
   }
 });
 
-// POST /api/playlists — create playlist
-app.post('/api/playlists', verifyMansoniToken, async (req, res) => {
+app.post('/api/playlists', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
-    const schema = zod.object({
-      name: zod.string().min(1).max(200),
-      description: zod.string().optional(),
-      is_public: zod.boolean().default(false),
-    });
-
-    const validated = schema.parse(req.body);
-
+    const validated = playlistSchema.parse(req.body);
     const { data, error } = await supabase
       .from('music_playlists')
       .insert({
-        user_id: req.user.id,
+        user_id: req.user!.id,
         name: validated.name,
         description: validated.description,
         is_public: validated.is_public,
@@ -289,364 +379,351 @@ app.post('/api/playlists', verifyMansoniToken, async (req, res) => {
 
     if (error) throw error;
     res.json({ data });
-  } catch (error: any) {
+  } catch (error) {
     if (error instanceof zod.ZodError) {
-      return res.status(400).json({ error: 'Validation failed', details: error.errors });
+      res.status(400).json({ error: 'Validation failed', details: error.errors });
+      return;
     }
-    res.status(500).json({ error: error.message });
+    sendError(res, error);
   }
 });
 
-// PUT /api/playlists/:id — update playlist
-app.put('/api/playlists/:id', verifyMansoniToken, async (req, res) => {
+app.put('/api/playlists/:id', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const { id } = req.params;
-    const schema = zod.object({
-      name: zod.string().min(1).max(200).optional(),
-      description: zod.string().optional(),
-      is_public: zod.boolean().optional(),
-    });
-
-    const validated = schema.parse(req.body);
-
-    // Check ownership
-    const { data: playlist, error: fetchError } = await supabase
-      .from('music_playlists')
-      .select('user_id')
-      .eq('id', id)
-      .single();
-
-    if (fetchError || playlist.user_id !== req.user.id) {
-      return res.status(403).json({ error: 'Access denied' });
+    const validated = playlistUpdateSchema.parse(req.body);
+    const { data: playlist, error: fetchError } = await supabase.from('music_playlists').select('user_id').eq('id', id).single();
+    if (fetchError || playlist.user_id !== req.user!.id) {
+      res.status(403).json({ error: 'Access denied' });
+      return;
     }
 
-    const { data, error } = await supabase
-      .from('music_playlists')
-      .update(validated)
-      .eq('id', id)
-      .select()
-      .single();
-
+    const { data, error } = await supabase.from('music_playlists').update(validated).eq('id', id).select().single();
     if (error) throw error;
     res.json({ data });
-  } catch (error: any) {
+  } catch (error) {
     if (error instanceof zod.ZodError) {
-      return res.status(400).json({ error: 'Validation failed', details: error.errors });
+      res.status(400).json({ error: 'Validation failed', details: error.errors });
+      return;
     }
-    res.status(500).json({ error: error.message });
+    sendError(res, error);
   }
 });
 
-// DELETE /api/playlists/:id
-app.delete('/api/playlists/:id', verifyMansoniToken, async (req, res) => {
+app.delete('/api/playlists/:id', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const { id } = req.params;
-
-    // Check ownership
-    const { data: playlist, error: fetchError } = await supabase
-      .from('music_playlists')
-      .select('user_id')
-      .eq('id', id)
-      .single();
-
-    if (fetchError || playlist.user_id !== req.user.id) {
-      return res.status(403).json({ error: 'Access denied' });
+    const { data: playlist, error: fetchError } = await supabase.from('music_playlists').select('user_id').eq('id', id).single();
+    if (fetchError || playlist.user_id !== req.user!.id) {
+      res.status(403).json({ error: 'Access denied' });
+      return;
     }
 
-    // Delete playlist (cascade will remove tracks)
-    const { error } = await supabase
-      .from('music_playlists')
-      .delete()
-      .eq('id', id);
-
+    const { error } = await supabase.from('music_playlists').delete().eq('id', id);
     if (error) throw error;
     res.json({ success: true });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
+  } catch (error) {
+    sendError(res, error);
   }
 });
 
-// POST /api/playlists/:id/tracks — add track to playlist
-app.post('/api/playlists/:id/tracks', verifyMansoniToken, async (req, res) => {
+app.post('/api/playlists/:id/tracks', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const { id } = req.params;
-    const { track_id } = req.body;
-
-    // Check playlist ownership
+    const { track_id } = trackMutationSchema.parse(req.body);
     const { data: playlist, error: fetchError } = await supabase
       .from('music_playlists')
       .select('user_id, tracks_count')
       .eq('id', id)
       .single();
 
-    if (fetchError || playlist.user_id !== req.user.id) {
-      return res.status(403).json({ error: 'Access denied' });
+    if (fetchError || playlist.user_id !== req.user!.id) {
+      res.status(403).json({ error: 'Access denied' });
+      return;
     }
 
-    // Find max position
-    const { data: maxPos } = await supabase
+    const { data: maxPosition } = await supabase
       .from('music_playlist_tracks')
       .select('position')
       .eq('playlist_id', id)
       .order('position', { ascending: false })
       .limit(1)
-      .single();
+      .maybeSingle();
 
-    const position = (maxPos?.position || 0) + 1;
-
-    // Insert
     const { data, error } = await supabase
       .from('music_playlist_tracks')
       .insert({
         playlist_id: id,
         track_id,
-        user_id: req.user.id,
-        position,
-      })
-      .select()
-      .single();
-
-    if (error) {
-      if (error.code === '23505') { // unique violation
-        return res.status(400).json({ error: 'Track already in playlist' });
-      }
-      throw error;
-    }
-
-    // Update playlist track count
-    await supabase
-      .from('music_playlists')
-      .update({ tracks_count: (playlist.tracks_count || 0) + 1 })
-      .eq('id', id);
-
-    res.json({ data });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// DELETE /api/playlists/:id/tracks/:trackId
-app.delete('/api/playlists/:id/tracks/:trackId', verifyMansoniToken, async (req, res) => {
-  try {
-    const { id, trackId } = req.params;
-
-    // Check ownership
-    const { data: playlist, error: fetchError } = await supabase
-      .from('music_playlists')
-      .select('user_id, tracks_count')
-      .eq('id', id)
-      .single();
-
-    if (fetchError || playlist.user_id !== req.user.id) {
-      return res.status(403).json({ error: 'Access denied' });
-    }
-
-    // Delete track from playlist
-    const { error } = await supabase
-      .from('music_playlist_tracks')
-      .delete()
-      .eq('playlist_id', id)
-      .eq('track_id', trackId);
-
-    if (error) throw error;
-
-    // Reorder positions
-    await supabase.rpc('reorder_playlist_tracks', { playlist_id: id });
-
-    // Update count
-    await supabase
-      .from('music_playlists')
-      .update({ tracks_count: Math.max(0, (playlist.tracks_count || 1) - 1) })
-      .eq('id', id);
-
-    res.json({ success: true });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// ============ LIKES ============
-
-// POST /api/likes — like a track
-app.post('/api/likes', verifyMansoniToken, async (req, res) => {
-  try {
-    const { track_id } = req.body;
-    
-    const { data, error } = await supabase
-      .from('music_likes')
-      .insert({
-        user_id: req.user.id,
-        track_id,
+        user_id: req.user!.id,
+        position: (maxPosition?.position || 0) + 1,
       })
       .select()
       .single();
 
     if (error) {
       if (error.code === '23505') {
-        return res.status(400).json({ error: 'Already liked' });
+        res.status(400).json({ error: 'Track already in playlist' });
+        return;
       }
       throw error;
     }
 
+    await supabase.from('music_playlists').update({ tracks_count: (playlist.tracks_count || 0) + 1 }).eq('id', id);
     res.json({ data });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
+  } catch (error) {
+    if (error instanceof zod.ZodError) {
+      res.status(400).json({ error: 'Validation failed', details: error.errors });
+      return;
+    }
+    sendError(res, error);
   }
 });
 
-// DELETE /api/likes/:trackId — unlike
-app.delete('/api/likes/:trackId', verifyMansoniToken, async (req, res) => {
+app.delete('/api/playlists/:id/tracks/:trackId', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
-    const { trackId } = req.params;
-    
-    const { error } = await supabase
-      .from('music_likes')
-      .delete()
-      .eq('user_id', req.user.id)
-      .eq('track_id', trackId);
+    const { id, trackId } = req.params;
+    const { data: playlist, error: fetchError } = await supabase
+      .from('music_playlists')
+      .select('user_id, tracks_count')
+      .eq('id', id)
+      .single();
 
+    if (fetchError || playlist.user_id !== req.user!.id) {
+      res.status(403).json({ error: 'Access denied' });
+      return;
+    }
+
+    const { error } = await supabase.from('music_playlist_tracks').delete().eq('playlist_id', id).eq('track_id', trackId);
     if (error) throw error;
+
+    await supabase.rpc('reorder_playlist_tracks', { p_playlist_id: id });
+    await supabase.from('music_playlists').update({ tracks_count: Math.max(0, (playlist.tracks_count || 1) - 1) }).eq('id', id);
     res.json({ success: true });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
+  } catch (error) {
+    sendError(res, error);
   }
 });
 
-// GET /api/likes — user's liked tracks
-app.get('/api/likes', verifyMansoniToken, async (req, res) => {
+app.get('/api/likes', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const { data, error } = await supabase
       .from('music_likes')
       .select(`
         id, created_at,
         music_tracks(
-          id, title, duration_ms,
-          music_artists(name),
-          music_albums(cover_url)
+          id, title, duration_ms, preview_url, audio_url,
+          artist:music_artists(name),
+          album:music_albums(cover_url, title)
         )
       `)
-      .eq('user_id', req.user.id)
+      .eq('user_id', req.user!.id)
       .order('created_at', { ascending: false });
 
     if (error) throw error;
     res.json({ data });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
+  } catch (error) {
+    sendError(res, error);
   }
 });
 
-// ============ ARTISTS & ALBUMS ============
+app.post('/api/likes', requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { track_id } = trackMutationSchema.parse(req.body);
+    const { data, error } = await supabase.from('music_likes').insert({ user_id: req.user!.id, track_id }).select().single();
 
-// GET /api/artists — list artists
+    if (error) {
+      if (error.code === '23505') {
+        res.status(400).json({ error: 'Already liked' });
+        return;
+      }
+      throw error;
+    }
+
+    res.json({ data });
+  } catch (error) {
+    if (error instanceof zod.ZodError) {
+      res.status(400).json({ error: 'Validation failed', details: error.errors });
+      return;
+    }
+    sendError(res, error);
+  }
+});
+
+app.delete('/api/likes/:trackId', requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { trackId } = req.params;
+    const { error } = await supabase.from('music_likes').delete().eq('user_id', req.user!.id).eq('track_id', trackId);
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+app.get('/api/downloads', requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('music_downloads')
+      .select('id, track_id, downloaded_at, file_path, expires_at')
+      .eq('user_id', req.user!.id)
+      .order('downloaded_at', { ascending: false });
+
+    if (error) throw error;
+    res.json({ data });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+app.post('/api/downloads', requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { track_id } = trackMutationSchema.parse(req.body);
+    const { data, error } = await supabase
+      .from('music_downloads')
+      .upsert({
+        user_id: req.user!.id,
+        track_id,
+        file_path: `cache:${track_id}`,
+        downloaded_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+    res.json({ data });
+  } catch (error) {
+    if (error instanceof zod.ZodError) {
+      res.status(400).json({ error: 'Validation failed', details: error.errors });
+      return;
+    }
+    sendError(res, error);
+  }
+});
+
+app.delete('/api/downloads/:trackId', requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { trackId } = req.params;
+    const { error } = await supabase.from('music_downloads').delete().eq('user_id', req.user!.id).eq('track_id', trackId);
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+app.get('/api/subscription', requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('music_subscriptions')
+      .select('*')
+      .eq('user_id', req.user!.id)
+      .order('created_at', { ascending: false })
+      .maybeSingle();
+
+    if (error) throw error;
+    res.json({ data });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
 app.get('/api/artists', async (req, res) => {
   try {
-    const { limit = 20, page = 1 } = req.query;
-    const offset = (Number(page) - 1) * Number(limit);
-
-    const { data, count } = await supabase
+    const limit = Number(req.query.limit || 20);
+    const page = Number(req.query.page || 1);
+    const offset = (page - 1) * limit;
+    const { data, count, error } = await supabase
       .from('music_artists')
       .select('*', { count: 'exact' })
       .order('followers_count', { ascending: false })
-      .range(offset, offset + Number(limit) - 1);
+      .range(offset, offset + limit - 1);
 
-    res.json({ data, pagination: { page: Number(page), limit: Number(limit), total: count || 0 } });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    if (error) throw error;
+    res.json({ data, pagination: { page, limit, total: count || 0 } });
+  } catch (error) {
+    sendError(res, error);
   }
 });
 
-// GET /api/albums — list albums
 app.get('/api/albums', async (req, res) => {
   try {
-    const { artist, limit = 20 } = req.query;
+    const limit = Number(req.query.limit || 20);
     let query = supabase
       .from('music_albums')
       .select(`
         id, title, cover_url, release_date, album_type,
-        music_artists(name)
+        artist:music_artists(name)
       `)
       .order('release_date', { ascending: false })
-      .limit(Number(limit));
+      .limit(limit);
 
-    if (artist) query = query.eq('artist_id', artist);
+    if (typeof req.query.artist === 'string' && req.query.artist) {
+      query = query.eq('artist_id', req.query.artist);
+    }
 
     const { data, error } = await query;
     if (error) throw error;
     res.json({ data });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
+  } catch (error) {
+    sendError(res, error);
   }
 });
 
-// ============ RECOMMENDATIONS ============
-
-// GET /api/recommendations — personalized (using RLS)
-app.get('/api/recommendations', verifyMansoniToken, async (req, res) => {
+app.get('/api/recommendations', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
-    const { limit = 20 } = req.query;
-    
-    // Call the database function
+    const limit = Number(req.query.limit || 20);
     const { data, error } = await supabase.rpc('get_music_recommendations', {
-      p_user_id: req.user.id,
-      p_limit: Number(limit),
+      p_user_id: req.user!.id,
+      p_limit: limit,
     });
 
     if (error) throw error;
     res.json({ data });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
+  } catch (error) {
+    sendError(res, error);
   }
 });
 
-// ============ SEARCH ============
-
-// GET /api/search — search across tracks, artists, albums
 app.get('/api/search', async (req, res) => {
   try {
-    const { q, type = 'track', limit = 20 } = req.query;
-    
+    const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    const type = typeof req.query.type === 'string' ? req.query.type : 'track';
+    const limit = Number(req.query.limit || 20);
+
     if (!q) {
-      return res.status(400).json({ error: 'Query parameter "q" is required' });
+      res.status(400).json({ error: 'Query parameter "q" is required' });
+      return;
     }
 
     if (type === 'track') {
-      const { data, error } = await supabase
-        .from('music_tracks')
-        .select(`
-          id, title, duration_ms,
-          music_artists(name),
-          music_albums(cover_url)
-        `)
-        .or(`title.ilike.%${q}%,music_artists.name.ilike.%${q}%`)
-        .limit(Number(limit));
-
-      if (error) throw error;
-      res.json({ data });
-    } else if (type === 'artist') {
-      const { data, error } = await supabase
-        .from('music_artists')
-        .select('*')
-        .ilike('name', `%${q}%`)
-        .limit(Number(limit));
-
-      if (error) throw error;
-      res.json({ data });
-    } else {
-      res.status(400).json({ error: 'Invalid search type' });
+      res.json({ data: await searchTrackRows(q, limit) });
+      return;
     }
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
+
+    if (type === 'artist') {
+      const { data, error } = await supabase.from('music_artists').select('*').ilike('name', `%${q}%`).limit(limit);
+      if (error) throw error;
+      res.json({ data });
+      return;
+    }
+
+    if (type === 'album') {
+      const { data, error } = await supabase.from('music_albums').select('*').ilike('title', `%${q}%`).limit(limit);
+      if (error) throw error;
+      res.json({ data });
+      return;
+    }
+
+    res.status(400).json({ error: 'Invalid search type' });
+  } catch (error) {
+    sendError(res, error);
   }
 });
 
-// ============ START SERVER ============
-
 app.listen(PORT, () => {
-  console.log(`🎵 Music API running on port ${PORT}`);
-  console.log(`   Health: http://localhost:${PORT}/health`);
-  if (process.env.NODE_ENV === 'development') {
-    console.log(`   CORS allowed: http://localhost:5173, http://localhost:3001`);
-  }
+  console.log(`Music API running on port ${PORT}`);
+  console.log(`Health: http://localhost:${PORT}/health`);
 });
 
 export default app;
