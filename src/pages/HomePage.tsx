@@ -89,18 +89,24 @@ export function HomePage() {
 
   return (
     <PullToRefresh onRefresh={handleRefresh}>
-      <div className="min-h-screen feed-column">
-        <FeedHeader />
+      <div className="relative min-h-screen feed-column overflow-hidden bg-transparent">
+        <div className="pointer-events-none absolute inset-0 z-0 bg-gradient-to-b from-slate-900/70 via-slate-800/55 to-slate-900/70" />
+        <div className="pointer-events-none absolute inset-0 z-0 backdrop-blur-3xl" />
+        <div className="pointer-events-none absolute -top-32 left-1/4 z-0 h-72 w-72 rounded-full bg-cyan-300/15 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-32 right-1/4 z-0 h-80 w-80 rounded-full bg-blue-300/10 blur-3xl" />
 
-        {/* Smart Feed Toggle */}
-        <div className="flex justify-center px-4 py-2 sticky top-0 z-10 bg-background/80 backdrop-blur border-b border-white/5">
-          <SmartFeedToggle mode={mode} onChange={setMode} />
-        </div>
+        <div className="relative z-10">
+          <FeedHeader />
 
-        <FeedFilters
-          filter={contentFilter}
-          onFilterChange={setContentFilter}
-        />
+          {/* Smart Feed Toggle */}
+          <div className="sticky top-0 z-10 flex justify-center border-b border-white/15 bg-white/10 px-4 py-1 shadow-[0_8px_22px_rgba(0,0,0,0.18)] backdrop-blur-2xl supports-[backdrop-filter]:bg-white/6">
+            <SmartFeedToggle mode={mode} onChange={setMode} />
+          </div>
+
+          <FeedFilters
+            filter={contentFilter}
+            onFilterChange={setContentFilter}
+          />
 
         {loading && posts.length === 0 ? (
           // ИСПРАВЛЕНИЕ: skeleton-экраны вместо spinner — соответствует поведению Instagram
@@ -194,6 +200,7 @@ export function HomePage() {
             )}
           </div>
         )}
+        </div>
       </div>
     </PullToRefresh>
   );

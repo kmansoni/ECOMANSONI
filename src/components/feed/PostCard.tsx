@@ -316,7 +316,7 @@ function PostCardComponent({
   };
 
   return (
-    <div className="bg-white/50 dark:bg-card backdrop-blur-sm border-b border-white/60 dark:border-border">
+    <div className="bg-white/12 backdrop-blur-xl border-b border-white/20 shadow-[0_8px_24px_rgba(0,0,0,0.12)]">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3">
         <div className="flex items-center gap-3">
@@ -371,7 +371,7 @@ function PostCardComponent({
       {/* Image/Video Carousel */}
       {allMedia.length > 0 && (
         <div
-          className="relative media-frame media-frame--post cursor-pointer select-none overflow-hidden"
+          className="relative mx-3 media-frame media-frame--post cursor-pointer select-none overflow-hidden rounded-2xl border border-white/25 bg-white/10 shadow-[0_14px_34px_rgba(0,0,0,0.2)]"
           style={{ aspectRatio: frameAspectRatio }}
           onTouchStart={onTouchStart}
           onTouchEnd={onTouchEnd}
@@ -437,7 +437,7 @@ function PostCardComponent({
           
           {/* Image counter */}
           {hasMultipleImages && (
-            <div className="absolute top-3 right-3 bg-black/60 text-white text-xs font-medium px-2 py-1 rounded-full">
+            <div className="absolute top-3 right-3 rounded-full border border-white/25 bg-white/20 px-2 py-1 text-xs font-medium text-white backdrop-blur-md">
               {currentImageIndex + 1}/{allMedia.length}
             </div>
           )}

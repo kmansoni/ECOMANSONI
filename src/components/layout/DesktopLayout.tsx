@@ -4,6 +4,7 @@ import {
   Home, Search, MessageCircle, Bell, Film, User, Settings,
   Phone, Bookmark, Archive, Users, Megaphone
 } from "lucide-react";
+import { ServicesMenu } from "./ServicesMenu";
 import { ScrollContainerProvider } from "@/contexts/ScrollContainerContext";
 import { usePresence } from "@/hooks/usePresence";
 import { useUnreadChats } from "@/hooks/useUnreadChats";
@@ -34,6 +35,9 @@ export function DesktopLayout() {
     <div className="DesktopShell h-full flex bg-background">
       {/* Sidebar */}
       <aside className="w-[72px] h-full flex flex-col items-center py-4 gap-1 border-r border-border bg-card/50 flex-shrink-0">
+        <div className="mb-2">
+          <ServicesMenu />
+        </div>
         {SIDEBAR_NAV.map((item) => {
           const Icon = item.icon;
           const isActive = item.to === "/"
@@ -62,7 +66,7 @@ export function DesktopLayout() {
                   {badge > 99 ? "99+" : badge}
                 </span>
               )}
-              <span className="text-[9px] mt-0.5 leading-none opacity-70">{item.label}</span>
+              <span className="mt-0.5 text-[10px] leading-none opacity-80 tracking-[0.01em] [font-family:ui-rounded,Trebuchet_MS,Segoe_UI,sans-serif]">{item.label}</span>
             </NavLink>
           );
         })}

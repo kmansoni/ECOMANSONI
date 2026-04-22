@@ -1,14 +1,10 @@
 import { useState, useMemo } from "react";
-import { User, Send } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { User } from "lucide-react";
 import { useScrollCollapse } from "@/hooks/useScrollCollapse";
-import { ServicesMenu } from "@/components/layout/ServicesMenu";
 import { cn } from "@/lib/utils";
 import { useScrollContainer } from "@/contexts/ScrollContainerContext";
-import logoSrc from "@/assets/logo.png";
 import { StoryViewer } from "./StoryViewer";
 import { useStories, type UserWithStories } from "@/hooks/useStories";
-import { useUnreadDmCount } from "@/hooks/useUnreadDmCount";
 
 // Animation constants - moved outside for performance
 const EXPANDED_AVATAR_SIZE = 64;
@@ -17,14 +13,13 @@ const EXPANDED_GAP = 16;
 const COLLAPSED_OVERLAP = 10;
 const MAX_VISIBLE_IN_STACK = 4;
 const EXPANDED_ROW_HEIGHT = 88;
-const HEADER_HEIGHT = 52;
+const HEADER_HEIGHT = 0;
 const PADDING_LEFT = 16;
-const MENU_BUTTON_WIDTH = 40;
-const COLLAPSED_START_X = PADDING_LEFT + MENU_BUTTON_WIDTH + 8;
+const COLLAPSED_START_X = PADDING_LEFT;
 
 // Precomputed values for animation
 const SIZE_DIFF = EXPANDED_AVATAR_SIZE - COLLAPSED_AVATAR_SIZE;
-const COLLAPSED_Y = (HEADER_HEIGHT - COLLAPSED_AVATAR_SIZE) / 2;
+const COLLAPSED_Y = 0;
 const Y_DIFF = COLLAPSED_Y - HEADER_HEIGHT;
 
 export function FeedHeader() {
@@ -33,8 +28,6 @@ export function FeedHeader() {
   const { usersWithStories, loading } = useStories();
   const [storyViewerOpen, setStoryViewerOpen] = useState(false);
   const [selectedStoryIndex, setSelectedStoryIndex] = useState(0);
-  const navigate = useNavigate();
-  const unreadDmCount = useUnreadDmCount();
 
   // ИСПРАВЛЕНИЕ дефекта #11: истории открываются всегда при нажатии на аватар.
   // Ранее при collapseProgress > 0.1 история не открывалась — только скролл вверх.
@@ -84,44 +77,18 @@ export function FeedHeader() {
   }, [usersWithStories, collapseProgress]);
 
   // Container height
-  const containerHeight = HEADER_HEIGHT + EXPANDED_ROW_HEIGHT * (1 - collapseProgress);
+  const containerHeight = COLLAPSED_AVATAR_SIZE + (EXPANDED_ROW_HEIGHT - COLLAPSED_AVATAR_SIZE) * (1 - collapseProgress);
 
   return (
     <div 
-      className="sticky top-0 z-30 bg-card/70 backdrop-blur-md overflow-hidden will-change-auto border-b border-border/40"
+      className="sticky top-0 z-30 overflow-hidden will-change-auto border-b border-white/15 bg-white/8 shadow-[0_10px_30px_rgba(0,0,0,0.24)] backdrop-blur-2xl supports-[backdrop-filter]:bg-white/6"
       style={{ height: `${containerHeight}px` }}
     >
-      {/* Header row with menu */}
-      <div 
-        className="absolute top-0 left-0 right-0 flex items-center px-4"
-        style={{ height: `${HEADER_HEIGHT}px` }}
-      >
-        <div className="flex items-center w-full justify-between">
-          <ServicesMenu />
-          <div className="flex items-center gap-1.5">
-            <img loading="lazy" src={logoSrc} alt="" className="w-7 h-7" />
-            <span className="font-serif text-xl font-bold text-foreground tracking-tight">mansoni</span>
-          </div>
-          <button
-            onClick={() => navigate("/chat")}
-            className="relative p-2 -mr-2 rounded-full hover:bg-muted/50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            aria-label={unreadDmCount > 0 ? `Сообщения, ${unreadDmCount} непрочитанных` : "Сообщения"}
-          >
-            <Send className="w-5 h-5 text-foreground" />
-            {unreadDmCount > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold px-1 leading-none">
-                {unreadDmCount > 99 ? "99+" : unreadDmCount}
-              </span>
-            )}
-          </button>
-        </div>
-      </div>
-
       {/* ИСПРАВЛЕНИЕ дефекта #34: skeleton-кружки вместо spinner — соответствует Instagram */}
       {loading && usersWithStories.length === 0 && (
         <div
           className="absolute flex items-center gap-4"
-          style={{ left: PADDING_LEFT, top: HEADER_HEIGHT }}
+          style={{ left: PADDING_LEFT, top: 0 }}
         >
           {Array.from({ length: 5 }).map((_, i) => (
             <div key={i} className="flex flex-col items-center gap-1">
@@ -206,7 +173,7 @@ export function FeedHeader() {
 
             {/* Name - CSS handles transition */}
             <span
-              className="story-name text-xs text-foreground font-medium max-w-16 truncate overflow-hidden"
+              className="story-name text-[12px] text-foreground/95 font-medium tracking-[0.01em] max-w-16 truncate overflow-hidden [font-family:ui-rounded,Trebuchet_MS,Segoe_UI,sans-serif]"
               style={{
                 opacity: styles.nameOpacity,
                 height: styles.nameOpacity > 0.1 ? '20px' : '0px',

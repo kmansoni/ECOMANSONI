@@ -16,7 +16,7 @@ const filters: { id: ContentFilter; label: string }[] = [
 
 export function FeedFilters({ filter, onFilterChange }: FeedFiltersProps) {
   return (
-    <div className="flex items-center gap-4 px-4 py-2 overflow-x-auto scrollbar-hide bg-white/50 dark:bg-transparent backdrop-blur-md">
+    <div className="flex items-center gap-4 overflow-x-auto scrollbar-hide border-y border-white/15 bg-white/10 px-4 py-2 backdrop-blur-2xl">
       {filters.map((f) => (
         <button
           key={f.id}

@@ -1,10 +1,13 @@
 import { useEffect, useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { X, UserPlus, ChevronRight } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+import { buildProfilePath } from '@/lib/users/profileLinks';
 import { useRecommendations } from '@/hooks/useRecommendations';
 import { tracker } from '@/lib/recommendations/tracker';
 import { DismissedSuggestion } from './DismissedSuggestion';
 import { dbLoose } from "@/lib/supabase";
+import { RecommendedUsersModal } from '@/components/profile/RecommendedUsersModal';
 
 interface SuggestedUser {
   id: string;
@@ -19,6 +22,25 @@ interface SuggestedUsersProps {
   className?: string;
 }
 
+const AVATAR_COLORS = [
+  { bg: '#6366f1', text: '#fff' }, // indigo
+  { bg: '#ec4899', text: '#fff' }, // pink
+  { bg: '#14b8a6', text: '#fff' }, // teal
+  { bg: '#f59e0b', text: '#fff' }, // amber
+  { bg: '#8b5cf6', text: '#fff' }, // violet
+  { bg: '#10b981', text: '#fff' }, // emerald
+  { bg: '#ef4444', text: '#fff' }, // red
+  { bg: '#3b82f6', text: '#fff' }, // blue
+  { bg: '#f97316', text: '#fff' }, // orange
+  { bg: '#06b6d4', text: '#fff' }, // cyan
+];
+
+function getAvatarColor(id: string) {
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
+  return AVATAR_COLORS[hash % AVATAR_COLORS.length];
+}
+
 const REASON_LABELS: Record<string, string> = {
   similar_interests: 'Похожие интересы',
   followed_by: 'Подписан на вас',
@@ -28,10 +50,12 @@ const REASON_LABELS: Record<string, string> = {
 
 export function SuggestedUsers({ className = '' }: SuggestedUsersProps) {
   const { getRecommendedUsers } = useRecommendations();
+  const navigate = useNavigate();
   const [users, setUsers] = useState<SuggestedUser[]>([]);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [followedIds, setFollowedIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
+  const [modalOpen, setModalOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -86,12 +110,14 @@ export function SuggestedUsers({ className = '' }: SuggestedUsersProps) {
   if (!visible.length) return null;
 
   return (
+    <>
     <section className={`${className}`} aria-label="Рекомендуемые пользователи">
       <div className="flex items-center justify-between px-4 mb-3">
         <h2 className="text-sm font-semibold text-foreground">Рекомендуемые для вас</h2>
         <button
           className="text-xs text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded"
           aria-label="Посмотреть всех рекомендуемых"
+          onClick={() => setModalOpen(true)}
         >
           Все <ChevronRight className="inline w-3 h-3" />
         </button>
@@ -99,7 +125,7 @@ export function SuggestedUsers({ className = '' }: SuggestedUsersProps) {
 
       <div
         ref={scrollRef}
-        className="flex gap-3 overflow-x-auto px-4 pb-2 snap-x snap-mandatory scrollbar-none"
+        className="flex gap-3 overflow-x-auto px-4 pb-2 snap-x snap-mandatory scrollbar-hide"
         role="list"
         aria-label="Список рекомендуемых пользователей"
       >
@@ -107,7 +133,7 @@ export function SuggestedUsers({ className = '' }: SuggestedUsersProps) {
           <div
             key={user.id}
             role="listitem"
-            className="flex-shrink-0 w-36 bg-card border border-border rounded-xl p-3 flex flex-col items-center gap-2 snap-start relative"
+            className="flex-shrink-0 w-36 bg-muted/30 border border-border rounded-xl p-3 flex flex-col items-center gap-2 snap-start relative"
           >
             <DismissedSuggestion
               userId={user.id}
@@ -115,7 +141,13 @@ export function SuggestedUsers({ className = '' }: SuggestedUsersProps) {
               className="absolute top-2 right-2"
             />
 
-            <div className="w-14 h-14 rounded-full overflow-hidden bg-muted flex items-center justify-center mt-2">
+            <button
+              type="button"
+              className="w-14 h-14 rounded-full overflow-hidden flex items-center justify-center mt-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              style={!user.avatar_url ? { background: getAvatarColor(user.id).bg } : undefined}
+              onClick={() => navigate(buildProfilePath({ username: user.username }))}
+              aria-label={`Перейти в профиль ${user.username}`}
+            >
               {user.avatar_url ? (
                 <img loading="lazy"
                   src={user.avatar_url}
@@ -123,16 +155,20 @@ export function SuggestedUsers({ className = '' }: SuggestedUsersProps) {
                   className="w-full h-full object-cover"
                 />
               ) : (
-                <span className="text-lg font-semibold text-muted-foreground" aria-hidden="true">
+                <span className="text-lg font-bold" style={{ color: getAvatarColor(user.id).text }} aria-hidden="true">
                   {(user.username?.[0] ?? '?').toUpperCase()}
                 </span>
               )}
-            </div>
+            </button>
 
-            <div className="text-center min-w-0 w-full">
+            <button
+              type="button"
+              className="text-center min-w-0 w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded"
+              onClick={() => navigate(buildProfilePath({ username: user.username }))}
+            >
               <p className="text-xs font-medium text-foreground truncate">{user.full_name || user.username || 'Пользователь'}</p>
               <p className="text-xs text-muted-foreground truncate">@{user.username || '...'}</p>
-            </div>
+            </button>
 
             {user.reason && (
               <p className="text-[10px] text-muted-foreground text-center leading-tight">
@@ -158,5 +194,8 @@ export function SuggestedUsers({ className = '' }: SuggestedUsersProps) {
         ))}
       </div>
     </section>
+
+    <RecommendedUsersModal isOpen={modalOpen} onClose={() => setModalOpen(false)} />
+  </>
   );
 }
