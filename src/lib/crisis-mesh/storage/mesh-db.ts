@@ -38,6 +38,10 @@ export interface StoredIdentity {
   displayName: string;
   deviceType: Peer['deviceType'];
   publicKeyB64: string;
+  /** ECDH P-256 SPKI base64 — появляется после успешного handshake. */
+  encryptionPublicKey?: string;
+  /** unix ms — когда handshake завершён. */
+  handshakeCompletedAt?: number;
   status: Peer['status'];
   firstSeenAt: number;
   lastSeenAt: number;
@@ -66,10 +70,11 @@ export interface StoredOutboxItem {
 
 export interface StoredSession {
   peerId: PeerId;
-  sessionKeyB64: string;
-  establishedAt: number;
+  /** JSON сериализованного RatchetState (см. `crypto/session.ts`). */
+  stateJson: string;
+  role: 'alice' | 'bob';
+  createdAt: number;
   lastActivityAt: number;
-  messageCounter: number;
 }
 
 // ─── Identities ──────────────────────────────────────────────────────────────
@@ -80,6 +85,8 @@ function peerToStored(peer: Peer): StoredIdentity {
     displayName: peer.displayName,
     deviceType: peer.deviceType,
     publicKeyB64: toBase64(peer.publicKey),
+    encryptionPublicKey: peer.encryptionPublicKey,
+    handshakeCompletedAt: peer.handshakeCompletedAt,
     status: peer.status,
     firstSeenAt: peer.firstSeenAt,
     lastSeenAt: peer.lastSeenAt,
@@ -95,6 +102,8 @@ function storedToPeer(row: StoredIdentity): Peer {
     displayName: row.displayName,
     deviceType: row.deviceType,
     publicKey: new Uint8Array(fromBase64(row.publicKeyB64)),
+    encryptionPublicKey: row.encryptionPublicKey,
+    handshakeCompletedAt: row.handshakeCompletedAt,
     status: row.status,
     firstSeenAt: row.firstSeenAt,
     lastSeenAt: row.lastSeenAt,
@@ -227,6 +236,14 @@ export async function upsertSession(session: StoredSession): Promise<void> {
 
 export async function getSession(peerId: PeerId): Promise<StoredSession | null> {
   return idbGet<StoredSession>('sessions', peerId);
+}
+
+export async function deleteSession(peerId: PeerId): Promise<void> {
+  await idbDelete('sessions', peerId);
+}
+
+export async function listSessions(): Promise<StoredSession[]> {
+  return idbGetAll<StoredSession>('sessions');
 }
 
 // ─── Maintenance ─────────────────────────────────────────────────────────────

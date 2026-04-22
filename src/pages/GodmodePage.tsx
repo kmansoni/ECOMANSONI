@@ -54,7 +54,7 @@ interface RaceEntry {
 
 // ── Constants ──────────────────────────────────────
 
-const API_BASE = "http://localhost:3077"
+const API_BASE = (import.meta.env.VITE_GODMODE_URL || "/godmode-api").replace(/\/$/, "")
 
 const THEME_CLASSES: Record<GodmodeTheme, { bg: string; text: string; accent: string; input: string; border: string; card: string }> = {
   matrix: {

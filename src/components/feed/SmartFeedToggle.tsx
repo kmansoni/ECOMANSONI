@@ -15,7 +15,7 @@ const TABS: { id: FeedMode; label: string; Icon: React.FC<{ className?: string }
 
 export function SmartFeedToggle({ mode, onChange }: SmartFeedToggleProps) {
   return (
-    <div className="flex items-center gap-1 bg-zinc-900/80 backdrop-blur rounded-full p-1 border border-white/10">
+    <div className="flex items-center gap-1 rounded-full border border-white/25 bg-white/14 p-1 shadow-[0_8px_24px_rgba(0,0,0,0.16)] backdrop-blur-xl">
       {TABS.map(({ id, label, Icon }) => {
         const isActive = mode === id;
         return (
@@ -27,13 +27,13 @@ export function SmartFeedToggle({ mode, onChange }: SmartFeedToggleProps) {
             {isActive && (
               <motion.div
                 layoutId="feed-toggle-pill"
-                className="absolute inset-0 bg-white/10 rounded-full"
+                className="absolute inset-0 rounded-full border border-white/25 bg-white/22"
                 initial={false}
                 transition={{ type: 'spring', stiffness: 400, damping: 30 }}
               />
             )}
-            <Icon className={`w-3.5 h-3.5 relative z-10 transition-colors ${isActive ? 'text-white' : 'text-zinc-500'}`} />
-            <span className={`relative z-10 transition-colors ${isActive ? 'text-white' : 'text-zinc-500'}`}>
+            <Icon className={`relative z-10 h-3.5 w-3.5 transition-colors ${isActive ? 'text-white' : 'text-white/65'}`} />
+            <span className={`relative z-10 transition-colors ${isActive ? 'text-white' : 'text-white/65'}`}>
               {label}
             </span>
           </button>

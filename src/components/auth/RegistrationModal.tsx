@@ -30,6 +30,8 @@ export function RegistrationModal({ isOpen, onClose, phone, email: initialEmail,
   const [birthDate, setBirthDate] = useState("");
   const [gender, setGender] = useState<Gender | "">("");
   const [entityType, setEntityType] = useState<EntityType | "">("");
+  const [password, setPassword] = useState("");
+  const [passwordConfirm, setPasswordConfirm] = useState("");
 
   useEffect(() => {
     if (!isOpen) return;
@@ -57,6 +59,16 @@ export function RegistrationModal({ isOpen, onClose, phone, email: initialEmail,
       return;
     }
 
+    if (password.length < 6) {
+      toast.error("Пароль должен содержать минимум 6 символов");
+      return;
+    }
+
+    if (password !== passwordConfirm) {
+      toast.error("Пароли не совпадают");
+      return;
+    }
+
     const age = calculateAge(birthDate);
     if (age < 18) {
       toast.error("Регистрация доступна только с 18 лет");
@@ -78,6 +90,7 @@ export function RegistrationModal({ isOpen, onClose, phone, email: initialEmail,
 
       // Update Supabase Auth user metadata
       const { error: authUpdateError } = await supabase.auth.updateUser({
+        password,
         data: {
           full_name: displayName,
           phone: digits || undefined,
@@ -147,27 +160,27 @@ export function RegistrationModal({ isOpen, onClose, phone, email: initialEmail,
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/55 backdrop-blur-[1px] flex items-center justify-center p-3 sm:p-4">
-      <div className="w-full max-w-md rounded-2xl border border-border bg-card text-card-foreground shadow-xl max-h-[92vh] overflow-y-auto p-5 sm:p-6">
+    <div className="glass-backdrop fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4">
+      <div className="glass-window w-full max-w-md rounded-2xl max-h-[92vh] overflow-y-auto p-5 sm:p-6">
         <div className="flex justify-between items-center mb-4">
           <div className="flex items-center gap-3">
             <img loading="lazy" src={logo} alt="Logo" className="w-8 h-8 object-contain" />
-            <h2 className="text-xl font-bold text-foreground">Завершите регистрацию</h2>
+            <h2 className="glass-title text-xl">Завершите регистрацию</h2>
           </div>
           <button
             onClick={() => {
               if (!loading) onClose();
             }}
             disabled={loading}
-            className="text-muted-foreground hover:text-foreground transition-colors"
+            className="glass-muted hover:text-foreground transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="rounded-md border border-border bg-muted/50 p-3 text-sm">
-            <p className="text-muted-foreground">
+          <div className="rounded-md border border-border/60 bg-white/10 p-3 text-sm">
+            <p className="glass-muted">
               Email: <span className="font-semibold text-foreground">{emailField || initialEmail || "-"}</span>
             </p>
           </div>
@@ -181,6 +194,7 @@ export function RegistrationModal({ isOpen, onClose, phone, email: initialEmail,
                 value={firstName}
                 onChange={(e) => setFirstName(e.target.value)}
                 disabled={loading}
+                className="glass-input"
               />
             </div>
             <div>
@@ -191,6 +205,7 @@ export function RegistrationModal({ isOpen, onClose, phone, email: initialEmail,
                 value={lastName}
                 onChange={(e) => setLastName(e.target.value)}
                 disabled={loading}
+                className="glass-input"
               />
             </div>
           </div>
@@ -204,7 +219,7 @@ export function RegistrationModal({ isOpen, onClose, phone, email: initialEmail,
               value={emailField}
               onChange={(e) => setEmailField(e.target.value)}
               disabled={loading || !!initialEmail}
-                className={initialEmail ? "disabled:opacity-100 disabled:bg-muted/70 disabled:text-foreground" : undefined}
+              className={initialEmail ? "glass-input disabled:opacity-100" : "glass-input"}
             />
           </div>
 
@@ -217,7 +232,35 @@ export function RegistrationModal({ isOpen, onClose, phone, email: initialEmail,
               value={phoneField}
               onChange={(e) => setPhoneField(e.target.value)}
               disabled={loading}
+              className="glass-input"
             />
+          </div>
+
+          <div className="grid grid-cols-1 gap-3">
+            <div>
+              <Label htmlFor="password" className="text-sm">Пароль *</Label>
+              <Input
+                id="password"
+                type="password"
+                placeholder="Минимум 6 символов"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                disabled={loading}
+                className="glass-input"
+              />
+            </div>
+            <div>
+              <Label htmlFor="passwordConfirm" className="text-sm">Подтвердите пароль *</Label>
+              <Input
+                id="passwordConfirm"
+                type="password"
+                placeholder="Повторите пароль"
+                value={passwordConfirm}
+                onChange={(e) => setPasswordConfirm(e.target.value)}
+                disabled={loading}
+                className="glass-input"
+              />
+            </div>
           </div>
 
           <div>
@@ -228,6 +271,7 @@ export function RegistrationModal({ isOpen, onClose, phone, email: initialEmail,
               value={birthDate}
               onChange={(e) => setBirthDate(e.target.value)}
               disabled={loading}
+              className="glass-input"
             />
           </div>
 
@@ -235,7 +279,7 @@ export function RegistrationModal({ isOpen, onClose, phone, email: initialEmail,
             <div>
               <Label htmlFor="gender" className="text-sm">Пол *</Label>
               <Select value={gender} onValueChange={(value) => setGender(value as Gender)}>
-                <SelectTrigger id="gender" disabled={loading}>
+                <SelectTrigger id="gender" disabled={loading} className="glass-input">
                   <SelectValue placeholder="Выберите" />
                 </SelectTrigger>
                 <SelectContent>
@@ -247,7 +291,7 @@ export function RegistrationModal({ isOpen, onClose, phone, email: initialEmail,
             <div>
               <Label htmlFor="entity" className="text-sm">Тип *</Label>
               <Select value={entityType} onValueChange={(value) => setEntityType(value as EntityType)}>
-                <SelectTrigger id="entity" disabled={loading}>
+                <SelectTrigger id="entity" disabled={loading} className="glass-input">
                   <SelectValue placeholder="Выберите" />
                 </SelectTrigger>
                 <SelectContent>
@@ -262,7 +306,7 @@ export function RegistrationModal({ isOpen, onClose, phone, email: initialEmail,
           <Button
             type="submit"
             disabled={loading}
-            className="w-full"
+            className="glass-primary-btn w-full"
           >
             {loading ? "Создание..." : "Создать аккаунт"}
           </Button>

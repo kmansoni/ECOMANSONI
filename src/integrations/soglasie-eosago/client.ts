@@ -62,8 +62,7 @@ export class SoglasieClient {
     this.baseUrl = this.getBaseUrl();
     this.authHeader = this.createAuth(config.login, config.password);
     this.authHeaderWithSubUser = this.createAuth(
-      config.login,
-      config.subUser || config.password,
+      config.subUser || config.login,
       config.subUserPassword || config.password
     );
   }
@@ -186,7 +185,9 @@ export class SoglasieClient {
     if (options?.overlimit) params.set("overlimit", "true");
 
     const query = params.toString();
-    return this.request(`/online/api/eosago/${policyId}/status${query ? "?" + query : ""}`);
+    return this.request(`/online/api/eosago/${policyId}/status${query ? "?" + query : ""}`, {
+      method: "GET",
+    });
   }
 
   /**
@@ -296,7 +297,9 @@ export class SoglasieClient {
    */
   async getPayLink(policyId: number): Promise<import("./types").PayLinkResponse> {
     logger.info("[Soglasie] Getting pay link...", { policyId });
-    return this.request(`/online/api/eosago/${policyId}/paylink`);
+    return this.request(`/online/api/eosago/${policyId}/paylink`, {
+      method: "GET",
+    });
   }
 
   // ═══════════════════════════════════════════════════════════

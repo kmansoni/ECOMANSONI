@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { validateMediasoupEnv } from "./env.mjs";
 
 function uuid(prefix) {
   return `${prefix}_${crypto.randomUUID().slice(0, 8)}`;
@@ -184,18 +185,19 @@ async function createFallbackController() {
 }
 
 async function createMediasoupController() {
+  const mediasoupEnv = validateMediasoupEnv();
   const mediasoup = await import("mediasoup");
   const os = await import("node:os");
 
-  const BASE_PORT = parseInt(process.env.SFU_RTC_MIN_PORT || "40000", 10);
-  const MAX_PORT = parseInt(process.env.SFU_RTC_MAX_PORT || "49999", 10);
+  const BASE_PORT = mediasoupEnv.basePort;
+  const MAX_PORT = mediasoupEnv.maxPort;
   const PORTS_PER_WORKER = 1000;
   const maxWorkersByPort = Math.floor((MAX_PORT - BASE_PORT + 1) / PORTS_PER_WORKER);
 
   const numWorkers = Math.max(
     1,
     Math.min(
-      parseInt(process.env.MEDIASOUP_WORKERS || "0", 10) || os.cpus().length,
+      mediasoupEnv.requestedWorkers || os.cpus().length,
       os.cpus().length,
       maxWorkersByPort,
     )
@@ -277,7 +279,7 @@ async function createMediasoupController() {
     const router = await ensureRouter(roomId);
 
     const transport = await router.createWebRtcTransport({
-      listenIps: [{ ip: "0.0.0.0", announcedIp: process.env.SFU_ANNOUNCED_IP || undefined }],
+      listenIps: [{ ip: "0.0.0.0", announcedIp: mediasoupEnv.announcedIp }],
       enableUdp: true,
       enableTcp: true,
       preferUdp: true,

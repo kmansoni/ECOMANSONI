@@ -7,6 +7,7 @@
 import { SoglasieClient, createClient, SoglasieError, ApplicationStatus } from './lib/client';
 import { EosagoWorkflow, createWorkflow } from './lib/workflow';
 import type { SoglasieConfig, EosagoApplication, KbmRequest } from './lib/types';
+import { DocumentType } from './lib/types';
 
 // ═══════════════════════════════════════════════════════════
 // Пример 1: Базовое оформление
@@ -452,6 +453,175 @@ async function errorHandlingExample() {
   }
 }
 
+// ═══════════════════════════════════════════════════════════
+// Пример 7: CCM расчет премии
+// ═══════════════════════════════════════════════════════════
+
+async function ccmCalcExample() {
+  const config: SoglasieConfig = {
+    login: 'PARTNER_LOGIN',
+    password: 'PARTNER_PASSWORD',
+    environment: 'test',
+  };
+
+  const client = createClient(config);
+
+  const ccmRequest = {
+    policyId: '12345678',
+    sendEmail: true,
+    Email: 'test@example.ru',
+    Phone: '+79261234567',
+    Insurer: {
+      Phisical: {
+        Resident: true,
+        Surname: 'Иванов',
+        Name: 'Иван',
+        Patronymic: 'Иванович',
+        BirthDate: '1990-01-01',
+        Sex: 'male',
+        Documents: {
+          Document: [{
+            TypeRSA: '12',
+            Serial: '1234',
+            Number: '567890',
+            Date: '2010-01-01',
+            IsPrimary: true,
+          }],
+        },
+        Addresses: {
+          Address: [{
+            Type: 'Registered',
+            Country: '643',
+            AddressCode: '77000000000000100',
+            Street: 'Тверская',
+            Hous: '1',
+            IsPrimary: true,
+          }],
+        },
+        Email: 'test@example.ru',
+        PhoneMobile: '+79261234567',
+      },
+    },
+    CarInfo: {
+      VIN: 'XTA219020D4875665',
+      LicensePlate: 'А123АА77',
+      MarkModelCarCode: 38110,
+      MarkPTS: 'ВАЗ/Lada',
+      ModelPTS: '2190/Granta',
+      YearIssue: 2013,
+      DocumentCar: {
+        Type: 3,
+        Serial: '77УТ',
+        Number: '123456',
+        Date: '2015-04-14',
+      },
+      EngCap: 106,
+      GoalUse: 'Personal',
+      Rented: false,
+    },
+    Drivers: {
+      Driver: [{
+        Face: {
+          Resident: true,
+          Surname: 'Иванов',
+          Name: 'Иван',
+          Patronymic: 'Иванович',
+          BirthDate: '1990-01-01',
+          Sex: 'male',
+          Documents: {
+            Document: [{
+              TypeRSA: 20,
+              Serial: '1234',
+              Number: '567890',
+              Date: '2015-01-01',
+            }],
+          },
+        },
+        DrivingExpDate: '2012-01-01',
+      }],
+    },
+  };
+
+  const result = await client.calculatePremium(ccmRequest);
+  console.log('Премия:', result.premium);
+  console.log('Страховая сумма:', result.insuranceSum);
+  console.log('Тариф:', result.tariff);
+}
+
+// ═══════════════════════════════════════════════════════════
+// Пример 8: Создание счета для ЮЛ
+// ═══════════════════════════════════════════════════════════
+
+async function invoiceExample() {
+  const config: SoglasieConfig = {
+    login: 'PARTNER_LOGIN',
+    password: 'PARTNER_PASSWORD',
+    subUser: 'SUBUSER',
+    subUserPassword: 'SUBUSER_PASSWORD',
+    environment: 'test',
+  };
+
+  const client = createClient(config);
+
+  const policyId = 12345678;
+
+  const invoice = await client.createInvoice(policyId, {
+    amount: 10000,
+    inn: '7701234567',
+    name: 'ООО Ромашка',
+    email: 'finance@company.ru',
+    phone: '+74951234567',
+  });
+
+  console.log('Счет:', invoice.number);
+  console.log('Ссылка:', invoice.link);
+  console.log('Статус:', invoice.status);
+
+  // Получение списка счетов
+  const invoices = await client.getInvoiceList({ policyId });
+  console.log('Всего счетов:', invoices.invoices.length);
+
+  // Получение конкретного счета
+  const invoiceDetail = await client.getInvoice(invoice.id);
+  console.log('Детали счета:', invoiceDetail);
+}
+
+// ═══════════════════════════════════════════════════════════
+// Пример 9: Загрузка документа
+// ═══════════════════════════════════════════════════════════
+
+async function documentUploadExample() {
+  const config: SoglasieConfig = {
+    login: 'PARTNER_LOGIN',
+    password: 'PARTNER_PASSWORD',
+    subUser: 'SUBUSER',
+    subUserPassword: 'SUBUSER_PASSWORD',
+    environment: 'test',
+  };
+
+  const client = createClient(config);
+
+  const policyId = 12345678;
+
+  // Пример 1: Загрузка из буфера
+  const buffer = new ArrayBuffer(1024);
+  const file = new File([buffer], 'passport.pdf', { type: 'application/pdf' });
+
+  const doc = await client.uploadDocument(policyId, file, 'passport');
+  console.log('Загружено:', doc.documentId);
+  console.log('Тип:', doc.documentType);
+
+  // Пример 2: Получение списка документов
+  const docs = await client.getDocuments(policyId);
+  console.log('Документы:', docs.length);
+
+  // Пример 3: Удаление документа
+  if (docs.length > 0) {
+    await client.deleteDocument(policyId, docs[0].documentId);
+    console.log('Документ удален');
+  }
+}
+
 // Export all examples
 export const examples = {
   basic: basicExample,
@@ -460,4 +630,7 @@ export const examples = {
   prolongation: prolongationExample,
   juridical: juridicalExample,
   errorHandling: errorHandlingExample,
+  ccmCalc: ccmCalcExample,
+  invoice: invoiceExample,
+  documentUpload: documentUploadExample,
 };

@@ -75,7 +75,7 @@ export function UserProfilePage() {
   // Decode URI component to handle spaces and special characters
   const username = rawUsername ? decodeURIComponent(rawUsername) : undefined;
 
-  const { profile, loading: profileLoading, error, follow, unfollow } = useProfileByUsername(username);
+  const { profile, loading: profileLoading, error, follow, unfollow, refetch: refetchProfile } = useProfileByUsername(username);
   const { posts, loading: postsLoading } = useUserPosts(profile?.user_id);
   const [userReels, setUserReels] = useState<UserReel[]>([]);
   const [userReelsLoading, setUserReelsLoading] = useState(false);
@@ -153,6 +153,25 @@ export function UserProfilePage() {
       logger.error('[UserProfilePage] Error opening profile stories', { error: e });
     }
   };
+
+  // Refresh profile when username changes (e.g., navigating between user profiles)
+  useEffect(() => {
+    if (refetchProfile) {
+      refetchProfile();
+    }
+  }, [rawUsername, refetchProfile]);
+
+  useEffect(() => {
+    // Refresh profile data when page becomes visible
+    const handleVisibilityChange = () => {
+      if (!document.hidden && refetchProfile) {
+        refetchProfile();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [refetchProfile]);
 
   // Check if user has UNVIEWED active stories (not just any stories)
   useEffect(() => {

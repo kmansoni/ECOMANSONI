@@ -97,6 +97,17 @@ const StoryArchivePage = lazy(() => import("@/pages/StoryArchivePage"));
 const ExploreFeedPage = lazy(() => import("@/pages/ExploreFeedPage").then(m => ({ default: m.ExploreFeedPage })));
 const PostDetailPage = lazy(() => import("@/pages/PostDetailPage").then(m => ({ default: m.PostDetailPage })));
 const AuthPage = lazy(() => import("@/pages/AuthPage").then(m => ({ default: m.AuthPage })));
+const AuthShowcasePage = lazy(() => import("@/pages/AuthShowcasePage").then(m => ({ default: m.AuthShowcasePage })));
+const AuthPrototypesPage = lazy(() => import("@/pages/AuthPrototypesPage").then(m => ({ default: m.AuthPrototypesPage })));
+const AuthCosmosPage = lazy(() => import("@/pages/AuthCosmosPage").then(m => ({ default: m.AuthCosmosPage })));
+const AuthPremiumPage = lazy(() => import("@/pages/AuthPremiumPage").then(m => ({ default: m.AuthPremiumPage })));
+const AuthAuroraRusPage = lazy(() => import("@/pages/AuthAuroraRusPage").then(m => ({ default: m.AuthAuroraRusPage })));
+const AuthNovaPage = lazy(() => import("@/pages/AuthNovaPage").then(m => ({ default: m.AuthNovaPage })));
+const AuthAbyssPage = lazy(() => import("@/pages/AuthAbyssPage").then(m => ({ default: m.AuthAbyssPage })));
+const AuthCitadelPage = lazy(() => import("@/pages/AuthCitadelPage").then(m => ({ default: m.AuthCitadelPage })));
+const AuthManifestoPage = lazy(() => import("@/pages/AuthManifestoPage").then(m => ({ default: m.AuthManifestoPage })));
+const TermsOfServicePage = lazy(() => import("@/pages/TermsOfServicePage"));
+const PrivacyPolicyPage = lazy(() => import("@/pages/PrivacyPolicyPage"));
 const NotFound = lazy(() => import("@/pages/NotFound"));
 const DevPanelPage = lazy(() => import("@/pages/DevPanelPage"));
 const CrisisMeshPage = lazy(() => import("@/pages/CrisisMeshPage"));
@@ -106,6 +117,7 @@ const CRMDashboard = lazy(() => import("@/pages/CRMDashboard").then(m => ({ defa
 const CRMHRDashboard = lazy(() => import("@/pages/CRMHRDashboard").then(m => ({ default: m.CRMHRDashboard })));
 const CRMAutoDashboard = lazy(() => import("@/pages/CRMAutoDashboard").then(m => ({ default: m.CRMAutoDashboard })));
 const CRMRealEstateDashboard = lazy(() => import("@/pages/CRMRealEstateDashboard").then(m => ({ default: m.CRMRealEstateDashboard })));
+const CRMInsuranceDashboard = lazy(() => import("@/pages/CRMInsuranceDashboard").then(m => ({ default: m.CRMInsuranceDashboard })));
 const EmailPage = lazy(() => import("@/pages/EmailPage").then(m => ({ default: m.EmailPage })));
 const EmailSettingsPage = lazy(() => import("@/pages/EmailSettingsPage").then(m => ({ default: m.EmailSettingsPage })));
 const CommandPalette = lazy(() => import("@/components/CommandPalette").then(m => ({ default: m.CommandPalette })));
@@ -126,6 +138,7 @@ const OrderDetailPage = lazy(() => import("@/pages/OrderDetailPage"));
 const AIAssistantPage = lazy(() => import("@/pages/AIAssistantPage"));
 const GodmodePage = lazy(() => import("@/pages/GodmodePage"));
 const ServiceBugsPage = lazy(() => import("@/pages/ServiceBugsPage").then(m => ({ default: m.ServiceBugsPage })));
+const MusicPage = lazy(() => import("@/pages/MusicPage"));
 
 // Batch 5: new pages
 const WebLoginCallbackPage = lazy(() => import("@/pages/WebLoginCallbackPage").then(m => ({ default: m.WebLoginCallbackPage })));
@@ -139,8 +152,11 @@ const TaxiHistoryPage = lazy(() => import("./pages/taxi/TaxiHistoryPage"));
 const TaxiSettingsPage = lazy(() => import("./pages/taxi/TaxiSettingsPage"));
 const TaxiDriverPage = lazy(() => import("./pages/taxi/TaxiDriverPage"));
 
-// Navigation module (lazy)
-const NavigationPage = lazy(() => import("@/pages/navigation/NavigationPage"));
+// Amap navigation module (lazy)
+const AmapPage = lazy(() => import("@/pages/amap/AmapPage"));
+const BusinessRegistrationPage = lazy(() => import("@/pages/navigation/BusinessRegistrationPage"));
+const TripHistoryPage = lazy(() => import("@/pages/navigation/TripHistoryPage"));
+const QuantumTransportLabPage = lazy(() => import("@/pages/navigation/QuantumTransportLabPage"));
 
 // Video Editor module (lazy)
 const EditorProjectsPage = lazy(() => import("@/pages/EditorProjectsPage"));
@@ -160,9 +176,11 @@ const SecurityAdminJitPage = lazy(() => import("@/pages/admin/SecurityAdminJitPa
 const AdminVerificationsPage = lazy(() => import("@/pages/admin/AdminVerificationsPage").then(m => ({ default: m.AdminVerificationsPage })));
 const AdminStaffProfilesPage = lazy(() => import("@/pages/admin/AdminStaffProfilesPage").then(m => ({ default: m.AdminStaffProfilesPage })));
 const AdminHashtagModerationPage = lazy(() => import("@/pages/admin/AdminHashtagModerationPage").then(m => ({ default: m.AdminHashtagModerationPage })));
+const AdminBusinessModerationPage = lazy(() => import("@/pages/admin/AdminBusinessModerationPage").then(m => ({ default: m.AdminBusinessModerationPage })));
 const KpiDashboardPage = lazy(() => import("@/pages/admin/KpiDashboardPage").then(m => ({ default: m.KpiDashboardPage })));
 const ModerationQueuePage = lazy(() => import("@/pages/admin/ModerationQueuePage").then(m => ({ default: m.ModerationQueuePage })));
 const AppealsPage = lazy(() => import("@/pages/admin/AppealsPage").then(m => ({ default: m.AppealsPage })));
+const AdminSoglasieSettingsPage = lazy(() => import("@/pages/admin/AdminSoglasieSettingsPage").then(m => ({ default: m.AdminSoglasieSettingsPage })));
 
 // Deep link handler — must be inside BrowserRouter
 function DeepLinkHandler() {
@@ -272,6 +290,82 @@ const App = () => {
                   </Suspense>
                 } />
 
+                {/* Public route - Auth design showcase (liquid glass) */}
+                <Route path="/auth/showcase" element={
+                  <Suspense fallback={<PageLoader />}>
+                    <AuthShowcasePage />
+                  </Suspense>
+                } />
+
+                {/* Public legal routes */}
+                <Route path="/legal/terms" element={
+                  <Suspense fallback={<PageLoader />}>
+                    <TermsOfServicePage />
+                  </Suspense>
+                } />
+
+                <Route path="/legal/privacy" element={
+                  <Suspense fallback={<PageLoader />}>
+                    <PrivacyPolicyPage />
+                  </Suspense>
+                } />
+
+                {/* Public route - Auth design prototypes gallery */}
+                <Route path="/auth/prototypes" element={
+                  <Suspense fallback={<PageLoader />}>
+                    <AuthPrototypesPage />
+                  </Suspense>
+                } />
+
+                {/* Public route - Cosmic animated auth prototype */}
+                <Route path="/auth/cosmos" element={
+                  <Suspense fallback={<PageLoader />}>
+                    <AuthCosmosPage />
+                  </Suspense>
+                } />
+
+                {/* Public route - Premium animated auth variants (silk/prism/neural/ocean) */}
+                <Route path="/auth/premium" element={
+                  <Suspense fallback={<PageLoader />}>
+                    <AuthPremiumPage />
+                  </Suspense>
+                } />
+
+                {/* Public route - Aurora borealis / Russia themed auth prototype */}
+                <Route path="/auth/aurora-rus" element={
+                  <Suspense fallback={<PageLoader />}>
+                    <AuthAuroraRusPage />
+                  </Suspense>
+                } />
+
+                {/* Public route - NOVA hold-to-enter auth prototype */}
+                <Route path="/auth/nova" element={
+                  <Suspense fallback={<PageLoader />}>
+                    <AuthNovaPage />
+                  </Suspense>
+                } />
+
+                {/* Public route - ABYSS bioluminescent auth prototype */}
+                <Route path="/auth/abyss" element={
+                  <Suspense fallback={<PageLoader />}>
+                    <AuthAbyssPage />
+                  </Suspense>
+                } />
+
+                {/* Public route - CITADEL secure ecosystem auth prototype */}
+                <Route path="/auth/citadel" element={
+                  <Suspense fallback={<PageLoader />}>
+                    <AuthCitadelPage />
+                  </Suspense>
+                } />
+
+                {/* Public route - MANIFESTO constructivist auth prototype */}
+                <Route path="/auth/manifesto" element={
+                  <Suspense fallback={<PageLoader />}>
+                    <AuthManifestoPage />
+                  </Suspense>
+                } />
+
                 {/* Web Login Widget — public, shown in popup */}
                 <Route path="/auth/web-login" element={
                   <Suspense fallback={<PageLoader />}>
@@ -326,6 +420,11 @@ const App = () => {
                       <AdminHashtagModerationPage />
                     </Suspense>
                   } />
+                  <Route path="/admin/business-moderation" element={
+                    <Suspense fallback={<PageLoader />}>
+                      <AdminBusinessModerationPage />
+                    </Suspense>
+                  } />
                   <Route path="/admin/jit" element={
                     <Suspense fallback={<PageLoader />}>
                       <SecurityAdminJitPage />
@@ -344,6 +443,16 @@ const App = () => {
                   <Route path="/admin/appeals" element={
                     <Suspense fallback={<PageLoader />}>
                       <AppealsPage />
+                    </Suspense>
+                  } />
+                  <Route path="/admin/insurance-soglasie" element={
+                    <Suspense fallback={<PageLoader />}>
+                      <AdminSoglasieSettingsPage />
+                    </Suspense>
+                  } />
+                  <Route path="/admin/navigation-lab" element={
+                    <Suspense fallback={<PageLoader />}>
+                      <QuantumTransportLabPage />
                     </Suspense>
                   } />
                 </Route>
@@ -742,6 +851,11 @@ const App = () => {
                         <CRMRealEstateDashboard />
                       </Suspense>
                     } />
+                    <Route path="/crm/insurance" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <CRMInsuranceDashboard />
+                      </Suspense>
+                    } />
                     <Route path="/email/settings" element={
                       <Suspense fallback={<PageLoader />}>
                         <EmailSettingsPage />
@@ -757,6 +871,12 @@ const App = () => {
                     <Route path="/services/bugs" element={
                       <Suspense fallback={<PageLoader />}>
                         <ServiceBugsPage />
+                      </Suspense>
+                    } />
+                    {/* ─── Music Module ─────────────────────── */}
+                    <Route path="/services/music/*" element={
+                      <Suspense fallback={<PageLoader />}>
+                        <MusicPage />
                       </Suspense>
                     } />
                     {/* ─── Taxi Module ─────────────────────── */}
@@ -831,13 +951,25 @@ const App = () => {
                     </Suspense>
                   } />
 
-                  {/* Navigation — fullscreen, outside AppLayout */}
-                  <Route path="/navigation" element={
+                  <Route path="/business-registration" element={
                     <Suspense fallback={<PageLoader />}>
-                      <NavigationPage />
+                      <BusinessRegistrationPage />
+                    </Suspense>
+                  } />
+                  <Route path="/trip-history" element={
+                    <Suspense fallback={<PageLoader />}>
+                      <TripHistoryPage />
                     </Suspense>
                   } />
                 </Route>
+
+                {/* Amap / Navigation — fullscreen public entry */}
+                <Route path="/amap" element={
+                  <Suspense fallback={<PageLoader />}>
+                    <AmapPage />
+                  </Suspense>
+                } />
+                <Route path="/navigation" element={<Navigate to="/amap" replace />} />
                 
                 {/* Dev Panel - public route with its own auth */}
                 <Route path="/dev" element={

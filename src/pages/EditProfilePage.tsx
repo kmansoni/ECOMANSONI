@@ -14,6 +14,14 @@ import { AvatarPresetPicker } from '@/components/profile/AvatarPresetPicker';
 import { toast } from 'sonner';
 import { logger } from '@/lib/logger';
 
+function normalizeUsernameInput(raw: string): string {
+  return raw
+    .trim()
+    .toLowerCase()
+    .replace(/^@+/, '')
+    .replace(/[^a-z0-9_]/g, '');
+}
+
 export function EditProfilePage() {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -23,6 +31,7 @@ export function EditProfilePage() {
   const [displayName, setDisplayName] = useState('');
   const [username, setUsername] = useState('');
   const [usernameError, setUsernameError] = useState('');
+  const [usernameStatus, setUsernameStatus] = useState<'idle' | 'checking' | 'available' | 'taken'>('idle');
   const [bio, setBio] = useState('');
   const [website, setWebsite] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
@@ -39,6 +48,63 @@ export function EditProfilePage() {
       setAvatarUrl(profile.avatar_url || '');
     }
   }, [profile]);
+
+  useEffect(() => {
+    const normalizedCurrent = normalizeUsernameInput(username);
+    const normalizedOwn = normalizeUsernameInput(profile?.username || '');
+
+    if (!user?.id) {
+      setUsernameStatus('idle');
+      return;
+    }
+
+    if (!normalizedCurrent || normalizedCurrent === normalizedOwn) {
+      setUsernameStatus('idle');
+      if (usernameError === 'Этот никнейм уже занят') {
+        setUsernameError('');
+      }
+      return;
+    }
+
+    if (normalizedCurrent.length < 3 || normalizedCurrent.length > 30 || !/^[a-z0-9_]+$/.test(normalizedCurrent)) {
+      setUsernameStatus('idle');
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      const run = async () => {
+        try {
+          setUsernameStatus('checking');
+          const { data: existing, error } = await supabase
+            .from('profiles')
+            .select('user_id')
+            .eq('username', normalizedCurrent)
+            .neq('user_id', user.id)
+            .limit(1)
+            .maybeSingle();
+
+          if (error) throw error;
+
+          if (existing) {
+            setUsernameStatus('taken');
+            setUsernameError('Этот никнейм уже занят');
+          } else {
+            setUsernameStatus('available');
+            if (usernameError === 'Этот никнейм уже занят') {
+              setUsernameError('');
+            }
+          }
+        } catch (err) {
+          logger.warn('[EditProfilePage] Username availability check failed', { error: err });
+          setUsernameStatus('idle');
+        }
+      };
+
+      void run();
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [profile?.username, user?.id, username, usernameError]);
 
   const handleAvatarClick = () => {
     fileInputRef.current?.click();
@@ -69,13 +135,17 @@ export function EditProfilePage() {
   };
 
   const handleSave = async () => {
-    const trimmedUsername = username.trim();
+    const trimmedUsername = normalizeUsernameInput(username);
     if (trimmedUsername && (trimmedUsername.length < 3 || trimmedUsername.length > 30)) {
       setUsernameError('От 3 до 30 символов');
       return;
     }
     if (trimmedUsername && !/^[a-z0-9_]+$/.test(trimmedUsername)) {
       setUsernameError('Только латинские буквы, цифры и _');
+      return;
+    }
+    if (usernameStatus === 'taken') {
+      setUsernameError('Этот никнейм уже занят');
       return;
     }
     setUsernameError('');
@@ -86,13 +156,13 @@ export function EditProfilePage() {
       if (trimmedUsername && trimmedUsername !== profile?.username) {
         const { data: existing } = await supabase
           .from('profiles')
-          .select('id')
+          .select('user_id')
           .eq('username', trimmedUsername)
-          .neq('id', user!.id)
+          .neq('user_id', user!.id)
           .limit(1)
           .maybeSingle();
         if (existing) {
-          setUsernameError('Это имя уже занято');
+          setUsernameError('Этот никнейм уже занят');
           setSaving(false);
           return;
         }
@@ -216,13 +286,25 @@ export function EditProfilePage() {
             <Input
               id="username"
               value={username}
-              onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
+              onChange={(e) => {
+                setUsername(normalizeUsernameInput(e.target.value));
+                setUsernameError('');
+              }}
               placeholder="username"
               maxLength={30}
               className="h-12 rounded-xl pl-8"
             />
           </div>
           {usernameError && <p className="text-xs text-destructive">{usernameError}</p>}
+          {!usernameError && usernameStatus === 'checking' && (
+            <p className="text-xs text-muted-foreground">Проверяем никнейм...</p>
+          )}
+          {!usernameError && usernameStatus === 'available' && (
+            <p className="text-xs text-green-600">Никнейм свободен</p>
+          )}
+          {!usernameError && usernameStatus === 'taken' && (
+            <p className="text-xs text-destructive">Этот никнейм уже занят</p>
+          )}
           <p className="text-xs text-muted-foreground">
             Латинские буквы, цифры и _ (от 3 до 30 символов)
           </p>

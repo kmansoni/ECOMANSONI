@@ -29,7 +29,7 @@ function getModuleId(pathname: string) {
   if (pathname.startsWith("/crm")) return "crm";
   if (pathname.startsWith("/insurance")) return "insurance";
   if (pathname.startsWith("/taxi")) return "taxi";
-  if (pathname.startsWith("/real-estate")) return "real-estate";
+  if (pathname.startsWith("/realestate")) return "real-estate";
   if (pathname.startsWith("/chats") || pathname.startsWith("/chat")) return "messenger";
 
   const [segment] = pathname.split("/").filter(Boolean);

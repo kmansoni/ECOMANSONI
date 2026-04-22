@@ -96,6 +96,15 @@ ai_engine/
 │   ├── document_processor.py     ← парсинг и чанкинг документов
 │   └── README.md                 ← документация RAG
 │
+├── voice_learning/               ← автономное voice/address learning foundation
+│   ├── __init__.py               ← публичный API voice learning
+│   ├── models.py                 ← доменные модели utterance/address/hotspot
+│   ├── parser.py                 ← locale-aware address parsing
+│   ├── novelty.py                ← novelty scoring + hotspot detection
+│   ├── storage.py                ← SQLite persistence для learning loop
+│   ├── service.py                ← orchestration layer для API
+│   └── README.md                 ← документация voice learning foundation
+│
 ├── vibe_coding/                  ← пример ProductionApp по Vibe Coding
 │   ├── README.md                 ← описание Vibe Coding стандарта
 │   ├── architecture.md           ← архитектурные решения
@@ -135,6 +144,36 @@ ai_engine/
     ├── 12_system_design.py       ← Системное проектирование
     ├── 13_financial_analysis.py  ← Финансовый анализ
     └── 14_game_development.py    ← Разработка игр
+```
+
+---
+
+## Voice Learning Foundation
+
+В движок добавлен foundation-слой для автономного обучения на голосовых и поисковых адресных запросах:
+
+- ingestion голосовых utterance и search-query сигналов
+- rule-based parsing адресов с поддержкой русских конструкций `улица + дом + корпус`
+- novelty scoring для редких адресов и новых шаблонов
+- hotspot packaging для адресов вроде `Чароитовая 1 корпус 4`
+- SQLite-backed feedback/training loop для дальнейшего ASR/NER fine-tuning
+- FastAPI endpoints: `/v1/voice/utterances`, `/v1/voice/search/log`, `/v1/voice/correction`, `/v1/voice/addresses/validate`, `/v1/voice/model/status`
+
+Быстрый старт для foundation-модуля:
+
+```python
+from ai_engine.voice_learning import VoiceLearningService
+
+service = VoiceLearningService()
+result = service.ingest_utterance(
+    user_id="demo-user",
+    transcript="Чароитовая 1 корпус 4",
+    source="voice",
+    language_code="ru",
+    user_context={"city": "Новосибирск", "country": "RU"},
+)
+
+print(result)
 ```
 
 ---

@@ -1,24 +1,50 @@
 /**
- * Crisis Mesh — Ed25519 identity management.
- * Генерация и хранение identity keypair, peerId как fingerprint публичного ключа.
+ * Crisis Mesh — Ed25519 identity + ECDH P-256 encryption keys.
  *
- * Web Crypto API: Ed25519 поддерживается Chrome 135+, Safari 17+, Firefox 139+.
- * Для старых окружений — fallback через @noble/ed25519 (см. noble-fallback.ts).
+ * Ed25519: подпись envelope'ов, source of peerId (фингерпринт pub).
+ * ECDH P-256: установка Double Ratchet сессий (см. `session.ts`).
+ *
+ * Persist:
+ *   - Публичные метаданные (peerId, displayName, publicKey, ecdhPublicKey,
+ *     createdAt) — в localStorage. Подделать можно, но все сообщения
+ *     подписаны, так что bootstrap с чужой метой не даёт подделать
+ *     отправителя: peerId вычисляется из publicKey, а приватного ключа у
+ *     злоумышленника нет.
+ *   - Приватные ключи (Ed25519 pkcs8 + ECDH pkcs8) — через HardwareKeyStorage:
+ *     WebAuthn / Keychain / Keystore / software fallback (в памяти, без
+ *     localStorage-следа).
  */
 
 import { toBase64, fromBase64 } from '@/lib/e2ee/utils';
+import { HardwareKeyStorage } from '@/lib/e2ee/hardwareKeyStorage';
+
 import { type LocalIdentity, type PeerId, asPeerId } from '../types';
 
-const IDENTITY_STORAGE_KEY = 'crisis-mesh:identity-v1';
+import {
+  exportEcdhPrivateKey,
+  generateEcdhKeyPair,
+  importEcdhPrivateKey,
+  importEcdhPublicKey,
+  type EcdhKeyPair,
+} from './ecdh-keys';
+
+const IDENTITY_STORAGE_KEY = 'crisis-mesh:identity-v2';
+const LEGACY_IDENTITY_STORAGE_KEY = 'crisis-mesh:identity-v1';
+const ED25519_PRIVATE_KEY_ID = 'crisis-mesh:ed25519-priv';
+const ECDH_PRIVATE_KEY_ID = 'crisis-mesh:ecdh-priv';
 
 export interface IdentityKeyPair {
-  publicKey: Uint8Array;   // 32 bytes raw Ed25519
-  privateKey: CryptoKey;   // non-extractable
+  publicKey: Uint8Array;
+  privateKey: CryptoKey;
 }
 
-/**
- * Проверка поддержки Ed25519 в текущем окружении.
- */
+export interface LoadedIdentity {
+  identity: LocalIdentity;
+  ed25519PrivateKey: CryptoKey;
+  ecdhPrivateKey: CryptoKey;
+  ecdh: EcdhKeyPair;
+}
+
 export async function isEd25519Supported(): Promise<boolean> {
   try {
     await crypto.subtle.generateKey(
@@ -33,13 +59,15 @@ export async function isEd25519Supported(): Promise<boolean> {
 }
 
 /**
- * Генерация нового identity keypair.
- * Приватный ключ non-extractable — не может быть экспортирован из CryptoKey.
+ * Генерация нового Ed25519 identity keypair.
+ * extractable=true — чтобы можно было экспортировать в pkcs8 для persist.
+ * Безопасность: pkcs8 никогда не уходит в plain storage, только через
+ * HardwareKeyStorage (WebAuthn/Keychain/Keystore/in-memory soft).
  */
 export async function generateIdentityKeyPair(): Promise<IdentityKeyPair> {
   const keyPair = (await crypto.subtle.generateKey(
     { name: 'Ed25519' } as EcKeyGenParams,
-    false,
+    true,
     ['sign', 'verify'],
   )) as CryptoKeyPair;
 
@@ -51,20 +79,16 @@ export async function generateIdentityKeyPair(): Promise<IdentityKeyPair> {
 }
 
 /**
- * Вычисление peerId как Base58(SHA-256(publicKey))[:16].
- * Детерминированный, стабильный, короткий для UX.
+ * Вычисление peerId как Base58(SHA-256(publicKey))[:12]
+ * (результат ≈ 16 символов base58, удобно показывать в UI).
  */
 export async function computePeerId(publicKey: Uint8Array): Promise<PeerId> {
-  const hashBuf = await crypto.subtle.digest('SHA-256', publicKey);
+  const hashBuf = await crypto.subtle.digest('SHA-256', publicKey as unknown as ArrayBuffer);
   const hash = new Uint8Array(hashBuf);
-  // Первые 12 байт → base58 для удобного отображения
   const fingerprint = base58Encode(hash.subarray(0, 12));
   return asPeerId(fingerprint);
 }
 
-/**
- * Импорт публичного ключа в CryptoKey для verify.
- */
 export async function importPublicKey(raw: Uint8Array): Promise<CryptoKey> {
   return crypto.subtle.importKey(
     'raw',
@@ -75,18 +99,36 @@ export async function importPublicKey(raw: Uint8Array): Promise<CryptoKey> {
   );
 }
 
-/**
- * Persist identity metadata (без приватного ключа) в localStorage.
- * Приватный ключ хранится CryptoKey в памяти + отдельно в hardwareKeyStorage (опц.)
- */
+async function exportEd25519PrivateKey(key: CryptoKey): Promise<string> {
+  const pkcs8 = await crypto.subtle.exportKey('pkcs8', key);
+  return toBase64(new Uint8Array(pkcs8));
+}
+
+async function importEd25519PrivateKey(pkcs8B64: string): Promise<CryptoKey> {
+  const bytes = new Uint8Array(fromBase64(pkcs8B64));
+  return crypto.subtle.importKey(
+    'pkcs8',
+    bytes as unknown as ArrayBuffer,
+    { name: 'Ed25519' } as EcKeyImportParams,
+    true,
+    ['sign'],
+  );
+}
+
 export function storeIdentityMetadata(identity: LocalIdentity): void {
   const payload = {
     peerId: identity.peerId,
     displayName: identity.displayName,
     publicKey: toBase64(identity.publicKey),
+    ecdhPublicKey: identity.ecdhPublicKey,
     createdAt: identity.createdAt,
   };
-  localStorage.setItem(IDENTITY_STORAGE_KEY, JSON.stringify(payload));
+  try {
+    localStorage.setItem(IDENTITY_STORAGE_KEY, JSON.stringify(payload));
+    localStorage.removeItem(LEGACY_IDENTITY_STORAGE_KEY);
+  } catch {
+    // Private mode / storage unavailable — identity живёт только эту сессию.
+  }
 }
 
 export function loadIdentityMetadata(): LocalIdentity | null {
@@ -97,12 +139,15 @@ export function loadIdentityMetadata(): LocalIdentity | null {
       peerId: string;
       displayName: string;
       publicKey: string;
+      ecdhPublicKey: string;
       createdAt: number;
     };
+    if (!parsed.ecdhPublicKey) return null;
     return {
       peerId: asPeerId(parsed.peerId),
       displayName: parsed.displayName,
       publicKey: new Uint8Array(fromBase64(parsed.publicKey)),
+      ecdhPublicKey: parsed.ecdhPublicKey,
       createdAt: parsed.createdAt,
     };
   } catch {
@@ -110,34 +155,111 @@ export function loadIdentityMetadata(): LocalIdentity | null {
   }
 }
 
+async function persistPrivateKeys(
+  ed25519PrivateKey: CryptoKey,
+  ecdhPrivateKey: CryptoKey,
+): Promise<void> {
+  const storage = new HardwareKeyStorage();
+  const [ed25519B64, ecdhB64] = await Promise.all([
+    exportEd25519PrivateKey(ed25519PrivateKey),
+    exportEcdhPrivateKey(ecdhPrivateKey),
+  ]);
+  await storage.put({ keyId: ED25519_PRIVATE_KEY_ID, wrappedKeyB64: ed25519B64 });
+  await storage.put({ keyId: ECDH_PRIVATE_KEY_ID, wrappedKeyB64: ecdhB64 });
+}
+
+async function loadPrivateKeys(): Promise<{
+  ed25519PrivateKey: CryptoKey;
+  ecdhPrivateKey: CryptoKey;
+} | null> {
+  const storage = new HardwareKeyStorage();
+  const [edRec, ecdhRec] = await Promise.all([
+    storage.get(ED25519_PRIVATE_KEY_ID),
+    storage.get(ECDH_PRIVATE_KEY_ID),
+  ]);
+  if (!edRec || !ecdhRec) return null;
+  const [ed25519PrivateKey, ecdhPrivateKey] = await Promise.all([
+    importEd25519PrivateKey(edRec.wrappedKeyB64),
+    importEcdhPrivateKey(ecdhRec.wrappedKeyB64),
+  ]);
+  return { ed25519PrivateKey, ecdhPrivateKey };
+}
+
+export async function deleteIdentity(): Promise<void> {
+  const storage = new HardwareKeyStorage();
+  await Promise.all([
+    storage.remove(ED25519_PRIVATE_KEY_ID),
+    storage.remove(ECDH_PRIVATE_KEY_ID),
+  ]);
+  try {
+    localStorage.removeItem(IDENTITY_STORAGE_KEY);
+    localStorage.removeItem(LEGACY_IDENTITY_STORAGE_KEY);
+  } catch {
+    // Ignore storage unavailability.
+  }
+}
+
 /**
- * Bootstrap identity: загружает существующую или создаёт новую.
- * Возвращает identity + приватный ключ (для этой сессии).
+ * Bootstrap: загружает существующую identity (если приватные ключи
+ * восстановлены) или создаёт новую.
+ *
+ * Сценарии:
+ *   1. Первый запуск: меты нет → генерация новой → persist.
+ *   2. Повторный запуск, ключи есть в HardwareKeyStorage → восстановление.
+ *   3. Мета есть, но ключи пропали (пользователь очистил storage) →
+ *      генерация новой identity. PeerId сменится, пиры выполнят новый
+ *      handshake, старые ratchet-сессии протухнут.
  */
 export async function bootstrapIdentity(
   displayName: string,
-): Promise<{ identity: LocalIdentity; privateKey: CryptoKey }> {
+): Promise<LoadedIdentity> {
   const existing = loadIdentityMetadata();
+
   if (existing) {
-    // Приватный ключ должен быть восстановлен из hardwareKeyStorage
-    // (в P0 — перегенерация при первом запуске без восстановления)
-    throw new Error(
-      'identity exists but privateKey recovery not implemented yet — requires hardwareKeyStorage integration',
-    );
+    const privateKeys = await loadPrivateKeys();
+    if (privateKeys) {
+      const ecdhPub = await importEcdhPublicKey(existing.ecdhPublicKey);
+      const ecdh: EcdhKeyPair = {
+        publicKey: ecdhPub,
+        privateKey: privateKeys.ecdhPrivateKey,
+        publicKeyB64: existing.ecdhPublicKey,
+      };
+      return {
+        identity: existing,
+        ed25519PrivateKey: privateKeys.ed25519PrivateKey,
+        ecdhPrivateKey: privateKeys.ecdhPrivateKey,
+        ecdh,
+      };
+    }
+    // Мета есть, ключей нет — удаляем мету, генерируем всё заново.
+    try {
+      localStorage.removeItem(IDENTITY_STORAGE_KEY);
+    } catch {
+      // Ignore.
+    }
   }
 
-  const { publicKey, privateKey } = await generateIdentityKeyPair();
-  const peerId = await computePeerId(publicKey);
+  const ed25519 = await generateIdentityKeyPair();
+  const ecdh = await generateEcdhKeyPair();
+  const peerId = await computePeerId(ed25519.publicKey);
 
   const identity: LocalIdentity = {
     peerId,
     displayName,
-    publicKey,
+    publicKey: ed25519.publicKey,
+    ecdhPublicKey: ecdh.publicKeyB64,
     createdAt: Date.now(),
   };
 
+  await persistPrivateKeys(ed25519.privateKey, ecdh.privateKey);
   storeIdentityMetadata(identity);
-  return { identity, privateKey };
+
+  return {
+    identity,
+    ed25519PrivateKey: ed25519.privateKey,
+    ecdhPrivateKey: ecdh.privateKey,
+    ecdh,
+  };
 }
 
 // ─── Base58 (Bitcoin alphabet) ───────────────────────────────────────────────
@@ -147,11 +269,9 @@ const BASE58_ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvw
 export function base58Encode(bytes: Uint8Array): string {
   if (bytes.length === 0) return '';
 
-  // Count leading zeros
   let zeros = 0;
   while (zeros < bytes.length && bytes[zeros] === 0) zeros++;
 
-  // Convert to base58 digits via BigInt
   let num = 0n;
   for (const b of bytes) num = num * 256n + BigInt(b);
 
@@ -162,7 +282,6 @@ export function base58Encode(bytes: Uint8Array): string {
     num = num / 58n;
   }
 
-  // Prepend '1' for each leading zero byte
   for (let i = 0; i < zeros; i++) result = '1' + result;
 
   return result;
@@ -181,7 +300,6 @@ export function base58Decode(str: string): Uint8Array {
     num = num * 58n + BigInt(idx);
   }
 
-  // Convert BigInt back to bytes
   const bytes: number[] = [];
   while (num > 0n) {
     bytes.unshift(Number(num & 0xffn));

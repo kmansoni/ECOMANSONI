@@ -36,12 +36,14 @@ node_modules
 
 # Frontend build output
 dist/
+public/modules/
 *.zip
 
 # Build/CI log artifacts
 tsc_errors.txt
 tsc-output.txt
 vite_errors.txt
+*.tsbuildinfo
 
 # Copilot chat exports
 ## GitHub Copilot Chat.md
@@ -59,9 +61,26 @@ scripts/.temp/
 
 # Local app temp
 tmp/
+.supabase-migration-list.txt
+.supabase-db-push.txt
+.tmp_schema_query.ps1
+.typecheck-current.txt
+dist-deploy.tar.gz
 
 # Local scratch/archive
 .archive/
+
+# Build deploy archives (timestamped)
+dist-deploy-*.tar.gz
+
+# Debug probe output
+probe_out.json
+
+# Local temp directories
+.tmp/
+
+# Kilo Code AI workspace
+.kilo/
 
 # Local secrets directory (never commit secrets)
 .secrets/
@@ -79,13 +98,18 @@ playwright-report/
 # Local vendor leftovers (should not be committed)
 columba/
 crisis-mesh-messenger/
+archive/crisis-mesh-flutter-poc/
 
 # Python cache artifacts
 __pycache__/
 *.py[cod]
+*.db
 
 # Python virtual environment
 .venv/
+
+# Local AI runtime data
+ai_engine/data/
 
 # Kilo Code AI workspace (worktrees, node_modules)
 .kilocode/
@@ -95,3 +119,9 @@ __pycache__/
 
 # Research screenshots
 inssmart-*.png
+
+# Generated OSM/GeoNames runtime data lives on AdminVPS, not in git.
+public/data/osm/**
+!public/data/osm/world/
+!public/data/osm/world/README.txt
+!public/data/osm/world/download-geofabrik.ps1

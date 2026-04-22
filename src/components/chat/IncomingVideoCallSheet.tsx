@@ -58,6 +58,7 @@ export function IncomingVideoCallSheet({ call, onAccept, onDecline }: IncomingVi
           <Button
             size="icon"
             onClick={onDecline}
+            aria-label="Отклонить"
             className="w-16 h-16 rounded-full bg-destructive hover:bg-destructive/90"
           >
             <PhoneOff className="w-7 h-7" />
@@ -70,6 +71,7 @@ export function IncomingVideoCallSheet({ call, onAccept, onDecline }: IncomingVi
           <Button
             size="icon"
             onClick={onAccept}
+            aria-label="Ответить"
             className="w-16 h-16 rounded-full bg-green-500 hover:bg-green-600"
           >
             {isVideoCall ? (

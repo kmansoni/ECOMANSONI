@@ -662,6 +662,22 @@
 				"c:\\Users\\manso\\Desktop\\разработка\\your-ai-companion-main\\supabase\\migrations\\20260406130000_fix_send_message_v1_restore_poll_kinds.sql"
 			],
 			"isBackground": false
+		},
+		{
+			"label": "Run Mansoni Dev Server",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"dev",
+				"--",
+				"--host",
+				"0.0.0.0",
+				"--port",
+				"8081",
+				"--strictPort"
+			],
+			"isBackground": true
 		}
 	]
 }

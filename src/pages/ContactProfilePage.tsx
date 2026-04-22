@@ -279,6 +279,7 @@ export function ContactProfilePage() {
 
             <button 
               onClick={handleCall}
+              aria-label="Аудиозвонок"
               className="flex flex-col items-center gap-1.5"
             >
               <div className="w-14 h-14 rounded-2xl bg-white/10 backdrop-blur-xl border border-white/20 flex items-center justify-center hover:bg-white/20 transition-colors">
@@ -289,6 +290,7 @@ export function ContactProfilePage() {
 
             <button 
               onClick={handleVideoCall}
+              aria-label="Видеозвонок"
               className="flex flex-col items-center gap-1.5"
             >
               <div className="w-14 h-14 rounded-2xl bg-white/10 backdrop-blur-xl border border-white/20 flex items-center justify-center hover:bg-white/20 transition-colors">

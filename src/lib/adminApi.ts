@@ -30,7 +30,9 @@ export type AdminApiAction =
   | "hashtags.status.bulk_set"
   | "service_bugs.create"
   | "service_bugs.update"
-  | "service_bugs.delete";
+  | "service_bugs.delete"
+  | "insurance_settings.get"
+  | "insurance_settings.set";
 
 export type KillSwitchRow = {
   key: string;
@@ -93,6 +95,17 @@ export type PrimaryOwner = {
     display_name: string;
     status: string;
   } | null;
+};
+
+/** Настройки страховых провайдеров */
+export type InsuranceSettings = {
+  id: string;
+  key: string;
+  value: Record<string, unknown>;
+  description: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
 };
 
 export type AdminMe = {

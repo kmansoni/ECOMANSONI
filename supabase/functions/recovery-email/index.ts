@@ -9,6 +9,73 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const EMAIL_ROUTER_URL = Deno.env.get("EMAIL_ROUTER_URL") ?? "http://email-router:3100/api/v1/send";
 
+function resolveEmailRouterSendUrl(emailRouterUrl: string): string {
+  const normalized = emailRouterUrl.replace(/\/+$/, "");
+  if (/\/send$/i.test(normalized)) return normalized;
+  return `${normalized}/v1/email/send`;
+}
+
+function buildPremiumOtpHtml(codeSpaced: string, ttlMinutes: number): string {
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Код подтверждения</title>
+</head>
+<body style="background: linear-gradient(135deg, #0a0a0f 0%, #1a1a2e 50%, #0f0f1a 100%); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 20px;">
+  <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 32px; padding: 48px; max-width: 420px; margin: 0 auto; box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.05);">
+    <div style="font-size: 26px; font-weight: 700; letter-spacing: 6px; color: #ffffff; text-align: center; margin-bottom: 4px;">MASNONI</div>
+    <div style="text-align: center; color: rgba(255, 255, 255, 0.4); font-size: 11px; letter-spacing: 4px; text-transform: uppercase; margin-bottom: 40px;">Подтверждение входа</div>
+
+    <div style="text-align: center; color: rgba(255, 255, 255, 0.9); font-size: 16px; margin-bottom: 8px;">Здравствуйте!</div>
+    <div style="text-align: center; color: rgba(255, 255, 255, 0.5); font-size: 14px; margin-bottom: 32px; line-height: 1.5;">Введите код для завершения входа в систему:</div>
+
+    <div style="background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 20px; padding: 28px; text-align: center; margin-bottom: 16px;">
+      <div style="font-family: 'SF Mono', 'Fira Code', Consolas, monospace; font-size: 40px; font-weight: 600; letter-spacing: 14px; color: #ffffff; text-shadow: 0 0 40px rgba(255, 255, 255, 0.4); margin-left: 14px;">${codeSpaced}</div>
+    </div>
+
+    <div style="text-align: center; color: rgba(255, 255, 255, 0.4); font-size: 12px; margin-bottom: 32px;">Код действителен ${ttlMinutes} минут</div>
+
+    <div style="background: rgba(255, 183, 77, 0.06); border: 1px solid rgba(255, 183, 77, 0.15); border-radius: 16px; padding: 24px; margin-bottom: 32px;">
+      <div style="color: #FFB74D; font-size: 12px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 16px;">Важно</div>
+      <div style="color: rgba(255, 255, 255, 0.7); font-size: 14px; line-height: 1.7; margin-bottom: 12px;">Этот код - <strong style="color: rgba(255, 255, 255, 0.9);">конфиденциальная информация</strong>.</div>
+      <div style="color: rgba(255, 255, 255, 0.7); font-size: 14px; line-height: 1.7; margin-bottom: 12px;"><strong style="color: rgba(255, 255, 255, 0.9);">Не сообщайте его третьим лицам.</strong></div>
+      <div style="height: 1px; background: rgba(255, 255, 255, 0.1); margin: 16px 0;"></div>
+      <div style="color: rgba(255, 255, 255, 0.7); font-size: 14px; line-height: 1.7; margin-bottom: 12px;">Использование чужого кода без согласия владельца - <strong style="color: rgba(255, 255, 255, 0.9);">нарушение закона</strong> (ст. 272 УК РФ).</div>
+      <div style="height: 1px; background: rgba(255, 255, 255, 0.1); margin: 16px 0;"></div>
+      <div style="color: rgba(255, 255, 255, 0.7); font-size: 14px; line-height: 1.7;">Получили код случайно? <strong style="color: rgba(255, 255, 255, 0.9);">Проигнорируйте</strong> это письмо и сообщите нам: <a href="mailto:support@masnoni.ru" style="color: rgba(255, 183, 77, 0.9); text-decoration: none;">support@masnoni.ru</a></div>
+    </div>
+
+    <div style="text-align: center; padding-top: 24px; border-top: 1px solid rgba(255, 255, 255, 0.06);">
+      <div style="color: rgba(255, 255, 255, 0.6); font-size: 14px; margin-bottom: 8px;">С уважением, команда Masnoni</div>
+      <div style="color: rgba(255, 255, 255, 0.4); font-size: 12px;">Ваша технологическая экосистема</div>
+      <div style="color: rgba(255, 255, 255, 0.3); font-size: 11px; margin-top: 4px;">masnoni.ru</div>
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+function buildPremiumOtpText(codeSpaced: string, ttlMinutes: number): string {
+  return [
+    "MASNONI - код подтверждения входа",
+    "",
+    "Здравствуйте!",
+    "Введите код для завершения входа в систему:",
+    "",
+    `Код: ${codeSpaced}`,
+    `Код действителен ${ttlMinutes} минут.`,
+    "",
+    "Важно:",
+    "Этот код - конфиденциальная информация.",
+    "Не сообщайте его третьим лицам.",
+    "Использование чужого кода без согласия владельца - нарушение закона (ст. 272 УК РФ).",
+    "Если получили код случайно - проигнорируйте письмо и напишите нам: support@masnoni.ru",
+  ].join("\n");
+}
+
 async function sha256hex(text: string): Promise<string> {
   const encoder = new TextEncoder();
   const data = encoder.encode(text);
@@ -29,6 +96,11 @@ Deno.serve(async (req: Request) => {
   if (corsResponse) return corsResponse;
 
   const origin = req.headers.get("Origin");
+  const preferredEmailRouterKey = Deno.env.get("EMAIL_ROUTER_INGEST_KEY");
+  const legacyEmailRouterKey = Deno.env.get("EMAIL_ROUTER_API_KEY");
+  const emailRouterIngestKey = preferredEmailRouterKey ?? legacyEmailRouterKey;
+  const otpFromEmail = Deno.env.get("EMAIL_OTP_FROM_EMAIL") ?? "auth@mansoni.ru";
+  const otpReplyTo = Deno.env.get("EMAIL_OTP_REPLY_TO") ?? "support@masnoni.ru";
   const authHeader = req.headers.get("Authorization");
   if (!authHeader) {
     return new Response(JSON.stringify({ error: "Missing authorization" }), {
@@ -73,10 +145,18 @@ Deno.serve(async (req: Request) => {
         headers: { ...getCorsHeaders(origin), "Content-Type": "application/json" },
       });
     }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(otpFromEmail) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(otpReplyTo)) {
+      return new Response(JSON.stringify({ error: "Server not configured" }), {
+        status: 500,
+        headers: { ...getCorsHeaders(origin), "Content-Type": "application/json" },
+      });
+    }
 
     const rawCode = generateSixDigitCode();
+    const shortCode = rawCode.slice(0, 3) + " " + rawCode.slice(3);
     const codeHash = await sha256hex(rawCode);
-    const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString(); // 15 min
+    const otpTtlMinutes = 15;
+    const expiresAt = new Date(Date.now() + otpTtlMinutes * 60 * 1000).toISOString();
 
     // Upsert recovery_emails record (service_role bypasses RLS)
     const { error: upsertError } = await supabase
@@ -102,15 +182,35 @@ Deno.serve(async (req: Request) => {
 
     // Send email via email-router
     try {
-      await fetch(EMAIL_ROUTER_URL, {
+      const sendUrl = resolveEmailRouterSendUrl(EMAIL_ROUTER_URL);
+      const timeoutRaw = Number(Deno.env.get("EMAIL_ROUTER_TIMEOUT_MS") ?? "8000");
+      const emailRouterTimeoutMs = Number.isFinite(timeoutRaw) && timeoutRaw >= 3000 && timeoutRaw <= 12000
+        ? Math.floor(timeoutRaw)
+        : 8000;
+
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      if (emailRouterIngestKey) {
+        headers["x-ingest-key"] = emailRouterIngestKey;
+        headers["X-API-Key"] = emailRouterIngestKey;
+      }
+
+      await fetch(sendUrl, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({
           to: email,
-          subject: "Mansoni — код подтверждения Recovery Email",
-          text: `Ваш код подтверждения: ${rawCode}\n\nКод действителен 15 минут.\nЕсли вы не запрашивали этот код — проигнорируйте письмо.`,
-          html: `<p>Ваш код подтверждения: <strong>${rawCode}</strong></p><p>Код действителен 15 минут.<br>Если вы не запрашивали этот код — проигнорируйте письмо.</p>`,
+          from: otpFromEmail,
+          subject: `Masnoni - код подтверждения Recovery Email: ${shortCode}`,
+          text: buildPremiumOtpText(shortCode, otpTtlMinutes),
+          html: buildPremiumOtpHtml(shortCode, otpTtlMinutes),
+          headers: {
+            "X-Transactional-Email": "true",
+            "Reply-To": otpReplyTo,
+          },
         }),
+        signal: AbortSignal.timeout(emailRouterTimeoutMs),
       });
     } catch (emailError) {
       console.error("Email send failed:", emailError);

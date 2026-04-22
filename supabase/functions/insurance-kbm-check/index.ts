@@ -122,12 +122,14 @@ Deno.serve(async (req) => {
           };
           if (provider.sandbox_mode) headers["X-Sandbox"] = "true";
 
+          const fetchStart = Date.now();
           const resp = await fetch(`${baseUrl}/kbm`, {
             method: "POST",
             headers,
             body: JSON.stringify({ driver_license, birth_date }),
             signal: AbortSignal.timeout(8000),
           });
+          const fetchElapsed = Date.now() - fetchStart;
 
           if (resp.ok) {
             const d = await resp.json() as Record<string, unknown>;
@@ -147,9 +149,12 @@ Deno.serve(async (req) => {
 
           svc.from("insurance_provider_logs").insert({
             provider_code: "inssmart",
+            operation: "kbm",
             category: "kbm",
+            is_success: resp.ok,
             status: resp.ok ? "ok" : "error",
-            response_time_ms: 0,
+            http_status: resp.status,
+            response_time_ms: fetchElapsed,
             error_message: resp.ok ? null : `HTTP ${resp.status}`,
           }).then(({ error: e }) => { if (e) console.error("[kbm-check] лог:", e.message); });
         } catch (err) {
@@ -180,6 +185,7 @@ Deno.serve(async (req) => {
         kbm_coefficient: kbmResult.coefficient,
         kbm_label: kbmResult.label,
         claims: kbmResult.claims,
+        previous_claims_count: kbmResult.claims,
         source: kbmResult.source,
         expires_at: new Date(Date.now() + 90 * 86400_000).toISOString(),
       },

@@ -474,7 +474,134 @@ export interface WorkflowOptions {
   maxStatusChecks?: number;
 }
 
-// ═══════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
+// CCM (Расчет премии)
+// ═══════════════════════════════════════════════════════════
+
+/** Параметры договора для расчета CCM */
+export interface CcmContract {
+  subuser: string;
+  datebeg: string;
+  dateend: string;
+  ВидДокумента: string;
+  ДопускБезОграничений: 0 | 1;
+  ИДРасчетаКБМ?: string;
+  VIN?: string;
+  МодельТС?: number;
+  Мощность?: number;
+  ПериодИсп?: number;
+  ПотокВвода?: number;
+  ПризнСтрахПрицеп?: 0 | 1;
+  Пролонгация?: 0 | 1;
+  СрокСтрах?: number;
+  ТерриторияИспользования?: string;
+  ТипСобственникаТС?: 1001 | 1002 | 1003 | 1004;
+  ТипТСОСАГО?: 1 | 2 | 3 | 4 | 5;
+  ТСИностранное?: 0 | 1;
+  Кбм?: number;
+}
+
+/** Параметр для CCM */
+export interface CcmParam {
+  brief: string;
+  val: string;
+}
+
+/** Коэффициент для CCM */
+export interface CcmCoeff {
+  brief: string;
+  name: string;
+  value: number;
+}
+
+/** Запрос расчета премии CCM */
+export interface CcmCalcRequest {
+  contract: CcmContract;
+  params?: CcmParam[];
+}
+
+/** Результат расчета CCM */
+export interface CcmCalcResult {
+  result: number;
+  premium: number;
+  coeffs: CcmCoeff[];
+  contractId?: number;
+}
+
+/** Ответ расчета премии CCM */
+export interface CcmCalcResponse {
+  requestId: string;
+  responseId?: string;
+  statusCode: number;
+  result?: CcmCalcResult;
+  errors?: CcmError[];
+}
+
+/** Ошибка CCM */
+export interface CcmError {
+  code: string;
+  description: string;
+  isCritical: boolean;
+}
+
+// ═══════════════════════════════════════════════════════════
+// Счета для ЮЛ (Этап 9)
+// ═══════════════════════════════════════════════════════════
+
+/** Статус счета */
+export type InvoiceStatus = 'NEW' | 'SENT' | 'PAID' | 'OVERDUE' | 'CANCELED';
+
+/** Запрос на создание счета для ЮЛ */
+export interface InvoiceRequest {
+  /** ID заявления */
+  policyId: number;
+  /** Сумма */
+  amount: number;
+  /** ИНН плательщика */
+  inn: string;
+  /** Наименование плательщика */
+  name: string;
+  /** Email для отправки счета */
+  email: string;
+  /** Телефон */
+  phone: string;
+}
+
+/** Ответ на создание/получение счета */
+export interface InvoiceResponse {
+  /** ID счета */
+  invoiceId: number;
+  /** Номер счета */
+  number: string;
+  /** Статус */
+  status: InvoiceStatus;
+  /** Ссылка на оплату */
+  link?: string;
+}
+
+/** Параметры фильтра для списка счетов */
+export interface InvoiceListFilters {
+  /** Фильтр по статусу */
+  status?: InvoiceStatus;
+  /** ID заявления */
+  policyId?: number;
+  /** Дата создания с (ISO) */
+  dateFrom?: string;
+  /** Дата создания по (ISO) */
+  dateTo?: string;
+  /** Лимит записей */
+  limit?: number;
+  /** Смещение */
+  offset?: number;
+}
+
+/** Ответ списка счетов */
+export interface InvoiceListResponse {
+  items: InvoiceResponse[];
+  total: number;
+}
+
+// ═══════════════════════════════════════════════════════════
 // Document Type Constants
 // ═══════════════════════════════════════════════════════════
 
@@ -526,3 +653,62 @@ export const GoalUseCode = {
   REGULAR_PASSENGERS: 'RegularPassengers',
   OTHER: 'Other',
 } as const;
+
+/** Константы CCM (Е-ОСАГО) */
+export const CcmConstants = {
+  PRODUCT: 'ОСАГО',
+  DOC_TYPE: 'ДогСтрахЕОСАГО',
+  DRIVER_LIMITED: 0,
+  DRIVER_UNLIMITED: 1,
+  STREAM_OLD: 24,
+} as const;
+
+/** Статусы счета */
+export const InvoiceStatusCode = {
+  NEW: 'NEW',
+  SENT: 'SENT',
+  PAID: 'PAID',
+  OVERDUE: 'OVERDUE',
+  CANCELED: 'CANCELED',
+} as const;
+
+// ═══════════════════════════════════════════════════════════
+// Этап 11: Загрузка документов
+// ═══════════════════════════════════════════════════════════
+
+/** Типы документов для загрузки */
+export type DocumentType =
+  | 'passport'
+  | 'driver_license'
+  | 'sts'
+  | 'pts'
+  | 'diagnostic_card'
+  | 'other';
+
+/** Запрос на загрузку документа */
+export interface DocumentUploadRequest {
+  /** Имя файла */
+  fileName: string;
+  /** Тип документа */
+  docType: DocumentType;
+  /** Описание */
+  description?: string;
+}
+
+/** Ответ загрузки документа */
+export interface DocumentUploadResponse {
+  /** ID документа */
+  documentId: number;
+  /** Ссылка на документ */
+  url: string;
+}
+
+/** Информация о документе */
+export interface DocumentInfo {
+  documentId: number;
+  docType: DocumentType;
+  fileName: string;
+  description?: string;
+  url: string;
+  createdAt: string;
+}

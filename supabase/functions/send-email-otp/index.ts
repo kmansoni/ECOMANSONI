@@ -61,8 +61,76 @@ function isGmailOrIcloudDomain(domain: string): boolean {
 
 function resolveEmailRouterSendUrl(emailRouterUrl: string): string {
   const normalized = emailRouterUrl.replace(/\/+$/, "");
-  if (/\/send$/i.test(normalized)) return normalized;
+  if (/\/v1\/email\/send$/i.test(normalized)) return normalized;
+  if (/\/(api\/)?v1\/send$/i.test(normalized)) {
+    return normalized.replace(/\/(api\/)?v1\/send$/i, "/v1/email/send");
+  }
+  if (/\/v1\/email$/i.test(normalized)) return `${normalized}/send`;
+  if (/\/send$/i.test(normalized)) {
+    return normalized.replace(/\/send$/i, "/v1/email/send");
+  }
   return `${normalized}/v1/email/send`;
+}
+
+function buildPremiumOtpHtml(codeSpaced: string, ttlMinutes: number): string {
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Код подтверждения</title>
+</head>
+<body style="background: linear-gradient(135deg, #0a0a0f 0%, #1a1a2e 50%, #0f0f1a 100%); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 20px;">
+  <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 32px; padding: 48px; max-width: 420px; margin: 0 auto; box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.05);">
+    <div style="font-size: 26px; font-weight: 700; letter-spacing: 6px; color: #ffffff; text-align: center; margin-bottom: 4px;">MASNONI</div>
+    <div style="text-align: center; color: rgba(255, 255, 255, 0.4); font-size: 11px; letter-spacing: 4px; text-transform: uppercase; margin-bottom: 40px;">Подтверждение входа</div>
+
+    <div style="text-align: center; color: rgba(255, 255, 255, 0.9); font-size: 16px; margin-bottom: 8px;">Здравствуйте!</div>
+    <div style="text-align: center; color: rgba(255, 255, 255, 0.5); font-size: 14px; margin-bottom: 32px; line-height: 1.5;">Введите код для завершения входа в систему:</div>
+
+    <div style="background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 20px; padding: 28px; text-align: center; margin-bottom: 16px;">
+      <div style="font-family: 'SF Mono', 'Fira Code', Consolas, monospace; font-size: 40px; font-weight: 600; letter-spacing: 14px; color: #ffffff; text-shadow: 0 0 40px rgba(255, 255, 255, 0.4); margin-left: 14px;">${codeSpaced}</div>
+    </div>
+
+    <div style="text-align: center; color: rgba(255, 255, 255, 0.4); font-size: 12px; margin-bottom: 32px;">Код действителен ${ttlMinutes} минут</div>
+
+    <div style="background: rgba(255, 183, 77, 0.06); border: 1px solid rgba(255, 183, 77, 0.15); border-radius: 16px; padding: 24px; margin-bottom: 32px;">
+      <div style="color: #FFB74D; font-size: 12px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 16px;">Важно</div>
+      <div style="color: rgba(255, 255, 255, 0.7); font-size: 14px; line-height: 1.7; margin-bottom: 12px;">Этот код - <strong style="color: rgba(255, 255, 255, 0.9);">конфиденциальная информация</strong>.</div>
+      <div style="color: rgba(255, 255, 255, 0.7); font-size: 14px; line-height: 1.7; margin-bottom: 12px;"><strong style="color: rgba(255, 255, 255, 0.9);">Не сообщайте его третьим лицам.</strong></div>
+      <div style="height: 1px; background: rgba(255, 255, 255, 0.1); margin: 16px 0;"></div>
+      <div style="color: rgba(255, 255, 255, 0.7); font-size: 14px; line-height: 1.7; margin-bottom: 12px;">Использование чужого кода без согласия владельца - <strong style="color: rgba(255, 255, 255, 0.9);">нарушение закона</strong> (ст. 272 УК РФ).</div>
+      <div style="height: 1px; background: rgba(255, 255, 255, 0.1); margin: 16px 0;"></div>
+      <div style="color: rgba(255, 255, 255, 0.7); font-size: 14px; line-height: 1.7;">Получили код случайно? <strong style="color: rgba(255, 255, 255, 0.9);">Проигнорируйте</strong> это письмо и сообщите нам: <a href="mailto:support@masnoni.ru" style="color: rgba(255, 183, 77, 0.9); text-decoration: none;">support@masnoni.ru</a></div>
+    </div>
+
+    <div style="text-align: center; padding-top: 24px; border-top: 1px solid rgba(255, 255, 255, 0.06);">
+      <div style="color: rgba(255, 255, 255, 0.6); font-size: 14px; margin-bottom: 8px;">С уважением, команда Masnoni</div>
+      <div style="color: rgba(255, 255, 255, 0.4); font-size: 12px;">Ваша технологическая экосистема</div>
+      <div style="color: rgba(255, 255, 255, 0.3); font-size: 11px; margin-top: 4px;">masnoni.ru</div>
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+function buildPremiumOtpText(codeSpaced: string, ttlMinutes: number): string {
+  return [
+    "MASNONI - код подтверждения входа",
+    "",
+    "Здравствуйте!",
+    "Введите код для завершения входа в систему:",
+    "",
+    `Код: ${codeSpaced}`,
+    `Код действителен ${ttlMinutes} минут.`,
+    "",
+    "Важно:",
+    "Этот код - конфиденциальная информация.",
+    "Не сообщайте его третьим лицам.",
+    "Использование чужого кода без согласия владельца - нарушение закона (ст. 272 УК РФ).",
+    "Если получили код случайно - проигнорируйте письмо и напишите нам: support@masnoni.ru",
+  ].join("\n");
 }
 
 async function cleanupOtpCode(
@@ -111,6 +179,8 @@ Deno.serve(async (req: Request) => {
   const preferredEmailRouterKey = Deno.env.get("EMAIL_ROUTER_INGEST_KEY");
   const legacyEmailRouterKey = Deno.env.get("EMAIL_ROUTER_API_KEY");
   const emailRouterIngestKey = preferredEmailRouterKey ?? legacyEmailRouterKey;
+  const otpFromEmail = Deno.env.get("EMAIL_OTP_FROM_EMAIL") ?? "auth@mansoni.ru";
+  const otpReplyTo = Deno.env.get("EMAIL_OTP_REPLY_TO") ?? "support@masnoni.ru";
   const emailRouterKeySource = preferredEmailRouterKey
     ? "EMAIL_ROUTER_INGEST_KEY"
     : legacyEmailRouterKey
@@ -156,6 +226,9 @@ Deno.serve(async (req: Request) => {
 
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return jsonResp(origin, { error: "Invalid email" }, 400);
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(otpFromEmail) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(otpReplyTo)) {
+    return jsonResp(origin, { error: "Server not configured" }, 500);
   }
 
   // ── DB-based cooldown between sends per email (configurable) ────────────
@@ -214,7 +287,11 @@ Deno.serve(async (req: Request) => {
   //
   // Keep the route explicit here so OTP flow matches the deployed router.
   try {
-    const sendUrl = resolveEmailRouterSendUrl(emailRouterUrl);
+    const primarySendUrl = resolveEmailRouterSendUrl(emailRouterUrl);
+    const sendUrlCandidates = Array.from(new Set([
+      primarySendUrl,
+      primarySendUrl.replace(/\/v1\/email\/send$/i, "/send"),
+    ]));
     const recipientDomain = emailDomain(email);
     const isPriorityMailbox = isGmailOrIcloudDomain(recipientDomain);
     const maxAttemptsRaw = Number(Deno.env.get("EMAIL_OTP_MAX_ATTEMPTS") ?? "8");
@@ -231,24 +308,23 @@ Deno.serve(async (req: Request) => {
 
     const emailPayload = {
       to: email,
-      subject: `Mansoni verification code: ${shortCode}`,
+      from: otpFromEmail,
+      subject: `Masnoni - код подтверждения: ${shortCode}`,
       maxAttempts: otpMaxAttempts,
       priority: 1,
       headers: {
         "Auto-Submitted": "auto-generated",
         "X-Auto-Response-Suppress": "All",
+        "X-Transactional-Email": "true",
+        "X-Priority": "1 (Highest)",
+        "Importance": "high",
+        "Precedence": "bulk",
+        "X-MSMail-Priority": "High",
+        "X-Mailer": "Masnoni-OTP/1.0",
+        "Reply-To": otpReplyTo,
       },
-      html: `
-        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px 24px;">
-          <h2 style="color: #1a1a1a; margin-bottom: 8px;">Mansoni verification code</h2>
-          <p style="color: #666; font-size: 15px; margin-bottom: 24px;">Use this one-time code to sign in:</p>
-          <div style="background: #f4f4f5; border-radius: 12px; padding: 20px; text-align: center; margin-bottom: 24px;">
-            <span style="font-size: 32px; font-weight: 700; letter-spacing: 6px; color: #18181b;">${shortCode}</span>
-          </div>
-          <p style="color: #999; font-size: 13px;">Code expires in ${otpTtlMinutes} minutes. If this wasn't you, you can ignore this email.</p>
-        </div>
-      `,
-      text: `Mansoni verification code: ${shortCode}. Expires in ${otpTtlMinutes} minutes. If you did not request this code, ignore this email.`,
+      html: buildPremiumOtpHtml(shortCode, otpTtlMinutes),
+      text: buildPremiumOtpText(shortCode, otpTtlMinutes),
     };
 
     const headers: Record<string, string> = {
@@ -265,36 +341,60 @@ Deno.serve(async (req: Request) => {
       isPriorityMailbox,
       otpMaxAttempts,
       emailRouterTimeoutMs,
-      sendUrl,
+      sendUrlCandidates,
       hasIngestKey: Boolean(emailRouterIngestKey),
       keySource: emailRouterKeySource,
+      otpFromEmail,
+      otpReplyTo,
     });
 
-    const upstream = await fetch(sendUrl, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(emailPayload),
-      signal: AbortSignal.timeout(emailRouterTimeoutMs),
-    });
+    let delivered = false;
+    let lastFailure: { status: number; sendUrl: string; body: string } | null = null;
 
-    if (!upstream.ok) {
+    for (const sendUrl of sendUrlCandidates) {
+      const upstream = await fetch(sendUrl, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(emailPayload),
+        signal: AbortSignal.timeout(emailRouterTimeoutMs),
+      });
+
+      if (upstream.ok) {
+        console.info("[send-email-otp] email-router accepted request", {
+          status: upstream.status,
+          sendUrl,
+          recipient: maskEmail(email),
+        });
+        delivered = true;
+        break;
+      }
+
       const errText = await upstream.text().catch(() => "");
-      console.error("[send-email-otp] email-router error:", {
-        status: upstream.status,
-        sendUrl,
-        body: errText,
+      lastFailure = { status: upstream.status, sendUrl, body: errText };
+
+      // Compatibility fallback for legacy routers exposing /send only.
+      if (upstream.status === 404 || upstream.status === 405) {
+        console.warn("[send-email-otp] email-router endpoint rejected, trying next candidate", {
+          status: upstream.status,
+          sendUrl,
+        });
+        continue;
+      }
+
+      break;
+    }
+
+    if (!delivered) {
+      console.error("[send-email-otp] email-router error:", lastFailure ?? {
+        status: "unknown",
+        sendUrl: sendUrlCandidates[0],
+        body: "",
       });
       await cleanupOtpCode(supabase, email, code);
       return jsonResp(origin, {
         error: "Email service unavailable",
         message: "Сервис отправки писем временно недоступен. Повторите попытку позже.",
       }, 503);
-    } else {
-      console.info("[send-email-otp] email-router accepted request", {
-        status: upstream.status,
-        sendUrl,
-        recipient: maskEmail(email),
-      });
     }
   } catch (err) {
     console.error("[send-email-otp] email-router fetch failed:", err);

@@ -151,6 +151,52 @@ See [`DEPLOY.md`](./DEPLOY.md) for deployment instructions covering GitHub Actio
 
 ---
 
+## Global Geodata Export
+
+The regional script `scripts/fetch-osm-data.mjs` is designed for bounded Overpass extracts like Moscow or Saint Petersburg. For world-scale country and settlement coverage, use the dedicated export CLI instead:
+
+```bash
+# Generate a world manifest from Geofabrik + GeoNames without downloading raw datasets
+npm run osm:world -- --manifest-only
+
+# Also download selected GeoNames metadata files
+npm run osm:world -- --download-geonames=countryInfo,admin1CodesASCII,admin2Codes
+
+# Download the full GeoNames allCountries dump (large)
+npm run osm:world -- --download-geonames=allCountries,countryInfo
+```
+
+Outputs are written to `public/data/osm/world/` and include:
+
+- `geofabrik-extracts.json` — full extract catalog with PBF URLs
+- `geofabrik-countries.json` — country-level subset
+- `geofabrik-download-manifest.json` — machine-readable download plan
+- `geofabrik-download.aria2.txt` — batch file for `aria2c`
+- `download-geofabrik.ps1` — PowerShell downloader for Geofabrik PBF extracts
+- `geonames-manifest.json` — GeoNames dataset manifest
+
+This workflow is intentionally manifest-driven because downloading every PBF for every country and subregion produces a very large dataset that should be stored outside normal source control.
+
+To turn the raw GeoNames dump into usable country and settlement shards:
+
+```bash
+# Process all populated places into per-country JSON shards
+npm run osm:world:process
+
+# Process one country only
+npm run osm:world:process -- --country=RU --min-population=1000
+```
+
+The processing stage writes to `public/data/osm/world/processed/`:
+
+- `countries.json` — normalized country metadata
+- `admin1.json` / `admin2.json` — administrative divisions
+- `settlements-manifest.json` — per-country shard manifest
+- `settlements/<ISO2>.json` — settlements for each country
+- `country-stats.json` / `world-stats.json` — export summary and counts
+
+---
+
 ## Contributing
 
 Please read [`CONTRIBUTING.md`](./CONTRIBUTING.md) before submitting a pull request.

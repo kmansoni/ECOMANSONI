@@ -25,7 +25,10 @@
  *   #7   — safeParseInt imported from shared utils.mjs (no duplication).
  */
 
-import { safeParseInt } from "./utils.mjs";
+import { readPositiveIntEnv } from "./env.mjs";
+import { logger as baseLogger } from "./logger.mjs";
+
+const logger = baseLogger.child({ context: "rateLimit" });
 
 const HARD_MULTIPLIER = 5; // disconnect threshold: rejectedTs.length >= limit * (HARD_MULTIPLIER - 1)
 
@@ -51,10 +54,14 @@ const DEPRECATED_CALL_ACTION_ENVS = [
 ];
 for (const envKey of DEPRECATED_CALL_ACTION_ENVS) {
   if (process.env[envKey] !== undefined) {
-    console.warn(
+    logger.warn(
+      {
+        event: "rate_limit.deprecated_env",
+        envKey,
+      },
       `[rateLimit] DEPRECATED env var "${envKey}" is set but no longer used. ` +
-      `All call action types now share the "_call_action" bucket. ` +
-      `Use RL_CALL_ACTION_LIMIT / RL_CALL_ACTION_WINDOW_MS instead.`
+        `All call action types now share the "_call_action" bucket. ` +
+        `Use RL_CALL_ACTION_LIMIT / RL_CALL_ACTION_WINDOW_MS instead.`
     );
   }
 }
@@ -68,21 +75,21 @@ for (const envKey of DEPRECATED_CALL_ACTION_ENVS) {
  *      map to a single shared "_call_action" bucket via BUCKET_ALIASES.
  */
 export const DEFAULT_RATE_LIMITS = Object.freeze({
-  GLOBAL:        { limit: safeParseInt(process.env.RL_GLOBAL_LIMIT,        60),  windowMs: safeParseInt(process.env.RL_GLOBAL_WINDOW_MS,        10000) },
-  HELLO:         { limit: safeParseInt(process.env.RL_HELLO_LIMIT,          2),  windowMs: safeParseInt(process.env.RL_HELLO_WINDOW_MS,         30000) },
-  AUTH:          { limit: safeParseInt(process.env.RL_AUTH_LIMIT,           3),  windowMs: safeParseInt(process.env.RL_AUTH_WINDOW_MS,          60000) },
-  ROOM_CREATE:   { limit: safeParseInt(process.env.RL_ROOM_CREATE_LIMIT,    3),  windowMs: safeParseInt(process.env.RL_ROOM_CREATE_WINDOW_MS,   60000) },
-  ROOM_JOIN:     { limit: safeParseInt(process.env.RL_ROOM_JOIN_LIMIT,      5),  windowMs: safeParseInt(process.env.RL_ROOM_JOIN_WINDOW_MS,     60000) },
-  "call.invite": { limit: safeParseInt(process.env.RL_CALL_INVITE_LIMIT,   10),  windowMs: safeParseInt(process.env.RL_CALL_INVITE_WINDOW_MS,   60000) },
+  GLOBAL:        { limit: readPositiveIntEnv("RL_GLOBAL_LIMIT", 60), windowMs: readPositiveIntEnv("RL_GLOBAL_WINDOW_MS", 10000) },
+  HELLO:         { limit: readPositiveIntEnv("RL_HELLO_LIMIT", 2), windowMs: readPositiveIntEnv("RL_HELLO_WINDOW_MS", 30000) },
+  AUTH:          { limit: readPositiveIntEnv("RL_AUTH_LIMIT", 3), windowMs: readPositiveIntEnv("RL_AUTH_WINDOW_MS", 60000) },
+  ROOM_CREATE:   { limit: readPositiveIntEnv("RL_ROOM_CREATE_LIMIT", 3), windowMs: readPositiveIntEnv("RL_ROOM_CREATE_WINDOW_MS", 60000) },
+  ROOM_JOIN:     { limit: readPositiveIntEnv("RL_ROOM_JOIN_LIMIT", 5), windowMs: readPositiveIntEnv("RL_ROOM_JOIN_WINDOW_MS", 60000) },
+  "call.invite": { limit: readPositiveIntEnv("RL_CALL_INVITE_LIMIT", 10), windowMs: readPositiveIntEnv("RL_CALL_INVITE_WINDOW_MS", 60000) },
   // M-1: single shared bucket for all call action types (accept/decline/cancel/hangup/rekey)
-  _call_action:  { limit: safeParseInt(process.env.RL_CALL_ACTION_LIMIT,   20),  windowMs: safeParseInt(process.env.RL_CALL_ACTION_WINDOW_MS,   60000) },
-  KEY_PACKAGE:   { limit: safeParseInt(process.env.RL_KEY_PACKAGE_LIMIT,   30),  windowMs: safeParseInt(process.env.RL_KEY_PACKAGE_WINDOW_MS,   60000) },
-  KEY_ACK:       { limit: safeParseInt(process.env.RL_KEY_ACK_LIMIT,       30),  windowMs: safeParseInt(process.env.RL_KEY_ACK_WINDOW_MS,       60000) },
-  REKEY_BEGIN:   { limit: safeParseInt(process.env.RL_REKEY_BEGIN_LIMIT,    3),  windowMs: safeParseInt(process.env.RL_REKEY_BEGIN_WINDOW_MS,   60000) },
-  REKEY_COMMIT:  { limit: safeParseInt(process.env.RL_REKEY_COMMIT_LIMIT,   3),  windowMs: safeParseInt(process.env.RL_REKEY_COMMIT_WINDOW_MS,  60000) },
-  SYNC_MAILBOX:  { limit: safeParseInt(process.env.RL_SYNC_MAILBOX_LIMIT,   5),  windowMs: safeParseInt(process.env.RL_SYNC_MAILBOX_WINDOW_MS,  60000) },
-  MAILBOX_ACK:   { limit: safeParseInt(process.env.RL_MAILBOX_ACK_LIMIT,   10),  windowMs: safeParseInt(process.env.RL_MAILBOX_ACK_WINDOW_MS,   60000) },
-  E2EE_CAPS:     { limit: safeParseInt(process.env.RL_E2EE_CAPS_LIMIT,      2),  windowMs: safeParseInt(process.env.RL_E2EE_CAPS_WINDOW_MS,     60000) },
+  _call_action:  { limit: readPositiveIntEnv("RL_CALL_ACTION_LIMIT", 20), windowMs: readPositiveIntEnv("RL_CALL_ACTION_WINDOW_MS", 60000) },
+  KEY_PACKAGE:   { limit: readPositiveIntEnv("RL_KEY_PACKAGE_LIMIT", 30), windowMs: readPositiveIntEnv("RL_KEY_PACKAGE_WINDOW_MS", 60000) },
+  KEY_ACK:       { limit: readPositiveIntEnv("RL_KEY_ACK_LIMIT", 30), windowMs: readPositiveIntEnv("RL_KEY_ACK_WINDOW_MS", 60000) },
+  REKEY_BEGIN:   { limit: readPositiveIntEnv("RL_REKEY_BEGIN_LIMIT", 3), windowMs: readPositiveIntEnv("RL_REKEY_BEGIN_WINDOW_MS", 60000) },
+  REKEY_COMMIT:  { limit: readPositiveIntEnv("RL_REKEY_COMMIT_LIMIT", 3), windowMs: readPositiveIntEnv("RL_REKEY_COMMIT_WINDOW_MS", 60000) },
+  SYNC_MAILBOX:  { limit: readPositiveIntEnv("RL_SYNC_MAILBOX_LIMIT", 5), windowMs: readPositiveIntEnv("RL_SYNC_MAILBOX_WINDOW_MS", 60000) },
+  MAILBOX_ACK:   { limit: readPositiveIntEnv("RL_MAILBOX_ACK_LIMIT", 10), windowMs: readPositiveIntEnv("RL_MAILBOX_ACK_WINDOW_MS", 60000) },
+  E2EE_CAPS:     { limit: readPositiveIntEnv("RL_E2EE_CAPS_LIMIT", 2), windowMs: readPositiveIntEnv("RL_E2EE_CAPS_WINDOW_MS", 60000) },
 });
 
 /**

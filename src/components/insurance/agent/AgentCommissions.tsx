@@ -6,19 +6,15 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
-import { DollarSign } from "lucide-react";
-import { supabase } from "@/lib/supabase";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import { DollarSign, ArrowUpDown } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { supabase, dbLoose } from "@/lib/supabase";
 
-const db = supabase as SupabaseClient<any>;
-
-const COMMISSION_RATE = 0.1;
-
-const payStatusConfig: Record<string, { label: string; variant: "default" | "secondary" | "outline" }> = {
-  active: { label: "Выплачено", variant: "default" },
-  pending: { label: "Ожидается", variant: "outline" },
-  expired: { label: "Выплачено", variant: "default" },
-  cancelled: { label: "Отменено", variant: "outline" },
+const statusConfig: Record<string, { label: string; variant: "default" | "secondary" | "outline" | "destructive" }> = {
+  confirmed: { label: "Подтверждена", variant: "default" },
+  paid: { label: "Выплачено", variant: "default" },
+  pending: { label: "Ожидается", variant: "secondary" },
+  cancelled: { label: "Отменена", variant: "destructive" },
 };
 
 const periods = [
@@ -27,64 +23,120 @@ const periods = [
   { value: "90d", label: "Последние 90 дней" },
 ];
 
+const statusFilters = [
+  { value: "all", label: "Все статусы" },
+  { value: "pending", label: "Ожидается" },
+  { value: "confirmed", label: "Подтверждена" },
+  { value: "paid", label: "Выплачено" },
+  { value: "cancelled", label: "Отменена" },
+];
+
+type SortField = "date" | "amount";
+type SortDir = "asc" | "desc";
+
 export function AgentCommissions() {
   const [period, setPeriod] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [sortField, setSortField] = useState<SortField>("date");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
 
-  const { data: policies = [], isLoading } = useQuery({
-    queryKey: ["agent-commissions", period],
+  const { data: commissions = [], isLoading } = useQuery({
+    queryKey: ["agent-commissions-real", period],
     queryFn: async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return [];
 
-      let query = db
-        .from("insurance_policies")
-        .select("id, policy_number, premium, status, start_date, insurance_companies(name), insurance_products(name)")
+      // Получаем agent_id
+      const { data: profile } = await dbLoose
+        .from("agent_profiles")
+        .select("id")
         .eq("user_id", user.id)
-        .order("start_date", { ascending: false })
-        .limit(50);
+        .single();
+      if (!profile) return [];
+
+      const agentId = (profile as any).id;
+
+      let query = dbLoose
+        .from("insurance_commissions")
+        .select("*, insurance_policies(policy_number, premium, insurance_companies(name), insurance_products(name))")
+        .eq("agent_id", agentId)
+        .order("created_at", { ascending: false })
+        .limit(100);
 
       if (period === "30d") {
         const d = new Date(); d.setDate(d.getDate() - 30);
-        query = query.gte("start_date", d.toISOString());
+        query = query.gte("created_at", d.toISOString());
       } else if (period === "90d") {
         const d = new Date(); d.setDate(d.getDate() - 90);
-        query = query.gte("start_date", d.toISOString());
+        query = query.gte("created_at", d.toISOString());
       }
 
       const { data, error } = await query;
       if (error) throw error;
-      return data ?? [];
+      return (data ?? []) as any[];
     },
   });
 
-  const rows = policies.map((p: any) => ({
-    ...p,
-    commission: Math.round((p.premium ?? 0) * COMMISSION_RATE),
-    companyName: p.insurance_companies?.name ?? "—",
-    productName: p.insurance_products?.name ?? p.policy_number ?? "—",
-  }));
+  // Фильтрация по статусу
+  const filtered = commissions.filter((c: any) =>
+    statusFilter === "all" || c.status === statusFilter
+  );
 
-  const totalPremium = rows.reduce((s: number, r: any) => s + (r.premium ?? 0), 0);
-  const totalCommission = rows.reduce((s: number, r: any) => s + r.commission, 0);
-  const paidCommission = rows.filter((r: any) => r.status === "active" || r.status === "expired").reduce((s: number, r: any) => s + r.commission, 0);
-  const pendingCommission = totalCommission - paidCommission;
+  // Сортировка
+  const sorted = [...filtered].sort((a: any, b: any) => {
+    if (sortField === "date") {
+      const diff = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+      return sortDir === "asc" ? diff : -diff;
+    }
+    const diff = a.amount - b.amount;
+    return sortDir === "asc" ? diff : -diff;
+  });
+
+  const totalCommission = filtered.reduce((s: number, r: any) => s + (r.amount ?? 0), 0);
+  const paidCommission = filtered
+    .filter((r: any) => r.status === "paid" || r.status === "confirmed")
+    .reduce((s: number, r: any) => s + (r.amount ?? 0), 0);
+  const pendingCommission = filtered
+    .filter((r: any) => r.status === "pending")
+    .reduce((s: number, r: any) => s + (r.amount ?? 0), 0);
 
   const fmt = (v: number) => v.toLocaleString("ru-RU") + " \u20bd";
 
+  function toggleSort(field: SortField) {
+    if (sortField === field) {
+      setSortDir(d => d === "asc" ? "desc" : "asc");
+    } else {
+      setSortField(field);
+      setSortDir("desc");
+    }
+  }
+
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <h3 className="font-semibold text-foreground">Комиссии</h3>
-        <Select value={period} onValueChange={setPeriod}>
-          <SelectTrigger className="w-40 h-8 text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {periods.map((p) => (
-              <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="flex gap-2">
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-36 h-8 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {statusFilters.map((s) => (
+                <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={period} onValueChange={setPeriod}>
+            <SelectTrigger className="w-40 h-8 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {periods.map((p) => (
+                <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       <div className="grid grid-cols-3 gap-2">
@@ -110,7 +162,7 @@ export function AgentCommissions() {
             <Skeleton key={i} className="h-12 w-full rounded-lg" />
           ))}
         </div>
-      ) : rows.length === 0 ? (
+      ) : sorted.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground">
           <DollarSign className="w-10 h-10 mx-auto mb-3 opacity-40" />
           <p className="text-sm">Комиссий пока нет</p>
@@ -130,13 +182,26 @@ export function AgentCommissions() {
                   <th className="text-left p-3 text-muted-foreground font-medium hidden sm:table-cell">Компания</th>
                   <th className="text-right p-3 text-muted-foreground font-medium">Премия</th>
                   <th className="text-right p-3 text-muted-foreground font-medium">Ставка</th>
-                  <th className="text-right p-3 text-muted-foreground font-medium">Комиссия</th>
+                  <th className="p-3 text-muted-foreground font-medium text-right">
+                    <button className="inline-flex items-center gap-1 hover:text-foreground" onClick={() => toggleSort("amount")}>
+                      Комиссия <ArrowUpDown className="w-3 h-3" />
+                    </button>
+                  </th>
+                  <th className="p-3 text-muted-foreground font-medium text-center">
+                    <button className="inline-flex items-center gap-1 hover:text-foreground" onClick={() => toggleSort("date")}>
+                      Дата <ArrowUpDown className="w-3 h-3" />
+                    </button>
+                  </th>
                   <th className="text-center p-3 text-muted-foreground font-medium">Статус</th>
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row: any, i: number) => {
-                  const status = payStatusConfig[row.status] ?? { label: row.status, variant: "outline" as const };
+                {sorted.map((row: any, i: number) => {
+                  const st = statusConfig[row.status] ?? { label: row.status, variant: "outline" as const };
+                  const policy = row.insurance_policies;
+                  const policyNumber = policy?.policy_number ?? "—";
+                  const companyName = policy?.insurance_companies?.name ?? "—";
+                  const premium = policy?.premium ?? 0;
                   return (
                     <motion.tr
                       key={row.id}
@@ -146,15 +211,17 @@ export function AgentCommissions() {
                       className="border-b border-border/50 last:border-0 hover:bg-muted/20 transition-colors"
                     >
                       <td className="p-3">
-                        <p className="font-medium text-foreground">{row.policy_number || row.id.slice(0, 8)}</p>
-                        <p className="text-muted-foreground">{row.productName}</p>
+                        <p className="font-medium text-foreground">{policyNumber}</p>
                       </td>
-                      <td className="p-3 text-muted-foreground hidden sm:table-cell">{row.companyName}</td>
-                      <td className="p-3 text-right text-foreground">{fmt(row.premium ?? 0)}</td>
-                      <td className="p-3 text-right text-muted-foreground">{Math.round(COMMISSION_RATE * 100)}%</td>
-                      <td className="p-3 text-right font-semibold text-green-400">{fmt(row.commission)}</td>
+                      <td className="p-3 text-muted-foreground hidden sm:table-cell">{companyName}</td>
+                      <td className="p-3 text-right text-foreground">{fmt(premium)}</td>
+                      <td className="p-3 text-right text-muted-foreground">{Math.round(row.rate * 100)}%</td>
+                      <td className="p-3 text-right font-semibold text-green-400">{fmt(row.amount)}</td>
+                      <td className="p-3 text-center text-muted-foreground">
+                        {new Date(row.created_at).toLocaleDateString("ru-RU")}
+                      </td>
                       <td className="p-3 text-center">
-                        <Badge variant={status.variant} className="text-[10px] h-4 px-1">{status.label}</Badge>
+                        <Badge variant={st.variant} className="text-[10px] h-4 px-1">{st.label}</Badge>
                       </td>
                     </motion.tr>
                   );
@@ -164,10 +231,6 @@ export function AgentCommissions() {
           </div>
           <Separator />
           <div className="flex justify-between items-center p-3">
-            <span className="text-sm font-medium text-muted-foreground">Итого сумма страховых премий:</span>
-            <span className="text-sm font-bold text-foreground">{fmt(totalPremium)}</span>
-          </div>
-          <div className="flex justify-between items-center px-3 pb-3">
             <span className="text-sm font-medium text-muted-foreground">Итого комиссия:</span>
             <span className="text-sm font-bold text-green-400">{fmt(totalCommission)}</span>
           </div>

@@ -14,6 +14,7 @@ const E2E_PASSWORD = "E2eCall!2026";
 
 const CALL_SETUP_TIMEOUT = 30_000;
 const IN_CALL_TIMEOUT = 40_000;
+const RELEVANT_CALL_LOG = /CallFSM|fallback_|transport-created|transport-connect|room-bootstrap|remote_stream_updated|connection_promoted_by_remote_tracks|media-bootstrap|media_bootstrap_progress|\[VideoCallContext\] State:/;
 
 function makeSb(): SupabaseClient {
   return createClient(SUPABASE_URL, SUPABASE_KEY, {
@@ -69,7 +70,7 @@ async function getOrCreateDm(sb: SupabaseClient, targetUserId: string): Promise<
 }
 
 async function waitForInCall(page: Page, timeout = IN_CALL_TIMEOUT) {
-  await page.locator("text=Соединение").first().waitFor({ state: "visible", timeout });
+  await page.locator('[data-call-connected="true"]').first().waitFor({ state: "visible", timeout });
 }
 
 async function waitForIncomingCall(page: Page, timeout = CALL_SETUP_TIMEOUT) {
@@ -77,7 +78,64 @@ async function waitForIncomingCall(page: Page, timeout = CALL_SETUP_TIMEOUT) {
 }
 
 async function acceptIncomingCall(page: Page) {
-  await page.locator("text=Ответить").first().click();
+  await page.locator('button[aria-label="Ответить"]').first().click();
+}
+
+async function captureCallUiSnapshot(page: Page) {
+  return page.evaluate(() => {
+    const connectedRoot = document.querySelector('[data-call-connected]');
+    const incomingText = Array.from(document.querySelectorAll('span, p, h1, h2, h3, div'))
+      .map((node) => node.textContent?.trim() ?? "")
+      .find((text) => text.includes("Входящий звонок"));
+    const connectingText = Array.from(document.querySelectorAll('span, p, h1, h2, h3, div'))
+      .map((node) => node.textContent?.trim() ?? "")
+      .find((text) => text.includes("Подключение"));
+    const durationText = Array.from(document.querySelectorAll('span'))
+      .map((node) => node.textContent?.trim() ?? "")
+      .find((text) => /^\d{2}:\d{2}$/.test(text));
+    const videos = Array.from(document.querySelectorAll('video')).map((video, index) => {
+      const stream = video.srcObject;
+      const mediaStream = stream instanceof MediaStream ? stream : null;
+      return {
+        index,
+        readyState: video.readyState,
+        paused: video.paused,
+        muted: video.muted,
+        autoplay: video.autoplay,
+        playsInline: video.playsInline,
+        width: video.videoWidth,
+        height: video.videoHeight,
+        trackKinds: mediaStream?.getTracks().map((track) => track.kind) ?? [],
+        trackStates: mediaStream?.getTracks().map((track) => `${track.kind}:${track.readyState}:${track.enabled}`) ?? [],
+      };
+    });
+    const audios = Array.from(document.querySelectorAll('audio')).map((audio, index) => ({
+      index,
+      readyState: audio.readyState,
+      paused: audio.paused,
+      muted: audio.muted,
+      autoplay: audio.autoplay,
+      hasSrcObject: audio.srcObject instanceof MediaStream,
+      trackStates: audio.srcObject instanceof MediaStream
+        ? audio.srcObject.getTracks().map((track) => `${track.kind}:${track.readyState}:${track.enabled}`)
+        : [],
+    }));
+
+    return {
+      url: window.location.href,
+      callState: connectedRoot?.getAttribute('data-call-state') ?? null,
+      callConnected: connectedRoot?.getAttribute('data-call-connected') ?? null,
+      connectionState: connectedRoot?.getAttribute('data-connection-state') ?? null,
+      hasIncomingOverlay: Boolean(incomingText),
+      hasConnectingLabel: Boolean(connectingText),
+      durationText: durationText ?? null,
+      videoCount: videos.length,
+      audioCount: audios.length,
+      videos,
+      audios,
+      documentVisibility: document.visibilityState,
+    };
+  });
 }
 
 async function endCall(page: Page) {
@@ -139,18 +197,22 @@ async function runSingleCall(browser: any, label: string) {
     await pageA.waitForTimeout(5000);
     await pageB.waitForTimeout(5000);
 
-    // 3.1 Кликнуть на DM в списке если чат не раскрылся автоматически
+    // 3.1 openDmId должен раскрыть DM автоматически. Если этого не произошло,
+    // допускаем только безопасный fallback по строке списка, а не по глобальному text locator,
+    // иначе можно случайно кликнуть по ChatHeader и уйти на /contact/:userId.
+    const videoCallBtn = pageA.locator('button[aria-label="Видеозвонок"]');
     const chatItem = pageA.locator(`[data-conversation-id="${convId}"]`).first();
-    const chatItemAlt = pageA.locator("text=E2E Caller B").first();
-    if (await chatItem.isVisible({ timeout: 3000 }).catch(() => false)) {
+    await expect
+      .poll(async () => {
+        if (await videoCallBtn.isVisible().catch(() => false)) return "opened";
+        if (await chatItem.isVisible().catch(() => false)) return "listed";
+        return "pending";
+      }, { timeout: 15000, message: "DM did not appear in header or chat list" })
+      .not.toBe("pending");
+
+    const chatAlreadyOpened = await videoCallBtn.isVisible().catch(() => false);
+    if (!chatAlreadyOpened) {
       await chatItem.click();
-    } else if (await chatItemAlt.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await chatItemAlt.click();
-    } else {
-      // fallback: кликнуть на email контакта
-      const emailItem = pageA.locator(`text=${emailB}`).first();
-      await emailItem.waitFor({ state: "visible", timeout: 5000 });
-      await emailItem.click();
     }
     await pageA.waitForTimeout(2000);
 
@@ -159,7 +221,6 @@ async function runSingleCall(browser: any, label: string) {
     console.log(`[${label}] URL A: ${pageA.url()}`);
 
     // 4. Дождаться кнопки видеозвонка в ChatHeader
-    const videoCallBtn = pageA.locator('button[aria-label="Видеозвонок"]');
     await videoCallBtn.waitFor({ state: "visible", timeout: 15_000 });
 
     // 5. Начать звонок
@@ -203,8 +264,14 @@ async function runSingleCall(browser: any, label: string) {
   } catch (err) {
     await pageA.screenshot({ path: "pw-screenshots/call-FAIL-pageA.png" }).catch(() => {});
     await pageB.screenshot({ path: "pw-screenshots/call-FAIL-pageB.png" }).catch(() => {});
-    console.log(`[${label}] FAIL console A:`, consoleA.slice(-20).join("\n"));
-    console.log(`[${label}] FAIL console B:`, consoleB.slice(-20).join("\n"));
+    const pageASnapshot = await captureCallUiSnapshot(pageA).catch(() => null);
+    const pageBSnapshot = await captureCallUiSnapshot(pageB).catch(() => null);
+    const relevantConsoleA = consoleA.filter((line) => RELEVANT_CALL_LOG.test(line));
+    const relevantConsoleB = consoleB.filter((line) => RELEVANT_CALL_LOG.test(line));
+    console.log(`[${label}] FAIL snapshot A:`, JSON.stringify(pageASnapshot));
+    console.log(`[${label}] FAIL snapshot B:`, JSON.stringify(pageBSnapshot));
+    console.log(`[${label}] FAIL console A:`, (relevantConsoleA.length > 0 ? relevantConsoleA : consoleA.slice(-20)).join("\n"));
+    console.log(`[${label}] FAIL console B:`, (relevantConsoleB.length > 0 ? relevantConsoleB : consoleB.slice(-20)).join("\n"));
     throw err;
   } finally {
     await ctxA.close();

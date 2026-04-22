@@ -1,10 +1,22 @@
 import { motion } from "framer-motion";
-import { Star } from "lucide-react";
+import { Star, History } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAgentBalance } from "@/hooks/insurance/useInsuranceAgent";
 import { LOYALTY_LEVELS, formatCurrency, getLoyaltyProgress } from "@/lib/insurance/loyalty";
 import { getLoyaltyInfo } from "@/types/insurance";
+import { supabase, dbLoose } from "@/lib/supabase";
+
+interface LoyaltyHistoryItem {
+  id: string;
+  quarter: string;
+  level_before: string;
+  level_after: string;
+  premiums_total: number;
+  bonus_percent: number;
+  calculated_at: string | null;
+}
 
 const levelColors: Record<string, string> = {
   novice: "#9ca3af",
@@ -16,6 +28,35 @@ const levelColors: Record<string, string> = {
 
 export function AgentLoyalty() {
   const { data, isLoading, error } = useAgentBalance();
+
+  // Загрузка истории лояльности
+  const { data: history = [] } = useQuery<LoyaltyHistoryItem[]>({
+    queryKey: ["insurance", "loyalty-history"],
+    queryFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return [];
+
+      const { data: profile } = await dbLoose
+        .from("agent_profiles")
+        .select("id")
+        .eq("user_id", user.id)
+        .single();
+      if (!profile) return [];
+
+      const agentId = (profile as any).id;
+
+      const { data: historyData, error } = await dbLoose
+        .from("insurance_loyalty_history")
+        .select("*")
+        .eq("agent_id", agentId)
+        .order("calculated_at", { ascending: false })
+        .limit(8);
+
+      if (error) return [];
+      return (historyData ?? []) as unknown as LoyaltyHistoryItem[];
+    },
+    staleTime: 120_000,
+  });
 
   if (isLoading) {
     return (
@@ -94,7 +135,7 @@ export function AgentLoyalty() {
                 }`}
               >
                 <span style={{ color: c }} className="text-base leading-none">
-                  {passed ? "●" : "○"}
+                  {passed ? "\u25cf" : "\u25cb"}
                 </span>
                 <span className={`flex-1 ${current ? "font-medium text-foreground" : "text-muted-foreground"}`}>
                   {lvl.name}
@@ -109,6 +150,29 @@ export function AgentLoyalty() {
             );
           })}
         </div>
+
+        {/* история лояльности */}
+        {history.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+              <History className="w-3.5 h-3.5" /> История уровней
+            </p>
+            {history.map(h => {
+              const beforeInfo = getLoyaltyInfo(h.level_before as any);
+              const afterInfo = getLoyaltyInfo(h.level_after as any);
+              const changed = h.level_before !== h.level_after;
+              return (
+                <div key={h.id} className="flex items-center justify-between text-xs py-1 border-b border-border/50 last:border-0">
+                  <span className="text-muted-foreground">{h.quarter}</span>
+                  <span className={changed ? "text-foreground font-medium" : "text-muted-foreground"}>
+                    {changed ? `${beforeInfo.name} \u2192 ${afterInfo.name}` : afterInfo.name}
+                  </span>
+                  <span className="text-muted-foreground">{formatCurrency(h.premiums_total)}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </CardContent>
     </Card>
   );

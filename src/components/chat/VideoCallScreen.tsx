@@ -217,31 +217,82 @@ export function VideoCallScreen({
   const isVideoCall = call ? call.call_type === "video" : true;
   const isConnected = isCallConnected(callState);
 
+  // Determine if we have remote audio tracks
+  const hasRemoteAudio = isConnected && remoteStream && remoteStream.getAudioTracks().length > 0;
+  
+  // Attach remote audio - always play remote audio when available (both video and audio calls)
+  useEffect(() => {
+    const audioElement = audioOutRef.current;
+    if (!audioElement) return;
+
+    if (remoteStream && hasRemoteAudio) {
+      logger.debug('video-call-screen: attaching remote audio', {
+        hasRemoteAudio,
+        tracks: remoteStream.getTracks().map(t => `${t.kind}:${t.readyState}`).join(", "),
+      });
+      audioElement.srcObject = remoteStream;
+      audioElement.play().catch(() => {
+        logger.debug('video-call-screen: remote audio autoplay blocked');
+      });
+      return;
+    }
+
+    audioElement.pause();
+    audioElement.srcObject = null;
+  }, [remoteStream, hasRemoteAudio]);
+
   // Determine if we have remote video to show
   const hasRemoteVideo = isConnected && remoteStream && remoteStream.getVideoTracks().length > 0;
 
   // Attach local stream - re-run when layout changes (hasRemoteVideo)
   useEffect(() => {
-    if (localVideoRef.current && localStream) {
+    const localVideoElement = localVideoRef.current;
+    if (localVideoElement && localStream) {
       logger.debug("video-call-screen: attaching local stream", { hasRemoteVideo });
-      localVideoRef.current.srcObject = localStream;
+      localVideoElement.srcObject = localStream;
+      localVideoElement.play().catch(() => {
+        logger.debug("video-call-screen: local video autoplay blocked");
+      });
+      return;
+    }
+
+    if (localVideoElement) {
+      localVideoElement.srcObject = null;
     }
   }, [localStream, hasRemoteVideo]);
 
   // Attach remote stream - re-run when layout changes or stream updates
   useEffect(() => {
-    if (remoteVideoRef.current && remoteStream) {
+    const remoteVideoElement = remoteVideoRef.current;
+    if (remoteVideoElement && remoteStream) {
       logger.debug("video-call-screen: attaching remote stream", {
         tracks: remoteStream.getTracks().map(t => `${t.kind}:${t.readyState}`).join(", "),
       });
-      remoteVideoRef.current.srcObject = remoteStream;
+      remoteVideoElement.srcObject = remoteStream;
+      remoteVideoElement.play().catch(() => {
+        logger.debug("video-call-screen: remote video autoplay blocked");
+      });
+      return;
+    }
+
+    if (remoteVideoElement) {
+      remoteVideoElement.srcObject = null;
     }
   }, [remoteStream, hasRemoteVideo]);
 
   // Attach remote screen share stream
   useEffect(() => {
-    if (remoteScreenRef.current && remoteScreenStream) {
-      remoteScreenRef.current.srcObject = remoteScreenStream;
+    const remoteScreenElement = remoteScreenRef.current;
+    if (remoteScreenElement && remoteScreenStream) {
+      remoteScreenElement.srcObject = remoteScreenStream;
+      remoteScreenElement.play().catch(() => {
+        logger.debug("video-call-screen: remote screen autoplay blocked");
+      });
+      return;
+    }
+
+    if (remoteScreenElement) {
+      remoteScreenElement.srcObject = null;
     }
   }, [remoteScreenStream]);
 
@@ -287,9 +338,15 @@ export function VideoCallScreen({
   // Video call - swap local/remote preview
   if (isVideoCall && localStream && !isVideoOff) {
     return (
-      <div className="fixed inset-0 bg-black z-[300] flex flex-col">
+      <div
+        className="fixed inset-0 bg-black z-[300] flex flex-col"
+        data-call-state={callState}
+        data-call-connected={isConnected ? "true" : "false"}
+          data-connection-state={connectionState}
+      >
         {/* Ringtone player */}
         <RingtonePlayer play={shouldPlayRingtone} />
+        <audio ref={audioOutRef} autoPlay playsInline style={{ display: "none" }} />
         {/* Main video area */}
 
         {hasRemoteVideo ? (
@@ -521,7 +578,12 @@ export function VideoCallScreen({
 
   // Audio call or waiting state - with brand background
   return (
-    <div className="fixed inset-0 z-[300] flex flex-col">
+    <div
+      className="fixed inset-0 z-[300] flex flex-col"
+      data-call-state={callState}
+      data-call-connected={isConnected ? "true" : "false"}
+      data-connection-state={connectionState}
+    >
       {/* Ringtone player */}
       <RingtonePlayer play={shouldPlayRingtone} />
       {/* Brand animated background */}
@@ -599,11 +661,8 @@ export function VideoCallScreen({
           )}
         </div>
 
-        {/* Audio element for audio calls */}
         {/* Аудиовыход с поддержкой setSinkId */}
-        {!isVideoCall && remoteStream && (
-          <audio ref={audioOutRef} autoPlay playsInline />
-        )}
+        <audio ref={audioOutRef} autoPlay playsInline style={{ display: "none" }} />
 
         {/* Bottom controls */}
         <div className="p-6 pb-10 safe-area-bottom">

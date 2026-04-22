@@ -8,6 +8,7 @@ export interface SearchUser {
   user_id: string;
   display_name: string;
   avatar_url: string;
+  username?: string;
   bio?: string;
   verified?: boolean;
   isFollowing?: boolean;
@@ -79,15 +80,21 @@ export function useSearch() {
   const [explorePageLoading, setExplorePageLoading] = useState(false);
 
   const searchUsers = useCallback(async (query: string) => {
-    if (!query.trim()) {
+    const raw = query.trim();
+    if (!raw) {
       setUsers([]);
       return;
     }
 
     setLoading(true);
     try {
-      const raw = query.trim();
-      const safeQuery = raw.replace(/[%_,()]/g, "");
+      const isUsernameQuery = raw.startsWith("@");
+      const normalizedQuery = isUsernameQuery ? raw.replace(/^@+/, "") : raw;
+      const safeQuery = normalizedQuery.replace(/[%(),]/g, "").trim();
+      if (!safeQuery) {
+        setUsers([]);
+        return;
+      }
       let effectiveData: any[] = [];
 
       // Проверяем наличие активной сессии перед поиском.
@@ -165,15 +172,24 @@ export function useSearch() {
             u.display_name ||
             u.full_name ||
             [u.first_name, u.last_name].filter(Boolean).join(" ") ||
-            u.username ||
             "Пользователь"
           ),
           avatar_url: String(u.avatar_url || ""),
+          username: typeof u.username === "string" ? u.username : undefined,
           bio: u.bio ? String(u.bio) : undefined,
           verified: Boolean(u.verified),
           isFollowing: followingIds.includes(u.user_id),
         }))
-        .filter((u) => Boolean(u.user_id));
+        .filter((u) => Boolean(u.user_id))
+        .sort((a, b) => {
+          if (!isUsernameQuery) return 0;
+          const aUsername = (a.username || "").toLowerCase();
+          const bUsername = (b.username || "").toLowerCase();
+          const q = safeQuery.toLowerCase();
+          const aScore = aUsername === q ? 0 : aUsername.startsWith(q) ? 1 : 2;
+          const bScore = bUsername === q ? 0 : bUsername.startsWith(q) ? 1 : 2;
+          return aScore - bScore;
+        });
 
       setUsers(usersWithFollowStatus);
     } catch (error) {

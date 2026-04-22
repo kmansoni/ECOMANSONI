@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { ArrowLeft, Home, Briefcase, Star, Bookmark } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useUserSettings } from '@/contexts/UserSettingsContext';
+import { navText } from '@/lib/navigation/navigationUi';
 import type { SavedPlace } from '@/types/navigation';
 import { savePlace } from '@/lib/navigation/places';
 
@@ -11,16 +13,17 @@ interface SavePlaceSheetProps {
   onSaved?: () => void;
 }
 
-const LABEL_OPTIONS: { id: 'home' | 'work' | 'custom'; label: string; icon: React.ElementType; color: string }[] = [
-  { id: 'home', label: 'Дом', icon: Home, color: 'text-blue-400' },
-  { id: 'work', label: 'Работа', icon: Briefcase, color: 'text-purple-400' },
-  { id: 'custom', label: 'Другое', icon: Star, color: 'text-yellow-400' },
-];
-
 export function SavePlaceSheet({ place, userId, onClose, onSaved }: SavePlaceSheetProps) {
+  const { settings } = useUserSettings();
+  const languageCode = settings?.language_code ?? null;
   const [selectedLabel, setSelectedLabel] = useState<'home' | 'work' | 'custom'>('custom');
   const [customName, setCustomName] = useState(place.name);
   const [saving, setSaving] = useState(false);
+  const labelOptions: { id: 'home' | 'work' | 'custom'; label: string; icon: React.ElementType; color: string }[] = [
+    { id: 'home', label: navText('Дом', 'Home', languageCode), icon: Home, color: 'text-blue-400' },
+    { id: 'work', label: navText('Работа', 'Work', languageCode), icon: Briefcase, color: 'text-purple-400' },
+    { id: 'custom', label: navText('Другое', 'Other', languageCode), icon: Star, color: 'text-yellow-400' },
+  ];
 
   const handleSave = async () => {
     setSaving(true);
@@ -59,7 +62,7 @@ export function SavePlaceSheet({ place, userId, onClose, onSaved }: SavePlaceShe
         {/* Header */}
         <div className="flex items-center gap-2 mb-4">
           <Bookmark className="w-5 h-5 text-blue-400" />
-          <h3 className="text-white font-semibold">Сохранить место</h3>
+          <h3 className="text-white font-semibold">{navText('Сохранить место', 'Save place', languageCode)}</h3>
         </div>
 
         {/* Address preview */}
@@ -67,14 +70,14 @@ export function SavePlaceSheet({ place, userId, onClose, onSaved }: SavePlaceShe
           <p className="text-sm text-white">{place.name}</p>
           <p className="text-xs text-gray-400 mt-0.5">{place.address}</p>
           {place.fiasId && (
-            <p className="text-[10px] text-gray-600 mt-1">ФИАС: {place.fiasId.substring(0, 8)}...</p>
+            <p className="text-[10px] text-gray-600 mt-1">FIAS: {place.fiasId.substring(0, 8)}...</p>
           )}
         </div>
 
         {/* Label selection */}
-        <p className="text-xs text-gray-400 mb-2">Тип</p>
+        <p className="text-xs text-gray-400 mb-2">{navText('Тип', 'Type', languageCode)}</p>
         <div className="flex gap-2 mb-4">
-          {LABEL_OPTIONS.map((opt) => {
+          {labelOptions.map((opt) => {
             const Icon = opt.icon;
             return (
               <button
@@ -97,12 +100,12 @@ export function SavePlaceSheet({ place, userId, onClose, onSaved }: SavePlaceShe
         {/* Custom name */}
         {selectedLabel === 'custom' && (
           <div className="mb-4">
-            <label className="text-xs text-gray-400 mb-1 block">Название</label>
+            <label className="text-xs text-gray-400 mb-1 block">{navText('Название', 'Name', languageCode)}</label>
             <input
               type="text"
               value={customName}
               onChange={(e) => setCustomName(e.target.value)}
-              placeholder="Мое любимое место"
+              placeholder={navText('Мое любимое место', 'My favorite place', languageCode)}
               className={cn(
                 'w-full h-11 px-4 rounded-xl',
                 'bg-gray-800/80 border border-white/10',
@@ -124,7 +127,7 @@ export function SavePlaceSheet({ place, userId, onClose, onSaved }: SavePlaceShe
               'transition-all active:scale-[0.98]'
             )}
           >
-            Отмена
+            {navText('Отмена', 'Cancel', languageCode)}
           </button>
           <button
             onClick={handleSave}
@@ -141,7 +144,7 @@ export function SavePlaceSheet({ place, userId, onClose, onSaved }: SavePlaceShe
             {saving ? (
               <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
             ) : (
-              'Сохранить'
+              navText('Сохранить', 'Save', languageCode)
             )}
           </button>
         </div>

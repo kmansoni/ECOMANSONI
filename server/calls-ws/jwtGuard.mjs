@@ -24,12 +24,13 @@
  */
 
 import crypto from "node:crypto";
+import { readPositiveIntEnv } from "./env.mjs";
+import { logger as baseLogger } from "./logger.mjs";
+
+const logger = baseLogger.child({ context: "jwtGuard" });
 
 // H-2: maximum consecutive auth failures before forced disconnect
-const MAX_CONSECUTIVE_FAILURES = (() => {
-  const n = parseInt(process.env.CALLS_WS_JWT_MAX_FAILURES ?? "3", 10);
-  return Number.isFinite(n) && n > 0 ? n : 3;
-})();
+const MAX_CONSECUTIVE_FAILURES = readPositiveIntEnv("CALLS_WS_JWT_MAX_FAILURES", 3);
 
 // H-2: grace period extended to current time when auth provider is temporarily down
 const GRACE_PERIOD_MS = 10_000;
@@ -106,9 +107,16 @@ export function createJwtGuard({ revalidateIntervalMs, validateFn }) {
         // Network error or provider down.
         // H-2: increment failure counter; disconnect after MAX_CONSECUTIVE_FAILURES
         conn._consecutiveAuthFailures = (conn._consecutiveAuthFailures ?? 0) + 1;
-        console.warn(
+        logger.warn(
+          {
+            event: "jwt.revalidation_transient_error",
+            userId: conn.userId,
+            failureCount: conn._consecutiveAuthFailures,
+            maxFailures: MAX_CONSECUTIVE_FAILURES,
+            error: err,
+          },
           `[jwtGuard] transient error during revalidation for userId=${conn.userId} ` +
-          `(failure ${conn._consecutiveAuthFailures}/${MAX_CONSECUTIVE_FAILURES}): ${err?.message}`
+            `(failure ${conn._consecutiveAuthFailures}/${MAX_CONSECUTIVE_FAILURES}): ${err?.message}`
         );
 
         if (conn._consecutiveAuthFailures >= MAX_CONSECUTIVE_FAILURES) {

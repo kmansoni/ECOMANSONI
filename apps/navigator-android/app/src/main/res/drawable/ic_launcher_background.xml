@@ -1,0 +1,4 @@
+<!-- Layer list for app background -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/background" />
+</layer-list>

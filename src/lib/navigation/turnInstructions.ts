@@ -1,4 +1,5 @@
 import type { ManeuverType } from '@/types/navigation';
+import { formatNavigationDistance, formatNavigationDuration, formatNavigationEta, getCurrentLanguageCode } from '@/lib/navigation/navigationUi';
 
 const MANEUVER_ICONS: Record<ManeuverType, string> = {
   'depart': 'Navigation',
@@ -23,7 +24,7 @@ const MANEUVER_ICONS: Record<ManeuverType, string> = {
   'keep-right': 'ArrowUpRight',
 };
 
-const MANEUVER_TEXT: Record<ManeuverType, string> = {
+const MANEUVER_TEXT_RU: Record<ManeuverType, string> = {
   'depart': 'Начните движение',
   'arrive': 'Вы прибыли',
   'turn-left': 'Поверните налево',
@@ -46,7 +47,30 @@ const MANEUVER_TEXT: Record<ManeuverType, string> = {
   'keep-right': 'Держитесь правее',
 };
 
-const MANEUVER_VOICE: Record<ManeuverType, string> = {
+const MANEUVER_TEXT_EN: Record<ManeuverType, string> = {
+  'depart': 'Start driving',
+  'arrive': 'You have arrived',
+  'turn-left': 'Turn left',
+  'turn-right': 'Turn right',
+  'turn-slight-left': 'Keep slightly left',
+  'turn-slight-right': 'Keep slightly right',
+  'turn-sharp-left': 'Take a sharp left',
+  'turn-sharp-right': 'Take a sharp right',
+  'uturn': 'Make a U-turn',
+  'merge-left': 'Merge left',
+  'merge-right': 'Merge right',
+  'fork-left': 'Keep left',
+  'fork-right': 'Keep right',
+  'roundabout': 'At the roundabout',
+  'exit-roundabout': 'Exit the roundabout',
+  'straight': 'Go straight',
+  'ramp-left': 'Take the left ramp',
+  'ramp-right': 'Take the right ramp',
+  'keep-left': 'Keep left',
+  'keep-right': 'Keep right',
+};
+
+const MANEUVER_VOICE_RU: Record<ManeuverType, string> = {
   'depart': 'Начните движение',
   'arrive': 'Вы прибыли в пункт назначения',
   'turn-left': 'Поверните налево',
@@ -69,61 +93,88 @@ const MANEUVER_VOICE: Record<ManeuverType, string> = {
   'keep-right': 'Держитесь правее',
 };
 
+const MANEUVER_VOICE_EN: Record<ManeuverType, string> = {
+  'depart': 'Start driving',
+  'arrive': 'You have arrived at your destination',
+  'turn-left': 'Turn left',
+  'turn-right': 'Turn right',
+  'turn-slight-left': 'Keep slightly left',
+  'turn-slight-right': 'Keep slightly right',
+  'turn-sharp-left': 'Take a sharp left',
+  'turn-sharp-right': 'Take a sharp right',
+  'uturn': 'Make a U-turn',
+  'merge-left': 'Merge left',
+  'merge-right': 'Merge right',
+  'fork-left': 'Keep left at the fork',
+  'fork-right': 'Keep right at the fork',
+  'roundabout': 'At the roundabout',
+  'exit-roundabout': 'Exit the roundabout',
+  'straight': 'Continue straight',
+  'ramp-left': 'Take the left ramp',
+  'ramp-right': 'Take the right ramp',
+  'keep-left': 'Keep left',
+  'keep-right': 'Keep right',
+};
+
+function isRu(): boolean {
+  return getCurrentLanguageCode() === 'ru';
+}
+
 export function getManeuverIconName(type: ManeuverType): string {
   return MANEUVER_ICONS[type] ?? 'ArrowUp';
 }
 
 export function getManeuverText(type: ManeuverType): string {
-  return MANEUVER_TEXT[type] ?? 'Продолжайте движение';
+  const table = isRu() ? MANEUVER_TEXT_RU : MANEUVER_TEXT_EN;
+  return table[type] ?? (isRu() ? 'Продолжайте движение' : 'Continue');
 }
 
 export function getManeuverInstruction(type: ManeuverType, streetName?: string): string {
-  const base = MANEUVER_TEXT[type] ?? 'Продолжайте движение';
+  const base = getManeuverText(type);
   if (streetName) {
     if (type === 'arrive') return `${base}: ${streetName}`;
-    return `${base} на ${streetName}`;
+    return isRu() ? `${base} на ${streetName}` : `${base} onto ${streetName}`;
   }
   return base;
 }
 
 export function getVoiceInstruction(type: ManeuverType, distanceMeters: number, streetName?: string): string {
-  const base = MANEUVER_VOICE[type] ?? 'Продолжайте движение';
+  const table = isRu() ? MANEUVER_VOICE_RU : MANEUVER_VOICE_EN;
+  const base = table[type] ?? (isRu() ? 'Продолжайте движение' : 'Continue');
   const distText = formatVoiceDistance(distanceMeters);
-  const street = streetName ? ` на ${streetName}` : '';
+  const street = streetName ? (isRu() ? ` на ${streetName}` : ` onto ${streetName}`) : '';
 
   if (type === 'depart') return base;
   if (type === 'arrive') return base;
-  return `Через ${distText} ${base.toLowerCase()}${street}`;
+  return isRu()
+    ? `Через ${distText} ${base.toLowerCase()}${street}`
+    : `In ${distText} ${base.toLowerCase()}${street}`;
 }
 
 function formatVoiceDistance(meters: number): string {
-  if (meters < 100) return `${Math.round(meters / 10) * 10} метров`;
-  if (meters < 1000) return `${Math.round(meters / 50) * 50} метров`;
+  if (isRu()) {
+    if (meters < 100) return `${Math.round(meters / 10) * 10} метров`;
+    if (meters < 1000) return `${Math.round(meters / 50) * 50} метров`;
+    const km = meters / 1000;
+    if (km < 10) return `${km.toFixed(1)} километра`;
+    return `${Math.round(km)} километров`;
+  }
+
+  if (meters < 100) return `${Math.round(meters / 10) * 10} meters`;
+  if (meters < 1000) return `${Math.round(meters / 50) * 50} meters`;
   const km = meters / 1000;
-  if (km < 10) return `${km.toFixed(1)} километра`;
-  return `${Math.round(km)} километров`;
+  if (km < 10) return `${km.toFixed(1)} kilometers`;
+  return `${Math.round(km)} kilometers`;
 }
 
 export function formatDistance(meters: number): string {
-  if (meters < 1000) {
-    return `${Math.round(meters / 10) * 10} м`;
-  }
-  const km = meters / 1000;
-  if (km < 10) return `${km.toFixed(1)} км`;
-  return `${Math.round(km)} км`;
+  return formatNavigationDistance(meters, getCurrentLanguageCode());
 }
 
 export function formatDuration(seconds: number): string {
-  if (seconds < 60) return '< 1 мин';
-  const mins = Math.round(seconds / 60);
-  if (mins < 60) return `${mins} мин`;
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  return m > 0 ? `${h} ч ${m} мин` : `${h} ч`;
+  return formatNavigationDuration(seconds, getCurrentLanguageCode());
 }
 
 export function formatETA(seconds: number): string {
-  const now = new Date();
-  now.setSeconds(now.getSeconds() + seconds);
-  return now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+  return formatNavigationEta(seconds, getCurrentLanguageCode());
 }

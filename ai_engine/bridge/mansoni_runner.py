@@ -163,7 +163,7 @@ def main():
     if args.interactive:
         orch.interactive()
     elif args.task:
-        agents = args.agents.split(",") if args.agents else None
+        agents = [agent.strip() for agent in args.agents.split(",") if agent.strip()] if args.agents else None
         orch.run(args.task, agents)
     else:
         p.print_help()

@@ -16,6 +16,7 @@ import type {
   TrustContext,
 } from './types';
 import type { RateLimitConfig } from './rate-limiter.service';
+import { validateTrustEnforcementEnv } from './env';
 
 export interface TrustMiddlewareConfig {
   trustService?: TrustService;
@@ -41,6 +42,10 @@ function defaultGetActorContext(req: Request): { type: ActorType; id: string } |
  * Create trust enforcement middleware
  */
 export function createTrustMiddleware(config: TrustMiddlewareConfig = {}) {
+  if (!config.trustService || !config.rateLimiter) {
+    validateTrustEnforcementEnv();
+  }
+
   const trustService = config.trustService || getTrustService();
   const rateLimiter = config.rateLimiter || getRateLimiter();
   const getActorContext = config.getActorContext || defaultGetActorContext;

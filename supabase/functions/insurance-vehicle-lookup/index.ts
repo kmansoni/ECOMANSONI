@@ -78,6 +78,7 @@ Deno.serve(async (req) => {
     }
 
     const query = plate ?? rawVin!;
+    const fetchStart = Date.now();
     const dadataResp = await fetch(
       "https://suggestions.dadata.ru/suggestions/api/4_1/rs/findById/car",
       {
@@ -91,12 +92,17 @@ Deno.serve(async (req) => {
       },
     );
 
+    const fetchElapsed = Date.now() - fetchStart;
+
     // лог
     svc.from("insurance_provider_logs").insert({
       provider_code: "dadata",
+      operation: "vehicle_lookup",
       category: "vehicle_lookup",
+      is_success: dadataResp.ok,
       status: dadataResp.ok ? "ok" : "error",
-      response_time_ms: 0,
+      http_status: dadataResp.status,
+      response_time_ms: fetchElapsed,
       user_id: user.id,
       error_message: dadataResp.ok ? null : `HTTP ${dadataResp.status}`,
     }).then(({ error: e }) => { if (e) console.error("[vehicle-lookup] лог:", e.message); });
@@ -137,11 +143,9 @@ Deno.serve(async (req) => {
 
     // сохраняем кэш (30 дней)
     if (result.make) {
-      const normalized = result.plate ? normalizePlate(result.plate) : plate;
       svc.from("insurance_vehicle_cache").upsert(
         {
           plate: result.plate || null,
-          plate_normalized: normalized || null,
           vin: result.vin || null,
           make: result.make,
           model: result.model,

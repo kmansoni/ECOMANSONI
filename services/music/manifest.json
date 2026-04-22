@@ -1,0 +1,23 @@
+{
+  "id": "music",
+  "name": "Музыка",
+  "version": "1.0.0",
+  "description": "Музыкальный сервис — стриминг, плейлисты, поиск треков",
+  "size": 52428800,
+  "entry": "MusicHomePage",
+  "icon": "🎵",
+  "routes": ["/services/music", "/music"],
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "zustand": "^4.0.0",
+    "@supabase/supabase-js": "^2.0.0"
+  },
+  "minAppVersion": "1.0.0",
+  "permissions": [
+    "storage",
+    "network"
+  ],
+  "cdnUrl": "https://cdn.mansoni.com/modules/music.zip",
+  "fallbackUrl": "http://localhost:3080/modules/music.zip"
+}

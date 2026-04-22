@@ -117,7 +117,7 @@ Deno.serve(async (req) => {
 
     switch (provider.code) {
       case "inssmart":
-        return await handleInsSmartPurchase(svc, provider, user.id, session, offer, personal_data, vehicle_data, idempotency_key, json);
+        return await handleInsSmartPurchase(svc, provider, user.id, session, offer, personal_data, vehicle_data, idempotency_key, body?.agent_id, json);
 
       case "cherehapa":
         return await handleCherehapaRedirect(provider, offer, json);
@@ -199,6 +199,7 @@ async function handleInsSmartPurchase(
   personalData: Record<string, unknown>,
   vehicleData: Record<string, unknown> | undefined,
   idempotencyKey: string | undefined,
+  agentId: string | undefined,
   json: (body: unknown, status?: number) => Response,
 ) {
   const apiKey = Deno.env.get("INSSMART_API_KEY");
@@ -218,18 +219,23 @@ async function handleInsSmartPurchase(
     idempotency_key: idempotencyKey,
   };
 
+  const fetchStart = Date.now();
   const resp = await fetch(`${baseUrl}/issue`, {
     method: "POST",
     headers,
     body: JSON.stringify(issueBody),
     signal: AbortSignal.timeout(15_000),
   });
+  const fetchElapsed = Date.now() - fetchStart;
 
   svc.from("insurance_provider_logs").insert({
     provider_code: "inssmart",
+    operation: session.category,
     category: session.category,
+    is_success: resp.ok,
     status: resp.ok ? "ok" : "error",
-    response_time_ms: 0,
+    http_status: resp.status,
+    response_time_ms: fetchElapsed,
     user_id: userId,
     error_message: resp.ok ? null : `HTTP ${resp.status}`,
   }).then(({ error: e }: { error: { message: string } | null }) => { if (e) console.error("[purchase] лог:", e.message); });
@@ -255,6 +261,7 @@ async function handleInsSmartPurchase(
       coverage_amount: offer.coverage_amount,
       policy_number: String(result.policy_number ?? ""),
       external_id: String(result.id ?? ""),
+      agent_id: agentId || null,
       start_date: new Date().toISOString(),
       end_date: new Date(Date.now() + 365 * 86400_000).toISOString(),
       holder_name: personalData.full_name,
@@ -289,6 +296,7 @@ async function handleInsSmartPurchase(
     coverage_amount: offer.coverage_amount,
     policy_number: String(result.policy_number ?? ""),
     external_id: String(result.id ?? ""),
+    agent_id: agentId || null,
     start_date: new Date().toISOString(),
     end_date: new Date(Date.now() + 365 * 86400_000).toISOString(),
     holder_name: personalData.full_name,

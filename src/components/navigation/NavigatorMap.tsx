@@ -1,22 +1,14 @@
-import { useEffect, useRef, memo } from 'react';
-import { Crosshair, ZoomIn, ZoomOut, Compass } from 'lucide-react';
+import { useEffect, useMemo, useState, memo } from 'react';
+import { LocateFixed, ZoomIn, ZoomOut, Compass, Navigation2, Box, Square, Camera } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { LatLng } from '@/types/taxi';
-import type { RouteSegment, SpeedCamera, NavRoute } from '@/types/navigation';
-
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
-
-const DARK_TILE_URL = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
-const DARK_TILE_ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>';
-
-const TRAFFIC_COLORS: Record<string, string> = {
-  free: '#4ADE80',
-  moderate: '#FBBF24',
-  slow: '#FB923C',
-  congested: '#F43F5E',
-  unknown: '#60A5FA',
-};
+import type { RouteSegment, SpeedCamera, NavRoute, Maneuver, ManeuverType, NavigationLaneGuidance, LaneTurn, MultiModalRoute } from '@/types/navigation';
+import { MapLibre3D } from './MapLibre3D';
+import { GreenWaveOverlay } from './GreenWaveOverlay';
+import { useNavigatorSettings } from '@/stores/navigatorSettingsStore';
+import { useUserSettings } from '@/contexts/UserSettingsContext';
+import { navText } from '@/lib/navigation/navigationUi';
+import { SurveyCaptureModal } from './SurveyCaptureModal';
 
 interface NavigatorMapProps {
   center: LatLng;
@@ -28,86 +20,260 @@ interface NavigatorMapProps {
   alternativeRoutes: NavRoute[];
   speedCameras: SpeedCamera[];
   destinationMarker: LatLng | null;
+  recenterTrigger?: number;
+  // Navigation-specific overlays
+  isNavigating?: boolean;
+  speed?: number;
+  speedLimit?: number | null;
+  nearbyCamera?: SpeedCamera | null;
+  nextManeuver?: Maneuver | null;
+  laneGuidance?: NavigationLaneGuidance | null;
+  distanceToNextTurn?: number;
+  remainingDistance?: number;
+  totalDistance?: number;
+  roadName?: string;
+  route?: NavRoute | null;
+  multimodalRoute?: MultiModalRoute | null;
+  selectedMultimodalSegmentIndex?: number | null;
   onCenterOnUser?: () => void;
   onToggleOrientation?: () => void;
   onMapClick?: (latlng: LatLng) => void;
   className?: string;
 }
 
-function createUserArrowIcon(heading: number): L.DivIcon {
-  return L.divIcon({
-    html: `
-      <div style="width:48px;height:48px;position:relative;display:flex;align-items:center;justify-content:center;">
-        <div style="
-          position:absolute;inset:-6px;
-          border-radius:50%;
-          background:radial-gradient(circle,rgba(59,130,246,0.35) 0%,transparent 70%);
-          animation:nav-pulse 2s ease-in-out infinite;
-        "></div>
-        <div style="
-          width:24px;height:24px;
-          transform:rotate(${heading}deg);
-        ">
-          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M12 2L4 20l8-4 8 4L12 2z" fill="#3B82F6" stroke="#93C5FD" stroke-width="1"/>
-          </svg>
+// ─── Lane guidance arrows ───────────────────────────────────────────────────
+const MANEUVER_ARROWS: Partial<Record<ManeuverType, string[]>> = {
+  'straight':       ['↑', '↑', '↑', '↑'],
+  'turn-left':      ['↰', '↑', '↑', '↑'],
+  'turn-right':     ['↑', '↑', '↑', '↱'],
+  'turn-slight-left':  ['↖', '↑', '↑', '↑'],
+  'turn-slight-right': ['↑', '↑', '↑', '↗'],
+  'turn-sharp-left':   ['↰', '↑', '↑', '↑'],
+  'turn-sharp-right':  ['↑', '↑', '↑', '↱'],
+  'fork-left':      ['↖', '↑', '↑'],
+  'fork-right':     ['↑', '↑', '↗'],
+  'keep-left':      ['↖', '↑', '↑', '↑'],
+  'keep-right':     ['↑', '↑', '↑', '↗'],
+  'merge-left':     ['↖', '↑', '↑'],
+  'merge-right':    ['↑', '↑', '↗'],
+  'ramp-left':      ['↰', '↑', '↑'],
+  'ramp-right':     ['↑', '↑', '↱'],
+  'uturn':          ['↶', '↑', '↑', '↑'],
+};
+
+function getLaneArrows(type?: ManeuverType): string[] {
+  if (!type) return ['↑', '↑', '↑', '↑'];
+  return MANEUVER_ARROWS[type] ?? ['↑', '↑', '↑', '↑'];
+}
+
+function getHighlightedLane(type?: ManeuverType): number {
+  if (!type) return -1;
+  if (type.includes('left') || type === 'uturn') return 0;
+  if (type.includes('right')) return getLaneArrows(type).length - 1;
+  return -1;
+}
+
+function laneTurnToGlyph(turn: LaneTurn): string {
+  switch (turn) {
+    case 'left':
+      return '↰';
+    case 'slight_left':
+    case 'merge_to_left':
+      return '↖';
+    case 'sharp_left':
+      return '↶';
+    case 'right':
+      return '↱';
+    case 'slight_right':
+    case 'merge_to_right':
+      return '↗';
+    case 'sharp_right':
+      return '↷';
+    case 'reverse':
+      return '⟲';
+    case 'none':
+      return '•';
+    default:
+      return '↑';
+  }
+}
+
+// ─── Speedometer ────────────────────────────────────────────────────────────
+function SpeedometerOverlay({ speed, speedLimit, languageCode }: { speed: number; speedLimit: number | null; languageCode?: string | null }) {
+  const isOver = speedLimit != null && speed > speedLimit;
+  return (
+    <div className="absolute top-20 left-3 z-[1000] flex flex-col items-center gap-2">
+      {/* Speed */}
+      <div className={cn(
+        'w-16 h-16 rounded-2xl flex flex-col items-center justify-center',
+        'bg-gray-900/85 backdrop-blur-md border border-white/10',
+        'shadow-lg shadow-black/30',
+        isOver && 'border-red-500/60 bg-red-950/60'
+      )}>
+        <span className={cn(
+          'text-2xl font-black leading-none',
+          isOver ? 'text-red-400' : 'text-white'
+        )}>
+          {Math.round(speed)}
+        </span>
+        <span className="text-[10px] text-gray-400 mt-0.5">{navText('км/ч', 'km/h', languageCode)}</span>
+      </div>
+
+      {/* Speed limit sign */}
+      {speedLimit != null && (
+        <div className="w-12 h-12 rounded-full border-[3px] border-red-500 bg-white flex items-center justify-center shadow-lg">
+          <span className="text-base font-black text-gray-900 leading-none">{speedLimit}</span>
         </div>
-        <div style="
-          position:absolute;width:10px;height:10px;
-          background:#3B82F6;border:2px solid white;
-          border-radius:50%;
-          box-shadow:0 0 0 4px rgba(59,130,246,0.2);
-        "></div>
-      </div>
-    `,
-    iconSize: [48, 48],
-    iconAnchor: [24, 24],
-    className: '',
-  });
+      )}
+    </div>
+  );
 }
 
-function createDestIcon(): L.DivIcon {
-  return L.divIcon({
-    html: `
-      <div style="position:relative;width:40px;height:52px;">
-        <svg width="40" height="52" viewBox="0 0 40 52" fill="none">
-          <path d="M20 0C9 0 0 9 0 20c0 15 20 32 20 32s20-17 20-32C40 9 31 0 20 0z" fill="#F43F5E"/>
-          <circle cx="20" cy="20" r="12" fill="#fff"/>
-          <circle cx="20" cy="20" r="6" fill="#ef4444"/>
+// ─── Camera warning ─────────────────────────────────────────────────────────
+function CameraWarningOverlay({ camera, userPosition, languageCode }: { camera: SpeedCamera; userPosition: LatLng | null; languageCode?: string | null }) {
+  const dist = userPosition
+    ? Math.round(Math.sqrt(
+        Math.pow((camera.location.lat - userPosition.lat) * 111320, 2) +
+        Math.pow((camera.location.lng - userPosition.lng) * 111320 * Math.cos(userPosition.lat * Math.PI / 180), 2)
+      ))
+    : null;
+
+  return (
+    <div className="absolute top-20 right-16 z-[1000] flex items-center gap-2">
+      <div className={cn(
+        'flex items-center gap-2 px-3 py-2 rounded-xl',
+        'bg-red-950/80 backdrop-blur-md border border-red-500/40',
+        'shadow-lg shadow-red-500/20',
+        'animate-pulse'
+      )}>
+        {dist != null && (
+          <span className="text-white font-bold text-sm">{dist} {navText('м', 'm', languageCode)}</span>
+        )}
+        <div className="w-8 h-8 rounded-full border-2 border-red-500 bg-white flex items-center justify-center">
+          <span className="text-xs font-black text-red-600">{camera.speedLimit}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Route progress bar (right side, like Amap) ────────────────────────────
+function RouteProgressBar({ remaining, total }: { remaining: number; total: number }) {
+  const progress = total > 0 ? Math.max(0, Math.min(1, 1 - remaining / total)) : 0;
+
+  return (
+    <div className="absolute top-20 right-2.5 bottom-36 z-[999] w-2 flex flex-col items-center">
+      <div className="relative w-full h-full rounded-full bg-gray-800/60 overflow-hidden border border-white/5">
+        {/* Filled portion (bottom-up) */}
+        <div
+          className="absolute bottom-0 left-0 right-0 rounded-full transition-all duration-1000"
+          style={{
+            height: `${progress * 100}%`,
+            background: 'linear-gradient(to top, #00E676, #42A5F5, #42A5F5)',
+          }}
+        />
+        {/* Current position dot */}
+        <div
+          className="absolute left-1/2 -translate-x-1/2 w-3 h-3 rounded-full bg-blue-400 border-2 border-white shadow-lg transition-all duration-1000"
+          style={{ bottom: `calc(${progress * 100}% - 6px)` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+// ─── Lane guidance (top arrows like Amap) ───────────────────────────────────
+function LaneGuidance({ guidance, maneuverType, distance, languageCode }: { guidance?: NavigationLaneGuidance | null; maneuverType?: ManeuverType; distance?: number; languageCode?: string | null }) {
+  if (guidance && guidance.lanes.length > 0) {
+    const urgencyClasses = guidance.urgency === 'critical'
+      ? 'bg-red-950/80 border-red-400/40'
+      : guidance.urgency === 'warn'
+        ? 'bg-amber-950/70 border-amber-400/35'
+        : 'bg-gray-950/75 border-white/10';
+
+    return (
+      <div className={cn(
+        'absolute top-2 left-1/2 -translate-x-1/2 z-[1000] rounded-2xl px-3 py-2.5',
+        'backdrop-blur-md border shadow-2xl shadow-black/30',
+        urgencyClasses
+      )}>
+        <div className="flex items-center justify-center gap-1.5">
+          {guidance.lanes.map((lane) => (
+            <div
+              key={lane.index}
+              className={cn(
+                'min-w-11 h-12 rounded-xl px-1.5 flex flex-col items-center justify-center border',
+                lane.isRecommended
+                  ? 'bg-green-500/85 border-green-300/60 text-white shadow-lg shadow-green-500/30'
+                  : 'bg-gray-900/70 border-white/10 text-gray-200'
+              )}
+            >
+              <div className="flex items-center gap-0.5 text-lg leading-none">
+                {(() => {
+                  const laneTurns: LaneTurn[] = lane.turns.length > 0 ? lane.turns : ['through'];
+                  return laneTurns.slice(0, 2).map((turn, index) => (
+                    <span key={`${lane.index}-${turn}-${index}`}>{laneTurnToGlyph(turn)}</span>
+                  ));
+                })()}
+              </div>
+              {lane.destination && (
+                <span className="mt-0.5 max-w-14 truncate text-[9px] font-medium opacity-90">{lane.destination}</span>
+              )}
+            </div>
+          ))}
+        </div>
+        <div className="mt-2 flex items-center justify-between gap-3 text-[11px] text-white/85">
+          <span className="font-medium">{guidance.message}</span>
+          <span className="whitespace-nowrap opacity-80">{guidance.source === 'osm' ? navText('Полосы OSM', 'OSM lanes', languageCode) : navText('Резерв', 'Fallback', languageCode)}{distance != null ? ` • ${Math.round(distance)} ${navText('м', 'm', languageCode)}` : ''}</span>
+        </div>
+      </div>
+    );
+  }
+
+  const arrows = getLaneArrows(maneuverType);
+  const highlighted = getHighlightedLane(maneuverType);
+
+  return (
+    <div className="absolute top-2 left-1/2 -translate-x-1/2 z-[1000] flex items-center gap-1">
+      {arrows.map((arrow, i) => (
+        <div
+          key={i}
+          className={cn(
+            'w-9 h-10 rounded-lg flex items-center justify-center text-xl',
+            'backdrop-blur-md border',
+            i === highlighted
+              ? 'bg-green-500/80 border-green-400/60 text-white shadow-lg shadow-green-500/30'
+              : 'bg-gray-900/70 border-white/10 text-gray-300'
+          )}
+        >
+          {arrow}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Compass overlay ────────────────────────────────────────────────────────
+function CompassRose({ heading }: { heading: number }) {
+  return (
+    <div className="relative w-16 h-16">
+      <div
+        className="w-full h-full transition-transform duration-300"
+        style={{ transform: `rotate(${-heading}deg)` }}
+      >
+        <svg viewBox="0 0 64 64" className="w-full h-full">
+          <circle cx="32" cy="32" r="24" fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="1"/>
+          <text x="32" y="16" textAnchor="middle" fontSize="10" fontWeight="bold" fill="#EF4444">N</text>
+          <text x="32" y="56" textAnchor="middle" fontSize="9" fill="rgba(255,255,255,0.4)">S</text>
+          <text x="52" y="36" textAnchor="middle" fontSize="9" fill="rgba(255,255,255,0.4)">E</text>
+          <text x="12" y="36" textAnchor="middle" fontSize="9" fill="rgba(255,255,255,0.4)">W</text>
         </svg>
-        <div style="position:absolute;top:12px;left:0;width:40px;text-align:center;font-size:11px;font-weight:700;color:#991b1b;">B</div>
       </div>
-    `,
-    iconSize: [40, 52],
-    iconAnchor: [20, 52],
-    className: '',
-  });
+    </div>
+  );
 }
 
-function createCameraIcon(): L.DivIcon {
-  return L.divIcon({
-    html: `
-      <div style="
-        width:28px;height:28px;
-        background:#EF4444;
-        border:2px solid #FCA5A5;
-        border-radius:6px;
-        display:flex;align-items:center;justify-content:center;
-        box-shadow:0 0 12px rgba(239,68,68,0.5);
-        animation:camera-blink 1.5s ease-in-out infinite;
-      ">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5">
-          <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/>
-          <circle cx="12" cy="13" r="4"/>
-        </svg>
-      </div>
-    `,
-    iconSize: [28, 28],
-    iconAnchor: [14, 14],
-    className: '',
-  });
-}
-
+// ─── Main component ─────────────────────────────────────────────────────────
 export const NavigatorMap = memo(function NavigatorMap({
   center,
   zoom,
@@ -118,179 +284,59 @@ export const NavigatorMap = memo(function NavigatorMap({
   alternativeRoutes,
   speedCameras,
   destinationMarker,
+  recenterTrigger = 0,
+  // Navigation-specific overlays
+  isNavigating = false,
+  speed = 0,
+  speedLimit,
+  nearbyCamera,
+  nextManeuver,
+  laneGuidance,
+  distanceToNextTurn,
+  remainingDistance,
+  totalDistance,
+  roadName,
+  route,
+  multimodalRoute,
+  selectedMultimodalSegmentIndex = null,
   onCenterOnUser,
   onToggleOrientation,
   onMapClick,
   className,
 }: NavigatorMapProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<L.Map | null>(null);
-  const userMarkerRef = useRef<L.Marker | null>(null);
-  const destMarkerRef = useRef<L.Marker | null>(null);
-  const routeLayerRef = useRef<L.LayerGroup | null>(null);
-  const altRouteLayerRef = useRef<L.LayerGroup | null>(null);
-  const cameraLayerRef = useRef<L.LayerGroup | null>(null);
+  const { settings } = useUserSettings();
+  const languageCode = settings?.language_code ?? null;
+  const [cameraState, setCameraState] = useState({ center, zoom });
+  const [is3D, setIs3D] = useState(true);
+  const navSettings = useNavigatorSettings();
 
-  // Init map
+  // Survey mode
+  const [isSurveyModalOpen, setIsSurveyModalOpen] = useState(false);
+
+  const handleOpenSurvey = () => {
+    setIsSurveyModalOpen(true);
+  };
+
+  const handleCloseSurvey = () => {
+    setIsSurveyModalOpen(false);
+  };
+
+  const handleScanComplete = (scanId: string) => {
+    // Optionally: show toast, refresh coverage layer, award XP
+    console.log('Scan completed:', scanId);
+  };
+
   useEffect(() => {
-    if (!containerRef.current || mapRef.current) return;
-
-    const map = L.map(containerRef.current, {
-      center: [center.lat, center.lng],
-      zoom,
-      zoomControl: false,
-      attributionControl: false,
-    });
-
-    L.tileLayer(DARK_TILE_URL, {
-      attribution: DARK_TILE_ATTR,
-      maxZoom: 19,
-      subdomains: 'abcd',
-    }).addTo(map);
-
-    L.control.attribution({ position: 'bottomleft', prefix: false }).addTo(map);
-
-    if (onMapClick) {
-      map.on('click', (e: L.LeafletMouseEvent) => {
-        onMapClick({ lat: e.latlng.lat, lng: e.latlng.lng });
-      });
-    }
-
-    mapRef.current = map;
-    routeLayerRef.current = L.layerGroup().addTo(map);
-    altRouteLayerRef.current = L.layerGroup().addTo(map);
-    cameraLayerRef.current = L.layerGroup().addTo(map);
-
-    return () => {
-      map.remove();
-      mapRef.current = null;
-    };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Update center
-  useEffect(() => {
-    if (!mapRef.current) return;
-    mapRef.current.setView([center.lat, center.lng], zoom, { animate: true });
+    setCameraState({ center, zoom });
   }, [center, zoom]);
 
-  // Rotate map (heading-up mode)
-  useEffect(() => {
-    if (!containerRef.current) return;
-    if (isNorthUp) {
-      containerRef.current.style.transform = '';
-    } else {
-      containerRef.current.style.transform = `rotate(${-heading}deg)`;
-    }
-  }, [heading, isNorthUp]);
+  const handleZoomIn = () => {
+    setCameraState((prev) => ({ ...prev, zoom: Math.min(prev.zoom + 1, 19) }));
+  };
 
-  // User position marker
-  useEffect(() => {
-    if (!mapRef.current) return;
-    if (userPosition) {
-      if (userMarkerRef.current) {
-        userMarkerRef.current.setLatLng([userPosition.lat, userPosition.lng]);
-        userMarkerRef.current.setIcon(createUserArrowIcon(isNorthUp ? heading : 0));
-      } else {
-        userMarkerRef.current = L.marker([userPosition.lat, userPosition.lng], {
-          icon: createUserArrowIcon(isNorthUp ? heading : 0),
-          zIndexOffset: 1000,
-        }).addTo(mapRef.current);
-      }
-    } else if (userMarkerRef.current) {
-      userMarkerRef.current.remove();
-      userMarkerRef.current = null;
-    }
-  }, [userPosition, heading, isNorthUp]);
-
-  // Destination marker
-  useEffect(() => {
-    if (!mapRef.current) return;
-    if (destMarkerRef.current) {
-      destMarkerRef.current.remove();
-      destMarkerRef.current = null;
-    }
-    if (destinationMarker) {
-      destMarkerRef.current = L.marker([destinationMarker.lat, destinationMarker.lng], {
-        icon: createDestIcon(),
-      }).addTo(mapRef.current);
-    }
-  }, [destinationMarker]);
-
-  // Route segments (traffic-colored)
-  useEffect(() => {
-    if (!mapRef.current || !routeLayerRef.current) return;
-    routeLayerRef.current.clearLayers();
-
-    for (const seg of routeSegments) {
-      if (seg.points.length < 2) continue;
-      const latlngs = seg.points.map((p) => [p.lat, p.lng] as [number, number]);
-      const color = TRAFFIC_COLORS[seg.traffic] ?? TRAFFIC_COLORS.unknown;
-
-      // Shadow
-      L.polyline(latlngs, {
-        color: '#000',
-        weight: 10,
-        opacity: 0.12,
-        smoothFactor: 2,
-        lineCap: 'round',
-        lineJoin: 'round',
-      }).addTo(routeLayerRef.current!);
-
-      // Main line
-      L.polyline(latlngs, {
-        color,
-        weight: 6,
-        opacity: 0.95,
-        smoothFactor: 2,
-        lineCap: 'round',
-        lineJoin: 'round',
-      }).addTo(routeLayerRef.current!);
-    }
-
-    // Fit bounds
-    if (routeSegments.length > 0) {
-      const allPoints = routeSegments.flatMap((s) => s.points);
-      if (allPoints.length >= 2) {
-        const bounds = L.latLngBounds(allPoints.map((p) => [p.lat, p.lng] as [number, number]));
-        mapRef.current.fitBounds(bounds, { padding: [60, 60], maxZoom: 16 });
-      }
-    }
-  }, [routeSegments]);
-
-  // Alternative routes
-  useEffect(() => {
-    if (!mapRef.current || !altRouteLayerRef.current) return;
-    altRouteLayerRef.current.clearLayers();
-
-    for (const alt of alternativeRoutes) {
-      const latlngs = alt.geometry.map((p) => [p.lat, p.lng] as [number, number]);
-      L.polyline(latlngs, {
-        color: '#6B7280',
-        weight: 5,
-        opacity: 0.4,
-        smoothFactor: 2,
-        lineCap: 'round',
-        lineJoin: 'round',
-        dashArray: '8 6',
-      }).addTo(altRouteLayerRef.current!);
-    }
-  }, [alternativeRoutes]);
-
-  // Speed cameras
-  useEffect(() => {
-    if (!mapRef.current || !cameraLayerRef.current) return;
-    cameraLayerRef.current.clearLayers();
-
-    for (const cam of speedCameras) {
-      L.marker([cam.location.lat, cam.location.lng], {
-        icon: createCameraIcon(),
-        zIndexOffset: 500,
-      }).addTo(cameraLayerRef.current!);
-    }
-  }, [speedCameras]);
-
-  const handleZoomIn = () => mapRef.current?.zoomIn();
-  const handleZoomOut = () => mapRef.current?.zoomOut();
+  const handleZoomOut = () => {
+    setCameraState((prev) => ({ ...prev, zoom: Math.max(prev.zoom - 1, 3) }));
+  };
 
   const glassBtn = cn(
     'w-11 h-11 rounded-xl',
@@ -302,43 +348,137 @@ export const NavigatorMap = memo(function NavigatorMap({
 
   return (
     <div className={cn('relative w-full h-full', className)}>
-      <div
-        ref={containerRef}
-        className="w-full h-full will-change-transform"
-        style={{ transformOrigin: 'center center' }}
+      {/* 3D Map */}
+      <MapLibre3D
+        center={cameraState.center}
+        zoom={cameraState.zoom}
+        heading={heading}
+        pitch={is3D ? (isNavigating ? 60 : 45) : 0}
+        isNorthUp={isNorthUp}
+        isNavigating={isNavigating}
+        userPosition={userPosition}
+        routeSegments={routeSegments}
+        route={route}
+        multimodalRoute={multimodalRoute ?? null}
+        selectedMultimodalSegmentIndex={selectedMultimodalSegmentIndex}
+        speedCameras={navSettings.showSpeedCameras ? speedCameras : []}
+        destinationMarker={destinationMarker}
+        recenterTrigger={recenterTrigger}
+        nextManeuver={nextManeuver ?? null}
+        mapStyle={navSettings.mapViewMode === 'satellite' ? 'satellite'
+          : navSettings.mapViewMode === 'hybrid' ? 'hybrid'
+          : navSettings.mapViewMode === 'terrain' ? 'terrain'
+          : navSettings.mapViewMode === 'light' ? 'light'
+          : navSettings.mapViewMode === '3d' ? 'dark'
+          : navSettings.navTheme === 'light' ? 'light'
+          : 'dark'}
+        onMapClick={onMapClick}
+        className="w-full h-full"
       />
 
-      {/* Right controls */}
-      <div className="absolute bottom-36 right-3 z-[1000] flex flex-col gap-2">
+      {/* ── Navigation overlays (only during active navigation) ── */}
+      {isNavigating && (
+        <>
+          {/* Lane guidance arrows */}
+          {navSettings.showLanes && (
+            <LaneGuidance
+              guidance={laneGuidance}
+              maneuverType={nextManeuver?.type}
+              distance={distanceToNextTurn}
+              languageCode={languageCode}
+            />
+          )}
+
+          {/* Green wave speed recommendation */}
+          <GreenWaveOverlay
+            userPosition={userPosition}
+            currentSpeed={speed ?? 0}
+            route={route ?? null}
+            isNavigating={isNavigating ?? false}
+          />
+
+          {/* Speedometer */}
+          <SpeedometerOverlay speed={speed} speedLimit={speedLimit ?? null} languageCode={languageCode} />
+
+          {/* Speed camera warning */}
+          {nearbyCamera && (
+            <CameraWarningOverlay camera={nearbyCamera} userPosition={userPosition} languageCode={languageCode} />
+          )}
+
+          {/* Route progress bar */}
+          {totalDistance != null && remainingDistance != null && (
+            <RouteProgressBar remaining={remainingDistance} total={totalDistance} />
+          )}
+
+          {/* Compass rose (bottom-center) */}
+          <div className="absolute bottom-44 left-1/2 -translate-x-1/2 z-[999]">
+            <CompassRose heading={heading} />
+          </div>
+
+          {/* Road name bar */}
+          {roadName && (
+            <div className={cn(
+              'absolute bottom-32 left-3 right-14 z-[999]',
+              'bg-gray-900/80 backdrop-blur-md rounded-xl px-4 py-2',
+              'border border-white/10'
+            )}>
+              <div className="flex items-center gap-2">
+                <Navigation2 className="w-4 h-4 text-green-400 shrink-0" />
+                <span className="text-sm text-white font-medium truncate">{roadName}</span>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+      <div className={cn(
+        'absolute right-3 z-[1000] flex flex-col gap-2',
+        isNavigating ? 'bottom-52' : 'bottom-36'
+      )}>
+        {/* Survey button */}
+        <button
+          onClick={handleOpenSurvey}
+          className={glassBtn}
+          aria-label="Съёмка карты"
+          title="Съёмка карты в реальном времени"
+        >
+          <Camera className="h-5 w-5 text-green-400" />
+        </button>
+
         {onToggleOrientation && (
-          <button onClick={onToggleOrientation} className={glassBtn} aria-label="Ориентация">
+          <button onClick={onToggleOrientation} className={glassBtn} aria-label={navText('Ориентация', 'Orientation', languageCode)}>
             <Compass className={cn('h-5 w-5', isNorthUp ? 'text-gray-400' : 'text-blue-400')} />
           </button>
         )}
-        <button onClick={handleZoomIn} className={glassBtn} aria-label="Приблизить">
+        {/* 2D / 3D Toggle */}
+        <button
+          onClick={() => setIs3D(v => !v)}
+          className={glassBtn}
+          aria-label={is3D ? navText('Переключить на 2D', 'Switch to 2D', languageCode) : navText('Переключить на 3D', 'Switch to 3D', languageCode)}
+        >
+          {is3D
+            ? <Box className="h-5 w-5 text-blue-400" />
+            : <Square className="h-5 w-5 text-gray-400" />
+          }
+        </button>
+        <button onClick={handleZoomIn} className={glassBtn} aria-label={navText('Приблизить', 'Zoom in', languageCode)}>
           <ZoomIn className="h-5 w-5 text-white" />
         </button>
-        <button onClick={handleZoomOut} className={glassBtn} aria-label="Отдалить">
+        <button onClick={handleZoomOut} className={glassBtn} aria-label={navText('Отдалить', 'Zoom out', languageCode)}>
           <ZoomOut className="h-5 w-5 text-white" />
         </button>
         {onCenterOnUser && (
-          <button onClick={onCenterOnUser} className={glassBtn} aria-label="Моё местоположение">
-            <Crosshair className="h-5 w-5 text-blue-400" />
+          <button onClick={onCenterOnUser} className={glassBtn} aria-label={navText('Центрировать на мне', 'Center on me', languageCode)}>
+            <LocateFixed className="h-5 w-5 text-sky-400" />
           </button>
         )}
       </div>
 
-      {/* CSS animations */}
-      <style>{`
-        @keyframes nav-pulse {
-          0%, 100% { transform: scale(1); opacity: 0.4; }
-          50% { transform: scale(1.4); opacity: 0.1; }
-        }
-        @keyframes camera-blink {
-          0%, 100% { opacity: 1; transform: scale(1); }
-          50% { opacity: 0.7; transform: scale(1.08); }
-        }
-      `}</style>
+      {/* Survey Capture Modal */}
+      <SurveyCaptureModal
+        isOpen={isSurveyModalOpen}
+        onClose={handleCloseSurvey}
+        onScanComplete={handleScanComplete}
+      />
     </div>
   );
 });

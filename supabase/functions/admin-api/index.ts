@@ -54,7 +54,9 @@ type ActionRequest = {
     | "hashtags.status.bulk_set"
     | "service_bugs.create"
     | "service_bugs.update"
-    | "service_bugs.delete";
+    | "service_bugs.delete"
+    | "insurance_settings.get"
+    | "insurance_settings.set";
   params?: Record<string, Json>;
 };
 
@@ -2209,6 +2211,102 @@ serve(async (req: Request) => {
         });
 
         return jsonResponse({ ok: true, data: { deleted: true, id } }, 200, origin);
+      }
+
+      // =============================================================
+      // insurance_settings — настройки страховых провайдеров
+      // =============================================================
+      case "insurance_settings.get": {
+        // Требуется роль owner или administrator
+        if (!hasScope("insurance.settings.read") && !isActorOwner) {
+          await audit({
+            action: "insurance.settings.read",
+            resource_type: "insurance_settings",
+            severity: "SEV2",
+            status: "denied",
+            reason_code: "MISSING_SCOPE",
+          });
+          return errorResponse("Forbidden", 403, origin);
+        }
+
+        const key = String(actionReq.params?.key ?? "soglasie_api");
+
+        const { data, error } = await (supabaseService as any)
+          .from("insurance_settings")
+          .select("id, key, value, description, is_active, created_at, updated_at")
+          .eq("key", key)
+          .single();
+
+        if (error && error.code !== "PGRST116") throw error; // PGRST116 = no rows returned
+
+        await audit({
+          action: "insurance.settings.read",
+          resource_type: "insurance_settings",
+          resource_id: data?.id ?? null,
+          severity: "SEV3",
+          status: "success",
+        });
+
+        return jsonResponse({ ok: true, data: data ?? null }, 200, origin);
+      }
+
+      case "insurance_settings.set": {
+        await assertNotKilled("admin_writes");
+
+        // Только owner может изменять настройки
+        if (!isActorOwner) {
+          await audit({
+            action: "insurance.settings.write",
+            resource_type: "insurance_settings",
+            severity: "SEV1",
+            status: "denied",
+            reason_code: "MISSING_SCOPE",
+          });
+          return errorResponse("Forbidden", 403, origin);
+        }
+
+        const required = requireParams(actionReq.params, ["key", "value"]);
+        if (!required.ok) return errorResponse(`Missing param: ${required.missing}`, 400, origin);
+
+        const key = String(required.value.key);
+        const value = required.value.value as Json;
+        const description = actionReq.params?.description 
+          ? String(actionReq.params.description) 
+          : null;
+        const isActive = actionReq.params?.is_active !== undefined 
+          ? Boolean(actionReq.params.is_active) 
+          : true;
+
+        const patch: Record<string, Json> = {
+          value,
+          is_active: isActive,
+          updated_at: new Date().toISOString(),
+        };
+        if (description !== null) {
+          patch.description = description;
+        }
+
+        const { data, error } = await (supabaseService as any)
+          .from("insurance_settings")
+          .upsert({
+            key,
+            ...patch,
+          }, { onConflict: "key" })
+          .select("id, key, value, description, is_active, created_at, updated_at")
+          .single();
+
+        if (error) throw error;
+
+        await audit({
+          action: "insurance.settings.write",
+          resource_type: "insurance_settings",
+          resource_id: data.id,
+          severity: "SEV2",
+          status: "success",
+          after_state: data ?? null,
+        });
+
+        return jsonResponse({ ok: true, data }, 200, origin);
       }
 
       default:

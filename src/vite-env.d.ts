@@ -14,6 +14,14 @@ interface ImportMetaEnv {
   readonly VITE_AI_API_URL: string;
   readonly VITE_AI_MODEL: string;
   readonly VITE_MEDIA_SERVER_URL: string;
+  readonly VITE_NAV_SERVER_ENABLED?: string;
+  readonly VITE_NAV_SERVER_URL?: string;
+  readonly VITE_NAV_SERVER_TIMEOUT_MS?: string;
+  readonly VITE_NAV_SERVER_RETRIES?: string;
+  readonly VITE_NAV_SERVER_RETRY_DELAY_MS?: string;
+  readonly VITE_NAV_SERVER_CB_FAILURE_THRESHOLD?: string;
+  readonly VITE_NAV_SERVER_CB_COOLDOWN_MS?: string;
+  readonly VITE_NAV_DIAGNOSTICS?: string;
   // Livestream Gateway
   readonly VITE_LIVESTREAM_GATEWAY_URL: string;
   readonly VITE_LIVEKIT_PUBLIC_URL: string;

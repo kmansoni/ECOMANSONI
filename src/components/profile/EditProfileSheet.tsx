@@ -8,6 +8,14 @@ import { supabase } from "@/integrations/supabase/client";
 import { NamePronunciationRecorder } from "./NamePronunciationRecorder";
 import { dbLoose } from "@/lib/supabase";
 
+function normalizeUsernameInput(raw: string): string {
+  return raw
+    .trim()
+    .toLowerCase()
+    .replace(/^@+/, "")
+    .replace(/[^a-z0-9_]/g, "");
+}
+
 export interface ProfileData {
   display_name?: string | null;
   username?: string | null;
@@ -44,6 +52,8 @@ export function EditProfileSheet({ isOpen, onClose, profile, userId, onSaved }: 
   });
   const [avatar, setAvatar] = useState<string | null>(profile?.avatar_url || null);
   const [pronunciationUrl, setPronunciationUrl] = useState<string | null>(profile?.name_pronunciation_url || null);
+  const [usernameError, setUsernameError] = useState("");
+  const [usernameStatus, setUsernameStatus] = useState<"idle" | "checking" | "available" | "taken">("idle");
   const [saving, setSaving] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -65,16 +75,51 @@ export function EditProfileSheet({ isOpen, onClose, profile, userId, onSaved }: 
   };
 
   const handleSave = async () => {
+    const normalizedOwnUsername = normalizeUsernameInput(profile?.username || "");
+    const normalizedUsername = normalizeUsernameInput(form.username || "");
+
+    if (normalizedUsername && (normalizedUsername.length < 3 || normalizedUsername.length > 30)) {
+      setUsernameError("От 3 до 30 символов");
+      return;
+    }
+    if (normalizedUsername && !/^[a-z0-9_]+$/.test(normalizedUsername)) {
+      setUsernameError("Только латинские буквы, цифры и _");
+      return;
+    }
+    if (usernameStatus === "taken") {
+      setUsernameError("Этот никнейм уже занят");
+      return;
+    }
+
     if (form.bio.length > 150) {
       toast.error("Биография не может быть длиннее 150 символов");
       return;
     }
     setSaving(true);
     try {
+      if (normalizedUsername && normalizedUsername !== normalizedOwnUsername) {
+        const { data: existing, error: existingErr } = await dbLoose
+          .from("profiles")
+          .select("user_id")
+          .eq("username", normalizedUsername)
+          .neq("user_id", userId)
+          .limit(1)
+          .maybeSingle();
+
+        if (existingErr) throw existingErr;
+        if (existing) {
+          setUsernameError("Этот никнейм уже занят");
+          setUsernameStatus("taken");
+          setSaving(false);
+          return;
+        }
+      }
+
       const { error } = await dbLoose
         .from("profiles")
         .update({
           display_name: form.display_name.trim() || null,
+          username: normalizedUsername || null,
           bio: form.bio.trim() || null,
           website: form.website.trim() || null,
           gender: form.gender || null,
@@ -86,7 +131,7 @@ export function EditProfileSheet({ isOpen, onClose, profile, userId, onSaved }: 
         .eq("user_id", userId);
       if (error) throw error;
       toast.success("Профиль сохранён");
-      onSaved({ ...profile, ...form, avatar_url: avatar });
+      onSaved({ ...profile, ...form, username: normalizedUsername || null, avatar_url: avatar });
       onClose();
     } catch {
       toast.error("Не удалось сохранить профиль");
@@ -179,12 +224,60 @@ export function EditProfileSheet({ isOpen, onClose, profile, userId, onSaved }: 
                   onChange={v => handleChange("display_name", v)}
                   placeholder="Ваше имя"
                 />
-                <Field
-                  label="Имя пользователя"
-                  value={form.username}
-                  onChange={v => handleChange("username", v)}
-                  placeholder="username"
-                />
+                <div className="py-3 border-b border-border">
+                  <label className="text-xs text-muted-foreground block mb-1">Имя пользователя</label>
+                  <div className="relative">
+                    <span className="absolute left-0 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">@</span>
+                    <input
+                      type="text"
+                      value={form.username}
+                      onChange={async (e) => {
+                        const next = normalizeUsernameInput(e.target.value);
+                        handleChange("username", next);
+                        setUsernameError("");
+
+                        const normalizedOwnUsername = normalizeUsernameInput(profile?.username || "");
+                        if (!next || next === normalizedOwnUsername) {
+                          setUsernameStatus("idle");
+                          return;
+                        }
+                        if (next.length < 3 || next.length > 30 || !/^[a-z0-9_]+$/.test(next)) {
+                          setUsernameStatus("idle");
+                          return;
+                        }
+
+                        setUsernameStatus("checking");
+                        const { data: existing, error } = await dbLoose
+                          .from("profiles")
+                          .select("user_id")
+                          .eq("username", next)
+                          .neq("user_id", userId)
+                          .limit(1)
+                          .maybeSingle();
+
+                        if (error) {
+                          setUsernameStatus("idle");
+                          return;
+                        }
+
+                        if (existing) {
+                          setUsernameStatus("taken");
+                          setUsernameError("Этот никнейм уже занят");
+                        } else {
+                          setUsernameStatus("available");
+                        }
+                      }}
+                      placeholder="username"
+                      maxLength={30}
+                      className="w-full pl-4 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+                    />
+                  </div>
+                  {usernameError ? <p className="text-xs text-destructive mt-2">{usernameError}</p> : null}
+                  {!usernameError && usernameStatus === "checking" ? <p className="text-xs text-muted-foreground mt-2">Проверяем никнейм...</p> : null}
+                  {!usernameError && usernameStatus === "available" ? <p className="text-xs text-green-600 mt-2">Никнейм свободен</p> : null}
+                  {!usernameError && usernameStatus === "taken" ? <p className="text-xs text-destructive mt-2">Этот никнейм уже занят</p> : null}
+                  <p className="text-xs text-muted-foreground mt-2">Латинские буквы, цифры и _ (3-30 символов)</p>
+                </div>
                 <Field
                   label="Вебсайт"
                   value={form.website}

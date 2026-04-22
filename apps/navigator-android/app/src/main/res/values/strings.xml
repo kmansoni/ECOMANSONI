@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Navigator</string>
+    <string name="gps_not_available">GPS недоступен</string>
+    <string name="location_permission_denied">Отказано в доступе к местоположению</string>
+    <string name="navigation_started">Навигация начата</string>
+    <string name="navigation_ended">Навигация завершена</string>
+    <string name="voice_not_available">Голос unavailable</string>
+    <string name="offline_mode">Офлайн режим</string>
+    <string name="downloading_region">Скачивание региона…</string>
+    <string name="region_downloaded">Регион скачан</string>
+</resources>

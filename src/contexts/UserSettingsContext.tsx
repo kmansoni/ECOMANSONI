@@ -9,6 +9,10 @@ import {
 } from "@/lib/user-settings";
 import { cleanupInactiveSessions, computeSessionKey, heartbeatMySession, upsertMySession } from "@/lib/sessions";
 import { supabase } from "@/integrations/supabase/client";
+import { startNavigatorSettingsSync } from "@/lib/navigation/navigatorSettingsSync";
+import { startVoiceLearningSync } from '@/lib/navigation/voiceLearningSync';
+import { addressLocalizer } from '@/lib/localization/addressLocalizer';
+import { getCurrentLanguageCode, resolveLocaleFromLanguageCode } from '@/lib/localization/appLocale';
 
 type UserSettingsContextValue = {
   settings: UserSettings | null;
@@ -24,11 +28,16 @@ function applyRootFlags(settings: UserSettings | null) {
   if (!settings) {
     root.classList.remove("reduce-motion");
     root.classList.remove("high-contrast");
+    root.lang = getCurrentLanguageCode();
+    addressLocalizer.setLocale(resolveLocaleFromLanguageCode(root.lang));
     return;
   }
 
   root.classList.toggle("reduce-motion", !!settings.reduce_motion);
   root.classList.toggle("high-contrast", !!settings.high_contrast);
+  const languageCode = getCurrentLanguageCode(settings.language_code);
+  root.lang = languageCode;
+  addressLocalizer.setLocale(resolveLocaleFromLanguageCode(languageCode));
 }
 
 export function UserSettingsProvider({ children }: { children: React.ReactNode }) {
@@ -161,6 +170,17 @@ export function UserSettingsProvider({ children }: { children: React.ReactNode }
 
     return unsubscribe;
   }, [setTheme, userId]);
+
+  // Sync navigator settings (sound, route, map, display) to Supabase
+  React.useEffect(() => {
+    if (!userId) return;
+    const stopNavigatorSync = startNavigatorSettingsSync(userId);
+    const stopVoiceLearningSync = startVoiceLearningSync();
+    return () => {
+      stopNavigatorSync();
+      stopVoiceLearningSync();
+    };
+  }, [userId]);
 
   const value = React.useMemo<UserSettingsContextValue>(
     () => ({

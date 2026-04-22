@@ -34,6 +34,10 @@ export interface Peer {
   displayName: string;           // задаёт пользователь на устройстве
   deviceType: 'android' | 'ios' | 'web' | 'unknown';
   publicKey: Uint8Array;         // Ed25519 public key (32 байта)
+  /** ECDH P-256 публичный ключ (SPKI base64). Появляется после handshake. */
+  encryptionPublicKey?: string;
+  /** unix ms — когда успешно завершён handshake и установлена E2EE-сессия. */
+  handshakeCompletedAt?: number;
   status: PeerStatus;
   lastSeenAt: number;            // unix ms
   firstSeenAt: number;
@@ -76,6 +80,26 @@ export interface MeshMessageEnvelope extends MeshMessageHeader {
   signature: string;
   /** Nonce для anti-replay, base64 (12 байт) */
   nonce: string;
+  /**
+   * Proof-of-Work (Hashcash) для anti-Sybil / anti-flood.
+   * Обязателен для SOS и для first-contact DM (когда получатель ещё не
+   * установил сессию с отправителем). Для обычного трафика опционален.
+   */
+  pow?: PowProof;
+}
+
+/**
+ * Hashcash-style PoW: SHA-256(challenge || nonce) имеет ≥ `bits` ведущих нулей.
+ * `challenge` строится детерминированно из senderId, recipientId, timestamp и kind
+ * — см. `buildFirstContactChallenge` / `buildSosChallenge`.
+ */
+export interface PowProof {
+  /** base64(nonce, 16 байт) */
+  nonce: string;
+  /** Фактическое число нулевых бит, найденное отправителем. */
+  bits: number;
+  /** Разновидность challenge — определяет формулу построения на receiver'е. */
+  kind: 'first-contact' | 'sos';
 }
 
 export interface DecryptedMeshMessage {
@@ -126,8 +150,14 @@ export interface EmergencySignal {
 export interface LocalIdentity {
   peerId: PeerId;
   displayName: string;
-  publicKey: Uint8Array;          // Ed25519 32 bytes
-  // Приватный ключ НЕ в этом объекте — лежит в hardwareKeyStorage
+  publicKey: Uint8Array;          // Ed25519 32 bytes (raw)
+  /**
+   * ECDH P-256 публичный ключ (SPKI base64).
+   * Используется для установки сессий Double Ratchet с пирами.
+   * Привязывается к Ed25519 identity через подпись в handshake.
+   */
+  ecdhPublicKey: string;
+  // Приватные ключи НЕ в этом объекте — лежат в hardwareKeyStorage.
   createdAt: number;
 }
 

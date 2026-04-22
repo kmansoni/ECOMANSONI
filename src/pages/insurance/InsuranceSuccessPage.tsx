@@ -1,5 +1,5 @@
 import { useParams, useNavigate } from "react-router-dom";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Check, Download, Home, Shield, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -7,11 +7,24 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
+import QRCode from "qrcode";
 
 export default function InsuranceSuccessPage() {
   const { policyId } = useParams<{ policyId: string }>();
   const navigate = useNavigate();
   const [downloading, setDownloading] = useState(false);
+  const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!policyId) return;
+    QRCode.toDataURL(policyId, {
+      width: 200,
+      margin: 2,
+      color: { dark: '#000000', light: '#ffffff' },
+    })
+      .then(setQrCodeUrl)
+      .catch((e) => console.warn('[InsuranceSuccess] QR generation failed:', e));
+  }, [policyId]);
 
   const handleDownload = async () => {
     if (!policyId) return;
@@ -92,6 +105,12 @@ export default function InsuranceSuccessPage() {
                   <p className="text-xs text-muted-foreground text-center mt-1">
                     Сохраните номер для обращения в страховую компанию
                   </p>
+                  {qrCodeUrl && (
+                    <div className="mt-3 p-2 bg-white rounded-lg">
+                      <img src={qrCodeUrl} alt="QR код полиса" className="w-32 h-32" />
+                      <p className="text-[10px] text-muted-foreground text-center mt-1">Сканируйте для быстрого поиска</p>
+                    </div>
+                  )}
                 </div>
               )}
 

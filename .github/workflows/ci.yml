@@ -58,6 +58,9 @@ jobs:
       - name: Migration governance lint
         run: npm run migrations:lint
 
+      - name: Agent topology validation
+        run: npm run agents:validate
+
       - name: Lint
         run: npm run lint
 

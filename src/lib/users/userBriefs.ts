@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import { logger } from "@/lib/logger";
+import { normalizeAvatarUrl } from "@/lib/mediaUrl";
 
 export interface UserBrief {
   user_id: string;
@@ -32,17 +33,12 @@ function normalizeText(value: unknown): string | null {
   return normalized.length > 0 ? normalized : null;
 }
 
-function makeFallbackToken(userId: string, size: number): string {
-  return `u_${userId.replace(/-/g, "").slice(0, size)}`;
-}
-
 export function makeFallbackUserBrief(userId: string): UserBrief {
-  const displayToken = makeFallbackToken(userId, 8);
   return {
     user_id: userId,
-    display_name: displayToken,
+    display_name: "Пользователь",
     avatar_url: null,
-    username: makeFallbackToken(userId, 16),
+    username: "",
   };
 }
 
@@ -54,8 +50,8 @@ function toUserBrief(userId: string, source?: UserBriefLike | null): UserBrief {
       normalizeText(source?.display_name) ??
       normalizeText(source?.full_name) ??
       fallback.display_name,
-    avatar_url: normalizeText(source?.avatar_url),
-    username: normalizeText(source?.username) ?? fallback.username,
+    avatar_url: normalizeAvatarUrl(source?.avatar_url) || null,
+    username: normalizeText(source?.username) ?? "",
   };
 }
 

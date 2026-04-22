@@ -1,12 +1,15 @@
 import express from 'express';
 import { createClient } from '@supabase/supabase-js';
+import { loadConfig } from './env.mjs';
 
 const app = express();
 app.use(express.json());
 
+const config = loadConfig();
+
 const supabase = createClient(
-  process.env.SUPABASE_URL || '',
-  process.env.SUPABASE_SERVICE_ROLE_KEY || ''
+  config.supabaseUrl,
+  config.supabaseServiceRoleKey
 );
 
 // Rate limiter: 30 msg/sec per bot
@@ -179,7 +182,7 @@ app.get('/bot/:token/getCommands', validateToken, async (req, res) => {
   res.json({ ok: true, result: data || [] });
 });
 
-const PORT = process.env.BOT_API_PORT || 3001;
+const PORT = config.port;
 app.listen(PORT, () => {
   console.log('Bot API server running on port ' + PORT);
 });

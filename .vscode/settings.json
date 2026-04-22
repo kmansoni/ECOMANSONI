@@ -21,5 +21,49 @@
 
   "chat.agent.maxRequests": 150,
   "github.copilot.chat.agent.autoFix": true,
-  "github.copilot.chat.agent.runTasks": true
+  "github.copilot.chat.agent.runTasks": true,
+
+  "kilo-code.autoApprovalEnabled": true,
+  "kilo-code.alwaysAllowReadOnly": true,
+  "kilo-code.alwaysAllowReadOnlyOutsideWorkspace": true,
+  "kilo-code.alwaysAllowWrite": true,
+  "kilo-code.alwaysAllowWriteOutsideWorkspace": false,
+  "kilo-code.alwaysAllowExecute": true,
+  "kilo-code.alwaysAllowBrowser": true,
+  "kilo-code.alwaysAllowMcp": true,
+  "kilo-code.alwaysAllowModeSwitch": true,
+  "kilo-code.alwaysAllowSubtasks": true,
+  "kilo-code.alwaysApproveResubmit": true,
+  "kilo-code.allowedCommands": [
+    "git add",
+    "git commit",
+    "git status",
+    "git diff",
+    "git log",
+    "git push",
+    "git pull",
+    "git fetch",
+    "git branch",
+    "git checkout",
+    "git restore",
+    "git stash",
+    "git rev-parse",
+    "git show",
+    "npm",
+    "npx",
+    "pnpm",
+    "bun",
+    "node",
+    "tsc",
+    "pwsh",
+    "powershell",
+    "supabase"
+  ],
+  "kilo-code.deniedCommands": [
+    "rm -rf",
+    "git push --force",
+    "git reset --hard",
+    "supabase db reset"
+  ],
+  "kilo-code.customInstructions": "Язык общения: русский. После каждого логического изменения: (1) npx tsc -p tsconfig.app.json --noEmit — 0 ошибок; (2) git add -A; (3) git commit -m \"<type>: <описание>\". Атомарные коммиты. Запрещено: git push --force, DROP TABLE, удаление credentials."
 }

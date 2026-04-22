@@ -37,6 +37,9 @@ CREATE POLICY "Users can follow others" ON public.followers
 CREATE POLICY "Users can unfollow" ON public.followers
     FOR DELETE USING (auth.uid() = follower_id);
 
+CREATE POLICY "Users can update own follows" ON public.followers
+    FOR UPDATE USING (auth.uid() = follower_id) WITH CHECK (auth.uid() = follower_id AND follower_id != following_id);
+
 -- Saved posts RLS policies
 CREATE POLICY "Users can view own saved posts" ON public.saved_posts
     FOR SELECT USING (auth.uid() = user_id);

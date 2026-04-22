@@ -3,8 +3,9 @@ import type { SpeedCamera } from '@/types/navigation';
 import { calculateDistance } from '@/lib/taxi/calculations';
 import { dbLoose } from "@/lib/supabase";
 import { logger } from '@/lib/logger';
+import { getOfflineSpeedCameras } from './offlineSearch';
 
-// Камеры Москвы и СПб — статичный набор, расширяется через nav_speed_cameras в Supabase
+// Камеры Москвы и СПб — статичный набор, расширяется через offline data / Supabase
 const BUILTIN_CAMERAS: SpeedCamera[] = [
   { id: 'cam-1', location: { lat: 55.7558, lng: 37.6173 }, speedLimit: 60, direction: 0, type: 'fixed' },
   { id: 'cam-2', location: { lat: 55.7620, lng: 37.6250 }, speedLimit: 60, direction: 90, type: 'fixed' },
@@ -24,12 +25,48 @@ const BUILTIN_CAMERAS: SpeedCamera[] = [
 let _cameras: SpeedCamera[] = BUILTIN_CAMERAS;
 let _loaded = false;
 
-/** Загружает камеры из Supabase (таблица nav_speed_cameras). Если таблица не существует — fallback на встроенные */
+function mergeCameraSets(...groups: SpeedCamera[][]): SpeedCamera[] {
+  const merged: SpeedCamera[] = [];
+  const seen = new Set<string>();
+
+  for (const group of groups) {
+    for (const cam of group) {
+      const key = `${cam.location.lat.toFixed(5)}:${cam.location.lng.toFixed(5)}:${cam.type}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push(cam);
+    }
+  }
+
+  return merged;
+}
+
+/** Загружает камеры: offline JSON → Supabase → встроенные */
 export async function loadSpeedCameras(): Promise<SpeedCamera[]> {
   if (_loaded) return _cameras;
+
+  let merged = [...BUILTIN_CAMERAS];
+
+  // 1) Offline data (downloaded from OSM)
   try {
-    // ⚠️ таблица может не существовать, поэтому обходим строгую типизацию
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const offlineCams = await getOfflineSpeedCameras();
+    if (offlineCams.length > 0) {
+      const mappedOffline = offlineCams.map(c => ({
+        id: c.id,
+        location: { lat: c.lat, lng: c.lon },
+        speedLimit: c.speedLimit,
+        direction: c.direction,
+        type: c.type as SpeedCamera['type'],
+      }));
+      merged = mergeCameraSets(mappedOffline, merged);
+      logger.debug(`[speedCameras] Загружено ${mappedOffline.length} камер из offline данных`);
+    }
+  } catch {
+    // offline not available
+  }
+
+  // 2) Supabase (if available)
+  try {
     const client = dbLoose;
     const { data, error } = await client.from('nav_speed_cameras')
       .select('id, lat, lng, speed_limit, direction, type')
@@ -37,17 +74,21 @@ export async function loadSpeedCameras(): Promise<SpeedCamera[]> {
     if (error) throw error;
     if (data?.length) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      _cameras = (data as any[]).map((row) => ({
+      const mappedSupabase = (data as any[]).map((row) => ({
         id: String(row.id),
         location: { lat: Number(row.lat), lng: Number(row.lng) },
         speedLimit: Number(row.speed_limit),
         direction: Number(row.direction),
         type: (String(row.type) as SpeedCamera['type']) || 'fixed',
       }));
+      merged = mergeCameraSets(mappedSupabase, merged);
     }
   } catch (err) {
     logger.debug('[speedCameras] nav_speed_cameras недоступна, используем встроенные', err);
   }
+
+  // 3) Fallback to builtin
+  _cameras = merged;
   _loaded = true;
   return _cameras;
 }
@@ -63,10 +104,11 @@ export function getNearbyCamera(position: LatLng, heading: number): SpeedCamera 
     const dist = calculateDistance(position, cam.location);
     if (dist > WARN_RADIUS_KM) continue;
 
-    // камера впереди? (±60° от курса)
+    // камера впереди? (±60° от курса) — handle 360° wrap-around
     const bearing = getBearing(position, cam.location);
-    const diff = Math.abs(normalizeDeg(bearing - heading));
-    if (diff > 60) continue;
+    const rawDiff = normalizeDeg(bearing - heading);
+    const angleDiff = rawDiff > 180 ? 360 - rawDiff : rawDiff;
+    if (angleDiff > 60) continue;
 
     if (dist < closestDist) {
       closestDist = dist;

@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { createQueryClient } from "@/lib/queryClient";
 import { createEphemeralSupabaseClient } from "@/lib/multiAccount/supabaseEphemeral";
+import { getAnonHeaders, getSendEmailOtpUrls, getVerifyEmailOtpUrls } from "@/lib/auth/backendEndpoints";
 import { useAccountContainerContext } from "@/contexts/AccountContainerContext";
 import { loadOrCreateDeviceIdentity } from "@/auth/deviceIdentity";
 import { logger } from "@/lib/logger";
@@ -30,14 +31,14 @@ type MultiAccountContextValue = {
   activeAccountId: AccountId | null;
   switchingAccountId: AccountId | null;
   isSwitchingAccount: boolean;
-  accountOperation: "switch" | "external-switch" | "add-password" | "otp-start" | "otp-verify" | "register-email" | null;
+  accountOperation: "switch" | "external-switch" | "lookup-phone" | "otp-start" | "otp-verify" | "recovery" | null;
   isAccountOperationInProgress: boolean;
   switchAccount: (accountId: AccountId) => Promise<void>;
-  addAccountWithPassword: (email: string, password: string) => Promise<{ error: Error | null }>;
-  startAddAccountEmailOtp: (email: string) => Promise<{ error: Error | null }>;
-  verifyAddAccountEmailOtp: (email: string, token: string) => Promise<{ error: Error | null }>;
+  lookupPhoneGetEmail: (phone: string) => Promise<{ email: string | null; error: Error | null }>;
+  sendOtpToEmail: (email: string, createUser?: boolean) => Promise<{ error: Error | null }>;
+  verifyOtpAndActivate: (email: string, token: string, opts?: { phone?: string; password?: string }) => Promise<{ error: Error | null }>;
+  checkRecoveryFactors: (phone: string, email: string, password: string) => Promise<{ error: Error | null }>;
 };
-
 const MultiAccountContext = React.createContext<MultiAccountContextValue | null>(null);
 const AUTH_SERVICE_BASE_URL = (import.meta.env.VITE_AUTH_SERVICE_BASE_URL as string | undefined)?.trim() || "";
 
@@ -48,6 +49,62 @@ type ActivatedSessionPayload = {
   refresh_token: string;
   refresh_expires_at: string;
 };
+
+type EdgeJsonPayload = Record<string, unknown>;
+
+function asEdgeJsonPayload(value: unknown): EdgeJsonPayload | null {
+  return value && typeof value === "object" ? (value as EdgeJsonPayload) : null;
+}
+
+function edgePayloadString(payload: EdgeJsonPayload | null, key: string): string | undefined {
+  const value = payload?.[key];
+  return typeof value === "string" ? value : undefined;
+}
+
+function edgePayloadBoolean(payload: EdgeJsonPayload | null, key: string): boolean {
+  return Boolean(payload?.[key]);
+}
+
+async function postJsonEdgeWithFallback(
+  urls: string[],
+  body: Record<string, unknown>,
+): Promise<{ response: Response; data: EdgeJsonPayload | null }> {
+  let lastError: unknown = null;
+  let lastResponse: Response | null = null;
+  let lastData: EdgeJsonPayload | null = null;
+
+  for (const url of urls) {
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: getAnonHeaders(),
+        body: JSON.stringify(body),
+      });
+      const text = await response.text();
+      let data: EdgeJsonPayload | null = null;
+      try {
+        data = asEdgeJsonPayload(text ? JSON.parse(text) : null);
+      } catch {
+        data = null;
+      }
+
+      if (response.ok) {
+        return { response, data };
+      }
+
+      lastResponse = response;
+      lastData = data;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  if (lastResponse) {
+    return { response: lastResponse, data: lastData };
+  }
+
+  throw (lastError ?? new Error("EDGE_UNREACHABLE"));
+}
 
 async function activateSessionBySessionId(sessionId: string): Promise<ActivatedSessionPayload> {
   if (!AUTH_SERVICE_BASE_URL) {
@@ -466,6 +523,12 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
     hardResetQueryClient();
   }, [accountContainer, hardResetQueryClient]);
 
+  // Ref to avoid re-running the init effect when activateSessionForAccount reference changes
+  const activateSessionRef = React.useRef(activateSessionForAccount);
+  React.useEffect(() => {
+    activateSessionRef.current = activateSessionForAccount;
+  }, [activateSessionForAccount]);
+
   const switchAccount = React.useCallback(async (accountId: AccountId) => {
     if (!accountId) return;
     if (activeAccountId === accountId) return;
@@ -682,7 +745,7 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
         }
 
         try {
-          await withTimeout(activateSessionForAccount(candidate), 5000, "initActivate");
+          await withTimeout(activateSessionRef.current(candidate), 5000, "initActivate");
         } catch {
           if (!cancelled) {
             setAccounts(upsertAccountIndex({ accountId: candidate, requiresReauth: true }));
@@ -697,7 +760,18 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
     return () => {
       cancelled = true;
     };
-  }, [activateSessionForAccount]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Safety: guarantee loading resolves even if init effect is cancelled mid-flight
+  React.useEffect(() => {
+    if (!loading) return;
+    const timer = window.setTimeout(() => {
+      logger.warn('[MultiAccount] safety timer: forcing loading=false after 8s');
+      setLoading(false);
+    }, 8_000);
+    return () => window.clearTimeout(timer);
+  }, [loading]);
 
   React.useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_evt, session) => {
@@ -716,7 +790,12 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
           accessToken: session.access_token,
           refreshToken: session.refresh_token,
           expiresAt: session.expires_at ?? 0,
-        }).catch(() => {});
+        }).catch((err) => {
+          logger.warn('[MultiAccount] writeTokens failed after auth state change', { accountId, err });
+          toast.error('Не удалось сохранить вход', {
+            description: 'После перезагрузки может потребоваться войти снова.',
+          });
+        });
 
         setActiveAccountId(accountId);
         setActiveAccountState(accountId);
@@ -823,98 +902,168 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
 
     return () => subscription.unsubscribe();
   }, [beginProfileLoad, isCurrentProfileLoad]);
-
-  const addAccountWithPassword = React.useCallback(async (email: string, password: string) => {
-    return runExclusiveAccountOp("add-password", async () => {
-      try {
-        const client = createEphemeralSupabaseClient();
-        const { data, error } = await client.auth.signInWithPassword({ email, password });
-        if (error) return { error };
-        const session = data.session;
-        if (!session || !session.user) return { error: new Error("no_session") };
-
-        const accountId = session.user.id as AccountId;
-        runtimeRefreshTokensRef.current[accountId] = session.refresh_token;
-        setAccounts(upsertAccountIndex({ accountId, requiresReauth: false, touchActive: true }));
-
-        await activateSessionForAccount(accountId);
-        const { seq, signal } = beginProfileLoad(accountId);
-        const profile = await fetchMyProfileSnapshot(accountId, signal);
-        if (profile && isCurrentProfileLoad(accountId, seq)) {
-          setAccounts(upsertAccountIndex({ accountId, profile }));
+    // ─── lookupPhoneGetEmail ─────────────────────────────────────────────────────
+    // ─── lookupPhoneGetEmail ─────────────────────────────────────────────────────
+    const lookupPhoneGetEmail = React.useCallback(async (phone: string) => {
+      return runExclusiveAccountOp("lookup-phone" as Parameters<typeof runExclusiveAccountOp>[0], async () => {
+        try {
+          const { data, error } = await supabase.rpc("get_email_by_phone_v1", { p_phone: phone });
+          if (error) return { email: null, error: error as Error };
+          return { email: (data as string | null) ?? null, error: null };
+        } catch (e) {
+          return { email: null, error: e as Error };
         }
-        return { error: null };
-      } catch (e) {
-        return { error: e as Error };
-      }
-    });
-  }, [activateSessionForAccount, beginProfileLoad, isCurrentProfileLoad, runExclusiveAccountOp]);
+      });
+    }, [runExclusiveAccountOp]) as (phone: string) => Promise<{ email: string | null; error: Error | null }>;
 
-  const startAddAccountEmailOtp = React.useCallback(async (email: string) => {
-    return runExclusiveAccountOp("otp-start", async () => {
-      try {
-        const trimmed = email.trim().toLowerCase();
-        if (!trimmed) return { error: new Error("Email is required") };
+    // ─── sendOtpToEmail ──────────────────────────────────────────────────────────
+    const sendOtpToEmail = React.useCallback(async (email: string, createUser = false) => {
+      return runExclusiveAccountOp("otp-start" as Parameters<typeof runExclusiveAccountOp>[0], async () => {
+        try {
+          const trimmed = email.trim().toLowerCase();
+          if (!trimmed) return { error: new Error("Email обязателен") };
 
-        const client = createEphemeralSupabaseClient();
-        const { error } = await client.auth.signInWithOtp({
-          email: trimmed,
-          options: { shouldCreateUser: true },
-        });
-        return { error: error ?? null };
-      } catch (e) {
-        return { error: e as Error };
-      }
-    });
-  }, [runExclusiveAccountOp]);
+          // The custom edge flow handles both existing and new users on verify step.
+          void createUser;
 
-  const verifyAddAccountEmailOtp = React.useCallback(async (email: string, token: string) => {
-    return runExclusiveAccountOp("otp-verify", async () => {
-      try {
-        const trimmed = email.trim().toLowerCase();
+          const { response, data } = await postJsonEdgeWithFallback(getSendEmailOtpUrls(), {
+            email: trimmed,
+          });
 
-        const client = createEphemeralSupabaseClient();
-        const { data, error } = await client.auth.verifyOtp({
-          email: trimmed,
-          token,
-          type: "email",
-        });
-        if (error) return { error };
+          if (!response.ok) {
+            const message = edgePayloadString(data, "message") || edgePayloadString(data, "error") || `HTTP ${response.status}`;
+            return { error: new Error(message) };
+          }
 
-        const session = data.session;
-        if (!session || !session.user) return { error: new Error("no_session") };
-
-        const accountId = session.user.id as AccountId;
-        runtimeRefreshTokensRef.current[accountId] = session.refresh_token;
-        setAccounts(upsertAccountIndex({ accountId, requiresReauth: false, touchActive: true }));
-
-        await activateSessionForAccount(accountId);
-        const { seq, signal } = beginProfileLoad(accountId);
-        const profile = await fetchMyProfileSnapshot(accountId, signal);
-        if (profile && isCurrentProfileLoad(accountId, seq)) {
-          setAccounts(upsertAccountIndex({ accountId, profile }));
+          return { error: null };
+        } catch (e) {
+          return { error: e as Error };
         }
-        return { error: null };
-      } catch (e) {
-        return { error: e as Error };
-      }
-    });
-  }, [activateSessionForAccount, beginProfileLoad, isCurrentProfileLoad, runExclusiveAccountOp]);
+      });
+    }, [runExclusiveAccountOp]);
 
-  const value = React.useMemo<MultiAccountContextValue>(() => ({
-    loading,
-    accounts,
-    activeAccountId,
-    switchingAccountId,
-    isSwitchingAccount: switchingAccountId !== null,
-    accountOperation,
-    isAccountOperationInProgress: accountOperation !== null,
-    switchAccount,
-    addAccountWithPassword,
-    startAddAccountEmailOtp,
-    verifyAddAccountEmailOtp,
-  }), [accountOperation, accounts, activeAccountId, addAccountWithPassword, loading, startAddAccountEmailOtp, switchAccount, switchingAccountId, verifyAddAccountEmailOtp]);
+    // ─── verifyOtpAndActivate ────────────────────────────────────────────────────
+    const verifyOtpAndActivate = React.useCallback(async (
+      email: string,
+      token: string,
+      opts: { phone?: string; password?: string } = {},
+    ) => {
+      return runExclusiveAccountOp("otp-verify", async () => {
+        try {
+          const trimmed = email.trim().toLowerCase();
+          const { response, data } = await postJsonEdgeWithFallback(getVerifyEmailOtpUrls(), {
+            email: trimmed,
+            code: token,
+          });
 
+          if (!response.ok || !edgePayloadBoolean(data, "ok")) {
+            const message = edgePayloadString(data, "message") || edgePayloadString(data, "error") || `HTTP ${response.status}`;
+            return { error: new Error(message) };
+          }
+
+          const accessToken = edgePayloadString(data, "accessToken") || "";
+          const refreshToken = edgePayloadString(data, "refreshToken") || "";
+          if (!accessToken || !refreshToken) {
+            return { error: new Error("Ответ сервера не содержит токены") };
+          }
+
+          const client = createEphemeralSupabaseClient();
+          const { data: setSessionData, error: setSessionError } = await client.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken,
+          });
+          if (setSessionError) return { error: setSessionError };
+
+          const session = setSessionData.session;
+          if (!session || !session.user) return { error: new Error("no_session") };
+
+          // If registering: set the password the user chose
+          if (opts.password) {
+            const { error: pwErr } = await client.auth.updateUser({ password: opts.password });
+            if (pwErr) logger.warn("[verifyOtpAndActivate] set-password failed", pwErr);
+          }
+
+          const accountId = session.user.id as AccountId;
+          runtimeRefreshTokensRef.current[accountId] = refreshToken;
+          setAccounts(upsertAccountIndex({ accountId, requiresReauth: false, touchActive: true }));
+
+          await activateSessionForAccount(accountId);
+
+          // If registering: attach phone to auth_accounts
+          if (opts.phone) {
+            try {
+              await supabase.rpc("auth_upsert_account_v1", {
+                p_email: trimmed,
+                p_phone_e164: opts.phone,
+              });
+            } catch (rpcErr) {
+              logger.warn("[verifyOtpAndActivate] phone upsert failed", rpcErr);
+            }
+          }
+
+          const { seq, signal } = beginProfileLoad(accountId);
+          const profile = await fetchMyProfileSnapshot(accountId, signal);
+          if (profile && isCurrentProfileLoad(accountId, seq)) {
+            setAccounts(upsertAccountIndex({ accountId, profile }));
+          }
+          return { error: null };
+        } catch (e) {
+          return { error: e as Error };
+        }
+      });
+    }, [activateSessionForAccount, beginProfileLoad, isCurrentProfileLoad, runExclusiveAccountOp]);
+
+    // ─── checkRecoveryFactors ────────────────────────────────────────────────────
+    // Verifies 3 static factors (phone+email match + correct password) server-side,
+    // then sends OTP as the 4th factor. Caller must follow up with verifyOtpAndActivate.
+    const checkRecoveryFactors = React.useCallback(async (phone: string, email: string, password: string) => {
+      return runExclusiveAccountOp("recovery" as Parameters<typeof runExclusiveAccountOp>[0], async () => {
+        try {
+          const trimmedEmail = email.trim().toLowerCase();
+
+          // Factor 1+2: phone and email must belong to the same account
+          const { data: match, error: matchErr } = await supabase.rpc("check_recovery_phone_email_v1", {
+            p_phone: phone,
+            p_email: trimmedEmail,
+          });
+          if (matchErr) return { error: matchErr as Error };
+          if (!match) return { error: new Error("Данные не совпадают с записями аккаунта") };
+
+          // Factor 3: password must be correct
+          const client = createEphemeralSupabaseClient();
+          const { error: pwErr } = await client.auth.signInWithPassword({ email: trimmedEmail, password });
+          if (pwErr) return { error: new Error("Неверный пароль") };
+
+          // All 3 static factors verified → send OTP (Factor 4)
+          const { response, data } = await postJsonEdgeWithFallback(getSendEmailOtpUrls(), {
+            email: trimmedEmail,
+          });
+          if (!response.ok) {
+            const message = edgePayloadString(data, "message") || edgePayloadString(data, "error") || `HTTP ${response.status}`;
+            return { error: new Error(message) };
+          }
+
+          return { error: null };
+        } catch (e) {
+          return { error: e as Error };
+        }
+      });
+    }, [runExclusiveAccountOp]) as (phone: string, email: string, password: string) => Promise<{ error: Error | null }>;
+
+    const value = React.useMemo<MultiAccountContextValue>(() => ({
+      loading,
+      accounts,
+      activeAccountId,
+      switchingAccountId,
+      isSwitchingAccount: switchingAccountId !== null,
+      accountOperation,
+      isAccountOperationInProgress: accountOperation !== null,
+      switchAccount,
+      lookupPhoneGetEmail,
+      sendOtpToEmail,
+      verifyOtpAndActivate,
+      checkRecoveryFactors,
+    }), [accountOperation, accounts, activeAccountId, checkRecoveryFactors, loading, lookupPhoneGetEmail, sendOtpToEmail, switchAccount, switchingAccountId, verifyOtpAndActivate]);
   return (
     <MultiAccountContext.Provider value={value}>
       <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>

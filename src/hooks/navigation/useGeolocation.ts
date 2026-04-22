@@ -38,6 +38,11 @@ export function useGeolocation() {
   const prevTimeRef = useRef<number>(0);
 
   const startTracking = useCallback(() => {
+    if (watchIdRef.current != null) {
+      setState((s) => ({ ...s, isTracking: true, error: null }));
+      return;
+    }
+
     if (!navigator.geolocation) {
       // Desktop fallback: use default center
       setState((s) => ({
@@ -58,22 +63,24 @@ export function useGeolocation() {
           lng: pos.coords.longitude,
         };
 
-        let heading = state.heading;
+        const previousPosition = prevPositionRef.current;
+        const previousTimestamp = prevTimeRef.current;
+        let heading = 0;
         let speed = 0;
 
         // Use GPS heading/speed if available
         if (pos.coords.heading != null && !isNaN(pos.coords.heading)) {
           heading = pos.coords.heading;
-        } else if (prevPositionRef.current) {
-          heading = calculateBearing(prevPositionRef.current, newPos);
+        } else if (previousPosition) {
+          heading = calculateBearing(previousPosition, newPos);
         }
 
         if (pos.coords.speed != null && pos.coords.speed >= 0) {
           speed = pos.coords.speed * 3.6; // m/s → km/h
-        } else if (prevPositionRef.current && prevTimeRef.current) {
-          const dt = (pos.timestamp - prevTimeRef.current) / 1000;
+        } else if (previousPosition && previousTimestamp) {
+          const dt = (pos.timestamp - previousTimestamp) / 1000;
           if (dt > 0) {
-            const dist = haversineM(prevPositionRef.current, newPos);
+            const dist = haversineM(previousPosition, newPos);
             speed = (dist / dt) * 3.6;
           }
         }
@@ -81,16 +88,18 @@ export function useGeolocation() {
         prevPositionRef.current = newPos;
         prevTimeRef.current = pos.timestamp;
 
-        setState({
+
+        setState((currentState) => ({
           position: newPos,
-          heading,
+          heading: heading || currentState.heading,
           speed: Math.max(0, speed),
           accuracy: pos.coords.accuracy,
           error: null,
           isTracking: true,
-        });
+        }));
       },
       (err) => {
+        watchIdRef.current = null;
         setState((s) => ({
           ...s,
           error: err.message,
@@ -111,6 +120,8 @@ export function useGeolocation() {
       navigator.geolocation?.clearWatch(watchIdRef.current);
       watchIdRef.current = null;
     }
+    prevPositionRef.current = null;
+    prevTimeRef.current = 0;
     setState((s) => ({ ...s, isTracking: false }));
   }, []);
 

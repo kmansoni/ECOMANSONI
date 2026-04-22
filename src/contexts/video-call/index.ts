@@ -100,10 +100,18 @@ export function useVideoCallContext(): VideoCallContextType {
     // Media
     localStream: media.localStream,
     remoteStream: media.remoteStream,
+    remoteScreenStream: media.remoteScreenStream,
     isMuted: media.isMuted,
     isVideoOff: media.isVideoOff,
+    isScreenSharing: media.isScreenSharing,
+    screenStream: media.screenStream,
+    noiseSuppressionEnabled: media.noiseSuppressionEnabled,
+    backgroundBlurEnabled: media.backgroundBlurEnabled,
     toggleMute: media.toggleMute,
     toggleVideo: media.toggleVideo,
+    toggleScreenShare: media.toggleScreenShare,
+    toggleNoiseSuppression: media.toggleNoiseSuppression,
+    toggleBackgroundBlur: media.toggleBackgroundBlur,
     // UI
     isCallUiActive: ui.isCallUiActive,
   };

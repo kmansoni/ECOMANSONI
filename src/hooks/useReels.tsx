@@ -8,6 +8,7 @@ import { fetchUserBriefMap, resolveUserBrief } from "@/lib/users/userBriefs";
 import { toggleReelLike as _toggleReelLike } from "@/lib/likes";
 import { logger } from "@/lib/logger";
 import { OperationMutex, showErrorToast, handleApiError } from "@/lib/errors";
+import { normalizeMediaUrl } from "@/lib/mediaUrl";
 import type { Database } from "@/integrations/supabase/types";
 
 type ReelRow = Database["public"]["Tables"]["reels"]["Row"];
@@ -23,52 +24,8 @@ function safeRandomUUID(): string {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-function normalizeUrlish(value: unknown): string {
-  if (typeof value !== "string") return "";
-  return value
-    .trim()
-    .replace(/^['"]+|['"]+$/g, "")
-    .trim();
-}
-
-function normalizeSupabaseBaseUrl(): string {
-  const raw = normalizeUrlish(import.meta.env?.VITE_SUPABASE_URL);
-  return raw.replace(/\/+$/, "");
-}
-
-function buildPublicStorageUrl(bucket: string, objectPath: string): string {
-  const base = normalizeSupabaseBaseUrl();
-  const cleanPath = normalizeUrlish(objectPath).replace(/^\/+/, "");
-  if (!base || !cleanPath) return "";
-  // NOTE: do not encode '/' so Supabase storage can resolve nested folders.
-  const encoded = cleanPath
-    .split("/")
-    .map((seg) => encodeURIComponent(seg))
-    .join("/");
-  return `${base}/storage/v1/object/public/${encodeURIComponent(bucket)}/${encoded}`;
-}
-
 export function normalizeReelMediaUrl(urlOrPath: unknown, bucket = "reels-media"): string {
-  const v = normalizeUrlish(urlOrPath);
-  if (!v) return "";
-
-  // Absolute URLs.
-  if (/^https?:\/\//i.test(v)) return v;
-
-  // Supabase storage path variants.
-  // - /storage/v1/object/public/...
-  // - storage/v1/object/public/...
-  if (v.startsWith("/storage/")) {
-    const base = normalizeSupabaseBaseUrl();
-    return base ? `${base}${v}` : v;
-  }
-  if (v.startsWith("storage/")) {
-    const base = normalizeSupabaseBaseUrl();
-    return base ? `${base}/${v}` : v;
-  }
-
-  // Common case when DB stores object path only (e.g. userId/file.mp4).
-  return buildPublicStorageUrl(bucket, v);
+  return normalizeMediaUrl(urlOrPath, bucket);
 }
 
 function normalizeReelRow(row: any): any {
@@ -78,7 +35,7 @@ function normalizeReelRow(row: any): any {
   return {
     ...row,
     video_url: normalizeReelMediaUrl(videoUrlRaw, "reels-media"),
-    thumbnail_url: normalizeReelMediaUrl(thumbUrlRaw, "reels-media") || normalizeUrlish(thumbUrlRaw),
+    thumbnail_url: normalizeReelMediaUrl(thumbUrlRaw, "reels-media") || normalizeMediaUrl(thumbUrlRaw),
   };
 }
 
