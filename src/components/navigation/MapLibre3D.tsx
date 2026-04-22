@@ -8,7 +8,7 @@
  *   - Speed camera markers
  *   - Destination pin
  */
-import { useEffect, useRef, useState, memo } from 'react';
+import { useEffect, useRef, useState, memo, useCallback } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import type { LatLng } from '@/types/taxi';
@@ -19,10 +19,15 @@ import { useRoadEvents, getRoadEventInfo } from '@/stores/roadEventsStore';
 import { getRelevantMapObjects, loadRoadFeatures } from '@/lib/navigation/roadFeatures';
 import { getStyleUrl, addEnhancedRoadLayers, addTerrain, applyMapThemeEnhancements, type MapTheme } from '@/lib/map/vectorTileProvider';
 import { ensureNavigationLayers, updateNavigationObjectSource } from '@/lib/map/navigationLayers';
+import { getRoad3DRenderer } from '@/lib/navigation/road3DRenderer';
 import { getNearbyTrafficLights, type TrafficLightStatus } from '@/lib/navigation/trafficLightTiming';
 import { getBuildingExtrusionColorExpression, getProductionPalette } from '@/lib/map/mapStyles';
 import { fetchTrafficInBbox, type TrafficSegment } from '@/lib/navigation/trafficProvider';
 import { useUserSettings } from '@/contexts/UserSettingsContext';
+import { logger } from '@/lib/logger';
+import { surveyService } from '@/lib/survey/surveyService';
+import type { SurveyScan } from '@/types/survey';
+import { supabase } from '@/lib/supabase';
 
 // ─── Style URLs: auto-detect MapTiler or fallback to CartoDB ────────────────
 const STYLES = {
@@ -106,19 +111,28 @@ export const MapLibre3D = memo(function MapLibre3D({
   onMapClick,
   className = '',
 }: MapLibre3DProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<maplibregl.Map | null>(null);
-  const carMarkerRef = useRef<maplibregl.Marker | null>(null);
-  const destMarkerRef = useRef<maplibregl.Marker | null>(null);
-  const eventMarkersRef = useRef<maplibregl.Marker[]>([]);
-  const [isReady, setIsReady] = useState(false);
-  const animFrameRef = useRef<number | null>(null);
-
-  // Get settings for vehicle marker + display toggles
+   const containerRef = useRef<HTMLDivElement>(null);
+   const mapRef = useRef<maplibregl.Map | null>(null);
+   const carMarkerRef = useRef<maplibregl.Marker | null>(null);
+   const destMarkerRef = useRef<maplibregl.Marker | null>(null);
+   const eventMarkersRef = useRef<maplibregl.Marker[]>([]);
+   const [isReady, setIsReady] = useState(false);
+   const animFrameRef = useRef<number | null>(null);
+   const road3DRendererRef = useRef(getRoad3DRenderer());
   const navSettings = useNavigatorSettings();
-  const { events: roadEvents } = useRoadEvents();
-  const { settings } = useUserSettings();
-  const languageCode = settings?.language_code ?? null;
+
+   // Survey scans state
+   const [surveyScans, setSurveyScans] = useState<SurveyScan[]>([]);
+   const [showSurveyLayer, setShowSurveyLayer] = useState(navSettings.showMapEdits);
+
+   // Sync setting changes
+   useEffect(() => {
+     setShowSurveyLayer(navSettings.showMapEdits);
+   }, [navSettings.showMapEdits]);
+
+   const { events: roadEvents } = useRoadEvents();
+   const { settings } = useUserSettings();
+   const languageCode = settings?.language_code ?? null;
 
   // Navigation pitch: 60° for Amap-like tilt, 0° for top-down
   const pitch = propPitch ?? (isNavigating ? 60 : 0);
@@ -145,19 +159,23 @@ export const MapLibre3D = memo(function MapLibre3D({
     const applyManagedLayers = () => {
       if (!map.isStyleLoaded()) return;
 
-      applyMapThemeEnhancements(map, mapStyle, languageCode);
+      try {
+        applyMapThemeEnhancements(map, mapStyle, languageCode);
 
-      if (navSettings.show3DBuildings) {
-        add3DBuildings(map, mapStyle);
-      }
-      addEnhancedRoadLayers(map, navSettings.labelSizeMultiplier, navSettings.highContrastLabels, mapStyle, languageCode);
-      ensureNavigationLayers(map, {
-        labelSizeMultiplier: navSettings.labelSizeMultiplier,
-        highContrast: navSettings.highContrastLabels,
-        theme: mapStyle,
-      });
-      if (mapStyle === 'terrain' || mapStyle === 'dark') {
-        addTerrain(map);
+        if (navSettings.show3DBuildings) {
+          add3DBuildings(map, mapStyle);
+        }
+        addEnhancedRoadLayers(map, navSettings.labelSizeMultiplier, navSettings.highContrastLabels, mapStyle, languageCode);
+        ensureNavigationLayers(map, {
+          labelSizeMultiplier: navSettings.labelSizeMultiplier,
+          highContrast: navSettings.highContrastLabels,
+          theme: mapStyle,
+        });
+        if (mapStyle === 'terrain' || mapStyle === 'dark') {
+          addTerrain(map);
+        }
+      } catch (error) {
+        logger.warn('[MapLibre3D] applyManagedLayers failed', { error, mapStyle });
       }
     };
 
@@ -189,59 +207,211 @@ export const MapLibre3D = memo(function MapLibre3D({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [languageCode, mapStyle]);
 
-   // ── Dynamic label updates when settings change ────────────────────────────
-   useEffect(() => {
-     const map = mapRef.current;
-     if (!map || !isReady) return;
+    // ── Survey scans layer (proposed/approved edits) ──────────────────────────
+    useEffect(() => {
+      const map = mapRef.current;
+      if (!map || !isReady) return;
 
-     ensureNavigationLayers(map, {
-       labelSizeMultiplier: navSettings.labelSizeMultiplier,
-       highContrast: navSettings.highContrastLabels,
-       theme: mapStyle,
-     });
+      // Only load if user has survey layer enabled
+      if (!showSurveyLayer) {
+        if (map.getLayer('survey-scans-fill')) {
+          map.removeLayer('survey-scans-fill');
+          map.removeLayer('survey-scans-user-border');
+          map.removeSource('survey-scans-source');
+        }
+        return;
+      }
 
-     // Compute scaled sizes
-     const baseRoadSizes = [11, 13, 15, 17, 19];
-     const scaledRoadSizes = baseRoadSizes.map(s => s * navSettings.labelSizeMultiplier);
-     const [r12, r14, r16, r18, r20] = scaledRoadSizes;
+      const loadScans = async () => {
+        const bounds = map.getBounds();
+        const bbox: [number, number, number, number] = [
+          bounds.getWest(),
+          bounds.getSouth(),
+          bounds.getEast(),
+          bounds.getNorth()
+        ];
 
-     const baseHNSizes = [10, 13, 15];
-     const scaledHNSizes = baseHNSizes.map(s => s * navSettings.labelSizeMultiplier);
-     const [hn16, hn18, hn20] = scaledHNSizes;
+        const scans = await surveyService.getInBounds(bbox, ['ready', 'approved'], 200);
+        setSurveyScans(scans);
+      };
 
-     const haloWidth = navSettings.highContrastLabels ? 4 : 3;
-     const haloBlur = navSettings.highContrastLabels ? 0 : 0.5;
+      loadScans();
 
-     // Update road label layer
-     try {
-       map.setLayoutProperty('enhanced-road-labels', 'text-size', [
-         'interpolate', ['linear'], ['zoom'],
-         12, r12,
-         14, r14,
-         16, r16,
-         18, r18,
-         20, r20,
-       ]);
-       map.setPaintProperty('enhanced-road-labels', 'text-halo-width', haloWidth);
-       map.setPaintProperty('enhanced-road-labels', 'text-halo-blur', haloBlur);
-     } catch (e) {
-       // Layer not yet created
-     }
+      // Realtime updates via subscription
+      const unsubscribe = surveyService.subscribeToScansInArea(
+        [map.getBounds().getWest(), map.getBounds().getSouth(), map.getBounds().getEast(), map.getBounds().getNorth()],
+        (updated) => setSurveyScans(updated)
+      );
 
-     // Update house number layer
-     try {
-       map.setLayoutProperty('enhanced-house-numbers', 'text-size', [
-         'interpolate', ['linear'], ['zoom'],
-         16, hn16,
-         18, hn18,
-         20, hn20,
-       ]);
-       map.setPaintProperty('enhanced-house-numbers', 'text-halo-width', haloWidth);
-       map.setPaintProperty('enhanced-house-numbers', 'text-halo-blur', haloBlur);
-     } catch (e) {
-       // Layer not yet created
-     }
-    }, [navSettings.labelSizeMultiplier, navSettings.highContrastLabels, isReady]);
+      const onMoveEnd = () => loadScans();
+      map.on('moveend', onMoveEnd);
+
+      return () => {
+        unsubscribe();
+        map.off('moveend', onMoveEnd);
+      };
+    }, [showSurveyLayer, isReady]);
+
+    // ── Render survey scans on map ─────────────────────────────────────────────
+    useEffect(() => {
+      const map = mapRef.current;
+      if (!map || !isReady) return;
+
+      if (surveyScans.length === 0) {
+        if (map.getLayer('survey-scans-fill')) {
+          map.removeLayer('survey-scans-fill');
+          map.removeLayer('survey-scans-user-border');
+          map.removeSource('survey-scans-source');
+        }
+        return;
+      }
+
+      const features = surveyScans
+        .filter(s => s.footprint_geometry)
+        .map(scan => {
+          const geometry = surveyService.helpers.parseWktPolygonToGeoJSON(scan.footprint_geometry);
+          if (!geometry) {
+            return null;
+          }
+
+          return {
+            type: 'Feature',
+            geometry,
+            properties: {
+              id: scan.id,
+              scan_type: scan.scan_type,
+              quality_score: scan.quality_score,
+              completeness_pct: scan.completeness_pct,
+              status: scan.status,
+              dimensions: scan.computed_dimensions,
+              is_your_scan: scan.user_id === (() => { try { return JSON.parse(localStorage.getItem('mansoni-user') || '{}').id; } catch { return null; } })()
+            }
+          };
+        })
+        .filter((feature): feature is GeoJSON.Feature => feature !== null);
+
+      const geojson: GeoJSON.FeatureCollection = {
+        type: 'FeatureCollection',
+        features: features as GeoJSON.Feature[]
+      };
+
+      if (!map.getSource('survey-scans-source')) {
+        map.addSource('survey-scans-source', {
+          type: 'geojson',
+          data: geojson
+        });
+
+        map.addLayer({
+          id: 'survey-scans-fill',
+          type: 'fill',
+          source: 'survey-scans-source',
+          paint: {
+            'fill-color': [
+              'case',
+              ['==', ['get', 'status'], 'approved'], 'rgba(34, 197, 94, 0.6)',
+              ['==', ['get', 'status'], 'proposed'], 'rgba(251, 191, 36, 0.4)',
+              ['==', ['get', 'status'], 'ready'], 'rgba(59, 130, 246, 0.4)',
+              'rgba(156, 163, 175, 0.3)'
+            ],
+            'fill-outline-color': [
+              'case',
+              ['==', ['get', 'status'], 'approved'], 'rgb(34, 197, 94)',
+              ['==', ['get', 'status'], 'proposed'], 'rgb(251, 191, 36)',
+              'rgb(107, 114, 128)'
+            ],
+            'fill-outline-width': 2
+          }
+        });
+
+        map.addLayer({
+          id: 'survey-scans-user-border',
+          type: 'line',
+          source: 'survey-scans-source',
+          paint: {
+            'line-color': '#22C55E',
+            'line-width': 3,
+            'line-opacity': 0.8
+          },
+          filter: ['==', ['get', 'is_your_scan'], true]
+        });
+
+        map.on('click', 'survey-scans-fill', (e) => {
+          const props = e.features?.[0]?.properties as any;
+          if (!props) return;
+          showSurveyPopup(props, e.lngLat);
+        });
+
+        map.on('mouseenter', 'survey-scans-fill', () => map.getCanvas().style.cursor = 'pointer');
+        map.on('mouseleave', 'survey-scans-fill', () => map.getCanvas().style.cursor = '');
+      } else {
+        (map.getSource('survey-scans-source') as maplibregl.GeoJSONSource).setData(geojson);
+      }
+
+      function showSurveyPopup(props: any, lngLat: maplibregl.LngLat) {
+        const dims = props.dimensions;
+        const html = `
+          <div class="p-3 min-w-[200px]">
+            <div class="font-bold text-gray-900 mb-2">${getScanTypeLabel(props.scan_type)}</div>
+            <div class="text-sm space-y-1">
+              <div class="flex justify-between"><span>Качество:</span><span class="font-medium">${Math.round(props.quality_score * 100)}%</span></div>
+              ${dims ? `
+                <div class="flex justify-between"><span>Размеры:</span><span class="font-medium">${dims.length_m?.toFixed(1)} × ${dims.width_m?.toFixed(1)} м</span></div>
+                ${dims.height_m ? `<div class="flex justify-between"><span>Высота:</span><span class="font-medium">${dims.height_m.toFixed(1)} м</span></div>` : ''}
+                <div class="flex justify-between"><span>Площадь:</span><span class="font-medium">${dims.area_m2?.toFixed(0)} м²</span></div>
+              ` : ''}
+              <div class="flex justify-between"><span>Покрытие:</span><span class="font-medium">${props.completeness_pct}%</span></div>
+              <div class="flex justify-between"><span>Статус:</span><span class="font-medium ${getStatusColor(props.status)}">${getStatusLabel(props.status)}</span></div>
+            </div>
+            ${props.is_your_scan ? '<div class="mt-2 text-xs text-green-600">✓ Ваш скан</div>' : ''}
+          </div>
+        `;
+
+        new maplibregl.Popup({ closeButton: true, closeOnClick: false })
+          .setLngLat([lngLat.lng, lngLat.lat])
+          .setHTML(html)
+          .addTo(map);
+      }
+
+      function getScanTypeLabel(t: string): string {
+        const dict: Record<string, string> = {
+          building: 'Здание',
+          road: 'Дорога',
+          bridge: 'Мост',
+          intersection: 'Перекрёсток',
+          street_furniture: 'Уличная мебель',
+          area: 'Территория'
+        };
+        return dict[t] || t;
+      }
+
+      function getStatusLabel(s: string): string {
+        const dict: Record<string, string> = {
+          processing: 'Обработка',
+          ready: 'Готов',
+          proposed: 'Предложен',
+          approved: 'Принят',
+          merged: 'В OSM',
+          rejected: 'Отклонён',
+          failed: 'Ошибка'
+        };
+        return dict[s] || s;
+      }
+
+      function getStatusColor(s: string): string {
+        const dict: Record<string, string> = {
+          processing: 'text-yellow-600',
+          ready: 'text-blue-600',
+          proposed: 'text-orange-600',
+          approved: 'text-green-600',
+          merged: 'text-green-700',
+          rejected: 'text-red-600',
+          failed: 'text-red-700'
+        };
+        return dict[s] || 'text-gray-600';
+      }
+
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [surveyScans, showSurveyLayer, isReady]);
 
   // ── City-wide traffic overlay ────────────────────────────────────────────
   useEffect(() => {
@@ -268,7 +438,7 @@ export const MapLibre3D = memo(function MapLibre3D({
         if (disposed) return;
         upsertTrafficOverlay(map, segments);
       } catch (error) {
-        console.warn('[MapLibre3D] Traffic overlay update failed:', error);
+        logger.warn('[MapLibre3D] Traffic overlay update failed', { error });
       }
     };
 
@@ -308,23 +478,27 @@ export const MapLibre3D = memo(function MapLibre3D({
     const map = mapRef.current;
     if (!map || !isReady) return;
 
-    if (isNavigating && userPosition) {
-      map.easeTo({
-        center: [userPosition.lng, userPosition.lat],
-        zoom: Math.max(zoom, 16.5),
-        pitch,
-        bearing,
-        duration: 800,
-        easing: (t) => t * (2 - t), // ease-out quad
-      });
-    } else {
-      map.easeTo({
-        center: [center.lng, center.lat],
-        zoom,
-        pitch,
-        bearing,
-        duration: 500,
-      });
+    try {
+      if (isNavigating && userPosition) {
+        map.easeTo({
+          center: [userPosition.lng, userPosition.lat],
+          zoom: Math.max(zoom, 16.5),
+          pitch,
+          bearing,
+          duration: 800,
+          easing: (t) => t * (2 - t), // ease-out quad
+        });
+      } else {
+        map.easeTo({
+          center: [center.lng, center.lat],
+          zoom,
+          pitch,
+          bearing,
+          duration: 500,
+        });
+      }
+    } catch (error) {
+      logger.warn('[MapLibre3D] camera sync failed', { error, isNavigating });
     }
   }, [center.lat, center.lng, zoom, pitch, bearing, isNavigating, userPosition, isReady]);
 
@@ -332,14 +506,18 @@ export const MapLibre3D = memo(function MapLibre3D({
     const map = mapRef.current;
     if (!map || !isReady || !userPosition) return;
 
-    map.easeTo({
-      center: [userPosition.lng, userPosition.lat],
-      zoom: Math.max(map.getZoom(), isNavigating ? 16.5 : 15.5),
-      pitch,
-      bearing,
-      duration: 900,
-      easing: (t) => 1 - Math.pow(1 - t, 3),
-    });
+    try {
+      map.easeTo({
+        center: [userPosition.lng, userPosition.lat],
+        zoom: Math.max(map.getZoom(), isNavigating ? 16.5 : 15.5),
+        pitch,
+        bearing,
+        duration: 900,
+        easing: (t) => 1 - Math.pow(1 - t, 3),
+      });
+    } catch (error) {
+      logger.warn('[MapLibre3D] recenter failed', { error });
+    }
   }, [recenterTrigger, isReady, userPosition, isNavigating, pitch, bearing]);
 
   // ── Route rendering ───────────────────────────────────────────────────────
@@ -347,64 +525,82 @@ export const MapLibre3D = memo(function MapLibre3D({
     const map = mapRef.current;
     if (!map || !isReady) return;
 
-    // Clear old route layers
-    removeRouteLayers(map);
+    const renderer = road3DRendererRef.current;
 
-    if (routeSegments.length === 0) return;
+    if (isNavigating) {
+      renderer.attach(map);
+      return () => {
+        renderer.removeAllLayers();
+        renderer.detach();
+      };
+    }
 
-    // Render each segment with traffic color
-    routeSegments.forEach((segment, i) => {
-      if (segment.points.length < 2) return;
+    renderer.removeAllLayers();
+    renderer.detach();
+    return;
+  }, [isNavigating, isReady]);
 
-      const coords = segment.points.map(p => [p.lng, p.lat] as [number, number]);
-      const sourceId = `route-seg-${i}`;
-      const layerId = `route-seg-layer-${i}`;
-      const outlineId = `route-seg-outline-${i}`;
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !isReady) return;
 
-      map.addSource(sourceId, {
-        type: 'geojson',
-        data: {
-          type: 'Feature',
-          properties: {},
-          geometry: { type: 'LineString', coordinates: coords },
-        },
+    try {
+      removeRouteLayers(map);
+
+      if (isNavigating || routeSegments.length === 0) return;
+
+      routeSegments.forEach((segment, i) => {
+        if (segment.points.length < 2) return;
+
+        const coords = segment.points.map(p => [p.lng, p.lat] as [number, number]);
+        const sourceId = `route-seg-${i}`;
+        const layerId = `route-seg-layer-${i}`;
+        const outlineId = `route-seg-outline-${i}`;
+
+        map.addSource(sourceId, {
+          type: 'geojson',
+          data: {
+            type: 'Feature',
+            properties: {},
+            geometry: { type: 'LineString', coordinates: coords },
+          },
+        });
+
+        map.addLayer({
+          id: outlineId,
+          type: 'line',
+          source: sourceId,
+          layout: { 'line-join': 'round', 'line-cap': 'round' },
+          paint: {
+            'line-color': '#000000',
+            'line-width': 10,
+            'line-opacity': 0.4,
+          },
+        });
+
+        map.addLayer({
+          id: layerId,
+          type: 'line',
+          source: sourceId,
+          layout: { 'line-join': 'round', 'line-cap': 'round' },
+          paint: {
+            'line-color': TRAFFIC_COLORS[segment.traffic] || TRAFFIC_COLORS.unknown,
+            'line-width': 7,
+            'line-opacity': 0.9,
+          },
+        });
       });
 
-      // Outline (dark border for depth)
-      map.addLayer({
-        id: outlineId,
-        type: 'line',
-        source: sourceId,
-        layout: { 'line-join': 'round', 'line-cap': 'round' },
-        paint: {
-          'line-color': '#000000',
-          'line-width': 10,
-          'line-opacity': 0.4,
-        },
-      });
-
-      // Main route line with traffic color
-      map.addLayer({
-        id: layerId,
-        type: 'line',
-        source: sourceId,
-        layout: { 'line-join': 'round', 'line-cap': 'round' },
-        paint: {
-          'line-color': TRAFFIC_COLORS[segment.traffic] || TRAFFIC_COLORS.unknown,
-          'line-width': 7,
-          'line-opacity': 0.9,
-        },
-      });
-    });
-
-    // Fit bounds when not navigating
-    if (!isNavigating && routeSegments.length > 0) {
-      const allPoints = routeSegments.flatMap(s => s.points);
-      if (allPoints.length >= 2) {
-        const bounds = new maplibregl.LngLatBounds();
-        allPoints.forEach(p => bounds.extend([p.lng, p.lat]));
-        map.fitBounds(bounds, { padding: 80, maxZoom: 16 });
+      if (!isNavigating && routeSegments.length > 0) {
+        const allPoints = routeSegments.flatMap(s => s.points);
+        if (allPoints.length >= 2) {
+          const bounds = new maplibregl.LngLatBounds();
+          allPoints.forEach(p => bounds.extend([p.lng, p.lat]));
+          map.fitBounds(bounds, { padding: 80, maxZoom: 16 });
+        }
       }
+    } catch (error) {
+      logger.warn('[MapLibre3D] route rendering failed', { error, routeSegmentCount: routeSegments.length });
     }
   }, [routeSegments, isReady, isNavigating]);
 
@@ -543,20 +739,24 @@ export const MapLibre3D = memo(function MapLibre3D({
     const map = mapRef.current;
     if (!map || !isReady) return;
 
-    const anchor = userPosition ?? center;
-    const objects = getRelevantMapObjects({
-      position: anchor,
-      route,
-      heading,
-      speedCameras,
-      showTrafficLights: navSettings.showTrafficLights,
-      showSpeedBumps: navSettings.showSpeedBumps,
-      showRoadSigns: navSettings.showRoadSigns,
-      showSpeedCameras: navSettings.showSpeedCameras,
-      showPOI: navSettings.showPOI,
-      radiusKm: isNavigating ? 1.8 : 1.2,
-    });
-    updateNavigationObjectSource(map, objects);
+    try {
+      const anchor = userPosition ?? center;
+      const objects = getRelevantMapObjects({
+        position: anchor,
+        route,
+        heading,
+        speedCameras,
+        showTrafficLights: navSettings.showTrafficLights,
+        showSpeedBumps: navSettings.showSpeedBumps,
+        showRoadSigns: navSettings.showRoadSigns,
+        showSpeedCameras: navSettings.showSpeedCameras,
+        showPOI: navSettings.showPOI,
+        radiusKm: isNavigating ? 1.8 : 1.2,
+      });
+      updateNavigationObjectSource(map, objects);
+    } catch (error) {
+      logger.warn('[MapLibre3D] navigation objects update failed', { error });
+    }
   }, [
     center,
     userPosition,
@@ -646,7 +846,24 @@ export const MapLibre3D = memo(function MapLibre3D({
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-function add3DBuildings(map: maplibregl.Map, mapStyle: MapStyle) {
+function isUsableMap(map: maplibregl.Map | null | undefined): map is maplibregl.Map {
+  if (!map
+    || typeof map.getLayer !== 'function'
+    || typeof map.getSource !== 'function'
+    || typeof map.getStyle !== 'function') {
+    return false;
+  }
+
+  try {
+    const style = map.getStyle();
+    return !!style && Array.isArray(style.layers) && !!style.sources;
+  } catch {
+    return false;
+  }
+}
+
+function add3DBuildings(map: maplibregl.Map | null | undefined, mapStyle: MapStyle) {
+  if (!isUsableMap(map)) return;
   const layers = map.getStyle()?.layers;
   if (!layers) return;
   const palette = getProductionPalette(mapStyle);
@@ -698,6 +915,29 @@ function add3DBuildings(map: maplibregl.Map, mapStyle: MapStyle) {
       labelLayerId,
     );
 
+    if (map.getLayer('3d-landmark-buildings')) {
+      map.removeLayer('3d-landmark-buildings');
+    }
+
+    map.addLayer(
+      {
+        id: '3d-landmark-buildings',
+        source: sourceId,
+        'source-layer': 'building',
+        type: 'fill-extrusion',
+        minzoom: 14,
+        filter: ['>=', ['coalesce', ['get', 'render_height'], ['get', 'height'], 0], 90],
+        paint: {
+          'fill-extrusion-color': palette.landmarkFill,
+          'fill-extrusion-height': ['*', ['coalesce', ['get', 'render_height'], ['get', 'height'], 20], 1.08],
+          'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], 0],
+          'fill-extrusion-opacity': mapStyle === 'satellite' || mapStyle === 'hybrid' ? 0.66 : 0.92,
+          'fill-extrusion-vertical-gradient': true,
+        },
+      },
+      labelLayerId,
+    );
+
     if (map.getLayer('3d-buildings-outline')) {
       map.removeLayer('3d-buildings-outline');
     }
@@ -717,12 +957,34 @@ function add3DBuildings(map: maplibregl.Map, mapStyle: MapStyle) {
       },
       labelLayerId,
     );
+
+    if (map.getLayer('3d-landmark-outline')) {
+      map.removeLayer('3d-landmark-outline');
+    }
+
+    map.addLayer(
+      {
+        id: '3d-landmark-outline',
+        source: sourceId,
+        'source-layer': 'building',
+        type: 'line',
+        minzoom: 14,
+        filter: ['>=', ['coalesce', ['get', 'render_height'], ['get', 'height'], 0], 90],
+        paint: {
+          'line-color': palette.landmarkLine,
+          'line-width': ['interpolate', ['linear'], ['zoom'], 14, 0.8, 18, 2.4],
+          'line-opacity': 0.82,
+        },
+      },
+      labelLayerId,
+    );
   } catch (e) {
-    console.warn('[MapLibre3D] Could not add 3D buildings:', e);
+    logger.warn('[MapLibre3D] Could not add 3D buildings', { error: e });
   }
 }
 
-function removeRouteLayers(map: maplibregl.Map) {
+function removeRouteLayers(map: maplibregl.Map | null | undefined) {
+  if (!isUsableMap(map)) return;
   const style = map.getStyle();
   if (!style?.layers) return;
 
@@ -740,72 +1002,78 @@ function removeRouteLayers(map: maplibregl.Map) {
   });
 }
 
-function upsertTrafficOverlay(map: maplibregl.Map, segments: TrafficSegment[]) {
-  const data = {
-    type: 'FeatureCollection' as const,
-    features: segments.map((segment) => ({
-      type: 'Feature' as const,
-      properties: {
-        congestion: segment.congestionLevel,
-        confidence: segment.confidence,
-        sampleCount: segment.sampleCount,
-      },
-      geometry: {
-        type: 'Point' as const,
-        coordinates: [segment.centerLon, segment.centerLat],
-      },
-    })),
-  };
+function upsertTrafficOverlay(map: maplibregl.Map | null | undefined, segments: TrafficSegment[]) {
+  if (!isUsableMap(map)) return;
+  try {
+    const data = {
+      type: 'FeatureCollection' as const,
+      features: segments.map((segment) => ({
+        type: 'Feature' as const,
+        properties: {
+          congestion: segment.congestionLevel,
+          confidence: segment.confidence,
+          sampleCount: segment.sampleCount,
+        },
+        geometry: {
+          type: 'Point' as const,
+          coordinates: [segment.centerLon, segment.centerLat],
+        },
+      })),
+    };
 
-  const existingSource = map.getSource(TRAFFIC_OVERLAY_SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
-  if (existingSource) {
-    existingSource.setData(data);
-  } else {
-    map.addSource(TRAFFIC_OVERLAY_SOURCE_ID, {
-      type: 'geojson',
-      data,
-    });
-  }
+    const existingSource = map.getSource(TRAFFIC_OVERLAY_SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
+    if (existingSource) {
+      existingSource.setData(data);
+    } else {
+      map.addSource(TRAFFIC_OVERLAY_SOURCE_ID, {
+        type: 'geojson',
+        data,
+      });
+    }
 
-  if (!map.getLayer(TRAFFIC_OVERLAY_LAYER_ID)) {
-    const beforeId = map.getStyle().layers?.find((layer) => layer.type === 'symbol')?.id;
-    map.addLayer({
-      id: TRAFFIC_OVERLAY_LAYER_ID,
-      type: 'circle',
-      source: TRAFFIC_OVERLAY_SOURCE_ID,
-      paint: {
-        'circle-color': [
-          'match',
-          ['get', 'congestion'],
-          'free', TRAFFIC_COLORS.free,
-          'moderate', '#EAB308',
-          'slow', TRAFFIC_COLORS.slow,
-          'congested', TRAFFIC_COLORS.congested,
-          TRAFFIC_COLORS.unknown,
-        ],
-        'circle-radius': [
-          'interpolate', ['linear'], ['zoom'],
-          8, ['+', 3, ['*', ['coalesce', ['get', 'confidence'], 0.3], 4]],
-          14, ['+', 6, ['*', ['coalesce', ['get', 'confidence'], 0.3], 6]],
-          18, ['+', 10, ['*', ['coalesce', ['get', 'confidence'], 0.3], 8]],
-        ],
-        'circle-opacity': [
-          'match',
-          ['get', 'congestion'],
-          'free', 0.18,
-          'moderate', 0.28,
-          'slow', 0.34,
-          'congested', 0.42,
-          0.2,
-        ],
-        'circle-stroke-color': 'rgba(15, 23, 42, 0.72)',
-        'circle-stroke-width': 0.75,
-      },
-    }, beforeId);
+    if (!map.getLayer(TRAFFIC_OVERLAY_LAYER_ID)) {
+      const beforeId = map.getStyle().layers?.find((layer) => layer.type === 'symbol')?.id;
+      map.addLayer({
+        id: TRAFFIC_OVERLAY_LAYER_ID,
+        type: 'circle',
+        source: TRAFFIC_OVERLAY_SOURCE_ID,
+        paint: {
+          'circle-color': [
+            'match',
+            ['get', 'congestion'],
+            'free', TRAFFIC_COLORS.free,
+            'moderate', '#EAB308',
+            'slow', TRAFFIC_COLORS.slow,
+            'congested', TRAFFIC_COLORS.congested,
+            TRAFFIC_COLORS.unknown,
+          ],
+          'circle-radius': [
+            'interpolate', ['linear'], ['zoom'],
+            8, ['+', 3, ['*', ['coalesce', ['get', 'confidence'], 0.3], 4]],
+            14, ['+', 6, ['*', ['coalesce', ['get', 'confidence'], 0.3], 6]],
+            18, ['+', 10, ['*', ['coalesce', ['get', 'confidence'], 0.3], 8]],
+          ],
+          'circle-opacity': [
+            'match',
+            ['get', 'congestion'],
+            'free', 0.18,
+            'moderate', 0.28,
+            'slow', 0.34,
+            'congested', 0.42,
+            0.2,
+          ],
+          'circle-stroke-color': 'rgba(15, 23, 42, 0.72)',
+          'circle-stroke-width': 0.75,
+        },
+      }, beforeId);
+    }
+  } catch (error) {
+    logger.warn('[MapLibre3D] upsertTrafficOverlay failed', { error, segmentCount: segments.length });
   }
 }
 
-function removeTrafficOverlay(map: maplibregl.Map) {
+function removeTrafficOverlay(map: maplibregl.Map | null | undefined) {
+  if (!isUsableMap(map)) return;
   if (map.getLayer(TRAFFIC_OVERLAY_LAYER_ID)) {
     try { map.removeLayer(TRAFFIC_OVERLAY_LAYER_ID); } catch { /* ignore */ }
   }
@@ -815,9 +1083,11 @@ function removeTrafficOverlay(map: maplibregl.Map) {
   }
 }
 
-function upsertTransitOverlay(map: maplibregl.Map, multimodalRoute: MultiModalRoute, selectedSegmentIndex: number | null) {
-  const stationFeatures = new Map<string, GeoJSON.Feature<GeoJSON.Point>>();
-  const features: GeoJSON.Feature[] = multimodalRoute.segments.flatMap((segment, index) => {
+function upsertTransitOverlay(map: maplibregl.Map | null | undefined, multimodalRoute: MultiModalRoute, selectedSegmentIndex: number | null) {
+  if (!isUsableMap(map)) return;
+  try {
+    const stationFeatures = new Map<string, GeoJSON.Feature<GeoJSON.Point>>();
+    const features: GeoJSON.Feature[] = multimodalRoute.segments.flatMap((segment, index) => {
     const segmentCoordinates = (segment.geometry && segment.geometry.length >= 2
       ? segment.geometry
       : [segment.from, segment.to]
@@ -873,92 +1143,89 @@ function upsertTransitOverlay(map: maplibregl.Map, multimodalRoute: MultiModalRo
     }];
   });
 
-  const data = {
-    type: 'FeatureCollection' as const,
-    features: [...features, ...stationFeatures.values()],
-  };
+    const data = {
+      type: 'FeatureCollection' as const,
+      features: [...features, ...stationFeatures.values()],
+    };
 
-  const existingSource = map.getSource(TRANSIT_OVERLAY_SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
-  if (existingSource) {
-    existingSource.setData(data);
-  } else {
-    map.addSource(TRANSIT_OVERLAY_SOURCE_ID, {
-      type: 'geojson',
-      data,
-    });
-  }
+    const existingSource = map.getSource(TRANSIT_OVERLAY_SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
+    if (existingSource) {
+      existingSource.setData(data);
+    } else {
+      map.addSource(TRANSIT_OVERLAY_SOURCE_ID, {
+        type: 'geojson',
+        data,
+      });
+    }
 
-  const beforeId = map.getStyle().layers?.find((layer) => layer.type === 'symbol')?.id;
+    const beforeId = map.getStyle().layers?.find((layer) => layer.type === 'symbol')?.id;
 
-  if (!map.getLayer(TRANSIT_LINE_LAYER_ID)) {
-    map.addLayer({
-      id: TRANSIT_LINE_LAYER_ID,
-      type: 'line',
-      source: TRANSIT_OVERLAY_SOURCE_ID,
-      filter: ['==', ['geometry-type'], 'LineString'],
-      layout: {
-        'line-join': 'round',
-        'line-cap': 'round',
-      },
-      paint: {
-        'line-color': ['coalesce', ['get', 'routeColor'], '#38BDF8'],
-        'line-width': [
-          'interpolate', ['linear'], ['zoom'],
-          10, ['case', ['boolean', ['get', 'isSelected'], false], 6, ['match', ['get', 'routeType'], 'metro', 4, 'walk', 2, 3]],
-          15, ['case', ['boolean', ['get', 'isSelected'], false], 10, ['match', ['get', 'routeType'], 'metro', 7, 'walk', 3, 5]],
-          18, ['case', ['boolean', ['get', 'isSelected'], false], 12, ['match', ['get', 'routeType'], 'metro', 9, 'walk', 4, 6]],
-        ],
-        'line-opacity': ['case', ['boolean', ['get', 'isSelected'], false], 1, ['match', ['get', 'routeType'], 'walk', 0.5, 0.88]],
-        'line-dasharray': [
-          'match', ['get', 'routeType'],
-          'walk', ['literal', [0.8, 1.2]],
-          'bus', ['literal', [1.2, 0.9]],
-          'tram', ['literal', [1.1, 0.8]],
-          ['literal', [1, 0]],
-        ],
-      },
-    }, beforeId);
-  }
+    if (!map.getLayer(TRANSIT_LINE_LAYER_ID)) {
+      map.addLayer({
+        id: TRANSIT_LINE_LAYER_ID,
+        type: 'line',
+        source: TRANSIT_OVERLAY_SOURCE_ID,
+        filter: ['==', ['geometry-type'], 'LineString'],
+        layout: {
+          'line-join': 'round',
+          'line-cap': 'round',
+        },
+        paint: {
+          'line-color': ['coalesce', ['get', 'routeColor'], '#38BDF8'],
+          'line-width': [
+            'interpolate', ['linear'], ['zoom'],
+            10, ['case', ['boolean', ['get', 'isSelected'], false], 6, ['match', ['get', 'routeType'], 'metro', 4, 'walk', 2, 3]],
+            15, ['case', ['boolean', ['get', 'isSelected'], false], 10, ['match', ['get', 'routeType'], 'metro', 7, 'walk', 3, 5]],
+            18, ['case', ['boolean', ['get', 'isSelected'], false], 12, ['match', ['get', 'routeType'], 'metro', 9, 'walk', 4, 6]],
+          ],
+          'line-opacity': ['case', ['boolean', ['get', 'isSelected'], false], 1, ['match', ['get', 'routeType'], 'walk', 0.5, 0.88]],
+        },
+      }, beforeId);
+    }
 
-  if (!map.getLayer(TRANSIT_STATION_LAYER_ID)) {
-    map.addLayer({
-      id: TRANSIT_STATION_LAYER_ID,
-      type: 'circle',
-      source: TRANSIT_OVERLAY_SOURCE_ID,
-      filter: ['==', ['geometry-type'], 'Point'],
-      paint: {
-        'circle-radius': ['interpolate', ['linear'], ['zoom'], 10, 3, 15, 5, 18, 7],
-        'circle-color': ['coalesce', ['get', 'routeColor'], '#38BDF8'],
-        'circle-stroke-color': '#E2E8F0',
-        'circle-stroke-width': 1.5,
-      },
-    }, beforeId);
-  }
+    if (!map.getLayer(TRANSIT_STATION_LAYER_ID)) {
+      map.addLayer({
+        id: TRANSIT_STATION_LAYER_ID,
+        type: 'circle',
+        source: TRANSIT_OVERLAY_SOURCE_ID,
+        filter: ['==', ['geometry-type'], 'Point'],
+        paint: {
+          'circle-radius': ['interpolate', ['linear'], ['zoom'], 10, 3, 15, 5, 18, 7],
+          'circle-color': ['coalesce', ['get', 'routeColor'], '#38BDF8'],
+          'circle-stroke-color': '#E2E8F0',
+          'circle-stroke-width': 1.5,
+        },
+      }, beforeId);
+    }
 
-  if (!map.getLayer(TRANSIT_LABEL_LAYER_ID)) {
-    map.addLayer({
-      id: TRANSIT_LABEL_LAYER_ID,
-      type: 'symbol',
-      source: TRANSIT_OVERLAY_SOURCE_ID,
-      minzoom: 12,
-      filter: ['==', ['geometry-type'], 'Point'],
-      layout: {
-        'text-field': ['get', 'name'],
-        'text-font': ['Noto Sans Bold', 'Arial Unicode MS Bold'],
-        'text-size': ['interpolate', ['linear'], ['zoom'], 12, 10, 16, 12],
-        'text-offset': [0, 1.1],
-        'text-anchor': 'top',
-      },
-      paint: {
-        'text-color': '#F8FAFC',
-        'text-halo-color': 'rgba(15, 23, 42, 0.92)',
-        'text-halo-width': 1.5,
-      },
-    });
+    if (!map.getLayer(TRANSIT_LABEL_LAYER_ID)) {
+      map.addLayer({
+        id: TRANSIT_LABEL_LAYER_ID,
+        type: 'symbol',
+        source: TRANSIT_OVERLAY_SOURCE_ID,
+        minzoom: 12,
+        filter: ['==', ['geometry-type'], 'Point'],
+        layout: {
+          'text-field': ['get', 'name'],
+          'text-font': ['Noto Sans Bold', 'Arial Unicode MS Bold'],
+          'text-size': ['interpolate', ['linear'], ['zoom'], 12, 10, 16, 12],
+          'text-offset': [0, 1.1],
+          'text-anchor': 'top',
+        },
+        paint: {
+          'text-color': '#F8FAFC',
+          'text-halo-color': 'rgba(15, 23, 42, 0.92)',
+          'text-halo-width': 1.5,
+        },
+      });
+    }
+  } catch (error) {
+    logger.warn('[MapLibre3D] upsertTransitOverlay failed', { error, segmentCount: multimodalRoute.segments.length });
   }
 }
 
-function removeTransitOverlay(map: maplibregl.Map) {
+function removeTransitOverlay(map: maplibregl.Map | null | undefined) {
+  if (!isUsableMap(map)) return;
   for (const layerId of [TRANSIT_LABEL_LAYER_ID, TRANSIT_STATION_LAYER_ID, TRANSIT_LINE_LAYER_ID]) {
     if (map.getLayer(layerId)) {
       try { map.removeLayer(layerId); } catch { /* ignore */ }

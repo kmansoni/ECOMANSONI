@@ -179,6 +179,7 @@ export default function NavigationPage() {
 
   const mapUserPosition = matchedPosition ?? nav.currentPosition;
   const isAmapPipelineReady = amapNav.isReady;
+  const hasAmapTelemetry = amapNav.isInitialized && amapNav.hasKalman && !!amapNav.filteredPosition;
   const hasReliableAmapHeading = isAmapPipelineReady && amapNav.matchConfidence >= AMAP_CONFIDENCE_HEADING_THRESHOLD;
   const kpiPipelineStateRef = useRef<string>('');
 
@@ -202,10 +203,12 @@ export default function NavigationPage() {
     : mapUserPosition ?? geo.position ?? { lat: 55.7558, lng: 37.6173 };
 
   const displayHeading = hasReliableAmapHeading ? amapNav.smoothedHeading : nav.currentHeading;
-  const displaySpeed = isAmapPipelineReady ? amapNav.smoothedSpeed : nav.currentSpeed;
-  const displaySpeedLimit = amapNav.currentSpeedLimit ?? nav.speedLimit;
-  const displayRoadName = amapNav.currentRoadName || nav.nextInstruction?.streetName;
-  const displayLaneGuidance = adaptAmapLaneRecommendation(amapNav.laneRecommendation, nav.nextInstruction?.type) ?? nav.laneGuidance;
+  const displaySpeed = hasAmapTelemetry ? amapNav.smoothedSpeed : nav.currentSpeed;
+  const displaySpeedLimit = isAmapPipelineReady ? (amapNav.currentSpeedLimit ?? nav.speedLimit) : nav.speedLimit;
+  const displayRoadName = isAmapPipelineReady ? (amapNav.currentRoadName || nav.nextInstruction?.streetName) : nav.nextInstruction?.streetName;
+  const displayLaneGuidance = isAmapPipelineReady
+    ? (adaptAmapLaneRecommendation(amapNav.laneRecommendation, nav.nextInstruction?.type) ?? nav.laneGuidance)
+    : nav.laneGuidance;
 
   const mapZoom = nav.phase === 'navigating' ? 17 : 14;
 

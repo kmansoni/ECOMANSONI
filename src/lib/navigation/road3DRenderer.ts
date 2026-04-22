@@ -12,18 +12,18 @@
  */
 
 import maplibregl from 'maplibre-gl';
-import type { LaneRecommendation, LaneSegment } from './laneGraph';
+import type { LaneRecommendation } from './laneGraph';
 import type { LatLng } from '@/types/taxi';
 import type { RouteSegment, TrafficLevel } from '@/types/navigation';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const LANE_WIDTH_PX = 12; // lane width at zoom 17
 const ROUTE_HIGHLIGHT_COLOR = '#00E676';
 const ROUTE_HIGHLIGHT_GLOW = 'rgba(0, 230, 118, 0.3)';
 const LANE_MARKING_COLOR = '#FFFFFF';
 const LANE_MARKING_DASH = [2, 4]; // dashed center lines
 const ROAD_SURFACE_COLOR = '#2D2D3D'; // dark road surface
+const ROAD_SURFACE_EDGE = '#B6C3D1';
 const BARRIER_COLOR = '#888888';
 
 const TRAFFIC_COLORS: Record<TrafficLevel, string> = {
@@ -45,6 +45,7 @@ const SRC_BARRIERS = 'amap-barriers';
 const SRC_SPEED_SIGNS = 'amap-speed-signs';
 
 const LYR_ROAD_SURFACE = 'amap-road-surface-layer';
+const LYR_ROAD_SURFACE_EDGE = 'amap-road-surface-edge-layer';
 const LYR_LANE_MARKINGS = 'amap-lane-markings-layer';
 const LYR_ROUTE_GLOW = 'amap-route-glow-layer';
 const LYR_ROUTE_HIGHLIGHT = 'amap-route-highlight-layer';
@@ -140,6 +141,7 @@ export class Road3DRenderer {
     laneRecommendation: LaneRecommendation | null,
   ): void {
     if (!this.map || routeGeometry.length < 2) return;
+    this.renderRoadSurface(routeGeometry, laneRecommendation);
 
     // 1. Route glow (wide, semi-transparent)
     this.updateLineSource(SRC_ROUTE_GLOW, LYR_ROUTE_GLOW, routeGeometry, {
@@ -208,6 +210,50 @@ export class Road3DRenderer {
     if (laneRecommendation) {
       this.renderLaneArrows(routeGeometry, laneRecommendation);
     }
+  }
+
+  private renderRoadSurface(
+    routeGeometry: LatLng[],
+    recommendation: LaneRecommendation | null,
+  ): void {
+    const totalLanes = Math.max(2, recommendation?.totalLanes ?? 3);
+    const laneWidthMeters = 3.5;
+    const corridorWidth = totalLanes * laneWidthMeters;
+
+    this.updateLineSource(SRC_ROAD_SURFACE, LYR_ROAD_SURFACE, routeGeometry, {
+      'line-color': ROAD_SURFACE_COLOR,
+      'line-width': [
+        'interpolate', ['linear'], ['zoom'],
+        13, corridorWidth * 1.35,
+        16, corridorWidth * 3.3,
+        18, corridorWidth * 5,
+      ],
+      'line-opacity': [
+        'interpolate', ['linear'], ['zoom'],
+        12, 0.3,
+        15, 0.78,
+        18, 0.92,
+      ],
+      'line-blur': 0.2,
+    }, {
+      'line-cap': 'round',
+      'line-join': 'round',
+    });
+
+    this.ensureLayer(LYR_ROAD_SURFACE_EDGE, SRC_ROAD_SURFACE, 'line', {
+      'line-color': ROAD_SURFACE_EDGE,
+      'line-width': [
+        'interpolate', ['linear'], ['zoom'],
+        13, corridorWidth * 1.48,
+        16, corridorWidth * 3.55,
+        18, corridorWidth * 5.25,
+      ],
+      'line-opacity': 0.16,
+      'line-blur': 1.2,
+    }, {
+      'line-cap': 'round',
+      'line-join': 'round',
+    });
   }
 
   /**
@@ -390,8 +436,24 @@ export class Road3DRenderer {
         16, 0.7,
         17, 1,
       ],
+      'text-halo-color': 'rgba(3, 7, 18, 0.96)',
+      'text-halo-width': 1.6,
     }, {
-      'text-field': '↑',
+      'text-field': [
+        'match',
+        ['get', 'direction'],
+        'left', '↰',
+        'slight_left', '↖',
+        'sharp_left', '↶',
+        'right', '↱',
+        'slight_right', '↗',
+        'sharp_right', '↷',
+        'merge_to_left', '⇖',
+        'merge_to_right', '⇗',
+        'reverse', '⟲',
+        'through', '↑',
+        '↑'
+      ],
       'text-rotate': ['get', 'rotation'],
       'text-allow-overlap': true,
       'text-ignore-placement': true,
@@ -462,7 +524,7 @@ export class Road3DRenderer {
   removeAllLayers(): void {
     if (!this.map) return;
     const layerIds = [
-      LYR_ROAD_SURFACE, LYR_LANE_MARKINGS, LYR_ROUTE_GLOW,
+      LYR_ROAD_SURFACE, LYR_ROAD_SURFACE_EDGE, LYR_LANE_MARKINGS, LYR_ROUTE_GLOW,
       LYR_ROUTE_HIGHLIGHT, LYR_LANE_ARROWS, LYR_BARRIERS, LYR_SPEED_SIGNS,
     ];
     const sourceIds = [
@@ -471,13 +533,21 @@ export class Road3DRenderer {
     ];
 
     for (const id of layerIds) {
-      if (this.map.getLayer(id)) {
-        this.map.removeLayer(id);
+      try {
+        if (this.map.getLayer(id)) {
+          this.map.removeLayer(id);
+        }
+      } catch {
+        // Layer cleanup must not crash navigation teardown.
       }
     }
     for (const id of sourceIds) {
-      if (this.map.getSource(id)) {
-        this.map.removeSource(id);
+      try {
+        if (this.map.getSource(id)) {
+          this.map.removeSource(id);
+        }
+      } catch {
+        // Source cleanup can fail if a dependent layer survived; swallow and continue.
       }
     }
     this.sourcesAdded.clear();

@@ -77,14 +77,30 @@ export interface VideoCallMediaContextType {
   localStream: MediaStream | null;
   /** Remote peer MediaStream assembled from SFU consumers. Null when no remote tracks. */
   remoteStream: MediaStream | null;
+  /** Dedicated remote screen-share stream derived from extra remote video tracks. */
+  remoteScreenStream: MediaStream | null;
   /** Whether local audio track is muted. */
   isMuted: boolean;
   /** Whether local video track is disabled. */
   isVideoOff: boolean;
+  /** Whether local screen sharing is active. */
+  isScreenSharing: boolean;
+  /** Local screen-share preview stream. */
+  screenStream: MediaStream | null;
+  /** Whether noise suppression is enabled. */
+  noiseSuppressionEnabled: boolean;
+  /** Whether background blur is enabled. */
+  backgroundBlurEnabled: boolean;
   /** Toggle microphone mute state. */
   toggleMute: () => void;
   /** Toggle camera on/off state. */
   toggleVideo: () => void;
+  /** Toggle local screen sharing. */
+  toggleScreenShare: () => Promise<void>;
+  /** Toggle noise suppression. */
+  toggleNoiseSuppression: () => Promise<void>;
+  /** Toggle background blur. */
+  toggleBackgroundBlur: () => Promise<void>;
 }
 
 // ─── UI domain ─────────────────────────────────────────────────────────────────

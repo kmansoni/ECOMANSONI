@@ -1,6 +1,7 @@
 import type maplibregl from 'maplibre-gl';
 import type { Feature, FeatureCollection, GeoJsonProperties, Point } from 'geojson';
 import type { NavigationMapObject } from '@/types/navigation';
+import { logger } from '@/lib/logger';
 import { getProductionPalette, type ProductionMapMode } from './mapStyles';
 
 const NAV_SOURCE_ID = 'nav-objects-source';
@@ -87,6 +88,22 @@ export function ensureNavigationLayers(
   }, sourceLayers, beforeId);
 
   addOrReplaceLayer(map, {
+    id: `${NAV_LAYER_PREFIX}toll-emphasis`,
+    type: 'line',
+    source: sourceId,
+    'source-layer': 'transportation',
+    filter: ['any', ['==', ['to-string', ['coalesce', ['get', 'toll'], '']], 'yes'], ['==', ['to-string', ['coalesce', ['get', 'fee'], '']], 'yes']],
+    minzoom: 9,
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: {
+      'line-color': '#F7C948',
+      'line-width': ['interpolate', ['linear'], ['zoom'], 9, 1.2, 15, 3.8, 18, 5.4],
+      'line-opacity': 0.85,
+      'line-dasharray': [1.2, 1.2],
+    },
+  }, sourceLayers, beforeId);
+
+  addOrReplaceLayer(map, {
     id: `${NAV_LAYER_PREFIX}centerline`,
     type: 'line',
     source: sourceId,
@@ -158,7 +175,150 @@ export function ensureNavigationLayers(
     },
   }, sourceLayers, undefined);
 
+  addFirstAvailableLayer(map, {
+    id: `${NAV_LAYER_PREFIX}rail-casing`,
+    type: 'line',
+    source: sourceId,
+    minzoom: 9,
+    filter: ['match', ['coalesce', ['get', 'class'], ['get', 'subclass']], ['rail', 'transit', 'subway', 'tram', 'light_rail', 'monorail'], true, false],
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: {
+      'line-color': 'rgba(15, 23, 42, 0.92)',
+      'line-width': ['interpolate', ['linear'], ['zoom'], 9, 1.8, 15, 4.2, 18, 6],
+      'line-opacity': 0.72,
+    },
+  }, ['transportation'], sourceLayers, beforeId);
+
+  addRailVariantLayer(map, sourceId, sourceLayers, beforeId, {
+    idSuffix: 'rail-lines-main',
+    classes: ['rail', 'transit'],
+    color: '#A3B1C6',
+  });
+
+  addRailVariantLayer(map, sourceId, sourceLayers, beforeId, {
+    idSuffix: 'rail-lines-subway',
+    classes: ['subway'],
+    color: '#3B82F6',
+    dasharray: [0.5, 0.75],
+  });
+
+  addRailVariantLayer(map, sourceId, sourceLayers, beforeId, {
+    idSuffix: 'rail-lines-tram',
+    classes: ['tram'],
+    color: '#F97316',
+    dasharray: [1, 0.9],
+  });
+
+  addRailVariantLayer(map, sourceId, sourceLayers, beforeId, {
+    idSuffix: 'rail-lines-light',
+    classes: ['light_rail'],
+    color: '#8B5CF6',
+    dasharray: [1.2, 0.6],
+  });
+
+  addRailVariantLayer(map, sourceId, sourceLayers, beforeId, {
+    idSuffix: 'rail-lines-monorail',
+    classes: ['monorail'],
+    color: '#14B8A6',
+  });
+
+  addFirstAvailableLayer(map, {
+    id: `${NAV_LAYER_PREFIX}public-transport-stops`,
+    type: 'circle',
+    source: sourceId,
+    minzoom: 11,
+    filter: ['match', ['coalesce', ['get', 'class'], ['get', 'subclass']], ['station', 'railway', 'subway', 'tram_stop', 'bus_stop', 'halt', 'ferry_terminal'], true, false],
+    paint: {
+      'circle-radius': ['interpolate', ['linear'], ['zoom'], 11, 2.4, 15, 5.5, 18, 8],
+      'circle-color': ['match', ['coalesce', ['get', 'class'], ['get', 'subclass']], 'subway', '#2563EB', 'tram_stop', '#F97316', 'bus_stop', '#06B6D4', '#DCE7F5'],
+      'circle-stroke-color': '#0F172A',
+      'circle-stroke-width': ['interpolate', ['linear'], ['zoom'], 11, 0.8, 16, 1.8],
+      'circle-opacity': 0.92,
+    },
+  }, ['poi'], sourceLayers, beforeId);
+
+  addFirstAvailableLayer(map, {
+    id: `${NAV_LAYER_PREFIX}public-transport-labels`,
+    type: 'symbol',
+    source: sourceId,
+    minzoom: 12,
+    filter: ['match', ['coalesce', ['get', 'class'], ['get', 'subclass']], ['station', 'railway', 'subway', 'tram_stop', 'bus_stop', 'halt', 'ferry_terminal'], true, false],
+    layout: {
+      'text-field': ['coalesce', ['get', 'name'], ['get', 'name:ru'], ''],
+      'text-font': ['Open Sans Bold', 'Noto Sans Regular'],
+      'text-size': ['interpolate', ['linear'], ['zoom'], 12, 10 * labelSizeMultiplier, 17, 13 * labelSizeMultiplier],
+      'text-offset': [0, 1.15],
+      'text-anchor': 'top',
+      'text-allow-overlap': false,
+    },
+    paint: {
+      'text-color': '#DCE7F5',
+      'text-halo-color': haloColor,
+      'text-halo-width': 1.8,
+    },
+  }, ['poi'], sourceLayers, undefined);
+
+  addFirstAvailableLayer(map, {
+    id: `${NAV_LAYER_PREFIX}public-civic-icons`,
+    type: 'circle',
+    source: sourceId,
+    minzoom: 12,
+    filter: ['match', ['coalesce', ['get', 'class'], ['get', 'subclass']], ['museum', 'theatre', 'library', 'town_hall', 'courthouse', 'government', 'park', 'garden', 'attraction', 'viewpoint'], true, false],
+    paint: {
+      'circle-radius': ['interpolate', ['linear'], ['zoom'], 12, 2.2, 16, 4.8],
+      'circle-color': ['match', ['coalesce', ['get', 'class'], ['get', 'subclass']], 'park', '#3FA34D', 'garden', '#7CCF7B', 'museum', '#8B5CF6', 'theatre', '#EC4899', 'library', '#F59E0B', 'attraction', '#EAB308', 'viewpoint', '#22C55E', '#94A3B8'],
+      'circle-stroke-color': '#0F172A',
+      'circle-stroke-width': 1.2,
+      'circle-opacity': 0.88,
+    },
+  }, ['poi'], sourceLayers, beforeId);
+
+  addFirstAvailableLayer(map, {
+    id: `${NAV_LAYER_PREFIX}public-civic-labels`,
+    type: 'symbol',
+    source: sourceId,
+    minzoom: 13,
+    filter: ['match', ['coalesce', ['get', 'class'], ['get', 'subclass']], ['museum', 'theatre', 'library', 'town_hall', 'courthouse', 'government', 'park', 'garden', 'attraction', 'viewpoint'], true, false],
+    layout: {
+      'text-field': ['coalesce', ['get', 'name'], ['get', 'name:ru'], ''],
+      'text-font': ['Open Sans Bold', 'Noto Sans Regular'],
+      'text-size': ['interpolate', ['linear'], ['zoom'], 13, 10 * labelSizeMultiplier, 17, 13 * labelSizeMultiplier],
+      'text-offset': [0, 1.05],
+      'text-anchor': 'top',
+      'text-allow-overlap': false,
+    },
+    paint: {
+      'text-color': palette.labelText,
+      'text-halo-color': haloColor,
+      'text-halo-width': 1.9,
+    },
+  }, ['poi'], sourceLayers, undefined);
+
   ensureNavObjectSource(map);
+  addOrReplaceLayer(map, {
+    id: `${NAV_LAYER_PREFIX}objects-spot`,
+    type: 'circle',
+    source: NAV_SOURCE_ID,
+    minzoom: 11,
+    paint: {
+      'circle-radius': ['match', ['get', 'relevance'], 'primary', 8, 'secondary', 6, 4],
+      'circle-color': [
+        'match',
+        ['get', 'kind'],
+        'traffic_light', '#22C55E',
+        'speed_camera', '#EF4444',
+        'park', '#3FA34D',
+        'public_transport', '#38BDF8',
+        'landmark', '#EAB308',
+        'public_service', '#8B5CF6',
+        '#94A3B8'
+      ],
+      'circle-stroke-color': '#0F172A',
+      'circle-stroke-width': 1.5,
+      'circle-opacity': 0.88,
+    },
+  }, new Set([NAV_SOURCE_ID]), undefined);
+
   addOrReplaceLayer(map, {
     id: `${NAV_LAYER_PREFIX}objects-low`,
     type: 'symbol',
@@ -212,7 +372,17 @@ export function ensureNavigationLayers(
       'text-ignore-placement': false,
     },
     paint: {
-      'text-color': ['case', ['==', ['get', 'kind'], 'speed_camera'], '#FCA5A5', palette.labelText],
+      'text-color': [
+        'match',
+        ['get', 'kind'],
+        'speed_camera', '#FCA5A5',
+        'traffic_light', '#86EFAC',
+        'park', '#BBF7D0',
+        'public_transport', '#BAE6FD',
+        'landmark', '#FDE68A',
+        'public_service', '#DDD6FE',
+        palette.labelText
+      ],
       'text-halo-color': haloColor,
       'text-halo-width': 2.5,
       'text-halo-blur': 0.2,
@@ -271,11 +441,59 @@ function addOrReplaceLayer(
     return;
   }
 
-  if (map.getLayer(layer.id)) {
-    map.removeLayer(layer.id);
-  }
+  try {
+    if (map.getLayer(layer.id)) {
+      map.removeLayer(layer.id);
+    }
 
-  map.addLayer(layer as maplibregl.LayerSpecification, beforeId);
+    map.addLayer(layer as maplibregl.LayerSpecification, beforeId);
+  } catch (error) {
+    logger.warn('[navigationLayers] failed to upsert layer', {
+      layerId: layer.id,
+      sourceLayer,
+      error,
+    });
+  }
+}
+
+function addFirstAvailableLayer(
+  map: maplibregl.Map,
+  layer: NavigationLayerSpec,
+  candidateSourceLayers: string[],
+  sourceLayers: Set<string>,
+  beforeId?: string,
+): void {
+  const match = candidateSourceLayers.find((sourceLayer) => sourceLayers.has(sourceLayer));
+  if (!match) return;
+  addOrReplaceLayer(map, { ...layer, 'source-layer': match }, sourceLayers, beforeId);
+}
+
+function addRailVariantLayer(
+  map: maplibregl.Map,
+  sourceId: string,
+  sourceLayers: Set<string>,
+  beforeId: string | undefined,
+  options: {
+    idSuffix: string;
+    classes: string[];
+    color: string;
+    dasharray?: number[];
+  },
+): void {
+  addFirstAvailableLayer(map, {
+    id: `${NAV_LAYER_PREFIX}${options.idSuffix}`,
+    type: 'line',
+    source: sourceId,
+    minzoom: 9,
+    filter: ['match', ['coalesce', ['get', 'class'], ['get', 'subclass']], options.classes, true, false],
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: {
+      'line-color': options.color,
+      'line-width': ['interpolate', ['linear'], ['zoom'], 9, 0.8, 15, 2.2, 18, 3.4],
+      'line-opacity': 0.92,
+      ...(options.dasharray ? { 'line-dasharray': options.dasharray } : {}),
+    },
+  }, ['transportation'], sourceLayers, beforeId);
 }
 
 function findVectorSourceId(style: maplibregl.StyleSpecification): string | null {

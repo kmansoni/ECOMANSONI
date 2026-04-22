@@ -603,7 +603,7 @@ export function AuthPage() {
   };
 
   return (
-    <div className="min-h-[100dvh] flex flex-col relative overflow-hidden">
+    <div className="min-h-[100dvh] flex flex-col relative overflow-hidden unified-page-bg">
       {/* Brand gradient background - logo colors */}
       <div className="absolute inset-0 bg-gradient-to-br from-[#0a1628] via-[#0d2035] to-[#071420]" />
       
@@ -750,13 +750,13 @@ export function AuthPage() {
 
           {/* Title */}
           <div className="text-center space-y-2">
-            <h1 className="text-3xl font-semibold text-white drop-shadow-lg">
+            <h1 className="glass-title text-3xl font-semibold drop-shadow-lg">
               {mode === "select" && "Добро пожаловать"}
               {mode === "login" && "Вход"}
               {mode === "otp" && "Код подтверждения"}
               {mode === "register" && "Регистрация"}
             </h1>
-            <p className="text-white/80 text-base">
+            <p className="glass-muted text-base">
               {mode === "select" && "Выберите действие для продолжения"}
               {mode === "login" && "Введите номер телефона"}
               {mode === "otp" && `Код отправлен на ${maskedEmail || otpEmail || email.trim()}`}
@@ -770,7 +770,7 @@ export function AuthPage() {
               <div className="relative">
                 <div className="absolute -inset-1 bg-white/10 rounded-3xl blur-xl" />
                 <div
-                  className="relative bg-white/10 backdrop-blur-2xl rounded-3xl p-6 space-y-4 border border-white/20 shadow-2xl"
+                  className="glass-window relative rounded-3xl p-6 space-y-4 shadow-2xl"
                   style={{
                     boxShadow:
                       "0 20px 60px rgba(0,0,0,0.35), inset 0 0 0 1px rgba(255,255,255,0.08)",
@@ -781,7 +781,7 @@ export function AuthPage() {
                   <Button 
                     onClick={() => setMode("register")}
                     disabled={loading}
-                    className="w-full h-14 rounded-2xl text-base font-semibold bg-white/90 hover:bg-white text-slate-800 shadow-xl shadow-black/20 transition-all hover:shadow-2xl hover:scale-[1.02] active:scale-[0.98]"
+                    className="glass-primary-btn w-full h-14 rounded-2xl text-base font-semibold transition-all hover:shadow-2xl hover:scale-[1.02] active:scale-[0.98]"
                   >
                     Регистрация
                   </Button>
@@ -790,7 +790,7 @@ export function AuthPage() {
                     onClick={() => setMode("login")}
                     disabled={loading}
                     variant="outline"
-                    className="w-full h-14 rounded-2xl text-base font-semibold bg-transparent border-white/30 text-white hover:bg-white/10 hover:text-white transition-all hover:scale-[1.02] active:scale-[0.98]"
+                    className="glass-secondary-btn w-full h-14 rounded-2xl text-base font-semibold transition-all hover:scale-[1.02] active:scale-[0.98]"
                   >
                     Вход
                   </Button>
@@ -799,7 +799,7 @@ export function AuthPage() {
                     onClick={() => setMode("qr")}
                     disabled={loading}
                     variant="ghost"
-                    className="w-full h-12 rounded-2xl text-sm font-medium text-white/70 hover:text-white hover:bg-white/5 transition-all"
+                    className="glass-muted w-full h-12 rounded-2xl text-sm font-medium hover:text-foreground hover:bg-white/5 transition-all"
                   >
                     Войти по QR-коду
                   </Button>
@@ -812,7 +812,7 @@ export function AuthPage() {
           {mode === "qr" && (
             <div className="relative">
               <div className="absolute -inset-1 bg-white/10 rounded-3xl blur-xl" />
-              <div className="relative bg-white/10 backdrop-blur-2xl rounded-3xl p-6 border border-white/20 shadow-2xl">
+              <div className="glass-window relative rounded-3xl p-6 shadow-2xl">
                 <QRCodeLogin onSuccess={() => navigate("/")} />
               </div>
             </div>
@@ -826,7 +826,7 @@ export function AuthPage() {
                 
                 <form 
                   onSubmit={handleLogin} 
-                  className="relative bg-white/10 backdrop-blur-2xl rounded-3xl p-6 space-y-4 border border-white/20 shadow-2xl"
+                  className="glass-window relative rounded-3xl p-6 space-y-4 shadow-2xl"
                 >
                   <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/50 to-transparent" />
                   
@@ -837,13 +837,13 @@ export function AuthPage() {
                       onChange={setPhone}
                       placeholder="+7 (___) ___-__-__"
                       required
-                      className="relative"
+                      className="relative glass-input"
                     />
                   </div>
 
                   <Button 
                     type="submit" 
-                    className="w-full h-14 rounded-2xl text-base font-semibold bg-white/90 hover:bg-white text-slate-800 shadow-xl shadow-black/20 transition-all hover:shadow-2xl hover:scale-[1.02] active:scale-[0.98]"
+                    className="glass-primary-btn w-full h-14 rounded-2xl text-base font-semibold transition-all hover:shadow-2xl hover:scale-[1.02] active:scale-[0.98]"
                     disabled={loading}
                   >
                     {loading ? (
@@ -859,12 +859,12 @@ export function AuthPage() {
                 </form>
               </div>
 
-              <p className="text-center text-white/50 text-sm px-4">
+              <p className="glass-muted text-center text-sm px-4">
                 Нет аккаунта?{" "}
                 <button 
                   onClick={() => setMode("register")} 
                   disabled={loading}
-                  className="text-white/80 underline hover:text-white"
+                  className="underline hover:text-foreground"
                 >
                   Зарегистрируйтесь
                 </button>
@@ -880,7 +880,7 @@ export function AuthPage() {
                 
                 <form 
                   onSubmit={handleVerifyOtp} 
-                  className="relative bg-white/10 backdrop-blur-2xl rounded-3xl p-6 space-y-4 border border-white/20 shadow-2xl"
+                  className="glass-window relative rounded-3xl p-6 space-y-4 shadow-2xl"
                 >
                   <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/50 to-transparent" />
                   
@@ -894,14 +894,14 @@ export function AuthPage() {
                       value={otpCode}
                       onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
                       placeholder="Введите 6-значный код из письма"
-                      className="relative w-full h-14 rounded-2xl bg-transparent text-white text-center text-2xl tracking-[0.5em] font-mono placeholder:text-white/30 placeholder:text-base placeholder:tracking-normal px-4 outline-none focus:ring-2 focus:ring-white/30 transition-all"
+                      className="glass-input relative w-full h-14 rounded-2xl text-center text-2xl tracking-[0.5em] font-mono placeholder:text-base placeholder:tracking-normal px-4 outline-none transition-all"
                       autoFocus
                     />
                   </div>
 
                   <Button 
                     type="submit" 
-                    className="w-full h-14 rounded-2xl text-base font-semibold bg-white/90 hover:bg-white text-slate-800 shadow-xl shadow-black/20 transition-all hover:shadow-2xl hover:scale-[1.02] active:scale-[0.98]"
+                    className="glass-primary-btn w-full h-14 rounded-2xl text-base font-semibold transition-all hover:shadow-2xl hover:scale-[1.02] active:scale-[0.98]"
                     disabled={loading || otpCode.length !== 6}
                   >
                     {authPageOperation === "otp" ? (
@@ -924,7 +924,7 @@ export function AuthPage() {
                         type="button"
                         onClick={handleResendOtp}
                         disabled={loading}
-                        className="text-white/70 text-sm underline hover:text-white transition-colors"
+                        className="glass-muted text-sm underline hover:text-foreground transition-colors"
                       >
                         Отправить код повторно
                       </button>
@@ -936,7 +936,7 @@ export function AuthPage() {
               <button
                 onClick={handleBack}
                 disabled={loading}
-                className="text-center text-white/50 text-sm hover:text-white/70 transition-colors"
+                className="glass-muted text-center text-sm hover:text-foreground transition-colors"
               >
                 Назад
               </button>
@@ -951,7 +951,7 @@ export function AuthPage() {
                 
                 <form 
                   onSubmit={handleRegisterClick} 
-                  className="relative bg-white/10 backdrop-blur-2xl rounded-3xl p-6 space-y-4 border border-white/20 shadow-2xl"
+                  className="glass-window relative rounded-3xl p-6 space-y-4 shadow-2xl"
                 >
                   <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/50 to-transparent" />
                   
@@ -962,7 +962,7 @@ export function AuthPage() {
                       onChange={setPhone}
                       placeholder="+7 (___) ___-__-__"
                       required
-                      className="relative"
+                      className="relative glass-input"
                     />
                   </div>
 
@@ -976,14 +976,14 @@ export function AuthPage() {
                       onChange={(e) => setEmail(e.target.value)}
                       placeholder="you@example.com"
                       required
-                      className="relative h-14 rounded-2xl bg-transparent text-white placeholder:text-white/30 px-4 outline-none border-0 focus-visible:ring-2 focus-visible:ring-white/30 text-base"
+                      className="glass-input relative h-14 rounded-2xl px-4 outline-none text-base"
                     />
                   </div>
 
                   <Button 
                     type="submit" 
                     disabled={loading}
-                    className="w-full h-14 rounded-2xl text-base font-semibold bg-white/90 hover:bg-white text-slate-800 shadow-xl shadow-black/20 transition-all hover:shadow-2xl hover:scale-[1.02] active:scale-[0.98]"
+                    className="glass-primary-btn w-full h-14 rounded-2xl text-base font-semibold transition-all hover:shadow-2xl hover:scale-[1.02] active:scale-[0.98]"
                   >
                     {loading ? (
                       <div className="flex items-center gap-2">
@@ -997,12 +997,12 @@ export function AuthPage() {
                 </form>
               </div>
 
-              <p className="text-center text-white/50 text-sm px-4">
+              <p className="glass-muted text-center text-sm px-4">
                 Уже есть аккаунт?{" "}
                 <button 
                   onClick={() => setMode("login")} 
                   disabled={loading}
-                  className="text-white/80 underline hover:text-white"
+                  className="underline hover:text-foreground"
                 >
                   Войти
                 </button>

@@ -1,38 +1,45 @@
 import React from "react";
 import { logger } from "@/lib/logger";
+import { clearLastRuntimeError, persistLastRuntimeError, reloadOnChunkFailureOnce, serializeRuntimeError } from "@/lib/runtimeErrorDiagnostics";
 
 type State = {
   hasError: boolean;
   shouldSuggestReload: boolean;
+  errorTitle: string | null;
+  errorDetails: string | null;
 };
 
 export class AppErrorBoundary extends React.Component<React.PropsWithChildren, State> {
-  override state: State = { hasError: false, shouldSuggestReload: false };
+  override state: State = {
+    hasError: false,
+    shouldSuggestReload: false,
+    errorTitle: null,
+    errorDetails: null,
+  };
 
   static getDerivedStateFromError(): State {
-    return { hasError: true, shouldSuggestReload: false };
+    return {
+      hasError: true,
+      shouldSuggestReload: false,
+      errorTitle: null,
+      errorDetails: null,
+    };
   }
 
   override componentDidCatch(error: unknown) {
     logger.error("app.error_boundary.runtime_error", { error });
-    // Chunk load failure — auto-reload with debounce
-    if (
-      error instanceof Error &&
-      (error.message.includes("Loading chunk") ||
-        error.message.includes("Failed to fetch dynamically imported module") ||
-        error.message.includes("Importing a module script failed") ||
-        (error as { name?: string }).name === "ChunkLoadError")
-    ) {
-      const key = "app_chunk_reload_ts";
-      const last = Number(sessionStorage.getItem(key) ?? 0);
-      if (Date.now() - last > 10_000) {
-        sessionStorage.setItem(key, String(Date.now()));
-        window.location.reload();
-        return;
-      }
+    const serialized = serializeRuntimeError(error);
+    persistLastRuntimeError(serialized.title, serialized.details ?? error);
+
+    if (reloadOnChunkFailureOnce(error)) {
+      return;
     }
 
-    this.setState({ shouldSuggestReload: true });
+    this.setState({
+      shouldSuggestReload: true,
+      errorTitle: serialized.title,
+      errorDetails: serialized.details,
+    });
   }
 
   override render() {
@@ -45,11 +52,24 @@ export class AppErrorBoundary extends React.Component<React.PropsWithChildren, S
               <p className="text-sm text-gray-300">
                 Ошибка зафиксирована в логах. Автоматический hard reload отключен, чтобы не маскировать причину и не ломать сценарий пользователя.
               </p>
+              {this.state.errorDetails && (
+                <div className="rounded-2xl border border-amber-400/20 bg-amber-300/10 px-3 py-2 text-left">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-amber-100/90">
+                    {this.state.errorTitle ?? 'RuntimeError'}
+                  </p>
+                  <p className="mt-1 break-words text-xs text-amber-50/85">
+                    {this.state.errorDetails}
+                  </p>
+                </div>
+              )}
             </div>
             <div className="flex flex-col gap-2 sm:flex-row sm:justify-center">
               <button
                 type="button"
-                onClick={() => this.setState({ hasError: false, shouldSuggestReload: false })}
+                onClick={() => {
+                  clearLastRuntimeError();
+                  this.setState({ hasError: false, shouldSuggestReload: false, errorTitle: null, errorDetails: null });
+                }}
                 className="rounded-2xl border border-white/15 bg-white/10 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-white/15"
               >
                 Попробовать снова
@@ -57,7 +77,10 @@ export class AppErrorBoundary extends React.Component<React.PropsWithChildren, S
               {this.state.shouldSuggestReload && (
                 <button
                   type="button"
-                  onClick={() => window.location.reload()}
+                  onClick={() => {
+                    clearLastRuntimeError();
+                    window.location.reload();
+                  }}
                   className="rounded-2xl border border-cyan-300/25 bg-cyan-400/15 px-4 py-2 text-sm font-medium text-cyan-50 transition-colors hover:bg-cyan-400/20"
                 >
                   Перезагрузить приложение

@@ -187,12 +187,13 @@ interface NavigatorSettingsState {
   showTransitOverlay: boolean;
   showSpeedBumps: boolean;
   showRoadSigns: boolean;
-  showLanes: boolean;
-  showSpeedCameras: boolean;
-  showPOI: boolean;
-  showPanorama: boolean;
-  labelSizeMultiplier: number; // 0.7 - 1.5
-  highContrastLabels: boolean;
+   showLanes: boolean;
+   showSpeedCameras: boolean;
+   showMapEdits: boolean;          // proposed/approved survey scans
+   showPOI: boolean;
+   showPanorama: boolean;
+   labelSizeMultiplier: number; // 0.7 - 1.5
+   highContrastLabels: boolean;
 
   // Действия
   setSoundMode: (mode: SoundMode) => void;
@@ -215,12 +216,13 @@ interface NavigatorSettingsState {
   setShowTransitOverlay: (v: boolean) => void;
   setShowSpeedBumps: (v: boolean) => void;
   setShowRoadSigns: (v: boolean) => void;
-  setShowLanes: (v: boolean) => void;
-  setShowSpeedCameras: (v: boolean) => void;
-  setShowPOI: (v: boolean) => void;
-  setShowPanorama: (v: boolean) => void;
-  setLabelSizeMultiplier: (v: number) => void;
-  setHighContrastLabels: (v: boolean) => void;
+   setShowLanes: (v: boolean) => void;
+   setShowSpeedCameras: (v: boolean) => void;
+   setShowMapEdits: (v: boolean) => void;
+   setShowPOI: (v: boolean) => void;
+   setShowPanorama: (v: boolean) => void;
+   setLabelSizeMultiplier: (v: number) => void;
+   setHighContrastLabels: (v: boolean) => void;
 }
 
 export const useNavigatorSettings = create<NavigatorSettingsState>()(
@@ -247,10 +249,11 @@ export const useNavigatorSettings = create<NavigatorSettingsState>()(
       showTransitOverlay: true,
       showSpeedBumps: true,
       showRoadSigns: true,
-      showLanes: true,
-      showSpeedCameras: true,
-      showPOI: true,
-      showPanorama: false,
+       showLanes: true,
+       showSpeedCameras: true,
+       showMapEdits: true,          // new: show survey scans layer
+       showPOI: true,
+       showPanorama: false,
       labelSizeMultiplier: 1.0,
       highContrastLabels: false,
 
@@ -275,9 +278,10 @@ export const useNavigatorSettings = create<NavigatorSettingsState>()(
       setShowTransitOverlay: (v) => set({ showTransitOverlay: v }),
       setShowSpeedBumps: (v) => set({ showSpeedBumps: v }),
       setShowRoadSigns: (v) => set({ showRoadSigns: v }),
-      setShowLanes: (v) => set({ showLanes: v }),
-       setShowSpeedCameras: (v) => set({ showSpeedCameras: v }),
-       setShowPOI: (v) => set({ showPOI: v }),
+        setShowLanes: (v) => set({ showLanes: v }),
+        setShowSpeedCameras: (v) => set({ showSpeedCameras: v }),
+        setShowMapEdits: (v) => set({ showMapEdits: v }),
+        setShowPOI: (v) => set({ showPOI: v }),
        setShowPanorama: (v) => set({ showPanorama: v }),
        setLabelSizeMultiplier: (v) => set({ labelSizeMultiplier: Math.max(0.7, Math.min(1.5, v)) }),
        setHighContrastLabels: (v) => set({ highContrastLabels: v }),

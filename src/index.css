@@ -2,6 +2,8 @@
 @tailwind components;
 @tailwind utilities;
 
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
+
 /* Definition of the design system. All colors, gradients, fonts, etc should be defined here.
 All colors MUST be HSL.
 */
@@ -30,6 +32,16 @@ All colors MUST be HSL.
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left:   env(safe-area-inset-left,   0px);
   --safe-right:  env(safe-area-inset-right,  0px);
+
+  /* Unified design tokens */
+  --app-font-family: 'Manrope', 'Segoe UI', sans-serif;
+  --glass-overlay: 210 30% 18% / 0.56;
+  --glass-surface: 0 0% 100% / 0.58;
+  --glass-border: 214 32% 50% / 0.28;
+  --glass-input: 0 0% 100% / 0.74;
+  --glass-ink: 220 40% 16%;
+  --glass-muted-ink: 220 16% 34%;
+  --glass-shadow: 213 57% 22% / 0.20;
 }
 
 /* ── Global scrollbar visibility policy ──────────────────────
@@ -432,6 +444,15 @@ body.filter-tritanopia  { filter: url(#tritanopia); }
     --sidebar-accent-foreground: 0 0% 90%;
     --sidebar-border: 0 0% 15%;
     --sidebar-ring: 217 91% 60%;
+
+    /* Unified design tokens (dark mode) */
+    --glass-overlay: 220 48% 4% / 0.70;
+    --glass-surface: 214 38% 16% / 0.64;
+    --glass-border: 0 0% 100% / 0.20;
+    --glass-input: 216 44% 11% / 0.84;
+    --glass-ink: 0 0% 98%;
+    --glass-muted-ink: 210 16% 74%;
+    --glass-shadow: 198 93% 56% / 0.22;
   }
 }
 
@@ -443,6 +464,7 @@ body.filter-tritanopia  { filter: url(#tritanopia); }
   html, body {
     @apply bg-background text-foreground;
     font-size: var(--app-font-scale);
+    font-family: var(--app-font-family);
     /* Mobile native app optimizations */
     -webkit-tap-highlight-color: transparent;
     -webkit-touch-callout: none;
@@ -530,6 +552,13 @@ body.filter-tritanopia  { filter: url(#tritanopia); }
   input, textarea {
     -webkit-user-select: text;
     user-select: text;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font-family: var(--app-font-family);
   }
 }
 
@@ -681,6 +710,78 @@ html.appearance-no-sticker-anim .emoji-picker-ios .EmojiPickerReact .epr-emoji i
 
 .media-object--cover {
   object-fit: cover;
+}
+
+/* Unified glass design primitives */
+.glass-backdrop {
+  background: hsl(var(--glass-overlay));
+  backdrop-filter: blur(16px);
+}
+
+.glass-window {
+  background: hsl(var(--glass-surface));
+  color: hsl(var(--glass-ink));
+  border: 1px solid hsl(var(--glass-border));
+  box-shadow:
+    0 20px 56px hsl(var(--glass-shadow)),
+    inset 0 1px 0 hsl(0 0% 100% / 0.24);
+}
+
+.glass-title {
+  color: hsl(var(--glass-ink));
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.glass-muted {
+  color: hsl(var(--glass-muted-ink));
+}
+
+.glass-input {
+  background: hsl(var(--glass-input));
+  color: hsl(var(--glass-ink));
+  border: 1px solid hsl(var(--glass-border));
+}
+
+.glass-input::placeholder {
+  color: hsl(var(--glass-muted-ink));
+}
+
+.glass-input:focus-visible {
+  outline: none;
+  border-color: hsl(var(--ring));
+  box-shadow: 0 0 0 2px hsl(var(--ring) / 0.25);
+}
+
+.glass-primary-btn {
+  background: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(188 100% 44%) 100%);
+  color: hsl(var(--primary-foreground));
+  border: 1px solid hsl(0 0% 100% / 0.18);
+  box-shadow: 0 12px 26px hsl(var(--glass-shadow));
+}
+
+.glass-primary-btn:hover {
+  filter: brightness(1.06);
+}
+
+.glass-secondary-btn {
+  background: hsl(var(--glass-input));
+  color: hsl(var(--glass-ink));
+  border: 1px solid hsl(var(--glass-border));
+}
+
+.unified-page-bg {
+  background:
+    radial-gradient(circle at 18% 12%, rgba(65, 165, 255, 0.28) 0%, rgba(65, 165, 255, 0) 44%),
+    radial-gradient(circle at 88% 80%, rgba(34, 212, 182, 0.26) 0%, rgba(34, 212, 182, 0) 46%),
+    linear-gradient(145deg, #d8e9fb 0%, #d1e2f7 36%, #c7d8ee 100%);
+}
+
+html.dark .unified-page-bg {
+  background:
+    radial-gradient(circle at 18% 12%, rgba(65, 165, 255, 0.28) 0%, rgba(65, 165, 255, 0) 44%),
+    radial-gradient(circle at 88% 80%, rgba(34, 212, 182, 0.22) 0%, rgba(34, 212, 182, 0) 46%),
+    linear-gradient(145deg, #07101c 0%, #0a1727 36%, #0b1e31 100%);
 }
 
 /* ── Feed column constraint ───────────────────────────────── */

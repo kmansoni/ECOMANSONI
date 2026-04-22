@@ -13,7 +13,7 @@ export function parseChatsQueryActions(search: string): ChatsQueryActions {
   const startCallTypeRaw = (params.get("callType") || "audio").toLowerCase();
 
   return {
-    openDmId: params.get("open"),
+    openDmId: params.get("open") || params.get("openDmId"),
     openChannelId: params.get("openChannel"),
     openGroupId: params.get("openGroup"),
     invite: params.get("invite"),
@@ -26,6 +26,7 @@ export function parseChatsQueryActions(search: string): ChatsQueryActions {
 export function clearHandledChatsQueryParams(search: string): string {
   const params = new URLSearchParams(search || "");
   params.delete("open");
+  params.delete("openDmId");
   params.delete("openChannel");
   params.delete("openGroup");
   params.delete("invite");

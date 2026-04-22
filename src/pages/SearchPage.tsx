@@ -78,7 +78,12 @@ export function SearchPage() {
     return () => clearTimeout(timer);
   }, [query, searchUsers]);
 
-  const handleUserClick = (userId: string) => {
+  const handleUserClick = (userId: string, username?: string) => {
+    const normalizedUsername = typeof username === "string" ? username.trim().replace(/^@+/, "") : "";
+    if (normalizedUsername) {
+      navigate(`/user/${encodeURIComponent(normalizedUsername)}`);
+      return;
+    }
     navigate(`/user/${userId}`);
   };
 
@@ -120,7 +125,7 @@ export function SearchPage() {
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
           <Input
-            placeholder="Поиск пользователей..."
+            placeholder="Поиск пользователей или @username..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             className="pl-10 pr-4 h-11 rounded-xl bg-muted/50 border-0 focus-visible:ring-1 focus-visible:ring-primary"
@@ -141,13 +146,13 @@ export function SearchPage() {
                 <div
                   key={user.user_id}
                   className="flex items-center gap-3 p-3 rounded-xl hover:bg-muted/50 active:bg-muted transition-colors cursor-pointer"
-                  onClick={() => handleUserClick(user.user_id)}
+                  onClick={() => handleUserClick(user.user_id, user.username)}
                   onTouchEnd={(e) => {
                     // Prevent issues with touch events in Telegram Mini App
                     const target = e.target as HTMLElement;
                     // Don't navigate if clicking on button or verified badge
                     if (target.closest('button')) return;
-                    handleUserClick(user.user_id);
+                    handleUserClick(user.user_id, user.username);
                   }}
                 >
                   <Avatar className="w-12 h-12 pointer-events-none">
@@ -159,7 +164,7 @@ export function SearchPage() {
                   <div className="flex-1 min-w-0 pointer-events-none">
                     <div className="flex items-center gap-1">
                       <span className="font-semibold text-foreground truncate">
-                        {user.display_name}
+                        {user.display_name || "Пользователь"}
                       </span>
                       {user.verified && (
                         <span className="pointer-events-auto">
@@ -167,11 +172,15 @@ export function SearchPage() {
                         </span>
                       )}
                     </div>
-                    {user.bio && (
+                    {user.username ? (
+                      <p className="text-sm text-muted-foreground line-clamp-1">
+                        @{user.username}
+                      </p>
+                    ) : user.bio ? (
                       <p className="text-sm text-muted-foreground line-clamp-1">
                         {user.bio}
                       </p>
-                    )}
+                    ) : null}
                   </div>
                   <Button
                     variant={user.isFollowing ? "outline" : "default"}
@@ -318,7 +327,7 @@ export function SearchPage() {
                   <div className="flex gap-3">
                     {freshCreators.slice(0, 14).map((c) => {
                       const userId = String(c?.user_id ?? "");
-                      const name = String(c?.display_name ?? (userId ? userId.slice(0, 8) : "User"));
+                      const name = String(c?.display_name ?? "Пользователь");
                       const avatarUrl = c?.avatar_url ? String(c.avatar_url) : "";
                       return (
                         <button

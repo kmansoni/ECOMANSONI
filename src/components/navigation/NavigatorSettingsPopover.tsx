@@ -187,10 +187,11 @@ export function NavigatorSettingsPopover({
                   <ToggleRow label={navText('Светофоры', 'Traffic lights', languageCode)} value={settings.showTrafficLights} onChange={settings.setShowTrafficLights} />
                   <ToggleRow label={navText('Метро и ОТ', 'Metro and transit', languageCode)} value={settings.showTransitOverlay} onChange={settings.setShowTransitOverlay} />
                   <ToggleRow label={navText('Дорожные знаки', 'Road signs', languageCode)} value={settings.showRoadSigns} onChange={settings.setShowRoadSigns} />
-                  <ToggleRow label={navText('Полосы движения', 'Lane guidance', languageCode)} value={settings.showLanes} onChange={settings.setShowLanes} />
-                  <ToggleRow label={navText('Камеры скорости', 'Speed cameras', languageCode)} value={settings.showSpeedCameras} onChange={settings.setShowSpeedCameras} />
-                  <ToggleRow label={navText('Точки интереса', 'Points of interest', languageCode)} value={settings.showPOI} onChange={settings.setShowPOI} />
-                  <ToggleRow label={navText('Лежачие полицейские', 'Speed bumps', languageCode)} value={settings.showSpeedBumps} onChange={settings.setShowSpeedBumps} />
+                   <ToggleRow label={navText('Полосы движения', 'Lane guidance', languageCode)} value={settings.showLanes} onChange={settings.setShowLanes} />
+                   <ToggleRow label={navText('Камеры скорости', 'Speed cameras', languageCode)} value={settings.showSpeedCameras} onChange={settings.setShowSpeedCameras} />
+                   <ToggleRow label={navText('Сканы карты', 'Survey scans', languageCode)} value={settings.showMapEdits ?? true} onChange={(v) => settings.setShowMapEdits?.(v)} />
+                   <ToggleRow label={navText('Точки интереса', 'Points of interest', languageCode)} value={settings.showPOI} onChange={settings.setShowPOI} />
+                   <ToggleRow label={navText('Лежачие полицейские', 'Speed bumps', languageCode)} value={settings.showSpeedBumps} onChange={settings.setShowSpeedBumps} />
                   <ToggleRow label={navText('Высокая контрастность', 'High contrast', languageCode)} value={settings.highContrastLabels} onChange={settings.setHighContrastLabels} />
 
                   <SectionBlock title={navText('Размер подписей', 'Label size', languageCode)}>

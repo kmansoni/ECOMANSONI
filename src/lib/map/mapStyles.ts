@@ -20,10 +20,13 @@ export interface ProductionPalette {
   secondaryRoad: string;
   localRoad: string;
   serviceRoad: string;
+  tollRoad: string;
   roadCasing: string;
   tunnelCasing: string;
   centerLine: string;
   shieldText: string;
+  railLine: string;
+  railCasing: string;
   waterFill: string;
   waterLine: string;
   waterwayLine: string;
@@ -31,6 +34,8 @@ export interface ProductionPalette {
   parkOutline: string;
   buildingFill: string;
   buildingLine: string;
+  landmarkFill: string;
+  landmarkLine: string;
   roadLabelText: string;
   labelText: string;
   labelHalo: string;
@@ -58,10 +63,13 @@ export function getProductionPalette(mode: ProductionMapMode): ProductionPalette
         secondaryRoad: '#F8FAFC',
         localRoad: '#EDF2F7',
         serviceRoad: '#E2E8F0',
+        tollRoad: '#D97706',
         roadCasing: 'rgba(148, 163, 184, 0.92)',
         tunnelCasing: 'rgba(148, 163, 184, 0.56)',
         centerLine: '#F59E0B',
         shieldText: '#0F172A',
+        railLine: '#64748B',
+        railCasing: 'rgba(255, 255, 255, 0.92)',
         waterFill: '#BFDBFE',
         waterLine: '#60A5FA',
         waterwayLine: '#3B82F6',
@@ -69,6 +77,8 @@ export function getProductionPalette(mode: ProductionMapMode): ProductionPalette
         parkOutline: 'rgba(74, 222, 128, 0.36)',
         buildingFill: 'rgba(226, 232, 240, 0.86)',
         buildingLine: 'rgba(148, 163, 184, 0.95)',
+        landmarkFill: 'rgba(148, 163, 184, 0.98)',
+        landmarkLine: 'rgba(71, 85, 105, 0.96)',
         roadLabelText: '#0F172A',
         labelText: '#1E293B',
         labelHalo: 'rgba(255, 255, 255, 0.98)',
@@ -92,10 +102,13 @@ export function getProductionPalette(mode: ProductionMapMode): ProductionPalette
         secondaryRoad: '#F5F5F0',
         localRoad: '#EDE7DB',
         serviceRoad: '#DDD6C7',
+        tollRoad: '#C2410C',
         roadCasing: 'rgba(120, 113, 108, 0.86)',
         tunnelCasing: 'rgba(120, 113, 108, 0.52)',
         centerLine: '#FACC15',
         shieldText: '#1C1917',
+        railLine: '#57534E',
+        railCasing: 'rgba(245, 245, 244, 0.9)',
         waterFill: '#93C5FD',
         waterLine: '#3B82F6',
         waterwayLine: '#2563EB',
@@ -103,6 +116,8 @@ export function getProductionPalette(mode: ProductionMapMode): ProductionPalette
         parkOutline: 'rgba(74, 124, 52, 0.32)',
         buildingFill: 'rgba(214, 211, 209, 0.84)',
         buildingLine: 'rgba(120, 113, 108, 0.9)',
+        landmarkFill: 'rgba(191, 174, 156, 0.95)',
+        landmarkLine: 'rgba(120, 113, 108, 0.94)',
         roadLabelText: '#292524',
         labelText: '#292524',
         labelHalo: 'rgba(250, 250, 249, 0.94)',
@@ -127,10 +142,13 @@ export function getProductionPalette(mode: ProductionMapMode): ProductionPalette
         secondaryRoad: '#CBD5E1',
         localRoad: '#CBD5E1',
         serviceRoad: '#94A3B8',
+        tollRoad: '#FACC15',
         roadCasing: 'rgba(2, 6, 23, 0.92)',
         tunnelCasing: 'rgba(30, 41, 59, 0.65)',
         centerLine: '#FACC15',
         shieldText: '#F8FAFC',
+        railLine: '#E2E8F0',
+        railCasing: 'rgba(15, 23, 42, 0.92)',
         waterFill: '#0C4A6E',
         waterLine: '#38BDF8',
         waterwayLine: '#7DD3FC',
@@ -138,6 +156,8 @@ export function getProductionPalette(mode: ProductionMapMode): ProductionPalette
         parkOutline: 'rgba(74, 222, 128, 0.18)',
         buildingFill: 'rgba(15, 23, 42, 0.18)',
         buildingLine: 'rgba(248, 250, 252, 0.42)',
+        landmarkFill: 'rgba(203, 213, 225, 0.72)',
+        landmarkLine: 'rgba(248, 250, 252, 0.82)',
         roadLabelText: '#FFFFFF',
         labelText: '#F8FAFC',
         labelHalo: 'rgba(2, 6, 23, 0.96)',
@@ -161,10 +181,13 @@ export function getProductionPalette(mode: ProductionMapMode): ProductionPalette
         secondaryRoad: '#F9FAFB',
         localRoad: '#EEF2F7',
         serviceRoad: '#E5E7EB',
+        tollRoad: '#D97706',
         roadCasing: 'rgba(100, 116, 139, 0.82)',
         tunnelCasing: 'rgba(100, 116, 139, 0.5)',
         centerLine: '#F59E0B',
         shieldText: '#111827',
+        railLine: '#64748B',
+        railCasing: 'rgba(255, 255, 255, 0.94)',
         waterFill: '#BFDBFE',
         waterLine: '#60A5FA',
         waterwayLine: '#3B82F6',
@@ -172,6 +195,8 @@ export function getProductionPalette(mode: ProductionMapMode): ProductionPalette
         parkOutline: 'rgba(34, 197, 94, 0.28)',
         buildingFill: 'rgba(229, 231, 235, 0.88)',
         buildingLine: 'rgba(156, 163, 175, 0.9)',
+        landmarkFill: 'rgba(156, 163, 175, 0.96)',
+        landmarkLine: 'rgba(75, 85, 99, 0.94)',
         roadLabelText: '#0F172A',
         labelText: '#1F2937',
         labelHalo: 'rgba(255, 255, 255, 0.96)',
@@ -196,10 +221,13 @@ export function getProductionPalette(mode: ProductionMapMode): ProductionPalette
         secondaryRoad: '#CBD5E1',
         localRoad: '#AAB6C5',
         serviceRoad: '#6B7280',
+        tollRoad: '#FBBF24',
         roadCasing: 'rgba(15, 23, 42, 0.9)',
         tunnelCasing: 'rgba(71, 85, 105, 0.5)',
         centerLine: '#FDE68A',
         shieldText: '#F8FAFC',
+        railLine: '#A3B1C6',
+        railCasing: 'rgba(15, 23, 42, 0.94)',
         waterFill: '#0C4A6E',
         waterLine: '#0EA5E9',
         waterwayLine: '#67E8F9',
@@ -207,6 +235,8 @@ export function getProductionPalette(mode: ProductionMapMode): ProductionPalette
         parkOutline: 'rgba(74, 222, 128, 0.18)',
         buildingFill: 'rgba(30, 41, 59, 0.88)',
         buildingLine: 'rgba(100, 116, 139, 0.95)',
+        landmarkFill: 'rgba(71, 85, 105, 0.98)',
+        landmarkLine: 'rgba(226, 232, 240, 0.9)',
         roadLabelText: '#F8FAFC',
         labelText: '#E2E8F0',
         labelHalo: 'rgba(2, 6, 23, 0.96)',

@@ -38,7 +38,10 @@ export interface RoadPoi {
   lon: number;
   address?: string | null;
   brand?: string | null;
+  tags?: Record<string, unknown>;
 }
+
+type PublicPoiKind = Extract<NavigationMapObject['kind'], 'poi' | 'park' | 'public_service' | 'public_transport' | 'landmark'>;
 
 let _trafficLights: TrafficLight[] = [];
 let _speedBumps: SpeedBump[] = [];
@@ -59,7 +62,32 @@ interface RelevantObjectsOptions {
   radiusKm?: number;
 }
 
-const PRIORITY_POI_CATEGORIES = new Set(['fuel', 'parking', 'cafe', 'restaurant', 'car_repair', 'hotel']);
+const NONCOMMERCIAL_POI_CATEGORIES = new Set([
+  'attraction',
+  'courthouse',
+  'library',
+  'museum',
+  'park',
+  'police',
+  'public_bookcase',
+  'public_building',
+  'public_service',
+  'school',
+  'college',
+  'university',
+  'theatre',
+  'townhall',
+  'viewpoint',
+  'zoo',
+  'monument',
+  'memorial',
+  'station',
+  'tram_stop',
+  'bus_station',
+  'bus_stop',
+  'subway_entrance',
+  'ferry_terminal',
+]);
 
 let lastRelevantObjectsCache:
   | { key: string; value: NavigationMapObject[] }
@@ -127,7 +155,7 @@ export function getNearbyFeatures(
   });
 
   const pois = _pois.filter((poi) => {
-    if (!PRIORITY_POI_CATEGORIES.has(poi.category)) return false;
+    if (!isNonCommercialPoi(poi)) return false;
     const dLat = Math.abs(poi.lat - position.lat);
     const dLon = Math.abs(poi.lon - position.lng);
     return dLat < dLatMax && dLon < dLonMax;
@@ -227,7 +255,7 @@ export function getRelevantMapObjects({
   if (showPOI) {
     collected.push(...nearby.pois.map((poi) => buildObject({
       id: `poi-${poi.id}`,
-      kind: 'poi',
+      kind: classifyPoiKind(poi),
       title: poi.name || poi.brand || 'POI',
       subtitle: poi.category,
       iconText: getPoiIcon(poi.category),
@@ -367,18 +395,74 @@ function getRoadSignIcon(sign: RoadSign): string {
 
 function getPoiIcon(category: string): string {
   switch (category) {
-    case 'fuel':
-      return '⛽';
-    case 'parking':
-      return '🅿';
-    case 'cafe':
-    case 'restaurant':
-      return '☕';
-    case 'hotel':
-      return '🛏';
-    case 'car_repair':
-      return '🔧';
+    case 'park':
+      return '🌳';
+    case 'museum':
+      return '🏛';
+    case 'theatre':
+      return '🎭';
+    case 'library':
+    case 'public_bookcase':
+      return '📚';
+    case 'police':
+      return '🚓';
+    case 'courthouse':
+    case 'townhall':
+    case 'public_building':
+    case 'public_service':
+      return '🏢';
+    case 'station':
+    case 'bus_station':
+    case 'bus_stop':
+    case 'tram_stop':
+    case 'subway_entrance':
+    case 'ferry_terminal':
+      return '🚉';
+    case 'attraction':
+    case 'viewpoint':
+    case 'monument':
+    case 'memorial':
+      return '★';
+    case 'school':
+    case 'college':
+    case 'university':
+      return '🎓';
     default:
-      return '•';
+      return '◦';
   }
+}
+
+function isNonCommercialPoi(poi: RoadPoi): boolean {
+  const category = poi.category.trim().toLowerCase();
+  if (NONCOMMERCIAL_POI_CATEGORIES.has(category)) return true;
+
+  const tags = poi.tags ?? {};
+  const tourism = typeof tags.tourism === 'string' ? tags.tourism.toLowerCase() : '';
+  const amenity = typeof tags.amenity === 'string' ? tags.amenity.toLowerCase() : '';
+  const railway = typeof tags.railway === 'string' ? tags.railway.toLowerCase() : '';
+  const leisure = typeof tags.leisure === 'string' ? tags.leisure.toLowerCase() : '';
+  const publicTransport = typeof tags.public_transport === 'string' ? tags.public_transport.toLowerCase() : '';
+
+  return [tourism, amenity, railway, leisure, publicTransport].some((value) =>
+    ['museum', 'gallery', 'attraction', 'viewpoint', 'theme_park', 'park', 'garden', 'stadium', 'library', 'police', 'townhall', 'courthouse', 'station', 'halt', 'tram_stop', 'platform', 'stop_position'].includes(value),
+  );
+}
+
+function classifyPoiKind(poi: RoadPoi): PublicPoiKind {
+  const category = poi.category.trim().toLowerCase();
+
+  if (['park'].includes(category)) return 'park';
+  if (['station', 'tram_stop', 'bus_station', 'bus_stop', 'subway_entrance', 'ferry_terminal'].includes(category)) return 'public_transport';
+  if (['attraction', 'viewpoint', 'monument', 'memorial'].includes(category)) return 'landmark';
+  if (['museum', 'theatre', 'library', 'public_bookcase', 'public_building', 'public_service', 'police', 'courthouse', 'townhall', 'school', 'college', 'university', 'zoo'].includes(category)) {
+    return 'public_service';
+  }
+
+  const tags = poi.tags ?? {};
+  const leisure = typeof tags.leisure === 'string' ? tags.leisure.toLowerCase() : '';
+  const railway = typeof tags.railway === 'string' ? tags.railway.toLowerCase() : '';
+  if (['park', 'garden', 'nature_reserve'].includes(leisure)) return 'park';
+  if (['station', 'halt', 'tram_stop', 'platform'].includes(railway)) return 'public_transport';
+
+  return 'poi';
 }

@@ -9,9 +9,10 @@ import { useAuth } from "@/hooks/useAuth";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
+import { PhoneInput } from "@/components/ui/phone-input";
 import { Button } from "@/components/ui/button";
 
-type AddMode = "none" | "password" | "otp" | "otp-verify";
+type AddMode = "none" | "phone" | "register" | "otp-verify" | "recovery";
 
 export function SettingsAccountsSection({ isDark, onBack }: SectionProps) {
   const navigate = useNavigate();
@@ -21,16 +22,28 @@ export function SettingsAccountsSection({ isDark, onBack }: SectionProps) {
     activeAccountId,
     switchAccount,
     isSwitchingAccount,
-    addAccountWithPassword,
-    startAddAccountEmailOtp,
-    verifyAddAccountEmailOtp,
+    lookupPhoneGetEmail,
+    sendOtpToEmail,
+    verifyOtpAndActivate,
+    checkRecoveryFactors,
   } = useMultiAccount();
 
   const [addMode, setAddMode] = useState<AddMode>("none");
+  const [addPhone, setAddPhone] = useState("");
   const [addEmail, setAddEmail] = useState("");
   const [addPassword, setAddPassword] = useState("");
   const [otpCode, setOtpCode] = useState("");
+  const [addIsRegister, setAddIsRegister] = useState(false);
   const [addLoading, setAddLoading] = useState(false);
+
+  const normalizePhone = (raw: string): string => {
+    const digits = raw.replace(/\D/g, "");
+    if (digits.length === 10) return `+7${digits}`;
+    if (digits.length === 11 && digits[0] === "8") return `+7${digits.slice(1)}`;
+    if (digits.length === 11 && digits[0] === "7") return `+${digits}`;
+    if (digits.length > 7) return `+${digits}`;
+    return raw.trim();
+  };
 
   const handleSwitch = async (accountId: string) => {
     if (accountId === activeAccountId || isSwitchingAccount) return;
@@ -42,41 +55,53 @@ export function SettingsAccountsSection({ isDark, onBack }: SectionProps) {
     }
   };
 
-  const handleAddWithPassword = async (e: React.FormEvent) => {
+  const handlePhoneSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const trimmedEmail = addEmail.trim().toLowerCase();
-    if (!trimmedEmail || !addPassword) {
-      toast.error("Заполните email и пароль");
+    const phone = normalizePhone(addPhone);
+    if (!phone || phone.length < 10) {
+      toast.error("Введите корректный номер телефона");
       return;
     }
     setAddLoading(true);
     try {
-      const { error } = await addAccountWithPassword(trimmedEmail, addPassword);
+      const { email, error } = await lookupPhoneGetEmail(phone);
       if (error) throw error;
-      toast.success("Аккаунт добавлен");
-      resetAddForm();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Ошибка добавления");
+      if (email) {
+        const { error: otpErr } = await sendOtpToEmail(email, false);
+        if (otpErr) throw otpErr;
+        setAddEmail(email);
+        setAddMode("otp-verify");
+        toast.success(`Код отправлен на ${email}`);
+      } else {
+        setAddMode("register");
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Ошибка проверки номера");
     } finally {
       setAddLoading(false);
     }
   };
 
-  const handleStartOtp = async (e: React.FormEvent) => {
+  const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const trimmedEmail = addEmail.trim().toLowerCase();
-    if (!trimmedEmail) {
-      toast.error("Введите email");
+    const email = addEmail.trim().toLowerCase();
+    if (!email || !addPassword) {
+      toast.error("Заполните email и пароль");
+      return;
+    }
+    if (addPassword.length < 6) {
+      toast.error("Пароль должен быть не менее 6 символов");
       return;
     }
     setAddLoading(true);
     try {
-      const { error } = await startAddAccountEmailOtp(trimmedEmail);
+      const { error } = await sendOtpToEmail(email, true);
       if (error) throw error;
+      setAddIsRegister(true);
       setAddMode("otp-verify");
-      toast.success("Код отправлен на " + trimmedEmail);
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Ошибка отправки кода");
+      toast.success(`Код регистрации отправлен на ${email}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Ошибка регистрации");
     } finally {
       setAddLoading(false);
     }
@@ -84,19 +109,43 @@ export function SettingsAccountsSection({ isDark, onBack }: SectionProps) {
 
   const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
-    const trimmedEmail = addEmail.trim().toLowerCase();
+    const email = addEmail.trim().toLowerCase();
     if (!otpCode || otpCode.length < 6) {
       toast.error("Введите 6-значный код");
       return;
     }
     setAddLoading(true);
     try {
-      const { error } = await verifyAddAccountEmailOtp(trimmedEmail, otpCode);
+      const opts = addIsRegister
+        ? { phone: normalizePhone(addPhone), password: addPassword }
+        : {};
+      const { error } = await verifyOtpAndActivate(email, otpCode, opts);
       if (error) throw error;
       toast.success("Аккаунт добавлен");
       resetAddForm();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Неверный код");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Неверный код");
+    } finally {
+      setAddLoading(false);
+    }
+  };
+
+  const handleRecoverySubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const phone = normalizePhone(addPhone);
+    const email = addEmail.trim().toLowerCase();
+    if (!phone || phone.length < 10 || !email || !addPassword) {
+      toast.error("Заполните все поля");
+      return;
+    }
+    setAddLoading(true);
+    try {
+      const { error } = await checkRecoveryFactors(phone, email, addPassword);
+      if (error) throw error;
+      setAddMode("otp-verify");
+      toast.success(`Код восстановления отправлен на ${email}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Данные не совпадают");
     } finally {
       setAddLoading(false);
     }
@@ -104,9 +153,11 @@ export function SettingsAccountsSection({ isDark, onBack }: SectionProps) {
 
   const resetAddForm = () => {
     setAddMode("none");
+    setAddPhone("");
     setAddEmail("");
     setAddPassword("");
     setOtpCode("");
+    setAddIsRegister(false);
   };
 
   const handleLogoutCurrent = async () => {
@@ -163,7 +214,15 @@ export function SettingsAccountsSection({ isDark, onBack }: SectionProps) {
               return (
                 <button
                   key={entry.accountId}
-                  onClick={() => needsReauth ? navigate("/auth") : handleSwitch(entry.accountId)}
+                  onClick={() => {
+                    if (needsReauth) {
+                      resetAddForm();
+                      setAddMode("phone");
+                      toast.info("Войдите повторно без выхода из текущей сессии");
+                      return;
+                    }
+                    void handleSwitch(entry.accountId);
+                  }}
                   disabled={switching || isActive}
                   className={cn(
                     "w-full flex items-center gap-3 px-4 py-3 transition-colors border-b last:border-0",
@@ -218,25 +277,7 @@ export function SettingsAccountsSection({ isDark, onBack }: SectionProps) {
               isDark ? "settings-dark-card" : "bg-card/80 border-white/20",
             )}>
               <button
-                onClick={() => setAddMode("password")}
-                className={cn(
-                  "w-full flex items-center gap-3 px-4 py-3 transition-colors border-b",
-                  isDark ? "border-white/5 hover:bg-white/5" : "border-black/5 hover:bg-black/5"
-                )}
-              >
-                <div className={cn(
-                  "w-11 h-11 rounded-full flex items-center justify-center",
-                  isDark ? "bg-white/10" : "bg-muted"
-                )}>
-                  <Plus className={cn("w-5 h-5", isDark ? "text-white" : "text-foreground")} />
-                </div>
-                <span className={cn("font-medium", isDark ? "text-white" : "text-foreground")}>
-                  Войти по паролю
-                </span>
-              </button>
-
-              <button
-                onClick={() => setAddMode("otp")}
+                onClick={() => { resetAddForm(); setAddMode("phone"); }}
                 className={cn(
                   "w-full flex items-center gap-3 px-4 py-3 transition-colors",
                   isDark ? "hover:bg-white/5" : "hover:bg-black/5"
@@ -249,7 +290,7 @@ export function SettingsAccountsSection({ isDark, onBack }: SectionProps) {
                   <Plus className={cn("w-5 h-5", isDark ? "text-white" : "text-foreground")} />
                 </div>
                 <span className={cn("font-medium", isDark ? "text-white" : "text-foreground")}>
-                  Войти по коду из email
+                  Добавить аккаунт
                 </span>
               </button>
             </div>
@@ -258,10 +299,40 @@ export function SettingsAccountsSection({ isDark, onBack }: SectionProps) {
               "backdrop-blur-xl rounded-2xl border p-4",
               isDark ? "settings-dark-card" : "bg-card/80 border-white/20",
             )}>
-              {addMode === "password" && (
-                <form onSubmit={handleAddWithPassword} className="space-y-3">
+              {addMode === "phone" && (
+                <form onSubmit={handlePhoneSubmit} className="space-y-3">
                   <p className={cn("text-sm font-medium mb-2", isDark ? "text-white" : "text-foreground")}>
-                    Добавить аккаунт (email + пароль)
+                    Введите номер телефона
+                  </p>
+                  <PhoneInput
+                    value={addPhone}
+                    onChange={setAddPhone}
+                  />
+                  <div className="flex gap-2">
+                    <Button type="button" variant="outline" onClick={resetAddForm} className="flex-1">
+                      Отмена
+                    </Button>
+                    <Button type="submit" disabled={addLoading} className="flex-1">
+                      {addLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Далее"}
+                    </Button>
+                  </div>
+                  <button
+                    type="button"
+                    className={cn(
+                      "w-full text-sm underline underline-offset-2 py-1",
+                      isDark ? "text-white/50" : "text-muted-foreground",
+                    )}
+                    onClick={() => setAddMode("recovery")}
+                  >
+                    Нет доступа к номеру?
+                  </button>
+                </form>
+              )}
+
+              {addMode === "register" && (
+                <form onSubmit={handleRegisterSubmit} className="space-y-3">
+                  <p className={cn("text-sm font-medium mb-2", isDark ? "text-white" : "text-foreground")}>
+                    Аккаунт не найден. Введите email и придумайте пароль.
                   </p>
                   <Input
                     type="email"
@@ -273,38 +344,48 @@ export function SettingsAccountsSection({ isDark, onBack }: SectionProps) {
                   />
                   <Input
                     type="password"
+                    placeholder="Пароль (мин. 6 символов)"
+                    value={addPassword}
+                    onChange={(e) => setAddPassword(e.target.value)}
+                    className={cn(isDark && "bg-white/5 border-white/10 text-white placeholder:text-white/40")}
+                  />
+                  <div className="flex gap-2">
+                    <Button type="button" variant="outline" onClick={() => setAddMode("phone")} className="flex-1">
+                      Назад
+                    </Button>
+                    <Button type="submit" disabled={addLoading} className="flex-1">
+                      {addLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Зарегистрироваться"}
+                    </Button>
+                  </div>
+                </form>
+              )}
+
+              {addMode === "recovery" && (
+                <form onSubmit={handleRecoverySubmit} className="space-y-3">
+                  <p className={cn("text-sm font-medium mb-2", isDark ? "text-white" : "text-foreground")}>
+                    Восстановление: телефон, email и пароль
+                  </p>
+                  <PhoneInput
+                    value={addPhone}
+                    onChange={setAddPhone}
+                  />
+                  <Input
+                    type="email"
+                    placeholder="Email"
+                    value={addEmail}
+                    onChange={(e) => setAddEmail(e.target.value)}
+                    className={cn(isDark && "bg-white/5 border-white/10 text-white placeholder:text-white/40")}
+                  />
+                  <Input
+                    type="password"
                     placeholder="Пароль"
                     value={addPassword}
                     onChange={(e) => setAddPassword(e.target.value)}
                     className={cn(isDark && "bg-white/5 border-white/10 text-white placeholder:text-white/40")}
                   />
                   <div className="flex gap-2">
-                    <Button type="button" variant="outline" onClick={resetAddForm} className="flex-1">
-                      Отмена
-                    </Button>
-                    <Button type="submit" disabled={addLoading} className="flex-1">
-                      {addLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Войти"}
-                    </Button>
-                  </div>
-                </form>
-              )}
-
-              {addMode === "otp" && (
-                <form onSubmit={handleStartOtp} className="space-y-3">
-                  <p className={cn("text-sm font-medium mb-2", isDark ? "text-white" : "text-foreground")}>
-                    Добавить аккаунт (код из email)
-                  </p>
-                  <Input
-                    type="email"
-                    placeholder="Email"
-                    value={addEmail}
-                    onChange={(e) => setAddEmail(e.target.value)}
-                    autoFocus
-                    className={cn(isDark && "bg-white/5 border-white/10 text-white placeholder:text-white/40")}
-                  />
-                  <div className="flex gap-2">
-                    <Button type="button" variant="outline" onClick={resetAddForm} className="flex-1">
-                      Отмена
+                    <Button type="button" variant="outline" onClick={() => setAddMode("phone")} className="flex-1">
+                      Назад
                     </Button>
                     <Button type="submit" disabled={addLoading} className="flex-1">
                       {addLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Отправить код"}

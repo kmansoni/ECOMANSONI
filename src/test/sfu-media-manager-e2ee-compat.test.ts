@@ -122,4 +122,52 @@ describe("SfuMediaManager E2EE compatibility", () => {
       /E2EE transform cannot be applied/
     );
   });
+
+  it("captures sender and receiver via onRtpSender/onRtpReceiver callbacks", async () => {
+    const sender = { id: "sender-1" } as unknown as RTCRtpSender;
+    const receiver = { id: "receiver-1" } as unknown as RTCRtpReceiver;
+
+    transportState.sendTransport.produce.mockImplementationOnce(async (options?: { onRtpSender?: (rtpSender: RTCRtpSender) => void }) => {
+      options?.onRtpSender?.(sender);
+      return {
+        ...transportState.makeProducer(),
+        rtpSender: undefined,
+      };
+    });
+
+    transportState.recvTransport.consume.mockImplementationOnce(async (options?: { onRtpReceiver?: (rtpReceiver: RTCRtpReceiver) => void }) => {
+      options?.onRtpReceiver?.(receiver);
+      return {
+        ...transportState.makeConsumer(),
+        rtpReceiver: undefined,
+      };
+    });
+
+    const { SfuMediaManager } = await import("@/calls-v2/sfuMediaManager");
+    const manager = new SfuMediaManager({ requireSenderReceiverAccessForE2ee: true });
+
+    await manager.loadDevice({ codecs: [{ mimeType: "audio/opus" }] } as never);
+    manager.createSendTransport(
+      { id: "send-1", iceParameters: {} as never, iceCandidates: [], dtlsParameters: {} as never },
+      async () => undefined,
+      async () => "producer-1",
+    );
+    manager.createRecvTransport(
+      { id: "recv-1", iceParameters: {} as never, iceCandidates: [], dtlsParameters: {} as never },
+      async () => undefined,
+    );
+
+    const producer = await manager.produce({ id: "local-track-1" } as MediaStreamTrack);
+    const consumer = await manager.consume({
+      id: "consumer-1",
+      producerId: "producer-1",
+      kind: "audio" as never,
+      rtpParameters: {} as never,
+    });
+
+    expect(producer.id).toBe("producer-1");
+    expect(consumer.id).toBe("consumer-1");
+    expect(manager.getProducerSender("producer-1")).toBe(sender);
+    expect(manager.getConsumerReceiver("consumer-1")).toBe(receiver);
+  });
 });

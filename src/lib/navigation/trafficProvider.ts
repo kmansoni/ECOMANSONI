@@ -14,6 +14,7 @@ import type { TrafficLevel } from '@/types/navigation';
 import { attemptBackendRequest, getBooleanEnv, getNavigationServerAuthHeaders, getNavigationServerBaseUrl, getNumberEnv } from '@/lib/navigation/backendAvailability';
 import { recordFallbackUsage } from '@/lib/navigation/navigationKpi';
 import { navText } from '@/lib/navigation/navigationUi';
+import { logger } from '@/lib/logger';
 
 const ENV = (import.meta as unknown as { env?: Record<string, string | undefined> }).env ?? {};
 const NAV_SERVER_URL = getNavigationServerBaseUrl(ENV.VITE_NAV_SERVER_URL);
@@ -23,6 +24,41 @@ const NAV_SERVER_RETRIES = getNumberEnv(ENV.VITE_NAV_SERVER_RETRIES, 1);
 const NAV_SERVER_RETRY_DELAY_MS = getNumberEnv(ENV.VITE_NAV_SERVER_RETRY_DELAY_MS, 250);
 const NAV_SERVER_CB_FAILURE_THRESHOLD = getNumberEnv(ENV.VITE_NAV_SERVER_CB_FAILURE_THRESHOLD, 3);
 const NAV_SERVER_CB_COOLDOWN_MS = getNumberEnv(ENV.VITE_NAV_SERVER_CB_COOLDOWN_MS, 30_000);
+
+export type TrafficFetchSource = 'navigation_server' | 'supabase' | 'cache' | 'time_estimate';
+
+interface TrafficRuntimeDiagnostics {
+  source: TrafficFetchSource;
+  degradationReason: string | null;
+  updatedAt: number;
+}
+
+function classifyTrafficErrorReason(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error ?? 'unknown');
+  const normalized = message.toLowerCase();
+
+  if (normalized.includes('circuit_open')) return 'circuit_open';
+  if (normalized.includes('disabled')) return 'disabled';
+  if (normalized.includes('missing_url')) return 'missing_url';
+  if (normalized.includes('timeout') || normalized.includes('abort')) return 'timeout';
+  if (normalized.includes('failed to fetch') || normalized.includes('networkerror') || normalized.includes('load failed')) return 'network';
+  if (normalized.includes('traffic_no_data')) return 'no_data';
+  if (normalized.includes('rpc')) return 'rpc_error';
+  if (/(401|403|404|408|409|422|429|500|502|503|504)/.test(normalized)) return 'http_error';
+  return 'unexpected';
+}
+
+function updateTrafficDiagnostics(source: TrafficFetchSource, degradationReason: string | null): void {
+  _runtimeDiagnostics = {
+    source,
+    degradationReason,
+    updatedAt: Date.now(),
+  };
+}
+
+function buildTrafficFallbackReason(selectedSource: TrafficFetchSource, reasons: string[]): string {
+  return `selected=${selectedSource};causes=${reasons.join('|')}`;
+}
 
 // ── Типы ────────────────────────────────────────────────────────────────────
 export interface TrafficSegment {
@@ -47,6 +83,10 @@ export interface TrafficOverview {
   color: string;
   /** Количество сегментов с данными */
   segmentCount: number;
+  /** Фактический источник данных */
+  source: TrafficFetchSource;
+  /** Причина деградации, если был fallback */
+  degradationReason: string | null;
 }
 
 // ── Кэш ─────────────────────────────────────────────────────────────────────
@@ -54,6 +94,15 @@ let _cachedSegments: TrafficSegment[] = [];
 let _lastFetchTime = 0;
 let _lastBbox: [number, number, number, number] | null = null;
 const CACHE_TTL_MS = 120_000; // 2 минуты
+let _runtimeDiagnostics: TrafficRuntimeDiagnostics = {
+  source: 'time_estimate',
+  degradationReason: null,
+  updatedAt: Date.now(),
+};
+
+export function getTrafficRuntimeDiagnostics(): TrafficRuntimeDiagnostics {
+  return _runtimeDiagnostics;
+}
 
 // ── Маппинг уровней из БД в клиентские ─────────────────────────────────────
 function mapCongestion(level: string): TrafficLevel {
@@ -182,18 +231,23 @@ export async function fetchTrafficInBbox(
     _lastBbox[0] <= minLat && _lastBbox[1] <= minLon &&
     _lastBbox[2] >= maxLat && _lastBbox[3] >= maxLon
   ) {
+    updateTrafficDiagnostics('cache', _runtimeDiagnostics.degradationReason);
     return _cachedSegments;
   }
+
+  const degradationReasons: string[] = [];
 
   try {
     const serverSegments = await fetchTrafficFromNavigationServer(minLat, minLon, maxLat, maxLon);
     _cachedSegments = serverSegments;
     _lastFetchTime = now;
     _lastBbox = [minLat, minLon, maxLat, maxLon];
+    updateTrafficDiagnostics('navigation_server', null);
     return serverSegments;
   } catch (serverErr) {
-    recordFallbackUsage('traffic', `supabase_rpc_after_navigation_server:${serverErr instanceof Error ? serverErr.message : String(serverErr)}`);
-    console.warn('[trafficProvider] navigation_server fallback:', serverErr);
+    const reason = `navigation_server:${classifyTrafficErrorReason(serverErr)}`;
+    degradationReasons.push(reason);
+    logger.warn('[trafficProvider] navigation_server traffic unavailable', { error: serverErr, reason });
   }
 
   try {
@@ -205,8 +259,19 @@ export async function fetchTrafficInBbox(
     });
 
     if (error) {
-      console.warn('[trafficProvider] Ошибка запроса трафика:', error.message);
-      return _cachedSegments; // Возвращаем кэш при ошибке
+      const reason = `supabase:${classifyTrafficErrorReason(error.message)}`;
+      degradationReasons.push(reason);
+      logger.warn('[trafficProvider] Traffic RPC returned an error', { reason, message: error.message });
+      if (_cachedSegments.length > 0) {
+        const fallbackReason = buildTrafficFallbackReason('cache', degradationReasons);
+        recordFallbackUsage('traffic', fallbackReason);
+        updateTrafficDiagnostics('cache', fallbackReason);
+        return _cachedSegments;
+      }
+      const fallbackReason = buildTrafficFallbackReason('time_estimate', degradationReasons);
+      recordFallbackUsage('traffic', fallbackReason);
+      updateTrafficDiagnostics('time_estimate', fallbackReason);
+      return [];
     }
 
     const segments: TrafficSegment[] = (data ?? []).map((row: Record<string, unknown>) => ({
@@ -225,11 +290,23 @@ export async function fetchTrafficInBbox(
     _cachedSegments = segments;
     _lastFetchTime = now;
     _lastBbox = [minLat, minLon, maxLat, maxLon];
+    updateTrafficDiagnostics('supabase', degradationReasons.length > 0 ? buildTrafficFallbackReason('supabase', degradationReasons) : null);
 
     return segments;
   } catch (err) {
-    console.warn('[trafficProvider] Сетевая ошибка:', err);
-    return _cachedSegments;
+    const reason = `supabase:${classifyTrafficErrorReason(err)}`;
+    degradationReasons.push(reason);
+    logger.warn('[trafficProvider] Traffic RPC network failure', { error: err, reason });
+    if (_cachedSegments.length > 0) {
+      const fallbackReason = buildTrafficFallbackReason('cache', degradationReasons);
+      recordFallbackUsage('traffic', fallbackReason);
+      updateTrafficDiagnostics('cache', fallbackReason);
+      return _cachedSegments;
+    }
+    const fallbackReason = buildTrafficFallbackReason('time_estimate', degradationReasons);
+    recordFallbackUsage('traffic', fallbackReason);
+    updateTrafficDiagnostics('time_estimate', fallbackReason);
+    return [];
   }
 }
 
@@ -290,6 +367,7 @@ function estimateTrafficByTime(hour: number = new Date().getHours()): TrafficLev
 
 // ── Общий обзор трафика (баллы как Яндекс) ──────────────────────────────────
 export function calculateTrafficOverview(segments: TrafficSegment[]): TrafficOverview {
+  const diagnostics = getTrafficRuntimeDiagnostics();
   if (segments.length === 0) {
     const fallback = estimateTrafficByTime();
     return {
@@ -297,6 +375,8 @@ export function calculateTrafficOverview(segments: TrafficSegment[]): TrafficOve
       label: fallback === 'free' ? navText('Свободно', 'Clear') : fallback === 'moderate' ? navText('Умеренно', 'Moderate') : navText('Пробки', 'Congested'),
       color: fallback === 'free' ? '#00E676' : fallback === 'moderate' ? '#FFAB00' : '#FF6D00',
       segmentCount: 0,
+      source: diagnostics.source,
+      degradationReason: diagnostics.degradationReason,
     };
   }
 
@@ -332,6 +412,8 @@ export function calculateTrafficOverview(segments: TrafficSegment[]): TrafficOve
     label,
     color,
     segmentCount: segments.length,
+    source: diagnostics.source,
+    degradationReason: diagnostics.degradationReason,
   };
 }
 
@@ -340,4 +422,5 @@ export function clearTrafficCache(): void {
   _cachedSegments = [];
   _lastFetchTime = 0;
   _lastBbox = null;
+  updateTrafficDiagnostics('time_estimate', null);
 }

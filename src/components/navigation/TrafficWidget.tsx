@@ -31,6 +31,8 @@ export function TrafficWidget({ position, className }: TrafficWidgetProps) {
     label: navText('Загрузка...', 'Loading...', languageCode),
     color: '#42A5F5',
     segmentCount: 0,
+    source: 'time_estimate',
+    degradationReason: null,
   });
   const [expanded, setExpanded] = useState(false);
 
@@ -112,6 +114,11 @@ export function TrafficWidget({ position, className }: TrafficWidgetProps) {
                   ? `${overview.segmentCount} ${navText('сегментов', 'segments', languageCode)}`
                   : navText('Нет данных от пользователей', 'No user traffic data', languageCode)}
               </p>
+              {overview.degradationReason && (
+                <p className="text-[10px] text-amber-300/80">
+                  {navText('Fallback:', 'Fallback:', languageCode)} {overview.source}
+                </p>
+              )}
             </div>
           </div>
 

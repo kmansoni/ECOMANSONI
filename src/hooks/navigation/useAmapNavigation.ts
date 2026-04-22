@@ -28,6 +28,8 @@ import { recordFallbackUsage, recordPipelineConfidence } from '@/lib/navigation/
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export interface AmapNavigationState {
+  /** Whether async pipeline bootstrap has completed */
+  isInitialized: boolean;
   /** Kalman-filtered GPS state */
   filteredPosition: KalmanState | null;
   /** Map-matched position on road */
@@ -36,6 +38,12 @@ export interface AmapNavigationState {
   laneRecommendation: LaneRecommendation | null;
   /** Whether the pipeline is fully initialized */
   isReady: boolean;
+  /** Whether Kalman smoothing is available */
+  hasKalman: boolean;
+  /** Whether live map matching is available */
+  hasMapMatching: boolean;
+  /** Whether lane-level guidance is available */
+  hasLaneGuidance: boolean;
   /** Pipeline initialization errors */
   errors: string[];
   /** Current speed from Kalman filter (km/h) */
@@ -82,10 +90,14 @@ export function useAmapNavigation(
 
   // ── State ──────────────────────────────────────────────────────────────
   const [state, setState] = useState<AmapNavigationState>({
+    isInitialized: false,
     filteredPosition: null,
     matchedPosition: null,
     laneRecommendation: null,
     isReady: false,
+    hasKalman: false,
+    hasMapMatching: false,
+    hasLaneGuidance: false,
     errors: [],
     smoothedSpeed: 0,
     smoothedHeading: 0,
@@ -110,6 +122,10 @@ export function useAmapNavigation(
     const errors: string[] = [];
 
     async function init() {
+      let hasKalman = !enableKalman;
+      let hasMapMatching = !enableMapMatching;
+      let hasLaneGuidance = !enableLaneGuidance;
+
       // 1. Kalman Filter
       if (enableKalman) {
         kalmanRef.current = new NavigationKalmanFilter({
@@ -118,6 +134,7 @@ export function useAmapNavigation(
           maxDtBeforeReset: 10,
           minSpeedForHeading: 1.5,
         });
+        hasKalman = true;
       }
 
       // 2. Map Matcher
@@ -126,6 +143,11 @@ export function useAmapNavigation(
         if (matcherOk) {
           matcherRef.current = new HMMMapMatcher();
           await matcherRef.current.init();
+          hasMapMatching = matcherRef.current.isReady;
+          if (!hasMapMatching) {
+            errors.push('Map matching: matcher initialization incomplete');
+            recordFallbackUsage('pipeline', 'map_matching_incomplete');
+          }
         } else {
           errors.push('Map matching: failed to load graph');
           recordFallbackUsage('pipeline', 'map_matching_init_failed');
@@ -138,19 +160,30 @@ export function useAmapNavigation(
         if (graph) {
           osmGraphRef.current = graph;
           laneGraphRef.current = await getLaneGraph(graph);
+          hasLaneGuidance = !!laneGraphRef.current;
+          if (!hasLaneGuidance) {
+            errors.push('Lane guidance: lane graph initialization incomplete');
+            recordFallbackUsage('pipeline', 'lane_graph_incomplete');
+          }
         } else {
           errors.push('Lane guidance: failed to load graph');
           recordFallbackUsage('pipeline', 'lane_graph_init_failed');
         }
       }
 
+      const isReady = hasKalman && hasMapMatching && hasLaneGuidance;
+
       setState(prev => ({
         ...prev,
-        isReady: true,
+        isInitialized: true,
+        isReady,
+        hasKalman,
+        hasMapMatching,
+        hasLaneGuidance,
         errors,
       }));
 
-      if (errors.length > 0) {
+      if (!isReady) {
         console.warn('[AmapNav] Initialization warnings:', errors);
         recordPipelineConfidence(0.45, 'amap_pipeline', true, errors.join('; '));
       } else {
@@ -229,7 +262,7 @@ export function useAmapNavigation(
 
   // ── Auto-feed from navigator position updates ──────────────────────────
   useEffect(() => {
-    if (!state.isReady) return;
+    if (!state.isInitialized) return;
     if (navigationState.phase !== 'navigating') return;
     if (!navigationState.currentPosition) return;
 
@@ -244,6 +277,7 @@ export function useAmapNavigation(
     feedGPS(reading);
   }, [
     state.isReady,
+    state.isInitialized,
     navigationState.phase,
     navigationState.currentPosition?.lat,
     navigationState.currentPosition?.lng,
@@ -254,7 +288,8 @@ export function useAmapNavigation(
 
   // ── Update 3D renderer when route changes ──────────────────────────────
   useEffect(() => {
-    if (!state.isReady) return;
+    if (!state.isInitialized) return;
+    if (navigationState.phase !== 'navigating') return;
     if (!navigationState.route) return;
 
     const renderer = rendererRef.current;
@@ -264,7 +299,7 @@ export function useAmapNavigation(
       state.laneRecommendation,
     );
   }, [
-    state.isReady,
+    state.isInitialized,
     state.laneRecommendation,
     navigationState.route,
   ]);
@@ -276,6 +311,7 @@ export function useAmapNavigation(
     rendererRef.current.removeAllLayers();
     setState(prev => ({
       ...prev,
+      isInitialized: prev.isInitialized,
       filteredPosition: null,
       matchedPosition: null,
       laneRecommendation: null,

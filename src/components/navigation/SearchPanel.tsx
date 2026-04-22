@@ -10,12 +10,39 @@ import { searchPOIs, type POIResult } from '@/lib/navigation/places';
 import { getTripHistory, type TripRecord } from '@/lib/navigation/tripHistory';
 import { buildStreetIndex, learnCorrection, mapOfflineSearchResultToFiasAddress, rememberLearnedAddress, resolveVoiceAddress } from '@/lib/navigation/voiceAddressResolver';
 import { recordVoiceSearchLearningEvent, recordVoiceSelectionFeedback } from '@/lib/navigation/voiceLearningSync';
+import { logger } from '@/lib/logger';
 import { useNavigatorSettings } from '@/stores/navigatorSettingsStore';
 import type { UseVoiceInputReturn } from '@/hooks/navigation/useVoiceInput';
 import { useUserSettings } from '@/contexts/UserSettingsContext';
 import { formatNavigationDistance, formatNavigationTripDate, navText } from '@/lib/navigation/navigationUi';
 
 type SearchTab = 'address' | 'poi';
+
+type VoiceSearchIssueKind =
+  | 'resolver_failed'
+  | 'online_fallback_failed'
+  | 'online_fallback_disabled'
+  | 'offline_only_results'
+  | 'no_matches';
+
+type VoiceSearchIssueTone = 'info' | 'warning' | 'error';
+
+interface VoiceSearchIssue {
+  kind: VoiceSearchIssueKind;
+  tone: VoiceSearchIssueTone;
+  message: string;
+  diagnosticCode: string;
+}
+
+function getVoiceSearchErrorCode(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error ?? 'unknown');
+  const normalized = message.toLowerCase();
+
+  if (normalized.includes('timeout') || normalized.includes('abort')) return 'timeout';
+  if (normalized.includes('failed to fetch') || normalized.includes('networkerror') || normalized.includes('load failed')) return 'network';
+  if (/(401|403|404|408|409|422|429|500|502|503|504)/.test(normalized)) return 'http';
+  return 'unexpected';
+}
 
 interface SearchPanelProps {
   favorites: SavedPlace[];
@@ -69,6 +96,7 @@ export function SearchPanel({
   const [tripHistoryLoading, setTripHistoryLoading] = useState(false);
   const [voiceNormalizedText, setVoiceNormalizedText] = useState('');
   const [bestVoiceMatch, setBestVoiceMatch] = useState<FiasAddress | null>(null);
+  const [voiceSearchIssue, setVoiceSearchIssue] = useState<VoiceSearchIssue | null>(null);
   const voiceAllowOnlineFallback = useNavigatorSettings((state) => state.voiceAllowOnlineFallback);
   const voiceLearningEnabled = useNavigatorSettings((state) => state.voiceLearningEnabled);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -158,6 +186,67 @@ export function SearchPanel({
     };
   }, [showTripHistory]);
 
+  const createVoiceSearchIssue = useCallback((kind: VoiceSearchIssueKind, diagnosticCode: string): VoiceSearchIssue => {
+    switch (kind) {
+      case 'resolver_failed':
+        return {
+          kind,
+          tone: 'error',
+          diagnosticCode,
+          message: navText(
+            'Не удалось разобрать голосовой адрес. Попробуйте повторить запрос или ввести адрес вручную.',
+            'Could not parse the voice address. Try again or enter the address manually.',
+            languageCode,
+          ),
+        };
+      case 'online_fallback_failed':
+        return {
+          kind,
+          tone: 'warning',
+          diagnosticCode,
+          message: navText(
+            'Онлайн-уточнение адреса недоступно, показываю локальные совпадения.',
+            'Online address refinement is unavailable, showing local matches only.',
+            languageCode,
+          ),
+        };
+      case 'online_fallback_disabled':
+        return {
+          kind,
+          tone: 'info',
+          diagnosticCode,
+          message: navText(
+            'Онлайн fallback для голосового адреса отключён, ищу только по локальным данным.',
+            'Online fallback for voice address search is disabled, using local data only.',
+            languageCode,
+          ),
+        };
+      case 'offline_only_results':
+        return {
+          kind,
+          tone: 'info',
+          diagnosticCode,
+          message: navText(
+            'Найдены только локальные совпадения. Уточните номер дома или включите онлайн fallback для точного адреса.',
+            'Only local matches were found. Add a house number or enable online fallback for a precise address.',
+            languageCode,
+          ),
+        };
+      case 'no_matches':
+      default:
+        return {
+          kind: 'no_matches',
+          tone: 'info',
+          diagnosticCode,
+          message: navText(
+            'Голосовой адрес распознан, но совпадений не найдено. Попробуйте другой вариант формулировки.',
+            'The voice address was recognized, but no matches were found. Try a different wording.',
+            languageCode,
+          ),
+        };
+    }
+  }, [languageCode]);
+
   const mergeVoiceAddressResults = useCallback((online: FiasAddress[], offline: FiasAddress[]) => {
     const merged: FiasAddress[] = [];
     const seen = new Set<string>();
@@ -228,9 +317,23 @@ export function SearchPanel({
     setTab('address');
     setShowTripHistory(false);
     setLoading(true);
+    setVoiceSearchIssue(null);
 
     try {
-      const resolved = await resolveVoiceAddress(trimmed, alternatives, currentPosition ?? undefined);
+      let resolved;
+      try {
+        resolved = await resolveVoiceAddress(trimmed, alternatives, currentPosition ?? undefined);
+      } catch (error) {
+        const diagnosticCode = `voice_resolver:${getVoiceSearchErrorCode(error)}`;
+        logger.warn('[SearchPanel] voice address resolver failed', { diagnosticCode, error });
+        setQuery(trimmed);
+        setVoiceNormalizedText('');
+        setBestVoiceMatch(null);
+        setPOIResults([]);
+        setVoiceSearchIssue(createVoiceSearchIssue('resolver_failed', diagnosticCode));
+        return;
+      }
+
       const normalized = resolved.normalizedText || trimmed;
 
       setQuery(normalized);
@@ -243,16 +346,41 @@ export function SearchPanel({
 
       const looksLikeConcreteAddress = /\d|\b(ул\.?|улица|street|st\.?|ave\.?|avenue|road|rd\.?|дом|д\.?|house|building|корпус|к\.?|стр\.?)\b/i.test(normalized);
       const hasOfflineAddress = offlineResults.some((result) => result.value.length > 0 && /\d/.test(result.value));
+      const shouldUseOnlineFallback = voiceAllowOnlineFallback && (offlineResults.length === 0 || (looksLikeConcreteAddress && !hasOfflineAddress));
 
-      const fallbackResults = voiceAllowOnlineFallback && (offlineResults.length === 0 || (looksLikeConcreteAddress && !hasOfflineAddress))
-        ? await suggestAddress(normalized, 8, currentPosition ?? undefined, { allowOnline: true })
-        : [];
+      let fallbackResults: FiasAddress[] = [];
+      let issue: VoiceSearchIssue | null = null;
+
+      if (shouldUseOnlineFallback) {
+        try {
+          fallbackResults = await suggestAddress(normalized, 8, currentPosition ?? undefined, { allowOnline: true });
+        } catch (error) {
+          const diagnosticCode = `voice_online_fallback:${getVoiceSearchErrorCode(error)}`;
+          logger.warn('[SearchPanel] voice address online fallback failed', { diagnosticCode, error, normalized });
+          issue = createVoiceSearchIssue('online_fallback_failed', diagnosticCode);
+        }
+      } else if (looksLikeConcreteAddress && !hasOfflineAddress) {
+        issue = createVoiceSearchIssue(
+          voiceAllowOnlineFallback ? 'offline_only_results' : 'online_fallback_disabled',
+          voiceAllowOnlineFallback ? 'voice_offline_only:street_without_house_match' : 'voice_online_fallback:disabled',
+        );
+      }
 
       const rankedResults = rankVoiceAddressResults(
         mergeVoiceAddressResults(fallbackResults, offlineResults),
         trimmed,
         normalized,
       ).slice(0, 10);
+
+      if (rankedResults.length === 0) {
+        issue = issue ?? createVoiceSearchIssue('no_matches', 'voice_search:no_matches');
+      } else if (issue?.kind === 'online_fallback_failed' && offlineResults.length === 0) {
+        issue = createVoiceSearchIssue('no_matches', `${issue.diagnosticCode}:empty_local_and_online`);
+      }
+
+      if (!issue && rankedResults.length > 0 && offlineResults.length > 0 && fallbackResults.length === 0 && looksLikeConcreteAddress && !hasOfflineAddress) {
+        issue = createVoiceSearchIssue('offline_only_results', 'voice_offline_only:partial_address_match');
+      }
 
       recordVoiceSearchLearningEvent({
         transcript: trimmed,
@@ -263,14 +391,16 @@ export function SearchPanel({
       setAddressResults(rankedResults);
       setBestVoiceMatch(rankedResults[0] ?? null);
       setPOIResults([]);
-    } catch (err) {
-      console.warn('[SearchPanel] Ошибка голосового поиска адреса', err);
-      setAddressResults([]);
+      setVoiceSearchIssue(issue);
+    } catch (error) {
+      const diagnosticCode = `voice_search:${getVoiceSearchErrorCode(error)}`;
+      logger.warn('[SearchPanel] unexpected voice search failure', { diagnosticCode, error });
       setBestVoiceMatch(null);
+      setVoiceSearchIssue(createVoiceSearchIssue('resolver_failed', diagnosticCode));
     } finally {
       setLoading(false);
     }
-  }, [currentPosition, mergeVoiceAddressResults, rankVoiceAddressResults, voiceAllowOnlineFallback]);
+  }, [createVoiceSearchIssue, currentPosition, mergeVoiceAddressResults, rankVoiceAddressResults, voiceAllowOnlineFallback]);
 
   useEffect(() => {
     if (!initialVoiceQuery?.text || voiceState !== 'idle') return;
@@ -283,9 +413,11 @@ export function SearchPanel({
     if (text.length < 2) {
       setAddressResults([]);
       setPOIResults([]);
+      setVoiceSearchIssue(null);
       return;
     }
     setBestVoiceMatch(null);
+    setVoiceSearchIssue(null);
     setLoading(true);
     try {
       if (currentTab === 'address') {
@@ -295,8 +427,8 @@ export function SearchPanel({
         const results = await searchPOIs(text, 20, currentPosition ?? undefined);
         setPOIResults(results);
       }
-    } catch (err) {
-      console.warn('[SearchPanel] Ошибка поиска', err);
+    } catch (error) {
+      logger.warn('[SearchPanel] search failed', { error, tab: currentTab, query: text });
     } finally {
       setLoading(false);
     }
@@ -321,6 +453,7 @@ export function SearchPanel({
     setQuery(value);
     setVoiceNormalizedText('');
     setBestVoiceMatch(null);
+    setVoiceSearchIssue(null);
     lastVoiceQueryRef.current = null;
     clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => performSearch(value, tab), 350);
@@ -330,6 +463,7 @@ export function SearchPanel({
     setTab(newTab);
     setVoiceNormalizedText('');
     setBestVoiceMatch(null);
+    setVoiceSearchIssue(null);
     if (query.length >= 2) {
       performSearch(query, newTab);
     }
@@ -339,6 +473,7 @@ export function SearchPanel({
     setTab('poi');
     setQuery(categoryQuery);
     setBestVoiceMatch(null);
+    setVoiceSearchIssue(null);
     void performSearch(categoryQuery, 'poi');
   };
 
@@ -346,6 +481,7 @@ export function SearchPanel({
     if (isClosing) return;
     resetVoice();
     setBestVoiceMatch(null);
+    setVoiceSearchIssue(null);
     setIsClosing(true);
     setIsVisible(false);
     closeTimerRef.current = setTimeout(() => onClose(), 220);
@@ -365,6 +501,7 @@ export function SearchPanel({
     setQuery(choice);
     setVoiceNormalizedText('');
     setBestVoiceMatch(null);
+    setVoiceSearchIssue(null);
     void performSearch(choice, tab);
   };
 
@@ -488,7 +625,7 @@ export function SearchPanel({
               {query && (
                 <button
                   type="button"
-                  onClick={() => { setQuery(''); setAddressResults([]); setPOIResults([]); setVoiceNormalizedText(''); setBestVoiceMatch(null); lastVoiceQueryRef.current = null; }}
+                  onClick={() => { setQuery(''); setAddressResults([]); setPOIResults([]); setVoiceNormalizedText(''); setBestVoiceMatch(null); setVoiceSearchIssue(null); lastVoiceQueryRef.current = null; }}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 transition-colors hover:text-gray-300"
                 >
                   <X className="w-4 h-4" />
@@ -781,6 +918,22 @@ export function SearchPanel({
         {loading && (
           <div className="flex items-center justify-center py-8">
             <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+          </div>
+        )}
+
+        {!loading && voiceSearchIssue && tab === 'address' && (
+          <div className="px-3 pb-2">
+            <div
+              className={cn(
+                'rounded-2xl border px-3 py-2',
+                voiceSearchIssue.tone === 'error' && 'border-rose-400/20 bg-rose-400/[0.08] text-rose-100',
+                voiceSearchIssue.tone === 'warning' && 'border-amber-400/20 bg-amber-400/[0.08] text-amber-100',
+                voiceSearchIssue.tone === 'info' && 'border-sky-400/18 bg-sky-400/[0.06] text-sky-100',
+              )}
+            >
+              <p className="text-xs font-medium">{voiceSearchIssue.message}</p>
+              <p className="mt-1 text-[10px] uppercase tracking-wide opacity-70">{voiceSearchIssue.diagnosticCode}</p>
+            </div>
           </div>
         )}
 

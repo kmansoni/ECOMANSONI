@@ -23,9 +23,14 @@ describe("chat deep link query helpers", () => {
     expect(actions.startCallType).toBe("audio");
   });
 
+  it("accepts legacy openDmId deeplink parameter", () => {
+    const actions = parseChatsQueryActions("?openDmId=legacy-dm-1");
+    expect(actions.openDmId).toBe("legacy-dm-1");
+  });
+
   it("clears handled keys and preserves unrelated query params", () => {
     const next = clearHandledChatsQueryParams(
-      "?open=dm1&invite=abc&startCall=user1&foo=bar&callType=video"
+      "?open=dm1&openDmId=legacy-dm-1&invite=abc&startCall=user1&foo=bar&callType=video"
     );
     expect(next).toBe("?foo=bar");
   });

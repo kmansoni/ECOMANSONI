@@ -80,17 +80,20 @@ const TRANSITIONS: Record<CallState, Partial<Record<CallEvent, CallState>>> = {
   },
   bootstrapping: {
     BOOTSTRAP_OK: "signaling_ready",
+    PROMOTE_IN_CALL: "in_call",
     CALL_END: "ending",
     ERROR: "failed",
   },
   signaling_ready: {
     SIGNALING_READY: "media_acquiring",
     MEDIA_ACQUIRED: "transport_connecting",
+    PROMOTE_IN_CALL: "in_call",
     CALL_END: "ending",
     ERROR: "failed",
   },
   media_acquiring: {
     MEDIA_ACQUIRED: "transport_connecting",
+    PROMOTE_IN_CALL: "in_call",
     CALL_END: "ending",
     ERROR: "failed",
   },

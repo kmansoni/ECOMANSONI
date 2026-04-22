@@ -46,6 +46,24 @@ export class SfuMediaManager {
   private relayStatsCollector = new RelayStatsCollector({ maxHistorySize: 120 });
   private lastRelayRoute: "none" | "p2p" | "relay" = "none";
 
+  private resolveProducerSender(
+    producer: mediasoupTypes.Producer,
+    senderFromCallback: RTCRtpSender | null,
+  ): RTCRtpSender | null {
+    return senderFromCallback
+      ?? producer.rtpSender
+      ?? ((producer as unknown as { _rtpSender?: RTCRtpSender })._rtpSender ?? null);
+  }
+
+  private resolveConsumerReceiver(
+    consumer: mediasoupTypes.Consumer,
+    receiverFromCallback: RTCRtpReceiver | null,
+  ): RTCRtpReceiver | null {
+    return receiverFromCallback
+      ?? consumer.rtpReceiver
+      ?? ((consumer as unknown as { _rtpReceiver?: RTCRtpReceiver })._rtpReceiver ?? null);
+  }
+
   constructor(options?: { requireSenderReceiverAccessForE2ee?: boolean; onIceRestartNeeded?: IceRestartCallback }) {
     this.device = new Device();
     // C-2 fix: default changed to TRUE — plaintext media is never acceptable
@@ -294,9 +312,14 @@ export class SfuMediaManager {
       throw new Error('sendTransport not created. Call createSendTransport first.');
     }
 
+    let senderFromCallback: RTCRtpSender | null = null;
+
     const producer = await this.sendTransport.produce({
       track,
       appData: appData || {},
+      onRtpSender: (rtpSender) => {
+        senderFromCallback = rtpSender;
+      },
     });
 
     this.producers.set(producer.id, producer);
@@ -304,7 +327,7 @@ export class SfuMediaManager {
     // C-3: Cache RTCRtpSender for Insertable Streams E2EE.
     // Uses public producer.rtpSender API (mediasoup-client ≥3.6) instead of private _handler._pc.
     try {
-      const sender = producer.rtpSender;
+      const sender = this.resolveProducerSender(producer, senderFromCallback);
       if (!sender) {
         const error = new Error(
           `[SfuMediaManager] producer.rtpSender is undefined for ${producer.id} — ` +
@@ -348,11 +371,16 @@ export class SfuMediaManager {
       throw new Error('recvTransport not created. Call createRecvTransport first.');
     }
 
+    let receiverFromCallback: RTCRtpReceiver | null = null;
+
     const consumer = await this.recvTransport.consume({
       id: options.id,
       producerId: options.producerId,
       kind: options.kind,
       rtpParameters: options.rtpParameters,
+      onRtpReceiver: (rtpReceiver) => {
+        receiverFromCallback = rtpReceiver;
+      },
     });
 
     this.consumers.set(consumer.id, consumer);
@@ -360,7 +388,7 @@ export class SfuMediaManager {
     // C-3: Cache RTCRtpReceiver for Insertable Streams E2EE.
     // Uses public consumer.rtpReceiver API (mediasoup-client ≥3.6) instead of private _handler._pc.
     try {
-      const receiver = consumer.rtpReceiver;
+      const receiver = this.resolveConsumerReceiver(consumer, receiverFromCallback);
       if (!receiver) {
         const error = new Error(
           `[SfuMediaManager] consumer.rtpReceiver is undefined for ${consumer.id} — ` +

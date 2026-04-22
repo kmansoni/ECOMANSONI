@@ -13,6 +13,12 @@ import {
   DrawerTitle,
 } from "@/components/ui/drawer";
 import { useMultiAccount } from "@/contexts/MultiAccountContext";
+import { supabase } from "@/integrations/supabase/client";
+import { Input } from "@/components/ui/input";
+import { PhoneInput } from "@/components/ui/phone-input";
+import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 interface NavItem {
   to: string;
@@ -66,9 +72,29 @@ export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function Bottom
   const { unreadCount } = useUnreadChats();
   const { unreadCount: notifUnreadCount } = useNotifications();
   const multiAccountEnabled = import.meta.env.VITE_ENABLE_MULTI_ACCOUNT === "true";
-  const { accounts: maAccounts, activeAccountId, switchAccount, switchingAccountId, isSwitchingAccount, isAccountOperationInProgress } = useMultiAccount();
+  const {
+    accounts: maAccounts,
+    activeAccountId,
+    switchAccount,
+    switchingAccountId,
+    isSwitchingAccount,
+    isAccountOperationInProgress,
+    lookupPhoneGetEmail,
+    sendOtpToEmail,
+    verifyOtpAndActivate,
+    checkRecoveryFactors,
+  } = useMultiAccount();
   const [keyboardOpen, setKeyboardOpen] = useState(false);
   const [accountSwitcherOpen, setAccountSwitcherOpen] = useState(false);
+  const [authSheetOpen, setAuthSheetOpen] = useState(false);
+  const [authMode, setAuthMode] = useState<"phone" | "register" | "recovery" | "otp-verify">("phone");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authOtpCode, setAuthOtpCode] = useState("");
+  const [authPhone, setAuthPhone] = useState("");
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authTargetAccountId, setAuthTargetAccountId] = useState<string | null>(null);
+  const [authIsRegister, setAuthIsRegister] = useState(false);
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
   const isLongPressRef = useRef(false);
   
@@ -114,9 +140,145 @@ export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function Bottom
     }
   };
 
+  const resetAuthSheet = useCallback(() => {
+    setAuthMode("phone");
+    setAuthEmail("");
+    setAuthPassword("");
+    setAuthOtpCode("");
+    setAuthPhone("");
+    setAuthLoading(false);
+    setAuthTargetAccountId(null);
+    setAuthIsRegister(false);
+  }, []);
+
+  const openAuthSheet = useCallback((accountId: string | null) => {
+    setAuthTargetAccountId(accountId);
+    setAuthMode("phone");
+    setAuthEmail("");
+    setAuthPassword("");
+    setAuthOtpCode("");
+    setAuthPhone("");
+    setAuthIsRegister(false);
+    setAuthSheetOpen(true);
+  }, []);
+
+  const handleAuthSheetOpenChange = useCallback((open: boolean) => {
+    setAuthSheetOpen(open);
+    if (!open) {
+      resetAuthSheet();
+    }
+  }, [resetAuthSheet]);
+
+  /** Нормализует номер телефона к формату E.164 (+7XXXXXXXXXX для РФ) */
+  const normalizePhone = (raw: string): string => {
+    const digits = raw.replace(/\D/g, "");
+    if (digits.length === 10) return `+7${digits}`;
+    if (digits.length === 11 && digits[0] === "8") return `+7${digits.slice(1)}`;
+    if (digits.length === 11 && digits[0] === "7") return `+${digits}`;
+    if (digits.length > 7) return `+${digits}`;
+    return raw.trim();
+  };
+
+  const handlePhoneSubmit = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault();
+    const phone = normalizePhone(authPhone);
+    if (!phone || phone.length < 10) {
+      toast.error("Введите корректный номер телефона");
+      return;
+    }
+    setAuthLoading(true);
+    try {
+      const { email, error } = await lookupPhoneGetEmail(phone);
+      if (error) throw error;
+      if (email) {
+        const { error: otpErr } = await sendOtpToEmail(email, false);
+        if (otpErr) throw otpErr;
+        setAuthEmail(email);
+        setAuthMode("otp-verify");
+        toast.success(`Код отправлен на ${email}`);
+      } else {
+        setAuthMode("register");
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Ошибка проверки номера");
+    } finally {
+      setAuthLoading(false);
+    }
+  }, [authPhone, lookupPhoneGetEmail, sendOtpToEmail]);
+
+  const handleRegisterSubmit = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault();
+    const email = authEmail.trim().toLowerCase();
+    if (!email || !authPassword) {
+      toast.error("Заполните email и пароль");
+      return;
+    }
+    if (authPassword.length < 6) {
+      toast.error("Пароль должен быть не менее 6 символов");
+      return;
+    }
+    setAuthLoading(true);
+    try {
+      const { error } = await sendOtpToEmail(email, true);
+      if (error) throw error;
+      setAuthIsRegister(true);
+      setAuthMode("otp-verify");
+      toast.success(`Код регистрации отправлен на ${email}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Ошибка регистрации");
+    } finally {
+      setAuthLoading(false);
+    }
+  }, [authEmail, authPassword, sendOtpToEmail]);
+
+  const handleVerifyOtp = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault();
+    const email = authEmail.trim().toLowerCase();
+    if (!authOtpCode || authOtpCode.length < 6) {
+      toast.error("Введите 6-значный код");
+      return;
+    }
+    setAuthLoading(true);
+    try {
+      const opts = authIsRegister
+        ? { phone: normalizePhone(authPhone), password: authPassword }
+        : {};
+      const { error } = await verifyOtpAndActivate(email, authOtpCode, opts);
+      if (error) throw error;
+      toast.success(authTargetAccountId ? "Вход аккаунта восстановлен" : "Аккаунт добавлен");
+      setAuthSheetOpen(false);
+      resetAuthSheet();
+      setAccountSwitcherOpen(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Неверный код");
+    } finally {
+      setAuthLoading(false);
+    }
+  }, [authEmail, authIsRegister, authOtpCode, authPassword, authPhone, authTargetAccountId, resetAuthSheet, verifyOtpAndActivate]);
+
+  const handleRecoverySubmit = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault();
+    const phone = normalizePhone(authPhone);
+    const email = authEmail.trim().toLowerCase();
+    if (!phone || phone.length < 10 || !email || !authPassword) {
+      toast.error("Заполните все поля");
+      return;
+    }
+    setAuthLoading(true);
+    try {
+      const { error } = await checkRecoveryFactors(phone, email, authPassword);
+      if (error) throw error;
+      setAuthMode("otp-verify");
+      toast.success(`Код восстановления отправлен на ${email}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Данные не совпадают");
+    } finally {
+      setAuthLoading(false);
+    }
+  }, [authEmail, authPassword, authPhone, checkRecoveryFactors]);
+
   const handleAddAccount = () => {
-    setAccountSwitcherOpen(false);
-    navigate("/auth?addAccount=1");
+    openAuthSheet(null);
   };
 
   const handleTouchStart = useCallback((item: NavItem) => {
@@ -388,44 +550,51 @@ export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function Bottom
               const others = maAccounts.filter(a => a.accountId !== activeAccountId);
               const sorted = active ? [active, ...others] : others;
               return sorted.map((account) => {
-              const displayName = account.profile?.display_name ?? account.profile?.displayName ?? "(profile not loaded)";
-              const username = account.profile?.username ?? (typeof displayName === "string" ? displayName : "(unknown)");
-              // FIX (P1): Deterministic avatar per account (hash of accountId) instead of fixed img=32
-              const getAvatarUrl = () => {
-                if (account.profile?.avatar_url) return account.profile.avatar_url;
-                if (account.profile?.avatarUrl) return account.profile.avatarUrl;
-                const hash = Array.from(account.accountId).reduce((h, c) => ((h << 5) - h) + c.charCodeAt(0), 0);
-                const imgId = Math.abs(hash) % 70;
-                return `https://i.pravatar.cc/150?img=${imgId}`;
-              };
-              const avatar = getAvatarUrl();
+              const rawDisplayName = account.profile?.display_name ?? account.profile?.displayName ?? "";
+              const displayName = typeof rawDisplayName === "string" ? rawDisplayName.trim() : "";
+              const rawUsername = typeof account.profile?.username === "string" ? account.profile.username.trim() : "";
+              const normalizedUsername = rawUsername.replace(/^@+/, "");
+              const primaryLine = normalizedUsername ? `@${normalizedUsername}` : (displayName || "Пользователь");
+              const secondaryLine = normalizedUsername
+                ? (displayName || "Без ФИО")
+                : (displayName ? "Никнейм не задан" : "Профиль не заполнен");
+              const avatar = account.profile?.avatar_url || account.profile?.avatarUrl || "";
               const isActive = activeAccountId === account.accountId;
               const needsReauth = account.requiresReauth === true;
               
               return (
               <button
                 key={account.accountId}
-                onClick={() => !needsReauth && !isAccountOperationInProgress && !isActive && handleSwitchAccount(account.accountId)}
-                disabled={needsReauth || isAccountOperationInProgress}
-                title={needsReauth ? "Требуется переаутентификация" : (isAccountOperationInProgress ? "Выполняется операция с аккаунтом..." : undefined)}
+                onClick={() => {
+                  if (isAccountOperationInProgress) return;
+                  if (isActive && !needsReauth) return;
+                  if (needsReauth) {
+                    openAuthSheet(account.accountId);
+                    return;
+                  }
+                  void handleSwitchAccount(account.accountId);
+                }}
+                disabled={isAccountOperationInProgress}
+                title={isAccountOperationInProgress ? "Выполняется операция с аккаунтом..." : undefined}
                 className={cn(
                   "w-full flex items-center gap-3 p-3 rounded-xl transition-colors",
                   needsReauth 
-                    ? "opacity-50 cursor-not-allowed bg-red-50 dark:bg-red-950/20" 
+                    ? "bg-red-50 dark:bg-red-950/20" 
                     : (isActive 
                         ? "bg-primary/10" 
                         : "hover:bg-muted"),
                   isAccountOperationInProgress && "opacity-70"
                 )}
               >
-                <img loading="lazy"
-                  src={avatar}
-                  alt={displayName}
-                  className="w-12 h-12 rounded-full object-cover"
-                />
+                <Avatar className="w-12 h-12">
+                  <AvatarImage src={avatar || undefined} alt={displayName || normalizedUsername || "Профиль"} />
+                  <AvatarFallback className="bg-muted">
+                    <User className="w-5 h-5 text-muted-foreground" />
+                  </AvatarFallback>
+                </Avatar>
                 <div className="flex-1 text-left">
-                  <p className="font-medium text-foreground">{username}</p>
-                  <p className="text-sm text-muted-foreground">{displayName}</p>
+                  <p className="font-medium text-foreground">{primaryLine}</p>
+                  <p className="text-sm text-muted-foreground">{secondaryLine}</p>
                 </div>
                 {isActive && !needsReauth && (
                   <Check className="w-5 h-5 text-primary" />
@@ -458,6 +627,118 @@ export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function Bottom
           </div>
           
           {/* Safe area padding */}
+          <div className="h-6" />
+        </DrawerContent>
+      </Drawer>
+
+      <Drawer open={authSheetOpen} onOpenChange={handleAuthSheetOpenChange}>
+        <DrawerContent className="bg-card border-border">
+          <DrawerHeader className="border-b border-border pb-4">
+            <DrawerTitle className="text-center">
+              {authTargetAccountId ? "Войти в аккаунт" : "Добавить аккаунт"}
+            </DrawerTitle>
+          </DrawerHeader>
+
+          <div className="p-4 space-y-3">
+            {authMode === "phone" && (
+              <form onSubmit={handlePhoneSubmit} className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  Введите номер телефона. Если аккаунт найден — отправим код на привязанный email.
+                </p>
+                <PhoneInput
+                  value={authPhone}
+                  onChange={setAuthPhone}
+                />
+                <Button type="submit" className="w-full" disabled={authLoading}>
+                  {authLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Далее"}
+                </Button>
+                <button
+                  type="button"
+                  className="w-full text-sm text-muted-foreground underline underline-offset-2 py-1"
+                  onClick={() => setAuthMode("recovery")}
+                >
+                  Нет доступа к номеру?
+                </button>
+              </form>
+            )}
+
+            {authMode === "register" && (
+              <form onSubmit={handleRegisterSubmit} className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  Аккаунт с этим номером не найден. Введите email и придумайте пароль для нового аккаунта.
+                </p>
+                <Input
+                  type="email"
+                  placeholder="Email"
+                  value={authEmail}
+                  onChange={(e) => setAuthEmail(e.target.value)}
+                  autoFocus
+                />
+                <Input
+                  type="password"
+                  placeholder="Придумайте пароль (мин. 6 символов)"
+                  value={authPassword}
+                  onChange={(e) => setAuthPassword(e.target.value)}
+                />
+                <div className="flex gap-2">
+                  <Button type="button" variant="outline" className="flex-1" onClick={() => setAuthMode("phone")}>Назад</Button>
+                  <Button type="submit" className="flex-1" disabled={authLoading}>
+                    {authLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Зарегистрироваться"}
+                  </Button>
+                </div>
+              </form>
+            )}
+
+            {authMode === "recovery" && (
+              <form onSubmit={handleRecoverySubmit} className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  Для восстановления укажите телефон, email и пароль — затем введите код из письма.
+                </p>
+                <PhoneInput
+                  value={authPhone}
+                  onChange={setAuthPhone}
+                />
+                <Input
+                  type="email"
+                  placeholder="Email"
+                  value={authEmail}
+                  onChange={(e) => setAuthEmail(e.target.value)}
+                />
+                <Input
+                  type="password"
+                  placeholder="Пароль"
+                  value={authPassword}
+                  onChange={(e) => setAuthPassword(e.target.value)}
+                />
+                <div className="flex gap-2">
+                  <Button type="button" variant="outline" className="flex-1" onClick={() => setAuthMode("phone")}>Назад</Button>
+                  <Button type="submit" className="flex-1" disabled={authLoading}>
+                    {authLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Отправить код"}
+                  </Button>
+                </div>
+              </form>
+            )}
+
+            {authMode === "otp-verify" && (
+              <form onSubmit={handleVerifyOtp} className="space-y-3">
+                <p className="text-sm text-muted-foreground">Код отправлен на {authEmail}</p>
+                <Input
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="000000"
+                  maxLength={6}
+                  value={authOtpCode}
+                  onChange={(e) => setAuthOtpCode(e.target.value.replace(/\D/g, ""))}
+                  autoFocus
+                  className="text-center text-2xl tracking-[0.3em]"
+                />
+                <Button type="submit" className="w-full" disabled={authLoading}>
+                  {authLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Подтвердить"}
+                </Button>
+              </form>
+            )}
+          </div>
+
           <div className="h-6" />
         </DrawerContent>
       </Drawer>

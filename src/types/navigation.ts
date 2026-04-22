@@ -179,7 +179,16 @@ export interface NavigationLaneGuidance {
   destinationHint?: string | null;
 }
 
-export type RouteMapObjectKind = 'traffic_light' | 'speed_bump' | 'road_sign' | 'speed_camera' | 'poi';
+export type RouteMapObjectKind =
+  | 'traffic_light'
+  | 'speed_bump'
+  | 'road_sign'
+  | 'speed_camera'
+  | 'poi'
+  | 'park'
+  | 'public_service'
+  | 'public_transport'
+  | 'landmark';
 
 export type RouteObjectRelevance = 'low' | 'secondary' | 'primary';
 

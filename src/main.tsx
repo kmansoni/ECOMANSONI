@@ -11,30 +11,7 @@ import { ENV } from "@/lib/env";
 import { initSessionStore } from "@/auth/sessionStore";
 import { initDeviceIdentity } from "@/auth/deviceIdentity";
 import { logger } from "@/lib/logger";
-
-const CHUNK_RELOAD_ONCE_KEY = "app.chunk_reload_once";
-
-function shouldRecoverLoadError(reason: unknown): boolean {
-  const text =
-    typeof reason === "string"
-      ? reason
-      : reason instanceof Error
-      ? reason.message
-      : String((reason as any)?.message || reason || "");
-  return /load failed|loading chunk|chunkloaderror|failed to fetch dynamically imported module|vite:preloaderror/i.test(text);
-}
-
-function reloadOnChunkFailureOnce(reason: unknown) {
-  if (!shouldRecoverLoadError(reason)) return;
-  try {
-    const alreadyReloaded = sessionStorage.getItem(CHUNK_RELOAD_ONCE_KEY) === "1";
-    if (alreadyReloaded) return;
-    sessionStorage.setItem(CHUNK_RELOAD_ONCE_KEY, "1");
-  } catch {
-    // no-op
-  }
-  window.location.reload();
-}
+import { persistLastRuntimeError, reloadOnChunkFailureOnce } from "@/lib/runtimeErrorDiagnostics";
 
 function setAppHeight() {
   const vvHeight = window.visualViewport?.height;
@@ -65,16 +42,28 @@ const platformInfo = detectDevice();
 applyPlatformAttributes(platformInfo);
 
 window.addEventListener("unhandledrejection", (event) => {
+  logger.error("[bootstrap] unhandled promise rejection", { reason: event.reason });
+  persistLastRuntimeError("UnhandledPromiseRejection", event.reason);
   reloadOnChunkFailureOnce(event.reason);
 });
 
 window.addEventListener("error", (event) => {
+  logger.error("[bootstrap] uncaught runtime error", {
+    message: event.message,
+    error: event.error,
+    filename: event.filename,
+    lineno: event.lineno,
+    colno: event.colno,
+  });
+  persistLastRuntimeError("UncaughtRuntimeError", event.error || event.message);
   reloadOnChunkFailureOnce(event.error || event.message);
 });
 
 window.addEventListener("vite:preloadError", (event: Event) => {
   const customEvent = event as CustomEvent;
   const detail = customEvent.detail as { payload?: unknown; error?: unknown } | undefined;
+  logger.error("[bootstrap] vite preload error", { detail });
+  persistLastRuntimeError("VitePreloadError", detail?.payload || detail?.error || detail);
   reloadOnChunkFailureOnce(detail?.payload || detail?.error || detail);
 });
 

@@ -38,7 +38,53 @@
 
 ---
 
+## 🧭 Execution Protocol
+
+- **Russian-first:** all discussion, промежуточные отчеты, questions, and final summaries MUST be in Russian unless the user explicitly requests another language.
+- **Single trajectory:** one task means one bounded subsystem. If the task is to fix calls, work only on calls. If the task is to fix SFU, work only on SFU. If the task is to fix avatars, work only on avatars. Do not broaden scope without explicit approval.
+- **One issue at a time:** if one specification contains multiple defects, resolve them strictly one by one. After each fix: verify, report the result, and only then move to the next defect.
+- **Surgical changes only:** avoid batch fixing across adjacent areas just because the code is nearby. Touch only the files and logic required for the current defect.
+- **Fix quality rule:** optimize not for the fewest changed lines, but for the smallest necessary change surface. Inside that bounded area, the fix must be complete and clean, not a temporary patch.
+- **Clean-code loop:** every change follows the same order: write the minimal clean fix, run validation, discuss outcome, refine if needed.
+- **No silent tech debt:** do not leave temporary branches of logic, stale fallbacks, dead code, duplicate paths, commented-out code, or partial migrations behind.
+- **No masked unknowns:** if the active area is underspecified or clearly missing logic, data, backend/frontend contract, or product behavior, do not hide it with a stub, noop, fake value, or silent bypass. Surface the gap explicitly.
+- **Deletion requires confirmation:** when cleanup means deleting old code, old endpoints, old config, or old fallback behavior, ask for confirmation before removal.
+- **Syntax and encoding first:** syntax errors, broken Cyrillic, mojibake, mixed encodings, and malformed text are first-class blockers and must be detected and surfaced immediately.
+- **Keep context compact:** do not accumulate unnecessary notes, duplicate plans, or speculative cleanup lists. Keep only the information needed for the current step.
+
+When such a gap is found, the agent MUST:
+
+1. identify the missing contract or logic explicitly;
+2. link the exact code area, schema, API, config, or document where the gap manifests;
+3. explain what is known, what is missing, and why a clean production fix cannot be completed silently;
+4. continue only after the gap is clarified or an explicit implementation direction is agreed.
+
+---
+
+## 🔄 Work Cycle
+
+For every defect, the agent MUST follow this sequence:
+
+1. **Lock scope:** state the exact subsystem and exact defect being worked on.
+2. **Inspect only relevant code:** read only the files needed for that defect.
+3. **Apply the smallest clean fix:** no opportunistic refactors outside the active defect.
+4. **Run validation immediately:** typecheck, test, build, smoke check, or targeted runtime verification for that exact area.
+5. **Report result in Russian:** what was fixed, what was verified, what remains.
+6. **Only then move forward:** if another defect exists, treat it as a new step, not as part of the previous patch.
+
+If validation fails, continue working on the same defect until it is clean or explicitly blocked.
+
+---
+
 ## 🤖 Agents
+
+## 🧰 Agent Runtime Split
+
+- **Активный runtime:** только файлы в `.github/agents/`.
+- **Активный toolset:** `execute`, `read`, `edit`, `search`, `agent`, `web`, `todo`, `claude-flow/*`.
+- **Жёсткое правило:** VS Code-specific, legacy-runtime и Kilo-incompatible инструменты не допускаются в agent definitions проекта.
+
+Если contributor добавляет новый agent-файл, он должен соответствовать только активному runtime проекта и его текущему toolset.
 
 ### Navigation Agent
 - **Trigger:** Changes to `src/lib/navigation/**`, `src/components/navigation/**`, `src/stores/navigatorSettings*`
@@ -129,3 +175,24 @@ Every PR touching navigation code MUST pass:
 5. **Route Preferences:** OSRM `exclude` param matches store toggles
 6. **Map Style Binding:** `mapViewMode` ↔ `MapLibre3D.mapStyle` connected
 7. **Camera Math:** Heading comparison uses `min(diff, 360-diff)` for angle wrapping
+
+---
+
+## ✅ Change Control Gates
+
+Every commit or PR in this repo SHOULD follow these rules unless the user explicitly overrides them:
+
+1. **One defect per logical step:** if three problems are reported, do not merge them into one broad fix pass.
+2. **One bounded scope per commit:** avoid mixing calls, SFU, avatars, navigation, music, or deploy fixes in the same commit unless they are inseparable.
+3. **Proof before progression:** each defect fix must include a concrete verification result before the next defect is touched.
+4. **No stealth cleanup:** removing legacy code, fallback code, duplicate code paths, or obsolete config requires explicit user confirmation.
+5. **No dirty leftovers:** temporary debug code, commented blocks, dead branches, duplicated logic, and stale fallback URLs are not allowed to remain after the fix.
+6. **Syntax and text integrity gate:** before closing work, check for syntax errors, malformed Russian text, mojibake, and accidental mixed encodings in touched files.
+7. **Discussion language gate:** all agent-facing explanations, progress notes, and summaries default to Russian.
+
+Recommended commit shape:
+
+1. defect statement
+2. surgical fix
+3. targeted validation
+4. concise Russian summary

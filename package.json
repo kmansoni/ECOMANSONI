@@ -45,6 +45,7 @@
     "chat:schema-probe": "node ./scripts/chat/schema-probe-ci.mjs",
     "sql:lint": "node ./scripts/sql/lint-rpc-aliases.mjs",
     "migrations:lint": "node ./scripts/sql/lint-migration-governance.mjs",
+    "agents:validate": "node ./scripts/governance/validate-agent-topology.mjs",
     "encoding:check-bom": "node ./scripts/encoding/check-bom.mjs",
     "encoding:normalize": "node ./scripts/encoding/normalize-utf8.mjs --write",
     "osm:world": "node ./scripts/export-world-geodata.mjs",

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, memo } from 'react';
-import { LocateFixed, ZoomIn, ZoomOut, Compass, Navigation2, Box, Square } from 'lucide-react';
+import { LocateFixed, ZoomIn, ZoomOut, Compass, Navigation2, Box, Square, Camera } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { LatLng } from '@/types/taxi';
 import type { RouteSegment, SpeedCamera, NavRoute, Maneuver, ManeuverType, NavigationLaneGuidance, LaneTurn, MultiModalRoute } from '@/types/navigation';
@@ -8,6 +8,7 @@ import { GreenWaveOverlay } from './GreenWaveOverlay';
 import { useNavigatorSettings } from '@/stores/navigatorSettingsStore';
 import { useUserSettings } from '@/contexts/UserSettingsContext';
 import { navText } from '@/lib/navigation/navigationUi';
+import { SurveyCaptureModal } from './SurveyCaptureModal';
 
 interface NavigatorMapProps {
   center: LatLng;
@@ -284,6 +285,7 @@ export const NavigatorMap = memo(function NavigatorMap({
   speedCameras,
   destinationMarker,
   recenterTrigger = 0,
+  // Navigation-specific overlays
   isNavigating = false,
   speed = 0,
   speedLimit,
@@ -307,6 +309,22 @@ export const NavigatorMap = memo(function NavigatorMap({
   const [cameraState, setCameraState] = useState({ center, zoom });
   const [is3D, setIs3D] = useState(true);
   const navSettings = useNavigatorSettings();
+
+  // Survey mode
+  const [isSurveyModalOpen, setIsSurveyModalOpen] = useState(false);
+
+  const handleOpenSurvey = () => {
+    setIsSurveyModalOpen(true);
+  };
+
+  const handleCloseSurvey = () => {
+    setIsSurveyModalOpen(false);
+  };
+
+  const handleScanComplete = (scanId: string) => {
+    // Optionally: show toast, refresh coverage layer, award XP
+    console.log('Scan completed:', scanId);
+  };
 
   useEffect(() => {
     setCameraState({ center, zoom });
@@ -416,6 +434,16 @@ export const NavigatorMap = memo(function NavigatorMap({
         'absolute right-3 z-[1000] flex flex-col gap-2',
         isNavigating ? 'bottom-52' : 'bottom-36'
       )}>
+        {/* Survey button */}
+        <button
+          onClick={handleOpenSurvey}
+          className={glassBtn}
+          aria-label="Съёмка карты"
+          title="Съёмка карты в реальном времени"
+        >
+          <Camera className="h-5 w-5 text-green-400" />
+        </button>
+
         {onToggleOrientation && (
           <button onClick={onToggleOrientation} className={glassBtn} aria-label={navText('Ориентация', 'Orientation', languageCode)}>
             <Compass className={cn('h-5 w-5', isNorthUp ? 'text-gray-400' : 'text-blue-400')} />
@@ -444,6 +472,13 @@ export const NavigatorMap = memo(function NavigatorMap({
           </button>
         )}
       </div>
+
+      {/* Survey Capture Modal */}
+      <SurveyCaptureModal
+        isOpen={isSurveyModalOpen}
+        onClose={handleCloseSurvey}
+        onScanComplete={handleScanComplete}
+      />
     </div>
   );
 });

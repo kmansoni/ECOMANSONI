@@ -3,7 +3,6 @@ import {
   ChevronDown, MoreHorizontal, QrCode, Volume2,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { VerifiedBadge } from "@/components/ui/verified-badge";
 import { BusinessActionButtons } from "./BusinessActionButtons";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel,
@@ -143,7 +142,6 @@ export function ProfileHeader({
           <h1 className="font-semibold text-lg text-foreground">
             {profile?.display_name || "Профиль"}
           </h1>
-          {profile?.verified && <VerifiedBadge size="md" />}
         </div>
         <div className="flex items-center gap-2">
           {isOwnProfile && (
@@ -174,7 +172,7 @@ export function ProfileHeader({
       </div>
 
       {/* ── Profile info ── */}
-      <div className="px-4 pt-2 pb-4">
+      <div className="px-4 pt-0 pb-4">
         <div className="flex items-start gap-4">
           {/* Avatar */}
           <div className="relative flex-shrink-0">
@@ -214,11 +212,8 @@ export function ProfileHeader({
           </div>
 
           {/* Stats */}
-          <div className="flex-1 pt-1">
+          <div className="flex-1 pt-0">
             <div className="flex items-center gap-1 mb-2">
-              <span className="font-semibold text-foreground text-base">
-                {profile?.display_name || "Пользователь"}
-              </span>
               {profile?.name_pronunciation_url && (
                 <button
                   onClick={handlePlayPronunciation}
@@ -229,7 +224,6 @@ export function ProfileHeader({
                 </button>
               )}
               {profileMeta?.status_emoji && <span>{profileMeta.status_emoji}</span>}
-              {profile?.verified && <VerifiedBadge size="sm" />}
             </div>
             {profileMeta?.category && (
               <p className="text-xs text-muted-foreground mb-2">{profileMeta.category}</p>

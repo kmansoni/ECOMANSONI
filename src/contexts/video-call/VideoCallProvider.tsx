@@ -55,6 +55,7 @@ import {
   transition as fsmTransition,
   isCallActive,
   isCallConnected,
+  isCallConnecting,
   fromLegacyStatus,
 } from "@/calls-v2/callStateMachine";
 import type { CallState, CallEvent } from "@/calls-v2/callStateMachine";
@@ -418,6 +419,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
   const callsWsRoomRef = useRef<string | null>(null);
   const lastSnapshotRoomVersionRef = useRef<number>(-1);
   const callsWsMediaRoomRef = useRef<string | null>(null);
+  const callsWsMediaBootstrapInFlightRoomRef = useRef<string | null>(null);
   const callsWsSendTransportRef = useRef<string | null>(null);
   const callsWsRecvTransportRef = useRef<string | null>(null);
   const relayMetricsTimerRef = useRef<number | null>(null);
@@ -457,6 +459,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
 
   // Profile of the callee shown immediately on the call screen before the call record loads from DB
   const [pendingCalleeProfile, setPendingCalleeProfile] = useState<CalleeProfile | null>(null);
+  const [remoteScreenStream, setRemoteScreenStream] = useState<MediaStream | null>(null);
 
   // ─── Call FSM (primary state source) ──────────────────────────────────────
   const [callState, setCallState] = useState<CallState>("idle");
@@ -502,6 +505,14 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     currentCall,
     localStream,
     remoteStream,
+    isScreenSharing,
+    screenStream,
+    startScreenShare,
+    stopScreenShare,
+    noiseSuppressionEnabled,
+    toggleNoiseSuppression,
+    backgroundBlurEnabled,
+    toggleBackgroundBlur,
     isMuted,
     isVideoOff,
     connectionState,
@@ -525,6 +536,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         callsWsRoomRef.current = null;
         lastSnapshotRoomVersionRef.current = -1;
         callsWsMediaRoomRef.current = null;
+        callsWsMediaBootstrapInFlightRoomRef.current = null;
         callsWsSendTransportRef.current = null;
         callsWsRecvTransportRef.current = null;
       }
@@ -584,6 +596,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       consumerAddedUnsubRef.current = null;
     }
     setRemoteMediaStream(null);
+    setRemoteScreenStream(null);
     sfuRouterRtpCapabilitiesRef.current = null;
     // Destroy E2EE key material and media encryption transforms
     callKeyExchangeRef.current?.destroy();
@@ -602,6 +615,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     callsWsRoomRef.current = null;
     lastSnapshotRoomVersionRef.current = -1;
     callsWsMediaRoomRef.current = null;
+    callsWsMediaBootstrapInFlightRoomRef.current = null;
     callsWsSendTransportRef.current = null;
     callsWsRecvTransportRef.current = null;
     e2eeLeaderDeviceRef.current = null;
@@ -1504,9 +1518,12 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     if (!manager) {
       logger.debug('[VideoCallContext] rebuildRemoteStream: no sfuManager');
       setRemoteMediaStream(null);
+      setRemoteScreenStream(null);
       return;
     }
     const tracks = manager.getAllRemoteTracks().filter((track) => track.readyState === "live");
+    const audioTracks = tracks.filter((track) => track.kind === "audio");
+    const videoTracks = tracks.filter((track) => track.kind === "video");
     logger.debug('[VideoCallContext] rebuildRemoteStream', {
       liveTracks: tracks.length,
       trackKinds: tracks.map(t => t.kind).join(', '),
@@ -1514,11 +1531,69 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     });
     if (tracks.length === 0) {
       setRemoteMediaStream(null);
+      setRemoteScreenStream(null);
       return;
     }
-    setRemoteMediaStream(new MediaStream(tracks));
-    dispatchFsm("REMOTE_MEDIA_READY");
+
+    const primaryVideoTrack = videoTracks[0] ?? null;
+    const screenVideoTrack = videoTracks[1] ?? null;
+    const primaryTracks = primaryVideoTrack ? [...audioTracks, primaryVideoTrack] : [...audioTracks];
+
+    setRemoteMediaStream(primaryTracks.length > 0 ? new MediaStream(primaryTracks) : null);
+    setRemoteScreenStream(screenVideoTrack ? new MediaStream([screenVideoTrack]) : null);
+
+    const state = callStateRef.current;
+    if (state === "media_ready") {
+      dispatchFsm("REMOTE_MEDIA_READY");
+      return;
+    }
+    if (isCallConnecting(state)) {
+      dispatchFsm("PROMOTE_IN_CALL");
+    }
   }, [setRemoteMediaStream, dispatchFsm]);
+
+  const screenShareProducerIdsRef = useRef<string[]>([]);
+
+  const syncScreenShareProducer = useCallback(async () => {
+    const manager = sfuManagerRef.current;
+    const roomId = callsWsMediaRoomRef.current;
+    const stream = screenStream;
+
+    if (!manager || !roomId) {
+      return;
+    }
+
+    if (!isScreenSharing || !stream) {
+      if (screenShareProducerIdsRef.current.length > 0) {
+        for (const producerId of screenShareProducerIdsRef.current) {
+          manager.closeProducer(producerId);
+        }
+        screenShareProducerIdsRef.current = [];
+      }
+      return;
+    }
+
+    if (screenShareProducerIdsRef.current.length > 0) {
+      return;
+    }
+
+    const tracks = stream.getVideoTracks().filter((track) => track.readyState === "live");
+    if (tracks.length === 0) {
+      return;
+    }
+
+    const producerIds: string[] = [];
+    for (const track of tracks) {
+      const producer = await manager.produce(track, { trackId: track.id, source: "screen" });
+      producerIds.push(producer.id);
+    }
+    screenShareProducerIdsRef.current = producerIds;
+    logger.info("[VideoCallContext] calls-v2 screen-share producers ready", { roomId, count: producerIds.length });
+  }, [isScreenSharing, screenStream]);
+
+  useEffect(() => {
+    void syncScreenShareProducer();
+  }, [syncScreenShareProducer]);
 
   const reportMediaBootstrapFailure = useCallback(
     (roomId: string, callId: string, error: unknown) => {
@@ -1692,12 +1767,15 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
 
       if (callsWsRoomRef.current !== roomId) return;
       if (callsWsMediaRoomRef.current === roomId) return;
+        if (callsWsMediaBootstrapInFlightRoomRef.current === roomId) return;
 
   const blockedUntil = mediaBootstrapBlockedUntilRef.current.get(roomId) ?? 0;
   if (Date.now() < blockedUntil) return;
 
       const client = callsWsRef.current ?? (await ensureCallsV2Connected());
       if (!client) return;
+
+      callsWsMediaBootstrapInFlightRoomRef.current = roomId;
 
       try {
         logger.info("[VideoCallContext] calls-v2 media-bootstrap:start", { callId, roomId });
@@ -1838,6 +1916,9 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
           return;
         }
         logger.info("[VideoCallContext] calls-v2 transport-created:send", { roomId, transportId: sendParams.transportId });
+        if (callStateRef.current === "bootstrapping") {
+          dispatchFsm("BOOTSTRAP_OK");
+        }
         markMediaBootstrapProgress("send_transport_created");
         dispatchFsm("MEDIA_ACQUIRED");
 
@@ -2001,6 +2082,10 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       } catch (err) {
         logger.error("[VideoCallContext] calls-v2 media bootstrap failed", err);
         reportMediaBootstrapFailure(roomId, callId, err);
+      } finally {
+        if (callsWsMediaBootstrapInFlightRoomRef.current === roomId) {
+          callsWsMediaBootstrapInFlightRoomRef.current = null;
+        }
       }
     },
     [ensureCallsV2Connected, markMediaBootstrapProgress, rebuildRemoteStream, reportMediaBootstrapFailure, user]
@@ -2040,7 +2125,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     if (legacyEngineActive) return;
     if (connectionState !== "connected") return;
     const s = callStateRef.current;
-    if (s === "transport_connecting" || s === "media_ready") {
+    if (isCallConnecting(s)) {
       dispatchFsm("PROMOTE_IN_CALL");
     }
   }, [connectionState, legacyEngineActive, dispatchFsm]);
@@ -2115,7 +2200,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       }
 
       const roomBootstrapOk = await bootstrapCallsV2Room(resolvedCall, "callee");
-      if (roomBootstrapOk) dispatchFsm("BOOTSTRAP_OK");
+      if (roomBootstrapOk && callStateRef.current === "bootstrapping") dispatchFsm("BOOTSTRAP_OK");
       if (!roomBootstrapOk) {
         // Detect whether the caller used legacy P2P (no SFU room hints were written).
         // When calls_v2_room_id is absent the caller launched a P2P call — match the protocol.
@@ -2291,7 +2376,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       }
       dispatchFsm("BOOTSTRAP_START");
       const roomBootstrapOk = await bootstrapCallsV2Room(result, "caller");
-      if (roomBootstrapOk) dispatchFsm("BOOTSTRAP_OK");
+      if (roomBootstrapOk && callStateRef.current === "bootstrapping") dispatchFsm("BOOTSTRAP_OK");
       if (!roomBootstrapOk) {
         dispatchFsm("ERROR");
         // P0: Fail-closed — NO auto-fallback to legacy P2P.
@@ -2489,10 +2574,26 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
   const mediaValue: VideoCallMediaContextType = {
     localStream: legacyEngineActive ? legacyLocalStream : localStream,
     remoteStream: legacyEngineActive ? legacyRemoteStream : remoteStream,
+    remoteScreenStream,
     isMuted: legacyEngineActive ? legacyIsMuted : isMuted,
     isVideoOff: legacyEngineActive ? legacyIsVideoOff : isVideoOff,
+    isScreenSharing: legacyEngineActive ? false : isScreenSharing,
+    screenStream: legacyEngineActive ? null : screenStream,
+    noiseSuppressionEnabled: legacyEngineActive ? false : noiseSuppressionEnabled,
+    backgroundBlurEnabled: legacyEngineActive ? false : backgroundBlurEnabled,
     toggleMute: legacyEngineActive ? legacyToggleMute : toggleMute,
     toggleVideo: legacyEngineActive ? legacyToggleVideo : toggleVideo,
+    toggleScreenShare: legacyEngineActive
+      ? async () => {}
+      : async () => {
+          if (isScreenSharing) {
+            stopScreenShare();
+            return;
+          }
+          await startScreenShare();
+        },
+    toggleNoiseSuppression: legacyEngineActive ? async () => {} : toggleNoiseSuppression,
+    toggleBackgroundBlur: legacyEngineActive ? async () => {} : toggleBackgroundBlur,
   };
 
   const uiValue: VideoCallUIContextType = {

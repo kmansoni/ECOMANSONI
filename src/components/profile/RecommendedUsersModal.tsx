@@ -112,10 +112,10 @@ export function RecommendedUsersModal({ isOpen, onClose }: RecommendedUsersModal
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-md max-h-[80dvh] flex flex-col p-0">
-        <DialogHeader className="px-6 pt-6 pb-4 border-b">
-          <DialogTitle className="text-2xl font-bold">Добро пожаловать!</DialogTitle>
-          <DialogDescription className="text-base pt-2">
+      <DialogContent className="glass-window max-w-md max-h-[80dvh] flex flex-col p-0 overflow-hidden">
+        <DialogHeader className="px-6 pt-6 pb-4 border-b border-white/15">
+          <DialogTitle className="glass-title text-3xl">Добро пожаловать!</DialogTitle>
+          <DialogDescription className="glass-muted text-base pt-2">
             {hasFromContacts 
               ? "Вот ваши друзья из контактов. Подпишитесь, чтобы видеть их контент"
               : "Подпишитесь на интересные аккаунты, чтобы видеть их контент в ленте"
@@ -125,21 +125,21 @@ export function RecommendedUsersModal({ isOpen, onClose }: RecommendedUsersModal
 
         {/* Разрешение на доступ к контактам */}
         {showContactsPermission && !hasFromContacts && (
-          <div className="px-6 py-4 bg-muted/50 border-b">
+          <div className="px-6 py-4 bg-white/10 border-b border-white/10">
             <div className="flex items-start gap-3">
               <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
                 <ContactRound className="w-5 h-5 text-primary" />
               </div>
               <div className="flex-1">
                 <h3 className="font-semibold mb-1">Найти друзей из контактов</h3>
-                <p className="text-sm text-muted-foreground mb-3">
+                <p className="glass-muted text-sm mb-3">
                   Разрешите доступ к контактам, чтобы найти знакомых на платформе
                 </p>
                 <div className="flex gap-2">
                   <Button 
                     size="sm" 
                     onClick={handleAllowContacts}
-                    className="flex-1"
+                    className="glass-primary-btn flex-1"
                   >
                     Разрешить
                   </Button>
@@ -147,7 +147,7 @@ export function RecommendedUsersModal({ isOpen, onClose }: RecommendedUsersModal
                     size="sm" 
                     variant="outline"
                     onClick={handleSkipContacts}
-                    className="flex-1"
+                    className="glass-secondary-btn flex-1"
                   >
                     Пропустить
                   </Button>
@@ -163,7 +163,7 @@ export function RecommendedUsersModal({ isOpen, onClose }: RecommendedUsersModal
               <Loader2 className="w-8 h-8 animate-spin text-primary" />
             </div>
           ) : users.length === 0 ? (
-            <div className="text-center py-12 text-muted-foreground">
+            <div className="glass-muted text-center py-12">
               Рекомендации пока недоступны
             </div>
           ) : (
@@ -171,7 +171,7 @@ export function RecommendedUsersModal({ isOpen, onClose }: RecommendedUsersModal
               {users.map((recommendedUser) => (
                 <div
                   key={recommendedUser.user_id}
-                  className="flex items-center gap-3 p-3 rounded-xl hover:bg-accent/50 transition-colors"
+                  className="flex items-center gap-3 p-3 rounded-xl hover:bg-white/10 transition-colors"
                 >
                   <Avatar className="w-14 h-14">
                     <AvatarImage src={recommendedUser.avatar_url || undefined} />
@@ -192,7 +192,7 @@ export function RecommendedUsersModal({ isOpen, onClose }: RecommendedUsersModal
                         </span>
                       )}
                     </div>
-                    <p className="text-sm text-muted-foreground">
+                    <p className="glass-muted text-sm">
                       {recommendedUser.followers_count} {formatFollowers(recommendedUser.followers_count)}
                     </p>
                   </div>
@@ -202,7 +202,7 @@ export function RecommendedUsersModal({ isOpen, onClose }: RecommendedUsersModal
                     variant={following.has(recommendedUser.user_id) ? "outline" : "default"}
                     onClick={() => handleFollow(recommendedUser.user_id)}
                     disabled={processing === recommendedUser.user_id}
-                    className="shrink-0"
+                    className={following.has(recommendedUser.user_id) ? "glass-secondary-btn shrink-0" : "glass-primary-btn shrink-0"}
                   >
                     {processing === recommendedUser.user_id ? (
                       <Loader2 className="w-4 h-4 animate-spin" />
@@ -218,10 +218,10 @@ export function RecommendedUsersModal({ isOpen, onClose }: RecommendedUsersModal
           )}
         </div>
 
-        <div className="px-6 pb-6 pt-4 border-t">
+        <div className="px-6 pb-6 pt-4 border-t border-white/15">
           <Button
             onClick={handleContinue}
-            className="w-full h-12 text-base font-semibold"
+            className="glass-primary-btn w-full h-12 text-base font-semibold"
           >
             Продолжить
           </Button>

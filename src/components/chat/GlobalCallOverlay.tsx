@@ -17,8 +17,12 @@ export function GlobalCallOverlay() {
     incomingCall,
     localStream,
     remoteStream,
+    remoteScreenStream,
     isMuted,
     isVideoOff,
+    isScreenSharing,
+    noiseSuppressionEnabled,
+    backgroundBlurEnabled,
     connectionState,
     isCallUiActive,
     pendingCalleeProfile,
@@ -27,6 +31,9 @@ export function GlobalCallOverlay() {
     endCall,
     toggleMute,
     toggleVideo,
+    toggleScreenShare,
+    toggleNoiseSuppression,
+    toggleBackgroundBlur,
     retryConnection,
   } = useVideoCallContext();
 
@@ -52,6 +59,7 @@ export function GlobalCallOverlay() {
         callState={callState}
         localStream={localStream}
         remoteStream={remoteStream}
+        remoteScreenStream={remoteScreenStream}
         isMuted={isMuted}
         isVideoOff={isVideoOff}
         connectionState={connectionState}
@@ -59,6 +67,12 @@ export function GlobalCallOverlay() {
         onToggleMute={toggleMute}
         onToggleVideo={toggleVideo}
         onRetry={retryConnection}
+        isScreenSharing={isScreenSharing}
+        onToggleScreenShare={toggleScreenShare}
+        noiseSuppressionEnabled={noiseSuppressionEnabled}
+        onToggleNoiseSuppression={toggleNoiseSuppression}
+        backgroundBlurEnabled={backgroundBlurEnabled}
+        onToggleBackgroundBlur={toggleBackgroundBlur}
       />
     );
 

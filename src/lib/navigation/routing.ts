@@ -4,6 +4,7 @@ import { useNavigatorSettings } from '@/stores/navigatorSettingsStore';
 import { loadOsmGraph, type OSMGraph, type OSMGraphEdge, type OSMGraphNode } from '@/lib/navigation/osmGraph';
 import { attemptBackendRequest, getBooleanEnv, getNavigationServerAuthHeaders, getNavigationServerBaseUrl, getNumberEnv } from '@/lib/navigation/backendAvailability';
 import { recordFallbackUsage } from '@/lib/navigation/navigationKpi';
+import { logger } from '@/lib/logger';
 
 const ENV = (import.meta as unknown as { env?: Record<string, string | undefined> }).env ?? {};
 const OSRM_BASE = ENV.VITE_OSRM_URL ?? 'https://router.project-osrm.org/route/v1/driving';
@@ -20,6 +21,48 @@ type GraphNode = OSMGraphNode;
 type GraphEdge = OSMGraphEdge;
 type LocalGraph = OSMGraph;
 
+type RouteAttemptSource = 'navigation_server' | 'offline' | 'osrm' | 'pedestrian' | 'transit';
+
+interface RouteFailureDiagnostic {
+  source: RouteAttemptSource;
+  reason: string;
+}
+
+function classifyRouteErrorReason(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error ?? 'unknown');
+  const normalized = message.toLowerCase();
+
+  if (normalized.includes('circuit_open')) return 'circuit_open';
+  if (normalized.includes('disabled')) return 'disabled';
+  if (normalized.includes('missing_url')) return 'missing_url';
+  if (normalized.includes('timeout') || normalized.includes('abort')) return 'timeout';
+  if (normalized.includes('failed to fetch') || normalized.includes('networkerror') || normalized.includes('load failed')) return 'network';
+  if (normalized.includes('offline_graph_unavailable') || normalized.includes('no local graph')) return 'graph_unavailable';
+  if (normalized.includes('offline_nearest_node_not_found') || normalized.includes('nearest node')) return 'nearest_node_not_found';
+  if (normalized.includes('offline_path_not_found') || normalized.includes('no path found')) return 'path_not_found';
+  if (normalized.includes('no route found')) return 'no_route_found';
+  if (normalized.includes('osrm error')) return 'http_error';
+  if (/(401|403|404|408|409|422|429|500|502|503|504)/.test(normalized)) return 'http_error';
+  return 'unexpected';
+}
+
+function createRouteFailureDiagnostic(source: RouteAttemptSource, error: unknown): RouteFailureDiagnostic {
+  return {
+    source,
+    reason: classifyRouteErrorReason(error),
+  };
+}
+
+function summarizeRouteDegradation(diags: RouteFailureDiagnostic[]): string | null {
+  if (diags.length === 0) return null;
+  return diags.map((diag) => `${diag.source}:${diag.reason}`).join('|');
+}
+
+function buildRouteFallbackReason(selectedSource: RouteFetchSource, diags: RouteFailureDiagnostic[]): string {
+  const summary = summarizeRouteDegradation(diags);
+  return summary ? `selected=${selectedSource};causes=${summary}` : `selected=${selectedSource}`;
+}
+
 let localGraph: LocalGraph | null = null;
 let graphLoadAttempted = false;
 
@@ -30,18 +73,19 @@ async function loadLocalGraph(): Promise<LocalGraph | null> {
   try {
     const parsedGraph = await loadOsmGraph();
     if (!parsedGraph) {
-      console.log('[Routing] Local graph not found');
+      logger.info('[Routing] Local graph not found');
       return null;
     }
     localGraph = parsedGraph;
     _spatialGrid = null; // reset spatial index
     _adjList = null; // reset adjacency list
-    console.log('[Routing] Loaded local graph:', 
-      Object.keys(parsedGraph.nodes).length, 'nodes,', 
-      parsedGraph.edges.length, 'edges');
+    logger.info('[Routing] Loaded local graph', {
+      nodeCount: Object.keys(parsedGraph.nodes).length,
+      edgeCount: parsedGraph.edges.length,
+    });
     return localGraph;
   } catch (e) {
-    console.warn('[Routing] Failed to load local graph:', e);
+    logger.warn('[Routing] Failed to load local graph', { error: e });
     return null;
   }
 }
@@ -351,20 +395,20 @@ export async function fetchRouteOffline(
   const graph = await loadLocalGraph();
   
   if (!graph) {
-    throw new Error('No local graph available');
+    throw new Error('offline_graph_unavailable');
   }
   
   const fromNodeId = findNearestNode(from.lat, from.lng, graph.nodes);
   const toNodeId = findNearestNode(to.lat, to.lng, graph.nodes);
   
   if (!fromNodeId || !toNodeId) {
-    throw new Error('Could not find nearest nodes');
+    throw new Error('offline_nearest_node_not_found');
   }
   
   const path = aStarRoute(graph.nodes, graph.edges, fromNodeId, toNodeId);
   
   if (!path || path.length === 0) {
-    throw new Error('No path found');
+    throw new Error('offline_path_not_found');
   }
   
   const main = edgesToRoute(path, graph.nodes, 'offline-main');
@@ -422,7 +466,14 @@ interface NavServerRouteEnvelope {
 
 export type RouteFetchSource = 'navigation_server' | 'offline' | 'osrm' | 'pedestrian' | 'transit';
 
-type RouteFetchResult = { main: NavRoute; alternatives: NavRoute[]; multimodal?: MultiModalRoute; source: RouteFetchSource };
+type RouteFetchResult = {
+  main: NavRoute;
+  alternatives: NavRoute[];
+  multimodal?: MultiModalRoute;
+  source: RouteFetchSource;
+  attemptedSources: RouteAttemptSource[];
+  degradationReason: string | null;
+};
 
 export type { RouteFetchResult };
 
@@ -643,7 +694,7 @@ async function fetchRouteFromNavigationServer(
   });
 
   if (!response.ok || !response.data?.success || !response.data.data?.routes?.length) {
-    const reason = response.reason ?? 'route_no_data';
+    const reason = response.reason ?? (response.attempted ? 'route_no_data' : 'not_attempted');
     throw new Error(`navigation_server_unavailable:${reason}`);
   }
 
@@ -662,21 +713,32 @@ export async function fetchRoute(
   pedestrianOptions?: PedestrianRoutingOptions,
 ): Promise<RouteFetchResult> {
   const effectiveMode: TravelMode = mode === 'taxi' ? 'car' : mode;
+  const degradationDiagnostics: RouteFailureDiagnostic[] = [];
+  const attemptedSources: RouteAttemptSource[] = [];
 
   // Pedestrian mode — use pedestrian graph + A*
   if (effectiveMode === 'pedestrian') {
+    attemptedSources.push('pedestrian');
     const { buildPedestrianRoute } = await import('./pedestrianMode');
     try {
       const main = await buildPedestrianRoute(from, to, pedestrianOptions);
-      return { main, alternatives: [], source: 'pedestrian' };
+      return {
+        main,
+        alternatives: [],
+        source: 'pedestrian',
+        attemptedSources,
+        degradationReason: summarizeRouteDegradation(degradationDiagnostics),
+      };
     } catch (e) {
-      console.warn('[Routing] Pedestrian route failed, falling back to car:', e);
-      // Fall through to car routing with warning
+      const diagnostic = createRouteFailureDiagnostic('pedestrian', e);
+      degradationDiagnostics.push(diagnostic);
+      logger.warn('[Routing] Pedestrian route failed, falling back to car', { error: e, diagnostic });
     }
   }
 
   // Transit mode — use TransitRouter (RAPTOR)
   if (effectiveMode === 'transit' || effectiveMode === 'multimodal' || effectiveMode === 'metro') {
+    attemptedSources.push('transit');
     try {
       const { transitRouter } = await import('./transitRouter');
       const mergedTransitOptions: TransitRoutingOptions = effectiveMode === 'metro'
@@ -698,33 +760,59 @@ export async function fetchRoute(
         totalDurationSeconds: result.main.totalDurationSeconds,
         geometry: result.main.segments.flatMap(s => s.geometry ?? []),
       };
-      return { main: fallbackRoute, alternatives: [], multimodal: result.main, source: 'transit' };
+      return {
+        main: fallbackRoute,
+        alternatives: [],
+        multimodal: result.main,
+        source: 'transit',
+        attemptedSources,
+        degradationReason: summarizeRouteDegradation(degradationDiagnostics),
+      };
     } catch (e) {
-      console.warn('[Routing] Transit route failed, falling back to car:', e);
+      const diagnostic = createRouteFailureDiagnostic('transit', e);
+      degradationDiagnostics.push(diagnostic);
+      logger.warn('[Routing] Transit route failed, falling back to car', { error: e, diagnostic });
     }
   }
 
   // Car mode (default) — navigation_server first, then offline, then OSRM
   // 1) BACKEND PRIORITY — navigation_server
+  attemptedSources.push('navigation_server');
   try {
     const result = await fetchRouteFromNavigationServer(from, to, alternatives, 'car');
-    return { ...result, source: 'navigation_server' };
+    return {
+      ...result,
+      source: 'navigation_server',
+      attemptedSources,
+      degradationReason: summarizeRouteDegradation(degradationDiagnostics),
+    };
   } catch (e) {
-    recordFallbackUsage('routing', `navigation_server_unavailable:${e instanceof Error ? e.message : String(e)}`);
-    console.log('[Routing] navigation_server unavailable:', e);
+    const diagnostic = createRouteFailureDiagnostic('navigation_server', e);
+    degradationDiagnostics.push(diagnostic);
+    logger.warn('[Routing] navigation_server unavailable', { error: e, diagnostic });
   }
 
   // 2) OFFLINE fallback — local Dijkstra routing
+  attemptedSources.push('offline');
   try {
     const result = await fetchRouteOffline(from, to);
-    console.log('[Routing] Offline route found');
-    recordFallbackUsage('routing', 'offline_after_navigation_server');
-    return { ...result, source: 'offline' };
+    const fallbackReason = buildRouteFallbackReason('offline', degradationDiagnostics);
+    recordFallbackUsage('routing', fallbackReason);
+    logger.info('[Routing] Offline route selected', { fallbackReason });
+    return {
+      ...result,
+      source: 'offline',
+      attemptedSources,
+      degradationReason: summarizeRouteDegradation(degradationDiagnostics),
+    };
   } catch (e) {
-    console.log('[Routing] Offline unavailable:', e);
+    const diagnostic = createRouteFailureDiagnostic('offline', e);
+    degradationDiagnostics.push(diagnostic);
+    logger.warn('[Routing] Offline route unavailable', { error: e, diagnostic });
   }
   
   // 3) OSRM fallback
+  attemptedSources.push('osrm');
   try {
     const coords = `${from.lng},${from.lat};${to.lng},${to.lat}`;
     const baseParams = `overview=full&geometries=geojson&steps=true&alternatives=${alternatives}`;
@@ -747,7 +835,7 @@ export async function fetchRoute(
     for (const url of urlVariants) {
       resp = await fetch(url);
       if (resp.ok) break;
-      console.warn(`[Routing] OSRM rejected: ${resp.status}, trying simpler request`);
+      logger.warn('[Routing] OSRM rejected request variant, trying simpler request', { status: resp.status, url });
     }
 
     if (!resp || !resp.ok) throw new Error(`OSRM error: ${resp?.status}`);
@@ -762,11 +850,21 @@ export async function fetchRoute(
       .slice(1, 4)
       .map((r, i) => parseOSRMRoute(r, `alt-${i}`));
 
-    recordFallbackUsage('routing', 'osrm_after_navigation_server_offline');
-    return { main, alternatives: alts, source: 'osrm' };
+    const fallbackReason = buildRouteFallbackReason('osrm', degradationDiagnostics);
+    recordFallbackUsage('routing', fallbackReason);
+    return {
+      main,
+      alternatives: alts,
+      source: 'osrm',
+      attemptedSources,
+      degradationReason: summarizeRouteDegradation(degradationDiagnostics),
+    };
   } catch (osrmErr) {
-    console.warn('[Routing] OSRM also failed:', osrmErr);
-    throw new Error('Нет доступных маршрутов. Загрузите оффлайн данные: node scripts/fetch-osm-data.mjs');
+    const diagnostic = createRouteFailureDiagnostic('osrm', osrmErr);
+    degradationDiagnostics.push(diagnostic);
+    logger.warn('[Routing] OSRM route unavailable', { error: osrmErr, diagnostic });
+    const failureSummary = summarizeRouteDegradation(degradationDiagnostics) ?? 'routing_chain_failed';
+    throw new Error(`route_chain_failed:${failureSummary}`);
   }
 }
 

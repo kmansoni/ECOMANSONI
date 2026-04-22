@@ -1590,6 +1590,7 @@ export function ChatsPage() {
                       )}
                     </AnimatePresence>
                     <motion.div
+                      data-conversation-id={conv.id}
                       animate={{ x: swipeOffset }}
                       transition={{ type: "spring", stiffness: 400, damping: 35 }}
                       onTouchStart={(e) => onSwipeTouchStart(itemKey, e)}

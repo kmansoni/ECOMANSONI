@@ -70,6 +70,18 @@ dist-deploy.tar.gz
 # Local scratch/archive
 .archive/
 
+# Build deploy archives (timestamped)
+dist-deploy-*.tar.gz
+
+# Debug probe output
+probe_out.json
+
+# Local temp directories
+.tmp/
+
+# Kilo Code AI workspace
+.kilo/
+
 # Local secrets directory (never commit secrets)
 .secrets/
 .git-push-force.ps1
@@ -86,6 +98,7 @@ playwright-report/
 # Local vendor leftovers (should not be committed)
 columba/
 crisis-mesh-messenger/
+archive/crisis-mesh-flutter-poc/
 
 # Python cache artifacts
 __pycache__/

@@ -392,8 +392,14 @@ export function useChannels() {
         }
       )
       .subscribe((status) => {
-        if (status === 'CHANNEL_ERROR') {
-          logger.warn("[useChannels] Realtime channel error for channels-updates");
+        if (status === 'SUBSCRIBED') {
+          scheduleChannelsRefresh();
+          return;
+        }
+
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          logger.warn("[useChannels] Realtime channel degraded for channels-updates", { status });
+          scheduleChannelsRefresh();
         }
       });
 

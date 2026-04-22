@@ -311,11 +311,15 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
   const blurProcessorRef = useRef<VideoBlurProcessor | null>(null);
   const originalVideoTrackRef = useRef<MediaStreamTrack | null>(null);
 
+  const statusRef = useRef<VideoCallStatus>("idle");
+  const connectionStateRef = useRef<string>("unknown");
   const localStreamRef = useRef<MediaStream | null>(null);
   const currentCallRef = useRef<VideoCall | null>(null);
   const mediaBootstrapSignalsRef = useRef<Set<string>>(new Set());
 
   // Keep refs in sync for use inside callbacks
+  useEffect(() => { statusRef.current = status; }, [status]);
+  useEffect(() => { connectionStateRef.current = connectionState; }, [connectionState]);
   useEffect(() => { localStreamRef.current = localStream; }, [localStream]);
   useEffect(() => { currentCallRef.current = currentCall; }, [currentCall]);
 
@@ -344,6 +348,24 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
   const markMediaBootstrapProgress = useCallback((signal: "send_transport_created" | "recv_transport_created") => {
     mediaBootstrapSignalsRef.current.add(signal);
     logger.info("video_call_sfu.media_bootstrap_progress", { signal });
+
+    const hasSend = mediaBootstrapSignalsRef.current.has("send_transport_created");
+    const hasRecv = mediaBootstrapSignalsRef.current.has("recv_transport_created");
+    const currentStatus = statusRef.current;
+    const currentConnectionState = connectionStateRef.current;
+
+    if (currentStatus !== "connected") return;
+    if (currentConnectionState === "connected" || currentConnectionState === "failed") return;
+    if (!hasSend || !hasRecv) return;
+
+    setConnectionState((prev) => {
+      if (prev === "connected" || prev === "failed") return prev;
+      logger.info("video_call_sfu.connection_promoted_by_bootstrap_signals", {
+        signal,
+        previousState: prev,
+      });
+      return "connected";
+    });
   }, []);
 
   useEffect(() => {
@@ -613,7 +635,7 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
         {
           event: "UPDATE",
           schema: "public",
-          table: "calls",
+          table: "video_calls",
           filter: `id=eq.${activeCallId}`,
         },
         (payload) => {
