@@ -97,6 +97,17 @@ const StoryArchivePage = lazy(() => import("@/pages/StoryArchivePage"));
 const ExploreFeedPage = lazy(() => import("@/pages/ExploreFeedPage").then(m => ({ default: m.ExploreFeedPage })));
 const PostDetailPage = lazy(() => import("@/pages/PostDetailPage").then(m => ({ default: m.PostDetailPage })));
 const AuthPage = lazy(() => import("@/pages/AuthPage").then(m => ({ default: m.AuthPage })));
+const AuthShowcasePage = lazy(() => import("@/pages/AuthShowcasePage").then(m => ({ default: m.AuthShowcasePage })));
+const AuthPrototypesPage = lazy(() => import("@/pages/AuthPrototypesPage").then(m => ({ default: m.AuthPrototypesPage })));
+const AuthCosmosPage = lazy(() => import("@/pages/AuthCosmosPage").then(m => ({ default: m.AuthCosmosPage })));
+const AuthPremiumPage = lazy(() => import("@/pages/AuthPremiumPage").then(m => ({ default: m.AuthPremiumPage })));
+const AuthAuroraRusPage = lazy(() => import("@/pages/AuthAuroraRusPage").then(m => ({ default: m.AuthAuroraRusPage })));
+const AuthNovaPage = lazy(() => import("@/pages/AuthNovaPage").then(m => ({ default: m.AuthNovaPage })));
+const AuthAbyssPage = lazy(() => import("@/pages/AuthAbyssPage").then(m => ({ default: m.AuthAbyssPage })));
+const AuthCitadelPage = lazy(() => import("@/pages/AuthCitadelPage").then(m => ({ default: m.AuthCitadelPage })));
+const AuthManifestoPage = lazy(() => import("@/pages/AuthManifestoPage").then(m => ({ default: m.AuthManifestoPage })));
+const TermsOfServicePage = lazy(() => import("@/pages/TermsOfServicePage"));
+const PrivacyPolicyPage = lazy(() => import("@/pages/PrivacyPolicyPage"));
 const NotFound = lazy(() => import("@/pages/NotFound"));
 const DevPanelPage = lazy(() => import("@/pages/DevPanelPage"));
 const CrisisMeshPage = lazy(() => import("@/pages/CrisisMeshPage"));
@@ -276,6 +287,82 @@ const App = () => {
                 <Route path="/auth" element={
                   <Suspense fallback={<PageLoader />}>
                     <AuthPage />
+                  </Suspense>
+                } />
+
+                {/* Public route - Auth design showcase (liquid glass) */}
+                <Route path="/auth/showcase" element={
+                  <Suspense fallback={<PageLoader />}>
+                    <AuthShowcasePage />
+                  </Suspense>
+                } />
+
+                {/* Public legal routes */}
+                <Route path="/legal/terms" element={
+                  <Suspense fallback={<PageLoader />}>
+                    <TermsOfServicePage />
+                  </Suspense>
+                } />
+
+                <Route path="/legal/privacy" element={
+                  <Suspense fallback={<PageLoader />}>
+                    <PrivacyPolicyPage />
+                  </Suspense>
+                } />
+
+                {/* Public route - Auth design prototypes gallery */}
+                <Route path="/auth/prototypes" element={
+                  <Suspense fallback={<PageLoader />}>
+                    <AuthPrototypesPage />
+                  </Suspense>
+                } />
+
+                {/* Public route - Cosmic animated auth prototype */}
+                <Route path="/auth/cosmos" element={
+                  <Suspense fallback={<PageLoader />}>
+                    <AuthCosmosPage />
+                  </Suspense>
+                } />
+
+                {/* Public route - Premium animated auth variants (silk/prism/neural/ocean) */}
+                <Route path="/auth/premium" element={
+                  <Suspense fallback={<PageLoader />}>
+                    <AuthPremiumPage />
+                  </Suspense>
+                } />
+
+                {/* Public route - Aurora borealis / Russia themed auth prototype */}
+                <Route path="/auth/aurora-rus" element={
+                  <Suspense fallback={<PageLoader />}>
+                    <AuthAuroraRusPage />
+                  </Suspense>
+                } />
+
+                {/* Public route - NOVA hold-to-enter auth prototype */}
+                <Route path="/auth/nova" element={
+                  <Suspense fallback={<PageLoader />}>
+                    <AuthNovaPage />
+                  </Suspense>
+                } />
+
+                {/* Public route - ABYSS bioluminescent auth prototype */}
+                <Route path="/auth/abyss" element={
+                  <Suspense fallback={<PageLoader />}>
+                    <AuthAbyssPage />
+                  </Suspense>
+                } />
+
+                {/* Public route - CITADEL secure ecosystem auth prototype */}
+                <Route path="/auth/citadel" element={
+                  <Suspense fallback={<PageLoader />}>
+                    <AuthCitadelPage />
+                  </Suspense>
+                } />
+
+                {/* Public route - MANIFESTO constructivist auth prototype */}
+                <Route path="/auth/manifesto" element={
+                  <Suspense fallback={<PageLoader />}>
+                    <AuthManifestoPage />
                   </Suspense>
                 } />
 
