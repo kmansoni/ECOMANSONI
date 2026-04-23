@@ -178,7 +178,7 @@ export async function uploadDocument(params: {
     throw new Error("Разрешены JPG, PNG, WEBP, PDF");
   }
 
-  const safeName = params.file.name.replace(/[^\w.\-]+/g, "_");
+  const safeName = params.file.name.replace(/[^\w.-]+/g, "_");
   const path = `${userId}/${params.applicationId}/${params.docType}_${Date.now()}_${safeName}`;
 
   const { error: upErr } = await supabase.storage
