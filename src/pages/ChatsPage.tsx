@@ -961,6 +961,7 @@ export function ChatsPage() {
                   </div>
                 )}
               </>
+            )}
           </div>
           
           {showCallsTab && (

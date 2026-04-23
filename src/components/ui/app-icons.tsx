@@ -1710,3 +1710,81 @@ export function DoubleCheckIcon(props: AppIconProps) {
     />
   );
 }
+
+/** SpinnerIcon — индикатор загрузки */
+export function SpinnerIcon(props: AppIconProps) {
+  return (
+    <IconShell
+      label="Загрузка"
+      {...props}
+      render={({ reduced, gradient }) => (
+        <>
+          <circle cx="12" cy="12" r="8" stroke="currentColor" strokeOpacity="0.2" fill="none" />
+          <motion.path
+            d="M12 4a8 8 0 018 8"
+            stroke={gradient}
+            fill="none"
+            animate={reduced ? undefined : { rotate: 360 }}
+            transition={reduced ? undefined : { duration: 0.9, repeat: Infinity, ease: "linear" }}
+            style={{ transformOrigin: "12px 12px" }}
+          />
+        </>
+      )}
+    />
+  );
+}
+
+/** GlobeIcon — глобус/сайт */
+export function GlobeIcon(props: AppIconProps) {
+  return (
+    <IconShell
+      label="Сайт"
+      {...props}
+      render={({ active, gradient }) => (
+        <>
+          <circle cx="12" cy="12" r="9" fill={active ? gradient : "none"} stroke={active ? "transparent" : "currentColor"} />
+          <path d="M3 12h18" stroke={active ? "#fff" : "currentColor"} />
+          <path d="M12 3a14 14 0 010 18" stroke={active ? "#fff" : "currentColor"} />
+          <path d="M12 3a14 14 0 000 18" stroke={active ? "#fff" : "currentColor"} />
+        </>
+      )}
+    />
+  );
+}
+
+/** AtSignIcon — username */
+export function AtSignIcon(props: AppIconProps) {
+  return (
+    <IconShell
+      label="Username"
+      {...props}
+      render={({ active, gradient }) => (
+        <>
+          <path
+            d="M16.5 14.5A4.5 4.5 0 1112 7.5v6.2a2.3 2.3 0 104.6 0V12"
+            fill="none"
+            stroke={active ? gradient : "currentColor"}
+          />
+          <path d="M12 20a8 8 0 118-8" fill="none" stroke={active ? gradient : "currentColor"} />
+        </>
+      )}
+    />
+  );
+}
+
+/** ImageSquareIcon — фото */
+export function ImageSquareIcon(props: AppIconProps) {
+  return (
+    <IconShell
+      label="Фото"
+      {...props}
+      render={({ active, gradient }) => (
+        <>
+          <rect x="3" y="4" width="18" height="16" rx="3" fill={active ? gradient : "none"} stroke={active ? "transparent" : "currentColor"} />
+          <circle cx="9" cy="10" r="1.6" fill={active ? "#fff" : "currentColor"} />
+          <path d="M6 17l4-4 3 2.5 2.5-2.5L18 17" fill="none" stroke={active ? "#fff" : "currentColor"} />
+        </>
+      )}
+    />
+  );
+}

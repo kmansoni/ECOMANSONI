@@ -17,11 +17,24 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, ShieldCheck, Globe, User, AtSign, Image } from "lucide-react";
 import { getSupabaseRuntimeConfig } from "@/lib/supabaseRuntimeConfig";
+import {
+  SpinnerIcon,
+  VerifiedIcon,
+  GlobeIcon,
+  UserIcon,
+  AtSignIcon,
+  ImageSquareIcon,
+  type AppIconProps,
+} from "@/components/ui/app-icons";
+import {
+  AppPageShell,
+  AppGlassCard,
+  AppPrimaryButton,
+  AppSecondaryButton,
+} from "@/components/ui/app-shell";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -51,10 +64,10 @@ const EDGE_APIKEY = String(getSupabaseRuntimeConfig().supabasePublishableKey || 
 
 // ── Scope display ──────────────────────────────────────────────────────────
 
-const SCOPE_LABELS: Record<string, { label: string; icon: typeof User }> = {
-  name: { label: "Имя и фамилия", icon: User },
-  username: { label: "Username (@имя)", icon: AtSign },
-  photo: { label: "Фото профиля", icon: Image },
+const SCOPE_LABELS: Record<string, { label: string; icon: (props: AppIconProps) => React.ReactNode }> = {
+  name: { label: "Имя и фамилия", icon: UserIcon },
+  username: { label: "Username (@имя)", icon: AtSignIcon },
+  photo: { label: "Фото профиля", icon: ImageSquareIcon },
 };
 
 // ── Component ──────────────────────────────────────────────────────────────
@@ -260,171 +273,165 @@ export function WebLoginCallbackPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-950 flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-400" />
-      </div>
+      <AppPageShell centered aurora>
+        <SpinnerIcon active size={32} tone="alt" className="mx-auto text-indigo-400" />
+      </AppPageShell>
     );
   }
 
   if (done) {
     return (
-      <div className="min-h-screen bg-gray-950 flex items-center justify-center">
-        <div className="text-center space-y-2">
-          <ShieldCheck className="w-12 h-12 text-green-400 mx-auto" />
-          <p className="text-gray-300">Авторизация завершена</p>
-          <p className="text-gray-500 text-sm">Окно закроется автоматически…</p>
+      <AppPageShell centered aurora className="px-4">
+        <div className="mx-auto w-full max-w-[360px]">
+          <AppGlassCard className="text-center">
+            <VerifiedIcon active size={48} tone="green" className="mx-auto text-emerald-400" />
+            <p className="glass-title mt-3 text-base font-semibold">Авторизация завершена</p>
+            <p className="glass-muted text-sm mt-1">Окно закроется автоматически…</p>
+          </AppGlassCard>
         </div>
-      </div>
+      </AppPageShell>
     );
   }
 
   if (error) {
     return (
-      <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
-        <div className="text-center space-y-3 max-w-sm">
-          <p className="text-red-400 font-medium">{error}</p>
-          <Button
-            variant="outline"
-            size="sm"
-            className="border-gray-700 text-gray-300"
-            onClick={() => window.close()}
-          >
-            Закрыть
-          </Button>
+      <AppPageShell centered aurora className="px-4">
+        <div className="mx-auto w-full max-w-[360px]">
+          <AppGlassCard className="text-center">
+            <p className="text-rose-300 font-medium">{error}</p>
+            <AppSecondaryButton
+              className="mt-4"
+              onClick={() => window.close()}
+            >
+              Закрыть
+            </AppSecondaryButton>
+          </AppGlassCard>
         </div>
-      </div>
+      </AppPageShell>
     );
   }
 
   if (!user) {
     return (
-      <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
-        <div className="text-center space-y-3">
-          <p className="text-gray-300">Для продолжения необходимо войти в аккаунт</p>
-          <Button
-            className="bg-blue-600 hover:bg-blue-700"
-            onClick={() => {
-              window.location.href = `/auth?next=${encodeURIComponent(window.location.href)}`;
-            }}
-          >
-            Войти
-          </Button>
+      <AppPageShell centered aurora className="px-4">
+        <div className="mx-auto w-full max-w-[360px]">
+          <AppGlassCard className="text-center">
+            <p className="glass-title text-base font-semibold">Требуется вход</p>
+            <p className="glass-muted text-sm mt-1">
+              Для продолжения необходимо войти в аккаунт
+            </p>
+            <AppPrimaryButton
+              className="mt-4"
+              onClick={() => {
+                window.location.href = `/auth?next=${encodeURIComponent(window.location.href)}`;
+              }}
+            >
+              Войти
+            </AppPrimaryButton>
+          </AppGlassCard>
         </div>
-      </div>
+      </AppPageShell>
     );
   }
 
   const si = sessionInfo!;
 
   return (
-    <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
-      <div className="w-full max-w-sm bg-gray-900 rounded-2xl border border-gray-800 overflow-hidden">
-        {/* Header */}
-        <div className="p-6 text-center border-b border-gray-800 space-y-3">
-          <div className="flex items-center justify-center gap-3">
-            {si.site_icon ? (
-              <img loading="lazy"
-                src={si.site_icon}
-                alt={si.site_name}
-                className="w-10 h-10 rounded-xl"
-              />
-            ) : (
-              <div className="w-10 h-10 rounded-xl bg-gray-800 flex items-center justify-center">
-                <Globe className="w-5 h-5 text-gray-400" />
-              </div>
-            )}
-            <span className="text-gray-400 text-lg">→</span>
-            <Avatar className="w-10 h-10">
+    <AppPageShell centered aurora className="px-4 py-8">
+      <div className="mx-auto w-full max-w-[420px]">
+        <AppGlassCard className="p-0">
+          {/* Header */}
+          <div className="p-6 text-center space-y-3 border-b border-white/10">
+            <div className="flex items-center justify-center gap-3">
+              {si.site_icon ? (
+                <img
+                  loading="lazy"
+                  src={si.site_icon}
+                  alt={si.site_name}
+                  className="w-10 h-10 rounded-xl ring-1 ring-white/15"
+                />
+              ) : (
+                <div className="w-10 h-10 rounded-xl bg-white/10 ring-1 ring-white/15 flex items-center justify-center">
+                  <GlobeIcon size={20} noAnimate className="opacity-70" />
+                </div>
+              )}
+              <span className="glass-muted text-lg">→</span>
+              <Avatar className="w-10 h-10 ring-1 ring-white/15">
+                <AvatarImage src={metaAvatarUrl || undefined} />
+                <AvatarFallback className="bg-indigo-500/30 text-indigo-100 text-sm">
+                  {initials}
+                </AvatarFallback>
+              </Avatar>
+            </div>
+
+            <div>
+              <h2 className="glass-title text-base font-semibold">
+                {si.site_name} запрашивает доступ
+              </h2>
+              <p className="glass-muted text-xs mt-1">
+                {new URL(si.redirect_url).origin}
+              </p>
+            </div>
+          </div>
+
+          {/* Requested permissions */}
+          <div className="p-5 space-y-2">
+            <p className="glass-muted text-xs font-semibold uppercase tracking-[0.18em] mb-3">
+              Будет передано
+            </p>
+
+            {si.requested_scopes.map((scope) => {
+              const s = SCOPE_LABELS[scope];
+              if (!s) return null;
+              const Icon = s.icon;
+              return (
+                <div key={scope} className="flex items-center gap-3 text-sm">
+                  <div className="w-7 h-7 rounded-lg bg-white/10 ring-1 ring-white/10 flex items-center justify-center flex-shrink-0">
+                    <Icon size={14} noAnimate className="opacity-75" />
+                  </div>
+                  <span className="glass-title text-[13px]">{s.label}</span>
+                  <Badge
+                    variant="outline"
+                    className="ml-auto border-white/15 bg-white/5 text-[10px] uppercase tracking-wider opacity-75"
+                  >
+                    только чтение
+                  </Badge>
+                </div>
+              );
+            })}
+
+            <p className="glass-muted text-xs pt-2">
+              Пароль и личные сообщения <strong className="opacity-90">никогда</strong> не передаются.
+            </p>
+          </div>
+
+          {/* User info */}
+          <div className="mx-5 mb-4 p-3 rounded-xl bg-white/5 ring-1 ring-white/10 flex items-center gap-3">
+            <Avatar className="w-8 h-8">
               <AvatarImage src={metaAvatarUrl || undefined} />
-              <AvatarFallback className="bg-blue-900 text-blue-200 text-sm">
-                {initials}
+              <AvatarFallback className="bg-white/10 text-xs">
+                {initials || "U"}
               </AvatarFallback>
             </Avatar>
+            <div className="flex-1 min-w-0">
+              <p className="glass-title text-sm font-medium truncate">{fallbackName}</p>
+              {metaUsername && <p className="glass-muted text-xs">@{metaUsername}</p>}
+            </div>
           </div>
 
-          <div>
-            <h2 className="text-gray-100 font-semibold text-base">
-              {si.site_name} запрашивает доступ
-            </h2>
-            <p className="text-gray-500 text-xs mt-1">
-              {new URL(si.redirect_url).origin}
-            </p>
+          {/* Actions */}
+          <div className="p-5 pt-0 space-y-2">
+            <AppPrimaryButton onClick={handleAllow} disabled={processing}>
+              {processing && <SpinnerIcon active size={16} className="mr-2" />}
+              Разрешить
+            </AppPrimaryButton>
+            <AppSecondaryButton onClick={handleDeny} disabled={processing}>
+              Отклонить
+            </AppSecondaryButton>
           </div>
-        </div>
-
-        {/* Requested permissions */}
-        <div className="p-5 space-y-2">
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-            Будет передано
-          </p>
-
-          {si.requested_scopes.map(scope => {
-            const s = SCOPE_LABELS[scope];
-            if (!s) return null;
-            const Icon = s.icon;
-            return (
-              <div
-                key={scope}
-                className="flex items-center gap-3 text-sm text-gray-300"
-              >
-                <div className="w-7 h-7 rounded-lg bg-gray-800 flex items-center justify-center flex-shrink-0">
-                  <Icon className="w-3.5 h-3.5 text-gray-400" />
-                </div>
-                <span>{s.label}</span>
-                <Badge
-                  variant="outline"
-                  className="ml-auto border-gray-700 text-gray-500 text-xs"
-                >
-                  только чтение
-                </Badge>
-              </div>
-            );
-          })}
-
-          <p className="text-xs text-gray-600 pt-2">
-            Пароль и личные сообщения <strong className="text-gray-500">никогда</strong> не передаются.
-          </p>
-        </div>
-
-        {/* User info */}
-        <div className="mx-5 mb-4 p-3 rounded-xl bg-gray-800/50 flex items-center gap-3">
-          <Avatar className="w-8 h-8">
-            <AvatarImage src={metaAvatarUrl || undefined} />
-            <AvatarFallback className="bg-gray-700 text-gray-300 text-xs">
-              {initials || "U"}
-            </AvatarFallback>
-          </Avatar>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm text-gray-200 font-medium truncate">
-              {fallbackName}
-            </p>
-            {metaUsername && (
-              <p className="text-xs text-gray-500">@{metaUsername}</p>
-            )}
-          </div>
-        </div>
-
-        {/* Actions */}
-        <div className="p-5 pt-0 space-y-2">
-          <Button
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium"
-            onClick={handleAllow}
-            disabled={processing}
-          >
-            {processing && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-            Разрешить
-          </Button>
-          <Button
-            variant="ghost"
-            className="w-full text-gray-400 hover:text-gray-200 hover:bg-gray-800"
-            onClick={handleDeny}
-            disabled={processing}
-          >
-            Отклонить
-          </Button>
-        </div>
+        </AppGlassCard>
       </div>
-    </div>
+    </AppPageShell>
   );
 }
 

@@ -1,14 +1,17 @@
 import { useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/useAuth";
 import { adminApi, AdminMe } from "@/lib/adminApi";
 import { toast } from "sonner";
-import { Loader2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { SpinnerIcon, VerifiedIcon } from "@/components/ui/app-icons";
+import {
+  AppPageShell,
+  AppGlassCard,
+  AppGlassInput,
+  AppPrimaryButton,
+} from "@/components/ui/app-shell";
 
 export function AdminLoginPage() {
   const { signIn } = useAuth();
@@ -51,46 +54,87 @@ export function AdminLoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4">
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <CardTitle>Admin Console</CardTitle>
-          <CardDescription>
-            Вход для админов (email + password). Доступ проверяется через `admin_users`.
-          </CardDescription>
-          {notAdmin && (
-            <div className="text-sm text-destructive">У аккаунта нет прав администратора.</div>
-          )}
-        </CardHeader>
-        <CardContent>
-          <form className="space-y-4" onSubmit={handleLogin}>
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input id="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" />
+    <AppPageShell centered aurora className="px-4 py-8">
+      <div className="mx-auto w-full max-w-[420px]">
+        <AppGlassCard>
+          {/* Brand header — как у AuthPage */}
+          <div className="flex items-center justify-center mb-5 sm:mb-6">
+            <div
+              className="flex items-center gap-3 text-[13px] tracking-[0.42em] uppercase opacity-70"
+              style={{ fontFeatureSettings: '"ss01"' }}
+            >
+              <span aria-hidden className="relative inline-block h-1.5 w-1.5 rounded-full bg-current">
+                <span className="absolute inset-0 rounded-full blur-[5px] opacity-60 bg-indigo-400" />
+              </span>
+              <span className="font-medium">mansoni · admin</span>
+              <span aria-hidden className="relative inline-block h-1.5 w-1.5 rounded-full bg-current">
+                <span className="absolute inset-0 rounded-full blur-[5px] opacity-60 bg-fuchsia-400" />
+              </span>
             </div>
+          </div>
+
+          <div className="mb-5 sm:mb-6">
+            <h1 className="glass-title text-[24px] sm:text-[28px] leading-[1.1] font-bold tracking-tight">
+              Admin Console
+            </h1>
+            <p className="glass-muted mt-2 text-sm">
+              Вход для администраторов по email и паролю. Доступ проверяется через{" "}
+              <span className="font-mono text-[12.5px]">admin_users</span>.
+            </p>
+            {notAdmin && (
+              <div className="mt-3 rounded-xl border border-rose-400/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
+                У аккаунта нет прав администратора.
+              </div>
+            )}
+          </div>
+
+          <form className="flex flex-col gap-4" onSubmit={handleLogin}>
             <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <Input
+              <Label htmlFor="email" className="glass-muted text-xs uppercase tracking-[0.18em]">
+                Email
+              </Label>
+              <AppGlassInput
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                autoComplete="email"
+                placeholder="you@example.com"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="password" className="glass-muted text-xs uppercase tracking-[0.18em]">
+                Password
+              </Label>
+              <AppGlassInput
                 id="password"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 autoComplete="current-password"
+                placeholder="••••••••"
               />
             </div>
-            <Button className="w-full" disabled={loading} type="submit">
+
+            <AppPrimaryButton type="submit" disabled={loading}>
               {loading ? (
-                <span className="inline-flex items-center gap-2">
-                  <Loader2 className="w-4 h-4 animate-spin" />
+                <>
+                  <SpinnerIcon active size={16} />
                   Вход...
-                </span>
+                </>
               ) : (
                 "Войти"
               )}
-            </Button>
+            </AppPrimaryButton>
+
+            <div className="glass-muted flex items-center justify-center gap-2 text-xs">
+              <VerifiedIcon active size={16} noAnimate tone="green" className="text-emerald-500" />
+              Защищено end-to-end шифрованием
+            </div>
           </form>
-        </CardContent>
-      </Card>
-    </div>
+        </AppGlassCard>
+      </div>
+    </AppPageShell>
   );
 }
