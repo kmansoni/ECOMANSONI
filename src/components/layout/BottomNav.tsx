@@ -1,5 +1,5 @@
-import { useState, useEffect, forwardRef, useRef, useCallback } from "react";
-import { Home, Search, Heart, FileText, LucideIcon, Check, ChevronDown, Camera, MessageCircle, User, AlertCircle, Bell, Film, Loader2 } from "lucide-react";
+import { useState, useEffect, forwardRef, useRef, useCallback, type ComponentType } from "react";
+import { AlertCircle, Loader2 } from "lucide-react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useReelsContext } from "@/contexts/ReelsContext";
 import { cn } from "@/lib/utils";
@@ -19,10 +19,23 @@ import { PhoneInput } from "@/components/ui/phone-input";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import {
+  BellIcon,
+  BookmarkIcon,
+  CameraIcon,
+  CheckIcon,
+  HomeIcon,
+  LikeIcon,
+  MessageIcon,
+  ReelsIcon,
+  SearchIcon,
+  UserIcon,
+  type AppIconProps,
+} from "@/components/ui/app-icons";
 
 interface NavItem {
   to: string;
-  icon?: LucideIcon;
+  icon?: ComponentType<AppIconProps>;
   label: string;
   hasBadge?: boolean;
   isAction?: boolean;
@@ -33,27 +46,27 @@ interface NavItem {
 
 // Default nav items: Лента → Reels → Уведомления → Чаты → Профиль | AR (отдельная кнопка)
 const defaultNavItems: NavItem[] = [
-  { to: "/", icon: Home, label: "Лента" },
-  { to: "/reels", icon: Film, label: "Reels" },
-  { to: "/notifications", icon: Bell, label: "Уведомления", hasBadge: true },
-  { to: "/chats", icon: MessageCircle, label: "Чаты", hasBadge: true },
-  { to: "/profile", icon: User, label: "Профиль", hasLongPress: true },
-  { to: "/ar", label: "AR" },
+  { to: "/", icon: HomeIcon, label: "Лента" },
+  { to: "/reels", icon: ReelsIcon, label: "Reels" },
+  { to: "/notifications", icon: BellIcon, label: "Уведомления", hasBadge: true },
+  { to: "/chats", icon: MessageIcon, label: "Чаты", hasBadge: true },
+  { to: "/profile", icon: UserIcon, label: "Профиль", hasLongPress: true },
+  { to: "/ar", icon: CameraIcon, label: "AR" },
 ];
 
 // Real estate service nav items
 const realEstateNavItems: NavItem[] = [
-  { to: "/", icon: Home, label: "Главная" },
-  { to: "#search", icon: Search, label: "Поиск", isAction: true },
-  { to: "/chats", icon: MessageCircle, label: "Чаты", hasBadge: true },
-  { to: "#favorites", icon: Heart, label: "Избранное", isAction: true },
+  { to: "/", icon: HomeIcon, label: "Главная" },
+  { to: "#search", icon: SearchIcon, label: "Поиск", isAction: true },
+  { to: "/chats", icon: MessageIcon, label: "Чаты", hasBadge: true },
+  { to: "#favorites", icon: LikeIcon, label: "Избранное", isAction: true },
 ];
 
 // Insurance service nav items
 const insuranceNavItems: NavItem[] = [
-  { to: "/", icon: Home, label: "Главная" },
-  { to: "/chats", icon: MessageCircle, label: "Чаты", hasBadge: true },
-  { to: "/insurance/policies", icon: FileText, label: "Полисы" },
+  { to: "/", icon: HomeIcon, label: "Главная" },
+  { to: "/chats", icon: MessageIcon, label: "Чаты", hasBadge: true },
+  { to: "/insurance/policies", icon: BookmarkIcon, label: "Полисы" },
 ];
 
 const BOTTOM_NAV_BAR_HEIGHT_PX = 56;
@@ -362,9 +375,9 @@ export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function Bottom
             className={cn(
               "flex-1 flex items-center justify-around",
               "rounded-full",
-              "bg-black/40 dark:bg-black/40 backdrop-blur-xl",
+              "glass-window bg-black/35 dark:bg-black/40 backdrop-blur-2xl",
               "border border-white/20 dark:border-white/10",
-              "shadow-lg shadow-black/5 dark:shadow-black/20"
+              "shadow-[0_18px_45px_rgba(7,10,26,0.28)]"
             )}
             style={{
               height: `${BOTTOM_NAV_BAR_HEIGHT_PX}px`,
@@ -396,7 +409,7 @@ export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function Bottom
                     }}
                   >
                     <div className="relative flex items-center justify-center">
-                      {item.icon && <item.icon className="w-[22px] h-[22px]" strokeWidth={1.8} />}
+                      {item.icon && <item.icon active={false} size={22} label={item.label} />}
                     </div>
                     <span className="text-[10px] font-medium mt-0.5 leading-tight">
                       {item.label}
@@ -429,7 +442,7 @@ export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function Bottom
                   }}
                   className={({ isActive }) =>
                     cn(
-                      "flex flex-col items-center justify-center flex-1 h-full",
+                      "relative flex flex-col items-center justify-center flex-1 h-full",
                       "transition-colors duration-150",
                       "active:opacity-70",
                       "min-w-[44px] min-h-[44px]",
@@ -443,15 +456,18 @@ export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function Bottom
                 >
                   {({ isActive }) => (
                     <>
+                      <span
+                        aria-hidden
+                        className={cn(
+                          "pointer-events-none absolute inset-x-2 top-1/2 h-10 -translate-y-1/2 rounded-2xl transition-all duration-200",
+                          isActive
+                            ? "bg-white/[0.12] shadow-[0_0_26px_rgba(96,165,250,0.18)]"
+                            : "opacity-0 scale-95"
+                        )}
+                      />
                       <div className="relative flex items-center justify-center">
                         {item.icon && (
-                          <item.icon
-                            className={cn(
-                              "w-6 h-6 transition-all duration-150",
-                              isActive && "stroke-[2.2px]"
-                            )}
-                            strokeWidth={isActive ? 2.2 : 1.8}
-                          />
+                          <item.icon active={isActive} size={24} label={item.label} />
                         )}
                         {item.hasBadge && item.to === "/notifications" && (
                           <NotificationBadge count={notifUnreadCount} />
@@ -488,9 +504,9 @@ export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function Bottom
                   cn(
                     "flex items-center justify-center",
                     "w-14 h-14 rounded-full",
-                    "bg-black/40 dark:bg-black/40 backdrop-blur-xl",
+                    "glass-window bg-black/35 dark:bg-black/40 backdrop-blur-2xl",
                     "border border-white/20 dark:border-white/10",
-                    "shadow-lg shadow-black/5 dark:shadow-black/20",
+                    "shadow-[0_18px_45px_rgba(7,10,26,0.28)]",
                     "transition-colors duration-150",
                     "active:opacity-70",
                     isActive ? "text-white" : "text-white/70"
@@ -504,13 +520,7 @@ export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function Bottom
                 {({ isActive }) => (
                   <div className="relative flex items-center justify-center">
                     {lastItem.icon ? (
-                      <lastItem.icon
-                        className={cn(
-                          "w-6 h-6 transition-all duration-150",
-                          isActive && "stroke-[2.2px]"
-                        )}
-                        strokeWidth={isActive ? 2.2 : 1.8}
-                      />
+                      <lastItem.icon active={isActive} size={24} label={lastItem.label} />
                     ) : (
                       <span 
                         className={cn(
@@ -589,7 +599,7 @@ export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function Bottom
                 <Avatar className="w-12 h-12">
                   <AvatarImage src={avatar || undefined} alt={displayName || normalizedUsername || "Профиль"} />
                   <AvatarFallback className="bg-muted">
-                    <User className="w-5 h-5 text-muted-foreground" />
+                    <UserIcon size={20} noAnimate className="text-muted-foreground" />
                   </AvatarFallback>
                 </Avatar>
                 <div className="flex-1 text-left">
@@ -597,7 +607,7 @@ export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function Bottom
                   <p className="text-sm text-muted-foreground">{secondaryLine}</p>
                 </div>
                 {isActive && !needsReauth && (
-                  <Check className="w-5 h-5 text-primary" />
+                  <CheckIcon active size={20} noAnimate tone="green" />
                 )}
                 {!isActive && switchingAccountId === account.accountId && (
                   <Loader2 className="w-5 h-5 text-primary animate-spin" aria-label="Переключаем аккаунт" />

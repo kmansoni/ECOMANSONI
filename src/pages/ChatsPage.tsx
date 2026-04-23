@@ -1,6 +1,5 @@
 import { useCallback, useMemo, useRef, useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { Search, Check, CheckCheck, LogIn, MessageCircle, Megaphone, Users, Phone, Bookmark, Archive, Pin, PinOff, ArchiveRestore, AlertTriangle, Bot } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { GradientAvatar } from "@/components/ui/gradient-avatar";
@@ -38,6 +37,23 @@ import { clearHandledChatsQueryParams, parseChatsQueryActions } from "@/lib/chat
 import { fallbackNameFromUserId } from "@/lib/chat/fallback-name-from-user-id";
 import { logger } from "@/lib/logger";
 import { EmergencySOSSheet } from "@/components/chat/EmergencySOSSheet";
+import {
+  ArchiveBoxIcon,
+  ArchiveRestoreIcon,
+  BellIcon,
+  BookmarkIcon,
+  BroadcastIcon,
+  CheckIcon,
+  CreateIcon,
+  DoubleCheckIcon,
+  GroupIcon,
+  LoginIcon,
+  MessageIcon,
+  PinIcon,
+  PinOffIcon,
+  PhoneCallIcon,
+  SearchIcon,
+} from "@/components/ui/app-icons";
 
 
 interface LocationState {
@@ -783,7 +799,7 @@ export function ChatsPage() {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-6 text-center relative">
         <div className="w-20 h-20 rounded-full bg-background/70 dark:bg-white/10 backdrop-blur-xl border border-border/60 dark:border-white/20 flex items-center justify-center mb-4 relative z-10">
-          <MessageCircle className="w-10 h-10 text-muted-foreground dark:text-white/60" />
+          <MessageIcon size={40} noAnimate className="text-muted-foreground dark:text-white/60" />
         </div>
         <h2 className="text-xl font-semibold mb-2 text-foreground dark:text-white relative z-10">Войдите для доступа к чатам</h2>
         <p className="text-muted-foreground dark:text-white/60 mb-6 relative z-10">
@@ -793,7 +809,7 @@ export function ChatsPage() {
           onClick={() => navigate("/auth")}
           className="gap-2 bg-background/70 border-border text-foreground hover:bg-muted relative z-10 dark:bg-white/10 dark:border-white/20 dark:text-white dark:hover:bg-white/20"
         >
-          <LogIn className="w-4 h-4" />
+          <LoginIcon size={16} noAnimate className="text-current" />
           Войти
         </Button>
       </div>
@@ -934,18 +950,17 @@ export function ChatsPage() {
                       className="w-9 h-9 flex items-center justify-center rounded-full bg-red-500/10 backdrop-blur-xl border border-red-500/20 hover:bg-red-500/15 transition-colors"
                       aria-label="Открыть SOS-центр"
                     >
-                      <AlertTriangle className="w-5 h-5 text-red-500" />
+                      <BellIcon active size={20} tone="red" />
                     </button>
                     <button
                       onClick={() => setInlineSearchActive(true)}
                       className="w-9 h-9 flex items-center justify-center rounded-full bg-black/5 dark:bg-white/10 backdrop-blur-xl border border-border/50 dark:border-white/20 hover:bg-black/10 dark:hover:bg-white/20 transition-colors"
                     >
-                      <Search className="w-5 h-5 text-foreground dark:text-white" />
+                      <SearchIcon size={20} noAnimate className="text-foreground dark:text-white" />
                     </button>
                   </div>
                 )}
               </>
-            )}
           </div>
           
           {showCallsTab && (
@@ -1067,14 +1082,14 @@ export function ChatsPage() {
                 onClick={() => openCreateSheet("group")}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-full bg-black/5 text-foreground hover:bg-black/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/20 transition-colors"
               >
-                <Users className="w-4 h-4" />
+                <GroupIcon size={16} noAnimate className="text-current" />
                 Группа
               </button>
               <button
                 onClick={() => openCreateSheet("channel")}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-full bg-black/5 text-foreground hover:bg-black/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/20 transition-colors"
               >
-                <Megaphone className="w-4 h-4" />
+                <BroadcastIcon size={16} noAnimate className="text-current" />
                 Канал
               </button>
               <button
@@ -1147,7 +1162,7 @@ export function ChatsPage() {
               {!callsLoading && activeCalls.length === 0 && (
                 <div className="flex flex-col items-center justify-center py-12 text-center px-6">
                   <div className="w-16 h-16 rounded-full bg-background/70 dark:bg-white/10 backdrop-blur-xl border border-border/60 dark:border-white/20 flex items-center justify-center mb-4">
-                    <Phone className="w-8 h-8 text-muted-foreground dark:text-white/60" />
+                    <PhoneCallIcon size={32} noAnimate className="text-muted-foreground dark:text-white/60" />
                   </div>
                   <h3 className="font-semibold mb-1 text-foreground dark:text-white">
                     {callsFilter === "missed" ? "Нет пропущенных" : "Нет звонков"}
@@ -1214,7 +1229,7 @@ export function ChatsPage() {
                         }}
                         className="w-9 h-9 flex items-center justify-center rounded-full bg-black/5 dark:bg-white/10 backdrop-blur-xl border border-border/50 dark:border-white/20 hover:bg-black/10 dark:hover:bg-white/20 transition-colors"
                       >
-                        <Phone className="w-4 h-4 text-foreground dark:text-white" />
+                        <PhoneCallIcon size={16} noAnimate className="text-foreground dark:text-white" />
                       </button>
                     </div>
                   );
@@ -1255,7 +1270,7 @@ export function ChatsPage() {
                conversations.length === 0 && groups.length === 0 && channels.length === 0 && (
                 <div className="flex flex-col items-center justify-center py-12 text-center px-6">
                   <div className="w-16 h-16 rounded-full bg-background/70 dark:bg-white/10 backdrop-blur-xl border border-border/60 dark:border-white/20 flex items-center justify-center mb-4">
-                    <MessageCircle className="w-8 h-8 text-muted-foreground dark:text-white/60" />
+                    <MessageIcon size={32} noAnimate className="text-muted-foreground dark:text-white/60" />
                   </div>
                   <h3 className="font-semibold mb-1 text-foreground dark:text-white">Нет чатов</h3>
                   <p className="text-sm text-muted-foreground dark:text-white/60">
@@ -1275,7 +1290,7 @@ export function ChatsPage() {
                     onClick={() => setShowArchive(false)}
                     className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
                   >
-                    <ArchiveRestore className="w-4 h-4" />
+                    <ArchiveRestoreIcon size={16} noAnimate className="text-current" />
                     ← Назад к чатам
                   </button>
                   <span className="text-sm font-medium text-foreground dark:text-white ml-auto">
@@ -1291,7 +1306,7 @@ export function ChatsPage() {
                   className="flex min-h-[68px] items-center gap-3 px-4 py-3 hover:bg-muted/60 active:bg-muted transition-colors cursor-pointer dark:hover:bg-white/5 dark:active:bg-white/10"
                 >
                   <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-cyan-400 flex items-center justify-center flex-shrink-0">
-                    <Bookmark className="w-5 h-5 text-white" />
+                    <BookmarkIcon active size={20} noAnimate className="text-white" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between mb-0.5">
@@ -1339,7 +1354,7 @@ export function ChatsPage() {
                   className="flex min-h-[68px] items-center gap-3 px-4 py-3 hover:bg-muted/60 active:bg-muted transition-colors cursor-pointer dark:hover:bg-white/5 dark:active:bg-white/10"
                 >
                   <div className="w-10 h-10 rounded-full bg-gradient-to-br from-slate-500 to-slate-600 flex items-center justify-center flex-shrink-0">
-                    <Archive className="w-5 h-5 text-white" />
+                    <ArchiveBoxIcon active size={20} noAnimate className="text-white" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <span className="font-medium text-foreground dark:text-white">
@@ -1391,13 +1406,12 @@ export function ChatsPage() {
                               onClick={() => { closeSwipe(itemKey); }}
                               className="flex flex-col items-center justify-center w-14 h-full text-cyan-600 dark:text-cyan-400 text-xs gap-1"
                             >
-                              <Pin className="w-5 h-5" />
+                              <PinIcon size={20} noAnimate className="text-current" />
                               <span>Закрепить</span>
                             </button>
                           </div>
                         )}
                       </AnimatePresence>
-                      {/* Left swipe reveal: archive */}
                       <AnimatePresence>
                         {showLeftActions && (
                           <div className="absolute inset-y-0 right-0 flex items-center px-2 bg-orange-500/20">
@@ -1408,7 +1422,7 @@ export function ChatsPage() {
                               }}
                               className="flex flex-col items-center justify-center w-14 h-full text-orange-600 dark:text-orange-400 text-xs gap-1"
                             >
-                              <Archive className="w-5 h-5" />
+                              <ArchiveBoxIcon size={20} noAnimate className="text-current" />
                               <span>Архив</span>
                             </button>
                           </div>
@@ -1430,14 +1444,14 @@ export function ChatsPage() {
                           <GradientAvatar name={channel.name} seed={channel.id} avatarUrl={channel.avatar_url} size="md" />
                           {channel.is_member && (
                             <div className="absolute -bottom-0.5 -right-0.5 w-5 h-5 bg-emerald-500 rounded-full flex items-center justify-center border-2 border-background dark:border-slate-900">
-                              <Check className="w-3 h-3 text-white" />
+                              <CheckIcon size={12} noAnimate className="text-white" />
                             </div>
                           )}
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between mb-0.5">
                             <span className="font-medium text-foreground dark:text-white truncate flex items-center gap-1.5">
-                              <Megaphone className="w-4 h-4 text-cyan-400 flex-shrink-0" />
+                              <BroadcastIcon size={16} noAnimate className="text-cyan-400 flex-shrink-0" />
                               {channel.name}
                             </span>
                             <span className="text-xs text-muted-foreground/70 dark:text-white/40 flex-shrink-0 ml-2">
@@ -1449,7 +1463,7 @@ export function ChatsPage() {
                               {channel.last_message?.content || channel.description || `${channel.member_count} подписчиков`}
                             </p>
                             <div className="flex items-center gap-1 text-xs text-muted-foreground/70 dark:text-white/40 ml-2">
-                              <Users className="w-3 h-3" />
+                              <GroupIcon size={12} noAnimate className="text-current" />
                               {channel.member_count}
                             </div>
                           </div>
@@ -1474,7 +1488,7 @@ export function ChatsPage() {
                               }}
                               className="flex flex-col items-center justify-center w-14 h-full text-cyan-600 dark:text-cyan-400 text-xs gap-1"
                             >
-                              {pinned ? <PinOff className="w-5 h-5" /> : <Pin className="w-5 h-5" />}
+                              {pinned ? <PinOffIcon size={20} noAnimate className="text-current" /> : <PinIcon size={20} noAnimate className="text-current" />}
                               <span>{pinned ? "Открепить" : "Закрепить"}</span>
                             </button>
                           </div>
@@ -1490,7 +1504,7 @@ export function ChatsPage() {
                               }}
                               className="flex flex-col items-center justify-center w-14 h-full text-orange-600 dark:text-orange-400 text-xs gap-1"
                             >
-                              <Archive className="w-5 h-5" />
+                              <ArchiveBoxIcon size={20} noAnimate className="text-current" />
                               <span>Архив</span>
                             </button>
                           </div>
@@ -1511,13 +1525,13 @@ export function ChatsPage() {
                         <div className="relative flex-shrink-0">
                           <GradientAvatar name={group.name} seed={group.id} avatarUrl={group.avatar_url} size="md" />
                           <div className="absolute -bottom-0.5 -right-0.5 w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center border-2 border-background dark:border-slate-900">
-                            <Users className="w-3 h-3 text-white" />
+                            <GroupIcon size={12} noAnimate className="text-white" />
                           </div>
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between mb-0.5">
                             <span className="font-medium text-foreground dark:text-white truncate flex items-center gap-1.5">
-                              {pinned && <Pin className="w-3 h-3 text-cyan-400 flex-shrink-0" />}
+                              {pinned && <PinIcon size={12} noAnimate className="text-cyan-400 flex-shrink-0" />}
                               {group.name}
                             </span>
                             <span className="text-xs text-muted-foreground/70 dark:text-white/40 flex-shrink-0 ml-2">
@@ -1566,7 +1580,7 @@ export function ChatsPage() {
                             }}
                             className="flex flex-col items-center justify-center w-14 h-full text-cyan-600 dark:text-cyan-400 text-xs gap-1"
                           >
-                            {pinned ? <PinOff className="w-5 h-5" /> : <Pin className="w-5 h-5" />}
+                            {pinned ? <PinOffIcon size={20} noAnimate className="text-current" /> : <PinIcon size={20} noAnimate className="text-current" />}
                             <span>{pinned ? "Открепить" : "Закреп."}</span>
                           </button>
                         </div>
@@ -1583,7 +1597,7 @@ export function ChatsPage() {
                             }}
                             className="flex flex-col items-center justify-center w-14 h-full text-orange-600 dark:text-orange-400 text-xs gap-1"
                           >
-                            {archived ? <ArchiveRestore className="w-5 h-5" /> : <Archive className="w-5 h-5" />}
+                            {archived ? <ArchiveRestoreIcon size={20} noAnimate className="text-current" /> : <ArchiveBoxIcon size={20} noAnimate className="text-current" />}
                             <span>{archived ? "Достать" : "Архив"}</span>
                           </button>
                         </div>
@@ -1616,7 +1630,7 @@ export function ChatsPage() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between mb-0.5">
                           <span className="font-medium text-foreground dark:text-white truncate flex items-center gap-1.5">
-                            {pinned && <Pin className="w-3 h-3 text-cyan-400 flex-shrink-0" />}
+                            {pinned && <PinIcon size={12} noAnimate className="text-cyan-400 flex-shrink-0" />}
                             {other.display_name || fallbackNameFromUserId(other.user_id)}
                           </span>
                           <span className="text-xs text-muted-foreground/70 dark:text-white/40 flex-shrink-0 ml-2">
@@ -1626,10 +1640,10 @@ export function ChatsPage() {
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-1 flex-1 min-w-0">
                             {!activityText && !hasDraft(conv.id) && isMyMessage && lastMessage?.is_read && (
-                              <CheckCheck className="w-4 h-4 text-cyan-400 flex-shrink-0" />
+                              <DoubleCheckIcon size={16} noAnimate className="text-cyan-400 flex-shrink-0" />
                             )}
                             {!activityText && !hasDraft(conv.id) && isMyMessage && !lastMessage?.is_read && (
-                              <Check className="w-4 h-4 text-muted-foreground/60 dark:text-white/40 flex-shrink-0" />
+                              <CheckIcon size={16} noAnimate className="text-muted-foreground/60 dark:text-white/40 flex-shrink-0" />
                             )}
                             {hasDraft(conv.id) && !activityText ? (
                               <p className="text-sm truncate">

@@ -14,15 +14,17 @@
 import React, { memo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Heart,
-  MessageCircle,
-  Send,
-  Bookmark,
   Repeat2,
-  Volume2,
-  VolumeX,
   MoreHorizontal,
 } from 'lucide-react';
+import {
+  BookmarkIcon,
+  CommentIcon,
+  LikeIcon,
+  MicOffIcon,
+  ShareIcon,
+  VolumeIcon,
+} from '@/components/ui/app-icons';
 import { formatCount } from '@/lib/reels/format';
 import type { ReelMetrics } from '@/types/reels';
 
@@ -199,13 +201,7 @@ const ReelSidebar = memo<ReelSidebarProps>(
               animate={{ scale: [1, 1.3, 1] }}
               transition={SPRING_BOUNCE}
             >
-              <Heart
-                className={`w-7 h-7 drop-shadow-lg ${
-                  isLiked
-                    ? 'fill-red-500 text-red-500'
-                    : 'fill-transparent text-white'
-                }`}
-              />
+              <LikeIcon active={isLiked} size={28} noAnimate={false} />
             </motion.div>
           </motion.button>
           <span className="text-white text-[11px] font-medium drop-shadow-md select-none leading-none">
@@ -219,7 +215,7 @@ const ReelSidebar = memo<ReelSidebarProps>(
           ariaLabel={`Комментарии, ${formatCount(metrics.comments_count)}`}
           counter={formatCount(metrics.comments_count)}
         >
-          <MessageCircle className="w-7 h-7 text-white drop-shadow-lg fill-transparent" />
+          <CommentIcon active={false} size={28} />
         </SidebarButton>
 
         {/* 3. Share --------------------------------------------------------- */}
@@ -228,7 +224,7 @@ const ReelSidebar = memo<ReelSidebarProps>(
           ariaLabel={`Поделиться, ${formatCount(metrics.shares_count)}`}
           counter={formatCount(metrics.shares_count)}
         >
-          <Send className="w-7 h-7 text-white drop-shadow-lg" />
+          <ShareIcon active={false} size={28} />
         </SidebarButton>
 
         {/* 4. Save ---------------------------------------------------------- */}
@@ -248,11 +244,7 @@ const ReelSidebar = memo<ReelSidebarProps>(
               animate={{ scale: [1, 1.3, 1] }}
               transition={SPRING_BOUNCE}
             >
-              <Bookmark
-                className={`w-7 h-7 drop-shadow-lg ${
-                  isSaved ? 'fill-white text-white' : 'fill-transparent text-white'
-                }`}
-              />
+              <BookmarkIcon active={isSaved} size={28} noAnimate={false} />
             </motion.div>
           </motion.button>
           <span className="text-white text-[11px] font-medium drop-shadow-md select-none leading-none">
@@ -288,9 +280,9 @@ const ReelSidebar = memo<ReelSidebarProps>(
               transition={{ duration: 0.15 }}
             >
               {isMuted ? (
-                <VolumeX className="w-5 h-5 text-white drop-shadow-lg" />
+                <MicOffIcon active size={20} />
               ) : (
-                <Volume2 className="w-5 h-5 text-white drop-shadow-lg" />
+                <VolumeIcon active size={20} />
               )}
             </motion.div>
           </AnimatePresence>

@@ -1,10 +1,10 @@
-import { BadgeCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { VerifiedIcon } from "@/components/ui/app-icons";
 
 interface VerifiedBadgeProps {
   className?: string;
@@ -12,10 +12,10 @@ interface VerifiedBadgeProps {
 }
 
 const sizeClasses = {
-  xs: "w-3 h-3",
-  sm: "w-3.5 h-3.5",
-  md: "w-4 h-4",
-  lg: "w-5 h-5",
+  xs: 12,
+  sm: 14,
+  md: 16,
+  lg: 20,
 };
 
 export function VerifiedBadge({ className, size = "sm" }: VerifiedBadgeProps) {
@@ -27,12 +27,11 @@ export function VerifiedBadge({ className, size = "sm" }: VerifiedBadgeProps) {
           className="inline-flex items-center justify-center focus:outline-none"
           onClick={(e) => e.stopPropagation()}
         >
-          <BadgeCheck 
-            className={cn(
-              sizeClasses[size],
-              "text-blue-500 fill-blue-500 stroke-white flex-shrink-0 cursor-pointer",
-              className
-            )} 
+          <VerifiedIcon
+            active
+            noAnimate
+            size={sizeClasses[size]}
+            className={cn("flex-shrink-0 cursor-pointer", className)}
           />
         </button>
       </PopoverTrigger>

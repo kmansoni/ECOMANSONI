@@ -10,6 +10,7 @@ import { ChatsPage } from "@/pages/ChatsPage";
 import { useDeepLinks } from "@/hooks/useDeepLinks";
 import { SkipToContent } from "@/components/accessibility/SkipToContent";
 import { ColorFilterSVG } from "@/components/accessibility/ColorFilterSVG";
+import { AppIconDefs } from "@/components/ui/app-icons";
 import { AuthProvider } from "@/hooks/useAuth";
 import { ChatOpenProvider } from "@/contexts/ChatOpenContext";
 import { VideoCallProvider } from "@/contexts/VideoCallContext";
@@ -130,6 +131,7 @@ const AIAssistantPage = lazy(() => import("@/pages/AIAssistantPage"));
 const GodmodePage = lazy(() => import("@/pages/GodmodePage"));
 const ServiceBugsPage = lazy(() => import("@/pages/ServiceBugsPage").then(m => ({ default: m.ServiceBugsPage })));
 const MusicPage = lazy(() => import("@/pages/MusicPage"));
+const IconPreviewPage = lazy(() => import("@/pages/IconPreviewPage"));
 
 // Batch 5: new pages
 const WebLoginCallbackPage = lazy(() => import("@/pages/WebLoginCallbackPage").then(m => ({ default: m.WebLoginCallbackPage })));
@@ -251,6 +253,7 @@ const App = () => {
       <TooltipProvider>
         <SkipToContent />
         <ColorFilterSVG />
+        <AppIconDefs />
         {/* aria-live region для screen reader */}
         <div
           id="a11y-live-region"
@@ -300,6 +303,13 @@ const App = () => {
                 <Route path="/auth/web-login" element={
                   <Suspense fallback={<PageLoader />}>
                     <WebLoginCallbackPage />
+                  </Suspense>
+                } />
+
+                {/* Public preview route for new icon system */}
+                <Route path="/preview/icons" element={
+                  <Suspense fallback={<PageLoader />}>
+                    <IconPreviewPage />
                   </Suspense>
                 } />
 

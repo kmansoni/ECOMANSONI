@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useState, useEffect, useRef } from "react";
-import { Phone } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { PhoneCallIcon } from "@/components/ui/app-icons";
 
 interface Country {
   code: string;
@@ -200,7 +200,7 @@ export function PhoneInput({ value, onChange, placeholder, required, className, 
               {detectedCountry.flag}
             </span>
           ) : (
-            <Phone className="w-5 h-5 text-white/50" aria-hidden="true" />
+            <PhoneCallIcon size={20} noAnimate className="text-white/50" aria-hidden="true" />
           )}
         </div>
 
