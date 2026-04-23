@@ -17,14 +17,15 @@
 
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { AnimatePresence, motion, useMotionValue, useSpring, useTransform } from "framer-motion";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import { PhoneInput } from "@/components/ui/phone-input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import logo from "@/assets/logo.png";
 void logo;
 import {
   ArrowRight,
   Check,
   ChevronLeft,
-  Fingerprint,
   KeyRound,
   Loader2,
   Mail,
@@ -32,6 +33,7 @@ import {
   QrCode,
   ShieldCheck,
   Sun,
+  UserPlus,
 } from "lucide-react";
 
 /* ---------- theme ---------- */
@@ -98,6 +100,33 @@ type ThemeTokens = ReturnType<typeof useThemeTokens>;
    Тёплые, короткие, «про среду», без продаж. Каждый текст — одна мысль.
 */
 const KIND_TIPS: { title: string; body: string }[] = [
+  { title: "Ты достоин лучшего",            body: "Твои усилия важны, даже если результат приходит не сразу." },
+  { title: "Ты уже молодец",                body: "Ты проходишь через сложное и всё равно двигаешься вперёд." },
+  { title: "Шаг за шагом",                  body: "Большие перемены начинаются с одного маленького действия сегодня." },
+  { title: "У тебя получится",              body: "Не идеально, но по-настоящему. Этого уже достаточно для старта." },
+  { title: "Сравнивай с собой",             body: "Смотри не на чужой темп, а на свой прогресс по сравнению со вчера." },
+  { title: "Ты не обязан всё сразу",        body: "Можно идти медленно. Главное — не предавать себя на пути." },
+  { title: "Сила в мягкости",               body: "Доброе сердце и спокойный голос — тоже форма внутренней силы." },
+  { title: "Отпусти лишнее",                body: "Ты имеешь право не нести то, что давно перестало быть твоим." },
+  { title: "Ошибки — это опыт",             body: "Каждая ошибка делает тебя точнее, глубже и мудрее." },
+  { title: "Ты важен",                      body: "Твоё присутствие уже меняет мир близких людей к лучшему." },
+  { title: "Выбери себя",                   body: "Забота о себе — не эгоизм, а уважение к своей жизни." },
+  { title: "Сегодня тоже день",             body: "Даже один завершённый пункт — это победа, а не мелочь." },
+  { title: "Ты не один",                    body: "Просить поддержку нормально. Сильные люди тоже опираются на других." },
+  { title: "Береги границы",                body: "\"Нет\" — это тоже забота, когда ты выбираешь себя и свои силы." },
+  { title: "Будь к себе добрее",            body: "Говори с собой так, как говорил бы с любимым человеком." },
+  { title: "Позвони родителям",              body: "Даже короткое \"как вы?\" может сделать чей-то вечер спокойнее." },
+  { title: "Проверь бабушку и дедушку",      body: "Одно доброе сообщение сегодня важнее идеального поста." },
+  { title: "Скажи спасибо",                  body: "Водителю, курьеру, коллеге. Простая благодарность греет надолго." },
+  { title: "Напиши тому, кто молчит",        body: "Иногда человеку нужен не совет, а просто \"я рядом\"." },
+  { title: "Сделай паузу",                   body: "Три глубоких вдоха и стакан воды часто решают больше, чем спор." },
+  { title: "Не откладывай добро",            body: "Если можно помочь сейчас, лучше сделать маленький шаг сразу." },
+  { title: "Держи слово",                    body: "Надёжность строится из мелочей: пообещал — напомни и сделай." },
+  { title: "Береги сон",                     body: "Усталость усиливает тревогу. Иногда лучший ответ — выспаться." },
+  { title: "Спроси: чем помочь?",            body: "Не \"держись\", а конкретно: \"что я могу сделать для тебя?\"." },
+  { title: "Обними близких",                 body: "Тепло важнее аргументов. Дом начинается с простого участия." },
+  { title: "Помни о соседях",                body: "Иногда пакет из магазина или пять минут помощи меняют день." },
+  { title: "Начни с доброго слова",          body: "Мягкий тон решает конфликты быстрее, чем правота." },
   { title: "Здесь безопасно",                body: "Разговоры с близкими остаются вашими. Ключ живёт на устройстве." },
   { title: "Сохрани общение с близкими",     body: "Архив чатов переезжает с вами — даже при смене телефона." },
   { title: "Один аккаунт — вся среда",       body: "Чат, карта, магазин и истории работают под одной подписью." },
@@ -153,7 +182,14 @@ function useRotatingTip(intervalMs = 5000) {
   useEffect(() => {
     if (reduced) return;
     const t = window.setInterval(() => {
-      setIndex((i) => (i + 1) % KIND_TIPS.length);
+      setIndex((prev) => {
+        if (KIND_TIPS.length <= 1) return prev;
+        let next = prev;
+        while (next === prev) {
+          next = Math.floor(Math.random() * KIND_TIPS.length);
+        }
+        return next;
+      });
     }, intervalMs);
     return () => window.clearInterval(t);
   }, [intervalMs, reduced]);
@@ -227,41 +263,81 @@ function KindTipsTicker({ tokens }: { tokens: ThemeTokens }) {
 
 /* ---------- flow state ---------- */
 
-type Step = "method" | "credentials" | "otp" | "success";
-type Method = "email" | "passkey" | "qr";
+type Step = "phone" | "register" | "otp" | "success";
 
 interface FlowState {
   step: Step;
-  method: Method;
+  phone: string;
   email: string;
+  firstName: string;
+  lastName: string;
+  middleName: string;
+  birthDate: string;
+  gender: string;
+  entityType: string;
+  password: string;
+  passwordConfirm: string;
+  registerError: string;
   otp: string;
   loading: boolean;
+  maskedEmail: string;
 }
 
 type FlowAction =
-  | { type: "setMethod"; method: Method }
+  | { type: "setPhone"; phone: string }
   | { type: "setEmail"; email: string }
+  | {
+      type: "setRegisterField";
+      field:
+        | "firstName"
+        | "lastName"
+        | "middleName"
+        | "birthDate"
+        | "gender"
+        | "entityType"
+        | "password"
+        | "passwordConfirm";
+      value: string;
+    }
+  | { type: "setRegisterError"; error: string }
   | { type: "setOtp"; otp: string }
+  | { type: "setMaskedEmail"; maskedEmail: string }
   | { type: "goto"; step: Step }
   | { type: "loading"; value: boolean }
   | { type: "reset" };
 
 const initialFlow: FlowState = {
-  step: "method",
-  method: "email",
+  step: "phone",
+  phone: "",
   email: "",
+  firstName: "",
+  lastName: "",
+  middleName: "",
+  birthDate: "",
+  gender: "",
+  entityType: "",
+  password: "",
+  passwordConfirm: "",
+  registerError: "",
   otp: "",
   loading: false,
+  maskedEmail: "",
 };
 
 function flowReducer(state: FlowState, action: FlowAction): FlowState {
   switch (action.type) {
-    case "setMethod":
-      return { ...state, method: action.method };
+    case "setPhone":
+      return { ...state, phone: action.phone };
     case "setEmail":
       return { ...state, email: action.email };
+    case "setRegisterField":
+      return { ...state, [action.field]: action.value };
+    case "setRegisterError":
+      return { ...state, registerError: action.error };
     case "setOtp":
       return { ...state, otp: action.otp };
+    case "setMaskedEmail":
+      return { ...state, maskedEmail: action.maskedEmail };
     case "goto":
       return { ...state, step: action.step };
     case "loading":
@@ -573,50 +649,6 @@ function OtpInput({ value, onChange, length = 6, tokens }: { value: string; onCh
   );
 }
 
-/* ---------- method pill ---------- */
-
-function MethodPill({
-  active,
-  icon,
-  label,
-  hint,
-  onClick,
-  tokens,
-}: {
-  active: boolean;
-  icon: React.ReactNode;
-  label: string;
-  hint: string;
-  onClick: () => void;
-  tokens: ThemeTokens;
-}) {
-  return (
-    <motion.button
-      type="button"
-      onClick={onClick}
-      whileHover={{ y: -2 }}
-      whileTap={{ scale: 0.98 }}
-      className={`relative flex flex-col items-start gap-2 p-3 sm:p-4 rounded-2xl border backdrop-blur-xl text-left transition-all
-        ${active ? tokens.pillActive : tokens.pillSurface}`}
-    >
-      <span className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-cyan-400 text-white shadow-sm">
-        {icon}
-      </span>
-      <div>
-        <div className={`${tokens.textPrimary} text-[13px] sm:text-sm font-semibold`}>{label}</div>
-        <div className={`${tokens.textMuted} text-[11px] sm:text-xs`}>{hint}</div>
-      </div>
-      {active && (
-        <motion.span
-          layoutId="method-active"
-          className={`absolute inset-0 rounded-2xl ring-2 pointer-events-none ${tokens.isDark ? "ring-white/50" : "ring-indigo-500/50"}`}
-          transition={{ type: "spring", stiffness: 300, damping: 28 }}
-        />
-      )}
-    </motion.button>
-  );
-}
-
 /* ---------- main page ---------- */
 
 export function AuthShowcasePage() {
@@ -739,14 +771,63 @@ export function AuthShowcasePage() {
   }, [tiltEnabled, isTouch, tiltX, tiltY]);
   void motionNeedsPermission;
 
-  const canContinueCreds = flow.email.includes("@") && flow.email.includes(".");
+  const navigate = useNavigate();
+
+  const phoneDigits = flow.phone.replace(/\D/g, "");
+  const regFirstName = flow.firstName ?? "";
+  const regLastName = flow.lastName ?? "";
+  const regEmail = flow.email ?? "";
+  const regBirthDate = flow.birthDate ?? "";
+  const regGender = flow.gender ?? "";
+  const regEntityType = flow.entityType ?? "";
+  const regPassword = flow.password ?? "";
+  const regPasswordConfirm = flow.passwordConfirm ?? "";
+  const canContinuePhone = phoneDigits.length >= 10;
   const canContinueOtp = flow.otp.length === 6;
 
-  const submitCreds = () => {
-    if (!canContinueCreds) return;
+  /**
+   * Попытка входа по телефону. Если «аккаунта нет» — показываем шаг
+   * регистрации в том же стеклянном стиле (единый дизайн auth-потока).
+   * Эвристика «не найдено»: номер заканчивается на 00 — идём в регистрацию.
+   */
+  const submitPhone = () => {
+    if (!canContinuePhone) return;
     dispatch({ type: "loading", value: true });
     window.setTimeout(() => {
       dispatch({ type: "loading", value: false });
+      const isUnknownAccount = phoneDigits.endsWith("00");
+      if (isUnknownAccount) {
+        dispatch({ type: "goto", step: "register" });
+        return;
+      }
+      const last2 = phoneDigits.slice(-2);
+      dispatch({ type: "setMaskedEmail", maskedEmail: `u***${last2}@example.com` });
+      dispatch({ type: "goto", step: "otp" });
+    }, 900);
+  };
+
+  const submitRegister = () => {
+    if (!regFirstName.trim() || !regLastName.trim() || !regEmail.trim() || !regBirthDate || !regGender || !regEntityType) {
+      dispatch({ type: "setRegisterError", error: "Заполните обязательные поля" });
+      return;
+    }
+    if (!regEmail.includes("@") || !regEmail.includes(".")) {
+      dispatch({ type: "setRegisterError", error: "Введите корректный email" });
+      return;
+    }
+    if (regPassword.length < 6) {
+      dispatch({ type: "setRegisterError", error: "Пароль должен содержать минимум 6 символов" });
+      return;
+    }
+    if (regPassword !== regPasswordConfirm) {
+      dispatch({ type: "setRegisterError", error: "Пароли не совпадают" });
+      return;
+    }
+    dispatch({ type: "setRegisterError", error: "" });
+    dispatch({ type: "loading", value: true });
+    window.setTimeout(() => {
+      dispatch({ type: "loading", value: false });
+      dispatch({ type: "setMaskedEmail", maskedEmail: flow.email });
       dispatch({ type: "goto", step: "otp" });
     }, 900);
   };
@@ -858,12 +939,12 @@ export function AuthShowcasePage() {
 
             {/* header */}
             <div className="flex items-center justify-between mb-5 sm:mb-6">
-              {flow.step !== "method" && flow.step !== "success" ? (
+              {flow.step !== "phone" && flow.step !== "success" ? (
                 <button
                   onClick={() =>
                     dispatch({
                       type: "goto",
-                      step: flow.step === "otp" ? "credentials" : "method",
+                      step: flow.step === "otp" ? "phone" : "phone",
                     })
                   }
                   className={`h-9 w-9 rounded-full border flex items-center justify-center transition ${tokens.iconBtn}`}
@@ -875,9 +956,10 @@ export function AuthShowcasePage() {
                 <div className="h-9 w-9" />
               )}
               <div className="flex items-center gap-1.5">
-                {(["method", "credentials", "otp", "success"] as Step[]).map((s) => {
-                  const activeIndex = ["method", "credentials", "otp", "success"].indexOf(flow.step);
-                  const idx = ["method", "credentials", "otp", "success"].indexOf(s);
+                {(["phone", "register", "otp", "success"] as Step[]).map((s) => {
+                  const order: Step[] = ["phone", "register", "otp", "success"];
+                  const activeIndex = order.indexOf(flow.step);
+                  const idx = order.indexOf(s);
                   return (
                     <span
                       key={s}
@@ -893,51 +975,52 @@ export function AuthShowcasePage() {
             {/* steps */}
             <div className="relative min-h-[300px] sm:min-h-[340px]">
               <AnimatePresence mode="wait" initial={false}>
-                {flow.step === "method" && (
-                  <motion.div
-                    key="method"
+                {flow.step === "phone" && (
+                  <motion.form
+                    key="phone"
                     initial={{ opacity: 0, x: 24 }}
                     animate={{ opacity: 1, x: 0 }}
                     exit={{ opacity: 0, x: -24 }}
                     transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      submitPhone();
+                    }}
+                    className="flex flex-col"
                   >
                     <KindTipsTicker tokens={tokens} />
 
-                    <div className="mt-4 sm:mt-6 grid grid-cols-3 gap-2 sm:gap-3">
-                      <MethodPill
-                        tokens={tokens}
-                        active={flow.method === "email"}
-                        icon={<Mail className="h-5 w-5" />}
-                        label="Email"
-                        hint="Код на почту"
-                        onClick={() => dispatch({ type: "setMethod", method: "email" })}
-                      />
-                      <MethodPill
-                        tokens={tokens}
-                        active={flow.method === "passkey"}
-                        icon={<Fingerprint className="h-5 w-5" />}
-                        label="Passkey"
-                        hint="Биометрия"
-                        onClick={() => dispatch({ type: "setMethod", method: "passkey" })}
-                      />
-                      <MethodPill
-                        tokens={tokens}
-                        active={flow.method === "qr"}
-                        icon={<QrCode className="h-5 w-5" />}
-                        label="QR"
-                        hint="С другого"
-                        onClick={() => dispatch({ type: "setMethod", method: "qr" })}
+                    <div className="mt-4 sm:mt-5">
+                      <PhoneInput
+                        value={flow.phone}
+                        onChange={(v) => dispatch({ type: "setPhone", phone: v })}
                       />
                     </div>
 
-                    <div className="mt-6 sm:mt-7">
+                    <div className={`mt-3 flex items-center gap-2 text-xs ${tokens.textMuted}`}>
+                      <ShieldCheck className="h-4 w-4 text-emerald-500" />
+                      Защищено end-to-end шифрованием
+                    </div>
+
+                    <div className="mt-5">
                       <PrimaryButton
+                        type="submit"
                         icon={<ArrowRight className="h-5 w-5" />}
-                        onClick={() => dispatch({ type: "goto", step: "credentials" })}
+                        disabled={!canContinuePhone}
+                        loading={flow.loading}
                       >
-                        Продолжить
+                        Получить код
                       </PrimaryButton>
                     </div>
+
+                    <button
+                      type="button"
+                      onClick={() => navigate("/auth")}
+                      className={`mt-3 group flex items-center justify-center gap-2 h-12 rounded-2xl border backdrop-blur-xl transition ${tokens.pillSurface} ${tokens.textSecondary}`}
+                    >
+                      <QrCode className="h-5 w-5 text-cyan-500" />
+                      Войти по QR-коду
+                    </button>
 
                     <p className={`mt-5 sm:mt-6 text-[11px] leading-relaxed ${tokens.textFaint}`}>
                       Продолжая, вы соглашаетесь с{" "}
@@ -950,41 +1033,135 @@ export function AuthShowcasePage() {
                       </Link>
                       .
                     </p>
-                  </motion.div>
+                  </motion.form>
                 )}
 
-                {flow.step === "credentials" && (
+                {flow.step === "register" && (
                   <motion.form
-                    key="credentials"
+                    key="register"
                     initial={{ opacity: 0, x: 24 }}
                     animate={{ opacity: 1, x: 0 }}
                     exit={{ opacity: 0, x: -24 }}
                     transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
                     onSubmit={(e) => {
                       e.preventDefault();
-                      submitCreds();
+                      submitRegister();
                     }}
-                    className="flex flex-col gap-5"
+                    className="flex flex-col gap-4"
                   >
                     <div>
                       <h1 className={`text-[24px] sm:text-[28px] leading-[1.1] font-bold tracking-tight ${tokens.textPrimary}`}>
-                        Ваш email
+                        Создать аккаунт
                       </h1>
                       <p className={`mt-2 text-sm ${tokens.textMuted}`}>
-                        Отправим код подтверждения. Без паролей.
+                        Аккаунта с номером{" "}
+                        <span className={tokens.textPrimary}>{flow.phone || "телефон"}</span>{" "}пока нет. Укажите email — пришлём код для создания.
                       </p>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <GlassInput
+                        tokens={tokens}
+                        id="firstName"
+                        label="Имя *"
+                        value={flow.firstName}
+                        onChange={(v) => dispatch({ type: "setRegisterField", field: "firstName", value: v })}
+                        autoComplete="given-name"
+                      />
+                      <GlassInput
+                        tokens={tokens}
+                        id="lastName"
+                        label="Фамилия *"
+                        value={flow.lastName}
+                        onChange={(v) => dispatch({ type: "setRegisterField", field: "lastName", value: v })}
+                        autoComplete="family-name"
+                      />
                     </div>
 
                     <GlassInput
                       tokens={tokens}
+                      id="middleName"
+                      label="Отчество (по желанию)"
+                      value={flow.middleName}
+                      onChange={(v) => dispatch({ type: "setRegisterField", field: "middleName", value: v })}
+                    />
+
+                    <GlassInput
+                      tokens={tokens}
                       id="email"
-                      label="Электронная почта"
+                      label="Электронная почта *"
                       value={flow.email}
                       onChange={(v) => dispatch({ type: "setEmail", email: v })}
                       type="email"
                       autoComplete="email"
                       icon={<Mail className="h-5 w-5" />}
                     />
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <GlassInput
+                        tokens={tokens}
+                        id="birthDate"
+                        label="Дата рождения *"
+                        value={flow.birthDate}
+                        onChange={(v) => dispatch({ type: "setRegisterField", field: "birthDate", value: v })}
+                        type="date"
+                      />
+
+                      <Select
+                        value={flow.gender}
+                        onValueChange={(value) => dispatch({ type: "setRegisterField", field: "gender", value })}
+                      >
+                        <SelectTrigger className={`h-14 rounded-2xl border backdrop-blur-xl ${tokens.inputSurface} ${tokens.textPrimary}`}>
+                          <SelectValue placeholder="Пол *" />
+                        </SelectTrigger>
+                        <SelectContent className="glass-popover">
+                          <SelectItem value="male">Мужской</SelectItem>
+                          <SelectItem value="female">Женский</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <Select
+                      value={flow.entityType}
+                      onValueChange={(value) => dispatch({ type: "setRegisterField", field: "entityType", value })}
+                    >
+                      <SelectTrigger className={`h-14 rounded-2xl border backdrop-blur-xl ${tokens.inputSurface} ${tokens.textPrimary}`}>
+                        <SelectValue placeholder="Тип пользователя *" />
+                      </SelectTrigger>
+                      <SelectContent className="glass-popover">
+                        <SelectItem value="individual">Физ. лицо</SelectItem>
+                        <SelectItem value="self_employed">Самозанятый</SelectItem>
+                        <SelectItem value="entrepreneur">ИП</SelectItem>
+                        <SelectItem value="legal_entity">Юр. лицо</SelectItem>
+                      </SelectContent>
+                    </Select>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <GlassInput
+                        tokens={tokens}
+                        id="password"
+                        label="Пароль *"
+                        value={flow.password}
+                        onChange={(v) => dispatch({ type: "setRegisterField", field: "password", value: v })}
+                        type="password"
+                        autoComplete="new-password"
+                      />
+                      <GlassInput
+                        tokens={tokens}
+                        id="passwordConfirm"
+                        label="Подтвердите пароль *"
+                        value={flow.passwordConfirm}
+                        onChange={(v) => dispatch({ type: "setRegisterField", field: "passwordConfirm", value: v })}
+                        type="password"
+                        autoComplete="new-password"
+                      />
+                    </div>
+
+                    {flow.registerError && (
+                      <div className="rounded-xl border border-rose-400/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
+                        {flow.registerError}
+                      </div>
+                    )}
 
                     <div className={`flex items-center gap-2 text-xs ${tokens.textMuted}`}>
                       <ShieldCheck className="h-4 w-4 text-emerald-500" />
@@ -993,20 +1170,20 @@ export function AuthShowcasePage() {
 
                     <PrimaryButton
                       type="submit"
-                      icon={<ArrowRight className="h-5 w-5" />}
-                      disabled={!canContinueCreds}
+                      icon={<UserPlus className="h-5 w-5" />}
+                      disabled={flow.loading}
                       loading={flow.loading}
                     >
-                      Получить код
+                      Создать аккаунт
                     </PrimaryButton>
 
                     <button
                       type="button"
-                      onClick={() => dispatch({ type: "setMethod", method: "passkey" })}
+                      onClick={() => dispatch({ type: "goto", step: "phone" })}
                       className={`group flex items-center justify-center gap-2 h-12 rounded-2xl border backdrop-blur-xl transition ${tokens.pillSurface} ${tokens.textSecondary}`}
                     >
-                      <Fingerprint className="h-5 w-5 text-cyan-500" />
-                      Войти по passkey
+                      <ChevronLeft className="h-5 w-5" />
+                      Изменить номер
                     </button>
                   </motion.form>
                 )}
@@ -1030,7 +1207,7 @@ export function AuthShowcasePage() {
                       </h1>
                       <p className={`mt-2 text-sm ${tokens.textMuted}`}>
                         Отправили 6-значный код на{" "}
-                        <span className={tokens.textPrimary}>{flow.email || "почту"}</span>
+                        <span className={tokens.textPrimary}>{flow.maskedEmail || flow.email || "почту"}</span>
                       </p>
                     </div>
 

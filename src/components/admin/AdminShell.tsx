@@ -19,6 +19,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
     { to: "/admin/admins", label: "Админы" },
     { to: "/admin/staff-profiles", label: "Staff Profiles", requireScope: "staff.profile.read" },
     { to: "/admin/verifications", label: "Verifications", requireScope: "verification.read" },
+    { to: "/admin/biz-registrations", label: "Регистрации бизнеса", requireScope: "biz_registration.read" },
     { to: "/admin/hashtags", label: "Hashtags", requireScope: "hashtag.status.write" },
     { to: "/admin/moderation-queue", label: "Mod Queue", requireScope: "moderation.review" },
     { to: "/admin/appeals", label: "Appeals", requireScope: "moderation.review" },

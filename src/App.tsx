@@ -154,7 +154,7 @@ const TaxiDriverPage = lazy(() => import("./pages/taxi/TaxiDriverPage"));
 
 // Amap navigation module (lazy)
 const AmapPage = lazy(() => import("@/pages/amap/AmapPage"));
-const BusinessRegistrationPage = lazy(() => import("@/pages/navigation/BusinessRegistrationPage"));
+
 const TripHistoryPage = lazy(() => import("@/pages/navigation/TripHistoryPage"));
 const QuantumTransportLabPage = lazy(() => import("@/pages/navigation/QuantumTransportLabPage"));
 
@@ -181,6 +181,8 @@ const KpiDashboardPage = lazy(() => import("@/pages/admin/KpiDashboardPage").the
 const ModerationQueuePage = lazy(() => import("@/pages/admin/ModerationQueuePage").then(m => ({ default: m.ModerationQueuePage })));
 const AppealsPage = lazy(() => import("@/pages/admin/AppealsPage").then(m => ({ default: m.AppealsPage })));
 const AdminSoglasieSettingsPage = lazy(() => import("@/pages/admin/AdminSoglasieSettingsPage").then(m => ({ default: m.AdminSoglasieSettingsPage })));
+const AdminBusinessRegistrationsPage = lazy(() => import("@/pages/admin/AdminBusinessRegistrationsPage").then(m => ({ default: m.AdminBusinessRegistrationsPage })));
+const BusinessRegistrationPage = lazy(() => import("@/pages/BusinessRegistrationPage"));
 
 // Deep link handler — must be inside BrowserRouter
 function DeepLinkHandler() {
@@ -450,6 +452,11 @@ const App = () => {
                       <AdminSoglasieSettingsPage />
                     </Suspense>
                   } />
+                  <Route path="/admin/biz-registrations" element={
+                    <Suspense fallback={<PageLoader />}>
+                      <AdminBusinessRegistrationsPage />
+                    </Suspense>
+                  } />
                   <Route path="/admin/navigation-lab" element={
                     <Suspense fallback={<PageLoader />}>
                       <QuantumTransportLabPage />
@@ -480,6 +487,8 @@ const App = () => {
                         <SearchPage />
                       </Suspense>
                     } />
+
+
 
                     <Route path="/hashtag/:tag" element={
                       <Suspense fallback={<PageLoader />}>

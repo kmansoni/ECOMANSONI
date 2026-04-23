@@ -6,9 +6,9 @@ import { QRCodeLogin } from "@/components/auth/QRCodeLogin";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PhoneInput } from "@/components/ui/phone-input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import logo from "@/assets/logo.png";
-import { RegistrationModal } from "@/components/auth/RegistrationModal";
 import { supabase } from "@/lib/supabase";
 import { sleep } from "@/lib/utils/sleep";
 import { RecommendedUsersModal } from "@/components/profile/RecommendedUsersModal";
@@ -24,6 +24,8 @@ import { logger } from "@/lib/logger";
  *  otp      — enter 6-digit code from email
  */
 type AuthMode = "select" | "login" | "register" | "otp" | "qr";
+type EntityType = "individual" | "self_employed" | "entrepreneur" | "legal_entity";
+type Gender = "male" | "female";
 
 const OTP_RESEND_COOLDOWN_SEC = 60;
 const AUTH_TIMEOUT_MS = 10_000;  // 10s per attempt (was 20s) — 2 URLs × 2 retries × 10s = 40s max
@@ -172,11 +174,98 @@ export function AuthPage() {
   const [maskedEmail, setMaskedEmail] = useState("");
   const [otpCode, setOtpCode] = useState("");
   const [otpCountdown, setOtpCountdown] = useState(0);
-  const [showRegistrationModal, setShowRegistrationModal] = useState(false);
   const [showRecommendations, setShowRecommendations] = useState(false);
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [middleName, setMiddleName] = useState("");
+  const [birthDate, setBirthDate] = useState("");
+  const [gender, setGender] = useState<Gender | "">("");
+  const [entityType, setEntityType] = useState<EntityType | "">("");
+  const [password, setPassword] = useState("");
+  const [passwordConfirm, setPasswordConfirm] = useState("");
   const isRegisterFlowRef = useRef(false);
   const otpSendUrlRef = useRef<string>("");
   const loading = authPageOperation !== null;
+
+  const clearRegisterFields = () => {
+    setFirstName("");
+    setLastName("");
+    setMiddleName("");
+    setBirthDate("");
+    setGender("");
+    setEntityType("");
+    setPassword("");
+    setPasswordConfirm("");
+  };
+
+  const completeRegistrationProfile = async () => {
+    const displayName = [firstName.trim(), lastName.trim(), middleName.trim()].filter(Boolean).join(" ");
+    const digits = phone.replace(/\D/g, "");
+    const normalizedEmail = (otpEmail || email).trim().toLowerCase();
+
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) {
+      toast.error("Сессия истекла, войдите снова");
+      return false;
+    }
+
+    const { error: authUpdateError } = await supabase.auth.updateUser({
+      password,
+      data: {
+        full_name: displayName,
+        first_name: firstName.trim(),
+        last_name: lastName.trim(),
+        middle_name: middleName.trim() || undefined,
+        email: normalizedEmail,
+        birth_date: birthDate,
+        gender,
+        entity_type: entityType,
+        phone: digits || undefined,
+      },
+    });
+
+    if (authUpdateError) {
+      logger.error("[AuthPage] auth update failed", { error: authUpdateError.message });
+      toast.error("Не удалось обновить аккаунт. Попробуйте снова.");
+      return false;
+    }
+
+    const profilePatch: Record<string, unknown> = {
+      display_name: displayName,
+      full_name: displayName,
+      first_name: firstName.trim(),
+      last_name: lastName.trim(),
+      email: normalizedEmail,
+      birth_date: birthDate,
+      gender,
+      entity_type: entityType,
+    };
+    if (digits) profilePatch.phone = digits;
+
+    const { data: existingProfile, error: existingProfileError } = await supabase
+      .from("profiles")
+      .select("user_id")
+      .eq("user_id", session.user.id)
+      .maybeSingle();
+
+    if (existingProfileError) {
+      logger.error("[AuthPage] profile existence check failed", { error: existingProfileError.message });
+      toast.error("Не удалось проверить профиль. Попробуйте снова.");
+      return false;
+    }
+
+    const profileMutation = existingProfile
+      ? await supabase.from("profiles").update(profilePatch).eq("user_id", session.user.id)
+      : await supabase.from("profiles").insert({ user_id: session.user.id, ...profilePatch });
+
+    if (profileMutation.error) {
+      logger.error("[AuthPage] profile save failed", { error: profileMutation.error.message });
+      toast.error("Не удалось сохранить профиль. Попробуйте снова.");
+      return false;
+    }
+
+    return true;
+  };
 
   // Countdown timer for OTP resend
   useEffect(() => {
@@ -388,8 +477,11 @@ export function AuthPage() {
         const isNewUser = payloadBoolean(data, "isNewUser") || isRegisterFlowRef.current;
 
         if (isNewUser) {
-          toast.success("Заполните профиль для завершения регистрации");
-          setShowRegistrationModal(true);
+          const saved = await completeRegistrationProfile();
+          if (!saved) return;
+          toast.success("Аккаунт создан!");
+          clearRegisterFields();
+          setShowRecommendations(true);
         } else {
           toast.success("Добро пожаловать!");
           navigate("/");
@@ -480,7 +572,7 @@ export function AuthPage() {
   };
 
   /**
-   * Register: phone + email → send OTP to given email → verify → registration modal.
+  * Register: collect profile fields + phone/email → send OTP → verify → save profile.
    */
   const handleRegisterClick = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -488,13 +580,27 @@ export function AuthPage() {
 
     const trimmedPhone = phone.trim();
     const trimmedEmail = email.trim().toLowerCase();
+    const trimmedFirstName = firstName.trim();
+    const trimmedLastName = lastName.trim();
 
     if (!trimmedPhone || trimmedPhone.replace(/\D/g, "").length < 10) {
       toast.error("Введите корректный номер телефона");
       return;
     }
+    if (!trimmedFirstName || !trimmedLastName || !birthDate || !gender || !entityType) {
+      toast.error("Заполните обязательные поля");
+      return;
+    }
     if (!trimmedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
       toast.error("Введите корректный email");
+      return;
+    }
+    if (password.length < 6) {
+      toast.error("Пароль должен содержать минимум 6 символов");
+      return;
+    }
+    if (password !== passwordConfirm) {
+      toast.error("Пароли не совпадают");
       return;
     }
 
@@ -580,6 +686,7 @@ export function AuthPage() {
     if (mode === "register") {
       setMode("login");
       setEmail("");
+      clearRegisterFields();
       isRegisterFlowRef.current = false;
       return;
     }
@@ -589,12 +696,6 @@ export function AuthPage() {
       setMode("select");
       setPhone("");
     }
-  };
-
-  const handleRegistrationSuccess = () => {
-    setShowRegistrationModal(false);
-    toast.success("Аккаунт создан!");
-    setShowRecommendations(true);
   };
 
   const handleRecommendationsClose = () => {
@@ -760,7 +861,7 @@ export function AuthPage() {
               {mode === "select" && "Выберите действие для продолжения"}
               {mode === "login" && "Введите номер телефона"}
               {mode === "otp" && `Код отправлен на ${maskedEmail || otpEmail || email.trim()}`}
-              {mode === "register" && "Укажите телефон и почту"}
+              {mode === "register" && "Заполните данные для создания аккаунта"}
             </p>
           </div>
 
@@ -943,7 +1044,7 @@ export function AuthPage() {
             </>
           )}
 
-          {/* Register form - phone + email, then OTP → registration modal */}
+          {/* Register form */}
           {mode === "register" && (
             <>
               <div className="relative">
@@ -969,12 +1070,103 @@ export function AuthPage() {
                   <div className="relative group">
                     <div className="absolute inset-0 bg-white/5 rounded-2xl group-focus-within:bg-white/10 transition-colors" />
                     <Input
+                      value={firstName}
+                      onChange={(e) => setFirstName(e.target.value)}
+                      placeholder="Имя *"
+                      required
+                      className="glass-input relative h-14 rounded-2xl px-4 outline-none text-base"
+                    />
+                  </div>
+
+                  <div className="relative group">
+                    <div className="absolute inset-0 bg-white/5 rounded-2xl group-focus-within:bg-white/10 transition-colors" />
+                    <Input
+                      value={lastName}
+                      onChange={(e) => setLastName(e.target.value)}
+                      placeholder="Фамилия *"
+                      required
+                      className="glass-input relative h-14 rounded-2xl px-4 outline-none text-base"
+                    />
+                  </div>
+
+                  <div className="relative group">
+                    <div className="absolute inset-0 bg-white/5 rounded-2xl group-focus-within:bg-white/10 transition-colors" />
+                    <Input
+                      value={middleName}
+                      onChange={(e) => setMiddleName(e.target.value)}
+                      placeholder="Отчество (по желанию)"
+                      className="glass-input relative h-14 rounded-2xl px-4 outline-none text-base"
+                    />
+                  </div>
+
+                  <div className="relative group">
+                    <div className="absolute inset-0 bg-white/5 rounded-2xl group-focus-within:bg-white/10 transition-colors" />
+                    <Input
                       type="email"
                       inputMode="email"
                       autoComplete="email"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      placeholder="you@example.com"
+                      placeholder="Email *"
+                      required
+                      className="glass-input relative h-14 rounded-2xl px-4 outline-none text-base"
+                    />
+                  </div>
+
+                  <div className="relative group">
+                    <div className="absolute inset-0 bg-white/5 rounded-2xl group-focus-within:bg-white/10 transition-colors" />
+                    <Input
+                      type="date"
+                      value={birthDate}
+                      onChange={(e) => setBirthDate(e.target.value)}
+                      required
+                      className="glass-input relative h-14 rounded-2xl px-4 outline-none text-base"
+                    />
+                  </div>
+
+                  <Select value={gender} onValueChange={(value) => setGender(value as Gender)}>
+                    <SelectTrigger className="glass-input h-14 rounded-2xl px-4 outline-none text-base">
+                      <SelectValue placeholder="Пол *" />
+                    </SelectTrigger>
+                    <SelectContent className="glass-popover">
+                      <SelectItem value="male">Мужской</SelectItem>
+                      <SelectItem value="female">Женский</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  <Select value={entityType} onValueChange={(value) => setEntityType(value as EntityType)}>
+                    <SelectTrigger className="glass-input h-14 rounded-2xl px-4 outline-none text-base">
+                      <SelectValue placeholder="Тип пользователя *" />
+                    </SelectTrigger>
+                    <SelectContent className="glass-popover">
+                      <SelectItem value="individual">Физ. лицо</SelectItem>
+                      <SelectItem value="self_employed">Самозанятый</SelectItem>
+                      <SelectItem value="entrepreneur">ИП</SelectItem>
+                      <SelectItem value="legal_entity">Юр. лицо</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  <div className="relative group">
+                    <div className="absolute inset-0 bg-white/5 rounded-2xl group-focus-within:bg-white/10 transition-colors" />
+                    <Input
+                      type="password"
+                      autoComplete="new-password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="Пароль *"
+                      required
+                      className="glass-input relative h-14 rounded-2xl px-4 outline-none text-base"
+                    />
+                  </div>
+
+                  <div className="relative group">
+                    <div className="absolute inset-0 bg-white/5 rounded-2xl group-focus-within:bg-white/10 transition-colors" />
+                    <Input
+                      type="password"
+                      autoComplete="new-password"
+                      value={passwordConfirm}
+                      onChange={(e) => setPasswordConfirm(e.target.value)}
+                      placeholder="Подтвердите пароль *"
                       required
                       className="glass-input relative h-14 rounded-2xl px-4 outline-none text-base"
                     />
@@ -991,7 +1183,7 @@ export function AuthPage() {
                         <span>Отправка...</span>
                       </div>
                     ) : (
-                      "Зарегистрироваться"
+                      "Получить код"
                     )}
                   </Button>
                 </form>
@@ -1014,17 +1206,6 @@ export function AuthPage() {
 
       {/* Bottom safe area gradient */}
       <div className="absolute bottom-0 left-0 right-0 h-20 bg-gradient-to-t from-black/20 to-transparent" />
-
-      {/* Registration Modal */}
-      <RegistrationModal 
-        isOpen={showRegistrationModal}
-        onClose={() => {
-          if (!loading) setShowRegistrationModal(false);
-        }}
-        phone={phone}
-        email={otpEmail || email}
-        onSuccess={handleRegistrationSuccess}
-      />
 
       {/* Recommended Users Modal */}
       <RecommendedUsersModal

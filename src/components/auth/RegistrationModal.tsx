@@ -17,7 +17,7 @@ interface RegistrationModalProps {
   onSuccess: () => void;
 }
 
-type EntityType = "individual" | "legal_entity" | "entrepreneur";
+type EntityType = "individual" | "self_employed" | "entrepreneur" | "legal_entity";
 type Gender = "male" | "female";
 
 export function RegistrationModal({ isOpen, onClose, phone, email: initialEmail, onSuccess }: RegistrationModalProps) {
@@ -25,6 +25,7 @@ export function RegistrationModal({ isOpen, onClose, phone, email: initialEmail,
   
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
+  const [middleName, setMiddleName] = useState("");
   const [emailField, setEmailField] = useState(initialEmail || "");
   const [phoneField, setPhoneField] = useState(phone || "");
   const [birthDate, setBirthDate] = useState("");
@@ -38,17 +39,6 @@ export function RegistrationModal({ isOpen, onClose, phone, email: initialEmail,
     setEmailField(initialEmail || "");
     setPhoneField(phone || "");
   }, [isOpen, initialEmail, phone]);
-
-  const calculateAge = (birthDateStr: string): number => {
-    const today = new Date();
-    const birth = new Date(birthDateStr);
-    let age = today.getFullYear() - birth.getFullYear();
-    const monthDiff = today.getMonth() - birth.getMonth();
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
-      age--;
-    }
-    return age;
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -69,16 +59,11 @@ export function RegistrationModal({ isOpen, onClose, phone, email: initialEmail,
       return;
     }
 
-    const age = calculateAge(birthDate);
-    if (age < 18) {
-      toast.error("Регистрация доступна только с 18 лет");
-      return;
-    }
-
     setLoading(true);
 
     try {
-      const displayName = `${firstName} ${lastName}`;
+      const trimmedMiddleName = middleName.trim();
+      const displayName = [firstName.trim(), lastName.trim(), trimmedMiddleName].filter(Boolean).join(" ");
       const digits = phoneField.replace(/\D/g, '');
 
       // Get current session — user is already logged in via email OTP
@@ -93,6 +78,13 @@ export function RegistrationModal({ isOpen, onClose, phone, email: initialEmail,
         password,
         data: {
           full_name: displayName,
+          first_name: firstName.trim(),
+          last_name: lastName.trim(),
+          middle_name: trimmedMiddleName || undefined,
+          email: emailField.trim().toLowerCase(),
+          birth_date: birthDate,
+          gender,
+          entity_type: entityType,
           phone: digits || undefined,
         },
       });
@@ -106,11 +98,11 @@ export function RegistrationModal({ isOpen, onClose, phone, email: initialEmail,
       // Update profile with full information
       const profilePatch: Record<string, unknown> = {
         display_name: displayName,
-        first_name: firstName,
-        last_name: lastName,
-        email: emailField,
+        full_name: displayName,
+        first_name: firstName.trim(),
+        last_name: lastName.trim(),
+        email: emailField.trim().toLowerCase(),
         birth_date: birthDate,
-        age: calculateAge(birthDate),
         gender,
         entity_type: entityType,
       };
@@ -185,7 +177,7 @@ export function RegistrationModal({ isOpen, onClose, phone, email: initialEmail,
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <Label htmlFor="firstName" className="text-sm">Имя *</Label>
               <Input
@@ -204,6 +196,17 @@ export function RegistrationModal({ isOpen, onClose, phone, email: initialEmail,
                 placeholder="Петров"
                 value={lastName}
                 onChange={(e) => setLastName(e.target.value)}
+                disabled={loading}
+                className="glass-input"
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <Label htmlFor="middleName" className="text-sm">Отчество (по желанию)</Label>
+              <Input
+                id="middleName"
+                placeholder="Иванович"
+                value={middleName}
+                onChange={(e) => setMiddleName(e.target.value)}
                 disabled={loading}
                 className="glass-input"
               />
@@ -282,7 +285,7 @@ export function RegistrationModal({ isOpen, onClose, phone, email: initialEmail,
                 <SelectTrigger id="gender" disabled={loading} className="glass-input">
                   <SelectValue placeholder="Выберите" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="glass-popover">
                   <SelectItem value="male">Мужской</SelectItem>
                   <SelectItem value="female">Женский</SelectItem>
                 </SelectContent>
@@ -294,8 +297,9 @@ export function RegistrationModal({ isOpen, onClose, phone, email: initialEmail,
                 <SelectTrigger id="entity" disabled={loading} className="glass-input">
                   <SelectValue placeholder="Выберите" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="glass-popover">
                   <SelectItem value="individual">Физ. лицо</SelectItem>
+                  <SelectItem value="self_employed">Самозанятый</SelectItem>
                   <SelectItem value="entrepreneur">ИП</SelectItem>
                   <SelectItem value="legal_entity">Юр. лицо</SelectItem>
                 </SelectContent>

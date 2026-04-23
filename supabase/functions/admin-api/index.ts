@@ -56,7 +56,12 @@ type ActionRequest = {
     | "service_bugs.update"
     | "service_bugs.delete"
     | "insurance_settings.get"
-    | "insurance_settings.set";
+    | "insurance_settings.set"
+    | "biz_registration.list"
+    | "biz_registration.get"
+    | "biz_registration.review"
+    | "biz_registration.request_docs"
+    | "biz_registration.document_url";
   params?: Record<string, Json>;
 };
 
@@ -2304,6 +2309,188 @@ serve(async (req: Request) => {
           severity: "SEV2",
           status: "success",
           after_state: data ?? null,
+        });
+
+        return jsonResponse({ ok: true, data }, 200, origin);
+      }
+
+      // ─── Business Legal Registrations ──────────────────
+      case "biz_registration.list": {
+        if (!hasScope("biz_registration.read")) {
+          await audit({
+            action: "biz_registration.read",
+            resource_type: "biz_registration",
+            severity: "SEV3",
+            status: "denied",
+            reason: "missing_scope",
+          });
+          return errorResponse("Forbidden", 403, origin);
+        }
+        const p = (actionReq.params ?? {}) as Record<string, Json>;
+        const status = typeof p.status === "string" ? p.status : null;
+        const kind = typeof p.kind === "string" ? p.kind : null;
+        const search = typeof p.search === "string" ? p.search.trim() : "";
+        const limit = Math.min(Math.max(Number(p.limit) || 50, 1), 200);
+        const offset = Math.max(Number(p.offset) || 0, 0);
+
+        let query = (supabaseService as any)
+          .from("business_legal_applications")
+          .select("id, user_id, kind, status, form_data, okved_codes, payment_status, rejection_reason, review_comment, submitted_at, reviewed_at, completed_at, created_at, updated_at, reviewer_admin_id", { count: "exact" })
+          .order("updated_at", { ascending: false })
+          .range(offset, offset + limit - 1);
+
+        if (status) query = query.eq("status", status);
+        if (kind) query = query.eq("kind", kind);
+        if (search) {
+          // search across form_data->>full_name / inn
+          query = query.or(
+            `form_data->>full_name.ilike.%${search}%,form_data->>inn.ilike.%${search}%,id.eq.${/^[0-9a-f-]{36}$/i.test(search) ? search : "00000000-0000-0000-0000-000000000000"}`,
+          );
+        }
+
+        const { data, count, error } = await query;
+        if (error) throw error;
+
+        await audit({
+          action: "biz_registration.list",
+          resource_type: "biz_registration",
+          severity: "SEV3",
+          status: "success",
+        });
+
+        return jsonResponse({ ok: true, data: { items: data ?? [], total: count ?? 0 } }, 200, origin);
+      }
+
+      case "biz_registration.get": {
+        if (!hasScope("biz_registration.read")) {
+          return errorResponse("Forbidden", 403, origin);
+        }
+        const req = requireParams(actionReq.params, ["id"]);
+        if (!req.ok) return errorResponse(`Missing param: ${req.missing}`, 400, origin);
+        const id = String(req.value.id);
+
+        const { data: application, error: aerr } = await (supabaseService as any)
+          .from("business_legal_applications")
+          .select("*")
+          .eq("id", id)
+          .maybeSingle();
+        if (aerr) throw aerr;
+        if (!application) return errorResponse("Not found", 404, origin);
+
+        const { data: documents } = await (supabaseService as any)
+          .from("business_legal_documents")
+          .select("id, doc_type, storage_path, file_name, mime_type, size_bytes, ocr_data, verified, created_at")
+          .eq("application_id", id)
+          .order("created_at", { ascending: true });
+
+        const { data: log } = await (supabaseService as any)
+          .from("business_legal_status_log")
+          .select("id, from_status, to_status, actor_user_id, actor_admin_id, comment, created_at")
+          .eq("application_id", id)
+          .order("created_at", { ascending: false });
+
+        await audit({
+          action: "biz_registration.get",
+          resource_type: "biz_registration",
+          resource_id: id,
+          severity: "SEV3",
+          status: "success",
+        });
+
+        return jsonResponse(
+          { ok: true, data: { application, documents: documents ?? [], log: log ?? [] } },
+          200,
+          origin,
+        );
+      }
+
+      case "biz_registration.document_url": {
+        if (!hasScope("biz_registration.read")) {
+          return errorResponse("Forbidden", 403, origin);
+        }
+        const req = requireParams(actionReq.params, ["document_id"]);
+        if (!req.ok) return errorResponse(`Missing param: ${req.missing}`, 400, origin);
+        const { data: doc, error: derr } = await (supabaseService as any)
+          .from("business_legal_documents")
+          .select("id, storage_path")
+          .eq("id", String(req.value.document_id))
+          .maybeSingle();
+        if (derr) throw derr;
+        if (!doc) return errorResponse("Not found", 404, origin);
+
+        const { data: signed, error: serr } = await (supabaseService as any)
+          .storage
+          .from("business-legal-docs")
+          .createSignedUrl(doc.storage_path, 60 * 10);
+        if (serr) throw serr;
+
+        return jsonResponse({ ok: true, data: { url: signed?.signedUrl ?? null, expires_in: 600 } }, 200, origin);
+      }
+
+      case "biz_registration.review": {
+        if (!hasScope("biz_registration.review")) {
+          await audit({
+            action: "biz_registration.review",
+            resource_type: "biz_registration",
+            severity: "SEV2",
+            status: "denied",
+            reason: "missing_scope",
+          });
+          return errorResponse("Forbidden", 403, origin);
+        }
+        const req = requireParams(actionReq.params, ["id", "decision"]);
+        if (!req.ok) return errorResponse(`Missing param: ${req.missing}`, 400, origin);
+
+        const id = String(req.value.id);
+        const decision = String(req.value.decision);
+        const p = (actionReq.params ?? {}) as Record<string, Json>;
+        const comment = typeof p.comment === "string" ? p.comment.trim() : null;
+        const rejectionReason = typeof p.rejection_reason === "string" ? p.rejection_reason.trim() : null;
+
+        const ALLOWED = new Set(["approve", "reject", "request_fixes", "take_review", "send_to_fns"]);
+        if (!ALLOWED.has(decision)) {
+          return errorResponse("Invalid decision", 400, origin);
+        }
+
+        const patch: Record<string, Json> = {
+          reviewer_admin_id: me.admin_user_id,
+          reviewed_at: new Date().toISOString(),
+        };
+        if (comment !== null) patch.review_comment = comment;
+
+        if (decision === "take_review") {
+          patch.status = "under_review";
+        } else if (decision === "request_fixes") {
+          if (!comment) return errorResponse("comment is required for request_fixes", 400, origin);
+          patch.status = "needs_fixes";
+        } else if (decision === "send_to_fns") {
+          patch.status = "sent_to_fns";
+          patch.fns_reference = `FNS-MOCK-${Date.now()}`;
+        } else if (decision === "approve") {
+          patch.status = "approved";
+          patch.completed_at = new Date().toISOString();
+        } else if (decision === "reject") {
+          if (!rejectionReason) return errorResponse("rejection_reason is required for reject", 400, origin);
+          patch.status = "rejected";
+          patch.rejection_reason = rejectionReason;
+          patch.completed_at = new Date().toISOString();
+        }
+
+        const { data, error } = await (supabaseService as any)
+          .from("business_legal_applications")
+          .update(patch)
+          .eq("id", id)
+          .select("*")
+          .single();
+        if (error) throw error;
+
+        await audit({
+          action: `biz_registration.${decision}`,
+          resource_type: "biz_registration",
+          resource_id: id,
+          severity: decision === "reject" || decision === "approve" ? "SEV1" : "SEV2",
+          status: "success",
+          after_state: { status: data.status },
         });
 
         return jsonResponse({ ok: true, data }, 200, origin);

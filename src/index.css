@@ -747,10 +747,36 @@ html.appearance-no-sticker-anim .emoji-picker-ios .EmojiPickerReact .epr-emoji i
   color: hsl(var(--glass-muted-ink));
 }
 
-.glass-input:focus-visible {
+.glass-input:focus-visible,
+.glass-input:focus-within {
   outline: none;
-  border-color: hsl(var(--ring));
-  box-shadow: 0 0 0 2px hsl(var(--ring) / 0.25);
+  border-color: hsl(var(--ring) / 0.55);
+  box-shadow: 0 0 0 1px hsl(var(--ring) / 0.35);
+  /* Neutralize Tailwind/shadcn ring so it doesn't stack with our glass ring */
+  --tw-ring-shadow: 0 0 #0000;
+  --tw-ring-offset-shadow: 0 0 #0000;
+  --tw-ring-offset-width: 0px;
+}
+
+.glass-popover {
+  background: hsl(var(--glass-input));
+  color: hsl(var(--glass-ink));
+  border: 1px solid hsl(var(--glass-border));
+  backdrop-filter: blur(24px) saturate(1.2);
+  -webkit-backdrop-filter: blur(24px) saturate(1.2);
+  box-shadow: 0 12px 32px hsl(var(--glass-shadow));
+}
+
+.glass-popover [role="option"] {
+  color: hsl(var(--glass-ink));
+  border-radius: 0.5rem;
+}
+
+.glass-popover [role="option"][data-highlighted],
+.glass-popover [role="option"]:focus {
+  background: hsl(var(--ring) / 0.18);
+  color: hsl(var(--glass-ink));
+  outline: none;
 }
 
 .glass-primary-btn {

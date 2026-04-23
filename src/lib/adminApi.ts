@@ -32,7 +32,11 @@ export type AdminApiAction =
   | "service_bugs.update"
   | "service_bugs.delete"
   | "insurance_settings.get"
-  | "insurance_settings.set";
+  | "insurance_settings.set"
+  | "biz_registration.list"
+  | "biz_registration.get"
+  | "biz_registration.review"
+  | "biz_registration.document_url";
 
 export type KillSwitchRow = {
   key: string;
