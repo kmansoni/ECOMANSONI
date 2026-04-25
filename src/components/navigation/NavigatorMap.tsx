@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils';
 import type { LatLng } from '@/types/taxi';
 import type { RouteSegment, SpeedCamera, NavRoute, Maneuver, ManeuverType, NavigationLaneGuidance, LaneTurn, MultiModalRoute } from '@/types/navigation';
 import { MapLibre3D } from './MapLibre3D';
+import { HDRoadModeToggle, isHDRoadEnabledFromStorage } from './HDRoadModeToggle';
 import { GreenWaveOverlay } from './GreenWaveOverlay';
 import { useNavigatorSettings } from '@/stores/navigatorSettingsStore';
 import { useUserSettings } from '@/contexts/UserSettingsContext';
@@ -308,6 +309,7 @@ export const NavigatorMap = memo(function NavigatorMap({
   const languageCode = settings?.language_code ?? null;
   const [cameraState, setCameraState] = useState({ center, zoom });
   const [is3D, setIs3D] = useState(true);
+  const [hdRoadEnabled, setHdRoadEnabled] = useState<boolean>(() => isHDRoadEnabledFromStorage());
   const navSettings = useNavigatorSettings();
 
   // Survey mode
@@ -373,6 +375,7 @@ export const NavigatorMap = memo(function NavigatorMap({
           : navSettings.navTheme === 'light' ? 'light'
           : 'dark'}
         onMapClick={onMapClick}
+        hdRoadEnabled={hdRoadEnabled}
         className="w-full h-full"
       />
 
@@ -471,6 +474,7 @@ export const NavigatorMap = memo(function NavigatorMap({
             <LocateFixed className="h-5 w-5 text-sky-400" />
           </button>
         )}
+        <HDRoadModeToggle onChange={setHdRoadEnabled} />
       </div>
 
       {/* Survey Capture Modal */}

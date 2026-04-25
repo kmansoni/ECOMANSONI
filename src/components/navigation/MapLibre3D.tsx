@@ -28,6 +28,8 @@ import { logger } from '@/lib/logger';
 import { surveyService } from '@/lib/survey/surveyService';
 import type { SurveyScan } from '@/types/survey';
 import { supabase } from '@/lib/supabase';
+import { useHDRoadInfra } from '@/hooks/useHDRoadInfra';
+import { HDInfraInfoPanel } from './HDInfraInfoPanel';
 
 // ─── Style URLs: auto-detect MapTiler or fallback to CartoDB ────────────────
 const STYLES = {
@@ -87,6 +89,8 @@ export interface MapLibre3DProps {
   nextManeuver?: Maneuver | null;
   mapStyle?: MapStyle;
   onMapClick?: (latlng: LatLng) => void;
+  /** HD 3D-режим: настоящие 3D-полосы, знаки, камеры через Three.js overlay */
+  hdRoadEnabled?: boolean;
   className?: string;
 }
 
@@ -109,6 +113,7 @@ export const MapLibre3D = memo(function MapLibre3D({
   nextManeuver = null,
   mapStyle = 'dark',
   onMapClick,
+  hdRoadEnabled = false,
   className = '',
 }: MapLibre3DProps) {
    const containerRef = useRef<HTMLDivElement>(null);
@@ -820,9 +825,27 @@ export const MapLibre3D = memo(function MapLibre3D({
     };
   }, [userPosition?.lat, userPosition?.lng, isReady, isNavigating, navSettings.showTrafficLights]);
 
+  // ── HD Road Infrastructure (Three.js overlay) ───────────────────────────
+  const { selectedHit, clearSelection } = useHDRoadInfra(mapRef.current, isReady, {
+    enabled: hdRoadEnabled,
+    userPosition,
+    heading,
+  });
+
   return (
     <div className={`relative w-full h-full ${className}`}>
       <div ref={containerRef} className="w-full h-full" />
+
+      {hdRoadEnabled && selectedHit && (
+        <HDInfraInfoPanel
+          object={
+            selectedHit.kind === 'sign' ? { kind: 'sign', data: selectedHit.data }
+            : selectedHit.kind === 'camera' ? { kind: 'camera', data: selectedHit.data }
+            : { kind: 'bridge', data: selectedHit.data }
+          }
+          onClose={clearSelection}
+        />
+      )}
 
       {/* Inject animations */}
       <style>{`
