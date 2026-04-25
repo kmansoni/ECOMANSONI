@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="512" height="512" role="img" aria-label="Mansoni mono">
+  <rect x="4" y="4" width="192" height="192" rx="44" ry="44" fill="#0B1020"/>
+  <g fill="none" stroke="#FFFFFF" stroke-width="14" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M52 148 L52 60"/>
+    <path d="M148 148 L148 60"/>
+    <path d="M52 60 L100 118 L148 60"/>
+  </g>
+  <circle cx="100" cy="118" r="6" fill="#FFFFFF"/>
+</svg>
