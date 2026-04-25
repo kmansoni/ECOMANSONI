@@ -185,8 +185,16 @@ function PostCardComponent({
 
   const applyAspectRatio = (width: number, height: number) => {
     if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return;
-    // Keep ratio in a sane feed range to avoid extreme layout jumps.
-    const next = Math.min(1.5, Math.max(0.75, width / height));
+    const raw = width / height;
+    // Instagram aspect ratio clamping:
+    // - Портрет (4:5 = 0.8) — максимально высокое фото в ленте
+    // - Квадрат (1:1 = 1.0) — стандарт
+    // - Ландшафт (1.91:1) — максимально широкое
+    // Узкие портреты (скриншоты, 9:16) — показываем contain, min 0.5625
+    // Широкие панорамы → обрезаем до 1.91
+    const next = raw < 0.5625
+      ? 0.5625 // 9:16 минимум — уже не обрезаем, переключаем на contain
+      : Math.min(1.91, raw);
     setFrameAspectRatio((prev) => (Math.abs(prev - next) < 0.01 ? prev : next));
   };
 
@@ -371,7 +379,7 @@ function PostCardComponent({
       {/* Image/Video Carousel */}
       {allMedia.length > 0 && (
         <div
-          className="relative mx-3 media-frame media-frame--post cursor-pointer select-none overflow-hidden rounded-2xl border border-white/25 bg-white/10 shadow-[0_14px_34px_rgba(0,0,0,0.2)]"
+          className="relative mx-3 media-frame media-frame--post cursor-pointer select-none overflow-hidden rounded-2xl border border-white/25 bg-black shadow-[0_14px_34px_rgba(0,0,0,0.2)]"
           style={{ aspectRatio: frameAspectRatio }}
           onTouchStart={onTouchStart}
           onTouchEnd={onTouchEnd}
@@ -412,13 +420,21 @@ function PostCardComponent({
                     const w = el.naturalWidth;
                     const h = el.naturalHeight;
                     if (w > 0 && h > 0) {
-                      const ratio = Math.min(1.5, Math.max(0.75, w / h));
+                      const raw = w / h;
+                      const ratio = raw < 0.5625
+                        ? 0.5625
+                        : Math.min(1.91, raw);
                       aspectRatioCache.current[idx] = ratio;
                       if (idx === currentImageIndex) {
                         applyAspectRatio(w, h);
                       }
                     }
                   }}
+                  objectFit={(() => {
+                    const cached = aspectRatioCache.current[idx];
+                    // узкий портрет (< 9:16) — contain чтобы не обрезать
+                    return cached && cached < 0.5625 ? "contain" : "cover";
+                  })()}
                 />
               );
             })}

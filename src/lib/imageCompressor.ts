@@ -56,14 +56,27 @@ export interface CompressResult {
  * Используются в mediaUpload.ts для автоматического выбора по bucket.
  */
 export const COMPRESS_PRESETS = {
-  /** Посты, Stories — Instagram-подобное качество */
+  /**
+   * Посты в ленте — максимальное качество (Instagram-standard).
+   * 1440px для retina-дисплеев, Instagram ресайзит до 1080px на сервере,
+   * но загрузка в 1440px даёт запас детализации при двойном сжатии CDN.
+   * quality 0.92 — оптимальный баланс: визуально lossless, без артефактов
+   * на градиентах и в тенях после двойной компрессии Instagram.
+   */
   post: {
-    maxWidth: 1080,
-    maxHeight: 1350,
-    quality: 0.85,
+    maxWidth: 1440,
+    maxHeight: 1800,
+    quality: 0.92,
     outputFormat: 'image/jpeg' as const,
   },
-  /** Аватары пользователей — компактные квадратные миниатюры */
+  /** Stories — вертикальный формат 9:16, высокое качество */
+  story: {
+    maxWidth: 1080,
+    maxHeight: 1920,
+    quality: 0.90,
+    outputFormat: 'image/jpeg' as const,
+  },
+  /** Аватары — компактные квадратные миниатюры */
   avatar: {
     maxWidth: 512,
     maxHeight: 512,
@@ -74,7 +87,7 @@ export const COMPRESS_PRESETS = {
   chat: {
     maxWidth: 1920,
     maxHeight: 1920,
-    quality: 0.80,
+    quality: 0.82,
     outputFormat: 'image/jpeg' as const,
   },
   /** Превью для Reels/видео — небольшой thumbnail */

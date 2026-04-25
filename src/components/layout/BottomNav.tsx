@@ -375,9 +375,11 @@ export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function Bottom
             className={cn(
               "flex-1 flex items-center justify-around",
               "rounded-full",
-              "glass-window bg-black/35 dark:bg-black/40 backdrop-blur-2xl",
-              "border border-white/20 dark:border-white/10",
-              "shadow-[0_18px_45px_rgba(7,10,26,0.28)]"
+              "bg-[rgba(10,22,40,0.72)] dark:bg-[rgba(15,15,25,0.78)]",
+              "backdrop-blur-[24px] saturate-[1.4] dark:saturate-[1.3]",
+              "border border-white/[0.18] dark:border-white/10",
+              "shadow-[0_8px_32px_rgba(0,120,200,0.2),0_2px_8px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.12)]",
+              "dark:shadow-[0_8px_32px_rgba(15,69,255,0.15),0_2px_8px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.06)]"
             )}
             style={{
               height: `${BOTTOM_NAV_BAR_HEIGHT_PX}px`,
@@ -461,7 +463,7 @@ export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function Bottom
                         className={cn(
                           "pointer-events-none absolute inset-x-2 top-1/2 h-10 -translate-y-1/2 rounded-2xl transition-all duration-200",
                           isActive
-                            ? "bg-white/[0.12] shadow-[0_0_26px_rgba(96,165,250,0.18)]"
+                            ? "bg-gradient-to-r from-[rgba(0,180,216,0.2)] to-[rgba(0,200,150,0.15)] shadow-[0_0_20px_rgba(0,180,216,0.15)]"
                             : "opacity-0 scale-95"
                         )}
                       />
@@ -504,9 +506,11 @@ export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function Bottom
                   cn(
                     "flex items-center justify-center",
                     "w-14 h-14 rounded-full",
-                    "glass-window bg-black/35 dark:bg-black/40 backdrop-blur-2xl",
-                    "border border-white/20 dark:border-white/10",
-                    "shadow-[0_18px_45px_rgba(7,10,26,0.28)]",
+                    "bg-[rgba(10,22,40,0.72)] dark:bg-[rgba(15,15,25,0.78)]",
+                    "backdrop-blur-[24px] saturate-[1.4] dark:saturate-[1.3]",
+                    "border border-white/[0.18] dark:border-white/10",
+                    "shadow-[0_8px_32px_rgba(0,120,200,0.2),0_2px_8px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.12)]",
+                    "dark:shadow-[0_8px_32px_rgba(15,69,255,0.15),0_2px_8px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.06)]",
                     "transition-colors duration-150",
                     "active:opacity-70",
                     isActive ? "text-white" : "text-white/70"

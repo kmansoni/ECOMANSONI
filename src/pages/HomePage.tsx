@@ -90,16 +90,15 @@ export function HomePage() {
   return (
     <PullToRefresh onRefresh={handleRefresh}>
       <div className="relative min-h-screen feed-column overflow-hidden bg-transparent">
-        <div className="pointer-events-none absolute inset-0 z-0 bg-gradient-to-b from-slate-900/70 via-slate-800/55 to-slate-900/70" />
-        <div className="pointer-events-none absolute inset-0 z-0 backdrop-blur-3xl" />
-        <div className="pointer-events-none absolute -top-32 left-1/4 z-0 h-72 w-72 rounded-full bg-cyan-300/15 blur-3xl" />
-        <div className="pointer-events-none absolute -bottom-32 right-1/4 z-0 h-80 w-80 rounded-full bg-blue-300/10 blur-3xl" />
+        {/* Aurora background orbs */}
+        <div className="aurora-overlay" />
+        <div className="pointer-events-none absolute inset-0 z-0 bg-gradient-to-b from-transparent via-background/30 to-background/60" />
 
         <div className="relative z-10">
           <FeedHeader />
 
           {/* Smart Feed Toggle */}
-          <div className="sticky top-0 z-10 flex justify-center border-b border-white/15 bg-white/10 px-4 py-1 shadow-[0_8px_22px_rgba(0,0,0,0.18)] backdrop-blur-2xl supports-[backdrop-filter]:bg-white/6">
+          <div className="sticky top-0 z-10 flex justify-center border-b border-white/10 bg-background/60 px-4 py-1 shadow-[0_4px_20px_rgba(0,0,0,0.15)] backdrop-blur-2xl supports-[backdrop-filter]:bg-background/40">
             <SmartFeedToggle mode={mode} onChange={setMode} />
           </div>
 

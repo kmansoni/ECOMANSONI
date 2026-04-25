@@ -250,9 +250,9 @@ describe('Chat Content Moderation', () => {
 
     it('should allow legitimate shared IPs (NAT, corporate)', async () => {
       const bannedUser = { userId: 'b1', ip: '10.0.0.1', fingerprint: 'fp1' };
-      const office colleague = { userId: 'c1', ip: '10.0.0.1', fingerprint: 'fp2' }; // другой fingerprint
+      const officeColleague = { userId: 'c1', ip: '10.0.0.1', fingerprint: 'fp2' }; // другой fingerprint
 
-      const isEvasion = await checkBanEvasion(bannedUser, office colleague);
+      const isEvasion = await checkBanEvasion(bannedUser, officeColleague);
       expect(isEvasion).toBe(false); // false negative OK (false positive плохо)
     });
   });

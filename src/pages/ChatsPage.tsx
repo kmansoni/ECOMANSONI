@@ -676,17 +676,6 @@ export function ChatsPage() {
     !getOtherParticipant(selectedConversation as Conversation).user_id &&
     isResolvingConversation;
 
-  if (shouldShowConversationResolving) {
-    return (
-      <div className="min-h-screen flex items-center justify-center p-6 text-center">
-        <div>
-          <h2 className="text-lg font-semibold mb-2 text-foreground dark:text-white">Открываем чат…</h2>
-          <p className="text-muted-foreground dark:text-white/60">Загружаем данные разговора</p>
-        </div>
-      </div>
-    );
-  }
-
   // Hydrate selectedConversation with full data once conversations load
   useEffect(() => {
     const selectedId = selectedConversation?.id;
@@ -1054,6 +1043,17 @@ export function ChatsPage() {
 
   // Calculate total unread count
   const totalUnreadCount = conversations.reduce((sum, c) => sum + (c.unread_count || 0), 0);
+
+  if (shouldShowConversationResolving) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6 text-center">
+        <div>
+          <h2 className="text-lg font-semibold mb-2 text-foreground dark:text-white">Открываем чат…</h2>
+          <p className="text-muted-foreground dark:text-white/60">Загружаем данные разговора</p>
+        </div>
+      </div>
+    );
+  }
 
   // Show selected DM conversation
   if (selectedConversation) {

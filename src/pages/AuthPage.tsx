@@ -206,19 +206,19 @@ function useThemeTokens(theme: Theme) {
         ? "bg-white/[0.06] border-white/15 hover:bg-white/[0.12]"
         : "bg-white/70 border-slate-900/10 hover:bg-white",
       pillActive: isDark
-        ? "bg-white/[0.14] border-white/40 shadow-[0_10px_40px_-10px_rgba(124,92,255,0.6)]"
-        : "bg-white border-indigo-500/40 shadow-[0_10px_40px_-10px_rgba(79,70,229,0.45)]",
+        ? "bg-white/[0.14] border-white/40 shadow-[0_10px_40px_-10px_rgba(0,180,216,0.5)]"
+        : "bg-white border-teal-500/40 shadow-[0_10px_40px_-10px_rgba(0,180,216,0.35)]",
       inputSurface: isDark
         ? "bg-white/[0.06] border-white/15"
         : "bg-white/85 border-slate-900/10",
       inputFocusRing: isDark
-        ? "shadow-[0_0_0_3px_rgba(124,92,255,0.35)] border-white/40"
-        : "shadow-[0_0_0_3px_rgba(79,70,229,0.25)] border-indigo-500/60",
+        ? "shadow-[0_0_0_3px_rgba(0,180,216,0.3)] border-white/40"
+        : "shadow-[0_0_0_3px_rgba(0,180,216,0.2)] border-teal-500/50",
       divider: isDark ? "bg-white/15" : "bg-slate-900/10",
       iconBtn: isDark
         ? "border-white/15 bg-white/[0.06] text-white hover:bg-white/[0.12]"
         : "border-slate-900/10 bg-white/70 text-slate-800 hover:bg-white",
-      progressDotActive: isDark ? "bg-white" : "bg-indigo-600",
+      progressDotActive: isDark ? "bg-white" : "bg-teal-600",
       progressDotIdle: isDark ? "bg-white/25" : "bg-slate-900/15",
       badgeChip: isDark
         ? "border-white/15 text-white/50"
@@ -338,7 +338,7 @@ function KindTipsTicker({ tokens }: { tokens: ThemeTokens }) {
         <span
           aria-hidden
           className={`inline-block h-1 w-1 rounded-full ${
-            tokens.isDark ? "bg-emerald-300" : "bg-emerald-500"
+            tokens.isDark ? "bg-cyan-300" : "bg-teal-500"
           }`}
           style={{ boxShadow: "0 0 8px currentColor" }}
         />
@@ -354,7 +354,7 @@ function KindTipsTicker({ tokens }: { tokens: ThemeTokens }) {
         >
           <h1 className={`text-[22px] sm:text-[26px] leading-[1.12] font-bold tracking-tight ${tokens.textPrimary}`}>
             {tip.title}
-            <span className={`ml-1 ${tokens.isDark ? "text-fuchsia-300/90" : "text-fuchsia-600/90"}`}>·</span>
+            <span className={`ml-1 ${tokens.isDark ? "text-cyan-300/90" : "text-teal-600/90"}`}>·</span>
           </h1>
           <p className={`mt-1.5 text-[13px] sm:text-sm leading-snug ${tokens.textMuted}`}>
             {tip.body}
@@ -374,20 +374,20 @@ function AuroraBackground({ theme }: { theme: Theme }) {
         className="absolute inset-0 transition-colors duration-700"
         style={{
           background: dark
-            ? "radial-gradient(120% 80% at 50% 0%, #0b1020 0%, #05060d 60%, #020309 100%)"
-            : "radial-gradient(120% 80% at 50% 0%, #ffffff 0%, #eef1ff 55%, #fdf4ff 100%)",
+            ? "radial-gradient(120% 80% at 50% 0%, #0a1628 0%, #071420 60%, #020309 100%)"
+            : "radial-gradient(120% 80% at 50% 0%, #f0fdfa 0%, #ecfeff 55%, #f0f9ff 100%)",
         }}
       />
       {(dark
         ? [
-            { x: "-10%", y: "-20%", c1: "#7c5cff", c2: "#22d3ee", s: 620, d: 18, delay: 0 },
-            { x: "60%", y: "10%", c1: "#ff5cf3", c2: "#ffb066", s: 560, d: 22, delay: 3 },
-            { x: "20%", y: "70%", c1: "#22d3ee", c2: "#7c5cff", s: 700, d: 26, delay: 6 },
+            { x: "-10%", y: "-20%", c1: "#00b4d8", c2: "#0077b6", s: 620, d: 18, delay: 0 },
+            { x: "60%", y: "10%", c1: "#00c896", c2: "#00e6b4", s: 560, d: 22, delay: 3 },
+            { x: "20%", y: "70%", c1: "#0096c7", c2: "#00b4d8", s: 700, d: 26, delay: 6 },
           ]
         : [
-            { x: "-10%", y: "-20%", c1: "#a5b4fc", c2: "#67e8f9", s: 620, d: 18, delay: 0 },
-            { x: "60%", y: "10%", c1: "#f9a8d4", c2: "#fdba74", s: 560, d: 22, delay: 3 },
-            { x: "20%", y: "70%", c1: "#67e8f9", c2: "#c4b5fd", s: 700, d: 26, delay: 6 },
+            { x: "-10%", y: "-20%", c1: "#67e8f9", c2: "#a5f3fc", s: 620, d: 18, delay: 0 },
+            { x: "60%", y: "10%", c1: "#6ee7b7", c2: "#a7f3d0", s: 560, d: 22, delay: 3 },
+            { x: "20%", y: "70%", c1: "#99f6e4", c2: "#a5f3fc", s: 700, d: 26, delay: 6 },
           ]
       ).map((b, i) => (
         <motion.div
@@ -474,12 +474,12 @@ function PrimaryButton({ onClick, disabled, loading, children, icon, type = "but
       whileTap={{ scale: 0.97 }}
       className="relative group h-14 w-full rounded-2xl overflow-hidden font-semibold text-white
                  disabled:opacity-60 disabled:cursor-not-allowed
-                 shadow-[0_12px_40px_-8px_rgba(124,92,255,0.55)]
+                 shadow-[0_12px_40px_-8px_rgba(0,180,216,0.45)]
                  focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
     >
       <span
         className="absolute inset-0"
-        style={{ background: "linear-gradient(135deg,#7c5cff 0%,#4f46e5 40%,#22d3ee 100%)" }}
+        style={{ background: "linear-gradient(135deg,#0096c7 0%,#00b4d8 40%,#00c896 100%)" }}
       />
       <span className="absolute inset-0 bg-gradient-to-b from-white/25 via-transparent to-transparent" />
       <motion.span
@@ -617,7 +617,7 @@ function OtpInput({ value, onChange, length = 6, tokens }: { value: string; onCh
           {ch && (
             <motion.span
               layoutId={`otp-dot-${i}`}
-              className="absolute inset-x-3 sm:inset-x-4 bottom-2 h-[3px] rounded-full bg-gradient-to-r from-fuchsia-400 via-indigo-500 to-cyan-400"
+              className="absolute inset-x-3 sm:inset-x-4 bottom-2 h-[3px] rounded-full bg-gradient-to-r from-cyan-400 via-teal-400 to-emerald-400"
             />
           )}
         </motion.div>
@@ -1232,7 +1232,7 @@ export function AuthPage() {
             transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
             className="relative w-full max-w-[400px] sm:max-w-md lg:max-w-[460px]"
           >
-            <div className={`pointer-events-none absolute -inset-4 sm:-inset-6 rounded-[2.2rem] blur-2xl opacity-70 ${tokens.isDark ? "bg-gradient-to-br from-fuchsia-500/25 via-indigo-500/20 to-cyan-400/25" : "bg-gradient-to-br from-fuchsia-300/40 via-indigo-300/35 to-cyan-300/40"}`} />
+            <div className={`pointer-events-none absolute -inset-4 sm:-inset-6 rounded-[2.2rem] blur-2xl opacity-70 ${tokens.isDark ? "bg-gradient-to-br from-cyan-500/20 via-teal-500/15 to-emerald-400/20" : "bg-gradient-to-br from-cyan-300/35 via-teal-300/30 to-emerald-300/35"}`} />
 
             <div className={`relative rounded-[1.5rem] sm:rounded-[2rem] p-4 sm:p-7 lg:p-8 border backdrop-blur-2xl overflow-hidden auth-glass-card ${tokens.glassCard} ${tokens.glassCardShadow}`} style={{display: 'flex', flexDirection: 'column'}}>
               {/* Переключатель темы — закреплён в правом верхнем углу карточки */}
@@ -1257,7 +1257,7 @@ export function AuthPage() {
               </motion.button>
               <div className="pointer-events-none absolute inset-0 rounded-[inherit]">
                 <div className={`absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent ${tokens.isDark ? "via-white/70" : "via-white"} to-transparent`} />
-                <div className={`absolute inset-y-8 left-0 w-px bg-gradient-to-b from-transparent ${tokens.isDark ? "via-white/30" : "via-indigo-200"} to-transparent`} />
+                <div className={`absolute inset-y-8 left-0 w-px bg-gradient-to-b from-transparent ${tokens.isDark ? "via-cyan-400/30" : "via-teal-300"} to-transparent`} />
               </div>
 
               <div className="flex items-center justify-center mb-5 sm:mb-6">
@@ -1265,15 +1265,19 @@ export function AuthPage() {
                   initial={{ opacity: 0, y: -4 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.7, ease: "easeOut", delay: 0.1 }}
-                  className={`flex items-center gap-3 text-[26px] sm:text-[32px] tracking-[0.42em] uppercase ${tokens.isDark ? "text-white/55" : "text-slate-500/90"}`}
-                  style={{ fontFeatureSettings: '"ss01"', fontWeight: 700 }}
+                  className="flex items-center gap-3"
                 >
-                  <span aria-hidden className={`relative inline-block h-3 w-3 rounded-full ${tokens.isDark ? "bg-white/70" : "bg-slate-700"}`}>
-                    <span className={`absolute inset-0 rounded-full blur-[7px] opacity-60 ${tokens.isDark ? "bg-indigo-300" : "bg-indigo-500"}`} />
+                  <span aria-hidden className="relative inline-block h-3 w-3 rounded-full bg-gradient-to-br from-cyan-400 to-teal-400">
+                    <span className="absolute inset-0 rounded-full blur-[7px] opacity-60 bg-cyan-400" />
                   </span>
-                  <span className="font-bold">mansoni</span>
-                  <span aria-hidden className={`relative inline-block h-3 w-3 rounded-full ${tokens.isDark ? "bg-white/70" : "bg-slate-700"}`}>
-                    <span className={`absolute inset-0 rounded-full blur-[7px] opacity-60 ${tokens.isDark ? "bg-fuchsia-300" : "bg-fuchsia-500"}`} />
+                  <span
+                    className="text-[26px] sm:text-[32px] tracking-[0.42em] uppercase font-bold text-gradient-brand"
+                    style={{ fontFeatureSettings: '"ss01"' }}
+                  >
+                    mansoni
+                  </span>
+                  <span aria-hidden className="relative inline-block h-3 w-3 rounded-full bg-gradient-to-br from-teal-400 to-emerald-400">
+                    <span className="absolute inset-0 rounded-full blur-[7px] opacity-60 bg-emerald-400" />
                   </span>
                 </motion.div>
               </div>
@@ -1520,14 +1524,14 @@ export function AuthPage() {
                         initial={{ scale: 0 }}
                         animate={{ scale: 1 }}
                         transition={{ type: "spring", stiffness: 220, damping: 14, delay: 0.1 }}
-                        className="relative h-20 w-20 rounded-full bg-gradient-to-br from-emerald-400 to-cyan-400 flex items-center justify-center shadow-[0_20px_60px_-10px_rgba(16,185,129,0.6)]"
+                        className="relative h-20 w-20 rounded-full bg-gradient-to-br from-cyan-400 to-emerald-400 flex items-center justify-center shadow-[0_20px_60px_-10px_rgba(0,200,150,0.5)]"
                       >
                         <Check className="h-10 w-10 text-white" strokeWidth={3} />
                         <motion.span
                           initial={{ scale: 1, opacity: 0.6 }}
                           animate={{ scale: 1.8, opacity: 0 }}
                           transition={{ duration: 1.2, repeat: Infinity }}
-                          className="absolute inset-0 rounded-full border-2 border-emerald-300"
+                          className="absolute inset-0 rounded-full border-2 border-cyan-300"
                         />
                       </motion.div>
                       <div>
@@ -1539,23 +1543,23 @@ export function AuthPage() {
                 </AnimatePresence>
               </div>
 
-              {/* Защита + политика — прибита к низу карточки */}
+              {/* Защита + политика */}
               <div className="mt-4 flex-shrink-0">
                 <div className={`flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] ${tokens.textFaint} mb-3`}>
                   <span className="flex items-center gap-1.5">
-                    <ShieldCheck className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                    <ShieldCheck className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
                     E2E-шифрование (Signal Protocol)
                   </span>
                   <span className="flex items-center gap-1.5">
-                    <ShieldCheck className="h-3.5 w-3.5 text-indigo-400 shrink-0" />
+                    <ShieldCheck className="h-3.5 w-3.5 text-teal-400 shrink-0" />
                     Supabase RLS + JWT
                   </span>
                   <span className="flex items-center gap-1.5">
-                    <ShieldCheck className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
+                    <ShieldCheck className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
                     TLS 1.3 в транзите
                   </span>
                   <span className="flex items-center gap-1.5">
-                    <ShieldCheck className="h-3.5 w-3.5 text-fuchsia-400 shrink-0" />
+                    <ShieldCheck className="h-3.5 w-3.5 text-green-400 shrink-0" />
                     AES-256 на устройстве
                   </span>
                 </div>

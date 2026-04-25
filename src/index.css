@@ -1,8 +1,8 @@
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
 
 /* Definition of the design system. All colors, gradients, fonts, etc should be defined here.
 All colors MUST be HSL.
@@ -309,6 +309,52 @@ body.filter-tritanopia  { filter: url(#tritanopia); }
 @keyframes bubble-breathe {
   0%, 100% { transform: scale(1); }
   50% { transform: scale(1.04); }
+}
+
+/* ── Premium Aurora Effects ──────────────────────────────────── */
+@keyframes aurora-drift {
+  0%   { transform: translate(0, 0) rotate(0deg) scale(1); opacity: 0.6; }
+  25%  { transform: translate(80px, -40px) rotate(45deg) scale(1.15); opacity: 0.8; }
+  50%  { transform: translate(-60px, 60px) rotate(90deg) scale(0.9); opacity: 0.5; }
+  75%  { transform: translate(40px, 30px) rotate(135deg) scale(1.1); opacity: 0.7; }
+  100% { transform: translate(0, 0) rotate(360deg) scale(1); opacity: 0.6; }
+}
+
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 20px rgba(0,180,216,0.15), 0 0 60px rgba(0,180,216,0.05); }
+  50% { box-shadow: 0 0 30px rgba(0,180,216,0.3), 0 0 80px rgba(0,180,216,0.12); }
+}
+
+@keyframes shield-breathe {
+  0%, 100% { filter: drop-shadow(0 0 6px rgba(0,230,180,0.3)); transform: scale(1); }
+  50% { filter: drop-shadow(0 0 14px rgba(0,230,180,0.5)); transform: scale(1.04); }
+}
+
+@keyframes float-nav {
+  0%, 100% { transform: translateX(-50%) translateY(0); }
+  50% { transform: translateX(-50%) translateY(-2px); }
+}
+
+@keyframes card-reveal {
+  from { opacity: 0; transform: translateY(16px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes badge-ping {
+  0% { transform: scale(1); opacity: 1; }
+  75% { transform: scale(1.8); opacity: 0; }
+  100% { transform: scale(1.8); opacity: 0; }
+}
+
+@keyframes gradient-shift {
+  0% { background-position: 0% 0%; }
+  50% { background-position: 100% 100%; }
+  100% { background-position: 0% 0%; }
+}
+
+@keyframes text-shimmer {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
 }
 
 @keyframes auth-enter {
@@ -674,17 +720,16 @@ html.appearance-no-sticker-anim .emoji-picker-ios .EmojiPickerReact .epr-emoji i
 
 .media-frame--post {
   max-width: 100%;
-  aspect-ratio: 1 / 1;
   display: flex;
   align-items: center;
   width: 100%;
-  max-height: 600px;
+  max-height: 700px;
   margin-inline: auto;
+  overflow: hidden;
 }
 
-/* Post media should follow frame dimensions with a sensible height cap. */
 .media-frame--post .media-object {
-  max-height: 600px;
+  max-height: 700px;
 }
 
 .media-frame--preview {
@@ -823,35 +868,35 @@ html.dark .unified-page-bg {
 
 /* ── Responsive feed media ────────────────────────────────── */
 
-/* Phone: full-bleed, compact */
+/* Phone: full-bleed, taller frame for portrait photos */
 [data-form-factor="phone"] .media-frame--post {
   border-radius: 0;
-  max-height: 56vh;
+  max-height: 75vh;
 }
 [data-form-factor="phone"] .media-frame--post .media-object {
-  max-height: 56vh;
+  max-height: 75vh;
 }
 
 /* Tablet: centered, moderate width */
 [data-form-factor="tablet"] .media-frame--post {
   max-width: 560px;
   margin-inline: auto;
-  max-height: 540px;
+  max-height: 700px;
   border-radius: var(--media-frame-radius);
 }
 [data-form-factor="tablet"] .media-frame--post .media-object {
-  max-height: 540px;
+  max-height: 700px;
 }
 
 /* Desktop: Instagram-like constrained column */
 [data-form-factor="desktop"] .media-frame--post {
   max-width: 470px;
   margin-inline: auto;
-  max-height: 585px;
+  max-height: 588px;
   border-radius: var(--media-frame-radius);
 }
 [data-form-factor="desktop"] .media-frame--post .media-object {
-  max-height: 585px;
+  max-height: 588px;
 }
 
 /* Fixed positioning fix for iOS Safari & Android WebView */
@@ -1052,3 +1097,279 @@ html, body, #root {
 .dark .emoji-picker-ios .EmojiPickerReact::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.2) !important;
 }
+
+/* ============================================================
+   PREMIUM DESIGN SYSTEM — Mansoni 2.0
+   Modern / Creative / Secure / Multifunctional
+   ============================================================ */
+
+/* ── Floating Nav Bar (glass morphism bottom nav) ────────────── */
+.floating-nav {
+  position: fixed;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  border-radius: 28px;
+  z-index: 50;
+  animation: float-nav 6s ease-in-out infinite;
+  width: min(92vw, 400px);
+  justify-content: space-around;
+}
+
+html:not(.dark) .floating-nav {
+  background: rgba(10, 22, 40, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(24px) saturate(1.4);
+  -webkit-backdrop-filter: blur(24px) saturate(1.4);
+  box-shadow:
+    0 8px 32px rgba(0, 120, 200, 0.2),
+    0 2px 8px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+html.dark .floating-nav {
+  background: rgba(15, 15, 25, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(24px) saturate(1.3);
+  -webkit-backdrop-filter: blur(24px) saturate(1.3);
+  box-shadow:
+    0 8px 32px rgba(15, 69, 255, 0.15),
+    0 2px 8px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.floating-nav-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 12px;
+  border-radius: 20px;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  color: rgba(255, 255, 255, 0.55);
+  text-decoration: none;
+  min-width: 48px;
+}
+
+.floating-nav-item:hover {
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.floating-nav-item.active {
+  color: #fff;
+  background: linear-gradient(135deg, rgba(0, 180, 216, 0.25), rgba(0, 200, 150, 0.2));
+  box-shadow: 0 0 20px rgba(0, 180, 216, 0.15);
+}
+
+.floating-nav-item .nav-label {
+  font-size: 9px;
+  font-weight: 600;
+  margin-top: 2px;
+  letter-spacing: 0.02em;
+  opacity: 0.8;
+}
+
+.floating-nav-item.active .nav-label {
+  opacity: 1;
+}
+
+/* ── Security Indicator ──────────────────────────────────────── */
+.security-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px 3px 7px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  animation: shield-breathe 3s ease-in-out infinite;
+}
+
+html:not(.dark) .security-badge {
+  background: rgba(0, 230, 180, 0.12);
+  color: #00e6b4;
+  border: 1px solid rgba(0, 230, 180, 0.2);
+}
+
+html.dark .security-badge {
+  background: rgba(0, 230, 180, 0.08);
+  color: #4eecc4;
+  border: 1px solid rgba(0, 230, 180, 0.15);
+}
+
+.security-badge svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* ── Premium Card с reveal-анимацией ─────────────────────────── */
+.premium-card {
+  animation: card-reveal 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+  border-radius: 20px;
+  overflow: hidden;
+  position: relative;
+}
+
+html:not(.dark) .premium-card {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(20px) saturate(1.3);
+  -webkit-backdrop-filter: blur(20px) saturate(1.3);
+  box-shadow:
+    0 12px 40px rgba(0, 80, 160, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+html.dark .premium-card {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(20px) saturate(1.2);
+  -webkit-backdrop-filter: blur(20px) saturate(1.2);
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+/* Shimmer edge effect on premium cards */
+.premium-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, rgba(0,180,216,0.3), transparent 40%, transparent 60%, rgba(0,200,150,0.3));
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+/* ── Gradient text utility ───────────────────────────────────── */
+.text-gradient-brand {
+  background: linear-gradient(135deg, #00b4d8 0%, #00c896 50%, #4fd080 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.text-gradient-shimmer {
+  background: linear-gradient(90deg, #00b4d8 0%, #00e6b4 25%, #4fd080 50%, #00b4d8 75%, #00e6b4 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: text-shimmer 4s linear infinite;
+}
+
+/* ── Module Pills (многофункциональность) ────────────────────── */
+.module-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 24px;
+  font-size: 13px;
+  font-weight: 600;
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+html:not(.dark) .module-pill {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.85);
+}
+
+html.dark .module-pill {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.module-pill:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(0, 180, 216, 0.15);
+}
+
+/* ── Notification pulse ──────────────────────────────────────── */
+.badge-pulse::after {
+  content: "";
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: inherit;
+  animation: badge-ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+/* ── Glow button ─────────────────────────────────────────────── */
+.btn-glow {
+  position: relative;
+  overflow: hidden;
+  animation: glow-pulse 3s ease-in-out infinite;
+  background: linear-gradient(135deg, #00b4d8, #00c896);
+  border: none;
+  color: #fff;
+  font-weight: 700;
+  border-radius: 16px;
+  padding: 12px 28px;
+  transition: transform 0.15s ease;
+}
+
+.btn-glow:active {
+  transform: scale(0.97);
+}
+
+/* ── Aurora overlay для hero-секций ──────────────────────────── */
+.aurora-overlay {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.aurora-overlay::before,
+.aurora-overlay::after {
+  content: "";
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  animation: aurora-drift 18s ease-in-out infinite;
+}
+
+.aurora-overlay::before {
+  width: 300px;
+  height: 300px;
+  top: -20%;
+  right: -10%;
+  background: rgba(0, 180, 216, 0.18);
+  animation-delay: -5s;
+}
+
+.aurora-overlay::after {
+  width: 250px;
+  height: 250px;
+  bottom: -10%;
+  left: -5%;
+  background: rgba(0, 200, 150, 0.15);
+  animation-delay: -10s;
+}
+
+/* ── Stagger animation delays for lists ──────────────────────── */
+.stagger-1 { animation-delay: 0.05s; }
+.stagger-2 { animation-delay: 0.1s; }
+.stagger-3 { animation-delay: 0.15s; }
+.stagger-4 { animation-delay: 0.2s; }
+.stagger-5 { animation-delay: 0.25s; }
+.stagger-6 { animation-delay: 0.3s; }

@@ -17,9 +17,10 @@ interface ZoomableImageProps {
   className?: string;
   onPress?: () => void;
   onLoad?: (e: React.SyntheticEvent<HTMLImageElement>) => void;
+  objectFit?: "cover" | "contain";
 }
 
-export function ZoomableImage({ src, alt, className, onPress, onLoad }: ZoomableImageProps) {
+export function ZoomableImage({ src, alt, className, onPress, onLoad, objectFit = "cover" }: ZoomableImageProps) {
   const { ref, style, isZoomed, reset } = usePinchZoom({
     minScale: 1,
     maxScale: 5,
@@ -40,7 +41,7 @@ export function ZoomableImage({ src, alt, className, onPress, onLoad }: Zoomable
         <img loading="lazy"
           src={src}
           alt={alt ?? ""}
-          className="w-full h-full object-cover select-none"
+          className={cn("w-full h-full select-none", objectFit === "contain" ? "object-contain" : "object-cover")}
           draggable={false}
           onClick={!isZoomed ? onPress : undefined}
           onLoad={onLoad}

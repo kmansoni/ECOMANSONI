@@ -1,3 +1,10 @@
+---
+name: agent-self-audit
+description: "Самоаудит агента: выявление слабых мест в скиллах, pattern analysis, gap detection. Use when: assess agent performance, find improvement areas, skill gap analysis."
+argument-hint: "[аспект для аудита или 'all']"
+user-invocable: true
+---
+
 # Agent Self-Audit — Выявление слабых мест скиллов и агента
 
 > Источники: AdieLaine/multi-agent-reasoning (self-evaluation), obra/superpowers (self-improving-agent,
