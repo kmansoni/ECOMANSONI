@@ -31,6 +31,28 @@ skills:
   - .github/skills/supabase-production/SKILL.md
   - .github/skills/messenger-platform/SKILL.md
   - .github/skills/supabase-edge-patterns/SKILL.md
+  - .github/skills/zustand-architecture/SKILL.md
+  - .github/skills/tanstack-query-patterns/SKILL.md
+  - .github/skills/threat-modeling/SKILL.md
+  - .github/skills/race-condition-detector/SKILL.md
+  - .github/skills/error-boundary-patterns/SKILL.md
+  - .github/skills/skeleton-loading-generator/SKILL.md
+  - .github/skills/image-optimization/SKILL.md
+  - .github/skills/virtual-scroll-optimizer/SKILL.md
+  - .github/skills/suspense-architect/SKILL.md
+  - .github/skills/realtime-architect/SKILL.md
+  - .github/skills/idempotency-patterns/SKILL.md
+  - .github/skills/retry-strategy/SKILL.md
+  - .github/skills/circuit-breaker/SKILL.md
+  - .github/skills/owasp-top10-scanner/SKILL.md
+  - .github/skills/e2ee-audit/SKILL.md
+  - .github/skills/dependency-audit/SKILL.md
+  - .github/skills/bundle-analyzer/SKILL.md
+  - .github/skills/database-migration-planner/SKILL.md
+  - .github/skills/postgresql-optimizer/SKILL.md
+  - .github/skills/core-web-vitals-optimizer/SKILL.md
+  - .github/skills/deep-audit/SKILL.md
+  - .github/skills/rug-quality-gate/SKILL.md
 ---
 
 # Mansoni Core — Explicit Alias
