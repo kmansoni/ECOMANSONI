@@ -280,7 +280,56 @@ export function applyProductionStyleEnhancements(map: maplibregl.Map, mode: Prod
   }
 
   localizeAndSharpenLabels(map, mode, languageCode);
+  hidePoiAndPlaceLabels(map);
   applyOverlayLayers(map, mode);
+}
+
+/**
+ * Скрывает POI-иконки и подписи мест/достопримечательностей из базового стиля.
+ *
+ * Что скрываем:
+ *   - source-layer = poi (значки и подписи всех POI: музеи, рестораны, остановки и т.д.)
+ *   - source-layer = place (подписи населённых пунктов на больших zoom оставляем,
+ *     но скрываем suburb/neighbourhood — они дублируют дороги)
+ *   - source-layer = transportation_name содержит названия дорог — НЕ скрываем
+ *
+ * Дороги, мосты, маршрут, номера домов — остаются.
+ */
+function hidePoiAndPlaceLabels(map: maplibregl.Map): void {
+  const style = map.getStyle();
+  if (!style?.layers) return;
+
+  for (const layer of style.layers) {
+    const lowerId = layer.id.toLowerCase();
+    const sourceLayer = (layer as maplibregl.LayerSpecification & { 'source-layer'?: string })['source-layer'] ?? '';
+    const lowerSrcLayer = sourceLayer.toLowerCase();
+
+    // Сохраняем нашу инфраструктуру
+    if (
+      layer.id.startsWith('nav-layer-') ||
+      layer.id.startsWith('enhanced-') ||
+      layer.id.startsWith('route-seg-') ||
+      layer.id.startsWith('mansoni-')
+    ) continue;
+
+    const isPoi = lowerSrcLayer === 'poi' || /poi[-_]?label/.test(lowerId) || lowerId.startsWith('poi');
+    const isSubPlace =
+      (lowerSrcLayer === 'place' &&
+        /(suburb|neighbourhood|hamlet|locality|isolated_dwelling|quarter)/.test(lowerId)) ||
+      /^place-(suburb|neighbourhood|hamlet|locality|quarter)/.test(lowerId);
+    const isTransitStation = lowerSrcLayer === 'transit_stop' || /transit[-_](stop|station|label)/.test(lowerId);
+    const isAerodrome = lowerSrcLayer === 'aerodrome_label' || /aerodrome|airport[-_]label/.test(lowerId);
+    const isMountainPeak = /mountain[-_]peak|peak[-_]label/.test(lowerId);
+    const isWaterway = /water[-_]name|waterway[-_]label/.test(lowerId);
+
+    if (isPoi || isSubPlace || isTransitStation || isAerodrome || isMountainPeak || isWaterway) {
+      try {
+        map.setLayoutProperty(layer.id, 'visibility', 'none');
+      } catch {
+        // некоторые слои не позволяют менять visibility
+      }
+    }
+  }
 }
 
 function localizeAndSharpenLabels(map: maplibregl.Map, mode: ProductionMapMode, languageCode?: string | null): void {

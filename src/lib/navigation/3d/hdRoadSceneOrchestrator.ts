@@ -25,7 +25,6 @@ import { LODManager } from './lodManager';
 import { buildVehicleModel, type VehicleHandle } from './vehicleModel';
 import { scanInfrastructure } from '../infra';
 import { enrichLanesWithHDGeometry, buildMarkingsForLaneGroup } from '../lanes';
-import { hidePoiLayers, restorePoiLayers } from './poiVisibility';
 import { logger } from '@/lib/logger';
 
 const OVERLAY_LAYER_ID = 'mansoni-hd-road-3d';
@@ -77,13 +76,6 @@ export class HDRoadSceneOrchestrator {
     });
 
     map.addLayer(this.overlay);
-
-    // Скрываем POI/подписи мест — мешают восприятию дороги
-    try {
-      hidePoiLayers(map);
-    } catch (err) {
-      logger.debug('[HDOrchestrator] hidePoiLayers failed', err);
-    }
   }
 
   /**
@@ -231,13 +223,6 @@ export class HDRoadSceneOrchestrator {
       this.map.removeLayer(OVERLAY_LAYER_ID);
     } catch {
       // layer may already be removed if map was destroyed
-    }
-
-    // Восстанавливаем POI слои
-    try {
-      restorePoiLayers(this.map);
-    } catch {
-      // map уже мёртв
     }
 
     if (this.currentInfraGroup) {
