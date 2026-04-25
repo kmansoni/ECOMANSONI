@@ -25,6 +25,18 @@ import type {
   CameraType,
   BridgeType,
   TunnelType,
+  SpeedBump,
+  SpeedBumpType,
+  PedestrianCrossing,
+  CrossingType,
+  BorderCrossing,
+  PoliceCheckpoint,
+  ParkingArea,
+  ParkingType,
+  Roundabout,
+  HighwayExit,
+  RoadSurface,
+  SmoothnessGrade,
 } from '@/types/roadInfra';
 import type { LatLng } from '@/types/taxi';
 import { logger } from '@/lib/logger';
@@ -76,6 +88,30 @@ function buildQuery(bbox: BBox, opts: InfraScanOptions): string {
     parts.push(`  way["bridge"](${b});`);
     parts.push(`  way["tunnel"](${b});`);
   }
+  if (opts.includeSpeedBumps !== false) {
+    parts.push(`  node["traffic_calming"](${b});`);
+  }
+  if (opts.includeCrossings !== false) {
+    parts.push(`  node["highway"="crossing"](${b});`);
+    parts.push(`  way["footway"="crossing"](${b});`);
+  }
+  if (opts.includeBorders !== false) {
+    parts.push(`  node["barrier"="border_control"](${b});`);
+  }
+  if (opts.includeCheckpoints !== false) {
+    parts.push(`  node["amenity"="police"](${b});`);
+    parts.push(`  node["highway"="checkpoint"](${b});`);
+  }
+  if (opts.includeParking !== false) {
+    parts.push(`  way["amenity"="parking"](${b});`);
+    parts.push(`  node["amenity"="parking"](${b});`);
+  }
+  if (opts.includeRoundabouts !== false) {
+    parts.push(`  way["junction"="roundabout"](${b});`);
+  }
+  if (opts.includeExits !== false) {
+    parts.push(`  node["highway"="motorway_junction"](${b});`);
+  }
 
   parts.push(`);`, `out body geom;`);
   return parts.join('\n');
@@ -124,7 +160,7 @@ async function fetchOverpass(query: string, signal?: AbortSignal): Promise<Overp
       return (await res.json()) as OverpassResponse;
     } catch (err) {
       lastError = err;
-      logger.debug('[overpassScanner] endpoint failed', url, err);
+      logger.debug('[overpassScanner] endpoint failed', { url, err });
     }
   }
 
@@ -340,6 +376,205 @@ function buildRestrictionsFromWay(el: OverpassElement): RoadRestriction[] {
   return result;
 }
 
+function buildSpeedBumpFromNode(el: OverpassElement): SpeedBump | null {
+  if (el.type !== 'node' || el.lat == null || el.lon == null) return null;
+  const tags = el.tags ?? {};
+  const calming = tags.traffic_calming;
+  if (!calming) return null;
+
+  const typeMap: Record<string, SpeedBumpType> = {
+    bump: 'bump', hump: 'hump', table: 'table', cushion: 'cushion',
+    raised_crosswalk: 'raised_crosswalk', dip: 'dip',
+  };
+  const bumpType = typeMap[calming] ?? 'bump';
+
+  return {
+    id: `bump-${el.id}`,
+    location: { lat: el.lat, lng: el.lon },
+    bumpType,
+    crossingRef: calming === 'raised_crosswalk' ? tags.crossing_ref : undefined,
+  };
+}
+
+function buildCrossingFromNode(el: OverpassElement): PedestrianCrossing | null {
+  if (el.type !== 'node' || el.lat == null || el.lon == null) return null;
+  const tags = el.tags ?? {};
+  if (tags.highway !== 'crossing') return null;
+
+  const ct = tags.crossing ?? tags.crossing_ref ?? 'uncontrolled';
+  const typeMap: Record<string, CrossingType> = {
+    traffic_signals: 'traffic_signals', zebra: 'zebra', pelican: 'pelican',
+    toucan: 'toucan', uncontrolled: 'uncontrolled', unmarked: 'uncontrolled',
+  };
+
+  return {
+    id: `cross-${el.id}`,
+    location: { lat: el.lat, lng: el.lon },
+    crossingType: typeMap[ct] ?? 'uncontrolled',
+    hasSignal: ct === 'traffic_signals' || tags['crossing:signals'] === 'yes',
+    hasTactilePaving: tags.tactile_paving === 'yes',
+  };
+}
+
+function buildCrossingFromWay(el: OverpassElement): PedestrianCrossing | null {
+  if (el.type !== 'way') return null;
+  const tags = el.tags ?? {};
+  if (tags.footway !== 'crossing') return null;
+  const geometry = (el.geometry ?? []).map((p) => ({ lat: p.lat, lng: p.lon }));
+  if (geometry.length < 2) return null;
+
+  const mid = geometry[Math.floor(geometry.length / 2)];
+  const ct = tags.crossing ?? 'uncontrolled';
+  const typeMap: Record<string, CrossingType> = {
+    traffic_signals: 'traffic_signals', zebra: 'zebra', uncontrolled: 'uncontrolled',
+    unmarked: 'uncontrolled',
+  };
+
+  return {
+    id: `cross-${el.id}`,
+    location: mid,
+    crossingType: typeMap[ct] ?? 'uncontrolled',
+    hasSignal: ct === 'traffic_signals',
+    hasTactilePaving: tags.tactile_paving === 'yes',
+    geometry,
+  };
+}
+
+function buildBorderFromNode(el: OverpassElement): BorderCrossing | null {
+  if (el.type !== 'node' || el.lat == null || el.lon == null) return null;
+  const tags = el.tags ?? {};
+  if (tags.barrier !== 'border_control') return null;
+
+  return {
+    id: `border-${el.id}`,
+    location: { lat: el.lat, lng: el.lon },
+    borderType: tags.border_type === 'regional' ? 'regional' : 'international',
+    name: tags.name ?? tags['name:en'] ?? 'Border',
+    openingHours: tags.opening_hours,
+    countryTo: tags['addr:country'],
+  };
+}
+
+function buildCheckpointFromNode(el: OverpassElement): PoliceCheckpoint | null {
+  if (el.type !== 'node' || el.lat == null || el.lon == null) return null;
+  const tags = el.tags ?? {};
+
+  const isPolice = tags.amenity === 'police' || tags.highway === 'checkpoint';
+  if (!isPolice) return null;
+
+  const op = (tags.operator ?? '').toLowerCase();
+  let cpType: PoliceCheckpoint['checkpointType'] = 'dps';
+  if (op.includes('таможн') || op.includes('custom')) cpType = 'customs';
+  else if (op.includes('вес') || tags.check === 'weight') cpType = 'weight_control';
+  else if (tags.barrier === 'toll_booth') cpType = 'toll_booth';
+
+  return {
+    id: `cp-${el.id}`,
+    location: { lat: el.lat, lng: el.lon },
+    checkpointType: cpType,
+    name: tags.name,
+    direction: tags.direction ? parseFloat(tags.direction) : undefined,
+  };
+}
+
+function buildParkingFromElement(el: OverpassElement): ParkingArea | null {
+  const tags = el.tags ?? {};
+  if (tags.amenity !== 'parking') return null;
+
+  let location: LatLng;
+  let geometry: LatLng[] | undefined;
+
+  if (el.type === 'node' && el.lat != null && el.lon != null) {
+    location = { lat: el.lat, lng: el.lon };
+  } else if (el.type === 'way' && el.geometry?.length) {
+    geometry = el.geometry.map((p) => ({ lat: p.lat, lng: p.lon }));
+    const mid = geometry[Math.floor(geometry.length / 2)];
+    location = mid;
+  } else {
+    return null;
+  }
+
+  const ptMap: Record<string, ParkingType> = {
+    underground: 'underground', multi_storey: 'multi_storey', 'multi-storey': 'multi_storey',
+    rooftop: 'rooftop', street_side: 'street_side', lane: 'lane', surface: 'surface',
+  };
+
+  return {
+    id: `park-${el.id}`,
+    location,
+    parkingType: ptMap[tags.parking ?? ''] ?? 'surface',
+    capacity: tags.capacity ? parseInt(tags.capacity, 10) : undefined,
+    fee: tags.fee === 'yes',
+    access: (['yes', 'customers', 'private', 'permissive'] as const).includes(tags.access as 'yes')
+      ? (tags.access as ParkingArea['access'])
+      : 'yes',
+    geometry,
+    name: tags.name,
+  };
+}
+
+function buildRoundaboutFromWay(el: OverpassElement): Roundabout | null {
+  if (el.type !== 'way') return null;
+  const tags = el.tags ?? {};
+  if (tags.junction !== 'roundabout') return null;
+  const geometry = (el.geometry ?? []).map((p) => ({ lat: p.lat, lng: p.lon }));
+  if (geometry.length < 3) return null;
+
+  let cLat = 0, cLng = 0;
+  for (const p of geometry) { cLat += p.lat; cLng += p.lng; }
+  const center = { lat: cLat / geometry.length, lng: cLng / geometry.length };
+
+  let maxDist = 0;
+  for (const p of geometry) {
+    const dLat = (p.lat - center.lat) * 111_320;
+    const dLng = (p.lng - center.lng) * 111_320 * Math.cos((center.lat * Math.PI) / 180);
+    const d = Math.sqrt(dLat * dLat + dLng * dLng);
+    if (d > maxDist) maxDist = d;
+  }
+
+  return {
+    id: `ra-${el.id}`,
+    center,
+    radiusM: maxDist,
+    lanes: intFromTag(tags.lanes, 1),
+    direction: tags.direction === 'clockwise' ? 'clockwise' : 'counterclockwise',
+    geometry,
+  };
+}
+
+function buildExitFromNode(el: OverpassElement): HighwayExit | null {
+  if (el.type !== 'node' || el.lat == null || el.lon == null) return null;
+  const tags = el.tags ?? {};
+  if (tags.highway !== 'motorway_junction') return null;
+
+  return {
+    id: `exit-${el.id}`,
+    location: { lat: el.lat, lng: el.lon },
+    ref: tags.ref,
+    destination: tags.destination ?? tags['destination:ref'],
+    exitType: tags.services === 'yes' ? 'service_area' : tags.rest_area === 'yes' ? 'rest_area' : 'exit',
+  };
+}
+
+function buildSurfaceFromWay(el: OverpassElement): RoadSurface | null {
+  if (el.type !== 'way') return null;
+  const tags = el.tags ?? {};
+  if (!tags.smoothness && !tags.surface) return null;
+  const geometry = (el.geometry ?? []).map((p) => ({ lat: p.lat, lng: p.lon }));
+  if (geometry.length < 2) return null;
+
+  const validGrades: SmoothnessGrade[] = ['excellent', 'good', 'intermediate', 'bad', 'very_bad', 'horrible'];
+  const sm = tags.smoothness as SmoothnessGrade | undefined;
+
+  return {
+    edgeId: `way-${el.id}`,
+    surface: tags.surface ?? 'asphalt',
+    smoothness: sm && validGrades.includes(sm) ? sm : 'good',
+    lastSurvey: tags['survey:date'],
+    geometry,
+  };
+}
+
 function approximateLength(points: LatLng[]): number {
   let total = 0;
   for (let i = 1; i < points.length; i++) {
@@ -361,6 +596,14 @@ function parseElements(elements: OverpassElement[]): Omit<RoadInfraSnapshot, 'bb
   const tunnels: TunnelGeometry[] = [];
   const restrictions: RoadRestriction[] = [];
   const markings: LaneMarking[] = []; // заполняется в lane-modeler
+  const speedBumps: SpeedBump[] = [];
+  const crossings: PedestrianCrossing[] = [];
+  const borders: BorderCrossing[] = [];
+  const checkpoints: PoliceCheckpoint[] = [];
+  const parking: ParkingArea[] = [];
+  const roundabouts: Roundabout[] = [];
+  const exits: HighwayExit[] = [];
+  const surfaces: RoadSurface[] = [];
 
   for (const el of elements) {
     if (el.type === 'way') {
@@ -370,6 +613,14 @@ function parseElements(elements: OverpassElement[]): Omit<RoadInfraSnapshot, 'bb
       const tunnel = buildTunnelFromWay(el);
       if (tunnel) tunnels.push(tunnel);
       restrictions.push(...buildRestrictionsFromWay(el));
+      const crossing = buildCrossingFromWay(el);
+      if (crossing) crossings.push(crossing);
+      const parkEl = buildParkingFromElement(el);
+      if (parkEl) parking.push(parkEl);
+      const ra = buildRoundaboutFromWay(el);
+      if (ra) roundabouts.push(ra);
+      const surf = buildSurfaceFromWay(el);
+      if (surf) surfaces.push(surf);
     } else if (el.type === 'node') {
       const sign = buildSignFromNode(el);
       if (sign) signs.push(sign);
@@ -377,10 +628,25 @@ function parseElements(elements: OverpassElement[]): Omit<RoadInfraSnapshot, 'bb
       if (cam) cameras.push(cam);
       const sig = buildSignalFromNode(el);
       if (sig) signals.push(sig);
+      const bump = buildSpeedBumpFromNode(el);
+      if (bump) speedBumps.push(bump);
+      const cross = buildCrossingFromNode(el);
+      if (cross) crossings.push(cross);
+      const border = buildBorderFromNode(el);
+      if (border) borders.push(border);
+      const cp = buildCheckpointFromNode(el);
+      if (cp) checkpoints.push(cp);
+      const parkNode = buildParkingFromElement(el);
+      if (parkNode) parking.push(parkNode);
+      const exit = buildExitFromNode(el);
+      if (exit) exits.push(exit);
     }
   }
 
-  return { lanes, markings, signs, cameras, signals, bridges, tunnels, restrictions };
+  return {
+    lanes, markings, signs, cameras, signals, bridges, tunnels, restrictions,
+    speedBumps, crossings, borders, checkpoints, parking, roundabouts, exits, surfaces,
+  };
 }
 
 /** Главная функция: сканировать инфраструктуру в bbox */

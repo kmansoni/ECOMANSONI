@@ -197,6 +197,14 @@ export interface RoadInfraSnapshot {
   bridges: BridgeGeometry[];
   tunnels: TunnelGeometry[];
   restrictions: RoadRestriction[];
+  speedBumps: SpeedBump[];
+  crossings: PedestrianCrossing[];
+  borders: BorderCrossing[];
+  checkpoints: PoliceCheckpoint[];
+  parking: ParkingArea[];
+  roundabouts: Roundabout[];
+  exits: HighwayExit[];
+  surfaces: RoadSurface[];
 }
 
 /** Опции сканирования */
@@ -206,11 +214,16 @@ export interface InfraScanOptions {
   includeCameras?: boolean;
   includeBridges?: boolean;
   includeSignals?: boolean;
-  /** TTL кэша в секундах */
+  includeSpeedBumps?: boolean;
+  includeCrossings?: boolean;
+  includeBorders?: boolean;
+  includeCheckpoints?: boolean;
+  includeParking?: boolean;
+  includeRoundabouts?: boolean;
+  includeExits?: boolean;
+  includeSurfaces?: boolean;
   cacheTTL?: number;
-  /** Принудительно обновить, игнорируя кэш */
   forceRefresh?: boolean;
-  /** AbortSignal для отмены */
   signal?: AbortSignal;
 }
 
@@ -231,4 +244,98 @@ export interface LaneArrow {
   laneIndex: number;
   /** Поворот относительно направления полосы (degrees) */
   rotationDeg: number;
+}
+
+// === Расширенная дорожная инфраструктура ===
+
+export type SpeedBumpType = 'bump' | 'hump' | 'table' | 'cushion' | 'raised_crosswalk' | 'dip';
+
+export interface SpeedBump {
+  id: string;
+  location: LatLng;
+  bumpType: SpeedBumpType;
+  /** Связан с пешеходным переходом (raised_crosswalk) */
+  crossingRef?: string;
+}
+
+export type CrossingType = 'uncontrolled' | 'traffic_signals' | 'zebra' | 'pelican' | 'toucan' | 'underpass' | 'overpass';
+
+export interface PedestrianCrossing {
+  id: string;
+  location: LatLng;
+  crossingType: CrossingType;
+  hasSignal: boolean;
+  hasTactilePaving: boolean;
+  /** Геометрия (way-based переходы) */
+  geometry?: LatLng[];
+}
+
+export type BorderType = 'international' | 'regional' | 'checkpoint';
+
+export interface BorderCrossing {
+  id: string;
+  location: LatLng;
+  borderType: BorderType;
+  name: string;
+  /** Часы работы (OSM opening_hours) */
+  openingHours?: string;
+  /** Для международных: код страны по ту сторону */
+  countryTo?: string;
+}
+
+export type CheckpointType = 'dps' | 'weight_control' | 'customs' | 'toll_booth';
+
+export interface PoliceCheckpoint {
+  id: string;
+  location: LatLng;
+  checkpointType: CheckpointType;
+  name?: string;
+  /** Направление контроля (degrees) */
+  direction?: number;
+}
+
+export type ParkingType = 'surface' | 'underground' | 'multi_storey' | 'rooftop' | 'street_side' | 'lane';
+
+export interface ParkingArea {
+  id: string;
+  location: LatLng;
+  parkingType: ParkingType;
+  capacity?: number;
+  fee: boolean;
+  /** OSM access-тег: yes / customers / private */
+  access: 'yes' | 'customers' | 'private' | 'permissive';
+  geometry?: LatLng[];
+  name?: string;
+}
+
+export interface Roundabout {
+  id: string;
+  center: LatLng;
+  /** Примерный радиус, м */
+  radiusM: number;
+  lanes: number;
+  /** Направление движения */
+  direction: 'clockwise' | 'counterclockwise';
+  geometry: LatLng[];
+}
+
+export interface HighwayExit {
+  id: string;
+  location: LatLng;
+  /** Номер съезда */
+  ref?: string;
+  /** Куда ведёт */
+  destination?: string;
+  exitType: 'exit' | 'entry' | 'rest_area' | 'service_area';
+}
+
+export type SmoothnessGrade = 'excellent' | 'good' | 'intermediate' | 'bad' | 'very_bad' | 'horrible';
+
+export interface RoadSurface {
+  edgeId: string;
+  surface: string;
+  smoothness: SmoothnessGrade;
+  /** Дата последнего survey (ISO string) */
+  lastSurvey?: string;
+  geometry: LatLng[];
 }

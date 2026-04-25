@@ -188,7 +188,14 @@ export type RouteMapObjectKind =
   | 'park'
   | 'public_service'
   | 'public_transport'
-  | 'landmark';
+  | 'landmark'
+  | 'pedestrian_crossing'
+  | 'border_crossing'
+  | 'police_checkpoint'
+  | 'parking'
+  | 'roundabout'
+  | 'highway_exit'
+  | 'road_surface_warning';
 
 export type RouteObjectRelevance = 'low' | 'secondary' | 'primary';
 
