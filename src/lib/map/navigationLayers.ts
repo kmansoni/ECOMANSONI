@@ -2,6 +2,7 @@ import type maplibregl from 'maplibre-gl';
 import type { Feature, FeatureCollection, GeoJsonProperties, Point, LineString } from 'geojson';
 import type { NavigationMapObject } from '@/types/navigation';
 import type { HDLane, LaneMarking } from '@/types/roadInfra';
+import { enrichLanesWithHDGeometry, buildMarkingsForLaneGroup } from '@/lib/navigation/lanes';
 import { logger } from '@/lib/logger';
 import { getProductionPalette, type ProductionMapMode } from './mapStyles';
 
@@ -50,10 +51,10 @@ export function ensureNavigationLayers(
       'line-color': ['case', ['==', ['get', 'brunnel'], 'tunnel'], palette.tunnelCasing, palette.roadCasing],
       'line-width': [
         'interpolate', ['linear'], ['zoom'],
-        8, ['match', ['get', 'class'], 'motorway', 5, 'trunk', 4.5, 'primary', 4, 'secondary', 3.5, 'tertiary', 3, 'street', 2.5, 2],
-        16, ['match', ['get', 'class'], 'motorway', 20, 'trunk', 17, 'primary', 15, 'secondary', 12, 'tertiary', 10, 'street', 8, 6],
+        8, ['match', ['get', 'class'], 'motorway', 3.5, 'trunk', 3, 'primary', 2.8, 'secondary', 2.4, 'tertiary', 2, 'street', 1.6, 1.2],
+        16, ['match', ['get', 'class'], 'motorway', 16, 'trunk', 14, 'primary', 12, 'secondary', 9, 'tertiary', 7.5, 'street', 6, 4.5],
       ],
-      'line-opacity': 0.95,
+      'line-opacity': 0.85,
     },
   }, sourceLayers, beforeId);
 
@@ -83,10 +84,10 @@ export function ensureNavigationLayers(
       ],
       'line-width': [
         'interpolate', ['linear'], ['zoom'],
-        8, ['match', ['get', 'class'], 'motorway', 3.2, 'trunk', 2.8, 'primary', 2.4, 'secondary', 2.1, 'tertiary', 1.8, 'street', 1.6, 1.3],
-        16, ['match', ['get', 'class'], 'motorway', 14, 'trunk', 12, 'primary', 10, 'secondary', 8, 'tertiary', 7, 'street', 5.5, 4.5],
+        8, ['match', ['get', 'class'], 'motorway', 2, 'trunk', 1.8, 'primary', 1.5, 'secondary', 1.3, 'tertiary', 1, 'street', 0.8, 0.6],
+        16, ['match', ['get', 'class'], 'motorway', 11, 'trunk', 9.5, 'primary', 8, 'secondary', 6, 'tertiary', 5, 'street', 4, 3],
       ],
-      'line-opacity': 0.96,
+      'line-opacity': 0.92,
     },
   }, sourceLayers, beforeId);
 
@@ -112,13 +113,13 @@ export function ensureNavigationLayers(
     source: sourceId,
     'source-layer': 'transportation',
     filter: ['all', ['match', ['get', 'class'], ['primary', 'secondary', 'tertiary'], true, false], ['!=', ['coalesce', ['get', 'oneway'], 0], 1]],
-    minzoom: 12,
+    minzoom: 14,
     layout: { 'line-cap': 'round', 'line-join': 'round' },
     paint: {
       'line-color': palette.centerLine,
-      'line-width': ['interpolate', ['linear'], ['zoom'], 12, 0.8, 17, 2],
-      'line-dasharray': [2, 2],
-      'line-opacity': 0.75,
+      'line-width': ['interpolate', ['linear'], ['zoom'], 14, 0.5, 17, 1.2],
+      'line-dasharray': [3, 3],
+      'line-opacity': 0.5,
     },
   }, sourceLayers, beforeId);
 
@@ -128,13 +129,13 @@ export function ensureNavigationLayers(
     source: sourceId,
     'source-layer': 'transportation',
     filter: ['==', ['get', 'brunnel'], 'bridge'],
-    minzoom: 12,
+    minzoom: 14,
     layout: { 'line-cap': 'round', 'line-join': 'round' },
     paint: {
       'line-color': palette.labelText,
-      'line-width': ['interpolate', ['linear'], ['zoom'], 12, 4, 17, 14],
+      'line-width': ['interpolate', ['linear'], ['zoom'], 14, 2, 17, 8],
       'line-blur': 0.6,
-      'line-opacity': 0.22,
+      'line-opacity': 0.15,
       'line-translate': [0, -1],
     },
   }, sourceLayers, beforeId);
@@ -145,13 +146,13 @@ export function ensureNavigationLayers(
     source: sourceId,
     'source-layer': 'transportation',
     filter: ['==', ['get', 'brunnel'], 'tunnel'],
-    minzoom: 12,
+    minzoom: 14,
     layout: { 'line-cap': 'round', 'line-join': 'round' },
     paint: {
       'line-color': palette.tunnelCasing,
-      'line-width': ['interpolate', ['linear'], ['zoom'], 12, 2.6, 17, 8],
-      'line-dasharray': [1.5, 1.5],
-      'line-opacity': 0.65,
+      'line-width': ['interpolate', ['linear'], ['zoom'], 14, 1.5, 17, 5],
+      'line-dasharray': [2, 2],
+      'line-opacity': 0.45,
     },
   }, sourceLayers, beforeId);
 
@@ -349,10 +350,20 @@ export function updateNavigationObjectSource(map: maplibregl.Map, objects: Navig
 export function updateLaneOverlay(map: maplibregl.Map, lanes: HDLane[], markings: LaneMarking[]): void {
   ensureLaneSources(map);
 
+  // Обогащаем полосы HD-геометрией (edges из centerline)
+  const enriched = enrichLanesWithHDGeometry(lanes);
+
+  // Генерируем разметку если нет готовой
+  const finalMarkings = markings.length > 0
+    ? markings
+    : enriched.length > 0
+      ? buildMarkingsForLaneGroup(enriched, { forwardLanes: enriched.length, backwardLanes: 0 })
+      : [];
+
   const laneSrc = map.getSource(NAV_LANE_SOURCE) as maplibregl.GeoJSONSource | undefined;
   if (laneSrc) {
     const features: Feature<LineString>[] = [];
-    for (const lane of lanes) {
+    for (const lane of enriched) {
       if (lane.leftEdge.length >= 2) {
         features.push({
           type: 'Feature',
@@ -373,7 +384,7 @@ export function updateLaneOverlay(map: maplibregl.Map, lanes: HDLane[], markings
 
   const markSrc = map.getSource(NAV_MARKING_SOURCE) as maplibregl.GeoJSONSource | undefined;
   if (markSrc) {
-    const features: Feature<LineString>[] = markings
+    const features: Feature<LineString>[] = finalMarkings
       .filter(m => m.geometry.length >= 2)
       .map((m, i) => ({
         type: 'Feature' as const,
