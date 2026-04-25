@@ -7,10 +7,10 @@
 import { test, expect, type Page, type ConsoleMessage, type BrowserContext } from "@playwright/test";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-const SUPABASE_URL = "https://lfkbgnbjxskspsownvjm.supabase.co";
-const SUPABASE_KEY = "sb_publishable_8I_R_P73-7XZ5Rgopqd7yQ_frSWuB5e";
-const STORAGE_KEY = "sb-lfkbgnbjxskspsownvjm-auth-token";
-const E2E_PASSWORD = "E2eCall!2026";
+const SUPABASE_URL = process.env.E2E_SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? "";
+const SUPABASE_KEY = process.env.E2E_SUPABASE_KEY ?? process.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? "";
+const STORAGE_KEY = `sb-${SUPABASE_URL.match(/\/\/([a-z0-9]+)\./)?.[1] ?? "unknown"}-auth-token`;
+const E2E_PASSWORD = process.env.E2E_PASSWORD ?? "";
 const BASE_URL = "http://localhost:8080";
 
 function makeSb(): SupabaseClient {

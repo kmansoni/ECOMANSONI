@@ -105,6 +105,19 @@ If validation fails, continue working on the same defect until it is clean or ex
   2. Supabase → localStorage hydration on login
   3. Premium feature flags are server-authoritative
 
+### Sequential Audit Agent (Новый)
+- **Trigger:** `mansoni` делегирует аудит по команде "сделай последовательный аудит"
+- **Scope:** Любой файл или директория
+- **Protocol:** Строго последовательный (один дефект → исправление → валидация → отчёт)
+- **Checks:** Все фронты через скиллы: code-review, stub-hunter, silent-failure-hunter, completion-checker, integration-checker, invariant-guardian, coherence-checker
+- **Rules:**
+  1. Никаких батчей — только по одной проблеме за цикл
+  2. Немедленная валидация после каждого исправления (tsc + targeted tests)
+  3. Минимальная поверхность изменения (smallest change surface)
+  4. Очистка мусора после каждого коммита
+  5. Continues until end of scope + consensus that code is clean
+- **Completion:** Все файлы scope пройдены, все скиллы вернули "clean", консенсус агентов достигнут
+
 ### Routing Agent
 - **Trigger:** Changes to `routing.ts`, `dynamicRerouter.ts`, `pedestrianMode.ts`, `transitRouter.ts`
 - **Checks:**

@@ -1,0 +1,12 @@
+# Navigator Domain LLM Tests
+# AI features: natural language search, route explanation, POI recommendations
+
+# Placeholder — to be expanded with domain-specific tests
+- test: "Placeholder Navigator test"
+  vars:
+    dummy: true
+  steps:
+    - prompt: "Placeholder"
+      assert:
+        type: "javascript"
+        value: "true === true"

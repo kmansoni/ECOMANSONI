@@ -163,7 +163,7 @@ jobs:
             ENVEOF
             chmod 600 "$ENV_FILE"
 
-      - name: Reload nginx (zero-downtime)
+      - name: Blue-green deploy (zero-downtime)
         uses: appleboy/ssh-action@v0.1.7
         with:
           host: ${{ secrets.ADMINVPS_HOST }}
@@ -172,8 +172,9 @@ jobs:
           port: 22
           script: |
             set -euo pipefail
-            sudo nginx -t
-            sudo systemctl reload nginx
+            APP_DIR="${{ secrets.ADMINVPS_APP_DIR }}"
+            chmod +x "$APP_DIR/scripts/blue-green-deploy.sh"
+            APP_DIR="$APP_DIR" bash "$APP_DIR/scripts/blue-green-deploy.sh"
 
       - name: Smoke test mansoni.ru
         run: |

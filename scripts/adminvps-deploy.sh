@@ -1,6 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Автозагрузка секретов из .secrets/credentials.env
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SECRETS_FILE="$SCRIPT_DIR/../.secrets/credentials.env"
+if [ -f "$SECRETS_FILE" ]; then
+  set -a
+  # shellcheck disable=SC1090
+  source "$SECRETS_FILE"
+  set +a
+  echo "Secrets loaded from .secrets/credentials.env"
+fi
+
 APP_DIR="${APP_DIR:-/opt/mansoni/app}"
 BRANCH="${DEPLOY_BRANCH:-main}"
 SYSTEMD_SERVICES="${SYSTEMD_SERVICES:-}"

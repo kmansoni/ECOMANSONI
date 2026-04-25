@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 
-const PK = "sb_publishable_8I_R_P73-7XZ5Rgopqd7yQ_frSWuB5e";
-const JK = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxma2JnbmJqeHNrc3Bzb3dudmptIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE0NDI0NTYsImV4cCI6MjA4NzAxODQ1Nn0.WNubMc1s9TA91aT_txY850x2rWJ1ayxiTs7Rq6Do21k";
+const PK = process.env.E2E_SUPABASE_KEY ?? process.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? "";
+const JK = process.env.E2E_SUPABASE_JWT ?? process.env.VITE_SUPABASE_ANON_KEY ?? "";
 
 test("WebSocket к SFU с патчем apikey", async ({ browser }) => {
   const ctx = await browser.newContext({ ignoreHTTPSErrors: true });

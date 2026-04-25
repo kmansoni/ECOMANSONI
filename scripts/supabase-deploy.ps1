@@ -9,7 +9,7 @@ param(
   [switch]$EnforceCriticalSecurityGate,
   [string]$MirrorRepoPath = "",
   [switch]$PromptToken,
-  [string[]]$Functions = @("vk-webhook", "turn-credentials", "aria-chat", "aria-memory", "insurance-assistant", "property-assistant")
+  [string[]]$Functions = @("vk-webhook", "turn-credentials", "aria-chat", "aria-memory", "insurance-assistant", "property-assistant", "delete-account")
 )
 
 $ErrorActionPreference = "Stop"
@@ -97,6 +97,26 @@ function Invoke-DbPushPolicyGuard([string]$repoRootPath) {
 
 $previousToken = $env:SUPABASE_ACCESS_TOKEN
 $tokenWasSet = -not [string]::IsNullOrWhiteSpace($previousToken)
+
+# Автозагрузка секретов из .secrets/credentials.env если токен не задан
+if (-not $tokenWasSet) {
+  $secretsFile = Join-Path $PSScriptRoot "..\\.secrets\\credentials.env"
+  if (Test-Path $secretsFile) {
+    Get-Content $secretsFile | ForEach-Object {
+      if ($_ -match '^([A-Z0-9_]+)="?([^"]*)"?$') {
+        $k = $Matches[1]; $v = $Matches[2]
+        if (-not [System.Environment]::GetEnvironmentVariable($k)) {
+          Set-Item -Path "Env:$k" -Value $v
+        }
+      }
+    }
+    $previousToken = $env:SUPABASE_ACCESS_TOKEN
+    $tokenWasSet = -not [string]::IsNullOrWhiteSpace($previousToken)
+    if ($tokenWasSet) {
+      Write-Host "Secrets loaded from .secrets/credentials.env" -ForegroundColor Cyan
+    }
+  }
+}
 $needsPrompt = $PromptToken -and ((-not $tokenWasSet) -or ($previousToken.Trim().Length -lt 10))
 $previousPgPassword = $env:PGPASSWORD
 $previousSupabaseDbPassword = $env:SUPABASE_DB_PASSWORD

@@ -263,11 +263,18 @@ server {
 
     client_max_body_size 10M;
 
-    # CORS заголовки
-    add_header 'Access-Control-Allow-Origin' '*' always;
+    # CORS — разрешаем только свои домены
+    set $cors_origin "";
+    if ($http_origin ~* "^https://(mansoni\.ru|www\.mansoni\.ru|[a-z0-9-]+\.github\.io)$") {
+        set $cors_origin $http_origin;
+    }
+
+    add_header 'Access-Control-Allow-Origin' $cors_origin always;
+    add_header 'Access-Control-Allow-Credentials' 'true' always;
     add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, PATCH, DELETE, OPTIONS' always;
     add_header 'Access-Control-Allow-Headers' 'Authorization, Content-Type, Accept, apikey, x-client-info' always;
     add_header 'Access-Control-Max-Age' '3600' always;
+    add_header 'Vary' 'Origin' always;
 
     if ($request_method = 'OPTIONS') {
         return 204;
@@ -323,9 +330,41 @@ sudo ufw --force enable
 log_success "Firewall настроен"
 
 #
-# Шаг 11: Настройка автоматических бэкапов
+# Шаг 11: SSL сертификат (Let's Encrypt)
 #
-log_info "Шаг 11/11: Настройка автоматических бэкапов..."
+log_info "Шаг 11/12: Настройка SSL (Let's Encrypt)..."
+
+read -p "Введи домен для SSL (например api.mansoni.ru): " SSL_DOMAIN
+read -p "Введи email для Let's Encrypt: " SSL_EMAIL
+
+if [ -n "$SSL_DOMAIN" ] && [ -n "$SSL_EMAIL" ]; then
+    sudo apt install -y certbot python3-certbot-nginx
+
+    # Обновляем server_name в nginx конфиге
+    sudo sed -i "s/server_name _;/server_name $SSL_DOMAIN;/" /etc/nginx/sites-available/mansoni-api
+    sudo nginx -t && sudo systemctl reload nginx
+
+    # Получаем сертификат
+    sudo certbot --nginx \
+        -d "$SSL_DOMAIN" \
+        --email "$SSL_EMAIL" \
+        --agree-tos \
+        --no-eff-email \
+        --redirect
+
+    # Автообновление уже добавлено certbot в cron, проверяем
+    sudo systemctl enable certbot.timer 2>/dev/null || \
+        (sudo crontab -l 2>/dev/null; echo "0 3 * * * certbot renew --quiet") | sudo crontab -
+
+    log_success "SSL сертификат получен для $SSL_DOMAIN (автообновление включено)"
+else
+    log_warning "SSL пропущен — домен не указан. Запусти позже: sudo certbot --nginx -d <домен>"
+fi
+
+#
+# Шаг 12: Настройка автоматических бэкапов
+#
+log_info "Шаг 12/12: Настройка автоматических бэкапов..."
 
 sudo mkdir -p /var/backups/mansoni
 
@@ -385,10 +424,8 @@ echo
 echo "  3. Проверь API:"
 echo "     curl http://localhost:3000/"
 echo
-echo "  4. Настрой домен и SSL:"
-echo "     sudo certbot --nginx -d api.mansoni.ru"
-echo
-echo "  5. Обнови CORS в Nginx (замени * на свой домен)"
+echo "  4. Проверь SSL:"
+echo "     curl -I https://$SSL_DOMAIN/health"
 echo
 log_info "📚 Полезные команды:"
 echo

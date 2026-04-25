@@ -1,0 +1,280 @@
+openapi: 3.1.0
+info:
+  title: Mansoni API
+  version: 1.0.0
+  description: |
+    REST API для платформы Mansoni — суперплатформа (мессенджер, соцсеть, маркетплейс, такси, CRM).
+
+    Аутентификация: Bearer токен от Supabase Auth.
+  contact:
+    email: admin@mansoni.ru
+
+servers:
+  - url: https://mansoni.ru/api
+    description: Production
+  - url: http://localhost:5173/api
+    description: Local development
+
+security:
+  - bearerAuth: []
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]
+
+    Profile:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        full_name:
+          type: string
+        avatar_url:
+          type: string
+          format: uri
+        bio:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    Post:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        content:
+          type: string
+        media_urls:
+          type: array
+          items:
+            type: string
+            format: uri
+        likes_count:
+          type: integer
+        comments_count:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+
+    Message:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        conversation_id:
+          type: string
+          format: uuid
+        sender_id:
+          type: string
+          format: uuid
+        content:
+          type: string
+        type:
+          type: string
+          enum: [text, image, video, audio, file, sticker]
+        created_at:
+          type: string
+          format: date-time
+
+    Pagination:
+      type: object
+      properties:
+        limit:
+          type: integer
+          default: 20
+          maximum: 100
+        offset:
+          type: integer
+          default: 0
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: healthy
+
+  # ── Профили ──────────────────────────────────────
+  /profiles/{id}:
+    get:
+      summary: Получить профиль пользователя
+      tags: [Profiles]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Профиль
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Profile'
+        '404':
+          description: Не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ── Посты ─────────────────────────────────────────
+  /posts:
+    get:
+      summary: Лента постов
+      tags: [Posts]
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: Список постов
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Post'
+    post:
+      summary: Создать пост
+      tags: [Posts]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                content:
+                  type: string
+                media_urls:
+                  type: array
+                  items:
+                    type: string
+              required: [content]
+      responses:
+        '201':
+          description: Пост создан
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Post'
+        '401':
+          description: Не авторизован
+
+  # ── Чаты ──────────────────────────────────────────
+  /conversations:
+    get:
+      summary: Список чатов
+      tags: [Chat]
+      responses:
+        '200':
+          description: Список чатов
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                      format: uuid
+                    last_message:
+                      $ref: '#/components/schemas/Message'
+                    unread_count:
+                      type: integer
+
+  /conversations/{id}/messages:
+    get:
+      summary: Сообщения чата
+      tags: [Chat]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: before
+          in: query
+          description: Курсор пагинации (created_at)
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Сообщения
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Message'
+
+  # ── Аккаунт ───────────────────────────────────────
+  /account/delete:
+    post:
+      summary: Удалить аккаунт (GDPR)
+      tags: [Account]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                confirm:
+                  type: string
+                  enum: [DELETE_MY_ACCOUNT]
+              required: [confirm]
+      responses:
+        '200':
+          description: Аккаунт удалён
+        '400':
+          description: Неверное подтверждение
+        '401':
+          description: Не авторизован

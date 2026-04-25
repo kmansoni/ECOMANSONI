@@ -7,10 +7,10 @@
 import { test, expect, type Page, type ConsoleMessage } from "@playwright/test";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-const SUPABASE_URL = "https://lfkbgnbjxskspsownvjm.supabase.co";
-const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxma2JnbmJqeHNrc3Bzb3dudmptIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE0NDI0NTYsImV4cCI6MjA4NzAxODQ1Nn0.WNubMc1s9TA91aT_txY850x2rWJ1ayxiTs7Rq6Do21k";
-const STORAGE_KEY = "sb-lfkbgnbjxskspsownvjm-auth-token";
-const E2E_PASSWORD = "E2eCall!2026";
+const SUPABASE_URL = process.env.E2E_SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? "";
+const SUPABASE_KEY = process.env.E2E_SUPABASE_KEY ?? process.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? "";
+const STORAGE_KEY = `sb-${SUPABASE_URL.match(/\/\/([a-z0-9]+)\./)?.[1] ?? "unknown"}-auth-token`;
+const E2E_PASSWORD = process.env.E2E_PASSWORD ?? "";
 
 const CALL_SETUP_TIMEOUT = 30_000;
 const IN_CALL_TIMEOUT = 40_000;
@@ -190,30 +190,14 @@ async function runSingleCall(browser: any, label: string) {
     const convId = await getOrCreateDm(authA.sb, authB.userId);
     console.log(`[${label}] DM: ${convId}`);
 
-    // 3. Навигация: User A открывает чат, User B на /chats (слушает входящие)
+    // 3. Навигация: User A открывает чат через deeplink, User B на /chats слушает входящие.
     await pageA.goto(`/chats?openDmId=${convId}`, { waitUntil: "domcontentloaded", timeout: 30_000 });
     await pageB.goto("/chats", { waitUntil: "domcontentloaded", timeout: 30_000 });
-    // Дать SPA время инициализировать auth + подписки
     await pageA.waitForTimeout(5000);
     await pageB.waitForTimeout(5000);
 
-    // 3.1 openDmId должен раскрыть DM автоматически. Если этого не произошло,
-    // допускаем только безопасный fallback по строке списка, а не по глобальному text locator,
-    // иначе можно случайно кликнуть по ChatHeader и уйти на /contact/:userId.
     const videoCallBtn = pageA.locator('button[aria-label="Видеозвонок"]');
-    const chatItem = pageA.locator(`[data-conversation-id="${convId}"]`).first();
-    await expect
-      .poll(async () => {
-        if (await videoCallBtn.isVisible().catch(() => false)) return "opened";
-        if (await chatItem.isVisible().catch(() => false)) return "listed";
-        return "pending";
-      }, { timeout: 15000, message: "DM did not appear in header or chat list" })
-      .not.toBe("pending");
-
-    const chatAlreadyOpened = await videoCallBtn.isVisible().catch(() => false);
-    if (!chatAlreadyOpened) {
-      await chatItem.click();
-    }
+    await videoCallBtn.waitFor({ state: "visible", timeout: 15000 });
     await pageA.waitForTimeout(2000);
 
     // debug: скриншот после открытия чата

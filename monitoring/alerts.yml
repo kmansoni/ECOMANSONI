@@ -1,0 +1,87 @@
+groups:
+  - name: infrastructure
+    rules:
+      - alert: ServiceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Сервис {{ $labels.job }} недоступен"
+          description: "{{ $labels.instance }} не отвечает больше 1 минуты"
+
+      - alert: HighCPU
+        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Высокая нагрузка CPU"
+          description: "CPU > 85% на {{ $labels.instance }} уже 5 минут"
+
+      - alert: HighMemory
+        expr: (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100 > 90
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Критически мало памяти"
+          description: "RAM занята на {{ $value | printf \"%.0f\" }}% на {{ $labels.instance }}"
+
+      - alert: DiskSpaceLow
+        expr: (1 - node_filesystem_avail_bytes{fstype!="tmpfs"} / node_filesystem_size_bytes) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Мало места на диске"
+          description: "Диск {{ $labels.mountpoint }} заполнен на {{ $value | printf \"%.0f\" }}%"
+
+      - alert: DiskSpaceCritical
+        expr: (1 - node_filesystem_avail_bytes{fstype!="tmpfs"} / node_filesystem_size_bytes) * 100 > 95
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Критически мало места на диске"
+          description: "Диск {{ $labels.mountpoint }} заполнен на {{ $value | printf \"%.0f\" }}%"
+
+  - name: redis
+    rules:
+      - alert: RedisDown
+        expr: redis_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Redis недоступен"
+          description: "Redis не отвечает на {{ $labels.instance }}"
+
+      - alert: RedisHighMemory
+        expr: redis_memory_used_bytes / redis_memory_max_bytes * 100 > 90
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Redis использует много памяти"
+          description: "Redis memory > 90% на {{ $labels.instance }}"
+
+  - name: http
+    rules:
+      - alert: SiteDown
+        expr: probe_success{job="blackbox"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Сайт недоступен"
+          description: "{{ $labels.instance }} не отвечает 2 минуты"
+
+      - alert: SlowResponse
+        expr: probe_duration_seconds{job="blackbox"} > 3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Медленный ответ сервера"
+          description: "{{ $labels.instance }} отвечает за {{ $value | printf \"%.1f\" }}с"

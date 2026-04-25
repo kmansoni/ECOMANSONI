@@ -1,0 +1,12 @@
+# Instagram Domain LLM Tests
+# AI features: post caption suggestions, hashtag recommendations, comment moderation
+
+# Placeholder — to be expanded with domain-specific tests
+- test: "Placeholder Instagram test"
+  vars:
+    dummy: true
+  steps:
+    - prompt: "Placeholder"
+      assert:
+        type: "javascript"
+        value: "true === true"
