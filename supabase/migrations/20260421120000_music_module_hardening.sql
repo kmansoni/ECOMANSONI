@@ -224,10 +224,10 @@ AS $$
 BEGIN
   WITH ordered AS (
     SELECT
-      id,
-      row_number() OVER (ORDER BY position, added_at, id) AS new_position
-    FROM public.music_playlist_tracks
-    WHERE playlist_id = p_playlist_id
+      mpt.id,
+      row_number() OVER (ORDER BY position, added_at, mpt.id) AS new_position
+    FROM public.music_playlist_tracks mpt
+    WHERE mpt.playlist_id = p_playlist_id
   )
   UPDATE public.music_playlist_tracks playlist_track
   SET position = ordered.new_position
@@ -240,7 +240,7 @@ BEGIN
     FROM public.music_playlist_tracks
     WHERE playlist_id = p_playlist_id
   )
-  WHERE id = p_playlist_id;
+  WHERE music_playlists.id = p_playlist_id;
 END;
 $$;
 
