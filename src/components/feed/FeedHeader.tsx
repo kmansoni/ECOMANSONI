@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { useScrollContainer } from "@/contexts/ScrollContainerContext";
 import { StoryViewer } from "./StoryViewer";
 import { useStories, type UserWithStories } from "@/hooks/useStories";
+import { ServicesMenu } from "@/components/layout/ServicesMenu";
 
 // Animation constants - moved outside for performance
 const EXPANDED_AVATAR_SIZE = 64;
@@ -84,6 +85,10 @@ export function FeedHeader() {
       className="sticky top-0 z-30 overflow-hidden will-change-auto border-b border-white/15 bg-white/8 shadow-[0_10px_30px_rgba(0,0,0,0.24)] backdrop-blur-2xl supports-[backdrop-filter]:bg-white/6"
       style={{ height: `${containerHeight}px` }}
     >
+      {/* Кнопка сервисов — правый верхний угол, мобайл */}
+      <div className="absolute top-2 right-3 z-20">
+        <ServicesMenu />
+      </div>
       {/* ИСПРАВЛЕНИЕ дефекта #34: skeleton-кружки вместо spinner — соответствует Instagram */}
       {loading && usersWithStories.length === 0 && (
         <div

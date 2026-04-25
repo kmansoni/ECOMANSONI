@@ -29,12 +29,14 @@ import { usePullDownExpand } from "@/hooks/usePullDownExpand";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { Bot } from "lucide-react";
 import { pbkdf2Hash, verifyPasscodeHash } from "@/lib/passcode";
 import { useArchivedChats } from "@/hooks/useArchivedChats";
 import { usePinnedChats } from "@/hooks/usePinnedChats";
 import { motion, AnimatePresence } from "framer-motion";
 import { clearHandledChatsQueryParams, parseChatsQueryActions } from "@/lib/chat/deepLinkQuery";
 import { fallbackNameFromUserId } from "@/lib/chat/fallback-name-from-user-id";
+import { fetchUserBriefMap } from "@/lib/users/userBriefs";
 import { logger } from "@/lib/logger";
 import { EmergencySOSSheet } from "@/components/chat/EmergencySOSSheet";
 import {
@@ -124,6 +126,7 @@ export function ChatsPage() {
   const swipeActive = useRef<Record<string, boolean>>({});
 
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
+  const [isResolvingConversation, setIsResolvingConversation] = useState(false);
   const [initialPanelAction, setInitialPanelAction] = useState<"settings" | "timer" | "scheduled" | null>(null);
   const [selectedChannel, setSelectedChannel] = useState<Channel | null>(null);
   const [selectedGroup, setSelectedGroup] = useState<GroupChat | null>(null);
@@ -471,36 +474,90 @@ export function ChatsPage() {
     };
   };
 
-  // Handle incoming conversationId from navigation state
+  const resolveMansoniConversation = useCallback(async (
+    conversationId: string,
+    hints?: Pick<LocationState, "otherUserId" | "otherDisplayName" | "otherAvatarUrl" | "chatAction">
+  ) => {
+    if (!conversationId) return false;
+
+    const existingConversation = conversations.find((conversation) => conversation.id === conversationId);
+    if (existingConversation?.participants?.length) {
+      setSelectedConversation(existingConversation);
+      if (hints?.chatAction) {
+        setInitialPanelAction(hints.chatAction);
+      }
+      return true;
+    }
+
+    setIsResolvingConversation(true);
+    try {
+      const [{ data: conversationRow, error: conversationError }, { data: participantRows, error: participantError }] = await Promise.all([
+        supabase.from("conversations").select("id, created_at, updated_at").eq("id", conversationId).maybeSingle(),
+        supabase.from("conversation_participants").select("conversation_id, user_id").eq("conversation_id", conversationId),
+      ]);
+
+      if (conversationError) throw conversationError;
+      if (participantError) throw participantError;
+      if (!conversationRow) {
+        toast.error("Чат не найден");
+        return false;
+      }
+
+      const participantIds = [...new Set((participantRows || []).map((participant) => String(participant.user_id || "")).filter(Boolean))];
+      const briefMap = await fetchUserBriefMap(participantIds, supabase);
+      const participants = (participantRows || []).map((participant) => {
+        const participantUserId = String(participant.user_id || "");
+        const brief = briefMap.get(participantUserId);
+        const isHintedUser = hints?.otherUserId && participantUserId === hints.otherUserId;
+        return {
+          user_id: participantUserId,
+          profile: brief
+            ? {
+                display_name: brief.display_name,
+                avatar_url: brief.avatar_url,
+              }
+            : isHintedUser
+              ? {
+                  display_name: hints?.otherDisplayName || fallbackNameFromUserId(participantUserId),
+                  avatar_url: hints?.otherAvatarUrl || null,
+                }
+              : undefined,
+        };
+      });
+
+      setSelectedConversation({
+        id: String(conversationRow.id),
+        created_at: String(conversationRow.created_at),
+        updated_at: String(conversationRow.updated_at),
+        participants,
+        unread_count: 0,
+      });
+      if (hints?.chatAction) {
+        setInitialPanelAction(hints.chatAction);
+      }
+      return true;
+    } catch (error) {
+      logger.warn("[ChatsPage] Failed to resolve conversation", { conversationId, error });
+      toast.error("Не удалось открыть чат");
+      return false;
+    } finally {
+      setIsResolvingConversation(false);
+    }
+  }, [conversations]);
+
+  // Handle incoming conversationId from navigation state and deeplink query via one resolver
   useEffect(() => {
     if (locationState?.conversationId) {
-      // Build participant from passed data (if available)
-      const participants = locationState.otherUserId 
-        ? [{
-            user_id: locationState.otherUserId,
-            profile: {
-              display_name: locationState.otherDisplayName || fallbackNameFromUserId(locationState.otherUserId),
-              avatar_url: locationState.otherAvatarUrl || null
-            }
-          }]
-        : [];
-
-      const immediateConv: Conversation = {
-        id: locationState.conversationId,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        participants,
-        unread_count: 0
-      };
-      
-      setSelectedConversation(immediateConv);
-      if (locationState.chatAction) {
-        setInitialPanelAction(locationState.chatAction);
-      }
+      void resolveMansoniConversation(locationState.conversationId, {
+        otherUserId: locationState.otherUserId,
+        otherDisplayName: locationState.otherDisplayName,
+        otherAvatarUrl: locationState.otherAvatarUrl,
+        chatAction: locationState.chatAction,
+      });
       window.history.replaceState({}, document.title);
-      refetch();
+      void refetch();
     }
-  }, [locationState, refetch]);
+  }, [locationState, refetch, resolveMansoniConversation]);
 
   useEffect(() => {
     const search = location.search;
@@ -519,23 +576,8 @@ export function ChatsPage() {
     let handled = false;
 
     if (openDmId) {
-      const fullConv = conversations.find((c) => c.id === openDmId);
-      if (fullConv) {
-        setSelectedConversation(fullConv);
-        handled = true;
-      } else if (!chatsLoading) {
-        setSelectedConversation({
-          id: openDmId,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          participants: [],
-          unread_count: 0,
-        });
-        void refetch();
-        handled = true;
-      } else {
-        return;
-      }
+      handled = true;
+      void resolveMansoniConversation(openDmId);
     }
 
     if (openChannelId) {
@@ -604,29 +646,53 @@ export function ChatsPage() {
       { replace: true, state: location.state }
     );
   }, [
+    channels,
+    channelsLoading,
+    groups,
+    groupsLoading,
     location.pathname,
     location.search,
     location.state,
     navigate,
-    conversations,
-    channels,
-    groups,
-    chatsLoading,
-    channelsLoading,
-    groupsLoading,
     refetch,
     refetchChannels,
     refetchGroups,
+    resolveMansoniConversation,
     startCall,
   ]);
+
+  useEffect(() => {
+    const selectedId = selectedConversation?.id;
+    if (!selectedId || !conversations.length) return;
+
+    const fullConversation = conversations.find((conversation) => conversation.id === selectedId);
+    if (fullConversation?.participants?.length) {
+      setSelectedConversation(fullConversation);
+    }
+  }, [conversations, selectedConversation?.id]);
+
+  const shouldShowConversationResolving =
+    Boolean(selectedConversation) &&
+    !getOtherParticipant(selectedConversation as Conversation).user_id &&
+    isResolvingConversation;
+
+  if (shouldShowConversationResolving) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6 text-center">
+        <div>
+          <h2 className="text-lg font-semibold mb-2 text-foreground dark:text-white">Открываем чат…</h2>
+          <p className="text-muted-foreground dark:text-white/60">Загружаем данные разговора</p>
+        </div>
+      </div>
+    );
+  }
 
   // Hydrate selectedConversation with full data once conversations load
   useEffect(() => {
     const selectedId = selectedConversation?.id;
     if (selectedId && conversations.length > 0) {
-      const fullConv = conversations.find(c => c.id === selectedId);
+      const fullConv = conversations.find((c) => c.id === selectedId);
       if (fullConv && fullConv.participants.length > 0) {
-        // Replace with the fully-loaded conversation (has last_message, unread_count, etc.)
         setSelectedConversation(fullConv);
       }
     }
@@ -648,20 +714,30 @@ export function ChatsPage() {
 
   const onSwipeTouchMove = useCallback((key: string, e: React.TouchEvent) => {
     const touch = e.touches[0];
-    const dx = touch.clientX - (swipeStartX.current[key] ?? touch.clientX);
-    const dy = Math.abs(touch.clientY - (swipeStartY.current[key] ?? touch.clientY));
-    if (!swipeActive.current[key] && dy > Math.abs(dx) * 0.8) return;
-    swipeActive.current[key] = true;
-    const clamped = Math.max(-SWIPE_MAX, Math.min(SWIPE_MAX, dx));
-    setSwipeOffsets((prev) => ({ ...prev, [key]: clamped }));
+    const startX = swipeStartX.current[key] ?? touch.clientX;
+    const startY = swipeStartY.current[key] ?? touch.clientY;
+    const dx = touch.clientX - startX;
+    const dy = touch.clientY - startY;
+
+    if (!swipeActive.current[key]) {
+      if (Math.abs(dx) < 8) return;
+      if (Math.abs(dy) > Math.abs(dx)) return;
+      swipeActive.current[key] = true;
+    }
+
+    if (dx > 0) {
+      setSwipeOffsets((prev) => ({ ...prev, [key]: 0 }));
+      return;
+    }
+
+    const next = Math.max(-SWIPE_MAX, dx);
+    setSwipeOffsets((prev) => ({ ...prev, [key]: next }));
   }, []);
 
   const onSwipeTouchEnd = useCallback((key: string) => {
     const offset = swipeOffsets[key] ?? 0;
-    const snapped = Math.abs(offset) >= SWIPE_THRESHOLD
-      ? (offset < 0 ? -SWIPE_THRESHOLD : SWIPE_THRESHOLD)
-      : 0;
-    setSwipeOffsets((prev) => ({ ...prev, [key]: snapped }));
+    const next = Math.abs(offset) >= SWIPE_THRESHOLD ? -SWIPE_MAX : 0;
+    setSwipeOffsets((prev) => ({ ...prev, [key]: next }));
     swipeActive.current[key] = false;
   }, [swipeOffsets]);
 
@@ -669,10 +745,170 @@ export function ChatsPage() {
     setSwipeOffsets((prev) => ({ ...prev, [key]: 0 }));
   }, []);
 
+  const closeAllSwipes = useCallback(() => {
+    setSwipeOffsets({});
+  }, []);
+
+  const getSwipeOffset = useCallback((key: string) => swipeOffsets[key] ?? 0, [swipeOffsets]);
+
   useEffect(() => {
-    const timer = window.setInterval(() => setActivityNowTick(Date.now()), 1000);
+    closeAllSwipes();
+  }, [activeTabId, primaryTab, closeAllSwipes]);
+
+  useEffect(() => {
+    const handleGlobalPointerDown = () => closeAllSwipes();
+    window.addEventListener("pointerdown", handleGlobalPointerDown, { passive: true });
+    return () => window.removeEventListener("pointerdown", handleGlobalPointerDown);
+  }, [closeAllSwipes]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setActivityNowTick(Date.now());
+    }, 10000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const channel = supabase
+      .channel(`typing:${user.id}`)
+      .on("broadcast", { event: "typing" }, ({ payload }: TypingBroadcastPayload) => {
+        const authorId = payload?.user_id;
+        const isTyping = payload?.is_typing;
+        const activity = payload?.activity;
+        if (!authorId || authorId === user.id || !isTyping) return;
+
+        setDmActivityByConversation((prev) => {
+          const next = { ...prev };
+          for (const conv of conversations) {
+            const other = conv.participants?.find((p) => p?.user_id !== user.id);
+            if (other?.user_id === authorId) {
+              next[conv.id] = {
+                activity: activity === "recording_video" ? "recording_video" : activity === "recording_voice" ? "recording_voice" : "typing",
+                at: Date.now(),
+              };
+            }
+          }
+          return next;
+        });
+      })
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [conversations, user]);
+
+  useEffect(() => {
+    const now = activityNowTick;
+    setDmActivityByConversation((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      for (const [conversationId, entry] of Object.entries(prev)) {
+        if (now - entry.at > 12000) {
+          delete next[conversationId];
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [activityNowTick]);
+
+  const dmConversationLookup = useMemo(() => {
+    return conversations
+      .map((conv) => {
+        const other = conv.participants?.find((p) => p?.user_id !== user?.id);
+        return { id: conv.id, otherUserId: other?.user_id || null };
+      })
+      .filter((item): item is { id: string; otherUserId: string } => Boolean(item.otherUserId));
+  }, [conversations, user?.id]);
+
+  const formatActivityPreview = useCallback((conversationId: string) => {
+    const activity = dmActivityByConversation[conversationId];
+    if (!activity) return null;
+    if (activity.activity === "recording_voice") return "Записывает голосовое…";
+    if (activity.activity === "recording_video") return "Записывает видео…";
+    return "Печатает…";
+  }, [dmActivityByConversation]);
+
+  const dmChannels = useMemo(() => {
+    return dmConversationLookup.map(({ id, otherUserId }) => {
+      const profile = profilesById[otherUserId];
+      const conversation = conversations.find((item) => item.id === id);
+      const activityPreview = formatActivityPreview(id);
+      return {
+        id,
+        name: profile?.display_name || fallbackNameFromUserId(otherUserId),
+        avatarUrl: profile?.avatar_url || null,
+        activityPreview,
+        conversation,
+      };
+    });
+  }, [conversations, dmConversationLookup, formatActivityPreview, profilesById]);
+
+  const filteredCalls = useMemo(() => activeCalls, [activeCalls]);
+
+  const showStories = primaryTab === "chats" && !selectedConversation && !selectedChannel && !selectedGroup;
+
+  const expandedHeaderHeight = HEADER_BASE_HEIGHT + PRIMARY_TABS_HEIGHT + FILTERS_HEIGHT + (showStories ? STORIES_ROW_HEIGHT : 0);
+  const collapsedHeaderHeight = HEADER_BASE_HEIGHT + PRIMARY_TABS_HEIGHT;
+  const pullDown = usePullDownExpand({ expandedHeight: expandedHeaderHeight, collapsedHeight: collapsedHeaderHeight });
+  const isHeaderExpanded = pullDown.currentHeight > collapsedHeaderHeight + 8;
+
+  const isCallsEmpty = !callsLoading && filteredCalls.length === 0;
+  const isChatsEmpty = !chatsLoading && conversations.length === 0 && channels.length === 0 && groups.length === 0;
+
+  const placeholderRows = useMemo(() => Array.from({ length: CHAT_LIST_PLACEHOLDER_COUNT }), []);
+
+  const openConversationFromList = useCallback((conv: Conversation) => {
+    setSelectedConversation({ ...conv, unread_count: 0 });
+    void refetch();
+  }, [refetch]);
+
+  const openChannelFromList = useCallback((channel: Channel) => {
+    setSelectedChannel(channel);
+  }, []);
+
+  const openGroupFromList = useCallback((group: GroupChat) => {
+    setSelectedGroup(group);
+  }, []);
+
+  const createConversationFromSearch = useCallback(async (profile: SearchUser) => {
+    const conversationId = await createConversation(profile.user_id);
+    if (!conversationId) return;
+
+    navigate("/chats", {
+      state: {
+        conversationId,
+        otherUserId: profile.user_id,
+        otherDisplayName: profile.display_name || profile.username || fallbackNameFromUserId(profile.user_id),
+        otherAvatarUrl: profile.avatar_url || null,
+      },
+    });
+  }, [createConversation, navigate]);
+
+  const openArchivedConversation = useCallback((conversationId: string) => {
+    void resolveMansoniConversation(conversationId);
+    setShowArchive(false);
+  }, [resolveMansoniConversation]);
+
+  const createQuickChannel = useCallback(() => openCreateSheet("channel"), []);
+  const createQuickGroup = useCallback(() => openCreateSheet("group"), []);
+
+  const chatsErrorMessage = chatsError && typeof chatsError === "string" ? chatsError : null;
+
+  // Hydrate selectedConversation with full data once conversations load
+  useEffect(() => {
+    const selectedId = selectedConversation?.id;
+    if (selectedId && conversations.length > 0) {
+      const fullConv = conversations.find(c => c.id === selectedId);
+      if (fullConv && fullConv.participants.length > 0) {
+        // Replace with the fully-loaded conversation (has last_message, unread_count, etc.)
+        setSelectedConversation(fullConv);
+      }
+    }
+  }, [conversations, selectedConversation?.id]);
 
   useEffect(() => {
     if (!user?.id) return;

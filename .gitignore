@@ -88,6 +88,8 @@ probe_out.json
 
 # P0-010: Env snapshots and build artifacts must never be committed
 .tmp_env_local_snapshot.txt
+# CI/CD temp artifacts
+.tmp_*
 *.env.local.snapshot
 TIMEWEB_PASTE_TO_CONSOLE.txt
 
@@ -125,3 +127,10 @@ public/data/osm/**
 !public/data/osm/world/
 !public/data/osm/world/README.txt
 !public/data/osm/world/download-geofabrik.ps1
+
+# Terraform secrets
+infra/terraform/terraform.tfvars
+infra/terraform/.terraform/
+infra/terraform/*.tfstate
+infra/terraform/*.tfstate.backup
+infra/terraform/.terraform.lock.hcl
