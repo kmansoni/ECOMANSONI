@@ -132,7 +132,7 @@ async function ensureInfraSnapshot(position: LatLng): Promise<RoadInfraSnapshot 
       north: position.lat + spread,
       east: position.lng + spread * 1.7,
     }, {
-      includeLanes: false,
+      includeLanes: true,
       includeSigns: false,
       includeCameras: false,
       includeBridges: false,
@@ -161,6 +161,11 @@ async function ensureInfraSnapshot(position: LatLng): Promise<RoadInfraSnapshot 
 /** Принудительная загрузка инфраструктуры из Overpass для текущей позиции */
 export function triggerInfraLoad(position: LatLng): void {
   ensureInfraSnapshot(position);
+}
+
+/** Текущий снимок инфраструктуры (null, если ещё не загружен) */
+export function getInfraSnapshot(): RoadInfraSnapshot | null {
+  return _infraSnapshot;
 }
 
 function infraObjectsFromSnapshot(

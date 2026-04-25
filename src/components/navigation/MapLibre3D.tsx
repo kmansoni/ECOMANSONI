@@ -16,9 +16,9 @@ import type { Maneuver, RouteSegment, SpeedCamera, NavRoute, TrafficLevel, Multi
 import { useNavigatorSettings } from '@/stores/navigatorSettingsStore';
 import { getVehicleMarkerSVG } from '@/lib/navigation/vehicleMarkers';
 import { useRoadEvents, getRoadEventInfo } from '@/stores/roadEventsStore';
-import { getRelevantMapObjects, loadRoadFeatures, onInfraUpdate, triggerInfraLoad } from '@/lib/navigation/roadFeatures';
+import { getRelevantMapObjects, loadRoadFeatures, onInfraUpdate, triggerInfraLoad, getInfraSnapshot } from '@/lib/navigation/roadFeatures';
 import { getStyleUrl, addEnhancedRoadLayers, addTerrain, applyMapThemeEnhancements, type MapTheme } from '@/lib/map/vectorTileProvider';
-import { ensureNavigationLayers, updateNavigationObjectSource } from '@/lib/map/navigationLayers';
+import { ensureNavigationLayers, updateNavigationObjectSource, updateLaneOverlay } from '@/lib/map/navigationLayers';
 import { getRoad3DRenderer } from '@/lib/navigation/road3DRenderer';
 import { getNearbyTrafficLights, type TrafficLightStatus } from '@/lib/navigation/trafficLightTiming';
 import { getBuildingExtrusionColorExpression, getProductionPalette } from '@/lib/map/mapStyles';
@@ -765,6 +765,12 @@ export const MapLibre3D = memo(function MapLibre3D({
         radiusKm: isNavigating ? 1.8 : 1.2,
       });
       updateNavigationObjectSource(map, objects);
+
+      // HD-полосы из Overpass
+      const snap = getInfraSnapshot();
+      if (snap && snap.lanes.length > 0) {
+        updateLaneOverlay(map, snap.lanes, snap.markings);
+      }
     } catch (error) {
       logger.warn('[MapLibre3D] navigation objects update failed', { error });
     }

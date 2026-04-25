@@ -1,10 +1,13 @@
 import type maplibregl from 'maplibre-gl';
-import type { Feature, FeatureCollection, GeoJsonProperties, Point } from 'geojson';
+import type { Feature, FeatureCollection, GeoJsonProperties, Point, LineString } from 'geojson';
 import type { NavigationMapObject } from '@/types/navigation';
+import type { HDLane, LaneMarking } from '@/types/roadInfra';
 import { logger } from '@/lib/logger';
 import { getProductionPalette, type ProductionMapMode } from './mapStyles';
 
 const NAV_SOURCE_ID = 'nav-objects-source';
+const NAV_LANE_SOURCE = 'nav-lanes-source';
+const NAV_MARKING_SOURCE = 'nav-markings-source';
 const NAV_LAYER_PREFIX = 'nav-layer-';
 
 interface EnsureNavigationLayersOptions {
@@ -339,6 +342,104 @@ export function updateNavigationObjectSource(map: maplibregl.Map, objects: Navig
   const source = map.getSource(NAV_SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
   if (!source) return;
   source.setData(toFeatureCollection(objects));
+}
+
+// ── HD Lanes on 2D map ──────────────────────────────────────────────────────
+
+export function updateLaneOverlay(map: maplibregl.Map, lanes: HDLane[], markings: LaneMarking[]): void {
+  ensureLaneSources(map);
+
+  const laneSrc = map.getSource(NAV_LANE_SOURCE) as maplibregl.GeoJSONSource | undefined;
+  if (laneSrc) {
+    const features: Feature<LineString>[] = [];
+    for (const lane of lanes) {
+      if (lane.leftEdge.length >= 2) {
+        features.push({
+          type: 'Feature',
+          properties: { side: 'left', laneType: lane.type, index: lane.index },
+          geometry: { type: 'LineString', coordinates: lane.leftEdge.map(p => [p.lng, p.lat]) },
+        });
+      }
+      if (lane.rightEdge.length >= 2) {
+        features.push({
+          type: 'Feature',
+          properties: { side: 'right', laneType: lane.type, index: lane.index },
+          geometry: { type: 'LineString', coordinates: lane.rightEdge.map(p => [p.lng, p.lat]) },
+        });
+      }
+    }
+    laneSrc.setData({ type: 'FeatureCollection', features });
+  }
+
+  const markSrc = map.getSource(NAV_MARKING_SOURCE) as maplibregl.GeoJSONSource | undefined;
+  if (markSrc) {
+    const features: Feature<LineString>[] = markings
+      .filter(m => m.geometry.length >= 2)
+      .map((m, i) => ({
+        type: 'Feature' as const,
+        properties: { markingType: m.type, color: m.color ?? null, idx: i },
+        geometry: { type: 'LineString' as const, coordinates: m.geometry.map(p => [p.lng, p.lat]) },
+      }));
+    markSrc.setData({ type: 'FeatureCollection', features });
+  }
+}
+
+function ensureLaneSources(map: maplibregl.Map): void {
+  const empty: FeatureCollection<LineString> = { type: 'FeatureCollection', features: [] };
+
+  if (!map.getSource(NAV_LANE_SOURCE)) {
+    map.addSource(NAV_LANE_SOURCE, { type: 'geojson', data: empty });
+
+    map.addLayer({
+      id: `${NAV_LAYER_PREFIX}lane-edges`,
+      type: 'line',
+      source: NAV_LANE_SOURCE,
+      minzoom: 15,
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': [
+          'match', ['get', 'laneType'],
+          'bus', '#FBBF24',
+          'bike', '#34D399',
+          '#E2E8F0',
+        ],
+        'line-width': ['interpolate', ['linear'], ['zoom'], 15, 1, 18, 2.5, 20, 4],
+        'line-opacity': ['interpolate', ['linear'], ['zoom'], 15, 0.3, 17, 0.7, 19, 0.9],
+      },
+    });
+  }
+
+  if (!map.getSource(NAV_MARKING_SOURCE)) {
+    map.addSource(NAV_MARKING_SOURCE, { type: 'geojson', data: empty });
+
+    map.addLayer({
+      id: `${NAV_LAYER_PREFIX}lane-markings`,
+      type: 'line',
+      source: NAV_MARKING_SOURCE,
+      minzoom: 15,
+      layout: { 'line-cap': 'butt', 'line-join': 'round' },
+      paint: {
+        'line-color': [
+          'match', ['get', 'markingType'],
+          'solid_yellow', '#F59E0B',
+          'solid_double_yellow', '#F59E0B',
+          'dashed_yellow', '#F59E0B',
+          'stop_line', '#EF4444',
+          'crosswalk', '#60A5FA',
+          '#FFFFFF',
+        ],
+        'line-width': ['interpolate', ['linear'], ['zoom'], 15, 0.8, 18, 2, 20, 3.5],
+        'line-opacity': ['interpolate', ['linear'], ['zoom'], 15, 0.25, 17, 0.6, 19, 0.85],
+        'line-dasharray': [
+          'match', ['get', 'markingType'],
+          'dashed_white', ['literal', [2, 3]],
+          'dashed_yellow', ['literal', [2, 3]],
+          'dashed_long', ['literal', [4, 2]],
+          ['literal', [1, 0]],
+        ],
+      },
+    } as maplibregl.LayerSpecification);
+  }
 }
 
 function ensureNavObjectSource(map: maplibregl.Map): void {
