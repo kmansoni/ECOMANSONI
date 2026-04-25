@@ -362,25 +362,6 @@ function KindTipsTicker({ tokens }: { tokens: ThemeTokens }) {
         </motion.div>
       </AnimatePresence>
 
-      <div className="mt-2 flex items-center gap-1">
-        {Array.from({ length: Math.min(6, total) }).map((_, i) => {
-          const active = i === index % 6;
-          return (
-            <span
-              key={i}
-              className={`h-[3px] rounded-full transition-all duration-500 ${
-                active
-                  ? tokens.isDark
-                    ? "w-5 bg-white/70"
-                    : "w-5 bg-slate-700/80"
-                  : tokens.isDark
-                  ? "w-1.5 bg-white/20"
-                  : "w-1.5 bg-slate-400/40"
-              }`}
-            />
-          );
-        })}
-      </div>
     </div>
   );
 }
@@ -1216,33 +1197,30 @@ export function AuthPage() {
 
   return (
     <>
-      <style>{`.auth-showcase-scroll{scrollbar-width:none;-ms-overflow-style:none}.auth-showcase-scroll::-webkit-scrollbar{display:none}`}</style>
+      <style>{`
+        .auth-showcase-scroll {
+          scrollbar-width: none !important;
+          -ms-overflow-style: none !important;
+        }
+        .auth-showcase-scroll::-webkit-scrollbar {
+          display: none !important;
+        }
+        @media (max-width: 640px) {
+          .auth-glass-card {
+            padding: 1.25rem !important;
+            min-width: 0 !important;
+            max-width: 100vw !important;
+            min-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 2rem) !important;
+            display: flex !important;
+            flex-direction: column !important;
+          }
+        }
+      `}</style>
       <div
-        className={`${theme === "dark" ? "dark" : ""} auth-showcase-scroll relative min-h-[100dvh] w-full overflow-x-hidden font-[Manrope,system-ui,sans-serif] ${tokens.textPrimary}`}
+        className={`${theme === "dark" ? "dark" : ""} auth-showcase-scroll relative h-[100dvh] w-full overflow-x-hidden overflow-y-auto overscroll-y-contain font-[Manrope,system-ui,sans-serif] ${tokens.textPrimary}`}
         style={{ colorScheme: theme, paddingTop: "env(safe-area-inset-top)", paddingBottom: "env(safe-area-inset-bottom)" }}
       >
         <AuroraBackground theme={theme} />
-
-        <div className="relative z-10 flex items-center justify-end px-4 sm:px-6 lg:px-10 py-4 sm:py-5">
-          <motion.button
-            onClick={toggle}
-            whileTap={{ scale: 0.9, rotate: 180 }}
-            className={`relative h-10 w-10 rounded-full border backdrop-blur-xl flex items-center justify-center transition ${tokens.iconBtn}`}
-            aria-label="Toggle theme"
-          >
-            <AnimatePresence mode="wait" initial={false}>
-              {theme === "dark" ? (
-                <motion.span key="moon" initial={{ opacity: 0, rotate: -90 }} animate={{ opacity: 1, rotate: 0 }} exit={{ opacity: 0, rotate: 90 }}>
-                  <Moon className="h-5 w-5" />
-                </motion.span>
-              ) : (
-                <motion.span key="sun" initial={{ opacity: 0, rotate: 90 }} animate={{ opacity: 1, rotate: 0 }} exit={{ opacity: 0, rotate: -90 }}>
-                  <Sun className="h-5 w-5" />
-                </motion.span>
-              )}
-            </AnimatePresence>
-          </motion.button>
-        </div>
 
         <div className="relative z-10 flex items-start sm:items-center justify-center px-3 sm:px-6 pb-6 sm:pb-10 min-h-[calc(100dvh-72px)]">
           <motion.div
@@ -1256,7 +1234,27 @@ export function AuthPage() {
           >
             <div className={`pointer-events-none absolute -inset-4 sm:-inset-6 rounded-[2.2rem] blur-2xl opacity-70 ${tokens.isDark ? "bg-gradient-to-br from-fuchsia-500/25 via-indigo-500/20 to-cyan-400/25" : "bg-gradient-to-br from-fuchsia-300/40 via-indigo-300/35 to-cyan-300/40"}`} />
 
-            <div className={`relative rounded-[1.5rem] sm:rounded-[2rem] p-4 sm:p-7 lg:p-8 border backdrop-blur-2xl overflow-hidden ${tokens.glassCard} ${tokens.glassCardShadow}`}>
+            <div className={`relative rounded-[1.5rem] sm:rounded-[2rem] p-4 sm:p-7 lg:p-8 border backdrop-blur-2xl overflow-hidden auth-glass-card ${tokens.glassCard} ${tokens.glassCardShadow}`} style={{display: 'flex', flexDirection: 'column'}}>
+              {/* Переключатель темы — закреплён в правом верхнем углу карточки */}
+              <motion.button
+                onClick={toggle}
+                whileTap={{ scale: 0.9, rotate: 180 }}
+                className={`absolute top-3 right-3 sm:top-5 sm:right-5 h-10 w-10 rounded-full border backdrop-blur-xl flex items-center justify-center transition ${tokens.iconBtn} z-20`}
+                aria-label="Toggle theme"
+                style={{ boxShadow: '0 2px 12px 0 rgba(0,0,0,0.08)' }}
+              >
+                <AnimatePresence mode="wait" initial={false}>
+                  {theme === "dark" ? (
+                    <motion.span key="moon" initial={{ opacity: 0, rotate: -90 }} animate={{ opacity: 1, rotate: 0 }} exit={{ opacity: 0, rotate: 90 }}>
+                      <Moon className="h-5 w-5" />
+                    </motion.span>
+                  ) : (
+                    <motion.span key="sun" initial={{ opacity: 0, rotate: 90 }} animate={{ opacity: 1, rotate: 0 }} exit={{ opacity: 0, rotate: -90 }}>
+                      <Sun className="h-5 w-5" />
+                    </motion.span>
+                  )}
+                </AnimatePresence>
+              </motion.button>
               <div className="pointer-events-none absolute inset-0 rounded-[inherit]">
                 <div className={`absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent ${tokens.isDark ? "via-white/70" : "via-white"} to-transparent`} />
                 <div className={`absolute inset-y-8 left-0 w-px bg-gradient-to-b from-transparent ${tokens.isDark ? "via-white/30" : "via-indigo-200"} to-transparent`} />
@@ -1267,20 +1265,20 @@ export function AuthPage() {
                   initial={{ opacity: 0, y: -4 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.7, ease: "easeOut", delay: 0.1 }}
-                  className={`flex items-center gap-3 text-[13px] tracking-[0.42em] uppercase ${tokens.isDark ? "text-white/55" : "text-slate-500/90"}`}
-                  style={{ fontFeatureSettings: '"ss01"' }}
+                  className={`flex items-center gap-3 text-[26px] sm:text-[32px] tracking-[0.42em] uppercase ${tokens.isDark ? "text-white/55" : "text-slate-500/90"}`}
+                  style={{ fontFeatureSettings: '"ss01"', fontWeight: 700 }}
                 >
-                  <span aria-hidden className={`relative inline-block h-1.5 w-1.5 rounded-full ${tokens.isDark ? "bg-white/70" : "bg-slate-700"}`}>
-                    <span className={`absolute inset-0 rounded-full blur-[5px] opacity-60 ${tokens.isDark ? "bg-indigo-300" : "bg-indigo-500"}`} />
+                  <span aria-hidden className={`relative inline-block h-3 w-3 rounded-full ${tokens.isDark ? "bg-white/70" : "bg-slate-700"}`}>
+                    <span className={`absolute inset-0 rounded-full blur-[7px] opacity-60 ${tokens.isDark ? "bg-indigo-300" : "bg-indigo-500"}`} />
                   </span>
-                  <span className="font-medium">mansoni</span>
-                  <span aria-hidden className={`relative inline-block h-1.5 w-1.5 rounded-full ${tokens.isDark ? "bg-white/70" : "bg-slate-700"}`}>
-                    <span className={`absolute inset-0 rounded-full blur-[5px] opacity-60 ${tokens.isDark ? "bg-fuchsia-300" : "bg-fuchsia-500"}`} />
+                  <span className="font-bold">mansoni</span>
+                  <span aria-hidden className={`relative inline-block h-3 w-3 rounded-full ${tokens.isDark ? "bg-white/70" : "bg-slate-700"}`}>
+                    <span className={`absolute inset-0 rounded-full blur-[7px] opacity-60 ${tokens.isDark ? "bg-fuchsia-300" : "bg-fuchsia-500"}`} />
                   </span>
                 </motion.div>
               </div>
 
-              <div className="flex items-center justify-between mb-5 sm:mb-6">
+              <div className="flex items-center mb-5 sm:mb-6 flex-shrink-0">
                 {flow.step !== "phone" && flow.step !== "success" ? (
                   <button
                     onClick={handleBack}
@@ -1292,24 +1290,9 @@ export function AuthPage() {
                 ) : (
                   <div className="h-9 w-9" />
                 )}
-                <div className="flex items-center gap-1.5">
-                  {(["phone", "register", "otp", "success"] as Step[]).map((s) => {
-                    const order: Step[] = ["phone", "register", "otp", "success"];
-                    const activeIndex = order.indexOf(flow.step);
-                    const idx = order.indexOf(s);
-                    return (
-                      <span
-                        key={s}
-                        className={`h-1.5 rounded-full transition-all duration-500
-                          ${idx <= activeIndex ? `w-6 ${tokens.progressDotActive}` : `w-3 ${tokens.progressDotIdle}`}`}
-                      />
-                    );
-                  })}
-                </div>
-                <div className="h-9 w-9" />
               </div>
 
-              <div className="relative min-h-[300px] sm:min-h-[340px]">
+              <div className="relative flex-1 flex flex-col justify-center min-h-[260px] sm:min-h-[300px]">
                 <AnimatePresence mode="wait" initial={false}>
                   {flow.step === "phone" && (
                     <motion.form
@@ -1333,11 +1316,6 @@ export function AuthPage() {
                         />
                       </div>
 
-                      <div className={`mt-3 flex items-center gap-2 text-xs ${tokens.textMuted}`}>
-                        <ShieldCheck className="h-4 w-4 text-emerald-500" />
-                        Защищено end-to-end шифрованием
-                      </div>
-
                       <div className="mt-5">
                         <PrimaryButton
                           type="submit"
@@ -1357,18 +1335,6 @@ export function AuthPage() {
                         <QrCode className="h-5 w-5 text-cyan-500" />
                         Войти по QR-коду
                       </button>
-
-                      <p className={`mt-5 sm:mt-6 text-[11px] leading-relaxed ${tokens.textFaint}`}>
-                        Продолжая, вы соглашаетесь с{" "}
-                        <Link to="/legal/terms" className={`${tokens.textPrimary} underline underline-offset-2`}>
-                          Условиями использования
-                        </Link>
-                        {" "}и{" "}
-                        <Link to="/legal/privacy" className={`${tokens.textPrimary} underline underline-offset-2`}>
-                          Политикой конфиденциальности
-                        </Link>
-                        .
-                      </p>
                     </motion.form>
                   )}
 
@@ -1456,11 +1422,6 @@ export function AuthPage() {
                           {flow.registerError}
                         </div>
                       )}
-
-                      <div className={`flex items-center gap-2 text-xs ${tokens.textMuted}`}>
-                        <ShieldCheck className="h-4 w-4 text-emerald-500" />
-                        Защищено end-to-end шифрованием
-                      </div>
 
                       <PrimaryButton type="submit" icon={<UserPlus className="h-5 w-5" />} disabled={flow.loading} loading={flow.loading}>
                         Создать аккаунт
@@ -1577,9 +1538,41 @@ export function AuthPage() {
                   )}
                 </AnimatePresence>
               </div>
+
+              {/* Защита + политика — прибита к низу карточки */}
+              <div className="mt-4 flex-shrink-0">
+                <div className={`flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] ${tokens.textFaint} mb-3`}>
+                  <span className="flex items-center gap-1.5">
+                    <ShieldCheck className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                    E2E-шифрование (Signal Protocol)
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <ShieldCheck className="h-3.5 w-3.5 text-indigo-400 shrink-0" />
+                    Supabase RLS + JWT
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <ShieldCheck className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
+                    TLS 1.3 в транзите
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <ShieldCheck className="h-3.5 w-3.5 text-fuchsia-400 shrink-0" />
+                    AES-256 на устройстве
+                  </span>
+                </div>
+                <p className={`text-[11px] leading-relaxed ${tokens.textFaint}`}>
+                  Продолжая, вы соглашаетесь с{" "}
+                  <Link to="/legal/terms" className={`${tokens.textPrimary} underline underline-offset-2`}>
+                    Условиями использования
+                  </Link>
+                  {" "}и{" "}
+                  <Link to="/legal/privacy" className={`${tokens.textPrimary} underline underline-offset-2`}>
+                    Политикой конфиденциальности
+                  </Link>
+                  .
+                </p>
+              </div>
             </div>
 
-            <ProtectionStrip tokens={tokens} />
           </motion.div>
         </div>
       </div>
@@ -1589,119 +1582,6 @@ export function AuthPage() {
   );
 }
 
-/* ========================================================================
- * Protection strip (factual E2EE facts)
- * ====================================================================== */
-
-const PROTECTION_ITEMS: { key: string; title: string; detail: string; source: string }[] = [
-  { key: "e2ee", title: "E2EE личных чатов", detail: "X3DH + Double Ratchet. Ключи у вас и собеседника, сервер шифротекста не читает.", source: "src/lib/e2ee/x3dh.ts · doubleRatchet.ts" },
-  { key: "groups", title: "Групповые ключи", detail: "Sender keys + ротация при выходе участника. У бывших нет доступа к будущим сообщениям.", source: "src/lib/e2ee/senderKeys.ts · groupMembershipRotation.ts" },
-  { key: "calls", title: "Звонки под SFrame", detail: "Медиа шифруется до SFU. Сервер пересылки не слышит голос и не видит кадр.", source: "src/lib/e2ee/sframe.ts · sframeMedia.ts" },
-  { key: "keys", title: "Ключ — на устройстве", detail: "Secure Enclave / StrongBox где есть, иначе — IndexedDB с WebCrypto без export.", source: "src/lib/e2ee/hardwareKeyStorage.ts · keyStore.ts" },
-  { key: "webauthn", title: "Passkey / WebAuthn", detail: "Вход и разблокировка ключей — биометрией устройства. Пароли на сервер не уходят.", source: "src/lib/e2ee/webAuthnBinding.ts" },
-  { key: "tls", title: "TLS 1.3 в транспорте", detail: "Поверх E2EE — современный TLS к нашим серверам. Это минимум, не главное.", source: "nginx.conf" },
-  { key: "rls", title: "RLS в базе", detail: "Row-Level Security в Supabase: чужую строку нельзя запросить даже по id.", source: "supabase/migrations · docs/requirements/security.json" },
-  { key: "pq", title: "Пост-квантовый гибрид", detail: "Экспериментально: X25519 + ML-KEM в handshake. Выключается флагом.", source: "src/lib/e2ee/pqKem.ts" },
-];
-
-function ProtectionStrip({ tokens }: { tokens: ThemeTokens }) {
-  const [open, setOpen] = useState(false);
-  const [active, setActive] = useState<string | null>(null);
-  const current = active ? PROTECTION_ITEMS.find((x) => x.key === active) ?? null : null;
-
-  return (
-    <div className={`mt-4 sm:mt-5 rounded-2xl border p-3 sm:p-4 backdrop-blur-2xl ${tokens.glassCard}`}>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className={`mx-auto flex items-center gap-2 text-[11px] px-3 h-8 rounded-full border transition ${tokens.pillSurface} ${tokens.textSecondary}`}
-        aria-expanded={open}
-      >
-        <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
-        <span className="font-medium tracking-[0.08em]">Защита · что именно работает</span>
-        <span className={`transition-transform duration-300 ${open ? "rotate-180" : ""}`} aria-hidden>⌄</span>
-      </button>
-
-      <AnimatePresence initial={false}>
-        {open && (
-          <motion.div
-            key="protection"
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-            className="overflow-hidden"
-          >
-            <div className={`mt-3 rounded-2xl border p-3 sm:p-4 ${tokens.isDark ? "bg-white/[0.04] border-white/10" : "bg-white/70 border-slate-900/10"}`}>
-              <div className={`text-[10px] uppercase tracking-[0.32em] mb-2 ${tokens.isDark ? "text-white/50" : "text-slate-500"}`}>
-                факты, без преувеличений
-              </div>
-              <ul className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                {PROTECTION_ITEMS.map((item) => {
-                  const isActive = active === item.key;
-                  return (
-                    <li key={item.key}>
-                      <button
-                        type="button"
-                        onClick={() => setActive(isActive ? null : item.key)}
-                        className={`group w-full flex items-center gap-2.5 text-left px-2.5 py-1.5 rounded-lg border transition ${
-                          isActive
-                            ? tokens.isDark ? "bg-white/[0.09] border-white/20" : "bg-white border-slate-900/15"
-                            : tokens.isDark ? "bg-transparent border-white/10 hover:bg-white/[0.05]" : "bg-transparent border-slate-900/10 hover:bg-white"
-                        }`}
-                      >
-                        <span
-                          aria-hidden
-                          className="relative inline-flex h-1.5 w-1.5 rounded-full shrink-0"
-                          style={{ background: "#34d399", boxShadow: "0 0 8px #34d39988" }}
-                        />
-                        <span className={`text-[12.5px] leading-tight ${tokens.isDark ? "text-white/90" : "text-slate-800"}`}>{item.title}</span>
-                        <span className={`ml-auto text-[10px] ${tokens.isDark ? "text-white/40" : "text-slate-500"}`}>{isActive ? "—" : "+"}</span>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-
-              <AnimatePresence mode="wait">
-                {current && (
-                  <motion.div
-                    key={current.key}
-                    initial={{ opacity: 0, y: 4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -4 }}
-                    transition={{ duration: 0.25 }}
-                    className={`mt-3 rounded-xl p-3 text-[12.5px] leading-snug ${tokens.isDark ? "bg-black/30 text-white/85" : "bg-slate-50 text-slate-700"}`}
-                  >
-                    <div>{current.detail}</div>
-                    <div className={`mt-1.5 font-mono text-[10.5px] tracking-tight ${tokens.isDark ? "text-emerald-300/80" : "text-emerald-700/80"}`}>
-                      {current.source}
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              <div className={`mt-3 pt-3 border-t text-[11px] leading-relaxed ${tokens.isDark ? "border-white/10 text-white/55" : "border-slate-900/10 text-slate-500"}`}>
-                Чего мы <strong>не</strong> обещаем: абсолютной защиты от захваченного устройства, анонимности на уровне метаданных и сохранности сообщений, если вы потеряете все свои устройства и резервную фразу.
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {!open && (
-        <div className={`mt-3 flex items-center justify-center gap-3 sm:gap-4 text-[11px] ${tokens.textFaint}`}>
-          <span className="flex items-center gap-1.5">
-            <ShieldCheck className="h-3.5 w-3.5" /> E2EE · Signal-совместимо
-          </span>
-          <span>·</span>
-          <span>SFrame для звонков</span>
-          <span>·</span>
-          <span>Passkey</span>
-        </div>
-      )}
-    </div>
-  );
-}
+// ProtectionStrip и горизонтальные линии/индикаторы убраны, всё содержимое теперь в едином стеклянном блоке
 
 export default AuthPage;

@@ -146,8 +146,9 @@ function guessDefaultCountry(): Country {
 }
 
 export function PhoneInput({ value, onChange, placeholder, required, className, id }: PhoneInputProps) {
-  const [displayValue, setDisplayValue] = useState('+');
-  const [detectedCountry, setDetectedCountry] = useState<Country | null>(null);
+  const defaultCountry = guessDefaultCountry();
+  const [displayValue, setDisplayValue] = useState(() => '+' + defaultCountry.dialCode);
+  const [detectedCountry, setDetectedCountry] = useState<Country | null>(defaultCountry);
   // Стабильная ссылка на onChange — предотвращает re-trigger useEffect при нестабильном callback
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;

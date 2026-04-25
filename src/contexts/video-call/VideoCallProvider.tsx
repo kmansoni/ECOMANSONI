@@ -448,6 +448,8 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
 
   // E2EE pipe break recovery: stored consumer params for re-consume + debounce
   const consumerCreateParamsRef = useRef<Map<string, import('@/calls-v2/types').ConsumedPayload>>(new Map());
+  const producerPeerKeyRef = useRef<Map<string, string>>(new Map());
+  const peerUserIdByDeviceIdRef = useRef<Map<string, string>>(new Map());
   /** trackId → timestamp последней попытки recovery (debounce 10s) */
   const pipeBreakRetryAtRef = useRef<Map<string, number>>(new Map());
   /** Ref для функции recovery — заполняется после определения, вызывается из closure в CallMediaEncryption */
@@ -923,6 +925,14 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
             .map((p) => p.peerId ?? p.deviceId ?? '')
             .filter(Boolean);
           rekeyMachineRef.current?.setActivePeers(peerIds);
+
+          for (const peer of snapshot.peers as Array<{ peerId?: string; deviceId?: string }>) {
+            if (!peer?.peerId || !peer?.deviceId) continue;
+            const userId = peer.peerId.split(":")[0] || "";
+            if (userId) {
+              peerUserIdByDeviceIdRef.current.set(peer.deviceId, userId);
+            }
+          }
         }
       });
 
@@ -1125,9 +1135,10 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
               // Try full ECDH unwrap (real wrapped epoch key from leader)
               try {
                 const peerEpochKey = await keyExchange.processKeyPackage(pkgData);
-                await mediaEncryption.setDecryptionKey(senderUserId, peerEpochKey);
+                const peerKey = senderDeviceId ? `${senderUserId}:${senderDeviceId}` : senderUserId;
+                await mediaEncryption.setDecryptionKey(peerKey, peerEpochKey);
                 keyExchangeSuccess = true;
-                logger.info("[VideoCallContext] KEY_PACKAGE: processKeyPackage OK", { epoch, senderUserId });
+                logger.info("[VideoCallContext] KEY_PACKAGE: processKeyPackage OK", { epoch, senderUserId, peerKey });
               } catch (error) {
                 const errDetail = error instanceof Error
                   ? { name: error.name, message: error.message }
@@ -1439,11 +1450,17 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         });
 
         const consumeUnsub = client.on("PRODUCER_ADDED", (frame) => {
-          const payload = frame.payload as { roomId?: string; producerId?: string } | undefined;
+          const payload = frame.payload as { roomId?: string; producerId?: string; peerDeviceId?: string } | undefined;
           if (payload?.roomId !== roomId) return;
           const producerId = payload?.producerId;
           if (!producerId) return;
-          // Use SFU device rtpCapabilities if loaded, else router capabilities
+
+          const peerDeviceId = typeof payload.peerDeviceId === "string" ? payload.peerDeviceId : "";
+          const peerUserId = peerDeviceId ? peerUserIdByDeviceIdRef.current.get(peerDeviceId) : "";
+          if (peerUserId) {
+            producerPeerKeyRef.current.set(producerId, peerUserId);
+          }
+
           const rtpCapabilities =
             sfuManagerRef.current?.rtpCapabilities ??
             sfuRouterRtpCapabilitiesRef.current;
@@ -2034,8 +2051,8 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
             if (REQUIRE_SFRAME && CallMediaEncryption.isSupported()) {
               const receiver = sfuManagerRef.current?.getConsumerReceiver(consumer.id);
               if (receiver) {
-                // Use producerId as peerId — links to who created this producer
-                callMediaEncryptionRef.current?.setupReceiverTransform(receiver, p.producerId, consumer.id);
+                const peerKey = producerPeerKeyRef.current.get(p.producerId) || p.producerId;
+                callMediaEncryptionRef.current?.setupReceiverTransform(receiver, peerKey, consumer.id);
               }
             }
             return client.consumerResume({ roomId, consumerId: consumer.id }).then(() => {
