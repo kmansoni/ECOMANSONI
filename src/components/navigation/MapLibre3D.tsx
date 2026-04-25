@@ -16,7 +16,7 @@ import type { Maneuver, RouteSegment, SpeedCamera, NavRoute, TrafficLevel, Multi
 import { useNavigatorSettings } from '@/stores/navigatorSettingsStore';
 import { getVehicleMarkerSVG } from '@/lib/navigation/vehicleMarkers';
 import { useRoadEvents, getRoadEventInfo } from '@/stores/roadEventsStore';
-import { getRelevantMapObjects, loadRoadFeatures } from '@/lib/navigation/roadFeatures';
+import { getRelevantMapObjects, loadRoadFeatures, onInfraUpdate, triggerInfraLoad } from '@/lib/navigation/roadFeatures';
 import { getStyleUrl, addEnhancedRoadLayers, addTerrain, applyMapThemeEnhancements, type MapTheme } from '@/lib/map/vectorTileProvider';
 import { ensureNavigationLayers, updateNavigationObjectSource } from '@/lib/map/navigationLayers';
 import { getRoad3DRenderer } from '@/lib/navigation/road3DRenderer';
@@ -740,6 +740,12 @@ export const MapLibre3D = memo(function MapLibre3D({
   }, [roadEvents, isReady]);
 
   // ── Route-aware map objects via GeoJSON source ───────────────────────────
+  const [infraVersion, setInfraVersion] = useState(0);
+
+  useEffect(() => {
+    return onInfraUpdate(() => setInfraVersion(v => v + 1));
+  }, []);
+
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !isReady) return;
@@ -770,6 +776,7 @@ export const MapLibre3D = memo(function MapLibre3D({
     speedCameras,
     route,
     isReady,
+    infraVersion,
     navSettings.showTrafficLights,
     navSettings.showSpeedBumps,
     navSettings.showRoadSigns,

@@ -6,7 +6,10 @@
 import { staticDataUrl } from './staticDataUrl';
 import type { LatLng } from '@/types/taxi';
 import type { NavRoute, NavigationMapObject, RouteObjectRelevance, SpeedCamera } from '@/types/navigation';
+import type { RoadInfraSnapshot } from '@/types/roadInfra';
 import { calculateDistance } from '@/lib/taxi/calculations';
+import { scanInfrastructure } from './infra';
+import { logger } from '@/lib/logger';
 
 export interface TrafficLight {
   id: string;
@@ -92,6 +95,174 @@ const NONCOMMERCIAL_POI_CATEGORIES = new Set([
 let lastRelevantObjectsCache:
   | { key: string; value: NavigationMapObject[] }
   | null = null;
+
+// === Overpass infra cache (живёт в памяти, обновляется при сдвиге позиции) ===
+let _infraSnapshot: RoadInfraSnapshot | null = null;
+let _infraCenter: LatLng | null = null;
+let _infraLoading = false;
+const INFRA_REFRESH_KM = 0.8; // обновляем при сдвиге >800м
+
+let _infraListeners: Array<() => void> = [];
+
+/** Подписка на обновление инфраструктурных данных (Overpass) */
+export function onInfraUpdate(cb: () => void): () => void {
+  _infraListeners.push(cb);
+  return () => { _infraListeners = _infraListeners.filter(fn => fn !== cb); };
+}
+
+function notifyInfraListeners() {
+  for (const cb of _infraListeners) {
+    try { cb(); } catch {}
+  }
+}
+
+async function ensureInfraSnapshot(position: LatLng): Promise<RoadInfraSnapshot | null> {
+  if (_infraSnapshot && _infraCenter) {
+    const drift = calculateDistance(_infraCenter, position);
+    if (drift < INFRA_REFRESH_KM) return _infraSnapshot;
+  }
+  if (_infraLoading) return _infraSnapshot;
+
+  _infraLoading = true;
+  const spread = 0.015; // ~1.5km
+  try {
+    const snap = await scanInfrastructure({
+      south: position.lat - spread,
+      west: position.lng - spread * 1.7,
+      north: position.lat + spread,
+      east: position.lng + spread * 1.7,
+    }, {
+      includeLanes: false,
+      includeSigns: false,
+      includeCameras: false,
+      includeBridges: false,
+      includeSignals: false,
+      includeSpeedBumps: true,
+      includeCrossings: true,
+      includeBorders: true,
+      includeCheckpoints: true,
+      includeParking: true,
+      includeRoundabouts: true,
+      includeExits: true,
+      includeSurfaces: true,
+      cacheTTL: 600,
+    });
+    _infraSnapshot = snap;
+    _infraCenter = position;
+    notifyInfraListeners();
+  } catch (err) {
+    logger.debug('[roadFeatures] infra scan failed', { err });
+  } finally {
+    _infraLoading = false;
+  }
+  return _infraSnapshot;
+}
+
+/** Принудительная загрузка инфраструктуры из Overpass для текущей позиции */
+export function triggerInfraLoad(position: LatLng): void {
+  ensureInfraSnapshot(position);
+}
+
+function infraObjectsFromSnapshot(
+  snap: RoadInfraSnapshot,
+  position: LatLng,
+  heading: number,
+  route: NavRoute | null,
+): NavigationMapObject[] {
+  const out: NavigationMapObject[] = [];
+
+  for (const b of snap.speedBumps) {
+    out.push(buildObject({
+      id: `ovp-bump-${b.id}`, kind: 'speed_bump',
+      title: BUMP_LABELS[b.bumpType] ?? 'Неровность', iconText: '▲',
+      location: b.location, position, heading, route,
+    }));
+  }
+
+  for (const c of snap.crossings) {
+    out.push(buildObject({
+      id: `ovp-cross-${c.id}`, kind: 'pedestrian_crossing',
+      title: CROSSING_LABELS[c.crossingType] ?? 'Переход',
+      subtitle: c.hasSignal ? 'Со светофором' : null,
+      iconText: '🚸', location: c.location, position, heading, route,
+    }));
+  }
+
+  for (const b of snap.borders) {
+    out.push(buildObject({
+      id: `ovp-border-${b.id}`, kind: 'border_crossing',
+      title: b.name || 'Граница', iconText: '🛂',
+      location: b.location, position, heading, route,
+    }));
+  }
+
+  for (const ch of snap.checkpoints) {
+    out.push(buildObject({
+      id: `ovp-chk-${ch.id}`, kind: 'police_checkpoint',
+      title: CHECKPOINT_LABELS[ch.checkpointType] ?? 'Пост',
+      subtitle: ch.name ?? null, iconText: '🚔',
+      location: ch.location, position, heading, route,
+    }));
+  }
+
+  for (const p of snap.parking) {
+    out.push(buildObject({
+      id: `ovp-park-${p.id}`, kind: 'parking',
+      title: p.name ?? PARKING_LABELS[p.parkingType] ?? 'Парковка',
+      subtitle: p.fee ? 'Платная' : 'Бесплатная', iconText: 'P',
+      location: p.location, position, heading, route,
+    }));
+  }
+
+  for (const r of snap.roundabouts) {
+    out.push(buildObject({
+      id: `ovp-rnd-${r.id}`, kind: 'roundabout',
+      title: `Кольцо (${r.lanes} пол.)`, iconText: '⭕',
+      location: r.center, position, heading, route,
+    }));
+  }
+
+  for (const e of snap.exits) {
+    out.push(buildObject({
+      id: `ovp-exit-${e.id}`, kind: 'highway_exit',
+      title: e.ref ? `Съезд ${e.ref}` : 'Съезд',
+      subtitle: e.destination ?? null, iconText: '🛣',
+      location: e.location, position, heading, route,
+    }));
+  }
+
+  const badSurfaces = snap.surfaces.filter(s =>
+    s.smoothness === 'bad' || s.smoothness === 'very_bad' || s.smoothness === 'horrible'
+  );
+  for (const s of badSurfaces) {
+    const pt = s.geometry[Math.floor(s.geometry.length / 2)];
+    if (!pt) continue;
+    out.push(buildObject({
+      id: `ovp-surf-${s.edgeId}`, kind: 'road_surface_warning',
+      title: 'Плохое покрытие',
+      subtitle: `${s.surface} / ${s.smoothness}`, iconText: '⚠',
+      location: pt, position, heading, route,
+    }));
+  }
+
+  return out;
+}
+
+const BUMP_LABELS: Record<string, string> = {
+  bump: 'Лежачий полицейский', hump: 'Искусственная неровность', table: 'Приподнятая платформа',
+  cushion: 'Подушка', raised_crosswalk: 'Приподнятый переход', dip: 'Углубление',
+};
+const CROSSING_LABELS: Record<string, string> = {
+  uncontrolled: 'Нерегулируемый', traffic_signals: 'Со светофором', zebra: 'Зебра',
+  pelican: 'Пеликан', toucan: 'Тукан', underpass: 'Подземный', overpass: 'Надземный',
+};
+const CHECKPOINT_LABELS: Record<string, string> = {
+  dps: 'Пост ДПС', weight_control: 'Весовой контроль', customs: 'Таможня', toll_booth: 'Пункт оплаты',
+};
+const PARKING_LABELS: Record<string, string> = {
+  surface: 'Открытая', underground: 'Подземная', multi_storey: 'Многоэтажная',
+  rooftop: 'На крыше', street_side: 'У обочины', lane: 'На полосе',
+};
 
 export async function loadRoadFeatures(): Promise<void> {
   if (_loaded) return;
@@ -265,6 +436,13 @@ export function getRelevantMapObjects({
       route,
     })));
   }
+
+  // Overpass infrastructure (async preload — подхватываем что уже закэшировано)
+  if (_infraSnapshot) {
+    collected.push(...infraObjectsFromSnapshot(_infraSnapshot, position, heading, route ?? null));
+  }
+  // триггерим фоновую загрузку, результат появится при следующем рендере
+  ensureInfraSnapshot(position);
 
   const sorted = collected
     .sort((left, right) => scoreObject(right) - scoreObject(left))
