@@ -23916,17 +23916,16 @@ export type Database = {
           account_id: string
         }[]
       }
+      check_recovery_phone_email_v1: {
+        Args: { p_phone: string; p_email: string }
+        Returns: boolean
+      }
+      get_email_by_phone_v1: {
+        Args: { p_phone: string }
+        Returns: string | null
+      }
       batch_analyze_diversity_v1: {
-        check_recovery_phone_email_v1: {
-          Args: { p_phone: string; p_email: string }
-          Returns: boolean
-        }
-        get_email_by_phone_v1: {
-          Args: { p_phone: string }
-          Returns: string | null
-        }
-        batch_analyze_diversity_v1: {
-          Args: { p_limit?: number }
+        Args: { p_limit?: number }
         Returns: {
           author_diversity_score: number
           is_echo_chamber: boolean
