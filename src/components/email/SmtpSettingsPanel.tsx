@@ -60,14 +60,14 @@ const SMTP_PRESETS: Record<string, SmtpPreset> = {
     note: "Требуется пароль приложения (2FA должен быть включён)",
   },
   yandex: {
-    label: "Яндекс Почта",
+     label: "Mansoni Почта",
     smtp_host: "smtp.yandex.ru",
     smtp_port: 587,
     tls_mode: "starttls",
     imap_host: "imap.yandex.ru",
     imap_port: 993,
     imap_tls: "ssl",
-    note: "Включите 'Доступ по протоколам' в настройках Яндекс ID",
+     note: "Включите 'Доступ по протоколам' в настройках Mansoni ID",
   },
   mailru: {
     label: "Mail.ru",
@@ -663,7 +663,7 @@ export function SmtpSettingsPanel() {
                 </div>
               </div>
               <p>
-                При использовании Gmail/Яндекс/Outlook — SPF и DKIM уже настроены провайдером.
+                 При использовании Gmail/Mansoni/Outlook — SPF и DKIM уже настроены провайдером.
               </p>
             </div>
           </div>

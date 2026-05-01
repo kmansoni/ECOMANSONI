@@ -57,6 +57,11 @@ type ActionRequest = {
     | "service_bugs.delete"
     | "insurance_settings.get"
     | "insurance_settings.set"
+    | "legal_documents.list"
+    | "legal_documents.get"
+    | "legal_documents.upsert"
+    | "external_providers.list"
+    | "external_providers.upsert"
     | "biz_registration.list"
     | "biz_registration.get"
     | "biz_registration.review"
@@ -2312,6 +2317,259 @@ serve(async (req: Request) => {
         });
 
         return jsonResponse({ ok: true, data }, 200, origin);
+      }
+
+      case "legal_documents.list": {
+        if (!hasScope("legal.documents.read") && !isActorOwner) {
+          await audit({
+            action: "legal.documents.read",
+            resource_type: "legal_document",
+            severity: "SEV2",
+            status: "denied",
+            reason_code: "MISSING_SCOPE",
+          });
+          return errorResponse("Forbidden", 403, origin);
+        }
+
+        const { data, error } = await (supabaseService as any)
+          .from("legal_documents")
+          .select("id,slug,title,version,effective_date,operator_label,content,status,published_at,updated_at")
+          .order("slug", { ascending: true });
+        if (error) throw error;
+
+        await audit({
+          action: "legal.documents.read",
+          resource_type: "legal_document",
+          severity: "SEV3",
+          status: "success",
+        });
+
+        return jsonResponse({ ok: true, data: data ?? [] }, 200, origin);
+      }
+
+      case "legal_documents.get": {
+        if (!hasScope("legal.documents.read") && !isActorOwner) {
+          await audit({
+            action: "legal.documents.read",
+            resource_type: "legal_document",
+            severity: "SEV2",
+            status: "denied",
+            reason_code: "MISSING_SCOPE",
+          });
+          return errorResponse("Forbidden", 403, origin);
+        }
+
+        const required = requireParams(actionReq.params, ["slug"]);
+        if (!required.ok) return errorResponse(`Missing param: ${required.missing}`, 400, origin);
+
+        const slug = String(required.value.slug).trim().toLowerCase();
+        if (slug !== "privacy" && slug !== "terms") return errorResponse("Invalid slug", 400, origin);
+
+        const { data, error } = await (supabaseService as any)
+          .from("legal_documents")
+          .select("id,slug,title,version,effective_date,operator_label,content,status,published_at,updated_at")
+          .eq("slug", slug)
+          .maybeSingle();
+        if (error) throw error;
+
+        await audit({
+          action: "legal.documents.read",
+          resource_type: "legal_document",
+          resource_id: slug,
+          severity: "SEV3",
+          status: "success",
+        });
+
+        return jsonResponse({ ok: true, data: data ?? null }, 200, origin);
+      }
+
+      case "legal_documents.upsert": {
+        await assertNotKilled("admin_writes");
+
+        if (!hasScope("legal.documents.write") && !isActorOwner) {
+          await audit({
+            action: "legal.documents.write",
+            resource_type: "legal_document",
+            severity: "SEV1",
+            status: "denied",
+            reason_code: "MISSING_SCOPE",
+          });
+          return errorResponse("Forbidden", 403, origin);
+        }
+
+        const required = requireParams(actionReq.params, [
+          "slug",
+          "title",
+          "version",
+          "effective_date",
+          "operator_label",
+          "content",
+          "status",
+        ]);
+        if (!required.ok) return errorResponse(`Missing param: ${required.missing}`, 400, origin);
+
+        const slug = String(required.value.slug).trim().toLowerCase();
+        const title = String(required.value.title).trim();
+        const version = String(required.value.version).trim();
+        const effectiveDate = String(required.value.effective_date).trim();
+        const operatorLabel = String(required.value.operator_label).trim();
+        const status = String(required.value.status).trim().toLowerCase();
+        const content = required.value.content as any;
+
+        if (slug !== "privacy" && slug !== "terms") return errorResponse("Invalid slug", 400, origin);
+        if (!title || !version || !effectiveDate || !operatorLabel) return errorResponse("Invalid input", 400, origin);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(effectiveDate)) return errorResponse("Invalid effective_date", 400, origin);
+        if (status !== "draft" && status !== "published") return errorResponse("Invalid status", 400, origin);
+        if (!content || typeof content !== "object" || Array.isArray(content)) return errorResponse("Invalid content", 400, origin);
+        if (!Array.isArray(content.sections) || content.sections.length === 0) return errorResponse("Invalid content.sections", 400, origin);
+        for (const section of content.sections) {
+          if (!section || typeof section !== "object" || Array.isArray(section)) return errorResponse("Invalid content.sections", 400, origin);
+          if (typeof section.heading !== "string" || !section.heading.trim()) return errorResponse("Invalid section.heading", 400, origin);
+          if (typeof section.body !== "string" || !section.body.trim()) return errorResponse("Invalid section.body", 400, origin);
+        }
+        if (typeof content.summary !== "string" || !content.summary.trim()) return errorResponse("Invalid content.summary", 400, origin);
+
+        const { data: existing, error: existingError } = await (supabaseService as any)
+          .from("legal_documents")
+          .select("id,published_at")
+          .eq("slug", slug)
+          .maybeSingle();
+        if (existingError) throw existingError;
+
+        const { data, error } = await (supabaseService as any)
+          .from("legal_documents")
+          .upsert({
+            slug,
+            title,
+            version,
+            effective_date: effectiveDate,
+            operator_label: operatorLabel,
+            content,
+            status,
+            published_at: status === "published" ? (existing?.published_at ?? nowIso) : null,
+            updated_by: adminUserId,
+          }, { onConflict: "slug" })
+          .select("id,slug,title,version,effective_date,operator_label,content,status,published_at,updated_at")
+          .single();
+        if (error) throw error;
+
+        await audit({
+          action: "legal.documents.write",
+          resource_type: "legal_document",
+          resource_id: slug,
+          severity: "SEV1",
+          status: "success",
+          before_state: existing ?? null,
+          after_state: data ?? null,
+        });
+
+        return jsonResponse({ ok: true, data }, 200, origin);
+      }
+
+      // ─── External Insurance Providers ───────────────────────────────────────────
+      case "external_providers.list": {
+        // Доступно owner и админам с scope 'external_providers.read'
+        if (!hasScope("external_providers.read") && !isActorOwner) {
+          await audit({
+            action: "external_providers.read",
+            resource_type: "external_insurance_providers",
+            severity: "SEV3",
+            status: "denied",
+            reason_code: "MISSING_SCOPE",
+          });
+          return errorResponse("Forbidden", 403, origin);
+        }
+
+        const filterCode = typeof actionReq.params?.code === "string" ? actionReq.params.code : null;
+        
+        const query = (supabaseService as any)
+          .from("external_insurance_providers")
+          .select("*")
+          .order("created_at", { ascending: false });
+
+        if (filterCode) {
+          query.filter("code", "eq", filterCode);
+        }
+
+        const { data, error } = await query;
+        if (error) throw error;
+
+        return jsonResponse({ ok: true, data }, 200, origin);
+      }
+
+      case "external_providers.upsert": {
+        await assertNotKilled("admin_writes");
+
+        if (!isActorOwner) {
+          await audit({
+            action: "external_providers.write",
+            resource_type: "external_insurance_providers",
+            severity: "SEV1",
+            status: "denied",
+            reason_code: "MISSING_SCOPE",
+          });
+          return errorResponse("Forbidden", 403, origin);
+        }
+
+        const required = requireParams(actionReq.params, ["code", "name", "client_id", "client_secret", "auth_url", "base_url"]);
+        if (!required.ok) return errorResponse(`Missing param: ${required.missing}`, 400, origin);
+
+        const {
+          code,
+          name,
+          client_id,
+          client_secret,
+          auth_url,
+          base_url,
+          token_type = "bearer",
+          calculation_endpoint = "/calculate",
+          application_endpoint = "/applications",
+          policy_endpoint = "/policies",
+          webhook_url,
+          timeout_ms = 30000,
+          sandbox_mode = false,
+          is_active = true,
+          id,
+        } = required.value;
+
+        const { data: upsertData, error: upsertError } = await (supabaseService as any)
+          .from("external_insurance_providers")
+          .upsert(
+            {
+              id: id ?? undefined,
+              code: String(code),
+              name: String(name),
+              client_id: String(client_id),
+              client_secret: String(client_secret),
+              auth_url: String(auth_url),
+              base_url: String(base_url),
+              token_type: String(token_type),
+              calculation_endpoint: String(calculation_endpoint),
+              application_endpoint: String(application_endpoint),
+              policy_endpoint: String(policy_endpoint),
+              webhook_url: webhook_url ? String(webhook_url) : null,
+              timeout_ms: Number(timeout_ms),
+              sandbox_mode: Boolean(sandbox_mode),
+              is_active: Boolean(is_active),
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "code", ignoreDuplicates: false }
+          )
+          .select("id, code, name, is_active, created_at, updated_at")
+          .single();
+
+        if (upsertError) throw upsertError;
+
+        await audit({
+          action: "external_providers.write",
+          resource_type: "external_insurance_providers",
+          resource_id: upsertData.id,
+          severity: "SEV2",
+          status: "success",
+          after_state: upsertData,
+        });
+
+        return jsonResponse({ ok: true, data: upsertData }, 200, origin);
       }
 
       // ─── Business Legal Registrations ──────────────────

@@ -33,6 +33,11 @@ export type AdminApiAction =
   | "service_bugs.delete"
   | "insurance_settings.get"
   | "insurance_settings.set"
+  | "legal_documents.list"
+  | "legal_documents.get"
+  | "legal_documents.upsert"
+  | "external_providers.list"
+  | "external_providers.upsert"
   | "biz_registration.list"
   | "biz_registration.get"
   | "biz_registration.review"
@@ -109,6 +114,30 @@ export type InsuranceSettings = {
   description: string | null;
   is_active: boolean;
   created_at: string;
+  updated_at: string;
+};
+
+export type LegalDocumentSlug = "privacy" | "terms";
+export type LegalDocumentStatus = "draft" | "published";
+
+export type LegalDocumentContent = {
+  summary: string;
+  sections: Array<{
+    heading: string;
+    body: string;
+  }>;
+};
+
+export type LegalDocument = {
+  id: string;
+  slug: LegalDocumentSlug;
+  title: string;
+  version: string;
+  effective_date: string;
+  operator_label: string;
+  content: LegalDocumentContent;
+  status: LegalDocumentStatus;
+  published_at: string | null;
   updated_at: string;
 };
 
