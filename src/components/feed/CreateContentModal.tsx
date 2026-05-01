@@ -16,6 +16,7 @@ import type { ContentType } from '@/hooks/useMediaEditor';
 import { useUnifiedContentCreator } from '@/hooks/useUnifiedContentCreator';
 import type { UnifiedContent } from '@/hooks/useUnifiedContentCreator';
 import { checkHashtagsAllowedForText } from '@/lib/hashtagModeration';
+import { useIsMobile } from '@/hooks/use-mobile';
 import { CameraHost, type CameraHostHandle, type CaptureMode } from '@/components/camera/CameraHost';
 import type { CameraDebugSnapshot } from '@/components/camera/CameraHost';
 import { SimpleMediaEditor } from '@/components/editor';
@@ -29,6 +30,9 @@ import {
 } from './editorStateModel';
 import { logger } from '@/lib/logger';
 import { applyImageFilter } from '@/lib/applyImageFilter';
+import { GalleryEntryButton } from '@/features/create/gallery/GalleryEntryButton';
+import type { GalleryMediaKind, GalleryPermissionState } from '@/features/create/gallery/galleryTypes';
+import { isNativeGalleryAvailable, pickNativeGalleryMedia } from '@/features/create/gallery/nativeGalleryAdapter';
 
 interface CreateContentModalProps {
   isOpen: boolean;
@@ -40,6 +44,7 @@ interface CreateContentModalProps {
 type TabType = 'publications' | 'stories' | 'reels' | 'live';
 type CameraMode = 'camera' | 'gallery';
 type FlashMode = 'off' | 'on' | 'auto';
+type StoryComposeMode = 'camera' | 'text';
 
 const TABS: Array<{ id: TabType; label: string; icon: LucideIcon; contentType: ContentType }> = [
   { id: 'publications', label: 'Публикация', icon: Image, contentType: 'post' },
@@ -48,7 +53,7 @@ const TABS: Array<{ id: TabType; label: string; icon: LucideIcon; contentType: C
   { id: 'live', label: 'Прямой эфир', icon: Radio, contentType: 'live' },
 ];
 
-const ZOOM_LEVELS = [0.5, 1, 2, 3] as const;
+const ZOOM_LEVELS = [1, 2, 3] as const;
 
 type QuickPanel = 'audio' | 'effects' | null;
 
@@ -65,7 +70,21 @@ const REEL_EFFECT_PRESETS = [
   { id: 'vivid', label: 'Яркий' },
 ] as const;
 
+const TEXT_STORY_BACKGROUNDS = [
+  { id: 'gradient-aurora', label: 'Аврора', className: 'from-slate-950 via-violet-700 to-cyan-500' },
+  { id: 'sunset', label: 'Закат', className: 'from-red-950 via-orange-500 to-yellow-300' },
+  { id: 'forest', label: 'Лес', className: 'from-emerald-950 via-green-600 to-lime-300' },
+  { id: 'graphite', label: 'Графит', className: 'from-slate-950 via-slate-600 to-gray-900' },
+] as const;
+
+const TEXT_STORY_FONTS = [
+  { id: 'classic', label: 'Classic', className: 'font-sans' },
+  { id: 'serif', label: 'Serif', className: 'font-serif' },
+  { id: 'mono', label: 'Mono', className: 'font-mono' },
+] as const;
+
 export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'publications' }: CreateContentModalProps) {
+  const isMobile = useIsMobile();
   const { user } = useAuth();
   const { setIsCreatingContent } = useChatOpen();
   const {
@@ -73,6 +92,7 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
     error,
     setActiveContentType,
     uploadStoryMedia,
+    createTextStory,
     uploadPostMedia,
     uploadReelMedia,
     createLiveSession,
@@ -90,8 +110,15 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
   const [isCameraRecording, setIsCameraRecording] = useState(false);
   const [cameraDebug, setCameraDebug] = useState<CameraDebugSnapshot | null>(null);
   const [flashMode, setFlashMode] = useState<FlashMode>('off');
-  const [zoomIndex, setZoomIndex] = useState(1); // 1x by default
-  const [timerEnabled, setTimerEnabled] = useState(false);
+  const [storyComposeMode, setStoryComposeMode] = useState<StoryComposeMode>('camera');
+  const [textStoryText, setTextStoryText] = useState('');
+  const [textStoryBackgroundId, setTextStoryBackgroundId] = useState<(typeof TEXT_STORY_BACKGROUNDS)[number]['id']>('gradient-aurora');
+  const [textStoryFontId, setTextStoryFontId] = useState<(typeof TEXT_STORY_FONTS)[number]['id']>('classic');
+  const [textStoryAlign, setTextStoryAlign] = useState<'left' | 'center' | 'right'>('center');
+  const [zoomIndex, setZoomIndex] = useState(0); // 1x by default
+  const [captureTimerSec, setCaptureTimerSec] = useState(0);
+  const [timerCountdown, setTimerCountdown] = useState<number | null>(null);
+  const [showCameraSettings, setShowCameraSettings] = useState(false);
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('environment');
   const [showCaptionEditor, setShowCaptionEditor] = useState(false);
   const [musicTitle, setMusicTitle] = useState('');
@@ -100,6 +127,9 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
   const [audioTracks, setAudioTracks] = useState<AudioTrackOption[]>([]);
   const [isAudioLoading, setIsAudioLoading] = useState(false);
   const [quickPanel, setQuickPanel] = useState<QuickPanel>(null);
+  const [galleryPermission, setGalleryPermission] = useState<GalleryPermissionState>('unknown');
+  const [lastGalleryThumbnailUrl, setLastGalleryThumbnailUrl] = useState<string | null>(null);
+  const [lastGalleryMediaKind, setLastGalleryMediaKind] = useState<GalleryMediaKind | null>(null);
   const [reelEffectPreset, setReelEffectPreset] = useState<(typeof REEL_EFFECT_PRESETS)[number]['id']>('none');
   const [reelFaceEnhance, setReelFaceEnhance] = useState(false);
   const [reelAiEnhance, setReelAiEnhance] = useState(false);
@@ -123,10 +153,15 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraHostRef = useRef<CameraHostHandle | null>(null);
   const publishInFlightRef = useRef(false);
+  const captureTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     // CRITICAL FIX #5: URL cleanup - предотвращение утечек памяти
     return () => {
+      if (captureTimerRef.current) {
+        window.clearInterval(captureTimerRef.current);
+        captureTimerRef.current = null;
+      }
       if (previewUrl && previewUrl.startsWith('blob:')) {
         try {
           URL.revokeObjectURL(previewUrl);
@@ -136,6 +171,18 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
       }
     };
   }, [previewUrl]);
+
+  useEffect(() => {
+    return () => {
+      if (lastGalleryThumbnailUrl && lastGalleryThumbnailUrl.startsWith('blob:')) {
+        try {
+          URL.revokeObjectURL(lastGalleryThumbnailUrl);
+        } catch (e) {
+          logger.warn('[CreateContentModal] Не удалось отозвать thumbnail object URL', { error: e });
+        }
+      }
+    };
+  }, [lastGalleryThumbnailUrl]);
 
   useEffect(() => {
     setIsCreatingContent(isOpen);
@@ -280,7 +327,9 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
       return;
     }
     setActiveTab(tabId);
+    setStoryComposeMode('camera');
     setQuickPanel(null);
+    setShowCameraSettings(false);
     setActiveContentType(TABS.find(t => t.id === tabId)?.contentType || 'post');
     setCameraMode(tabId === 'live' ? 'gallery' : 'camera');
     setShowCaptionEditor(false);
@@ -323,30 +372,38 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
     }
   };
 
+  const applyGalleryFile = useCallback(async (file: File, providedPreviewUrl?: string) => {
+    dispatchEditor({ type: 'CLEAR_ALL' });
+
+    if (activeTab === 'reels' && file.type.startsWith('video/')) {
+      const duration = await getVideoDurationSeconds(file);
+      if (duration != null && duration > 90) {
+        toast.error('Выберите видео короче 90 секунд.');
+        if (providedPreviewUrl) URL.revokeObjectURL(providedPreviewUrl);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        return;
+      }
+    }
+
+    setSelectedFile(file);
+    const url = providedPreviewUrl ?? URL.createObjectURL(file);
+    setPreviewUrl(url);
+    setGalleryPermission('granted');
+    setLastGalleryMediaKind(file.type.startsWith('video/') ? 'video' : 'image');
+    setLastGalleryThumbnailUrl(prev => {
+      if (prev?.startsWith('blob:')) URL.revokeObjectURL(prev);
+      return file.type.startsWith('image/') ? URL.createObjectURL(file) : null;
+    });
+    setCameraMode('gallery');
+    setShowCaptionEditor(true);
+    setReelClientPublishId(null);
+    clearStoredReelPublishId();
+  }, [activeTab, clearStoredReelPublishId, getVideoDurationSeconds]);
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      // CRITICAL FIX #1: Reset editor state when new file selected
-      dispatchEditor({ type: 'CLEAR_ALL' });
-
-      void (async () => {
-        if (activeTab === 'reels' && file.type.startsWith('video/')) {
-          const duration = await getVideoDurationSeconds(file);
-          if (duration != null && duration > 90) {
-            toast.error('Выберите видео короче 90 секунд.');
-            if (fileInputRef.current) fileInputRef.current.value = '';
-            return;
-          }
-        }
-
-        setSelectedFile(file);
-        const url = URL.createObjectURL(file);
-        setPreviewUrl(url);
-        setCameraMode('gallery');
-        setShowCaptionEditor(true);
-        setReelClientPublishId(null);
-        clearStoredReelPublishId();
-      })();
+      void applyGalleryFile(file);
     }
   };
 
@@ -382,6 +439,30 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
         resetForm();
         onClose();
       } else {
+        if (activeTab === 'stories' && storyComposeMode === 'text') {
+          const text = textStoryText.trim();
+          if (!text) {
+            toast.error('Введите текст истории');
+            return;
+          }
+
+          const result = await createTextStory({
+            text,
+            backgroundId: textStoryBackgroundId,
+            fontId: textStoryFontId,
+            align: textStoryAlign,
+            color: '#ffffff',
+          });
+
+          if (result) {
+            toast.success('История успешно загружена!');
+            onSuccess?.(result.content_type);
+            resetForm();
+            onClose();
+          }
+          return;
+        }
+
         if (!selectedFile) {
           toast.error('Выберите медиа-файл');
           return;
@@ -508,6 +589,7 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
     setAudioQuery('');
     setAudioTracks([]);
     setQuickPanel(null);
+    setShowCameraSettings(false);
     setReelEffectPreset('none');
     setReelFaceEnhance(false);
     setReelAiEnhance(false);
@@ -519,6 +601,15 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
     setReelAllowRemix(true);
     setCameraMode('camera');
     setShowCaptionEditor(false);
+    setCaptureTimerSec(0);
+    setTimerCountdown(null);
+    setFlashMode('off');
+    setStoryComposeMode('camera');
+    setTextStoryText('');
+    setTextStoryBackgroundId('gradient-aurora');
+    setTextStoryFontId('classic');
+    setTextStoryAlign('center');
+    setZoomIndex(0);
     setReelClientPublishId(null);
     clearStoredReelPublishId();
     if (fileInputRef.current) fileInputRef.current.value = '';
@@ -530,11 +621,125 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
   };
 
   const cycleFlash = () => {
-    setFlashMode(prev => prev === 'off' ? 'on' : prev === 'on' ? 'auto' : 'off');
+    void (async () => {
+      const nextMode: FlashMode = flashMode === 'off' ? 'on' : 'off';
+      if (nextMode === 'on') {
+        const enabled = await cameraHostRef.current?.setTorchEnabled(true);
+        if (!enabled) {
+          toast.error('Вспышка недоступна на этой камере');
+          setFlashMode('off');
+          return;
+        }
+      } else {
+        await cameraHostRef.current?.setTorchEnabled(false);
+      }
+      setFlashMode(nextMode);
+    })();
   };
 
   const cycleZoom = () => {
-    setZoomIndex(prev => (prev + 1) % ZOOM_LEVELS.length);
+    setZoomIndex(prev => {
+      const nextIndex = (prev + 1) % ZOOM_LEVELS.length;
+      void cameraHostRef.current?.setZoomLevel(ZOOM_LEVELS[nextIndex]);
+      return nextIndex;
+    });
+  };
+
+  const setZoomLevelIndex = (nextIndex: number) => {
+    setZoomIndex(nextIndex);
+    void cameraHostRef.current?.setZoomLevel(ZOOM_LEVELS[nextIndex]);
+  };
+
+  const cycleTimer = () => {
+    setCaptureTimerSec(prev => (prev === 0 ? 3 : prev === 3 ? 10 : 0));
+  };
+
+  const runCapture = useCallback(() => {
+    if (activeTab === 'reels') {
+      void cameraHostRef.current?.recordVideo();
+    } else {
+      void cameraHostRef.current?.capturePhoto();
+    }
+  }, [activeTab]);
+
+  const handleCapture = useCallback(() => {
+    if (timerCountdown != null) return;
+
+    if (activeTab === 'reels' && isCameraRecording) {
+      cameraHostRef.current?.stopRecording();
+      return;
+    }
+
+    if (captureTimerSec <= 0) {
+      runCapture();
+      return;
+    }
+
+    setTimerCountdown(captureTimerSec);
+    captureTimerRef.current = window.setInterval(() => {
+      setTimerCountdown(prev => {
+        if (prev == null) return prev;
+        if (prev <= 1) {
+          if (captureTimerRef.current) {
+            window.clearInterval(captureTimerRef.current);
+            captureTimerRef.current = null;
+          }
+          window.setTimeout(runCapture, 0);
+          return null;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  }, [activeTab, captureTimerSec, isCameraRecording, runCapture, timerCountdown]);
+
+  const handleCameraReadyChange = useCallback((ready: boolean) => {
+    setIsCameraReady(ready);
+    if (ready) {
+      void cameraHostRef.current?.setZoomLevel(ZOOM_LEVELS[zoomIndex]);
+      if (flashMode === 'on') {
+        void cameraHostRef.current?.setTorchEnabled(true);
+      }
+    }
+  }, [flashMode, zoomIndex]);
+
+  const handleCameraDebugChange = useCallback((snapshot: CameraDebugSnapshot) => {
+    setCameraDebug(snapshot);
+  }, []);
+
+  const galleryAccept = activeTab === 'live' ? 'image/*' : activeTab === 'reels' ? 'video/*' : 'image/*,video/*';
+
+  const openGalleryPicker = () => {
+    setQuickPanel(null);
+    setShowCameraSettings(false);
+    void (async () => {
+      try {
+        if (activeTab !== 'reels' && await isNativeGalleryAvailable()) {
+          const picked = await pickNativeGalleryMedia();
+          if (picked) {
+            setGalleryPermission(picked.permission);
+            if (picked.permission === 'denied') {
+              toast.error('Доступ к галерее запрещен в настройках устройства');
+              return;
+            }
+            if (picked.file) {
+              await applyGalleryFile(picked.file, picked.previewUrl);
+            }
+          }
+          return;
+        }
+
+        if (!fileInputRef.current) {
+          setGalleryPermission('unavailable');
+          toast.error('Галерея недоступна в этом окружении');
+          return;
+        }
+
+        fileInputRef.current?.click();
+      } catch (error) {
+        logger.error('[CreateContentModal] Ошибка выбора медиа из галереи', { error });
+        toast.error('Не удалось открыть галерею');
+      }
+    })();
   };
 
   const flipCamera = () => {
@@ -548,13 +753,19 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
   const captureMode: CaptureMode = activeTab === 'reels' ? 'reel' : 'story';
   const isPreviewVideo = selectedFile ? selectedFile.type.startsWith('video/') : activeTab === 'reels';
   const zoomLabel = `${ZOOM_LEVELS[zoomIndex]}x`;
+  const isTextStoryMode = activeTab === 'stories' && storyComposeMode === 'text';
+  const textStoryBackground = TEXT_STORY_BACKGROUNDS.find((item) => item.id === textStoryBackgroundId) ?? TEXT_STORY_BACKGROUNDS[0];
+  const textStoryFont = TEXT_STORY_FONTS.find((item) => item.id === textStoryFontId) ?? TEXT_STORY_FONTS[0];
 
   const FlashIcon = flashMode === 'off' ? ZapOff : Zap;
   const flashColor = flashMode === 'on' ? 'text-yellow-400' : flashMode === 'auto' ? 'text-blue-400' : 'text-white/70';
 
   return (
     <div
-      className="fixed inset-0 z-[999] bg-black flex flex-col"
+      className={cn(
+        'fixed inset-y-0 right-0 z-[999] bg-black flex flex-col',
+        isMobile ? 'left-0' : 'left-[84px]',
+      )}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
       onKeyDown={handleKeyDown}
@@ -567,15 +778,16 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
         {isCameraAvailable && (
           <CameraHost
             ref={cameraHostRef}
-            isActive={isOpen && isCameraAvailable && cameraMode === 'camera'}
+            isActive={isOpen && isCameraAvailable && cameraMode === 'camera' && !isTextStoryMode}
             mode={captureMode}
             facingMode={facingMode}
+            previewZoom={ZOOM_LEVELS[zoomIndex]}
             className={cn(
               'absolute inset-0 transition-opacity duration-150',
-              cameraMode === 'camera' && !previewUrl ? 'opacity-100' : 'opacity-0 pointer-events-none',
+              cameraMode === 'camera' && !previewUrl && !isTextStoryMode ? 'opacity-100' : 'opacity-0 pointer-events-none',
             )}
             videoClassName="w-full h-full object-cover"
-            onReadyChange={setIsCameraReady}
+            onReadyChange={handleCameraReadyChange}
             onRecordingChange={setIsCameraRecording}
             onPhotoCaptured={(file, url) => {
               setPreviewFromCapture(file, url);
@@ -590,7 +802,7 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
               toast.error('Не удалось открыть камеру');
               setCameraMode('gallery');
             }}
-            onDebugChange={setCameraDebug}
+            onDebugChange={handleCameraDebugChange}
           />
         )}
 
@@ -606,13 +818,30 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
         )}
 
         {/* Empty gallery state */}
-        {cameraMode === 'gallery' && !previewUrl && activeTab !== 'live' && (
+        {cameraMode === 'gallery' && !previewUrl && activeTab !== 'live' && !isTextStoryMode && (
           <div
             onClick={() => fileInputRef.current?.click()}
             className="absolute inset-0 flex flex-col items-center justify-center gap-4 cursor-pointer text-white/50 hover:text-white/80 transition-colors"
           >
             <Upload className="w-20 h-20 opacity-40" />
             <p className="text-base font-medium">Нажмите чтобы выбрать медиа</p>
+          </div>
+        )}
+
+        {isTextStoryMode && !previewUrl && (
+          <div className={cn('absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br px-6', textStoryBackground.className)}>
+            <Textarea
+              value={textStoryText}
+              onChange={(event) => setTextStoryText(event.target.value)}
+              maxLength={280}
+              placeholder="Напишите историю..."
+              className={cn(
+                'min-h-40 w-full max-w-xl resize-none border-0 bg-transparent text-4xl font-extrabold leading-tight text-white placeholder:text-white/55 shadow-none focus-visible:ring-0',
+                textStoryFont.className,
+                textStoryAlign === 'left' ? 'text-left' : textStoryAlign === 'right' ? 'text-right' : 'text-center',
+              )}
+            />
+            <div className="mt-5 text-xs font-medium text-white/65">{textStoryText.length}/280</div>
           </div>
         )}
 
@@ -660,7 +889,7 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
           </button>
 
           {/* Center controls – only in camera mode */}
-          {cameraMode === 'camera' && isCameraAvailable && (
+          {cameraMode === 'camera' && isCameraAvailable && !isTextStoryMode && (
             <div className="flex items-center gap-4">
               {/* Flash */}
               <button onClick={cycleFlash} className="flex flex-col items-center gap-0.5" aria-label="Вспышка">
@@ -678,33 +907,120 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
 
               {/* Timer */}
               <button
-                onClick={() => setTimerEnabled(v => !v)}
-                className={cn('flex flex-col items-center', timerEnabled ? 'text-yellow-400' : 'text-white/70')}
+                onClick={cycleTimer}
+                className={cn('flex flex-col items-center', captureTimerSec > 0 ? 'text-yellow-400' : 'text-white/70')}
                 aria-label="Таймер"
               >
                 <Timer className="w-6 h-6" />
+                {captureTimerSec > 0 && (
+                  <span className="text-[10px] font-bold leading-none">{captureTimerSec}с</span>
+                )}
               </button>
             </div>
           )}
 
           {/* Settings / Done */}
-          {previewUrl ? (
+          {previewUrl || isTextStoryMode ? (
             <button
               onClick={handlePublish}
-              disabled={isLoading || isPublishing}
+              disabled={isLoading || isPublishing || (isTextStoryMode && !textStoryText.trim())}
               className="px-4 h-9 rounded-full bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold flex items-center gap-2 disabled:opacity-50 transition-colors"
             >
-              {isLoading || isPublishing ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Далее →'}
+              {isLoading || isPublishing ? <Loader2 className="w-4 h-4 animate-spin" /> : isTextStoryMode ? 'Опубликовать' : 'Далее →'}
             </button>
           ) : (
-            <button className="w-10 h-10 flex items-center justify-center rounded-full bg-black/30 backdrop-blur-sm text-white" aria-label="Настройки">
+            <button
+              onClick={() => {
+                setShowCameraSettings(prev => !prev);
+                setQuickPanel(null);
+              }}
+              className={cn(
+                'w-10 h-10 flex items-center justify-center rounded-full backdrop-blur-sm text-white',
+                showCameraSettings ? 'bg-blue-600/70' : 'bg-black/30',
+              )}
+              aria-label="Настройки"
+            >
               <Settings className="w-5 h-5" />
             </button>
           )}
         </div>
 
+        {cameraMode === 'camera' && isCameraAvailable && showCameraSettings && !previewUrl && !isTextStoryMode && (
+          <div className="absolute right-4 top-16 z-30 w-72 rounded-2xl border border-white/20 bg-black/70 backdrop-blur-md p-4 text-white shadow-2xl">
+            <div className="mb-3 flex items-center justify-between">
+              <span className="text-sm font-semibold">Настройки камеры</span>
+              <button
+                onClick={() => setShowCameraSettings(false)}
+                className="text-xs text-white/70 hover:text-white"
+              >
+                Закрыть
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs">
+              <div>
+                <div className="mb-2 flex items-center justify-between text-white/80">
+                  <span>Зум</span>
+                  <span>{zoomLabel}</span>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  {ZOOM_LEVELS.map((level, index) => (
+                    <button
+                      key={level}
+                      onClick={() => setZoomLevelIndex(index)}
+                      className={cn(
+                        'rounded-full border px-2 py-1.5 font-semibold transition-colors',
+                        zoomIndex === index
+                          ? 'border-blue-300 bg-blue-600/70 text-white'
+                          : 'border-white/15 bg-white/10 text-white/80 hover:bg-white/15',
+                      )}
+                    >
+                      {level}x
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-2 text-[11px] text-white/50">
+                  {cameraDebug?.supportsZoom ? 'Используется аппаратный зум камеры.' : 'Используется цифровой зум предпросмотра.'}
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={cycleFlash}
+                  className={cn(
+                    'rounded-xl border px-3 py-2 text-left transition-colors',
+                    flashMode === 'on'
+                      ? 'border-yellow-300/70 bg-yellow-500/20 text-yellow-100'
+                      : 'border-white/15 bg-white/10 text-white/80 hover:bg-white/15',
+                  )}
+                >
+                  <div className="font-semibold">Вспышка</div>
+                  <div className="text-[11px] opacity-70">{flashMode === 'on' ? 'Вкл' : 'Выкл'}</div>
+                </button>
+                <button
+                  onClick={cycleTimer}
+                  className={cn(
+                    'rounded-xl border px-3 py-2 text-left transition-colors',
+                    captureTimerSec > 0
+                      ? 'border-yellow-300/70 bg-yellow-500/20 text-yellow-100'
+                      : 'border-white/15 bg-white/10 text-white/80 hover:bg-white/15',
+                  )}
+                >
+                  <div className="font-semibold">Таймер</div>
+                  <div className="text-[11px] opacity-70">{captureTimerSec > 0 ? `${captureTimerSec}с` : 'Выкл'}</div>
+                </button>
+              </div>
+
+              <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-white/70">
+                <div>Камера: {facingMode === 'environment' ? 'задняя' : 'фронтальная'}</div>
+                <div>Torch: {cameraDebug?.supportsTorch ? 'доступен' : 'недоступен'}</div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* ── ADD AUDIO label (camera mode, non-live) ─────────────── */}
-        {cameraMode === 'camera' && isCameraAvailable && (
+        {cameraMode === 'camera' && isCameraAvailable && !isTextStoryMode && (
           <div className="absolute top-16 left-1/2 -translate-x-1/2 z-20">
             <button
               onClick={() => {
@@ -720,7 +1036,7 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
         )}
 
         {/* ── LEFT SIDEBAR TOOLS (camera mode only) ─────────────────── */}
-        {cameraMode === 'camera' && isCameraAvailable && (
+        {cameraMode === 'camera' && isCameraAvailable && !isTextStoryMode && (
           <div className="absolute left-3 top-1/2 -translate-y-1/2 z-20 flex flex-col gap-5">
             {[
               {
@@ -785,7 +1101,7 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
         )}
 
         {/* ── QUICK PANELS (backend-backed) ─────────────────────────── */}
-        {cameraMode === 'camera' && isCameraAvailable && quickPanel === 'audio' && (
+        {cameraMode === 'camera' && isCameraAvailable && !isTextStoryMode && quickPanel === 'audio' && (
           <div className="absolute left-14 top-1/2 -translate-y-1/2 z-20 w-72 rounded-2xl border border-white/20 bg-black/60 backdrop-blur-md p-3 space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold text-white/90">Выбор аудио</span>
@@ -842,7 +1158,7 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
           </div>
         )}
 
-        {cameraMode === 'camera' && isCameraAvailable && quickPanel === 'effects' && (
+        {cameraMode === 'camera' && isCameraAvailable && !isTextStoryMode && quickPanel === 'effects' && (
           <div className="absolute left-14 top-1/2 -translate-y-1/2 z-20 w-56 rounded-2xl border border-white/20 bg-black/60 backdrop-blur-md p-3 space-y-2">
             <div className="flex items-center justify-between mb-1">
               <span className="text-xs font-semibold text-white/90">Эффекты</span>
@@ -871,6 +1187,72 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
                 {preset.label}
               </button>
             ))}
+          </div>
+        )}
+
+        {activeTab === 'stories' && !previewUrl && (
+          <div className="absolute bottom-5 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-full border border-white/15 bg-black/45 p-1 text-xs font-semibold text-white backdrop-blur-md">
+            <button
+              type="button"
+              onClick={() => setStoryComposeMode('camera')}
+              className={cn('rounded-full px-4 py-2 transition-colors', storyComposeMode === 'camera' ? 'bg-white text-black' : 'text-white/70 hover:text-white')}
+            >
+              Камера
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setStoryComposeMode('text');
+                setQuickPanel(null);
+                setShowCameraSettings(false);
+              }}
+              className={cn('rounded-full px-4 py-2 transition-colors', storyComposeMode === 'text' ? 'bg-white text-black' : 'text-white/70 hover:text-white')}
+            >
+              Текст
+            </button>
+          </div>
+        )}
+
+        {isTextStoryMode && !previewUrl && (
+          <div className="absolute bottom-24 left-0 right-0 z-20 space-y-3 px-4">
+            <div className="flex justify-center gap-2">
+              {TEXT_STORY_BACKGROUNDS.map((background) => (
+                <button
+                  key={background.id}
+                  type="button"
+                  onClick={() => setTextStoryBackgroundId(background.id)}
+                  className={cn(
+                    'h-9 w-9 rounded-full border-2 bg-gradient-to-br transition-transform active:scale-95',
+                    background.className,
+                    textStoryBackgroundId === background.id ? 'border-white' : 'border-white/25',
+                  )}
+                  aria-label={`Фон: ${background.label}`}
+                />
+              ))}
+            </div>
+            <div className="mx-auto flex max-w-md items-center justify-center gap-2 rounded-2xl border border-white/15 bg-black/35 p-2 backdrop-blur-md">
+              {TEXT_STORY_FONTS.map((font) => (
+                <button
+                  key={font.id}
+                  type="button"
+                  onClick={() => setTextStoryFontId(font.id)}
+                  className={cn(
+                    'rounded-xl px-3 py-2 text-xs font-semibold transition-colors',
+                    font.className,
+                    textStoryFontId === font.id ? 'bg-white text-black' : 'text-white/75 hover:bg-white/10 hover:text-white',
+                  )}
+                >
+                  {font.label}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => setTextStoryAlign((prev) => prev === 'center' ? 'left' : prev === 'left' ? 'right' : 'center')}
+                className="rounded-xl px-3 py-2 text-xs font-semibold text-white/75 transition-colors hover:bg-white/10 hover:text-white"
+              >
+                {textStoryAlign === 'left' ? 'Слева' : textStoryAlign === 'right' ? 'Справа' : 'Центр'}
+              </button>
+            </div>
           </div>
         )}
 
@@ -917,17 +1299,15 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
         )}
 
         {/* ── BOTTOM CAMERA CONTROLS (camera mode) ─────────────────── */}
-        {cameraMode === 'camera' && isCameraAvailable && (
+        {cameraMode === 'camera' && isCameraAvailable && !isTextStoryMode && (
           <div className="absolute bottom-28 left-0 right-0 z-20 flex items-center justify-between px-8">
-            {/* Gallery thumbnail button */}
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="w-12 h-12 rounded-xl border-2 border-white/40 bg-white/10 backdrop-blur-sm flex items-center justify-center overflow-hidden"
-              aria-label="Галерея"
+            <GalleryEntryButton
+              thumbnailUrl={lastGalleryThumbnailUrl}
+              mediaKind={lastGalleryMediaKind}
+              permission={galleryPermission}
               disabled={isCameraRecording}
-            >
-              <Upload className="w-5 h-5 text-white" />
-            </button>
+              onClick={openGalleryPicker}
+            />
 
             {/* Main capture button */}
             <div className="flex flex-col items-center gap-2">
@@ -935,27 +1315,26 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
                 <Loader2 className="w-5 h-5 text-white/60 animate-spin" />
               )}
               <button
-                onClick={() => {
-                  if (activeTab === 'reels') {
-                    void cameraHostRef.current?.recordVideo();
-                  } else {
-                    void cameraHostRef.current?.capturePhoto();
-                  }
-                }}
-                disabled={!isCameraReady}
+                onClick={handleCapture}
+                disabled={!isCameraReady || timerCountdown != null}
                 className={cn(
                   'w-[72px] h-[72px] rounded-full border-4 transition-all active:scale-95',
                   isCameraRecording
                     ? 'border-red-500 bg-red-500/30 scale-90'
                     : 'border-white bg-white/20 hover:bg-white/30',
-                  !isCameraReady && 'opacity-40',
+                  (!isCameraReady || timerCountdown != null) && 'opacity-40',
                 )}
                 aria-label={activeTab === 'reels' ? (isCameraRecording ? 'Стоп' : 'Запись') : 'Снимок'}
               >
-                {isCameraRecording && (
+                {timerCountdown != null ? (
+                  <span className="text-2xl font-bold text-white">{timerCountdown}</span>
+                ) : isCameraRecording && (
                   <span className="block w-6 h-6 rounded bg-red-500 mx-auto" />
                 )}
               </button>
+              {timerCountdown != null && (
+                <span className="text-xs text-white/80 font-medium">Таймер: {timerCountdown}</span>
+              )}
               {isCameraRecording && (
                 <span className="text-xs text-red-400 font-medium animate-pulse">● Запись</span>
               )}
@@ -1004,7 +1383,7 @@ export function CreateContentModal({ isOpen, onClose, onSuccess, initialTab = 'p
         <input
           ref={fileInputRef}
           type="file"
-          accept={activeTab === 'live' ? 'image/*' : activeTab === 'reels' ? 'video/*' : 'image/*,video/*'}
+          accept={galleryAccept}
           onChange={handleFileSelect}
           className="hidden"
         />
