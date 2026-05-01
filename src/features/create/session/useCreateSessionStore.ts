@@ -1,38 +1,42 @@
-import { useCallback, useState } from "react";
-import type { CreateAsset, CreateEntryPoint, CreateMode, CreateSession } from "./types";
+import { useCallback, useEffect, useState } from "react";
+import type { CreateAsset, CreateEntryPoint, CreateLayer, CreateMode, CreateSession, CreateSettings } from "./types";
+import { createInitialSession } from "./createSessionModel";
+import { clearCreateSessionDraft, loadCreateSessionDraft, saveCreateSessionDraft } from "./draftStorage";
 
 interface UseCreateSessionStoreOptions {
   initialMode?: CreateMode;
   entry?: CreateEntryPoint;
+  restoreDraft?: boolean;
+  autosave?: boolean;
 }
-
-const createSessionId = () => {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    return crypto.randomUUID();
-  }
-  return `create_${Date.now()}`;
-};
-
-const createInitialSession = (mode: CreateMode, entry: CreateEntryPoint): CreateSession => {
-  const now = Date.now();
-  return {
-    id: createSessionId(),
-    entry,
-    mode,
-    assets: [],
-    layers: [],
-    editor: {},
-    draft: { isDirty: false },
-    createdAt: now,
-    updatedAt: now,
-  };
-};
 
 export function useCreateSessionStore(options: UseCreateSessionStoreOptions = {}) {
   const initialMode = options.initialMode ?? "post";
   const entry = options.entry ?? "plus";
+  const restoreDraft = options.restoreDraft ?? false;
+  const autosave = options.autosave ?? false;
 
-  const [session, setSession] = useState<CreateSession>(() => createInitialSession(initialMode, entry));
+  const [session, setSession] = useState<CreateSession>(() => {
+    if (restoreDraft) {
+      const draft = loadCreateSessionDraft();
+      if (draft) return draft;
+    }
+    return createInitialSession(initialMode, entry);
+  });
+
+  useEffect(() => {
+    if (!autosave || !session.draft.isDirty) return;
+    if (session.draft.lastSavedAt && session.draft.lastSavedAt >= session.updatedAt) return;
+    if (saveCreateSessionDraft(session)) {
+      setSession(prev => ({
+        ...prev,
+        draft: {
+          ...prev.draft,
+          lastSavedAt: Date.now(),
+        },
+      }));
+    }
+  }, [autosave, session]);
 
   const setMode = useCallback((mode: CreateMode) => {
     setSession((prev) => {
@@ -40,6 +44,10 @@ export function useCreateSessionStore(options: UseCreateSessionStoreOptions = {}
       return {
         ...prev,
         mode,
+        draft: {
+          ...prev.draft,
+          isDirty: true,
+        },
         updatedAt: Date.now(),
       };
     });
@@ -57,6 +65,58 @@ export function useCreateSessionStore(options: UseCreateSessionStoreOptions = {}
     }));
   }, []);
 
+  const setLayers = useCallback((layers: CreateLayer[]) => {
+    setSession((prev) => ({
+      ...prev,
+      layers,
+      draft: {
+        ...prev.draft,
+        isDirty: true,
+      },
+      updatedAt: Date.now(),
+    }));
+  }, []);
+
+  const patchSettings = useCallback((patch: Partial<CreateSettings>) => {
+    setSession((prev) => ({
+      ...prev,
+      settings: {
+        ...prev.settings,
+        ...patch,
+      },
+      draft: {
+        ...prev.draft,
+        isDirty: true,
+      },
+      updatedAt: Date.now(),
+    }));
+  }, []);
+
+  const markSaved = useCallback(() => {
+    setSession((prev) => ({
+      ...prev,
+      draft: {
+        ...prev.draft,
+        isDirty: false,
+        lastSavedAt: Date.now(),
+      },
+      updatedAt: Date.now(),
+    }));
+  }, []);
+
+  const clearDraft = useCallback(() => {
+    clearCreateSessionDraft();
+    setSession((prev) => ({
+      ...prev,
+      draft: {
+        ...prev.draft,
+        isDirty: false,
+        lastSavedAt: undefined,
+      },
+      updatedAt: Date.now(),
+    }));
+  }, []);
+
   const resetSession = useCallback((mode: CreateMode = initialMode, nextEntry: CreateEntryPoint = entry) => {
     setSession(createInitialSession(mode, nextEntry));
   }, [entry, initialMode]);
@@ -65,6 +125,10 @@ export function useCreateSessionStore(options: UseCreateSessionStoreOptions = {}
     session,
     setMode,
     setAssets,
+    setLayers,
+    patchSettings,
+    markSaved,
+    clearDraft,
     resetSession,
   };
 }

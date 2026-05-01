@@ -1,4 +1,4 @@
-import { Image, Upload, Video } from "lucide-react";
+import { Image, Upload, Video, CheckSquare } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { GalleryMediaKind, GalleryPermissionState } from "./galleryTypes";
 
@@ -7,10 +7,20 @@ interface GalleryEntryButtonProps {
   mediaKind?: GalleryMediaKind | null;
   permission: GalleryPermissionState;
   disabled?: boolean;
+  multiSelect?: boolean;
+  selectedCount?: number;
   onClick: () => void;
 }
 
-export function GalleryEntryButton({ thumbnailUrl, mediaKind, permission, disabled, onClick }: GalleryEntryButtonProps) {
+export function GalleryEntryButton({ 
+  thumbnailUrl, 
+  mediaKind, 
+  permission, 
+  disabled, 
+  multiSelect = false,
+  selectedCount = 0,
+  onClick 
+}: GalleryEntryButtonProps) {
   const hasThumbnail = Boolean(thumbnailUrl);
   const isVideo = mediaKind === "video";
   const permissionLabel = permission === "denied"
@@ -19,7 +29,7 @@ export function GalleryEntryButton({ thumbnailUrl, mediaKind, permission, disabl
       ? "Доступ к галерее ограничен"
       : permission === "unavailable"
         ? "Галерея недоступна"
-        : "Галерея";
+        : multiSelect ? "Галерея (множественный выбор)" : "Галерея";
 
   return (
     <button
@@ -27,6 +37,7 @@ export function GalleryEntryButton({ thumbnailUrl, mediaKind, permission, disabl
       className={cn(
         "relative w-12 h-12 rounded-xl border-2 border-white/40 bg-white/10 backdrop-blur-sm flex items-center justify-center overflow-hidden transition-transform active:scale-95",
         disabled && "opacity-40 cursor-not-allowed",
+        multiSelect && "ring-2 ring-primary"
       )}
       aria-label={permissionLabel}
       title={permissionLabel}
@@ -38,6 +49,18 @@ export function GalleryEntryButton({ thumbnailUrl, mediaKind, permission, disabl
         <Video className="w-5 h-5 text-white" />
       ) : (
         <Upload className="w-5 h-5 text-white" />
+      )}
+
+      {multiSelect && (
+        <div className="absolute top-0 left-0 w-full h-full bg-primary/20 flex items-center justify-center">
+          <CheckSquare className="w-5 h-5 text-primary" />
+        </div>
+      )}
+
+      {selectedCount > 0 && multiSelect && (
+        <div className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-xs font-bold text-white">
+          {selectedCount}
+        </div>
       )}
 
       {hasThumbnail && (
