@@ -1,15 +1,21 @@
 import { useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
+import { Loader2, RefreshCw } from "lucide-react";
+import { motion } from "framer-motion";
+
 import { dbLoose } from "@/lib/supabase";
-import { Loader2, QrCode, RefreshCw } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { GlassSecondaryButton } from "@/components/ui/glass/GlassSecondaryButton";
+import { useGlassTokens, type GlassTheme } from "@/components/ui/glass/glassTokens";
 import { cn } from "@/lib/utils";
 
 interface QRCodeLoginProps {
   onSuccess: (session: any) => void;
+  /** Optional theme override; defaults to "dark" to match AuthPage. */
+  theme?: GlassTheme;
 }
 
-export function QRCodeLogin({ onSuccess }: QRCodeLoginProps) {
+export function QRCodeLogin({ onSuccess, theme = "dark" }: QRCodeLoginProps) {
+  const tokens = useGlassTokens(theme);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [token, setToken] = useState<string | null>(null);
   const [status, setStatus] = useState<"generating" | "waiting" | "expired" | "success">("generating");
@@ -21,20 +27,15 @@ export function QRCodeLogin({ onSuccess }: QRCodeLoginProps) {
     const newToken = crypto.randomUUID();
     setToken(newToken);
 
-    // Generate QR code with deep link
     const qrData = `ecomansoni://qr-login?token=${newToken}`;
     if (canvasRef.current) {
       await QRCode.toCanvas(canvasRef.current, qrData, {
         width: 220,
         margin: 2,
-        color: {
-          dark: "#000000",
-          light: "#ffffff",
-        },
+        color: { dark: "#0a1628", light: "#ffffff" },
       });
     }
 
-    // Сохраняем токен в БД (таблица не в сгенерированных типах — используем dbLoose)
     await dbLoose.from("qr_login_tokens").upsert({
       token: newToken,
       status: "pending",
@@ -43,7 +44,6 @@ export function QRCodeLogin({ onSuccess }: QRCodeLoginProps) {
 
     setStatus("waiting");
 
-    // Poll for confirmation
     if (pollRef.current) clearInterval(pollRef.current);
     pollRef.current = setInterval(async () => {
       const { data } = await dbLoose
@@ -62,7 +62,6 @@ export function QRCodeLogin({ onSuccess }: QRCodeLoginProps) {
       }
     }, 2000);
 
-    // Auto-expire after 5 minutes
     if (expiryRef.current) clearTimeout(expiryRef.current);
     expiryRef.current = setTimeout(() => {
       setStatus((prev) => {
@@ -84,38 +83,48 @@ export function QRCodeLogin({ onSuccess }: QRCodeLoginProps) {
   }, []);
 
   return (
-    <div className="flex flex-col items-center gap-4 py-6">
-      <QrCode className="w-8 h-8 text-primary" />
-      <h3 className="text-lg font-semibold">Вход по QR-коду</h3>
-      <p className="text-sm text-muted-foreground text-center max-w-[280px]">
-        Откройте ECOMANSONI на телефоне, перейдите в Настройки → Устройства → Сканировать QR-код
+    <div className="flex flex-col items-center gap-5">
+      <p className={cn("text-sm text-center max-w-[280px]", tokens.textMuted)}>
+        Откройте mansoni на телефоне → Настройки → Устройства → Сканировать QR-код
       </p>
 
-      <div className={cn(
-        "relative rounded-2xl overflow-hidden bg-white p-3",
-        status === "expired" && "opacity-40"
-      )}>
+      <motion.div
+        initial={{ scale: 0.9, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+        className={cn(
+          "relative rounded-2xl p-3 transition-opacity",
+          status === "expired" && "opacity-40",
+        )}
+        style={{
+          background: "linear-gradient(135deg,rgba(255,255,255,0.95),rgba(255,255,255,0.85))",
+          boxShadow: "0 20px 60px -15px rgba(0,180,216,0.4)",
+        }}
+      >
         <canvas ref={canvasRef} />
         {status === "generating" && (
-          <div className="absolute inset-0 flex items-center justify-center bg-white">
-            <Loader2 className="w-8 h-8 animate-spin text-primary" />
+          <div className="absolute inset-0 flex items-center justify-center rounded-2xl bg-white">
+            <Loader2 className="w-8 h-8 animate-spin text-cyan-500" />
           </div>
         )}
-      </div>
+        <div
+          className="pointer-events-none absolute -inset-1 rounded-[1.25rem] -z-10 blur-xl opacity-70"
+          style={{ background: "linear-gradient(135deg,#00b4d8 0%,#00c896 50%,#4fd080 100%)" }}
+        />
+      </motion.div>
 
       {status === "expired" && (
-        <Button
-          variant="outline"
+        <GlassSecondaryButton
+          size="md"
+          icon={<RefreshCw className="w-4 h-4" />}
           onClick={generateToken}
-          className="gap-2"
         >
-          <RefreshCw className="w-4 h-4" />
           Обновить QR-код
-        </Button>
+        </GlassSecondaryButton>
       )}
 
       {status === "waiting" && (
-        <p className="text-xs text-muted-foreground animate-pulse">
+        <p className={cn("text-xs animate-pulse", tokens.textFaint)}>
           Ожидание подтверждения...
         </p>
       )}

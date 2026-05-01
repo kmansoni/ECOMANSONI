@@ -1,49 +1,37 @@
 /**
- * PasscodeLockScreen — Full-screen PIN lock overlay
+ * PasscodeLockScreen — Full-screen PIN lock overlay (liquid-glass).
  *
  * Features:
- *  - 4-6 digit PIN input with visual dots
- *  - "Use Biometric" button (renders only when biometricEnabled = true)
- *  - Brute-force lockout countdown display
+ *  - 4-6 digit PIN with glowing dots
+ *  - Aurora background + glass card matching AuthPage
+ *  - Biometric unlock button (when enabled)
+ *  - Brute-force lockout countdown
  *  - Shake animation on wrong PIN
- *
- * Used as the `lockScreen` prop of PasscodeLockProvider:
- *
- *   <PasscodeLockProvider lockScreen={(state) => <PasscodeLockScreen state={state} />}>
- *     <App />
- *   </PasscodeLockProvider>
+ *  - Theme switcher (dark/light) via useGlassTokens
  */
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Fingerprint, Delete } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { AnimatePresence, motion } from "framer-motion";
+import { Fingerprint, Delete, Lock, Moon, Sun } from "lucide-react";
+
+import {
+  AuroraBackground,
+  useGlassTheme,
+  useGlassTokens,
+  BRAND_GRADIENT,
+} from "@/components/ui/glass";
+import { GlassPrimaryButton } from "@/components/ui/glass/GlassPrimaryButton";
+import { cn } from "@/lib/utils";
 import { type PasscodeLockState } from "@/hooks/usePasscodeLock";
 
-const PIN_LENGTH = 4; // Must match setPasscode validation (4-6)
+const PIN_LENGTH = 4;
 
-const NUMPAD_KEYS = [
+const NUMPAD_KEYS: Array<Array<string>> = [
   ["1", "2", "3"],
   ["4", "5", "6"],
   ["7", "8", "9"],
   ["", "0", "⌫"],
 ];
-
-function PinDots({ entered, length }: { entered: number; length: number }) {
-  return (
-    <div className="flex gap-3 justify-center my-6">
-      {Array.from({ length }).map((_, i) => (
-        <div
-          key={i}
-          className={`w-4 h-4 rounded-full border-2 transition-all duration-150 ${
-            i < entered
-              ? "bg-primary border-primary scale-110"
-              : "bg-transparent border-muted-foreground"
-          }`}
-        />
-      ))}
-    </div>
-  );
-}
 
 interface PasscodeLockScreenProps {
   state: PasscodeLockState;
@@ -52,35 +40,25 @@ interface PasscodeLockScreenProps {
 export function PasscodeLockScreen({ state }: PasscodeLockScreenProps) {
   const { unlockApp, unlockWithBiometric, biometricEnabled, lockoutRemainingMs } = state;
 
+  const { theme, toggle } = useGlassTheme("dark");
+  const tokens = useGlassTokens(theme);
+
   const [pin, setPin] = useState("");
   const [shaking, setShaking] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
   const shakeTimerRef = useRef<ReturnType<typeof setTimeout>>();
 
-  // Format lockout countdown
   const lockoutSeconds = Math.ceil(lockoutRemainingMs / 1000);
   const isLockedOut = lockoutRemainingMs > 0;
 
-  // Auto-clear error after 2s
   useEffect(() => {
     if (!errorMsg) return;
     const t = setTimeout(() => setErrorMsg(null), 2000);
     return () => clearTimeout(t);
   }, [errorMsg]);
 
-  // Cleanup shake timer on unmount
-  useEffect(() => {
-    return () => clearTimeout(shakeTimerRef.current);
-  }, []);
-
-  // Auto-submit when PIN reaches PIN_LENGTH digits
-  useEffect(() => {
-    if (pin.length === PIN_LENGTH && !checking) {
-      handleSubmit(pin);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pin]);
+  useEffect(() => () => clearTimeout(shakeTimerRef.current), []);
 
   const handleSubmit = useCallback(
     async (currentPin: string) => {
@@ -94,16 +72,24 @@ export function PasscodeLockScreen({ state }: PasscodeLockScreenProps) {
       if (!ok) {
         setShaking(true);
         setPin("");
-        setErrorMsg(state.lockoutRemainingMs > 0
-          ? `Слишком много попыток. Подождите ${Math.ceil(state.lockoutRemainingMs / 1000)} сек.`
-          : "Неверный PIN"
+        setErrorMsg(
+          state.lockoutRemainingMs > 0
+            ? `Слишком много попыток. Подождите ${Math.ceil(state.lockoutRemainingMs / 1000)} сек.`
+            : "Неверный PIN",
         );
         clearTimeout(shakeTimerRef.current);
         shakeTimerRef.current = setTimeout(() => setShaking(false), 500);
       }
     },
-    [unlockApp, isLockedOut, lockoutSeconds, state.lockoutRemainingMs]
+    [unlockApp, isLockedOut, lockoutSeconds, state.lockoutRemainingMs],
   );
+
+  useEffect(() => {
+    if (pin.length === PIN_LENGTH && !checking) {
+      void handleSubmit(pin);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pin]);
 
   const handleKey = useCallback(
     (key: string) => {
@@ -116,7 +102,7 @@ export function PasscodeLockScreen({ state }: PasscodeLockScreenProps) {
       if (pin.length >= PIN_LENGTH) return;
       setPin((p) => p + key);
     },
-    [pin, isLockedOut, checking]
+    [pin, isLockedOut, checking],
   );
 
   const handleBiometric = useCallback(async () => {
@@ -124,88 +110,155 @@ export function PasscodeLockScreen({ state }: PasscodeLockScreenProps) {
     setChecking(true);
     const ok = await unlockWithBiometric();
     setChecking(false);
-    if (!ok) {
-      setErrorMsg("Биометрия не подтверждена");
-    }
+    if (!ok) setErrorMsg("Биометрия не подтверждена");
   }, [unlockWithBiometric, isLockedOut]);
 
   return (
-    <div className="fixed inset-0 z-[9999] bg-background flex flex-col items-center justify-center select-none">
-      {/* Lock icon */}
-      <div className="mb-2 text-4xl">🔒</div>
-
-      <h1 className="text-xl font-semibold mb-1">Введите PIN</h1>
-
-      {isLockedOut ? (
-        <p className="text-sm text-destructive mt-1 mb-4">
-          Заблокировано на {lockoutSeconds} сек.
-        </p>
-      ) : (
-        <p className="text-sm text-muted-foreground mt-1 mb-4">
-          {errorMsg ?? "Введите PIN для входа"}
-        </p>
+    <div
+      className={cn(
+        theme === "dark" ? "dark" : "",
+        "fixed inset-0 z-[9999] overflow-hidden font-[Manrope,system-ui,sans-serif] select-none",
+        tokens.textPrimary,
       )}
+      style={{ colorScheme: theme }}
+    >
+      <AuroraBackground theme={theme} />
 
-      {/* PIN dots with shake animation */}
-      <div
-        className={`transition-transform ${shaking ? "animate-[shake_0.4s_ease-in-out]" : ""}`}
-        style={shaking ? { animation: "shake 0.4s ease-in-out" } : {}}
-      >
-        <PinDots entered={pin.length} length={PIN_LENGTH} />
-      </div>
+      <div className="relative z-10 flex min-h-full items-center justify-center px-4 py-6">
+        <div className="relative w-full max-w-[400px]">
+          <div
+            className={cn(
+              "pointer-events-none absolute -inset-4 sm:-inset-6 rounded-[2.2rem] blur-2xl opacity-70",
+              tokens.isDark
+                ? "bg-gradient-to-br from-cyan-500/20 via-teal-500/15 to-emerald-400/20"
+                : "bg-gradient-to-br from-cyan-300/35 via-teal-300/30 to-emerald-300/35",
+            )}
+          />
 
-      {/* Number pad */}
-      <div className="mt-2 space-y-2">
-        {NUMPAD_KEYS.map((row, ri) => (
-          <div key={ri} className="flex gap-4 justify-center">
-            {row.map((key, ki) => (
-              <button
-                key={ki}
-                onClick={() => handleKey(key)}
-                disabled={key === "" || checking || isLockedOut}
-                className={`
-                  w-16 h-16 rounded-full text-xl font-medium
-                  flex items-center justify-center
-                  transition-colors
-                  ${key === ""
-                    ? "invisible"
-                    : key === "⌫"
-                    ? "text-muted-foreground hover:bg-muted active:bg-muted"
-                    : "hover:bg-muted active:bg-muted"}
-                  disabled:opacity-40
-                `}
+          <div
+            className={cn(
+              "relative rounded-[1.5rem] sm:rounded-[2rem] p-6 sm:p-8 border backdrop-blur-2xl overflow-hidden",
+              tokens.glassCard,
+              tokens.glassCardShadow,
+            )}
+          >
+            <motion.button
+              onClick={toggle}
+              whileTap={{ scale: 0.9, rotate: 180 }}
+              className={cn(
+                "absolute top-4 right-4 h-10 w-10 rounded-full border backdrop-blur-xl flex items-center justify-center transition z-20",
+                tokens.iconBtn,
+              )}
+              aria-label="Переключить тему"
+            >
+              <AnimatePresence mode="wait" initial={false}>
+                {theme === "dark" ? (
+                  <motion.span key="moon" initial={{ opacity: 0, rotate: -90 }} animate={{ opacity: 1, rotate: 0 }} exit={{ opacity: 0, rotate: 90 }}>
+                    <Moon className="h-5 w-5" />
+                  </motion.span>
+                ) : (
+                  <motion.span key="sun" initial={{ opacity: 0, rotate: 90 }} animate={{ opacity: 1, rotate: 0 }} exit={{ opacity: 0, rotate: -90 }}>
+                    <Sun className="h-5 w-5" />
+                  </motion.span>
+                )}
+              </AnimatePresence>
+            </motion.button>
+
+            <div className="flex flex-col items-center text-center">
+              <motion.div
+                initial={{ scale: 0.6, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ type: "spring", stiffness: 220, damping: 16 }}
+                className="relative h-16 w-16 rounded-2xl flex items-center justify-center mb-4"
+                style={{ background: BRAND_GRADIENT, boxShadow: "0 20px 60px -15px rgba(0,180,216,0.55)" }}
               >
-                {key === "⌫" ? <Delete className="w-5 h-5" /> : key}
-              </button>
-            ))}
+                <Lock className="h-7 w-7 text-white" strokeWidth={2.4} />
+              </motion.div>
+
+              <h1 className={cn("text-2xl font-bold tracking-tight", tokens.textPrimary)}>Введите PIN</h1>
+
+              <p
+                className={cn(
+                  "mt-2 text-sm min-h-[1.25rem]",
+                  isLockedOut ? "text-rose-400" : errorMsg ? "text-rose-400" : tokens.textMuted,
+                )}
+              >
+                {isLockedOut
+                  ? `Заблокировано на ${lockoutSeconds} сек.`
+                  : errorMsg ?? "Введите PIN для входа"}
+              </p>
+
+              <motion.div
+                animate={shaking ? { x: [0, -8, 8, -6, 6, 0] } : { x: 0 }}
+                transition={{ duration: 0.4, ease: "easeInOut" }}
+                className="flex gap-3 justify-center my-7"
+              >
+                {Array.from({ length: PIN_LENGTH }).map((_, i) => {
+                  const filled = i < pin.length;
+                  return (
+                    <motion.div
+                      key={i}
+                      animate={filled ? { scale: [0.6, 1.15, 1] } : { scale: 1 }}
+                      transition={{ duration: 0.25, ease: "easeOut" }}
+                      className={cn(
+                        "w-3.5 h-3.5 rounded-full border-2 transition-colors",
+                        filled
+                          ? tokens.isDark
+                            ? "border-cyan-300/80"
+                            : "border-teal-500/70"
+                          : tokens.isDark
+                          ? "border-white/20"
+                          : "border-slate-900/15",
+                      )}
+                      style={
+                        filled
+                          ? { background: BRAND_GRADIENT, boxShadow: "0 6px 18px -6px rgba(0,200,150,0.55)" }
+                          : undefined
+                      }
+                    />
+                  );
+                })}
+              </motion.div>
+            </div>
+
+            <div className="mt-2 grid grid-cols-3 gap-3">
+              {NUMPAD_KEYS.flat().map((key, i) =>
+                key === "" ? (
+                  <div key={i} aria-hidden />
+                ) : (
+                  <motion.button
+                    key={i}
+                    type="button"
+                    whileTap={{ scale: 0.92 }}
+                    onClick={() => handleKey(key)}
+                    disabled={checking || isLockedOut}
+                    className={cn(
+                      "h-16 rounded-2xl border backdrop-blur-xl text-xl font-semibold flex items-center justify-center transition disabled:opacity-40",
+                      tokens.iconBtn,
+                    )}
+                  >
+                    {key === "⌫" ? <Delete className="h-5 w-5" /> : key}
+                  </motion.button>
+                ),
+              )}
+            </div>
+
+            {biometricEnabled && (
+              <div className="mt-5">
+                <GlassPrimaryButton
+                  variant="brand"
+                  size="md"
+                  icon={<Fingerprint className="h-5 w-5" />}
+                  onClick={() => void handleBiometric()}
+                  disabled={checking || isLockedOut}
+                >
+                  Войти по биометрии
+                </GlassPrimaryButton>
+              </div>
+            )}
           </div>
-        ))}
+        </div>
       </div>
-
-      {/* Biometric button */}
-      {biometricEnabled && (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="mt-6 text-primary"
-          onClick={handleBiometric}
-          disabled={checking || isLockedOut}
-        >
-          <Fingerprint className="w-5 h-5 mr-2" />
-          Войти по биометрии
-        </Button>
-      )}
-
-      {/* Inline shake keyframes */}
-      <style>{`
-        @keyframes shake {
-          0%, 100% { transform: translateX(0); }
-          20% { transform: translateX(-6px); }
-          40% { transform: translateX(6px); }
-          60% { transform: translateX(-4px); }
-          80% { transform: translateX(4px); }
-        }
-      `}</style>
     </div>
   );
 }

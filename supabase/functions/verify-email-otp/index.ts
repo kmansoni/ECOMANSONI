@@ -157,55 +157,46 @@ Deno.serve(async (req: Request) => {
         return jsonResp(origin, { error: "Request too large." }, 413);
       }
     }
-    let email: string, code: string;
+    let email: string, code: string, phone = "";
     try {
       const body = await req.json();
       if (typeof body !== "object" || body === null || Array.isArray(body)) {
         return jsonResp(origin, { error: "Request body must be a JSON object." }, 400);
       }
-      email = String(body.email ?? "").trim().toLowerCase();
-      // Normalize email to NFC form (canonical decomposition followed by recomposition)
-      // so "café" and "cafe\u0301" (combining accent) both map to the same normalized string.
-      // This prevents attackers from creating duplicate accounts via Unicode variants.
-      email = email.normalize("NFC");
+      email = String(body.email ?? "").trim().toLowerCase().normalize("NFC");
+      phone = String(body.phone ?? "").trim();
       code = String(body.code ?? "").trim();
     } catch {
       return jsonResp(origin, { error: "Invalid JSON" }, 400);
     }
 
-    if (!email || !code) {
+    if ((!email && !phone) || !code) {
       return jsonResp(origin, { error: "email and code required" }, 400);
     }
 
-    // Reject malformed emails early to avoid unnecessary DB/Auth load and
-    // to return a deterministic client error instead of downstream 5xx.
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      return jsonResp(origin, { error: "Invalid email format." }, 400);
-    }
-
-    // Enforce max email length (RFC 5321: 254 chars) to prevent DoS via huge strings
-    // in HMAC, DB queries, and Auth API calls.
-    if (email.length > 254) {
-      return jsonResp(origin, { error: "Invalid email format." }, 400);
-    }
-
-    // Second rate-limit gate keyed on the (validated, normalised) email address.
-    // IP can be spoofed via X-Forwarded-For; email cannot — it is already format-validated.
-    // Stricter than IP limit: 10 req/min per email.
-    const emailRateKey = `email:${email}`;
-    const emailRate = checkRateLimit(emailRateKey, 10);
-    if (!emailRate.allowed) {
-      const retryAfterSecs = Math.ceil(emailRate.resetIn / 1000);
-      const resp = jsonResp(origin, {
-        error: `Too many requests. Try again in ${retryAfterSecs}s.`,
-        retryAfter: retryAfterSecs,
-      }, 429);
-      resp.headers.set("Retry-After", String(retryAfterSecs));
-      return resp;
+    if (email) {
+      // Reject malformed emails early to avoid unnecessary DB/Auth load.
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return jsonResp(origin, { error: "Invalid email format." }, 400);
+      }
+      if (email.length > 254) {
+        return jsonResp(origin, { error: "Invalid email format." }, 400);
+      }
+      // Rate limit by email (stricter than IP limit: 10 req/min)
+      const emailRateKey = `email:${email}`;
+      const emailRate = checkRateLimit(emailRateKey, 10);
+      if (!emailRate.allowed) {
+        const retryAfterSecs = Math.ceil(emailRate.resetIn / 1000);
+        const resp = jsonResp(origin, {
+          error: `Too many requests. Try again in ${retryAfterSecs}s.`,
+          retryAfter: retryAfterSecs,
+        }, 429);
+        resp.headers.set("Retry-After", String(retryAfterSecs));
+        return resp;
+      }
     }
 
     // Validate code format early — before any DB work — to block DoS via huge strings.
-    // A valid OTP is exactly 6 ASCII digits; anything else is rejected immediately.
     if (!/^\d{6}$/.test(code)) {
       return jsonResp(origin, { error: "Invalid code format." }, 400);
     }
@@ -226,6 +217,38 @@ Deno.serve(async (req: Request) => {
     const supabase = createClient(supabaseUrl, serviceRoleKey, {
       auth: { persistSession: false },
     });
+
+    // ── Phone → email resolution for admin OTP verification ────────────────────
+    if (!email && phone) {
+      const digits = phone.replace(/\D/g, "");
+      if (digits.length < 10) {
+        return jsonResp(origin, { error: "Invalid or expired verification code." }, 400);
+      }
+      const candidates = [digits, `+${digits}`, `+7${digits.slice(1)}`];
+      const { data: adminUser } = await supabase
+        .from("admin_users")
+        .select("email, status")
+        .or(candidates.map((p) => `phone.eq.${p}`).join(","))
+        .maybeSingle();
+
+      if (!adminUser?.email || adminUser.status !== "active") {
+        return jsonResp(origin, { error: "Invalid or expired verification code." }, 400);
+      }
+      email = adminUser.email.trim().toLowerCase().normalize("NFC");
+
+      // Apply email rate limit now that we have the real email
+      const emailRateKey = `email:${email}`;
+      const emailRate = checkRateLimit(emailRateKey, 10);
+      if (!emailRate.allowed) {
+        const retryAfterSecs = Math.ceil(emailRate.resetIn / 1000);
+        const resp = jsonResp(origin, {
+          error: `Too many requests. Try again in ${retryAfterSecs}s.`,
+          retryAfter: retryAfterSecs,
+        }, 429);
+        resp.headers.set("Retry-After", String(retryAfterSecs));
+        return resp;
+      }
+    }
 
     // ── Fetch OTP record ────────────────────────────────────────────────────
     const { data: otp, error: fetchError } = await supabase

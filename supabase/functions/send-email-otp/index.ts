@@ -26,6 +26,14 @@ function jsonResp(origin: string | null, body: Record<string, unknown>, status =
   });
 }
 
+function emailServiceUnavailableResp(origin: string | null): Response {
+  return jsonResp(origin, {
+    ok: false,
+    error: "Email service unavailable",
+    message: "Сервис отправки писем временно недоступен. Повторите попытку позже.",
+  });
+}
+
 // Crypto-safe 6-digit OTP
 function generateOTP(): string {
   const buf = new Uint32Array(1);
@@ -163,11 +171,13 @@ Deno.serve(async (req: Request) => {
   // Parse body
   let email: string;
   let phone: string | undefined;
+  let adminCheck = false;
   let maskedEmailForResponse: string | undefined;
   try {
     const body = await req.json();
     email = (body.email ?? "").trim().toLowerCase();
     phone = body.phone ? String(body.phone).trim() : undefined;
+    adminCheck = body.admin_check === true;
   } catch {
     return jsonResp(origin, { error: "Invalid JSON" }, 400);
   }
@@ -191,37 +201,50 @@ Deno.serve(async (req: Request) => {
     console.error("[send-email-otp] Missing SUPABASE env vars");
     return jsonResp(origin, { error: "Server not configured" }, 500);
   }
-  if (!emailRouterUrl) {
-    console.error("[send-email-otp] Missing EMAIL_ROUTER_URL");
-    return jsonResp(origin, { error: "Email service unavailable" }, 503);
-  }
 
   const supabase = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false },
   });
 
-  // ── Phone-based login: look up email from profiles ──────────────────────
+  // ── Phone-based login: resolve email from admin_users or profiles ────────
   if (phone && !email) {
     const digits = normalizePhone(phone);
     if (digits.length < 10) {
       return jsonResp(origin, { error: "Invalid phone number" }, 400);
     }
 
-    // Search profiles by phone (try multiple formats)
     const phoneCandidates = [digits, `+${digits}`, `+7${digits.slice(1)}`];
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("email, phone")
-      .or(phoneCandidates.map((p) => `phone.eq.${p}`).join(","))
-      .limit(1)
-      .maybeSingle();
 
-    if (!profile?.email) {
-      return jsonResp(origin, { error: "not_found", message: "Аккаунт не найден. Пройдите регистрацию." }, 404);
+    if (adminCheck) {
+      // Admin login: resolve email directly from admin_users (no profiles dependency)
+      const { data: adminUser } = await supabase
+        .from("admin_users")
+        .select("email, status")
+        .or(phoneCandidates.map((p) => `phone.eq.${p}`).join(","))
+        .maybeSingle();
+
+      if (!adminUser?.email || adminUser.status !== "active") {
+        return jsonResp(origin, { error: "not_found", message: "Аккаунт не найден." }, 404);
+      }
+
+      email = adminUser.email.trim().toLowerCase();
+      maskedEmailForResponse = maskEmail(email);
+    } else {
+      // Regular login: look up email from user profile
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("email, phone")
+        .or(phoneCandidates.map((p) => `phone.eq.${p}`).join(","))
+        .limit(1)
+        .maybeSingle();
+
+      if (!profile?.email) {
+        return jsonResp(origin, { error: "not_found", message: "Аккаунт не найден. Пройдите регистрацию." }, 404);
+      }
+
+      email = profile.email.trim().toLowerCase();
+      maskedEmailForResponse = maskEmail(email);
     }
-
-    email = profile.email.trim().toLowerCase();
-    maskedEmailForResponse = maskEmail(email);
   }
 
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
@@ -229,6 +252,10 @@ Deno.serve(async (req: Request) => {
   }
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(otpFromEmail) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(otpReplyTo)) {
     return jsonResp(origin, { error: "Server not configured" }, 500);
+  }
+  if (!emailRouterUrl) {
+    console.error("[send-email-otp] Missing EMAIL_ROUTER_URL");
+    return emailServiceUnavailableResp(origin);
   }
 
   // ── DB-based cooldown between sends per email (configurable) ────────────
@@ -391,21 +418,15 @@ Deno.serve(async (req: Request) => {
         body: "",
       });
       await cleanupOtpCode(supabase, email, code);
-      return jsonResp(origin, {
-        error: "Email service unavailable",
-        message: "Сервис отправки писем временно недоступен. Повторите попытку позже.",
-      }, 503);
+      return emailServiceUnavailableResp(origin);
     }
   } catch (err) {
     console.error("[send-email-otp] email-router fetch failed:", err);
     await cleanupOtpCode(supabase, email, code);
-    return jsonResp(origin, {
-      error: "Email service unavailable",
-      message: "Сервис отправки писем временно недоступен. Повторите попытку позже.",
-    }, 503);
+    return emailServiceUnavailableResp(origin);
   }
 
-  const resp: Record<string, unknown> = { success: true };
+  const resp: Record<string, unknown> = { ok: true, success: true };
   if (maskedEmailForResponse) {
     resp.maskedEmail = maskedEmailForResponse;
   }

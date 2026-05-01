@@ -16,7 +16,7 @@
 import { logger } from "@/lib/logger";
 
 import { useCallback, useEffect, useRef } from "react";
-import { Button } from "@/components/ui/button";
+import { GlassPrimaryButton } from "@/components/ui/glass/GlassPrimaryButton";
 import { cn } from "@/lib/utils";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -160,29 +160,25 @@ export function WebLoginButton({
 
   // ── Size variants ─────────────────────────────────────────────────────────
 
-  const sizeClasses: Record<string, string> = {
-    sm: "h-8 px-3 text-xs",
-    md: "h-10 px-4 text-sm",
-    lg: "h-12 px-6 text-base",
+  const sizeMap: Record<NonNullable<WebLoginButtonProps["size"]>, "sm" | "md" | "lg"> = {
+    sm: "sm",
+    md: "md",
+    lg: "lg",
   };
 
   const iconSize: Record<string, number> = { sm: 14, md: 16, lg: 20 };
 
   return (
-    <Button
+    <GlassPrimaryButton
       type="button"
       onClick={handleClick}
-      className={cn(
-        "bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl",
-        "flex items-center gap-2 transition-all duration-150",
-        sizeClasses[size],
-        className
-      )}
+      size={sizeMap[size]}
+      variant="brand"
+      icon={<MessengerIcon size={iconSize[size]} />}
+      className={cn(className)}
     >
-      {/* App icon */}
-      <MessengerIcon size={iconSize[size]} />
-      <span>{buttonText}</span>
-    </Button>
+      {buttonText}
+    </GlassPrimaryButton>
   );
 }
 

@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Label } from "@/components/ui/label";
-import { useAuth } from "@/hooks/useAuth";
 import { adminApi, AdminMe } from "@/lib/adminApi";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
@@ -13,8 +12,9 @@ import {
   AppPrimaryButton,
 } from "@/components/ui/app-shell";
 
+type Step = "phone" | "otp";
+
 export function AdminLoginPage() {
-  const { signIn } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const locState = location.state as { from?: string; notAdmin?: boolean } | null;
@@ -22,32 +22,85 @@ export function AdminLoginPage() {
   const from = useMemo(() => locState?.from ?? "/admin", [locState?.from]);
   const notAdmin = Boolean(locState?.notAdmin);
 
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [step, setStep] = useState<Step>("phone");
+  const [phone, setPhone] = useState("");
+  const [otp, setOtp] = useState("");
+  const [maskedEmail, setMaskedEmail] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
+    const trimmed = phone.trim();
+    if (!trimmed) return;
     setLoading(true);
     try {
-      const res = await signIn(email.trim().toLowerCase(), password);
-      if (res.error) {
-        toast.error("Ошибка входа", { description: "Проверьте email и пароль." });
+      const { data, error } = await supabase.functions.invoke<{
+        ok: boolean;
+        maskedEmail?: string;
+      }>("send-email-otp", {
+        body: { phone: trimmed, admin_check: true },
+      });
+
+      if (error || !data?.ok) {
+        let desc = "Проверьте номер телефона.";
+        try {
+          // FunctionsHttpError may expose body via .context
+          const body = await (error as { context?: Response })?.context?.json?.();
+          if (body?.message) desc = body.message;
+        } catch { /* ignore */ }
+        toast.error("Аккаунт не найден", { description: desc });
         return;
       }
 
-      // Verify admin access via admin-api
+      setMaskedEmail(data.maskedEmail ?? "");
+      setStep("otp");
+      toast.success("Код отправлен", { description: `На почту ${data.maskedEmail ?? ""} отправлен код подтверждения.` });
+    } catch {
+      toast.error("Ошибка", { description: "Не удалось отправить код. Попробуйте позже." });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const code = otp.trim();
+    if (!code) return;
+    setLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke<{
+        ok: boolean;
+        accessToken?: string;
+        refreshToken?: string;
+      }>("verify-email-otp", {
+        body: { phone: phone.trim(), code },
+      });
+
+      if (error || !data?.ok || !data.accessToken || !data.refreshToken) {
+        toast.error("Неверный код", { description: "Код недействителен или истёк. Попробуйте снова." });
+        return;
+      }
+
+      const { error: sessionError } = await supabase.auth.setSession({
+        access_token: data.accessToken,
+        refresh_token: data.refreshToken,
+      });
+      if (sessionError) {
+        toast.error("Ошибка сессии", { description: sessionError.message });
+        return;
+      }
+
       const me = await adminApi<AdminMe>("me");
       if (!me) {
-        toast.error("Нет доступа", { description: "Аккаунт не является админом" });
+        toast.error("Нет доступа", { description: "Аккаунт не является администратором." });
         await supabase.auth.signOut();
         return;
       }
 
       toast.success("Вход выполнен");
       navigate(from, { replace: true });
-    } catch (err) {
-      toast.error("Ошибка", { description: "Не удалось выполнить вход. Попробуйте позже." });
+    } catch {
+      toast.error("Ошибка", { description: "Не удалось подтвердить код. Попробуйте позже." });
     } finally {
       setLoading(false);
     }
@@ -57,7 +110,6 @@ export function AdminLoginPage() {
     <AppPageShell centered aurora className="px-4 py-8">
       <div className="mx-auto w-full max-w-[420px]">
         <AppGlassCard>
-          {/* Brand header — как у AuthPage */}
           <div className="flex items-center justify-center mb-5 sm:mb-6">
             <div
               className="flex items-center gap-3 text-[13px] tracking-[0.42em] uppercase opacity-70"
@@ -77,10 +129,17 @@ export function AdminLoginPage() {
             <h1 className="glass-title text-[24px] sm:text-[28px] leading-[1.1] font-bold tracking-tight">
               Admin Console
             </h1>
-            <p className="glass-muted mt-2 text-sm">
-              Вход для администраторов по email и паролю. Доступ проверяется через{" "}
-              <span className="font-mono text-[12.5px]">admin_users</span>.
-            </p>
+            {step === "phone" ? (
+              <p className="glass-muted mt-2 text-sm">
+                Введите номер телефона. Система найдёт почту и отправит код подтверждения.
+              </p>
+            ) : (
+              <p className="glass-muted mt-2 text-sm">
+                Код отправлен на{" "}
+                <span className="font-medium text-white/80">{maskedEmail}</span>.
+                Введите его ниже.
+              </p>
+            )}
             {notAdmin && (
               <div className="mt-3 rounded-xl border border-rose-400/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
                 У аккаунта нет прав администратора.
@@ -88,51 +147,76 @@ export function AdminLoginPage() {
             )}
           </div>
 
-          <form className="flex flex-col gap-4" onSubmit={handleLogin}>
-            <div className="space-y-2">
-              <Label htmlFor="email" className="glass-muted text-xs uppercase tracking-[0.18em]">
-                Email
-              </Label>
-              <AppGlassInput
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                autoComplete="email"
-                placeholder="you@example.com"
-              />
-            </div>
+          {step === "phone" ? (
+            <form className="flex flex-col gap-4" onSubmit={handleSendOtp}>
+              <div className="space-y-2">
+                <Label htmlFor="phone" className="glass-muted text-xs uppercase tracking-[0.18em]">
+                  Номер телефона
+                </Label>
+                <AppGlassInput
+                  id="phone"
+                  type="tel"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  autoComplete="tel"
+                  placeholder="+7 999 000 00 00"
+                />
+              </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="password" className="glass-muted text-xs uppercase tracking-[0.18em]">
-                Password
-              </Label>
-              <AppGlassInput
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                autoComplete="current-password"
-                placeholder="••••••••"
-              />
-            </div>
+              <AppPrimaryButton type="submit" disabled={loading || !phone.trim()}>
+                {loading ? (
+                  <>
+                    <SpinnerIcon active size={16} />
+                    Отправка кода...
+                  </>
+                ) : (
+                  "Получить код"
+                )}
+              </AppPrimaryButton>
 
-            <AppPrimaryButton type="submit" disabled={loading}>
-              {loading ? (
-                <>
-                  <SpinnerIcon active size={16} />
-                  Вход...
-                </>
-              ) : (
-                "Войти"
-              )}
-            </AppPrimaryButton>
+              <div className="glass-muted flex items-center justify-center gap-2 text-xs">
+                <VerifiedIcon active size={16} noAnimate tone="green" className="text-emerald-500" />
+                Защищено end-to-end шифрованием
+              </div>
+            </form>
+          ) : (
+            <form className="flex flex-col gap-4" onSubmit={handleVerifyOtp}>
+              <div className="space-y-2">
+                <Label htmlFor="otp" className="glass-muted text-xs uppercase tracking-[0.18em]">
+                  Код из письма
+                </Label>
+                <AppGlassInput
+                  id="otp"
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={6}
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
+                  autoComplete="one-time-code"
+                  placeholder="000 000"
+                />
+              </div>
 
-            <div className="glass-muted flex items-center justify-center gap-2 text-xs">
-              <VerifiedIcon active size={16} noAnimate tone="green" className="text-emerald-500" />
-              Защищено end-to-end шифрованием
-            </div>
-          </form>
+              <AppPrimaryButton type="submit" disabled={loading || otp.trim().length !== 6}>
+                {loading ? (
+                  <>
+                    <SpinnerIcon active size={16} />
+                    Проверка кода...
+                  </>
+                ) : (
+                  "Войти"
+                )}
+              </AppPrimaryButton>
+
+              <button
+                type="button"
+                className="glass-muted text-xs text-center hover:text-white/70 transition-colors"
+                onClick={() => { setStep("phone"); setOtp(""); }}
+              >
+                ← Изменить номер телефона
+              </button>
+            </form>
+          )}
         </AppGlassCard>
       </div>
     </AppPageShell>
