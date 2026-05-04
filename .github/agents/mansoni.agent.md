@@ -43,8 +43,16 @@ skills:
   - .github/skills/realtime-architect/SKILL.md
   - .github/skills/idempotency-patterns/SKILL.md
   - .github/skills/retry-strategy/SKILL.md
-  - .github/skills/circuit-breaker/SKILL.md
-  - .github/skills/owasp-top10-scanner/SKILL.md
+- .github/skills/circuit-breaker/SKILL.md
+- .github/skills/offline-navigation/SKILL.md
+- .github/skills/voice-assistant/SKILL.md
+- .github/skills/traffic-provider/SKILL.md
+- .github/skills/vitest-mastery/SKILL.md
+- .github/skills/playwright-mastery/SKILL.md
+- .github/skills/capacitor-offline/SKILL.md
+- .github/skills/prompt-engineering/SKILL.md
+- .github/skills/state-machine-designer/SKILL.md
+- .github/skills/owasp-top10-scanner/SKILL.md
   - .github/skills/e2ee-audit/SKILL.md
   - .github/skills/dependency-audit/SKILL.md
   - .github/skills/bundle-analyzer/SKILL.md
