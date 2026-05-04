@@ -30,6 +30,17 @@ skills:
   - .github/skills/intersection-observer-patterns/SKILL.md
   - .github/skills/websocket-scaling/SKILL.md
   - .github/skills/geospatial-query-optimizer/SKILL.md
+  - .github/skills/network-optimization/SKILL.md
+  - .github/skills/animation-performance/SKILL.md
+  - .github/skills/database-query-perf/SKILL.md
+  - .github/skills/api-response-optimization/SKILL.md
+  - .github/skills/react-rendering-perf/SKILL.md
+  - .github/skills/memory-leak-detection/SKILL.md
+  - .github/skills/css-animation-patterns/SKILL.md
+  - .github/skills/webhook-patterns/SKILL.md
+  - .github/skills/pwa-compliance/SKILL.md
+  - .github/skills/service-worker-architect/SKILL.md
+  - .github/skills/push-notification-architect/SKILL.md
 ---
 
 # Mansoni Performance Engineer — Managed Specialist

@@ -44,6 +44,13 @@ skills:
   - .github/skills/jwt-rotation-patterns/SKILL.md
   - .github/skills/subresource-integrity/SKILL.md
   - .github/skills/business-logic-vulnerability/SKILL.md
+  - .github/skills/deep-audit/SKILL.md
+  - .github/skills/dependency-audit/SKILL.md
+  - .github/skills/platform-auditor/SKILL.md
+  - .github/skills/security-self-learning/SKILL.md
+  - .github/skills/agentic-ai-security/SKILL.md
+  - .github/skills/audit-log-generator/SKILL.md
+  - .github/skills/penetration-test-reporter/SKILL.md
 ---
 
 # Mansoni Security Engineer — Managed Specialist

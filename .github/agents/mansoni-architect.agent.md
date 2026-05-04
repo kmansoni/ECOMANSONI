@@ -13,6 +13,9 @@ skills:
   - .github/skills/structured-planning/SKILL.md
   - .github/skills/messenger-platform/SKILL.md
   - .github/skills/supabase-production/SKILL.md
+  - .github/skills/supabase-realtime-architect/SKILL.md
+  - .github/skills/supabase-rls-auditor/SKILL.md
+  - .github/skills/supabase-edge-patterns/SKILL.md
   - .github/skills/react-production/SKILL.md
   - .github/skills/self-learning-protocol/SKILL.md
   - .github/skills/threat-modeling/SKILL.md
@@ -25,7 +28,14 @@ skills:
   - .github/skills/zustand-architecture/SKILL.md
   - .github/skills/tanstack-query-patterns/SKILL.md
   - .github/skills/postgresql-partitioning/SKILL.md
+  - .github/skills/postgresql-optimizer/SKILL.md
   - .github/skills/data-visualization/SKILL.md
+  - .github/skills/message-queue-designer/SKILL.md
+  - .github/skills/secrets-rotation/SKILL.md
+  - .github/skills/caching-strategy/SKILL.md
+  - .github/skills/pwa-compliance/SKILL.md
+  - .github/skills/service-worker-architect/SKILL.md
+  - .github/skills/database-migration-planner/SKILL.md
 ---
 
 # Mansoni Architect — Managed Specialist

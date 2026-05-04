@@ -10,6 +10,43 @@ tools:
   - todo
   - claude-flow/*
 user-invocable: false
+skills:
+  - .github/skills/code-review/SKILL.md
+  - .github/skills/stub-hunter/SKILL.md
+  - .github/skills/completion-checker/SKILL.md
+  - .github/skills/integration-checker/SKILL.md
+  - .github/skills/silent-failure-hunter/SKILL.md
+  - .github/skills/invariant-guardian/SKILL.md
+  - .github/skills/coherence-checker/SKILL.md
+  - .github/skills/race-condition-detector/SKILL.md
+  - .github/skills/deep-audit/SKILL.md
+  - .github/skills/platform-auditor/SKILL.md
+  - .github/skills/agent-self-audit/SKILL.md
+  - .github/skills/code-health-score/SKILL.md
+  - .github/skills/complexity-reducer/SKILL.md
+  - .github/skills/refactoring-patterns/SKILL.md
+  - .github/skills/dead-code-elimination/SKILL.md
+  - .github/skills/dependency-audit/SKILL.md
+  - .github/skills/test-audit-suite/SKILL.md
+  - .github/skills/integration-testing/SKILL.md
+  - .github/skills/contract-testing/SKILL.md
+  - .github/skills/load-testing/SKILL.md
+  - .github/skills/visual-regression/SKILL.md
+  - .github/skills/accessibility-audit/SKILL.md
+  - .github/skills/a11y-audit/SKILL.md
+  - .github/skills/webapp-uat/SKILL.md
+  - .github/skills/ux-reviewer/SKILL.md
+  - .github/skills/security-audit/SKILL.md
+  - .github/skills/owasp-top10-scanner/SKILL.md
+  - .github/skills/injection-scanner/SKILL.md
+  - .github/skills/xss-scanner/SKILL.md
+  - .github/skills/csrf-protection-audit/SKILL.md
+  - .github/skills/supabase-rls-auditor/SKILL.md
+  - .github/skills/cryptographic-failures-audit/SKILL.md
+  - .github/skills/subresource-integrity/SKILL.md
+  - .github/skills/performance-audit/SKILL.md
+  - .github/skills/web-perf-audit/SKILL.md
+  - .github/skills/memory-leak-detection/SKILL.md
 ---
 
 # Sequential Auditor — Агент последовательного аудита кода

@@ -11,7 +11,42 @@ tools:
   - todo
   - claude-flow/*
 user-invocable: false
+skills:
+  - .github/skills/code-review/SKILL.md
+  - .github/skills/stub-hunter/SKILL.md
+  - .github/skills/completion-checker/SKILL.md
+  - .github/skills/integration-checker/SKILL.md
+  - .github/skills/silent-failure-hunter/SKILL.md
+  - .github/skills/invariant-guardian/SKILL.md
+  - .github/skills/coherence-checker/SKILL.md
+  - .github/skills/race-condition-detector/SKILL.md
+  - .github/skills/deep-audit/SKILL.md
+  - .github/skills/security-audit/SKILL.md
+  - .github/skills/owasp-top10-scanner/SKILL.md
+  - .github/skills/test-driven-dev/SKILL.md
+  - .github/skills/integration-testing/SKILL.md
+  - .github/skills/unit-test-generation/SKILL.md
+  - .github/skills/vitest-mastery/SKILL.md
+  - .github/skills/playwright-mastery/SKILL.md
+  - .github/skills/testing-strategy/SKILL.md
+  - .github/skills/contract-testing/SKILL.md
+  - .github/skills/load-testing/SKILL.md
+  - .github/skills/visual-regression/SKILL.md
+  - .github/skills/accessibility-testing/SKILL.md
+  - .github/skills/snapshot-testing/SKILL.md
+  - .github/skills/test-data-factory/SKILL.md
+  - .github/skills/mutation-testing/SKILL.md
+  - .github/skills/e2ee-audit/SKILL.md
+  - .github/skills/supabase-rls-auditor/SKILL.md
+  - .github/skills/performance-audit/SKILL.md
+  - .github/skills/web-perf-audit/SKILL.md
+  - .github/skills/ux-inspection-navigation/SKILL.md
+  - .github/skills/navigator-tester-enhanced/SKILL.md
+  - .github/skills/functional-tester/SKILL.md
+  - .github/skills/browser-test-engineer/SKILL.md
+  - .github/skills/live-browser-testing/SKILL.md
 ---
+
 # Mansoni Tester Agent
 
 ## Роль

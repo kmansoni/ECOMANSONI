@@ -25,6 +25,17 @@ skills:
   - .github/skills/push-notification-architect/SKILL.md
   - .github/skills/pwa-compliance/SKILL.md
   - .github/skills/service-worker-architect/SKILL.md
+  - .github/skills/github-actions/SKILL.md
+  - .github/skills/docker-best-practices/SKILL.md
+  - .github/skills/kubernetes-patterns/SKILL.md
+  - .github/skills/secret-management/SKILL.md
+  - .github/skills/blue-green-deployment/SKILL.md
+  - .github/skills/canary-deployment/SKILL.md
+  - .github/skills/chaos-engineering/SKILL.md
+  - .github/skills/disaster-recovery/SKILL.md
+  - .github/skills/senior-devops/SKILL.md
+  - .github/skills/release-manager/SKILL.md
+  - .github/skills/monitoring-stack/SKILL.md
 ---
 
 # Mansoni DevOps — Managed Specialist
