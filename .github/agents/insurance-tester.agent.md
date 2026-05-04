@@ -12,7 +12,6 @@ tools:
   - claude-flow/*
 user-invocable: false
 ---
-# Insurance Tester Agent
 
 ## Role
 Specialized agent for testing insurance products, claims processing, and policy management.

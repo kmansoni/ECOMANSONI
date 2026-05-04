@@ -10,14 +10,6 @@ tools:
   - todo
   - claude-flow/*
 user-invocable: false
-skills:
-  - .github/skills/code-review/SKILL.md
-  - .github/skills/stub-hunter/SKILL.md
-  - .github/skills/silent-failure-hunter/SKILL.md
-  - .github/skills/completion-checker/SKILL.md
-  - .github/skills/integration-checker/SKILL.md
-  - .github/skills/invariant-guardian/SKILL.md
-  - .github/skills/coherence-checker/SKILL.md
 ---
 
 # Sequential Auditor — Агент последовательного аудита кода

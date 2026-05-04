@@ -6,9 +6,14 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 const activeDir = path.join(repoRoot, '.github', 'agents');
 
 const expectedUserInvocable = new Map([
+  // Core agents (user-invocable: true)
   ['mansoni.agent.md', true],
   ['mansoni-core.agent.md', true],
   ['ruflo.agent.md', true],
+  // Specialist agents (user-invocable: false)
+  ['calls-tester.agent.md', false],
+  ['instagram-tester.agent.md', false],
+  ['insurance-tester.agent.md', false],
   ['mansoni-architect.agent.md', false],
   ['mansoni-debugger.agent.md', false],
   ['mansoni-devops.agent.md', false],
@@ -16,6 +21,17 @@ const expectedUserInvocable = new Map([
   ['mansoni-reviewer.agent.md', false],
   ['mansoni-security-engineer.agent.md', false],
   ['mansoni-tester.agent.md', false],
+  ['map-display.agent.md', false],
+  ['messenger-tester.agent.md', false],
+  ['navigation.agent.md', false],
+  ['navigator-tester.agent.md', false],
+  ['routing.agent.md', false],
+  ['sequential-auditor.agent.md', false],
+  ['settings-sync.agent.md', false],
+  ['shop-tester.agent.md', false],
+  ['taxi-tester.agent.md', false],
+  ['test-coordinator.agent.md', false],
+  ['voice-safety.agent.md', false],
 ]);
 
 const activeTools = new Set([

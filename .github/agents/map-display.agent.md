@@ -12,7 +12,6 @@ tools:
   - claude-flow/*
 user-invocable: false
 ---
-
 # Map Display Agent
 
 ## Role
