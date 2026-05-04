@@ -1,3 +1,17 @@
+---
+name: test-coordinator
+description: "Test Coordinator — центральный координатор для управления специализированными агентами тестирования и обеспечения полного покрытия тестами платформы ECOMANSONI."
+tools:
+  - execute
+  - read
+  - edit
+  - search
+  - agent
+  - web
+  - todo
+  - claude-flow/*
+user-invocable: false
+---
 # Test Coordinator Agent
 
 ## Role

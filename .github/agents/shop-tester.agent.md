@@ -1,3 +1,17 @@
+---
+name: shop-tester
+description: "Shop Tester — специализированный агент для тестирования e-commerce, каталога товаров и шопинга."
+tools:
+  - execute
+  - read
+  - edit
+  - search
+  - agent
+  - web
+  - todo
+  - claude-flow/*
+user-invocable: false
+---
 # Shop Tester Agent
 
 ## Role

@@ -1,3 +1,17 @@
+---
+name: taxi-tester
+description: "Taxi Tester — специализированный агент для тестирования заказа такси, ride-sharing и транспортных услуг."
+tools:
+  - execute
+  - read
+  - edit
+  - search
+  - agent
+  - web
+  - todo
+  - claude-flow/*
+user-invocable: false
+---
 # Taxi Tester Agent
 
 ## Role

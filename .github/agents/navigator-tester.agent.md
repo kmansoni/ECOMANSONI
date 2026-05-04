@@ -1,3 +1,17 @@
+---
+name: navigator-tester
+description: "Navigator Tester — специализированный агент для тестирования навигации, карт, маршрутизации и location-based услуг."
+tools:
+  - execute
+  - read
+  - edit
+  - search
+  - agent
+  - web
+  - todo
+  - claude-flow/*
+user-invocable: false
+---
 # Navigator Tester Agent
 
 ## Role

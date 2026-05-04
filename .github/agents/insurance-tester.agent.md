@@ -1,3 +1,17 @@
+---
+name: insurance-tester
+description: "Insurance Tester — специализированный агент для тестирования страховых продуктов, обработки претензий и управления полисами."
+tools:
+  - execute
+  - read
+  - edit
+  - search
+  - agent
+  - web
+  - todo
+  - claude-flow/*
+user-invocable: false
+---
 # Insurance Tester Agent
 
 ## Role

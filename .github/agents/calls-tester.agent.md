@@ -1,3 +1,17 @@
+---
+name: calls-tester
+description: "Calls Tester — специализированный агент для тестирования голосовых/видео звонков, SFU и медиа-стриминга."
+tools:
+  - execute
+  - read
+  - edit
+  - search
+  - agent
+  - web
+  - todo
+  - claude-flow/*
+user-invocable: false
+---
 # Calls & SFU Tester Agent
 
 ## Role

@@ -1,3 +1,17 @@
+---
+name: messenger-tester
+description: "Messenger Tester — специализированный агент для тестирования мессенджера: чаты, сообщения, E2E-шифрование, медиа, уведомления."
+tools:
+  - execute
+  - read
+  - edit
+  - search
+  - agent
+  - web
+  - todo
+  - claude-flow/*
+user-invocable: false
+---
 # Messenger Tester Agent
 
 ## Role
