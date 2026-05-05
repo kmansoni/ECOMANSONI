@@ -43,6 +43,8 @@ const GuidePage = lazy(() => import("@/pages/GuidePage"));
 const FollowRequestsPage = lazy(() => import("@/pages/FollowRequestsPage"));
 const LocationPage = lazy(() => import("@/pages/LocationPage"));
 const AudioTrackPage = lazy(() => import("@/pages/AudioTrackPage"));
+const AdManagerPage = lazy(() => import("@/pages/AdManagerPage"));
+const AdCampaignDetailPage = lazy(() => import("@/pages/ads/AdCampaignDetailPage"));
 
 // Initialize error tracking
 initErrorTracking();
@@ -798,12 +800,25 @@ const App = () => {
                         <CRMRealEstateDashboard />
                       </Suspense>
                     } />
-                    <Route path="/crm/insurance" element={
-                      <Suspense fallback={<PageLoader />}>
-                        <CRMInsuranceDashboard />
-                      </Suspense>
-                    } />
-                    <Route path="/email/settings" element={
+                     <Route path="/crm/insurance" element={
+                       <Suspense fallback={<PageLoader />}>
+                         <CRMInsuranceDashboard />
+                       </Suspense>
+                     } />
+
+                     {/* ─── Ads Module ─────────────────────────── */}
+                     <Route path="/ads" element={
+                       <Suspense fallback={<PageLoader />}>
+                         <AdManagerPage />
+                       </Suspense>
+                     } />
+                     <Route path="/ads/:id" element={
+                       <Suspense fallback={<PageLoader />}>
+                         <AdCampaignDetailPage />
+                       </Suspense>
+                     } />
+
+                     <Route path="/email/settings" element={
                       <Suspense fallback={<PageLoader />}>
                         <EmailSettingsPage />
                       </Suspense>

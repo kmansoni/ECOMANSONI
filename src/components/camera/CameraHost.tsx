@@ -16,6 +16,7 @@ export interface CameraHostHandle {
   isRecording: () => boolean;
   supportsTorch: () => boolean;
   setTorchEnabled: (enabled: boolean) => Promise<boolean>;
+  setZoomLevel: (level: number) => Promise<boolean>;  // Добавлено
 }
 
 export interface CameraDebugSnapshot {
@@ -29,6 +30,8 @@ export interface CameraDebugSnapshot {
   mode: CaptureMode;
   lastStopReason: string | null;
   lastEventAt: number;
+  supportsTorch: boolean;
+  supportsZoom: boolean;
 }
 
 interface CameraDebugGlobal {
@@ -53,10 +56,9 @@ export type FacingMode = "user" | "environment";
 interface CameraHostProps {
   isActive: boolean;
   mode: CaptureMode;
-  /** Which camera to use. Changing this prop restarts the stream. Default: "environment" */
   facingMode?: FacingMode;
-  /** Optional override for MediaRecorder video bitrate. */
   targetVideoBitsPerSecond?: number;
+  previewZoom?: number;
   className?: string;
   videoClassName?: string;
   videoStyle?: React.CSSProperties;
@@ -160,6 +162,8 @@ export const CameraHost = forwardRef<CameraHostHandle, CameraHostProps>(function
   const recorderChunksRef = useRef<BlobPart[]>([]);
   const recorderTimerRef = useRef<number | null>(null);
   const torchSupportedRef = useRef(false);
+  const zoomSupportedRef = useRef(false);
+  const zoomRangeRef = useRef<{ min: number; max: number }>({ min: 1, max: 1 });
 
   const [ready, setReady] = useState(false);
   const [recording, setRecording] = useState(false);
@@ -177,6 +181,8 @@ export const CameraHost = forwardRef<CameraHostHandle, CameraHostProps>(function
     mode,
     lastStopReason: null,
     lastEventAt: Date.now(),
+    supportsTorch: false,
+    supportsZoom: false,
   });
 
   const profile = useMemo(() => buildProfile(mode), [mode]);
@@ -299,8 +305,15 @@ export const CameraHost = forwardRef<CameraHostHandle, CameraHostProps>(function
         try {
           const caps = (videoTrack as any).getCapabilities?.();
           torchSupportedRef.current = Boolean(caps?.torch);
+          if (caps?.zoom) {
+            zoomSupportedRef.current = true;
+            zoomRangeRef.current = { min: caps.zoom.min ?? 1, max: caps.zoom.max ?? 1 };
+          } else {
+            zoomSupportedRef.current = false;
+          }
         } catch {
           torchSupportedRef.current = false;
+          zoomSupportedRef.current = false;
         }
 
         const debug = getCameraDebugGlobal();
@@ -358,6 +371,8 @@ export const CameraHost = forwardRef<CameraHostHandle, CameraHostProps>(function
     const stream = streamRef.current;
     streamRef.current = null;
     torchSupportedRef.current = false;
+    zoomSupportedRef.current = false;
+    zoomRangeRef.current = { min: 1, max: 1 };
     setReady(false);
 
     emitDebug({
@@ -516,6 +531,28 @@ export const CameraHost = forwardRef<CameraHostHandle, CameraHostProps>(function
     }
   }, []);
 
+  const setZoomLevel = useCallback(async (level: number): Promise<boolean> => {
+    const stream = streamRef.current;
+    if (!stream) return false;
+    const videoTrack = stream.getVideoTracks()[0];
+    if (!videoTrack) return false;
+
+    try {
+      const caps = (videoTrack as any).getCapabilities?.();
+      if (!caps?.zoom) return false;
+
+      const { min = 1, max = 1 } = caps.zoom;
+      const clampedLevel = Math.max(min, Math.min(max, level));
+
+      await (videoTrack as any).applyConstraints({
+        advanced: [{ zoom: clampedLevel }]
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
+
   useImperativeHandle(
     ref,
     () => ({
@@ -525,8 +562,9 @@ export const CameraHost = forwardRef<CameraHostHandle, CameraHostProps>(function
       isRecording: () => recording,
       supportsTorch,
       setTorchEnabled,
+      setZoomLevel,
     }),
-    [capturePhoto, recordVideo, stopRecording, recording, supportsTorch, setTorchEnabled],
+    [capturePhoto, recordVideo, stopRecording, recording, supportsTorch, setTorchEnabled, setZoomLevel],
   );
 
   return (

@@ -1,23 +1,5 @@
-/**
- * @file src/components/camera/SlowMotionCapture.tsx
- * @description Slow Motion и Time-lapse съёмка.
- *
- * Slow Motion архитектура:
- * - Захват при высоком frameRate (120fps если поддерживается, иначе 60fps)
- * - Воспроизведение при нормальном frameRate (30fps) → эффект замедления
- * - MediaRecorder: захват при высоком fps
- * - Playback speed: video.playbackRate = 0.25 (4x slow) или 0.5 (2x slow)
- * - Экспорт: WebM с оригинальным fps, playbackRate метаданные
- *
- * Time-lapse архитектура:
- * - Захват кадров с интервалом (default: 1 кадр/сек)
- * - Сборка в видео через canvas + MediaRecorder при 30fps
- * - Результат: 30x ускорение (1 мин реального времени = 2 сек видео)
- * - Настройка интервала: 0.5с / 1с / 2с / 5с
- */
-
-import { useState, useRef, useEffect, useCallback } from "react";
-import { Zap, Clock, Square, Circle, Loader2, ChevronDown } from "lucide-react";
+import { useState, useRef, useEffect } from "react";
+import { Zap, Clock, Square, Circle, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 

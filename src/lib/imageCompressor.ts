@@ -1,135 +1,45 @@
-/**
- * @module imageCompressor
- * @description Client-side сжатие изображений через Canvas API.
- *
- * Архитектурные решения:
- * - OffscreenCanvas + createImageBitmap: не блокирует main thread, доступны в современных браузерах.
- * - Fallback на HTMLCanvasElement + Image element: для Safari < 16.4 где OffscreenCanvas ограничен.
- * - canvas.toBlob: асинхронный, не блокирует main thread в отличие от toDataURL.
- * - EXIF автоматически удаляется: Canvas API рисует пиксели без метаданных — privacy by design.
- * - URL.revokeObjectURL в finally: предотвращает утечку памяти при любом исходе.
- * - GIF/SVG/WebP не сжимаются: потеря анимации, векторности или overhead > экономии.
- */
-
 import { logger } from './logger';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
 export interface CompressOptions {
-  /** Максимальная ширина в пикселях (default: 2048) */
   maxWidth?: number;
-  /** Максимальная высота в пикселях (default: 2048) */
   maxHeight?: number;
-  /**
-   * Качество JPEG/WebP в диапазоне 0–1 (default: 0.85).
-   * Значения вне диапазона зажимаются: < 0 → 0.0, > 1 → 1.0.
-   */
   quality?: number;
-  /** Выходной MIME-тип (default: 'image/jpeg') */
   outputFormat?: 'image/jpeg' | 'image/webp';
-  /**
-   * Минимальный размер файла для запуска сжатия (bytes, default: 512_000 = 500 KB).
-   * Если файл меньше — возвращается оригинал без обработки.
-   */
   skipBelowBytes?: number;
 }
 
 export interface CompressResult {
-  /** Сжатый файл (или оригинал если сжатие не применялось) */
   file: File;
-  /** Оригинальный размер в байтах */
   originalSize: number;
-  /** Размер после сжатия в байтах */
   compressedSize: number;
-  /** Ширина после сжатия (или оригинала если сжатие пропущено) */
   width: number;
-  /** Высота после сжатия (или оригинала если сжатие пропущено) */
   height: number;
-  /** true если сжатие было применено */
   wasCompressed: boolean;
 }
 
 // ─── Presets ──────────────────────────────────────────────────────────────────
 
-/**
- * Готовые пресеты сжатия для разных контекстов.
- * Используются в mediaUpload.ts для автоматического выбора по bucket.
- */
 export const COMPRESS_PRESETS = {
-  /**
-   * Посты в ленте — максимальное качество (Instagram-standard).
-   * 1440px для retina-дисплеев, Instagram ресайзит до 1080px на сервере,
-   * но загрузка в 1440px даёт запас детализации при двойном сжатии CDN.
-   * quality 0.92 — оптимальный баланс: визуально lossless, без артефактов
-   * на градиентах и в тенях после двойной компрессии Instagram.
-   */
-  post: {
-    maxWidth: 1440,
-    maxHeight: 1800,
-    quality: 0.92,
-    outputFormat: 'image/jpeg' as const,
-  },
-  /** Stories — вертикальный формат 9:16, высокое качество */
-  story: {
-    maxWidth: 1080,
-    maxHeight: 1920,
-    quality: 0.90,
-    outputFormat: 'image/jpeg' as const,
-  },
-  /** Аватары — компактные квадратные миниатюры */
-  avatar: {
-    maxWidth: 512,
-    maxHeight: 512,
-    quality: 0.90,
-    outputFormat: 'image/jpeg' as const,
-  },
-  /** Чат-медиа — баланс качества и размера */
-  chat: {
-    maxWidth: 1920,
-    maxHeight: 1920,
-    quality: 0.82,
-    outputFormat: 'image/jpeg' as const,
-  },
-  /** Превью для Reels/видео — небольшой thumbnail */
-  thumbnail: {
-    maxWidth: 480,
-    maxHeight: 480,
-    quality: 0.80,
-    outputFormat: 'image/jpeg' as const,
-  },
+  post: { maxWidth: 1440, maxHeight: 1800, quality: 0.92, outputFormat: 'image/jpeg' as const },
+  story: { maxWidth: 1080, maxHeight: 1920, quality: 0.90, outputFormat: 'image/jpeg' as const },
+  avatar: { maxWidth: 512, maxHeight: 512, quality: 0.90, outputFormat: 'image/jpeg' as const },
+  chat: { maxWidth: 1920, maxHeight: 1920, quality: 0.82, outputFormat: 'image/jpeg' as const },
+  thumbnail: { maxWidth: 480, maxHeight: 480, quality: 0.80, outputFormat: 'image/jpeg' as const },
 } as const;
-
-// ─── Constants ────────────────────────────────────────────────────────────────
 
 const DEFAULT_MAX_WIDTH = 2048;
 const DEFAULT_MAX_HEIGHT = 2048;
 const DEFAULT_QUALITY = 0.85;
 const DEFAULT_OUTPUT_FORMAT = 'image/jpeg' as const;
-const DEFAULT_SKIP_BELOW_BYTES = 512_000; // 500 KB
+const DEFAULT_SKIP_BELOW_BYTES = 512_000;
 
-/**
- * MIME-типы, которые НЕ сжимаются:
- * - image/gif   — потеря анимации
- * - image/svg+xml — потеря векторности
- * - image/webp  — уже оптимально сжат; повторное сжатие только ухудшит качество
- */
+// GIF — потеря анимации, SVG — потеря векторности, WebP — уже сжат
 const NON_COMPRESSIBLE_TYPES = new Set([
   'image/gif',
   'image/svg+xml',
   'image/webp',
 ]);
 
-// ─── Public helpers ───────────────────────────────────────────────────────────
-
-/**
- * Проверить, является ли файл сжимаемым изображением.
- *
- * Возвращает false для:
- * - GIF (потеря анимации)
- * - SVG (потеря векторности)
- * - WebP (уже оптимально сжат)
- * - Любых не-image/* MIME-типов
- */
 export function isCompressibleImage(file: File): boolean {
   if (!file.type.startsWith('image/')) return false;
   return !NON_COMPRESSIBLE_TYPES.has(file.type);
@@ -137,16 +47,6 @@ export function isCompressibleImage(file: File): boolean {
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
-/**
- * Вычислить новые размеры изображения с сохранением пропорций (fit, не crop).
- * Если изображение уже вписывается в maxWidth × maxHeight — размеры не изменяются.
- *
- * @param srcWidth   Оригинальная ширина пикселей
- * @param srcHeight  Оригинальная высота пикселей
- * @param maxWidth   Максимально допустимая ширина
- * @param maxHeight  Максимально допустимая высота
- * @returns { width, height } — финальные размеры
- */
 function computeDimensions(
   srcWidth: number,
   srcHeight: number,
@@ -167,27 +67,12 @@ function computeDimensions(
   };
 }
 
-/**
- * Конвертировать Blob в File, сохранив имя оригинала.
- * Расширение имени файла заменяется на соответствующее outputFormat.
- *
- * @param blob         Blob из canvas.toBlob
- * @param originalName Оригинальное имя файла
- * @param outputFormat MIME-тип выходного изображения
- * @returns            File с обновлённым именем и типом
- */
 function blobToFile(blob: Blob, originalName: string, outputFormat: string): File {
   const ext = outputFormat === 'image/webp' ? 'webp' : 'jpg';
-  // Заменяем расширение оригинального имени
   const baseName = originalName.replace(/\.[^.]+$/, '');
-  const newName = `${baseName}.${ext}`;
-  return new File([blob], newName, { type: outputFormat });
+  return new File([blob], `${baseName}.${ext}`, { type: outputFormat });
 }
 
-/**
- * Обертка над canvas.toBlob в виде Promise.
- * Выбрасывает ошибку если браузер вернул null (Out of Memory или неподдерживаемый формат).
- */
 function canvasToBlobAsync(
   canvas: HTMLCanvasElement | OffscreenCanvas,
   outputFormat: string,
@@ -218,15 +103,8 @@ function canvasToBlobAsync(
   });
 }
 
-// ─── Core implementation: OffscreenCanvas path ────────────────────────────────
+// ─── OffscreenCanvas path (non-blocking) ────────────────────────────────────
 
-/**
- * Путь сжатия через OffscreenCanvas + createImageBitmap.
- * Доступен в Chrome 69+, Firefox 105+, Safari 16.4+.
- * Не блокирует main thread — createImageBitmap декодирует в фоне.
- *
- * @internal
- */
 async function compressViaOffscreenCanvas(
   file: File,
   width: number,
@@ -234,8 +112,6 @@ async function compressViaOffscreenCanvas(
   outputFormat: string,
   quality: number,
 ): Promise<Blob> {
-  // createImageBitmap декодирует HEIC/JPEG/PNG без блокировки main thread.
-  // Поддерживает File/Blob напрямую (без URL.createObjectURL).
   const bitmap = await createImageBitmap(file, {
     resizeWidth: width,
     resizeHeight: height,
@@ -252,19 +128,12 @@ async function compressViaOffscreenCanvas(
     ctx.drawImage(bitmap, 0, 0, width, height);
     return await canvasToBlobAsync(canvas, outputFormat, quality);
   } finally {
-    bitmap.close(); // Освобождаем VideoFrame/ImageBitmap memory
+    bitmap.close();
   }
 }
 
-// ─── Core implementation: HTMLCanvasElement fallback ──────────────────────────
+// ─── HTMLCanvas fallback ────────────────────────────────────────────────────
 
-/**
- * Fallback путь через HTMLCanvasElement + Image element.
- * Используется в Safari < 16.4 и браузерах без OffscreenCanvas.
- * Требует active DOM (не работает в Web Workers).
- *
- * @internal
- */
 function compressViaHTMLCanvas(
   objectUrl: string,
   width: number,
@@ -299,29 +168,12 @@ function compressViaHTMLCanvas(
       reject(new Error('Failed to decode image via HTMLImageElement'));
     };
 
-    // crossOrigin не нужен: objectUrl — blob: URI, same-origin by definition
     img.src = objectUrl;
   });
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
-/**
- * Сжать изображение на клиенте через Canvas API.
- *
- * Порядок операций:
- * 1. Проверка isCompressibleImage — GIF/SVG/WebP возвращаются без изменений.
- * 2. Проверка skipBelowBytes — маленькие файлы возвращаются без изменений.
- * 3. Попытка через OffscreenCanvas + createImageBitmap (non-blocking).
- * 4. Fallback на HTMLCanvasElement + Image если OffscreenCanvas недоступен.
- * 5. EXIF автоматически удаляется — Canvas рисует только пиксели.
- * 6. URL.revokeObjectURL вызывается в finally для предотвращения утечки памяти.
- *
- * @param file    Исходный файл изображения
- * @param options Опции сжатия (все поля опциональны)
- * @returns       CompressResult с файлом и метриками сжатия
- * @throws        Error если Canvas API полностью недоступен (SSR, etc.)
- */
 export async function compressImage(
   file: File,
   options?: CompressOptions,
@@ -334,52 +186,27 @@ export async function compressImage(
 
   const originalSize = file.size;
 
-  // ── 1. Несжимаемые форматы (GIF/SVG/WebP) ──────────────────────────────────
   if (!isCompressibleImage(file)) {
-    const skipResult: CompressResult = {
-      file,
-      originalSize,
-      compressedSize: originalSize,
-      // Размеры неизвестны без декодирования — возвращаем 0 для несжимаемых
-      width: 0,
-      height: 0,
-      wasCompressed: false,
-    };
-    return skipResult;
+    return { file, originalSize, compressedSize: originalSize, width: 0, height: 0, wasCompressed: false };
   }
 
-  // ── 2. Файл ниже порога — overhead сжатия превысит экономию ────────────────
   if (originalSize < skipBelowBytes) {
-    const skipResult: CompressResult = {
-      file,
-      originalSize,
-      compressedSize: originalSize,
-      width: 0,
-      height: 0,
-      wasCompressed: false,
-    };
-    return skipResult;
+    return { file, originalSize, compressedSize: originalSize, width: 0, height: 0, wasCompressed: false };
   }
 
-  // ── 3. Определить размеры через createImageBitmap (если доступен) ───────────
-  // createImageBitmap декодирует заголовок без полного рендера — получаем w/h дёшево.
   let srcWidth: number;
   let srcHeight: number;
   let useOffscreen = typeof OffscreenCanvas !== 'undefined';
   const supportsCreateImageBitmap = typeof createImageBitmap !== 'undefined';
-
-  // objectUrl создаётся только для fallback-пути; для OffscreenCanvas не нужен.
   let objectUrl: string | null = null;
 
   try {
     if (supportsCreateImageBitmap) {
-      // Декодируем только для получения размеров (без resize)
       const probe = await createImageBitmap(file);
       srcWidth = probe.width;
       srcHeight = probe.height;
       probe.close();
     } else {
-      // Fallback: загружаем через HTMLImageElement для получения размеров
       objectUrl = URL.createObjectURL(file);
       const dims = await new Promise<{ width: number; height: number }>((resolve, reject) => {
         const img = new Image();
@@ -389,33 +216,23 @@ export async function compressImage(
       });
       srcWidth = dims.width;
       srcHeight = dims.height;
-      // objectUrl понадобится дальше для HTMLCanvas fallback
     }
 
     const { width, height } = computeDimensions(srcWidth, srcHeight, maxWidth, maxHeight);
 
-    // ── 4. Сжатие ────────────────────────────────────────────────────────────
     let blob: Blob;
 
     if (useOffscreen && supportsCreateImageBitmap) {
       try {
         blob = await compressViaOffscreenCanvas(file, width, height, outputFormat, quality);
       } catch (offscreenErr) {
-        // OffscreenCanvas может упасть при нехватке памяти или CORS-проблемах
-        // Логируем деградацию и переходим на fallback
         logger.warn('[imageCompressor] OffscreenCanvas failed, falling back to HTMLCanvas', { error: offscreenErr });
         useOffscreen = false;
-
-        if (!objectUrl) {
-          objectUrl = URL.createObjectURL(file);
-        }
+        if (!objectUrl) objectUrl = URL.createObjectURL(file);
         blob = await compressViaHTMLCanvas(objectUrl, width, height, outputFormat, quality);
       }
     } else {
-      // HTMLCanvas fallback
-      if (!objectUrl) {
-        objectUrl = URL.createObjectURL(file);
-      }
+      if (!objectUrl) objectUrl = URL.createObjectURL(file);
       blob = await compressViaHTMLCanvas(objectUrl, width, height, outputFormat, quality);
     }
 
@@ -430,9 +247,6 @@ export async function compressImage(
       wasCompressed: true,
     };
   } finally {
-    // Всегда освобождаем объектный URL во избежание утечки памяти
-    if (objectUrl) {
-      URL.revokeObjectURL(objectUrl);
-    }
+    if (objectUrl) URL.revokeObjectURL(objectUrl);
   }
 }

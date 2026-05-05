@@ -1,8 +1,3 @@
-/**
- * Face Detection через TensorFlow.js face-landmarks-detection / MediaPipe.
- * Lazy-load модели. Fallback: определение по цвету кожи через Canvas.
- */
-
 import { logger } from '@/lib/logger';
 
 export interface BoundingBox {
@@ -96,6 +91,23 @@ export async function detectFaces(videoElement: HTMLVideoElement): Promise<Detec
   return detectFacesByColor(videoElement);
 }
 
+/**
+ * Skin-tone heuristic: approximates face region by detecting pixels
+ * in the typical skin color range (YCbCr-inspired RGB check).
+ */
+export function isSkinPixel(r: number, g: number, b: number): boolean {
+  return r > 95 && g > 40 && b > 20 && r > g && r > b && Math.abs(r - g) > 15;
+}
+
+export function computeSkinRatio(imageData: ImageData): number {
+  const data = imageData.data;
+  let count = 0;
+  for (let i = 0; i < data.length; i += 4) {
+    if (isSkinPixel(data[i], data[i + 1], data[i + 2])) count++;
+  }
+  return count / (imageData.width * imageData.height);
+}
+
 function detectFacesByColor(videoElement: HTMLVideoElement): DetectedFace[] {
   try {
     const canvas = document.createElement('canvas');
@@ -113,8 +125,7 @@ function detectFacesByColor(videoElement: HTMLVideoElement): DetectedFace[] {
     for (let y = 0; y < H; y++) {
       for (let x = 0; x < W; x++) {
         const i = (y * W + x) * 4;
-        const r = data[i], g = data[i + 1], b = data[i + 2];
-        if (r > 95 && g > 40 && b > 20 && r > g && r > b && Math.abs(r - g) > 15) {
+        if (isSkinPixel(data[i], data[i + 1], data[i + 2])) {
           minX = Math.min(minX, x);
           maxX = Math.max(maxX, x);
           minY = Math.min(minY, y);

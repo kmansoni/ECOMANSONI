@@ -1,22 +1,3 @@
-/**
- * @file src/components/camera/DualCamera.tsx
- * @description Dual Camera — одновременная съёмка с фронтальной и задней камеры.
- * Instagram-стиль: PiP (Picture-in-Picture) режим.
- *
- * Архитектура:
- * - getUserMedia x2: { facingMode: 'environment' } + { facingMode: 'user' }
- * - Canvas compositor: рисует оба потока на одном canvas
- * - PiP: маленький кружок (фронтальная) поверх большого (задняя)
- * - Swap: нажатие на PiP меняет камеры местами
- * - Запись: MediaRecorder захватывает canvas.captureStream()
- * - Fallback: если вторая камера недоступна → одиночная камера
- *
- * Ограничения:
- * - iOS Safari: одновременный доступ к двум камерам не поддерживается
- *   → fallback на последовательное переключение
- * - Android Chrome 94+: поддерживается через getDisplayMedia workaround
- */
-
 import { useState, useRef, useEffect, useCallback } from "react";
 import { FlipHorizontal, Circle, Square, SwitchCamera, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";

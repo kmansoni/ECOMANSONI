@@ -1,7 +1,4 @@
-/**
- * Автогенерация alt-text для изображений.
- * Использует контекстные правила и fallback на Vision API (заглушка).
- */
+import { computeSkinRatio } from '@/lib/ar/faceDetection';
 
 export interface AltTextContext {
   username?: string;
@@ -54,8 +51,6 @@ export function generateAltText(context: AltTextContext = {}): string {
 export async function analyzeImage(
   imageElement: HTMLImageElement
 ): Promise<AltTextContext> {
-  // TODO: интеграция с Vision API (Google Cloud Vision / Azure Computer Vision)
-  // Fallback: простой анализ через Canvas
   try {
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
@@ -65,20 +60,8 @@ export async function analyzeImage(
     canvas.height = 64;
     ctx.drawImage(imageElement, 0, 0, 64, 64);
 
-    // Простая эвристика: если много телесных оттенков → вероятно люди
     const imageData = ctx.getImageData(0, 0, 64, 64);
-    const data = imageData.data;
-    let skinPixels = 0;
-
-    for (let i = 0; i < data.length; i += 4) {
-      const r = data[i], g = data[i + 1], b = data[i + 2];
-      // Приближённый диапазон телесных тонов
-      if (r > 95 && g > 40 && b > 20 && r > g && r > b && Math.abs(r - g) > 15) {
-        skinPixels++;
-      }
-    }
-
-    const skinRatio = skinPixels / (64 * 64);
+    const skinRatio = computeSkinRatio(imageData);
     return { hasFaces: skinRatio > 0.1 };
   } catch {
     return {};
