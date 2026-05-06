@@ -1538,15 +1538,18 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       setRemoteScreenStream(null);
       return;
     }
-    const tracks = manager.getAllRemoteTracks().filter((track) => track.readyState === "live");
-    const audioTracks = tracks.filter((track) => track.kind === "audio");
-    const videoTracks = tracks.filter((track) => track.kind === "video");
+    // Get all remote tracks - include tracks that may not be "live" yet
+    // readyState changes are async; we want audio in the stream as soon as it arrives
+    const allTracks = manager.getAllRemoteTracks();
+    const audioTracks = allTracks.filter((track) => track.kind === "audio");
+    const videoTracks = allTracks.filter((track) => track.kind === "video");
     logger.debug('[VideoCallContext] rebuildRemoteStream', {
-      liveTracks: tracks.length,
-      trackKinds: tracks.map(t => t.kind).join(', '),
-      trackStates: tracks.map(t => `${t.kind}:${t.readyState}`).join(', '),
+      totalTracks: allTracks.length,
+      audioTracks: audioTracks.length,
+      videoTracks: videoTracks.length,
+      trackDetails: allTracks.map(t => `${t.kind}:${t.readyState}`).join(', '),
     });
-    if (tracks.length === 0) {
+    if (allTracks.length === 0) {
       setRemoteMediaStream(null);
       setRemoteScreenStream(null);
       return;
@@ -1554,6 +1557,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
 
     const primaryVideoTrack = videoTracks[0] ?? null;
     const screenVideoTrack = videoTracks[1] ?? null;
+    // Always include audio tracks in primary stream for call audio
     const primaryTracks = primaryVideoTrack ? [...audioTracks, primaryVideoTrack] : [...audioTracks];
 
     setRemoteMediaStream(primaryTracks.length > 0 ? new MediaStream(primaryTracks) : null);

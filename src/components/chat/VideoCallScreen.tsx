@@ -198,11 +198,23 @@ export function VideoCallScreen({
   const [callDuration, setCallDuration] = useState(0);
   const [isSpeakerOn, setIsSpeakerOn] = useState(true);
   const [isSelfMain, setIsSelfMain] = useState(true); // swap state
-  // Try to use setSinkId if available
+   
+  // Переключение аудио вывода: динамик (isSpeakerOn=true) использует default output
+  // isSpeakerOn=false = тихий режим (mute audio element)
   useEffect(() => {
-    if (audioOutRef.current && typeof audioOutRef.current.setSinkId === "function") {
-      const sinkId = isSpeakerOn ? "default" : "communications";
-      audioOutRef.current.setSinkId(sinkId).catch(() => { /* audio output not supported */ });
+    const audioEl = audioOutRef.current;
+    if (!audioEl) return;
+    
+    if (isSpeakerOn) {
+      audioEl.muted = false;
+      if (typeof audioEl.setSinkId === "function") {
+        audioEl.setSinkId("default").catch((err) => {
+          logger.debug("video-call-screen: setSinkId failed", { error: err.message });
+        });
+      }
+    } else {
+      // Тихий режим - выключаем звук
+      audioEl.muted = true;
     }
   }, [isSpeakerOn]);
 
@@ -217,9 +229,9 @@ export function VideoCallScreen({
   const isVideoCall = call ? call.call_type === "video" : true;
   const isConnected = isCallConnected(callState);
 
-  // Determine if we have remote audio tracks
-  const hasRemoteAudio = isConnected && remoteStream && remoteStream.getAudioTracks().length > 0;
-  
+// Determine if we have remote audio tracks - check tracks directly, not call state
+  const hasRemoteAudio = remoteStream && remoteStream.getAudioTracks().length > 0;
+   
   // Attach remote audio - always play remote audio when available (both video and audio calls)
   useEffect(() => {
     const audioElement = audioOutRef.current;
@@ -228,7 +240,8 @@ export function VideoCallScreen({
     if (remoteStream && hasRemoteAudio) {
       logger.debug('video-call-screen: attaching remote audio', {
         hasRemoteAudio,
-        tracks: remoteStream.getTracks().map(t => `${t.kind}:${t.readyState}`).join(", "),
+        audioTracks: remoteStream.getAudioTracks().map(t => `${t.kind}:${t.readyState}`).join(", "),
+        totalTracks: remoteStream.getTracks().length,
       });
       audioElement.srcObject = remoteStream;
       audioElement.play().catch(() => {
@@ -698,7 +711,7 @@ export function VideoCallScreen({
           <div className="flex items-center justify-around">
             <GlassControlButton
               icon={isSpeakerOn ? <Volume2 className="w-6 h-6" /> : <Headphones className="w-6 h-6" />}
-              label={isSpeakerOn ? "Динамик" : "Наушники"}
+              label={isSpeakerOn ? "Динамик включен" : "Динамик выключен"}
               isActive={isSpeakerOn}
               onClick={() => setIsSpeakerOn(!isSpeakerOn)}
             />
