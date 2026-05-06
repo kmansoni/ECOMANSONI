@@ -3,7 +3,6 @@ import { createRoot } from "react-dom/client";
 import { ThemeProvider } from "next-themes";
 import App from "./App.tsx";
 import "./index.css";
-import { initTelegramMiniApp } from "@/lib/telegramWebApp";
 import { initIceCacheAutoInvalidation } from "@/lib/webrtc-config";
 import { detectDevice } from "@/lib/platform/device";
 import { applyPlatformAttributes } from "@/hooks/usePlatform";
@@ -32,7 +31,6 @@ window.addEventListener("load", setAppHeight);
 window.addEventListener("resize", setAppHeight);
 window.visualViewport?.addEventListener("resize", setAppHeight);
 
-initTelegramMiniApp();
 initIceCacheAutoInvalidation();
 
 // ─── Platform bootstrap ────────────────────────────────────────────────────

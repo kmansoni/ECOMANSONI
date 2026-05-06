@@ -20,7 +20,7 @@ import type { Json } from "@/integrations/supabase/types";
 
 declare global {
   interface Window {
-    Telegram?: { WebApp?: unknown };
+    
   }
 }
 
@@ -671,11 +671,10 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
     isInitiator: boolean,
     forceRelay: boolean = false
   ) => {
-    // Force TURN relay on Telegram iOS to avoid frequent ICE failures in WebView/NAT environments.
+    // Force TURN relay for iOS to avoid frequent ICE failures in WebView/NAT environments.
     // On other platforms keep adaptive behavior: start with "all" and switch to relay on failure.
-    const isTelegramIOS = /iPhone|iPad/i.test(navigator.userAgent) &&
-      (window.Telegram?.WebApp || /Telegram/i.test(navigator.userAgent));
-    const shouldForceRelay = forceRelay || isTelegramIOS;
+    const isIOS = /iPhone|iPad/i.test(navigator.userAgent);
+    const shouldForceRelay = forceRelay || isIOS;
 
     log("Creating peer connection, initiator:", isInitiator, "forceRelay:", shouldForceRelay, "isTelegramIOS:", isTelegramIOS);
 
@@ -930,7 +929,6 @@ export function useVideoCall(options: UseVideoCallOptions = {}) {
             callType: call.call_type,
             platform: navigator.platform,
             ua: navigator.userAgent.slice(0, 100),
-            isTelegram: !!window.Telegram?.WebApp,
           },
         });
       } catch {
