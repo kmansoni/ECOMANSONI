@@ -1,3 +1,6 @@
+import type { GlassTokens } from "@/components/ui/glass/glassTokens";
+
+export type ThemeTokens = GlassTokens;
 export type Theme = "dark" | "light";
 export type Step = "phone" | "register" | "otp" | "qr" | "success";
 export type Gender = "male" | "female";
@@ -60,22 +63,3 @@ export interface GlassInputProps {
   inputMode?: React.HTMLAttributes<HTMLInputElement>["inputMode"];
   tokens: ThemeTokens;
 }
-
-export type ThemeTokens = {
-  isDark: boolean;
-  textPrimary: string;
-  textSecondary: string;
-  textMuted: string;
-  textFaint: string;
-  glassCard: string;
-  glassCardShadow: string;
-  pillSurface: string;
-  pillActive: string;
-  inputSurface: string;
-  inputFocusRing: string;
-  divider: string;
-  iconBtn: string;
-  progressDotActive: string;
-  progressDotIdle: string;
-  badgeChip: string;
-};

@@ -1,7 +1,9 @@
-import { Phone, PhoneOff, Video } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { motion } from "framer-motion";
+import { Phone, Video } from "lucide-react";
 import type { VideoCall } from "@/contexts/VideoCallContext";
-import { GradientAvatar } from "@/components/ui/gradient-avatar";
+import { GlassControlButton } from "@/components/ui/glass/GlassControlButton";
+import { CallBackground } from "@/components/ui/glass/CallBackground";
+import { GlassAvatarRing } from "@/components/ui/glass/GlassAvatarRing";
 
 interface IncomingVideoCallSheetProps {
   call: VideoCall;
@@ -15,74 +17,52 @@ export function IncomingVideoCallSheet({ call, onAccept, onDecline }: IncomingVi
   const isVideoCall = call.call_type === "video";
 
   return (
-    <div className="fixed inset-0 bg-gradient-to-b from-primary/90 to-primary z-[100] flex flex-col items-center justify-between py-16 safe-area-inset animate-in fade-in duration-300">
-      {/* Call type indicator */}
-      <div className="flex items-center gap-2 bg-white/20 px-4 py-2 rounded-full">
-        {isVideoCall ? (
-          <Video className="w-5 h-5 text-white" />
-        ) : (
-          <Phone className="w-5 h-5 text-white" />
-        )}
+    <motion.div
+      initial={{ opacity: 0, y: "100%" }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: "100%" }}
+      transition={{ type: "spring", stiffness: 300, damping: 30 }}
+      className="fixed inset-0 z-[100] flex flex-col items-center justify-between py-16 safe-area-inset"
+    >
+      <CallBackground />
+
+      <div className="relative z-10 flex items-center gap-2 bg-white/10 backdrop-blur-md px-4 py-2 rounded-full border border-white/20">
+        {isVideoCall ? <Video className="w-5 h-5 text-white" /> : <Phone className="w-5 h-5 text-white" />}
         <span className="text-white font-medium">
           {isVideoCall ? "Видеозвонок" : "Аудиозвонок"}
         </span>
       </div>
 
-      {/* Caller info */}
-      <div className="flex flex-col items-center gap-4">
-        {/* Avatar with pulse animation */}
-        <div className="relative">
-          <div className="absolute inset-0 bg-white/30 rounded-full animate-ping" />
-          <div className="absolute inset-[-8px] bg-white/20 rounded-full animate-pulse" />
-          <div className="w-32 h-32 rounded-full overflow-hidden border-4 border-white/50 relative z-10">
-            <GradientAvatar
-              name={callerName}
-              seed={call.caller_id}
-              avatarUrl={callerAvatar}
-              size="lg"
-              className="w-full h-full text-4xl border-0"
-            />
-          </div>
-        </div>
-
+      <div className="relative z-10 flex flex-col items-center gap-4">
+        <GlassAvatarRing
+          name={callerName}
+          seed={call.caller_id}
+          avatarUrl={callerAvatar}
+          size="xl"
+          isRinging
+          callState="incoming_ringing"
+        />
         <div className="text-center">
           <h2 className="text-2xl font-bold text-white">{callerName}</h2>
           <p className="text-white/80 mt-1">Входящий звонок...</p>
         </div>
       </div>
 
-      {/* Action buttons */}
-      <div className="flex items-center gap-12">
-        {/* Decline */}
-        <div className="flex flex-col items-center gap-2">
-          <Button
-            size="icon"
-            onClick={onDecline}
-            aria-label="Отклонить"
-            className="w-16 h-16 rounded-full bg-destructive hover:bg-destructive/90"
-          >
-            <PhoneOff className="w-7 h-7" />
-          </Button>
-          <span className="text-white/80 text-sm">Отклонить</span>
-        </div>
-
-        {/* Accept */}
-        <div className="flex flex-col items-center gap-2">
-          <Button
-            size="icon"
-            onClick={onAccept}
-            aria-label="Ответить"
-            className="w-16 h-16 rounded-full bg-green-500 hover:bg-green-600"
-          >
-            {isVideoCall ? (
-              <Video className="w-7 h-7" />
-            ) : (
-              <Phone className="w-7 h-7" />
-            )}
-          </Button>
-          <span className="text-white/80 text-sm">Ответить</span>
-        </div>
+      <div className="relative z-10 flex items-center gap-12">
+        <GlassControlButton
+          icon={<Phone className="w-7 h-7 rotate-[135deg]" />}
+          label="Отклонить"
+          variant="danger"
+          size="lg"
+          onClick={onDecline}
+        />
+        <GlassControlButton
+          icon={isVideoCall ? <Video className="w-7 h-7" /> : <Phone className="w-7 h-7" />}
+          label="Ответить"
+          size="lg"
+          onClick={onAccept}
+        />
       </div>
-    </div>
+    </motion.div>
   );
 }

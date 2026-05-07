@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { GradientAvatar } from "@/components/ui/gradient-avatar";
+import { GlassControlButton } from "@/components/ui/glass/GlassControlButton";
 import type { Participant } from "@/hooks/useGroupVideoCall";
 import { GroupCallInviteSheet } from "./GroupCallInviteSheet";
 import { CallReactionOverlay, ReactionPicker, type CallReaction } from "./CallReactionOverlay";
@@ -458,39 +459,39 @@ export function GroupVideoCallScreen({
         )}
       >
         {/* Мьют */}
-        <ControlButton
+        <GlassControlButton
           onClick={onToggleMute}
-          active={!isMuted}
+          isActive={!isMuted}
           icon={isMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
-          label={isMuted ? "Включить микрофон" : "Выключить микрофон"}
-          danger={isMuted}
+          label={isMuted ? "Вкл. микрофон" : "Выкл. микрофон"}
+          size="sm"
         />
 
         {/* Камера */}
-        <ControlButton
+        <GlassControlButton
           onClick={onToggleCamera}
-          active={isCameraOn}
+          isActive={isCameraOn}
           icon={isCameraOn ? <Video className="w-5 h-5" /> : <VideoOff className="w-5 h-5" />}
-          label={isCameraOn ? "Выключить камеру" : "Включить камеру"}
-          danger={!isCameraOn}
+          label={isCameraOn ? "Выкл. камеру" : "Вкл. камеру"}
+          size="sm"
         />
 
         {/* Демонстрация экрана */}
-        <ControlButton
+        <GlassControlButton
           onClick={onToggleScreenShare}
-          active={isScreenSharing}
+          isActive={isScreenSharing}
           icon={<Monitor className="w-5 h-5" />}
-          label={isScreenSharing ? "Остановить демонстрацию" : "Демонстрация экрана"}
-          accent={isScreenSharing}
+          label={isScreenSharing ? "Стоп демо" : "Демо экрана"}
+          size="sm"
         />
 
         {/* Поднять руку */}
-        <ControlButton
+        <GlassControlButton
           onClick={onRaiseHand}
-          active={isHandRaised}
+          isActive={isHandRaised}
           icon={<Hand className="w-5 h-5" />}
-          label={isHandRaised ? "Опустить руку" : "Поднять руку"}
-          accent={isHandRaised}
+          label={isHandRaised ? "Опустить" : "Поднять руку"}
+          size="sm"
         />
 
         {/* Реакции */}
@@ -502,31 +503,32 @@ export function GroupVideoCallScreen({
                 onClose={() => setShowReactionPicker(false)}
               />
             )}
-            <ControlButton
+            <GlassControlButton
               onClick={() => setShowReactionPicker(v => !v)}
-              active={showReactionPicker}
+              isActive={showReactionPicker}
               icon={<Smile className="w-5 h-5" />}
               label="Реакция"
+              size="sm"
             />
           </div>
         )}
 
         {/* Завершить */}
-        <button
+        <GlassControlButton
           onClick={onLeaveCall}
-          className="p-4 rounded-full bg-red-600 hover:bg-red-700 text-white transition-colors shadow-lg"
-          title="Завершить звонок"
-          aria-label="Завершить звонок"
-        >
-          <PhoneOff className="w-5 h-5" />
-        </button>
+          icon={<PhoneOff className="w-5 h-5" />}
+          label="Завершить"
+          variant="danger"
+          size="sm"
+        />
 
         {/* Добавить участника */}
-        <ControlButton
+        <GlassControlButton
           onClick={() => setShowInvite(true)}
-          active={false}
+          isActive={false}
           icon={<UserPlus className="w-5 h-5" />}
-          label="Добавить участника"
+          label="Добавить"
+          size="sm"
         />
       </div>
 
@@ -546,42 +548,3 @@ export function GroupVideoCallScreen({
   );
 }
 
-// ---------------------------------------------------------------------------
-// ControlButton util
-// ---------------------------------------------------------------------------
-
-function ControlButton({
-  onClick,
-  active,
-  icon,
-  label,
-  danger = false,
-  accent = false,
-}: {
-  onClick: () => void;
-  active: boolean;
-  icon: React.ReactNode;
-  label: string;
-  danger?: boolean;
-  accent?: boolean;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      title={label}
-      aria-label={label}
-      className={cn(
-        "p-3.5 rounded-full transition-colors shadow",
-        danger
-          ? "bg-red-600/80 hover:bg-red-600 text-white"
-          : accent
-          ? "bg-blue-600/80 hover:bg-blue-600 text-white"
-          : active
-          ? "bg-white/20 hover:bg-white/30 text-white"
-          : "bg-white/10 hover:bg-white/20 text-zinc-400",
-      )}
-    >
-      {icon}
-    </button>
-  );
-}

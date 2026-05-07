@@ -31,7 +31,22 @@ export type GlassTokens = {
   spaceLg: string;
   glassPrimaryGradient: string;
   glowBrand: string;
+  callControlActive: string;
+  callControlInactive: string;
+  callControlDanger: string;
+  callStateConnected: string;
+  callStateRinging: string;
+  callStateConnecting: string;
+  callStateFailed: string;
 };
+
+export const CALL_ACCENT_COLORS = {
+  navy: "#0066CC",
+  teal: "#00A3B4",
+  cyan: "#00b4d8",
+  emerald: "#00c896",
+  green: "#4fd080",
+} as const;
 
 export const BRAND_GRADIENT = "linear-gradient(135deg,#0096c7 0%,#00b4d8 40%,#00c896 100%)";
 export const BRAND_TEXT_GRADIENT = "linear-gradient(135deg,#00b4d8 0%,#00c896 50%,#4fd080 100%)";
@@ -52,7 +67,7 @@ export function useGlassTokens(theme: GlassTheme): GlassTokens {
     () => ({
       isDark,
       textPrimary: isDark ? "text-white" : "text-slate-900",
-      textSecondary: isDark ? "text-slate-400" : "text-slate-500",
+      textSecondary: isDark ? "text-white/70" : "text-slate-700",
       textMuted: isDark ? "text-slate-500" : "text-slate-400",
       textFaint: isDark ? "text-white/40" : "text-slate-400",
       glassCard: isDark
@@ -95,6 +110,17 @@ export function useGlassTokens(theme: GlassTheme): GlassTokens {
       glowBrand: isDark
         ? "shadow-[0_12px_40px_-8px_rgba(0,180,216,0.45)]"
         : "shadow-[0_12px_40px_-8px_rgba(0,180,216,0.25)]",
+      callControlActive: isDark
+        ? "bg-white/[0.18] border-white/30 shadow-[0_8px_24px_-4px_rgba(0,180,216,0.4)]"
+        : "bg-white/80 border-white/60 shadow-[0_8px_24px_-4px_rgba(0,180,216,0.2)]",
+      callControlInactive: isDark
+        ? "bg-white/[0.07] border-white/12"
+        : "bg-white/50 border-white/30",
+      callControlDanger: "linear-gradient(145deg, #ef4444 0%, #dc2626 100%)",
+      callStateConnected: "#4fd080",
+      callStateRinging: "#fbbf24",
+      callStateConnecting: "#00b4d8",
+      callStateFailed: "#ef4444",
     }),
     [isDark],
   );
