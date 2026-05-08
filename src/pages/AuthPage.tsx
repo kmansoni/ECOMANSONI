@@ -540,7 +540,7 @@ export function AuthPage() {
                       <div>
                         <div className="flex items-center gap-2 mb-3">
                           <Heart className={`w-4 h-4 ${tokens.isDark ? "text-cyan-300" : "text-teal-600"}`} />
-                          <span className={`text-sm font-semibold ${tokens.isDark ? "text-white/80" : "text-gray-700"}`}>
+                          <span className={`text-sm font-semibold ${tokens.isDark ? "text-white" : "text-gray-700"}`}>
                             Добрые мысли
                           </span>
                         </div>

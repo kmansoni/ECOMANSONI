@@ -103,7 +103,7 @@ export function KindTipsTicker({ tokens }: { tokens: ThemeTokens }) {
     <div className="min-h-[96px] sm:min-h-[108px]">
       <div
         className={`mb-2 flex items-center gap-2 text-[10px] uppercase tracking-[0.32em] ${
-          tokens.isDark ? "text-white/45" : "text-slate-500"
+          tokens.isDark ? "text-white/70" : "text-slate-500"
         }`}
       >
         <span
@@ -125,7 +125,7 @@ export function KindTipsTicker({ tokens }: { tokens: ThemeTokens }) {
             {tip.title}
             <span className={`ml-1 ${tokens.isDark ? "text-cyan-300/90" : "text-teal-600/90"}`}>·</span>
           </h1>
-          <p className={`mt-1.5 text-[13px] sm:text-sm leading-snug ${tokens.textMuted}`}>{tip.body}</p>
+          <p className={`mt-1.5 text-[13px] sm:text-sm leading-snug ${tokens.isDark ? "text-white/75" : tokens.textMuted}`}>{tip.body}</p>
         </motion.div>
       </AnimatePresence>
     </div>
