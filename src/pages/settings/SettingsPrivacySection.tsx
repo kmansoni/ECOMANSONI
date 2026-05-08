@@ -10,8 +10,7 @@ import { PrivacySecurityCenter } from "@/components/settings/PrivacySecurityCent
 import { SettingsHeader } from "./helpers";
 import type { SectionProps } from "./types";
 import { useCallback, useEffect, useState } from "react";
-import { Download, CheckCircle2, Mail, Heart, FileText } from "lucide-react";
-import { KindTipsTicker } from "@/pages/auth/components/KindTipsTicker";
+import { Download, CheckCircle2, Mail, FileText } from "lucide-react";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -333,22 +332,6 @@ export function SettingsPrivacySection({ isDark, currentScreen, onNavigate, onBa
         />
         {currentScreen === "privacy" && (
           <>
-            <div className="px-4 pb-4 mt-4">
-              <div className={cn(
-                "backdrop-blur-xl rounded-2xl border p-4",
-                isDark
-                  ? "bg-white/[0.04] border-white/[0.08]"
-                  : "bg-white/40 border-white/20"
-              )}>
-                <div className="flex items-center gap-2 mb-3">
-                  <Heart className={cn("w-4 h-4", isDark ? "text-cyan-300" : "text-teal-600")} />
-                  <span className={cn("text-sm font-semibold", isDark ? "text-white/80" : "text-gray-700")}>
-                    Добрые мысли
-                  </span>
-                </div>
-                <KindTipsTicker tokens={{ isDark, textPrimary: isDark ? "text-white" : "text-gray-900", textMuted: isDark ? "text-white/60" : "text-gray-500" }} />
-              </div>
-            </div>
             <div className="px-4 pb-4 mt-4">
               <Link
                 to="/legal/privacy"
