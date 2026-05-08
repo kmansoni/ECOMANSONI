@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { useThemeStore } from "@/hooks/useThemeStore";
+import { useTheme } from "@/pages/auth/theme";
 import { cn } from "@/lib/utils";
 import { KindTipsTicker } from "@/pages/auth/components/KindTipsTicker";
 import {
@@ -136,7 +136,8 @@ function SectionCard({ icon: Icon, title, items, isDark }: {
 }
 
 export default function PrivacyPolicyPage() {
-  const isDark = useThemeStore((s) => s.theme) === "dark";
+  const { theme } = useTheme("dark");
+  const isDark = theme === "dark";
   const tokens = {
     isDark,
     textPrimary: isDark ? "text-white" : "text-gray-900",
