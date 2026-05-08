@@ -85,13 +85,22 @@ export class EmailDb {
     query?: string,
     allow404 = false,
   ): Promise<T> {
-    const response = await fetch(this.buildUrl(path, query), {
-      ...init,
-      headers: {
-        ...this.postgrestHeaders(),
-        ...(init.headers ?? {}),
-      },
-    });
+    const url = this.buildUrl(path, query);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15_000);
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        ...init,
+        headers: {
+          ...this.postgrestHeaders(),
+          ...(init.headers ?? {}),
+        },
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
 
     if (allow404 && response.status === 404) {
       return null as T;

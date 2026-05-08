@@ -161,28 +161,35 @@ export const MapLibre3D = memo(function MapLibre3D({
       maxPitch: 70,
     });
 
-    const applyManagedLayers = () => {
-      if (!map.isStyleLoaded()) return;
+     const applyManagedLayers = () => {
+       if (!map.isStyleLoaded()) return;
 
-      try {
-        applyMapThemeEnhancements(map, mapStyle, languageCode);
+       try {
+         // OpenFreeMap styles (dark/bright/liberty/positron) already include
+         // full road rendering, labels, railways, etc. We only apply custom
+         // layers when using MapTiler with a bare custom style.
+         const hasMapTiler = !!(import.meta as unknown as Record<string, Record<string, string>>).env?.VITE_MAPTILER_KEY;
 
-        if (navSettings.show3DBuildings) {
-          add3DBuildings(map, mapStyle);
-        }
-        addEnhancedRoadLayers(map, navSettings.labelSizeMultiplier, navSettings.highContrastLabels, mapStyle, languageCode);
-        ensureNavigationLayers(map, {
-          labelSizeMultiplier: navSettings.labelSizeMultiplier,
-          highContrast: navSettings.highContrastLabels,
-          theme: mapStyle,
-        });
-        if (mapStyle === 'terrain' || mapStyle === 'dark') {
-          addTerrain(map);
-        }
-      } catch (error) {
-        logger.warn('[MapLibre3D] applyManagedLayers failed', { error, mapStyle });
-      }
-    };
+         if (hasMapTiler) {
+           applyMapThemeEnhancements(map, mapStyle, languageCode);
+           addEnhancedRoadLayers(map, navSettings.labelSizeMultiplier, navSettings.highContrastLabels, mapStyle, languageCode);
+           ensureNavigationLayers(map, {
+             labelSizeMultiplier: navSettings.labelSizeMultiplier,
+             highContrast: navSettings.highContrastLabels,
+             theme: mapStyle,
+           });
+         }
+
+         if (navSettings.show3DBuildings) {
+           add3DBuildings(map, mapStyle);
+         }
+         if (mapStyle === 'terrain' || mapStyle === 'dark') {
+           addTerrain(map);
+         }
+       } catch (error) {
+         logger.warn('[MapLibre3D] applyManagedLayers failed', { error, mapStyle });
+       }
+     };
 
     map.on('load', () => {
       applyManagedLayers();
@@ -300,17 +307,7 @@ export const MapLibre3D = memo(function MapLibre3D({
         features: features as GeoJSON.Feature[]
       };
 
-      if (!map.getSource('survey-scans-source')) {
-        map.addSource('survey-scans-source', {
-          type: 'geojson',
-          data: geojson
-        });
-
-        map.addLayer({
-          id: 'survey-scans-fill',
-          type: 'fill',
-          source: 'survey-scans-source',
-          paint: {
+const fillPaint: mapboxgl.FillPaint = {
             'fill-color': [
               'case',
               ['==', ['get', 'status'], 'approved'], 'rgba(34, 197, 94, 0.6)',
@@ -324,9 +321,22 @@ export const MapLibre3D = memo(function MapLibre3D({
               ['==', ['get', 'status'], 'proposed'], 'rgb(251, 191, 36)',
               'rgb(107, 114, 128)'
             ],
-            'fill-outline-width': 2
-          }
-        });
+            'fill-outline-width': 2,
+            'fill-antialias': true
+          };
+
+          if (!map.getSource('survey-scans-source')) {
+            map.addSource('survey-scans-source', {
+              type: 'geojson',
+              data: geojson
+            });
+
+            map.addLayer({
+              id: 'survey-scans-fill',
+              type: 'fill',
+              source: 'survey-scans-source',
+              paint: fillPaint
+            });
 
         map.addLayer({
           id: 'survey-scans-user-border',
@@ -554,47 +564,56 @@ export const MapLibre3D = memo(function MapLibre3D({
 
       if (isNavigating || routeSegments.length === 0) return;
 
-      routeSegments.forEach((segment, i) => {
-        if (segment.points.length < 2) return;
+       // Helper function to convert width in meters to zoom-dependent pixel width
+       const metersToPixels = (meters: number) => [
+         '/',
+         ['*', meters, 156543.033928], // meters per pixel at equator zoom 0
+         ['^', 2, ['zoom']],
+       ];
 
-        const coords = segment.points.map(p => [p.lng, p.lat] as [number, number]);
-        const sourceId = `route-seg-${i}`;
-        const layerId = `route-seg-layer-${i}`;
-        const outlineId = `route-seg-outline-${i}`;
+       routeSegments.forEach((segment, i) => {
+         if (segment.points.length < 2) return;
 
-        map.addSource(sourceId, {
-          type: 'geojson',
-          data: {
-            type: 'Feature',
-            properties: {},
-            geometry: { type: 'LineString', coordinates: coords },
-          },
-        });
+         const coords = segment.points.map(p => [p.lng, p.lat] as [number, number]);
+         const sourceId = `route-seg-${i}`;
+         const layerId = `route-seg-layer-${i}`;
+         const outlineId = `route-seg-outline-${i}`;
 
-        map.addLayer({
-          id: outlineId,
-          type: 'line',
-          source: sourceId,
-          layout: { 'line-join': 'round', 'line-cap': 'round' },
-          paint: {
-            'line-color': '#000000',
-            'line-width': 10,
-            'line-opacity': 0.4,
-          },
-        });
+         map.addSource(sourceId, {
+           type: 'geojson',
+           data: {
+             type: 'Feature',
+             properties: {},
+             geometry: { type: 'LineString', coordinates: coords },
+           },
+         });
 
-        map.addLayer({
-          id: layerId,
-          type: 'line',
-          source: sourceId,
-          layout: { 'line-join': 'round', 'line-cap': 'round' },
-          paint: {
-            'line-color': TRAFFIC_COLORS[segment.traffic] || TRAFFIC_COLORS.unknown,
-            'line-width': 7,
-            'line-opacity': 0.9,
-          },
-        });
-      });
+         // Outline layer (wider, dark background for contrast)
+         map.addLayer({
+           id: outlineId,
+           type: 'line',
+           source: sourceId,
+           layout: { 'line-join': 'round', 'line-cap': 'round' },
+           paint: {
+             'line-color': '#000000',
+             'line-width': metersToPixels(10), // 10 meters outline
+             'line-opacity': 0.4,
+           },
+         });
+
+         // Main route layer (colored by traffic)
+         map.addLayer({
+           id: layerId,
+           type: 'line',
+           source: sourceId,
+           layout: { 'line-join': 'round', 'line-cap': 'round' },
+           paint: {
+             'line-color': TRAFFIC_COLORS[segment.traffic] || TRAFFIC_COLORS.unknown,
+             'line-width': metersToPixels(7), // 7 meters width
+             'line-opacity': 0.9,
+           },
+         });
+       });
 
       if (!isNavigating && routeSegments.length > 0) {
         const allPoints = routeSegments.flatMap(s => s.points);
@@ -899,125 +918,119 @@ function isUsableMap(map: maplibregl.Map | null | undefined): map is maplibregl.
 }
 
 function add3DBuildings(map: maplibregl.Map | null | undefined, mapStyle: MapStyle) {
-  if (!isUsableMap(map)) return;
-  const layers = map.getStyle()?.layers;
-  if (!layers) return;
-  const palette = getProductionPalette(mapStyle);
+   if (!isUsableMap(map)) return;
+   const style = map.getStyle();
+   if (!style?.sources) return;
+   const palette = getProductionPalette(mapStyle);
 
-  // Find the first label layer to insert buildings underneath
-  let labelLayerId: string | undefined;
-  for (const layer of layers) {
-    if (layer.type === 'symbol' && (layer as any).layout?.['text-field']) {
-      labelLayerId = layer.id;
-      break;
-    }
-  }
+   // Find the first label layer to insert buildings underneath
+   let labelLayerId: string | undefined;
+   const layers = style.layers;
+   if (layers) {
+     for (const layer of layers) {
+       if (layer.type === 'symbol' && (layer as any).layout?.['text-field']) {
+         labelLayerId = layer.id;
+         break;
+       }
+     }
+   }
 
-  // Check if building source exists
-  const sources = map.getStyle()?.sources;
-  const hasBuildings = sources && Object.keys(sources).some(k =>
-    k.includes('carto') || k.includes('openmaptiles') || k === 'composite'
-  );
+   // Find vector source (same logic as in addEnhancedRoadLayers)
+   const sourceId = Object.keys(style.sources).find(k =>
+     k.includes('openmaptiles') || k.includes('carto') || k.includes('maptiler') || k === 'composite' || k.includes('osm')
+   );
+   if (!sourceId) return;
 
-  if (!hasBuildings) return;
+   try {
+     if (map.getLayer('3d-buildings')) {
+       map.removeLayer('3d-buildings');
+     }
 
-  // Find the correct source name
-  const sourceId = Object.keys(sources!).find(k =>
-    k.includes('carto') || k.includes('openmaptiles') || k === 'composite'
-  );
+     map.addLayer(
+       {
+         id: '3d-buildings',
+         source: sourceId,
+         'source-layer': 'building',
+         type: 'fill-extrusion',
+         minzoom: 14,
+         paint: {
+           'fill-extrusion-color': getBuildingExtrusionColorExpression(mapStyle),
+           'fill-extrusion-height': ['coalesce', ['get', 'render_height'], ['get', 'height'], 10],
+           'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], 0],
+           'fill-extrusion-opacity': mapStyle === 'satellite' || mapStyle === 'hybrid' ? 0.45 : 0.82,
+           'fill-extrusion-vertical-gradient': true,
+         },
+       },
+       labelLayerId,
+     );
 
-  if (!sourceId) return;
+     if (map.getLayer('3d-landmark-buildings')) {
+       map.removeLayer('3d-landmark-buildings');
+     }
 
-  try {
-    if (map.getLayer('3d-buildings')) {
-      map.removeLayer('3d-buildings');
-    }
+     map.addLayer(
+       {
+         id: '3d-landmark-buildings',
+         source: sourceId,
+         'source-layer': 'building',
+         type: 'fill-extrusion',
+         minzoom: 14,
+         filter: ['>=', ['coalesce', ['get', 'render_height'], ['get', 'height'], 0], 90],
+         paint: {
+           'fill-extrusion-color': palette.landmarkFill,
+           'fill-extrusion-height': ['*', ['coalesce', ['get', 'render_height'], ['get', 'height'], 20], 1.08],
+           'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], 0],
+           'fill-extrusion-opacity': mapStyle === 'satellite' || mapStyle === 'hybrid' ? 0.66 : 0.92,
+           'fill-extrusion-vertical-gradient': true,
+         },
+       },
+       labelLayerId,
+     );
 
-    map.addLayer(
-      {
-        id: '3d-buildings',
-        source: sourceId,
-        'source-layer': 'building',
-        type: 'fill-extrusion',
-        minzoom: 14,
-        paint: {
-          'fill-extrusion-color': getBuildingExtrusionColorExpression(mapStyle),
-          'fill-extrusion-height': ['coalesce', ['get', 'render_height'], ['get', 'height'], 10],
-          'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], 0],
-          'fill-extrusion-opacity': mapStyle === 'satellite' || mapStyle === 'hybrid' ? 0.45 : 0.82,
-          'fill-extrusion-vertical-gradient': true,
-        },
-      },
-      labelLayerId,
-    );
+     if (map.getLayer('3d-buildings-outline')) {
+       map.removeLayer('3d-buildings-outline');
+     }
 
-    if (map.getLayer('3d-landmark-buildings')) {
-      map.removeLayer('3d-landmark-buildings');
-    }
+     map.addLayer(
+       {
+         id: '3d-buildings-outline',
+         source: sourceId,
+         'source-layer': 'building',
+         type: 'line',
+         minzoom: 14,
+         paint: {
+           'line-color': palette.buildingLine,
+           'line-width': ['interpolate', ['linear'], ['zoom'], 14, 0.5, 18, 1.5],
+           'line-opacity': 0.65,
+         },
+       },
+       labelLayerId,
+     );
 
-    map.addLayer(
-      {
-        id: '3d-landmark-buildings',
-        source: sourceId,
-        'source-layer': 'building',
-        type: 'fill-extrusion',
-        minzoom: 14,
-        filter: ['>=', ['coalesce', ['get', 'render_height'], ['get', 'height'], 0], 90],
-        paint: {
-          'fill-extrusion-color': palette.landmarkFill,
-          'fill-extrusion-height': ['*', ['coalesce', ['get', 'render_height'], ['get', 'height'], 20], 1.08],
-          'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], 0],
-          'fill-extrusion-opacity': mapStyle === 'satellite' || mapStyle === 'hybrid' ? 0.66 : 0.92,
-          'fill-extrusion-vertical-gradient': true,
-        },
-      },
-      labelLayerId,
-    );
+     if (map.getLayer('3d-landmark-outline')) {
+       map.removeLayer('3d-landmark-outline');
+     }
 
-    if (map.getLayer('3d-buildings-outline')) {
-      map.removeLayer('3d-buildings-outline');
-    }
-
-    map.addLayer(
-      {
-        id: '3d-buildings-outline',
-        source: sourceId,
-        'source-layer': 'building',
-        type: 'line',
-        minzoom: 14,
-        paint: {
-          'line-color': palette.buildingLine,
-          'line-width': ['interpolate', ['linear'], ['zoom'], 14, 0.5, 18, 1.5],
-          'line-opacity': 0.65,
-        },
-      },
-      labelLayerId,
-    );
-
-    if (map.getLayer('3d-landmark-outline')) {
-      map.removeLayer('3d-landmark-outline');
-    }
-
-    map.addLayer(
-      {
-        id: '3d-landmark-outline',
-        source: sourceId,
-        'source-layer': 'building',
-        type: 'line',
-        minzoom: 14,
-        filter: ['>=', ['coalesce', ['get', 'render_height'], ['get', 'height'], 0], 90],
-        paint: {
-          'line-color': palette.landmarkLine,
-          'line-width': ['interpolate', ['linear'], ['zoom'], 14, 0.8, 18, 2.4],
-          'line-opacity': 0.82,
-        },
-      },
-      labelLayerId,
-    );
-  } catch (e) {
-    logger.warn('[MapLibre3D] Could not add 3D buildings', { error: e });
-  }
-}
+     map.addLayer(
+       {
+         id: '3d-landmark-outline',
+         source: sourceId,
+         'source-layer': 'building',
+         type: 'line',
+         minzoom: 14,
+         filter: ['>=', ['coalesce', ['get', 'render_height'], ['get', 'height'], 0], 90],
+         paint: {
+           'line-color': palette.landmarkLine,
+           'line-width': ['interpolate', ['linear'], ['zoom'], 14, 0.8, 18, 2.4],
+           'line-opacity': 0.82,
+         },
+       },
+       labelLayerId,
+     );
+   } catch (e) {
+     logger.warn('[MapLibre3D] Could not add 3D buildings', { error: e });
+   }
+ }
 
 function removeRouteLayers(map: maplibregl.Map | null | undefined) {
   if (!isUsableMap(map)) return;
@@ -1282,28 +1295,73 @@ function applySmoothRotation(element: HTMLDivElement, nextHeading: number) {
 }
 
 function getVehicleVisualState(maneuver: Maneuver | null | undefined) {
-  if (!maneuver) return 'straight';
+   if (!maneuver) return 'straight';
 
-  switch (maneuver.type) {
-    case 'turn-left':
-    case 'turn-slight-left':
-    case 'turn-sharp-left':
-      return 'left';
-    case 'turn-right':
-    case 'turn-slight-right':
-    case 'turn-sharp-right':
-      return 'right';
-    case 'merge-left':
-    case 'merge-right':
-      return 'merge';
-    case 'ramp-left':
-    case 'ramp-right':
-      return 'ramp';
-    case 'arrive':
-      return 'arrival';
-    default:
-      return 'straight';
-  }
+   switch (maneuver.type) {
+     case 'turn-left':
+     case 'turn-slight-left':
+     case 'turn-sharp-left':
+       return 'left';
+     case 'turn-right':
+     case 'turn-slight-right':
+     case 'turn-sharp-right':
+       return 'right';
+     case 'merge-left':
+     case 'merge-right':
+       return 'merge';
+     case 'ramp-left':
+     case 'ramp-right':
+       return 'ramp';
+     case 'arrive':
+       return 'arrival';
+     default:
+       return 'straight';
+   }
+}
+
+/** Add lane markings based on vector tile lanes property */
+function addLaneLayers(map: maplibregl.Map | null | undefined, mapStyle: MapStyle) {
+   if (!isUsableMap(map)) return;
+   const style = map.getStyle();
+   if (!style?.sources) return;
+
+   const sourceId = Object.keys(style.sources).find(k =>
+     k.includes('openmaptiles') || k.includes('carto') || k.includes('maptiler') || k === 'composite' || k.includes('osm')
+   );
+   if (!sourceId) return;
+
+   const isDark = mapStyle === 'dark' || mapStyle === 'darkNolabels';
+   const lineColor = isDark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.25)';
+
+   try {
+     ['lane-dashed', 'lane-solid-edge'].forEach(id => {
+       if (map.getLayer(id)) {
+         try { map.removeLayer(id); } catch {}
+       }
+     });
+
+     // Only show lane dividers on major roads at high zoom
+     map.addLayer({
+       id: 'lane-dashed',
+       type: 'line',
+       source: sourceId,
+       'source-layer': 'transportation',
+       minzoom: 15,
+       filter: [
+         'all',
+         ['>=', ['coalesce', ['get', 'lanes'], 0], 3],
+         ['match', ['get', 'class'], ['motorway', 'trunk', 'primary', 'secondary'], true, false]
+       ],
+       layout: { 'line-join': 'round', 'line-cap': 'butt' },
+       paint: {
+         'line-color': lineColor,
+         'line-width': ['interpolate', ['linear'], ['zoom'], 15, 0.3, 18, 1],
+         'line-dasharray': [3, 4]
+       }
+     });
+   } catch (e) {
+     logger.warn('[MapLibre3D] Could not add lane layers', { error: e });
+   }
 }
 
 function getVehicleGlow(state: ReturnType<typeof getVehicleVisualState>) {

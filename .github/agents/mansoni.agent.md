@@ -43,16 +43,16 @@ skills:
   - .github/skills/realtime-architect/SKILL.md
   - .github/skills/idempotency-patterns/SKILL.md
   - .github/skills/retry-strategy/SKILL.md
-- .github/skills/circuit-breaker/SKILL.md
-- .github/skills/offline-navigation/SKILL.md
-- .github/skills/voice-assistant/SKILL.md
-- .github/skills/traffic-provider/SKILL.md
-- .github/skills/vitest-mastery/SKILL.md
-- .github/skills/playwright-mastery/SKILL.md
-- .github/skills/capacitor-offline/SKILL.md
-- .github/skills/prompt-engineering/SKILL.md
-- .github/skills/state-machine-designer/SKILL.md
-- .github/skills/owasp-top10-scanner/SKILL.md
+  - .github/skills/circuit-breaker/SKILL.md
+  - .github/skills/offline-navigation/SKILL.md
+  - .github/skills/voice-assistant/SKILL.md
+  - .github/skills/traffic-provider/SKILL.md
+  - .github/skills/vitest-mastery/SKILL.md
+  - .github/skills/playwright-mastery/SKILL.md
+  - .github/skills/capacitor-offline/SKILL.md
+  - .github/skills/prompt-engineering/SKILL.md
+  - .github/skills/state-machine-designer/SKILL.md
+  - .github/skills/owasp-top10-scanner/SKILL.md
   - .github/skills/e2ee-audit/SKILL.md
   - .github/skills/dependency-audit/SKILL.md
   - .github/skills/bundle-analyzer/SKILL.md
@@ -61,6 +61,32 @@ skills:
   - .github/skills/core-web-vitals-optimizer/SKILL.md
   - .github/skills/deep-audit/SKILL.md
   - .github/skills/rug-quality-gate/SKILL.md
+  - .kilo/skills/a11y/SKILL.md
+  - .kilo/skills/competitive-ads-extractor/SKILL.md
+  - .kilo/skills/compliance/SKILL.md
+  - .kilo/skills/content-moderation/SKILL.md
+  - .kilo/skills/content-research-writer/SKILL.md
+  - .kilo/skills/crisis-mesh/SKILL.md
+  - .kilo/skills/database-performance/SKILL.md
+  - .kilo/skills/dev-browser-hidden/SKILL.md
+  - .kilo/skills/domain-name-brainstormer/SKILL.md
+  - .kilo/skills/frontend-design/SKILL.md
+  - .kilo/skills/image-enhancer/SKILL.md
+  - .kilo/skills/internal-comms/SKILL.md
+  - .kilo/skills/lead-research-assistant/SKILL.md
+  - .kilo/skills/llm-security/SKILL.md
+  - .kilo/skills/mcp-builder/SKILL.md
+  - .kilo/skills/meeting-insights-analyzer/SKILL.md
+  - .kilo/skills/mobile-native/SKILL.md
+  - .kilo/skills/multi-account/SKILL.md
+  - .kilo/skills/operation-pangolin/SKILL.md
+  - .kilo/skills/performance-budget/SKILL.md
+  - .kilo/skills/replication-crdt/SKILL.md
+  - .kilo/skills/slack-gif-creator/SKILL.md
+  - .kilo/skills/storage-management/SKILL.md
+  - .kilo/skills/theme-factory/SKILL.md
+  - .kilo/skills/time-handling/SKILL.md
+  - .kilo/skills/webrtc-sfu/SKILL.md
 ---
 
 # Mansoni — Main Entry Point (Core Default)

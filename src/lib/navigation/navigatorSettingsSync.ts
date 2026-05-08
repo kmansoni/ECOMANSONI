@@ -39,6 +39,9 @@ interface NavigatorSettingsRow {
   show_speed_cameras: boolean;
   show_poi: boolean;
   show_panorama: boolean;
+  show_traffic_flow_overlay: boolean;
+  show_transit_overlay: boolean;
+  show_map_edits: boolean;
   label_size_multiplier: number;
   high_contrast_labels: boolean;
   updated_at: string;
@@ -69,6 +72,9 @@ function rowToState(row: NavigatorSettingsRow) {
     showSpeedCameras: row.show_speed_cameras,
     showPOI: row.show_poi,
     showPanorama: row.show_panorama,
+    showTrafficFlowOverlay: row.show_traffic_flow_overlay,
+    showTransitOverlay: row.show_transit_overlay,
+    showMapEdits: row.show_map_edits,
     labelSizeMultiplier: row.label_size_multiplier,
     highContrastLabels: row.high_contrast_labels,
   };
@@ -100,6 +106,9 @@ function stateToPayload() {
     show_speed_cameras: s.showSpeedCameras,
     show_poi: s.showPOI,
     show_panorama: s.showPanorama,
+    show_traffic_flow_overlay: s.showTrafficFlowOverlay,
+    show_transit_overlay: s.showTransitOverlay,
+    show_map_edits: s.showMapEdits,
     label_size_multiplier: s.labelSizeMultiplier,
     high_contrast_labels: s.highContrastLabels,
   };

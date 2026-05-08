@@ -76,7 +76,7 @@ export function usePostLikes(postId: string | null): UsePostLikesResult {
         const userIds = rows.map(r => r.user_id);
         const { data: profilesData, error: profilesError } = await dbLoose
           .from("profiles")
-          .select("user_id, username, display_name, avatar_url, is_verified")
+          .select("user_id, username, display_name, avatar_url, verified")
           .in("user_id", userIds);
         if (profilesError) throw profilesError;
 
@@ -85,7 +85,7 @@ export function usePostLikes(postId: string | null): UsePostLikesResult {
           username: string | null;
           display_name: string | null;
           avatar_url: string | null;
-          is_verified: boolean | null;
+          verified: boolean | null;
         };
         const profileMap = new Map<string, ProfileRow>();
         for (const p of (profilesData ?? []) as ProfileRow[]) {
@@ -101,7 +101,7 @@ export function usePostLikes(postId: string | null): UsePostLikesResult {
               username: p.username ?? `u_${r.user_id.slice(0, 8)}`,
               displayName: p.display_name ?? p.username ?? "Пользователь",
               avatarUrl: p.avatar_url,
-              isVerified: p.is_verified ?? false,
+              isVerified: p.verified ?? false,
               likedAt: r.created_at,
             };
           });

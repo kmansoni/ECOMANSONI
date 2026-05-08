@@ -386,7 +386,7 @@ export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function Bottom
               minHeight: `${BOTTOM_NAV_BAR_HEIGHT_PX}px`,
             }}
           >
-            {/* Render all items except the last one */}
+            {/* Render all items except the last one, with create button in the middle */}
             {navItems.slice(0, -1).map((item) => {
               // For action items (not real routes), use button
               if (item.isAction) {
@@ -488,7 +488,22 @@ export const BottomNav = forwardRef<HTMLElement, BottomNavProps>(function Bottom
             })}
           </nav>
 
-
+          {/* Create button */}
+          {onCreateClick && (
+            <button
+              className={cn(
+                "flex items-center justify-center",
+                "w-11 h-11 rounded-full",
+                "bg-gradient-to-br from-cyan-400 to-blue-500",
+                "shadow-[0_0_12px_rgba(0,180,216,0.4)]",
+                "transition-transform duration-150 active:scale-90"
+              )}
+              style={{ WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation' }}
+              onClick={onCreateClick}
+            >
+              <span className="text-white text-xl leading-none font-light">+</span>
+            </button>
+          )}
 
           {/* Separate circular button for the last item (Profile) */}
           {(() => {

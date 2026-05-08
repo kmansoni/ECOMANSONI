@@ -516,16 +516,6 @@ export function BookmarkIcon(props: AppIconProps) {
             fill={active ? gradient : "none"}
             stroke={active ? "transparent" : "currentColor"}
           />
-          {active && !reduced && (
-            <motion.path
-              d="M9 8h6M9 12h4"
-              stroke="#fff"
-              strokeWidth={1.6}
-              initial={{ pathLength: 0, opacity: 0 }}
-              animate={{ pathLength: 1, opacity: 0.9 }}
-              transition={{ duration: 0.35, delay: 0.1 }}
-            />
-          )}
         </motion.g>
       )}
     />

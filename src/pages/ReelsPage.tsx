@@ -137,7 +137,7 @@ function mapToFeedItem(reel: Reel, index: number): ReelFeedItem {
 function ReelsSkeletonScreen(): JSX.Element {
   return (
     <div
-      className="fixed inset-0 z-50 bg-black flex flex-col items-center justify-center"
+      className="fixed inset-0 md:absolute md:inset-0 z-50 bg-black flex flex-col items-center justify-center"
       aria-label="Загрузка Reels"
     >
       {/* Пульсирующий placeholder на весь экран */}
@@ -164,7 +164,7 @@ interface ErrorScreenProps {
 
 function ReelsErrorScreen({ onRetry }: ErrorScreenProps): JSX.Element {
   return (
-    <div className="fixed inset-0 z-50 bg-black flex flex-col items-center justify-center gap-6 px-6">
+    <div className="fixed inset-0 md:absolute md:inset-0 z-50 bg-black flex flex-col items-center justify-center gap-6 px-6">
       <div className="text-6xl" role="img" aria-label="Ошибка">⚠️</div>
       <p className="text-white text-lg font-medium text-center">
         Не удалось загрузить Reels
@@ -184,7 +184,7 @@ function ReelsErrorScreen({ onRetry }: ErrorScreenProps): JSX.Element {
 
 function ReelsEmptyScreen(): JSX.Element {
   return (
-    <div className="fixed inset-0 z-50 bg-black flex flex-col items-center justify-center gap-4 px-8">
+    <div className="fixed inset-0 md:absolute md:inset-0 z-50 bg-black flex flex-col items-center justify-center gap-4 px-8">
       <div className="text-7xl" role="img" aria-label="Нет контента">🎬</div>
       <p className="text-white text-xl font-semibold text-center">
         Нет Reels для показа
@@ -532,7 +532,7 @@ export default function ReelsPage(): JSX.Element {
 
   return (
     <div
-      className="fixed inset-0 bg-black overflow-hidden z-50"
+      className="fixed inset-0 md:absolute md:inset-0 bg-black overflow-hidden z-50"
       aria-label="Reels"
     >
       {/* ── Feed mode tabs: "Для вас" / "Подписки" ──────────────────────────

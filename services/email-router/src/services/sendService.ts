@@ -62,15 +62,23 @@ const smtpConnectionsActive = new Gauge({
 // ─── Retry backoff calculator ─────────────────────
 
 /**
- * Exponential backoff with jitter.
- * Schedule: 30s → 2m → 8m → 32m → 2h (capped).
- * Jitter: ±20% to prevent thundering herd on recovery.
+ * Exponential backoff with jitter — priority-aware.
+ * OTP (priority 1-2) → fast retries: 5s → 30s → 2min → 5min → 10min
+ * Normal (priority 3)  → standard: 30s → 2min → 8min → 32min → 2h
+ * Bulk (priority 4-5)   → slow:     1min → 5min → 20min → 1h → 4h
+ *
+ * Rationale:
+ *   - OTP/transactional emails are time-critical; user experience degrades sharply
+ *     after 30s delay. Reduced backoff ensures code delivery within ~1 minute total.
+ *   - Bulk newsletters tolerate delays; conserve SMTP connections for high-priority.
+ *   - Jitter (±20%) prevents thundering herd on recovery.
  */
-function calculateBackoff(attempt: number): number {
-  const baseMs = 30_000;
-  const maxMs = 2 * 60 * 60 * 1000; // 2 hours cap
-  const delay = Math.min(baseMs * Math.pow(4, attempt - 1), maxMs);
-  // Jitter: ±20%
+function calculateBackoff(attempt: number, priority: number): number {
+  const baseMs = priority <= 2 ? 5_000 : priority === 3 ? 30_000 : 60_000;
+  const factor = priority <= 2 ? 2 : priority === 3 ? 4 : 4;
+  const maxMs = priority <= 2 ? 10 * 60 * 1000 : priority === 3 ? 2 * 60 * 60 * 1000 : 4 * 60 * 60 * 1000;
+
+  const delay = Math.min(baseMs * Math.pow(factor, attempt - 1), maxMs);
   const jitter = delay * 0.2 * (Math.random() * 2 - 1);
   return Math.round(delay + jitter);
 }
@@ -131,6 +139,9 @@ export class SendService {
     this.transporter = nodemailer.createTransport(transportOpts);
 
     // ── Circuit breaker for SMTP failures ──
+    // NOTE: threshold=5, resetTimeoutMs=30000 may be too aggressive for transactional
+    // emails. Consider raising threshold to 10-20 or increasing resetTimeout to 60s+
+    // if you see circuit opening during normal operation.
     this.circuitBreaker = new CircuitBreaker(redis, {
       name: 'smtp-postfix',
       threshold: env.CIRCUIT_BREAKER_THRESHOLD,
@@ -260,8 +271,8 @@ export class SendService {
       const isRetryable = isRetryableSmtpError(typeof smtpCode === 'number' ? smtpCode : undefined);
 
       if (isRetryable && job.attempt < job.maxRetries) {
-        // Schedule retry with exponential backoff + jitter
-        const delayMs = calculateBackoff(job.attempt);
+        // Schedule retry with priority-aware exponential backoff + jitter
+        const delayMs = calculateBackoff(job.attempt, job.priority);
         await this.scheduleRetry(job, delayMs);
         emailsSentTotal.inc({ status: 'retry', tenant_id: job.tenantId });
         logger.warn(

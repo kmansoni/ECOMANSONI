@@ -27,16 +27,20 @@ async function fetchNotificationsUnread(userId: string): Promise<number> {
 }
 
 async function fetchChatsUnreadV11(userId: string): Promise<number> {
-  const { data, error } = await dbLoose
-    .from("chat_inbox_projection")
-    .select("dialog_id, unread_count")
-    .eq("user_id", userId);
+  const rpc = supabase as unknown as { rpc: <T>(fn: string, args?: Record<string, unknown>) => Promise<{ data: T | null; error: unknown }> };
+  const { data, error } = await rpc.rpc<unknown[]>("chat_get_inbox_v11", { p_limit: 500, p_cursor: null });
   if (error) {
-    logger.error("[UnifiedCounter] chats v1.1 count fetch error", { error });
+    logger.error("[UnifiedCounter] chats v1.1 inbox rpc error", { error });
     return 0;
   }
-  const rows = (Array.isArray(data) ? data : []) as Array<{ dialog_id: string; unread_count: number | null }>;
-  return rows.reduce((sum, r) => sum + Number(r.unread_count || 0), 0);
+  const rows = Array.isArray(data) ? data : [];
+  let total = 0;
+  for (const row of rows) {
+    if (row && typeof row === "object" && "unread_count" in row) {
+      total += Number((row as { unread_count: number | null }).unread_count) || 0;
+    }
+  }
+  return total;
 }
 
 async function fetchChatsUnreadLegacy(userId: string): Promise<{ total: number; conversationIds: Set<string> }> {
@@ -146,50 +150,44 @@ export function UnifiedCounterProvider({ children }: { children: ReactNode }) {
     /* ── Realtime: Chats ────────────────────────────────────── */
     let chatDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
-    const chatsChannel = isV11
-      ? supabase
-          .channel("unified-chats-rt")
-          .on(
-            "postgres_changes",
-            {
-              event: "*",
-              schema: "public",
-              table: "chat_inbox_projection",
-              filter: `user_id=eq.${userId}`,
-            },
-            () => {
-              // Debounce rapid projection changes (batch messages, mark-all-read)
-              if (chatDebounceTimer) clearTimeout(chatDebounceTimer);
-              chatDebounceTimer = setTimeout(() => {
-                const fetchStarted = Date.now();
-                void fetchChatsUnreadV11(userId).then((count) => {
-                  if (isMountedRef.current) {
-                    store.getState().setChatsUnread(count, fetchStarted);
-                  }
-                });
-              }, 500);
-            },
-          )
-          .subscribe()
-      : supabase
-          .channel("unified-chats-rt")
-          .on(
-            "postgres_changes",
-            {
-              event: "INSERT",
-              schema: "public",
-              table: "messages",
-            },
-            (payload: { new: { conversation_id?: string; sender_id?: string } }) => {
-              const msg = payload.new;
-              if (!msg?.conversation_id) return;
-              if (!participantIdsRef.current.has(msg.conversation_id)) return;
-              if (msg.sender_id !== userId) {
-                store.getState().incrementChats(1);
-              }
-            },
-          )
-          .subscribe();
+    const debouncedChatsResync = () => {
+      if (chatDebounceTimer) clearTimeout(chatDebounceTimer);
+      chatDebounceTimer = setTimeout(() => {
+        const fetchStarted = Date.now();
+        if (isV11) {
+          void fetchChatsUnreadV11(userId).then((count) => {
+            if (isMountedRef.current) {
+              store.getState().setChatsUnread(count, fetchStarted);
+            }
+          });
+        } else {
+          void fetchChatsUnreadLegacy(userId).then(({ total, conversationIds }) => {
+            participantIdsRef.current = conversationIds;
+            if (isMountedRef.current) {
+              store.getState().setChatsUnread(total, fetchStarted);
+            }
+          });
+        }
+      }, 500);
+    };
+
+    // Subscribe to messages table — works regardless of v11/legacy and doesn't need RLS on projection
+    const chatsChannel = supabase
+      .channel("unified-chats-rt")
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "messages",
+        },
+        (payload: { new: { sender_id?: string } }) => {
+          if (payload.new.sender_id !== userId) {
+            debouncedChatsResync();
+          }
+        },
+      )
+      .subscribe();
 
     /* ── Periodic resync ────────────────────────────────────── */
     const intervalId = setInterval(resyncAll, RESYNC_INTERVAL_MS);

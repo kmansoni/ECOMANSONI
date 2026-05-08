@@ -15,18 +15,12 @@ skills:
   - .github/skills/coherence-checker/SKILL.md
   - .github/skills/recovery-engineer/SKILL.md
   - .github/skills/functional-tester/SKILL.md
-  - .github/skills/live-test-engineer/SKILL.md
-  - .github/skills/browser-test-engineer/SKILL.md
   - .github/skills/debugger-tester-integration/SKILL.md
   - .github/skills/code-review/SKILL.md
-  - .github/skills/stub-hunter/SKILL.md
-  - .github/skills/invariant-guardian/SKILL.md
-  - .github/skills/langsmith-fetch/SKILL.md
-  - .github/skills/agent-self-audit/SKILL.md
-  - .github/skills/deep-audit/SKILL.md
-  - .github/skills/debug-dashboard/SKILL.md
   - .github/skills/race-condition-detector/SKILL.md
   - .github/skills/error-boundary-patterns/SKILL.md
+  - .github/skills/deep-audit/SKILL.md
+  - .github/skills/debug-dashboard/SKILL.md
   - .github/skills/platform-auditor/SKILL.md
 ---
 

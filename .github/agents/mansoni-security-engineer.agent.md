@@ -7,7 +7,6 @@ tools:
   - web
   - todo
   - agent
-  - execute
   - claude-flow/*
 user-invocable: false
 skills:
@@ -15,7 +14,6 @@ skills:
   - .github/skills/owasp-top10-scanner/SKILL.md
   - .github/skills/injection-scanner/SKILL.md
   - .github/skills/e2ee-audit-specialist/SKILL.md
-  - .github/skills/e2ee-audit/SKILL.md
   - .github/skills/zero-trust-audit/SKILL.md
   - .github/skills/broken-access-control-audit/SKILL.md
   - .github/skills/authentication-failure-audit/SKILL.md
@@ -25,6 +23,7 @@ skills:
   - .github/skills/csrf-protection-audit/SKILL.md
   - .github/skills/supabase-rls-auditor/SKILL.md
   - .github/skills/supply-chain-security/SKILL.md
+  - .github/skills/circuit-breaker/SKILL.md
   - .github/skills/security-misconfiguration-audit/SKILL.md
   - .github/skills/security-logging-audit/SKILL.md
   - .github/skills/cryptographic-failures-audit/SKILL.md
@@ -38,18 +37,15 @@ skills:
   - .github/skills/cors-policy-auditor/SKILL.md
   - .github/skills/file-upload-security/SKILL.md
   - .github/skills/secrets-rotation/SKILL.md
-  - .github/skills/race-condition-detector/SKILL.md
-  - .github/skills/penetration-test/SKILL.md
   - .github/skills/threat-modeling/SKILL.md
   - .github/skills/jwt-rotation-patterns/SKILL.md
   - .github/skills/subresource-integrity/SKILL.md
   - .github/skills/business-logic-vulnerability/SKILL.md
   - .github/skills/deep-audit/SKILL.md
   - .github/skills/dependency-audit/SKILL.md
-  - .github/skills/platform-auditor/SKILL.md
-  - .github/skills/security-self-learning/SKILL.md
   - .github/skills/agentic-ai-security/SKILL.md
   - .github/skills/audit-log-generator/SKILL.md
+  - .github/skills/penetration-test/SKILL.md
   - .github/skills/penetration-test-reporter/SKILL.md
 ---
 

@@ -17,7 +17,6 @@ skills:
   - .github/skills/render-profiler/SKILL.md
   - .github/skills/virtual-scroll-optimizer/SKILL.md
   - .github/skills/postgresql-optimizer/SKILL.md
-  - .github/skills/postgresql-partitioning/SKILL.md
   - .github/skills/caching-strategy/SKILL.md
   - .github/skills/code-humanizer/SKILL.md
   - .github/skills/image-optimization/SKILL.md

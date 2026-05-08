@@ -184,6 +184,7 @@ export function LikesSheet({ postId, likeCount, isOpen, onClose }: LikesSheetPro
     <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <SheetContent
         side="bottom"
+        hideCloseButton
         className="bg-[#1a1a1a] border-t border-white/10 rounded-t-2xl p-0 max-h-[80vh] flex flex-col"
       >
         {/* Header */}

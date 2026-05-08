@@ -180,6 +180,33 @@ export function useMarkConversationRead() {
           }
           logger.error("[markConversationRead] ack_read_v1 rpc error", { error: rpcErr });
         }
+        // After successful mark-read, resync unread counter from DB
+        const fetchStarted = Date.now();
+        if (isChatProtocolV11EnabledForUser(user.id)) {
+          const { data } = await rpc.rpc<unknown[]>("chat_get_inbox_v11", { p_limit: 500, p_cursor: null });
+          const rows = Array.isArray(data) ? data : [];
+          let total = 0;
+          for (const row of rows) {
+            if (isRecord(row)) total += getNumberField(row, "unread_count") ?? 0;
+          }
+          useUnifiedCounterStore.getState().setChatsUnread(total, fetchStarted);
+        } else {
+          const { data: parts } = await supabase
+            .from("conversation_participants")
+            .select("conversation_id, last_read_at")
+            .eq("user_id", user.id);
+          let total = 0;
+          for (const p of parts ?? []) {
+            const { count } = await supabase
+              .from("messages")
+              .select("id", { count: "exact", head: true })
+              .eq("conversation_id", p.conversation_id)
+              .neq("sender_id", user.id)
+              .gt("created_at", p.last_read_at || "1970-01-01");
+            total += count || 0;
+          }
+          useUnifiedCounterStore.getState().setChatsUnread(total, fetchStarted);
+        }
       } finally {
         inFlightConversationIdsRef.current.delete(conversationId);
       }

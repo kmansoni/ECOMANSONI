@@ -392,7 +392,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
   ]);
 
   return (
-    <div className="fixed inset-0 flex flex-col bg-background z-[200]">
+    <div className="fixed inset-0 md:absolute md:inset-0 flex flex-col bg-background z-[200]">
       <AnimatedEmojiFullscreen emoji={lastSentEmoji} onComplete={() => setLastSentEmoji(null)} />
       <MessageEffectOverlay effect={activeEffect} onComplete={() => setActiveEffect(null)} />
 

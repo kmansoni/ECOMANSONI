@@ -1,6 +1,7 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { useLocation, useNavigationType } from "react-router-dom";
 import { ReactNode, useRef } from "react";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 interface PageTransitionProps {
   children: ReactNode;
@@ -11,18 +12,24 @@ interface PageTransitionProps {
 const TAB_ROUTES = new Set(["/", "/reels", "/notifications", "/chats", "/profile", "/ar"]);
 
 export function PageTransition({ children }: PageTransitionProps) {
+  const isMobile = useIsMobile();
   const location = useLocation();
   const navigationType = useNavigationType();
   const prevPathRef = useRef(location.pathname);
 
+  // На десктопе анимации не нужны — сайдбар всегда виден
+  if (!isMobile) {
+    return (
+      <div className="h-full w-full" style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}>
+        {children}
+      </div>
+    );
+  }
+
   const isTab = TAB_ROUTES.has(location.pathname);
   const wasTab = TAB_ROUTES.has(prevPathRef.current);
 
-  // Переключение между табами — стабильный ключ, без ремаунта
-  // Вход/выход из глубокой страницы — анимация слайдом
   const transitionKey = isTab ? "__tabs__" : location.pathname;
-
-  // Обновляем предыдущий путь после вычисления направления
   const isTabToTab = isTab && wasTab;
 
   const getDirection = () => {

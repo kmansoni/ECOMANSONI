@@ -1,9 +1,9 @@
 /**
- * Vector tile provider — MapTiler + OpenMapTiles + CartoDB fallback.
+ * Vector tile provider — OSM free tiles (OpenFreeMap) with MapTiler override.
  *
  * Priority:
- *   1. MapTiler (VITE_MAPTILER_KEY) — best quality, global, vector
- *   2. CartoDB (free) — fallback, decent quality
+ *   1. MapTiler (VITE_MAPTILER_KEY) — if key provided, use MapTiler vectors
+ *   2. OpenFreeMap (free) — OSM-derived vector tiles, no API key needed
  *
  * Also provides production MapLibre style with enhanced road rendering.
  */
@@ -32,107 +32,111 @@ interface StyleConfig {
 
 /** Get available map styles in priority order */
 export function getMapStyles(): Record<MapTheme, StyleConfig> {
-  const key = getMapTilerKey();
+   const key = getMapTilerKey();
 
-  if (key) {
-    return {
-      dark: {
-        url: `https://api.maptiler.com/maps/dataviz-dark/style.json?key=${key}`,
-        name: 'MapTiler Dark',
-        isVector: true,
-      },
-      light: {
-        url: `https://api.maptiler.com/maps/dataviz-light/style.json?key=${key}`,
-        name: 'MapTiler Light',
-        isVector: true,
-      },
-      satellite: {
-        url: `https://api.maptiler.com/maps/hybrid/style.json?key=${key}`,
-        name: 'MapTiler Satellite',
-        isVector: true,
-      },
-      hybrid: {
-        url: `https://api.maptiler.com/maps/hybrid/style.json?key=${key}`,
-        name: 'MapTiler Hybrid',
-        isVector: true,
-      },
-      terrain: {
-        url: `https://api.maptiler.com/maps/outdoor-v2/style.json?key=${key}`,
-        name: 'MapTiler Terrain',
-        isVector: true,
-      },
-      streets: {
-        url: `https://api.maptiler.com/maps/streets-v2/style.json?key=${key}`,
-        name: 'MapTiler Streets',
-        isVector: true,
-      },
-      voyager: {
-        url: `https://api.maptiler.com/maps/dataviz-light/style.json?key=${key}`,
-        name: 'MapTiler Voyager Alias',
-        isVector: true,
-      },
-      positron: {
-        url: `https://api.maptiler.com/maps/dataviz-light/style.json?key=${key}`,
-        name: 'MapTiler Positron Alias',
-        isVector: true,
-      },
-      darkNolabels: {
-        url: `https://api.maptiler.com/maps/dataviz-dark/style.json?key=${key}`,
-        name: 'MapTiler Dark Alias',
-        isVector: true,
-      },
-    };
-  }
+   // Base OSM-derived free tiles from OpenFreeMap
+   // NOTE: OpenFreeMap serves style JSON at /styles/{name} (no /style.json suffix)
+   const baseStyles: Record<MapTheme, StyleConfig> = {
+     dark: {
+       url: 'https://tiles.openfreemap.org/styles/dark',
+       name: 'OpenFreeMap Dark',
+       isVector: true,
+     },
+     light: {
+       url: 'https://tiles.openfreemap.org/styles/bright',
+       name: 'OpenFreeMap Bright',
+       isVector: true,
+     },
+     satellite: {
+       url: 'https://tiles.openfreemap.org/styles/liberty',
+       name: 'OpenFreeMap Liberty',
+       isVector: true,
+     },
+     hybrid: {
+       url: 'https://tiles.openfreemap.org/styles/liberty',
+       name: 'OpenFreeMap Liberty',
+       isVector: true,
+     },
+     terrain: {
+       url: 'https://tiles.openfreemap.org/styles/liberty',
+       name: 'OpenFreeMap Liberty',
+       isVector: true,
+     },
+     streets: {
+       url: 'https://tiles.openfreemap.org/styles/liberty',
+       name: 'OpenFreeMap Liberty',
+       isVector: true,
+     },
+     voyager: {
+       url: 'https://tiles.openfreemap.org/styles/bright',
+       name: 'OpenFreeMap Bright',
+       isVector: true,
+     },
+     positron: {
+       url: 'https://tiles.openfreemap.org/styles/positron',
+       name: 'OpenFreeMap Positron',
+       isVector: true,
+     },
+     darkNolabels: {
+       url: 'https://tiles.openfreemap.org/styles/dark',
+       name: 'OpenFreeMap Dark',
+       isVector: true,
+     },
+   };
 
-  // Fallback: CartoDB free tiles
-  return {
-    dark: {
-      url: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
-      name: 'CartoDB Dark',
-      isVector: true,
-    },
-    light: {
-      url: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
-      name: 'CartoDB Light',
-      isVector: true,
-    },
-    satellite: {
-      url: 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json',
-      name: 'CartoDB Voyager',
-      isVector: true,
-    },
-    hybrid: {
-      url: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
-      name: 'CartoDB Hybrid Fallback',
-      isVector: true,
-    },
-    terrain: {
-      url: 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json',
-      name: 'CartoDB Terrain Fallback',
-      isVector: true,
-    },
-    streets: {
-      url: 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json',
-      name: 'CartoDB Voyager',
-      isVector: true,
-    },
-    voyager: {
-      url: 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json',
-      name: 'CartoDB Voyager Alias',
-      isVector: true,
-    },
-    positron: {
-      url: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
-      name: 'CartoDB Positron Alias',
-      isVector: true,
-    },
-    darkNolabels: {
-      url: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
-      name: 'CartoDB Dark Alias',
-      isVector: true,
-    },
-  };
-}
+   // If MapTiler key is present, override with MapTiler styles (higher quality)
+   if (key) {
+     return {
+       dark: {
+         url: `https://api.maptiler.com/maps/dataviz-dark/style.json?key=${key}`,
+         name: 'MapTiler Dark',
+         isVector: true,
+       },
+       light: {
+         url: `https://api.maptiler.com/maps/dataviz-light/style.json?key=${key}`,
+         name: 'MapTiler Light',
+         isVector: true,
+       },
+       satellite: {
+         url: `https://api.maptiler.com/maps/hybrid/style.json?key=${key}`,
+         name: 'MapTiler Satellite',
+         isVector: true,
+       },
+       hybrid: {
+         url: `https://api.maptiler.com/maps/hybrid/style.json?key=${key}`,
+         name: 'MapTiler Hybrid',
+         isVector: true,
+       },
+       terrain: {
+         url: `https://api.maptiler.com/maps/outdoor-v2/style.json?key=${key}`,
+         name: 'MapTiler Terrain',
+         isVector: true,
+       },
+       streets: {
+         url: `https://api.maptiler.com/maps/streets-v2/style.json?key=${key}`,
+         name: 'MapTiler Streets',
+         isVector: true,
+       },
+       voyager: {
+         url: `https://api.maptiler.com/maps/dataviz-light/style.json?key=${key}`,
+         name: 'MapTiler Voyager Alias',
+         isVector: true,
+       },
+       positron: {
+         url: `https://api.maptiler.com/maps/dataviz-light/style.json?key=${key}`,
+         name: 'MapTiler Positron Alias',
+         isVector: true,
+       },
+       darkNolabels: {
+         url: `https://api.maptiler.com/maps/dataviz-dark/style.json?key=${key}`,
+         name: 'MapTiler Dark Alias',
+         isVector: true,
+       },
+     };
+   }
+
+   return baseStyles;
+ }
 
 /** Get the best available style URL for a theme */
 export function getStyleUrl(theme: MapTheme = 'dark'): string {
@@ -294,34 +298,44 @@ export function applyMapThemeEnhancements(map: maplibregl.Map, theme: MapTheme =
 
 // ── Terrain (3D relief) ─────────────────────────────────────────────────────
 
-/** Add 3D terrain from MapTiler (requires key) */
+/** Add 3D terrain from MapTiler (if key available) or free Copernicus DEM */
 export function addTerrain(map: maplibregl.Map) {
-  const key = getMapTilerKey();
-  if (!key) return;
+   const key = getMapTilerKey();
 
-  try {
-    map.addSource('terrain-source', {
-      type: 'raster-dem',
-      url: `https://api.maptiler.com/tiles/terrain-rgb-v2/tiles.json?key=${key}`,
-      tileSize: 256,
-    });
+   try {
+     if (key) {
+       // MapTiler terrain-rgb v2
+       map.addSource('terrain-source', {
+         type: 'raster-dem',
+         url: `https://api.maptiler.com/tiles/terrain-rgb-v2/tiles.json?key=${key}`,
+         tileSize: 256,
+       });
+     } else {
+       // Free global terrain-rgb tiles (Copernicus) via AWS public bucket
+       // Source: https://registry.opendata.aws/copernicus-dem/
+       map.addSource('terrain-source', {
+         type: 'raster-dem',
+         url: 'https://terrain-tiles.s3.amazonaws.com/terrarium/{z}/{x}/{y}.png',
+         tileSize: 256,
+       });
+     }
 
-    map.setTerrain({ source: 'terrain-source', exaggeration: 0.3 });
+     map.setTerrain({ source: 'terrain-source', exaggeration: 0.3 });
 
-    // Sky layer for 3D views
-    map.addLayer({
-      id: 'sky',
-      type: 'sky' as unknown as 'background',
-      paint: {
-        'sky-type': 'atmosphere' as unknown as string,
-        'sky-atmosphere-sun': [0, 0] as unknown as string,
-        'sky-atmosphere-sun-intensity': 15 as unknown as number,
-      } as unknown as maplibregl.BackgroundLayerSpecification['paint'],
-    });
-  } catch (e) {
-    console.warn('[VectorTiles] Terrain:', e);
-  }
-}
+     // Sky layer for 3D views
+     map.addLayer({
+       id: 'sky',
+       type: 'sky' as unknown as 'background',
+       paint: {
+         'sky-type': 'atmosphere' as unknown as string,
+         'sky-atmosphere-sun': [0, 0] as unknown as string,
+         'sky-atmosphere-sun-intensity': 15 as unknown as number,
+       } as unknown as maplibregl.BackgroundLayerSpecification['paint'],
+     });
+   } catch (e) {
+     console.warn('[VectorTiles] Terrain:', e);
+   }
+ }
 
 // ── Auto theme (day/night) ──────────────────────────────────────────────────
 

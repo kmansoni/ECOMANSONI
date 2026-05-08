@@ -265,8 +265,8 @@ export function useIncomingCalls(options: UseIncomingCallsOptions = {}) {
           const raw = payload.new as Record<string, unknown>;
           const updated = { ...raw, status: raw.state ?? raw.status } as VideoCall;
           
-          // Clear incoming call if it was answered, declined, ended, or missed
-          if (["answered", "active", "connected", "declined", "ended", "missed"].includes(updated.status)) {
+// Clear incoming call if it was answered, declined, ended, missed, or failed
+           if (["answered", "active", "connected", "declined", "ended", "missed", "failed"].includes(updated.status)) {
             logger.info("incoming_calls.status_changed", { callId: updated.id, status: updated.status });
             notifiedCalls.delete(updated.id);
             void releaseCallWake();

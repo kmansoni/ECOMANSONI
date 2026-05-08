@@ -105,6 +105,7 @@ function MobileLayout() {
       <BottomNav
         hidden={shouldHideMobile}
         disableHideAnimation={false}
+        onCreateClick={() => setCreateOpen(true)}
       />
       {/* Call UI is now handled globally by GlobalCallOverlay in App.tsx */}
     </div>

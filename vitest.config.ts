@@ -14,8 +14,13 @@ export default defineConfig({
         execArgv: ["--no-deprecation"],
       },
     },
+    deps: {
+      inline: [/cris-mesh/],
+    },
   },
   resolve: {
-    alias: { "@": path.resolve(__dirname, "./src") },
+    alias: {
+      "@": path.resolve(__dirname, "./src"),
+    },
   },
 });

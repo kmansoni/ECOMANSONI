@@ -26,6 +26,7 @@ import {
   speakCamera,
   speakArrival,
   speakReroute,
+  speakSpeedWarning,
 } from '@/lib/navigation/voiceAssistant';
 import { startTrafficCollection, stopTrafficCollection, addTrafficProbe } from '@/lib/navigation/trafficCollector';
 import {
@@ -460,9 +461,20 @@ export function useNavigation(options?: UseNavigationOptions) {
         s.points.some((p) => calculateDistance(currentPosition!, p) < 0.05)
       );
       setSpeedLimit(seg?.speedLimit ?? null);
-    }
-
-    // Off-route: O(1) spatial grid проверка
+     }
+ 
+     // Speed warning — safety-critical
+     if (speedLimit && currentSpeed > speedLimit) {
+       const key = 'speed_warning';
+       if (!voiceSpokenRef.current.has(key)) {
+         voiceSpokenRef.current.add(key);
+         speakSpeedWarning(currentSpeed, speedLimit);
+       }
+     } else {
+       voiceSpokenRef.current.delete('speed_warning');
+     }
+ 
+     // Off-route: O(1) spatial grid проверка
     const onRoute = isOnRouteRef.current
       ? isOnRouteRef.current(currentPosition!)
       : route.geometry.some(

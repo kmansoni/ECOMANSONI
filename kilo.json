@@ -1,0 +1,42 @@
+{
+  "$schema": "https://app.kilo.ai/config.json",
+  "skills": {
+    "paths": [".kilo/skills"]
+  },
+  "permission": {
+    "*": "ask",
+    "bash": "ask"
+  },
+  "agent": {
+    "code": {
+      "permission": {
+        "bash": "ask"
+      }
+    },
+    "general": {
+      "permission": {
+        "bash": "ask"
+      }
+    },
+    "debug": {
+      "permission": {
+        "bash": "ask"
+      }
+    },
+    "plan": {
+      "permission": {
+        "bash": "ask"
+      }
+    },
+    "build": {
+      "permission": {
+        "bash": "ask"
+      }
+    },
+    "mansoni": {
+      "permission": {
+        "bash": "ask"
+      }
+    }
+  }
+}

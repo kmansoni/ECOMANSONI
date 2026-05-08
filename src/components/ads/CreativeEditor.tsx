@@ -11,29 +11,20 @@
  * - frequency_cap (slider)
  * - priority_order (number)
  *
- * Валидация на лету.
+ * Валидация на лету через validators.ts.
  * Preview в реальном времени.
  */
 
 import { useState, useEffect } from "react";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogFooter,
+  DialogDescription,
 } from "@/components/ui/dialog";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -43,26 +34,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { CreativePreview } from "./CreativePreview";
 import { validateCreativeInput } from "@/lib/validators";
 import type { AdCreative, AdCreativeInsert } from "@/lib/ads/types";
-
-const creativeSchema = z.object({
-  type: z.enum(['image', 'video', 'carousel', 'story']),
-  media_url: z.string().url('Введите корректный HTTPS URL'),
-  headline: z.string().min(1, 'Заголовок обязателен').max(100, 'Слишком длинный заголовок'),
-  description: z.string().max(300, 'Слишком длинное описание').optional().nullable(),
-  call_to_action: z.enum([
-    'learn_more', 'shop_now', 'sign_up', 'contact_us', 'download', 'get_quote', 'apply_now'
-  ]),
-  destination_url: z.string().url('Введите корректный HTTPS URL'),
-  frequency_cap: z.number().min(1).max(100).default(3),
-  priority_order: z.number().min(0).default(0),
-});
-
-type CreativeFormData = z.infer<typeof creativeSchema>;
 
 interface CreativeEditorProps {
   open: boolean;
@@ -81,61 +56,69 @@ export function CreativeEditor({
 }: CreativeEditorProps) {
   const [previewFormat, setPreviewFormat] = useState<'feed' | 'story' | 'reels'>('feed');
   const [serverError, setServerError] = useState<string | null>(null);
-
-  const form = useForm<CreativeFormData>({
-    resolver: zodResolver(creativeSchema),
-    defaultValues: {
-      type: initialData?.type ?? 'image',
-      media_url: initialData?.media_url ?? '',
-      headline: initialData?.headline ?? '',
-      description: initialData?.description ?? '',
-      call_to_action: (initialData?.call_to_action as any) ?? 'learn_more',
-      destination_url: initialData?.destination_url ?? '',
-      frequency_cap: initialData?.frequency_cap ?? 3,
-      priority_order: initialData?.priority_order ?? 0,
-    },
+  const [formData, setFormData] = useState({
+    type: 'image' as const,
+    media_url: '',
+    headline: '',
+    description: '',
+    call_to_action: 'learn_more' as const,
+    destination_url: '',
+    frequency_cap: 3,
+    priority_order: 0,
   });
 
   // Сброс при открытии/изменении initialData
   useEffect(() => {
     if (open) {
-      form.reset({
+      setFormData({
         type: initialData?.type ?? 'image',
         media_url: initialData?.media_url ?? '',
         headline: initialData?.headline ?? '',
         description: initialData?.description ?? '',
-        call_to_action: (initialData?.call_to_action as any) ?? 'learn_more',
+        call_to_action: initialData?.call_to_action ?? 'learn_more',
         destination_url: initialData?.destination_url ?? '',
         frequency_cap: initialData?.frequency_cap ?? 3,
         priority_order: initialData?.priority_order ?? 0,
       });
       setServerError(null);
     }
-  }, [open, initialData, form]);
+  }, [open, initialData]);
 
-  const onSubmitHandler = form.handleSubmit(async (data) => {
+  const handleChange = (field: string, value: any) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
     setServerError(null);
 
-    // Доп. валидация (URL HTTPS, длины)
-    const errors = validateCreativeInput(data);
+    // Валидация
+    const errors = validateCreativeInput(formData);
     if (errors.length > 0) {
       setServerError(errors[0]);
       return;
     }
 
     try {
-      const success = editingCreative
-        ? await onSubmit({ ...data, description: data.description || null } as AdCreativeUpdate)
-        : await onSubmit({ ...data, description: data.description || null } as AdCreativeInsert);
-
-      if (success) {
-        form.reset();
-        onOpenChange(false);
-      }
-    } catch (e: any) {
-      setServerError(e.message || 'Ошибка сохранения');
+      await onSubmit({
+        ...formData,
+        description: formData.description || null,
+      } as AdCreativeInsert);
+      setFormData({
+        type: 'image',
+        media_url: '',
+        headline: '',
+        description: '',
+        call_to_action: 'learn_more',
+        destination_url: '',
+        frequency_cap: 3,
+        priority_order: 0,
+      });
+      onOpenChange(false);
+    } catch (err: any) {
+      setServerError(err.message || 'Ошибка сохранения');
     }
-  });
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -148,182 +131,134 @@ export function CreativeEditor({
 
         <div className="grid md:grid-cols-2 gap-6">
           {/* Форма */}
-          <Form {...form}>
-            <form onSubmit={onSubmitHandler} className="space-y-4">
-              {/* Тип креатива */}
-              <FormField
-                control={form.control}
-                name="type"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Тип</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Выберите тип" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="image">Изображение</SelectItem>
-                        <SelectItem value="video">Видео</SelectItem>
-                        <SelectItem value="carousel">Карабель</SelectItem>
-                        <SelectItem value="story">История</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Тип креатива */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Тип</label>
+              <Select
+                value={formData.type}
+                onValueChange={(value: any) => handleChange('type', value)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Выберите тип" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="image">Изображение</SelectItem>
+                  <SelectItem value="video">Видео</SelectItem>
+                  <SelectItem value="carousel">Караousel</SelectItem>
+                  <SelectItem value="story">История</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Media URL */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">URL медиа (HTTPS)</label>
+              <Input
+                placeholder="https://..."
+                value={formData.media_url}
+                onChange={(e) => handleChange('media_url', e.target.value)}
               />
+            </div>
 
-              {/* Media URL */}
-              <FormField
-                control={form.control}
-                name="media_url"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>URL медиа (HTTPS)</FormLabel>
-                    <FormControl>
-                      <Input placeholder="https://..." {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
+            {/* Headline */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Заголовок (1-100 символов)</label>
+              <Input
+                placeholder="Краткий заголовок"
+                value={formData.headline}
+                onChange={(e) => handleChange('headline', e.target.value)}
+                maxLength={100}
               />
+              <div className="text-xs text-muted-foreground text-right">
+                {formData.headline.length}/100
+              </div>
+            </div>
 
-              {/* Headline */}
-              <FormField
-                control={form.control}
-                name="headline"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Заголовок (1-100 символов)</FormLabel>
-                    <FormControl>
-                      <Input placeholder="Краткий заголовок" {...field} />
-                    </FormControl>
-                    <div className="text-xs text-muted-foreground text-right">
-                      {field.value.length}/100
-                    </div>
-                    <FormMessage />
-                  </FormItem>
-                )}
+            {/* Description */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Описание (до 300 символов)</label>
+              <Textarea
+                placeholder="Дополнительное описание"
+                value={formData.description}
+                onChange={(e) => handleChange('description', e.target.value)}
+                maxLength={300}
               />
+              <div className="text-xs text-muted-foreground text-right">
+                {formData.description.length}/300
+              </div>
+            </div>
 
-              {/* Description */}
-              <FormField
-                control={form.control}
-                name="description"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Описание (до 300 символов)</FormLabel>
-                    <FormControl>
-                      <Textarea
-                        placeholder="Дополнительное описание"
-                        {...field}
-                        value={field.value ?? ''}
-                      />
-                    </FormControl>
-                    <div className="text-xs text-muted-foreground text-right">
-                      {(field.value?.length || 0)}/300
-                    </div>
-                    <FormMessage />
-                  </FormItem>
-                )}
+            {/* Call to Action */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Призыв к действию</label>
+              <Select
+                value={formData.call_to_action}
+                onValueChange={(value: any) => handleChange('call_to_action', value)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Выберите CTA" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="learn_more">Узнать больше</SelectItem>
+                  <SelectItem value="shop_now">Купить сейчас</SelectItem>
+                  <SelectItem value="sign_up">Зарегистрироваться</SelectItem>
+                  <SelectItem value="contact_us">Связаться</SelectItem>
+                  <SelectItem value="download">Скачать</SelectItem>
+                  <SelectItem value="get_quote">Получить расчёт</SelectItem>
+                  <SelectItem value="apply_now">Подать заявку</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Destination URL */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Ссылка назначения (HTTPS)</label>
+              <Input
+                placeholder="https://..."
+                value={formData.destination_url}
+                onChange={(e) => handleChange('destination_url', e.target.value)}
               />
+            </div>
 
-              {/* Call to Action */}
-              <FormField
-                control={form.control}
-                name="call_to_action"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Призыв к действию</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Выберите CTA" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="learn_more">Узнать больше</SelectItem>
-                        <SelectItem value="shop_now">Купить сейчас</SelectItem>
-                        <SelectItem value="sign_up">Зарегистрироваться</SelectItem>
-                        <SelectItem value="contact_us">Связаться</SelectItem>
-                        <SelectItem value="download">Скачать</SelectItem>
-                        <SelectItem value="get_quote">Получить расчёт</SelectItem>
-                        <SelectItem value="apply_now">Подать заявку</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
+            {/* Frequency Cap */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">
+                Частотный лимит (показов на пользователя в день): {formData.frequency_cap}
+              </label>
+              <Slider
+                min={1}
+                max={100}
+                step={1}
+                value={[formData.frequency_cap]}
+                onValueChange={([val]) => handleChange('frequency_cap', val)}
               />
+            </div>
 
-              {/* Destination URL */}
-              <FormField
-                control={form.control}
-                name="destination_url"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Ссылка назначения (HTTPS)</FormLabel>
-                    <FormControl>
-                      <Input placeholder="https://..." {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
+            {/* Priority Order */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Приоритет (0-мин)</label>
+              <Input
+                type="number"
+                min={0}
+                value={formData.priority_order}
+                onChange={(e) => handleChange('priority_order', parseInt(e.target.value) || 0)}
               />
+            </div>
 
-              {/* Frequency Cap */}
-              <FormField
-                control={form.control}
-                name="frequency_cap"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Частотный лимит (показов на пользователя в день): {field.value}</FormLabel>
-                    <FormControl>
-                      <Slider
-                        min={1}
-                        max={100}
-                        step={1}
-                        value={[field.value]}
-                        onValueChange={([val]) => field.onChange(val)}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+            {serverError && (
+              <div className="text-sm text-destructive bg-destructive/10 p-2 rounded">
+                {serverError}
+              </div>
+            )}
 
-              {/* Priority Order */}
-              <FormField
-                control={form.control}
-                name="priority_order"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Приоритет (0-мин)</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="number"
-                        min={0}
-                        {...field}
-                        onChange={e => field.onChange(parseInt(e.target.value) || 0)}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              {serverError && (
-                <div className="text-sm text-destructive bg-destructive/10 p-2 rounded">
-                  {serverError}
-                </div>
-              )}
-
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-                  Отмена
-                </Button>
-                <Button type="submit">{submitLabel}</Button>
-              </DialogFooter>
-            </form>
-          </Form>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                Отмена
+              </Button>
+              <Button type="submit">{submitLabel}</Button>
+            </DialogFooter>
+          </form>
 
           {/* Preview */}
           <div className="space-y-4">
@@ -353,13 +288,13 @@ export function CreativeEditor({
 
             <div className="flex justify-center p-4 border rounded-lg bg-muted/20">
               <CreativePreview
-                creative={form.getValues() as any}
+                creative={formData as any}
                 format={previewFormat}
               />
             </div>
 
             <p className="text-xs text-muted-foreground text-center">
-              Преiew — как креатив будет выглядеть в ленте/историях/reels
+              Преview — как креатив будет выглядеть в ленте/историях/reels
             </p>
           </div>
         </div>

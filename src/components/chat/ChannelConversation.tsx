@@ -1061,7 +1061,7 @@ export function ChannelConversation({ channel, onBack, onLeave }: ChannelConvers
   };
 
   return (
-    <div className="fixed inset-0 z-[200] flex flex-col bg-background">
+    <div className="fixed inset-0 md:absolute md:inset-0 z-[200] flex flex-col bg-background">
       <ChannelHeader
         channel={channel}
         onBack={onBack}

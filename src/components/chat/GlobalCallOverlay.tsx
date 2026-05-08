@@ -38,10 +38,10 @@ export function GlobalCallOverlay() {
   } = useVideoCallContext();
 
   logger.debug("[GlobalCallOverlay] Render", {
-    status, 
-    hasCurrentCall: !!currentCall, 
+    status,
+    hasCurrentCall: !!currentCall,
     hasIncomingCall: !!incomingCall,
-    isCallUiActive,
+    isCallUiActive: !!isCallUiActive,
   });
 
   // Show active call screen if:

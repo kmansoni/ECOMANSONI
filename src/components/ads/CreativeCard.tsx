@@ -30,7 +30,7 @@ export function CreativeCard({
   onSubmitReview,
 }: CreativeCardProps) {
   const canEdit = creative.status === 'draft' || creative.status === 'rejected';
-  canSubmit = creative.status === 'draft' || creative.status === 'rejected';
+  const canSubmit = creative.status === 'draft' || creative.status === 'rejected';
   const canDelete = creative.status === 'draft' || creative.status === 'rejected';
 
   return (

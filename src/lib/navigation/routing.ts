@@ -775,97 +775,95 @@ export async function fetchRoute(
     }
   }
 
-  // Car mode (default) — navigation_server first, then offline, then OSRM
-  // 1) BACKEND PRIORITY — navigation_server
-  attemptedSources.push('navigation_server');
-  try {
-    const result = await fetchRouteFromNavigationServer(from, to, alternatives, 'car');
-    return {
-      ...result,
-      source: 'navigation_server',
-      attemptedSources,
-      degradationReason: summarizeRouteDegradation(degradationDiagnostics),
-    };
-  } catch (e) {
-    const diagnostic = createRouteFailureDiagnostic('navigation_server', e);
-    degradationDiagnostics.push(diagnostic);
-    logger.warn('[Routing] navigation_server unavailable', { error: e, diagnostic });
-  }
+   // Car mode (default) — OSRM first, then navigation_server, then offline
+   // 1) OSRM fallback (open-source router)
+   attemptedSources.push('osrm');
+   try {
+     const coords = `${from.lng},${from.lat};${to.lng},${to.lat}`;
+     const baseParams = `overview=full&geometries=geojson&steps=true&alternatives=${alternatives}`;
 
-  // 2) OFFLINE fallback — local Dijkstra routing
-  attemptedSources.push('offline');
-  try {
-    const result = await fetchRouteOffline(from, to);
-    const fallbackReason = buildRouteFallbackReason('offline', degradationDiagnostics);
-    recordFallbackUsage('routing', fallbackReason);
-    logger.info('[Routing] Offline route selected', { fallbackReason });
-    return {
-      ...result,
-      source: 'offline',
-      attemptedSources,
-      degradationReason: summarizeRouteDegradation(degradationDiagnostics),
-    };
-  } catch (e) {
-    const diagnostic = createRouteFailureDiagnostic('offline', e);
-    degradationDiagnostics.push(diagnostic);
-    logger.warn('[Routing] Offline route unavailable', { error: e, diagnostic });
-  }
-  
-  // 3) OSRM fallback
-  attemptedSources.push('osrm');
-  try {
-    const coords = `${from.lng},${from.lat};${to.lng},${to.lat}`;
-    const baseParams = `overview=full&geometries=geojson&steps=true&alternatives=${alternatives}`;
+     // Apply route preferences to OSRM exclude param
+     const prefs = useNavigatorSettings.getState();
+     const excludes: string[] = [];
+     if (prefs.avoidTolls) excludes.push('toll');
+     if (prefs.avoidHighways) excludes.push('motorway');
+     const excludeParam = excludes.length > 0 ? `&exclude=${excludes.join(',')}` : '';
 
-    // Apply route preferences to OSRM exclude param
-    const prefs = useNavigatorSettings.getState();
-    const excludes: string[] = [];
-    if (prefs.avoidTolls) excludes.push('toll');
-    if (prefs.avoidHighways) excludes.push('motorway');
-    const excludeParam = excludes.length > 0 ? `&exclude=${excludes.join(',')}` : '';
+     // Try with full params first, progressively strip unsupported features
+     const urlVariants = [
+       `${OSRM_BASE}/${coords}?${baseParams}&annotations=duration,speed${excludeParam}`,
+       ...(excludeParam ? [`${OSRM_BASE}/${coords}?${baseParams}&annotations=duration,speed`] : []),
+       `${OSRM_BASE}/${coords}?${baseParams}`,
+     ];
 
-    // Try with full params first, progressively strip unsupported features
-    const urlVariants = [
-      `${OSRM_BASE}/${coords}?${baseParams}&annotations=duration,speed${excludeParam}`,
-      ...(excludeParam ? [`${OSRM_BASE}/${coords}?${baseParams}&annotations=duration,speed`] : []),
-      `${OSRM_BASE}/${coords}?${baseParams}`,
-    ];
+     let resp: Response | null = null;
+     for (const url of urlVariants) {
+       resp = await fetch(url);
+       if (resp.ok) break;
+       logger.warn('[Routing] OSRM rejected request variant, trying simpler request', { status: resp.status, url });
+     }
 
-    let resp: Response | null = null;
-    for (const url of urlVariants) {
-      resp = await fetch(url);
-      if (resp.ok) break;
-      logger.warn('[Routing] OSRM rejected request variant, trying simpler request', { status: resp.status, url });
-    }
+     if (!resp || !resp.ok) throw new Error(`OSRM error: ${resp?.status}`);
 
-    if (!resp || !resp.ok) throw new Error(`OSRM error: ${resp?.status}`);
+     const data = await resp.json();
+     if (data.code !== 'Ok' || !data.routes?.length) {
+       throw new Error('No route found');
+     }
 
-    const data = await resp.json();
-    if (data.code !== 'Ok' || !data.routes?.length) {
-      throw new Error('No route found');
-    }
+     const main = parseOSRMRoute(data.routes[0], 'main');
+     const alts = (data.routes as OSRMRoute[])
+       .slice(1, 4)
+       .map((r, i) => parseOSRMRoute(r, `alt-${i}`));
 
-    const main = parseOSRMRoute(data.routes[0], 'main');
-    const alts = (data.routes as OSRMRoute[])
-      .slice(1, 4)
-      .map((r, i) => parseOSRMRoute(r, `alt-${i}`));
+     const fallbackReason = buildRouteFallbackReason('osrm', degradationDiagnostics);
+     recordFallbackUsage('routing', fallbackReason);
+     return {
+       main,
+       alternatives: alts,
+       source: 'osrm',
+       attemptedSources,
+       degradationReason: summarizeRouteDegradation(degradationDiagnostics),
+     };
+   } catch (osrmErr) {
+     const diagnostic = createRouteFailureDiagnostic('osrm', osrmErr);
+     degradationDiagnostics.push(diagnostic);
+     logger.warn('[Routing] OSRM route unavailable', { error: osrmErr, diagnostic });
+   }
 
-    const fallbackReason = buildRouteFallbackReason('osrm', degradationDiagnostics);
-    recordFallbackUsage('routing', fallbackReason);
-    return {
-      main,
-      alternatives: alts,
-      source: 'osrm',
-      attemptedSources,
-      degradationReason: summarizeRouteDegradation(degradationDiagnostics),
-    };
-  } catch (osrmErr) {
-    const diagnostic = createRouteFailureDiagnostic('osrm', osrmErr);
-    degradationDiagnostics.push(diagnostic);
-    logger.warn('[Routing] OSRM route unavailable', { error: osrmErr, diagnostic });
-    const failureSummary = summarizeRouteDegradation(degradationDiagnostics) ?? 'routing_chain_failed';
-    throw new Error(`route_chain_failed:${failureSummary}`);
-  }
+   // 2) BACKEND — navigation_server
+   attemptedSources.push('navigation_server');
+   try {
+     const result = await fetchRouteFromNavigationServer(from, to, alternatives, 'car');
+     return {
+       ...result,
+       source: 'navigation_server',
+       attemptedSources,
+       degradationReason: summarizeRouteDegradation(degradationDiagnostics),
+     };
+   } catch (e) {
+     const diagnostic = createRouteFailureDiagnostic('navigation_server', e);
+     degradationDiagnostics.push(diagnostic);
+     logger.warn('[Routing] navigation_server unavailable', { error: e, diagnostic });
+   }
+
+   // 3) OFFLINE fallback — local Dijkstra routing
+   attemptedSources.push('offline');
+   try {
+     const result = await fetchRouteOffline(from, to);
+     const fallbackReason = buildRouteFallbackReason('offline', degradationDiagnostics);
+     recordFallbackUsage('routing', fallbackReason);
+     logger.info('[Routing] Offline route selected', { fallbackReason });
+     return {
+       ...result,
+       source: 'offline',
+       attemptedSources,
+       degradationReason: summarizeRouteDegradation(degradationDiagnostics),
+     };
+   } catch (e) {
+     const diagnostic = createRouteFailureDiagnostic('offline', e);
+     degradationDiagnostics.push(diagnostic);
+     logger.warn('[Routing] Offline route unavailable', { error: e, diagnostic });
+   }
 }
 
 // ─── Spatial off-route проверка O(1) вместо O(n) ───────────────────────────

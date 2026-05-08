@@ -17,7 +17,11 @@ import type {
   AdCampaign,
   CreateCampaignInput,
   CampaignStats,
+  AdCreativeStatus,
+  Targeting,
 } from "@/lib/ads/types";
+
+export type { Targeting, CampaignStats };
 
 export function useAdCampaigns() {
   const { user } = useAuth();

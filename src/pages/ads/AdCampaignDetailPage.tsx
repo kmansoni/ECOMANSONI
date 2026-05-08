@@ -62,6 +62,7 @@ export default function AdCampaignDetailPage() {
   const [editingCreative, setEditingCreative] = useState<AdCreative | null>(null);
   const [previewCreative, setPreviewCreative] = useState<AdCreative | null>(null);
   const [previewFormat, setPreviewFormat] = useState<'feed' | 'story' | 'reels'>('feed');
+  const [serverError, setServerError] = useState<string | null>(null);
 
   // Находим текущую кампанию
   const campaign = campaigns.find(c => c.id === id);
@@ -97,20 +98,6 @@ export default function AdCampaignDetailPage() {
     if (success) {
       handleCloseEditor();
     }
-  };
-
-  const handleCloseEditor = () => {
-    setEditorOpen(false);
-    setEditingCreative(null);
-  };
-
-  const handleSubmitCreative = async (data: AdCreativeInsert) => {
-    if (editingCreative) {
-      await updateCreative(editingCreative.id, data);
-    } else {
-      await addCreative(data);
-    }
-    handleCloseEditor();
   };
 
   const handleDeleteCreative = async (creativeId: string) => {
@@ -366,5 +353,6 @@ export default function AdCampaignDetailPage() {
           </DialogContent>
         </Dialog>
       )}
-  </div>
-);
+    </div>
+  );
+}
