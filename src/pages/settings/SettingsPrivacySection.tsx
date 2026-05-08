@@ -9,14 +9,15 @@ import { cn, getErrorMessage } from "@/lib/utils";
 import { PrivacySecurityCenter } from "@/components/settings/PrivacySecurityCenter";
 import { SettingsHeader } from "./helpers";
 import type { SectionProps } from "./types";
-// BlockedUsersPanel is inlined here to avoid circular imports
 import { useCallback, useEffect, useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Download, CheckCircle2, Mail, Heart, FileText } from "lucide-react";
+import { KindTipsTicker } from "@/pages/auth/components/KindTipsTicker";
+import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { toast } from "@/hooks/use-toast";
-import { CheckCircle2, Mail } from "lucide-react";
 import { useRecoveryEmail } from "@/hooks/useRecoveryEmail";
 
 type PrivacyScreen =
@@ -268,6 +269,28 @@ function RecoveryEmailPanel({ isDark }: { isDark: boolean }) {
 }
 
 export function SettingsPrivacySection({ isDark, currentScreen, onNavigate, onBack }: PrivacySectionProps) {
+  const { user } = useAuth();
+  const [exporting, setExporting] = useState(false);
+
+  const handleExportData = async () => {
+    if (!user) return;
+    setExporting(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("gdpr-export", {
+        body: { format: "json" },
+      });
+      if (error) throw error;
+      if (data?.downloadUrl) {
+        window.open(data.downloadUrl, "_blank");
+        toast({ title: "Экспорт данных", description: "Файл готов к скачиванию" });
+      }
+    } catch (e) {
+      toast({ title: "Экспорт данных", description: getErrorMessage(e) });
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const titles: Record<PrivacyScreen, string> = {
     privacy: "Конфиденциальность",
     privacy_blocked: "Заблокированные",
@@ -309,9 +332,60 @@ export function SettingsPrivacySection({ isDark, currentScreen, onNavigate, onBa
           onOpenBlocked={currentScreen === "privacy" ? () => onNavigate("privacy_blocked") : undefined}
         />
         {currentScreen === "privacy" && (
-          <div className="px-4 pb-4 mt-4">
-            <RecoveryEmailPanel isDark={isDark} />
-          </div>
+          <>
+            <div className="px-4 pb-4 mt-4">
+              <div className={cn(
+                "backdrop-blur-xl rounded-2xl border p-4",
+                isDark
+                  ? "bg-white/[0.04] border-white/[0.08]"
+                  : "bg-white/40 border-white/20"
+              )}>
+                <div className="flex items-center gap-2 mb-3">
+                  <Heart className={cn("w-4 h-4", isDark ? "text-cyan-300" : "text-teal-600")} />
+                  <span className={cn("text-sm font-semibold", isDark ? "text-white/80" : "text-gray-700")}>
+                    Добрые мысли
+                  </span>
+                </div>
+                <KindTipsTicker tokens={{ isDark, textPrimary: isDark ? "text-white" : "text-gray-900", textMuted: isDark ? "text-white/60" : "text-gray-500" }} />
+              </div>
+            </div>
+            <div className="px-4 pb-4 mt-4">
+              <Link
+                to="/legal/privacy"
+                className={cn(
+                  "w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl border transition-colors",
+                  isDark
+                    ? "bg-white/5 border-white/10 hover:bg-white/10 text-white"
+                    : "bg-white/50 border-white/30 hover:bg-white/70 text-gray-900"
+                )}
+              >
+                <FileText className="w-4 h-4" />
+                <span>Политика конфиденциальности</span>
+              </Link>
+            </div>
+            <div className="px-4 pb-4 mt-4">
+              <button
+                onClick={handleExportData}
+                disabled={exporting || !user}
+                className={cn(
+                  "w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl border transition-colors",
+                  isDark
+                    ? "bg-white/5 border-white/10 hover:bg-white/10 text-white"
+                    : "bg-white/50 border-white/30 hover:bg-white/70 text-gray-900",
+                  (!user || exporting) && "opacity-50 cursor-not-allowed"
+                )}
+              >
+                <Download className="w-4 h-4" />
+                <span>{exporting ? "Формируем..." : "Экспорт данных (GDPR)"}</span>
+              </button>
+              <p className={cn("text-xs mt-2 px-1", isDark ? "text-white/50" : "text-gray-600")}>
+                Скачайте все свои данные в формате JSON. Ссылка активна 7 дней.
+              </p>
+            </div>
+            <div className="px-4 pb-4 mt-4">
+              <RecoveryEmailPanel isDark={isDark} />
+            </div>
+          </>
         )}
       </div>
     </>
