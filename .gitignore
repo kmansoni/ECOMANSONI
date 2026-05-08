@@ -96,6 +96,14 @@ TIMEWEB_PASTE_TO_CONSOLE.txt
 # Test artifacts
 test-results/
 playwright-report/
+screenshots/
+pw-screenshots/
+
+# Build logs and deploy archives
+*.tar.gz
+tsc-output.*
+build*.log
+.tmp/
 
 # Local vendor leftovers (should not be committed)
 columba/
