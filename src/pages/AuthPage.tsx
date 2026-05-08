@@ -537,7 +537,7 @@ export function AuthPage() {
                     <motion.form key="phone" initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -24 }} transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
                       onSubmit={(e) => { e.preventDefault(); void submitPhone(); }} className="flex flex-col"
                     >
-                      <div className={`backdrop-blur-xl rounded-2xl border p-4 ${tokens.isDark ? "bg-white/[0.04] border-white/[0.08]" : "bg-white/40 border-white/20"}`}>
+                      <div>
                         <div className="flex items-center gap-2 mb-3">
                           <Heart className={`w-4 h-4 ${tokens.isDark ? "text-cyan-300" : "text-teal-600"}`} />
                           <span className={`text-sm font-semibold ${tokens.isDark ? "text-white/80" : "text-gray-700"}`}>
