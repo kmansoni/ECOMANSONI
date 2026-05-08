@@ -1,16 +1,3 @@
-/**
- * usePostLikes — paginated list of users who liked a post.
- *
- * Fetches from `post_likes` JOIN `profiles` with cursor-based pagination.
- * Returns a stable list that can be extended via `loadMore()`.
- *
- * Architecture:
- *   - postId null → no-op (sheet not open)
- *   - PAGE_SIZE = 30 — matches Instagram's batch size
- *   - Cursor pagination via `created_at` DESC + `id` tiebreaker
- *   - Deduplication guard: ignores duplicate loads
- */
-
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { dbLoose } from "@/lib/supabase";
@@ -43,7 +30,6 @@ export function usePostLikes(postId: string | null): UsePostLikesResult {
   const [hasMore, setHasMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Cursor: { likedAt, id } of the last fetched row
   const cursorRef = useRef<{ likedAt: string; id: string } | null>(null);
   const fetchingRef = useRef(false);
   const currentPostIdRef = useRef<string | null>(null);
@@ -62,28 +48,14 @@ export function usePostLikes(postId: string | null): UsePostLikesResult {
       }
 
       try {
-        // post_likes: { post_id, user_id, created_at }
-        // profiles:   { id, username, display_name, avatar_url, is_verified }
         let query = dbLoose
           .from("post_likes")
-          .select(
-            `
-            user_id,
-            created_at,
-            profiles:user_id (
-              username,
-              display_name,
-              avatar_url,
-              is_verified
-            )
-          `
-          )
+          .select("user_id, created_at")
           .eq("post_id", postId)
           .order("created_at", { ascending: false })
           .order("user_id", { ascending: false })
           .limit(PAGE_SIZE);
 
-        // Cursor pagination: fetch rows older than the last cursor
         if (!isFirstPage && cursorRef.current) {
           query = query.or(
             `created_at.lt.${cursorRef.current.likedAt},` +
@@ -91,35 +63,53 @@ export function usePostLikes(postId: string | null): UsePostLikesResult {
           );
         }
 
-        const { data, error: fetchError } = await query;
-        if (fetchError) throw fetchError;
+        const { data: likesData, error: likesError } = await query;
+        if (likesError) throw likesError;
 
-        const rows = (data ?? []) as unknown as Array<{
+        const rows = (likesData ?? []) as Array<{ user_id: string; created_at: string }>;
+        if (rows.length === 0) {
+          if (isFirstPage) setLikers([]);
+          setHasMore(false);
+          return;
+        }
+
+        const userIds = rows.map(r => r.user_id);
+        const { data: profilesData, error: profilesError } = await dbLoose
+          .from("profiles")
+          .select("user_id, username, display_name, avatar_url, is_verified")
+          .in("user_id", userIds);
+        if (profilesError) throw profilesError;
+
+        type ProfileRow = {
           user_id: string;
-          created_at: string;
-          profiles: {
-            username: string;
-            display_name: string | null;
-            avatar_url: string | null;
-            is_verified: boolean | null;
-          } | null;
-        }>;
+          username: string | null;
+          display_name: string | null;
+          avatar_url: string | null;
+          is_verified: boolean | null;
+        };
+        const profileMap = new Map<string, ProfileRow>();
+        for (const p of (profilesData ?? []) as ProfileRow[]) {
+          profileMap.set(p.user_id, p);
+        }
 
         const mapped: PostLiker[] = rows
-          .filter((r) => r.profiles !== null)
-          .map((r) => ({
-            userId: r.user_id,
-            username: r.profiles!.username,
-            displayName: r.profiles!.display_name ?? r.profiles!.username,
-            avatarUrl: r.profiles!.avatar_url,
-            isVerified: r.profiles!.is_verified ?? false,
-            likedAt: r.created_at,
-          }));
+          .filter(r => profileMap.has(r.user_id))
+          .map(r => {
+            const p = profileMap.get(r.user_id)!;
+            return {
+              userId: r.user_id,
+              username: p.username ?? `u_${r.user_id.slice(0, 8)}`,
+              displayName: p.display_name ?? p.username ?? "Пользователь",
+              avatarUrl: p.avatar_url,
+              isVerified: p.is_verified ?? false,
+              likedAt: r.created_at,
+            };
+          });
 
         if (isFirstPage) {
           setLikers(mapped);
         } else {
-          setLikers((prev) => [...prev, ...mapped]);
+          setLikers(prev => [...prev, ...mapped]);
         }
 
         setHasMore(rows.length === PAGE_SIZE);
@@ -140,7 +130,6 @@ export function usePostLikes(postId: string | null): UsePostLikesResult {
     [postId]
   );
 
-  // Reset and fetch first page when postId changes
   useEffect(() => {
     if (postId === currentPostIdRef.current) return;
     currentPostIdRef.current = postId;
