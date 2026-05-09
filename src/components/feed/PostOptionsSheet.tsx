@@ -1,6 +1,6 @@
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
-import { Bookmark, UserPlus, UserMinus, Flag, Link2, Pin } from "lucide-react";
+import { Bookmark, UserPlus, UserMinus, Flag, Link2, Pin, Archive, Undo2 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useSavedPosts } from "@/hooks/useSavedPosts";
 import { supabase } from "@/integrations/supabase/client";
@@ -9,6 +9,8 @@ import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { ReportSheet } from "@/components/moderation/ReportSheet";
+import { archivePost, unarchivePost, isPostArchived } from "@/repositories/archiveRepository";
+import { logger } from "@/lib/logger";
 
 interface PostOptionsSheetProps {
   isOpen: boolean;
@@ -34,11 +36,32 @@ export function PostOptionsSheet({
   const [loading, setLoading] = useState(false);
   const [pinLoading, setPinLoading] = useState(false);
   const [pinnedRows, setPinnedRows] = useState<Array<{ id: string; post_id: string; position: number | null }>>([]);
+  const [isArchived, setIsArchived] = useState(false);
+  const [archiveLoading, setArchiveLoading] = useState(false);
 
   const [showReport, setShowReport] = useState(false);
   const saved = isSaved(postId);
   const isOwnPost = user?.id === authorId;
   const pinnedEntry = pinnedRows.find((row) => row.post_id === postId) ?? null;
+
+  // Check if the current user's post is archived
+  useEffect(() => {
+    const checkArchive = async () => {
+      if (!isOpen || !user || !isOwnPost) {
+        setIsArchived(false);
+        return;
+      }
+      try {
+        const archived = await isPostArchived(user.id, postId);
+        setIsArchived(archived);
+      } catch (err) {
+        logger.error('[PostOptionsSheet] Failed to check archive status', { error: err });
+        setIsArchived(false);
+      }
+    };
+
+    void checkArchive();
+  }, [isOpen, user, isOwnPost, postId]);
 
   // Check if following the author
   useEffect(() => {
@@ -158,53 +181,92 @@ export function PostOptionsSheet({
     }
   };
 
-  const handlePinToggle = async () => {
-    if (!user || !isOwnPost) return;
+   const handlePinToggle = async () => {
+     if (!user || !isOwnPost) return;
 
-    setPinLoading(true);
-    try {
-      if (pinnedEntry) {
-        const { error } = await dbLoose
-          .from("pinned_posts")
-          .delete()
-          .eq("id", pinnedEntry.id)
-          .eq("user_id", user.id);
+     setPinLoading(true);
+     try {
+       if (pinnedEntry) {
+         const { error } = await dbLoose
+           .from("pinned_posts")
+           .delete()
+           .eq("id", pinnedEntry.id)
+           .eq("user_id", user.id);
 
-        if (error) throw error;
-        toast.success("Пост откреплён");
-      } else {
-        if (pinnedRows.length >= 3) {
-          toast.error("Можно закрепить максимум 3 поста");
-          return;
-        }
+         if (error) throw error;
+         toast.success("Пост откреплён");
+       } else {
+         if (pinnedRows.length >= 3) {
+           toast.error("Можно закрепить максимум 3 поста");
+           return;
+         }
 
-        const nextPosition = pinnedRows.reduce((max, row) => Math.max(max, Number(row.position ?? 0)), -1) + 1;
-        const { error } = await dbLoose.from("pinned_posts").insert({
-          user_id: user.id,
-          post_id: postId,
-          position: nextPosition,
-        });
+         const nextPosition = pinnedRows.reduce((max, row) => Math.max(max, Number(row.position ?? 0)), -1) + 1;
+         const { error } = await dbLoose.from("pinned_posts").insert({
+           user_id: user.id,
+           post_id: postId,
+           position: nextPosition,
+         });
 
-        if (error) throw error;
-        toast.success("Пост закреплён");
-      }
+         if (error) throw error;
+         toast.success("Пост закреплён");
+       }
 
-      const { data: refreshedRows } = await dbLoose
-        .from("pinned_posts")
-        .select("id, post_id, position")
-        .eq("user_id", user.id)
-        .order("position", { ascending: true })
-        .order("pinned_at", { ascending: true });
+       const { data: refreshedRows } = await dbLoose
+         .from("pinned_posts")
+         .select("id, post_id, position")
+         .eq("user_id", user.id)
+         .order("position", { ascending: true })
+         .order("pinned_at", { ascending: true });
 
-      setPinnedRows((refreshedRows ?? []) as Array<{ id: string; post_id: string; position: number | null }>);
-      onPinChanged?.();
-      onClose();
-    } catch (err) {
-      toast.error("Не удалось обновить закрепление");
-    } finally {
-      setPinLoading(false);
-    }
-  };
+       setPinnedRows((refreshedRows ?? []) as Array<{ id: string; post_id: string; position: number | null }>);
+       onPinChanged?.();
+       onClose();
+     } catch (err) {
+       toast.error("Не удалось обновить закрепление");
+     } finally {
+       setPinLoading(false);
+     }
+   };
+
+   const handleArchive = async () => {
+     if (!user) return;
+     setArchiveLoading(true);
+     try {
+       await archivePost(user.id, postId);
+       setIsArchived(true);
+       toast.success("Пост архивирован", {
+         action: {
+           label: "Отменить",
+           onClick: async () => {
+             await unarchivePost(user.id, postId);
+             setIsArchived(false);
+           },
+         },
+         duration: 5000,
+       });
+       onClose();
+     } catch (err) {
+       toast.error("Не удалось архивировать пост");
+     } finally {
+       setArchiveLoading(false);
+     }
+   };
+
+   const handleRestore = async () => {
+     if (!user) return;
+     setArchiveLoading(true);
+     try {
+       await unarchivePost(user.id, postId);
+       setIsArchived(false);
+       toast.success("Пост восстановлен");
+       onClose();
+     } catch (err) {
+       toast.error("Не удалось восстановить пост");
+     } finally {
+       setArchiveLoading(false);
+     }
+   };
 
   return (
     <>
@@ -221,17 +283,39 @@ export function PostOptionsSheet({
             {saved ? "Удалить из избранного" : "Добавить в избранное"}
           </Button>
 
-          {isOwnPost && (
-            <Button
-              variant="ghost"
-              className="justify-start gap-3 h-14 px-6 text-base font-normal"
-              onClick={handlePinToggle}
-              disabled={pinLoading}
-            >
-              <Pin className={pinnedEntry ? "fill-current text-primary" : ""} />
-              {pinnedEntry ? "Открепить пост" : "Закрепить в профиле"}
-            </Button>
-          )}
+           {isOwnPost && (
+             <Button
+               variant="ghost"
+               className="justify-start gap-3 h-14 px-6 text-base font-normal"
+               onClick={handlePinToggle}
+               disabled={pinLoading}
+             >
+               <Pin className={pinnedEntry ? "fill-current text-primary" : ""} />
+               {pinnedEntry ? "Открепить пост" : "Закрепить в профиле"}
+             </Button>
+           )}
+
+           {/* Archive / Restore - only for own posts */}
+           {isOwnPost && (
+             <Button
+               variant="ghost"
+               className="justify-start gap-3 h-14 px-6 text-base font-normal"
+               onClick={isArchived ? handleRestore : handleArchive}
+               disabled={archiveLoading}
+             >
+               {isArchived ? (
+                 <>
+                   <Undo2 className="text-blue-500" />
+                   Восстановить пост
+                 </>
+               ) : (
+                 <>
+                   <Archive className="text-muted-foreground" />
+                   Архивировать
+                 </>
+               )}
+             </Button>
+           )}
 
           {/* Follow/Unfollow - only show if not own post */}
           {!isOwnPost && (

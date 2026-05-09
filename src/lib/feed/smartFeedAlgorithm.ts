@@ -3,6 +3,8 @@
  * Превосходит стандартную хронологическую ленту за счёт многофакторного ранжирования
  */
 
+import { getRankConfig } from './rankConfig';
+
 export interface FeedRankingFactors {
   engagementScore: number;      // 0-1: лайки, комментарии, сохранения, шеры
   authorAffinity: number;       // 0-1: насколько пользователь взаимодействует с автором
@@ -15,53 +17,32 @@ export interface FeedRankingFactors {
   contentType: 'text' | 'image' | 'video' | 'carousel' | 'reel';
 }
 
-// Веса факторов ранжирования
-const WEIGHTS = {
-  engagement: 0.30,
-  authorAffinity: 0.25,
-  recency: 0.20,
-  contentRelevance: 0.15,
-  diversity: 0.10,
-} as const;
-
-// Бонусы/штрафы
-const BOOSTS = {
-  closeFriend: 1.5,
-  following: 1.2,
-  alreadySeen: 0.3,
-} as const;
-
-// Бонусы за тип контента (видео и карусели получают небольшой буст)
-const CONTENT_TYPE_BONUS: Record<FeedRankingFactors['contentType'], number> = {
-  reel: 1.15,
-  video: 1.10,
-  carousel: 1.05,
-  image: 1.0,
-  text: 0.95,
-};
-
 /**
  * Рассчитывает итоговый score поста для ленты
+ * Веса и бонусы берутся из конфигурации (config-driven)
  */
 export function calculateFeedScore(factors: FeedRankingFactors): number {
+  const config = getRankConfig();
+
   // Базовый score — взвешенная сумма факторов
   const baseScore =
-    factors.engagementScore * WEIGHTS.engagement +
-    factors.authorAffinity * WEIGHTS.authorAffinity +
-    factors.recencyScore * WEIGHTS.recency +
-    factors.contentRelevance * WEIGHTS.contentRelevance +
-    factors.diversityBonus * WEIGHTS.diversity;
+    factors.engagementScore * config.weights.engagement +
+    factors.authorAffinity * config.weights.authorAffinity +
+    factors.recencyScore * config.weights.recency +
+    factors.contentRelevance * config.weights.contentRelevance +
+    factors.diversityBonus * config.weights.diversity;
 
   // Применяем мультипликаторы
   let multiplier = 1.0;
 
-  if (factors.isCloseFriend) multiplier *= BOOSTS.closeFriend;
-  else if (factors.isFollowing) multiplier *= BOOSTS.following;
+  if (factors.isCloseFriend) multiplier *= config.boosts.closeFriend;
+  else if (factors.isFollowing) multiplier *= config.boosts.following;
 
-  if (factors.hasInteracted) multiplier *= BOOSTS.alreadySeen;
+  if (factors.hasInteracted) multiplier *= config.boosts.alreadySeen;
 
   // Бонус за тип контента
-  multiplier *= CONTENT_TYPE_BONUS[factors.contentType];
+  const contentTypeKey = factors.contentType; // 'reel' | 'video' | 'carousel' | 'image' | 'text'
+  multiplier *= config.contentTypeBonus[contentTypeKey] ?? 1.0;
 
   return Math.min(1.0, baseScore * multiplier);
 }

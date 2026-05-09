@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
-import { User } from "lucide-react";
-import { useScrollCollapse } from "@/hooks/useScrollCollapse";
+import { User, Search, Settings2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useScrollCollapse } from "@/hooks/useScrollCollapse";
 import { useScrollContainer } from "@/contexts/ScrollContainerContext";
 import { StoryViewer } from "./StoryViewer";
 import { useStories, type UserWithStories } from "@/hooks/useStories";
@@ -82,7 +82,7 @@ export function FeedHeader() {
 
   return (
     <div 
-      className="sticky top-0 z-30 overflow-hidden will-change-auto border-b border-white/15 bg-white/8 shadow-[0_10px_30px_rgba(0,0,0,0.24)] backdrop-blur-2xl supports-[backdrop-filter]:bg-white/6"
+      className="sticky top-0 z-30 overflow-hidden will-change-auto bg-white/[0.03] border-b border-white/[0.08] shadow-[0_8px_40px_rgba(0,0,0,0.24)] backdrop-blur-3xl supports-[backdrop-filter]:bg-white/[0.02]"
       style={{ height: `${containerHeight}px` }}
     >
       {/* Кнопка сервисов — правый верхний угол, мобайл */}
@@ -98,10 +98,10 @@ export function FeedHeader() {
           {Array.from({ length: 5 }).map((_, i) => (
             <div key={i} className="flex flex-col items-center gap-1">
               <div
-                className="rounded-full bg-muted animate-pulse"
+                className="rounded-full bg-white/10 animate-pulse"
                 style={{ width: EXPANDED_AVATAR_SIZE, height: EXPANDED_AVATAR_SIZE }}
               />
-              <div className="w-12 h-2.5 rounded bg-muted animate-pulse" />
+              <div className="w-12 h-2.5 rounded bg-white/10 animate-pulse" />
             </div>
           ))}
         </div>
@@ -134,14 +134,14 @@ export function FeedHeader() {
               className={cn(
                 "story-avatar rounded-full flex-shrink-0 relative",
                 user.isOwn && !hasStories
-                  ? "p-0.5 bg-muted"
+                  ? "p-0.5 bg-white/10"
                   : user.hasNew && user.hasCloseFriendsStory
                     ? "p-[2.5px] bg-gradient-to-tr from-green-400 via-emerald-500 to-green-400"
                     : user.hasNew
-                      ? "p-[2.5px] bg-gradient-to-tr from-primary via-accent to-primary"
+                      ? "p-[2.5px] bg-gradient-to-tr from-cyan-400 via-teal-400 to-emerald-400"
                       : hasStories
-                        ? "p-0.5 bg-muted-foreground/30"
-                        : "p-0.5 bg-muted"
+                        ? "p-0.5 bg-white/15"
+                        : "p-0.5 bg-white/10"
               )}
               style={{
                 width: `${EXPANDED_AVATAR_SIZE}px`,
@@ -151,7 +151,7 @@ export function FeedHeader() {
               }}
             >
               <div className="w-full h-full rounded-full bg-background p-[2px]">
-                <div className="w-full h-full rounded-full overflow-hidden bg-muted flex items-center justify-center">
+                <div className="w-full h-full rounded-full overflow-hidden bg-white/5 flex items-center justify-center">
                   {user.avatar_url ? (
                     <img                        src={user.avatar_url}
                       alt={user.display_name || ''}
@@ -159,19 +159,19 @@ export function FeedHeader() {
                       loading="lazy"
                     />
                   ) : (
-                    <User className="w-6 h-6 text-muted-foreground" />
+                    <User className="w-6 h-6 text-white/30" />
                   )}
                 </div>
               </div>
               {/* Plus icon - use CSS class for transition */}
               {showPlusIcon && (
                 <div 
-                  className="absolute -bottom-0.5 -right-0.5 w-5 h-5 rounded-full bg-primary border-2 border-background flex items-center justify-center story-avatar"
+                  className="absolute -bottom-0.5 -right-0.5 w-5 h-5 rounded-full bg-cyan-400 border-2 border-background flex items-center justify-center story-avatar"
                   style={{ 
                     opacity: collapseProgress < 0.5 ? 1 : 0,
                   }}
                 >
-                  <span className="w-3 h-3 text-primary-foreground text-[12px] leading-none flex items-center justify-center">+</span>
+                  <span className="w-3 h-3 text-black text-[12px] leading-none flex items-center justify-center">+</span>
                 </div>
               )}
             </div>

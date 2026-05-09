@@ -1,5 +1,6 @@
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { motion } from "framer-motion";
 
 export type ContentFilter = 'all' | 'media' | 'text';
 
@@ -16,30 +17,47 @@ const filters: { id: ContentFilter; label: string }[] = [
 
 export function FeedFilters({ filter, onFilterChange }: FeedFiltersProps) {
   return (
-    <div className="flex items-center gap-4 overflow-x-auto scrollbar-hide border-y border-white/15 bg-white/10 px-4 py-2 backdrop-blur-2xl">
+    <div className="flex items-center gap-1 overflow-x-auto scrollbar-hide px-3 py-1.5">
       {filters.map((f) => (
         <button
           key={f.id}
           onClick={() => onFilterChange(f.id)}
           className={cn(
-            "relative py-1 text-sm font-medium whitespace-nowrap transition-all duration-200",
+            "relative px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-all duration-200",
             filter === f.id
-              ? "text-foreground/70"
-              : "text-foreground/40 hover:text-foreground/55"
+              ? "text-white"
+              : "text-white/50 hover:text-white/80"
           )}
+          style={filter === f.id ? {
+            background: "linear-gradient(135deg, rgba(0,180,216,0.25), rgba(0,200,150,0.2))",
+            boxShadow: "0 2px 12px rgba(0,180,216,0.15)",
+          } : {}}
         >
-          {f.label}
+          {filter === f.id && (
+            <motion.div
+              layoutId="filter-pill"
+              className="absolute inset-0 rounded-full"
+              initial={false}
+              transition={{ type: "spring", stiffness: 300, damping: 25 }}
+              style={{
+                background: "linear-gradient(135deg, #0096c7, #00c896)",
+                boxShadow: "0 4px 16px rgba(0,180,216,0.2)",
+              }}
+            />
+          )}
+          <span className="relative z-10">{f.label}</span>
         </button>
       ))}
-      
+
       {filter !== 'all' && (
-        <button
+        <motion.button
+          whileTap={{ scale: 0.9 }}
           onClick={() => onFilterChange('all')}
-          className="p-1.5 rounded-full text-foreground/30 hover:text-foreground/50 transition-colors ml-auto"
+          className="ml-auto p-1.5 rounded-full text-white/30 hover:text-white/60 transition-colors"
           aria-label="Сбросить фильтр"
         >
           <X className="w-4 h-4" />
-        </button>
+        </motion.button>
       )}
     </div>
   );
