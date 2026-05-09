@@ -1,7 +1,7 @@
 import { motion } from "framer-motion";
 import { Plus } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import type { ThemeTokens } from "../auth/types";
+import type { ThemeTokens } from "@/pages/auth/types";
 
 export function CreatePostFAB({ tokens }: { tokens: ThemeTokens }) {
   const navigate = useNavigate();

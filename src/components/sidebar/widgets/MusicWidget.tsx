@@ -46,7 +46,7 @@ export default function MusicWidget() {
         </div>
       </div>
       <div className="mt-1 flex items-center gap-1 text-[10px] text-gray-500">
-        <span>{(currentTrack.duration * currentTrack.progress / 100 * 100).toFixed(0)}:00</span>
+        <span>1:41</span>
         <div className="flex-1 h-0.5 rounded-full bg-white/10 mx-1">
           <div className="h-full rounded-full bg-cyan-400" style={{ width: `${currentTrack.progress * 100}%` }} />
         </div>

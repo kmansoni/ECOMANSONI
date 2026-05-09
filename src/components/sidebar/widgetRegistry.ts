@@ -1,6 +1,7 @@
 // src/components/sidebar/widgetRegistry.ts
 import { lazy } from 'react';
-import type { WidgetId } from '@/stores/navigatorSettingsStore';
+
+type WidgetId = string;
 
 export interface WidgetDefinition {
   id: WidgetId;

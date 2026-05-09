@@ -156,27 +156,6 @@ export type MapViewMode = 'standard' | 'satellite' | 'hybrid' | 'terrain' | '3d'
 // ─── Тема оформления ────────────────────────────────────────────────────────
 export type NavTheme = 'dark' | 'light' | 'auto' | 'amap' | 'neon' | 'retro';
 
-// ─── Виджеты сайдбара ───────────────────────────────────────────────────────
-export type WidgetId =
-  | 'profile'
-  | 'quickActions'
-  | 'chats'
-  | 'music'
-  | 'taxi'
-  | 'weather'
-  | 'todo'
-  | 'search'
-  | 'recommendations'
-  | 'notes'
-  | 'settings'
-  | 'support';
-
-export interface SidebarWidgetsState {
-  order: WidgetId[];
-  visible: WidgetId[];
-  sizes: Record<WidgetId, number>; // height in px
-}
-
 // ─── Состояние хранилища ─────────────────────────────────────────────────────
 interface NavigatorSettingsState {
   // Звук
@@ -249,75 +228,56 @@ interface NavigatorSettingsState {
 export const useNavigatorSettings = create<NavigatorSettingsState>()(
   persist(
     (set) => ({
-       // Значения по умолчанию
-       soundMode: 'all',
-       volume: 80,
-       muteOtherApps: false,
-       selectedVoice: 'default',
-       voiceEnabled: true,
-       voiceLearningEnabled: true,
-       voiceBackendSyncEnabled: true,
-       voiceAllowOnlineFallback: true,
-       avoidTolls: false,
-       avoidUnpaved: false,
-       avoidHighways: false,
-       selectedVehicle: 'sedan-white',
-       mapViewMode: 'standard',
-       navTheme: 'dark',
-       show3DBuildings: true,
-       showTrafficFlowOverlay: true,
-       showTrafficLights: true,
-       showTransitOverlay: true,
-       showSpeedBumps: true,
-       showRoadSigns: true,
-        showLanes: true,
-        showSpeedCameras: true,
-        showMapEdits: true,          // new: show survey scans layer
-        showPOI: true,
-        showPanorama: false,
-       labelSizeMultiplier: 1.0,
-       highContrastLabels: false,
-       // Sidebar widgets defaults
-       sidebarWidgets: {
-         order: ['profile', 'quickActions', 'chats', 'music', 'taxi', 'weather', 'todo', 'search', 'recommendations', 'notes', 'settings', 'support'],
-         visible: ['profile', 'quickActions', 'chats', 'music', 'taxi', 'weather', 'todo', 'search', 'recommendations', 'notes', 'settings', 'support'],
-         sizes: {
-           profile: 80,
-           quickActions: 60,
-           chats: 120,
-           music: 70,
-           taxi: 70,
-           weather: 60,
-           todo: 80,
-           search: 50,
-           recommendations: 100,
-           notes: 80,
-           settings: 60,
-           support: 50,
-         },
-       },
+      // Значения по умолчанию
+      soundMode: 'all',
+      volume: 80,
+      muteOtherApps: false,
+      selectedVoice: 'default',
+      voiceEnabled: true,
+      voiceLearningEnabled: true,
+      voiceBackendSyncEnabled: true,
+      voiceAllowOnlineFallback: true,
+      avoidTolls: false,
+      avoidUnpaved: false,
+      avoidHighways: false,
+      selectedVehicle: 'sedan-white',
+      mapViewMode: 'standard',
+      navTheme: 'dark',
+      show3DBuildings: true,
+      showTrafficFlowOverlay: true,
+      showTrafficLights: true,
+      showTransitOverlay: true,
+      showSpeedBumps: true,
+      showRoadSigns: true,
+       showLanes: true,
+       showSpeedCameras: true,
+       showMapEdits: true,          // new: show survey scans layer
+       showPOI: true,
+       showPanorama: false,
+      labelSizeMultiplier: 1.0,
+      highContrastLabels: false,
 
-       // Сеттеры
-       setSoundMode: (mode) => set({ soundMode: mode }),
-       setVolume: (v) => set({ volume: Math.max(0, Math.min(100, v)) }),
-       setMuteOtherApps: (v) => set({ muteOtherApps: v }),
-       setSelectedVoice: (id) => set({ selectedVoice: id }),
-       setVoiceEnabled: (v) => set({ voiceEnabled: v }),
-       setVoiceLearningEnabled: (v) => set({ voiceLearningEnabled: v }),
-       setVoiceBackendSyncEnabled: (v) => set({ voiceBackendSyncEnabled: v }),
-       setVoiceAllowOnlineFallback: (v) => set({ voiceAllowOnlineFallback: v }),
-       setAvoidTolls: (v) => set({ avoidTolls: v }),
-       setAvoidUnpaved: (v) => set({ avoidUnpaved: v }),
-       setAvoidHighways: (v) => set({ avoidHighways: v }),
-       setSelectedVehicle: (id) => set({ selectedVehicle: id }),
-       setMapViewMode: (mode) => set({ mapViewMode: mode }),
-       setNavTheme: (theme) => set({ navTheme: theme }),
-       setShow3DBuildings: (v) => set({ show3DBuildings: v }),
-       setShowTrafficFlowOverlay: (v) => set({ showTrafficFlowOverlay: v }),
-       setShowTrafficLights: (v) => set({ showTrafficLights: v }),
-       setShowTransitOverlay: (v) => set({ showTransitOverlay: v }),
-       setShowSpeedBumps: (v) => set({ showSpeedBumps: v }),
-       setShowRoadSigns: (v) => set({ showRoadSigns: v }),
+      // Сеттеры
+      setSoundMode: (mode) => set({ soundMode: mode }),
+      setVolume: (v) => set({ volume: Math.max(0, Math.min(100, v)) }),
+      setMuteOtherApps: (v) => set({ muteOtherApps: v }),
+      setSelectedVoice: (id) => set({ selectedVoice: id }),
+      setVoiceEnabled: (v) => set({ voiceEnabled: v }),
+      setVoiceLearningEnabled: (v) => set({ voiceLearningEnabled: v }),
+      setVoiceBackendSyncEnabled: (v) => set({ voiceBackendSyncEnabled: v }),
+      setVoiceAllowOnlineFallback: (v) => set({ voiceAllowOnlineFallback: v }),
+      setAvoidTolls: (v) => set({ avoidTolls: v }),
+      setAvoidUnpaved: (v) => set({ avoidUnpaved: v }),
+      setAvoidHighways: (v) => set({ avoidHighways: v }),
+      setSelectedVehicle: (id) => set({ selectedVehicle: id }),
+      setMapViewMode: (mode) => set({ mapViewMode: mode }),
+      setNavTheme: (theme) => set({ navTheme: theme }),
+      setShow3DBuildings: (v) => set({ show3DBuildings: v }),
+      setShowTrafficFlowOverlay: (v) => set({ showTrafficFlowOverlay: v }),
+      setShowTrafficLights: (v) => set({ showTrafficLights: v }),
+      setShowTransitOverlay: (v) => set({ showTransitOverlay: v }),
+      setShowSpeedBumps: (v) => set({ showSpeedBumps: v }),
+      setShowRoadSigns: (v) => set({ showRoadSigns: v }),
         setShowLanes: (v) => set({ showLanes: v }),
         setShowSpeedCameras: (v) => set({ showSpeedCameras: v }),
         setShowMapEdits: (v) => set({ showMapEdits: v }),
@@ -325,10 +285,6 @@ export const useNavigatorSettings = create<NavigatorSettingsState>()(
        setShowPanorama: (v) => set({ showPanorama: v }),
        setLabelSizeMultiplier: (v) => set({ labelSizeMultiplier: Math.max(0.7, Math.min(1.5, v)) }),
        setHighContrastLabels: (v) => set({ highContrastLabels: v }),
-       // Sidebar widgets actions
-       setSidebarWidgetOrder: (order) => set((state) => ({ sidebarWidgets: { ...state.sidebarWidgets, order } })),
-       setSidebarWidgetVisible: (visible) => set((state) => ({ sidebarWidgets: { ...state.sidebarWidgets, visible } })),
-       setSidebarWidgetSize: (id, size) => set((state) => ({ sidebarWidgets: { ...state.sidebarWidgets, sizes: { ...state.sidebarWidgets.sizes, [id]: size } } })),
      }),
     {
       name: 'navigator-settings',

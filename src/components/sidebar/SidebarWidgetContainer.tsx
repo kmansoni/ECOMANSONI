@@ -1,6 +1,5 @@
-// src/components/sidebar/SidebarWidgetContainer.tsx
 import React, { Suspense, useState } from 'react';
-import { useNavigatorSettings } from '@/stores/navigatorSettingsStore';
+import { useSidebarWidgets } from '@/stores/sidebarWidgetsStore';
 import { WIDGET_REGISTRY } from './widgetRegistry';
 import { SidebarGroup, SidebarGroupContent, SidebarSeparator } from '@/components/ui/sidebar';
 import { IconRenderer } from './iconRenderer';
@@ -52,9 +51,7 @@ function WidgetWrapper({
 }
 
 export function SidebarWidgetContainer() {
-  const { sidebarWidgets } = useNavigatorSettings((s) => s.sidebarWidgets);
-  const { order = [], visible = [] } = sidebarWidgets || {};
-
+  const { order, visible } = useSidebarWidgets();
   const [configOpen, setConfigOpen] = useState(false);
   const [collapsedWidgets, setCollapsedWidgets] = useState<Set<string>>(new Set());
 
@@ -74,7 +71,7 @@ export function SidebarWidgetContainer() {
       <div className="flex flex-col items-center justify-center h-full text-gray-500 text-sm p-4 gap-3">
         <IconRenderer name="Settings" className="h-10 w-10 text-gray-700" />
         <p className="text-center">Панель пуста</p>
-        <p className="text-[10px] text-center text-gray-600">Настройте виджеты в<br />настройках навигатора</p>
+        <p className="text-[10px] text-center text-gray-600">Настройте виджеты</p>
         <button
           onClick={() => setConfigOpen(true)}
           className="mt-2 rounded-lg bg-white/10 px-4 py-1.5 text-xs text-white/70 hover:bg-white/20 hover:text-white transition-colors"

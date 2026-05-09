@@ -1,6 +1,6 @@
 import { forwardRef } from "react";
 import { motion } from "framer-motion";
-import type { ThemeTokens } from "../auth/types";
+import type { ThemeTokens } from "@/pages/auth/types";
 
 export function PremiumFeedLayout({ children, tokens }: { children: React.ReactNode; tokens: ThemeTokens }) {
   return (

@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import type { ThemeTokens } from "../auth/types";
+import type { ThemeTokens } from "@/pages/auth/types";
 
 export function FeedBrandPanel({ tokens }: { tokens: ThemeTokens }) {
   return (

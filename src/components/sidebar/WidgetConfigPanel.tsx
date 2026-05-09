@@ -1,11 +1,10 @@
-// src/components/sidebar/WidgetConfigPanel.tsx
 import React, { useState } from 'react';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { WIDGET_REGISTRY } from './widgetRegistry';
-import { useNavigatorSettings } from '@/stores/navigatorSettingsStore';
+import { useSidebarWidgets } from '@/stores/sidebarWidgetsStore';
 import { IconRenderer } from './iconRenderer';
 
 interface Props {
@@ -75,15 +74,7 @@ function DraggableItem({
 }
 
 export function WidgetConfigPanel({ open, onOpenChange }: Props) {
-  const { sidebarWidgets, setSidebarWidgetOrder, setSidebarWidgetVisible } = useNavigatorSettings(
-    (s) => ({
-      sidebarWidgets: s.sidebarWidgets,
-      setSidebarWidgetOrder: s.setSidebarWidgetOrder,
-      setSidebarWidgetVisible: s.setSidebarWidgetVisible,
-    }),
-  );
-
-  const { order = [], visible = [] } = sidebarWidgets || {};
+  const { order, visible, setOrder, setVisible, reset } = useSidebarWidgets();
   const [dragId, setDragId] = useState<string | null>(null);
   const allWidgetIds = Object.keys(WIDGET_REGISTRY) as (keyof typeof WIDGET_REGISTRY)[];
 
@@ -108,14 +99,14 @@ export function WidgetConfigPanel({ open, onOpenChange }: Props) {
     const newOrder = [...order];
     const [removed] = newOrder.splice(fromIdx, 1);
     newOrder.splice(toIdx, 0, removed);
-    setSidebarWidgetOrder(newOrder);
+    setOrder(newOrder);
   };
 
   const handleDragEnd = () => { setDragId(null); };
 
   const toggleVisible = (id: string, checked: boolean) => {
     if (checked) {
-      if (!visible.includes(id)) setSidebarWidgetVisible([...visible, id]);
+      if (!visible.includes(id)) setVisible([...visible, id]);
       if (!order.includes(id)) {
         const def = WIDGET_REGISTRY[id];
         const sameCategory = order.filter((oid) => WIDGET_REGISTRY[oid]?.category === def?.category);
@@ -123,25 +114,20 @@ export function WidgetConfigPanel({ open, onOpenChange }: Props) {
           const insertIdx = order.indexOf(sameCategory[sameCategory.length - 1]) + 1;
           const newOrder = [...order];
           newOrder.splice(insertIdx, 0, id);
-          setSidebarWidgetOrder(newOrder);
+          setOrder(newOrder);
         } else {
-          setSidebarWidgetOrder([...order, id]);
+          setOrder([...order, id]);
         }
       }
     } else {
-      setSidebarWidgetVisible(visible.filter((v) => v !== id));
+      setVisible(visible.filter((v) => v !== id));
     }
   };
 
   const addWidget = (id: string) => {
     const newOrder = order.includes(id) ? order : [...order, id];
-    setSidebarWidgetOrder(newOrder);
-    if (!visible.includes(id)) setSidebarWidgetVisible([...visible, id]);
-  };
-
-  const handleReset = () => {
-    setSidebarWidgetOrder(['profile', 'quickActions', 'chats', 'music', 'taxi', 'weather', 'todo', 'search', 'recommendations', 'notes', 'settings', 'support']);
-    setSidebarWidgetVisible(['profile', 'quickActions', 'chats', 'music', 'taxi', 'weather', 'todo', 'search', 'recommendations', 'notes', 'settings', 'support']);
+    setOrder(newOrder);
+    if (!visible.includes(id)) setVisible([...visible, id]);
   };
 
   return (
@@ -169,7 +155,7 @@ export function WidgetConfigPanel({ open, onOpenChange }: Props) {
                     icon={def.icon}
                     visible={visible.includes(id)}
                     onToggle={toggleVisible}
-                    onRemove={(wid: string) => setSidebarWidgetVisible(visible.filter((v) => v !== wid))}
+                    onRemove={(wid: string) => setVisible(visible.filter((v) => v !== wid))}
                     onDragStart={handleDragStart}
                     onDragOver={handleDragOver}
                     onDrop={handleDrop}
@@ -213,7 +199,7 @@ export function WidgetConfigPanel({ open, onOpenChange }: Props) {
         </div>
 
         <DialogFooter className="mt-4">
-          <Button variant="outline" onClick={handleReset}>Сбросить</Button>
+          <Button variant="outline" onClick={reset}>Сбросить</Button>
           <Button onClick={() => onOpenChange(false)}>Готово</Button>
         </DialogFooter>
       </DialogContent>

@@ -17,6 +17,8 @@ import { PremiumFeedToggle } from "@/components/feed/PremiumFeedToggle";
 import { FeedLayout, FeedTransition } from "@/components/feed/FeedLayout";
 import { CreatePostFAB } from "@/components/feed/CreatePostFAB";
 import { useTheme, useThemeTokens } from "@/pages/auth/theme";
+import { Sidebar, SidebarContent, SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
+import { SidebarWidgetContainer } from "@/components/sidebar/SidebarWidgetContainer";
 
 export function HomePage() {
   const { posts, setPosts, loading, loadingMore, hasMore, mode, setMode, refetch, loadMore, error } = useSmartFeed();
@@ -89,6 +91,13 @@ export function HomePage() {
   const skelBg = tokens.isDark ? "bg-white/10" : "bg-white/15";
 
   return (
+    <SidebarProvider>
+      <Sidebar variant="sidebar" collapsible="icon" className="hidden lg:flex border-r border-white/[0.06] bg-black/20 backdrop-blur-xl">
+        <SidebarContent>
+          <SidebarWidgetContainer />
+        </SidebarContent>
+      </Sidebar>
+      <SidebarInset>
     <PullToRefresh onRefresh={handleRefresh}>
       <FeedLayout tokens={tokens}>
         <FeedBrandPanel tokens={tokens} />
@@ -212,6 +221,8 @@ export function HomePage() {
         )}
       </AnimatePresence>
     </PullToRefresh>
+      </SidebarInset>
+    </SidebarProvider>
   );
 }
 

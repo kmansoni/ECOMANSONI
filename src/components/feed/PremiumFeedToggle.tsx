@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import { Sparkles, Users, Clock } from "lucide-react";
-import type { ThemeTokens } from "../auth/types";
+import type { ThemeTokens } from "@/pages/auth/types";
 import type { FeedMode } from "@/hooks/useSmartFeed";
 
 const TABS: { id: FeedMode; label: string; Icon: React.FC<{ className?: string }> }[] = [
