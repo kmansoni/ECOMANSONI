@@ -17,8 +17,8 @@ import { PremiumFeedToggle } from "@/components/feed/PremiumFeedToggle";
 import { FeedLayout, FeedTransition } from "@/components/feed/FeedLayout";
 import { CreatePostFAB } from "@/components/feed/CreatePostFAB";
 import { useTheme, useThemeTokens } from "@/pages/auth/theme";
-import { Sidebar, SidebarContent, SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { SidebarWidgetContainer } from "@/components/sidebar/SidebarWidgetContainer";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 export function HomePage() {
   const { posts, setPosts, loading, loadingMore, hasMore, mode, setMode, refetch, loadMore, error } = useSmartFeed();
@@ -29,6 +29,7 @@ export function HomePage() {
   usePresence();
   const themeCtx = useTheme("dark");
   const tokens = useThemeTokens(themeCtx.theme);
+  const isMobile = useIsMobile();
 
   const handleLikeChange = useCallback(
     (postId: string, liked: boolean) => {
@@ -91,17 +92,35 @@ export function HomePage() {
   const skelBg = tokens.isDark ? "bg-white/10" : "bg-white/15";
 
   return (
-    <SidebarProvider>
-      <Sidebar variant="sidebar" collapsible="icon" className="hidden lg:flex border-r border-white/[0.06] bg-black/20 backdrop-blur-xl">
-        <SidebarContent>
+    <div className="flex h-full">
+      {/* Виджет-панель — только десктоп */}
+      {!isMobile && (
+        <aside className="hidden lg:flex w-[280px] xl:w-[300px] flex-shrink-0 flex-col overflow-y-auto border-r border-white/[0.06] bg-[linear-gradient(180deg,rgba(10,14,31,0.6),rgba(6,9,20,0.4))] backdrop-blur-xl scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+          {/* Brand header */}
+          <div className="px-4 pt-5 pb-4 border-b border-white/[0.06]">
+            <h2 className="text-lg font-bold text-white tracking-tight">Ваша лента</h2>
+            <p className="text-xs text-white/50 mt-0.5">Публикации и рекомендации</p>
+            <div className="grid grid-cols-3 gap-1.5 mt-3">
+              {[
+                { label: "Подписки", value: "142" },
+                { label: "Публикации", value: "2.4K" },
+                { label: "Советы", value: "38" },
+              ].map((s) => (
+                <div key={s.label} className="rounded-lg border border-white/[0.08] bg-white/[0.04] p-2 text-center">
+                  <div className="text-sm font-bold text-white">{s.value}</div>
+                  <div className="text-[9px] uppercase tracking-wider text-white/40 mt-0.5">{s.label}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+          {/* Виджеты */}
           <SidebarWidgetContainer />
-        </SidebarContent>
-      </Sidebar>
-      <SidebarInset>
+        </aside>
+      )}
+
+      <div className="flex-1 min-w-0 overflow-y-auto">
     <PullToRefresh onRefresh={handleRefresh}>
       <FeedLayout tokens={tokens}>
-        <FeedBrandPanel tokens={tokens} />
-
         <div className="relative min-h-screen feed-column overflow-hidden bg-transparent">
           <div className="pointer-events-none absolute inset-0 z-0 bg-gradient-to-b from-transparent via-background/30 to-background/60" />
           <div className="aurora-overlay" />
@@ -221,8 +240,8 @@ export function HomePage() {
         )}
       </AnimatePresence>
     </PullToRefresh>
-      </SidebarInset>
-    </SidebarProvider>
+      </div>
+    </div>
   );
 }
 
