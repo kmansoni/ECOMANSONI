@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { ChatMessageList } from "./ChatMessageList";
 import { ChatConversationOverlays } from "./ChatConversationOverlays";
 import { useChatMessageActions } from "@/hooks/useChatMessageActions";
@@ -328,6 +329,10 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
 
   // ── Props for ChatMessageItem ──────────────────────────────────
   // Стабильные ссылки критичны: ChatMessageItem обёрнут в React.memo,
+  const navigate = useNavigate();
+  const handleStartGroupVideoCall = useCallback(() => {
+    navigate(`/group-call/${conversationId}`);
+  }, [navigate, conversationId]);
   // и при пересоздании этих объектов на каждом рендере мемоизация
   // становится бесполезной (ссылочное сравнение падает).
   const messageStyleConfig = useMemo(() => ({
@@ -411,6 +416,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
         onBack={onBack}
         onStartAudioCall={handleStartAudioCall}
         onStartVideoCall={handleStartVideoCall}
+        onStartGroupVideoCall={isGroup ? handleStartGroupVideoCall : undefined}
         onSearchOpen={() => setShowMessageSearch(true)}
         onAddMembers={isGroup ? () => setShowChatSettings(true) : undefined}
       />
@@ -551,6 +557,23 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
         onInlineBotDismiss={() => setInlineBotTrigger(null)}
         onEffect={sendWithEffect}
         onToggleRecordMode={() => setRecordMode(p => p === 'voice' ? 'video' : 'voice')}
+        onInsertSpoiler={() => {
+          const cursorPos = inputRef.current?.selectionStart ?? inputText.length;
+          const start = inputText.substring(0, cursorPos);
+          const end = inputText.substring(cursorPos);
+          const selection = inputRef.current?.selectionStart !== inputRef.current?.selectionEnd
+            ? inputText.substring(inputRef.current.selectionStart, inputRef.current.selectionEnd)
+            : '';
+          const wrapped = selection ? `||${selection}||` : '||';
+          setInputText(`${start}${wrapped}${end}`);
+          requestAnimationFrame(() => {
+            if (inputRef.current) {
+              const newPos = cursorPos + wrapped.length;
+              inputRef.current.focus();
+              inputRef.current.setSelectionRange(selection ? cursorPos + wrapped.length : cursorPos + 2, selection ? cursorPos + wrapped.length : cursorPos + 2);
+            }
+          });
+        }}
         handleStickerSend={handleStickerSend}
         handleGifSend={handleGifSend}
         conversationId={conversationId}

@@ -24,6 +24,7 @@ interface ChatHeaderProps {
   onBack: () => void;
   onStartAudioCall: () => void;
   onStartVideoCall: () => void;
+  onStartGroupVideoCall?: () => void;
   onSearchOpen: () => void;
   onAddMembers?: () => void;
 }
@@ -44,6 +45,7 @@ export function ChatHeader({
   onStartAudioCall,
   onStartVideoCall,
   onSearchOpen,
+  onStartGroupVideoCall,
   onAddMembers,
 }: ChatHeaderProps) {
   const navigate = useNavigate();
@@ -143,6 +145,18 @@ export function ChatHeader({
             <Video className="w-5 h-5 text-[#6ab3f3]" />
             {isGroup && <UsersIcon className="w-3 h-3 text-[#6ab3f3] absolute -bottom-0.5 -right-0.5" />}
           </button>
+          {isGroup && onStartGroupVideoCall && (
+            <button
+              onClick={onStartGroupVideoCall}
+              className="p-2 rounded-full hover:bg-white/10 active:bg-white/15 transition-colors relative"
+              aria-label="Групповой видеозвонок"
+            >
+              <Video className="w-5 h-5 text-[#6ab3f3]" />
+              <div className="absolute -bottom-0.5 -right-0.5 flex h-3 w-3 items-center justify-center bg-[#6ab3f3] rounded-full">
+                <span className="text-white text-xs">+</span>
+              </div>
+            </button>
+          )}
         </div>
       </div>
 
