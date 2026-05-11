@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Демо уникального лайка ⎈</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+body {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    color: #fff;
+    gap: 40px;
+    padding-bottom: constant(safe-area-inset-bottom);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-top: constant(safe-area-inset-top);
+    padding-top: env(safe-area-inset-top);
+}
+
+.container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 30px;
+}
+
+        .demo-area {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .like-button {
+            cursor: pointer;
+            transition: transform 0.2s ease;
+            user-select: none;
+        }
+
+        .like-button:hover {
+            transform: scale(1.1);
+        }
+
+        .like-button:active {
+            transform: scale(0.95);
+        }
+
+        /* SVG Heart Styles */
+        .heart-svg {
+            width: 100px;
+            height: 100px;
+            filter: drop-shadow(0 0 20px rgba(255, 77, 77, 0.5));
+        }
+
+        .heart-bg {
+            fill: none;
+            stroke: rgba(255, 255, 255, 0.15);
+            stroke-width: 2;
+        }
+
+        .heart-fill {
+            fill: transparent;
+            stroke: #ff4d4d;
+            stroke-width: 3;
+            stroke-dasharray: 280;
+            stroke-dashoffset: 280;
+            transition: stroke-dashoffset 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .heart-filled .heart-fill {
+            stroke-dashoffset: 0;
+        }
+
+        .heart-glow {
+            fill: transparent;
+            stroke: #ff8888;
+            stroke-width: 1;
+            stroke-dasharray: 280;
+            stroke-dashoffset: 280;
+            opacity: 0.6;
+            transition: stroke-dashoffset 0.8s cubic-bezier(0.4, 0, 0.2, 1) 0.1s;
+        }
+
+        .heart-filled .heart-glow {
+            stroke-dashoffset: 0;
+        }
+
+        /* Pulse animation after fill */
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.08); }
+        }
+
+        .heart-filled {
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+
+        /* Symbol variant styles */
+        .symbol-heart {
+            width: 120px;
+            height: 120px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: rgba(255, 77, 77, 0.08);
+            border-radius: 24px;
+            border: 2px solid rgba(255, 77, 77, 0.2);
+            font-size: 60px;
+            cursor: pointer;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .symbol-heart::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 0;
+            height: 0;
+            background: radial-gradient(circle, rgba(255, 77, 77, 0.3) 0%, transparent 70%);
+            transform: translate(-50%, -50%);
+            transition: width 0.6s ease, height 0.6s ease;
+            border-radius: 50%;
+        }
+
+        .symbol-heart.active::before {
+            width: 200px;
+            height: 200px;
+        }
+
+        .symbol-heart .char {
+            position: relative;
+            z-index: 1;
+            transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .symbol-heart.active .char {
+            transform: scale(1.2);
+        }
+
+        .symbol-heart.active {
+            background: rgba(255, 77, 77, 0.2);
+            border-color: #ff4d4d;
+            box-shadow: 0 0 40px rgba(255, 77, 77, 0.4);
+        }
+
+        /* Unique symbol variant */
+        .unique-symbol {
+            background: rgba(100, 200, 255, 0.08);
+            border-color: rgba(100, 200, 255, 0.2);
+        }
+
+        .unique-symbol.active {
+            background: rgba(100, 200, 255, 0.2);
+            border-color: #64c8ff;
+            box-shadow: 0 0 40px rgba(100, 200, 255, 0.4);
+        }
+
+        .unique-symbol.active .char {
+            color: #64c8ff;
+            text-shadow: 0 0 20px rgba(100, 200, 255, 0.8);
+        }
+
+        .counter {
+            font-size: 18px;
+            color: rgba(255, 255, 255, 0.7);
+            margin-top: 10px;
+            transition: all 0.3s ease;
+        }
+
+        .counter.bump {
+            color: #ff4d4d;
+            transform: scale(1.2);
+        }
+
+        .labels {
+            display: flex;
+            gap: 40px;
+            margin-top: 30px;
+        }
+
+        .label {
+            text-align: center;
+            max-width: 200px;
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 14px;
+            line-height: 1.5;
+        }
+
+        .label strong {
+            display: block;
+            color: rgba(255, 255, 255, 0.9);
+            font-size: 16px;
+            margin-bottom: 5px;
+        }
+
+        .instructions {
+            margin-top: 40px;
+            padding: 20px 30px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 14px;
+            max-width: 400px;
+            text-align: center;
+            line-height: 1.6;
+        }
+
+        .instructions code {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'SF Mono', 'Monaco', monospace;
+            color: #ff6b6b;
+        }
+
+        h1 {
+            font-size: 28px;
+            font-weight: 600;
+            background: linear-gradient(90deg, #ff4d4d, #64c8ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+.variant-row {
+    display: flex;
+    gap: 60px;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-bottom: 30px;
+}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Демо уникального лайка ⎈</h1>
+
+        <div class="variant-row">
+            <!-- SVG Heart Animation -->
+            <div class="demo-area">
+                <div class="like-button" id="heartBtn">
+                    <svg class="heart-svg" viewBox="0 0 100 100">
+                        <!-- Glow layer -->
+                        <path class="heart-glow" d="M50 88 L20 55 C5 42 5 25 20 15 C30 8 42 8 50 20 C58 8 70 8 80 15 C95 25 95 42 80 55 L50 88 Z"></path>
+                        <!-- Main fill -->
+                        <path class="heart-fill" d="M50 88 L20 55 C5 42 5 25 20 15 C30 8 42 8 50 20 C58 8 70 8 80 15 C95 25 95 42 80 55 L50 88 Z"></path>
+                        <!-- Background outline -->
+                        <path class="heart-bg" d="M50 88 L20 55 C5 42 5 25 20 15 C30 8 42 8 50 20 C58 8 70 8 80 15 C95 25 95 42 80 55 L50 88 Z"></path>
+                    </svg>
+                </div>
+                <div class="counter" id="heartCounter">0</div>
+                <div class="label">
+                    <strong>SVG-анимация</strong>
+                    Плавное заполнение контура с glow-эффектом
+                </div>
+            </div>
+
+            <!-- Symbol variant -->
+            <div class="demo-area">
+                <div class="symbol-heart unique-symbol" id="symbolBtn">
+                    <span class="char">⎈</span>
+                </div>
+                <div class="counter" id="symbolCounter">0</div>
+                <div class="label">
+                    <strong>Символ ⎈</strong>
+                    Комбинированный Unicode-символ с пульсацией
+                </div>
+            </div>
+
+            <!-- Character cluster -->
+            <div class="demo-area">
+                <div class="symbol-heart" id="clusterBtn" style="border-color: rgba(255, 150, 50, 0.2);">
+                    <span class="char">⦿+</span>
+                </div>
+                <div class="counter" id="clusterCounter">0</div>
+                <div class="label">
+                    <strong>Комбинированный</strong>
+                    Графемный кластер с спецсимволом
+                </div>
+            </div>
+        </div>
+
+        <div class="instructions">
+            <strong>Как это работает:</strong><br>
+            Нажмите на элемент для активации анимации.<br>
+            Каждый клик увеличивает счётчик.<br>
+            SVG: stroke-dashoffset + glow layers.<br>
+            Символы: CSS transforms + box-shadow + масштабирование.
+        </div>
+    </div>
+
+    <script>
+        // State
+        let heartCount = 0;
+        let symbolCount = 0;
+        let clusterCount = 0;
+
+        const heartBtn = document.getElementById('heartBtn');
+        const heartCounter = document.getElementById('heartCounter');
+        const symbolBtn = document.getElementById('symbolBtn');
+        const symbolCounter = document.getElementById('symbolCounter');
+        const clusterBtn = document.getElementById('clusterBtn');
+        const clusterCounter = document.getElementById('clusterCounter');
+
+        // SVG Heart animation
+        heartBtn.addEventListener('click', () => {
+            heartBtn.classList.toggle('heart-filled');
+            heartCount++;
+            heartCounter.textContent = heartCount;
+            heartCounter.classList.add('bump');
+            setTimeout(() => heartCounter.classList.remove('bump'), 300);
+        });
+
+        // Symbol ⎈ animation
+        symbolBtn.addEventListener('click', () => {
+            symbolBtn.classList.toggle('active');
+            symbolCount++;
+            symbolCounter.textContent = symbolCount;
+            symbolCounter.classList.add('bump');
+            setTimeout(() => symbolCounter.classList.remove('bump'), 300);
+        });
+
+        // Cluster ⦿+ animation
+        clusterBtn.addEventListener('click', () => {
+            clusterBtn.classList.toggle('active');
+            clusterCount++;
+            clusterCounter.textContent = clusterCount;
+            clusterCounter.classList.add('bump');
+            setTimeout(() => clusterCounter.classList.remove('bump'), 300);
+        });
+
+        // Auto-demo mode (showcase)
+        setTimeout(() => {
+            heartBtn.classList.add('heart-filled');
+        }, 500);
+
+        setTimeout(() => {
+            symbolBtn.classList.add('active');
+        }, 1200);
+
+        setTimeout(() => {
+            clusterBtn.classList.add('active');
+        }, 1900);
+    </script>
+</body>
+</html>
