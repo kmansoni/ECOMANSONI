@@ -2,7 +2,6 @@ import { useEffect, useRef, type ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useUnifiedCounterStore } from "@/stores/useUnifiedCounterStore";
-import { isChatProtocolV11EnabledForUser } from "@/lib/chat/protocolV11";
 import { logger } from "@/lib/logger";
 import { dbLoose } from "@/lib/supabase";
 
@@ -43,32 +42,6 @@ async function fetchChatsUnreadV11(userId: string): Promise<number> {
   return total;
 }
 
-async function fetchChatsUnreadLegacy(userId: string): Promise<{ total: number; conversationIds: Set<string> }> {
-  const { data: participants } = await supabase
-    .from("conversation_participants")
-    .select("conversation_id, last_read_at")
-    .eq("user_id", userId);
-
-  if (!participants || participants.length === 0) {
-    return { total: 0, conversationIds: new Set() };
-  }
-
-  const conversationIds = new Set(participants.map((p) => p.conversation_id));
-  let total = 0;
-
-  for (const participant of participants) {
-    const { count } = await supabase
-      .from("messages")
-      .select("id", { count: "exact", head: true })
-      .eq("conversation_id", participant.conversation_id)
-      .neq("sender_id", userId)
-      .gt("created_at", participant.last_read_at || "1970-01-01");
-    total += count || 0;
-  }
-
-  return { total, conversationIds };
-}
-
 /* ────────────────────────────────────────────────────────────
  * Provider component
  * ──────────────────────────────────────────────────────────── */
@@ -76,7 +49,6 @@ async function fetchChatsUnreadLegacy(userId: string): Promise<{ total: number; 
 export function UnifiedCounterProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const store = useUnifiedCounterStore;
-  const participantIdsRef = useRef<Set<string>>(new Set());
   const isMountedRef = useRef(true);
 
   useEffect(() => {
@@ -84,49 +56,40 @@ export function UnifiedCounterProvider({ children }: { children: ReactNode }) {
     return () => { isMountedRef.current = false; };
   }, []);
 
-  useEffect(() => {
-    if (!user) {
-      store.getState().reset();
-      return;
-    }
+   useEffect(() => {
+     if (!user) {
+       store.getState().reset();
+       return;
+     }
 
-    const userId = user.id;
-    const isV11 = isChatProtocolV11EnabledForUser(userId);
+     const userId = user.id;
 
-    /* ── Initial fetch ──────────────────────────────────────── */
-    const resyncAll = async () => {
-      if (!isMountedRef.current) return;
-      const state = store.getState();
-      const now = Date.now();
+     /* ── Initial fetch ──────────────────────────────────────── */
+     const resyncAll = async () => {
+       if (!isMountedRef.current) return;
+       const state = store.getState();
+       const now = Date.now();
 
-      // Notifications
-      if (now - state.lastSyncAt.notifications > 10_000) {
-        const fetchStarted = Date.now();
-        const nCount = await fetchNotificationsUnread(userId);
-        if (isMountedRef.current) {
-          store.getState().setNotificationsUnread(nCount, fetchStarted);
-        }
-      }
+       // Notifications
+       if (now - state.lastSyncAt.notifications > 10_000) {
+         const fetchStarted = Date.now();
+         const nCount = await fetchNotificationsUnread(userId);
+         if (isMountedRef.current) {
+           store.getState().setNotificationsUnread(nCount, fetchStarted);
+         }
+       }
 
-      // Chats
-      if (now - state.lastSyncAt.chats > 10_000) {
-        const fetchStarted = Date.now();
-        if (isV11) {
-          const cCount = await fetchChatsUnreadV11(userId);
-          if (isMountedRef.current) {
-            store.getState().setChatsUnread(cCount, fetchStarted);
-          }
-        } else {
-          const { total, conversationIds } = await fetchChatsUnreadLegacy(userId);
-          participantIdsRef.current = conversationIds;
-          if (isMountedRef.current) {
-            store.getState().setChatsUnread(total, fetchStarted);
-          }
-        }
-      }
-    };
+       // Chats — v11 path only
+       if (now - state.lastSyncAt.chats > 10_000) {
+         const fetchStarted = Date.now();
+         const cCount = await fetchChatsUnreadV11(userId);
+         if (isMountedRef.current) {
+           store.getState().setChatsUnread(cCount, fetchStarted);
+         }
+       }
+     };
 
-    void resyncAll();
+     void resyncAll();
 
     /* ── Realtime: Notifications ────────────────────────────── */
     const notifChannel = supabase
@@ -147,47 +110,46 @@ export function UnifiedCounterProvider({ children }: { children: ReactNode }) {
       )
       .subscribe();
 
-    /* ── Realtime: Chats ────────────────────────────────────── */
-    let chatDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+     /* ── Realtime: Chats ────────────────────────────────────── */
+     let chatDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+     let chatLastRpcFetchAt = 0;
+     const CHAT_RPC_THROTTLE_MS = 2_000;
 
-    const debouncedChatsResync = () => {
-      if (chatDebounceTimer) clearTimeout(chatDebounceTimer);
-      chatDebounceTimer = setTimeout(() => {
-        const fetchStarted = Date.now();
-        if (isV11) {
-          void fetchChatsUnreadV11(userId).then((count) => {
-            if (isMountedRef.current) {
-              store.getState().setChatsUnread(count, fetchStarted);
-            }
-          });
-        } else {
-          void fetchChatsUnreadLegacy(userId).then(({ total, conversationIds }) => {
-            participantIdsRef.current = conversationIds;
-            if (isMountedRef.current) {
-              store.getState().setChatsUnread(total, fetchStarted);
-            }
-          });
-        }
-      }, 500);
-    };
+     const debouncedChatsResync = () => {
+       if (chatDebounceTimer) clearTimeout(chatDebounceTimer);
+       chatDebounceTimer = setTimeout(() => {
+         const fetchStarted = Date.now();
+         // Throttle actual RPC call to avoid hammering DB on rapid message bursts
+         if (fetchStarted - chatLastRpcFetchAt < CHAT_RPC_THROTTLE_MS) {
+           return;
+         }
+         chatLastRpcFetchAt = fetchStarted;
+         void fetchChatsUnreadV11(userId).then((count) => {
+           if (isMountedRef.current) {
+             store.getState().setChatsUnread(count, fetchStarted);
+           }
+         });
+       }, 200);
+     };
 
-    // Subscribe to messages table — works regardless of v11/legacy and doesn't need RLS on projection
-    const chatsChannel = supabase
-      .channel("unified-chats-rt")
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "messages",
-        },
-        (payload: { new: { sender_id?: string } }) => {
-          if (payload.new.sender_id !== userId) {
-            debouncedChatsResync();
-          }
-        },
-      )
-      .subscribe();
+	    // Subscribe to chat_inbox_projection UPDATE events (B-138 compliant)
+	    // This triggers on unread_count changes, which is more efficient than
+	    // subscribing to every message INSERT
+	    const chatsChannel = supabase
+	      .channel("unified-chats-rt")
+	      .on(
+	        "postgres_changes",
+	        {
+	          event: "UPDATE",
+	          schema: "public",
+	          table: "chat_inbox_projection",
+	          filter: `user_id=eq.${userId}`,
+	        },
+	        () => {
+	          debouncedChatsResync();
+	        },
+	      )
+	      .subscribe();
 
     /* ── Periodic resync ────────────────────────────────────── */
     const intervalId = setInterval(resyncAll, RESYNC_INTERVAL_MS);

@@ -88,13 +88,14 @@ export function useMarkConversationRead() {
   const rpc = getChatReadRpcClient();
   const inFlightConversationIdsRef = useRef<Set<string>>(new Set());
 
-  const markConversationRead = useCallback(
-    async (conversationId: string | null) => {
-      if (!user || !conversationId) return;
-      if (inFlightConversationIdsRef.current.has(conversationId)) return;
+   const markConversationRead = useCallback(
+     async (conversationId: string | null) => {
+       if (!user || !conversationId) return;
+       if (inFlightConversationIdsRef.current.has(conversationId)) return;
 
-      inFlightConversationIdsRef.current.add(conversationId);
-      try {
+       inFlightConversationIdsRef.current.add(conversationId);
+       // Resync will happen after mark-read succeeds (see finally block)
+       try {
         if (isChatProtocolV11EnabledForUser(user.id)) {
           const deviceId = getOrCreateChatDeviceId();
           const clientWriteSeq = nextClientWriteSeq(user.id);
@@ -189,7 +190,6 @@ export function useMarkConversationRead() {
           for (const row of rows) {
             if (isRecord(row)) total += getNumberField(row, "unread_count") ?? 0;
           }
-          useUnifiedCounterStore.getState().setChatsUnread(total, fetchStarted);
         } else {
           const { data: parts } = await supabase
             .from("conversation_participants")
@@ -205,7 +205,6 @@ export function useMarkConversationRead() {
               .gt("created_at", p.last_read_at || "1970-01-01");
             total += count || 0;
           }
-          useUnifiedCounterStore.getState().setChatsUnread(total, fetchStarted);
         }
       } finally {
         inFlightConversationIdsRef.current.delete(conversationId);

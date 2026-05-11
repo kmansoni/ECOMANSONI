@@ -47,13 +47,16 @@ export function useChatNotifications({
   // Mark incoming messages as read
   useEffect(() => {
     if (!conversationId || !user || isGroup) return;
+
+    const unread = messages.filter((m) => m.sender_id !== user.id && !m.is_read);
+    const unreadIds = unread.map((m) => m.id);
+    if (!unreadIds.length) return; // Нет непрочитанных — ничего не делаем
+
     void (async () => {
       await markConversationRead(conversationId);
       onRefetch?.();
     })();
 
-    const unread = messages.filter((m) => m.sender_id !== user.id && !m.is_read);
-    const unreadIds = unread.map((m) => m.id);
     if (unreadIds.length) void markAsDelivered(unreadIds);
     for (const msg of unread) markAsRead(msg.id);
   }, [conversationId, user, isGroup, messages, markConversationRead, onRefetch, markAsRead, markAsDelivered]);

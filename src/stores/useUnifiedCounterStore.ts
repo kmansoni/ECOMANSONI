@@ -29,8 +29,6 @@ export interface CounterState {
   clearNotifications: () => void;
   clearChats: () => void;
 
-  /* ── Sync timestamp ─────────────────────────────────────── */
-  touchSync: (key: "notifications" | "chats") => void;
 
   /* ── Reset on logout ────────────────────────────────────── */
   reset: () => void;
@@ -96,8 +94,6 @@ export const useUnifiedCounterStore = create<CounterState>((set) => ({
   clearNotifications: () => set({ notificationsUnread: 0 }),
   clearChats: () => set({ chatsUnread: 0 }),
 
-  touchSync: (key) =>
-    set((s) => ({ lastSyncAt: { ...s.lastSyncAt, [key]: Date.now() } })),
 
   reset: () => set(INITIAL),
 }));

@@ -526,7 +526,6 @@ export function useConversations() {
 
         setConversations(convs);
         const totalUnread = convs.reduce((sum, c) => sum + (c.unread_count || 0), 0);
-        useUnifiedCounterStore.getState().setChatsUnread(totalUnread, Date.now());
         return;
       }
 
@@ -636,7 +635,6 @@ export function useConversations() {
 
       setConversations(mappedConversations);
       const totalUnread = mappedConversations.reduce((sum, c) => sum + (c.unread_count || 0), 0);
-      useUnifiedCounterStore.getState().setChatsUnread(totalUnread, Date.now());
     } catch (error) {
       logger.error("Error fetching conversations:", error);
       const msg = getErrorMessage(error);
