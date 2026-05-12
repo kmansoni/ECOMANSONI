@@ -145,6 +145,7 @@ function TemplateCard({
     </motion.div>
   );
 }
+TemplateCard.displayName = 'TemplateCard';
 
 export function ReelTemplates({ onSelectTemplate, onClose }: ReelTemplatesProps) {
   const { user } = useAuth();
@@ -261,3 +262,4 @@ export function ReelTemplates({ onSelectTemplate, onClose }: ReelTemplatesProps)
     </Sheet>
   );
 }
+ReelTemplates.displayName = 'ReelTemplates';

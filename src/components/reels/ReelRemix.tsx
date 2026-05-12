@@ -99,9 +99,9 @@ export function ReelRemix({
   }, [splitMode, newVideoUrl]);
 
   useEffect(() => {
-    if (mode === "preview") {
-      canvasRef.current!.width = 720;
-      canvasRef.current!.height = 1280;
+    if (mode === "preview" && canvasRef.current) {
+      canvasRef.current.width = 720;
+      canvasRef.current.height = 1280;
       originalVideoRef.current?.play().catch(() => { /* autoplay blocked */ });
       newVideoRef.current?.play().catch(() => { /* autoplay blocked */ });
       rafRef.current = requestAnimationFrame(renderFrame);
@@ -154,26 +154,47 @@ export function ReelRemix({
 
   const handleExport = async () => {
     if (!newVideoFile || !user) return;
+    const canvas = canvasRef.current;
+    if (!canvas) {
+      toast.error("Canvas не готов");
+      return;
+    }
     setIsExporting(true);
 
-    const canvas = canvasRef.current!;
+    const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp8')
+      ? 'video/webm;codecs=vp8'
+      : 'video/webm';
     const captureStream = canvas.captureStream(30);
     const recorder = new MediaRecorder(captureStream, {
-      mimeType: "video/webm;codecs=vp8",
+      mimeType,
       videoBitsPerSecond: 2_500_000,
     });
     chunksRef.current = [];
     recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
     recorder.onstop = () => {
-      const blob = new Blob(chunksRef.current, { type: "video/webm" });
+      const blob = new Blob(chunksRef.current, { type: mimeType });
       setIsExporting(false);
       onComplete(blob);
     };
 
     recorder.start();
-    // Записываем длительность оригинального видео
-    const duration = originalVideoRef.current?.duration ?? 15;
-    setTimeout(() => recorder.stop(), duration * 1000);
+    // Слушаем фактическое окончание оригинального видео
+    const origVideo = originalVideoRef.current;
+    const targetDuration = origVideo?.duration ?? 15;
+    const onVideoEnded = () => recorder.stop();
+    origVideo?.addEventListener('ended', onVideoEnded);
+    // Fallback: если video не emits 'ended' (loop=true), стопим по таймауту
+    const timeoutId = setTimeout(() => {
+      origVideo?.removeEventListener('ended', onVideoEnded);
+      recorder.stop();
+    }, (targetDuration + 1) * 1000);
+    // После стопа чистим
+    const originalOnStop = recorder.onstop;
+    recorder.onstop = () => {
+      clearTimeout(timeoutId);
+      origVideo?.removeEventListener('ended', onVideoEnded);
+      originalOnStop?.call(recorder);
+    };
   };
 
   return (

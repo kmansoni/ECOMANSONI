@@ -300,16 +300,18 @@ function ReelsEmptyScreen(): JSX.Element {
 }
 
 // ---------------------------------------------------------------------------
-// Pull-to-refresh
+// Pull-to-refresh style (inline, no module-level mutable state)
 // ---------------------------------------------------------------------------
 
-let pullToRefreshStyleAdded = false;
-function ensurePullToRefreshStyle() {
-  if (pullToRefreshStyleAdded) return;
-  if (typeof document === 'undefined') return;
+function usePullToRefreshStyle() {
+  const addedRef = useRef(false);
+  useEffect(() => {
+    if (addedRef.current) return;
+    if (typeof document === 'undefined') return;
+    addedRef.current = true;
 
-  const style = document.createElement('style');
-  style.textContent = `
+    const style = document.createElement('style');
+    style.textContent = `
     /* Glass shimmer animation */
     @keyframes glass-shimmer {
       0% { background-position: -200% 0; }
@@ -355,8 +357,8 @@ function ensurePullToRefreshStyle() {
       animation: glow-pulse 2s ease-in-out infinite;
     }
   `;
-  document.head.appendChild(style);
-  pullToRefreshStyleAdded = true;
+    document.head.appendChild(style);
+  }, []);
 }
 
 // ---------------------------------------------------------------------------
@@ -450,7 +452,7 @@ export default function ReelsPage(): JSX.Element {
 
   useEffect(() => {
     setIsReelsPage(true);
-    ensurePullToRefreshStyle();
+    usePullToRefreshStyle();
     return () => {
       setIsReelsPage(false);
     };
@@ -657,7 +659,7 @@ export default function ReelsPage(): JSX.Element {
   }, []);
 
   const handleAuthorPress = useCallback(
-    (authorId: string) => navigate(`/user/${encodeURIComponent(authorId)}`),
+    (username: string) => navigate(`/user/${encodeURIComponent(username)}`),
     [navigate],
   );
 

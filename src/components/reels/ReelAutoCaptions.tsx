@@ -71,10 +71,11 @@ export function ReelCaptionsOverlay({ videoUrl, currentTimeMs, captions, isVisib
 interface CaptionGeneratorProps {
   videoFile: File | null;
   videoUrl: string | null;
+  videoDuration?: number;
   onCaptionsGenerated: (captions: Caption[]) => void;
 }
 
-export function CaptionGenerator({ videoFile, videoUrl, onCaptionsGenerated }: CaptionGeneratorProps) {
+export function CaptionGenerator({ videoFile, videoUrl, videoDuration, onCaptionsGenerated }: CaptionGeneratorProps) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [captions, setCaptions] = useState<Caption[]>([]);
   const [isEditing, setIsEditing] = useState(false);
@@ -120,10 +121,9 @@ export function CaptionGenerator({ videoFile, videoUrl, onCaptionsGenerated }: C
 
   const handleManualSave = () => {
     if (!editText.trim()) return;
-    // Простое разбиение на предложения с равномерным распределением времени
     const sentences = editText.split(/[.!?]+/).filter((s) => s.trim());
-    const videoDuration = 15000; // default 15s
-    const perSentence = videoDuration / sentences.length;
+    const duration = videoDuration ?? 15000;
+    const perSentence = duration / sentences.length;
 
     const manualCaptions: Caption[] = sentences.map((text, i) => ({
       start_ms: Math.round(i * perSentence),
@@ -226,6 +226,7 @@ export function CaptionGenerator({ videoFile, videoUrl, onCaptionsGenerated }: C
     </div>
   );
 }
+CaptionGenerator.displayName = 'CaptionGenerator';
 
 // Real-time субтитры при записи через Web Speech API
 export function useLiveCaptions(isRecording: boolean) {
@@ -257,23 +258,34 @@ export function useLiveCaptions(isRecording: boolean) {
       setTranscript(final || interim);
     };
 
-    recognition.onerror = () => {
-      // Keep current transcript and stop silently on speech API errors.
+    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+      const errorTypes: Record<string, string> = {
+        'no-speech': 'Речь не обнаружена. Говорите громче.',
+        'audio-capture': 'Микрофон недоступен.',
+        'not-allowed': 'Доступ к микрофону запрещён.',
+        'network': 'Ошибка сети. Проверьте подключение.',
+        'aborted': 'Распознавание остановлено.',
+        'language-not-supported': 'Язык не поддерживается.',
+      };
+      const message = errorTypes[event.error] ?? `Ошибка распознавания: ${event.error}`;
+      console.warn('[LiveCaptions]', event.error, event.message);
+      toast.warning(message);
       recognition.abort();
     };
 
     try {
       recognition.start();
       recognitionRef.current = recognition;
-    } catch {
-      // Speech API can throw if called before user gesture / unsupported browser.
+    } catch (err) {
+      console.error('[LiveCaptions] Failed to start:', err);
+      toast.error('Не удалось запустить распознавание речи');
     }
 
     return () => {
       try {
         recognition.stop();
-      } catch {
-        // Ignore stop race when recognition is already stopped.
+      } catch (err) {
+        console.debug('[LiveCaptions] Stop race:', err);
       }
     };
   }, [isRecording]);

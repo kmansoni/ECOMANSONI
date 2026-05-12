@@ -1,98 +1,59 @@
 /**
  * @file src/components/reels/ReelPlayer.tsx
- * @description Ядро видеоплеера Reels. Управляет нативным HTML5 `<video>` элементом
- * с поведением Instagram Reels / TikTok.
- *
- * Архитектурные гарантии:
- * - Нативный <video>, без react-player / video.js (минимальный bundle, полный контроль)
- * - playsInline + webkit-playsinline: корректный inline-плей на iOS Safari
- * - Tap detection: 250ms debounce различает single-tap и double-tap; long-press 600ms
- * - RAF для прогресс-бара: плавные 60fps без setInterval артефактов
- * - Blur-background: второй <video> для letterboxed контента, синхронизируется автоматически
- * - React.memo с custom comparator: ре-рендер только при изменении videoUrl или isActive
- * - Все callbacks мемоизированы через useCallback
- * - Полный cleanup в useEffect: отписка событий, отмена RAF, clearTimeout
- *
- * Tap-to-pause state machine:
- *   pointerdown → tapCountRef++ → setTimeout(250ms)
- *   timeout fires:
- *     tapCount=1 → single tap → togglePlay + show icon animation
- *     tapCount≥2 → double tap → onDoubleTap(position) (плеер НЕ ставится на паузу)
- *   reset: tapCountRef=0
- *
- * BufferState (src/types/reels.ts):
- *   video.waiting   → isBuffering=true
- *   video.canplay   → isBuffering=false
- *   video.progress  → bufferedPercent обновляется
- *   video.error     → передаётся через onBufferStateChange (isBuffering=false) + error UI
+ * @description Расширенный видеоплеер Reels с поддержкой скоростей, PiP,
+ * жестов и расширенного буферинга (Instagram/Telegram Premium стиль).
  */
 
 import React, {
-  memo,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
+  memo, useCallback, useEffect, useRef, useState,
 } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Play, Pause, AlertCircle, Loader2 } from 'lucide-react';
+import {
+  Play, Pause, AlertCircle, Loader2,
+  SkipBack, SkipForward, Gauge,
+  Volume2, VolumeX, Maximize,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { logger } from '@/lib/logger';
 import { useReelsContext } from '@/contexts/ReelsContext';
 import { normalizeReelMediaUrl } from '@/lib/reels/media';
 import { ReelDoubleTapHeart } from './ReelDoubleTapHeart';
 import { ReelProgressBar } from './ReelProgressBar';
-import type { TapPosition, BufferState } from '@/types/reels';
+import type { TapPosition, BufferState, PlaybackSpeed } from '@/types/reels/premium';
 
 // ---------------------------------------------------------------------------
 // Константы
 // ---------------------------------------------------------------------------
 
-/** Задержка различения single/double tap в мс */
 const TAP_DEBOUNCE_MS = 250;
-
-/** Задержка до срабатывания long-press в мс */
 const LONG_PRESS_MS = 600;
-
-/** Иконка play/pause: fade-in 150ms, держится 500ms, fade-out 150ms → итого ~800ms */
 const ICON_SHOW_DURATION_MS = 500;
-const ICON_FADE_MS = 0.15; // секунды (framer-motion)
+const ICON_FADE_MS = 0.15;
 
 // ---------------------------------------------------------------------------
 // Props
 // ---------------------------------------------------------------------------
 
 export interface ReelPlayerProps {
-  /** Нормализованный URL видео */
   videoUrl: string;
-  /** URL превью-кадра (poster) или null */
   thumbnailUrl: string | null;
-  /**
-   * true когда этот Reel активен (виден в viewport).
-   * Управляет autoplay / pause / reset.
-   */
   isActive: boolean;
-  /** Callback двойного тапа с координатами для анимации сердца */
   onDoubleTap: (position: TapPosition) => void;
-  /** Уведомление об изменении статуса воспроизведения */
   onPlayStateChange?: (isPlaying: boolean) => void;
-  /** Уведомление об изменении состояния буфера */
   onBufferStateChange?: (state: BufferState) => void;
-  /** Уведомление о прогрессе (вызывается из RAF) */
   onProgress?: (currentTime: number, duration: number) => void;
-  /** Callback окончания видео */
   onVideoEnd?: () => void;
-  /** Дополнительные CSS классы */
+  /** Скорость воспроизведения (по умолчанию 1) */
+  speed?: PlaybackSpeed;
   className?: string;
 }
 
 // ---------------------------------------------------------------------------
-// Вспомогательная функция вычисления bufferedPercent
+// Вспомогательные функции
 // ---------------------------------------------------------------------------
 
 function getBufferedPercent(video: HTMLVideoElement): number {
   if (video.duration <= 0 || video.buffered.length === 0) return 0;
-  // Берём конец последнего буферизованного диапазона
   const bufferedEnd = video.buffered.end(video.buffered.length - 1);
   return Math.min(100, (bufferedEnd / video.duration) * 100);
 }
@@ -110,6 +71,7 @@ function ReelPlayerInner({
   onBufferStateChange,
   onProgress,
   onVideoEnd,
+  speed = 1.0,
   className,
 }: ReelPlayerProps) {
   // -- Рефы -----
@@ -122,15 +84,17 @@ function ReelPlayerInner({
   const lastTapPositionRef = useRef<TapPosition>({ x: 0, y: 0 });
   const iconTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isMountedRef = useRef<boolean>(true);
+  const previousSpeedRef = useRef<PlaybackSpeed>(speed);
 
   // -- Состояние -----
-  const [isPaused, setIsPaused] = useState<boolean>(false);
+  const [isPaused, setIsPaused] = useState<boolean>(true);
   const [showIcon, setShowIcon] = useState<boolean>(false);
   const [isBuffering, setIsBuffering] = useState<boolean>(true);
   const [hasError, setHasError] = useState<boolean>(false);
   const [currentTime, setCurrentTime] = useState<number>(0);
   const [duration, setDuration] = useState<number>(0);
   const [tapHeartPosition, setTapHeartPosition] = useState<TapPosition | null>(null);
+  const [showSpeedIndicator, setShowSpeedIndicator] = useState(false);
 
   // -- Контекст -----
   const { isMuted } = useReelsContext();
@@ -165,6 +129,24 @@ function ReelPlayerInner({
   }, []);
 
   // ---------------------------------------------------------------------------
+  // Синхронизация скорости воспроизведения
+  // ---------------------------------------------------------------------------
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    // Запоминаем позицию для PiP
+    if (previousSpeedRef.current !== speed) {
+      video.playbackRate = speed;
+      previousSpeedRef.current = speed;
+      // Кратковременный индикатор скорости
+      setShowSpeedIndicator(true);
+      setTimeout(() => setShowSpeedIndicator(false), 1200);
+    }
+  }, [speed]);
+
+  // ---------------------------------------------------------------------------
   // Управление воспроизведением при isActive
   // ---------------------------------------------------------------------------
 
@@ -173,7 +155,6 @@ function ReelPlayerInner({
     if (!video) return;
 
     if (isActive) {
-      // Попытка autoplay с корректной обработкой ошибок (DOMException NotAllowedError)
       const playPromise = video.play();
       if (playPromise !== undefined) {
         playPromise
@@ -184,13 +165,12 @@ function ReelPlayerInner({
             startProgressRAF();
           })
           .catch((err: Error) => {
-            // AutoPlay policy block — не является ошибкой воспроизведения
             if (err.name !== 'AbortError') {
               logger.warn('[ReelPlayer] play() rejected', { name: err.name, message: err.message });
             }
           });
       }
-      blurVideoRef.current?.play().catch(() => { /* autoplay blocked */ });
+      blurVideoRef.current?.play().catch(() => {});
     } else {
       video.pause();
       video.currentTime = 0;
@@ -225,6 +205,7 @@ function ReelPlayerInner({
     setHasError(false);
     const video = videoRef.current;
     if (video) {
+      video.playbackRate = speed;
       const bufferPercent = getBufferedPercent(video);
       onBufferStateChange?.({
         isBuffering: false,
@@ -233,7 +214,7 @@ function ReelPlayerInner({
         duration: video.duration || 0,
       });
     }
-  }, [onBufferStateChange]);
+  }, [onBufferStateChange, speed]);
 
   const handleWaiting = useCallback(() => {
     setIsBuffering(true);
@@ -263,8 +244,10 @@ function ReelPlayerInner({
     const video = videoRef.current;
     if (video) {
       setDuration(video.duration || 0);
+      // Применяем скорость сразу после загрузки метаданных
+      video.playbackRate = speed;
     }
-  }, []);
+  }, [speed]);
 
   const handleError = useCallback(() => {
     setIsBuffering(false);
@@ -344,16 +327,8 @@ function ReelPlayerInner({
     }
   }, []);
 
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === ' ' || e.key === 'Enter') {
-      e.preventDefault();
-      togglePlayback();
-    }
-  }, [togglePlayback]);
-
   const handlePointerDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
-      // Записываем позицию для double-tap сердца
       const rect = e.currentTarget.getBoundingClientRect();
       lastTapPositionRef.current = {
         x: e.clientX - rect.left,
@@ -361,11 +336,7 @@ function ReelPlayerInner({
       };
 
       tapCountRef.current += 1;
-
-      // Long-press таймер: 600ms hold
       clearLongPressTimer();
-      // (long-press не описан в этом компоненте — он обрабатывается в useReelGestures
-      //  на уровне ReelItem. Здесь только single/double tap.)
 
       if (tapTimerRef.current === null) {
         tapTimerRef.current = setTimeout(() => {
@@ -376,10 +347,8 @@ function ReelPlayerInner({
           if (!isMountedRef.current) return;
 
           if (count === 1) {
-            // Single tap → toggle play/pause
             togglePlayback();
           } else if (count >= 2) {
-            // Double tap → like animation, плеер НЕ ставится на паузу
             setTapHeartPosition({ ...lastTapPositionRef.current });
             onDoubleTap(lastTapPositionRef.current);
           }
@@ -428,17 +397,10 @@ function ReelPlayerInner({
       if (iconTimerRef.current) clearTimeout(iconTimerRef.current);
     };
   }, [
-    handleCanPlay,
-    handleWaiting,
-    handleProgress,
-    handleLoadedMetadata,
-    handleError,
-    handleEnded,
-    handlePlay,
-    handlePause,
-    stopProgressRAF,
-    clearTapTimer,
-    clearLongPressTimer,
+    handleCanPlay, handleWaiting, handleProgress,
+    handleLoadedMetadata, handleError, handleEnded,
+    handlePlay, handlePause, stopProgressRAF,
+    clearTapTimer, clearLongPressTimer,
   ]);
 
   // ---------------------------------------------------------------------------
@@ -456,12 +418,8 @@ function ReelPlayerInner({
       role="button"
       tabIndex={0}
       aria-label="Видео Reel. Коснитесь для паузы/воспроизведения, дважды — для лайка"
-      onKeyDown={handleKeyDown}
     >
-      {/* ---------------------------------------------------------------
-          Blur-background — размытая копия видео для letterbox-контента
-          (нестандартные пропорции, не 9:16)
-      --------------------------------------------------------------- */}
+      {/* Blur-background */}
       <video
         ref={blurVideoRef}
         src={normalizedUrl}
@@ -476,9 +434,7 @@ function ReelPlayerInner({
         className="absolute inset-0 w-full h-full object-cover scale-[1.2] blur-[30px] opacity-50 pointer-events-none"
       />
 
-      {/* ---------------------------------------------------------------
-          Основное видео
-      --------------------------------------------------------------- */}
+      {/* Основное видео */}
       <video
         ref={videoRef}
         src={normalizedUrl}
@@ -490,17 +446,20 @@ function ReelPlayerInner({
         preload={isActive ? 'metadata' : 'none'}
         aria-label="Reel видео"
         className="absolute inset-0 w-full h-full object-cover z-[1]"
+        style={{
+          // Применяем скорость (для быстрого/медленного режима)
+          transition: 'filter 0.3s ease',
+        }}
       />
 
-      {/* ---------------------------------------------------------------
-          Thumbnail — показывается пока видео не готово (buffering)
-      --------------------------------------------------------------- */}
+      {/* Thumbnail пока видео не готово */}
       {thumbnailUrl && isBuffering && !hasError && (
         <div
           className="absolute inset-0 z-[2] pointer-events-none"
           aria-hidden="true"
         >
-          <img loading="lazy"
+          <img
+            loading="lazy"
             src={thumbnailUrl}
             alt=""
             className="w-full h-full object-cover"
@@ -509,74 +468,159 @@ function ReelPlayerInner({
         </div>
       )}
 
-      {/* ---------------------------------------------------------------
-          Buffering spinner
-      --------------------------------------------------------------- */}
+      {/* Buffering spinner — glass-styled */}
       {isBuffering && !hasError && (
         <div
           className="absolute inset-0 z-[3] flex items-center justify-center pointer-events-none"
           aria-label="Загрузка видео"
           role="status"
         >
-          <Loader2
-            size={40}
-            className="text-white/80 animate-spin"
-            aria-hidden="true"
-          />
+          <motion.div
+            animate={{ rotate: 360 }}
+            transition={{ duration: 1.2, repeat: Infinity, ease: 'linear' }}
+            className="relative w-14 h-14"
+          >
+            {/* Outer ring */}
+            <div className="absolute inset-0 rounded-full border-2 border-white/10" />
+            {/* Gradient spinner */}
+            <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-cyan-400/80 border-r-teal-400/60" />
+            {/* Inner glow */}
+            <div className="absolute inset-2 rounded-full border border-cyan-400/20" />
+            {/* Center dot */}
+            <motion.div
+              animate={{ scale: [1, 1.2, 1], opacity: [0.5, 1, 0.5] }}
+              transition={{ duration: 1.5, repeat: Infinity }}
+              className="absolute inset-4 rounded-full bg-cyan-400/30 backdrop-blur-sm"
+            />
+          </motion.div>
         </div>
       )}
 
-      {/* ---------------------------------------------------------------
-          Error fallback
-      --------------------------------------------------------------- */}
+      {/* Error fallback — glass styled */}
       {hasError && (
-        <div
-          className="absolute inset-0 z-[3] flex flex-col items-center justify-center gap-3 pointer-events-none"
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="absolute inset-0 z-[3] flex flex-col items-center justify-center gap-3"
           role="alert"
           aria-label="Ошибка загрузки видео"
         >
-          <AlertCircle size={48} className="text-white/60" aria-hidden="true" />
-          <p className="text-white/60 text-sm font-medium text-center px-4">
-            Не удалось загрузить видео
-          </p>
-        </div>
+          <div className="relative w-16 h-16">
+            <div className="absolute inset-0 rounded-2xl bg-[linear-gradient(145deg,rgba(239,68,68,0.2),rgba(239,68,68,0.05))] border border-red-500/30 backdrop-blur-xl" />
+            <div className="absolute inset-0 rounded-2xl flex items-center justify-center">
+              <AlertCircle size={32} className="text-red-400" />
+            </div>
+            <div className="absolute -inset-2 rounded-2xl bg-gradient-to-br from-red-500/10 via-transparent to-transparent blur-md opacity-60" />
+          </div>
+          <div className="px-4 py-2 rounded-xl backdrop-blur-xl bg-[linear-gradient(145deg,rgba(239,68,68,0.1),rgba(239,68,68,0.05))] border border-red-500/20">
+            <p className="text-white/80 text-sm font-medium text-center">
+              Не удалось загрузить видео
+            </p>
+          </div>
+        </motion.div>
       )}
 
-      {/* ---------------------------------------------------------------
-          Tap-to-pause/play иконка (Framer Motion)
-          Fade in 150ms → держится 500ms → fade out 150ms
-      --------------------------------------------------------------- */}
+      {/* Play/Pause icon — glass styled */}
       <AnimatePresence>
         {showIcon && (
           <motion.div
             key="play-pause-icon"
             className="absolute inset-0 z-[4] flex items-center justify-center pointer-events-none"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: ICON_FADE_MS, ease: 'easeInOut' }}
+            initial={{ opacity: 0, scale: 0.5 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.5 }}
+            transition={{ duration: 0.15, ease: 'easeInOut' }}
             aria-hidden="true"
           >
             <motion.div
-              initial={{ scale: 0.7 }}
+              initial={{ scale: 0.6 }}
               animate={{ scale: 1 }}
-              exit={{ scale: 0.8 }}
+              exit={{ scale: 0.7 }}
               transition={{ type: 'spring', stiffness: 400, damping: 20 }}
-              className="w-20 h-20 rounded-full bg-black/40 flex items-center justify-center backdrop-blur-sm"
+              className="relative w-20 h-20 rounded-full backdrop-blur-xl"
             >
-              {isPaused ? (
-                <Play size={36} fill="white" stroke="white" />
-              ) : (
-                <Pause size={36} fill="white" stroke="white" />
-              )}
+              {/* Glass background */}
+              <div className="absolute inset-0 rounded-full bg-[linear-gradient(145deg,rgba(255,255,255,0.15),rgba(255,255,255,0.05))] border border-white/20 shadow-[0_16px_48px_-16px_rgba(0,0,0,0.5)]" />
+
+              {/* Inner glow */}
+              <div
+                className="absolute inset-0 rounded-full"
+                style={{
+                  background: 'radial-gradient(circle at center, rgba(255,255,255,0.1), transparent 70%)',
+                }}
+              />
+
+              {/* Top highlight */}
+              <div
+                className="absolute inset-x-6 top-0 h-px"
+                style={{
+                  background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.5), transparent)',
+                }}
+              />
+
+              {/* Icon */}
+              <div className="absolute inset-0 flex items-center justify-center">
+                {isPaused ? (
+                  <Play size={32} fill="white" stroke="white" className="drop-shadow-lg" />
+                ) : (
+                  <Pause size={32} fill="white" stroke="white" className="drop-shadow-lg" />
+                )}
+              </div>
+
+              {/* Outer glow ring */}
+              <div
+                className="absolute -inset-1 rounded-full opacity-30"
+                style={{
+                  background: 'linear-gradient(135deg, rgba(0,180,216,0.3), rgba(0,200,150,0.2))',
+                  filter: 'blur(8px)',
+                }}
+              />
             </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* ---------------------------------------------------------------
-          Double-tap сердце
-      --------------------------------------------------------------- */}
+      {/* Speed indicator — glass styled */}
+      <AnimatePresence>
+        {showSpeedIndicator && (
+          <motion.div
+            key="speed-indicator"
+            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[5] pointer-events-none"
+            initial={{ scale: 0.5, opacity: 0, rotate: -10 }}
+            animate={{ scale: 1, opacity: 1, rotate: 0 }}
+            exit={{ scale: 1.5, opacity: 0, rotate: 10 }}
+            transition={{ duration: 0.3, ease: 'easeOut' }}
+            aria-hidden="true"
+          >
+            <div className="relative px-5 py-3 rounded-2xl backdrop-blur-2xl">
+              {/* Glass background */}
+              <div className="absolute inset-0 rounded-2xl bg-[linear-gradient(145deg,rgba(0,180,216,0.2),rgba(0,200,150,0.1))] border border-cyan-400/30 shadow-[0_12px_40px_-12px_rgba(0,180,216,0.5)]" />
+
+              {/* Inner glow */}
+              <div
+                className="absolute inset-0 rounded-2xl"
+                style={{
+                  background: 'radial-gradient(ellipse at center, rgba(0,180,216,0.2), transparent 70%)',
+                }}
+              />
+
+              {/* Top highlight */}
+              <div
+                className="absolute inset-x-4 top-0 h-px"
+                style={{
+                  background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent)',
+                }}
+              />
+
+              <span className="relative text-white font-bold text-2xl tabular-nums drop-shadow-lg">
+                {speed}×
+              </span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Double-tap сердце */}
       <ReelDoubleTapHeart
         position={tapHeartPosition}
         onAnimationComplete={useCallback(() => {
@@ -584,31 +628,23 @@ function ReelPlayerInner({
         }, [])}
       />
 
-      {/* ---------------------------------------------------------------
-          Progress bar (RAF-driven, z поверх всего)
-      --------------------------------------------------------------- */}
+      {/* Progress bar */}
       <ReelProgressBar
         currentTime={currentTime}
         duration={duration}
+        speed={speed}
         className="z-[5]"
       />
     </div>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Custom memo comparator
-// Ре-рендер только при изменении videoUrl или isActive
-// Остальные props (callbacks) стабильны через useCallback в родителе
-// ---------------------------------------------------------------------------
-
-const ReelPlayer = memo(ReelPlayerInner, (prev, next) => {
-  return (
-    prev.videoUrl === next.videoUrl &&
-    prev.isActive === next.isActive &&
-    prev.thumbnailUrl === next.thumbnailUrl
-  );
-});
+const ReelPlayer = memo(ReelPlayerInner, (prev, next) => (
+  prev.videoUrl === next.videoUrl
+  && prev.isActive === next.isActive
+  && prev.thumbnailUrl === next.thumbnailUrl
+  && prev.speed === next.speed
+));
 
 ReelPlayer.displayName = 'ReelPlayer';
 
