@@ -21,7 +21,7 @@ function safeRandomUUID(): string {
   } catch (error) {
     logger.warn("[useReels] randomUUID unavailable, using fallback", { error });
   }
-  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return `${Date.now()}-${(crypto.getRandomValues(new Uint8Array(8)) as Uint8Array).reduce((a, b) => a + b.toString(16).padStart(2, '0'), '')}`;
 }
 
 export function normalizeReelMediaUrl(urlOrPath: unknown, bucket = "reels-media"): string {
@@ -222,61 +222,69 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
         }
       };
 
-      if (feedMode === "reels") {
-        const fetchRequestId = safeRandomUUID();
+      const sessionId = getAnonSessionId(user);
+      const fetchRequestId = safeRandomUUID();
 
-        const sessionId = getAnonSessionId(user);
-        let rpc = await supabase.rpc("get_reels_feed_v2", {
+      let rpc = await supabase.rpc("get_reels_feed_v2", {
+        p_limit: limit,
+        p_offset: offset,
+        p_session_id: sessionId,
+        p_exploration_ratio: feedMode === "reels" ? 0.2 : 0,
+        p_recency_days: 30,
+        p_freq_cap_hours: feedMode === "reels" ? 6 : 0,
+        p_algorithm_version: feedMode === "reels" ? "v3" : "friends_v1",
+      });
+
+      if (rpc.error) {
+        rpc = await supabase.rpc("get_reels_feed_v2", {
           p_limit: limit,
           p_offset: offset,
           p_session_id: sessionId,
-          p_exploration_ratio: 0.2,
-          p_recency_days: 30,
-          p_freq_cap_hours: 6,
-          p_algorithm_version: "v3",
         });
-
-        if (rpc.error) {
-          rpc = await supabase.rpc("get_reels_feed_v2", {
-            p_limit: limit,
-            p_offset: offset,
-            p_session_id: sessionId,
-          });
-        }
-
-        if (rpc.error) {
-          logger.warn("[useReels] get_reels_feed_v2 failed, using fallback", { error: rpc.error, offset, limit });
-          let data = await fetchReelsFallback();
-          if ((data?.length || 0) === 0) data = await fetchReelsViaEdgeFallback();
-          return data;
-        }
-
-        const rpcRows = (rpc.data || []).map((row: any, index: number) => {
-          const id = row?.id ?? row?.reel_id;
-          return {
-            ...row,
-            id,
-            request_id: row?.request_id ?? fetchRequestId,
-            feed_position: row?.feed_position ?? (offset + index),
-            algorithm_version: row?.algorithm_version,
-            final_score: row?.final_score ?? row?.score,
-          };
-        });
-
-        // RPC succeeded but returned 0 rows on first page → try fallback chain
-        if (rpcRows.length === 0 && offset === 0) {
-          let data = await fetchReelsFallback();
-          if ((data?.length || 0) === 0) data = await fetchReelsViaEdgeFallback();
-          if (data.length > 0) return data;
-        }
-
-        return rpcRows;
       }
 
-      // friends mode
-      let data = await fetchReelsFallback();
-      if ((data?.length || 0) === 0) data = await fetchReelsViaEdgeFallback();
-      return data;
+      if (rpc.error) {
+        // Friends-режим использует fallback с ручной фильтрацией по подпискам
+        if (feedMode === "friends") {
+          const data = await fetchReelsFallback();
+          return data;
+        }
+        logger.warn("[useReels] get_reels_feed_v2 failed, using fallback", { error: rpc.error, offset, limit });
+        const data = await fetchReelsFallback();
+        if ((data?.length || 0) === 0) {
+          const edgeData = await fetchReelsViaEdgeFallback();
+          return edgeData;
+        }
+        return data;
+      }
+
+      const rpcRows = (rpc.data || []).map((row: any, index: number) => {
+        const id = row?.id ?? row?.reel_id;
+        return {
+          ...row,
+          id,
+          request_id: row?.request_id ?? fetchRequestId,
+          feed_position: row?.feed_position ?? (offset + index),
+          algorithm_version: row?.algorithm_version,
+          final_score: row?.final_score ?? row?.score,
+        };
+      });
+
+      // RPC succeeded but returned 0 rows on first page → try fallback chain
+      if (rpcRows.length === 0 && offset === 0) {
+        if (feedMode === "friends") {
+          const data = await fetchReelsFallback();
+          if (data.length > 0) return data;
+        }
+        const data = await fetchReelsFallback();
+        if ((data?.length || 0) === 0) {
+          const edgeData = await fetchReelsViaEdgeFallback();
+          return edgeData;
+        }
+        return data;
+      }
+
+      return rpcRows;
     },
     [feedMode, user],
   );
@@ -686,7 +694,7 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
   );
 
   const recordShare = useCallback(
-    async (reelId: string, targetType: "dm" | "group" | "channel", targetId: string) => {
+    async (reelId: string, targetType: string, targetId?: string) => {
       if (!user) return;
 
       if (isDemoId(reelId)) {
@@ -700,7 +708,7 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
           reel_id: reelId,
           user_id: user.id,
           target_type: targetType,
-          target_id: targetId,
+          target_id: targetId ?? reelId, // fallback to reelId if not provided
         });
         setReels((prev) =>
           prev.map((r) => (r.id === reelId ? { ...r, shares_count: (r.shares_count || 0) + 1 } : r)),
@@ -715,7 +723,7 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
             ownerId,
             eventType: "share_complete",
             eventSubtype: targetType,
-            props: { target_id: targetId },
+            props: { target_id: targetId ?? undefined },
           });
         }
       } catch (error) {
@@ -1047,6 +1055,45 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
           }
         },
       )
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "reel_comments" },
+        (payload: any) => {
+          const row = payload.old;
+          if (!row?.reel_id) return;
+          // Пропускаем собственные удаления — уже обработаны через UI
+          if (row.author_id === userIdRef.current) return;
+          setReels(prev => prev.map(r =>
+            r.id === row.reel_id ? { ...r, comments_count: Math.max(0, (r.comments_count ?? 0) - 1) } : r
+          ));
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "reel_reactions" },
+        (payload: any) => {
+          const row = payload.new;
+          if (!row?.reel_id) return;
+          // Пропускаем собственные реакции — уже обновлены оптимистично в toggleReaction
+          if (row.user_id === userIdRef.current) return;
+          setReels(prev => prev.map(r =>
+            r.id === row.reel_id ? { ...r, likes_count: (r.likes_count ?? 0) + 1 } : r
+          ));
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "reel_reactions" },
+        (payload: any) => {
+          const row = payload.old;
+          if (!row?.reel_id) return;
+          // Пропускаем собственные удаления реакций
+          if (row.user_id === userIdRef.current) return;
+          setReels(prev => prev.map(r =>
+            r.id === row.reel_id ? { ...r, likes_count: Math.max(0, (r.likes_count ?? 0) - 1) } : r
+          ));
+        },
+      )
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
@@ -1074,5 +1121,6 @@ export function useReels(feedMode: ReelsFeedMode = "reels") {
     setReelFeedback,
     createReel,
     refetch: fetchReels,
+    removeReel: (reelId: string) => setReels((prev) => prev.filter((r) => r.id !== reelId)),
   };
 }

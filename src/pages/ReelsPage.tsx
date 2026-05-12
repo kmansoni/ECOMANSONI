@@ -648,9 +648,8 @@ export default function ReelsPage(): JSX.Element {
   );
 
   const handleShare = useCallback((reelId: string) => {
-    void recordShare(reelId, "dm", "reels_page");
     setShareReelId(reelId);
-  }, [recordShare]);
+  }, []);
 
   const handleShareClose = useCallback(() => {
     setShareReelId(null);
@@ -914,7 +913,9 @@ export default function ReelsPage(): JSX.Element {
             reposts_count: 0,
             views_count: 0,
           }}
-          onShare={() => {}}
+          onShare={(targetType, targetId) => {
+            void recordShare(shareReelId, targetType, targetId);
+          }}
         />
       )}
     </div>
