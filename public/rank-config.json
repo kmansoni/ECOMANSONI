@@ -1,0 +1,21 @@
+{
+  "weights": {
+    "engagement": 0.30,
+    "authorAffinity": 0.25,
+    "recency": 0.20,
+    "contentRelevance": 0.15,
+    "diversity": 0.10
+  },
+  "boosts": {
+    "closeFriend": 1.5,
+    "following": 1.2,
+    "alreadySeen": 0.3
+  },
+  "contentTypeBonus": {
+    "reel": 1.15,
+    "video": 1.10,
+    "carousel": 1.05,
+    "image": 1.0,
+    "text": 0.95
+  }
+}
