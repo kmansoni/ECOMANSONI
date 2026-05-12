@@ -1,43 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="512" height="512" role="img" aria-label="Mansoni">
   <defs>
-    <linearGradient id="mGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#A855F7"/>
-      <stop offset="50%" stop-color="#3B82F6"/>
-      <stop offset="100%" stop-color="#22D3EE"/>
-    </linearGradient>
-    <linearGradient id="mBg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#0F172A"/>
-      <stop offset="100%" stop-color="#020617"/>
-    </linearGradient>
-  </defs>
-
-  <rect x="0" y="0" width="200" height="200" rx="46" ry="46" fill="url(#mBg)"/>
-
-  <!-- Монограмма M: геометричная, заливка градиентом -->
-  <path fill="url(#mGrad)" d="
-    M 44 154
-    L 44 46
-    L 64 46
-    L 100 108
-    L 136 46
-    L 156 46
-    L 156 154
-    L 138 154
-    L 138 84
-    L 108 132
-    L 92 132
-    L 62 84
-    L 62 154
-    Z
-  "/>
-
-  <!-- Акцент-точка -->
-  <circle cx="100" cy="166" r="5" fill="#22D3EE"/>
-</svg>
-<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="512" height="512" role="img" aria-label="Mansoni">
-  <defs>
     <linearGradient id="mansoniGrad" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#7C3AED"/>
       <stop offset="50%" stop-color="#3B82F6"/>

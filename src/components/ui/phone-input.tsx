@@ -7,59 +7,63 @@ interface Country {
   code: string;
   name: string;
   dialCode: string;
-  flag: string;
+  flagUrl: string;
   pattern?: RegExp;
 }
 
+const getFlagUrl = (code: string): string => {
+  return `/flags/${code.toLowerCase()}.svg`;
+};
+
 const countries: Country[] = [
-  { code: "RU", name: "Россия", dialCode: "7", flag: "🇷🇺", pattern: /^7[3-9]/ },
-  { code: "KZ", name: "Казахстан", dialCode: "7", flag: "🇰🇿", pattern: /^7[67]/ },
-  { code: "BY", name: "Беларусь", dialCode: "375", flag: "🇧🇾" },
-  { code: "UA", name: "Украина", dialCode: "380", flag: "🇺🇦" },
-  { code: "UZ", name: "Узбекистан", dialCode: "998", flag: "🇺🇿" },
-  { code: "KG", name: "Кыргызстан", dialCode: "996", flag: "🇰🇬" },
-  { code: "TJ", name: "Таджикистан", dialCode: "992", flag: "🇹🇯" },
-  { code: "TM", name: "Туркменистан", dialCode: "993", flag: "🇹🇲" },
-  { code: "AZ", name: "Азербайджан", dialCode: "994", flag: "🇦🇿" },
-  { code: "AM", name: "Армения", dialCode: "374", flag: "🇦🇲" },
-  { code: "GE", name: "Грузия", dialCode: "995", flag: "🇬🇪" },
-  { code: "MD", name: "Молдова", dialCode: "373", flag: "🇲🇩" },
-  { code: "US", name: "США", dialCode: "1", flag: "🇺🇸" },
-  { code: "GB", name: "Великобритания", dialCode: "44", flag: "🇬🇧" },
-  { code: "DE", name: "Германия", dialCode: "49", flag: "🇩🇪" },
-  { code: "FR", name: "Франция", dialCode: "33", flag: "🇫🇷" },
-  { code: "IT", name: "Италия", dialCode: "39", flag: "🇮🇹" },
-  { code: "ES", name: "Испания", dialCode: "34", flag: "🇪🇸" },
-  { code: "PT", name: "Португалия", dialCode: "351", flag: "🇵🇹" },
-  { code: "NL", name: "Нидерланды", dialCode: "31", flag: "🇳🇱" },
-  { code: "BE", name: "Бельгия", dialCode: "32", flag: "🇧🇪" },
-  { code: "CH", name: "Швейцария", dialCode: "41", flag: "🇨🇭" },
-  { code: "AT", name: "Австрия", dialCode: "43", flag: "🇦🇹" },
-  { code: "PL", name: "Польша", dialCode: "48", flag: "🇵🇱" },
-  { code: "CZ", name: "Чехия", dialCode: "420", flag: "🇨🇿" },
-  { code: "SE", name: "Швеция", dialCode: "46", flag: "🇸🇪" },
-  { code: "NO", name: "Норвегия", dialCode: "47", flag: "🇳🇴" },
-  { code: "FI", name: "Финляндия", dialCode: "358", flag: "🇫🇮" },
-  { code: "DK", name: "Дания", dialCode: "45", flag: "🇩🇰" },
-  { code: "TR", name: "Турция", dialCode: "90", flag: "🇹🇷" },
-  { code: "AE", name: "ОАЭ", dialCode: "971", flag: "🇦🇪" },
-  { code: "IL", name: "Израиль", dialCode: "972", flag: "🇮🇱" },
-  { code: "CN", name: "Китай", dialCode: "86", flag: "🇨🇳" },
-  { code: "JP", name: "Япония", dialCode: "81", flag: "🇯🇵" },
-  { code: "KR", name: "Южная Корея", dialCode: "82", flag: "🇰🇷" },
-  { code: "IN", name: "Индия", dialCode: "91", flag: "🇮🇳" },
-  { code: "TH", name: "Таиланд", dialCode: "66", flag: "🇹🇭" },
-  { code: "VN", name: "Вьетнам", dialCode: "84", flag: "🇻🇳" },
-  { code: "ID", name: "Индонезия", dialCode: "62", flag: "🇮🇩" },
-  { code: "MY", name: "Малайзия", dialCode: "60", flag: "🇲🇾" },
-  { code: "SG", name: "Сингапур", dialCode: "65", flag: "🇸🇬" },
-  { code: "AU", name: "Австралия", dialCode: "61", flag: "🇦🇺" },
-  { code: "NZ", name: "Новая Зеландия", dialCode: "64", flag: "🇳🇿" },
-  { code: "BR", name: "Бразилия", dialCode: "55", flag: "🇧🇷" },
-  { code: "MX", name: "Мексика", dialCode: "52", flag: "🇲🇽" },
-  { code: "AR", name: "Аргентина", dialCode: "54", flag: "🇦🇷" },
-  { code: "EG", name: "Египет", dialCode: "20", flag: "🇪🇬" },
-  { code: "ZA", name: "ЮАР", dialCode: "27", flag: "🇿🇦" },
+  { code: "RU", name: "Россия", dialCode: "7", flagUrl: getFlagUrl("ru"), pattern: /^7[3-9]/ },
+  { code: "KZ", name: "Казахстан", dialCode: "7", flagUrl: getFlagUrl("kz"), pattern: /^7[67]/ },
+  { code: "BY", name: "Беларусь", dialCode: "375", flagUrl: getFlagUrl("by") },
+  { code: "UA", name: "Украина", dialCode: "380", flagUrl: getFlagUrl("ua") },
+  { code: "UZ", name: "Узбекистан", dialCode: "998", flagUrl: getFlagUrl("uz") },
+  { code: "KG", name: "Кыргызстан", dialCode: "996", flagUrl: getFlagUrl("kg") },
+  { code: "TJ", name: "Таджикистан", dialCode: "992", flagUrl: getFlagUrl("tj") },
+  { code: "TM", name: "Туркменистан", dialCode: "993", flagUrl: getFlagUrl("tm") },
+  { code: "AZ", name: "Азербайджан", dialCode: "994", flagUrl: getFlagUrl("az") },
+  { code: "AM", name: "Армения", dialCode: "374", flagUrl: getFlagUrl("am") },
+  { code: "GE", name: "Грузия", dialCode: "995", flagUrl: getFlagUrl("ge") },
+  { code: "MD", name: "Молдова", dialCode: "373", flagUrl: getFlagUrl("md") },
+  { code: "US", name: "США", dialCode: "1", flagUrl: getFlagUrl("us") },
+  { code: "GB", name: "Великобритания", dialCode: "44", flagUrl: getFlagUrl("gb") },
+  { code: "DE", name: "Германия", dialCode: "49", flagUrl: getFlagUrl("de") },
+  { code: "FR", name: "Франция", dialCode: "33", flagUrl: getFlagUrl("fr") },
+  { code: "IT", name: "Италия", dialCode: "39", flagUrl: getFlagUrl("it") },
+  { code: "ES", name: "Испания", dialCode: "34", flagUrl: getFlagUrl("es") },
+  { code: "PT", name: "Португалия", dialCode: "351", flagUrl: getFlagUrl("pt") },
+  { code: "NL", name: "Нидерланды", dialCode: "31", flagUrl: getFlagUrl("nl") },
+  { code: "BE", name: "Бельгия", dialCode: "32", flagUrl: getFlagUrl("be") },
+  { code: "CH", name: "Швейцария", dialCode: "41", flagUrl: getFlagUrl("ch") },
+  { code: "AT", name: "Австрия", dialCode: "43", flagUrl: getFlagUrl("at") },
+  { code: "PL", name: "Польша", dialCode: "48", flagUrl: getFlagUrl("pl") },
+  { code: "CZ", name: "Чехия", dialCode: "420", flagUrl: getFlagUrl("cz") },
+  { code: "SE", name: "Швеция", dialCode: "46", flagUrl: getFlagUrl("se") },
+  { code: "NO", name: "Норвегия", dialCode: "47", flagUrl: getFlagUrl("no") },
+  { code: "FI", name: "Финляндия", dialCode: "358", flagUrl: getFlagUrl("fi") },
+  { code: "DK", name: "Дания", dialCode: "45", flagUrl: getFlagUrl("dk") },
+  { code: "TR", name: "Турция", dialCode: "90", flagUrl: getFlagUrl("tr") },
+  { code: "AE", name: "ОАЭ", dialCode: "971", flagUrl: getFlagUrl("ae") },
+  { code: "IL", name: "Израиль", dialCode: "972", flagUrl: getFlagUrl("il") },
+  { code: "CN", name: "Китай", dialCode: "86", flagUrl: getFlagUrl("cn") },
+  { code: "JP", name: "Япония", dialCode: "81", flagUrl: getFlagUrl("jp") },
+  { code: "KR", name: "Южная Корея", dialCode: "82", flagUrl: getFlagUrl("kr") },
+  { code: "IN", name: "Индия", dialCode: "91", flagUrl: getFlagUrl("in") },
+  { code: "TH", name: "Таиланд", dialCode: "66", flagUrl: getFlagUrl("th") },
+  { code: "VN", name: "Вьетнам", dialCode: "84", flagUrl: getFlagUrl("vn") },
+  { code: "ID", name: "Индонезия", dialCode: "62", flagUrl: getFlagUrl("id") },
+  { code: "MY", name: "Малайзия", dialCode: "60", flagUrl: getFlagUrl("my") },
+  { code: "SG", name: "Сингапур", dialCode: "65", flagUrl: getFlagUrl("sg") },
+  { code: "AU", name: "Австралия", dialCode: "61", flagUrl: getFlagUrl("au") },
+  { code: "NZ", name: "Новая Зеландия", dialCode: "64", flagUrl: getFlagUrl("nz") },
+  { code: "BR", name: "Бразилия", dialCode: "55", flagUrl: getFlagUrl("br") },
+  { code: "MX", name: "Мексика", dialCode: "52", flagUrl: getFlagUrl("mx") },
+  { code: "AR", name: "Аргентина", dialCode: "54", flagUrl: getFlagUrl("ar") },
+  { code: "EG", name: "Египет", dialCode: "20", flagUrl: getFlagUrl("eg") },
+  { code: "ZA", name: "ЮАР", dialCode: "27", flagUrl: getFlagUrl("za") },
 ];
 
 const detectCountry = (digits: string): Country | null => {
@@ -193,13 +197,15 @@ export function PhoneInput({ value, onChange, placeholder, required, className, 
       <div className="relative flex items-center">
         <div className="absolute left-4 flex items-center justify-center pointer-events-none h-full">
           {detectedCountry ? (
-            <span 
-              className="text-lg leading-none text-white flex items-center" 
-              style={{ fontFamily: "'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif" }}
-              aria-hidden="true"
-            >
-              {detectedCountry.flag}
-            </span>
+            <img
+              src={detectedCountry.flagUrl}
+              alt={detectedCountry.name}
+              className="w-7 h-5 rounded-sm object-cover"
+              style={{ imageRendering: 'auto' }}
+              onError={(e) => {
+                (e.target as HTMLImageElement).style.display = 'none';
+              }}
+            />
           ) : (
             <PhoneCallIcon size={20} noAnimate className="text-white/50" aria-hidden="true" />
           )}
