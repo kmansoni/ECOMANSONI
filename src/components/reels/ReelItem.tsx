@@ -1,35 +1,28 @@
 /**
  * @file src/components/reels/ReelItem.tsx
- * @description Контейнер одного Reel — одна «страница» вертикального фида.
- *
- * Ответственность:
- * - Компонует ReelPlayer + ReelOverlay + placeholder для ReelSidebar (Phase 3)
- * - Управляет state double-tap сердца (TapPosition | null)
- * - Проксирует isActive в ReelPlayer
- * - Проксирует данные автора / описания / музыки в ReelOverlay
- *
- * Double-tap flow:
- *   ReelPlayer.onDoubleTap(pos) → setHeartPosition(pos) + onLike(reel.id)
- *   ReelDoubleTapHeart.onAnimationComplete → setHeartPosition(null)
- *
- * Layout: 100vw × 100dvh, snap-start snap-always (для CSS scroll snap).
- * Не overflow:scroll — прокрутка управляется родительским контейнером.
+ * @description Контейнер одного Reel — полная интеграция Premium UI.
+ * Топ-бар, боттам-бар, реакции, long-press, PiP, всё как Telegram/Instagram Premium.
  */
 
-import React, { memo, useCallback, useState } from 'react';
+import React, { memo, useCallback, useRef, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Flag, EyeOff, Link2, Trash2, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Flag, Link2, MessageCircle, EyeOff, Heart } from 'lucide-react';
 import { toast } from 'sonner';
 import { ReelPlayer } from './ReelPlayer';
 import { ReelOverlay } from './ReelOverlay';
 import { ReelDoubleTapHeart } from './ReelDoubleTapHeart';
 import { ReelSidebar } from './ReelSidebar';
+import { ReelReactionPicker } from './ReelReactionPicker';
 import { ReportSheet } from '@/components/moderation/ReportSheet';
 import { useReelsContext } from '@/contexts/ReelsContext';
 import { useAuth } from '@/hooks/useAuth';
+import { useReactions } from '@/hooks/useReactions';
+import { useFollow } from '@/hooks/useFollow';
 import { supabase } from '@/lib/supabase';
+import { cn } from '@/lib/utils';
 import type { ReelFeedItem, TapPosition } from '@/types/reels';
+import type { ReactionCount } from '@/types/reels/premium';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -37,19 +30,24 @@ import type { ReelFeedItem, TapPosition } from '@/types/reels';
 
 interface ReelItemProps {
   reel: ReelFeedItem;
-  /**
-   * true когда этот Reel виден в viewport (IntersectionObserver на уровне страницы).
-   * Пробрасывается в ReelPlayer для управления autoplay / pause.
-   */
+  /** true когда этот Reel активен в viewport */
   isActive: boolean;
   onLike: (reelId: string) => void;
   onSave: (reelId: string) => void;
   onRepost: (reelId: string) => void;
   onShare: (reelId: string) => void;
   onComment: (reelId: string) => void;
-  onAuthorPress: (authorId: string) => void;
+  onAuthorPress: (username: string) => void;
   onHashtagPress: (hashtag: string) => void;
-  onFollowPress: (authorId: string) => void;
+  onFollowPress?: (authorId: string) => void;
+  /** Набор реакций */
+  reactionCounts?: ReactionCount[];
+  /** Текущая реакция пользователя */
+  myReaction?: string | null;
+  /** Callback при выборе реакции */
+  onReactionChange?: (reelId: string, emoji: string) => void;
+  /** Callback при удалении рилса автором */
+  onDelete?: (reelId: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -68,44 +66,52 @@ const ReelItem = memo<ReelItemProps>(
     onAuthorPress,
     onHashtagPress,
     onFollowPress,
+    reactionCounts = [],
+    myReaction = null,
+    onReactionChange,
+    onDelete,
   }) => {
-    // Позиция double-tap сердца (null = анимация не активна)
     const [heartPosition, setHeartPosition] = useState<TapPosition | null>(null);
     const [moreOpen, setMoreOpen] = useState(false);
     const [reportOpen, setReportOpen] = useState(false);
+    const [showReactionPicker, setShowReactionPicker] = useState(false);
+    const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
 
     const { isMuted, toggleMute } = useReelsContext();
     const { user } = useAuth();
     const navigate = useNavigate();
     const isOwn = user?.id === reel.author.id;
 
-    // ---------------------------------------------------------------------------
-    // Callbacks
-    // ---------------------------------------------------------------------------
+    const { isFollowing, toggle: toggleFollow, loading: followLoading } = useFollow(reel.author.id);
+    const isCurrentlyFollowing = user?.id === reel.author.id ? true : isFollowing;
+    const isFollowingRef = useRef(isFollowing);
+    useEffect(() => { isFollowingRef.current = isFollowing; }, [isFollowing]);
 
-    /**
-     * Вызывается ReelPlayer при double-tap.
-     * Одновременно показываем сердце и проставляем лайк.
-     */
-    const handleDoubleTap = useCallback(
-      (position: TapPosition) => {
-        setHeartPosition(position);
-        onLike(reel.id);
+    const handleFollow = useCallback(async () => {
+      const before = isFollowingRef.current;
+      await toggleFollow();
+      const after = isFollowingRef.current;
+      if (before !== after) {
+        onFollowPress?.(reel.author.id);
+      }
+    }, [toggleFollow, onFollowPress, reel.author.id]);
+
+    const handleReaction = useCallback(
+      (emoji: string) => {
+        onReactionChange?.(reel.id, emoji);
+        void triggerHaptic();
       },
-      [onLike, reel.id],
+      [onReactionChange, reel.id],
     );
 
-    /** Сердце завершило анимацию → скрываем */
-    const handleHeartAnimationComplete = useCallback(() => {
-      setHeartPosition(null);
+    const openReactionPicker = useCallback(() => {
+      setShowReactionPicker(true);
     }, []);
 
-    const handleLike = useCallback(() => onLike(reel.id), [onLike, reel.id]);
-    const handleSave = useCallback(() => onSave(reel.id), [onSave, reel.id]);
-    const handleRepost = useCallback(() => onRepost(reel.id), [onRepost, reel.id]);
-    const handleShare = useCallback(() => onShare(reel.id), [onShare, reel.id]);
-    const handleComment = useCallback(() => onComment(reel.id), [onComment, reel.id]);
-    const handleMore = useCallback(() => setMoreOpen(true), []);
+    const closeReactionPicker = useCallback(() => {
+      setShowReactionPicker(false);
+    }, []);
 
     const handleNotInterested = useCallback(async () => {
       setMoreOpen(false);
@@ -129,16 +135,20 @@ const ReelItem = memo<ReelItemProps>(
     const handleDelete = useCallback(async () => {
       setMoreOpen(false);
       const { error } = await supabase.from('reels').delete().eq('id', reel.id);
-      if (error) toast.error('Не удалось удалить');
-      else toast('Рилс удалён');
-    }, [reel.id]);
+      if (error) {
+        toast.error('Не удалось удалить');
+      } else {
+        toast('Рилс удалён');
+        // Оповещаем родителя — удаляем из фида
+        onDelete?.(reel.id);
+      }
+    }, [reel.id, onDelete]);
 
     const handleOpenReport = useCallback(() => {
       setMoreOpen(false);
       setReportOpen(true);
     }, []);
 
-    /** Tap on music badge → navigate to AudioTrackPage */
     const handleMusicPress = useCallback(
       (musicTitle: string) => {
         navigate(`/audio/${encodeURIComponent(musicTitle)}`);
@@ -146,19 +156,49 @@ const ReelItem = memo<ReelItemProps>(
       [navigate],
     );
 
+    /** Long press на видео → picker реакций */
+    const handlePointerDown = useCallback((e: React.PointerEvent) => {
+      if (e.pointerType === 'touch') {
+        longPressTimerRef.current = setTimeout(() => {
+          openReactionPicker();
+        }, 500);
+      }
+    }, [openReactionPicker]);
+
+    const handlePointerUp = useCallback(() => {
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+      }
+    }, []);
+
+    // ---------------------------------------------------------------------------
+    // Haptic helper
+    // ---------------------------------------------------------------------------
+
+    const triggerHaptic = useCallback(async () => {
+      try {
+        const cap = await import('@capacitor/haptics' as any) as any;
+        await cap.Haptics.impact({ style: cap.ImpactStyle.Light });
+      } catch {
+        // noop on web
+      }
+    }, []);
+
     // ---------------------------------------------------------------------------
     // Render
     // ---------------------------------------------------------------------------
 
     return (
       <div
+        ref={containerRef}
         className="relative w-full h-[100dvh] bg-black overflow-hidden snap-start snap-always"
         data-reel-id={reel.id}
         data-reel-active={isActive}
+        onPointerDown={handlePointerDown}
+        onPointerUp={handlePointerUp}
       >
-        {/* ----------------------------------------------------------------
-            Видеоплеер — занимает весь контейнер
-        ---------------------------------------------------------------- */}
+        {/* ---- Видеоплеер ---- */}
         <ReelPlayer
           videoUrl={reel.video_url}
           thumbnailUrl={reel.thumbnail_url}
@@ -167,51 +207,61 @@ const ReelItem = memo<ReelItemProps>(
           className="absolute inset-0 w-full h-full"
         />
 
-        {/* ----------------------------------------------------------------
-            Overlay с информацией (автор, описание, музыка)
-        ---------------------------------------------------------------- */}
+        {/* ---- Overlay автора и описания ---- */}
         <ReelOverlay
           author={reel.author}
           description={reel.description}
           musicTitle={reel.music_title}
           musicArtist={reel.music_artist}
           hashtags={reel.hashtags}
-          isFollowing={reel.author.is_following}
-          onAuthorPress={onAuthorPress}
+          isFollowing={isCurrentlyFollowing}
+          onAuthorPress={handleAuthorClick}
           onHashtagPress={onHashtagPress}
-          onFollowPress={onFollowPress}
+          onFollowPress={handleFollow}
           onMusicPress={handleMusicPress}
         />
 
-        {/* ----------------------------------------------------------------
-            ReelSidebar — кнопки действий (Phase 3)
-        ---------------------------------------------------------------- */}
-        <ReelSidebar
-          reelId={reel.id}
-          metrics={reel.metrics}
-          isLiked={reel.is_liked}
-          isSaved={reel.is_saved}
-          isReposted={reel.is_reposted}
-          authorAvatarUrl={reel.author.avatar_url}
-          onLike={handleLike}
-          onComment={handleComment}
-          onShare={handleShare}
-          onSave={handleSave}
-          onRepost={handleRepost}
-          onMore={handleMore}
-          onMuteToggle={toggleMute}
-          isMuted={isMuted}
-        />
+        {/* ---- Sidebar (правая колонка) ---- */}
+        {isActive && (
+          <ReelSidebar
+            reelId={reel.id}
+            metrics={reel.metrics}
+            isLiked={reel.is_liked}
+            isSaved={reel.is_saved}
+            isReposted={reel.is_reposted}
+            reactionCounts={reactionCounts}
+            myReaction={myReaction}
+            onLike={handleLike}
+            onComment={handleComment}
+            onShare={handleShare}
+            onSave={handleSave}
+            onRepost={handleRepost}
+            onMore={handleMore}
+            onMuteToggle={toggleMute}
+            onReaction={handleReaction}
+            isMuted={isMuted}
+          />
+        )}
 
-        {/* ----------------------------------------------------------------
-            Double-tap heart animation — абсолютно поверх всего
-        ---------------------------------------------------------------- */}
+        {/* ---- Double-tap сердце ---- */}
         <ReelDoubleTapHeart
           position={heartPosition}
           onAnimationComplete={handleHeartAnimationComplete}
         />
 
-        {/* Action sheet */}
+        {/* ---- Picker реакций (long press) ---- */}
+        <AnimatePresence>
+          {showReactionPicker && reactionCounts.length > 0 && (
+            <ReelReactionPicker
+              reactionCounts={reactionCounts}
+              myReaction={myReaction}
+              onReaction={handleReaction}
+              position={getPickerPosition()}
+            />
+          )}
+        </AnimatePresence>
+
+        {/* ---- Action sheet (More) ---- */}
         <AnimatePresence>
           {moreOpen && (
             <>
@@ -230,22 +280,37 @@ const ReelItem = memo<ReelItemProps>(
                 transition={{ type: 'spring', damping: 28, stiffness: 300 }}
               >
                 <div className="w-10 h-1 bg-zinc-600 rounded-full mx-auto mb-4" />
-                <button onClick={handleNotInterested} className="flex items-center gap-3 w-full p-3 rounded-lg hover:bg-zinc-800 text-white">
+                <button
+                  onClick={handleNotInterested}
+                  className="flex items-center gap-3 w-full p-3 rounded-lg hover:bg-zinc-800 text-white"
+                >
                   <EyeOff size={20} /> Не интересует
                 </button>
-                <button onClick={handleCopyLink} className="flex items-center gap-3 w-full p-3 rounded-lg hover:bg-zinc-800 text-white">
+                <button
+                  onClick={handleCopyLink}
+                  className="flex items-center gap-3 w-full p-3 rounded-lg hover:bg-zinc-800 text-white"
+                >
                   <Link2 size={20} /> Скопировать ссылку
                 </button>
-                <button onClick={handleOpenReport} className="flex items-center gap-3 w-full p-3 rounded-lg hover:bg-zinc-800 text-red-400">
+                <button
+                  onClick={handleOpenReport}
+                  className="flex items-center gap-3 w-full p-3 rounded-lg hover:bg-zinc-800 text-red-400"
+                >
                   <Flag size={20} /> Пожаловаться
                 </button>
                 {isOwn && (
-                  <button onClick={handleDelete} className="flex items-center gap-3 w-full p-3 rounded-lg hover:bg-zinc-800 text-red-500">
-                    <Trash2 size={20} /> Удалить
+                  <button
+                    onClick={handleDelete}
+                    className="flex items-center gap-3 w-full p-3 rounded-lg hover:bg-zinc-800 text-red-500"
+                  >
+                    <MessageCircle size={20} /> Удалить
                   </button>
                 )}
-                <button onClick={() => setMoreOpen(false)} className="flex items-center gap-3 w-full p-3 rounded-lg hover:bg-zinc-800 text-zinc-400 mt-2">
-                  <X size={20} /> Отмена
+                <button
+                  onClick={() => setMoreOpen(false)}
+                  className="flex items-center gap-3 w-full p-3 rounded-lg hover:bg-zinc-800 text-zinc-400 mt-2"
+                >
+                  <Heart size={20} /> Отмена
                 </button>
               </motion.div>
             </>

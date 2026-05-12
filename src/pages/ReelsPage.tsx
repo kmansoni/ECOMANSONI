@@ -35,7 +35,10 @@ import type { ReelFeedItemV3 } from '@/types/reels/premium';
 import { logger } from '@/lib/logger';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
+import { parseHashtags } from '@/lib/reels/format';
 import { Heart, HeartOff } from 'lucide-react';
+import { trackAnalyticsEvent } from '@/lib/analytics/firehose';
+import { useAuth } from '@/hooks/useAuth';
 
 // ---------------------------------------------------------------------------
 // Reels feed mode
@@ -111,7 +114,7 @@ function mapToFeedItem(reel: Reel, index: number): ReelFeedItem {
     duration_seconds: reel.duration_seconds ?? 0,
     author,
     metrics,
-    hashtags: [],
+    hashtags: parseHashtags(reel.description ?? null),
     created_at: reel.created_at,
     is_liked: reel.isLiked ?? false,
     is_saved: reel.isSaved ?? false,
@@ -119,7 +122,6 @@ function mapToFeedItem(reel: Reel, index: number): ReelFeedItem {
     feed_position: reel.feed_position ?? index,
     recommendation_reason: reel.ranking_reason,
     final_score: reel.final_score,
-    reactions: v3.reactions,
   };
 }
 
@@ -368,6 +370,7 @@ function usePullToRefreshStyle() {
 export default function ReelsPage(): JSX.Element {
   const { setIsReelsPage } = useReelsContext();
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   // Feed mode state
   const [feedMode, setFeedModeState] = useState<ReelsFeedMode>('for_you');
@@ -396,9 +399,11 @@ export default function ReelsPage(): JSX.Element {
     toggleLike,
     toggleSave,
     toggleRepost,
+    recordShare,
     recordImpression,
     recordView,
     refetch,
+    removeReel,
   } = useReels(reelsFeedMode);
 
   // Reactions hook
@@ -643,12 +648,20 @@ export default function ReelsPage(): JSX.Element {
   );
 
   const handleShare = useCallback((reelId: string) => {
+    void recordShare(reelId, "dm", "reels_page");
     setShareReelId(reelId);
-  }, []);
+  }, [recordShare]);
 
   const handleShareClose = useCallback(() => {
     setShareReelId(null);
   }, []);
+
+  const handleDelete = useCallback(
+    (reelId: string) => {
+      removeReel(reelId);
+    },
+    [removeReel],
+  );
 
   const handleComment = useCallback((reelId: string) => {
     setCommentsReelId(reelId);
@@ -667,6 +680,18 @@ export default function ReelsPage(): JSX.Element {
     (hashtag: string) => navigate(`/hashtag/${hashtag}`),
     [navigate],
   );
+
+  const handleFollowPress = useCallback((authorId: string) => {
+    if (!user) return;
+    trackAnalyticsEvent({
+      actorId: user.id,
+      objectType: 'user',
+      objectId: authorId,
+      ownerId: authorId,
+      eventType: 'follow',
+      props: { source: 'reels_page' }
+    });
+  }, [user, trackAnalyticsEvent]);
 
   const handleReaction = useCallback(
     (reelId: string, emoji: string) => {
@@ -802,21 +827,22 @@ export default function ReelsPage(): JSX.Element {
               data-reel-index={index}
               className="h-[100dvh] w-full flex-shrink-0 snap-start snap-always"
             >
-              <ReelItem
-                reel={reel}
-                isActive={isActive}
-                onLike={handleLike}
-                onSave={handleSave}
-                onRepost={handleRepost}
-                onShare={handleShare}
-                onComment={handleComment}
-                onAuthorPress={handleAuthorPress}
-                onHashtagPress={handleHashtagPress}
-                onFollowPress={() => {}}
-                reactionCounts={reelsReactions}
-                myReaction={myReaction}
-                onReactionChange={handleReaction}
-              />
+                <ReelItem
+                  reel={reel}
+                  isActive={isActive}
+                  onLike={handleLike}
+                  onSave={handleSave}
+                  onRepost={handleRepost}
+                  onShare={handleShare}
+                  onComment={handleComment}
+                  onAuthorPress={handleAuthorPress}
+                  onHashtagPress={handleHashtagPress}
+                  onFollowPress={handleFollowPress}
+                  reactionCounts={reelsReactions}
+                  myReaction={myReaction}
+                  onReactionChange={handleReaction}
+                  onDelete={handleDelete}
+                />
             </div>
           );
         })}

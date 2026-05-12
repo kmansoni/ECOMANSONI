@@ -19,7 +19,9 @@ import { useReelsContext } from '@/contexts/ReelsContext';
 import { normalizeReelMediaUrl } from '@/lib/reels/media';
 import { ReelDoubleTapHeart } from './ReelDoubleTapHeart';
 import { ReelProgressBar } from './ReelProgressBar';
-import type { TapPosition, BufferState, PlaybackSpeed } from '@/types/reels/premium';
+import type { TapPosition } from '@/types/reels';
+import type { PlaybackSpeed } from '@/types/reels/premium';
+import type { BufferState } from '@/types/reels';
 
 // ---------------------------------------------------------------------------
 // Константы
@@ -185,16 +187,16 @@ function ReelPlayerInner({
     }
   }, [isActive, startProgressRAF, stopProgressRAF, onPlayStateChange]);
 
-  // ---------------------------------------------------------------------------
-  // Синхронизация muted с контекстом
-  // ---------------------------------------------------------------------------
+   // ---------------------------------------------------------------------------
+   // Синхронизация muted с контекстом
+   // ---------------------------------------------------------------------------
 
-  useEffect(() => {
-    const video = videoRef.current;
-    if (video) {
-      video.muted = isMuted;
-    }
-  }, [isMuted]);
+   useEffect(() => {
+     const video = videoRef.current;
+     if (video) {
+       video.muted = isMuted;
+     }
+   }, [isMuted]);
 
   // ---------------------------------------------------------------------------
   // Обработчики событий video
