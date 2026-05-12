@@ -62,6 +62,18 @@ export async function unarchivePost(userId: string, postId: string): Promise<voi
   if (error) throw error;
 }
 
+export async function isPostArchived(userId: string, postId: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('archived_posts')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('post_id', postId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data !== null;
+}
+
 export async function getArchivedPosts(userId: string): Promise<PostWithMedia[]> {
   const { data, error } = await supabase
     .from('archived_posts')

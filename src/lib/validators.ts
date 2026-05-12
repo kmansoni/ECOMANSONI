@@ -125,6 +125,8 @@ export function validateCreative(input: {
   return errors;
 }
 
+export const validateCreativeInput = validateCreative;
+
 /**
  * Валидация UUID
  */

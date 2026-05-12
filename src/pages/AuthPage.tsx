@@ -1,17 +1,17 @@
 /**
- * AuthPage — production auth screen (liquid-glass showcase design).
- * Real Supabase phone -> email-OTP flow. Mounted at /auth.
+ * AuthPage — Premium auth screen с liquid-glass дизайном.
+ * Использует BrandPanel, WaveBackground, AuthToggle, SocialLoginButtons, QRLoginSection, SuccessScreen.
+ * Mounted at /auth.
  */
 
 import { useRef, useState } from "react";
-import { AnimatePresence, motion, useMotionValue, useSpring, useTransform } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import {
   ArrowRight,
   Check,
   ChevronLeft,
-  Heart,
   KeyRound,
   Mail,
   Moon,
@@ -21,7 +21,6 @@ import {
 } from "lucide-react";
 
 import { PhoneInput } from "@/components/ui/phone-input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { QRCodeLogin } from "@/components/auth/QRCodeLogin";
 import { RecommendedUsersModal } from "@/components/profile/RecommendedUsersModal";
 
@@ -29,7 +28,7 @@ import { supabase } from "@/lib/supabase";
 import { getVerifyEmailOtpUrls, getSendEmailOtpUrls, getAnonHeaders } from "@/lib/auth/backendEndpoints";
 import { logger } from "@/lib/logger";
 
-import type { FlowAction, Gender, EntityType } from "./auth/types";
+import type { FlowAction, Gender, EntityType, ThemeTokens } from "./auth/types";
 import {
   fetchJsonWithRetry,
   withTimeout,
@@ -45,13 +44,19 @@ import {
 import { useTheme, useThemeTokens } from "./auth/theme";
 import { useAuthFlow, useMediaFlag, useOtpCountdown } from "./auth/hooks";
 
-import { AuroraBackground } from "./auth/components/AuroraBackground";
-import { PrimaryButton } from "./auth/components/PrimaryButton";
+// Premium components
+import { PremiumAuthLayout, PremiumGlassCard } from "./auth/components/PremiumAuthLayout";
+import { BrandPanel } from "./auth/components/BrandPanel";
+import { WaveBackground } from "./auth/components/WaveBackground";
+import { AuthToggle } from "./auth/components/AuthToggle";
+import { SocialLoginButtons } from "./auth/components/SocialLoginButtons";
+import { QRLoginSection } from "./auth/components/QRLoginSection";
+import { SuccessScreen } from "./auth/components/SuccessScreen";
 import { GlassInput } from "./auth/components/GlassInput";
+import { PrimaryButton } from "./auth/components/PrimaryButton";
 import { OtpInput } from "./auth/components/OtpInput";
-import { KindTipsTicker } from "./auth/components/KindTipsTicker";
-import { DesktopShowcase } from "./auth/components/DesktopShowcase";
-import { SecurityFooter } from "./auth/components/SecurityFooter";
+
+type AuthMode = "login" | "register";
 
 export function AuthPage() {
   const { theme, toggle } = useTheme("dark");
@@ -59,6 +64,7 @@ export function AuthPage() {
   const [flow, dispatch] = useAuthFlow();
   const navigate = useNavigate();
 
+  const [authMode, setAuthMode] = useState<AuthMode>("login");
   const otpEmailRef = useRef("");
   const otpSendUrlRef = useRef("");
   const isRegisterFlowRef = useRef(false);
@@ -68,27 +74,7 @@ export function AuthPage() {
   const reduced = useMediaFlag("(prefers-reduced-motion: reduce)");
   useOtpCountdown(flow.otpCountdown, dispatch);
 
-  // tilt
-  const tiltX = useMotionValue(0);
-  const tiltY = useMotionValue(0);
-  const rotX = useTransform(tiltY, [-40, 40], [6, -6]);
-  const rotY = useTransform(tiltX, [-40, 40], [-6, 6]);
-  const springX = useSpring(rotX, { stiffness: 120, damping: 14 });
-  const springY = useSpring(rotY, { stiffness: 120, damping: 14 });
-  const tiltEnabled = !reduced;
-  const pointerTiltEnabled = !isTouch && !reduced;
-
-  const handleCardMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!pointerTiltEnabled) return;
-    const r = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
-    tiltX.set(e.clientX - r.left - r.width / 2);
-    tiltY.set(e.clientY - r.top - r.height / 2);
-  };
-  const handleCardLeave = () => {
-    if (!pointerTiltEnabled) return;
-    tiltX.set(0);
-    tiltY.set(0);
-  };
+  const handleToggle = () => setAuthMode(prev => prev === "login" ? "register" : "login");
 
   const phoneDigits = flow.phone.replace(/\D/g, "");
   const canContinuePhone = phoneDigits.length >= 10;
@@ -199,6 +185,7 @@ export function AuthPage() {
       if (response.status === 404 && payloadString(data, "error") === "not_found") {
         toast.message("Аккаунта нет", { description: "Создайте новый — это займёт минуту" });
         dispatch({ type: "goto", step: "register" });
+        setAuthMode("register");
         return;
       }
 
@@ -447,229 +434,145 @@ export function AuthPage() {
     }
   };
 
+  const handleContinue = () => {
+    setShowRecommendations(false);
+    navigate("/");
+  };
+
   return (
-    <>
-      <style>{`
-        .auth-showcase-scroll { scrollbar-width: none !important; -ms-overflow-style: none !important; }
-        .auth-showcase-scroll::-webkit-scrollbar { display: none !important; }
-        @media (max-width: 640px) {
-          .auth-glass-card { padding: 1.25rem !important; min-width: 0 !important; max-width: 100vw !important; min-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom)) !important; display: flex !important; flex-direction: column !important; border-radius: 0 !important; }
-          .auth-mobile-wrapper { padding: 0 !important; margin: 0 !important; min-height: 100dvh !important; align-items: stretch !important; }
-          .auth-mobile-card-container { max-width: 100% !important; width: 100% !important; }
-        }
-      `}</style>
-      <div
-        className={`${theme === "dark" ? "dark" : ""} auth-showcase-scroll relative h-[100dvh] w-full overflow-x-hidden overflow-y-auto overscroll-y-contain font-[Manrope,system-ui,sans-serif] ${tokens.textPrimary}`}
-        style={{ colorScheme: theme, paddingTop: "env(safe-area-inset-top)", paddingBottom: "env(safe-area-inset-bottom)" }}
-      >
-        <AuroraBackground theme={theme} />
+    <PremiumAuthLayout tokens={tokens}>
+      <WaveBackground tokens={tokens} />
 
-        <div className="auth-mobile-wrapper relative z-10 flex items-start sm:items-center justify-center px-3 sm:px-6 pb-6 sm:pb-10 min-h-[calc(100dvh-72px)]">
-          <DesktopShowcase tokens={tokens} />
+      {/* Brand Panel - left side on desktop */}
+      <BrandPanel tokens={tokens} />
 
-          <motion.div
-            onMouseMove={handleCardMove}
-            onMouseLeave={handleCardLeave}
-            style={tiltEnabled ? { rotateX: springX, rotateY: springY, transformPerspective: 1200 } : undefined}
-            initial={{ opacity: 0, y: 30, scale: 0.96 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
-            className="auth-mobile-card-container relative w-full max-w-[400px] sm:max-w-md lg:max-w-[460px]"
-          >
-            <div className={`pointer-events-none absolute -inset-4 sm:-inset-6 rounded-[2.2rem] blur-2xl opacity-70 ${tokens.isDark ? "bg-gradient-to-br from-cyan-500/20 via-teal-500/15 to-emerald-400/20" : "bg-gradient-to-br from-cyan-300/35 via-teal-300/30 to-emerald-300/35"}`} />
+      {/* Auth Card - right side */}
+      <PremiumGlassCard tokens={tokens} className="w-full max-w-[440px] p-6 sm:p-8">
+        {/* Theme toggle */}
+        <motion.button
+          onClick={toggle}
+          whileTap={{ scale: 0.9 }}
+          className={`absolute top-4 right-4 h-10 w-10 rounded-full border backdrop-blur-xl flex items-center justify-center transition ${tokens.iconBtn}`}
+          aria-label="Toggle theme"
+        >
+          {theme === "dark" ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
+        </motion.button>
 
-            <div className={`relative rounded-[1.5rem] sm:rounded-[2rem] p-4 sm:p-7 lg:p-8 border backdrop-blur-2xl overflow-hidden auth-glass-card ${tokens.glassCard} ${tokens.glassCardShadow}`} style={{display: 'flex', flexDirection: 'column'}}>
-              {/* Theme toggle */}
-              <motion.button
-                onClick={toggle}
-                whileTap={{ scale: 0.9, rotate: 180 }}
-                className={`absolute top-3 right-3 sm:top-5 sm:right-5 h-10 w-10 rounded-full border backdrop-blur-xl flex items-center justify-center transition ${tokens.iconBtn} z-20`}
-                aria-label="Toggle theme"
-                style={{ boxShadow: '0 2px 12px 0 rgba(0,0,0,0.08)' }}
-              >
-                <AnimatePresence mode="wait" initial={false}>
-                  {theme === "dark" ? (
-                    <motion.span key="moon" initial={{ opacity: 0, rotate: -90 }} animate={{ opacity: 1, rotate: 0 }} exit={{ opacity: 0, rotate: 90 }}><Moon className="h-5 w-5" /></motion.span>
-                  ) : (
-                    <motion.span key="sun" initial={{ opacity: 0, rotate: 90 }} animate={{ opacity: 1, rotate: 0 }} exit={{ opacity: 0, rotate: -90 }}><Sun className="h-5 w-5" /></motion.span>
-                  )}
-                </AnimatePresence>
-              </motion.button>
+        <div className="pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
 
-              <div className="pointer-events-none absolute inset-0 rounded-[inherit]">
-                <div className={`absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent ${tokens.isDark ? "via-white/70" : "via-white"} to-transparent`} />
-                <div className={`absolute inset-y-8 left-0 w-px bg-gradient-to-b from-transparent ${tokens.isDark ? "via-cyan-400/30" : "via-teal-300"} to-transparent`} />
-              </div>
+        {/* Logo */}
+        <div className="flex items-center justify-center mb-4">
+          <span className="text-[24px] sm:text-[28px] tracking-[0.3em] uppercase font-bold text-gradient-brand">
+            mansoni
+          </span>
+        </div>
 
-              {/* Logo */}
-              <div className="flex items-center justify-center mb-5 sm:mb-6">
-                <motion.div
-                  initial={{ opacity: 0, y: -4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.7, ease: "easeOut", delay: 0.1 }}
-                  className="flex items-center gap-3"
-                >
-                  <span aria-hidden className="relative inline-block h-3 w-3 rounded-full bg-gradient-to-br from-cyan-400 to-teal-400">
-                    <span className="absolute inset-0 rounded-full blur-[7px] opacity-60 bg-cyan-400" />
-                  </span>
-                  <span className="text-[26px] sm:text-[32px] tracking-[0.42em] uppercase font-bold text-gradient-brand" style={{ fontFeatureSettings: '"ss01"' }}>
-                    mansoni
-                  </span>
-                  <span aria-hidden className="relative inline-block h-3 w-3 rounded-full bg-gradient-to-br from-teal-400 to-emerald-400">
-                    <span className="absolute inset-0 rounded-full blur-[7px] opacity-60 bg-emerald-400" />
-                  </span>
-                </motion.div>
-              </div>
+        {/* Auth Toggle */}
+        <AuthToggle mode={authMode} onToggle={handleToggle} tokens={tokens} />
 
-              {/* Back button */}
-              <div className="flex items-center mb-5 sm:mb-6 flex-shrink-0">
-                {flow.step !== "phone" && flow.step !== "success" ? (
-                  <button onClick={handleBack} className={`h-9 w-9 rounded-full border flex items-center justify-center transition ${tokens.iconBtn}`} aria-label="Back">
+        {/* Steps */}
+        <div className="relative flex flex-col gap-4">
+          <AnimatePresence mode="wait">
+            {flow.step === "phone" && authMode === "login" && (
+              <motion.div key="phone-login" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                <div className="space-y-4">
+                  <PhoneInput value={flow.phone} onChange={(v) => dispatch({ type: "setPhone", phone: v })} dark={tokens.isDark} />
+                  <PrimaryButton type="button" onClick={() => void submitPhone()} disabled={!canContinuePhone} loading={flow.loading}>
+                    Получить код
+                  </PrimaryButton>
+                </div>
+                <QRLoginSection tokens={tokens} />
+              </motion.div>
+            )}
+
+            {flow.step === "phone" && authMode === "register" && (
+              <motion.div key="phone-register" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                <div className="space-y-4">
+                  <PhoneInput value={flow.phone} onChange={(v) => dispatch({ type: "setPhone", phone: v })} dark={tokens.isDark} />
+                  <PrimaryButton type="button" onClick={() => void submitPhone()} disabled={!canContinuePhone} loading={flow.loading}>
+                    Зарегистрироваться
+                  </PrimaryButton>
+                </div>
+                <QRLoginSection tokens={tokens} />
+              </motion.div>
+            )}
+
+            {flow.step === "register" && (
+              <motion.div key="register" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-4">
+                <div className="h-9 flex items-center">
+                  {flow.step !== "phone" ? (
+                    <button onClick={handleBack} className={`h-9 w-9 rounded-full border flex items-center justify-center transition ${tokens.iconBtn}`}>
+                      <ChevronLeft className="h-5 w-5" />
+                    </button>
+                  ) : <div />}
+                </div>
+                <h2 className={`text-xl font-bold ${tokens.textPrimary}`}>Создать аккаунт</h2>
+                <div className="grid grid-cols-2 gap-3">
+                  <GlassInput tokens={tokens} id="firstName" label="Имя *" value={flow.firstName} onChange={(v) => dispatch({ type: "setRegisterField", field: "firstName", value: v })} />
+                  <GlassInput tokens={tokens} id="lastName" label="Фамилия *" value={flow.lastName} onChange={(v) => dispatch({ type: "setRegisterField", field: "lastName", value: v })} />
+                </div>
+                <GlassInput tokens={tokens} id="email" label="Email *" value={flow.email} onChange={(v) => dispatch({ type: "setEmail", email: v })} type="email" icon={<Mail className="h-5 w-5" />} />
+                <GlassInput tokens={tokens} id="password" label="Пароль *" value={flow.password} onChange={(v) => dispatch({ type: "setRegisterField", field: "password", value: v })} type="password" />
+                {flow.registerError && <div className={`text-xs rounded-xl border border-rose-400/40 bg-rose-500/10 px-3 py-2 ${tokens.isDark ? 'text-rose-200' : 'text-rose-700'}`}>{flow.registerError}</div>}
+                <PrimaryButton type="button" onClick={() => void submitRegister()} disabled={flow.loading} loading={flow.loading}>
+                  Создать аккаунт
+                </PrimaryButton>
+              </motion.div>
+            )}
+
+            {flow.step === "otp" && (
+              <motion.div key="otp" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-4">
+                <div className="h-9 flex items-center">
+                  <button onClick={handleBack} className={`h-9 w-9 rounded-full border flex items-center justify-center transition ${tokens.iconBtn}`}>
                     <ChevronLeft className="h-5 w-5" />
                   </button>
-                ) : <div className="h-9 w-9" />}
-              </div>
-
-              {/* Steps */}
-              <div className="relative flex-1 flex flex-col justify-center min-h-[260px] sm:min-h-[300px]">
-                <AnimatePresence mode="wait" initial={false}>
-                  {flow.step === "phone" && (
-                    <motion.form key="phone" initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -24 }} transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-                      onSubmit={(e) => { e.preventDefault(); void submitPhone(); }} className="flex flex-col"
-                    >
-                      <div>
-                        <div className="flex items-center gap-2 mb-3">
-                          <Heart className={`w-4 h-4 ${tokens.isDark ? "text-cyan-300" : "text-teal-600"}`} />
-                          <span className={`text-sm font-semibold ${tokens.isDark ? "text-white" : "text-gray-700"}`}>
-                            Добрые мысли
-                          </span>
-                        </div>
-                        <KindTipsTicker tokens={tokens} />
-                      </div>
-                      <div className="mt-4 sm:mt-5">
-                        <PhoneInput value={flow.phone} onChange={(v) => dispatch({ type: "setPhone", phone: v })} dark={tokens.isDark} />
-                      </div>
-                      <div className="mt-5">
-                        <PrimaryButton type="submit" icon={<ArrowRight className="h-5 w-5" />} disabled={!canContinuePhone} loading={flow.loading}>
-                          Получить код
-                        </PrimaryButton>
-                      </div>
-                      <button type="button" onClick={() => dispatch({ type: "goto", step: "qr" })}
-                        className={`mt-3 group flex items-center justify-center gap-2 h-12 rounded-2xl border backdrop-blur-xl transition ${tokens.pillSurface} ${tokens.textSecondary}`}
-                      >
-                        <QrCode className="h-5 w-5 text-cyan-500" /> Войти по QR-коду
-                      </button>
-                    </motion.form>
+                </div>
+                <h2 className={`text-xl font-bold ${tokens.textPrimary}`}>Код подтверждения</h2>
+                <p className={`text-sm ${tokens.textMuted}`}>Отправлен на {flow.maskedEmail || otpEmailRef.current || "почту"}</p>
+                <OtpInput tokens={tokens} value={flow.otp} onChange={(v) => dispatch({ type: "setOtp", otp: v })} />
+                <PrimaryButton type="button" onClick={() => void submitOtp()} disabled={!canContinueOtp} loading={flow.loading}>
+                  Подтвердить
+                </PrimaryButton>
+                <div className={`text-center text-sm ${tokens.textMuted}`}>
+                  {flow.otpCountdown > 0 ? (
+                    <>Повторно через {Math.floor(flow.otpCountdown / 60)}:{String(flow.otpCountdown % 60).padStart(2, "0")}</>
+                  ) : (
+                    <button type="button" onClick={() => void handleResendOtp()} className={`${tokens.textPrimary} underline`}>Отправить ещё раз</button>
                   )}
+                </div>
+              </motion.div>
+            )}
 
-                  {flow.step === "register" && (
-                    <motion.form key="register" initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -24 }} transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-                      onSubmit={(e) => { e.preventDefault(); void submitRegister(); }} className="flex flex-col gap-4"
-                    >
-                      <div>
-                        <h1 className={`text-[24px] sm:text-[28px] leading-[1.1] font-bold tracking-tight ${tokens.textPrimary}`}>Создать аккаунт</h1>
-                        <p className={`mt-2 text-sm ${tokens.textMuted}`}>
-                          Аккаунта с номером <span className={tokens.textPrimary}>{flow.phone || "телефон"}</span> пока нет. Укажите данные — пришлём код на email.
-                        </p>
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <GlassInput tokens={tokens} id="firstName" label="Имя *" value={flow.firstName} onChange={(v) => dispatch({ type: "setRegisterField", field: "firstName", value: v })} autoComplete="given-name" />
-                        <GlassInput tokens={tokens} id="lastName" label="Фамилия *" value={flow.lastName} onChange={(v) => dispatch({ type: "setRegisterField", field: "lastName", value: v })} autoComplete="family-name" />
-                      </div>
-                      <GlassInput tokens={tokens} id="middleName" label="Отчество (по желанию)" value={flow.middleName} onChange={(v) => dispatch({ type: "setRegisterField", field: "middleName", value: v })} />
-                      <GlassInput tokens={tokens} id="email" label="Электронная почта *" value={flow.email} onChange={(v) => dispatch({ type: "setEmail", email: v })} type="email" autoComplete="email" icon={<Mail className="h-5 w-5" />} />
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <GlassInput tokens={tokens} id="birthDate" label="Дата рождения *" value={flow.birthDate} onChange={(v) => dispatch({ type: "setRegisterField", field: "birthDate", value: v })} type="date" />
-                        <Select value={flow.gender} onValueChange={(value) => dispatch({ type: "setRegisterField", field: "gender", value })}>
-                          <SelectTrigger className={`h-14 rounded-2xl border backdrop-blur-xl ${tokens.inputSurface} ${tokens.textPrimary}`}><SelectValue placeholder="Пол *" /></SelectTrigger>
-                          <SelectContent className="glass-popover">
-                            <SelectItem value="male">Мужской</SelectItem>
-                            <SelectItem value="female">Женский</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <Select value={flow.entityType} onValueChange={(value) => dispatch({ type: "setRegisterField", field: "entityType", value })}>
-                        <SelectTrigger className={`h-14 rounded-2xl border backdrop-blur-xl ${tokens.inputSurface} ${tokens.textPrimary}`}><SelectValue placeholder="Тип пользователя *" /></SelectTrigger>
-                        <SelectContent className="glass-popover">
-                          <SelectItem value="individual">Физ. лицо</SelectItem>
-                          <SelectItem value="self_employed">Самозанятый</SelectItem>
-                          <SelectItem value="entrepreneur">ИП</SelectItem>
-                          <SelectItem value="legal_entity">Юр. лицо</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <GlassInput tokens={tokens} id="password" label="Пароль *" value={flow.password} onChange={(v) => dispatch({ type: "setRegisterField", field: "password", value: v })} type="password" autoComplete="new-password" />
-                        <GlassInput tokens={tokens} id="passwordConfirm" label="Подтвердите пароль *" value={flow.passwordConfirm} onChange={(v) => dispatch({ type: "setRegisterField", field: "passwordConfirm", value: v })} type="password" autoComplete="new-password" />
-                      </div>
-                      {flow.registerError && (
-                        <div className={`rounded-xl border border-rose-400/40 bg-rose-500/10 px-3 py-2 text-xs ${tokens.isDark ? 'text-rose-200' : 'text-rose-700'}`}>{flow.registerError}</div>
-                      )}
-                      <PrimaryButton type="submit" icon={<UserPlus className="h-5 w-5" />} disabled={flow.loading} loading={flow.loading}>Создать аккаунт</PrimaryButton>
-                      <button type="button" onClick={() => dispatch({ type: "goto", step: "phone" })}
-                        className={`group flex items-center justify-center gap-2 h-12 rounded-2xl border backdrop-blur-xl transition ${tokens.pillSurface} ${tokens.textSecondary}`}
-                      >
-                        <ChevronLeft className="h-5 w-5" /> Изменить номер
-                      </button>
-                    </motion.form>
-                  )}
+            {flow.step === "qr" && (
+              <motion.div key="qr" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-4">
+                <div className="h-9 flex items-center">
+                  <button onClick={handleBack} className={`h-9 w-9 rounded-full border flex items-center justify-center transition ${tokens.iconBtn}`}>
+                    <ChevronLeft className="h-5 w-5" />
+                  </button>
+                </div>
+                <h2 className={`text-xl font-bold ${tokens.textPrimary}`}>Вход по QR-коду</h2>
+                <QRCodeLogin onSuccess={() => navigate("/")} />
+              </motion.div>
+            )}
 
-                  {flow.step === "otp" && (
-                    <motion.form key="otp" initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -24 }} transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-                      onSubmit={(e) => { e.preventDefault(); void submitOtp(); }} className="flex flex-col gap-5"
-                    >
-                      <div>
-                        <h1 className={`text-[24px] sm:text-[28px] leading-[1.1] font-bold tracking-tight ${tokens.textPrimary}`}>Код подтверждения</h1>
-                        <p className={`mt-2 text-sm ${tokens.textMuted}`}>
-                          Отправили 6-значный код на <span className={tokens.textPrimary}>{flow.maskedEmail || otpEmailRef.current || flow.email || "почту"}</span>
-                        </p>
-                      </div>
-                      <OtpInput tokens={tokens} value={flow.otp} onChange={(v) => dispatch({ type: "setOtp", otp: v })} />
-                      <PrimaryButton type="submit" icon={<KeyRound className="h-5 w-5" />} disabled={!canContinueOtp} loading={flow.loading}>Подтвердить</PrimaryButton>
-                      <div className={`text-center text-sm ${tokens.textMuted}`}>
-                        {flow.otpCountdown > 0 ? (
-                          <>Отправить повторно через {Math.floor(flow.otpCountdown / 60)}:{String(flow.otpCountdown % 60).padStart(2, "0")}</>
-                        ) : (
-                          <>Не пришло?{" "}<button type="button" onClick={() => void handleResendOtp()} className={`${tokens.textPrimary} underline-offset-2 hover:underline`}>Отправить ещё раз</button></>
-                        )}
-                      </div>
-                    </motion.form>
-                  )}
+            {flow.step === "success" && (
+              <motion.div key="success" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                <SuccessScreen
+                  tokens={tokens}
+                  displayName={flow.firstName}
+                  onContinue={handleContinue}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
 
-                  {flow.step === "qr" && (
-                    <motion.div key="qr" initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -24 }} transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }} className="flex flex-col gap-5">
-                      <div>
-                        <h1 className={`text-[24px] sm:text-[28px] leading-[1.1] font-bold tracking-tight ${tokens.textPrimary}`}>Вход по QR-коду</h1>
-                        <p className={`mt-2 text-sm ${tokens.textMuted}`}>Откройте mansoni на другом устройстве и отсканируйте код.</p>
-                      </div>
-                      <QRCodeLogin onSuccess={() => navigate("/")} />
-                    </motion.div>
-                  )}
-
-                  {flow.step === "success" && (
-                    <motion.div key="success" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }} transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }} className="flex flex-col items-center text-center gap-5 py-6">
-                      <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 220, damping: 14, delay: 0.1 }}
-                        className="relative h-20 w-20 rounded-full bg-gradient-to-br from-cyan-400 to-emerald-400 flex items-center justify-center shadow-[0_20px_60px_-10px_rgba(0,200,150,0.5)]"
-                      >
-                        <Check className="h-10 w-10 text-white" strokeWidth={3} />
-                        <motion.span initial={{ scale: 1, opacity: 0.6 }} animate={{ scale: 1.8, opacity: 0 }} transition={{ duration: 1.2, repeat: Infinity }} className="absolute inset-0 rounded-full border-2 border-cyan-300" />
-                      </motion.div>
-                      <div>
-                        <h1 className={`text-[24px] sm:text-[26px] font-bold tracking-tight ${tokens.textPrimary}`}>Добро пожаловать</h1>
-                        <p className={`mt-2 text-sm ${tokens.textMuted}`}>Вход выполнен. Готовим ваше пространство...</p>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-
-              <SecurityFooter tokens={tokens} />
-            </div>
-          </motion.div>
+          {/* Social Login */}
+          <SocialLoginButtons tokens={tokens} />
         </div>
-      </div>
+      </PremiumGlassCard>
 
       <RecommendedUsersModal isOpen={showRecommendations} onClose={() => { setShowRecommendations(false); navigate("/"); }} />
-    </>
+    </PremiumAuthLayout>
   );
 }
 

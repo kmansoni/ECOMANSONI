@@ -226,3 +226,22 @@ export function formatRelativeTime(dateString: string): string {
     month: 'short',
   });
 }
+
+// ---------------------------------------------------------------------------
+// parseHashtags
+// ---------------------------------------------------------------------------
+
+/**
+ * Извлекает хэштеги из текста.
+ *
+ * @param text - Текст для парсинга
+ * @returns Массив хэштегов (без символа #)
+ *
+ * @example
+ * parseHashtags("Hello #world #foo") // ["world", "foo"]
+ */
+export function parseHashtags(text: string): string[] {
+  const matches = text.match(/#[\wа-яёА-ЯЁ]+/g);
+  if (!matches) return [];
+  return matches.map(tag => tag.slice(1));
+}
