@@ -684,13 +684,13 @@ export default function ReelsPage(): JSX.Element {
     if (!user) return;
     trackAnalyticsEvent({
       actorId: user.id,
-      objectType: 'user',
+      objectType: 'profile',
       objectId: authorId,
       ownerId: authorId,
-      eventType: 'follow',
+      eventType: 'follow_click',
       props: { source: 'reels_page' }
     });
-  }, [user, trackAnalyticsEvent]);
+  }, [user]);
 
   const handleReaction = useCallback(
     (reelId: string, emoji: string) => {
@@ -817,7 +817,8 @@ export default function ReelsPage(): JSX.Element {
           }
 
           const reelsReactions = getReactionCounts(reel.id);
-          const myReaction = getMyReactions(reel.id);
+          const myReactions = getMyReactions(reel.id);
+          const myReaction = myReactions.length > 0 ? myReactions[0] : null;
 
           return (
             <div
