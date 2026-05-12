@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import { BookOpen, GraduationCap, Sparkles, BrainCircuit, ChevronRight } from "lucide-react";
-import logoImage from "@/assets/logo.png";
+import mansoniLogo from "/brand/mansoni-logo.svg";
 import type { ThemeTokens } from "../types";
 
 export function BrandPanel({ tokens }: { tokens: ThemeTokens }) {
@@ -14,9 +14,9 @@ export function BrandPanel({ tokens }: { tokens: ThemeTokens }) {
       {/* Brand logo */}
       <div className="flex items-center gap-3 mb-6">
         <img
-          src={logoImage}
+          src={mansoniLogo}
           alt=""
-          className="w-9 h-9 sm:w-11 sm:h-11 shrink-0"
+          className="w-11 h-11 sm:w-12 sm:h-12 shrink-0"
           aria-hidden="true"
         />
         <span
