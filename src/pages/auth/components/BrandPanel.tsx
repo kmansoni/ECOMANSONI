@@ -1,0 +1,85 @@
+import { motion } from "framer-motion";
+import { BookOpen, GraduationCap, Sparkles, BrainCircuit, ChevronRight } from "lucide-react";
+import logoImage from "@/assets/logo.png";
+import type { ThemeTokens } from "../types";
+
+export function BrandPanel({ tokens }: { tokens: ThemeTokens }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, x: -40 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1], delay: 0.2 }}
+      className="hidden lg:flex flex-col justify-center w-[420px] xl:w-[480px] pr-8 xl:pr-12 py-8"
+    >
+      {/* Brand logo */}
+      <div className="flex items-center gap-3 mb-6">
+        <img
+          src={logoImage}
+          alt=""
+          className="w-9 h-9 sm:w-11 sm:h-11 shrink-0"
+          aria-hidden="true"
+        />
+        <span
+          className="text-[28px] sm:text-[34px] font-bold tracking-[0.1em] uppercase text-gradient-brand"
+          style={{
+            fontFeatureSettings: '"ss01"',
+            textShadow: "0 0 30px rgba(6, 182, 212, 0.2)",
+          }}
+        >
+          mansoni
+        </span>
+      </div>
+
+      {/* Hero text */}
+      <h1 className={`text-[36px] xl:text-[42px] font-bold leading-[1.1] tracking-tight mb-4 ${tokens.textPrimary}`}>
+        Всё в одном
+        <br />
+        <span className="text-gradient-brand">приложении</span>
+      </h1>
+      <p className={`text-base xl:text-lg leading-relaxed mb-10 max-w-[380px] ${tokens.textSecondary}`}>
+        Мессенджер, соцсеть, маркетплейс, навигация, звонки — единый аккаунт с E2E-шифрованием и полным контролем над данными.
+      </p>
+
+      {/* Feature cards */}
+      <div className="space-y-3 mb-10">
+        {[
+          { icon: <BookOpen className="w-5 h-5" />, label: "Мессенджер", desc: "E2E-шифрование, групповые чаты" },
+          { icon: <Sparkles className="w-5 h-5" />, label: "Лента и Reels", desc: "Контент от друзей и по интересам" },
+          { icon: <BrainCircuit className="w-5 h-5" />, label: "Навигация", desc: "Маршруты, трафик, офлайн-карты" },
+          { icon: <GraduationCap className="w-5 h-5" />, label: "Маркетплейс", desc: "Покупки без лишних приложений" },
+        ].map((item, i) => (
+          <motion.div
+            key={item.label}
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.5, delay: 0.5 + i * 0.1 }}
+            className={`flex items-center gap-3 rounded-2xl px-4 py-3 border backdrop-blur-xl ${tokens.glassCard}`}
+          >
+            <span className={`shrink-0 ${tokens.textPrimary}`}>{item.icon}</span>
+            <div className="flex-1 min-w-0">
+              <span className={`text-sm font-semibold ${tokens.textPrimary}`}>{item.label}</span>
+              <span className={`text-xs block mt-0.5 ${tokens.textMuted}`}>{item.desc}</span>
+            </div>
+            <ChevronRight className={`w-4 h-4 shrink-0 ${tokens.textFaint}`} />
+          </motion.div>
+        ))}
+      </div>
+
+      {/* Trust badge */}
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 1 }}
+        className={`p-4 rounded-2xl border backdrop-blur-xl ${tokens.glassSoft}`}
+      >
+        <div className="flex items-center gap-2 mb-2">
+          <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+          <span className={`text-xs font-medium ${tokens.textPrimary}`}>Защита данных</span>
+        </div>
+        <p className={`text-[11px] leading-relaxed ${tokens.textMuted}`}>
+          E2E-шифрование · RLS-безопасность · TLS 1.3 · AES-256 на устройстве
+        </p>
+      </motion.div>
+    </motion.div>
+  );
+}
