@@ -175,14 +175,23 @@ function ReelPlayerInner({
       blurVideoRef.current?.play().catch(() => {});
     } else {
       video.pause();
-      video.currentTime = 0;
+      // Сброс времени может выбросить ошибку, если метаданные ещё не загружены
+      try {
+        video.currentTime = 0;
+      } catch {
+        // Игнорируем — видео не готово
+      }
       setIsPaused(true);
       setCurrentTime(0);
       onPlayStateChange?.(false);
       stopProgressRAF();
       if (blurVideoRef.current) {
         blurVideoRef.current.pause();
-        blurVideoRef.current.currentTime = 0;
+        try {
+          blurVideoRef.current.currentTime = 0;
+        } catch {
+          // ignore
+        }
       }
     }
   }, [isActive, startProgressRAF, stopProgressRAF, onPlayStateChange]);
