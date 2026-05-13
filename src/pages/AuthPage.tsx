@@ -1,6 +1,6 @@
 /**
  * AuthPage — Premium auth screen с liquid-glass дизайном.
- * Использует BrandPanel, WaveBackground, AuthToggle, SocialLoginButtons, QRLoginSection, SuccessScreen.
+ * Использует BrandPanel, WaveBackground, SocialLoginButtons, SuccessScreen.
  * Mounted at /auth.
  */
 
@@ -49,7 +49,6 @@ import { PremiumAuthLayout, PremiumGlassCard } from "./auth/components/PremiumAu
 import { BrandPanel } from "./auth/components/BrandPanel";
 import { WaveBackground } from "./auth/components/WaveBackground";
 import { SocialLoginButtons } from "./auth/components/SocialLoginButtons";
-import { QRLoginSection } from "./auth/components/QRLoginSection";
 import { SuccessScreen } from "./auth/components/SuccessScreen";
 import { GlassInput } from "./auth/components/GlassInput";
 import { GlassSelect } from "./auth/components/GlassSelect";
@@ -497,7 +496,6 @@ export function AuthPage() {
                     Получить код
                   </PrimaryButton>
                 </div>
-                <QRLoginSection tokens={tokens} />
               </motion.div>
             )}
 
