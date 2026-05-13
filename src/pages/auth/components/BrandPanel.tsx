@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { BookOpen, GraduationCap, Sparkles, BrainCircuit, ChevronRight } from "lucide-react";
+import { BookOpen, GraduationCap, Sparkles, BrainCircuit, ChevronRight, QrCode } from "lucide-react";
 import mansoniLogo from "/brand/mansoni-logo.svg";
 import type { ThemeTokens } from "../types";
 
@@ -65,12 +65,33 @@ export function BrandPanel({ tokens }: { tokens: ThemeTokens }) {
         ))}
       </div>
 
+      {/* QR Login Card */}
+      <motion.button
+        initial={{ opacity: 0, x: -20 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ duration: 0.5, delay: 0.7 }}
+        type="button"
+        whileTap={{ scale: 0.98 }}
+        onClick={() => {
+          const el = document.getElementById("qr-section");
+          el?.scrollIntoView({ behavior: "smooth" });
+        }}
+        className={`flex items-center gap-3 rounded-2xl px-4 py-3 border backdrop-blur-xl transition-all duration-200 hover:border-white/[0.12] ${tokens.glassCard}`}
+      >
+        <QrCode className={`w-5 h-5 ${tokens.textPrimary}`} />
+        <div className="flex-1 min-w-0">
+          <span className={`text-sm font-semibold ${tokens.textPrimary}`}>Войти по QR-коду</span>
+          <span className={`text-xs block mt-0.5 ${tokens.textMuted}`}>Быстрый вход с телефона</span>
+        </div>
+        <ChevronRight className={`w-4 h-4 shrink-0 ${tokens.textFaint}`} />
+      </motion.button>
+
       {/* Trust badge */}
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ delay: 1 }}
-        className={`p-4 rounded-2xl border backdrop-blur-xl ${tokens.glassSoft}`}
+        className={`p-4 rounded-2xl border backdrop-blur-xl ${tokens.glassCardSoft}`}
       >
         <div className="flex items-center gap-2 mb-2">
           <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />

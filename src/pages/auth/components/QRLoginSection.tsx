@@ -8,6 +8,7 @@ export function QRLoginSection({ tokens }: { tokens: ThemeTokens }) {
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5, delay: 0.4 }}
+      className="lg:hidden"
     >
       <div className="flex items-center gap-2 mb-3">
         <div className="flex-1 h-px" style={{ background: tokens.isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)" }} />
