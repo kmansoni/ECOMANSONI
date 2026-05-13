@@ -58,6 +58,7 @@ void initAnalytics();
 const HomePage = lazy(() => import("@/pages/HomePage").then(m => ({ default: m.HomePage })));
 const SearchPage = lazy(() => import("@/pages/SearchPage").then(m => ({ default: m.SearchPage })));
 const SavedMessagesPage = lazy(() => import("@/pages/SavedMessagesPage").then(m => ({ default: m.SavedMessagesPage })));
+const RemindersPage = lazy(() => import("@/pages/RemindersPage").then(m => ({ default: m.default })));
 const EditProfilePage = lazy(() => import("@/pages/EditProfilePage").then(m => ({ default: m.EditProfilePage })));
 const CreatorAnalyticsDashboard = lazy(() => import("@/pages/CreatorAnalyticsDashboard").then(m => ({ default: m.default })));
 const UserProfilePage = lazy(() => import("@/pages/UserProfilePage").then(m => ({ default: m.UserProfilePage })));
@@ -471,6 +472,13 @@ const App = () => {
                       <RouteErrorBoundary>
                         <Suspense fallback={<PageLoader />}>
                           <SavedMessagesPage />
+                        </Suspense>
+                      </RouteErrorBoundary>
+                    } />
+                    <Route path="/reminders" element={
+                      <RouteErrorBoundary>
+                        <Suspense fallback={<PageLoader />}>
+                          <RemindersPage />
                         </Suspense>
                       </RouteErrorBoundary>
                     } />

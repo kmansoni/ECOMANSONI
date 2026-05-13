@@ -28,6 +28,7 @@ const SIDEBAR_NAV = [
   { to: "/search", icon: SearchIcon as SidebarIcon, label: "Поиск" },
   { to: "/reels", icon: ReelsIcon as SidebarIcon, label: "Reels" },
   { to: "/notifications", icon: BellIcon as SidebarIcon, label: "Уведомления" },
+  { to: "/reminders", icon: BellIcon as SidebarIcon, label: "Напоминания" },
   { to: "/people-nearby", icon: "users" as SidebarIcon, label: "Люди рядом" },
   { to: "/saved-messages", icon: BookmarkIcon as SidebarIcon, label: "Избранное" },
   { to: "/settings", icon: SettingsIcon as SidebarIcon, label: "Настройки" },

@@ -1,19 +1,17 @@
 import { useState, useEffect } from "react";
-import { Bell, BellOff, Check, Clock, Calendar, X } from "lucide-react";
+import { Bell, Check, Clock } from "lucide-react";
 import { dbLoose } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
-import { cn } from "@/lib/utils";
 
 interface PostReminderProps {
   postId: string;
 }
 
 interface ReminderData {
-  id: string;
   remind_at: string;
 }
 
@@ -32,7 +30,7 @@ function formatRemindTime(isoString: string): string {
   const diffH = Math.round(diffMs / (1000 * 60 * 60));
   const diffD = Math.round(diffMs / (1000 * 60 * 60 * 24));
 
-  if (diffH < 0) return "Просрочено";
+  if (diffMs < 0) return "Просрочено";
   if (diffH < 1) return "Менее чем через час";
   if (diffH < 24) return `Через ${diffH} ч.`;
   if (diffD === 1) return "Завтра";
@@ -59,11 +57,11 @@ export function PostReminder({ postId }: PostReminderProps) {
     const loadReminder = async () => {
       const { data } = await dbLoose
         .from("post_reminders")
-        .select("id, remind_at")
+        .select("remind_at")
         .eq("post_id", postId)
         .eq("user_id", user.id)
         .single();
-      setReminder(data);
+      setReminder(data as ReminderData | null);
     };
     void loadReminder();
   }, [postId, user]);
@@ -84,11 +82,11 @@ export function PostReminder({ postId }: PostReminderProps) {
       if (error) throw error;
       const { data } = await dbLoose
         .from("post_reminders")
-        .select("id, remind_at")
+        .select("remind_at")
         .eq("post_id", postId)
         .eq("user_id", user.id)
         .single();
-      setReminder(data);
+      setReminder(data as ReminderData | null);
       setOpen(false);
       toast.success("Напоминание установлено");
     } catch {
@@ -119,11 +117,11 @@ export function PostReminder({ postId }: PostReminderProps) {
       if (error) throw error;
       const { data } = await dbLoose
         .from("post_reminders")
-        .select("id, remind_at")
+        .select("remind_at")
         .eq("post_id", postId)
         .eq("user_id", user.id)
         .single();
-      setReminder(data);
+      setReminder(data as ReminderData | null);
       setOpen(false);
       toast.success("Напоминание установлено");
     } catch {
@@ -155,14 +153,40 @@ export function PostReminder({ postId }: PostReminderProps) {
   // Уже установлено — показываем статус
   if (reminder) {
     return (
-      <button
-        onClick={() => setOpen(true)}
-        className="flex items-center gap-1.5 text-xs text-primary hover:opacity-80 transition-opacity"
-      >
-        <Check className="w-3.5 h-3.5" />
-        <span className="hidden sm:inline">{formatRemindTime(reminder.remind_at)}</span>
-        <span className="sm:hidden">Напоминание</span>
-      </button>
+      <>
+        <button
+          onClick={() => setOpen(true)}
+          className="flex items-center gap-1.5 text-xs text-primary hover:opacity-80 transition-opacity"
+        >
+          <Check className="w-3.5 h-3.5" />
+          <span className="hidden sm:inline">{formatRemindTime(reminder.remind_at)}</span>
+          <span className="sm:hidden">Напоминание</span>
+        </button>
+
+        <Sheet open={open} onOpenChange={setOpen}>
+          <SheetContent className="w-full sm:max-w-md">
+            <SheetHeader className="pb-4">
+              <SheetTitle className="flex items-center gap-2 text-lg">
+                <Check className="w-5 h-5 text-primary" />
+                Напоминание установлено
+              </SheetTitle>
+            </SheetHeader>
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                {formatRemindTime(reminder.remind_at)}
+              </p>
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={handleRemove}
+                disabled={loading}
+              >
+                Удалить напоминание
+              </Button>
+            </div>
+          </SheetContent>
+        </Sheet>
+      </>
     );
   }
 
