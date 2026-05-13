@@ -56,7 +56,7 @@ export function FeedBrandPanel({ tokens }: { tokens: ThemeTokens }) {
       </div>
 
       {/* Bottom trust section */}
-      <div className={`p-4 rounded-2xl border backdrop-blur-xl ${tokens.glassSoft}`}>
+      <div className={`p-4 rounded-2xl border backdrop-blur-xl ${tokens.glassCardSoft}`}>
         <div className="flex items-center gap-2 mb-2">
           <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
           <span className={`text-xs font-medium ${tokens.textPrimary}`}>Защита данных</span>

@@ -15,7 +15,7 @@ export function TermsCheckbox({
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: 0.5 }}
-      className={`flex items-start gap-3 p-3 rounded-xl border backdrop-blur-xl transition-all ${tokens.glassSoft} ${
+      className={`flex items-start gap-3 p-3 rounded-xl border backdrop-blur-xl transition-all ${tokens.glassCardSoft} ${
         !checked ? "border-rose-400/30" : ""
       }`}
       onClick={() => onChange(!checked)}
