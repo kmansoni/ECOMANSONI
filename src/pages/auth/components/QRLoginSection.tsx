@@ -22,7 +22,7 @@ export function QRLoginSection({ tokens }: { tokens: ThemeTokens }) {
           const el = document.getElementById("qr-section");
           el?.scrollIntoView({ behavior: "smooth" });
         }}
-        className={`w-full h-12 rounded-2xl border backdrop-blur-xl flex items-center justify-center gap-2 transition-all duration-300 ${tokens.pillSurface} ${tokens.textSecondary} hover:scale-[1.02]`}
+        className="w-full h-12 rounded-2xl backdrop-blur-xl flex items-center justify-center gap-2 transition-all duration-300 text-white/70 hover:text-white hover:bg-white/[0.05] border border-white/[0.06] hover:border-white/[0.10]"
       >
         <QrCode className="w-5 h-5" />
         <span className="text-sm font-medium">Войти по QR-коду</span>

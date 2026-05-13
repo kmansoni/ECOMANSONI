@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef } from "react";
 import { motion } from "framer-motion";
-import type { ThemeTokens } from "../types";
+import { cn } from "@/lib/utils";
 
-export function OtpInput({ value, onChange, length = 6, tokens }: { value: string; onChange: (v: string) => void; length?: number; tokens: ThemeTokens }) {
+export function OtpInput({ value, onChange, length = 6 }: { value: string; onChange: (v: string) => void; length?: number }) {
   const refs = useRef<Array<HTMLInputElement | null>>([]);
   useEffect(() => { refs.current[0]?.focus(); }, []);
 
@@ -51,9 +51,14 @@ export function OtpInput({ value, onChange, length = 6, tokens }: { value: strin
             onPaste={onPaste}
             onChange={(e) => set(i, e.target.value)}
             onKeyDown={(e) => onKey(i, e)}
-            className={`w-full aspect-square rounded-2xl text-center text-xl sm:text-2xl font-semibold
-                       border backdrop-blur-xl outline-none transition-all
-                       ${tokens.inputSurface} ${tokens.textPrimary}`}
+            className={cn(
+              "w-full aspect-square rounded-2xl text-center text-xl sm:text-2xl font-semibold",
+              "border border-white/[0.08] bg-white/[0.05] backdrop-blur-xl",
+              "text-white",
+              "outline-none transition-all",
+              "hover:border-white/15",
+              "focus:border-white/20"
+            )}
           />
           {ch && (
             <motion.span

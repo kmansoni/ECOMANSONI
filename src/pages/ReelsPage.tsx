@@ -114,7 +114,7 @@ function mapToFeedItem(reel: Reel, index: number): ReelFeedItem {
     duration_seconds: reel.duration_seconds ?? 0,
     author,
     metrics,
-    hashtags: parseHashtags(reel.description ?? null),
+    hashtags: parseHashtags(reel.description ?? ''),  
     created_at: reel.created_at,
     is_liked: reel.isLiked ?? false,
     is_saved: reel.isSaved ?? false,
@@ -455,9 +455,10 @@ export default function ReelsPage(): JSX.Element {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const prevIndexRef = useRef<number>(-1);
 
+  usePullToRefreshStyle();
+
   useEffect(() => {
     setIsReelsPage(true);
-    usePullToRefreshStyle();
     return () => {
       setIsReelsPage(false);
     };
@@ -708,16 +709,7 @@ export default function ReelsPage(): JSX.Element {
     [currentIndex],
   );
 
-  // Track viewed indices
-  const [viewedIndices, setViewedIndices] = useState<Set<number>>(new Set());
 
-  useEffect(() => {
-    setViewedIndices((prev) => {
-      const next = new Set(prev);
-      next.add(currentIndex);
-      return next;
-    });
-  }, [currentIndex]);
 
   // ---------------------------------------------------------------------------
   // Render states

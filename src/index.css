@@ -252,10 +252,18 @@ body.filter-protanopia  { filter: url(#protanopia); }
 body.filter-deuteranopia { filter: url(#deuteranopia); }
 body.filter-tritanopia  { filter: url(#tritanopia); }
 
-/* Focus visible — улучшенное кольцо фокуса */
+/* Focus visible — улучшенное кольцо фокуса (исключение для glassmorphism инпутов) */
 :focus-visible {
   outline: 2px solid hsl(var(--ring));
   outline-offset: 2px;
+}
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+.glass-input:focus-visible,
+.glass-select:focus-visible {
+  outline: none;
+  outline-offset: 0;
 }
 
 /* Screen reader only utility */
@@ -795,9 +803,9 @@ html.appearance-no-sticker-anim .emoji-picker-ios .EmojiPickerReact .epr-emoji i
 .glass-input:focus-visible,
 .glass-input:focus-within {
   outline: none;
-  border-color: hsl(var(--ring) / 0.55);
-  box-shadow: 0 0 0 1px hsl(var(--ring) / 0.35);
-  /* Neutralize Tailwind/shadcn ring so it doesn't stack with our glass ring */
+  outline-offset: 0;
+  border-color: hsl(var(--glass-border));
+  box-shadow: none;
   --tw-ring-shadow: 0 0 #0000;
   --tw-ring-offset-shadow: 0 0 #0000;
   --tw-ring-offset-width: 0px;

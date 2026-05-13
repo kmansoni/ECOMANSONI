@@ -14,12 +14,14 @@ export class RouteErrorBoundary extends React.Component<React.PropsWithChildren,
 
   override componentDidCatch(error: unknown) {
     logger.error("route.error_boundary.runtime_error", { error });
-    // Auto-recover: reset error state after a tick so the route re-renders
-    setTimeout(() => this.setState({ hasError: false }), 0);
+    // Auto-recover once after a tick — only if the component stopped throwing
+    setTimeout(() => this.setState({ hasError: false }), 1000);
   }
 
   override render() {
-    // Always render children — error state auto-clears
+    if (this.state.hasError) {
+      return null;
+    }
     return this.props.children;
   }
 }

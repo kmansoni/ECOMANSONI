@@ -240,7 +240,8 @@ export function formatRelativeTime(dateString: string): string {
  * @example
  * parseHashtags("Hello #world #foo") // ["world", "foo"]
  */
-export function parseHashtags(text: string): string[] {
+export function parseHashtags(text: string | null | undefined): string[] {
+  if (!text) return [];
   const matches = text.match(/#[\wа-яёА-ЯЁ]+/g);
   if (!matches) return [];
   return matches.map(tag => tag.slice(1));

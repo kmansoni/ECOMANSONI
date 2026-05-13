@@ -1,0 +1,124 @@
+{
+  "sessions": {
+    "term-1778455818735-k2vie7": {
+      "id": "term-1778455818735-k2vie7",
+      "name": "mansoni-powershell",
+      "status": "active",
+      "createdAt": "2026-05-10T23:30:18.735Z",
+      "lastActivity": "2026-05-10T23:41:46.508Z",
+      "workingDir": "c:\\Users\\manso\\Desktop\\разработка\\mansoni",
+      "history": [
+        {
+          "command": "$content = Get-Content .env -Raw; $content += \"`n# Telegram OAuth`nVITE_TELEGRAM_BOT_ID=8784446400`nTELEGRAM_BOT_TOKEN=8784446400:AAHE6AlLrwzhrBGUFPZ4FwFLr7ZEuaz6gJw`n\"; Set-Content .env -Value $content -NoNewline; Write-Host \"DONE\"",
+          "output": "\n[stderr] \"$content\" �� ���� ����७��� ��� ���譥�\r\n��������, �ᯮ��塞�� �ணࠬ��� ��� ������ 䠩���.\r\n",
+          "timestamp": "2026-05-10T23:30:44.043Z",
+          "exitCode": 1
+        },
+        {
+          "command": "Get-Content .env",
+          "output": "\n[stderr] \"Get-Content\" �� ���� ����७��� ��� ���譥�\r\n��������, �ᯮ��塞�� �ணࠬ��� ��� ������ 䠩���.\r\n",
+          "timestamp": "2026-05-10T23:30:56.799Z",
+          "exitCode": 1
+        },
+        {
+          "command": "pwd",
+          "output": "/c/Users/manso/Desktop/разработка/mansoni\n",
+          "timestamp": "2026-05-10T23:31:04.876Z",
+          "exitCode": 0
+        },
+        {
+          "command": "cat .env | tail -5",
+          "output": "-NoNewline\r\n",
+          "timestamp": "2026-05-10T23:31:13.881Z",
+          "exitCode": 0
+        },
+        {
+          "command": "cat .env",
+          "output": "-NoNewline\r\n",
+          "timestamp": "2026-05-10T23:31:44.362Z",
+          "exitCode": 0
+        },
+        {
+          "command": "ls -la .env*",
+          "output": "-rw-r--r-- 1 users 197609    12 May 11 02:28 .env\n-rw-r--r-- 1 users 197609 13669 May  8 23:33 .env.example\n-rw-r--r-- 1 users 197609   165 May 11 01:22 .env.local\n-rw-r--r-- 1 users 197609  2755 May  2 12:14 .env.production.example\n",
+          "timestamp": "2026-05-10T23:32:08.060Z",
+          "exitCode": 0
+        },
+        {
+          "command": "cat .env.example",
+          "output": "# Frontend runtime (Vite)\n# Copy to .env.local (recommended) or .env and fill in values.\n\n# ===== Build marker (deploy verification) =====\n# Рекомендуется задавать в CI/CD:\n#   VITE_APP_COMMIT_SHA=$(git rev-parse --short HEAD)\n#   VITE_APP_BUILD_TIME=$(date -u +\"%Y-%m-%dT%H:%M:%SZ\")\nVITE_APP_NAME=\"ECOMANSONI\"\nVITE_APP_VERSION=\"0.0.0\"\nVITE_APP_COMMIT_SHA=\"dev\"\nVITE_APP_BUILD_TIME=\"\"\n\n# ===== Secret Chat hardening =====\n# In production, require WebAuthn PRF binding before Secret Chat key usage.\n# Set to \"false\" only for temporary rollout or emergency fallback.\nVITE_E2EE_REQUIRE_WEBAUTHN=\"true\"\n\n# ===== Analytics — Yandex Metrika =====\n# Числовой идентификатор счётчика из https://metrika.yandex.ru\n# Если не задан — Метрика не загружается (graceful no-op)\nVITE_YM_COUNTER_ID=\n\n# ===== Analytics — Google Analytics 4 =====\n# Measurement ID вида G-XXXXXXXXXX из https://analytics.google.com\n# Если не задан — GA4 не загружается (graceful no-op)\nVITE_GA_MEASUREMENT_ID=\n\n# ===== Supabase (для Auth, TURN/WebRTC звонков, Storage) =====\nVITE_SUPABASE_URL=\"https://YOUR_PROJECT_REF.supabase.co\"\n# Prefer VITE_SUPABASE_PUBLISHABLE_KEY (anon key)\nVITE_SUPABASE_PUBLISHABLE_KEY=\"YOUR_SUPABASE_ANON_KEY\"\n# Vector tiles provider key for production navigation maps\nVITE_MAPTILER_KEY=\"\"\n# Supabase Personal Access Token (для CLI / Edge Functions / Management API)\n# Получить: https://app.supabase.com/account/tokens\nSUPABASE_ACCESS_TOKEN=\"sbp_YOUR_PERSONAL_ACCESS_TOKEN\"\n\n# ===== Static data (OSM/GeoNames) =====\n# URL prefix for static navigation data (graph, settlements, POIs, etc.).\n# In production served by nginx from AdminVPS /opt/mansoni/static-data.\n# Empty = relative paths (dev mode, data in public/).\nVITE_STATIC_DATA_URL=\"\"\n\n# Dynamic modules\n# Default production path is same-origin from the built frontend artifact.\nVITE_MUSIC_MODULE_URL=\"/modules/music/music-module.js\"\n\n# Public AI gateway page.\n# Prefer a same-origin reverse proxy in production; override with full URL if hosted separately.\nVITE_GODMODE_URL=\"/godmode-api\"\n\n# ===== Navigation routing =====\n# Self-hosted OSRM is recommended for production to avoid public rate limits.\nVITE_OSRM_URL=\"https://router.project-osrm.org/route/v1/driving\"\nVITE_OSRM_FOOT_URL=\"https://router.project-osrm.org/route/v1/foot\"\n\n# Navigation backend (navigation_server) — backend-priority routing/traffic\n# If disabled or unavailable, frontend falls back to offline graph and OSRM/Supabase RPC.\nVITE_NAV_SERVER_ENABLED=\"false\"\nVITE_NAV_SERVER_URL=\"http://localhost:8090\"\nVITE_NAV_SERVER_TIMEOUT_MS=\"1800\"\nVITE_NAV_SERVER_RETRIES=\"1\"\nVITE_NAV_SERVER_RETRY_DELAY_MS=\"250\"\nVITE_NAV_SERVER_CB_FAILURE_THRESHOLD=\"3\"\nVITE_NAV_SERVER_CB_COOLDOWN_MS=\"30000\"\n\n# Navigation diagnostics overlay (dev-only)\nVITE_NAV_DIAGNOSTICS=\"false\"\n\n# ===== TURN / WebRTC (звонки за NAT) ==================================\n# ===== Calls V2 / SFU / E2EE ==========================================\n# КРИТИЧНО для VPS: публичный IPv4 для mediasoup ICE candidates.\n# Без этого WebRTC-транспорты будут анонсировать 0.0.0.0 и клиенты не подключатся.\nSFU_ANNOUNCED_IP=\"\"\n\n# Production-grade client path for calls. Without these vars the app can\n# create a call row in DB but will not be able to bootstrap SFU media.\nVITE_CALLS_V2_ENABLED=\"true\"\n# Single-region endpoint (optional if using the multi-region list below)\nVITE_CALLS_V2_WS_URL=\"\"\n# Recommended multi-region setup for production failover\n# Example: wss://sfu-ru.mansoni.ru/ws,wss://sfu-tr.mansoni.ru/ws,wss://sfu-ae.mansoni.ru/ws\nVITE_CALLS_V2_WS_URLS=\"\"\n# Periodic E2EE epoch rotation interval; do not set below 30000\nVITE_CALLS_V2_REKEY_INTERVAL_MS=\"120000\"\n# Advertise Insertable Streams / SFrame capability when supported by the browser\nVITE_CALLS_FRAME_E2EE_ADVERTISE_SFRAME=\"true\"\n\n# Supabase Edge Function `turn-credentials` генерирует HMAC-SHA1 credentials для coturn (RFC 5766 §9.2).\n# Shared secret ДОЛЖЕН совпадать с static-auth-secret в infra/calls/coturn/turnserver.prod.conf\n# Сгенерировать: openssl rand -hex 32\nTURN_SHARED_SECRET=\"\"\n\n# URL list for TURN (comma-separated). Include regional endpoints.\n# Example:\n# TURN_URLS=\"turns:turn-ru.mansoni.ru:5349?transport=tcp,turn:turn-ru.mansoni.ru:3478?transport=udp,turns:turn-tr.mansoni.ru:5349?transport=tcp\"\nTURN_URLS=\"\"\n\n# Optional dedicated IPv6 endpoints (comma-separated)\nTURN_URLS_V6=\"\"\n\n# Optional STUN list override (comma-separated)\nSTUN_URLS=\"\"\n\n# TURN credential TTL bounds are enforced server-side to 1..24h.\n# You can request custom ttlSeconds in API body; default value comes from this secret.\nTURN_TTL_SECONDS=\"3600\"\n\n# Auth / security controls\nTURN_API_KEYS=\"\"\nTURN_REQUIRE_NONCE=\"true\"\nTURN_REPLAY_WINDOW_MS=\"300000\"\nTURN_RL_SCOPE_HASH_SECRET=\"\"\nTURN_USER_HASH_SECRET=\"\"\n\n# Rate-limit controls\nTURN_RATE_MAX_PER_MINUTE=\"20\"\nTURN_RATE_HARD_CAP_PER_MINUTE=\"200\"\nTURN_REQUIRE_RATE_LIMIT=\"true\"\n\n# Audit / metrics\nTURN_AUDIT_LOG_ENABLED=\"true\"\nTURN_REGION=\"global\"\nTURN_METRICS_KEY=\"\"\n\n# Опциональный URL внешнего TURN credentials endpoint (если не используешь Supabase Edge Function).\n# Если задан — webrtc-config.ts использует его вместо встроенной функции turn-credentials.\n# Пример: https://your-api.example.com/get-turn-credentials\nVITE_TURN_CREDENTIALS_URL=\"\"\n\n# Если TURN endpoint требует статический API-ключ (не нужно для Supabase Edge Function)\nVITE_TURN_CREDENTIALS_API_KEY=\"\"\n\n# ===== Server-only secrets (never expose to client) =====\nTURN_CREDENTIALS_API_KEY=\"\"\nDELEGATION_ISSUER_SECRET=\"\"\n\n# Comma-separated allowlist for browser origins in Edge Functions\n# Example: https://mansoni.ru,https://www.mansoni.ru\nCORS_ALLOWED_ORIGINS=\"\"\n\n# ===== ARIA AI Assistant =====\n# Суpabase Edge Function secret (устанавливается в Supabase Dashboard → Settings → Vault)\n# AI_API_KEY — ключ внешнего AI провайдера (если используешь api.mansoni.ru / OpenRouter)\n# Если НЕ установлен → ARIA автоматически работает через встроенный TypeScript движок\n\n# Для прямого вызова AI с фронтенда (опционально, если не хочешь Edge Function)\nVITE_AI_API_KEY=\"\"\n# Endpoint AI (по умолчанию api.mansoni.ru)\nVITE_AI_API_URL=\"https://api.mansoni.ru/v1/chat/completions\"\n# Модель AI (по умолчанию gemini-2.5-pro)\nVITE_AI_MODEL=\"google/gemini-2.5-pro-exp-03-25\"\n\n# ===== Anthropic API (через Edge Function aria-anthropic) =====\n# Ключ хранится в Supabase Vault (Dashboard → Settings → Vault).\n# Этот флаг включает UI-путь Claude в AI-ассистенте.\nVITE_ANTHROPIC_ENABLED=\"\"\n# Модель Claude (default: claude-opus-4-6)\nVITE_ANTHROPIC_MODEL=\"claude-opus-4-6\"\nVITE_ANTHROPIC_MAX_TOKENS=\"2000\"\n\n# ===== Страхование — СК Согласие (Е-ОСАГО) =====\n# Учётные данные выдаются куратором партнёра\n# Также можно настроить в админ-панели: /admin/insurance-soglasie\nSOGLASIE_LOGIN=\"\"\nSOGLASIE_SUBUSER=\"\"\nSOGLASIE_PASSWORD=\"\"\n\n# URL API (тест / прод)\n# Тест (daily): https://b2b.soglasie.ru/daily/online/api/eosago\n# Тест (новые партнёры): https://b2b.soglasie.ru/upload-test/online/api/eosago\n# Прод: https://b2b.soglasie.ru/online/api/eosago\nVITE_SOGLASIE_API_URL=\"https://b2b.soglasie.ru/upload-test/online/api/eosago\"\n\n# URL для расчёта премии (SOAP CCM)\n# Тест: https://b2b.soglasie.ru/upload-test/CCM/calcService\n# Прод: https://b2b.soglasie.ru:443/CCM/CCMService\nVITE_SOGLASIE_CALC_URL=\"https://b2b.soglasie.ru/upload-test/CCM/calcService\"\n\n# URL для пролонгации (GraphQL token)\n# Тест: https://b2b.soglasie.ru/diasoft-schema/graphiql/\n# Прод: https://b2b.soglasie.ru/diasoft-schema/graphiql/\nVITE_SOGLASIE_TOKEN_URL=\"https://b2b.soglasie.ru/diasoft-schema/graphiql/\"\n\n# ===== ARIA Self-Hosted Python Backend =====\n# Если запустил ai_engine/server/main.py локально или на сервере:\n#   pip install -r ai_engine/server/requirements.txt\n#   uvicorn ai_engine.server.main:app --host 0.0.0.0 --port 8000\n#\n# Supabase Edge Function secret (Vault):\n#   ARIA_BACKEND_URL = http://YOUR_SERVER_IP:8000\n#   ARIA_BACKEND_KEY = your-aria-api-key\n#\n# Локальная разработка: нужен supabase functions serve с --env-file\nARIA_BACKEND_URL=\"\"\nARIA_BACKEND_KEY=\"CHANGE_ME_STRONG_ARIA_BACKEND_KEY\"\n# Optional: distributed feedback rate limiting for ARIA backend.\n# If set, ai_engine.learning.feedback_store uses Redis INCR/EXPIRE bucket limiter.\nARIA_FEEDBACK_REDIS_URL=\"redis://localhost:6379/0\"\n\n# ===== Sentry Error Tracking =====\n# Get your DSN from https://sentry.io → Project Settings → Client Keys (DSN)\n# Если не задан — Sentry не загружается (graceful no-op)\nVITE_SENTRY_DSN=\n# Environment tag reported to Sentry (production | staging | development).\n# По умолчанию: 'development' если import.meta.env.DEV, иначе 'production'\nVITE_SENTRY_ENVIRONMENT=\n# Release string (e.g. \"1.2.3\" or git SHA). Optional — улучшает source-map mapping.\nVITE_SENTRY_RELEASE=\nVITE_IMGLY_LICENSE_KEY=\"\"\n\n# ===== GDPR Export =====\n# Storage bucket for user data exports\nGDPR_EXPORT_BUCKET=\"user-exports\"\n# Export file TTL in days (default 7)\nGDPR_EXPORT_TTL_DAYS=\"7\"\n\n# ===== Analytics firehose (Redpanda ingest) =====\n# Frontend endpoint that accepts batched events\nVITE_ANALYTICS_INGEST_URL=\"https://analytics.mansoni.ru/analytics/events\"\n\n# ===== Analytics ingest service (server-only) =====\nANALYTICS_KAFKA_BROKERS=\"localhost:9092\"\nANALYTICS_KAFKA_TOPIC=\"analytics.v1\"\nANALYTICS_KAFKA_CLIENT_ID=\"mansoni-analytics-ingest\"\nANALYTICS_INGEST_PORT=\"4010\"\nANALYTICS_CORS_ORIGINS=\"https://mansoni.ru,https://www.mansoni.ru\"\n# Optional: require api key for ingest\nANALYTICS_INGEST_API_KEY=\"\"\n\n# ===== ClickHouse consumer =====\nANALYTICS_CH_URL=\"http://localhost:8123\"\nANALYTICS_CH_DATABASE=\"analytics\"\nANALYTICS_CH_USER=\"default\"\nANALYTICS_CH_PASSWORD=\"\"\n\n# Optional (dev / seeding)\nVITE_SEED_TEST_CHATS_TOKEN=\"CHANGE_ME\"\n\n# Optional (CI/CD chat schema probe hardening)\n# Used by scripts/chat/schema-probe-ci.mjs when REQUIRE_CHAT_SCHEMA_PROBE=1.\nSUPABASE_SERVICE_ROLE_KEY=\"\"\nVITE_EXPECTED_SUPABASE_PROJECT_REF=\"YOUR_PROJECT_REF\"\nCHAT_SCHEMA_EXPECTED_VERSION=\"2\"\n\n# ═══════════════════════════════════════════\n# Email Router\n# ═══════════════════════════════════════════\n# Email sends are proxied through Supabase Edge Function (email-send).\n# The API key NEVER reaches the browser — it lives only in Supabase Vault.\n#\n# Email Router — серверные переменные (НЕ ставить с префиксом VITE_!)\n# Устанавливаются в Supabase Dashboard → Settings → Vault (Secrets):\n# EMAIL_ROUTER_API_KEY=your-secret-key-min-16-chars  # Только в Supabase Vault!\n# EMAIL_ROUTER_URL=http://email-router:8090           # Только в Supabase Vault!\n#\n# Email Router — клиентские переменные (только для локальной разработки)\n# VITE_EMAIL_ROUTER_DIRECT=true  # Включить прямой режим (только dev!)\n# VITE_EMAIL_ROUTER_API_URL=http://localhost:8090  # Только при VITE_EMAIL_ROUTER_DIRECT=true\n# VITE_EMAIL_ROUTER_API_KEY=dev-test-key-1234567890  # Только при VITE_EMAIL_ROUTER_DIRECT=true\n  \n# 🎬 Media Server (AdminVPS) ════════════════════════════════════════════\n# URL медиа-сервера на AdminVPS. Загрузка фото/видео/аудио идёт через него.\n# В production: https://media.mansoni.ru\n# В dev: http://localhost:3100\nVITE_MEDIA_SERVER_URL=http://localhost:3100 \n\n# ===== Livestream Gateway (LiveKit / SFU) ================================\n# REST gateway for token generation, stream management, chat relay\n# In production: https://live-gateway.yourdomain.com\n# In dev: http://localhost:3100\nVITE_LIVESTREAM_GATEWAY_URL=http://localhost:3100\n# LiveKit WebSocket URL (public, used by client SDK)\n# In production: wss://live.yourdomain.com\nVITE_LIVEKIT_PUBLIC_URL=wss://live.yourdomain.com\n\n# === Video Editor (CapCut-like) ===\n# REST API для видеоредактора (проекты, таймлайн, рендер)\n# В production: https://editor-api.yourdomain.com\n# В dev: http://localhost:3002\nVITE_EDITOR_API_URL=http://localhost:3002\n\n# ===== MSSQL Database Configuration (optional) =====\n# Если требуется подключение к MSSQL базе данных\nMSSQL_SERVER=localhost\nMSSQL_DATABASE=mansoni\nMSSQL_USER=sa\nMSSQL_PASSWORD=YourStrong!Passw0rd\n# Для доверенных соединений с Windows аутентификацией:\n# MSSQL_USE_WINDOWS_AUTH=true\n# Опции подключения\nMSSQL_ENCRYPT=true\nMSSQL_TRUST_CERT=false\nMSSQL_INSTANCE= # Для именованного экземпляра, например: SQLEXPRESS\n",
+          "timestamp": "2026-05-10T23:32:18.475Z",
+          "exitCode": 0
+        },
+        {
+          "command": "grep TELEGRAM .env",
+          "output": "VITE_TELEGRAM_BOT_ID=8784446400\nTELEGRAM_BOT_TOKEN=8784446400:AAHE6AlLrwzhrBGUFPZ4FwFLr7ZEuaz6gJw\n",
+          "timestamp": "2026-05-10T23:35:16.576Z",
+          "exitCode": 0
+        },
+        {
+          "command": "npx supabase functions deploy telegram-auth 2>&1",
+          "output": "failed to parse environment file: .env (unexpected character '-' in variable name)\nTry rerunning the command with --debug to troubleshoot the error.\n",
+          "timestamp": "2026-05-10T23:37:10.756Z",
+          "exitCode": 1
+        },
+        {
+          "command": "head -20 .env",
+          "output": "-NoNewline\r\n\n# Telegram OAuth\nVITE_TELEGRAM_BOT_ID=8784446400\nTELEGRAM_BOT_TOKEN=8784446400:AAHE6AlLrwzhrBGUFPZ4FwFLr7ZEuaz6gJw",
+          "timestamp": "2026-05-10T23:37:20.706Z",
+          "exitCode": 0
+        },
+        {
+          "command": "sed -i '1d' .env && head -10 .env",
+          "output": "\n# Telegram OAuth\nVITE_TELEGRAM_BOT_ID=8784446400\nTELEGRAM_BOT_TOKEN=8784446400:AAHE6AlLrwzhrBGUFPZ4FwFLr7ZEuaz6gJw",
+          "timestamp": "2026-05-10T23:37:36.723Z",
+          "exitCode": 0
+        },
+        {
+          "command": "cat .env.example | head -50",
+          "output": "# Frontend runtime (Vite)\n# Copy to .env.local (recommended) or .env and fill in values.\n\n# ===== Build marker (deploy verification) =====\n# Рекомендуется задавать в CI/CD:\n#   VITE_APP_COMMIT_SHA=$(git rev-parse --short HEAD)\n#   VITE_APP_BUILD_TIME=$(date -u +\"%Y-%m-%dT%H:%M:%SZ\")\nVITE_APP_NAME=\"ECOMANSONI\"\nVITE_APP_VERSION=\"0.0.0\"\nVITE_APP_COMMIT_SHA=\"dev\"\nVITE_APP_BUILD_TIME=\"\"\n\n# ===== Secret Chat hardening =====\n# In production, require WebAuthn PRF binding before Secret Chat key usage.\n# Set to \"false\" only for temporary rollout or emergency fallback.\nVITE_E2EE_REQUIRE_WEBAUTHN=\"true\"\n\n# ===== Analytics — Yandex Metrika =====\n# Числовой идентификатор счётчика из https://metrika.yandex.ru\n# Если не задан — Метрика не загружается (graceful no-op)\nVITE_YM_COUNTER_ID=\n\n# ===== Analytics — Google Analytics 4 =====\n# Measurement ID вида G-XXXXXXXXXX из https://analytics.google.com\n# Если не задан — GA4 не загружается (graceful no-op)\nVITE_GA_MEASUREMENT_ID=\n\n# ===== Supabase (для Auth, TURN/WebRTC звонков, Storage) =====\nVITE_SUPABASE_URL=\"https://YOUR_PROJECT_REF.supabase.co\"\n# Prefer VITE_SUPABASE_PUBLISHABLE_KEY (anon key)\nVITE_SUPABASE_PUBLISHABLE_KEY=\"YOUR_SUPABASE_ANON_KEY\"\n# Vector tiles provider key for production navigation maps\nVITE_MAPTILER_KEY=\"\"\n# Supabase Personal Access Token (для CLI / Edge Functions / Management API)\n# Получить: https://app.supabase.com/account/tokens\nSUPABASE_ACCESS_TOKEN=\"sbp_YOUR_PERSONAL_ACCESS_TOKEN\"\n\n# ===== Static data (OSM/GeoNames) =====\n# URL prefix for static navigation data (graph, settlements, POIs, etc.).\n# In production served by nginx from AdminVPS /opt/mansoni/static-data.\n# Empty = relative paths (dev mode, data in public/).\nVITE_STATIC_DATA_URL=\"\"\n\n# Dynamic modules\n# Default production path is same-origin from the built frontend artifact.\nVITE_MUSIC_MODULE_URL=\"/modules/music/music-module.js\"\n\n# Public AI gateway page.\n# Prefer a same-origin reverse proxy in production; override with full URL if hosted separately.\nVITE_GODMODE_URL=\"/godmode-api\"\n",
+          "timestamp": "2026-05-10T23:37:52.131Z",
+          "exitCode": 0
+        },
+        {
+          "command": "cat > .env << 'ENVEOF'\nVITE_SUPABASE_URL=\"https://lfkbgnbjxskspsownvjm.supabase.co\"\nVITE_SUPABASE_PUBLISHABLE_KEY=\"sb_publishable_8I_R_P73-7XZ5Rgopqd7yQ_frSWuB5e\"\n\nVITE_CALLS_V2_ENABLED=\"true\"\nVITE_CALLS_V2_WS_URL=\"wss://sfu-ru.mansoni.ru/ws\"\nVITE_CALLS_V2_WS_URLS=\"wss://sfu-ru.mansoni.ru/ws,wss://sfu-tr.mansoni.ru/ws,wss://sfu-ae.mansoni.ru/ws\"\n\nOPENROUTER_API_KEY=\"YOUR_OPENROUTER_API_KEY_HERE\"\nAI_API_KEY=\"YOUR_OPENROUTER_API_KEY_HERE\"\nAI_API_URL=\"https://openrouter.ai/api/v1/chat/completions\"\nAI_DEFAULT_MODEL=\"anthropic/claude-opus-4-6\"\nAI_FALLBACK_MODELS=\"anthropic/claude-3.5-sonnet,openai/gpt-4o,google/gemini-2.5-pro-exp-03-25\"\nVITE_AI_API_URL=\"https://openrouter.ai/api/v1/chat/completions\"\nVITE_AI_MODEL=\"anthropic/claude-opus-4-6\"\n\nSOGLASIE_LOGIN=\"\"\nSOGLASIE_SUBUSER=\"\"\nSOGLASIE_PASSWORD=\"\"\nVITE_SOGLASIE_API_URL=\"https://b2b.soglasie.ru/upload-test/online/api/eosago\"\nVITE_SOGLASIE_CALC_URL=\"https://b2b.soglasie.ru/upload-test/CCM/calcService\"\nVITE_SOGLASIE_TOKEN_URL=\"https://b2b.soglasie.ru/diasoft-schema/graphiql/\"\n\nMSSQL_SERVER=localhost\nMSSQL_DATABASE=mansoni_dev\nMSSQL_USER=sa\nMSSQL_PASSWORD=\nMSSQL_ENCRYPT=true\nMSSQL_TRUST_CERT=false\n\nVITE_TELEGRAM_BOT_ID=8784446400\nTELEGRAM_BOT_TOKEN=8784446400:AAHE6AlLrwzhrBGUFPZ4FwFLr7ZEuaz6gJw\nENVEOF\necho \"OK\"",
+          "output": "\n[stderr] ���।�������� ������: <<.\r\n",
+          "timestamp": "2026-05-10T23:38:02.174Z",
+          "exitCode": 1
+        },
+        {
+          "command": "printf 'VITE_SUPABASE_URL=\"https://lfkbgnbjxskspsownvjm.supabase.co\"\\nVITE_SUPABASE_PUBLISHABLE_KEY=\"sb_publishable_8I_R_P73-7XZ5Rgopqd7yQ_frSWuB5e\"\\nVITE_CALLS_V2_ENABLED=\"true\"\\nVITE_CALLS_V2_WS_URL=\"wss://sfu-ru.mansoni.ru/ws\"\\nVITE_CALLS_V2_WS_URLS=\"wss://sfu-ru.mansoni.ru/ws,wss://sfu-tr.mansoni.ru/ws,wss://sfu-ae.mansoni.ru/ws\"\\nOPENROUTER_API_KEY=\"YOUR_OPENROUTER_API_KEY_HERE\"\\nAI_API_KEY=\"YOUR_OPENROUTER_API_KEY_HERE\"\\nAI_API_URL=\"https://openrouter.ai/api/v1/chat/completions\"\\nAI_DEFAULT_MODEL=\"anthropic/claude-opus-4-6\"\\nAI_FALLBACK_MODELS=\"anthropic/claude-3.5-sonnet,openai/gpt-4o,google/gemini-2.5-pro-exp-03-25\"\\nVITE_AI_API_URL=\"https://openrouter.ai/api/v1/chat/completions\"\\nVITE_AI_MODEL=\"anthropic/claude-opus-4-6\"\\nSOGLASIE_LOGIN=\"\"\\nSOGLASIE_SUBUSER=\"\"\\nSOGLASIE_PASSWORD=\"\"\\nVITE_SOGLASIE_API_URL=\"https://b2b.soglasie.ru/upload-test/online/api/eosago\"\\nVITE_SOGLASIE_CALC_URL=\"https://b2b.soglasie.ru/upload-test/CCM/calcService\"\\nVITE_SOGLASIE_TOKEN_URL=\"https://b2b.soglasie.ru/diasoft-schema/graphiql/\"\\nMSSQL_SERVER=localhost\\nMSSQL_DATABASE=mansoni_dev\\nMSSQL_USER=sa\\nMSSQL_PASSWORD=\\nMSSQL_ENCRYPT=true\\nMSSQL_TRUST_CERT=false\\nVITE_TELEGRAM_BOT_ID=8784446400\\nTELEGRAM_BOT_TOKEN=8784446400:AAHE6AlLrwzhrBGUFPZ4FwFLr7ZEuaz6gJw\\n' > .env && echo \"DONE\"",
+          "output": "\"DONE\"\r\n",
+          "timestamp": "2026-05-10T23:38:52.521Z",
+          "exitCode": 0
+        },
+        {
+          "command": "grep TELEGRAM .env && npx supabase functions deploy telegram-auth 2>&1",
+          "output": "VITE_TELEGRAM_BOT_ID=8784446400\nTELEGRAM_BOT_TOKEN=8784446400:AAHE6AlLrwzhrBGUFPZ4FwFLr7ZEuaz6gJw\nWARNING: Docker is not running\nfailed to deploy function: Post \"https://api.supabase.com/v1/projects/lfkbgnbjxskspsownvjm/functions/deploy?slug=telegram-auth\": net/http: TLS handshake timeout\nTry rerunning the command with --debug to troubleshoot the error.\n",
+          "timestamp": "2026-05-10T23:39:32.026Z",
+          "exitCode": 1
+        },
+        {
+          "command": "supabase secrets set TELEGRAM_BOT_TOKEN=8784446400:AAHE6AlLrwzhrBGUFPZ4FwFLr7ZEuaz6gJw --project-ref lfkbgnbjxskspsownvjm 2>&1",
+          "output": "\"supabase\" �� ���� ����७��� ��� ���譥�\r\n��������, �ᯮ��塞�� �ணࠬ��� ��� ������ 䠩���.\r\n",
+          "timestamp": "2026-05-10T23:39:53.404Z",
+          "exitCode": 1
+        },
+        {
+          "command": "npx supabase secrets set TELEGRAM_BOT_TOKEN=8784446400:AAHE6AlLrwzhrBGUFPZ4FwFLr7ZEuaz6gJw --project-ref lfkbgnbjxskspsownvjm 2>&1",
+          "output": "",
+          "timestamp": "2026-05-10T23:41:02.509Z",
+          "exitCode": 1
+        },
+        {
+          "command": "curl -s -X POST \"https://api.supabase.com/v1/projects/lfkbgnbjxskspsownvjm/secrets\" \\\n  -H \"Authorization: Bearer $SUPABASE_ACCESS_TOKEN\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '[{\"name\": \"TELEGRAM_BOT_TOKEN\", \"value\": \"8784446400:AAHE6AlLrwzhrBGUFPZ4FwFLr7ZEuaz6gJw\"}]' 2>&1",
+          "output": "",
+          "timestamp": "2026-05-10T23:41:46.508Z",
+          "exitCode": 1
+        }
+      ],
+      "env": {}
+    }
+  },
+  "version": "3.0.0"
+}

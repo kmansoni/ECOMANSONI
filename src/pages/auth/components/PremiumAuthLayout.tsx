@@ -53,10 +53,34 @@ export function PremiumGlassCard({
 }) {
   return (
     <div
-      className={`relative overflow-hidden rounded-2xl sm:rounded-3xl border backdrop-blur-2xl ${tokens.glassCard} ${tokens.glassCardShadow} ${className}`}
+      className={`relative overflow-hidden rounded-2xl sm:rounded-3xl ${tokens.glassCardShadow} ${className}`}
+      style={{
+        background: tokens.isDark
+          ? "linear-gradient(135deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.02) 50%, rgba(255,255,255,0.04) 100%)"
+          : "linear-gradient(135deg, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.85) 50%, rgba(255,255,255,0.92) 100%)",
+        backdropFilter: "blur(40px) saturate(180%)",
+        border: tokens.isDark
+          ? "1px solid rgba(255,255,255,0.08)"
+          : "1px solid rgba(0,0,0,0.05)",
+        boxShadow: tokens.isDark
+          ? "0 8px 40px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.08), inset 0 -1px 0 rgba(0,0,0,0.1)"
+          : "0 8px 40px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.8)",
+      }}
     >
       {/* Subtle top highlight */}
-      <div className="pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
+      <div
+        className="pointer-events-none absolute inset-x-8 top-0 h-px"
+        style={{
+          background: "linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.3) 50%, transparent 100%)",
+        }}
+      />
+      {/* Left edge light refraction */}
+      <div
+        className="pointer-events-none absolute inset-y-4 left-0 w-px"
+        style={{
+          background: "linear-gradient(180deg, rgba(255,255,255,0.15) 0%, rgba(255,255,255,0.02) 50%, rgba(255,255,255,0.08) 100%)",
+        }}
+      />
       {children}
     </div>
   );

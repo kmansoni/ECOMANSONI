@@ -12,7 +12,7 @@ interface Country {
 }
 
 const getFlagUrl = (code: string): string => {
-  return `/flags/${code.toLowerCase()}.svg`;
+  return `/flags/${code.toLowerCase()}.png`;
 };
 
 const countries: Country[] = [
@@ -68,8 +68,13 @@ const countries: Country[] = [
 
 const detectCountry = (digits: string): Country | null => {
   if (!digits || digits.length === 0) return null;
-  
-  if (digits.startsWith('7')) {
+
+  // +1 (США, Канада)
+  if (digits.startsWith('1')) {
+    return countries.find(c => c.code === 'US') || null;
+  }
+
+  if (digits.startsWith('7') || digits.startsWith('8')) {
     if (digits.length >= 2) {
       const secondDigit = digits[1];
       if (secondDigit === '6' || secondDigit === '7') {
@@ -78,15 +83,15 @@ const detectCountry = (digits: string): Country | null => {
     }
     return countries.find(c => c.code === 'RU') || null;
   }
-  
+
   const sortedCountries = [...countries].sort((a, b) => b.dialCode.length - a.dialCode.length);
-  
+
   for (const country of sortedCountries) {
     if (digits.startsWith(country.dialCode)) {
       return country;
     }
   }
-  
+
   return null;
 };
 
@@ -221,7 +226,13 @@ export function PhoneInput({ value, onChange, placeholder, required, className, 
           placeholder={placeholder || (detectedCountry ? `+${detectedCountry.dialCode} (___) ___-__-__` : "+7 (___) ___-__-__")}
           required={required}
           aria-label="Номер телефона"
-          className="w-full pl-14 pr-4 h-14 bg-transparent border border-white/20 rounded-2xl text-white placeholder:text-white/40 focus:border-white/40 focus:outline-none focus:ring-0"
+          className={cn("w-full pl-14 pr-4 h-14 rounded-2xl border border-white/[0.08] backdrop-blur-xl transition-all text-[15px]",
+            "bg-white/[0.05]",
+            "text-white placeholder:text-white/40",
+            "outline-none",
+            "hover:border-white/15",
+            "focus:border-white/20"
+          )}
         />
       </div>
     </div>

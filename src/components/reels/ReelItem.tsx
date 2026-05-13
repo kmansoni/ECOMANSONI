@@ -105,6 +105,48 @@ const ReelItem = memo<ReelItemProps>(
       [onReactionChange, reel.id],
     );
 
+    const handleDoubleTap = useCallback((position: TapPosition) => {
+      setHeartPosition(position);
+      onLike(reel.id);
+    }, [onLike, reel.id]);
+
+    const handleHeartAnimationComplete = useCallback(() => {
+      setHeartPosition(null);
+    }, []);
+
+    const handleAuthorClick = useCallback(() => {
+      if (!reel.author?.username) return;
+      onAuthorPress(reel.author.username);
+    }, [onAuthorPress, reel.author]);
+
+    const handleLike = useCallback(() => {
+      onLike(reel.id);
+    }, [onLike, reel.id]);
+
+    const handleComment = useCallback(() => {
+      onComment(reel.id);
+    }, [onComment, reel.id]);
+
+    const handleShare = useCallback(() => {
+      onShare(reel.id);
+    }, [onShare, reel.id]);
+
+    const handleSave = useCallback(() => {
+      onSave(reel.id);
+    }, [onSave, reel.id]);
+
+    const handleRepost = useCallback(() => {
+      onRepost(reel.id);
+    }, [onRepost, reel.id]);
+
+    const handleMore = useCallback(() => {
+      setMoreOpen(true);
+    }, []);
+
+    const getPickerPosition = useCallback(() => {
+      return heartPosition ?? { x: 0, y: 0 };
+    }, [heartPosition]);
+
     const openReactionPicker = useCallback(() => {
       setShowReactionPicker(true);
     }, []);
@@ -238,7 +280,6 @@ const ReelItem = memo<ReelItemProps>(
             onRepost={handleRepost}
             onMore={handleMore}
             onMuteToggle={toggleMute}
-            onReaction={handleReaction}
             isMuted={isMuted}
           />
         )}

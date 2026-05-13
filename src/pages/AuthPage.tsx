@@ -53,8 +53,10 @@ import { SocialLoginButtons } from "./auth/components/SocialLoginButtons";
 import { QRLoginSection } from "./auth/components/QRLoginSection";
 import { SuccessScreen } from "./auth/components/SuccessScreen";
 import { GlassInput } from "./auth/components/GlassInput";
+import { GlassSelect } from "./auth/components/GlassSelect";
 import { PrimaryButton } from "./auth/components/PrimaryButton";
 import { OtpInput } from "./auth/components/OtpInput";
+import { SecurityFooter } from "./auth/components/SecurityFooter";
 
 type AuthMode = "login" | "register";
 
@@ -447,21 +449,38 @@ export function AuthPage() {
       <BrandPanel tokens={tokens} />
 
       {/* Auth Card - right side */}
-      <PremiumGlassCard tokens={tokens} className="w-full max-w-[440px] p-6 sm:p-8">
-        {/* Theme toggle */}
-        <motion.button
-          onClick={toggle}
-          whileTap={{ scale: 0.9 }}
-          className={`absolute top-4 right-4 h-10 w-10 rounded-full border backdrop-blur-xl flex items-center justify-center transition ${tokens.iconBtn}`}
-          aria-label="Toggle theme"
-        >
-          {theme === "dark" ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
-        </motion.button>
+      <PremiumGlassCard tokens={tokens} className="w-full max-w-[440px] p-6 sm:p-8 max-h-[90vh] overflow-y-auto">
+        {/* Top row: Back button + Theme toggle - always visible */}
+        <div className="absolute top-4 left-4 right-4 flex items-center justify-between z-10">
+          <AnimatePresence>
+            {flow.step !== "phone" && (
+              <motion.button
+                key="back-btn"
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -10 }}
+                onClick={handleBack}
+                className="h-10 w-10 rounded-full border border-white/10 bg-white/[0.05] backdrop-blur-xl flex items-center justify-center transition hover:bg-white/[0.1]"
+              >
+                <ChevronLeft className="h-5 w-5 text-white/70" />
+              </motion.button>
+            )}
+            {(flow.step === "phone" || !flow.step) && <div className="w-10" />}
+          </AnimatePresence>
+          <motion.button
+            onClick={toggle}
+            whileTap={{ scale: 0.9 }}
+            className="h-10 w-10 rounded-full border border-white/10 bg-white/[0.05] backdrop-blur-xl flex items-center justify-center transition hover:bg-white/[0.1]"
+            aria-label="Toggle theme"
+          >
+            {theme === "dark" ? <Moon className="h-5 w-5 text-white/70" /> : <Sun className="h-5 w-5 text-white/70" />}
+          </motion.button>
+        </div>
 
         <div className="pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
 
         {/* Logo */}
-        <div className="flex items-center justify-center mb-4">
+        <div className="flex items-center justify-center mb-6 mt-2">
           <span className="text-[24px] sm:text-[28px] tracking-[0.3em] uppercase font-bold text-gradient-brand">
             mansoni
           </span>
@@ -499,21 +518,51 @@ export function AuthPage() {
 
             {flow.step === "register" && (
               <motion.div key="register" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-4">
-                <div className="h-9 flex items-center">
-                  {flow.step !== "phone" ? (
-                    <button onClick={handleBack} className={`h-9 w-9 rounded-full border flex items-center justify-center transition ${tokens.iconBtn}`}>
-                      <ChevronLeft className="h-5 w-5" />
-                    </button>
-                  ) : <div />}
-                </div>
-                <h2 className={`text-xl font-bold ${tokens.textPrimary}`}>Создать аккаунт</h2>
+                <h2 className="text-xl font-bold text-white">Создать аккаунт</h2>
                 <div className="grid grid-cols-2 gap-3">
                   <GlassInput tokens={tokens} id="firstName" label="Имя *" value={flow.firstName} onChange={(v) => dispatch({ type: "setRegisterField", field: "firstName", value: v })} />
                   <GlassInput tokens={tokens} id="lastName" label="Фамилия *" value={flow.lastName} onChange={(v) => dispatch({ type: "setRegisterField", field: "lastName", value: v })} />
                 </div>
+                <GlassInput tokens={tokens} id="middleName" label="Отчество" value={flow.middleName} onChange={(v) => dispatch({ type: "setRegisterField", field: "middleName", value: v })} />
                 <GlassInput tokens={tokens} id="email" label="Email *" value={flow.email} onChange={(v) => dispatch({ type: "setEmail", email: v })} type="email" icon={<Mail className="h-5 w-5" />} />
-                <GlassInput tokens={tokens} id="password" label="Пароль *" value={flow.password} onChange={(v) => dispatch({ type: "setRegisterField", field: "password", value: v })} type="password" />
-                {flow.registerError && <div className={`text-xs rounded-xl border border-rose-400/40 bg-rose-500/10 px-3 py-2 ${tokens.isDark ? 'text-rose-200' : 'text-rose-700'}`}>{flow.registerError}</div>}
+                <div className="grid grid-cols-2 gap-3">
+                  <GlassInput tokens={tokens} id="password" label="Пароль *" value={flow.password} onChange={(v) => dispatch({ type: "setRegisterField", field: "password", value: v })} type="password" />
+                  <GlassInput tokens={tokens} id="passwordConfirm" label="Подтвердите *" value={flow.passwordConfirm} onChange={(v) => dispatch({ type: "setRegisterField", field: "passwordConfirm", value: v })} type="password" />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className={`text-[10px] tracking-[0.18em] uppercase opacity-80 ${tokens.textSecondary}`}>Дата рождения *</label>
+                    <input
+                      type="date"
+                      value={flow.birthDate}
+                      onChange={(e) => dispatch({ type: "setRegisterField", field: "birthDate", value: e.target.value })}
+                      className="w-full h-14 px-4 rounded-2xl border border-white/[0.08] bg-white/[0.05] backdrop-blur-xl text-white text-[15px] outline-none transition-all hover:border-white/15 focus:border-white/20"
+                    />
+                  </div>
+                  <GlassSelect
+                    id="gender"
+                    label="Пол *"
+                    value={flow.gender}
+                    options={[
+                      { value: "male", label: "Мужской" },
+                      { value: "female", label: "Женский" }
+                    ]}
+                    onChange={(v) => dispatch({ type: "setRegisterField", field: "gender", value: v })}
+                  />
+                </div>
+                <GlassSelect
+                  id="entity"
+                  label="Тип *"
+                  value={flow.entityType}
+                  options={[
+                    { value: "individual", label: "Физ. лицо" },
+                    { value: "self_employed", label: "Самозанятый" },
+                    { value: "entrepreneur", label: "ИП" },
+                    { value: "legal_entity", label: "Юр. лицо" }
+                  ]}
+                  onChange={(v) => dispatch({ type: "setRegisterField", field: "entityType", value: v })}
+                />
+                {flow.registerError && <div className="text-xs rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-rose-200">{flow.registerError}</div>}
                 <PrimaryButton type="button" onClick={() => void submitRegister()} disabled={flow.loading} loading={flow.loading}>
                   Создать аккаунт
                 </PrimaryButton>
@@ -522,14 +571,9 @@ export function AuthPage() {
 
             {flow.step === "otp" && (
               <motion.div key="otp" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-4">
-                <div className="h-9 flex items-center">
-                  <button onClick={handleBack} className={`h-9 w-9 rounded-full border flex items-center justify-center transition ${tokens.iconBtn}`}>
-                    <ChevronLeft className="h-5 w-5" />
-                  </button>
-                </div>
-                <h2 className={`text-xl font-bold ${tokens.textPrimary}`}>Код подтверждения</h2>
+                <h2 className="text-xl font-bold text-white">Код подтверждения</h2>
                 <p className={`text-sm ${tokens.textMuted}`}>Отправлен на {flow.maskedEmail || otpEmailRef.current || "почту"}</p>
-                <OtpInput tokens={tokens} value={flow.otp} onChange={(v) => dispatch({ type: "setOtp", otp: v })} />
+                <OtpInput value={flow.otp} onChange={(v) => dispatch({ type: "setOtp", otp: v })} />
                 <PrimaryButton type="button" onClick={() => void submitOtp()} disabled={!canContinueOtp} loading={flow.loading}>
                   Подтвердить
                 </PrimaryButton>
@@ -545,12 +589,7 @@ export function AuthPage() {
 
             {flow.step === "qr" && (
               <motion.div key="qr" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-4">
-                <div className="h-9 flex items-center">
-                  <button onClick={handleBack} className={`h-9 w-9 rounded-full border flex items-center justify-center transition ${tokens.iconBtn}`}>
-                    <ChevronLeft className="h-5 w-5" />
-                  </button>
-                </div>
-                <h2 className={`text-xl font-bold ${tokens.textPrimary}`}>Вход по QR-коду</h2>
+                <h2 className="text-xl font-bold text-white">Вход по QR-коду</h2>
                 <QRCodeLogin onSuccess={() => navigate("/")} />
               </motion.div>
             )}
@@ -568,6 +607,9 @@ export function AuthPage() {
 
           {/* Social Login */}
           <SocialLoginButtons tokens={tokens} />
+
+          {/* Security & Legal */}
+          <SecurityFooter tokens={tokens} />
         </div>
       </PremiumGlassCard>
 

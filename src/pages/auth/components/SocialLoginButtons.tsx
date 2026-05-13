@@ -68,8 +68,7 @@ export function SocialLoginButtons({ tokens }: { tokens: ThemeTokens }) {
             type="button"
             onClick={btn.onClick}
             whileTap={{ scale: 0.96 }}
-            className={`flex-1 flex items-center justify-center gap-2 h-12 rounded-xl border backdrop-blur-xl transition-all duration-200 border-white/15 hover:bg-white/20 ${tokens.textSecondary} text-sm font-medium`}
-            style={{ background: tokens.isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.02)" }}
+            className="flex-1 flex items-center justify-center gap-2 h-12 rounded-xl backdrop-blur-xl transition-all duration-200 text-white/70 hover:text-white text-sm font-medium border border-white/[0.06] hover:border-white/[0.12] hover:bg-white/[0.05]"
           >
             {btn.icon}
             <span className="hidden sm:inline">{btn.label}</span>
