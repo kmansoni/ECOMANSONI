@@ -1,46 +1,33 @@
 {
-  "name": "mansoni",
-  "short_name": "mansoni",
-  "description": "ÃÃÃÂ¾ÃÃÃÂ¸ÃÃÂ°ÃÃÂ»ÃÃÃÂ½ÃÃÂ°Ã ÃÃÃÂµÃÃ mansoni",
-  "start_url": "/",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "name": "Mansoni",
+  "short_name": "Mansoni",
+  "description": "Mansoni — мини-приложения и боты",
+  "start_url": "/mini-apps",
   "display": "standalone",
-  "background_color": "#0a1628",
-  "theme_color": "#0a1628",
-  "orientation": "portrait",
-  "lang": "ru",
+  "orientation": "any",
+  "background_color": "#1a1a2e",
+  "theme_color": "#6c63ff",
+  "scope": "/mini-apps",
+  "categories": ["utilities", "social"],
   "icons": [
     {
-      "src": "/favicon.ico",
-      "sizes": "any",
-      "type": "image/x-icon"
-    }
-  ],
-  "shortcuts": [
-    {
-      "name": "ÃÃÃÂ¾ÃÃÂ²ÃÃÂ¾ÃÃÂµ ÃÃÂ¾ÃÃÂ±ÃÃÃÂµÃÃÂ½ÃÃÂ¸ÃÃÂµ",
-      "short_name": "ÃÃÃÂ°ÃÃÂ¿ÃÃÂ¸ÃÃÂ°ÃÃ",
-      "description": "ÃÃÃÂ°ÃÃÂ¿ÃÃÂ¸ÃÃÂ°ÃÃ ÃÃÂ½ÃÃÂ¾ÃÃÂ²ÃÃÂ¾ÃÃÂµ ÃÃÂ¾ÃÃÂ±ÃÃÃÂµÃÃÂ½ÃÃÂ¸ÃÃÂµ",
-      "url": "/chats?action=new",
-      "icons": [
-        {
-          "src": "/icons/compose-96.png",
-          "sizes": "96x96",
-          "type": "image/png"
-        }
-      ]
+      "src": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxOTIiIGhlaWdodD0iMTkyIiBmaWxsPSJub25lIj48cmVjdCB3aWR0aD0iMTkyIiBoZWlnaHQ9IjE5MiIgdHJhbnNmb3JtPSJyb3RhdGUoLTQ1KSIgZmlsbD0iIzZjNjNmZiIvPjx0ZXh0IHg9IjkwIiB5PSIxMDciIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSI4MCIgZmlsbD0iIjMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZG9taW5hbnQtYmFzZWxpbmU9Im1pZGRsZSIgIHN0eWxlPSJiZWhlaWdodDogYWxzZTtmaWxsOiBuc3RhbmNlOyI+TjwvdGV4dD48L3N2Zz4=",
+      "sizes": "192x192",
+      "type": "image/png"
     },
     {
-      "name": "AI ÃÃÃÃÂµÃÃÂ½ÃÃ",
-      "short_name": "AI",
-      "description": "ÃÃÃÂ¾ÃÃÂ³ÃÃÃÂ¾ÃÃÂ²ÃÃÂ¾ÃÃÂ¸ÃÃ ÃÃÂ¾ÃÃÂ± AI ÃÃÃÃÂµÃÃÂ½ÃÃÃÂ¾ÃÃÂ¼",
-      "url": "/chats?action=ai",
-      "icons": [
-        {
-          "src": "/icons/bot-96.png",
-          "sizes": "96x96",
-          "type": "image/png"
-        }
-      ]
+      "src": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiBmaWxsPSJub25lIj48cmVjdCB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdHJhbnNmb3JtPSJyb3RhdGUoLTQ1KSIgZmlsbD0iIzZjNjNmZiIvPjx0ZXh0IHg9IjI1NiIgeT0iMjc2IiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQwIiBmaWxsPSIjMzMzIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIiBzdHlsZT0iYmVla2hlaWdodDogYWxzZTtmaWxsOiBuc3RhbmNlOyI+TTwvdGV4dD48L3N2Zz4=",
+      "sizes": "512x512",
+      "type": "image/png"
     }
-  ]
-}
+  ],
+  "screenshots": [],
+  "share_target": {
+    "action": "/mini-apps/share",
+    "method": "GET",
+    "params": {
+      "target_url": "url"
+    }
+  }
+}",

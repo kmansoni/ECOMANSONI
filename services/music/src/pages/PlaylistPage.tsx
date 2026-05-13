@@ -1,15 +1,20 @@
 import { useParams, Link } from 'react-router-dom';
 import { Play, Shuffle } from 'lucide-react';
 import { useMusicStore } from '../store/useMusicStore';
-import TrackList from '../components/TrackList';
 import { useMusicData } from '../lib/useMusicData';
+import { useMemo } from 'react';
+import TrackList from '../components/TrackList';
 
 export default function PlaylistPage() {
   const { id } = useParams<{ id: string }>();
-  const { playlists, playTrack, setQueue } = useMusicStore();
-  const { playlists: fetchedPlaylists, loading } = useMusicData();
+  const { playTrack, setQueue } = useMusicStore();
+  const { playlists, loading, error, fetchUserPlaylists } = useMusicData();
 
-  const playlist = playlists.find((p) => p.id === id) || fetchedPlaylists.find((p) => p.id === id);
+  // Find playlist from fetched data
+  const playlist = useMemo(
+    () => playlists.find((p) => p.id === id),
+    [playlists, id]
+  );
 
   if (loading && !playlist) {
     return <div className="flex items-center justify-center h-full text-slate-300">Загрузка плейлиста...</div>;
@@ -51,6 +56,23 @@ export default function PlaylistPage() {
       setQueue(shuffled);
       playTrack(shuffled[0]);
     }
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-center">
+          <p className="text-red-400 mb-2">Ошибка загрузки</p>
+          <p className="text-slate-400 text-sm">{error}</p>
+          <button
+            onClick={() => fetchUserPlaylists()}
+            className="mt-4 px-4 py-2 bg-purple-500 rounded-lg"
+          >
+            Повторить
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (

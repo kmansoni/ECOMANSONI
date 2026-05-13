@@ -1,34 +1,29 @@
 /**
- * MiniAppContainer - Контейнер для мини-приложений
- * 
- * Интегрированный iframe для отображения мини-приложений
- * как в Telegram Mini Apps.
+ * MiniAppContainer — iframe-обёртка с postMessage API
+ *
+ * Обновлённая версия с двусторонней коммуникацией:
+ * - Отправляет init-сообщение при загрузке iframe
+ * - Принимает resize-события и подстраивает высоту
+ * - Пересылает действия кнопок в iframe
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { X, ExternalLink, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import './MiniAppContainer.css';
 
 interface MiniAppContainerProps {
-  /** URL мини-приложения */
   url: string;
-  /** ID мини-приложения */
   appId?: string;
-  /** Контекст бота (если запущено из бота) */
   botContext?: {
     bot_id: string;
     user_id: string;
     chat_id?: string;
   };
-  /** Показывать в полноэкранном режиме */
   fullscreen?: boolean;
-  /** Колбэк при закрытии */
   onClose?: () => void;
-  /** Колбэк при готовности */
   onReady?: () => void;
-  /** Колбэк при ошибке */
   onError?: (error: Error) => void;
-  /** Дополнительные классы */
   className?: string;
 }
 
@@ -47,12 +42,10 @@ export function MiniAppContainer({
   const [error, setError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
 
-  // Build URL with query params
   const appUrl = React.useMemo(() => {
     const urlObj = new URL(url);
     urlObj.searchParams.set('platform', 'web');
     urlObj.searchParams.set('app_id', appId || '');
-    
     if (botContext) {
       urlObj.searchParams.set('bot_id', botContext.bot_id);
       urlObj.searchParams.set('user_id', botContext.user_id);
@@ -60,14 +53,30 @@ export function MiniAppContainer({
         urlObj.searchParams.set('chat_id', botContext.chat_id);
       }
     }
-    
     return urlObj.toString();
   }, [url, appId, botContext]);
 
-  const handleLoad = () => {
+  // Отправка сообщения в iframe
+  const postMessage = useCallback((action: string, data?: unknown) => {
+    if (!iframeRef.current?.contentWindow) return;
+    iframeRef.current.contentWindow.postMessage(
+      { type: 'mini-app-action', action, data },
+      '*'
+    );
+  }, []);
+
+  // Инициализация при загрузке iframe
+  const handleLoad = useCallback(() => {
     setLoading(false);
+    // Отправляем init-сообщение
+    postMessage('init', {
+      platform: 'web',
+      appId,
+      theme: 'dark',
+      version: '1.0.0',
+    });
     onReady?.();
-  };
+  }, [postMessage, appId, onReady]);
 
   const handleError = () => {
     setLoading(false);
@@ -78,49 +87,54 @@ export function MiniAppContainer({
   const handleRetry = () => {
     setError(null);
     setLoading(true);
-    setRetryCount(prev => prev + 1);
-    
+    setRetryCount((prev) => prev + 1);
     if (iframeRef.current) {
       iframeRef.current.src = appUrl;
     }
   };
 
   const handleClose = useCallback(() => {
-    // Send close message to mini app
-    if (iframeRef.current?.contentWindow) {
-      iframeRef.current.contentWindow.postMessage(
-        { type: 'close' },
-        '*'
-      );
-    }
+    postMessage('close');
     onClose?.();
-  }, [onClose]);
+  }, [postMessage, onClose]);
 
+  // Слушаем сообщения от iframe
   useEffect(() => {
-    // Listen for messages from mini app
     const handleMessage = (event: MessageEvent) => {
-      if (event.data?.type === 'ready') {
-        onReady?.();
-      } else if (event.data?.type === 'close') {
-        handleClose();
-      } else if (event.data?.type === 'error') {
-        onError?.(new Error(event.data.message || 'Mini app error'));
+      const data = event.data;
+      if (!data || data.type !== 'mini-app-event') return;
+
+      switch (data.event) {
+        case 'ready':
+          onReady?.();
+          break;
+        case 'close':
+          handleClose();
+          break;
+        case 'error':
+          onError?.(new Error(data.message || 'Mini app error'));
+          break;
+        case 'resize':
+          if (iframeRef.current && data.height) {
+            iframeRef.current.style.height = `${data.height}px`;
+          }
+          break;
       }
     };
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [onReady, onError, handleClose]);
+  }, [handleClose, onReady, onError]);
 
   return (
     <div
       className={cn(
-        "relative flex flex-col bg-background",
-        fullscreen ? "fixed inset-0 z-50" : "rounded-xl border overflow-hidden",
+        'relative flex flex-col bg-background',
+        fullscreen ? 'fixed inset-0 z-50' : 'rounded-xl border overflow-hidden',
         className
       )}
     >
-      {/* Header (only in non-fullscreen mode) */}
+      {/* Header (non-fullscreen) */}
       {!fullscreen && (
         <div className="flex items-center justify-between px-4 py-2 border-b bg-card">
           <div className="flex items-center gap-2">
@@ -150,7 +164,7 @@ export function MiniAppContainer({
         </div>
       )}
 
-      {/* Fullscreen close button */}
+      {/* Fullscreen close */}
       {fullscreen && (
         <button
           onClick={handleClose}
@@ -177,7 +191,8 @@ export function MiniAppContainer({
             key={retryCount}
             ref={iframeRef}
             src={appUrl}
-            className="w-full h-full border-0"
+            className="w-full border-0 mini-app-iframe"
+            style={{ height: fullscreen ? '100%' : '600px' }}
             allow="accelerometer; ambient-light-sensor; camera; encrypted-media; geolocation; gyroscope; hid; microphone; midi; payment; usb; vr; xr-spatial-tracking"
             sandbox="allow-forms allow-modals allow-popups allow-presentation allow-same-origin allow-scripts"
             onLoad={handleLoad}
@@ -189,5 +204,3 @@ export function MiniAppContainer({
     </div>
   );
 }
-
-export default MiniAppContainer;

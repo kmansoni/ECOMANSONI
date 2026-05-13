@@ -10,10 +10,10 @@ export function useMusicActions() {
   const setDownloadedTrackIds = useMusicStore((state) => state.setDownloadedTrackIds);
 
   const likeTrack = useCallback(async (trackId: string) => {
-    const supabase = getSupabaseClient();
     const isAuthed = Boolean(getAuthToken());
 
     if (isAuthed) {
+      const supabase = getSupabaseClient();
       const { error } = await supabase.from('music_likes').insert({ track_id: trackId });
       if (error && error.code !== '23505') {
         throw error;
@@ -26,10 +26,10 @@ export function useMusicActions() {
   }, [likedTrackIds, setLikedTrackIds]);
 
   const unlikeTrack = useCallback(async (trackId: string) => {
-    const supabase = getSupabaseClient();
     const isAuthed = Boolean(getAuthToken());
 
     if (isAuthed) {
+      const supabase = getSupabaseClient();
       const { error } = await supabase.from('music_likes').delete().eq('track_id', trackId);
       if (error) {
         throw error;
@@ -44,18 +44,16 @@ export function useMusicActions() {
       await unlikeTrack(trackId);
       return false;
     }
-
     await likeTrack(trackId);
     return true;
-  }, [likeTrack, likedTrackIds, unlikeTrack]);
+  }, [likeTrack, unlikeTrack, likedTrackIds]);
 
   const downloadTrack = useCallback(async (track: Track) => {
     await cacheTrackAudio(track);
 
-    const supabase = getSupabaseClient();
     const isAuthed = Boolean(getAuthToken());
-
     if (isAuthed) {
+      const supabase = getSupabaseClient();
       const { error } = await supabase.from('music_downloads').upsert({
         track_id: track.id,
         file_path: `cache:${track.id}`,
@@ -73,10 +71,9 @@ export function useMusicActions() {
   const removeDownload = useCallback(async (trackId: string) => {
     await removeCachedTrack(trackId);
 
-    const supabase = getSupabaseClient();
     const isAuthed = Boolean(getAuthToken());
-
     if (isAuthed) {
+      const supabase = getSupabaseClient();
       const { error } = await supabase.from('music_downloads').delete().eq('track_id', trackId);
       if (error) {
         throw error;
@@ -91,10 +88,9 @@ export function useMusicActions() {
       await removeDownload(track.id);
       return false;
     }
-
     await downloadTrack(track);
     return true;
-  }, [downloadTrack, downloadedTrackIds, removeDownload]);
+  }, [downloadTrack, removeDownload, downloadedTrackIds]);
 
   return {
     likeTrack,

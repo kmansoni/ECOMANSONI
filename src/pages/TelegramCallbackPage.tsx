@@ -36,19 +36,22 @@ export function TelegramCallbackPage() {
           throw new Error("Неверные параметры Telegram OAuth");
         }
 
-        // Вызываем edge function для верификации и создания сессии
-        const { data, error } = await supabase.functions.invoke("telegram-auth", {
-          method: "POST",
-          body: {
-            telegram_id: id,
-            first_name: firstName,
-            last_name: lastName,
-            username: username,
-            photo_url: photoUrl,
-            auth_date: authDate,
-            hash: hash,
-          },
-        });
+// Вызываем edge function для верификации и создания сессии
+         const { data, error } = await supabase.functions.invoke("telegram-auth", {
+           method: "POST",
+           body: {
+             telegram_id: id,
+             first_name: firstName,
+             last_name: lastName,
+             username: username,
+             photo_url: photoUrl,
+             auth_date: authDate,
+             hash: hash,
+             is_premium: searchParams.get("is_premium") === "true",
+             language_code: searchParams.get("language_code") || undefined,
+             start_param: searchParams.get("start_param") || undefined,
+           },
+         });
 
         if (error) {
           throw error;

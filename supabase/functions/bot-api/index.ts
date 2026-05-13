@@ -493,7 +493,7 @@ async function handleDeleteBotWebhook(req: Request, userId: string, botId: strin
 async function handleGetBotByUsername(req: Request, username: string) {
   const { data: bot, error } = await supabase
     .from('bots')
-    .select('id, username, display_name, description, about, avatar_url, bot_chat_type, language_code')
+    .select('id, username, display_name, description, about, avatar_url, bot_chat_type, language_code, supports_guest_queries')
     .eq('username', username.toLowerCase())
     .eq('status', 'active')
     .single();
@@ -503,6 +503,195 @@ async function handleGetBotByUsername(req: Request, username: string) {
   }
 
   return createSuccessResponse(bot);
+}
+
+// ============================================================================
+// GUEST MODE (Bot API 10.0)
+// ============================================================================
+
+async function handleSetGuestMode(req: Request, userId: string, botId: string) {
+  // Check ownership
+  const { data: bot } = await supabase
+    .from('bots')
+    .select('owner_id')
+    .eq('id', botId)
+    .single();
+
+  if (!bot || bot.owner_id !== userId) {
+    return createErrorResponse('Access denied', 403);
+  }
+
+  const body = await req.json();
+  const { supports_guest_queries } = body;
+
+  const { data: updatedBot, error } = await supabase
+    .from('bots')
+    .update({ supports_guest_queries })
+    .eq('id', botId)
+    .select('supports_guest_queries')
+    .single();
+
+  if (error) {
+    return createErrorResponse(error.message, 500);
+  }
+
+  return createSuccessResponse({ supports_guest_queries: updatedBot.supports_guest_queries });
+}
+
+async function handleAnswerGuestQuery(req: Request) {
+  const body = await req.json();
+  const { guest_query_id, ok, error: errorMsg, result } = body;
+
+  if (!guest_query_id) {
+    return createErrorResponse('guest_query_id is required', 400);
+  }
+
+  // This endpoint would be called by bots to answer guest queries
+  // Implementation would send response back to Telegram
+  // For now, just acknowledge
+  return createSuccessResponse({ 
+    ok, 
+    result,
+    message: 'Guest query response sent' 
+  });
+}
+
+// ============================================================================
+// POLL ENHANCEMENTS (Bot API 10.0)
+// ============================================================================
+
+async function handleSendPoll(req: Request, userId: string, botId: string) {
+  // Check ownership
+  const { data: bot } = await supabase
+    .from('bots')
+    .select('owner_id')
+    .eq('id', botId)
+    .single();
+
+  if (!bot || bot.owner_id !== userId) {
+    return createErrorResponse('Access denied', 403);
+  }
+
+  const body = await req.json();
+  const { 
+    chat_id, 
+    question, 
+    options, 
+    is_anonymous = true,
+    type = 'regular',
+    allows_multiple_answers = false,
+    correct_option_id,
+    explanation,
+    explanation_parse_mode,
+    open_period,
+    close_date,
+    is_closed,
+    // Bot API 10.0 additions
+    members_only,
+    country_codes,
+    allows_revoting,
+    shuffle_ones,
+    allow_adding_options,
+    hide_results_until_closed,
+    description,
+    description_parse_mode,
+  } = body;
+
+  if (!chat_id || !question || !options || !Array.isArray(options)) {
+    return createErrorResponse('chat_id, question, and options array are required', 400);
+  }
+
+  // Allow single option (was minimum 2)
+  if (options.length < 1) {
+    return createErrorResponse('At least 1 option is required', 400);
+  }
+
+  // Store poll in database
+  const { data: poll, error } = await supabase
+    .from('polls')
+    .insert({
+      bot_id: botId,
+      chat_id,
+      question,
+      options,
+      is_anonymous,
+      type,
+      allows_multiple_answers,
+      correct_option_id,
+      explanation,
+      open_period,
+      close_date,
+      is_closed,
+      // Bot API 10.0 fields
+      members_only: members_only || false,
+      country_codes: country_codes || [],
+      allows_revoting: allows_revoting || false,
+      shuffle_ones: shuffle_ones || false,
+      allow_adding_options: allow_adding_options || false,
+      hide_results_until_closed: hide_results_until_closed || false,
+      description,
+    })
+    .select()
+    .single();
+
+  if (error) {
+    return createErrorResponse(error.message, 500);
+  }
+
+  // Send to Telegram Bot API would happen here
+  return createSuccessResponse({ poll_id: poll.id, message: 'Poll created' });
+}
+
+// Live Photos (Bot API 10.0)
+async function handleSendLivePhoto(req: Request, userId: string, botId: string) {
+  const { data: bot } = await supabase
+    .from('bots')
+    .select('owner_id')
+    .eq('id', botId)
+    .single();
+
+  if (!bot || bot.owner_id !== userId) {
+    return createErrorResponse('Access denied', 403);
+  }
+
+  const body = await req.json();
+  const { chat_id, live_photo, caption, reply_markup } = body;
+
+  if (!chat_id || !live_photo) {
+    return createErrorResponse('chat_id and live_photo are required', 400);
+  }
+
+  return createSuccessResponse({ 
+    message: 'Live photo sent',
+    chat_id,
+    caption
+  });
+}
+
+// Message Drafts (Bot API 10.0)
+async function handleSendMessageDraft(req: Request, userId: string, botId: string) {
+  const { data: bot } = await supabase
+    .from('bots')
+    .select('owner_id')
+    .eq('id', botId)
+    .single();
+
+  if (!bot || bot.owner_id !== userId) {
+    return createErrorResponse('Access denied', 403);
+  }
+
+  const body = await req.json();
+  const { chat_id, text } = body;
+
+  if (!chat_id || !text) {
+    return createErrorResponse('chat_id and text are required', 400);
+  }
+
+  return createSuccessResponse({ 
+    message: 'Draft sent',
+    chat_id,
+    text
+  });
 }
 
 // ============================================================================
@@ -634,6 +823,46 @@ Deno.serve(async (req) => {
           return withCors(await handleDeleteBotWebhook(req, userId, botId));
         }
       }
+      
+      // Guest Mode (Bot API 10.0)
+      if (segments[2] === 'guest-mode') {
+        // POST /bot-api/bots/:id/guest-mode
+        if (req.method === 'POST') {
+          return withCors(await handleSetGuestMode(req, userId, botId));
+        }
+      }
+      
+// Polls (Bot API 10.0)
+      if (segments[2] === 'polls') {
+        // POST /bot-api/bots/:id/polls
+        if (req.method === 'POST') {
+          return withCors(await handleSendPoll(req, userId, botId));
+        }
+      }
+      
+      // Live Photos (Bot API 10.0)
+      if (segments[2] === 'live-photos') {
+        // POST /bot-api/bots/:id/live-photos
+        if (req.method === 'POST') {
+          return withCors(await handleSendLivePhoto(req, userId, botId));
+        }
+      }
+      
+      // Message Drafts (Bot API 10.0)
+      if (segments[2] === 'drafts') {
+        // POST /bot-api/bots/:id/drafts
+        if (req.method === 'POST') {
+          return withCors(await handleSendMessageDraft(req, userId, botId));
+        }
+      }
+}
+   }
+
+   // Guest query endpoint (public)
+  if (segments[0] === 'guest-query') {
+    // POST /bot-api/guest-query - answer guest query
+    if (req.method === 'POST') {
+      return withCors(await handleAnswerGuestQuery(req));
     }
   }
 

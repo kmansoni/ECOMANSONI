@@ -1,6 +1,5 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { DEMO_PLAYLISTS, DEMO_TRACKS } from '../lib/demoMusicData';
 
 export interface Track {
   id: string;
@@ -63,8 +62,8 @@ export const useMusicStore = create<MusicState>()(
       isPlaying: false,
       volume: 0.8,
       queue: [],
-      tracks: DEMO_TRACKS,
-      playlists: DEMO_PLAYLISTS,
+      tracks: [],
+      playlists: [],
       likedTrackIds: [],
       downloadedTrackIds: [],
       loading: false,

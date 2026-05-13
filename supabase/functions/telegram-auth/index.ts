@@ -29,6 +29,9 @@ interface TelegramAuthPayload {
   photo_url?: string;
   auth_date: string;
   hash: string;
+  is_premium?: boolean;
+  language_code?: string;
+  start_param?: string;
 }
 
 function checkString(value: unknown): value is string {
@@ -156,6 +159,26 @@ Deno.serve(async (req: Request) => {
 
     if (existingUser) {
       userId = existingUser.user_id;
+      // Update existing user with fresh Telegram data
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({
+          display_name: [first_name, last_name].filter(Boolean).join(' ') || undefined,
+          full_name: [first_name, last_name].filter(Boolean).join(' ') || undefined,
+          first_name: first_name || null,
+          last_name: last_name || null,
+          username: username || null,
+          avatar_url: photo_url || null,
+          is_premium: payload.is_premium ?? false,
+          language_code: payload.language_code || null,
+          last_login_at: new Date().toISOString(),
+          referral_code: payload.start_param || null,
+        })
+        .eq('user_id', userId);
+
+      if (updateError) {
+        console.error('[telegram-auth] Profile update error', updateError);
+      }
     } else {
       // Create new user in Supabase Auth
       const email = `${telegram_id}@telegram.mansoni.app`;
@@ -174,6 +197,9 @@ Deno.serve(async (req: Request) => {
           last_name: last_name || '',
           username: username || '',
           avatar_url: photo_url || '',
+          is_premium: payload.is_premium ?? false,
+          language_code: payload.language_code || '',
+          referral_code: payload.start_param || '',
         },
       });
 
@@ -187,7 +213,7 @@ Deno.serve(async (req: Request) => {
 
       userId = newUser.user.id;
 
-      // Create profile
+      // Create profile with all fields
       await supabase.from('profiles').insert({
         user_id: userId,
         telegram_id,
@@ -197,6 +223,10 @@ Deno.serve(async (req: Request) => {
         last_name: last_name || null,
         username: username || null,
         avatar_url: photo_url || null,
+        is_premium: payload.is_premium ?? false,
+        language_code: payload.language_code || null,
+        last_login_at: new Date().toISOString(),
+        referral_code: payload.start_param || null,
       });
     }
 

@@ -473,7 +473,7 @@ export function AuthPage() {
         <div className="pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
 
         {/* Logo */}
-        <div className="flex items-center justify-center gap-2 mb-4 mt-2">
+        <div className="flex items-center justify-center gap-2 mt-2">
           <img src="/brand/mansoni-logo.svg" alt="" className="w-8 h-8 sm:w-9 sm:h-9" aria-hidden="true" />
           <span className="text-[24px] sm:text-[28px] tracking-[0.3em] uppercase font-bold text-gradient-brand">
             mansoni
@@ -481,12 +481,12 @@ export function AuthPage() {
         </div>
 
         {/* Kind Tips Ticker */}
-        <div className="mb-6">
+        <div className="flex-1 flex flex-col justify-end pb-4">
           <KindTipsTicker tokens={tokens} />
         </div>
 
         {/* Steps */}
-        <div className="relative flex flex-col gap-4">
+        <div className="relative flex flex-col gap-4 mt-auto">
           <AnimatePresence mode="wait">
             {flow.step === "phone" && (
               <motion.div key="phone" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>

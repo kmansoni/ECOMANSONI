@@ -1,27 +1,10 @@
 /**
  * supabase/functions/post-reminder-notify/index.ts — Post Reminder Notifications
- *
- * Security model:
- *  - Called by pg_cron every minute (via HTTP with service_role key) OR X-Internal-Call
- *  - Uses service_role for all DB operations
- *  - Idempotent: marks `notified = true` before sending to prevent duplicates on retry
- *  - Batch limit: 100 reminders per invocation to bound execution time
- *
- * Triggered by:
- *  - pg_cron: SELECT net.http_post('https://<project>.supabase.co/functions/v1/post-reminder-notify', ...)
- *
- * Environment variables:
- *  - SUPABASE_URL
- *  - SUPABASE_SERVICE_ROLE_KEY
- *  - NOTIFICATION_ROUTER_URL      — URL of notification-router service
- *  - NOTIFICATION_ROUTER_KEY      — API key for notification-router
  */
 
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { handleCors, getCorsHeaders } from "../_shared/utils.ts";
-
-// ─── Logging ──────────────────────────────────────────────────────────────────
 
 function log(
   level: "info" | "warn" | "error",
@@ -41,23 +24,12 @@ function log(
   );
 }
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-interface ReminderRow {
-  id: string;
-  user_id: string;
-  post_id: string;
-  remind_at: string;
-}
-
 interface SendResult {
   reminder_id: string;
   user_id: string;
   success: boolean;
   error?: string;
 }
-
-// ─── Notification dispatch ────────────────────────────────────────────────────
 
 async function sendPushNotification(
   userId: string,
@@ -83,30 +55,15 @@ async function sendPushNotification(
   }
 }
 
-// ─── Main processing ──────────────────────────────────────────────────────────
-
 async function processReminders(
   supabase: ReturnType<typeof createClient>,
 ): Promise<{ notified_count: number; errors: Array<{ reminder_id: string; error: string }> }> {
   const now = new Date().toISOString();
 
-  // Fetch due reminders with post and author info
+  // Step 1: Fetch due reminders with post info (no join to profiles)
   const { data: reminders, error: fetchError } = await supabase
     .from("post_reminders")
-    .select(`
-      id,
-      user_id,
-      post_id,
-      remind_at,
-      posts!inner (
-        id,
-        content,
-        author_id,
-        profiles!inner (
-          username
-        )
-      )
-    `)
+    .select("post_id, user_id, remind_at")
     .lte("remind_at", now)
     .eq("notified", false)
     .limit(100)
@@ -122,19 +79,39 @@ async function processReminders(
     return { notified_count: 0, errors: [] };
   }
 
-  log("info", "process", `Processing ${reminders.length} reminders`, { count: reminders.length });
+  log("info", "process", `Processing ${reminders.length} reminders`);
 
-  // CRITICAL: Mark as notified BEFORE sending to prevent duplicate sends on retry
-  const reminderIds = reminders.map((r: { id: string }) => r.id);
-  const { error: markError } = await supabase
+  // Step 2: Get post content and author info
+  const postIds = reminders.map((r) => r.post_id);
+  const { data: postsData } = await supabase
+    .from("posts")
+    .select("id, content, author_id")
+    .in("id", postIds);
+
+  const postsMap = new Map(
+    (postsData ?? []).map((p) => [p.id, p])
+  );
+
+  // Step 3: Get author usernames
+  const authorIds = [...new Set((postsData ?? []).map((p) => p.author_id).filter(Boolean))];
+  let usernameMap = new Map<string, string>();
+  if (authorIds.length > 0) {
+    const { data: profilesData } = await supabase
+      .from("profiles")
+      .select("user_id, username")
+      .in("user_id", authorIds);
+    usernameMap = new Map(
+      (profilesData ?? []).map((p) => [p.user_id, p.username ?? "author"])
+    );
+  }
+
+  // Step 4: Mark as notified BEFORE sending (idempotent)
+  const reminderPostIds = reminders.map((r) => r.post_id);
+  await supabase
     .from("post_reminders")
     .update({ notified: true })
-    .in("id", reminderIds);
-
-  if (markError) {
-    log("error", "mark", "Failed to mark reminders as notified", { error: markError.message });
-    throw new Error(`Mark failed: ${markError.message}`);
-  }
+    .in("post_id", reminderPostIds)
+    .eq("notified", false);
 
   const notifRouterUrl = Deno.env.get("NOTIFICATION_ROUTER_URL");
   const notifRouterKey = Deno.env.get("NOTIFICATION_ROUTER_KEY");
@@ -142,46 +119,38 @@ async function processReminders(
   const results: SendResult[] = [];
   let notifiedCount = 0;
 
-  // Process in parallel with a concurrency limiter (max 10 concurrent)
+  // Process in parallel (max 10 concurrent)
   const CONCURRENCY = 10;
   for (let i = 0; i < reminders.length; i += CONCURRENCY) {
     const batch = reminders.slice(i, i + CONCURRENCY);
     const batchResults = await Promise.allSettled(
-      batch.map(async (reminder: Record<string, unknown>) => {
-        const userId = reminder.user_id as string;
-        const reminderId = reminder.id as string;
-        const post = reminder.posts as Record<string, unknown> | null;
-        const postContent = (post?.content as string | null) ?? "Новая публикация";
-        const authorUsername = (post?.profiles as Record<string, unknown> | null)?.username as string | null ?? "author";
+      batch.map(async (reminder) => {
+        const post = postsMap.get(reminder.post_id);
+        const postContent = (post?.content ?? "Новая публикация") as string;
+        const authorUsername = post?.author_id ? (usernameMap.get(post.author_id) ?? "author") : "author";
 
-        // Truncate content for notification
         const shortContent = postContent.length > 50
           ? postContent.slice(0, 47) + "..."
           : postContent;
 
         const notifTitle = "Напоминание о публикации";
-        const notifBody = postContent
-          ? `@${authorUsername}: "${shortContent}"`
-          : `@${authorUsername} опубликовал новый контент`;
+        const notifBody = `@${authorUsername}: "${shortContent}"`;
 
         if (!notifRouterUrl) {
-          log("warn", "send", "NOTIFICATION_ROUTER_URL not configured", { reminder_id: reminderId });
-          return { reminder_id: reminderId, user_id: userId, success: false, error: "NO_NOTIF_ROUTER" };
+          log("warn", "send", "NOTIFICATION_ROUTER_URL not configured", { post_id: reminder.post_id });
+          return { reminder_id: reminder.post_id, user_id: reminder.user_id, success: false, error: "NO_NOTIF_ROUTER" };
         }
 
         await sendPushNotification(
-          userId,
+          reminder.user_id,
           notifTitle,
           notifBody,
-          {
-            type: "post_reminder",
-            post_id: reminder.post_id as string,
-          },
+          { type: "post_reminder", post_id: reminder.post_id },
           notifRouterUrl,
           notifRouterKey,
         );
 
-        return { reminder_id: reminderId, user_id: userId, success: true };
+        return { reminder_id: reminder.post_id, user_id: reminder.user_id, success: true };
       }),
     );
 
@@ -191,9 +160,7 @@ async function processReminders(
         results.push(r);
         if (r.success) notifiedCount++;
       } else {
-        log("warn", "send", "Reminder send threw uncaught error", {
-          error: String(result.reason),
-        });
+        log("warn", "send", "Send error", { error: String(result.reason) });
         results.push({ reminder_id: "unknown", user_id: "unknown", success: false, error: String(result.reason) });
       }
     }
@@ -203,64 +170,36 @@ async function processReminders(
     .filter((r) => !r.success)
     .map((r) => ({ reminder_id: r.reminder_id, error: r.error ?? "UNKNOWN" }));
 
-  if (errors.length > 0) {
-    try {
-      await supabase.from("reminder_send_errors").insert(
-        errors.map((e) => ({
-          reminder_id: e.reminder_id,
-          error: e.error,
-          occurred_at: now,
-        })),
-      );
-    } catch {
-      log("warn", "audit", "Failed to persist send errors to DB");
-    }
-  }
-
-  log("info", "done", "Reminder batch complete", {
-    total: reminders.length,
-    notified: notifiedCount,
-    failed: errors.length,
-  });
+  log("info", "done", "Batch complete", { total: reminders.length, notified: notifiedCount, failed: errors.length });
 
   return { notified_count: notifiedCount, errors };
 }
 
-// ─── Handler ──────────────────────────────────────────────────────────────────
-
 serve(async (req: Request) => {
   const origin = req.headers.get("origin");
-
   const corsResponse = handleCors(req);
   if (corsResponse) return corsResponse;
 
   const corsHeaders = getCorsHeaders(origin);
-
   const json = (body: unknown, status: number) =>
-    new Response(JSON.stringify(body), {
-      status,
-      headers: {
-        ...corsHeaders,
-        "Content-Type": "application/json",
-      },
-    });
+    new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
   if (req.method !== "POST") {
     return json({ success: false, error: "METHOD_NOT_ALLOWED" }, 405);
   }
 
-  const authHeader = req.headers.get("Authorization");
   const isInternalCall = req.headers.get("X-Internal-Call") === "1";
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
   if (!supabaseUrl || !serviceRoleKey) {
-    log("error", "config", "Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
     return json({ success: false, error: "INTERNAL_ERROR" }, 500);
   }
 
+  // Internal calls bypass auth
   if (!isInternalCall) {
+    const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
       return json({ success: false, error: "UNAUTHORIZED" }, 401);
     }
@@ -270,15 +209,13 @@ serve(async (req: Request) => {
     }
   }
 
-  const supabase = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { persistSession: false },
-  });
+  const supabase = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } });
 
   try {
     const result = await processReminders(supabase);
     return json({ success: true, ...result }, 200);
   } catch (err) {
-    log("error", "process", "processReminders threw", { error: String(err) });
+    log("error", "process", "Error", { error: String(err) });
     return json({ success: false, error: "PROCESSING_FAILED", detail: String(err) }, 500);
   }
 });

@@ -1,10 +1,10 @@
 import { useRef, useEffect, useState } from 'react';
-import { 
-  Play, 
-  Pause, 
-  SkipBack, 
-  SkipForward, 
-  Volume2, 
+import {
+  Play,
+  Pause,
+  SkipBack,
+  SkipForward,
+  Volume2,
   VolumeX,
   Repeat,
   Shuffle,
@@ -31,7 +31,6 @@ export default function AudioPlayer({ className = '' }: AudioPlayerProps) {
     pauseTrack,
     resumeTrack,
     setVolume,
-    addToQueue,
   } = useMusicStore();
 
   const [currentTime, setCurrentTime] = useState(0);
@@ -39,6 +38,7 @@ export default function AudioPlayer({ className = '' }: AudioPlayerProps) {
   const [isMuted, setIsMuted] = useState(false);
   const [isShuffle, setIsShuffle] = useState(false);
   const [isRepeat, setIsRepeat] = useState(false);
+  const [playbackError, setPlaybackError] = useState<string | null>(null);
 
   // Format time as MM:SS
   function formatTime(seconds: number): string {
@@ -51,6 +51,7 @@ export default function AudioPlayer({ className = '' }: AudioPlayerProps) {
   // Handle track change
   useEffect(() => {
     let isActive = true;
+    setPlaybackError(null);
 
     async function prepareTrackSource() {
       if (!currentTrack || !audioRef.current) {
@@ -62,22 +63,35 @@ export default function AudioPlayer({ className = '' }: AudioPlayerProps) {
         objectUrlRef.current = null;
       }
 
-      const cachedUrl = await getCachedTrackObjectUrl(currentTrack.id);
-      if (!isActive || !audioRef.current) {
+      let finalUrl = currentTrack.audioUrl;
+
+      try {
+        const cachedUrl = await getCachedTrackObjectUrl(currentTrack.id);
         if (cachedUrl) {
-          URL.revokeObjectURL(cachedUrl);
+          objectUrlRef.current = cachedUrl;
+          finalUrl = cachedUrl;
+        }
+      } catch (err) {
+        console.warn('Cache lookup failed, using direct URL:', err);
+      }
+
+      if (!isActive || !audioRef.current) {
+        if (objectUrlRef.current) {
+          URL.revokeObjectURL(objectUrlRef.current);
+          objectUrlRef.current = null;
         }
         return;
       }
 
-      if (cachedUrl) {
-        objectUrlRef.current = cachedUrl;
-      }
-
-      audioRef.current.src = cachedUrl || currentTrack.audioUrl;
-      audioRef.current.load();
-      if (isPlaying) {
-        audioRef.current.play().catch(console.error);
+      try {
+        audioRef.current.src = finalUrl;
+        audioRef.current.load();
+        if (isPlaying) {
+          await audioRef.current.play();
+        }
+      } catch (err) {
+        console.error('Audio playback failed:', err);
+        setPlaybackError(err instanceof Error ? err.message : 'Playback failed');
       }
     }
 
@@ -91,13 +105,16 @@ export default function AudioPlayer({ className = '' }: AudioPlayerProps) {
   // Handle play/pause
   useEffect(() => {
     if (!audioRef.current || !currentTrack) return;
-    
+
     if (isPlaying) {
-      audioRef.current.play().catch(console.error);
+      audioRef.current.play().catch((err) => {
+        console.error('Play failed:', err);
+        setPlaybackError(err instanceof Error ? err.message : 'Playback failed');
+      });
     } else {
       audioRef.current.pause();
     }
-  }, [isPlaying]);
+  }, [isPlaying, currentTrack]);
 
   // Handle volume
   useEffect(() => {
@@ -140,6 +157,13 @@ export default function AudioPlayer({ className = '' }: AudioPlayerProps) {
     }
   }
 
+  function handleError() {
+    if (audioRef.current?.error) {
+      const errorMsg = audioRef.current.error.message || 'Audio error';
+      setPlaybackError(errorMsg);
+    }
+  }
+
   function handleEnded() {
     if (currentTrack && getAuthToken()) {
       void (async () => {
@@ -157,16 +181,14 @@ export default function AudioPlayer({ className = '' }: AudioPlayerProps) {
     }
 
     if (isRepeat && currentTrack) {
-      // Repeat current track
       if (audioRef.current) {
         audioRef.current.currentTime = 0;
         audioRef.current.play().catch(console.error);
       }
     } else if (queue.length > 1) {
-      // Play next track in queue
       const currentIndex = queue.findIndex(t => t.id === currentTrack?.id);
       if (currentIndex !== -1 && currentIndex < queue.length - 1) {
-        const nextIndex = isShuffle 
+        const nextIndex = isShuffle
           ? Math.floor(Math.random() * queue.length)
           : currentIndex + 1;
         playTrack(queue[nextIndex]);
@@ -202,10 +224,9 @@ export default function AudioPlayer({ className = '' }: AudioPlayerProps) {
 
   function handlePrevious() {
     if (!currentTrack || queue.length === 0) return;
-    
+
     const currentIndex = queue.findIndex(t => t.id === currentTrack.id);
     if (currentTime > 3) {
-      // Restart current track if more than 3 seconds played
       if (audioRef.current) {
         audioRef.current.currentTime = 0;
       }
@@ -216,18 +237,18 @@ export default function AudioPlayer({ className = '' }: AudioPlayerProps) {
 
   function handleNext() {
     if (!currentTrack || queue.length === 0) return;
-    
+
     const currentIndex = queue.findIndex(t => t.id === currentTrack.id);
     let nextIndex: number;
-    
+
     if (isShuffle) {
       nextIndex = Math.floor(Math.random() * queue.length);
     } else if (currentIndex >= queue.length - 1) {
-      nextIndex = 0; // Loop back to start
+      nextIndex = 0;
     } else {
       nextIndex = currentIndex + 1;
     }
-    
+
     playTrack(queue[nextIndex]);
   }
 
@@ -239,14 +260,20 @@ export default function AudioPlayer({ className = '' }: AudioPlayerProps) {
 
   return (
     <div className={`fixed bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur-lg border-t border-slate-700/50 ${className}`}>
+      {playbackError && (
+        <div className="absolute top-full left-0 right-0 bg-red-900/90 text-red-200 text-xs p-2 text-center">
+          Ошибка воспроизведения: {playbackError}
+        </div>
+      )}
       <audio
         ref={audioRef}
         onTimeUpdate={handleTimeUpdate}
         onLoadedMetadata={handleLoadedMetadata}
         onEnded={handleEnded}
+        onError={handleError}
         crossOrigin="anonymous"
       />
-      
+
       <div className="max-w-7xl mx-auto px-4 py-3">
         {/* Progress bar (mobile) */}
         <div className="md:hidden mb-3">
@@ -274,6 +301,9 @@ export default function AudioPlayer({ className = '' }: AudioPlayerProps) {
               src={currentTrack.coverUrl}
               alt={currentTrack.album}
               className="w-12 h-12 rounded object-cover flex-shrink-0"
+              onError={(e) => {
+                (e.target as HTMLImageElement).src = 'https://picsum.photos/seed/default/300/300';
+              }}
             />
             <div className="min-w-0">
               <p className="text-sm font-medium text-white truncate">
@@ -297,7 +327,7 @@ export default function AudioPlayer({ className = '' }: AudioPlayerProps) {
               >
                 <Shuffle className="w-4 h-4" />
               </button>
-              
+
               <button
                 onClick={handlePrevious}
                 className="p-2 text-slate-300 hover:text-white transition-colors"
@@ -305,7 +335,7 @@ export default function AudioPlayer({ className = '' }: AudioPlayerProps) {
               >
                 <SkipBack className="w-5 h-5" />
               </button>
-              
+
               <button
                 onClick={isPlaying ? pauseTrack : resumeTrack}
                 className="p-3 bg-white text-black rounded-full hover:scale-105 transition-transform"
@@ -317,7 +347,7 @@ export default function AudioPlayer({ className = '' }: AudioPlayerProps) {
                   <Play className="w-5 h-5 fill-current ml-0.5" />
                 )}
               </button>
-              
+
               <button
                 onClick={handleNext}
                 className="p-2 text-slate-300 hover:text-white transition-colors"
@@ -325,7 +355,7 @@ export default function AudioPlayer({ className = '' }: AudioPlayerProps) {
               >
                 <SkipForward className="w-5 h-5" />
               </button>
-              
+
               <button
                 onClick={() => setIsRepeat(!isRepeat)}
                 className={`p-2 rounded-full transition-colors ${
@@ -367,7 +397,7 @@ export default function AudioPlayer({ className = '' }: AudioPlayerProps) {
             >
               <ListMusic className="w-4 h-4" />
             </button>
-            
+
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setIsMuted(!isMuted)}

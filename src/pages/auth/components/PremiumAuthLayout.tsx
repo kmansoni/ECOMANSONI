@@ -35,7 +35,7 @@ export function PremiumAuthLayout({
       </div>
 
       {/* Main content */}
-      <div className="relative z-10 flex w-full max-w-5xl items-center">
+      <div className="relative z-10 flex w-full max-w-5xl items-stretch">
         {children}
       </div>
     </div>

@@ -1,7 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Suspense, lazy } from 'react';
 import { Loader2 } from 'lucide-react';
-import AudioPlayer from './components/AudioPlayer';
 
 // Ленивая загрузка страниц для уменьшения начального бандла
 const MusicHomePage = lazy(() => import('./pages/MusicHomePage'));
@@ -57,11 +56,10 @@ export function MusicAppRoutes() {
 // Главный компонент standalone-версии модуля
 export default function App() {
   return (
-    <BrowserRouter basename={import.meta.env.BASE_URL}>
-      <MusicAppRoutes />
-      
-      {/* Audio Player - показывается на всех страницах */}
-      <AudioPlayer />
-    </BrowserRouter>
+    <div className="music-module">
+      <BrowserRouter basename={import.meta.env.BASE_URL}>
+        <MusicAppRoutes />
+      </BrowserRouter>
+    </div>
   );
 }

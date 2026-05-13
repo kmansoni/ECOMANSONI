@@ -1,31 +1,29 @@
 import { useParams, Link } from 'react-router-dom';
 import { ArrowLeft, Play, Pause, Heart, MoreHorizontal, Download } from 'lucide-react';
 import { useMusicStore } from '../store/useMusicStore';
-import { useMemo, useState } from 'react';
 import { useMusicData } from '../lib/useMusicData';
 import { useMusicActions } from '../lib/useMusicActions';
+import { useMemo, useState } from 'react';
 
 export default function TrackPage() {
   const { id } = useParams<{ id: string }>();
-  const { playlists, tracks, playTrack, currentTrack, isPlaying, pauseTrack, resumeTrack, likedTrackIds, downloadedTrackIds } = useMusicStore();
+  const { currentTrack, isPlaying, playTrack, pauseTrack, resumeTrack, likedTrackIds, downloadedTrackIds } = useMusicStore();
   const { tracks: fetchedTracks, playlists: fetchedPlaylists } = useMusicData();
   const { toggleLike, toggleDownload } = useMusicActions();
   const [actionError, setActionError] = useState<string | null>(null);
 
   const allTracks = useMemo(() => {
-    const merged = new Map<string, (typeof tracks)[number]>();
+    const merged = new Map<string, (typeof fetchedTracks)[number]>();
 
     for (const track of [
-      ...tracks,
       ...fetchedTracks,
-      ...playlists.flatMap((playlist) => playlist.tracks),
       ...fetchedPlaylists.flatMap((playlist) => playlist.tracks),
     ]) {
       merged.set(track.id, track);
     }
 
     return Array.from(merged.values());
-  }, [tracks, fetchedTracks, playlists, fetchedPlaylists]);
+  }, [fetchedTracks, fetchedPlaylists]);
 
   const track = allTracks.find((item) => item.id === id) || null;
 
@@ -151,13 +149,13 @@ export default function TrackPage() {
           </button>
         </div>
 
-        {actionError ? <p className="mt-4 text-sm text-red-400">{actionError}</p> : null}
+        {actionError && <p className="mt-4 text-sm text-red-400">{actionError}</p>}
 
-        {/* Рекомендации (простые) */}
+        {/* Рекомендации */}
         <div className="mt-12">
           <h2 className="text-2xl font-bold mb-4">Похожие треки</h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {playlists.flatMap((p) => p.tracks)
+            {fetchedPlaylists.flatMap((p) => p.tracks)
               .filter((t) => t.id !== track.id)
               .slice(0, 4)
               .map((similarTrack) => (

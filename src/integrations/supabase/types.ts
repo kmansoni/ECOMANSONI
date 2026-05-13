@@ -19174,46 +19174,124 @@ export type Database = {
         }
         Relationships: []
       }
+      polls: {
+        Row: {
+          allow_adding_options: boolean | null
+          allows_multiple_answers: boolean | null
+          allows_revoting: boolean | null
+          bot_id: string
+          chat_id: number
+          close_date: string | null
+          correct_option_id: number | null
+          created_at: string | null
+          description: string | null
+          hide_results_until_closed: boolean | null
+          id: string
+          is_closed: boolean | null
+          is_anonymous: boolean | null
+          members_only: boolean | null
+          open_period: number | null
+          options: Json | null
+          country_codes: string[] | null
+          question: string
+          shuffle_ones: boolean | null
+          total_voter_count: number | null
+          type: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          allow_adding_options?: boolean | null
+          allows_multiple_answers?: boolean | null
+          allows_revoting?: boolean | null
+          bot_id: string
+          chat_id: number
+          close_date?: string | null
+          correct_option_id?: number | null
+          created_at?: string | null
+          description?: string | null
+          hide_results_until_closed?: boolean | null
+          id?: string
+          is_closed?: boolean | null
+          is_anonymous?: boolean | null
+          members_only?: boolean | null
+          open_period?: number | null
+          options?: Json | null
+          country_codes?: string[] | null
+          question: string
+          shuffle_ones?: boolean | null
+          total_voter_count?: number | null
+          type?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          allow_adding_options?: boolean | null
+          allows_multiple_answers?: boolean | null
+          allows_revoting?: boolean | null
+          bot_id?: string
+          chat_id?: number
+          close_date?: string | null
+          correct_option_id?: number | null
+          created_at?: string | null
+          description?: string | null
+          hide_results_until_closed?: boolean | null
+          id?: string
+          is_closed?: boolean | null
+          is_anonymous?: boolean | null
+          members_only?: boolean | null
+          open_period?: number | null
+          options?: Json | null
+          country_codes?: string[] | null
+          question?: string
+          shuffle_ones?: boolean | null
+          total_voter_count?: number | null
+          type?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       star_transactions: {
         Row: {
           amount: number
+          balance_after: number
+          balance_before: number
           created_at: string | null
           description: string | null
           id: string
-          related_gift_id: string | null
-          related_message_id: string | null
-          related_user_id: string | null
+          metadata: Json | null
+          reference_id: string | null
           type: string
           user_id: string
         }
         Insert: {
           amount: number
+          balance_after: number
+          balance_before: number
           created_at?: string | null
           description?: string | null
           id?: string
-          related_gift_id?: string | null
-          related_message_id?: string | null
-          related_user_id?: string | null
+          metadata?: Json | null
+          reference_id?: string | null
           type: string
           user_id: string
         }
         Update: {
           amount?: number
+          balance_after?: number
+          balance_before?: number
           created_at?: string | null
           description?: string | null
           id?: string
-          related_gift_id?: string | null
-          related_message_id?: string | null
-          related_user_id?: string | null
+          metadata?: Json | null
+          reference_id?: string | null
           type?: string
           user_id?: string
         }
         Relationships: [
           {
-            foreignKeyName: "star_transactions_related_gift_id_fkey"
-            columns: ["related_gift_id"]
+            foreignKeyName: "star_transactions_user_id_fkey"
+            columns: ["user_id"]
             isOneToOne: false
-            referencedRelation: "gift_catalog"
+            referencedRelation: "users"
             referencedColumns: ["id"]
           },
         ]
@@ -22764,22 +22842,22 @@ export type Database = {
       user_stars: {
         Row: {
           balance: number
-          total_earned: number
-          total_spent: number
+          created_at: string | null
+          id: string
           updated_at: string | null
           user_id: string
         }
         Insert: {
           balance?: number
-          total_earned?: number
-          total_spent?: number
+          created_at?: string | null
+          id?: string
           updated_at?: string | null
           user_id: string
         }
         Update: {
           balance?: number
-          total_earned?: number
-          total_spent?: number
+          created_at?: string | null
+          id?: string
           updated_at?: string | null
           user_id?: string
         }
@@ -26784,7 +26862,7 @@ export type Database = {
         Returns: Json
       }
       refund_invoice_stars: {
-        Args: { p_amount: number; p_invoice_id: string; p_reason: string }
+        Args: { p_amount?: number; p_invoice_id: string; p_reason?: string }
         Returns: Json
       }
       replenish_one_time_prekeys: {
@@ -27920,6 +27998,10 @@ export type Database = {
       update_peak_viewers: {
         Args: { p_current_viewers: number; p_session_id: number }
         Returns: undefined
+      }
+      update_stars_balance: {
+        Args: { p_amount: number; p_type: string; p_user_id: string }
+        Returns: number
       }
       updategeometrysrid: {
         Args: {

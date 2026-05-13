@@ -60,10 +60,7 @@ interface PlaylistTrackRow {
 }
 
 function pickOne<T>(value?: T | T[] | null): T | undefined {
-  if (!value) {
-    return undefined;
-  }
-
+  if (!value) return undefined;
   return Array.isArray(value) ? value[0] : value;
 }
 
@@ -90,13 +87,13 @@ export function useMusicData() {
   const [downloadedTrackIds, setDownloadedTrackIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isDemo, setIsDemo] = useState(true);
+  const [isDemo, setIsDemo] = useState(false);
 
   // Fetch popular tracks
-  const fetchTracks = useCallback(async (limit = 20) => {
+  const fetchTracks = useCallback(async (limit = 20): Promise<Track[]> => {
     try {
       const supabase = getSupabaseClient();
-      const { data, error } = await supabase
+      const { data, error: fetchError } = await supabase
         .from('music_tracks')
         .select(`
           id, title, duration_ms, preview_url, audio_url, explicit, popularity, play_count,
@@ -107,8 +104,8 @@ export function useMusicData() {
         .order('popularity', { ascending: false })
         .limit(limit);
 
-      if (error) throw error;
-      
+      if (fetchError) throw fetchError;
+
       if (data && data.length > 0) {
         const mappedTracks = (data as TrackDB[]).map(mapTrackToUI);
         setTracks(mappedTracks);
@@ -117,29 +114,33 @@ export function useMusicData() {
       }
     } catch (err) {
       console.warn('Using demo tracks (Supabase not connected):', err);
-      setIsDemo(true);
     }
 
     const fallback = DEMO_TRACKS.slice(0, limit);
     setTracks(fallback);
+    setIsDemo(true);
     return fallback;
   }, []);
 
   // Fetch user's playlists
-  const fetchUserPlaylists = useCallback(async () => {
+  const fetchUserPlaylists = useCallback(async (): Promise<Playlist[]> => {
     try {
       const supabase = getSupabaseClient();
       const isAuthed = Boolean(getAuthToken());
-      let query = supabase.from('music_playlists').select('*').order('updated_at', { ascending: false }).limit(20);
+      let query = supabase
+        .from('music_playlists')
+        .select('*')
+        .order('updated_at', { ascending: false })
+        .limit(20);
 
       if (!isAuthed) {
         query = query.eq('is_public', true);
       }
 
-      const { data, error } = await query;
+      const { data, error: fetchError } = await query;
 
-      if (error) throw error;
-      
+      if (fetchError) throw fetchError;
+
       if (data && data.length > 0) {
         const playlistIds = data.map((playlist) => playlist.id);
         const { data: playlistTracks, error: playlistTracksError } = await supabase
@@ -161,9 +162,7 @@ export function useMusicData() {
         const tracksByPlaylist = new Map<string, Track[]>();
         for (const row of (playlistTracks || []) as PlaylistTrackRow[]) {
           const trackRow = pickOne(row.music_tracks);
-          if (!trackRow) {
-            continue;
-          }
+          if (!trackRow) continue;
 
           const bucket = tracksByPlaylist.get(row.playlist_id) || [];
           bucket.push(mapTrackToUI(trackRow));
@@ -183,15 +182,15 @@ export function useMusicData() {
       }
     } catch (err) {
       console.warn('Using demo playlists:', err);
-      setIsDemo(true);
     }
 
     setPlaylists(DEMO_PLAYLISTS);
+    setIsDemo(true);
     return DEMO_PLAYLISTS;
   }, []);
 
   // Fetch liked tracks
-  const fetchLikedTracks = useCallback(async () => {
+  const fetchLikedTracks = useCallback(async (): Promise<Track[]> => {
     try {
       if (!getAuthToken()) {
         setLikedTracks([]);
@@ -199,7 +198,7 @@ export function useMusicData() {
       }
 
       const supabase = getSupabaseClient();
-      const { data, error } = await supabase
+      const { data, error: fetchError } = await supabase
         .from('music_likes')
         .select(`
           id, created_at,
@@ -212,8 +211,8 @@ export function useMusicData() {
         .order('created_at', { ascending: false })
         .limit(50);
 
-      if (error) throw error;
-      
+      if (fetchError) throw fetchError;
+
       if (data && data.length > 0) {
         const mappedTracks = data
           .filter((d) => d.music_tracks)
@@ -224,14 +223,14 @@ export function useMusicData() {
       }
     } catch (err) {
       console.warn('Using demo likes:', err);
-      setIsDemo(true);
     }
 
     setLikedTracks([]);
     return [];
   }, []);
 
-  const fetchDownloadedTracks = useCallback(async () => {
+  // Fetch downloaded tracks
+  const fetchDownloadedTracks = useCallback(async (): Promise<string[]> => {
     const cachedTrackIds = await listCachedTrackIds();
 
     try {
@@ -241,9 +240,12 @@ export function useMusicData() {
       }
 
       const supabase = getSupabaseClient();
-      const { data, error } = await supabase.from('music_downloads').select('track_id').limit(200);
+      const { data, error: fetchError } = await supabase
+        .from('music_downloads')
+        .select('track_id')
+        .limit(200);
 
-      if (error) throw error;
+      if (fetchError) throw fetchError;
 
       const remoteTrackIds = (data || []).map((item) => item.track_id);
       const merged = Array.from(new Set([...remoteTrackIds, ...cachedTrackIds]));
@@ -302,7 +304,7 @@ export function useMusicData() {
       }
 
       const uniqueTracks = new Map<string, Track>();
-      for (const track of ([...(tracksResult.data || []), ...artistTracks] as TrackDB[])) {
+      for (const track of [...(tracksResult.data || []), ...artistTracks] as TrackDB[]) {
         uniqueTracks.set(track.id, mapTrackToUI(track));
       }
 
@@ -312,7 +314,7 @@ export function useMusicData() {
     } catch (err) {
       console.warn('Search failed:', err);
     }
-    
+
     // Fallback to demo search
     const lowerQuery = query.toLowerCase();
     return DEMO_TRACKS.filter(
@@ -323,70 +325,63 @@ export function useMusicData() {
     );
   }, []);
 
-  // Initial load
+  // Initial load — single source of truth
   useEffect(() => {
+    let cancelled = false;
+
     async function loadAll() {
       setLoading(true);
       setError(null);
-      
+
       try {
-        await Promise.all([
+        await Promise.allSettled([
           fetchTracks(20),
           fetchUserPlaylists(),
           fetchLikedTracks(),
           fetchDownloadedTracks(),
         ]);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load music data');
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Failed to load music data');
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     }
-    
-    loadAll();
-  }, [fetchTracks, fetchUserPlaylists, fetchLikedTracks]);
 
-  // Add track to liked
+    loadAll();
+    return () => {
+      cancelled = true;
+    };
+  }, [fetchTracks, fetchUserPlaylists, fetchLikedTracks, fetchDownloadedTracks]);
+
+  // Add track to liked — updates local state for immediate UI feedback
   const likeTrack = useCallback(async (trackId: string) => {
     try {
       const supabase = getSupabaseClient();
-      const { error } = await supabase
-        .from('music_likes')
-        .insert({ track_id: trackId });
-
-      if (error && error.code !== '23505') {
-        throw error;
-      }
-
-      const likedTrack = tracks.find((track) => track.id === trackId);
-      if (likedTrack && !likedTracks.some((track) => track.id === trackId)) {
-        setLikedTracks([likedTrack, ...likedTracks]);
-      }
+      const { error } = await supabase.from('music_likes').insert({ track_id: trackId });
+      if (error && error.code !== '23505') throw error;
     } catch (err) {
       console.warn('Like failed:', err);
     }
-  }, [likedTracks, tracks]);
+  }, []);
 
   // Remove track from liked
   const unlikeTrack = useCallback(async (trackId: string) => {
     try {
       const supabase = getSupabaseClient();
-      const { error } = await supabase
-        .from('music_likes')
-        .delete()
-        .eq('track_id', trackId);
-
+      const { error } = await supabase.from('music_likes').delete().eq('track_id', trackId);
       if (error) throw error;
-
-      setLikedTracks(likedTracks.filter((track) => track.id !== trackId));
     } catch (err) {
       console.warn('Unlike failed:', err);
     }
-  }, [likedTracks]);
+  }, []);
 
   return {
     tracks,
-    playlists: isDemo ? DEMO_PLAYLISTS : playlists,
+    playlists,
     likedTracks,
     downloadedTrackIds,
     loading,

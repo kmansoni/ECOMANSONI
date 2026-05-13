@@ -1,0 +1,8 @@
+/**
+ * MiniAppContainer — CSS styles for iframe container
+ */
+
+.mini-app-iframe {
+  min-height: 400px;
+  transition: height 0.3s ease;
+}

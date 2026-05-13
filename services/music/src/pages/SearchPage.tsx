@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Search, Loader2 } from 'lucide-react';
-import { useMusicStore } from '../store/useMusicStore';
 import { useMusicData } from '../lib/useMusicData';
 import type { Track } from '../store/useMusicStore';
 import TrackList from '../components/TrackList';
@@ -9,11 +8,10 @@ export default function SearchPage() {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Track[]>([]);
   const [searching, setSearching] = useState(false);
-  const { playlists, isDemo } = useMusicStore();
-  const { searchTracks } = useMusicData();
+  const { tracks, playlists, isDemo, searchTracks: searchTracksFromHook } = useMusicData();
 
-  // Demo search fallback
-  const demoSearch = useCallback((q: string) => {
+  // Demo search fallback using local data
+  const demoSearch = useCallback((q: string): Track[] => {
     const allTracks = playlists.flatMap((p) => p.tracks);
     const lowerQuery = q.toLowerCase();
     return allTracks.filter(
@@ -24,35 +22,31 @@ export default function SearchPage() {
     );
   }, [playlists]);
 
-  // Search handler with Supabase
+  // Debounced search
   useEffect(() => {
     if (!query.trim()) {
       setResults([]);
       return;
     }
 
-    async function doSearch() {
+    const timer = setTimeout(async () => {
       setSearching(true);
       try {
-        // Try Supabase first, fallback to demo
-        const supabaseResults = await searchTracks(query);
+        const supabaseResults = await searchTracksFromHook(query);
         if (supabaseResults.length > 0) {
           setResults(supabaseResults);
-        } else if (isDemo) {
+        } else {
           setResults(demoSearch(query));
         }
       } catch {
-        // Fallback to demo
         setResults(demoSearch(query));
       } finally {
         setSearching(false);
       }
-    }
+    }, 300);
 
-    // Debounce search
-    const timer = setTimeout(doSearch, 300);
     return () => clearTimeout(timer);
-  }, [query, searchTracks, isDemo, demoSearch]);
+  }, [query, searchTracksFromHook, demoSearch]);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-900 to-black text-white p-6">
@@ -72,7 +66,7 @@ export default function SearchPage() {
         </div>
 
         {/* Results */}
-        {query && (
+        {query ? (
           <div>
             {searching ? (
               <div className="flex items-center justify-center py-12">
@@ -81,7 +75,7 @@ export default function SearchPage() {
             ) : (
               <>
                 <h2 className="text-xl font-semibold mb-4">
-                  Результаты для "{query}" ({results.length})
+                  Результаты для &ldquo;{query}&rdquo; ({results.length})
                 </h2>
                 {results.length > 0 ? (
                   <TrackList tracks={results} />
@@ -94,10 +88,8 @@ export default function SearchPage() {
               </>
             )}
           </div>
-        )}
-
-        {/* Popular categories (when not searching) */}
-        {!query && (
+        ) : (
+          // Popular genres when no query
           <div>
             <h2 className="text-xl font-semibold mb-4">Популярные жанры</h2>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

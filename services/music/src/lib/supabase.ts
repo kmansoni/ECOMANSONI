@@ -9,17 +9,19 @@ const SUPABASE_ANON_KEY =
 let cachedClient: SupabaseClient | null = null;
 let cachedToken: string | null = null;
 
-// Получаем Mansoni JWT из глобальной переменной или localStorage
-// MusicPage устанавливает window.__MANSONI_TOKEN__ при загрузке модуля
+// Получаем Mansoni JWT из доступных источников
+// Порядок: глобальная переменная → sessionStorage → localStorage
 export function getAuthToken(): string | null {
-  if (typeof window !== 'undefined') {
-    return (
-      (window as any).__MANSONI_TOKEN__ ||
-      localStorage.getItem('mansoni_token') ||
-      localStorage.getItem('supabase.auth.token')
-    );
+  if (typeof window === 'undefined') {
+    return null;
   }
-  return null;
+
+  return (
+    (window as any).__MANSONI_TOKEN__ ||
+    sessionStorage.getItem('mansoni_token') ||
+    localStorage.getItem('mansoni_token') ||
+    localStorage.getItem('supabase.auth.token')
+  );
 }
 
 export function setMansoniToken(token: string) {
