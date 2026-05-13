@@ -1,7 +1,6 @@
 import { motion } from "framer-motion";
-import { QrCode, Smartphone } from "lucide-react";
+import { QrCode } from "lucide-react";
 import type { ThemeTokens } from "../types";
-import { QRCodeLogin } from "./QRCodeLogin";
 
 export function QRLoginSection({ tokens }: { tokens: ThemeTokens }) {
   return (
@@ -26,7 +25,6 @@ export function QRLoginSection({ tokens }: { tokens: ThemeTokens }) {
       >
         <QrCode className="w-5 h-5" />
         <span className="text-sm font-medium">Войти по QR-коду</span>
-        <Smartphone className="w-4 h-4 opacity-50" />
       </motion.button>
     </motion.div>
   );

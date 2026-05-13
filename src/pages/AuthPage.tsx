@@ -48,7 +48,6 @@ import { useAuthFlow, useMediaFlag, useOtpCountdown } from "./auth/hooks";
 import { PremiumAuthLayout, PremiumGlassCard } from "./auth/components/PremiumAuthLayout";
 import { BrandPanel } from "./auth/components/BrandPanel";
 import { WaveBackground } from "./auth/components/WaveBackground";
-import { AuthToggle } from "./auth/components/AuthToggle";
 import { SocialLoginButtons } from "./auth/components/SocialLoginButtons";
 import { QRLoginSection } from "./auth/components/QRLoginSection";
 import { SuccessScreen } from "./auth/components/SuccessScreen";
@@ -57,8 +56,7 @@ import { GlassSelect } from "./auth/components/GlassSelect";
 import { PrimaryButton } from "./auth/components/PrimaryButton";
 import { OtpInput } from "./auth/components/OtpInput";
 import { SecurityFooter } from "./auth/components/SecurityFooter";
-
-type AuthMode = "login" | "register";
+import { KindTipsTicker } from "./auth/components/KindTipsTicker";
 
 export function AuthPage() {
   const { theme, toggle } = useTheme("dark");
@@ -66,7 +64,6 @@ export function AuthPage() {
   const [flow, dispatch] = useAuthFlow();
   const navigate = useNavigate();
 
-  const [authMode, setAuthMode] = useState<AuthMode>("login");
   const otpEmailRef = useRef("");
   const otpSendUrlRef = useRef("");
   const isRegisterFlowRef = useRef(false);
@@ -75,8 +72,6 @@ export function AuthPage() {
   const isTouch = useMediaFlag("(pointer: coarse)");
   const reduced = useMediaFlag("(prefers-reduced-motion: reduce)");
   useOtpCountdown(flow.otpCountdown, dispatch);
-
-  const handleToggle = () => setAuthMode(prev => prev === "login" ? "register" : "login");
 
   const phoneDigits = flow.phone.replace(/\D/g, "");
   const canContinuePhone = phoneDigits.length >= 10;
@@ -187,7 +182,6 @@ export function AuthPage() {
       if (response.status === 404 && payloadString(data, "error") === "not_found") {
         toast.message("Аккаунта нет", { description: "Создайте новый — это займёт минуту" });
         dispatch({ type: "goto", step: "register" });
-        setAuthMode("register");
         return;
       }
 
@@ -480,36 +474,24 @@ export function AuthPage() {
         <div className="pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
 
         {/* Logo */}
-        <div className="flex items-center justify-center mb-6 mt-2">
+        <div className="flex items-center justify-center mb-4 mt-2">
           <span className="text-[24px] sm:text-[28px] tracking-[0.3em] uppercase font-bold text-gradient-brand">
             mansoni
           </span>
         </div>
 
-        {/* Auth Toggle */}
-        <AuthToggle mode={authMode} onToggle={handleToggle} tokens={tokens} />
+        {/* Kind Tips Ticker */}
+        <KindTipsTicker tokens={tokens} />
 
         {/* Steps */}
         <div className="relative flex flex-col gap-4">
           <AnimatePresence mode="wait">
-            {flow.step === "phone" && authMode === "login" && (
-              <motion.div key="phone-login" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            {flow.step === "phone" && (
+              <motion.div key="phone" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                 <div className="space-y-4">
-                  <PhoneInput value={flow.phone} onChange={(v) => dispatch({ type: "setPhone", phone: v })} dark={tokens.isDark} />
+                  <PhoneInput value={flow.phone} onChange={(v) => dispatch({ type: "setPhone", phone: v })} />
                   <PrimaryButton type="button" onClick={() => void submitPhone()} disabled={!canContinuePhone} loading={flow.loading}>
                     Получить код
-                  </PrimaryButton>
-                </div>
-                <QRLoginSection tokens={tokens} />
-              </motion.div>
-            )}
-
-            {flow.step === "phone" && authMode === "register" && (
-              <motion.div key="phone-register" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                <div className="space-y-4">
-                  <PhoneInput value={flow.phone} onChange={(v) => dispatch({ type: "setPhone", phone: v })} dark={tokens.isDark} />
-                  <PrimaryButton type="button" onClick={() => void submitPhone()} disabled={!canContinuePhone} loading={flow.loading}>
-                    Зарегистрироваться
                   </PrimaryButton>
                 </div>
                 <QRLoginSection tokens={tokens} />
