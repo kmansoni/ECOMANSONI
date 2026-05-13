@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { BookOpen, GraduationCap, Sparkles, BrainCircuit, ChevronRight, QrCode } from "lucide-react";
+import { BookOpen, GraduationCap, Sparkles, Map, ChevronRight, QrCode } from "lucide-react";
 import mansoniLogo from "/brand/mansoni-logo.svg";
 import type { ThemeTokens } from "../types";
 
@@ -11,41 +11,36 @@ export function BrandPanel({ tokens }: { tokens: ThemeTokens }) {
       transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1], delay: 0.2 }}
       className="hidden lg:flex flex-col justify-center w-[420px] xl:w-[480px] pr-8 xl:pr-12 py-8"
     >
-      {/* Brand logo */}
-      <div className="flex items-center gap-3 mb-6">
+      {/* Brand logo + tagline */}
+      <div className="flex items-center gap-3 mb-2">
         <img
           src={mansoniLogo}
           alt=""
           className="w-11 h-11 sm:w-12 sm:h-12 shrink-0"
           aria-hidden="true"
         />
-        <span
-          className="text-[28px] sm:text-[34px] font-bold tracking-[0.1em] uppercase text-gradient-brand"
-          style={{
-            fontFeatureSettings: '"ss01"',
-            textShadow: "0 0 30px rgba(6, 182, 212, 0.2)",
-          }}
-        >
-          mansoni
-        </span>
+        <div className="flex flex-col">
+          <span
+            className="text-[28px] sm:text-[34px] font-bold tracking-[0.1em] uppercase text-gradient-brand"
+            style={{
+              fontFeatureSettings: '"ss01"',
+              textShadow: "0 0 30px rgba(6, 182, 212, 0.2)",
+            }}
+          >
+            mansoni
+          </span>
+          <span className={`text-[11px] tracking-wide ${tokens.textMuted}`}>
+            Всё в одном приложении
+          </span>
+        </div>
       </div>
 
-      {/* Hero text */}
-      <h1 className={`text-[36px] xl:text-[42px] font-bold leading-[1.1] tracking-tight mb-4 ${tokens.textPrimary}`}>
-        Всё в одном
-        <br />
-        <span className="text-gradient-brand">приложении</span>
-      </h1>
-      <p className={`text-base xl:text-lg leading-relaxed mb-10 max-w-[380px] ${tokens.textSecondary}`}>
-        Мессенджер, соцсеть, маркетплейс, навигация, звонки — единый аккаунт с E2E-шифрованием и полным контролем над данными.
-      </p>
-
       {/* Feature cards */}
-      <div className="space-y-3 mb-10">
+      <div className="space-y-3 mt-8">
         {[
           { icon: <BookOpen className="w-5 h-5" />, label: "Мессенджер", desc: "E2E-шифрование, групповые чаты" },
           { icon: <Sparkles className="w-5 h-5" />, label: "Лента и Reels", desc: "Контент от друзей и по интересам" },
-          { icon: <BrainCircuit className="w-5 h-5" />, label: "Навигация", desc: "Маршруты, трафик, офлайн-карты" },
+          { icon: <Map className="w-5 h-5" />, label: "Навигация", desc: "Маршруты, трафик, офлайн-карты" },
           { icon: <GraduationCap className="w-5 h-5" />, label: "Маркетплейс", desc: "Покупки без лишних приложений" },
         ].map((item, i) => (
           <motion.div

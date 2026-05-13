@@ -481,7 +481,9 @@ export function AuthPage() {
         </div>
 
         {/* Kind Tips Ticker */}
-        <KindTipsTicker tokens={tokens} />
+        <div className="mb-6">
+          <KindTipsTicker tokens={tokens} />
+        </div>
 
         {/* Steps */}
         <div className="relative flex flex-col gap-4">
