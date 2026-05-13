@@ -4,12 +4,6 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 
-// IndexedDB mock via fake-indexeddb
-import fakeIndexedDB from 'fake-indexeddb';
-import Keyv from 'keyv';
-
-vi.mock('@/lib/telegram/miniApp', () => ({}));
-
 describe('cloudStorage', () => {
   beforeEach(async () => {
     // @ts-ignore

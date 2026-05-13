@@ -14,7 +14,7 @@ export function FeedBrandPanel({ tokens }: { tokens: ThemeTokens }) {
       <div>
         <div className="flex items-center gap-3 mb-8">
           <img
-            src="/brand/mansoni-logo.svg"
+            src="/brand/logo.png"
             alt=""
             className="w-10 h-10 sm:w-12 sm:h-12 shrink-0"
             aria-hidden="true"

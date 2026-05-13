@@ -4,8 +4,6 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('@/lib/telegram/miniApp', () => ({}));
-
 describe('device utilities', () => {
   beforeEach(() => {
     vi.clearAllMocks();

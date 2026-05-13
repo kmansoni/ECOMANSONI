@@ -474,7 +474,21 @@ export function AuthPage() {
 
         {/* Logo */}
         <div className="flex items-center justify-center gap-2 mt-2">
-          <img src="/brand/mansoni-logo.svg" alt="" className="w-8 h-8 sm:w-9 sm:h-9" aria-hidden="true" />
+          <motion.img
+            src="/brand/logo.png"
+            alt=""
+            className="w-8 h-8 sm:w-9 sm:h-9"
+            aria-hidden="true"
+            animate={{
+              filter: ["drop-shadow(0 0 8px rgba(0,180,216,0.4))", "drop-shadow(0 0 16px rgba(0,180,216,0.7))", "drop-shadow(0 0 8px rgba(0,180,216,0.4))"],
+              scale: [1, 1.02, 1],
+            }}
+            transition={{
+              duration: 3,
+              ease: "easeInOut",
+              repeat: Infinity,
+            }}
+          />
           <span className="text-[24px] sm:text-[28px] tracking-[0.3em] uppercase font-bold text-gradient-brand">
             mansoni
           </span>

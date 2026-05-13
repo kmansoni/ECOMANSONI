@@ -17,7 +17,7 @@ import type {
   GeoLocation, LocationRequestOptions, AccelerometerData,
   GyroscopeData, DeviceOrientationData, QRResult, QRScannerOptions,
   AttachmentFile, ContactPayload, EmojiStatus, BiometricStatus,
-  BiometricAuthenticateParams,
+  BiometricAuthenticateParams, DeviceInfo,
 } from './types';
 
 type Callback<T> = (data: T) => void;
@@ -150,7 +150,7 @@ export const deviceOrientation = {
 
 // ── QR Scanner (jsqr + fallback) ─────────────────────────
 
-let _jsqr: typeof import('jsqr') | null = null;
+let _jsqr: any = null;
 try { _jsqr = require('jsqr'); } catch { /* optional */ }
 
 function decodeQRFromCanvas(canvas: HTMLCanvasElement): string | null {
@@ -254,8 +254,8 @@ export const haptic = {
 export async function requestContact(): Promise<ContactPayload | null> {
   try {
     // @ts-ignore — experimental API
-    if (navigator.contacts?.select) {
-      const contacts = await navigator.contacts.select(['name', 'email', 'tel'], { multiple: false });
+    if ((navigator as any).contacts?.select) {
+      const contacts = await (navigator as any).contacts.select(['name', 'email', 'tel'], { multiple: false });
       if (contacts && contacts.length > 0) {
         const c = contacts[0];
         return { phoneNumber: c.tel?.[0]?.value || '', firstName: c.name?.given?.[0] || '', lastName: c.name?.family?.[0] || '' };
@@ -271,7 +271,7 @@ export async function requestContact(): Promise<ContactPayload | null> {
 }
 
 export function isContactsAPISupported(): boolean {
-  return typeof navigator.contacts?.select === 'function';
+  return typeof (navigator as any).contacts?.select === 'function';
 }
 
 // ── Camera / Attachments ────────────────────────────────

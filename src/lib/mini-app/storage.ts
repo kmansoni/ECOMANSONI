@@ -7,6 +7,8 @@
  * Не зависит от Telegram — использует только Web API.
  */
 
+import { getDeviceInfo } from './device';
+
 interface StorageItem {
   key: string;
   value: string;
@@ -146,7 +148,7 @@ const _sessionCache = new Map<string, string>();
 
 export const sessionStorage = {
   get: (key: string): string | null => _sessionCache.get(key) ?? null,
-  set: (key: string, value: string): void => _sessionCache.set(key, value),
-  delete: (key: string): void => _sessionCache.delete(key),
+  set: (key: string, value: string): void => { _sessionCache.set(key, value); },
+  delete: (key: string): void => { _sessionCache.delete(key); },
   clear: (): void => _sessionCache.clear(),
 };

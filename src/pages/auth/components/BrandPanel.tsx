@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import { BookOpen, GraduationCap, Sparkles, Map, ChevronRight, QrCode } from "lucide-react";
-import mansoniLogo from "/brand/mansoni-logo.svg";
+import mansoniLogo from "/brand/logo.png";
 import type { ThemeTokens } from "../types";
 
 export function BrandPanel({ tokens }: { tokens: ThemeTokens }) {

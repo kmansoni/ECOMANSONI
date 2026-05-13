@@ -56,6 +56,10 @@ import {
   // Misc
   sendData, getDeviceInfo,
   hideKeyboard,
+  // Dialogs
+  showPopup, showAlert, showConfirm,
+  // Additional API
+  addToHomeScreen, checkHomeScreenStatus,
 } from '@/lib/mini-app';
 
 import type { UseMiniAppReturn } from './useMiniApp.types';

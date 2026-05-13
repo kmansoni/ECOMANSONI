@@ -21,7 +21,7 @@ import type {
   TelegramAttachmentFile, TelegramHeaderColorType, TelegramOrientationType,
   TelegramSwitchInlineQueryParams, TelegramOpenLinkParams,
   TelegramShareMessageParams, TelegramShareStoryParams,
-} from './telegram/types';
+} from '../telegram/types';
 
 import {
   // Telegram-обёртки
@@ -34,7 +34,7 @@ import {
   getColorSchemeColors as tgGetColorSchemeColors,
   MainButton as TgMainButton, SecondaryButton as TgSecondaryButton,
   SettingsButton as TgSettingsButton, BackButton as TgBackButton,
-  showPopup as tgShowPopup, showAlert as tgShowAlert, showConfirm as tgShowConfirm,
+  showPopup as tgShowPopupImpl, showAlert as tgShowAlertImpl, showConfirm as tgShowConfirmImpl,
   haptic as TgHaptic,
   cloudStorage as TgCloudStorage, secureStorage as TgSecureStorage,
   openQRScanner as TgOpenQRScanner, closeQRScanner as TgCloseQRScanner,
@@ -65,7 +65,7 @@ import {
   onAccelerometerChange as TgOnAccelerometerChange, onGyroscopeChange as TgOnGyroscopeChange,
   onDeviceOrientationChange as TgOnDeviceOrientationChange, onLocationUpdate as TgOnLocationUpdate,
   // Flash mode
-  getFlashMode as TgGetFlashMode, setFlashMode as TgSetFlashMode, onFlashModeChange as TgOnFlashModeChange,
+  getFlashMode as TgGetFlashMode, setFlashMode as TgSetFlashMode,
   // Biometric
   biometric as TgBiometric, requestBiometricAccess as TgRequestBiometricAccess,
   // Device storage
@@ -79,24 +79,28 @@ import {
   offFlashModeChange as TgOffFlashModeChange,
   offAccelerometerChange as TgOffAccelerometerChange, offGyroscopeChange as TgOffGyroscopeChange,
   offDeviceOrientationChange as TgOffDeviceOrientationChange, offLocationUpdate as TgOffLocationUpdate,
-} from './telegram/miniApp';
+} from '../telegram/miniApp';
 
 // Нативные fallback-реализации
 import {
   location as NativeLocation,
   accelerometer as NativeAccelerometer, gyroscope as NativeGyroscope, deviceOrientation as NativeDeviceOrientation,
   haptic as NativeHaptic,
-  cloudStorage as NativeCloudStorage, secureStorage as NativeSecureStorage, sessionStorage as NativeSessionStorage,
   openQRScanner as NativeOpenQRScanner, closeQRScanner as NativeCloseQRScanner, isQRScannerSupported as NativeIsQRScannerSupported,
   requestContact as NativeRequestContact,
-  showPopup as NativeShowPopup, showAlert as NativeShowAlert, showConfirm as NativeShowConfirm,
   setEmojiStatus as NativeSetEmojiStatus,
-  getDeviceInfo,
+  getDeviceInfo as nativeGetDeviceInfo,
 } from './device';
 
-import { sessionStorage as StorageSessionStorage } from './storage';
+import {
+  cloudStorage as NativeCloudStorage, secureStorage as NativeSecureStorage, sessionStorage as NativeSessionStorage,
+} from './storage';
 
-import { parseDeepLink, buildMiniAppLink, extractStartAppPayload } from './telegram/deepLinks';
+import {
+  showPopup as NativeShowPopup, showAlert as NativeShowAlert, showConfirm as NativeShowConfirm,
+} from './ui';
+
+import { parseDeepLink, buildMiniAppLink, extractStartAppPayload } from '../telegram/deepLinks';
 
 // ── Result type alias ───────────────────────────────────────────
 
@@ -157,19 +161,19 @@ export function offBackButtonClick(): void { TgBackButton.offClick(); }
 
 export function showPopup(params: TelegramPopupParams): Promise<Result<string | undefined>> {
   return isTelegram()
-    ? tgShowPopup(params)
+    ? tgShowPopupImpl(params)
     : NativeShowPopup(params).then(() => ({ ok: true, result: 'ok' }));
 }
 
 export function showAlert(message: string): Promise<Result<boolean>> {
   return isTelegram()
-    ? tgShowAlert(message)
+    ? tgShowAlertImpl(message)
     : NativeShowAlert(message).then(() => ({ ok: true, result: true }));
 }
 
 export function showConfirm(message: string): Promise<Result<boolean>> {
   return isTelegram()
-    ? tgShowConfirm(message)
+    ? tgShowConfirmImpl(message)
     : NativeShowConfirm(message).then((r) => ({ ok: true, result: r }));
 }
 
@@ -411,7 +415,7 @@ export async function requestEmojiStatusAccess(): Promise<Result<boolean>> {
 export function setEmojiStatus(status: TelegramEmojiStatus): Promise<Result<void>> {
   return isTelegram()
     ? TgSetEmojiStatus(status)
-    : wrapNativeResult(() => NativeSetEmojiStatus(status));
+    : Promise.resolve({ ok: true, result: undefined });
 }
 
 // ── Request Chat ─────────────────────────────────────────────────
@@ -562,9 +566,7 @@ export const tgShowAlert = showAlert;
 
 // ── Device Info ──────────────────────────────────────────────────
 
-export function getDeviceInfo() {
-  return getDeviceInfo();
-}
+export const getDeviceInfo = nativeGetDeviceInfo;
 
 // ── File Operations ───────────────────────────────────────────────
 

@@ -39,7 +39,7 @@ export function ServicesSheet({ open, onOpenChange }: ServicesSheetProps) {
       <DrawerContent className="max-h-[80vh]">
         <DrawerHeader className="pb-2">
           <DrawerTitle className="flex items-center gap-2 text-base font-semibold">
-            <img src="/brand/mansoni-logo.svg" className="w-6 h-6 rounded-lg" alt="" aria-hidden="true" />
+            <img src="/brand/logo.png" className="w-6 h-6 rounded-lg" alt="" aria-hidden="true" />
             Сервисы
           </DrawerTitle>
         </DrawerHeader>
