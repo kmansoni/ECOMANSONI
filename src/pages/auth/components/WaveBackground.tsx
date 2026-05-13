@@ -25,49 +25,49 @@ export function WaveBackground({ tokens }: { tokens: ThemeTokens }) {
         }}
       />
 
-      {/* Bottom waves */}
-      <div className="absolute bottom-0 left-0 right-0 h-[350px]">
-        <svg viewBox="0 0 1440 350" className="w-full h-full" preserveAspectRatio="none">
-          {/* Wave 1 - back, cyan */}
+      {/* Bottom waves - full width, anchored to bottom */}
+      <div className="absolute bottom-0 left-0 right-0 h-[45%] sm:h-[35%]">
+        <svg viewBox="0 0 1440 400" className="w-full h-full" preserveAspectRatio="xMidYMax slice">
+          {/* Wave 1 - back, cyan - tallest */}
           <motion.path
-            d="M0,200 C240,150 480,250 720,180 C960,110 1200,200 1440,160 L1440,350 L0,350 Z"
-            fill={tokens.isDark ? "rgba(0,180,216,0.08)" : "rgba(0,180,216,0.06)"}
+            d="M0,250 C360,150 720,300 1080,200 C1260,150 1380,220 1440,200 L1440,400 L0,400 Z"
+            fill={tokens.isDark ? "rgba(0,180,216,0.12)" : "rgba(0,180,216,0.08)"}
             animate={{
               d: [
-                "M0,200 C240,150 480,250 720,180 C960,110 1200,200 1440,160 L1440,350 L0,350 Z",
-                "M0,160 C240,220 480,140 720,200 C960,260 1200,180 1440,220 L1440,350 L0,350 Z",
-                "M0,200 C240,150 480,250 720,180 C960,110 1200,200 1440,160 L1440,350 L0,350 Z",
+                "M0,250 C360,150 720,300 1080,200 C1260,150 1380,220 1440,200 L1440,400 L0,400 Z",
+                "M0,200 C360,280 720,180 1080,280 C1260,320 1380,250 1440,260 L1440,400 L0,400 Z",
+                "M0,250 C360,150 720,300 1080,200 C1260,150 1380,220 1440,200 L1440,400 L0,400 Z",
               ],
             }}
-            transition={{ duration: 8, ease: "easeInOut", repeat: Infinity }}
+            transition={{ duration: 10, ease: "easeInOut", repeat: Infinity }}
           />
 
           {/* Wave 2 - middle, teal */}
           <motion.path
-            d="M0,240 C300,190 600,270 900,210 C1100,170 1300,250 1440,220 L1440,350 L0,350 Z"
-            fill={tokens.isDark ? "rgba(0,200,150,0.06)" : "rgba(0,200,150,0.05)"}
+            d="M0,320 C400,250 800,350 1200,300 C1320,280 1380,330 1440,320 L1440,400 L0,400 Z"
+            fill={tokens.isDark ? "rgba(0,200,150,0.10)" : "rgba(0,200,150,0.07)"}
             animate={{
               d: [
-                "M0,240 C300,190 600,270 900,210 C1100,170 1300,250 1440,220 L1440,350 L0,350 Z",
-                "M0,220 C300,280 600,200 900,260 C1100,300 1300,220 1440,260 L1440,350 L0,350 Z",
-                "M0,240 C300,190 600,270 900,210 C1100,170 1300,250 1440,220 L1440,350 L0,350 Z",
+                "M0,320 C400,250 800,350 1200,300 C1320,280 1380,330 1440,320 L1440,400 L0,400 Z",
+                "M0,280 C400,340 800,260 1200,350 C1320,380 1380,320 1440,330 L1440,400 L0,400 Z",
+                "M0,320 C400,250 800,350 1200,300 C1320,280 1380,330 1440,320 L1440,400 L0,400 Z",
               ],
             }}
-            transition={{ duration: 10, ease: "easeInOut", repeat: Infinity, delay: 0.5 }}
+            transition={{ duration: 12, ease: "easeInOut", repeat: Infinity, delay: 0.7 }}
           />
 
-          {/* Wave 3 - front, emerald glow */}
+          {/* Wave 3 - front, emerald - brightest */}
           <motion.path
-            d="M0,280 C400,230 800,300 1200,250 C1320,230 1380,270 1440,260 L1440,350 L0,350 Z"
-            fill={tokens.isDark ? "rgba(79,208,128,0.05)" : "rgba(79,208,128,0.04)"}
+            d="M0,380 C500,340 1000,390 1440,360 L1440,400 L0,400 Z"
+            fill={tokens.isDark ? "rgba(79,208,128,0.08)" : "rgba(79,208,128,0.05)"}
             animate={{
               d: [
-                "M0,280 C400,230 800,300 1200,250 C1320,230 1380,270 1440,260 L1440,350 L0,350 Z",
-                "M0,260 C400,310 800,240 1200,290 C1320,310 1380,270 1440,280 L1440,350 L0,350 Z",
-                "M0,280 C400,230 800,300 1200,250 C1320,230 1380,270 1440,260 L1440,350 L0,350 Z",
+                "M0,380 C500,340 1000,390 1440,360 L1440,400 L0,400 Z",
+                "M0,360 C500,400 1000,350 1440,380 L1440,400 L0,400 Z",
+                "M0,380 C500,340 1000,390 1440,360 L1440,400 L0,400 Z",
               ],
             }}
-            transition={{ duration: 12, ease: "easeInOut", repeat: Infinity, delay: 1 }}
+            transition={{ duration: 14, ease: "easeInOut", repeat: Infinity, delay: 1.4 }}
           />
         </svg>
       </div>

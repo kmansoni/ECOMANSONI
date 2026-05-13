@@ -39,11 +39,11 @@ type Result<T> = { ok: true; result: T } | { ok: false; error: string };
 
 // ── Bridge ──────────────────────────────────────────────
 
-function tg(): Telegram.WebApp | null {
+function tg(): any {
   if (typeof window === 'undefined') return null;
   try {
     const raw = (window as any).Telegram?.WebApp;
-    return raw && typeof raw.ready === 'function' ? (raw as Telegram.WebApp) : null;
+    return raw && typeof raw.ready === 'function' ? raw : null;
   } catch { return null; }
 }
 
@@ -58,7 +58,7 @@ async function asyncWrap<T>(fn: (ok: (v: T) => void, err: (e: string) => void) =
       (v) => resolve({ ok: true, result: v }),
       (e) => resolve({ ok: false, error: e })
     );
-  }).catch((e: any) => ({ ok: false, error: e.message }));
+  }).catch((e: any) => ({ ok: false, error: e.message || String(e) }));
 }
 
 // ── Lifecycle ───────────────────────────────────────────
@@ -451,7 +451,6 @@ export function shareFiles(files: TelegramAttachmentFile[]): Result<void> {
 // ── Bio Check ───────────────────────────────────────────
 
 export function showBioCheckPopup(params: { text?: string; username?: string; bio?: string; photo_url?: string }, cb: (r: any) => void) {
-  // @ts-expect-error — newer API may not be typed yet
   tg()?.showBioCheckPopup?.(params, cb);
 }
 

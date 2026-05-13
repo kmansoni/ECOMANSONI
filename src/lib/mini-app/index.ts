@@ -25,7 +25,6 @@ import type {
 
 import {
   // Telegram-обёртки
-  tg as getTg,
   ready as tgReady, expand as tgExpand, close as tgClose,
   getPlatform as tgGetPlatform, getVersion as tgGetVersion,
   getColorScheme as tgGetColorScheme, getThemeParams as tgGetThemeParams,
@@ -114,6 +113,16 @@ function wrapNativeResult<T>(fn: () => Promise<T>): Promise<Result<T>> {
 
 // ── Detection ─────────────────────────────────────────────────────
 
+function getTg(): any {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = (window as any).Telegram?.WebApp;
+    return raw && typeof raw.ready === 'function' ? raw : null;
+  } catch {
+    return null;
+  }
+}
+
 function isTelegram(): boolean {
   if (typeof window === 'undefined') return false;
   const tg = getTg();
@@ -142,9 +151,11 @@ export function setBackgroundColor(color: string): void {
   if (isTelegram()) tgSetBackgroundColor(color);
 }
 export function getColorSchemeColors(): { bg_color: string; button_color: string; button_text_color: string } {
-  return isTelegram()
-    ? tgGetColorSchemeColors()
-    : { bg_color: '#ffffff', button_color: '#6c63ff', button_text_color: '#ffffff' };
+  if (isTelegram()) {
+    const res = tgGetColorSchemeColors();
+    return res.ok ? res.result : { bg_color: '#ffffff', button_color: '#6c63ff', button_text_color: '#ffffff' };
+  }
+  return { bg_color: '#ffffff', button_color: '#6c63ff', button_text_color: '#ffffff' };
 }
 
 // ── Buttons ───────────────────────────────────────────────────────
@@ -162,7 +173,7 @@ export function offBackButtonClick(): void { TgBackButton.offClick(); }
 export function showPopup(params: TelegramPopupParams): Promise<Result<string | undefined>> {
   return isTelegram()
     ? tgShowPopupImpl(params)
-    : NativeShowPopup(params).then(() => ({ ok: true, result: 'ok' }));
+    : NativeShowPopup(params).then((r) => ({ ok: true, result: r.buttonId }));
 }
 
 export function showAlert(message: string): Promise<Result<boolean>> {
@@ -174,7 +185,7 @@ export function showAlert(message: string): Promise<Result<boolean>> {
 export function showConfirm(message: string): Promise<Result<boolean>> {
   return isTelegram()
     ? tgShowConfirmImpl(message)
-    : NativeShowConfirm(message).then((r) => ({ ok: true, result: r }));
+    : NativeShowConfirm(message).then((r) => ({ ok: true, result: r.ok }));
 }
 
 // ── Haptics ───────────────────────────────────────────────────────
@@ -238,7 +249,11 @@ export const deviceStorage = isTelegram() ? TgDeviceStorage : {
 
 export function openQRScanner(text?: string): Promise<Result<TelegramQRCodeText | null>> {
   return isTelegram()
-    ? TgOpenQRScanner(text)
+    ? new Promise((resolve) => {
+        TgOpenQRScanner(text, (data) => {
+          resolve({ ok: true, result: data });
+        });
+      })
     : wrapNativeResult(() => NativeOpenQRScanner());
 }
 
@@ -257,8 +272,18 @@ export async function requestContact(): Promise<Result<TelegramContactPayload | 
   if (isTelegram()) {
     return await TgRequestContact();
   }
-  const result = await NativeRequestContact();
-  return { ok: true, result };
+  const native = await NativeRequestContact();
+  if (!native) {
+    return { ok: true, result: null };
+  }
+  return {
+    ok: true,
+    result: {
+      phone_number: native.phoneNumber,
+      first_name: native.firstName,
+      last_name: native.lastName,
+    },
+  };
 }
 
 export function requestWriteAccess(): Promise<Result<boolean>> {
@@ -324,30 +349,54 @@ export const deviceOrientation = isTelegram()
 // ── Fullscreen & Orientation ─────────────────────────────────────
 
 export function requestFullscreen(): Promise<void> {
-  return isTelegram() ? TgRequestFullscreen() : document.documentElement.requestFullscreen?.() ?? Promise.resolve();
+  if (isTelegram()) {
+    TgRequestFullscreen();
+    return Promise.resolve();
+  }
+  return document.documentElement.requestFullscreen?.() ?? Promise.resolve();
 }
 export function exitFullscreen(): Promise<void> {
-  return isTelegram() ? TgExitFullscreen() : document.exitFullscreen?.() ?? Promise.resolve();
+  if (isTelegram()) {
+    TgExitFullscreen();
+    return Promise.resolve();
+  }
+  return document.exitFullscreen?.() ?? Promise.resolve();
 }
 export function isFullscreen(): boolean {
   return isTelegram() ? TgIsFullscreen() : !!document.fullscreenElement;
 }
 
 export function lockOrientation(orientation: TelegramOrientationType): Promise<void> {
-  return isTelegram() ? TgLockOrientation(orientation) : Promise.resolve();
+  if (isTelegram()) {
+    TgLockOrientation(orientation);
+    return Promise.resolve();
+  }
+  return Promise.resolve();
 }
 export function unlockOrientation(): Promise<void> {
-  return isTelegram() ? TgUnlockOrientation() : Promise.resolve();
+  if (isTelegram()) {
+    TgUnlockOrientation();
+    return Promise.resolve();
+  }
+  return Promise.resolve();
 }
 export function isOrientationLocked(): boolean {
   return isTelegram() ? TgIsOrientationLocked() : false;
 }
 
 export function enableVerticalSwipes(): Promise<void> {
-  return isTelegram() ? TgEnableVerticalSwipes() : Promise.resolve();
+  if (isTelegram()) {
+    TgEnableVerticalSwipes();
+    return Promise.resolve();
+  }
+  return Promise.resolve();
 }
 export function disableVerticalSwipes(): Promise<void> {
-  return isTelegram() ? TgDisableVerticalSwipes() : Promise.resolve();
+  if (isTelegram()) {
+    TgDisableVerticalSwipes();
+    return Promise.resolve();
+  }
+  return Promise.resolve();
 }
 export function isVerticalSwipesEnabled(): boolean {
   return isTelegram() ? TgIsVerticalSwipesEnabled() : false;
@@ -393,7 +442,7 @@ export function shareToStory(params: { media_url: string; text?: string; widget_
 }
 export function shareMessage(params: TelegramShareMessageParams): Promise<Result<boolean>> {
   return isTelegram()
-    ? TgShareMessage(params)
+    ? TgShareMessage(params).then(res => res.ok ? { ok: true, result: true } : { ok: false, error: res.error })
     : Promise.resolve(navigator.share?.(params) ? { ok: true, result: true } : { ok: false, error: 'share_not_supported' });
 }
 export function readTextFromClipboard(): Promise<Result<string>> {
@@ -537,7 +586,7 @@ export async function requestBiometricAccess(): Promise<Result<boolean>> {
 // ── Init Data ────────────────────────────────────────────────────
 
 export function getInitData(): Record<string, unknown> | null {
-  return isTelegram() ? TgGetInitData() : null;
+  return isTelegram() ? (TgGetInitData() as Record<string, unknown> | null) : null;
 }
 export function getInitDataRaw(): string | undefined {
   return isTelegram() ? TgGetInitDataRaw() : undefined;

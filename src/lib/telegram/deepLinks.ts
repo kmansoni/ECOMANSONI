@@ -97,3 +97,7 @@ export default {
   buildDeepLink,
   trackDeepLink,
 };
+
+export const parseDeepLink = parseTelegramLink;
+export const buildMiniAppLink = buildDeepLink;
+export const extractStartAppPayload = parseStartApp;
