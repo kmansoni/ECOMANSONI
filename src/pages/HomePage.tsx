@@ -16,6 +16,7 @@ import { FeedBrandPanel } from "@/components/feed/FeedBrandPanel";
 import { PremiumFeedToggle } from "@/components/feed/PremiumFeedToggle";
 import { FeedLayout, FeedTransition } from "@/components/feed/FeedLayout";
 import { CreatePostFAB } from "@/components/feed/CreatePostFAB";
+import { formatRelativeTime } from "@/lib/reels/format";
 import { useTheme, useThemeTokens } from "@/pages/auth/theme";
 import { SidebarWidgetContainer } from "@/components/sidebar/SidebarWidgetContainer";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -174,7 +175,7 @@ export function HomePage() {
                   {filteredPosts.map((post, i) => {
                     const sid = typeof post.id === "string" && post.id.trim().length > 0 ? post.id : `post-gen-${i}`;
                     const sa = typeof post.author_id === "string" && post.author_id.trim().length > 0 ? post.author_id : "unknown";
-                    const sn = post.author?.display_name || sa.slice(0, 8);
+                    const sn = post.author?.username || post.author?.display_name || sa.slice(0, 8);
                     return (
                       <FeedTransition key={sid}>
                         <div className="rounded-2xl overflow-hidden mb-4" style={{ background: feedBg, border: `1px solid ${feedBorder}` }}>
@@ -189,7 +190,7 @@ export function HomePage() {
                             comments={post.comments_count}
                             shares={post.shares_count}
                             saves={post.saves_count}
-                            timeAgo={post.created_at}
+                            timeAgo={formatRelativeTime(post.created_at)}
                             isLiked={post.is_liked}
                             onLikeChange={handleLikeChange}
                             hideLikes={post.hide_likes_count}

@@ -37,6 +37,7 @@ export type FeedMode = 'smart' | 'chronological' | 'following';
 
 export interface FeedAuthor {
   id: string;
+  username: string | null;
   display_name: string | null;
   avatar_url: string | null;
   is_verified: boolean;
@@ -93,6 +94,7 @@ interface PublicFeedRow {
 
 interface PublicProfileRow {
   user_id: string;
+  username: string | null;
   display_name: string | null;
   avatar_url: string | null;
   verified?: boolean | null;
@@ -200,7 +202,7 @@ async function fetchPublicFeedPage(
   if (authorIds.length > 0) {
     const { data: profileRows, error: profilesError } = await dbLoose
       .from("profiles")
-      .select("user_id, display_name, avatar_url, verified")
+      .select("user_id, username, display_name, avatar_url, verified")
       .in("user_id", authorIds);
 
     if (!profilesError) {
@@ -227,6 +229,7 @@ async function fetchPublicFeedPage(
       is_saved: false,
       author: {
         id: row.author_id,
+        username: profile?.username ?? null,
         display_name: profile?.display_name ?? null,
         avatar_url: profile?.avatar_url ?? null,
         is_verified: Boolean(profile?.verified),
@@ -409,7 +412,7 @@ export function useSmartFeed() {
             score: 0,
             is_liked: false,
             is_saved: false,
-            author: { id: String(newPost.author_id ?? ''), display_name: null, avatar_url: null, is_verified: false },
+            author: { id: String(newPost.author_id ?? ''), username: null, display_name: null, avatar_url: null, is_verified: false },
             media: [],
           };
 
