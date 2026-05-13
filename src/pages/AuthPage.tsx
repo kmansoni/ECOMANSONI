@@ -474,7 +474,8 @@ export function AuthPage() {
         <div className="pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
 
         {/* Logo */}
-        <div className="flex items-center justify-center mb-4 mt-2">
+        <div className="flex items-center justify-center gap-2 mb-4 mt-2">
+          <img src="/brand/mansoni-logo.svg" alt="" className="w-8 h-8 sm:w-9 sm:h-9" aria-hidden="true" />
           <span className="text-[24px] sm:text-[28px] tracking-[0.3em] uppercase font-bold text-gradient-brand">
             mansoni
           </span>

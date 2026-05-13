@@ -80,22 +80,6 @@ export function BrandPanel({ tokens }: { tokens: ThemeTokens }) {
         </div>
         <ChevronRight className={`w-4 h-4 shrink-0 ${tokens.textFaint}`} />
       </motion.button>
-
-      {/* Trust badge */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 1 }}
-        className={`p-4 rounded-2xl border backdrop-blur-xl ${tokens.glassCardSoft}`}
-      >
-        <div className="flex items-center gap-2 mb-2">
-          <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-          <span className={`text-xs font-medium ${tokens.textPrimary}`}>Защита данных</span>
-        </div>
-        <p className={`text-[11px] leading-relaxed ${tokens.textMuted}`}>
-          E2E-шифрование · RLS-безопасность · TLS 1.3 · AES-256 на устройстве
-        </p>
-      </motion.div>
     </motion.div>
   );
 }
