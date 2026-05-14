@@ -10,8 +10,19 @@ export function PremiumAuthLayout({
 }) {
   return (
     <div
-      className={`relative flex min-h-[100dvh] w-full items-center justify-center px-3 py-6 sm:px-6 sm:py-8 ${tokens.textPrimary}`}
-      style={{ paddingTop: "env(safe-area-inset-top)", paddingBottom: "env(safe-area-inset-bottom)" }}
+      className={`relative flex min-h-[100dvh] w-full items-center justify-center px-4 py-6 sm:px-5 sm:py-7 md:px-6 md:py-8 ${tokens.textPrimary}`}
+      style={{
+        paddingTop: "env(safe-area-inset-top)",
+        paddingBottom: "env(safe-area-inset-bottom)",
+        // Типографическая шкала (все размеры кратны 4px)
+        "--text-xs": "11px",
+        "--text-sm": "13px",
+        "--text-base": "15px",
+        "--text-lg": "18px",
+        "--text-xl": "22px",
+        "--text-2xl": "28px",
+        "--text-3xl": "36px",
+      } as React.CSSProperties}
     >
       {/* Ambient background */}
       <div className="absolute inset-0">
@@ -34,8 +45,16 @@ export function PremiumAuthLayout({
         />
       </div>
 
-      {/* Main content */}
-      <div className="relative z-10 flex w-full max-w-5xl items-stretch">
+      {/* Mobile edge effect */}
+      <div
+        className="pointer-events-none absolute inset-0 sm:hidden z-20"
+        style={{
+          boxShadow: "inset 0 0 40px rgba(0,0,0,0.4), inset 0 0 8px rgba(0,0,0,0.3)",
+        }}
+      />
+
+      {/* Main content — flex container with smooth transitions */}
+      <div className="relative z-10 flex w-full max-w-5xl items-stretch gap-4 md:gap-6">
         {children}
       </div>
     </div>
@@ -53,18 +72,19 @@ export function PremiumGlassCard({
 }) {
   return (
     <div
-      className={`relative overflow-hidden rounded-2xl sm:rounded-3xl ${tokens.glassCardShadow} ${className}`}
+      className={`relative w-full max-w-[440px] overflow-hidden rounded-lg sm:rounded-2xl md:rounded-[2rem] transition-all duration-300 ease-out ${className}`}
       style={{
         background: tokens.isDark
           ? "linear-gradient(135deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.02) 50%, rgba(255,255,255,0.04) 100%)"
           : "linear-gradient(135deg, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.85) 50%, rgba(255,255,255,0.92) 100%)",
-        backdropFilter: "blur(40px) saturate(180%)",
+        backdropFilter: "blur(50px) saturate(200%)",
+        WebkitBackdropFilter: "blur(50px) saturate(200%)",
         border: tokens.isDark
-          ? "1px solid rgba(255,255,255,0.08)"
-          : "1px solid rgba(0,0,0,0.05)",
+          ? "1px solid rgba(255,255,255,0.1)"
+          : "1px solid rgba(0,0,0,0.06)",
         boxShadow: tokens.isDark
-          ? "0 8px 40px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.08), inset 0 -1px 0 rgba(0,0,0,0.1)"
-          : "0 8px 40px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.8)",
+          ? "0 20px 60px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.1), inset 0 -1px 0 rgba(0,0,0,0.2), 0 0 1px rgba(0,188,212,0.3)"
+          : "0 20px 60px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.9), inset 0 -1px 0 rgba(0,0,0,0.05)",
       }}
     >
       {/* Subtle top highlight */}

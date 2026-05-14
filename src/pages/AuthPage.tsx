@@ -47,7 +47,6 @@ import { useAuthFlow, useMediaFlag, useOtpCountdown } from "./auth/hooks";
 // Premium components
 import { PremiumAuthLayout, PremiumGlassCard } from "./auth/components/PremiumAuthLayout";
 import { BrandPanel } from "./auth/components/BrandPanel";
-import { WaveBackground } from "./auth/components/WaveBackground";
 import { SocialLoginButtons } from "./auth/components/SocialLoginButtons";
 import { SuccessScreen } from "./auth/components/SuccessScreen";
 import { GlassInput } from "./auth/components/GlassInput";
@@ -436,89 +435,90 @@ export function AuthPage() {
 
   return (
     <PremiumAuthLayout tokens={tokens}>
-      <WaveBackground tokens={tokens} />
+      {/* Desktop: Brand Panel */}
+      <div className="hidden lg:flex flex-col justify-center w-[400px] xl:w-[460px] pr-8 xl:pr-12 shrink-0">
+        <BrandPanel tokens={tokens} />
+      </div>
 
-      {/* Brand Panel - left side on desktop */}
-      <BrandPanel tokens={tokens} />
-
-      {/* Auth Card - right side */}
-      <PremiumGlassCard tokens={tokens} className="w-full max-w-[440px] p-6 sm:p-8 max-h-[90vh] overflow-y-auto">
-        {/* Top row: Back button + Theme toggle - always visible */}
-        <div className="absolute top-4 left-4 right-4 flex items-center justify-between z-10">
-          <AnimatePresence>
-            {flow.step !== "phone" && (
-              <motion.button
-                key="back-btn"
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -10 }}
-                onClick={handleBack}
-                className="h-10 w-10 rounded-full border border-white/10 bg-white/[0.05] backdrop-blur-xl flex items-center justify-center transition hover:bg-white/[0.1]"
-              >
-                <ChevronLeft className="h-5 w-5 text-white/70" />
-              </motion.button>
-            )}
-            {(flow.step === "phone" || !flow.step) && <div className="w-10" />}
-          </AnimatePresence>
-          <motion.button
+      {/* Auth Card - centered on all screen sizes */}
+      <PremiumGlassCard tokens={tokens} className="flex flex-col w-full sm:w-[460px] sm:flex-none p-5 sm:p-8">
+        {/* Header: Logo + Brand + Theme toggle */}
+        <div className="flex items-center justify-between mb-6 sm:mb-8">
+          <div className="flex items-center gap-2">
+            <img
+              src="/brand/logo.png"
+              alt=""
+              className="w-8 h-8"
+              aria-hidden="true"
+            />
+            <span className="text-lg sm:text-xl tracking-[0.2em] uppercase font-bold text-gradient-brand">
+              mansoni
+            </span>
+          </div>
+          <button
             onClick={toggle}
-            whileTap={{ scale: 0.9 }}
-            className="h-10 w-10 rounded-full border border-white/10 bg-white/[0.05] backdrop-blur-xl flex items-center justify-center transition hover:bg-white/[0.1]"
-            aria-label="Toggle theme"
+            className="h-10 w-10 rounded-full border border-white/10 bg-white/5 flex items-center justify-center hover:bg-white/10 active:scale-95 transition-all"
+            aria-label="Переключить тему"
           >
-            {theme === "dark" ? <Moon className="h-5 w-5 text-white/70" /> : <Sun className="h-5 w-5 text-white/70" />}
-          </motion.button>
-        </div>
-
-        <div className="pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
-
-        {/* Logo */}
-        <div className="flex items-center justify-center gap-2 mt-2">
-          <motion.img
-            src="/brand/logo.png"
-            alt=""
-            className="w-8 h-8 sm:w-9 sm:h-9"
-            aria-hidden="true"
-            animate={{
-              y: [0, -3, 0],
-              filter: [
-                "drop-shadow(0 0 12px rgba(0,188,212,0.5))",
-                "drop-shadow(0 0 20px rgba(0,188,212,0.8))",
-                "drop-shadow(0 0 12px rgba(0,188,212,0.5))",
-              ],
-            }}
-            transition={{
-              y: { duration: 4, ease: "easeInOut", repeat: Infinity },
-              filter: { duration: 4, ease: "easeInOut", repeat: Infinity },
-            }}
-          />
-          <span className="text-[24px] sm:text-[28px] tracking-[0.3em] uppercase font-bold text-gradient-brand">
-            mansoni
-          </span>
-        </div>
-
-        {/* Kind Tips Ticker */}
-        <div className="flex-1 flex flex-col justify-end pb-4">
-          <KindTipsTicker tokens={tokens} />
-        </div>
-
-        {/* Steps */}
-        <div className="relative flex flex-col gap-4 mt-auto">
-          <AnimatePresence mode="wait">
-            {flow.step === "phone" && (
-              <motion.div key="phone" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                <div className="space-y-4">
-                  <PhoneInput value={flow.phone} onChange={(v) => dispatch({ type: "setPhone", phone: v })} />
-                  <PrimaryButton type="button" onClick={() => void submitPhone()} disabled={!canContinuePhone} loading={flow.loading}>
-                    Получить код
-                  </PrimaryButton>
-                </div>
-              </motion.div>
+            {theme === "dark" ? (
+              <Moon className="h-4 w-4 text-white/60" />
+            ) : (
+              <Sun className="h-4 w-4 text-white/60" />
             )}
+          </button>
+        </div>
 
-            {flow.step === "register" && (
-              <motion.div key="register" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-4">
-                <h2 className="text-xl font-bold text-white">Создать аккаунт</h2>
+        {/* Hero: "Добрые мысли" — аккуратный блок */}
+        <div className="text-center mb-8 sm:mb-10">
+          <h1 className="text-xl sm:text-2xl font-bold text-white mb-2">
+            Отпусти лишнее
+          </h1>
+          <p className="text-xs sm:text-sm text-white/50 tracking-wide">
+            ДОБРЫЕ МЫСЛИ • ЭФИР
+          </p>
+        </div>
+
+        {/* Main Flow: Phone Input + Button */}
+        <div className="space-y-3 mb-6">
+          <PhoneInput
+            value={flow.phone}
+            onChange={(v) => dispatch({ type: "setPhone", phone: v })}
+          />
+          <PrimaryButton
+            type="button"
+            onClick={() => void submitPhone()}
+            disabled={!canContinuePhone}
+            loading={flow.loading}
+          >
+            Получить код
+          </PrimaryButton>
+        </div>
+
+        {/* Social Login */}
+        <SocialLoginButtons tokens={tokens} />
+
+        {/* Footer: Security + Legal */}
+        <SecurityFooter tokens={tokens} />
+
+        {/* Other Auth Steps (OTP, Register, etc.) */}
+        <AnimatePresence mode="wait">
+          {flow.step === "register" && (
+            <motion.div
+              key="register"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="absolute inset-x-0 bottom-0 top-0 bg-[var(--bg-primary)] p-5 sm:p-8 flex flex-col overflow-y-auto"
+            >
+              <button
+                onClick={handleBack}
+                className="flex items-center gap-2 text-white/60 mb-6"
+              >
+                <ChevronLeft className="h-5 w-5" />
+                Назад
+              </button>
+              <h2 className="text-xl font-bold text-white mb-4">Создать аккаунт</h2>
+              <div className="space-y-3 flex-1">
                 <div className="grid grid-cols-2 gap-3">
                   <GlassInput tokens={tokens} id="firstName" label="Имя *" value={flow.firstName} onChange={(v) => dispatch({ type: "setRegisterField", field: "firstName", value: v })} />
                   <GlassInput tokens={tokens} id="lastName" label="Фамилия *" value={flow.lastName} onChange={(v) => dispatch({ type: "setRegisterField", field: "lastName", value: v })} />
@@ -531,22 +531,19 @@ export function AuthPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className={`text-[10px] tracking-[0.18em] uppercase opacity-80 ${tokens.textSecondary}`}>Дата рождения *</label>
+                    <label className="text-[10px] tracking-[0.18em] uppercase text-white/50">Дата рождения *</label>
                     <input
                       type="date"
                       value={flow.birthDate}
                       onChange={(e) => dispatch({ type: "setRegisterField", field: "birthDate", value: e.target.value })}
-                      className="w-full h-14 px-4 rounded-2xl border border-white/[0.08] bg-white/[0.05] backdrop-blur-xl text-white text-[15px] outline-none transition-all hover:border-white/15 focus:border-white/20"
+                      className="w-full h-14 px-4 rounded-xl border border-white/10 bg-white/5 text-white text-[15px] outline-none transition-all"
                     />
                   </div>
                   <GlassSelect
                     id="gender"
                     label="Пол *"
                     value={flow.gender}
-                    options={[
-                      { value: "male", label: "Мужской" },
-                      { value: "female", label: "Женский" }
-                    ]}
+                    options={[{ value: "male", label: "Мужской" }, { value: "female", label: "Женский" }]}
                     onChange={(v) => dispatch({ type: "setRegisterField", field: "gender", value: v })}
                   />
                 </div>
@@ -554,63 +551,80 @@ export function AuthPage() {
                   id="entity"
                   label="Тип *"
                   value={flow.entityType}
-                  options={[
-                    { value: "individual", label: "Физ. лицо" },
-                    { value: "self_employed", label: "Самозанятый" },
-                    { value: "entrepreneur", label: "ИП" },
-                    { value: "legal_entity", label: "Юр. лицо" }
-                  ]}
+                  options={[{ value: "individual", label: "Физ. лицо" }, { value: "self_employed", label: "Самозанятый" }, { value: "entrepreneur", label: "ИП" }, { value: "legal_entity", label: "Юр. лицо" }]}
                   onChange={(v) => dispatch({ type: "setRegisterField", field: "entityType", value: v })}
                 />
                 {flow.registerError && <div className="text-xs rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-rose-200">{flow.registerError}</div>}
-                <PrimaryButton type="button" onClick={() => void submitRegister()} disabled={flow.loading} loading={flow.loading}>
-                  Создать аккаунт
-                </PrimaryButton>
-              </motion.div>
-            )}
+              </div>
+              <PrimaryButton type="button" onClick={() => void submitRegister()} disabled={flow.loading} loading={flow.loading} className="mt-4">
+                Создать аккаунт
+              </PrimaryButton>
+            </motion.div>
+          )}
 
-            {flow.step === "otp" && (
-              <motion.div key="otp" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-4">
-                <h2 className="text-xl font-bold text-white">Код подтверждения</h2>
-                <p className={`text-sm ${tokens.textMuted}`}>Отправлен на {flow.maskedEmail || otpEmailRef.current || "почту"}</p>
-                <OtpInput value={flow.otp} onChange={(v) => dispatch({ type: "setOtp", otp: v })} />
-                <PrimaryButton type="button" onClick={() => void submitOtp()} disabled={!canContinueOtp} loading={flow.loading}>
-                  Подтвердить
-                </PrimaryButton>
-                <div className={`text-center text-sm ${tokens.textMuted}`}>
-                  {flow.otpCountdown > 0 ? (
-                    <>Повторно через {Math.floor(flow.otpCountdown / 60)}:{String(flow.otpCountdown % 60).padStart(2, "0")}</>
-                  ) : (
-                    <button type="button" onClick={() => void handleResendOtp()} className={`${tokens.textPrimary} underline`}>Отправить ещё раз</button>
-                  )}
-                </div>
-              </motion.div>
-            )}
+          {flow.step === "otp" && (
+            <motion.div
+              key="otp"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="absolute inset-x-0 bottom-0 top-0 bg-[var(--bg-primary)] p-5 sm:p-8 flex flex-col"
+            >
+              <button
+                onClick={handleBack}
+                className="flex items-center gap-2 text-white/60 mb-6"
+              >
+                <ChevronLeft className="h-5 w-5" />
+                Назад
+              </button>
+              <h2 className="text-xl font-bold text-white mb-1">Код подтверждения</h2>
+              <p className="text-sm text-white/50 mb-6">Отправлен на {flow.maskedEmail || otpEmailRef.current || "почту"}</p>
+              <OtpInput value={flow.otp} onChange={(v) => dispatch({ type: "setOtp", otp: v })} />
+              <PrimaryButton type="button" onClick={() => void submitOtp()} disabled={!canContinueOtp} loading={flow.loading} className="mt-4">
+                Подтвердить
+              </PrimaryButton>
+              <div className="text-center text-sm text-white/50 mt-4">
+                {flow.otpCountdown > 0 ? (
+                  <>Повторно через {Math.floor(flow.otpCountdown / 60)}:{String(flow.otpCountdown % 60).padStart(2, "0")}</>
+                ) : (
+                  <button type="button" onClick={() => void handleResendOtp()} className="text-white/70 underline">Отправить ещё раз</button>
+                )}
+              </div>
+            </motion.div>
+          )}
 
-            {flow.step === "qr" && (
-              <motion.div key="qr" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-4">
-                <h2 className="text-xl font-bold text-white">Вход по QR-коду</h2>
-                <QRCodeLogin onSuccess={() => navigate("/")} />
-              </motion.div>
-            )}
+          {flow.step === "qr" && (
+            <motion.div
+              key="qr"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="absolute inset-x-0 bottom-0 top-0 bg-[var(--bg-primary)] p-5 sm:p-8 flex flex-col"
+            >
+              <button
+                onClick={handleBack}
+                className="flex items-center gap-2 text-white/60 mb-6"
+              >
+                <ChevronLeft className="h-5 w-5" />
+                Назад
+              </button>
+              <h2 className="text-xl font-bold text-white mb-4">Вход по QR-коду</h2>
+              <QRCodeLogin onSuccess={() => navigate("/")} />
+            </motion.div>
+          )}
 
-            {flow.step === "success" && (
-              <motion.div key="success" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                <SuccessScreen
-                  tokens={tokens}
-                  displayName={flow.firstName}
-                  onContinue={handleContinue}
-                />
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* Social Login */}
-          <SocialLoginButtons tokens={tokens} />
-
-          {/* Security & Legal */}
-          <SecurityFooter tokens={tokens} />
-        </div>
+          {flow.step === "success" && (
+            <motion.div
+              key="success"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="absolute inset-x-0 bottom-0 top-0 bg-[var(--bg-primary)] p-5 sm:p-8 flex flex-col"
+            >
+              <SuccessScreen tokens={tokens} displayName={flow.firstName} onContinue={handleContinue} />
+            </motion.div>
+          )}
+        </AnimatePresence>
       </PremiumGlassCard>
 
       <RecommendedUsersModal isOpen={showRecommendations} onClose={() => { setShowRecommendations(false); navigate("/"); }} />
