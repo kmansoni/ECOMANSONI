@@ -5,7 +5,7 @@
  * Все методы возвращают Result-тип: { ok: true; result } | { ok: false; error }.
  */
 
-export {
+export type {
   TelegramThemeParams, TelegramColorScheme, TelegramBiometricStatus,
   TelegramBiometricAuthenticateParams, TelegramBiometricToken,
   TelegramCloudStorageItem, TelegramLocation, TelegramAccelerometerData,
@@ -53,12 +53,12 @@ function wrap<T>(fn: () => T): Result<T> {
 }
 
 async function asyncWrap<T>(fn: (ok: (v: T) => void, err: (e: string) => void) => void): Promise<Result<T>> {
-  return new Promise((resolve) => {
+  return new Promise<Result<T>>((resolve) => {
     fn(
-      (v) => resolve({ ok: true, result: v }),
-      (e) => resolve({ ok: false, error: e })
+      (v) => resolve({ ok: true, result: v } as Result<T>),
+      (e) => resolve({ ok: false, error: e } as Result<T>)
     );
-  }).catch((e: any) => ({ ok: false, error: e.message || String(e) }));
+  }).catch((e: any) => ({ ok: false, error: String(e) } as Result<T>));
 }
 
 // ── Lifecycle ───────────────────────────────────────────
@@ -214,38 +214,49 @@ export const haptic = {
 
 export const cloudStorage = {
   get: (keys: string[]) => asyncWrap<TelegramCloudStorageItem[]>((ok, err) => {
-    tg()?.cloudStorage.get(keys, (e, r) => e ? err(e) : ok(r||[]));
+    tg()?.cloudStorage.get(keys, (e: any, r: any) => e ? err(String(e)) : ok(r || []));
   }),
-  getOne: async (key: string) => { const r = await cloudStorage.get([key]); return r.ok ? {ok:true, result: r.result[0]?.value??null} : r; },
+  getOne: async (key: string) => {
+    const r = await cloudStorage.get([key]);
+    return r.ok ? { ok: true, result: r.result[0]?.value ?? null } : r;
+  },
   set: (items: TelegramCloudStorageItem[]) => asyncWrap<void>((ok, err) => {
-    tg()?.cloudStorage.set(items, (e) => e ? err(e) : ok(undefined));
+    tg()?.cloudStorage.set(items, (e: any) => e ? err(String(e)) : ok(undefined));
   }),
   delete: (keys: string[]) => asyncWrap<void>((ok, err) => {
-    tg()?.cloudStorage.delete(keys, (e) => e ? err(e) : ok(undefined));
+    tg()?.cloudStorage.delete(keys, (e: any) => e ? err(String(e)) : ok(undefined));
   }),
 };
 
 export const secureStorage = {
   get: (key: string) => asyncWrap<string | null>((ok, err) => {
-    tg()?.secureStorage.get(key, (e, v) => e ? err(e) : ok(v ?? null));
+    tg()?.secureStorage.get(key, (e: any, v: any) => e ? err(String(e)) : ok(v ?? null));
   }),
   set: (key: string, value: string) => asyncWrap<void>((ok, err) => {
-    tg()?.secureStorage.set(key, value, (e) => e ? err(e) : ok(undefined));
+    tg()?.secureStorage.set(key, value, (e: any) => e ? err(String(e)) : ok(undefined));
   }),
 };
 
 // ── Biometric ───────────────────────────────────────────
 
 export const biometric = {
-  check: () => asyncWrap<TelegramBiometricStatus>((ok) => { tg()?.biometricManager.isAvailable(ok); }),
+  check: () => asyncWrap<TelegramBiometricStatus>((ok) => {
+    tg()?.biometricManager.isAvailable((status: any) => ok(status));
+  }),
   authenticate: (params?: TelegramBiometricAuthenticateParams) => asyncWrap<TelegramBiometricToken>(
-    (ok, err) => { tg()?.biometricManager.authenticate({reason:params?.reason, fingerprint:params?.finger_print}, ok, err); }
+    (ok, err) => {
+      tg()?.biometricManager.authenticate(
+        { reason: params?.reason, fingerprint: params?.finger_print },
+        (token: any) => ok(token),
+        (error: any) => err(String(error))
+      );
+    }
   ),
 };
 
 export function requestBiometricAccess(): Promise<Result<boolean>> {
   return asyncWrap<boolean>((ok) => {
-    tg()?.biometricManager.requestAccess?.((granted) => ok(granted));
+    tg()?.biometricManager.requestAccess?.((granted: any) => ok(!!granted));
   });
 }
 
@@ -312,9 +323,9 @@ export function shareToStory(params: TelegramShareStoryParams): Result<void> {
 
 export function shareMessage(params: TelegramShareMessageParams): Promise<Result<void>> {
   return asyncWrap<void>((ok, err) => {
-    tg()?.shareMessage?.(params.text, ({ status }) => {
-      if (status === 'sent') ok();
-      else err(status);
+    tg()?.shareMessage?.(params.text, (result: { status: string }) => {
+      if (result.status === 'sent') ok();
+      else err(result.status);
     });
   });
 }
@@ -323,7 +334,7 @@ export function shareMessage(params: TelegramShareMessageParams): Promise<Result
 
 export function readTextFromClipboard(): Promise<Result<string>> {
   return asyncWrap<string>((ok, err) => {
-    tg()?.readTextFromClipboard?.((data) => ok(data ?? ''), err);
+    tg()?.readTextFromClipboard?.((data: string | null) => ok(data ?? ''), err);
   });
 }
 
@@ -331,15 +342,15 @@ export function readTextFromClipboard(): Promise<Result<string>> {
 
 export function requestEmojiStatusAccess(): Promise<Result<boolean>> {
   return asyncWrap<boolean>((ok) => {
-    tg()?.requestEmojiStatusAccess?.((granted) => ok(granted));
+    tg()?.requestEmojiStatusAccess?.((granted: any) => ok(!!granted));
   });
 }
 
 export function setEmojiStatus(status: TelegramEmojiStatus): Promise<Result<void>> {
   return asyncWrap<void>((ok, err) => {
-    tg()?.setEmojiStatus?.(status, ({ ok: success, error }) => {
-      if (success) ok();
-      else err(error ?? 'Failed to set emoji status');
+    tg()?.setEmojiStatus?.(status, (result: { ok: boolean; error?: string }) => {
+      if (result.ok) ok();
+      else err(result.error ?? 'Failed to set emoji status');
     });
   });
 }
@@ -358,18 +369,20 @@ export function hideKeyboard(): Result<void> {
 
 export function addToHomeScreen(): Promise<Result<void>> {
   return asyncWrap<void>((ok, err) => {
-    tg()?.addToHomeScreen(({ status }) => status === 'completed' ? ok(undefined) : err(status));
+    tg()?.addToHomeScreen((result: { status: string }) => result.status === 'completed' ? ok(undefined) : err(result.status));
   });
 }
 export function checkHomeScreenStatus(): Promise<Result<string>> {
-  return asyncWrap<string>((ok) => { tg()?.checkHomeScreenStatus(({ status }) => ok(status)); });
+  return asyncWrap<string>((ok) => {
+    tg()?.checkHomeScreenStatus((result: { status: string }) => ok(result.status));
+  });
 }
 
 // ── Request Chat ────────────────────────────────────────
 
 export function requestChat(params: TelegramChatRequest): Promise<Result<void>> {
   return asyncWrap<void>((ok, err) => {
-    tg()?.requestChat(params, ({ status }) => status === 'sent' ? ok(undefined) : err(status));
+    tg()?.requestChat(params, (result: { status: string }) => result.status === 'sent' ? ok(undefined) : err(result.status));
   });
 }
 
@@ -377,7 +390,7 @@ export function requestChat(params: TelegramChatRequest): Promise<Result<void>> 
 
 export function downloadFile(fileId: string, sec = true): Promise<Result<string>> {
   return asyncWrap<string>((ok, err) => {
-    tg()?.downloadFile(fileId, { sec }, (status, data) => status === 'cancelled' ? err(status) : ok(data||''));
+    tg()?.downloadFile(fileId, { sec }, (status: string, data?: string) => status === 'cancelled' ? err(status) : ok(data || ''));
   });
 }
 
@@ -413,7 +426,7 @@ export const deviceOrientation = {
 
 export const locationManager = {
   request: (opts?: { enableHighAccuracy?: boolean }) => asyncWrap<void>((ok, err) => {
-    tg()?.locationManager.request(opts??{}, ({ status }) => status === 'granted' ? ok(undefined) : err(status));
+    tg()?.locationManager.request(opts ?? {}, (result: { status: string }) => result.status === 'granted' ? ok(undefined) : err(result.status));
   }),
   onUpdate: (cb: (loc: TelegramLocation) => void) => { tg()?.locationManager.onLocationUpdated(cb); },
   offUpdate: () => { tg()?.locationManager.offLocationUpdated(); },
@@ -432,7 +445,7 @@ export function showEmojiStatus() { tg()?.showEmojiStatus(); }
 
 export function requestContact(): Promise<Result<TelegramContactPayload>> {
   return asyncWrap<TelegramContactPayload>((ok, err) => {
-    tg()?.requestContact((granted, contact) => granted ? ok(contact!) : err('User denied'));
+    tg()?.requestContact((granted: boolean, contact: any) => granted ? ok(contact!) : err('User denied'));
   });
 }
 
@@ -584,13 +597,13 @@ export function offDeviceOrientationChange(): void {
 
 export function requestAccelerometer(): Promise<Result<boolean>> {
   return asyncWrap<boolean>((ok) => {
-    tg()?.accelerometer.requestPermission?.((granted) => ok(granted));
+    tg()?.accelerometer.requestPermission?.((granted: any) => ok(!!granted));
   });
 }
 
 export function requestGyroscope(): Promise<Result<boolean>> {
   return asyncWrap<boolean>((ok) => {
-    tg()?.gyroscope.requestPermission?.((granted) => ok(granted));
+    tg()?.gyroscope.requestPermission?.((granted: any) => ok(!!granted));
   });
 }
 
@@ -615,16 +628,16 @@ export function initTelegramMiniApp() {
 
 export const deviceStorage = {
   get: (key: string) => asyncWrap<string | null>((ok, err) => {
-    tg()?.deviceStorage?.get(key, (e, v) => e ? err(e) : ok(v ?? null));
+    tg()?.deviceStorage?.get(key, (e: any, v: any) => e ? err(String(e)) : ok(v ?? null));
   }),
   set: (key: string, value: string) => asyncWrap<void>((ok, err) => {
-    tg()?.deviceStorage?.set(key, value, (e) => e ? err(e) : ok(undefined));
+    tg()?.deviceStorage?.set(key, value, (e: any) => e ? err(String(e)) : ok(undefined));
   }),
   remove: (key: string) => asyncWrap<void>((ok, err) => {
-    tg()?.deviceStorage?.remove(key, (e) => e ? err(e) : ok(undefined));
+    tg()?.deviceStorage?.remove(key, (e: any) => e ? err(String(e)) : ok(undefined));
   }),
   clear: () => asyncWrap<void>((ok, err) => {
-    tg()?.deviceStorage?.clear((e) => e ? err(e) : ok(undefined));
+    tg()?.deviceStorage?.clear((e: any) => e ? err(String(e)) : ok(undefined));
   }),
 };
 

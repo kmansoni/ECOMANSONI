@@ -5,8 +5,9 @@
  * Все операции — не более 250 строк.
  */
 
-import type { Result } from './miniApp';
-import { getSupabaseClient } from '@/integrations/supabase/client';
+import { supabase } from '@/integrations/supabase/client';
+
+type Result<T> = { ok: true; result: T } | { ok: false; error: string };
 
 interface StarsInvoice {
   id: string;
@@ -39,7 +40,6 @@ interface CreateInvoiceParams {
  */
 async function createInvoice(params: CreateInvoiceParams): Promise<Result<StarsInvoice>> {
   try {
-    const supabase = getSupabaseClient();
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return { ok: false, error: 'No session' };
 
@@ -79,7 +79,6 @@ async function createInvoice(params: CreateInvoiceParams): Promise<Result<StarsI
  */
 async function payInvoice(invoiceId: string): Promise<Result<{ client_secret?: string }>> {
   try {
-    const supabase = getSupabaseClient();
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return { ok: false, error: 'No session' };
 
@@ -110,7 +109,6 @@ async function payInvoice(invoiceId: string): Promise<Result<{ client_secret?: s
  */
 async function listInvoices(botId?: string, limit = 20, offset = 0): Promise<Result<{ invoices: StarsInvoice[]; total: number }>> {
   try {
-    const supabase = getSupabaseClient();
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return { ok: false, error: 'No session' };
 

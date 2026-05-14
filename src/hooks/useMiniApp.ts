@@ -64,6 +64,8 @@ import {
 
 import type { UseMiniAppReturn } from './useMiniApp.types';
 
+export { UseMiniAppReturn };
+
 export function useMiniApp(): UseMiniAppReturn {
   const [state, setState] = useState({
     platform: getPlatform(),
@@ -75,22 +77,24 @@ export function useMiniApp(): UseMiniAppReturn {
     isActive: isActive(),
     viewportHeight: getViewportHeight(),
     viewportStableHeight: getViewportStableHeight(),
+    isMobile: isMobile(),
+    isDesktop: isDesktop(),
     flashMode: getFlashMode(),
   });
 
   useEffect(() => {
-    const unsubFull = onFullscreenChange((v) => setState(s => ({ ...s, isFullscreen: v })));
-    const unsubActive = onActiveChange((v) => setState(s => ({ ...s, isActive: v })));
-    const unsubViewport = onViewportChange((v) => setState(s => ({ ...s, viewportHeight: v.height })));
-    const unsubFlash = onFlashModeChange((m) => setState(s => ({ ...s, flashMode: m })));
-    const unsubOrientation = onOrientationChange(() => setState(s => ({ ...s, isOrientationLocked: true })));
+    onFullscreenChange((v) => setState(s => ({ ...s, isFullscreen: v })));
+    onActiveChange((v) => setState(s => ({ ...s, isActive: v })));
+    onViewportChange((v) => setState(s => ({ ...s, viewportHeight: v.height })));
+    onFlashModeChange((m) => setState(s => ({ ...s, flashMode: m })));
+    onOrientationChange(() => setState(s => ({ ...s, isOrientationLocked: true })));
 
     return () => {
-      unsubFull?.();
-      unsubActive?.();
-      unsubViewport?.();
-      unsubFlash?.();
-      unsubOrientation?.();
+      offFullscreenChange();
+      offActiveChange();
+      offViewportChange();
+      offFlashModeChange();
+      offOrientationChange();
     };
   }, []);
 

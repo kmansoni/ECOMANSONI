@@ -254,7 +254,13 @@ export function openQRScanner(text?: string): Promise<Result<TelegramQRCodeText 
           resolve({ ok: true, result: data });
         });
       })
-    : wrapNativeResult(() => NativeOpenQRScanner());
+    : (async () => {
+        const qr = await NativeOpenQRScanner();
+        if (!qr) {
+          return { ok: true, result: null };
+        }
+        return { ok: true, result: { data: qr.raw, text: qr.text } };
+      })();
 }
 
 export function closeQRScanner(): void {
@@ -294,7 +300,24 @@ export function requestWriteAccess(): Promise<Result<boolean>> {
 
 // ── Geolocation ──────────────────────────────────────────────────
 
-export const location = NativeLocation;
+export const location = {
+  request: (opts?: { enableHighAccuracy?: boolean }): Promise<Result<TelegramLocation>> => {
+    return isTelegram()
+      ? TgGetLocation()
+      : wrapNativeResult(() => NativeLocation.request(opts));
+  },
+  startUpdates: (cb: (loc: TelegramLocation) => void): void => {
+    if (isTelegram()) {
+      TgOnLocationUpdate(cb);
+    } else {
+      NativeLocation.startUpdates((loc) => cb(loc as TelegramLocation));
+    }
+  },
+  stopUpdates: (): void => {
+    if (isTelegram()) TgOffLocationUpdate();
+    else NativeLocation.stopUpdates();
+  },
+};
 
 export function getLocation(): Promise<Result<TelegramLocation>> {
   return isTelegram()
@@ -309,7 +332,7 @@ export const locationManager = isTelegram()
         await NativeLocation.request(opts);
       },
       onUpdate: (cb: (loc: TelegramLocation) => void) => {
-        NativeLocation.startUpdates((loc) => cb(loc));
+        NativeLocation.startUpdates((loc) => cb(loc as TelegramLocation));
       },
       offUpdate: () => {
         NativeLocation.stopUpdates();
@@ -442,8 +465,17 @@ export function shareToStory(params: { media_url: string; text?: string; widget_
 }
 export function shareMessage(params: TelegramShareMessageParams): Promise<Result<boolean>> {
   return isTelegram()
-    ? TgShareMessage(params).then(res => res.ok ? { ok: true, result: true } : { ok: false, error: res.error })
-    : Promise.resolve(navigator.share?.(params) ? { ok: true, result: true } : { ok: false, error: 'share_not_supported' });
+    ? TgShareMessage(params).then((res): Result<boolean> => {
+        if (res.ok) return { ok: true, result: true };
+        const e = (res as { ok: false; error: string }).error;
+        return { ok: false, error: e };
+      })
+    : navigator.share
+    ? navigator.share(params).then(
+        () => ({ ok: true, result: true }),
+        (e: any) => ({ ok: false, error: e?.message || 'Share failed' })
+      )
+    : Promise.resolve({ ok: false, error: 'share_not_supported' });
 }
 export function readTextFromClipboard(): Promise<Result<string>> {
   return isTelegram()
@@ -482,6 +514,36 @@ export function getFlashMode(): 'on' | 'off' | 'auto' {
 }
 export function setFlashMode(mode: 'on' | 'off' | 'auto'): void {
   if (isTelegram()) TgSetFlashMode(mode);
+}
+
+// ── Additional API ───────────────────────────────────────────────────
+
+export function setSwipeBehavior(behavior: 'none' | 'horizontal' | 'vertical'): void {
+  if (isTelegram()) TgSetSwipeBehavior(behavior);
+}
+
+export function addToHomeScreen(): Promise<Result<void>> {
+  return isTelegram()
+    ? TgAddToHomeScreen()
+    : Promise.resolve({ ok: false, error: 'add_to_home_screen_not_supported' });
+}
+
+export function checkHomeScreenStatus(): Promise<Result<string>> {
+  return isTelegram()
+    ? TgCheckHomeScreenStatus()
+    : Promise.resolve({ ok: false, error: 'not_supported' });
+}
+
+export function hideKeyboard(): void {
+  if (isTelegram()) TgHideKeyboard();
+}
+
+// ── Deprecated ────────────────────────────────────────────────────
+
+/** @deprecated Use `ready()` + `expand()` separately */
+export function init(): void {
+  ready();
+  expand();
 }
 
 // ── Events ────────────────────────────────────────────────────────

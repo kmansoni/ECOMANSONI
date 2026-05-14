@@ -28,6 +28,8 @@ export interface MiniAppState {
   isActive: boolean;
   viewportHeight: number;
   viewportStableHeight: number;
+  isMobile: boolean;
+  isDesktop: boolean;
   flashMode: 'on' | 'off' | 'auto';
 }
 

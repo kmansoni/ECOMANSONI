@@ -1,5 +1,37 @@
 # API Документация Mini App
 
+## 🚀 Unified Bridge Architecture
+
+Mansoni Mini App использует **единый фасад-мост** (`src/lib/mini-app/index.ts`), который автоматически выбирает реализацию:
+
+- **Если `window.Telegram?.WebApp` доступен** → все вызовы делегируются Telegram WebApp API.
+- **Если Telegram отсутствует** (браузер, десктоп, мобильный Safari без Telegram) → автоматически используются нативные Web API fallback'и.
+
+**Принцип:**
+```ts
+import { showPopup, location, cloudStorage } from '@/lib/mini-app';
+
+// Один и тот же код работает везде
+showPopup({ message: 'Привет!' }); // Telegram popup OR DOM overlay
+location.request(); // Telegram location OR Geolocation API
+```
+
+### Fallback Matrix
+
+| API Group | Telegram | Native Fallback |
+|-----------|----------|-----------------|
+| **Dialogs** | `WebApp.showPopup()` | DOM `document.createElement('dialog')` |
+| **Storage** | `WebApp.cloudStorage` | IndexedDB (`idb-keyval`) + AES-256-GCM |
+| **Sensors** | `WebApp.accelerometer` | `DeviceMotionEvent` / `DeviceOrientationEvent` |
+| **Geolocation** | `WebApp.getLocation()` | `navigator.geolocation.getCurrentPosition()` |
+| **Haptics** | `WebApp.HapticFeedback` | `navigator.vibrate()` |
+| **QR Scanner** | `WebApp.showScanQrPopup()` | `jsqr` + `MediaDevices.getUserMedia()` |
+| **Contacts** | `WebApp.requestContact()` | `navigator.contacts.select()` + prompt polyfill |
+| **Share** | `WebApp.shareMessage()` | `navigator.share()` (Web Share API) |
+| **Clipboard** | `WebApp.readTextFromClipboard()` | `navigator.clipboard.readText()` |
+
+---
+
 ## Обзор
 
 Mansoni Mini App — автономная система мини-приложений, работающая без зависимости от `window.Telegram.WebApp`. Все API реализованы через нативные Web API с опциональной поддержкой Telegram (при наличии `window.Telegram`).
@@ -391,6 +423,44 @@ function MyMiniApp() {
   const { ready, platform, showPopup, mainButton: MainBtn } = useMiniAppContext();
   // MainBtn.Component автоматически рендерится в bottom bar
 }
+```
+
+---
+
+## 🔄 Migration Guide
+
+### From `@/lib/telegram/miniApp` to `@/lib/mini-app`
+
+**Было (Telegram only):**
+```ts
+import { showPopup, cloudStorage } from '@/lib/telegram/miniApp';
+// Падало без window.Telegram
+```
+
+**Стало (Unified):**
+```ts
+import { showPopup, cloudStorage } from '@/lib/mini-app';
+// Работает везде: Telegram OR native browser
+```
+
+### API Changes
+
+| Old API | New API | Notes |
+|---------|---------|-------|
+| `initTelegramMiniApp()` | `init()` (deprecated) / `ready()+expand()` | `init()` сохраняется для обратной совместимости |
+| `tgShowPopup()` | `showPopup()` | Прямая замена |
+| `mainButton` (object) | `mainButton` (same object) | Не изменился |
+| `cloudStorage.get(keys)` | возвращает `Result<...>` | Теперь асинхронный Result-тип |
+| `location.request()` | возвращает `Promise<Result<...>>` | Изменён возвращаемый тип |
+
+### Deprecated Names (still available)
+
+```ts
+// These still work but emit console warnings in development
+export const initTelegramMiniApp = () => { ready(); expand(); };
+export const tgShowPopup = showPopup;
+export const tgShowConfirm = showConfirm;
+export const tgShowAlert = showAlert;
 ```
 
 ---

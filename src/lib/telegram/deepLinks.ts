@@ -26,17 +26,39 @@ export function parseTelegramLink(url: string): {
   startParam?: string;
   startApp?: string;
   attach?: string;
+  command?: string;
+  payload?: string;
 } {
   try {
     const u = new URL(url);
     const pathParts = u.pathname.slice(1).split('/');
-    
-    return {
-      botUsername: pathParts[0],
-      startParam: u.searchParams.get('start') || u.searchParams.get('startapp') || undefined,
-      startApp: u.searchParams.get('startapp') || undefined,
-      attach: u.searchParams.get('startattach') || undefined,
-    };
+    const botUsername = pathParts[0];
+
+    const startParam = u.searchParams.get('start') || undefined;
+    const startApp = u.searchParams.get('startapp') || undefined;
+    const attach = u.searchParams.get('startattach') || undefined;
+
+    // Derive command and payload
+    let command: string | undefined;
+    let payload: string | undefined;
+
+    if (startApp !== undefined) {
+      command = 'startapp';
+      payload = startApp;
+    } else if (startParam !== undefined) {
+      command = 'start';
+      payload = startParam;
+    } else if (attach !== undefined) {
+      command = 'attach';
+      payload = attach;
+    } else if (u.protocol === 'tg:' && pathParts[0] === 'resolve') {
+      command = 'resolve';
+      payload = u.searchParams.get('domain') || undefined;
+    } else {
+      command = 'navigate';
+    }
+
+    return { botUsername, startParam, startApp, attach, command, payload };
   } catch {
     return {};
   }

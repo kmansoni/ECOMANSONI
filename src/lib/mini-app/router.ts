@@ -37,7 +37,7 @@ function parseLocation(url: string): Route {
     const params: Record<string, string> = {};
     const query: Record<string, string> = {};
 
-    for (const [k, v] of urlObj.searchParams) {
+    for (const [k, v] of Array.from(urlObj.searchParams.entries())) {
       query[k] = v;
     }
 
@@ -100,7 +100,7 @@ export function initHashRouter(routes: Record<string, () => void | Promise<void>
 
 // ── Deep links ───────────────────────────────────────────────
 
-export { parseDeepLink, buildMiniAppLink, extractStartAppPayload };
+export { parseDeepLink, buildMiniAppLink, extractStartAppPayload, parseLocation };
 
 export function handleDeepLink(
   url: string,

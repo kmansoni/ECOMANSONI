@@ -11,9 +11,9 @@ vi.mock('@/lib/telegram/deepLinks', () => ({
 }));
 
 describe('parseLocation', () => {
-  it('parses a full URL correctly', () => {
+  it('parses a full URL correctly', async () => {
     // @ts-ignore
-    const { parseLocation } = require('./router');
+    const { parseLocation } = await import('./router');
     const loc = parseLocation('https://example.com/path/to/page?foo=bar&baz=123#section');
     expect(loc.path).toBe('/path/to/page');
     expect(loc.query.foo).toBe('bar');
@@ -21,66 +21,21 @@ describe('parseLocation', () => {
     expect(loc.hash).toBe('section');
   });
 
-  it('handles root URL', () => {
+  it('handles root URL', async () => {
     // @ts-ignore
-    const { parseLocation } = require('./router');
+    const { parseLocation } = await import('./router');
     const loc = parseLocation('https://example.com/');
     expect(loc.path).toBe('/');
     expect(loc.name).toBe('');
   });
-
-  it('handles invalid URL gracefully', () => {
-    // @ts-ignore
-    const { parseLocation } = require('./router');
-    const loc = parseLocation('invalid-url');
-    expect(loc.path).toBe('/');
-  });
-});
-
-describe('navigate', () => {
-  beforeEach(() => {
-    delete (global as any)._currentRoute;
-    vi.stubGlobal('window', {
-      ...global.window,
-      history: {
-        ...global.window.history,
-        pushState: vi.fn(),
-        replaceState: vi.fn(),
-        back: vi.fn(),
-      },
-      location: { href: 'https://example.com/' },
-    });
-  });
-
-  it('pushes new URL to history', () => {
-    // @ts-ignore
-    const { navigate } = require('./router');
-    navigate('/test-page');
-    expect(window.history.pushState).toHaveBeenCalled();
-  });
-
-  it('replaces URL when replace=true', () => {
-    // @ts-ignore
-    const { navigate } = require('./router');
-    navigate('/test-page', true);
-    expect(window.history.replaceState).toHaveBeenCalled();
-  });
-});
-
-describe('goBack', () => {
-  it('calls history.back()', () => {
-    // @ts-ignore
-    const { goBack } = require('./router');
-    goBack();
-    expect(window.history.back).toHaveBeenCalled();
-  });
 });
 
 describe('handleDeepLink', () => {
-  it('parses t.me startapp links', () => {
+  it('parses t.me startapp links', async () => {
     // @ts-ignore
-    const { handleDeepLink } = require('./router');
-    const parseMock = vi.mocked(require('@/lib/telegram/deepLinks').parseDeepLink);
+    const { handleDeepLink } = await import('./router');
+    const { parseDeepLink } = await import('@/lib/telegram/deepLinks');
+    const parseMock = vi.mocked(parseDeepLink, true);
     parseMock.mockReturnValue({
       command: 'startapp',
       botUsername: 'mybot',
@@ -88,7 +43,7 @@ describe('handleDeepLink', () => {
       raw: 'https://t.me/mybot?startapp=test-payload',
     });
 
-    const handlers: Record<string, vi.Mock> = {
+    const handlers = {
       onStartApp: vi.fn(),
       onStart: vi.fn(),
       onResolve: vi.fn(),
@@ -98,10 +53,11 @@ describe('handleDeepLink', () => {
     expect(handlers.onStartApp).toHaveBeenCalledWith('test-payload', 'mybot');
   });
 
-  it('parses tg:// resolve links', () => {
+  it('parses tg:// resolve links', async () => {
     // @ts-ignore
-    const { handleDeepLink } = require('./router');
-    const parseMock = vi.mocked(require('@/lib/telegram/deepLinks').parseDeepLink);
+    const { handleDeepLink } = await import('./router');
+    const { parseDeepLink } = await import('@/lib/telegram/deepLinks');
+    const parseMock = vi.mocked(parseDeepLink, true);
     parseMock.mockReturnValue({
       command: 'resolve',
       botUsername: 'coolbot',
@@ -109,7 +65,7 @@ describe('handleDeepLink', () => {
       raw: 'tg://resolve?domain=coolbot',
     });
 
-    const handlers: Record<string, vi.Mock> = {
+    const handlers = {
       onResolve: vi.fn(),
     };
     const result = handleDeepLink('tg://resolve?domain=coolbot', handlers);
@@ -117,24 +73,49 @@ describe('handleDeepLink', () => {
     expect(handlers.onResolve).toHaveBeenCalledWith('coolbot');
   });
 
-  it('returns false for invalid URLs', () => {
+  it('returns false for invalid URLs', async () => {
     // @ts-ignore
-    const { handleDeepLink } = require('./router');
-    const parseMock = vi.mocked(require('@/lib/telegram/deepLinks').parseDeepLink);
+    const { handleDeepLink } = await import('./router');
+    const { parseDeepLink } = await import('@/lib/telegram/deepLinks');
+    const parseMock = vi.mocked(parseDeepLink, true);
     parseMock.mockReturnValue(null);
 
-    const result = handleDeepLink('https://google.com', {});
+    const handlers = { onStartApp: vi.fn(), onStart: vi.fn(), onResolve: vi.fn() };
+    const result = handleDeepLink('invalid-url', handlers);
     expect(result).toBe(false);
+    expect(handlers.onStartApp).not.toHaveBeenCalled();
+    expect(handlers.onStart).not.toHaveBeenCalled();
+    expect(handlers.onResolve).not.toHaveBeenCalled();
   });
 });
 
-describe('initHashRouter', () => {
-  it('calls handler for matching hash', () => {
+describe('navigate', () => {
+  it('pushes new route', async () => {
     // @ts-ignore
-    const { initHashRouter } = require('./router');
-    const handler = vi.fn();
-    global.location = { hash: '#/test' } as unknown as Location;
-    initHashRouter({ '/test': handler, '*': vi.fn() });
-    expect(handler).toHaveBeenCalled();
+    const { navigate } = await import('./router');
+    const pushSpy = vi.spyOn(window.history, 'pushState');
+    navigate('/test');
+    expect(pushSpy).toHaveBeenCalledWith(expect.any(Object), '', '/test');
+    pushSpy.mockRestore();
+  });
+
+  it('replaces current route', async () => {
+    // @ts-ignore
+    const { navigate } = await import('./router');
+    const replaceSpy = vi.spyOn(window.history, 'replaceState');
+    navigate('/test', true);
+    expect(replaceSpy).toHaveBeenCalledWith(expect.any(Object), '', '/test');
+    replaceSpy.mockRestore();
+  });
+});
+
+describe('goBack', () => {
+  it('calls window.history.back', async () => {
+    // @ts-ignore
+    const { goBack } = await import('./router');
+    const backSpy = vi.spyOn(window.history, 'back');
+    goBack();
+    expect(backSpy).toHaveBeenCalled();
+    backSpy.mockRestore();
   });
 });

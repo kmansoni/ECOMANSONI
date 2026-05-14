@@ -8,6 +8,7 @@
  */
 
 import { Stars as TgStars } from '@/lib/telegram/payments';
+import type { CreateInvoiceParams as TgCreateInvoiceParams } from '@/lib/telegram/payments';
 
 export interface Invoice {
   id: string;
@@ -33,11 +34,17 @@ export interface CreateInvoiceParams {
  * Создать инвойс через Supabase Edge Function.
  */
 export async function createInvoice(params: CreateInvoiceParams) {
-  return TgStars.createInvoice({
+  // Map our params to Telegram's expected shape
+  const tgParams: TgCreateInvoiceParams = {
     botId: '',
     chatId: '',
-    ...params,
-  });
+    title: params.title,
+    description: params.description,
+    amount: params.amount,
+    currency: params.currency as any,
+    // payload and photoUrl omitted (optional)
+  };
+  return TgStars.createInvoice(tgParams);
 }
 
 /**
