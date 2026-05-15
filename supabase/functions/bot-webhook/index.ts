@@ -19,6 +19,20 @@ const botWebhookSecret = Deno.env.get('BOT_WEBHOOK_SECRET') ?? '';
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+/**
+ * Получить webhook secret для конкретного бота из БД.
+ * Fallback на глобальный BOT_WEBHOOK_SECRET для обратной совместимости.
+ */
+async function getWebhookSecretForBot(botId: string): Promise<string | null> {
+  const { data: bot } = await supabase
+    .from('bots')
+    .select('webhook_secret')
+    .eq('id', botId)
+    .single();
+
+  return bot?.webhook_secret || null;
+}
+
 // ============================================================================
 // TYPES (Telegram-compatible)
 // ============================================================================
@@ -119,11 +133,11 @@ function extractCommand(text?: string): string | null {
 /**
  * HMAC-SHA256 signature verification for webhook requests.
  * Header: X-Webhook-Signature: sha256=<hex>
- * If BOT_WEBHOOK_SECRET is not set, verification is skipped with a warning.
+ * Uses per-bot secret when provided, falls back to global.
  */
-async function verifyWebhookSignature(body: string, signature: string | null): Promise<boolean> {
-  if (!botWebhookSecret) {
-    console.error('[bot-webhook] BOT_WEBHOOK_SECRET not set — rejecting request');
+async function verifyWebhookSignature(body: string, signature: string | null, secret: string): Promise<boolean> {
+  if (!secret) {
+    console.error('[bot-webhook] No webhook secret provided — rejecting request');
     return false;
   }
   if (!signature) return false;
@@ -134,7 +148,7 @@ async function verifyWebhookSignature(body: string, signature: string | null): P
 
   const key = await crypto.subtle.importKey(
     'raw',
-    new TextEncoder().encode(botWebhookSecret),
+    new TextEncoder().encode(secret),
     { name: 'HMAC', hash: 'SHA-256' },
     false,
     ['sign']
@@ -477,11 +491,16 @@ Deno.serve(async (req: Request) => {
     return createErrorResponse('Failed to read body', 400, origin);
   }
 
-  // Verify HMAC signature if BOT_WEBHOOK_SECRET is configured
-  const signature = req.headers.get('X-Webhook-Signature');
-  const isValidSignature = await verifyWebhookSignature(bodyText, signature);
-  if (!isValidSignature) {
-    return createErrorResponse('Invalid webhook signature', 403, origin);
+  // Verify HMAC signature using per-bot secret (fallback to global)
+  const botSecret = await getWebhookSecretForBot(botId);
+  const secretToUse = botSecret || botWebhookSecret;
+
+  if (secretToUse) {
+    if (!signature || !(await verifyWebhookSignature(bodyText, signature, secretToUse))) {
+      return createErrorResponse('Invalid webhook signature', 403, origin);
+    }
+  } else {
+    console.warn('[bot-webhook] No webhook secret configured for bot or globally — skipping signature verification');
   }
 
   // Parse update

@@ -9,7 +9,7 @@ export function BrandPanel({ tokens }: { tokens: ThemeTokens }) {
       initial={{ opacity: 0, x: -40 }}
       animate={{ opacity: 1, x: 0 }}
       transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1], delay: 0.2 }}
-      className="flex flex-col justify-center py-6 lg:py-8 transition-opacity duration-300"
+      className="hidden lg:flex flex-col justify-center w-[420px] xl:w-[480px] pr-8 xl:pr-12 py-8"
     >
       {/* Brand logo + tagline */}
       <div className="flex items-center gap-3 mb-2">

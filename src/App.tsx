@@ -121,6 +121,7 @@ const AudioRoomsPage = lazy(() => import("@/pages/AudioRoomsPage").then(m => ({ 
 const BotListPage = lazy(() => import("@/pages/BotListPage").then(m => ({ default: m.BotListPage })));
 const BotCreatePage = lazy(() => import("@/pages/BotCreatePage").then(m => ({ default: m.BotCreatePage })));
 const BotSettingsPage = lazy(() => import("@/pages/BotSettingsPage").then(m => ({ default: m.BotSettingsPage })));
+const BotPage = lazy(() => import("@/pages/BotPage").then(m => ({ default: m.BotPage })));
 const MiniAppListPage = lazy(() => import("@/pages/MiniAppListPage").then(m => ({ default: m.MiniAppListPage })));
 const DeleteAccountPage = lazy(() => import("@/pages/DeleteAccountPage").then(m => ({ default: m.DeleteAccountPage })));
 const ReelsPage = lazy(() => import("./pages/ReelsPage"));
@@ -647,12 +648,18 @@ const App = () => {
                         <BotCreatePage />
                       </Suspense>
                     } />
-                    <Route path="/bots/:id" element={
-                      <Suspense fallback={<PageLoader />}>
-                        <BotSettingsPage />
-                      </Suspense>
-                    } />
-                    <Route path="/mini-apps" element={
+<Route path="/bots/:id" element={
+                       <Suspense fallback={<PageLoader />}>
+                         <BotSettingsPage />
+                       </Suspense>
+                     } />
+                     {/* Публичная страница бота — перед /user/:username */}
+                     <Route path="/bot/:username" element={
+                       <Suspense fallback={<PageLoader />}>
+                         <BotPage />
+                       </Suspense>
+                     } />
+                     <Route path="/mini-apps" element={
                       <Suspense fallback={<PageLoader />}>
                         <MiniAppListPage />
                       </Suspense>

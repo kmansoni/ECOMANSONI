@@ -48,6 +48,11 @@ export interface Bot {
   can_read_all_group_messages: boolean;
   is_private: boolean;
   language_code: string;
+  supports_guest_queries?: boolean;
+  can_manage_bots?: boolean;
+  api_token?: string;
+  webhook_url?: string;
+  capabilities?: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
 }
@@ -437,6 +442,136 @@ export interface UseBotAnalyticsReturn {
   loading: boolean;
   error: Error | null;
   refetch: () => Promise<void>;
+}
+
+// ============================================================================
+// BOT HANDLERS TYPES
+// ============================================================================
+
+export type BotHandlerTriggerType =
+  | 'keyword' | 'command' | 'callback' | 'regex' | 'ai'
+  | 'schedule' | 'welcome' | 'fallback' | 'media' | 'reaction'
+  | 'member_joined' | 'member_left';
+
+export type BotHandlerResponseType =
+  | 'text' | 'photo' | 'video' | 'document' | 'audio' | 'voice'
+  | 'sticker' | 'animation' | 'location' | 'venue' | 'contact'
+  | 'poll' | 'quiz' | 'dice' | 'keyboard' | 'action' | 'typing'
+  | 'leave' | 'invite' | 'topic' | 'forward' | 'media_group';
+
+export interface BotHandlerCondition {
+  variable: string;
+  operator: 'equals' | 'not_equals' | 'contains' | 'greater_than' | 'less_than' | 'exists' | 'not_exists';
+  value: string;
+}
+
+export interface BotHandler {
+  id: string;
+  bot_id: string;
+  name: string;
+  trigger_type: BotHandlerTriggerType;
+  trigger_value: string;
+  response_type: BotHandlerResponseType;
+  response_content: Record<string, unknown>;
+  priority: number;
+  is_active: boolean;
+  ai_model?: string;
+  ai_prompt?: string;
+  ai_temperature?: number;
+  ai_max_tokens?: number;
+  conditions: BotHandlerCondition[];
+  created_at: string;
+  updated_at: string;
+}
+
+// ============================================================================
+// BOT SESSIONS TYPES
+// ============================================================================
+
+export interface BotSession {
+  id: string;
+  bot_id: string;
+  user_id: string;
+  conversation_id?: string;
+  context: Record<string, unknown>;
+  state: string;
+  variables: Record<string, string>;
+  expires_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// ============================================================================
+// BOT KEYBOARDS TYPES
+// ============================================================================
+
+export interface BotInlineKeyboardButton {
+  text: string;
+  url?: string;
+  callback_data?: string;
+  web_app?: { url: string };
+  pay?: boolean;
+}
+
+export interface BotKeyboard {
+  id: string;
+  bot_id: string;
+  name: string;
+  description?: string;
+  keyboard_type: 'inline' | 'reply' | 'remove';
+  buttons: BotInlineKeyboardButton[][];
+  is_persistent: boolean;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+// ============================================================================
+// BOT RUNS TYPES
+// ============================================================================
+
+export interface BotRun {
+  id: string;
+  bot_id: string;
+  session_id?: string;
+  trigger_type: string;
+  trigger_value?: string;
+  input_payload: Record<string, unknown>;
+  handler_id?: string;
+  handler_name?: string;
+  response_method?: string;
+  response_payload?: Record<string, unknown>;
+  status: 'completed' | 'error' | 'timeout' | 'skipped';
+  duration_ms?: number;
+  error_message?: string;
+  created_at: string;
+}
+
+// ============================================================================
+// BOT CONVERSATION STATE (FSM)
+// ============================================================================
+
+export interface BotConversationState {
+  id: string;
+  bot_id: string;
+  name: string;
+  description?: string;
+  flow: {
+    nodes: Array<{
+      id: string;
+      type: 'message' | 'action' | 'condition' | 'end';
+      content?: Record<string, unknown>;
+    }>;
+    transitions: Array<{
+      from: string;
+      to: string;
+      condition?: string;
+    }>;
+  };
+  initial_state: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
 // ============================================================================

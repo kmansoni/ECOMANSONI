@@ -1,6 +1,6 @@
 /**
  * BotSettingsPage — настройки бота по адресу /bots/:id
- * Вкладки: Основное / Токены / Команды / Webhook
+ * Вкладки: Основное / Обработчики / Клавиатуры / Состояния / Аналитика / Webhook
  */
 
 import React, { useCallback, useEffect, useState } from 'react';
@@ -15,22 +15,17 @@ import {
   RefreshCw,
   Trash2,
   Webhook,
+  LayoutDashboard,
+  Workflow,
+  BarChart2,
+  Coins,
+  Zap,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { botApi } from '@/lib/bots/api';
-import type { BotCommand, BotToken, BotWebhook, BotWithOwner } from '@/lib/bots/types';
-
-// ---------------------------------------------------------------------------
-// Tab definition
-// ---------------------------------------------------------------------------
-type Tab = 'general' | 'tokens' | 'commands' | 'webhook';
-
-const TABS: { id: Tab; label: string }[] = [
-  { id: 'general',  label: 'Основное' },
-  { id: 'tokens',   label: 'Токены'   },
-  { id: 'commands', label: 'Команды'  },
-  { id: 'webhook',  label: 'Webhook'  },
-];
+import { StarsV2 } from '@/lib/stars/v2/payments';
+import type { BotCommand, BotToken, BotWebhook, BotHandler, BotKeyboard, BotConversationState, BotSession, BotAnalytics, BotWithOwner } from '@/lib/bots/types';
+import { FSMVisualEditor } from '@/components/bots/FSMVisualEditor';
 
 // ---------------------------------------------------------------------------
 // BotSettingsPage
@@ -95,27 +90,31 @@ export function BotSettingsPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 mb-5 bg-muted rounded-xl p-1 overflow-x-auto">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={`flex-1 min-w-fit px-3 py-1.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
-              tab === t.id
-                ? 'bg-background text-foreground shadow-sm'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+<div className="flex gap-1 mb-5 bg-muted rounded-xl p-1 overflow-x-auto">
+         {TABS.map((t) => (
+           <button
+             key={t.id}
+             onClick={() => setTab(t.id)}
+             className={`flex items-center gap-1.5 min-w-fit px-3 py-1.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
+               tab === t.id
+                 ? 'bg-background text-foreground shadow-sm'
+                 : 'text-muted-foreground hover:text-foreground'
+             }`}
+           >
+             {t.icon}
+             {t.label}
+           </button>
+         ))}
+       </div>
 
-      {/* Tab content */}
-      {tab === 'general'  && <GeneralTab  bot={bot!} onUpdated={setBot} onDeleted={() => navigate('/bots')} />}
-      {tab === 'tokens'   && <TokensTab   botId={botId!} />}
-      {tab === 'commands' && <CommandsTab botId={botId!} />}
-      {tab === 'webhook'  && <WebhookTab  botId={botId!} />}
+       {/* Tab content */}
+       {tab === 'general'    && <GeneralTab    bot={bot!} onUpdated={setBot} onDeleted={() => navigate('/bots')} />}
+       {tab === 'handlers'   && <HandlersTab   botId={botId!} />}
+       {tab === 'keyboards'  && <KeyboardsTab  botId={botId!} />}
+       {tab === 'states'     && <StatesTab     botId={botId!} />}
+       {tab === 'analytics'  && <AnalyticsTab  botId={botId!} />}
+       {tab === 'payments'   && <PaymentsTab   botId={botId!} />}
+       {tab === 'webhook'    && <WebhookTab    botId={botId!} />}
     </div>
   );
 }
@@ -655,41 +654,596 @@ function WebhookTab({ botId }: WebhookTabProps) {
 }
 
 // ===========================================================================
-// Helpers
+// HandlersTab
 // ===========================================================================
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+interface HandlersTabProps { botId: string }
+
+function HandlersTab({ botId }: HandlersTabProps) {
+  const [handlers, setHandlers]   = useState<BotHandler[]>([]);
+  const [loading, setLoading]     = useState(true);
+  const [creating, setCreating]   = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [newHandler, setNewHandler] = useState<Partial<BotHandler>>({
+    name: '',
+    trigger_type: 'keyword' as BotHandler['trigger_type'],
+    trigger_value: '',
+    response_type: 'text' as BotHandler['response_type'],
+    response_content: { method: 'sendMessage', params: { text: '' }, options: {} },
+    priority: 50,
+    is_active: true,
+    conditions: [],
+  });
+
+  useEffect(() => {
+    void botApi.getBotHandlers(botId).then(({ handlers: h }) => {
+      setHandlers(h);
+      setLoading(false);
+    }).catch((err) => {
+      toast.error(err instanceof Error ? err.message : 'Ошибка загрузки');
+      setLoading(false);
+    });
+  }, [botId]);
+
+  const handleCreate = async () => {
+    if (!newHandler.name || !newHandler.trigger_type || !newHandler.response_type) {
+      toast.error('Заполните обязательные поля');
+      return;
+    }
+    setCreating(true);
+    try {
+      const created = await botApi.createBotHandler(botId, {
+        name: newHandler.name!,
+        trigger_type: newHandler.trigger_type!,
+        trigger_value: newHandler.trigger_value ?? '',
+        response_type: newHandler.response_type!,
+        response_content: newHandler.response_content ?? { method: 'sendMessage', params: { text: '' }, options: {} },
+        priority: newHandler.priority ?? 50,
+        is_active: newHandler.is_active ?? true,
+        conditions: newHandler.conditions ?? [],
+      });
+      setHandlers((prev) => [...prev, created.handler].sort((a, b) => a.priority - b.priority));
+      setNewHandler({
+        name: '', trigger_type: 'keyword', trigger_value: '',
+        response_type: 'text', response_content: { method: 'sendMessage', params: { text: '' }, options: {} },
+        priority: 50, is_active: true, conditions: [],
+      });
+      toast.success('Обработчик создан');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Не удалось создать');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const handleUpdate = async (handlerId: string, updates: Partial<BotHandler>) => {
+    try {
+      const updated = await botApi.updateBotHandler(botId, handlerId, updates);
+      setHandlers((prev) => prev.map((h) => h.id === handlerId ? updated.handler : h));
+      toast.success('Обработчик обновлён');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Не удалось обновить');
+    }
+  };
+
+  const handleDelete = async (handlerId: string) => {
+    try {
+      await botApi.deleteBotHandler(botId, handlerId);
+      setHandlers((prev) => prev.filter((h) => h.id !== handlerId));
+      toast.success('Обработчик удалён');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Не удалось удалить');
+    }
+  };
+
+  const triggerTypes: BotHandler['trigger_type'][] = ['keyword', 'command', 'callback', 'regex', 'ai', 'schedule', 'welcome', 'fallback', 'media', 'reaction', 'member_joined', 'member_left'];
+  const responseTypes: BotHandler['response_type'][] = ['text', 'photo', 'video', 'document', 'audio', 'voice', 'sticker', 'animation', 'location', 'venue', 'contact', 'poll', 'quiz', 'dice', 'keyboard', 'action', 'typing', 'leave', 'invite', 'topic', 'forward', 'media_group'];
+
+  if (loading) return <div className="flex items-center justify-center h-32"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>;
+
   return (
-    <div className="space-y-1">
-      <label className="text-sm font-medium">{label}</label>
-      {children}
+    <div className="space-y-4">
+      {/* List */}
+      <div className="bg-card border rounded-2xl overflow-hidden">
+        {handlers.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-8">Нет обработчиков</p>
+        ) : (
+          <ul className="divide-y">
+            {handlers.map((h) => (
+              <li key={h.id} className="p-3 flex items-center gap-3">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium">
+                    <span className="text-xs text-muted-foreground mr-1">#{h.priority}</span>
+                    {h.name}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Триггер: {h.trigger_type} {h.trigger_value ? `(${h.trigger_value})` : ''} → Ответ: {h.response_type}
+                  </p>
+                </div>
+                <div className="flex gap-1 shrink-0">
+                  <button onClick={() => setEditingId(editingId === h.id ? null : h.id)} className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">
+                    ✏️
+                  </button>
+                  <button onClick={() => handleDelete(h.id)} className="p-1.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors" aria-label="Удалить">
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                {editingId === h.id && (
+                  <div className="w-full mt-3 p-3 bg-background rounded-xl border space-y-2">
+                    <div className="flex gap-2">
+                      <input value={h.name} onChange={(e) => handleUpdate(h.id, { name: e.target.value })} placeholder="Название" className="flex-1 h-9 rounded-lg border px-2 text-sm" />
+                      <select value={h.trigger_type} onChange={(e) => handleUpdate(h.id, { trigger_type: e.target.value as BotHandler['trigger_type'] })} className="h-9 rounded-lg border px-2 text-sm">
+                        {triggerTypes.map((t) => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                    </div>
+                    <input value={h.trigger_value} onChange={(e) => handleUpdate(h.id, { trigger_value: e.target.value })} placeholder="Значение триггера (опционально)" className="h-9 rounded-lg border px-2 text-sm w-full" />
+                    <select value={h.response_type} onChange={(e) => handleUpdate(h.id, { response_type: e.target.value as BotHandler['response_type'] })} className="h-9 rounded-lg border px-2 text-sm">
+                      {responseTypes.map((t) => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                    <div className="flex gap-2 items-end">
+                      <label className="text-xs text-muted-foreground">Приоритет (↑ = первый):</label>
+                      <input type="number" value={h.priority} onChange={(e) => handleUpdate(h.id, { priority: Number(e.target.value) })} className="w-20 h-9 rounded-lg border px-2 text-sm" />
+                      <label className="flex items-center gap-1 text-xs">
+                        <input type="checkbox" checked={h.is_active} onChange={(e) => handleUpdate(h.id, { is_active: e.target.checked })} />
+                        Активен
+                      </label>
+                    </div>
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {/* Create */}
+      <div className="bg-card border rounded-2xl p-5 space-y-3">
+        <p className="font-medium">Новый обработчик</p>
+        <div className="grid grid-cols-2 gap-2">
+          <input value={newHandler.name} onChange={(e) => setNewHandler({ ...newHandler, name: e.target.value })} placeholder="Название" className="h-10 rounded-xl border px-3 text-sm col-span-2" />
+          <select value={newHandler.trigger_type} onChange={(e) => setNewHandler({ ...newHandler, trigger_type: e.target.value as BotHandler['trigger_type'] })} className="h-10 rounded-xl border px-3 text-sm">
+            {triggerTypes.map((t) => <option key={t} value={t}>{t}</option>)}
+          </select>
+          <input value={newHandler.trigger_value} onChange={(e) => setNewHandler({ ...newHandler, trigger_value: e.target.value })} placeholder="Триггер (опц.)" className="h-10 rounded-xl border px-3 text-sm" />
+          <select value={newHandler.response_type} onChange={(e) => setNewHandler({ ...newHandler, response_type: e.target.value as BotHandler['response_type'] })} className="h-10 rounded-xl border px-3 text-sm">
+            {responseTypes.map((t) => <option key={t} value={t}>{t}</option>)}
+          </select>
+          <input type="number" value={newHandler.priority} onChange={(e) => setNewHandler({ ...newHandler, priority: Number(e.target.value) || 50 })} placeholder="Приоритет (50)" className="h-10 rounded-xl border px-3 text-sm" />
+        </div>
+        <button onClick={handleCreate} disabled={creating} className="w-full h-11 rounded-xl bg-primary text-primary-foreground font-medium disabled:opacity-50 flex items-center justify-center gap-2 transition-opacity">
+          {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+          Создать обработчик
+        </button>
+      </div>
     </div>
   );
 }
 
-interface ToggleProps {
-  checked: boolean;
-  onChange: (v: boolean) => void;
-  label: string;
-  description?: string;
+// ===========================================================================
+// KeyboardsTab
+// ===========================================================================
+interface KeyboardsTabProps { botId: string }
+
+function KeyboardsTab({ botId }: KeyboardsTabProps) {
+  const [keyboards, setKeyboards] = useState<BotKeyboard[]>([]);
+  const [loading, setLoading]     = useState(true);
+  const [creating, setCreating]   = useState(false);
+  const [newKeyboard, setNewKeyboard] = useState<Partial<BotKeyboard>>({
+    name: '',
+    keyboard_type: 'inline',
+    buttons: [],
+    is_persistent: false,
+    is_active: true,
+  });
+
+  useEffect(() => {
+    void botApi.getBotKeyboards(botId).then(({ keyboards: k }) => {
+      setKeyboards(k);
+      setLoading(false);
+    }).catch((err) => {
+      toast.error(err instanceof Error ? err.message : 'Ошибка загрузки');
+      setLoading(false);
+    });
+  }, [botId]);
+
+  const handleCreate = async () => {
+    if (!newKeyboard.name || !newKeyboard.buttons.length) {
+      toast.error('Укажите название и хотя бы одну кнопку');
+      return;
+    }
+    setCreating(true);
+    try {
+      await botApi.createBotKeyboard(botId, {
+        name: newKeyboard.name!,
+        keyboard_type: newKeyboard.keyboard_type || 'inline',
+        buttons: newKeyboard.buttons,
+        is_persistent: newKeyboard.is_persistent ?? false,
+        is_active: newKeyboard.is_active ?? true,
+      });
+      toast.success('Клавиатура создана');
+      setNewKeyboard({ name: '', keyboard_type: 'inline', buttons: [], is_persistent: false, is_active: true });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Не удалось создать');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  if (loading) return <div className="flex items-center justify-center h-32"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-card border rounded-2xl overflow-hidden">
+        {keyboards.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-8">Нет клавиатур</p>
+        ) : (
+          <ul className="divide-y">
+            {keyboards.map((k) => (
+              <li key={k.id} className="p-3 flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium">{k.name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    Тип: {k.keyboard_type} | Кнопок: {k.buttons.length} | {k.is_persistent ? 'Постоянная' : 'Одноразовая'}
+                  </p>
+                </div>
+                <button onClick={() => handleDelete(k.id)} className="p-1.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors" aria-label="Удалить">
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div className="bg-card border rounded-2xl p-5 space-y-3">
+        <p className="font-medium">Новая клавиатура</p>
+        <input value={newKeyboard.name} onChange={(e) => setNewKeyboard({ ...newKeyboard, name: e.target.value })} placeholder="Название" className="h-10 rounded-xl border px-3 text-sm w-full" />
+        <div className="flex gap-2">
+          <select value={newKeyboard.keyboard_type} onChange={(e) => setNewKeyboard({ ...newKeyboard, keyboard_type: e.target.value as BotKeyboard['keyboard_type'] })} className="flex-1 h-10 rounded-xl border px-3 text-sm">
+            <option value="inline">Inline</option>
+            <option value="reply">Reply</option>
+            <option value="remove">Remove</option>
+          </select>
+          <label className="flex items-center gap-2 h-10 px-3">
+            <input type="checkbox" checked={newKeyboard.is_persistent} onChange={(e) => setNewKeyboard({ ...newKeyboard, is_persistent: e.target.checked })} />
+            Постоянная
+          </label>
+        </div>
+        <textarea
+          value={JSON.stringify(newKeyboard.buttons, null, 2)}
+          onChange={(e) => { try { setNewKeyboard({ ...newKeyboard, buttons: JSON.parse(e.target.value) }); } catch {} }}
+          placeholder='Кнопки JSON: [[{"text": "Кнопка", "callback_data": "btn1"}]]'
+          rows={3}
+          className="w-full rounded-xl border bg-background px-3 py-2 text-xs font-mono resize-none"
+        />
+        <button onClick={handleCreate} disabled={creating} className="w-full h-11 rounded-xl bg-primary text-primary-foreground font-medium disabled:opacity-50 flex items-center justify-center gap-2 transition-opacity">
+          {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+          Создать клавиатуру
+        </button>
+      </div>
+    </div>
+  );
 }
 
-function Toggle({ checked, onChange, label, description }: ToggleProps) {
+// ===========================================================================
+// StatesTab — FSM визуальный редактор
+// ===========================================================================
+interface StatesTabProps { botId: string }
+
+function StatesTab({ botId }: StatesTabProps) {
+  const [states, setStates]   = useState<BotConversationState[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [newStateName, setNewStateName] = useState('');
+  const [activeStateId, setActiveStateId] = useState<string | null>(null);
+
+  // Индекс: id → state
+  const stateMap = useMemo(() => {
+    const m: Record<string, BotConversationState> = {};
+    states.forEach(s => { m[s.id] = s; });
+    return m;
+  }, [states]);
+
+  const activeState = activeStateId ? stateMap[activeStateId] : null;
+
+  useEffect(() => {
+    void botApi.getBotStates(botId).then(({ states: s }) => {
+      setStates(s);
+      setLoading(false);
+      if (s.length > 0 && !activeStateId) setActiveStateId(s[0].id);
+    }).catch((err) => {
+      toast.error(err instanceof Error ? err.message : 'Ошибка загрузки');
+      setLoading(false);
+    });
+  }, [botId]);
+
+  const handleCreate = async () => {
+    if (!newStateName.trim()) {
+      toast.error('Укажите имя состояния');
+      return;
+    }
+    setCreating(true);
+    try {
+      const created = await botApi.createBotState(botId, {
+        name: newStateName.trim(),
+        flow: { nodes: [], transitions: [] },
+        initial_state: '',
+        is_active: true,
+      });
+      setStates((prev) => [...prev, created.state]);
+      setActiveStateId(created.state.id);
+      setNewStateName('');
+      toast.success('FSM-состояние создано');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Не удалось создать');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const handleDelete = async (stateId: string) => {
+    try {
+      await botApi.deleteBotState(botId, stateId);
+      setStates((prev) => prev.filter((s) => s.id !== stateId));
+      if (activeStateId === stateId) {
+        const remaining = states.filter((s) => s.id !== stateId);
+        setActiveStateId(remaining[0]?.id || null);
+      }
+      toast.success('FSM-состояние удалено');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Не удалось удалить');
+    }
+  };
+
+  const handleSaveState = async (stateId: string, flow: { nodes: any[]; transitions: any[] }, initialState: string) => {
+    try {
+      await botApi.updateBotState(botId, stateId, {
+        flow,
+        initial_state: initialState,
+      });
+      setStates((prev) => prev.map((s) => s.id === stateId ? { ...s, flow, initial_state: initialState } : s));
+      toast.success('FSM-состояние сохранено');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Не удалось сохранить');
+    }
+  };
+
+  if (loading) return <div className="flex items-center justify-center h-32"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>;
+
   return (
-    <label className="flex items-center gap-3 cursor-pointer select-none">
-      <div
-        onClick={() => onChange(!checked)}
-        role="switch"
-        aria-checked={checked}
-        tabIndex={0}
-        onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') onChange(!checked); }}
-        className={`w-10 h-6 rounded-full relative transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${checked ? 'bg-primary' : 'bg-muted'}`}
-      >
-        <span className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-transform ${checked ? 'left-5' : 'left-1'}`} />
+    <div className="space-y-4">
+      {/* Список состояний */}
+      <div className="bg-card border rounded-2xl overflow-hidden">
+        {states.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-8">Нет FSM-состояний. Создайте первое.</p>
+        ) : (
+          <ul className="divide-y">
+            {states.map((s) => (
+              <li
+                key={s.id}
+                className={cn(
+                  "p-3 flex items-center justify-between cursor-pointer transition-colors",
+                  activeStateId === s.id ? "bg-primary/5" : "hover:bg-accent/30"
+                )}
+                onClick={() => setActiveStateId(s.id)}
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <Workflow className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium truncate">{s.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      Начало: <code className="bg-background px-1.5 py-0.5 rounded text-xs">{s.initial_state || '—'}</code>
+                      {' · '}Узлов: {s.flow?.nodes?.length ?? 0}
+                      {' · '}Переходов: {s.flow?.transitions?.length ?? 0}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={(e) => { e.stopPropagation(); void handleDelete(s.id); }}
+                  className="p-1.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors shrink-0"
+                  aria-label="Удалить"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
-      <div className="flex-1">
-        <p className="text-sm font-medium leading-none">{label}</p>
-        {description && <p className="text-xs text-muted-foreground mt-0.5">{description}</p>}
+
+      {/* Создание нового состояния */}
+      <div className="bg-card border rounded-2xl p-4 flex gap-2 items-end">
+        <div className="flex-1">
+          <label className="text-xs text-muted-foreground mb-1 block">Имя нового FSM-состояния</label>
+          <input
+            value={newStateName}
+            onChange={(e) => setNewStateName(e.target.value)}
+            placeholder="main_flow, dialog_start, ..."
+            className="w-full h-10 rounded-xl border bg-background px-3 text-sm"
+            onKeyDown={(e) => { if (e.key === 'Enter') { void handleCreate(); } }}
+          />
+        </div>
+        <button
+          onClick={handleCreate}
+          disabled={creating || !newStateName.trim()}
+          className="h-10 px-4 rounded-xl bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50 flex items-center gap-1.5 shrink-0"
+        >
+          {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+          Создать
+        </button>
       </div>
-    </label>
+
+      {/* Визуальный редактор выбранного состояния */}
+      {activeState && (
+        <div className="bg-card border rounded-2xl p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Workflow className="w-4 h-4 text-primary" />
+              <p className="font-medium">Редактор: <code className="bg-background px-1.5 py-0.5 rounded text-sm font-mono">{activeState.name}</code></p>
+            </div>
+            <button
+              onClick={() => {
+                const flow = activeState.flow || { nodes: [], transitions: [] };
+                void handleSaveState(
+                  activeState.id,
+                  flow,
+                  activeState.initial_state || flow.nodes?.[0]?.id || ''
+                );
+              }}
+              className="flex items-center gap-1.5 text-sm text-primary hover:text-primary/80 transition-colors"
+            >
+              <Check className="w-3.5 h-3.5" />
+              Сохранить
+            </button>
+          </div>
+          <FSMVisualEditor
+            flow={activeState.flow || { nodes: [], transitions: [] }}
+            onChange={(flow) => {
+              setStates((prev) =>
+                prev.map((s) => s.id === activeState.id ? { ...s, flow } : s)
+              );
+            }}
+            initialState={activeState.initial_state}
+            onInitialStateChange={(stateId) => {
+              setStates((prev) =>
+                prev.map((s) => s.id === activeState.id ? { ...s, initial_state: stateId } : s)
+              );
+            }}
+          />
+          <p className="text-xs text-muted-foreground text-center">
+            Кликните по ноде на холсте для редактирования · Удаляйте переходы кнопкой ✕
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ===========================================================================
+// AnalyticsTab
+// ===========================================================================
+interface AnalyticsTabProps { botId: string }
+
+function AnalyticsTab({ botId }: AnalyticsTabProps) {
+  const [analytics, setAnalytics] = useState<BotAnalytics[]>([]);
+  const [loading, setLoading]   = useState(true);
+
+  useEffect(() => {
+    void botApi.getBotAnalytics(botId, { days: 30 }).then(({ analytics: a }) => {
+      setAnalytics(a);
+      setLoading(false);
+    }).catch((err) => {
+      toast.error(err instanceof Error ? err.message : 'Ошибка загрузки');
+      setLoading(false);
+    });
+  }, [botId]);
+
+  if (loading) return <div className="flex items-center justify-center h-32"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>;
+
+  const totalSent     = analytics.reduce((s, a) => s + a.messages_sent, 0);
+  const totalReceived = analytics.reduce((s, a) => s + a.messages_received, 0);
+  const totalUsers    = analytics.reduce((s, a) => s + a.unique_users, 0);
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-3">
+        <div className="bg-primary/10 rounded-xl p-4 text-center">
+          <p className="text-2xl font-bold text-primary">{totalSent}</p>
+          <p className="text-xs text-muted-foreground">Отправлено</p>
+        </div>
+        <div className="bg-accent/10 rounded-xl p-4 text-center">
+          <p className="text-2xl font-bold">{totalReceived}</p>
+          <p className="text-xs text-muted-foreground">Получено</p>
+        </div>
+        <div className="bg-card border rounded-xl p-4 text-center col-span-2">
+          <p className="text-2xl font-bold">{totalUsers}</p>
+          <p className="text-xs text-muted-foreground">Уникальных пользователей</p>
+        </div>
+      </div>
+      <div className="bg-card border rounded-2xl overflow-hidden">
+        <ul className="divide-y">
+          {analytics.map((a) => (
+            <li key={a.date} className="p-3 flex items-center justify-between">
+              <p className="text-sm">{a.date}</p>
+              <div className="flex gap-4 text-xs text-muted-foreground">
+                <span>↑ {a.messages_sent}</span>
+                <span>↓ {a.messages_received}</span>
+                <span>👥 {a.unique_users}</span>
+              </div>
+            </li>
+          ))}
+          {analytics.length === 0 && (
+            <p className="text-sm text-muted-foreground text-center py-8">Нет данных</p>
+          )}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+// ===========================================================================
+// PaymentsTab
+// ===========================================================================
+interface PaymentsTabProps { botId: string }
+
+function PaymentsTab({ botId }: PaymentsTabProps) {
+  const [balance, setBalance]     = useState<number | null>(null);
+  const [loading, setLoading]     = useState(true);
+  const [transactions, setTransactions] = useState<any[]>([]);
+
+  useEffect(() => {
+    loadBalance();
+    loadTransactions();
+  }, [botId]);
+
+async function loadBalance() {
+     try {
+       const balance = await StarsV2.getBalance();
+       setBalance(balance);
+       setLoading(false);
+     } catch {
+       setLoading(false);
+     }
+   }
+
+async function loadTransactions() {
+     try {
+       const result = await botApi.getBotRuns(botId, { limit: 20 });
+       setTransactions(result.runs.filter((r) => r.response_method === 'sendMessage'));
+     } catch {
+       // noop
+     }
+   }
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-3">
+        <div className="bg-yellow-500/10 rounded-xl p-4 text-center">
+          <p className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">{loading ? '...' : balance ?? '—'}</p>
+          <p className="text-xs text-muted-foreground">Stars (XTR) баланс</p>
+        </div>
+        <div className="bg-card border rounded-xl p-4 text-center">
+          <p className="text-2xl font-bold">{transactions.length}</p>
+          <p className="text-xs text-muted-foreground">Транзакций</p>
+        </div>
+      </div>
+      <div className="bg-card border rounded-2xl p-5">
+        <p className="font-medium mb-3">Интеграция с Stars v2</p>
+        <p className="text-sm text-muted-foreground">
+          Платёжная система Stars v2 реализована через собственный протокол без зависимости от Telegram API.
+          Используйте <code className="bg-background px-1.5 py-0.5 rounded text-xs">StarsV2</code> из{' '}
+          <code className="bg-background px-1.5 py-0.5 rounded text-xs">@/lib/stars/v2/payments</code> для создания
+          инвойсов, оплаты и возвратов.
+        </p>
+        <div className="mt-3 p-3 bg-background rounded-lg text-xs font-mono space-y-1">
+          <p>// Пример:</p>
+          <p>import { StarsV2 } from &quot;@/lib/stars/v2/payments&quot;;</p>
+          <p>const invoice = await StarsV2.createInvoice({{</p>
+          <p>  botId, chatId, title: &quot;Подписка&quot;,</p>
+          <p>  amount: 100, currency: &quot;XTR&quot;</p>
+          <p>}});</p>
+          <p>const result = await StarsV2.payInvoice(invoice.id);</p>
+        </div>
+      </div>
+    </div>
   );
 }

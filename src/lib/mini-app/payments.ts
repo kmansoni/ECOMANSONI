@@ -1,14 +1,13 @@
 /**
  * Mini App — Payments Bridge
  *
- * Обёртка над Telegram Stars (XTR) и Stripe-подобными платёжками.
- * Делегирует в @/lib/telegram/payments.ts (Supabase Edge Functions).
+ * Обёртка над Stars v2 — независимая от Telegram платёжная система.
+ * Ранее делегировал в telegram/payments, теперь использует собственный протокол.
  *
  * Не более 150 строк.
  */
 
-import { Stars as TgStars } from '@/lib/telegram/payments';
-import type { CreateInvoiceParams as TgCreateInvoiceParams } from '@/lib/telegram/payments';
+import { StarsV2 } from '@/lib/stars/v2/payments';
 
 export interface Invoice {
   id: string;
@@ -34,38 +33,35 @@ export interface CreateInvoiceParams {
  * Создать инвойс через Supabase Edge Function.
  */
 export async function createInvoice(params: CreateInvoiceParams) {
-  // Map our params to Telegram's expected shape
-  const tgParams: TgCreateInvoiceParams = {
+  return StarsV2.createInvoice({
     botId: '',
     chatId: '',
     title: params.title,
     description: params.description,
     amount: params.amount,
     currency: params.currency as any,
-    // payload and photoUrl omitted (optional)
-  };
-  return TgStars.createInvoice(tgParams);
+  });
 }
 
 /**
  * Оплатить инвойс.
  */
 export async function payInvoice(invoiceId: string) {
-  return TgStars.payInvoice(invoiceId);
+  return StarsV2.payInvoice(invoiceId);
 }
 
 /**
  * Получить список инвойсов.
  */
 export async function listInvoices(botId?: string, limit = 20, offset = 0) {
-  return TgStars.listInvoices(botId, limit, offset);
+  return StarsV2.listInvoices({ botId, limit, offset });
 }
 
 /**
  * Получить баланс Stars (XTR).
  */
 export async function getStarsBalance() {
-  return TgStars.getStarsBalance();
+  return StarsV2.getBalance();
 }
 
-export { TgStars as Stars };
+export { StarsV2 as Stars };

@@ -9,6 +9,367 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 import { createErrorResponse, createSuccessResponse } from './utils.ts';
 import { handleCors, getCorsHeaders } from '../_shared/utils.ts';
 
+// ===================================================================
+// HANDLERS
+// ===================================================================
+
+async function handleGetHandlers(req: Request, userId: string, botId: string) {
+  const { data: bot } = await supabase
+    .from('bots')
+    .select('owner_id')
+    .eq('id', botId)
+    .single();
+
+  if (!bot || bot.owner_id !== userId) {
+    return createErrorResponse('Access denied', 403);
+  }
+
+  const { data: handlers, error } = await supabase
+    .from('bot_handlers')
+    .select('*')
+    .eq('bot_id', botId)
+    .order('priority', { ascending: true });
+
+  if (error) return createErrorResponse(error.message, 500);
+  return createSuccessResponse({ handlers: handlers || [] });
+}
+
+async function handleCreateHandler(req: Request, userId: string, botId: string) {
+  const body = await req.json();
+  const { name, trigger_type, trigger_value, response_type, response_content,
+          priority, is_active, conditions, ai_model, ai_prompt, ai_temperature, ai_max_tokens } = body;
+
+  if (!name || !trigger_type || !response_type) {
+    return createErrorResponse('name, trigger_type and response_type are required', 400);
+  }
+
+  // Validate trigger_type
+  const validTriggers = ['keyword','command','callback','regex','ai','schedule','welcome','fallback','media','reaction','member_joined','member_left'];
+  if (!validTriggers.includes(trigger_type)) {
+    return createErrorResponse(`Invalid trigger_type. Must be one of: ${validTriggers.join(', ')}`, 400);
+  }
+
+  // 'welcome' and 'fallback' can only have one per bot
+  if (['welcome','fallback'].includes(trigger_type)) {
+    const { data: existing } = await supabase
+      .from('bot_handlers')
+      .select('id')
+      .eq('bot_id', botId)
+      .eq('trigger_type', trigger_type)
+      .single();
+    if (existing) return createErrorResponse(`A '${trigger_type}' handler already exists for this bot`, 409);
+  }
+
+  const { data: handler, error } = await supabase
+    .from('bot_handlers')
+    .insert({
+      bot_id: botId,
+      name,
+      trigger_type,
+      trigger_value: trigger_value ?? null,
+      response_type,
+      response_content: response_content ?? {},
+      priority: priority ?? 50,
+      is_active: is_active ?? true,
+      conditions: conditions ?? [],
+      ai_model: ai_model ?? null,
+      ai_prompt: ai_prompt ?? null,
+      ai_temperature: ai_temperature ?? 0.7,
+      ai_max_tokens: ai_max_tokens ?? 500,
+    })
+    .select()
+    .single();
+
+  if (error) return createErrorResponse(error.message, 500);
+  return createSuccessResponse({ handler });
+}
+
+async function handleUpdateHandler(req: Request, userId: string, botId: string, handlerId: string) {
+  const body = await req.json();
+  const allowedFields = ['name','trigger_type','trigger_value','response_type','response_content',
+                          'priority','is_active','conditions','ai_model','ai_prompt','ai_temperature','ai_max_tokens'];
+  const updates: Record<string, unknown> = {};
+  for (const field of allowedFields) {
+    if (body[field] !== undefined) updates[field] = body[field];
+  }
+  updates.updated_at = new Date().toISOString();
+
+  const { data: handler, error } = await supabase
+    .from('bot_handlers')
+    .update(updates)
+    .eq('id', handlerId)
+    .eq('bot_id', botId)
+    .select()
+    .single();
+
+  if (error) return createErrorResponse(error.message, 500);
+  return createSuccessResponse({ handler });
+}
+
+async function handleDeleteHandler(req: Request, userId: string, botId: string, handlerId: string) {
+  const { error } = await supabase
+    .from('bot_handlers')
+    .delete()
+    .eq('id', handlerId)
+    .eq('bot_id', botId);
+
+  if (error) return createErrorResponse(error.message, 500);
+  return createSuccessResponse({ message: 'Handler deleted' });
+}
+
+// ===================================================================
+// KEYBOARDS
+// ===================================================================
+
+async function handleGetKeyboards(req: Request, userId: string, botId: string) {
+  const { data: keyboards, error } = await supabase
+    .from('bot_keyboards')
+    .select('*')
+    .eq('bot_id', botId)
+    .order('created_at', { ascending: false });
+
+  if (error) return createErrorResponse(error.message, 500);
+  return createSuccessResponse({ keyboards: keyboards || [] });
+}
+
+async function handleCreateKeyboard(req: Request, userId: string, botId: string) {
+  const body = await req.json();
+  const { name, description, keyboard_type, buttons, is_persistent } = body;
+
+  if (!name || !keyboard_type || !buttons) {
+    return createErrorResponse('name, keyboard_type and buttons are required', 400);
+  }
+
+  const { data: keyboard, error } = await supabase
+    .from('bot_keyboards')
+    .insert({
+      bot_id: botId,
+      name,
+      description: description ?? null,
+      keyboard_type,
+      buttons,
+      is_persistent: is_persistent ?? false,
+      is_active: true,
+    })
+    .select()
+    .single();
+
+  if (error) return createErrorResponse(error.message, 500);
+  return createSuccessResponse({ keyboard });
+}
+
+async function handleUpdateKeyboard(req: Request, userId: string, botId: string, keyboardId: string) {
+  const body = await req.json();
+  const { data: keyboard, error } = await supabase
+    .from('bot_keyboards')
+    .update({ ...body, updated_at: new Date().toISOString() })
+    .eq('id', keyboardId)
+    .eq('bot_id', botId)
+    .select()
+    .single();
+
+  if (error) return createErrorResponse(error.message, 500);
+  return createSuccessResponse({ keyboard });
+}
+
+async function handleDeleteKeyboard(req: Request, userId: string, botId: string, keyboardId: string) {
+  const { error } = await supabase
+    .from('bot_keyboards')
+    .delete()
+    .eq('id', keyboardId)
+    .eq('bot_id', botId);
+
+  if (error) return createErrorResponse(error.message, 500);
+  return createSuccessResponse({ message: 'Keyboard deleted' });
+}
+
+// ===================================================================
+// CONVERSATION STATES (FSM)
+// ===================================================================
+
+async function handleGetStates(req: Request, userId: string, botId: string) {
+  const { data: states, error } = await supabase
+    .from('bot_conversation_states')
+    .select('*')
+    .eq('bot_id', botId)
+    .order('created_at', { ascending: false });
+
+  if (error) return createErrorResponse(error.message, 500);
+  return createSuccessResponse({ states: states || [] });
+}
+
+async function handleCreateState(req: Request, userId: string, botId: string) {
+  const body = await req.json();
+  const { name, description, flow, initial_state } = body;
+
+  if (!name || !flow || !initial_state) {
+    return createErrorResponse('name, flow and initial_state are required', 400);
+  }
+
+  const { data: state, error } = await supabase
+    .from('bot_conversation_states')
+    .insert({
+      bot_id: botId,
+      name,
+      description: description ?? null,
+      flow,
+      initial_state,
+      is_active: true,
+    })
+    .select()
+    .single();
+
+  if (error) return createErrorResponse(error.message, 500);
+  return createSuccessResponse({ state });
+}
+
+async function handleUpdateState(req: Request, userId: string, botId: string, stateId: string) {
+  const body = await req.json();
+  const { data: state, error } = await supabase
+    .from('bot_conversation_states')
+    .update({ ...body, updated_at: new Date().toISOString() })
+    .eq('id', stateId)
+    .eq('bot_id', botId)
+    .select()
+    .single();
+
+  if (error) return createErrorResponse(error.message, 500);
+  return createSuccessResponse({ state });
+}
+
+async function handleDeleteState(req: Request, userId: string, botId: string, stateId: string) {
+  const { error } = await supabase
+    .from('bot_conversation_states')
+    .delete()
+    .eq('id', stateId)
+    .eq('bot_id', botId);
+
+  if (error) return createErrorResponse(error.message, 500);
+  return createSuccessResponse({ message: 'State deleted' });
+}
+
+// ===================================================================
+// SESSIONS
+// ===================================================================
+
+async function handleGetSessions(req: Request, userId: string, botId: string) {
+   const url = new URL(req.url);
+   const limit = Math.min(parseInt(url.searchParams.get('limit') || '50'), 100);
+   const cursor = url.searchParams.get('cursor'); // ISO timestamp или ID
+
+   let query = supabase
+     .from('bot_sessions')
+     .select('*, profiles(id, display_name, avatar_url)')
+     .eq('bot_id', botId)
+     .order('updated_at', { ascending: false })
+     .limit(limit);
+
+   // Cursor-based pagination: "cursor" is the updated_at of the last item from previous page
+   // For ties, use id as tiebreaker
+   if (cursor) {
+     const parts = cursor.split('|');
+     if (parts.length === 2) {
+       const [cursorUpdatedAt, cursorId] = parts;
+       query = query.or(`updated_at.lt.${cursorUpdatedAt},updated_at.eq.${cursorUpdatedAt}&id.lt.${cursorId}`);
+     }
+   }
+
+   const { data: sessions, error } = await query;
+   if (error) return createErrorResponse(error.message, 500);
+
+   // Build next cursor
+   let nextCursor = null;
+   if (sessions && sessions.length === limit) {
+     const last = sessions[sessions.length - 1];
+     nextCursor = `${last.updated_at}|${last.id}`;
+   }
+
+   return createSuccessResponse({ sessions: sessions || [], next_cursor: nextCursor });
+ }
+
+async function handleEndSession(req: Request, userId: string, botId: string, sessionId: string) {
+  const expiresAt = new Date(Date.now() + 60000).toISOString(); // expire in 1 min
+  const { data, error } = await supabase
+    .from('bot_sessions')
+    .update({ expires_at: expiresAt, state: 'ended' })
+    .eq('id', sessionId)
+    .eq('bot_id', botId)
+    .select()
+    .single();
+
+  if (error) return createErrorResponse(error.message, 500);
+  return createSuccessResponse({ session: data });
+}
+
+async function handleClearSessionVars(req: Request, userId: string, botId: string, sessionId: string) {
+  const { data, error } = await supabase
+    .from('bot_sessions')
+    .update({ variables: '{}', state: 'idle' })
+    .eq('id', sessionId)
+    .eq('bot_id', botId)
+    .select()
+    .single();
+
+  if (error) return createErrorResponse(error.message, 500);
+  return createSuccessResponse({ session: data });
+}
+
+// ===================================================================
+// RUNS (Execution Logs)
+// ===================================================================
+
+async function handleGetRuns(req: Request, userId: string, botId: string) {
+   const url = new URL(req.url);
+   const limit = Math.min(parseInt(url.searchParams.get('limit') || '50'), 100);
+   const cursor = url.searchParams.get('cursor'); // ISO timestamp|id
+
+   let query = supabase
+     .from('bot_runs')
+     .select('*', { count: 'exact' })
+     .eq('bot_id', botId)
+     .order('created_at', { ascending: false })
+     .limit(limit);
+
+   // Cursor-based pagination
+   if (cursor) {
+     const parts = cursor.split('|');
+     if (parts.length === 2) {
+       const [cursorCreatedAt, cursorId] = parts;
+       query = query.or(`created_at.lt.${cursorCreatedAt},created_at.eq.${cursorCreatedAt}&id.lt.${cursorId}`);
+     }
+   }
+
+   const { data: runs, count, error } = await query;
+   if (error) return createErrorResponse(error.message, 500);
+
+   let nextCursor = null;
+   if (runs && runs.length === limit) {
+     const last = runs[runs.length - 1];
+     nextCursor = `${last.created_at}|${last.id}`;
+   }
+
+   return createSuccessResponse({ runs: runs || [], total: count || 0, next_cursor: nextCursor });
+ }
+
+// ===================================================================
+// ANALYTICS
+// ===================================================================
+
+async function handleGetAnalytics(req: Request, userId: string, botId: string) {
+  const url = new URL(req.url);
+  const days = parseInt(url.searchParams.get('days') || '30');
+
+  const { data: analytics, error } = await supabase
+    .from('bot_analytics')
+    .select('*')
+    .eq('bot_id', botId)
+    .order('date', { ascending: false })
+    .limit(days);
+
+  if (error) return createErrorResponse(error.message, 500);
+  return createSuccessResponse({ analytics: analytics || [] });
+}
+
 declare const Deno: {
   env: { get(name: string): string | undefined };
   serve(handler: (req: Request) => Response | Promise<Response>): void;
@@ -115,35 +476,49 @@ async function handleCreateBot(req: Request, userId: string) {
 }
 
 async function handleListBots(req: Request, userId: string) {
-  const url = new URL(req.url);
-  const page = parseInt(url.searchParams.get('page') || '1');
-  const page_size = parseInt(url.searchParams.get('page_size') || '20');
-  const status = url.searchParams.get('status');
+   const url = new URL(req.url);
+   const limit = Math.min(parseInt(url.searchParams.get('limit') || '20'), 100);
+   const cursor = url.searchParams.get('cursor'); // ISO timestamp|id
+   const status = url.searchParams.get('status');
 
-  let query = supabase
-    .from('bots')
-    .select('*', { count: 'exact' })
-    .eq('owner_id', userId)
-    .order('created_at', { ascending: false })
-    .range((page - 1) * page_size, page * page_size - 1);
+   let query = supabase
+     .from('bots')
+     .select('*', { count: 'exact' })
+     .eq('owner_id', userId)
+     .order('created_at', { ascending: false })
+     .limit(limit);
 
-  if (status) {
-    query = query.eq('status', status);
-  }
+   if (status) {
+     query = query.eq('status', status);
+   }
 
-  const { data: bots, count, error } = await query;
+   // Cursor-based pagination
+   if (cursor) {
+     const parts = cursor.split('|');
+     if (parts.length === 2) {
+       const [cursorCreatedAt, cursorId] = parts;
+       query = query.or(`created_at.lt.${cursorCreatedAt},created_at.eq.${cursorCreatedAt}&id.lt.${cursorId}`);
+     }
+   }
 
-  if (error) {
-    return createErrorResponse(error.message, 500);
-  }
+   const { data: bots, count, error } = await query;
 
-  return createSuccessResponse({
-    bots,
-    total: count || 0,
-    page,
-    page_size
-  });
-}
+   if (error) {
+     return createErrorResponse(error.message, 500);
+   }
+
+   let nextCursor = null;
+   if (bots && bots.length === limit) {
+     const last = bots[bots.length - 1];
+     nextCursor = `${last.created_at}|${last.id}`;
+   }
+
+   return createSuccessResponse({
+     bots,
+     total: count || 0,
+     next_cursor: nextCursor
+   });
+ }
 
 async function handleGetBot(req: Request, userId: string, botId: string) {
   const { data: bot, error } = await supabase

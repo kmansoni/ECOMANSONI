@@ -131,9 +131,9 @@ function useRotatingTip(intervalMs = 5000) {
 export function KindTipsTicker({ tokens }: { tokens: ThemeTokens }) {
   const { tip, index } = useRotatingTip(5200);
   return (
-    <div className="min-h-[96px] sm:min-h-[108px]">
+    <div className="sm:min-h-[108px]">
       <div
-        className={`mb-2 flex items-center gap-2 text-[10px] uppercase tracking-[0.32em] ${
+        className={`mb-1.5 sm:mb-2 flex items-center gap-2 text-[10px] uppercase tracking-[0.32em] ${
           tokens.isDark ? "text-white/70" : "text-slate-500"
         }`}
       >
@@ -152,11 +152,11 @@ export function KindTipsTicker({ tokens }: { tokens: ThemeTokens }) {
           exit={{ opacity: 0, y: -8, filter: "blur(6px)" }}
           transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
         >
-          <h1 className={`text-[22px] sm:text-[26px] leading-[1.12] font-bold tracking-tight ${tokens.textPrimary}`}>
+          <h1 className={`text-lg sm:text-[22px] leading-tight font-bold tracking-tight ${tokens.textPrimary}`}>
             {tip.title}
             <span className={`ml-1 ${tokens.isDark ? "text-cyan-300/90" : "text-teal-600/90"}`}>·</span>
           </h1>
-          <p className={`mt-1.5 text-[13px] sm:text-sm leading-snug ${tokens.isDark ? "text-white/75" : tokens.textMuted}`}>{tip.body}</p>
+          <p className={`mt-0.5 sm:mt-1.5 text-[12px] sm:text-[13px] leading-snug ${tokens.isDark ? "text-white/75" : tokens.textMuted}`}>{tip.body}</p>
         </motion.div>
       </AnimatePresence>
     </div>

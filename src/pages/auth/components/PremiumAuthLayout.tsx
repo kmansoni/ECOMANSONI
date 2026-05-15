@@ -1,5 +1,6 @@
 import { motion, AnimatePresence } from "framer-motion";
 import type { ThemeTokens } from "../types";
+import { WaveBackground } from "./WaveBackground";
 
 export function PremiumAuthLayout({
   children,
@@ -10,19 +11,7 @@ export function PremiumAuthLayout({
 }) {
   return (
     <div
-      className={`relative flex min-h-[100dvh] w-full items-center justify-center px-4 py-6 sm:px-5 sm:py-7 md:px-6 md:py-8 ${tokens.textPrimary}`}
-      style={{
-        paddingTop: "env(safe-area-inset-top)",
-        paddingBottom: "env(safe-area-inset-bottom)",
-        // Типографическая шкала (все размеры кратны 4px)
-        "--text-xs": "11px",
-        "--text-sm": "13px",
-        "--text-base": "15px",
-        "--text-lg": "18px",
-        "--text-xl": "22px",
-        "--text-2xl": "28px",
-        "--text-3xl": "36px",
-      } as React.CSSProperties}
+      className={`relative flex min-h-[100dvh] w-full items-stretch sm:items-center sm:justify-center overflow-hidden sm:px-6 sm:py-8 ${tokens.textPrimary}`}
     >
       {/* Ambient background */}
       <div className="absolute inset-0">
@@ -43,18 +32,46 @@ export function PremiumAuthLayout({
             WebkitMaskImage: "radial-gradient(ellipse 70% 60% at 50% 0%, black 20%, transparent 70%)",
           }}
         />
+        <WaveBackground tokens={tokens} />
       </div>
 
-      {/* Mobile edge effect */}
-      <div
-        className="pointer-events-none absolute inset-0 sm:hidden z-20"
+      {/* Liquid glass — левый край */}
+      <motion.div
+        className="pointer-events-none absolute left-0 top-0 bottom-0 w-[72px] xl:w-[110px] z-[5]"
         style={{
-          boxShadow: "inset 0 0 40px rgba(0,0,0,0.4), inset 0 0 8px rgba(0,0,0,0.3)",
+          background: tokens.isDark
+            ? "linear-gradient(to right, rgba(6,182,212,0.10) 0%, rgba(99,102,241,0.05) 55%, transparent 100%)"
+            : "linear-gradient(to right, rgba(6,182,212,0.18) 0%, rgba(99,102,241,0.08) 55%, transparent 100%)",
+          backdropFilter: "blur(14px) saturate(150%)",
+          WebkitBackdropFilter: "blur(14px) saturate(150%)",
+          borderRight: tokens.isDark
+            ? "1px solid rgba(255,255,255,0.06)"
+            : "1px solid rgba(0,0,0,0.05)",
+          borderRadius: "0 20px 20px 0",
         }}
+        animate={{ opacity: [0.7, 1, 0.7] }}
+        transition={{ duration: 6, ease: "easeInOut", repeat: Infinity }}
+      />
+      {/* Liquid glass — правый край */}
+      <motion.div
+        className="pointer-events-none absolute right-0 top-0 bottom-0 w-[72px] xl:w-[110px] z-[5]"
+        style={{
+          background: tokens.isDark
+            ? "linear-gradient(to left, rgba(99,102,241,0.10) 0%, rgba(6,182,212,0.05) 55%, transparent 100%)"
+            : "linear-gradient(to left, rgba(99,102,241,0.18) 0%, rgba(6,182,212,0.08) 55%, transparent 100%)",
+          backdropFilter: "blur(14px) saturate(150%)",
+          WebkitBackdropFilter: "blur(14px) saturate(150%)",
+          borderLeft: tokens.isDark
+            ? "1px solid rgba(255,255,255,0.06)"
+            : "1px solid rgba(0,0,0,0.05)",
+          borderRadius: "20px 0 0 20px",
+        }}
+        animate={{ opacity: [1, 0.7, 1] }}
+        transition={{ duration: 6, ease: "easeInOut", repeat: Infinity }}
       />
 
-      {/* Main content — flex container with smooth transitions */}
-      <div className="relative z-10 flex w-full max-w-5xl items-stretch gap-4 md:gap-6">
+      {/* Main content */}
+      <div className="relative z-10 flex w-full sm:max-w-5xl items-stretch">
         {children}
       </div>
     </div>
@@ -65,26 +82,28 @@ export function PremiumGlassCard({
   children,
   tokens,
   className = "",
+  style,
 }: {
   children: React.ReactNode;
   tokens: ThemeTokens;
   className?: string;
+  style?: React.CSSProperties;
 }) {
   return (
     <div
-      className={`relative w-full max-w-[440px] overflow-hidden rounded-lg sm:rounded-2xl md:rounded-[2rem] transition-all duration-300 ease-out ${className}`}
+      className={`relative overflow-hidden rounded-none sm:rounded-3xl ${tokens.glassCardShadow} ${className}`}
       style={{
         background: tokens.isDark
           ? "linear-gradient(135deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.02) 50%, rgba(255,255,255,0.04) 100%)"
           : "linear-gradient(135deg, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.85) 50%, rgba(255,255,255,0.92) 100%)",
-        backdropFilter: "blur(50px) saturate(200%)",
-        WebkitBackdropFilter: "blur(50px) saturate(200%)",
+        backdropFilter: "blur(40px) saturate(180%)",
         border: tokens.isDark
-          ? "1px solid rgba(255,255,255,0.1)"
-          : "1px solid rgba(0,0,0,0.06)",
+          ? "1px solid rgba(255,255,255,0.08)"
+          : "1px solid rgba(0,0,0,0.05)",
         boxShadow: tokens.isDark
-          ? "0 20px 60px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.1), inset 0 -1px 0 rgba(0,0,0,0.2), 0 0 1px rgba(0,188,212,0.3)"
-          : "0 20px 60px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.9), inset 0 -1px 0 rgba(0,0,0,0.05)",
+          ? "0 8px 40px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.08), inset 0 -1px 0 rgba(0,0,0,0.1)"
+          : "0 8px 40px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.8)",
+        ...style,
       }}
     >
       {/* Subtle top highlight */}
