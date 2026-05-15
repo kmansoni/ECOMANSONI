@@ -27,6 +27,18 @@ import { StarsV2 } from '@/lib/stars/v2/payments';
 import type { BotCommand, BotToken, BotWebhook, BotHandler, BotKeyboard, BotConversationState, BotSession, BotAnalytics, BotWithOwner } from '@/lib/bots/types';
 import { FSMVisualEditor } from '@/components/bots/FSMVisualEditor';
 
+type Tab = 'general' | 'handlers' | 'keyboards' | 'states' | 'analytics' | 'payments' | 'webhook';
+
+const TABS: { id: Tab; label: string; icon?: React.ReactNode }[] = [
+  { id: 'general',   label: 'Основное',     icon: <LayoutDashboard size={16} /> },
+  { id: 'handlers',  label: 'Обработчики',  icon: <Workflow size={16} /> },
+  { id: 'keyboards', label: 'Клавиатуры',   icon: <Zap size={16} /> },
+  { id: 'states',    label: 'Состояния',     icon: <BarChart2 size={16} /> },
+  { id: 'analytics', label: 'Аналитика',    icon: <Coins size={16} /> },
+  { id: 'payments',  label: 'Платежи',      icon: <Coins size={16} /> },
+  { id: 'webhook',   label: 'Webhook',      icon: <Webhook size={16} /> },
+];
+
 // ---------------------------------------------------------------------------
 // BotSettingsPage
 // ---------------------------------------------------------------------------
@@ -1235,13 +1247,12 @@ async function loadTransactions() {
           инвойсов, оплаты и возвратов.
         </p>
         <div className="mt-3 p-3 bg-background rounded-lg text-xs font-mono space-y-1">
-          <p>// Пример:</p>
-          <p>import { StarsV2 } from &quot;@/lib/stars/v2/payments&quot;;</p>
-          <p>const invoice = await StarsV2.createInvoice({{</p>
-          <p>  botId, chatId, title: &quot;Подписка&quot;,</p>
-          <p>  amount: 100, currency: &quot;XTR&quot;</p>
-          <p>}});</p>
-          <p>const result = await StarsV2.payInvoice(invoice.id);</p>
+          <pre>{String.raw`import { StarsV2 } from "@/lib/stars/v2/payments";`}</pre>
+          <pre>{String.raw`const invoice = await StarsV2.createInvoice({`}</pre>
+          <pre>{String.raw`  botId, chatId, title: "Подписка",`}</pre>
+          <pre>{String.raw`  amount: 100, currency: "XTR"`}</pre>
+          <pre>{String.raw`});`}</pre>
+          <pre>{String.raw`const result = await StarsV2.payInvoice(invoice.id);`}</pre>
         </div>
       </div>
     </div>

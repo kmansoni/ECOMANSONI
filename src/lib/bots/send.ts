@@ -5,7 +5,15 @@
  * Не зависит от Telegram API.
  */
 
-import { supabase } from '@/integrations/supabase/client';
+import { dbLoose as supabase } from '@/lib/supabase';
+import type {
+  InlineQueryResult,
+  WebAppInfo,
+  InlineKeyboardMarkup,
+  ReplyKeyboardMarkup,
+  ReplyKeyboardRemove,
+  ForceReply,
+} from './protocol';
 
 export type MessageDeliveryStatus = 'pending' | 'sent' | 'delivered' | 'read' | 'failed';
 
@@ -238,11 +246,15 @@ export async function sendBotMessage(
       raw_update: payload,
     });
 
-    await supabase.rpc('increment_bot_analytics', {
-      p_bot_id: botId,
-      p_date: new Date().toISOString().split('T')[0],
-      p_messages_sent: 1,
-    }).catch(() => {});
+    try {
+      await supabase.rpc('increment_bot_analytics', {
+        p_bot_id: botId,
+        p_date: new Date().toISOString().split('T')[0],
+        p_messages_sent: 1,
+      });
+    } catch {
+      // Analytics tracking is non-critical
+    }
 
     return { ok: true, message_id: message.id };
   } catch (error: any) {
@@ -291,22 +303,23 @@ export async function waitForUserMessage(
         schema: 'public',
         table: 'messages',
         filter: `conversation_id=eq.${chatId}`,
-      })
-      .subscribe(async (payload) => {
-        if (payload.new.sender_type === 'bot' && payload.new.bot_id === botId) return;
+      }, (payload) => {
+        const newMsg = payload.new as Record<string, unknown>;
+        if (newMsg.sender_type === 'bot' && newMsg.bot_id === botId) return;
 
         clearTimeout(timeout);
-        await channel.unsubscribe();
+        channel.unsubscribe();
 
         resolve({
           ok: true,
           content: {
-            text: payload.new.content?.text,
-            media_url: payload.new.content?.media_url,
-            content_type: payload.new.content_type,
+            text: (newMsg.content as Record<string, unknown>)?.text,
+            media_url: (newMsg.content as Record<string, unknown>)?.media_url,
+            content_type: newMsg.content_type,
           },
         });
-      });
+      })
+      .subscribe();
   });
 }
 

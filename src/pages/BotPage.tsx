@@ -8,7 +8,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Bot as BotIcon, Star, Clock, MessageCircle, Zap, Shield, ExternalLink, Send, Image as ImageIcon, FileText, Smile, ChevronUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { botApi } from '@/lib/bots/api';
-import { useBotSend, useRealtimeBotMessages } from '@/hooks/useBotSend';
+import { useBotSend } from '@/hooks/useBotSend';
+import { useRealtimeBotMessages } from '@/hooks/useRealtimeBotMessages';
 import { BotMessageContent } from '@/components/bots/BotMessageContent';
 import { supabase } from '@/integrations/supabase/client';
 

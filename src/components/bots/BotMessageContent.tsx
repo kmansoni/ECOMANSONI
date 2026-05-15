@@ -4,7 +4,7 @@
  *              animation, poll, location, venue, contact, action, callback_answer.
  */
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { cn } from '@/lib/utils';
 import { BotKeyboard } from './BotKeyboard';
 

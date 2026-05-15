@@ -16,7 +16,7 @@ export type BotEventType =
   | 'reaction'          // Реакция на сообщение
   | 'member_joined'     // Пользователь добавлен в чат с ботом
   | 'member_left'       // Пользователь удалён из чата
-  | 'start'             /start команда
+  | 'start'             // /start команда
   | 'command'           // Любая /команда
   | 'inline_query'      // Запрос для inline-режима
   | 'chosen_inline'     // Пользователь выбрал inline-результат
@@ -163,8 +163,6 @@ export interface BotEventContent {
   connected_website?: string;
   author_signature?: string;
   is_topic_message?: boolean;
-  is_automatic_forward?: boolean;
-  has_protected_content?: boolean;
   edit_date?: number;
   sender_chat?: BotChat;
 }
@@ -221,7 +219,6 @@ export interface BotMessage {
   caption_entities?: BotTextEntity[];
   contact?: BotContact;
   dice?: BotDice;
-  game?: BotGame;
   poll?: BotPoll;
   venue?: BotVenue;
   location?: BotLocation;

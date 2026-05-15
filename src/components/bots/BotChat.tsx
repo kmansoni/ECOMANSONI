@@ -4,7 +4,7 @@
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { supabase } from '@/integrations/supabase/client';
+import { dbLoose as supabase } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 import { BotIcon, Loader2 } from 'lucide-react';
 import { BotMessageContent } from './BotMessageContent';

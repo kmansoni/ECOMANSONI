@@ -5,6 +5,7 @@
  */
 
 import { supabase } from '@/lib/supabase';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type {
   Bot,
   BotWithOwner,
@@ -346,6 +347,55 @@ export const botApi = {
      return handleResponse<{ message: string }>(response);
    },
 
+   // ===== BOT HANDLERS =====
+
+   /**
+    * Get bot handlers
+    */
+   async getBotHandlers(botId: string): Promise<{ handlers: BotHandler[] }> {
+     const headers = await getAuthHeaders();
+     const response = await fetch(`${BOT_API_URL}/bots/${botId}/handlers`, { headers });
+     return handleResponse<{ handlers: BotHandler[] }>(response);
+   },
+
+   /**
+    * Create a bot handler
+    */
+   async createBotHandler(botId: string, data: Omit<BotHandler, 'id' | 'created_at' | 'updated_at'>): Promise<{ handler: BotHandler }> {
+     const headers = await getAuthHeaders();
+     const response = await fetch(`${BOT_API_URL}/bots/${botId}/handlers`, {
+       method: 'POST',
+       headers,
+       body: JSON.stringify(data),
+     });
+     return handleResponse<{ handler: BotHandler }>(response);
+   },
+
+   /**
+    * Update a bot handler
+    */
+   async updateBotHandler(botId: string, handlerId: string, data: Partial<BotHandler>): Promise<{ handler: BotHandler }> {
+     const headers = await getAuthHeaders();
+     const response = await fetch(`${BOT_API_URL}/bots/${botId}/handlers/${handlerId}`, {
+       method: 'PATCH',
+       headers,
+       body: JSON.stringify(data),
+     });
+     return handleResponse<{ handler: BotHandler }>(response);
+   },
+
+   /**
+    * Delete a bot handler
+    */
+   async deleteBotHandler(botId: string, handlerId: string): Promise<{ message: string }> {
+     const headers = await getAuthHeaders();
+     const response = await fetch(`${BOT_API_URL}/bots/${botId}/handlers/${handlerId}`, {
+       method: 'DELETE',
+       headers,
+     });
+     return handleResponse<{ message: string }>(response);
+   },
+
    // ===== BOT RUNS (Execution Logs) =====
 
 /**
@@ -393,6 +443,7 @@ export const botApi = {
      });
      return handleResponse<{ response: BotOutboundMessage | null }>(response);
    },
+ };
 
 // ============================================================================
 // MINI APP API
@@ -498,8 +549,6 @@ export const miniAppApi = {
 // CONVENIENCE HOOKS — Full implementation (replaces createBotHooks stubs)
 // ============================================================================
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-
 /**
  * useBots — список всех ботов пользователя (cursor-based)
  */
@@ -518,7 +567,6 @@ export function useBotRuns(botId: string, options?: { limit?: number; cursor?: s
     queryKey: ['bot-runs', botId, options],
     queryFn: () => botApi.getBotRuns(botId, options),
     enabled: !!botId,
-    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
   });
 }
 
@@ -604,17 +652,6 @@ export function useBotConversationStates(botId: string) {
   return useQuery({
     queryKey: ['bot-states', botId],
     queryFn: () => botApi.getBotStates(botId),
-    enabled: !!botId,
-  });
-}
-
-/**
- * useBotRuns — логи выполнения обработчиков
- */
-export function useBotRuns(botId: string, options?: { page?: number; pageSize?: number }) {
-  return useQuery({
-    queryKey: ['bot-runs', botId, options],
-    queryFn: () => botApi.getBotRuns(botId, options),
     enabled: !!botId,
   });
 }
