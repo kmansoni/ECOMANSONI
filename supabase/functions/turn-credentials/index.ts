@@ -6,12 +6,24 @@ const DEFAULT_TURN_TTL_SECONDS = 3600;
 const MIN_TURN_TTL_SECONDS = 3600;
 const MAX_TURN_TTL_SECONDS = 24 * 3600;
 
-const TURN_RATE_MAX_PER_WINDOW = Math.max(1, Number(Deno.env.get("TURN_RATE_MAX_PER_MINUTE") ?? "20"));
-const TURN_RATE_HARD_CAP_PER_WINDOW = Math.max(1, Number(Deno.env.get("TURN_RATE_HARD_CAP_PER_MINUTE") ?? "200"));
+const TURN_RATE_MAX_PER_WINDOW = Math.max(
+  1,
+  Number(Deno.env.get("TURN_RATE_MAX_PER_MINUTE") ?? "20"),
+);
+const TURN_RATE_HARD_CAP_PER_WINDOW = Math.max(
+  1,
+  Number(Deno.env.get("TURN_RATE_HARD_CAP_PER_MINUTE") ?? "200"),
+);
 const TURN_LOCAL_RL_WINDOW_MS = 60_000;
 
-const TURN_REPLAY_WINDOW_MS = Math.max(1_000, Number(Deno.env.get("TURN_REPLAY_WINDOW_MS") ?? "300000"));
-const TURN_METRICS_WINDOW_MS = Math.max(60_000, Number(Deno.env.get("TURN_METRICS_WINDOW_MS") ?? "3600000"));
+const TURN_REPLAY_WINDOW_MS = Math.max(
+  1_000,
+  Number(Deno.env.get("TURN_REPLAY_WINDOW_MS") ?? "300000"),
+);
+const TURN_METRICS_WINDOW_MS = Math.max(
+  60_000,
+  Number(Deno.env.get("TURN_METRICS_WINDOW_MS") ?? "3600000"),
+);
 
 const TURN_NO_STORE_HEADERS = {
   "Content-Type": "application/json",
@@ -89,9 +101,9 @@ function normalizeEnv(value: unknown): string {
 function isProductionEnv(): boolean {
   const env = (
     Deno.env.get("ENV") ??
-    Deno.env.get("DENO_ENV") ??
-    Deno.env.get("NODE_ENV") ??
-    ""
+      Deno.env.get("DENO_ENV") ??
+      Deno.env.get("NODE_ENV") ??
+      ""
   ).toLowerCase();
   if (env === "prod" || env === "production") return true;
 
@@ -144,7 +156,9 @@ function getClientIp(req: Request): string {
 }
 
 function isUuid(value: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ""));
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    String(value || ""),
+  );
 }
 
 function shouldFailHardOnRateLimitMisconfig(): boolean {
@@ -161,7 +175,9 @@ function shouldFailHardOnReplayMisconfig(): boolean {
 
 function parseRequestedTtlSeconds(body: unknown): number {
   const record = (body && typeof body === "object") ? body as Record<string, unknown> : {};
-  const requested = Number(record.ttlSeconds ?? Deno.env.get("TURN_TTL_SECONDS") ?? `${DEFAULT_TURN_TTL_SECONDS}`);
+  const requested = Number(
+    record.ttlSeconds ?? Deno.env.get("TURN_TTL_SECONDS") ?? `${DEFAULT_TURN_TTL_SECONDS}`,
+  );
   const ttl = Number.isFinite(requested) ? Math.floor(requested) : DEFAULT_TURN_TTL_SECONDS;
   return Math.max(MIN_TURN_TTL_SECONDS, Math.min(MAX_TURN_TTL_SECONDS, ttl));
 }
@@ -213,7 +229,9 @@ function cleanupWindowedMaps(): void {
 }
 
 function extractNonce(req: Request, body: Record<string, unknown>): string {
-  const headerNonce = normalizeEnv(req.headers.get("x-turn-nonce") ?? req.headers.get("x-request-id") ?? "");
+  const headerNonce = normalizeEnv(
+    req.headers.get("x-turn-nonce") ?? req.headers.get("x-request-id") ?? "",
+  );
   if (headerNonce) return headerNonce.slice(0, 120);
   const bodyNonce = normalizeEnv(String(body.nonce ?? body.requestId ?? ""));
   return bodyNonce.slice(0, 120);
@@ -233,8 +251,10 @@ async function enforceReplayProtection(
 
   const replayKey = `${userKey}:${nonce}`;
   const now = nowMs();
-  const seenUntil = replayNonceBuckets.get(replayKey);
-  if (seenUntil && seenUntil > now) {
+
+  // Atomically check-and-set for local replay cache
+  const existingEntry = replayNonceBuckets.get(replayKey);
+  if (existingEntry && existingEntry > now) {
     metrics.replayRejected += 1;
     return makeJsonResponse(corsHeaders, 409, { error: "replay_detected" });
   }
@@ -266,11 +286,17 @@ async function enforceReplayProtection(
     });
 
     if (error) {
-      logEvent("turn.replay.rpc_error", { code: error.code ?? null, message: error.message ?? null });
+      logEvent("turn.replay.rpc_error", {
+        code: error.code ?? null,
+        message: error.message ?? null,
+      });
       if (shouldFailHardOnReplayMisconfig()) {
         return makeJsonResponse(corsHeaders, 500, { error: "misconfigured" });
       }
-      replayNonceBuckets.set(replayKey, now + TURN_REPLAY_WINDOW_MS);
+      // Only set if not already set by concurrent request
+      if (!replayNonceBuckets.has(replayKey)) {
+        replayNonceBuckets.set(replayKey, now + TURN_REPLAY_WINDOW_MS);
+      }
       logEvent("turn.replay.local_fallback", { reason: "rpc_error" });
       return null;
     }
@@ -278,24 +304,34 @@ async function enforceReplayProtection(
     const row = Array.isArray(data) ? data[0] : data;
     if (row && row.allowed === false) {
       metrics.replayRejected += 1;
-      replayNonceBuckets.set(replayKey, now + TURN_REPLAY_WINDOW_MS);
+      // Only set if not already set by concurrent request
+      if (!replayNonceBuckets.has(replayKey)) {
+        replayNonceBuckets.set(replayKey, now + TURN_REPLAY_WINDOW_MS);
+      }
       return makeJsonResponse(corsHeaders, 409, { error: "replay_detected" });
     }
   } catch {
     if (shouldFailHardOnReplayMisconfig()) {
       return makeJsonResponse(corsHeaders, 500, { error: "misconfigured" });
     }
-    replayNonceBuckets.set(replayKey, now + TURN_REPLAY_WINDOW_MS);
+    // Only set if not already set by concurrent request
+    if (!replayNonceBuckets.has(replayKey)) {
+      replayNonceBuckets.set(replayKey, now + TURN_REPLAY_WINDOW_MS);
+    }
     logEvent("turn.replay.local_fallback", { reason: "exception" });
     return null;
   }
 
-  replayNonceBuckets.set(replayKey, now + TURN_REPLAY_WINDOW_MS);
+  // Only set if not already set by concurrent request
+  if (!replayNonceBuckets.has(replayKey)) {
+    replayNonceBuckets.set(replayKey, now + TURN_REPLAY_WINDOW_MS);
+  }
   return null;
 }
 
 async function hashRateScope(scope: string): Promise<string> {
-  const secret = Deno.env.get("TURN_RL_SCOPE_HASH_SECRET") ?? Deno.env.get("TURN_USER_HASH_SECRET") ?? Deno.env.get("TURN_SHARED_SECRET") ?? "turn-rl";
+  const secret = Deno.env.get("TURN_RL_SCOPE_HASH_SECRET") ??
+    Deno.env.get("TURN_USER_HASH_SECRET") ?? Deno.env.get("TURN_SHARED_SECRET") ?? "turn-rl";
   const digest = await hmacSha256Base64(secret, scope);
   return toBase64Url(digest).slice(0, 32);
 }
@@ -308,12 +344,16 @@ async function enforceTurnIssueRateLimit(
   const localBucket = Math.floor(nowMs() / TURN_LOCAL_RL_WINDOW_MS);
   const effectiveLocalMax = Math.min(TURN_RATE_MAX_PER_WINDOW, TURN_RATE_HARD_CAP_PER_WINDOW);
 
-  const userState = localUserRateBuckets.get(userId);
-  const userCount = userState && userState.bucket === localBucket ? userState.cnt + 1 : 1;
+  // Atomically update user rate bucket
+  const prevUserState = localUserRateBuckets.get(userId);
+  const userCount = prevUserState && prevUserState.bucket === localBucket
+    ? prevUserState.cnt + 1
+    : 1;
   localUserRateBuckets.set(userId, { bucket: localBucket, cnt: userCount });
 
-  const ipState = localIpRateBuckets.get(ip);
-  const ipCount = ipState && ipState.bucket === localBucket ? ipState.cnt + 1 : 1;
+  // Atomically update IP rate bucket
+  const prevIpState = localIpRateBuckets.get(ip);
+  const ipCount = prevIpState && prevIpState.bucket === localBucket ? prevIpState.cnt + 1 : 1;
   localIpRateBuckets.set(ip, { bucket: localBucket, cnt: ipCount });
 
   if (userCount > effectiveLocalMax || ipCount > TURN_RATE_HARD_CAP_PER_WINDOW) {
@@ -372,13 +412,16 @@ async function authenticateRequest(req: Request): Promise<AuthResult | null> {
   const apiKeys = parseApiKeys();
   const presentedApiKey = normalizeEnv(
     req.headers.get("x-turn-api-key") ??
-    req.headers.get("x-api-key") ??
-    req.headers.get("apikey") ??
-    "",
+      req.headers.get("x-api-key") ??
+      req.headers.get("apikey") ??
+      "",
   );
 
   if (presentedApiKey && apiKeys.includes(presentedApiKey)) {
-    const keyHash = toBase64Url(await hmacSha256Base64("turn-api-key", presentedApiKey)).slice(0, 24);
+    const keyHash = toBase64Url(await hmacSha256Base64("turn-api-key", presentedApiKey)).slice(
+      0,
+      24,
+    );
     return { userId: `apikey:${keyHash}`, authType: "api_key" };
   }
 
@@ -415,7 +458,10 @@ async function authenticateRequest(req: Request): Promise<AuthResult | null> {
   return null;
 }
 
-async function buildTurnCredentials(userId: string, ttlSeconds: number): Promise<{ username: string; credential: string; expiresAt: string }> {
+async function buildTurnCredentials(
+  userId: string,
+  ttlSeconds: number,
+): Promise<{ username: string; credential: string; expiresAt: string }> {
   const secret = normalizeEnv(Deno.env.get("TURN_SHARED_SECRET") ?? "");
   if (!secret) {
     throw new Error("turn_shared_secret_missing");
@@ -434,7 +480,9 @@ async function buildTurnCredentials(userId: string, ttlSeconds: number): Promise
   };
 }
 
-function splitIceServersByUrl(server: { urls: string | string[]; username?: string; credential?: string }) {
+function splitIceServersByUrl(
+  server: { urls: string | string[]; username?: string; credential?: string },
+) {
   const urls = Array.isArray(server.urls) ? server.urls : [server.urls];
   const out: Array<{ urls: string; username?: string; credential?: string }> = [];
   for (const u of urls) {
@@ -483,9 +531,12 @@ function maybeHandleMetrics(req: Request, corsHeaders: Record<string, string>): 
   if (!metricsKey) return makeJsonResponse(corsHeaders, 404, { error: "not_found" });
 
   const provided = normalizeEnv(req.headers.get("x-turn-metrics-key") ?? "");
-  if (!provided || provided !== metricsKey) return makeJsonResponse(corsHeaders, 403, { error: "forbidden" });
+  if (!provided || provided !== metricsKey) {
+    return makeJsonResponse(corsHeaders, 403, { error: "forbidden" });
+  }
 
-  const avgLatency = metrics.success + metrics.errors + metrics.rateLimited + metrics.unauthorized + metrics.replayRejected > 0
+  const avgLatency = metrics.success + metrics.errors + metrics.rateLimited + metrics.unauthorized +
+        metrics.replayRejected > 0
     ? Math.round(metrics.sumLatencyMs / Math.max(1, metrics.requests))
     : 0;
 
@@ -560,6 +611,13 @@ serve(async (req) => {
     const turnUrls = getTurnUrls();
     const stunUrls = getStunUrls();
 
+    // Pre-compute hashes for audit logging (avoid duplicate async calls)
+    const userHash = toBase64Url(await hmacSha256Base64("turn-audit-user", auth.userId)).slice(
+      0,
+      32,
+    );
+    const ipHash = await hashRateScope(clientIp);
+
     if (turnUrls.length === 0) {
       logEvent("turn.issue.no_turn_urls", { requestId });
       const latencyMs = Math.max(1, nowMs() - startedAt);
@@ -570,8 +628,8 @@ serve(async (req) => {
       await writeAuditLog({
         request_id: requestId,
         auth_type: auth.authType,
-        user_hash: toBase64Url(await hmacSha256Base64("turn-audit-user", auth.userId)).slice(0, 32),
-        ip_hash: await hashRateScope(clientIp),
+        user_hash: userHash,
+        ip_hash: ipHash,
         outcome: "stun_only",
         status_code: 200,
         latency_ms: latencyMs,
@@ -592,7 +650,11 @@ serve(async (req) => {
     const creds = await buildTurnCredentials(auth.userId, ttlSeconds);
     const iceServers = [
       ...stunUrls.map((u) => ({ urls: u })),
-      ...splitIceServersByUrl({ urls: turnUrls, username: creds.username, credential: creds.credential }),
+      ...splitIceServersByUrl({
+        urls: turnUrls,
+        username: creds.username,
+        credential: creds.credential,
+      }),
     ];
 
     const latencyMs = Math.max(1, nowMs() - startedAt);
@@ -603,8 +665,8 @@ serve(async (req) => {
     await writeAuditLog({
       request_id: requestId,
       auth_type: auth.authType,
-      user_hash: toBase64Url(await hmacSha256Base64("turn-audit-user", auth.userId)).slice(0, 32),
-      ip_hash: await hashRateScope(clientIp),
+      user_hash: userHash,
+      ip_hash: ipHash,
       outcome: "ok",
       status_code: 200,
       latency_ms: latencyMs,

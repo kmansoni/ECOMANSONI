@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Palette, Moon, Type, Radius, Sparkles, Sticker, Smartphone } from "lucide-react";
-import { useTheme } from "next-themes";
+import { useTheme } from "@/contexts/ThemeContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";

@@ -29,9 +29,23 @@ import {
 } from '@/lib/transit/gtfsLoader';
 
 const PEDESTRIAN_SPEED_KMH = 5.0;
-const TRANSFER_PENALTY_SECONDS = 180; // 3 min transfer penalty
 const MAX_WALK_KM = 1.5;
 const MAX_CANDIDATES = 50;
+
+function computeTransferPenaltySeconds(transferArrivalSeconds: number, nextDepartureSeconds: number): number {
+  const daySeconds = 24 * 3600;
+  const normalizedArrival = ((transferArrivalSeconds % daySeconds) + daySeconds) % daySeconds;
+  const hour = normalizedArrival / 3600;
+  const isPeakHour = (hour >= 7 && hour < 10) || (hour >= 17 && hour < 20);
+
+  // В часы пик закладываем больший буфер из-за плотности потоков на пересадках.
+  const basePenalty = isPeakHour ? 210 : 150;
+  const transferWindow = Math.max(0, nextDepartureSeconds - transferArrivalSeconds);
+
+  // Если окно пересадки большое, добавляем часть фактического ожидания,
+  // но не даём penalty раздуваться бесконтрольно.
+  return Math.min(420, Math.max(basePenalty, Math.round(transferWindow * 0.35)));
+}
 
 // Haversine distance in km
 function haversineKm(a: LatLng, b: LatLng): number {
@@ -277,7 +291,8 @@ class TransitRouterEngine {
 
                   if (boardIdx2 >= 0 && alightIdx2 > boardIdx2) {
                     const boardTime2 = stopTimes2[boardIdx2].departureSeconds;
-                    if (boardTime2 < transferArrival + TRANSFER_PENALTY_SECONDS) continue;
+                    const transferPenaltySeconds = computeTransferPenaltySeconds(transferArrival, boardTime2);
+                    if (boardTime2 < transferArrival + transferPenaltySeconds) continue;
 
                     const accessWalk = walkSegment(from, fs.stop.location);
                     const seg1 = this.tripCandidateToSegment(
@@ -287,7 +302,7 @@ class TransitRouterEngine {
                       { lat: 0, lng: 0 }, // placeholder — same stop
                       { lat: 0, lng: 0 }
                     );
-                    transferWalk.durationSeconds = TRANSFER_PENALTY_SECONDS;
+                    transferWalk.durationSeconds = transferPenaltySeconds;
                     transferWalk.distanceMeters = 0;
 
                     const seg2 = this.tripCandidateToSegment(
@@ -297,7 +312,7 @@ class TransitRouterEngine {
 
                     const totalDur = accessWalk.durationSeconds +
                       (stopTimes1[i].arrivalSeconds - stopTimes1[boardIdx1].departureSeconds) +
-                      TRANSFER_PENALTY_SECONDS +
+                      transferPenaltySeconds +
                       (stopTimes2[alightIdx2].arrivalSeconds - boardTime2) +
                       egressWalk.durationSeconds;
 

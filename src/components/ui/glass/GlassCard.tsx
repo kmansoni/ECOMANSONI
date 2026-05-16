@@ -53,15 +53,37 @@ export const GlassCard = forwardRef<HTMLDivElement, GlassCardProps>(function Gla
         {...rest}
       >
         {isAuthStyle && (
-          /* Внутренние "линии света" по краям как в AuthPage */
-          <div
-            className="pointer-events-none absolute inset-0"
-            aria-hidden
-            style={{
-              background:
-                "linear-gradient(180deg,rgba(255,255,255,0.10) 0%,transparent 35%,transparent 65%,rgba(255,255,255,0.04) 100%)",
-            }}
-          />
+          <>
+            {/* Specular highlight (блик света сверху) */}
+            <div
+              className="pointer-events-none absolute inset-x-0 top-0 h-1/2"
+              aria-hidden
+              style={{
+                background:
+                  "linear-gradient(180deg,rgba(255,255,255,0.35) 0%,rgba(255,255,255,0.10) 40%,transparent 100%)",
+              }}
+            />
+            {/* Refraction (мягкое цветное свечение снизу для жидкого эффекта) */}
+            <div
+              className="pointer-events-none absolute inset-x-0 bottom-0 h-1/3"
+              aria-hidden
+              style={{
+                background: tokens.isDark
+                  ? "linear-gradient(0deg,rgba(0,180,216,0.10) 0%,transparent 100%)"
+                  : "linear-gradient(0deg,rgba(255,255,255,0.25) 0%,transparent 100%)",
+              }}
+            />
+            {/* Inner ring (тонкая внутренняя обводка как у Apple liquid glass) */}
+            <div
+              className="pointer-events-none absolute inset-0 rounded-[inherit]"
+              aria-hidden
+              style={{
+                boxShadow: tokens.isDark
+                  ? "inset 0 1px 0 rgba(255,255,255,0.18), inset 0 0 0 1px rgba(255,255,255,0.06)"
+                  : "inset 0 1px 0 rgba(255,255,255,0.85), inset 0 0 0 1px rgba(255,255,255,0.35), inset 0 -1px 0 rgba(255,255,255,0.4)",
+              }}
+            />
+          </>
         )}
         <div className="relative">{children}</div>
       </div>

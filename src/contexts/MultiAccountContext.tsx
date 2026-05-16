@@ -367,7 +367,12 @@ export function MultiAccountProvider({ children }: { children: React.ReactNode }
   const instanceIdRef = React.useRef<string>(
     (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function")
       ? crypto.randomUUID()
-      : `inst_${Math.random().toString(16).slice(2)}_${Date.now().toString(16)}`,
+      : (() => {
+          const arr = new Uint8Array(8);
+          crypto.getRandomValues(arr);
+          const r = Array.from(arr, b => b.toString(16).padStart(2, '0')).join('');
+          return `inst_${r}_${Date.now().toString(16)}`;
+        })(),
   );
   const activeAccountIdRef = React.useRef<AccountId | null>(activeAccountId);
   const externalSwitchRef = React.useRef<((id: AccountId) => Promise<void>) | null>(null);

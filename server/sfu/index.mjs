@@ -66,6 +66,14 @@ const E2EE_MAX_REKEYS = 5;
 // continue operating normally.
 const E2EE_RATE_LIMIT_MAX_ENTRIES = 200_000;
 
+function getRemoteAddress(req) {
+  return (req?.socket?.remoteAddress ?? "").replace(/^::ffff:/i, "");
+}
+
+function isLoopbackAddress(address) {
+  return address === "127.0.0.1" || address === "::1";
+}
+
 function checkE2EERateLimit(deviceId, operation) {
   const now = Date.now();
   let entry = e2eeRateLimits.get(deviceId);
@@ -103,8 +111,13 @@ const supabaseAuthClient = SUPABASE_URL && SUPABASE_AUTH_KEY
 const authCache = new Map();
 const AUTH_CACHE_TTL_MS = 15_000;
 
-async function verifyAccessToken(accessToken) {
+async function verifyAccessToken(accessToken, req) {
   if (CALLS_DEV_INSECURE_AUTH) {
+    const remoteAddress = getRemoteAddress(req);
+    if (!isLoopbackAddress(remoteAddress)) {
+      console.warn(`[sfu] CALLS_DEV_INSECURE_AUTH rejected for non-loopback source: ${remoteAddress || "unknown"}`);
+      return null;
+    }
     return { userId: `dev_${String(accessToken ?? "anon").slice(0, 20)}` };
   }
 
@@ -242,7 +255,7 @@ function isSecureUpgradeRequest(req) {
   const xForwardedProto = req?.headers?.["x-forwarded-proto"];
   if (!xForwardedProto) return false;
 
-  const remoteAddress = (req?.socket?.remoteAddress ?? "").replace(/^::ffff:/i, "");
+  const remoteAddress = getRemoteAddress(req);
   if (TRUSTED_PROXIES.size > 0 && !TRUSTED_PROXIES.has(remoteAddress)) {
     return false;
   }
@@ -386,6 +399,49 @@ function sendToDevice(room, deviceId, frame) {
 function isLikelyBase64(value, minLength = 16) {
   if (typeof value !== "string" || value.length < minLength) return false;
   return /^[A-Za-z0-9+/=]+$/.test(value);
+}
+
+async function verifyIdentitySignature(kp, signatureBase64) {
+  try {
+    const senderIdentity = isObject(kp?.senderIdentity) ? kp.senderIdentity : null;
+    const userId = typeof senderIdentity?.userId === "string" ? senderIdentity.userId : "";
+    const deviceId = typeof senderIdentity?.deviceId === "string" ? senderIdentity.deviceId : "";
+    const sessionId = typeof senderIdentity?.sessionId === "string" ? senderIdentity.sessionId : "";
+    const identityPubKeyJwk = isObject(senderIdentity?.identityPubKeyJwk)
+      ? senderIdentity.identityPubKeyJwk
+      : null;
+
+    if (!identityPubKeyJwk) {
+      return false;
+    }
+
+    const signature = Buffer.from(signatureBase64, "base64");
+    if (signature.length < 32) {
+      return false;
+    }
+
+    const data = Buffer.from(
+      `${kp.senderPublicKey}|${kp.ciphertext}|${kp.epoch}|${userId}|${deviceId}|${sessionId}|${kp.salt ?? ""}`,
+      "utf8"
+    );
+
+    const publicKey = await crypto.webcrypto.subtle.importKey(
+      "jwk",
+      identityPubKeyJwk,
+      { name: "ECDSA", namedCurve: "P-256" },
+      false,
+      ["verify"]
+    );
+
+    return await crypto.webcrypto.subtle.verify(
+      { name: "ECDSA", hash: "SHA-256" },
+      publicKey,
+      signature,
+      data
+    );
+  } catch {
+    return false;
+  }
 }
 
 function isPeerE2EEReadyForEpoch(room, peerDeviceId) {
@@ -538,7 +594,7 @@ wss.on("connection", (ws, req) => {
 
       case "AUTH": {
         const accessToken = frame.payload?.accessToken;
-        const verified = await verifyAccessToken(accessToken);
+        const verified = await verifyAccessToken(accessToken, req);
         if (!verified) {
           ack(ws, frame.msgId, false, wsError("UNAUTHENTICATED", "Invalid accessToken", {}, false));
           return;
@@ -884,43 +940,74 @@ wss.on("connection", (ws, req) => {
         // (< 17 bytes, the minimum SFrame overhead) are blocked as they cannot
         // carry valid encrypted payloads and indicate a bypassed E2EE sender.
         if (requireSFrame) {
-          if (produced.observer && typeof produced.observer.on === "function") {
-            // REQUIRED: mediasoup v3 does NOT emit "trace" events unless enableTrace() is called.
-            // Without this the entire SFrame enforcement block is dead code.
-            if (typeof produced.enableTrace === "function") {
-              produced.enableTrace(["rtp"]);
-            }
-            let framesChecked = 0;
-            let suspiciousFrames = 0;
-            const MAX_CHECK_FRAMES = 5;
-            const SFRAME_CHECK_TIMEOUT = 10000;
-            const checkTimer = setTimeout(() => {
-              if (framesChecked === 0) {
-                console.log(`[SFrame] WARN: No frames received from producer ${producerId} within ${SFRAME_CHECK_TIMEOUT}ms`);
-              }
-            }, SFRAME_CHECK_TIMEOUT);
-            produced.observer.on("trace", (trace) => {
-              if (trace.type === "rtp" && framesChecked < MAX_CHECK_FRAMES) {
-                framesChecked++;
-                // SECURITY FIX: Track frames too small to contain SFrame header + ciphertext
-                if (trace.size !== undefined && trace.size < 17) {
-                  suspiciousFrames++;
-                  console.log(`[SFrame] WARN: Producer ${producerId} frame ${framesChecked} too small for SFrame (${trace.size} bytes)`);
-                }
-                if (framesChecked >= MAX_CHECK_FRAMES) {
-                  clearTimeout(checkTimer);
-                  // SECURITY FIX: If ALL sampled frames are too small, close the producer.
-                  // A single outlier (e.g. RTCP SR, padding) is tolerated; unanimous failure is not.
-                  if (suspiciousFrames >= MAX_CHECK_FRAMES) {
-                    console.warn(`[SFrame] BLOCKING: Producer ${producerId} — ALL ${MAX_CHECK_FRAMES} frames too small for SFrame. Closing producer.`);
-                    produced.close();
-                  } else {
-                    console.log(`[SFrame] OK: Producer ${producerId} passed ${MAX_CHECK_FRAMES} frame checks (${suspiciousFrames} suspicious)`);
-                  }
-                }
-              }
+          const hasTraceObserver = produced.observer && typeof produced.observer.on === "function";
+          const canEnableTrace = typeof produced.enableTrace === "function";
+
+          const closeSuspiciousProducer = async (reason) => {
+            const wasClosed = await mediaPlane.closeProducer(room.roomId, producerId).catch((error) => {
+              logOperationError("closeProducer", { roomId: room.roomId, deviceId: conn.deviceId, error });
+              return false;
             });
+
+            room.producers.delete(producerId);
+
+            if (!wasClosed) {
+              console.warn(`[SFrame] closeProducer fallback cleanup for ${producerId}`);
+            }
+
+            bumpRoomVersion(room);
+            broadcastRoom(room, {
+              v: 1,
+              type: "PRODUCER_REMOVED",
+              msgId: uuid(),
+              ts: nowMs(),
+              payload: { roomId: room.roomId, producerId, peerDeviceId: conn.deviceId, reason },
+            }, conn.deviceId);
+          };
+
+          if (!hasTraceObserver || !canEnableTrace) {
+            await closeSuspiciousProducer("SFRAME_TRACE_UNAVAILABLE");
+            ack(ws, frame.msgId, false, wsError("E2EE_ENFORCEMENT_FAILED", "SFrame trace enforcement unavailable", {}, true));
+            return;
           }
+
+          produced.enableTrace(["rtp"]);
+
+          let framesChecked = 0;
+          let suspiciousFrames = 0;
+          let enforcementDone = false;
+          const MAX_CHECK_FRAMES = 5;
+          const SFRAME_CHECK_TIMEOUT = 10000;
+          const checkTimer = setTimeout(() => {
+            if (!enforcementDone && framesChecked === 0) {
+              console.warn(`[SFrame] WARN: no RTP trace frames for producer ${producerId} within ${SFRAME_CHECK_TIMEOUT}ms`);
+            }
+          }, SFRAME_CHECK_TIMEOUT);
+
+          produced.observer.on("trace", (trace) => {
+            if (enforcementDone || trace.type !== "rtp" || framesChecked >= MAX_CHECK_FRAMES) {
+              return;
+            }
+
+            framesChecked += 1;
+            if (trace.size !== undefined && trace.size < 17) {
+              suspiciousFrames += 1;
+              console.log(`[SFrame] WARN: Producer ${producerId} frame ${framesChecked} too small for SFrame (${trace.size} bytes)`);
+            }
+
+            if (framesChecked >= MAX_CHECK_FRAMES) {
+              enforcementDone = true;
+              clearTimeout(checkTimer);
+
+              if (suspiciousFrames >= MAX_CHECK_FRAMES) {
+                console.warn(`[SFrame] BLOCKING: Producer ${producerId} — all ${MAX_CHECK_FRAMES} sampled frames too small for SFrame.`);
+                void closeSuspiciousProducer("SFRAME_FRAMES_TOO_SMALL");
+                return;
+              }
+
+              console.log(`[SFrame] OK: Producer ${producerId} passed ${MAX_CHECK_FRAMES} frame checks (${suspiciousFrames} suspicious)`);
+            }
+          });
         }
 
         send(ws, {
@@ -1114,6 +1201,43 @@ wss.on("connection", (ws, req) => {
         if (!kp.senderPublicKey || !isLikelyBase64(kp.senderPublicKey, 24)) {
           ack(ws, frame.msgId, false, wsError("KEY_PACKAGE_INVALID", "Missing or invalid senderPublicKey", {}, false));
           return;
+        }
+
+        const senderIdentity = isObject(kp.senderIdentity) ? kp.senderIdentity : null;
+        if (!senderIdentity) {
+          ack(ws, frame.msgId, false, wsError("KEY_PACKAGE_INVALID", "Missing senderIdentity", {}, false));
+          return;
+        }
+
+        if (typeof senderIdentity.sessionId !== "string" || senderIdentity.sessionId.length < 8) {
+          ack(ws, frame.msgId, false, wsError("KEY_PACKAGE_INVALID", "Invalid senderIdentity.sessionId", {}, false));
+          return;
+        }
+
+        if (senderIdentity.userId !== conn.userId || senderIdentity.deviceId !== conn.deviceId) {
+          ack(ws, frame.msgId, false, wsError("KEY_PACKAGE_INVALID", "senderIdentity mismatch", {}, false));
+          return;
+        }
+
+        const isDiscoveryPackage = kp.keyPackageType === "DISCOVERY";
+        if (isDiscoveryPackage) {
+
+          const signatureValid = await verifyIdentitySignature(kp, kp.sig);
+          if (!signatureValid) {
+            ack(ws, frame.msgId, false, wsError("KEY_PACKAGE_INVALID", "Invalid senderIdentity signature", {}, false));
+            return;
+          }
+        } else {
+          if (!kp.identitySig || !isLikelyBase64(kp.identitySig, 24)) {
+            ack(ws, frame.msgId, false, wsError("KEY_PACKAGE_INVALID", "Missing or invalid identitySig", {}, false));
+            return;
+          }
+
+          const signatureValid = await verifyIdentitySignature(kp, kp.identitySig);
+          if (!signatureValid) {
+            ack(ws, frame.msgId, false, wsError("KEY_PACKAGE_INVALID", "Invalid identitySig", {}, false));
+            return;
+          }
         }
 
         if (!room.peers.has(kp.targetDeviceId)) {

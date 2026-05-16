@@ -37,7 +37,13 @@ import {
 import { Slider } from "@/components/ui/slider";
 import { CreativePreview } from "./CreativePreview";
 import { validateCreativeInput } from "@/lib/validators";
-import type { AdCreative, AdCreativeInsert } from "@/lib/ads/types";
+import type {
+  AdCreative,
+  AdCreativeInsert,
+  AdCreativeStatus,
+  AdCreativeType,
+  CallToAction,
+} from "@/lib/ads/types";
 
 interface CreativeEditorProps {
   open: boolean;
@@ -45,6 +51,34 @@ interface CreativeEditorProps {
   onSubmit: (data: AdCreativeInsert) => Promise<void>;
   initialData?: AdCreative | null;
   submitLabel?: string;
+}
+
+type CreativeFormData = Omit<AdCreativeInsert, "campaign_id" | "creative_hash"> & {
+  description: string;
+  frequency_cap: number;
+  priority_order: number;
+};
+
+const DEFAULT_FORM_DATA: CreativeFormData = {
+  type: "image",
+  media_url: "",
+  headline: "",
+  description: "",
+  call_to_action: "learn_more",
+  destination_url: "",
+  frequency_cap: 3,
+  priority_order: 0,
+};
+
+const CREATIVE_TYPES: AdCreativeType[] = ["image", "video", "carousel", "story"];
+const CTA_VALUES: CallToAction[] = ["learn_more", "shop_now", "sign_up", "contact_us", "download", "get_quote", "apply_now"];
+
+function isCreativeType(value: string): value is AdCreativeType {
+  return CREATIVE_TYPES.includes(value as AdCreativeType);
+}
+
+function isCallToAction(value: string): value is CallToAction {
+  return CTA_VALUES.includes(value as CallToAction);
 }
 
 export function CreativeEditor({
@@ -56,26 +90,17 @@ export function CreativeEditor({
 }: CreativeEditorProps) {
   const [previewFormat, setPreviewFormat] = useState<'feed' | 'story' | 'reels'>('feed');
   const [serverError, setServerError] = useState<string | null>(null);
-  const [formData, setFormData] = useState({
-    type: 'image' as const,
-    media_url: '',
-    headline: '',
-    description: '',
-    call_to_action: 'learn_more' as const,
-    destination_url: '',
-    frequency_cap: 3,
-    priority_order: 0,
-  });
+  const [formData, setFormData] = useState<CreativeFormData>(DEFAULT_FORM_DATA);
 
   // Сброс при открытии/изменении initialData
   useEffect(() => {
     if (open) {
       setFormData({
-        type: initialData?.type ?? 'image',
+        type: (initialData?.type ?? 'image') as AdCreativeType,
         media_url: initialData?.media_url ?? '',
         headline: initialData?.headline ?? '',
         description: initialData?.description ?? '',
-        call_to_action: initialData?.call_to_action ?? 'learn_more',
+        call_to_action: (initialData?.call_to_action ?? 'learn_more') as CallToAction,
         destination_url: initialData?.destination_url ?? '',
         frequency_cap: initialData?.frequency_cap ?? 3,
         priority_order: initialData?.priority_order ?? 0,
@@ -84,8 +109,37 @@ export function CreativeEditor({
     }
   }, [open, initialData]);
 
-  const handleChange = (field: string, value: any) => {
+  const handleChange = <K extends keyof CreativeFormData>(field: K, value: CreativeFormData[K]) => {
     setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const previewCreative: AdCreative = {
+    id: initialData?.id ?? "preview",
+    campaign_id: initialData?.campaign_id ?? "preview-campaign",
+    type: formData.type,
+    media_url: formData.media_url,
+    thumbnail_url: initialData?.thumbnail_url ?? null,
+    headline: formData.headline,
+    description: formData.description || null,
+    call_to_action: formData.call_to_action,
+    destination_url: formData.destination_url,
+    status: initialData?.status ?? ("draft" as AdCreativeStatus),
+    moderation_reason: initialData?.moderation_reason ?? null,
+    moderated_at: initialData?.moderated_at ?? null,
+    moderated_by: initialData?.moderated_by ?? null,
+    moderation_metadata: initialData?.moderation_metadata ?? null,
+    updated_at: initialData?.updated_at ?? new Date().toISOString(),
+    updated_by: initialData?.updated_by ?? null,
+    deleted_at: initialData?.deleted_at ?? null,
+    creative_hash: initialData?.creative_hash ?? "preview",
+    frequency_cap: formData.frequency_cap,
+    priority_order: formData.priority_order,
+    media_duration_sec: initialData?.media_duration_sec ?? null,
+    media_width: initialData?.media_width ?? null,
+    media_height: initialData?.media_height ?? null,
+    file_size_bytes: initialData?.file_size_bytes ?? null,
+    aspect_ratio: initialData?.aspect_ratio ?? null,
+    created_at: initialData?.created_at ?? new Date().toISOString(),
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -104,19 +158,10 @@ export function CreativeEditor({
         ...formData,
         description: formData.description || null,
       } as AdCreativeInsert);
-      setFormData({
-        type: 'image',
-        media_url: '',
-        headline: '',
-        description: '',
-        call_to_action: 'learn_more',
-        destination_url: '',
-        frequency_cap: 3,
-        priority_order: 0,
-      });
+      setFormData(DEFAULT_FORM_DATA);
       onOpenChange(false);
-    } catch (err: any) {
-      setServerError(err.message || 'Ошибка сохранения');
+    } catch (err: unknown) {
+      setServerError(err instanceof Error ? err.message : 'Ошибка сохранения');
     }
   };
 
@@ -137,7 +182,11 @@ export function CreativeEditor({
               <label className="text-sm font-medium">Тип</label>
               <Select
                 value={formData.type}
-                onValueChange={(value: any) => handleChange('type', value)}
+                onValueChange={(value) => {
+                  if (isCreativeType(value)) {
+                    handleChange('type', value);
+                  }
+                }}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Выберите тип" />
@@ -194,7 +243,11 @@ export function CreativeEditor({
               <label className="text-sm font-medium">Призыв к действию</label>
               <Select
                 value={formData.call_to_action}
-                onValueChange={(value: any) => handleChange('call_to_action', value)}
+                onValueChange={(value) => {
+                  if (isCallToAction(value)) {
+                    handleChange('call_to_action', value);
+                  }
+                }}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Выберите CTA" />
@@ -288,7 +341,7 @@ export function CreativeEditor({
 
             <div className="flex justify-center p-4 border rounded-lg bg-muted/20">
               <CreativePreview
-                creative={formData as any}
+                creative={previewCreative}
                 format={previewFormat}
               />
             </div>

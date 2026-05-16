@@ -13,6 +13,8 @@ import type { BotHandler, BotSession, BotKeyboard, BotConversationState, BotRun 
 // Handler Hooks
 // ============================================================================
 
+/* eslint-disable react-hooks/rules-of-hooks */
+// createBotEngineHooks is a hook factory, not a hook itself - it returns an object with hooks
 export function createBotEngineHooks(botId: string) {
   const queryClient = useQueryClient();
 
@@ -163,7 +165,6 @@ export function useBotRuns(botId: string, options: { limit?: number; cursor?: st
      queryKey: ['bot-runs', botId, options],
      queryFn: () => BotRunApi.listRuns(botId, options),
      enabled: !!botId,
-     getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
    });
  }
 
@@ -205,10 +206,40 @@ export const BotEngineApi = {
       BotStateApi.updateState(botId, stateId, data),
     delete: (botId: string, stateId: string) => BotStateApi.deleteState(botId, stateId),
   },
+  // ===== GUEST BOTS =====
+  guestBots: {
+    register: (botId: string, data: { supports_guest_queries: boolean }) =>
+      botApi.registerGuestBot(botId, data),
+    answerQuery: (botId: string, guestQueryId: string, data: { text: string; media_url?: string; media_type?: string }) =>
+      botApi.answerGuestQuery(botId, guestQueryId, data),
+  },
+
+  // ===== BOT-TO-BOT =====
+  botToBot: {
+    send: (fromBotId: string, toBotId: string, data: { content: string; type: string; session_id: string; media_url?: string; media_type?: string; reply_to_message_id?: string }) =>
+      botApi.sendBotToBotMessage(fromBotId, toBotId, data),
+  },
+
+  // ===== CHAT AUTOMATION =====
+  automation: {
+    register: (botId: string, data: { user_id: string; chat_ids: string[]; triggers: unknown[]; allowed_message_types: string[] }) =>
+      botApi.registerChatAutomation(botId, data),
+    list: (botId: string) => botApi.getAutomationRules(botId),
+  },
+
+  // ===== AI STYLES =====
+  aiStyles: {
+    create: (data: { name: string; description?: string; system_prompt: string; user_id: string }) =>
+      botApi.createAIStyle(data),
+    list: (userId: string) => botApi.listAIStyles(userId),
+    apply: (styleId: string, text: string, language: string) =>
+      botApi.applyAIStyle(styleId, text, language),
+  },
+
 runs: {
-     list: (botId: string, opts?: { limit?: number; cursor?: string }) =>
-       BotRunApi.listRuns(botId, opts),
-   },
+      list: (botId: string, opts?: { limit?: number; cursor?: string }) =>
+        BotRunApi.listRuns(botId, opts),
+    },
  };
 
 // ============================================================================

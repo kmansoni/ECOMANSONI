@@ -3,7 +3,7 @@
  * Используются всеми "v2"-разделами (feed, reels, chats, profile, calls), чтобы
  * новый UI выглядел в едином стиле с экраном входа/регистрации.
  */
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 export type GlassTheme = "dark" | "light";
 
@@ -55,9 +55,57 @@ export const BRAND_HALO_DARK =
 export const BRAND_HALO_LIGHT =
   "bg-gradient-to-br from-cyan-300/30 via-teal-300/25 to-emerald-200/30";
 
+const GLASS_THEME_STORAGE_KEY = "glass-theme";
+const ROOT_THEME_STORAGE_KEY = "theme";
+
+function readStoredGlassTheme(initial: GlassTheme): GlassTheme {
+  if (typeof window === "undefined") return initial;
+  try {
+    const raw = window.localStorage.getItem(GLASS_THEME_STORAGE_KEY);
+    if (raw === "dark" || raw === "light") return raw;
+
+    const rootTheme = window.localStorage.getItem(ROOT_THEME_STORAGE_KEY);
+    if (rootTheme === "dark" || rootTheme === "light") return rootTheme;
+  } catch {
+    // ignore storage read failures
+  }
+  return initial;
+}
+
+function writeStoredGlassTheme(theme: GlassTheme): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(GLASS_THEME_STORAGE_KEY, theme);
+  } catch {
+    // ignore storage write failures
+  }
+}
+
 export function useGlassTheme(initial: GlassTheme = "dark") {
-  const [theme, setTheme] = useState<GlassTheme>(initial);
-  const toggle = useCallback(() => setTheme((t) => (t === "dark" ? "light" : "dark")), []);
+  const [theme, setThemeState] = useState<GlassTheme>(() => readStoredGlassTheme(initial));
+
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== GLASS_THEME_STORAGE_KEY && event.key !== ROOT_THEME_STORAGE_KEY) return;
+      const next = event.newValue;
+      if (next === "dark" || next === "light") {
+        setThemeState(next);
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
+  const setTheme = useCallback((next: GlassTheme | ((prev: GlassTheme) => GlassTheme)) => {
+    setThemeState((prev) => {
+      const resolved = typeof next === "function" ? next(prev) : next;
+      writeStoredGlassTheme(resolved);
+      return resolved;
+    });
+  }, []);
+
+  const toggle = useCallback(() => setTheme((t) => (t === "dark" ? "light" : "dark")), [setTheme]);
+
   return { theme, setTheme, toggle };
 }
 
@@ -66,19 +114,19 @@ export function useGlassTokens(theme: GlassTheme): GlassTokens {
   return useMemo(
     () => ({
       isDark,
-      textPrimary: isDark ? "text-white" : "text-slate-900",
-      textSecondary: isDark ? "text-white/70" : "text-slate-700",
-      textMuted: isDark ? "text-slate-500" : "text-slate-400",
-      textFaint: isDark ? "text-white/40" : "text-slate-400",
+      textPrimary: isDark ? "text-white" : "text-slate-950",
+      textSecondary: isDark ? "text-white/70" : "text-slate-800",
+      textMuted: isDark ? "text-slate-500" : "text-slate-700",
+      textFaint: isDark ? "text-white/40" : "text-slate-600",
       glassCard: isDark
-        ? "bg-[linear-gradient(140deg,rgba(255,255,255,0.12),rgba(255,255,255,0.04))] border-white/20"
-        : "bg-[linear-gradient(140deg,rgba(255,255,255,0.92),rgba(255,255,255,0.78))] border-white/80 backdrop-blur-2xl",
+        ? "bg-[linear-gradient(140deg,rgba(255,255,255,0.14),rgba(255,255,255,0.04))] border-white/20 backdrop-blur-2xl backdrop-saturate-150"
+        : "bg-[linear-gradient(140deg,rgba(255,255,255,0.75),rgba(255,255,255,0.55))] border-white/80 backdrop-blur-2xl backdrop-saturate-150",
       glassCardShadow: isDark
-        ? "shadow-[0_30px_80px_-20px_rgba(10,8,40,0.6)]"
-        : "shadow-[0_30px_80px_-20px_rgba(79,70,229,0.25)]",
+        ? "shadow-[0_30px_80px_-20px_rgba(10,8,40,0.6),inset_0_1px_0_rgba(255,255,255,0.18)]"
+        : "shadow-[0_30px_80px_-20px_rgba(15,23,42,0.18),inset_0_1px_0_rgba(255,255,255,0.9)]",
       glassCardSoft: isDark
-        ? "bg-white/[0.05] border-white/10"
-        : "bg-white/70 border-slate-900/[0.06]",
+        ? "bg-white/[0.05] border-white/10 backdrop-blur-xl backdrop-saturate-150"
+        : "bg-white/65 border-white/70 backdrop-blur-xl backdrop-saturate-150",
       pillSurface: isDark
         ? "bg-white/[0.06] border-white/15 hover:bg-white/[0.12]"
         : "bg-white/70 border-slate-900/10 hover:bg-white",

@@ -30,7 +30,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { useTheme } from "next-themes";
+import { useTheme } from "@/contexts/ThemeContext";
 import { getErrorMessage } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -59,6 +59,7 @@ import { SettingsLanguageSection } from "./settings/SettingsLanguageSection";
 import { SettingsMainSection } from "./settings/SettingsMainSection";
 import { SettingsCloseFriendsSection } from "./settings/SettingsCloseFriendsSection";
 import { SettingsAccountsSection } from "./settings/SettingsAccountsSection";
+import { SettingsAIStylesSection } from "./settings/SettingsAIStylesSection";
 
 type ProfileState = {
   user_id?: string;
@@ -302,6 +303,10 @@ export function SettingsPage() {
       // accounts — multi-account switching
       case "accounts":
         return <SettingsAccountsSection {...sectionProps} />;
+
+      // ai_styles — Custom AI Styles management
+      case "ai_styles":
+        return <SettingsAIStylesSection {...sectionProps} />;
 
       default:
         return (

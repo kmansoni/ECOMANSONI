@@ -33,7 +33,7 @@ export function SecurityFooter({ tokens, onTerms, onPrivacy }: SecurityFooterPro
         <button
           type="button"
           onClick={onTerms}
-          className={`${tokens.textPrimary} underline underline-offset-2 hover:text-white hover:brightness-110 transition-colors cursor-pointer`}
+          className={`${tokens.textPrimary} underline underline-offset-2 hover:brightness-110 transition-colors cursor-pointer`}
         >
           Условиями использования
         </button>
@@ -41,7 +41,7 @@ export function SecurityFooter({ tokens, onTerms, onPrivacy }: SecurityFooterPro
         <button
           type="button"
           onClick={onPrivacy}
-          className={`${tokens.textPrimary} underline underline-offset-2 hover:text-white hover:brightness-110 transition-colors cursor-pointer`}
+          className={`${tokens.textPrimary} underline underline-offset-2 hover:brightness-110 transition-colors cursor-pointer`}
         >
           Политикой конфиденциальности
         </button>

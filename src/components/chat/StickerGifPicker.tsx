@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import EmojiPicker, { EmojiStyle, EmojiClickData, Theme } from "emoji-picker-react";
-import { useTheme } from "next-themes";
+import { useTheme } from "@/contexts/ThemeContext";
 import { useStickers, type Sticker } from "@/hooks/useStickers";
 import { useSavedGifs } from "@/hooks/useSavedGifs";
 import { searchGifs, getTrendingGifs, type GifItem } from "@/lib/chat/gifService";

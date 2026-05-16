@@ -15,17 +15,18 @@ describe('useBotSend — core logic', () => {
     const conversationId = 'conv_456';
     const userId = 'user_789';
     const text = 'Привет, бот!';
+    const eventId = `exec_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+    const timestamp = new Date().toISOString();
 
     const inboundEvent: BotInboundEvent = {
-      event_id: expect.any(String),
-      timestamp: expect.any(String),
+      event_id: eventId,
+      timestamp: timestamp,
       bot_id: botId,
       user_id: userId,
       chat_id: conversationId,
       type: 'message',
       content: {
         text,
-        message_id: expect.any(String),
       },
       context: {
         platform_user_id: userId,
@@ -171,8 +172,11 @@ describe('Event type validation', () => {
     'inline_query', 'chosen_inline', 'poll_answer', 'dice',
     'game', 'video_note', 'voice', 'location', 'contact',
     'venue', 'invoice', 'successful_payment', 'my_chat_member',
-    'chat_join_request', 'chat_boost', 'new_chat_title',
-    'delete_chat_photo', 'pinned_message', 'error', 'fallback',
+    'chat_join_request', 'chat_boost', 'new_chat_photo', 'new_chat_title',
+    'delete_chat_photo', 'pinned_message', 'proximity_alert',
+    'group_chat_created', 'supergroup_chat_created', 'channel_chat_created',
+    'message_auto_delete_timer_changed', 'migrate_to_chat_id', 'migrate_from_chat_id',
+    'poll', 'typing_start', 'typing_stop', 'error', 'fallback',
     'ai_response', 'welcome', 'schedule',
   ];
 

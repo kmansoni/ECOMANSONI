@@ -73,11 +73,14 @@ export function getOrCreateDeviceId(): string {
   try {
     const existing = localStorage.getItem(DEVICE_ID_KEY);
     if (existing && existing.length > 8) return existing;
-    const id = `dev_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+    const arr = new Uint8Array(8);
+    crypto.getRandomValues(arr);
+    const randomPart = Array.from(arr, b => b.toString(16).padStart(2, '0')).join('');
+    const id = `dev_${Date.now().toString(36)}_${randomPart}`;
     localStorage.setItem(DEVICE_ID_KEY, id);
     return id;
   } catch {
-    return `dev_fallback_${Math.random().toString(36).slice(2)}`;
+    return `dev_fallback_${Array.from(crypto.getRandomValues(new Uint8Array(4)), b => b.toString(16).padStart(2, '0')).join('')}`;
   }
 }
 

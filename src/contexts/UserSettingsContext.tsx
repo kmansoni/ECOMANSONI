@@ -1,5 +1,5 @@
 import React from "react";
-import { useTheme } from "next-themes";
+import { useTheme } from "@/contexts/ThemeContext";
 import { useAuth } from "@/hooks/useAuth";
 import {
   getOrCreateUserSettings,
@@ -71,7 +71,8 @@ export function UserSettingsProvider({ children }: { children: React.ReactNode }
       if (cancelled) return;
 
       // Cleanup inactive sessions based on current settings (or default 180 days).
-      const autoDays = (settings?.sessions_auto_terminate_days ?? 180) || 180;
+      const rawDays = settings?.sessions_auto_terminate_days;
+      const autoDays = Math.max(180, Math.min(365, rawDays ?? 180));
       await cleanupInactiveSessions({ userId, autoTerminateDays: autoDays });
       if (cancelled) return;
 

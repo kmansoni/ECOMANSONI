@@ -155,11 +155,11 @@ async function handleTool(name, args) {
           timeout: 30000
         });
         return {
-          content: [{ type: 'text', text: JSON.stringify({
-            success: true,
-            url: page.url(),
-            title: await page.title()
-          })]
+            content: [{ type: 'text', text: JSON.stringify({
+                success: true,
+                url: page.url(),
+                title: await page.title()
+            }) }]
         };
       }
 

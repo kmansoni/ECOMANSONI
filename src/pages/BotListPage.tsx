@@ -87,7 +87,6 @@ const loadBots = useCallback(async () => {
        setLoading(true);
        const result = await botApi.listBots({
          limit: 20,
-         status: activeCategory === 'all' ? undefined : (activeCategory as BotType['status']),
        });
        setBots(result.bots);
        setNextCursor(result.nextCursor);
@@ -105,7 +104,6 @@ const loadBots = useCallback(async () => {
        const result = await botApi.listBots({
          limit: 20,
          cursor: nextCursor,
-         status: activeCategory === 'all' ? undefined : (activeCategory as BotType['status']),
        });
       setBots((prev) => [...prev, ...result.bots]);
       setNextCursor(result.nextCursor);
@@ -149,15 +147,21 @@ const loadBots = useCallback(async () => {
 
   // Фильтрация ботов по поиску
   const filteredBots = useMemo(() => {
-    if (!searchQuery.trim()) return bots;
     const q = searchQuery.toLowerCase().trim();
-    return bots.filter(
-      (b) =>
+    return bots.filter((b) => {
+      const category = (b.category || '').toLowerCase();
+      const matchesCategory = activeCategory === 'all' || category === activeCategory;
+      if (!matchesCategory) return false;
+
+      if (!q) return true;
+
+      return (
         b.display_name.toLowerCase().includes(q) ||
         b.username.toLowerCase().includes(q) ||
         (b.description?.toLowerCase() || '').includes(q)
-    );
-  }, [bots, searchQuery]);
+      );
+    });
+  }, [bots, searchQuery, activeCategory]);
 
   if (loading && bots.length === 0) {
     return (

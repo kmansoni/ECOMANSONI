@@ -59,6 +59,7 @@ ufw allow 80/tcp
 ufw allow 443/tcp
 ufw allow 3478/udp
 ufw allow 3478/tcp
+ufw allow 5349/udp
 ufw allow 5349/tcp
 ufw allow 49160:49200/udp
 
@@ -111,6 +112,7 @@ services:
       - "3478:3478/udp"
       - "3478:3478/tcp"
       - "5349:5349/tcp"
+      - "5349:5349/udp"
       - "49160-49200:49160-49200/udp"
     volumes:
       - ./turnserver.conf:/etc/coturn/turnserver.conf:ro
@@ -120,6 +122,12 @@ EOF
 
 echo "[TURN] Starting coturn..."
 docker compose -f /opt/turn/docker-compose.yml up -d
+
+# Auto-renewal for Let's Encrypt certificates (cron job)
+cat > /etc/cron.d/turn-certbot <<'CRON'
+0 3 * * * root certbot renew --quiet --post-hook "docker compose -f /opt/turn/docker-compose.yml restart"
+CRON
+chmod 644 /etc/cron.d/turn-certbot
 
 echo "[TURN] Done. Next steps on your local machine:" 
 echo "  - Set Supabase secrets: TURN_URLS + TURN_SHARED_SECRET + TURN_TTL_SECONDS"

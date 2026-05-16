@@ -5,6 +5,10 @@ function uuid(prefix) {
   return `${prefix}_${crypto.randomUUID().slice(0, 8)}`;
 }
 
+function randomSha256Fingerprint() {
+  return crypto.randomBytes(32).toString("hex").match(/.{2}/g).join(":");
+}
+
 const DEFAULT_MEDIA_CODECS = [
   {
     kind: "audio",
@@ -80,7 +84,7 @@ async function createFallbackController() {
           fingerprints: [
             {
               algorithm: "sha-256",
-              value: Array.from({ length: 32 }, () => "00").join(":"),
+              value: randomSha256Fingerprint(),
             },
           ],
         },
@@ -132,6 +136,32 @@ async function createFallbackController() {
       });
 
       return { id: consumerId, kind: producer.kind, rtpParameters: {} };
+    },
+
+    async closeProducer(roomId, producerId) {
+      const room = rooms.get(roomId);
+      if (!room) return false;
+
+      const producer = room.producers.get(producerId);
+      if (!producer) return false;
+
+      room.producers.delete(producerId);
+
+      const ownerProducerIds = room.peerToProducerIds.get(producer.peerDeviceId);
+      if (ownerProducerIds) {
+        ownerProducerIds.delete(producerId);
+        if (ownerProducerIds.size === 0) {
+          room.peerToProducerIds.delete(producer.peerDeviceId);
+        }
+      }
+
+      for (const [consumerId, consumer] of room.consumers.entries()) {
+        if (consumer.producerId === producerId) {
+          room.consumers.delete(consumerId);
+        }
+      }
+
+      return true;
     },
 
     async removePeer(roomId, peerDeviceId) {
@@ -342,7 +372,52 @@ async function createMediasoupController() {
       peerSet.add(producer.id);
       room.peerToProducerIds.set(peerDeviceId, peerSet);
 
-      return { id: producer.id, kind: producer.kind, observer: producer.observer };
+      return {
+        id: producer.id,
+        kind: producer.kind,
+        observer: producer.observer,
+        enableTrace:
+          typeof producer.enableTrace === "function"
+            ? producer.enableTrace.bind(producer)
+            : undefined,
+      };
+    },
+
+    async closeProducer(roomId, producerId) {
+      const room = rooms.get(roomId);
+      if (!room) return false;
+
+      const producer = room.producers.get(producerId);
+      if (!producer) return false;
+
+      const ownerDeviceId = producer.appData?.peerDeviceId;
+
+      try {
+        producer.close();
+      } catch {
+        // Producer может быть уже закрыт по transportclose, это безопасно игнорировать.
+      }
+
+      room.producers.delete(producerId);
+
+      if (ownerDeviceId) {
+        const ownerProducerIds = room.peerToProducerIds.get(ownerDeviceId);
+        if (ownerProducerIds) {
+          ownerProducerIds.delete(producerId);
+          if (ownerProducerIds.size === 0) {
+            room.peerToProducerIds.delete(ownerDeviceId);
+          }
+        }
+      }
+
+      for (const [consumerId, consumer] of room.consumers.entries()) {
+        if (consumer.producerId === producerId) {
+          consumer.close();
+          room.consumers.delete(consumerId);
+        }
+      }
+
+      return true;
     },
 
     async consume(roomId, peerDeviceId, producerId, rtpCapabilities = null) {
@@ -400,7 +475,7 @@ async function createMediasoupController() {
       room.peerToProducerIds.delete(peerDeviceId);
 
       for (const [consumerId, consumer] of room.consumers.entries()) {
-        if (producerIds.has(consumer.producerId) || consumer.appData?.peerDeviceId === peerDeviceId) {
+        if (producerIds.has(consumer.producerId) || consumer.peerDeviceId === peerDeviceId) {
           consumer.close();
           room.consumers.delete(consumerId);
         }

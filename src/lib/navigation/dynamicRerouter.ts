@@ -95,7 +95,7 @@ export class DynamicRerouter {
       const { fetchRoute } = await import('./routing');
       const result = await fetchRoute(pos, dest, true, 'car');
 
-      if (result.source !== 'navigation_server') {
+      if (result.source === 'offline') {
         recordFallbackUsage('routing', `dynamic_rerouter:${result.source}`);
       }
 

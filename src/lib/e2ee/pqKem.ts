@@ -118,15 +118,8 @@ async function _ecdhDecap(
  * STUB: ML-KEM-768 is not available. Returns zeros as a placeholder.
  * Replace this when integrating a real ML-KEM implementation.
  */
-async function _mlkemStub(): Promise<{ kemSharedSecret: ArrayBuffer; kemCiphertext: ArrayBuffer }> {
-  logger.warn(
-    '[E2EE:PQ] ML-KEM-768 requested but not available. ' +
-    'Falling back to ECDH-only. Enable PQ when FIPS 203 lands in Web Crypto.',
-  );
-  return {
-    kemSharedSecret: new ArrayBuffer(32),  // zero bytes — excluded from combiner
-    kemCiphertext:   new ArrayBuffer(0),
-  };
+function _mlkemStub(): never {
+  throw new Error("Post-Quantum KEM (ML-KEM-768) is not supported in this runtime. Please enable a compatible implementation.");
 }
 
 // ─── Hybrid combiner ─────────────────────────────────────────────────────────
@@ -188,27 +181,34 @@ function _concat(a: Uint8Array, b: Uint8Array): Uint8Array {
 export async function hybridEncapsulate(
   recipientPublicKey: CryptoKey,
 ): Promise<HybridKEMResult> {
-  const pqEnabled = isPQAvailable();
+  try {
+    const ecdhResult = await _ecdhEncap(recipientPublicKey);
+    let pqResult = { sharedBits: new ArrayBuffer(0), encap: "" };
+    let pqUsed = false;
 
-  const { sharedBits: ecdhBits, encap: ecdhEncap } = await _ecdhEncap(recipientPublicKey);
+    if (isPQAvailable()) {
+      pqResult = await _mlkemStub(); // Replace with real PQ-KEM when available
+      pqUsed = true;
+    }
 
-  let pqBits: ArrayBuffer | null = null;
-  let pqCiphertext = '';
+    const combinedSecret = await crypto.subtle.importKey(
+      "raw",
+      new Uint8Array([...new Uint8Array(ecdhResult.sharedBits), ...new Uint8Array(pqResult.sharedBits)]),
+      { name: "HKDF" },
+      false,
+      ["deriveBits"]
+    );
 
-  if (pqEnabled) {
-    const { kemSharedSecret, kemCiphertext } = await _mlkemStub();
-    pqBits = kemSharedSecret;
-    pqCiphertext = toBase64(kemCiphertext);
+    return {
+      sharedSecret: combinedSecret,
+      ecdhCiphertext: toBase64(ecdhResult.encap),
+      pqCiphertext: toBase64(new TextEncoder().encode(pqResult.encap)),
+      pqUsed,
+    };
+  } catch (error) {
+    logger.error("Hybrid KEM encapsulation failed", error);
+    throw error;
   }
-
-  const sharedSecret = await _combineSecrets(ecdhBits, pqBits);
-
-  return {
-    sharedSecret,
-    ecdhCiphertext: toBase64(ecdhEncap),
-    pqCiphertext,
-    pqUsed: pqEnabled,
-  };
 }
 
 /**

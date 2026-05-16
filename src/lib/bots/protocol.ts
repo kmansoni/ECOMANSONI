@@ -53,6 +53,10 @@ export type BotEventType =
   | 'ai_response'        // Ответ от AI-обработчика
   | 'welcome'            // Первое сообщение нового пользователя
   | 'schedule'           // Триггер по расписанию
+  | 'guest_message'      // Гостевое сообщение (бот упомянут в чужом чате)
+  | 'bot_to_bot'         // Сообщение от другого бота
+  | 'automation_trigger' // Триггер автоматизации чата
+  | 'ai_style_request'   // Запрос на применение AI-стиля
 
 // ── Типы ответов бота ────────────────────────────────────────────
 
@@ -97,6 +101,12 @@ export type BotResponseMethod =
   | 'getChatAdministrators'
   | 'getChatMembersCount'
   | 'getChatMember'
+  | 'sendGuestMessage'         // Отправить гостевой ответ
+  | 'sendBotToBotMessage'     // Отправить сообщение другому боту
+  | 'activateChatAutomation'  // Активировать правило автоматизации чата
+  | 'applyAIStyle'            // Применить AI-стиль к тексту
+  | 'registerGuestBot'        // Зарегистрировать бота как поддерживающий гостевые запросы
+  | 'answerGuestQuery'        // Ответить на гостевой запрос  
 
 // ── Интерфейсы протокола ─────────────────────────────────────────
 
@@ -165,6 +175,21 @@ export interface BotEventContent {
   is_topic_message?: boolean;
   edit_date?: number;
   sender_chat?: BotChat;
+
+  // Guest Bot fields
+  guest_query?: BotGuestMessage;
+  guest_caller_user?: BotUser;
+
+  // Bot-to-Bot fields
+  bot_to_bot_message?: BotToBotMessage;
+
+  // Chat Automation fields
+  automation_rule_id?: string;
+  automation_trigger?: AutomationTrigger;
+
+  // AI Style fields
+  ai_style_id?: string;
+  ai_style_request?: { style_id: string; text: string };
 }
 
 export interface BotEventContext {
@@ -634,4 +659,194 @@ export interface BotPayment {
   paid_at?: string;
   refund_at?: string;
   transaction_id?: string;
+}
+
+// ── Guest Bots (Telegram May 2026) ─────────────────────────────────
+
+/**
+ * Гостевое сообщение: бот упомянут в чужом чате, не будучи его членом.
+ * Аналог Telegram Guest Mode: запрос обрабатывается только в пределах
+ * конкретного упоминания без доступа к истории чата.
+ */
+export interface BotGuestMessage {
+  /** ID гостевого запроса */
+  guest_query_id: string;
+  /** ID чата, где упомянут бот */
+  chat_id: string;
+  /** ID пользователя, упомянувшего бота (инициатор гостевого запроса) */
+  caller_user_id: string;
+  /** Имя пользователя, упомянувшего */
+  caller_first_name: string;
+  /** Username инициатора */
+  caller_username?: string;
+  /** Текст сообщения, в котором упомянут бот */
+  source_text: string;
+  /** Полный текст запроса к боту */
+  query_text: string;
+  /** Временная метка гостевого запроса */
+  timestamp: string;
+  /** Какие разрешения запрошены у бота */
+  requested_permissions: BotGuestPermission[];
+}
+
+export interface BotGuestPermission {
+  type: 'read_message' | 'send_reply' | 'send_media' | 'api_call';
+  granted: boolean;
+}
+
+export interface BotGuestQueryResult {
+  /** ID гостевого запроса */
+  query_id: string;
+  /** Ответ бота (только для текущего запроса) */
+  response_text: string;
+  /** Срок действия ответа */
+  expires_at: string;
+  /** Можно ли отправлять follow-up ответы */
+  can_reply: boolean;
+}
+
+// ── Bot-to-Bot Chat ────────────────────────────────────────────────
+
+/**
+ * Бот отправил сообщение другому боту.
+ * Промежуточный слой: боты общаются между собой через собственный протокол mansoni,
+ * без обращения к api.telegram.org.
+ */
+export interface BotToBotMessage {
+  /** ID сообщения от бота-отправителя */
+  message_id: string;
+  /** ID бота-отправителя */
+  from_bot_id: string;
+  /** Целевой бот */
+  to_bot_id: string;
+  /** Тип сообщения */
+  type: 'direct' | 'command' | 'query_response' | 'status';
+  /** Содержимое сообщения */
+  content: string;
+  /** Вложенный медиа */
+  media_url?: string;
+  media_type?: string;
+  /** ID сообщения, на которое отвечаем */
+  reply_to_message_id?: string;
+  /** Временная метка */
+  timestamp: string;
+  /** Сессионный ID для отслеживания диалога между ботами */
+  session_id: string;
+}
+
+// ── Chat Automation ───────────────────────────────────────────────
+
+/**
+ * Правила автоматизации чата: бот может отвечать за пользователя.
+ * Аналог Telegram Chat Automation (май 2026) — в собственной реализации.
+ */
+export interface ChatAutomationRule {
+  rule_id: string;
+  user_id: string;
+  bot_id: string;
+  name: string;
+  /** Триггеры, которые запускают бота */
+  triggers: AutomationTrigger[];
+  /** В каких чатах бот может отвечать */
+  allowed_chat_ids: string[];
+  /** Типы сообщений, которые бот может отправлять */
+  allowed_message_types: ('text' | 'media' | 'sticker' | 'gif')[];
+  /** Запрещённые слова/темы */
+  blocked_topics: string[];
+  /** Активно ли правило */
+  is_active: boolean;
+  /** Сколько сообщений бот может отправить за период (rate limit) */
+  rate_limit_per_hour?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AutomationTrigger {
+  type: 'keyword' | 'regex' | 'intent' | 'time_based' | 'inactivity';
+  value: string;
+  /** Задержка перед ответом в секундах */
+  delay_seconds?: number;
+  /** Только в определённое время суток */
+  time_window?: { start: string; end: string };
+}
+
+// ── Custom AI Styles ──────────────────────────────────────────────
+
+/**
+ * Пользовательский AI-стиль для текстового редактора.
+ * Аналог Telegram Custom AI Styles (май 2026).
+ */
+export interface AIStyle {
+  style_id: string;
+  user_id: string;
+  name: string;
+  description?: string;
+  /** Системный промпт для стиля */
+  system_prompt: string;
+  /** Использовать ли этот стиль по умолчанию */
+  is_default: boolean;
+  /** Публичный стиль (можно делиться ссылкой) */
+  is_public: boolean;
+  /** Автор стиля */
+  author_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AIStyleShare {
+  share_id: string;
+  style_id: string;
+  /** Кто опубликовал ссылку */
+  shared_by: string;
+  /** Сколько раз стиль использовали по ссылке */
+  use_count: number;
+  created_at: string;
+}
+
+// ── Bot Response Methods additions ───────────────────────────────
+
+/** Бот отправляет гостевый ответ (только для текущего запроса) */
+export interface BotGuestResponse {
+  method: 'sendGuestMessage';
+  guest_query_id: string;
+  params: {
+    text: string;
+    media_url?: string;
+    media_type?: string;
+  };
+}
+
+/** Бот отправляет сообщение другому боту */
+export interface BotToBotRequest {
+  method: 'sendBotToBotMessage';
+  params: {
+    to_bot_id: string;
+    content: string;
+    type: 'direct' | 'command' | 'query_response' | 'status';
+    session_id: string;
+    media_url?: string;
+    media_type?: string;
+    reply_to_message_id?: string;
+  };
+}
+
+/** Бот активирует правило автоматизации чата */
+export interface BotAutomationActivate {
+  method: 'activateChatAutomation';
+  params: {
+    user_id: string;
+    rule_id: string;
+    chat_ids: string[];
+    bot_token: string; // токен бота, который будет отвечать
+  };
+}
+
+/** Применить пользовательский AI-стиль к тексту */
+export interface BotApplyAIStyle {
+  method: 'applyAIStyle';
+  params: {
+    style_id: string;
+    text: string;
+    language: string;
+  };
 }

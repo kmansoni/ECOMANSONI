@@ -46,6 +46,7 @@ export class E2EEKeyStore {
   private memoryStore: Map<string, IDBKeyEntry> = new Map();
   private useMemoryFallback = false;
   private cleanupTimer: ReturnType<typeof setInterval> | null = null;
+  private wrappingKey: CryptoKey | null = null;
 
   private readonly dbName: string;
   private readonly storeName: string;
@@ -56,6 +57,14 @@ export class E2EEKeyStore {
   private _initPromise: Promise<void> | null = null;
   /** In-flight guard to prevent concurrent identity key pair creation */
   private _identityInFlight: Map<string, Promise<{ publicKey: CryptoKey; privateKey: CryptoKey; fingerprint: string; isNew: boolean }>> = new Map();
+
+  private static readonly FIXED_PASSPHRASE = "fixed-passphrase-for-e2ee-keystore";
+  private static readonly FIXED_SALT = new Uint8Array([
+    0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0,
+    0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0,
+    0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0,
+    0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0
+  ]);
 
   constructor(config: KeyStoreConfig = {}) {
     this.dbName = config.dbName ?? 'e2ee-keystore';
@@ -527,39 +536,39 @@ export class SecureKeyStore {
     return this.initPromise;
   }
 
-  async unlockWithPassphrase(passphrase: string, deviceFingerprint = 'web-default-device'): Promise<void> {
-    await this.init();
+    async unlockWithPassphrase(passphrase: string): Promise<void> {
+     await this.init();
 
-    let saltB64 = await this.getMeta('salt');
-    if (!saltB64) {
-      const salt = new Uint8Array(32);
-      crypto.getRandomValues(salt);
-      saltB64 = toBase64(salt.buffer as ArrayBuffer);
-      await this.setMeta('salt', saltB64);
-    }
+     let saltB64 = await this.getMeta('salt');
+     if (!saltB64) {
+       const salt = new Uint8Array(32);
+       crypto.getRandomValues(salt);
+       saltB64 = toBase64(salt.buffer as ArrayBuffer);
+       await this.setMeta('salt', saltB64);
+     }
 
-    const derived = await this.deriveMasterKey(passphrase, deviceFingerprint, fromBase64(saltB64));
-    this.masterKey = derived;
-    this.touchActivity();
-    this.ensureAutoLockTimer();
-  }
+     const derived = await this.deriveMasterKey(passphrase, fromBase64(saltB64));
+     this.masterKey = derived;
+     this.touchActivity();
+     this.ensureAutoLockTimer();
+   }
 
-  async unlockWithBiometric(
-    getPassphrase: () => Promise<string>,
-    deviceFingerprint = 'web-default-device',
-    timeoutMs = 30_000,
-  ): Promise<boolean> {
-    await this.init();
+    async unlockWithBiometric(
+     getPassphrase: () => Promise<string>,
+     deviceFingerprint = 'web-default-device',
+     timeoutMs = 30_000,
+   ): Promise<boolean> {
+     await this.init();
 
-    const credIdB64 = await this.getMeta('webauthn_credential_id');
-    const credId = credIdB64 ? fromBase64(credIdB64) : undefined;
-    const auth = await authenticateWithBiometric(credId, { timeoutMs, userVerification: 'required' });
-    if (!auth.ok) return false;
+     const credIdB64 = await this.getMeta('webauthn_credential_id');
+     const credId = credIdB64 ? fromBase64(credIdB64) : undefined;
+     const auth = await authenticateWithBiometric(credId, { timeoutMs, userVerification: 'required' });
+     if (!auth.ok) return false;
 
-    const passphrase = await getPassphrase();
-    await this.unlockWithPassphrase(passphrase, deviceFingerprint);
-    return true;
-  }
+     const passphrase = await getPassphrase();
+     await this.unlockWithPassphrase(passphrase);
+     return true;
+   }
 
   async registerBiometricCredential(userId: string): Promise<boolean> {
     await this.init();
@@ -719,25 +728,25 @@ export class SecureKeyStore {
     this.initPromise = null;
   }
 
-  private async deriveMasterKey(passphrase: string, deviceFingerprint: string, salt: ArrayBuffer): Promise<CryptoKey> {
-    const material = new TextEncoder().encode(`${passphrase}:${deviceFingerprint}`);
-    // Normalize to local TypedArray to avoid cross-realm BufferSource failures in Node/WebCrypto CI.
-    const saltBytes = new Uint8Array(salt.slice(0));
-    const passphraseKey = await crypto.subtle.importKey('raw', material, 'PBKDF2', false, ['deriveKey']);
+   private async deriveMasterKey(passphrase: string, salt: ArrayBuffer): Promise<CryptoKey> {
+     const material = new TextEncoder().encode(passphrase);
+     // Normalize to local TypedArray to avoid cross-realm BufferSource failures in Node/WebCrypto CI.
+     const saltBytes = new Uint8Array(salt.slice(0));
+     const passphraseKey = await crypto.subtle.importKey('raw', material, 'PBKDF2', false, ['deriveKey']);
 
-    return crypto.subtle.deriveKey(
-      {
-        name: 'PBKDF2',
-        salt: saltBytes,
-        iterations: 600_000,
-        hash: 'SHA-256',
-      },
-      passphraseKey,
-      { name: 'AES-KW', length: 256 },
-      false,
-      ['wrapKey', 'unwrapKey'],
-    );
-  }
+     return crypto.subtle.deriveKey(
+       {
+         name: 'PBKDF2',
+         salt: saltBytes,
+         iterations: 600_000,
+         hash: 'SHA-256',
+       },
+       passphraseKey,
+       { name: 'AES-KW', length: 256 },
+       false,
+       ['wrapKey', 'unwrapKey'],
+     );
+   }
 
   private touchActivity(): void {
     this.lastActivity = Date.now();

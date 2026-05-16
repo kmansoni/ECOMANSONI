@@ -1,7 +1,7 @@
 import type { LatLng } from '@/types/taxi';
 import type { NavRoute, TravelMode } from '@/types/navigation';
 import { routePreferenceLearner, type RouteScores, type RouteWeights, type TripContext } from '@/lib/navigation/routePreferenceLearner';
-import { evaluateRouteSuperposition } from '@/lib/navigation/quantumRouteEvaluator';
+import { evaluateRouteSuperposition, DEFAULT_ROUTE_WEIGHTS } from '@/lib/navigation/quantumRouteEvaluator';
 import { simulateUserTrip } from '@/lib/navigation/userDigitalTwin';
 import { computeSwarmRecommendation, createTravelIntention, registerIntention, removeIntention } from '@/lib/navigation/swarmIntelligence';
 import { getTimeAccount, loadTimeAccount, recordTimeSaved, summarizeTimeValue } from '@/lib/navigation/timeBank';
@@ -19,15 +19,6 @@ import type {
   SystemSelfReport,
   AbductiveHypothesis,
 } from '@/types/quantum-transport';
-
-const DEFAULT_ROUTE_WEIGHTS: RouteWeights = {
-  time: 0.35,
-  cost: 0.20,
-  eco: 0.10,
-  safety: 0.15,
-  comfort: 0.10,
-  transfers: 0.10,
-};
 
 export interface QuantumLiveInsights {
   quantumSuperposition: RouteSuperposition | null;

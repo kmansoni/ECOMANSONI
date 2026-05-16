@@ -297,7 +297,20 @@ export interface KeyPackagePayload {
   targetDeviceId: string;
   epoch: number;
   ciphertext: string;           // encrypted key material (base64)
+  /**
+   * Тип KEY_PACKAGE.
+   * - DISCOVERY: discovery-пакет (ciphertext намеренно равен senderPublicKey)
+   * - WRAPPED_EPOCH_KEY: нормальный пакет с реальным ciphertext от createKeyPackage()
+   */
+  keyPackageType?: 'DISCOVERY' | 'WRAPPED_EPOCH_KEY' | string;
+  /** Одноразовый nonce для discovery anti-replay (используется только при keyPackageType=DISCOVERY). */
+  discoveryNonce?: string;
   sig: string;                  // signature (base64)
+  /**
+   * Подпись senderIdentity (ECDSA P-256) поверх payload key package.
+   * Для non-discovery пакетов обязательна на сервере.
+   */
+  identitySig?: string;
   /** C-3 fix: REQUIRED — sender ECDH P-256 public key (base64 uncompressed 65 bytes) */
   senderPublicKey: string;      // was optional — made required to prevent null crash in processKeyPackage
   salt: string;                 // base64 random 32-byte HKDF salt (H-1) — made required
@@ -312,6 +325,7 @@ export interface KeyPackagePayload {
     userId: string;
     deviceId: string;
     sessionId: string;
+    identityPubKeyJwk?: JsonWebKey;
   };
 }
 

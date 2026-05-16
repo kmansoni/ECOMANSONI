@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
-import { Plus, Trash2, BarChart2 } from "lucide-react";
+import { Plus, Trash2, BarChart2, Clock, Users, Shuffle, Eye, MessageSquare, Globe } from "lucide-react";
 import { usePolls, CreatePollInput } from "@/hooks/usePolls";
 
 interface CreatePollSheetProps {
@@ -23,6 +23,12 @@ export function CreatePollSheet({ open, onOpenChange, conversationId, onCreated 
   const [isQuiz, setIsQuiz] = useState(false);
   const [correctIndex, setCorrectIndex] = useState<number | null>(null);
   const [creating, setCreating] = useState(false);
+  // Polls 2.0 options
+  const [allowAddingOptions, setAllowAddingOptions] = useState(false);
+  const [hideResults, setHideResults] = useState(false);
+  const [shuffleOptions, setShuffleOptions] = useState(false);
+  const [timeLimit, setTimeLimit] = useState<number>(0); // 0 = unlimited
+  const [description, setDescription] = useState("");
 
   const addOption = () => {
     if (options.length < 10) setOptions((prev) => [...prev, ""]);
@@ -51,6 +57,12 @@ export function CreatePollSheet({ open, onOpenChange, conversationId, onCreated 
       is_anonymous: isAnonymous,
       allows_multiple: allowsMultiple,
       correct_option_index: isQuiz ? correctIndex : null,
+      // Polls 2.0
+      allow_adding_options: allowAddingOptions,
+      hide_results_until_closed: hideResults,
+      shuffle_options: shuffleOptions,
+      time_limit: timeLimit > 0 ? timeLimit : undefined,
+      description: description.trim() || undefined,
     };
 
     const pollId = await createPoll(input);
@@ -176,6 +188,70 @@ export function CreatePollSheet({ open, onOpenChange, conversationId, onCreated 
                   if (v) setAllowsMultiple(false);
                   if (!v) setCorrectIndex(null);
                 }}
+              />
+            </div>
+
+            {/* Polls 2.0: New Options */}
+            {!isQuiz && (
+              <>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-white">Разрешить добавлять варианты</p>
+                    <p className="text-xs text-white/40">Участники могут предлагать свои варианты</p>
+                  </div>
+                  <Switch checked={allowAddingOptions} onCheckedChange={setAllowAddingOptions} />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-white">Скрыть результаты до закрытия</p>
+                    <p className="text-xs text-white/40">Результаты видны только после завершения опроса</p>
+                  </div>
+                  <Switch checked={hideResults} onCheckedChange={setHideResults} />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-white">Перемешать варианты</p>
+                    <p className="text-xs text-white/40">Каждый видит варианты в случайном порядке</p>
+                  </div>
+                  <Switch checked={shuffleOptions} onCheckedChange={setShuffleOptions} />
+                </div>
+              </>
+            )}
+
+            {/* Time Limit */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Clock className="w-4 h-4 text-white/50" />
+                <div>
+                  <p className="text-sm text-white">Ограничение по времени</p>
+                  <p className="text-xs text-white/40">Сколько секунд на голосование</p>
+                </div>
+              </div>
+              <Input
+                type="number"
+                min={0}
+                max={86400}
+                value={timeLimit || ""}
+                onChange={(e) => setTimeLimit(Math.max(0, parseInt(e.target.value) || 0))}
+                placeholder="∞"
+                className="w-20 bg-white/5 border-white/10 text-white text-sm text-center"
+              />
+            </div>
+
+            {/* Description */}
+            <div>
+              <label className="text-xs text-white/50 mb-1.5 flex items-center gap-1.5">
+                <MessageSquare className="w-3.5 h-3.5" />
+                Подробнее об опросе
+              </label>
+              <Textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Добавьте контекст или уточнения"
+                className="bg-white/5 border-white/10 text-white placeholder:text-white/30 resize-none"
+                rows={2}
               />
             </div>
           </div>

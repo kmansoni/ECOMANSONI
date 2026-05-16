@@ -7,7 +7,7 @@
 
 import { cn } from '@/lib/utils';
 import { Loader2 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 
 interface MainButtonProps {
   text?: string;
@@ -63,30 +63,38 @@ export function MainButton({
 }: MainButtonProps) {
   const ref = useRef<HTMLButtonElement>(null);
 
-  if (!isVisible) return null;
-
   const style: React.CSSProperties = {};
   if (color) style.backgroundColor = color;
   if (textColor) style.color = textColor;
 
-  return (
-    <button
-      ref={ref}
-      onClick={isActive && !disabled ? onClick : undefined}
-      disabled={disabled || !isActive || isLoading}
-      className={cn(
+  const buttonClassName = useMemo(
+    () =>
+      cn(
         'fixed bottom-4 left-1/2 z-[99999] -translate-x-1/2',
         'flex items-center justify-center gap-2',
         'h-12 min-w-[120px] max-w-[390px] px-8',
         'rounded-full text-base font-semibold',
         'transition-all duration-200',
         'active:scale-[0.97]',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2',
         'disabled:opacity-50 disabled:cursor-not-allowed',
         hasShineEffect && 'bg-gradient-to-r from-primary via-primary/80 to-primary',
         !color && 'bg-primary text-primary-foreground',
         !hasShineEffect && !color && 'shadow-lg shadow-primary/25',
         className,
-      )}
+      ),
+    [className, color, hasShineEffect],
+  );
+
+  if (!isVisible) return null;
+
+  return (
+    <button
+      type="button"
+      ref={ref}
+      onClick={isActive && !disabled ? onClick : undefined}
+      disabled={disabled || !isActive || isLoading}
+      className={buttonClassName}
       style={style}
       aria-label={text || 'Main Button'}
     >
@@ -96,7 +104,7 @@ export function MainButton({
       {/* Shine overlay */}
       {hasShineEffect && (
         <span
-          className="absolute inset-0 rounded-full opacity-0 transition-opointer-events-none"
+          className="pointer-events-none absolute inset-0 rounded-full opacity-0 transition-opacity"
           style={{
             background:
               'linear-gradient(115deg, transparent 30%, rgba(255,255,255,0.15) 50%, transparent 70%)',

@@ -83,10 +83,17 @@ function persistSessionsEncrypted(sessions: Record<string, AccountSession>): voi
   // P0-013: Chain writes sequentially — wait for previous write before starting next.
   // Without chaining, rapid successive calls would overwrite _pendingWrite and the
   // previous Promise would be abandoned, potentially losing intermediate state.
+  //
+  // SECURITY: If a write fails (e.g. encryption error), the chain stays healthy
+  // because we catch inside the async block. Without this catch, a single failure
+  // would poison _pendingWrite with a rejected promise and block ALL subsequent
+  // writes for the lifetime of the page.
   const prev = _pendingWrite ?? Promise.resolve();
   _pendingWrite = prev.then(async () => {
+    // consume snapshot inside the async closure to avoid holding a stale reference
+    const data = snapshot;
     try {
-      const encrypted = await encryptForStorage(snapshot);
+      const encrypted = await encryptForStorage(data);
       localStorage.setItem(SESSIONS_KEY, encrypted);
     } catch (err) {
       // FAIL-SECURE: do NOT fall back to plaintext.
@@ -99,6 +106,7 @@ function persistSessionsEncrypted(sessions: Record<string, AccountSession>): voi
         { error: err },
       );
     }
+    // swallow errors here so the chain never becomes rejected
   });
 }
 

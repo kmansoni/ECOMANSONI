@@ -129,6 +129,10 @@ interface PhoneInputProps {
   required?: boolean;
   className?: string;
   id?: string;
+  /** Подсказка внутри поля по центру. Исчезает при вводе номера. */
+  hint?: string;
+  /** Цветовая схема. По умолчанию тёмная (glass-on-dark). */
+  theme?: "dark" | "light";
 }
 
 function guessDeviceCountryCode(): string | null {
@@ -154,7 +158,8 @@ function guessDefaultCountry(): Country {
   return countries.find((c) => c.code === "RU") ?? countries[0]!;
 }
 
-export function PhoneInput({ value, onChange, placeholder, required, className, id }: PhoneInputProps) {
+export function PhoneInput({ value, onChange, placeholder, required, className, id, hint, theme = "dark" }: PhoneInputProps) {
+  const isLight = theme === "light";
   const defaultCountry = guessDefaultCountry();
   const [displayValue, setDisplayValue] = useState(() => '+' + defaultCountry.dialCode);
   const [detectedCountry, setDetectedCountry] = useState<Country | null>(defaultCountry);
@@ -200,19 +205,19 @@ export function PhoneInput({ value, onChange, placeholder, required, className, 
   return (
     <div className={cn("relative", className)}>
       <div className="relative flex items-center">
-        <div className="absolute left-4 flex items-center justify-center pointer-events-none h-full">
+        <div className="absolute left-4 z-10 flex items-center justify-center pointer-events-none h-full">
           {detectedCountry ? (
             <img
               src={detectedCountry.flagUrl}
               alt={detectedCountry.name}
-              className="w-7 h-5 rounded-sm object-cover"
+              className="w-7 h-5 rounded-[3px] object-cover ring-1 ring-black/15 shadow-sm"
               style={{ imageRendering: 'auto' }}
               onError={(e) => {
                 (e.target as HTMLImageElement).style.display = 'none';
               }}
             />
           ) : (
-            <PhoneCallIcon size={20} noAnimate className="text-white/50" aria-hidden="true" />
+            <PhoneCallIcon size={20} noAnimate className={isLight ? "text-slate-500" : "text-white/50"} aria-hidden="true" />
           )}
         </div>
 
@@ -226,14 +231,39 @@ export function PhoneInput({ value, onChange, placeholder, required, className, 
           placeholder={placeholder || (detectedCountry ? `+${detectedCountry.dialCode} (___) ___-__-__` : "+7 (___) ___-__-__")}
           required={required}
           aria-label="Номер телефона"
-          className={cn("w-full pl-14 pr-4 h-14 rounded-2xl border border-white/[0.08] backdrop-blur-xl transition-all text-[15px]",
-            "bg-white/[0.05]",
-            "text-white placeholder:text-white/40",
-            "outline-none",
-            "hover:border-white/15",
-            "focus:border-white/20"
+          className={cn("w-full pl-14 pr-4 h-14 rounded-2xl border backdrop-blur-xl transition-all text-[15px] outline-none",
+            isLight
+              ? "bg-white/85 border-slate-300 placeholder:text-slate-400 hover:border-slate-400 focus:border-teal-500"
+              : "bg-white/[0.05] border-white/[0.08] placeholder:text-white/40 hover:border-white/15 focus:border-white/20",
+            hint && (!detectedCountry || displayValue.replace(/\D/g, '').length <= detectedCountry.dialCode.length)
+              ? (isLight ? "text-transparent caret-slate-900" : "text-transparent caret-white")
+              : (isLight ? "text-slate-900" : "text-white")
           )}
         />
+        {hint && (!detectedCountry || displayValue.replace(/\D/g, '').length <= detectedCountry.dialCode.length) && (
+          <>
+            {detectedCountry && (
+              <span
+                className={cn(
+                  "pointer-events-none absolute left-14 top-1/2 -translate-y-1/2 text-[15px] font-medium",
+                  isLight ? "text-slate-900" : "text-white/85"
+                )}
+                aria-hidden="true"
+              >
+                +{detectedCountry.dialCode}
+              </span>
+            )}
+            <span
+              className={cn(
+                "pointer-events-none absolute inset-y-0 left-[92px] right-4 flex items-center justify-center text-[12px] truncate",
+                isLight ? "text-slate-500" : "text-white/45"
+              )}
+              aria-hidden="true"
+            >
+              {hint}
+            </span>
+          </>
+        )}
       </div>
     </div>
   );

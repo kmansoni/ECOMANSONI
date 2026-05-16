@@ -976,27 +976,27 @@ export function useMessages(conversationId: string | null) {
     runV11RecoveryRef.current = runV11Recovery;
   }, [runV11Recovery]);
 
-  useEffect(() => {
-    if (!recoveryServiceRef.current) {
-      recoveryServiceRef.current = new ChatV11RecoveryService({
-        onAckTimeout: () => {
-          bumpChatMetric("ack_without_receipt_10s_rate", 1);
-        },
-        runStep: (ctx) => runV11RecoveryRef.current(ctx),
-        onFailure: (ctx) => {
-          pendingLocalByClientIdRef.current.delete(ctx.clientMsgId);
-          setMessages((prev) => prev.filter((m) => !(m.id.startsWith("local:") && m.client_msg_id === ctx.clientMsgId)));
-          void fetchMessagesRef.current();
-        },
-        maxAttempts: recoveryPolicy.maxAttempts,
-        retryPolicy: {
-          minDelayMs: recoveryPolicy.minDelayMs,
-          maxDelayMs: recoveryPolicy.maxDelayMs,
-          exponentialBaseMs: recoveryPolicy.exponentialBaseMs,
-          jitterRatio: recoveryPolicy.jitterRatio,
-        },
-      });
-    }
+   useEffect(() => {
+     if (!recoveryServiceRef.current) {
+       recoveryServiceRef.current = new ChatV11RecoveryService({
+         onAckTimeout: (ctx) => {
+           bumpChatMetric("ack_without_receipt_10s_rate", 1);
+         },
+         runStep: (ctx) => runV11RecoveryRef.current(ctx),
+         onFailure: (ctx) => {
+           pendingLocalByClientIdRef.current.delete(ctx.clientMsgId);
+           setMessages((prev) => prev.filter((m) => !(m.id.startsWith("local:") && m.client_msg_id === ctx.clientMsgId)));
+           void fetchMessagesRef.current();
+         },
+         maxAttempts: recoveryPolicy.maxAttempts,
+         retryPolicy: {
+           minDelayMs: recoveryPolicy.minDelayMs,
+           maxDelayMs: recoveryPolicy.maxDelayMs,
+           exponentialBaseMs: recoveryPolicy.exponentialBaseMs,
+           jitterRatio: recoveryPolicy.jitterRatio,
+         },
+       });
+     }
 
     return () => {
       recoveryServiceRef.current?.clearAll();

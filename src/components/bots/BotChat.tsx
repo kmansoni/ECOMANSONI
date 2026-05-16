@@ -58,6 +58,17 @@ export function BotChat({ botId, botName, botAvatar, conversationId: propConvers
     }
   }, [botId, propConversationId]);
 
+  async function ensureParticipant(conversationIdValue: string, userId: string) {
+    const { error } = await supabase
+      .from('conversation_participants')
+      .insert({ conversation_id: conversationIdValue, user_id: userId });
+
+    // Игнорируем дубликаты, если участник уже добавлен.
+    if (error && error.code !== '23505') {
+      throw error;
+    }
+  }
+
   async function findOrCreateConversation() {
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -74,6 +85,7 @@ export function BotChat({ botId, botName, botAvatar, conversationId: propConvers
 
       if (existing) {
         setConversationId(existing.id);
+        await ensureParticipant(existing.id, user.id);
         loadMessages(existing.id);
         return;
       }
@@ -91,6 +103,8 @@ export function BotChat({ botId, botName, botAvatar, conversationId: propConvers
         .single();
 
       if (error) throw error;
+
+      await ensureParticipant(conv.id, user.id);
       setConversationId(conv.id);
       setMessages([]);
     } catch (err) {

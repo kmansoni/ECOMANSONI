@@ -95,51 +95,62 @@ export async function getOrCreateIdentityKeyPair(): Promise<CryptoKeyPair> {
 }
 
 /**
- * Signs the tuple (userId, ephemeralPubKey) with the device identity private key.
+ * Signs the tuple (senderPublicKey, ciphertext, epoch, userId, deviceId, sessionId, salt) with the device identity private key.
  *
  * The signed data layout (deterministic, no hidden state):
- *   [ userId as UTF-8 bytes ] || [ 0x00 separator ] || [ ephemeralPubKey bytes ]
+ *   [ senderPublicKey as string ] || [ '|' ] ||
+ *   [ ciphertext as string ] || [ '|' ] ||
+ *   [ epoch as string ] || [ '|' ] ||
+ *   [ userId as string ] || [ '|' ] ||
+ *   [ deviceId as string ] || [ '|' ] ||
+ *   [ sessionId as string ] || [ '|' ] ||
+ *   [ salt as string ]
  *
  * Returns raw IEEE P1363 r||s (64 bytes for P-256).
  */
 export async function signIdentity(
-  privateKey: CryptoKey,
-  userId: string,
-  ephemeralPubKey: ArrayBuffer,
+   privateKey: CryptoKey,
+   userId: string,
+   deviceId: string,
+   sessionId: string,
+   senderPublicKey: string,
+   ciphertext: string,
+   epoch: number,
+   salt: string,
 ): Promise<ArrayBuffer> {
-  const encoder = new TextEncoder();
-  const userIdBytes = encoder.encode(userId);
-  // Deterministic data = userId_utf8 || 0x00 || ephemeralPubKey
-  const data = new Uint8Array(userIdBytes.byteLength + 1 + ephemeralPubKey.byteLength);
-  data.set(userIdBytes, 0);
-  data[userIdBytes.byteLength] = 0x00;
-  data.set(new Uint8Array(ephemeralPubKey), userIdBytes.byteLength + 1);
-  return crypto.subtle.sign(SIGN_PARAMS, privateKey, data);
+   const encoder = new TextEncoder();
+   const data = new TextEncoder().encode(
+      `${senderPublicKey}|${ciphertext}|${epoch}|${userId}|${deviceId}|${sessionId}|${salt}`
+   );
+   return crypto.subtle.sign(SIGN_PARAMS, privateKey, data);
 }
 
 /**
- * Verifies an ECDSA signature over (userId, ephemeralPubKey).
+ * Verifies an ECDSA signature over (senderPublicKey, ciphertext, epoch, userId, deviceId, sessionId, salt).
  *
  * Returns false on any verification failure — never throws to the caller
  * to avoid timing-sensitive error propagation.
  */
 export async function verifyIdentity(
-  publicKey: CryptoKey,
-  userId: string,
-  ephemeralPubKey: ArrayBuffer,
-  signature: ArrayBuffer,
+   publicKey: CryptoKey,
+   userId: string,
+   deviceId: string,
+   sessionId: string,
+   senderPublicKey: string,
+   ciphertext: string,
+   epoch: number,
+   salt: string,
+   signature: ArrayBuffer,
 ): Promise<boolean> {
-  try {
-    const encoder = new TextEncoder();
-    const userIdBytes = encoder.encode(userId);
-    const data = new Uint8Array(userIdBytes.byteLength + 1 + ephemeralPubKey.byteLength);
-    data.set(userIdBytes, 0);
-    data[userIdBytes.byteLength] = 0x00;
-    data.set(new Uint8Array(ephemeralPubKey), userIdBytes.byteLength + 1);
-    return await crypto.subtle.verify(SIGN_PARAMS, publicKey, signature, data);
-  } catch {
-    return false;
-  }
+   try {
+      const encoder = new TextEncoder();
+      const data = new TextEncoder().encode(
+         `${senderPublicKey}|${ciphertext}|${epoch}|${userId}|${deviceId}|${sessionId}|${salt}`
+      );
+      return await crypto.subtle.verify(SIGN_PARAMS, publicKey, signature, data);
+   } catch {
+      return false;
+   }
 }
 
 /**

@@ -6,13 +6,14 @@
  * Extracted from ChatConversation.tsx.
  */
 import React, { useRef, useCallback } from "react";
-import { X, Send, Mic, Video, Smile, Timer, Pencil } from "lucide-react";
+import { X, Send, Mic, Video, Smile, Timer, Pencil, Wand2 } from "lucide-react";
 import { AttachmentIcon } from "./AttachmentIcon";
 import { AutoGrowTextarea } from "./AutoGrowTextarea";
 import { InlineBotResults } from "./InlineBotResults";
 import { MentionSuggestions } from "./MentionSuggestions";
 import { SendOptionsMenu } from "./SendOptionsMenu";
 import { QuickReplyBar } from "./QuickReplyBar";
+import { AIEditorPopup } from "./AIEditorPopup";
 import type { MessageEffectType } from "./MessageEffectOverlay";
 import type { MentionUser } from "@/hooks/useMentions";
 import type { QuickReply } from "@/hooks/useQuickReplies";
@@ -30,6 +31,7 @@ interface ChatInputBarProps {
   showSendOptions: boolean;
   isGroup?: boolean;
   maxLength: number;
+  disableForwarding?: boolean;
 
   editingMessage: { id: string; content: string } | null;
   replyTo: { id: string; preview: string } | null;
@@ -70,6 +72,11 @@ interface ChatInputBarProps {
   onToggleRecordMode?: () => void;
   quickReplies?: QuickReply[];
   onQuickReplySelect?: (text: string) => void;
+
+  // AI Editor
+  showAIEditor?: boolean;
+  onSetShowAIEditor?: (v: boolean) => void;
+  onAIEditorApply?: (text: string) => void;
 }
 
 export function ChatInputBar({
@@ -84,6 +91,7 @@ export function ChatInputBar({
   showSendOptions,
   isGroup,
   maxLength,
+  disableForwarding = false,
   editingMessage,
   replyTo,
   quotedText,
@@ -119,6 +127,9 @@ export function ChatInputBar({
   onToggleRecordMode,
   quickReplies,
   onQuickReplySelect,
+  showAIEditor = false,
+  onSetShowAIEditor,
+  onAIEditorApply,
 }: ChatInputBarProps) {
   const sendButtonLongPressRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -249,6 +260,15 @@ export function ChatInputBar({
             </button>
 
             <div className="flex-1 relative">
+              {/* AI Editor */}
+              {showAIEditor && onSetShowAIEditor && (
+                <AIEditorPopup
+                  originalText={inputText}
+                  onApply={(text) => onAIEditorApply?.(text)}
+                  onClose={() => onSetShowAIEditor(false)}
+                />
+              )}
+
               {/* Inline bot results */}
               {inlineBotTrigger && (
                 <InlineBotResults
@@ -297,6 +317,16 @@ export function ChatInputBar({
 
               {/* Icons inside input */}
               <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                {inputText.trim() && onSetShowAIEditor && (
+                  <button
+                    onClick={() => onSetShowAIEditor(!showAIEditor)}
+                    className={`transition-colors ${showAIEditor ? "text-amber-400" : "text-white/50 hover:text-amber-400"}`}
+                    aria-label="AI-редактор"
+                    type="button"
+                  >
+                    <Wand2 className="w-5 h-5" />
+                  </button>
+                )}
                 <button
                   onClick={() => onSetShowTimerPicker(true)}
                   className={`transition-colors ${defaultTimer !== null ? "text-orange-400" : "text-white/50 hover:text-white/70"}`}

@@ -1093,6 +1093,8 @@ function generateSecretToken(): string {
 // ============================================================================
 
 Deno.serve(async (req) => {
+  console.log('bot-api called:', req.method, req.url);
+
   const corsResponse = handleCors(req);
   if (corsResponse) return corsResponse;
 
@@ -1106,8 +1108,11 @@ Deno.serve(async (req) => {
   }
 
   const url = new URL(req.url);
-  const path = url.pathname.replace(/^\/bot-api/, '');
+  const path = url.pathname
+    .replace(/^\/functions\/v1\/bot-api(?=\/|$)/, '')
+    .replace(/^\/bot-api(?=\/|$)/, '');
   const segments = path.split('/').filter(Boolean);
+  console.log('path:', path, 'segments:', segments);
   
   const userId = await getAuthenticatedUser(req);
   
@@ -1122,6 +1127,16 @@ Deno.serve(async (req) => {
   // Protected endpoints require auth
   if (!userId) {
     return withCors(createErrorResponse('Unauthorized', 401));
+  }
+
+  // Root endpoint — POST /bot-api (create bot) or GET /bot-api (list bots)
+  if (segments.length === 0) {
+    if (req.method === 'POST') {
+      return withCors(await handleCreateBot(req, userId));
+    }
+    if (req.method === 'GET') {
+      return withCors(await handleListBots(req, userId));
+    }
   }
 
   // Bot management

@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Bell, BellOff, Volume2, Vibrate, Palette, Type, Layers, Download, Archive, ArchiveRestore, Pin, PinOff } from 'lucide-react';
+import { X, Bell, BellOff, Volume2, Vibrate, Palette, Type, Layers, Download, Archive, ArchiveRestore, Pin, PinOff, ShieldOff } from 'lucide-react';
 import { useChatSettings } from '@/hooks/useChatSettings';
 import { useArchivedChats } from '@/hooks/useArchivedChats';
 import { usePinnedChats } from '@/hooks/usePinnedChats';
@@ -10,7 +10,9 @@ import { MessageDensityToggle } from './MessageDensityToggle';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
 
+// Add toggle for disable forwarding in private chats (Telegram March 2026)
 interface ChatSettingsSheetProps {
   conversationId: string;
   open: boolean;
@@ -57,6 +59,24 @@ export function ChatSettingsSheet({ conversationId, open, onClose }: ChatSetting
   const [showMuteMenu, setShowMuteMenu] = useState(false);
   const [showWallpaper, setShowWallpaper] = useState(false);
   const [isUploadingWallpaper, setIsUploadingWallpaper] = useState(false);
+  // Disable forwarding state (Telegram March 2026)
+  const [disableForwarding, setDisableForwarding] = useState(false);
+  const [loadingForwarding, setLoadingForwarding] = useState(false);
+
+  // Load conversation settings
+  useEffect(() => {
+    if (!conversationId) return;
+
+    void supabase
+      .from('conversations')
+      .select('*')
+      .eq('id', conversationId)
+      .single()
+      .then(({ data }: { data: Record<string, unknown> | null }) => {
+        const value = data?.disable_forwarding;
+        setDisableForwarding(typeof value === 'boolean' ? value : false);
+      });
+  }, [conversationId]);
 
   const archived = isArchived(conversationId);
   const pinned = isPinned(conversationId);
@@ -304,6 +324,32 @@ export function ChatSettingsSheet({ conversationId, open, onClose }: ChatSetting
                   >
                     {archived ? "Разархивировать" : "В архив"}
                   </button>
+                </SettingRow>
+
+                <SettingRow
+                  icon={<ShieldOff className="w-4 h-4" />}
+                  label="Запретить пересылку"
+                >
+                  <Switch
+                    checked={disableForwarding}
+                    onCheckedChange={async (v) => {
+                      setLoadingForwarding(true);
+                      try {
+                        const patch = { disable_forwarding: v } as unknown as never;
+                        await supabase
+                          .from('conversations')
+                          .update(patch)
+                          .eq('id', conversationId);
+                        setDisableForwarding(v);
+                        toast.success(v ? 'Пересылка сообщений запрещена' : 'Пересылка сообщений разрешена');
+                      } catch (error) {
+                        toast.error('Не удалось изменить настройку');
+                      } finally {
+                        setLoadingForwarding(false);
+                      }
+                    }}
+                    disabled={loadingForwarding}
+                  />
                 </SettingRow>
               </div>
             </div>

@@ -1,5 +1,5 @@
 import EmojiPicker, { EmojiStyle, EmojiClickData, Theme } from "emoji-picker-react";
-import { useTheme } from "next-themes";
+import { useTheme } from "@/contexts/ThemeContext";
 import { EMOJI_PICKER_CATEGORIES } from "./emoji-picker-categories";
 
 interface EmojiStickerPickerProps {

@@ -86,7 +86,7 @@ export async function cleanupInactiveSessions(params: {
   userId: string;
   autoTerminateDays: number;
 }) {
-  const days = Math.max(7, Math.min(365, Math.round(params.autoTerminateDays || 180)));
+  const days = Math.max(180, Math.min(365, Math.round(params.autoTerminateDays)));
   const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 
   await supabase

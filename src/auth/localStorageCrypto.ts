@@ -155,46 +155,26 @@ function collectFingerprint(): string {
 
 // ─── Производный ключ (кешируется для encrypt-пути) ──────────────────────────
 
-/**
- * Кеш ключа. Храним одну пару (ключ, соль) — для encrypt-пути.
- *
- * ENCRYPT путь: `deriveKey()` без аргументов.
- *   При наличии кеша — возвращается кешированная пара (ключ, соль) без вызова
- *   PBKDF2. Это КРИТИЧНО для производительности: 200 000 итераций PBKDF2
- *   занимают ~60ms на современном устройстве, и без кеша UI зависает при
- *   каждой записи токена/сессии в localStorage.
- *
- * DECRYPT путь: `deriveKey(salt)` — salt приходит из конверта, кеш не юзается
- *   (у каждой записи своя соль).
- *
- * ВАЖНО: при ENCRYPT-пути соль зафиксирована на весь lifetime кеша. Учитывая,
- * что plaintext шифруется каждый раз с новым IV (nonce), это безопасно —
- * GCM-уникальность обеспечивается IV, не солью.
- */
 let _cachedKey: CryptoKey | null = null;
 let _cachedSalt: string | null = null; // base64 repr соли для переиспользования
 
 /**
- * Производит AES-GCM ключ через PBKDF2 из browserFingerprint + salt.
+ * Cache the encryption key for the session lifetime.
  *
- * @param salt - DECRYPT путь: 16-байтная соль из сохранённого конверта.
- *               ENCRYPT путь: не передаётся → переиспользуется кешированная соль
- *               (или генерируется новая один раз и кешируется).
+ * INVARIANT: _cachedSalt represents the salt for a single record. Each
+ * encryptForStorage() call generates a fresh IV (12-byte nonce), so GCM
+ * uniqueness is maintained via the IV — not the salt. Reusing the same
+ * salt across multiple records is safe and correct under AES-GCM.
+ *
+ * NOTE: if clearKeyCache() is called (e.g. in tests), the next encrypt call
+ * will generate a new salt and re-derive the key via PBKDF2 (~60ms cost).
+ * This is intentional — the cache is invalidated explicitly.
  */
 async function deriveKey(
   salt?: ArrayBuffer,
 ): Promise<{ key: CryptoKey; salt: ArrayBuffer }> {
   const isEncryptPath = !salt;
 
-  // ── Encrypt-путь: возвращаем кеш если он есть ──────────────────────────────
-  // FIX (CRITICAL): Ранее код генерировал новую случайную соль ДО проверки
-  // кеша, а затем сравнивал только что сгенерированную соль с кешированной.
-  // Они никогда не совпадали → кеш никогда не срабатывал → PBKDF2 вызывался
-  // при КАЖДОМ обращении к encryptForStorage(). Это приводило к заморозке UI
-  // на ~60ms при каждой записи токенов/сессий.
-  //
-  // Исправление: на encrypt-пути сначала проверяем кеш, и только если он пуст
-  // генерируем новую соль (один раз за сессию браузера).
   if (isEncryptPath && _cachedKey && _cachedSalt) {
     return { key: _cachedKey, salt: b64ToBuf(_cachedSalt) };
   }

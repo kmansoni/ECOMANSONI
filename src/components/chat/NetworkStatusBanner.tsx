@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Loader2, WifiOff, CheckCircle2, Clock } from 'lucide-react';
 import { useOfflineStatus } from '@/hooks/useOfflineStatus';
 import { cn } from '@/lib/utils';
-import { getOutboxForUser, subscribeOutbox } from '@/lib/chat/messageOutbox';
+import { getOutbox } from '@/lib/chat/messageOutbox';
 
 type BannerPhase = 'idle' | 'waiting' | 'updating' | 'done';
 
@@ -32,24 +32,16 @@ export function NetworkStatusBanner({ userId }: { userId?: string } = {}) {
   // Subscribe to outbox changes to show pending message count
   useEffect(() => {
     if (!userId) return;
-    let cancelled = false;
 
     const load = () => {
-      getOutboxForUser(userId).then((entries) => {
-        if (!cancelled) {
-          const count = entries.filter(
-            (e) => e.status === 'pending' || e.status === 'sending' || e.status === 'failed'
-          ).length;
-          setPendingCount(count);
-        }
-      }).catch(() => {/* outbox count fetch failed, will use stale value */});
+      const queueSize = getOutbox().size();
+      setPendingCount(queueSize);
     };
 
     load();
-    const unsub = subscribeOutbox(load);
+    const intervalId = window.setInterval(load, 2000);
     return () => {
-      cancelled = true;
-      unsub();
+      window.clearInterval(intervalId);
     };
   }, [userId]);
 

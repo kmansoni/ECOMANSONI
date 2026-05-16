@@ -4,7 +4,7 @@
  * Extracted from SettingsPage.tsx — the main settings menu screen.
  * Renders grouped menu items (Account, Settings, Support, Logout).
  */
-import { Moon, Bell, Lock, HelpCircle, Info, LogOut, Shield, Archive, Clock, Bookmark, Users, Smartphone, Database, AlertCircle, BarChart3, Accessibility, Globe, BadgeCheck, Smile, Phone, UserPlus } from "lucide-react";
+import { Moon, Bell, Lock, HelpCircle, Info, LogOut, Shield, Archive, Clock, Bookmark, Users, Smartphone, Database, AlertCircle, BarChart3, Accessibility, Globe, BadgeCheck, Smile, Phone, UserPlus, Wand2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SettingsHeader, SettingsMenuItem } from "./helpers";
 import type { Screen, SectionProps } from "./types";
@@ -80,6 +80,7 @@ export function SettingsMainSection({
             <SettingsMenuItem icon={icon(Smartphone)} label="Устройства" isDark={isDark} onClick={nav("security_sessions")} />
             <SettingsMenuItem icon={icon(Globe)} label="Язык" isDark={isDark} onClick={nav("language")} value={languageCode ?? "ru"} />
             <SettingsMenuItem icon={icon(Accessibility)} label="Доступность" isDark={isDark} onClick={nav("accessibility")} />
+            <SettingsMenuItem icon={icon(Wand2)} label="AI-стили" isDark={isDark} onClick={nav("ai_styles")} />
             <SettingsMenuItem icon={icon(BarChart3)} label="Статистика" isDark={isDark} onClick={nav("statistics")} />
             <SettingsMenuItem icon={icon(BadgeCheck)} label="Брендированный контент" isDark={isDark} onClick={nav("branded_content")} />
           </div>

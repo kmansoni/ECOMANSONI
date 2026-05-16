@@ -211,11 +211,18 @@ export async function sendBotMessage(
       case 'setChatPhoto':
       case 'deleteChatPhoto':
       case 'chat_boost':
+      case 'sendGuestMessage':
+      case 'sendBotToBotMessage':
+      case 'activateChatAutomation':
+      case 'applyAIStyle':
+      case 'registerGuestBot':
+      case 'answerGuestQuery':
         content = payload.params as Record<string, unknown>;
         contentType = payload.method;
         break;
       default:
-        content = { text: `[Unsupported method: ${payload.method}]` };
+        console.warn(`[BotSend] Unknown method: ${payload.method}`);
+        return { ok: false, error: `Unknown method: ${payload.method}` };
     }
 
     const { data: message, error: msgError } = await supabase
@@ -252,8 +259,8 @@ export async function sendBotMessage(
         p_date: new Date().toISOString().split('T')[0],
         p_messages_sent: 1,
       });
-    } catch {
-      // Analytics tracking is non-critical
+    } catch { // eslint-disable-line no-restricted-syntax
+      // Analytics tracking is non-critical, safe to ignore failures
     }
 
     return { ok: true, message_id: message.id };

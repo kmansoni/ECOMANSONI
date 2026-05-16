@@ -161,7 +161,7 @@ export function AuthPage() {
 
       const sendUrls = getSendEmailOtpUrls();
       let response: Response | null = null;
-      let data: ReturnType<typeof payloadString> extends string ? never : Record<string, unknown> | null = null;
+      let data: Record<string, unknown> | null = null;
       let lastError: unknown = null;
 
       for (const sendUrl of sendUrls) {
@@ -172,9 +172,14 @@ export function AuthPage() {
             AUTH_TIMEOUT_MS,
             "send-email-otp",
           );
-          if (result.response.ok) { response = result.response; data = result.data; otpSendUrlRef.current = sendUrl; break; }
+          if (result.response.ok) {
+            response = result.response;
+            data = result.data as Record<string, unknown>;
+            otpSendUrlRef.current = sendUrl;
+            break;
+          }
           response = result.response;
-          data = result.data;
+          data = result.data as Record<string, unknown>;
         } catch (err) { lastError = err; }
       }
 
@@ -251,8 +256,14 @@ export function AuthPage() {
             AUTH_TIMEOUT_MS,
             "register-send-email-otp",
           );
-          if (result.response.ok) { response = result.response; data = result.data; otpSendUrlRef.current = sendUrl; break; }
-          response = result.response; data = result.data;
+          if (result.response.ok) {
+            response = result.response;
+            data = result.data as Record<string, unknown>;
+            otpSendUrlRef.current = sendUrl;
+            break;
+          }
+          response = result.response;
+          data = result.data as Record<string, unknown>;
         } catch (err) { lastError = err; }
       }
 
@@ -307,8 +318,13 @@ export function AuthPage() {
             AUTH_TIMEOUT_MS,
             "verify-email-otp",
           );
-          if (result.response.ok) { response = result.response; data = result.data; break; }
-          response = result.response; data = result.data;
+          if (result.response.ok) {
+            response = result.response;
+            data = result.data as Record<string, unknown>;
+            break;
+          }
+          response = result.response;
+          data = result.data as Record<string, unknown>;
         } catch (err) { lastError = err; }
       }
 
@@ -389,7 +405,11 @@ export function AuthPage() {
             AUTH_TIMEOUT_MS,
             "resend-email-otp",
           );
-          if (result.response.ok) { response = result.response; otpSendUrlRef.current = sendUrl; break; }
+          if (result.response.ok) {
+            response = result.response;
+            otpSendUrlRef.current = sendUrl;
+            break;
+          }
           response = result.response;
         } catch (err) { lastError = err; }
       }
@@ -461,9 +481,9 @@ export function AuthPage() {
                   animate={{ opacity: 1, x: 0 }}
                   exit={{ opacity: 0, x: -10 }}
                   onClick={handleBack}
-                  className="h-10 w-10 rounded-full border border-white/10 bg-white/[0.05] backdrop-blur-xl flex items-center justify-center transition hover:bg-white/[0.1]"
+                  className={`h-10 w-10 rounded-full border backdrop-blur-xl flex items-center justify-center transition ${tokens.isDark ? "border-white/10 bg-white/[0.05] hover:bg-white/[0.1]" : "border-slate-300 bg-white/70 hover:bg-white"}`}
                 >
-                  <ChevronLeft className="h-5 w-5 text-white/70" />
+                  <ChevronLeft className={`h-5 w-5 ${tokens.isDark ? "text-white/70" : "text-slate-700"}`} />
                 </motion.button>
               )}
             </AnimatePresence>
@@ -471,42 +491,40 @@ export function AuthPage() {
           <motion.button
             onClick={toggle}
             whileTap={{ scale: 0.9 }}
-            className="h-10 w-10 rounded-full border border-white/10 bg-white/[0.05] backdrop-blur-xl flex items-center justify-center transition hover:bg-white/[0.1]"
+            className={`h-10 w-10 rounded-full border backdrop-blur-xl flex items-center justify-center transition ${tokens.isDark ? "border-white/10 bg-white/[0.05] hover:bg-white/[0.1]" : "border-slate-300 bg-white/70 hover:bg-white"}`}
             aria-label="Toggle theme"
           >
-            {theme === "dark" ? <Moon className="h-5 w-5 text-white/70" /> : <Sun className="h-5 w-5 text-white/70" />}
+            {theme === "dark" ? <Moon className="h-5 w-5 text-white/70" /> : <Sun className="h-5 w-5 text-slate-700" />}
           </motion.button>
         </div>
 
         {/* Logo */}
-        <div className="flex items-center justify-center gap-2 mb-3 sm:mb-6">
+        <div className="flex items-center justify-center gap-3 mb-3 sm:mb-6">
           <motion.img
             src="/brand/logo.png"
             alt=""
-            className="w-6 h-6 sm:w-9 sm:h-9"
+            className="w-11 h-11 sm:w-12 sm:h-12 shrink-0"
             aria-hidden="true"
-            animate={{
-              y: [0, -3, 0],
-              filter: [
-                "drop-shadow(0 0 12px rgba(0,188,212,0.5))",
-                "drop-shadow(0 0 20px rgba(0,188,212,0.8))",
-                "drop-shadow(0 0 12px rgba(0,188,212,0.5))",
-              ],
-            }}
-            transition={{
-              y: { duration: 4, ease: "easeInOut", repeat: Infinity },
-              filter: { duration: 4, ease: "easeInOut", repeat: Infinity },
-            }}
+            animate={{ y: [0, -3, 0] }}
+            transition={{ duration: 4, ease: "easeInOut", repeat: Infinity }}
           />
-          <span className="text-lg sm:text-[24px] tracking-[0.2em] sm:tracking-[0.3em] uppercase font-bold text-gradient-brand">
+          <span
+            className="text-[28px] sm:text-[34px] font-bold uppercase tracking-[0.1em] text-gradient-brand"
+            style={{
+              fontFeatureSettings: '"ss01"',
+              textShadow: "0 0 30px rgba(6, 182, 212, 0.2)",
+            }}
+          >
             mansoni
           </span>
         </div>
 
-        {/* Kind Tips Ticker — между логотипом и шагами */}
+        {/* Kind Tips Ticker — посередине между логотипом и формой */}
+        <div className="flex-1" aria-hidden="true" />
         <div className="py-2 sm:py-3">
           <KindTipsTicker tokens={tokens} />
         </div>
+        <div className="flex-1" aria-hidden="true" />
 
         {/* Steps */}
         <div className="flex flex-col gap-5">
@@ -514,7 +532,12 @@ export function AuthPage() {
             {flow.step === "phone" && (
               <motion.div key="phone" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                 <div className="space-y-4">
-                  <PhoneInput value={flow.phone} onChange={(v) => dispatch({ type: "setPhone", phone: v })} />
+                  <PhoneInput
+                    value={flow.phone}
+                    onChange={(v) => dispatch({ type: "setPhone", phone: v })}
+                    hint="код придёт на привязанную почту"
+                    theme={theme}
+                  />
                   <PrimaryButton type="button" onClick={() => void submitPhone()} disabled={!canContinuePhone} loading={flow.loading}>
                     Получить код
                   </PrimaryButton>
@@ -524,7 +547,7 @@ export function AuthPage() {
 
             {flow.step === "register" && (
               <motion.div key="register" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-4">
-                <h2 className="text-xl font-bold text-white">Создать аккаунт</h2>
+                <h2 className={`text-xl font-bold ${tokens.textPrimary}`}>Создать аккаунт</h2>
                 <div className="grid grid-cols-2 gap-3">
                   <GlassInput tokens={tokens} id="firstName" label="Имя *" value={flow.firstName} onChange={(v) => dispatch({ type: "setRegisterField", field: "firstName", value: v })} />
                   <GlassInput tokens={tokens} id="lastName" label="Фамилия *" value={flow.lastName} onChange={(v) => dispatch({ type: "setRegisterField", field: "lastName", value: v })} />
@@ -542,7 +565,7 @@ export function AuthPage() {
                       type="date"
                       value={flow.birthDate}
                       onChange={(e) => dispatch({ type: "setRegisterField", field: "birthDate", value: e.target.value })}
-                      className="w-full h-14 px-4 rounded-2xl border border-white/[0.08] bg-white/[0.05] backdrop-blur-xl text-white text-[15px] outline-none transition-all hover:border-white/15 focus:border-white/20"
+                      className={`w-full h-14 px-4 rounded-2xl border backdrop-blur-xl text-[15px] outline-none transition-all ${tokens.isDark ? "border-white/[0.08] bg-white/[0.05] text-white hover:border-white/15 focus:border-white/20" : "border-slate-300 bg-white/85 text-slate-900 hover:border-slate-400 focus:border-teal-500"}`}
                     />
                   </div>
                   <GlassSelect
@@ -577,7 +600,7 @@ export function AuthPage() {
 
             {flow.step === "otp" && (
               <motion.div key="otp" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-4">
-                <h2 className="text-xl font-bold text-white">Код подтверждения</h2>
+                <h2 className={`text-xl font-bold ${tokens.textPrimary}`}>Код подтверждения</h2>
                 <p className={`text-sm ${tokens.textMuted}`}>Отправлен на {flow.maskedEmail || otpEmailRef.current || "почту"}</p>
                 <OtpInput value={flow.otp} onChange={(v) => dispatch({ type: "setOtp", otp: v })} />
                 <PrimaryButton type="button" onClick={() => void submitOtp()} disabled={!canContinueOtp} loading={flow.loading}>
@@ -595,7 +618,7 @@ export function AuthPage() {
 
             {flow.step === "qr" && (
               <motion.div key="qr" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-4">
-                <h2 className="text-xl font-bold text-white">Вход по QR-коду</h2>
+                <h2 className={`text-xl font-bold ${tokens.textPrimary}`}>Вход по QR-коду</h2>
                 <QRCodeLogin onSuccess={() => navigate("/")} />
               </motion.div>
             )}

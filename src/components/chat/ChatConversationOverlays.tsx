@@ -151,6 +151,12 @@ export interface ChatConversationOverlaysProps {
   showCreatePoll: boolean;
   setShowCreatePoll: (v: boolean) => void;
 
+  showAIEditor: boolean;
+  setShowAIEditor: (v: boolean) => void;
+  onAIEditorApply?: (text: string) => void;
+
+  disableForwarding?: boolean;
+
   showChatSettings: boolean;
   setShowChatSettings: (v: boolean) => void;
 
@@ -184,6 +190,8 @@ export function ChatConversationOverlays({
   showMessageSearch, setShowMessageSearch,
   decryptedCache, senderProfiles,
   showCreatePoll, setShowCreatePoll,
+  showAIEditor, setShowAIEditor, onAIEditorApply,
+  disableForwarding = false,
   showChatSettings, setShowChatSettings,
   showJumpToPicker, setShowJumpToPicker,
 }: ChatConversationOverlaysProps) {

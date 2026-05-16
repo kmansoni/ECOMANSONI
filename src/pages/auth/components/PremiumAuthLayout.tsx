@@ -19,7 +19,7 @@ export function PremiumAuthLayout({
           className={`absolute inset-0 transition-colors duration-700 ${
             tokens.isDark
               ? "bg-[radial-gradient(120%_80%_at_50%_0%,#0a1628_0%,#071420_60%,#020309_100%)]"
-              : "bg-[radial-gradient(120%_80%_at_50%_0%,#f0fdfa_0%,#ecfeff_55%,#f0f9ff_100%)]"
+              : "bg-[radial-gradient(120%_80%_at_50%_0%,#ccfbf1_0%,#a5f3fc_50%,#7dd3fc_100%)]"
           }`}
         />
         {/* Subtle grid pattern */}
@@ -34,41 +34,6 @@ export function PremiumAuthLayout({
         />
         <WaveBackground tokens={tokens} />
       </div>
-
-      {/* Liquid glass — левый край */}
-      <motion.div
-        className="pointer-events-none absolute left-0 top-0 bottom-0 w-[72px] xl:w-[110px] z-[5]"
-        style={{
-          background: tokens.isDark
-            ? "linear-gradient(to right, rgba(6,182,212,0.10) 0%, rgba(99,102,241,0.05) 55%, transparent 100%)"
-            : "linear-gradient(to right, rgba(6,182,212,0.18) 0%, rgba(99,102,241,0.08) 55%, transparent 100%)",
-          backdropFilter: "blur(14px) saturate(150%)",
-          WebkitBackdropFilter: "blur(14px) saturate(150%)",
-          borderRight: tokens.isDark
-            ? "1px solid rgba(255,255,255,0.06)"
-            : "1px solid rgba(0,0,0,0.05)",
-          borderRadius: "0 20px 20px 0",
-        }}
-        animate={{ opacity: [0.7, 1, 0.7] }}
-        transition={{ duration: 6, ease: "easeInOut", repeat: Infinity }}
-      />
-      {/* Liquid glass — правый край */}
-      <motion.div
-        className="pointer-events-none absolute right-0 top-0 bottom-0 w-[72px] xl:w-[110px] z-[5]"
-        style={{
-          background: tokens.isDark
-            ? "linear-gradient(to left, rgba(99,102,241,0.10) 0%, rgba(6,182,212,0.05) 55%, transparent 100%)"
-            : "linear-gradient(to left, rgba(99,102,241,0.18) 0%, rgba(6,182,212,0.08) 55%, transparent 100%)",
-          backdropFilter: "blur(14px) saturate(150%)",
-          WebkitBackdropFilter: "blur(14px) saturate(150%)",
-          borderLeft: tokens.isDark
-            ? "1px solid rgba(255,255,255,0.06)"
-            : "1px solid rgba(0,0,0,0.05)",
-          borderRadius: "20px 0 0 20px",
-        }}
-        animate={{ opacity: [1, 0.7, 1] }}
-        transition={{ duration: 6, ease: "easeInOut", repeat: Infinity }}
-      />
 
       {/* Main content */}
       <div className="relative z-10 flex w-full sm:max-w-5xl items-stretch">

@@ -32,6 +32,7 @@ function readEnv(name) {
 
 function isRequireMode() {
   const v = readEnv("REQUIRE_TURN_SMOKE");
+  if (!v) return false;
   return v === "1" || v.toLowerCase() === "true";
 }
 

@@ -62,6 +62,14 @@ interface ChatConversationInputProps {
 
   handleStickerSend: (url: string) => void;
   handleGifSend: (url: string) => void;
+
+  // AI Editor
+  showAIEditor?: boolean;
+  onSetShowAIEditor?: (v: boolean) => void;
+  onAIEditorApply?: (text: string) => void;
+
+  // Disable forwarding
+  disableForwarding?: boolean;
 }
 
 export function ChatConversationInput({
@@ -79,6 +87,8 @@ export function ChatConversationInput({
   onMentionSelect, onMentionActiveIndexChange, onMentionDismiss,
   onInlineBotSelect, onInlineBotDismiss, onEffect, onToggleRecordMode,
   handleStickerSend, handleGifSend,
+  showAIEditor, onSetShowAIEditor, onAIEditorApply,
+  disableForwarding = false,
 }: ChatConversationInputProps) {
   return (
     <>
@@ -148,6 +158,10 @@ export function ChatConversationInput({
           onInlineBotDismiss={onInlineBotDismiss}
           onEffect={onEffect}
           onToggleRecordMode={onToggleRecordMode}
+          showAIEditor={showAIEditor}
+          onSetShowAIEditor={onSetShowAIEditor}
+          onAIEditorApply={onAIEditorApply}
+          disableForwarding={disableForwarding}
         />
 
         <div onClick={(e) => e.stopPropagation()}>

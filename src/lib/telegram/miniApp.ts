@@ -52,6 +52,10 @@ function wrap<T>(fn: () => T): Result<T> {
   catch (e: any) { return { ok: false, error: e.message || 'Unknown error' }; }
 }
 
+function safeCall(fn: () => void): void {
+  try { fn(); } catch {}
+}
+
 async function asyncWrap<T>(fn: (ok: (v: T) => void, err: (e: string) => void) => void): Promise<Result<T>> {
   return new Promise<Result<T>>((resolve) => {
     fn(
@@ -63,9 +67,9 @@ async function asyncWrap<T>(fn: (ok: (v: T) => void, err: (e: string) => void) =
 
 // ── Lifecycle ───────────────────────────────────────────
 
-export function ready() { tg()?.ready(); }
-export function expand() { tg()?.expand?.(); }
-export function close() { tg()?.close?.(); }
+export function ready() { safeCall(() => { tg()?.ready(); }); }
+export function expand() { safeCall(() => { tg()?.expand?.(); }); }
+export function close() { safeCall(() => { tg()?.close?.(); }); }
 export function getPlatform() { return tg()?.platform || 'unknown'; }
 export function getVersion() { return tg()?.version; }
 export function getColorScheme() { return tg()?.colorScheme || 'light'; }
@@ -87,35 +91,35 @@ export function getColorSchemeColors(): Result<TelegramColorScheme> {
 // ── Bottom Buttons ──────────────────────────────────────
 
 export const MainButton = {
-  show: () => tg()?.MainButton.show(),
-  hide: () => tg()?.MainButton.hide(),
-  setText: (text: string) => tg()?.MainButton.setText(text),
+  show: () => safeCall(() => { tg()?.MainButton.show(); }),
+  hide: () => safeCall(() => { tg()?.MainButton.hide(); }),
+  setText: (text: string) => safeCall(() => { tg()?.MainButton.setText(text); }),
   setParams: (p: TelegramMainButtonParams) => wrap(() => tg()?.MainButton.setParams(p)),
-  onClick: (cb: () => void) => tg()?.MainButton.onClick(cb),
-  offClick: () => tg()?.MainButton.offClick(),
+  onClick: (cb: () => void) => safeCall(() => { tg()?.MainButton.onClick(cb); }),
+  offClick: () => safeCall(() => { tg()?.MainButton.offClick(); }),
 };
 
 export const SecondaryButton = {
-  show: () => tg()?.SecondaryButton?.show(),
-  hide: () => tg()?.SecondaryButton?.hide(),
-  setText: (text: string) => tg()?.SecondaryButton?.setText(text),
+  show: () => safeCall(() => { tg()?.SecondaryButton?.show(); }),
+  hide: () => safeCall(() => { tg()?.SecondaryButton?.hide(); }),
+  setText: (text: string) => safeCall(() => { tg()?.SecondaryButton?.setText(text); }),
   setParams: (p: TelegramSecondaryButtonParams) => wrap(() => tg()?.SecondaryButton?.setParams(p)),
-  onClick: (cb: () => void) => tg()?.SecondaryButton?.onClick(cb),
-  offClick: () => tg()?.SecondaryButton?.offClick(),
+  onClick: (cb: () => void) => safeCall(() => { tg()?.SecondaryButton?.onClick(cb); }),
+  offClick: () => safeCall(() => { tg()?.SecondaryButton?.offClick(); }),
 };
 
 export const SettingsButton = {
-  show: () => tg()?.SettingsButton.show(),
-  hide: () => tg()?.SettingsButton.hide(),
+  show: () => safeCall(() => { tg()?.SettingsButton.show(); }),
+  hide: () => safeCall(() => { tg()?.SettingsButton.hide(); }),
   setParams: (p: TelegramSettingsButtonParams) => wrap(() => tg()?.SettingsButton.setParams(p)),
-  onClick: (cb: () => void) => tg()?.SettingsButton.onClick(cb),
+  onClick: (cb: () => void) => safeCall(() => { tg()?.SettingsButton.onClick(cb); }),
 };
 
 export const BackButton = {
-  show: () => tg()?.BackButton.show(),
-  hide: () => tg()?.BackButton.hide(),
-  onClick: (cb: () => void) => { tg()?.BackButton.onClick(cb); },
-  offClick: () => { tg()?.BackButton.offClick(); },
+  show: () => safeCall(() => { tg()?.BackButton.show(); }),
+  hide: () => safeCall(() => { tg()?.BackButton.hide(); }),
+  onClick: (cb: () => void) => { safeCall(() => { tg()?.BackButton.onClick(cb); }); },
+  offClick: () => { safeCall(() => { tg()?.BackButton.offClick(); }); },
 };
 
 // ── Fullscreen ───────────────────────────────────────────────
@@ -357,7 +361,7 @@ export function setEmojiStatus(status: TelegramEmojiStatus): Promise<Result<void
 
 // ── Swipe ───────────────────────────────────────────────
 
-export function setSwipeBehavior(b: TelegramSwipeBehavior) { tg()?.setSwipeBehavior(b); }
+export function setSwipeBehavior(b: TelegramSwipeBehavior) { safeCall(() => { tg()?.setSwipeBehavior(b); }); }
 
 // ── Hide Keyboard ─────────────────────────────────────────────
 
@@ -405,21 +409,70 @@ export function getLocation(): Promise<Result<TelegramLocation>> {
 export const accelerometer = {
   start: (opts?: { sensitivity?: 'low'|'medium'|'high' }) => wrap(() => tg()?.accelerometer.start(opts)),
   stop: () => wrap(() => tg()?.accelerometer.stop()),
-  on: (cb: (d: TelegramAccelerometerData) => void) => { tg()?.accelerometer.onCurrent(cb); },
-  off: () => { tg()?.accelerometer.offCurrent(); },
+  on: (cb: (d: TelegramAccelerometerData) => void) => {
+    if (sensorCurrentSubscribers.accelerometer.includes(cb)) {
+      return;
+    }
+
+    sensorCurrentSubscribers.accelerometer.push(cb);
+    if (sensorCurrentSubscribers.accelerometer.length === 1) {
+      safeCall(() => { tg()?.accelerometer.onCurrent?.(emitAccelerometerCurrent); });
+    }
+  },
+  off: () => {
+    if (!sensorCurrentSubscribers.accelerometer.length) {
+      return;
+    }
+
+    sensorCurrentSubscribers.accelerometer = [];
+    safeCall(() => { tg()?.accelerometer.offCurrent?.(); });
+  },
 };
 
 export const gyroscope = {
   start: (opts?: { sensitivity?: 'low'|'medium'|'high' }) => wrap(() => tg()?.gyroscope.start(opts)),
   stop: () => wrap(() => tg()?.gyroscope.stop()),
-  on: (cb: (d: TelegramGyroscopeData) => void) => { tg()?.gyroscope.onCurrent(cb); },
-  off: () => { tg()?.gyroscope.offCurrent(); },
+  on: (cb: (d: TelegramGyroscopeData) => void) => {
+    if (sensorCurrentSubscribers.gyroscope.includes(cb)) {
+      return;
+    }
+
+    sensorCurrentSubscribers.gyroscope.push(cb);
+    if (sensorCurrentSubscribers.gyroscope.length === 1) {
+      safeCall(() => { tg()?.gyroscope.onCurrent?.(emitGyroscopeCurrent); });
+    }
+  },
+  off: () => {
+    if (!sensorCurrentSubscribers.gyroscope.length) {
+      return;
+    }
+
+    sensorCurrentSubscribers.gyroscope = [];
+    safeCall(() => { tg()?.gyroscope.offCurrent?.(); });
+  },
 };
 
 export const deviceOrientation = {
   start: () => wrap(() => tg()?.deviceOrientation.start()),
   stop: () => wrap(() => tg()?.deviceOrientation.stop()),
-  on: (cb: (d: TelegramDeviceOrientationData) => void) => { tg()?.deviceOrientation.onCurrent(cb); },
+  on: (cb: (d: TelegramDeviceOrientationData) => void) => {
+    if (sensorCurrentSubscribers.deviceOrientation.includes(cb)) {
+      return;
+    }
+
+    sensorCurrentSubscribers.deviceOrientation.push(cb);
+    if (sensorCurrentSubscribers.deviceOrientation.length === 1) {
+      safeCall(() => { tg()?.deviceOrientation.onCurrent?.(emitDeviceOrientationCurrent); });
+    }
+  },
+  off: () => {
+    if (!sensorCurrentSubscribers.deviceOrientation.length) {
+      return;
+    }
+
+    sensorCurrentSubscribers.deviceOrientation = [];
+    safeCall(() => { tg()?.deviceOrientation.offCurrent?.(); });
+  },
 };
 
 // ── Location Manager ────────────────────────────────────
@@ -428,8 +481,32 @@ export const locationManager = {
   request: (opts?: { enableHighAccuracy?: boolean }) => asyncWrap<void>((ok, err) => {
     tg()?.locationManager.request(opts ?? {}, (result: { status: string }) => result.status === 'granted' ? ok(undefined) : err(result.status));
   }),
-  onUpdate: (cb: (loc: TelegramLocation) => void) => { tg()?.locationManager.onLocationUpdated(cb); },
-  offUpdate: () => { tg()?.locationManager.offLocationUpdated(); },
+  onUpdate: (cb: (loc: TelegramLocation) => void) => {
+    if (locationManagerSubscribers.includes(cb)) {
+      return;
+    }
+
+    locationManagerSubscribers.push(cb);
+    if (locationManagerSubscribers.length === 1) {
+      safeCall(() => { tg()?.locationManager.onLocationUpdated(emitLocationManagerUpdate); });
+    }
+  },
+  offUpdate: (cb?: (loc: TelegramLocation) => void) => {
+    if (!locationManagerSubscribers.length) {
+      return;
+    }
+
+    if (!cb) {
+      locationManagerSubscribers = [];
+      safeCall(() => { tg()?.locationManager.offLocationUpdated(); });
+      return;
+    }
+
+    locationManagerSubscribers = locationManagerSubscribers.filter((handler) => handler !== cb);
+    if (!locationManagerSubscribers.length) {
+      safeCall(() => { tg()?.locationManager.offLocationUpdated(); });
+    }
+  },
 };
 
 // ── Init Data ───────────────────────────────────────────
@@ -439,7 +516,7 @@ export function getInitDataRaw(): string | undefined { return tg()?.initData; }
 
 // ── Emoji Status ────────────────────────────────────────
 
-export function showEmojiStatus() { tg()?.showEmojiStatus(); }
+export function showEmojiStatus() { safeCall(() => { tg()?.showEmojiStatus(); }); }
 
 // ── Request Contact ─────────────────────────────────────
 
@@ -464,83 +541,220 @@ export function shareFiles(files: TelegramAttachmentFile[]): Result<void> {
 // ── Bio Check ───────────────────────────────────────────
 
 export function showBioCheckPopup(params: { text?: string; username?: string; bio?: string; photo_url?: string }, cb: (r: any) => void) {
-  tg()?.showBioCheckPopup?.(params, cb);
+  safeCall(() => { tg()?.showBioCheckPopup?.(params, cb); });
 }
 
 // ── Event Subscriptions ─────────────────────────────────────
 
-const eventHandlers: Record<string, ((...args: any[]) => void)[]> = {};
+type EventHandlerEntry = {
+  original: (...args: any[]) => void;
+  wrapped: (...args: any[]) => void;
+};
+
+const eventHandlers: Record<string, EventHandlerEntry[]> = {};
+
+const sensorSubscribers = {
+  accelerometer: [] as Array<(data: TelegramAccelerometerData) => void>,
+  gyroscope: [] as Array<(data: TelegramGyroscopeData) => void>,
+  deviceOrientation: [] as Array<(data: TelegramDeviceOrientationData) => void>,
+};
+
+const sensorCurrentSubscribers = {
+  accelerometer: [] as Array<(data: TelegramAccelerometerData) => void>,
+  gyroscope: [] as Array<(data: TelegramGyroscopeData) => void>,
+  deviceOrientation: [] as Array<(data: TelegramDeviceOrientationData) => void>,
+};
+
+let locationManagerSubscribers: Array<(loc: TelegramLocation) => void> = [];
+
+function emitAccelerometer(data: TelegramAccelerometerData): void {
+  sensorSubscribers.accelerometer.forEach((cb) => cb(data));
+}
+
+function emitGyroscope(data: TelegramGyroscopeData): void {
+  sensorSubscribers.gyroscope.forEach((cb) => cb(data));
+}
+
+function emitDeviceOrientation(data: TelegramDeviceOrientationData): void {
+  sensorSubscribers.deviceOrientation.forEach((cb) => cb(data));
+}
+
+function emitAccelerometerCurrent(data: TelegramAccelerometerData): void {
+  sensorCurrentSubscribers.accelerometer.forEach((cb) => cb(data));
+}
+
+function emitGyroscopeCurrent(data: TelegramGyroscopeData): void {
+  sensorCurrentSubscribers.gyroscope.forEach((cb) => cb(data));
+}
+
+function emitDeviceOrientationCurrent(data: TelegramDeviceOrientationData): void {
+  sensorCurrentSubscribers.deviceOrientation.forEach((cb) => cb(data));
+}
+
+function emitLocationManagerUpdate(loc: TelegramLocation): void {
+  locationManagerSubscribers.forEach((cb) => cb(loc));
+}
 
 export function onFullscreenChange(cb: (isFullscreen: boolean) => void): void {
   const handler = (value: boolean) => cb(value);
   eventHandlers.fullscreen = eventHandlers.fullscreen || [];
-  eventHandlers.fullscreen.push(handler);
-  tg()?.onEvent?.('fullscreenChanged', handler);
+  eventHandlers.fullscreen.push({ original: cb as (...args: any[]) => void, wrapped: handler });
+  safeCall(() => { tg()?.onEvent?.('fullscreenChanged', handler); });
 }
 
 export function offFullscreenChange(cb?: (isFullscreen: boolean) => void): void {
-  if (cb && eventHandlers.fullscreen) {
-    eventHandlers.fullscreen = eventHandlers.fullscreen.filter(h => h !== cb);
+  if (!eventHandlers.fullscreen?.length) {
+    return;
   }
-  tg()?.offEvent?.('fullscreenChanged');
+
+  if (!cb) {
+    safeCall(() => { tg()?.offEvent?.('fullscreenChanged'); });
+    eventHandlers.fullscreen = [];
+    return;
+  }
+
+  const found = eventHandlers.fullscreen.find((entry) => entry.original === cb);
+  if (!found) {
+    return;
+  }
+
+  safeCall(() => { tg()?.offEvent?.('fullscreenChanged', found.wrapped); });
+  eventHandlers.fullscreen = eventHandlers.fullscreen.filter((entry) => entry !== found);
 }
 
 export function onOrientationChange(cb: (orientation: { width: number; height: number }) => void): void {
   const handler = (data: { width: number; height: number }) => cb(data);
   eventHandlers.orientation = eventHandlers.orientation || [];
-  eventHandlers.orientation.push(handler);
-  tg()?.onEvent?.('orientationChanged', handler);
+  eventHandlers.orientation.push({ original: cb as (...args: any[]) => void, wrapped: handler });
+  safeCall(() => { tg()?.onEvent?.('orientationChanged', handler); });
 }
 
 export function offOrientationChange(cb?: (orientation: { width: number; height: number }) => void): void {
-  if (cb && eventHandlers.orientation) {
-    eventHandlers.orientation = eventHandlers.orientation.filter(h => h !== cb);
+  if (!eventHandlers.orientation?.length) {
+    return;
   }
-  tg()?.offEvent?.('orientationChanged');
+
+  if (!cb) {
+    safeCall(() => { tg()?.offEvent?.('orientationChanged'); });
+    eventHandlers.orientation = [];
+    return;
+  }
+
+  const found = eventHandlers.orientation.find((entry) => entry.original === cb);
+  if (!found) {
+    return;
+  }
+
+  safeCall(() => { tg()?.offEvent?.('orientationChanged', found.wrapped); });
+  eventHandlers.orientation = eventHandlers.orientation.filter((entry) => entry !== found);
 }
 
 export function onViewportChange(cb: (viewport: TelegramViewport) => void): void {
   const handler = (data: TelegramViewport) => cb(data);
   eventHandlers.viewport = eventHandlers.viewport || [];
-  eventHandlers.viewport.push(handler);
-  tg()?.onEvent?.('viewportChanged', handler);
+  eventHandlers.viewport.push({ original: cb as (...args: any[]) => void, wrapped: handler });
+  safeCall(() => { tg()?.onEvent?.('viewportChanged', handler); });
 }
 
 export function offViewportChange(cb?: (viewport: TelegramViewport) => void): void {
-  if (cb && eventHandlers.viewport) {
-    eventHandlers.viewport = eventHandlers.viewport.filter(h => h !== cb);
+  if (!eventHandlers.viewport?.length) {
+    return;
   }
-  tg()?.offEvent?.('viewportChanged');
+
+  if (!cb) {
+    safeCall(() => { tg()?.offEvent?.('viewportChanged'); });
+    eventHandlers.viewport = [];
+    return;
+  }
+
+  const found = eventHandlers.viewport.find((entry) => entry.original === cb);
+  if (!found) {
+    return;
+  }
+
+  safeCall(() => { tg()?.offEvent?.('viewportChanged', found.wrapped); });
+  eventHandlers.viewport = eventHandlers.viewport.filter((entry) => entry !== found);
 }
 
 export function onActiveChange(cb: (isActive: boolean) => void): void {
   const handler = (value: boolean) => cb(value);
   eventHandlers.active = eventHandlers.active || [];
-  eventHandlers.active.push(handler);
-  tg()?.onEvent?.('activeChanged', handler);
+  eventHandlers.active.push({ original: cb as (...args: any[]) => void, wrapped: handler });
+  safeCall(() => { tg()?.onEvent?.('activeChanged', handler); });
 }
 
 export function offActiveChange(cb?: (isActive: boolean) => void): void {
-  if (cb && eventHandlers.active) {
-    eventHandlers.active = eventHandlers.active.filter(h => h !== cb);
+  if (!eventHandlers.active?.length) {
+    return;
   }
-  tg()?.offEvent?.('activeChanged');
+
+  if (!cb) {
+    safeCall(() => { tg()?.offEvent?.('activeChanged'); });
+    eventHandlers.active = [];
+    return;
+  }
+
+  const found = eventHandlers.active.find((entry) => entry.original === cb);
+  if (!found) {
+    return;
+  }
+
+  safeCall(() => { tg()?.offEvent?.('activeChanged', found.wrapped); });
+  eventHandlers.active = eventHandlers.active.filter((entry) => entry !== found);
 }
 
 export function onInvoiceClose(cb: (result: { status: string; slug?: string }) => void): void {
-  tg()?.onEvent?.('invoiceClosed', cb);
+  const handler = (result: { status: string; slug?: string }) => cb(result);
+  eventHandlers.invoiceClosed = eventHandlers.invoiceClosed || [];
+  eventHandlers.invoiceClosed.push({ original: cb as (...args: any[]) => void, wrapped: handler });
+  safeCall(() => { tg()?.onEvent?.('invoiceClosed', handler); });
 }
 
-export function offInvoiceClose(): void {
-  tg()?.offEvent?.('invoiceClosed');
+export function offInvoiceClose(cb?: (result: { status: string; slug?: string }) => void): void {
+  if (!eventHandlers.invoiceClosed?.length) {
+    return;
+  }
+
+  if (!cb) {
+    safeCall(() => { tg()?.offEvent?.('invoiceClosed'); });
+    eventHandlers.invoiceClosed = [];
+    return;
+  }
+
+  const found = eventHandlers.invoiceClosed.find((entry) => entry.original === cb);
+  if (!found) {
+    return;
+  }
+
+  safeCall(() => { tg()?.offEvent?.('invoiceClosed', found.wrapped); });
+  eventHandlers.invoiceClosed = eventHandlers.invoiceClosed.filter((entry) => entry !== found);
 }
 
 export function onPopupClosed(cb: (buttonId: string) => void): void {
-  tg()?.onEvent?.('popupClosed', cb);
+  const handler = (buttonId: string) => cb(buttonId);
+  eventHandlers.popupClosed = eventHandlers.popupClosed || [];
+  eventHandlers.popupClosed.push({ original: cb as (...args: any[]) => void, wrapped: handler });
+  safeCall(() => { tg()?.onEvent?.('popupClosed', handler); });
 }
 
-export function offPopupClosed(): void {
-  tg()?.offEvent?.('popupClosed');
+export function offPopupClosed(cb?: (buttonId: string) => void): void {
+  if (!eventHandlers.popupClosed?.length) {
+    return;
+  }
+
+  if (!cb) {
+    safeCall(() => { tg()?.offEvent?.('popupClosed'); });
+    eventHandlers.popupClosed = [];
+    return;
+  }
+
+  const found = eventHandlers.popupClosed.find((entry) => entry.original === cb);
+  if (!found) {
+    return;
+  }
+
+  safeCall(() => { tg()?.offEvent?.('popupClosed', found.wrapped); });
+  eventHandlers.popupClosed = eventHandlers.popupClosed.filter((entry) => entry !== found);
 }
 
 // ── Flash Mode ─────────────────────────────────────────────
@@ -554,11 +768,30 @@ export function setFlashMode(mode: 'on' | 'off' | 'auto'): Result<void> {
 }
 
 export function onFlashModeChange(cb: (mode: 'on' | 'off' | 'auto') => void): void {
-  tg()?.onEvent?.('flashModeChanged', cb);
+  const handler = (mode: 'on' | 'off' | 'auto') => cb(mode);
+  eventHandlers.flashModeChanged = eventHandlers.flashModeChanged || [];
+  eventHandlers.flashModeChanged.push({ original: cb as (...args: any[]) => void, wrapped: handler });
+  safeCall(() => { tg()?.onEvent?.('flashModeChanged', handler); });
 }
 
-export function offFlashModeChange(): void {
-  tg()?.offEvent?.('flashModeChanged');
+export function offFlashModeChange(cb?: (mode: 'on' | 'off' | 'auto') => void): void {
+  if (!eventHandlers.flashModeChanged?.length) {
+    return;
+  }
+
+  if (!cb) {
+    safeCall(() => { tg()?.offEvent?.('flashModeChanged'); });
+    eventHandlers.flashModeChanged = [];
+    return;
+  }
+
+  const found = eventHandlers.flashModeChanged.find((entry) => entry.original === cb);
+  if (!found) {
+    return;
+  }
+
+  safeCall(() => { tg()?.offEvent?.('flashModeChanged', found.wrapped); });
+  eventHandlers.flashModeChanged = eventHandlers.flashModeChanged.filter((entry) => entry !== found);
 }
 
 // ── Emoji Status Events ─────────────────────────────────────
@@ -570,27 +803,87 @@ export function offEmojiStatus(): Result<void> {
 // ── Sensor Events ───────────────────────────────────────────
 
 export function onAccelerometerChange(cb: (data: TelegramAccelerometerData) => void): void {
-  tg()?.accelerometer.onChange?.(cb);
+  if (sensorSubscribers.accelerometer.includes(cb)) {
+    return;
+  }
+
+  sensorSubscribers.accelerometer.push(cb);
+  if (sensorSubscribers.accelerometer.length === 1) {
+    safeCall(() => { tg()?.accelerometer.onChange?.(emitAccelerometer); });
+  }
 }
 
-export function offAccelerometerChange(): void {
-  tg()?.accelerometer.offChange?.();
+export function offAccelerometerChange(cb?: (data: TelegramAccelerometerData) => void): void {
+  if (!sensorSubscribers.accelerometer.length) {
+    return;
+  }
+
+  if (!cb) {
+    sensorSubscribers.accelerometer = [];
+    safeCall(() => { tg()?.accelerometer.offChange?.(); });
+    return;
+  }
+
+  sensorSubscribers.accelerometer = sensorSubscribers.accelerometer.filter((handler) => handler !== cb);
+  if (!sensorSubscribers.accelerometer.length) {
+    safeCall(() => { tg()?.accelerometer.offChange?.(); });
+  }
 }
 
 export function onGyroscopeChange(cb: (data: TelegramGyroscopeData) => void): void {
-  tg()?.gyroscope.onChange?.(cb);
+  if (sensorSubscribers.gyroscope.includes(cb)) {
+    return;
+  }
+
+  sensorSubscribers.gyroscope.push(cb);
+  if (sensorSubscribers.gyroscope.length === 1) {
+    safeCall(() => { tg()?.gyroscope.onChange?.(emitGyroscope); });
+  }
 }
 
-export function offGyroscopeChange(): void {
-  tg()?.gyroscope.offChange?.();
+export function offGyroscopeChange(cb?: (data: TelegramGyroscopeData) => void): void {
+  if (!sensorSubscribers.gyroscope.length) {
+    return;
+  }
+
+  if (!cb) {
+    sensorSubscribers.gyroscope = [];
+    safeCall(() => { tg()?.gyroscope.offChange?.(); });
+    return;
+  }
+
+  sensorSubscribers.gyroscope = sensorSubscribers.gyroscope.filter((handler) => handler !== cb);
+  if (!sensorSubscribers.gyroscope.length) {
+    safeCall(() => { tg()?.gyroscope.offChange?.(); });
+  }
 }
 
 export function onDeviceOrientationChange(cb: (data: TelegramDeviceOrientationData) => void): void {
-  tg()?.deviceOrientation.onChange?.(cb);
+  if (sensorSubscribers.deviceOrientation.includes(cb)) {
+    return;
+  }
+
+  sensorSubscribers.deviceOrientation.push(cb);
+  if (sensorSubscribers.deviceOrientation.length === 1) {
+    safeCall(() => { tg()?.deviceOrientation.onChange?.(emitDeviceOrientation); });
+  }
 }
 
-export function offDeviceOrientationChange(): void {
-  tg()?.deviceOrientation.offChange?.();
+export function offDeviceOrientationChange(cb?: (data: TelegramDeviceOrientationData) => void): void {
+  if (!sensorSubscribers.deviceOrientation.length) {
+    return;
+  }
+
+  if (!cb) {
+    sensorSubscribers.deviceOrientation = [];
+    safeCall(() => { tg()?.deviceOrientation.offChange?.(); });
+    return;
+  }
+
+  sensorSubscribers.deviceOrientation = sensorSubscribers.deviceOrientation.filter((handler) => handler !== cb);
+  if (!sensorSubscribers.deviceOrientation.length) {
+    safeCall(() => { tg()?.deviceOrientation.offChange?.(); });
+  }
 }
 
 // ── Accelerometer/Gyroscope Permission ──────────────────────
@@ -610,11 +903,30 @@ export function requestGyroscope(): Promise<Result<boolean>> {
 // ── Location Updates ────────────────────────────────────────
 
 export function onLocationUpdate(cb: (loc: TelegramLocation) => void): void {
-  tg()?.onEvent?.('locationChanged', cb);
+  const handler = (loc: TelegramLocation) => cb(loc);
+  eventHandlers.locationChanged = eventHandlers.locationChanged || [];
+  eventHandlers.locationChanged.push({ original: cb as (...args: any[]) => void, wrapped: handler });
+  safeCall(() => { tg()?.onEvent?.('locationChanged', handler); });
 }
 
-export function offLocationUpdate(): void {
-  tg()?.offEvent?.('locationChanged');
+export function offLocationUpdate(cb?: (loc: TelegramLocation) => void): void {
+  if (!eventHandlers.locationChanged?.length) {
+    return;
+  }
+
+  if (!cb) {
+    safeCall(() => { tg()?.offEvent?.('locationChanged'); });
+    eventHandlers.locationChanged = [];
+    return;
+  }
+
+  const found = eventHandlers.locationChanged.find((entry) => entry.original === cb);
+  if (!found) {
+    return;
+  }
+
+  safeCall(() => { tg()?.offEvent?.('locationChanged', found.wrapped); });
+  eventHandlers.locationChanged = eventHandlers.locationChanged.filter((entry) => entry !== found);
 }
 
 // ── Init ────────────────────────────────────────────────

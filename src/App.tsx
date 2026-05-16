@@ -136,6 +136,7 @@ const GodmodePage = lazy(() => import("@/pages/GodmodePage"));
 const ServiceBugsPage = lazy(() => import("@/pages/ServiceBugsPage").then(m => ({ default: m.ServiceBugsPage })));
 const MusicPage = lazy(() => import("@/pages/MusicPage"));
 const IconPreviewPage = lazy(() => import("@/pages/IconPreviewPage"));
+const DesignSystemPage = lazy(() => import("@/pages/DesignSystemPage"));
 
 // Batch 5: new pages
 const WebLoginCallbackPage = lazy(() => import("@/pages/WebLoginCallbackPage").then(m => ({ default: m.WebLoginCallbackPage })));
@@ -314,6 +315,13 @@ const App = () => {
                 <Route path="/preview/icons" element={
                   <Suspense fallback={<PageLoader />}>
                     <IconPreviewPage />
+                  </Suspense>
+                } />
+
+                {/* Public preview route for liquid glass design system */}
+                <Route path="/preview/design" element={
+                  <Suspense fallback={<PageLoader />}>
+                    <DesignSystemPage />
                   </Suspense>
                 } />
 

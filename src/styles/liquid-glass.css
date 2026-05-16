@@ -1,0 +1,619 @@
+/* ============================================================
+   LIQUID GLASS DESIGN SYSTEM — mansoni 2026
+   Изолированный слой токенов и эффектов для нового UI.
+   Активируется через класс .lg-scope на корневом контейнере
+   страницы превью или внутри отдельных контейнеров.
+   ============================================================ */
+
+.lg-scope {
+  --lg-radius-xs: 10px;
+  --lg-radius-sm: 14px;
+  --lg-radius-md: 20px;
+  --lg-radius-lg: 28px;
+  --lg-radius-xl: 36px;
+  --lg-radius-pill: 999px;
+
+  --lg-blur-sm: 14px;
+  --lg-blur-md: 24px;
+  --lg-blur-lg: 40px;
+
+  --lg-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --lg-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  --lg-grad-aurora: linear-gradient(135deg, #6a5cff 0%, #00d4ff 45%, #ff6ad5 100%);
+  --lg-grad-sunrise: linear-gradient(135deg, #ff8a3d 0%, #ff3d7f 100%);
+  --lg-grad-mint: linear-gradient(135deg, #00f0a8 0%, #00b4d8 100%);
+  --lg-grad-violet: linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%);
+
+  font-family: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-feature-settings: 'cv11', 'ss01', 'ss03';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  letter-spacing: -0.011em;
+}
+
+/* ── Темы ────────────────────────────────────────────────── */
+.lg-scope[data-theme="light"] {
+  --lg-bg-1: #f6f4ff;
+  --lg-bg-2: #e8f2ff;
+  --lg-bg-3: #fff0f6;
+  --lg-ink: #0e1530;
+  --lg-ink-soft: #4b5266;
+  --lg-ink-mute: #8089a0;
+
+  --lg-glass-bg: rgba(255, 255, 255, 0.55);
+  --lg-glass-bg-strong: rgba(255, 255, 255, 0.78);
+  --lg-glass-border: rgba(255, 255, 255, 0.7);
+  --lg-glass-inner: inset 0 1px 0 rgba(255, 255, 255, 0.9), inset 0 -1px 0 rgba(14, 21, 48, 0.04);
+  --lg-glass-shadow: 0 20px 60px -20px rgba(80, 60, 160, 0.25), 0 8px 24px -12px rgba(14, 21, 48, 0.12);
+  --lg-input-bg: rgba(255, 255, 255, 0.7);
+  --lg-divider: rgba(14, 21, 48, 0.08);
+
+  --lg-accent: #6a5cff;
+  --lg-accent-soft: rgba(106, 92, 255, 0.14);
+  --lg-success: #10b981;
+  --lg-danger: #ef4444;
+  --lg-warning: #f59e0b;
+
+  color: var(--lg-ink);
+  background:
+    radial-gradient(1200px 600px at 10% -10%, var(--lg-bg-1) 0%, transparent 60%),
+    radial-gradient(900px 600px at 90% 0%, var(--lg-bg-2) 0%, transparent 55%),
+    radial-gradient(800px 500px at 50% 100%, var(--lg-bg-3) 0%, transparent 55%),
+    #f3f4fb;
+}
+
+.lg-scope[data-theme="dark"] {
+  --lg-bg-1: #1a1240;
+  --lg-bg-2: #052033;
+  --lg-bg-3: #3a0c2b;
+  --lg-ink: #f0f2ff;
+  --lg-ink-soft: #b8bdd6;
+  --lg-ink-mute: #757b95;
+
+  --lg-glass-bg: rgba(20, 22, 40, 0.55);
+  --lg-glass-bg-strong: rgba(28, 32, 56, 0.78);
+  --lg-glass-border: rgba(255, 255, 255, 0.12);
+  --lg-glass-inner: inset 0 1px 0 rgba(255, 255, 255, 0.08), inset 0 -1px 0 rgba(0, 0, 0, 0.2);
+  --lg-glass-shadow: 0 30px 80px -30px rgba(0, 0, 0, 0.6), 0 8px 24px -12px rgba(0, 0, 0, 0.4);
+  --lg-input-bg: rgba(255, 255, 255, 0.06);
+  --lg-divider: rgba(255, 255, 255, 0.08);
+
+  --lg-accent: #8b7dff;
+  --lg-accent-soft: rgba(139, 125, 255, 0.18);
+  --lg-success: #34d399;
+  --lg-danger: #f87171;
+  --lg-warning: #fbbf24;
+
+  color: var(--lg-ink);
+  background:
+    radial-gradient(1200px 600px at 10% -10%, var(--lg-bg-1) 0%, transparent 60%),
+    radial-gradient(900px 600px at 90% 0%, var(--lg-bg-2) 0%, transparent 55%),
+    radial-gradient(800px 500px at 50% 100%, var(--lg-bg-3) 0%, transparent 55%),
+    #07091a;
+}
+
+/* ── Базовые glass-поверхности ────────────────────────────── */
+.lg-glass {
+  background: var(--lg-glass-bg);
+  border: 1px solid var(--lg-glass-border);
+  border-radius: var(--lg-radius-md);
+  box-shadow: var(--lg-glass-shadow), var(--lg-glass-inner);
+  backdrop-filter: blur(var(--lg-blur-md)) saturate(180%);
+  -webkit-backdrop-filter: blur(var(--lg-blur-md)) saturate(180%);
+}
+
+.lg-glass-strong {
+  background: var(--lg-glass-bg-strong);
+  border: 1px solid var(--lg-glass-border);
+  border-radius: var(--lg-radius-md);
+  box-shadow: var(--lg-glass-shadow), var(--lg-glass-inner);
+  backdrop-filter: blur(var(--lg-blur-lg)) saturate(200%);
+  -webkit-backdrop-filter: blur(var(--lg-blur-lg)) saturate(200%);
+}
+
+.lg-glass-soft {
+  background: var(--lg-glass-bg);
+  border: 1px solid var(--lg-glass-border);
+  border-radius: var(--lg-radius-sm);
+  backdrop-filter: blur(var(--lg-blur-sm));
+  -webkit-backdrop-filter: blur(var(--lg-blur-sm));
+}
+
+/* Liquid highlight — двигающийся блик при ховере */
+.lg-liquid {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.lg-liquid::before {
+  content: '';
+  position: absolute;
+  inset: -40%;
+  background: radial-gradient(circle at var(--mx, 50%) var(--my, 50%),
+    rgba(255, 255, 255, 0.35) 0%,
+    rgba(255, 255, 255, 0) 35%);
+  opacity: 0;
+  transition: opacity 0.4s var(--lg-ease);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.lg-liquid:hover::before {
+  opacity: 1;
+}
+
+.lg-scope[data-theme="dark"] .lg-liquid::before {
+  background: radial-gradient(circle at var(--mx, 50%) var(--my, 50%),
+    rgba(139, 125, 255, 0.25) 0%,
+    rgba(139, 125, 255, 0) 35%);
+}
+
+.lg-liquid > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* ── Кнопки ───────────────────────────────────────────────── */
+.lg-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border-radius: var(--lg-radius-pill);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  border: 1px solid var(--lg-glass-border);
+  background: var(--lg-glass-bg);
+  color: var(--lg-ink);
+  cursor: pointer;
+  transition: transform 0.25s var(--lg-ease-spring), box-shadow 0.3s var(--lg-ease);
+  backdrop-filter: blur(var(--lg-blur-sm));
+  -webkit-backdrop-filter: blur(var(--lg-blur-sm));
+  user-select: none;
+}
+
+.lg-btn:hover { transform: translateY(-1px); box-shadow: 0 8px 24px -8px rgba(106, 92, 255, 0.35); }
+.lg-btn:active { transform: translateY(0) scale(0.97); }
+
+.lg-btn-primary {
+  background: var(--lg-grad-aurora);
+  color: white;
+  border: none;
+  box-shadow: 0 10px 30px -10px rgba(106, 92, 255, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+.lg-btn-primary:hover { box-shadow: 0 14px 40px -10px rgba(106, 92, 255, 0.7); }
+
+.lg-btn-ghost {
+  background: transparent;
+  border: 1px solid var(--lg-divider);
+}
+
+.lg-btn-icon {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: 50%;
+}
+
+/* ── Поля ввода ───────────────────────────────────────────── */
+.lg-input {
+  width: 100%;
+  padding: 14px 18px;
+  border-radius: var(--lg-radius-sm);
+  background: var(--lg-input-bg);
+  border: 1px solid var(--lg-glass-border);
+  color: var(--lg-ink);
+  font-size: 15px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.2s var(--lg-ease), box-shadow 0.25s var(--lg-ease), background 0.2s ease;
+  backdrop-filter: blur(var(--lg-blur-sm));
+  -webkit-backdrop-filter: blur(var(--lg-blur-sm));
+}
+
+.lg-input::placeholder { color: var(--lg-ink-mute); }
+
+.lg-input:focus {
+  border-color: var(--lg-accent);
+  box-shadow: 0 0 0 4px var(--lg-accent-soft);
+}
+
+/* ── Аватары ──────────────────────────────────────────────── */
+.lg-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  color: white;
+  flex-shrink: 0;
+  position: relative;
+  background: var(--lg-grad-aurora);
+  box-shadow: 0 4px 12px -4px rgba(106, 92, 255, 0.4);
+}
+
+.lg-avatar[data-online="true"]::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--lg-success);
+  border: 2px solid var(--lg-glass-bg-strong);
+  box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.5);
+  animation: lg-pulse 2s infinite;
+}
+
+@keyframes lg-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.5); }
+  70% { box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}
+
+/* ── Икoнки в glass-чипах ─────────────────────────────────── */
+.lg-icon-chip {
+  width: 40px;
+  height: 40px;
+  border-radius: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--lg-glass-bg);
+  border: 1px solid var(--lg-glass-border);
+  backdrop-filter: blur(var(--lg-blur-sm));
+  -webkit-backdrop-filter: blur(var(--lg-blur-sm));
+  transition: transform 0.3s var(--lg-ease-spring), background 0.3s ease;
+  color: var(--lg-ink);
+  cursor: pointer;
+}
+
+.lg-icon-chip:hover { transform: translateY(-2px) rotate(-3deg); }
+.lg-icon-chip[data-active="true"] {
+  background: var(--lg-grad-aurora);
+  color: white;
+  border-color: transparent;
+  box-shadow: 0 8px 20px -6px rgba(106, 92, 255, 0.5);
+}
+
+/* ── Навигация (rail / bottom bar) ────────────────────────── */
+.lg-nav-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: var(--lg-radius-sm);
+  cursor: pointer;
+  color: var(--lg-ink-soft);
+  transition: color 0.2s ease, background 0.3s var(--lg-ease);
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.lg-nav-item:hover { color: var(--lg-ink); background: var(--lg-glass-bg); }
+
+.lg-nav-item[data-active="true"] {
+  color: var(--lg-ink);
+  background: var(--lg-glass-bg-strong);
+  font-weight: 600;
+}
+
+.lg-nav-item[data-active="true"]::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 20%;
+  bottom: 20%;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--lg-grad-aurora);
+  box-shadow: 0 0 12px rgba(106, 92, 255, 0.6);
+}
+
+/* ── Heart like — современная анимация лайка ─────────────── */
+.lg-like {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  background: none;
+  border: none;
+  color: var(--lg-ink-soft);
+  transition: color 0.2s ease;
+}
+
+.lg-like:hover { color: var(--lg-danger); }
+
+.lg-like[data-liked="true"] {
+  color: var(--lg-danger);
+}
+
+.lg-like[data-liked="true"] svg {
+  fill: currentColor;
+  animation: lg-heart-burst 0.6s var(--lg-ease-spring);
+}
+
+@keyframes lg-heart-burst {
+  0% { transform: scale(1); }
+  30% { transform: scale(1.4) rotate(-8deg); }
+  60% { transform: scale(0.85) rotate(4deg); }
+  100% { transform: scale(1) rotate(0); }
+}
+
+.lg-like-spark {
+  position: absolute;
+  pointer-events: none;
+  inset: 0;
+}
+
+.lg-like[data-liked="true"] .lg-like-spark::before,
+.lg-like[data-liked="true"] .lg-like-spark::after {
+  content: '';
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--lg-danger);
+  top: 50%;
+  left: 50%;
+  opacity: 0;
+  animation: lg-spark 0.7s ease-out;
+}
+
+.lg-like[data-liked="true"] .lg-like-spark::before { animation-delay: 0.05s; transform: translate(-20px, -20px); }
+.lg-like[data-liked="true"] .lg-like-spark::after { transform: translate(18px, -22px); }
+
+@keyframes lg-spark {
+  0% { opacity: 1; transform: translate(0, 0) scale(1); }
+  100% { opacity: 0; transform: translate(var(--dx, 24px), var(--dy, -28px)) scale(0); }
+}
+
+/* ── Badge / pill ─────────────────────────────────────────── */
+.lg-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: var(--lg-radius-pill);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  background: var(--lg-accent-soft);
+  color: var(--lg-accent);
+}
+
+.lg-badge-grad {
+  background: var(--lg-grad-aurora);
+  color: white;
+  padding: 4px 12px;
+  box-shadow: 0 4px 12px -4px rgba(106, 92, 255, 0.5);
+}
+
+/* ── Сообщения чата ───────────────────────────────────────── */
+.lg-msg {
+  max-width: 78%;
+  padding: 10px 14px;
+  border-radius: var(--lg-radius-md);
+  font-size: 14px;
+  line-height: 1.4;
+  word-wrap: break-word;
+  position: relative;
+  animation: lg-msg-in 0.4s var(--lg-ease-spring);
+}
+
+.lg-msg-in {
+  background: var(--lg-glass-bg-strong);
+  border: 1px solid var(--lg-glass-border);
+  border-bottom-left-radius: 6px;
+  align-self: flex-start;
+  color: var(--lg-ink);
+  backdrop-filter: blur(var(--lg-blur-sm));
+}
+
+.lg-msg-out {
+  background: var(--lg-grad-aurora);
+  color: white;
+  border-bottom-right-radius: 6px;
+  align-self: flex-end;
+  box-shadow: 0 8px 20px -10px rgba(106, 92, 255, 0.5);
+}
+
+@keyframes lg-msg-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ── Карточки поста (feed) ────────────────────────────────── */
+.lg-card {
+  border-radius: var(--lg-radius-lg);
+  overflow: hidden;
+  background: var(--lg-glass-bg);
+  border: 1px solid var(--lg-glass-border);
+  box-shadow: var(--lg-glass-shadow);
+  backdrop-filter: blur(var(--lg-blur-md));
+  -webkit-backdrop-filter: blur(var(--lg-blur-md));
+  transition: transform 0.4s var(--lg-ease), box-shadow 0.4s var(--lg-ease);
+}
+
+.lg-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 30px 80px -30px rgba(80, 60, 160, 0.35), 0 8px 24px -12px rgba(14, 21, 48, 0.15);
+}
+
+/* ── Toggle ───────────────────────────────────────────────── */
+.lg-toggle {
+  position: relative;
+  width: 48px;
+  height: 28px;
+  border-radius: 999px;
+  background: var(--lg-divider);
+  cursor: pointer;
+  transition: background 0.3s ease;
+  border: none;
+  padding: 0;
+}
+
+.lg-toggle::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: white;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  transition: transform 0.3s var(--lg-ease-spring);
+}
+
+.lg-toggle[data-on="true"] {
+  background: var(--lg-grad-aurora);
+}
+
+.lg-toggle[data-on="true"]::after {
+  transform: translateX(20px);
+}
+
+/* ── Floating action ──────────────────────────────────────── */
+.lg-fab {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--lg-grad-aurora);
+  color: white;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 16px 40px -10px rgba(106, 92, 255, 0.6);
+  transition: transform 0.3s var(--lg-ease-spring);
+}
+
+.lg-fab:hover { transform: scale(1.08) rotate(8deg); }
+.lg-fab:active { transform: scale(0.95); }
+
+/* ── Модалка / sheet ──────────────────────────────────────── */
+.lg-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(8, 10, 24, 0.45);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: lg-fade 0.3s ease;
+}
+
+.lg-modal {
+  width: min(420px, 92%);
+  padding: 24px;
+  border-radius: var(--lg-radius-lg);
+  background: var(--lg-glass-bg-strong);
+  border: 1px solid var(--lg-glass-border);
+  box-shadow: 0 40px 100px -20px rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(var(--lg-blur-lg)) saturate(200%);
+  -webkit-backdrop-filter: blur(var(--lg-blur-lg)) saturate(200%);
+  animation: lg-modal-in 0.4s var(--lg-ease-spring);
+}
+
+@keyframes lg-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes lg-modal-in {
+  from { opacity: 0; transform: translateY(20px) scale(0.94); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ── Скелетон ─────────────────────────────────────────────── */
+.lg-skeleton {
+  background: linear-gradient(90deg,
+    var(--lg-glass-bg) 25%,
+    var(--lg-glass-bg-strong) 50%,
+    var(--lg-glass-bg) 75%);
+  background-size: 200% 100%;
+  animation: lg-shimmer 1.6s infinite linear;
+  border-radius: var(--lg-radius-sm);
+}
+
+@keyframes lg-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+/* ── Typing indicator ─────────────────────────────────────── */
+.lg-typing { display: inline-flex; gap: 4px; padding: 12px 16px; }
+.lg-typing span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--lg-ink-mute);
+  animation: lg-typing 1.3s infinite ease-in-out;
+}
+.lg-typing span:nth-child(2) { animation-delay: 0.15s; }
+.lg-typing span:nth-child(3) { animation-delay: 0.3s; }
+
+@keyframes lg-typing {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+  30% { transform: translateY(-4px); opacity: 1; }
+}
+
+/* ── Препроекция viewport ─────────────────────────────────── */
+.lg-frame {
+  margin: 0 auto;
+  overflow: hidden;
+  border-radius: 32px;
+  border: 1px solid var(--lg-glass-border);
+  box-shadow: 0 40px 100px -30px rgba(0, 0, 0, 0.4);
+  background: var(--lg-glass-bg-strong);
+  position: relative;
+}
+
+.lg-frame[data-viewport="desktop"] { width: 100%; max-width: 1280px; aspect-ratio: 16 / 10; }
+.lg-frame[data-viewport="mobile"] { width: 390px; height: 760px; border-radius: 44px; padding: 8px; background: #111; }
+.lg-frame[data-viewport="mobile"] > .lg-frame-inner {
+  border-radius: 36px;
+  overflow: hidden;
+  height: 100%;
+  position: relative;
+}
+
+.lg-frame-inner { width: 100%; height: 100%; overflow: hidden; position: relative; }
+
+/* ── Sticky preview header ────────────────────────────────── */
+.lg-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--lg-divider);
+  background: var(--lg-glass-bg-strong);
+  backdrop-filter: blur(var(--lg-blur-lg));
+  -webkit-backdrop-filter: blur(var(--lg-blur-lg));
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* ── Доступность ──────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .lg-scope *, .lg-scope *::before, .lg-scope *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}

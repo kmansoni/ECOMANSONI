@@ -1,5 +1,5 @@
 import { forwardRef, useRef, useState, type ReactNode, type MouseEvent } from "react";
-import { motion, useMotionValue, useSpring } from "framer-motion";
+import { motion, useMotionValue, useReducedMotion, useSpring } from "framer-motion";
 import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BRAND_GRADIENT } from "./glassTokens";
@@ -35,6 +35,8 @@ export const GlassPrimaryButton = forwardRef<
     ref,
   ) {
     const localRef = useRef<HTMLButtonElement | null>(null);
+    const prefersReducedMotion = useReducedMotion();
+    const isMotionEnabled = !prefersReducedMotion;
     const setRef = (el: HTMLButtonElement | null) => {
       localRef.current = el;
       if (typeof ref === "function") ref(el);
@@ -47,21 +49,25 @@ export const GlassPrimaryButton = forwardRef<
     const [ripples, setRipples] = useState<Array<{ id: number; x: number; y: number }>>([]);
 
     const handleMove = (e: MouseEvent<HTMLButtonElement>) => {
+      if (!isMotionEnabled) return;
       const r = localRef.current?.getBoundingClientRect();
       if (!r) return;
       mx.set((e.clientX - r.left - r.width / 2) * 0.2);
       my.set((e.clientY - r.top - r.height / 2) * 0.3);
     };
     const handleLeave = () => {
+      if (!isMotionEnabled) return;
       mx.set(0);
       my.set(0);
     };
     const handleClick = (e: MouseEvent<HTMLButtonElement>) => {
-      const r = localRef.current?.getBoundingClientRect();
-      if (r) {
-        const id = Date.now();
-        setRipples((prev) => [...prev, { id, x: e.clientX - r.left, y: e.clientY - r.top }]);
-        window.setTimeout(() => setRipples((prev) => prev.filter((p) => p.id !== id)), 650);
+      if (isMotionEnabled) {
+        const r = localRef.current?.getBoundingClientRect();
+        if (r) {
+          const id = Date.now();
+          setRipples((prev) => [...prev, { id, x: e.clientX - r.left, y: e.clientY - r.top }]);
+          window.setTimeout(() => setRipples((prev) => prev.filter((p) => p.id !== id)), 650);
+        }
       }
       onClick?.();
     };
@@ -77,8 +83,8 @@ export const GlassPrimaryButton = forwardRef<
         onMouseMove={handleMove}
         onMouseLeave={handleLeave}
         onClick={handleClick}
-        style={{ x: sx, y: sy }}
-        whileTap={{ scale: 0.97 }}
+        style={isMotionEnabled ? { x: sx, y: sy } : undefined}
+        whileTap={isMotionEnabled ? { scale: 0.97 } : undefined}
         className={cn(
           "relative group w-full rounded-2xl overflow-hidden font-semibold text-white",
           "disabled:opacity-60 disabled:cursor-not-allowed",
@@ -94,14 +100,14 @@ export const GlassPrimaryButton = forwardRef<
           <span className="absolute inset-0" style={{ background: BRAND_GRADIENT }} />
         )}
         <span className="absolute inset-0 bg-gradient-to-b from-white/25 via-transparent to-transparent" />
-        {variant !== "brand" && (
+        {variant !== "brand" && isMotionEnabled && (
           <motion.span
             className="absolute -inset-y-4 -left-1/3 w-1/3 rotate-12 bg-white/30 blur-md"
             animate={{ x: ["0%", "450%"] }}
             transition={{ duration: 2.8, repeat: Infinity, ease: "easeInOut", repeatDelay: 1.2 }}
           />
         )}
-        {ripples.map((r) => (
+        {isMotionEnabled && ripples.map((r) => (
           <motion.span
             key={r.id}
             className="absolute rounded-full bg-white/40 pointer-events-none"

@@ -79,6 +79,19 @@ export class SfuMediaManager {
     this.onIceRestartNeeded = cb;
   }
 
+  private clearIceRestartTimer(transportId: string): void {
+    const timer = this.iceRestartTimers.get(transportId);
+    if (timer !== undefined) {
+      window.clearTimeout(timer);
+      this.iceRestartTimers.delete(transportId);
+    }
+  }
+
+  private replaceIceRestartTimer(transportId: string, timer: number): void {
+    this.clearIceRestartTimer(transportId);
+    this.iceRestartTimers.set(transportId, timer);
+  }
+
   /**
    * C-1 fix: Attempt ICE restart with exponential backoff.
    * Max 3 attempts at 1s, 2s, 4s. If all fail — close transport.
@@ -89,11 +102,16 @@ export class SfuMediaManager {
     direction: 'send' | 'recv',
     attempt = 0,
   ): void {
+    if (transport.closed) {
+      this.clearIceRestartTimer(transportId);
+      return;
+    }
+
     const MAX_ATTEMPTS = 3;
     if (attempt >= MAX_ATTEMPTS) {
       logger.warn(`[SfuMediaManager] ICE restart exhausted after ${MAX_ATTEMPTS} attempts for ${direction} transport ${transportId}`);
       if (!transport.closed) transport.close();
-      this.iceRestartTimers.delete(transportId);
+      this.clearIceRestartTimer(transportId);
       return;
     }
 
@@ -101,7 +119,11 @@ export class SfuMediaManager {
     logger.info(`[SfuMediaManager] ICE restart attempt ${attempt + 1}/${MAX_ATTEMPTS} for ${direction} transport in ${delay}ms`);
 
     const timer = window.setTimeout(async () => {
-      this.iceRestartTimers.delete(transportId);
+      this.clearIceRestartTimer(transportId);
+      if (transport.closed) {
+        return;
+      }
+
       if (!this.onIceRestartNeeded) {
         logger.warn('[SfuMediaManager] No ICE restart callback registered — closing transport');
         if (!transport.closed) transport.close();
@@ -112,11 +134,14 @@ export class SfuMediaManager {
         logger.info(`[SfuMediaManager] ICE restart signaled successfully for ${direction} transport ${transportId}`);
       } catch (err) {
         logger.warn(`[SfuMediaManager] ICE restart signaling failed (attempt ${attempt + 1})`, err);
+        if (transport.closed) {
+          return;
+        }
         this.scheduleIceRestart(transport, transportId, direction, attempt + 1);
       }
     }, delay);
 
-    this.iceRestartTimers.set(transportId, timer);
+    this.replaceIceRestartTimer(transportId, timer);
   }
 
   private async collectRelaySampleFromTransport(
@@ -236,12 +261,16 @@ export class SfuMediaManager {
         const t = this.sendTransport;
         if (t) {
           const timer = window.setTimeout(() => {
-            if (t.connectionState === 'disconnected') {
+            this.clearIceRestartTimer(options.id);
+            if (!t.closed && t.connectionState === 'disconnected') {
               this.scheduleIceRestart(t, options.id, 'send');
             }
           }, 5_000);
-          t.once('connectionstatechange', () => clearTimeout(timer));
+          this.replaceIceRestartTimer(options.id, timer);
+          t.once('connectionstatechange', () => this.clearIceRestartTimer(options.id));
         }
+      } else if (state === 'connected' || state === 'closed') {
+        this.clearIceRestartTimer(options.id);
       }
     });
 
@@ -288,12 +317,16 @@ export class SfuMediaManager {
         const t = this.recvTransport;
         if (t) {
           const timer = window.setTimeout(() => {
-            if (t.connectionState === 'disconnected') {
+            this.clearIceRestartTimer(options.id);
+            if (!t.closed && t.connectionState === 'disconnected') {
               this.scheduleIceRestart(t, options.id, 'recv');
             }
           }, 5_000);
-          t.once('connectionstatechange', () => clearTimeout(timer));
+          this.replaceIceRestartTimer(options.id, timer);
+          t.once('connectionstatechange', () => this.clearIceRestartTimer(options.id));
         }
+      } else if (state === 'connected' || state === 'closed') {
+        this.clearIceRestartTimer(options.id);
       }
     });
 
@@ -499,8 +532,8 @@ export class SfuMediaManager {
   /** Закрыть всё и освободить ресурсы. */
   close(): void {
     // C-1 fix: cancel all pending ICE restart timers before closing
-    for (const timer of this.iceRestartTimers.values()) {
-      window.clearTimeout(timer);
+    for (const transportId of this.iceRestartTimers.keys()) {
+      this.clearIceRestartTimer(transportId);
     }
     this.iceRestartTimers.clear();
 

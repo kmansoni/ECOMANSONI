@@ -26,7 +26,22 @@ export function BotMessageContent({
   const botMethod = metadata?.bot_method as string | undefined;
   const botParams = metadata?.bot_params as Record<string, unknown> | undefined;
 
+  const captionText = typeof content.caption === 'string' && content.caption.length > 0
+    ? content.caption
+    : null;
+  const phoneNumberText = typeof content.phone_number === 'string' && content.phone_number.length > 0
+    ? content.phone_number
+    : null;
+  const proximityAlertRadius = typeof content.proximity_alert_radius === 'number'
+    ? content.proximity_alert_radius
+    : null;
+  const fileSize = typeof content.file_size === 'number' ? content.file_size : null;
+  const contactName = typeof content.contact_name === 'string' && content.contact_name.length > 0
+    ? content.contact_name
+    : 'Контакт';
+
   const replyMarkup = botParams?.reply_markup as Record<string, unknown> | undefined;
+  const hasReplyMarkup = Boolean(replyMarkup);
 
   // ── Текст ──────────────────────────────────────────────────────
   if (contentType === 'text') {
@@ -35,12 +50,12 @@ export function BotMessageContent({
     return (
       <>
         <p className="whitespace-pre-wrap leading-relaxed">{text}</p>
-        {replyMarkup && (
+        {hasReplyMarkup ? (
           <BotKeyboard
-            replyMarkup={replyMarkup}
+            replyMarkup={replyMarkup!}
             onButtonClick={(text, cb) => onCallbackButtonClick?.(text, cb)}
           />
-        )}
+        ) : null}
       </>
     );
   }
@@ -55,13 +70,13 @@ export function BotMessageContent({
           className={cn("rounded-lg max-w-full h-auto", className)}
           loading="lazy"
         />
-        {content.caption && <p className="mt-1 text-sm text-muted-foreground">{content.caption}</p>}
-        {replyMarkup && (
+        {captionText && <p className="mt-1 text-sm text-muted-foreground">{captionText}</p>}
+        {hasReplyMarkup ? (
           <BotKeyboard
-            replyMarkup={replyMarkup}
+            replyMarkup={replyMarkup!}
             onButtonClick={(text, cb) => onCallbackButtonClick?.(text, cb)}
           />
-        )}
+        ) : null}
       </>
     );
   }
@@ -76,20 +91,22 @@ export function BotMessageContent({
           className={cn("rounded-lg max-w-full", className)}
           preload="metadata"
         />
-        {content.caption && <p className="mt-1 text-sm text-muted-foreground">{content.caption}</p>}
-        {replyMarkup && (
+        {captionText && <p className="mt-1 text-sm text-muted-foreground">{captionText}</p>}
+        {hasReplyMarkup ? (
           <BotKeyboard
-            replyMarkup={replyMarkup}
+            replyMarkup={replyMarkup!}
             onButtonClick={(text, cb) => onCallbackButtonClick?.(text, cb)}
           />
-        )}
+        ) : null}
       </>
     );
   }
 
   // ── Документ ─────────────────────────────────────────────────────
   if (contentType === 'document' && content.media_url) {
-    const fileName = (content.caption as string) || 'document';
+    const fileName = typeof content.caption === 'string' && content.caption.length > 0
+      ? content.caption
+      : 'document';
     const ext = fileName.split('.').pop()?.toLowerCase() || '';
     const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext);
     const isVideo = ['mp4', 'mov', 'webm'].includes(ext);
@@ -103,13 +120,13 @@ export function BotMessageContent({
             className={cn("rounded-lg max-w-full h-auto", className)}
             loading="lazy"
           />
-          {content.caption && <p className="mt-1 text-sm text-muted-foreground">{content.caption}</p>}
-          {replyMarkup && (
+          {captionText && <p className="mt-1 text-sm text-muted-foreground">{captionText}</p>}
+          {hasReplyMarkup ? (
             <BotKeyboard
-              replyMarkup={replyMarkup}
+              replyMarkup={replyMarkup!}
               onButtonClick={(text, cb) => onCallbackButtonClick?.(text, cb)}
             />
-          )}
+          ) : null}
         </>
       );
     }
@@ -123,13 +140,13 @@ export function BotMessageContent({
             className={cn("rounded-lg max-w-full", className)}
             preload="metadata"
           />
-          {content.caption && <p className="mt-1 text-sm text-muted-foreground">{content.caption}</p>}
-          {replyMarkup && (
+          {captionText && <p className="mt-1 text-sm text-muted-foreground">{captionText}</p>}
+          {hasReplyMarkup ? (
             <BotKeyboard
-              replyMarkup={replyMarkup}
+              replyMarkup={replyMarkup!}
               onButtonClick={(text, cb) => onCallbackButtonClick?.(text, cb)}
             />
-          )}
+          ) : null}
         </>
       );
     }
@@ -151,20 +168,20 @@ export function BotMessageContent({
           </div>
           <div className="min-w-0">
             <p className="text-sm font-medium truncate">{fileName}</p>
-            {content.file_size && (
+            {fileSize !== null && (
               <p className="text-xs text-muted-foreground">
-                {formatBytes(content.file_size as number)}
+                {formatBytes(fileSize)}
               </p>
             )}
           </div>
         </a>
-        {content.caption && <p className="mt-1 text-sm text-muted-foreground">{content.caption}</p>}
-        {replyMarkup && (
+        {captionText && <p className="mt-1 text-sm text-muted-foreground">{captionText}</p>}
+        {hasReplyMarkup ? (
           <BotKeyboard
-            replyMarkup={replyMarkup}
+            replyMarkup={replyMarkup!}
             onButtonClick={(text, cb) => onCallbackButtonClick?.(text, cb)}
           />
-        )}
+        ) : null}
       </>
     );
   }
@@ -179,13 +196,13 @@ export function BotMessageContent({
           className={cn("w-full max-w-[340px]", className)}
           preload="metadata"
         />
-        {content.caption && <p className="mt-1 text-sm text-muted-foreground">{content.caption}</p>}
-        {replyMarkup && (
+        {captionText && <p className="mt-1 text-sm text-muted-foreground">{captionText}</p>}
+        {hasReplyMarkup ? (
           <BotKeyboard
-            replyMarkup={replyMarkup}
+            replyMarkup={replyMarkup!}
             onButtonClick={(text, cb) => onCallbackButtonClick?.(text, cb)}
           />
-        )}
+        ) : null}
       </>
     );
   }
@@ -203,13 +220,13 @@ export function BotMessageContent({
             preload="metadata"
           />
         </div>
-        {content.caption && <p className="mt-1 text-sm text-muted-foreground">{content.caption}</p>}
-        {replyMarkup && (
+        {captionText && <p className="mt-1 text-sm text-muted-foreground">{captionText}</p>}
+        {hasReplyMarkup ? (
           <BotKeyboard
-            replyMarkup={replyMarkup}
+            replyMarkup={replyMarkup!}
             onButtonClick={(text, cb) => onCallbackButtonClick?.(text, cb)}
           />
-        )}
+        ) : null}
       </>
     );
   }
@@ -226,13 +243,13 @@ export function BotMessageContent({
             preload="metadata"
           />
         </div>
-        {content.caption && <p className="mt-1 text-sm text-muted-foreground">{content.caption}</p>}
-        {replyMarkup && (
+        {captionText && <p className="mt-1 text-sm text-muted-foreground">{captionText}</p>}
+        {hasReplyMarkup ? (
           <BotKeyboard
-            replyMarkup={replyMarkup}
+            replyMarkup={replyMarkup!}
             onButtonClick={(text, cb) => onCallbackButtonClick?.(text, cb)}
           />
-        )}
+        ) : null}
       </>
     );
   }
@@ -249,13 +266,13 @@ export function BotMessageContent({
           playsInline
           className={cn("rounded-lg max-w-[340px]", className)}
         />
-        {content.caption && <p className="mt-1 text-sm text-muted-foreground">{content.caption}</p>}
-        {replyMarkup && (
+        {captionText && <p className="mt-1 text-sm text-muted-foreground">{captionText}</p>}
+        {hasReplyMarkup ? (
           <BotKeyboard
-            replyMarkup={replyMarkup}
+            replyMarkup={replyMarkup!}
             onButtonClick={(text, cb) => onCallbackButtonClick?.(text, cb)}
           />
-        )}
+        ) : null}
       </>
     );
   }
@@ -325,12 +342,12 @@ export function BotMessageContent({
             </div>
           )}
         </div>
-        {replyMarkup && (
+        {hasReplyMarkup ? (
           <BotKeyboard
-            replyMarkup={replyMarkup}
+            replyMarkup={replyMarkup!}
             onButtonClick={(text, cb) => onCallbackButtonClick?.(text, cb)}
           />
-        )}
+        ) : null}
       </>
     );
   }
@@ -365,9 +382,9 @@ export function BotMessageContent({
             }}
           />
         </a>
-        {content.proximity_alert_radius && (
+        {proximityAlertRadius !== null && (
           <p className="text-xs text-muted-foreground mt-1">
-            Радиус уведомления: {content.proximity_alert_radius}м
+            Радиус уведомления: {proximityAlertRadius}м
           </p>
         )}
         <p className="text-xs text-muted-foreground">
@@ -375,12 +392,12 @@ export function BotMessageContent({
           {heading != null && ` · ${heading}°`}
           {livePeriod != null && ` · ${Math.round(livePeriod / 60)} мин`}
         </p>
-        {replyMarkup && (
+        {hasReplyMarkup ? (
           <BotKeyboard
-            replyMarkup={replyMarkup}
+            replyMarkup={replyMarkup!}
             onButtonClick={(text, cb) => onCallbackButtonClick?.(text, cb)}
           />
-        )}
+        ) : null}
       </>
     );
   }
@@ -413,19 +430,19 @@ export function BotMessageContent({
               <ContactIcon className="w-5 h-5 text-primary" />
             </div>
             <div className="min-w-0">
-              <p className="text-sm font-medium">{content.contact_name as string}</p>
-              {content.phone_number && (
-                <p className="text-xs text-muted-foreground">{content.phone_number}</p>
+              <p className="text-sm font-medium">{contactName}</p>
+              {phoneNumberText && (
+                <p className="text-xs text-muted-foreground">{phoneNumberText}</p>
               )}
             </div>
           </div>
         </div>
-        {replyMarkup && (
+        {hasReplyMarkup ? (
           <BotKeyboard
-            replyMarkup={replyMarkup}
+            replyMarkup={replyMarkup!}
             onButtonClick={(text, cb) => onCallbackButtonClick?.(text, cb)}
           />
-        )}
+        ) : null}
       </>
     );
   }
@@ -454,12 +471,12 @@ export function BotMessageContent({
     return (
       <>
         <p className="whitespace-pre-wrap leading-relaxed">{text}</p>
-        {replyMarkup && (
+        {hasReplyMarkup ? (
           <BotKeyboard
-            replyMarkup={replyMarkup}
+            replyMarkup={replyMarkup!}
             onButtonClick={(text, cb) => onCallbackButtonClick?.(text, cb)}
           />
-        )}
+        ) : null}
       </>
     );
   }

@@ -224,7 +224,6 @@ export function FSMVisualEditor({ flow, onChange, initialState, onInitialStateCh
             strokeWidth="1"
             className="cursor-pointer hover:fill-red-500/50 transition-colors"
             onClick={() => handleRemoveTransition(t.from, t.to)}
-            title="Удалить переход"
           >
             <title>Удалить переход</title>
           </circle>
@@ -294,7 +293,10 @@ export function FSMVisualEditor({ flow, onChange, initialState, onInitialStateCh
     return (
       <div className="flex gap-2 mt-4">
         <button
-          onClick={() => setEditingTransition({ from: '', to: '' }) || setTransitionCondition('')}
+          onClick={() => {
+            setEditingTransition({ from: '', to: '' });
+            setTransitionCondition('');
+          }}
           className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
         >
           <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

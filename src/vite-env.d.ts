@@ -30,11 +30,13 @@ interface ImportMetaEnv {
   readonly VITE_APP_VERSION?: string;
   readonly VITE_APP_COMMIT_SHA?: string;
   readonly VITE_APP_BUILD_TIME?: string;
+  // Bot Engine
+  readonly VITE_EXPECTED_SUPABASE_PROJECT_REF?: string;
 }
 
-interface ImportMeta {
-  readonly env: ImportMetaEnv;
-}
+  interface ImportMeta {
+    readonly env: ImportMetaEnv;
+  }
 
 interface Window {
   __APP_BUILD__?: {

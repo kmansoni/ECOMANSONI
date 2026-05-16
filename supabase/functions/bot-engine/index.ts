@@ -805,6 +805,21 @@ async function handleExecute(rawEvent: unknown): Promise<Response> {
   });
 }
 
+async function getAuthenticatedUserId(req: Request): Promise<string | null> {
+  const authHeader = req.headers.get('Authorization');
+  if (!authHeader?.startsWith('Bearer ')) {
+    return null;
+  }
+
+  const token = authHeader.slice('Bearer '.length);
+  const { data: { user }, error } = await supabase.auth.getUser(token);
+  if (error || !user) {
+    return null;
+  }
+
+  return user.id;
+}
+
 // Extracted core processing for reuse by both webhook and execute
 async function processHandlerMatch(handler: BotHandler, event: BotInboundEvent, bot: any): Promise<BotOutboundMessage | null> {
   const session = await getOrCreateSession(event.bot_id, event.user_id, event.chat_id);
@@ -891,7 +906,27 @@ async function handleWebhook(req: Request): Promise<Response> {
   // Execute — programmatic handler invocation
   if (path === '/execute' && req.method === 'POST') {
     try {
+      const authUserId = await getAuthenticatedUserId(req);
+      if (!authUserId) {
+        return jsonErr('Unauthorized', 401);
+      }
+
       const raw = await req.json();
+      const body = raw as Record<string, unknown>;
+      const botId = typeof body.bot_id === 'string' ? body.bot_id : '';
+      if (!botId) {
+        return jsonErr('bot_id required', 400);
+      }
+
+      const bot = await getBotById(botId);
+      if (!bot) {
+        return jsonErr('Bot not found or inactive', 404);
+      }
+
+      if (bot.owner_id !== authUserId) {
+        return jsonErr('Access denied', 403);
+      }
+
       return await handleExecute(raw);
     } catch (error: any) {
       console.error('[bot-engine] Error in execute:', error);

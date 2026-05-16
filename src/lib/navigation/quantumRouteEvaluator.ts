@@ -27,7 +27,7 @@ import type { RouteWeights } from '@/lib/navigation/routePreferenceLearner';
 // WAVE FUNCTION EVALUATION
 // ══════════════════════════════════════════════════════════════════════════
 
-const DEFAULT_WEIGHTS: RouteWeights = {
+export const DEFAULT_ROUTE_WEIGHTS: RouteWeights = {
   time: 0.30,
   cost: 0.20,
   eco: 0.15,
@@ -258,7 +258,7 @@ function computeParetoFront(
  */
 export function evaluateRouteSuperposition(
   routes: NavRoute[],
-  weights: RouteWeights = DEFAULT_WEIGHTS,
+  weights: RouteWeights = DEFAULT_ROUTE_WEIGHTS,
   mode: TravelMode = 'car'
 ): RouteSuperposition {
   if (routes.length === 0) {

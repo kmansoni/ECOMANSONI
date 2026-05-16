@@ -59,17 +59,17 @@ function decodeVarInt(data: Uint8Array, offset: number): [number, number] {
   return [value, i - offset];
 }
 
-/** Строит IV для AES-GCM из counter (zero-padded до 12 байт) */
-function buildIV(counter: number): Uint8Array {
-  const iv = new ArrayBuffer(12);
-  const view = new DataView(iv);
-  // counter как 32-bit big-endian в последних 4 байтах
-  view.setUint32(8, counter >>> 0, false);
-  if (counter > 0xffffffff) {
-    view.setUint32(4, Math.floor(counter / 0x100000000) >>> 0, false);
-  }
-  return new Uint8Array(iv);
-}
+/** Строит IV для AES-GCM из epoch и counter (epoch: первые 4 байта, counter: следующие 8 байт) */
+function buildIV(epoch: number, counter: number): Uint8Array {
+   const iv = new ArrayBuffer(12);
+   const view = new DataView(iv);
+   // epoch как 32-bit big-endian в первых 4 байтах
+   view.setUint32(0, epoch >>> 0, false);
+   // counter как 64-bit big-endian в следующих 8 байтах (разделён на две 32-битные части)
+   view.setUint32(4, Math.floor(counter / 0x100000000) >>> 0, false);
+   view.setUint32(8, counter >>> 0, false);
+   return new Uint8Array(iv);
+ }
 
 // ─── SFrameContext ────────────────────────────────────────────────────────────
 
@@ -79,8 +79,9 @@ const MAX_REPLAY_WINDOW = 8192;
 export class SFrameContext {
   private key: CryptoKey | null = null;
   private counter: number = 0;
-  private keyId: number = 0;
-  private config: SFrameConfig;
+   private keyId: number = 0;
+   private epoch: number = 0;
+   private config: SFrameConfig;
   /** Replay protection: track highest seen counter + small window for out-of-order */
   private highestSeenCounter: number = -1;
   private seenCounters: Set<number> = new Set();
@@ -91,16 +92,18 @@ export class SFrameContext {
     };
   }
 
-  /**
-   * Установка ключа шифрования. Resets replay protection state.
-   */
-  async setEncryptionKey(key: CryptoKey, keyId: number): Promise<void> {
-    this.key = key;
-    this.keyId = keyId & 0x7fffffff; // max 31 бит
-    // Reset replay state on key change
-    this.highestSeenCounter = -1;
-    this.seenCounters.clear();
-  }
+   /**
+    * Установка ключа шифрования. Resets replay protection state.
+    */
+   async setEncryptionKey(key: CryptoKey, keyId: number): Promise<void> {
+     this.key = key;
+     this.keyId = keyId & 0x7fffffff; // max 31 бит
+     // Increment epoch to ensure IV uniqueness after key rotation
+     this.epoch = (this.epoch + 1) >>> 0;
+     // Reset replay state on key change
+     this.highestSeenCounter = -1;
+     this.seenCounters.clear();
+   }
 
   /**
    * Шифрование медиафрейма
@@ -112,7 +115,7 @@ export class SFrameContext {
 
     const counter = this.counter++;
     const header = this._buildHeader(this.keyId, counter);
-    const iv = buildIV(counter);
+    const iv = buildIV(this.epoch, counter);
 
     // AAD = header bytes
     const frameBytes = new Uint8Array(frame.slice(0));
@@ -165,7 +168,7 @@ export class SFrameContext {
       throw new Error(`Duplicate SFrame counter ${counter} — possible replay attack`);
     }
 
-    const iv = buildIV(counter);
+     const iv = buildIV(this.epoch, counter);
 
     // Header bytes (для AAD)
     const headerBuf = new Uint8Array(frame.slice(0, headerLength));
@@ -188,13 +191,15 @@ export class SFrameContext {
     this.seenCounters.add(counter);
     if (counter > this.highestSeenCounter) {
       this.highestSeenCounter = counter;
-      // Range-based eviction: drop all counters that fall below the new floor.
-      // This guarantees seenCounters only holds counters in [highestSeenCounter-MAX_REPLAY_WINDOW+1 .. highestSeenCounter].
-      // Any replay of an evicted counter will be caught by the floor check above.
-      const newFloor = this.highestSeenCounter - MAX_REPLAY_WINDOW;
-      for (const c of this.seenCounters) {
-        if (c <= newFloor) this.seenCounters.delete(c);
-      }
+     // Range-based eviction: drop all counters that fall below the new floor.
+     // This guarantees seenCounters only holds counters in [highestSeenCounter-MAX_REPLAY_WINDOW+1 .. highestSeenCounter].
+     // Any replay of an evicted counter will be caught by the floor check above.
+     const newFloor = this.highestSeenCounter - MAX_REPLAY_WINDOW;
+     this.seenCounters.forEach(c => {
+         if (c <= newFloor) {
+             this.seenCounters.delete(c);
+         }
+     });
     }
 
     return decrypted;

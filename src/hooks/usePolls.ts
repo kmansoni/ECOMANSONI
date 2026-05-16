@@ -36,6 +36,19 @@ export interface CreatePollInput {
   allows_multiple?: boolean;
   correct_option_index?: number | null;
   close_date?: string | null;
+  // Polls 2.0 options (Telegram March 2026)
+  allow_adding_options?: boolean;
+  suggest_poll_option?: boolean;
+  hide_results_until_closed?: boolean;
+  shuffle_options?: boolean;
+  time_limit?: number; // seconds
+  members_only?: boolean;
+  country_codes?: string[];
+  // Media attachment
+  media_url?: string;
+  media_type?: "image" | "video" | "location" | null;
+  // Description
+  description?: string;
 }
 
 export function usePolls(conversationId: string | null) {
@@ -91,6 +104,19 @@ export function usePolls(conversationId: string | null) {
           allows_multiple: input.allows_multiple ?? false,
           correct_option_index: input.correct_option_index ?? null,
           close_date: input.close_date ?? null,
+          // Polls 2.0
+          allow_adding_options: input.allow_adding_options ?? false,
+          suggest_poll_option: input.suggest_poll_option ?? false,
+          hide_results_until_closed: input.hide_results_until_closed ?? false,
+          shuffle_options: input.shuffle_options ?? false,
+          time_limit: input.time_limit ?? null,
+          members_only: input.members_only ?? false,
+          country_codes: input.country_codes ?? [],
+          // Media
+          media_url: input.media_url ?? null,
+          media_type: input.media_type ?? null,
+          // Description
+          description: input.description ?? null,
         })
         .select("id")
         .single();

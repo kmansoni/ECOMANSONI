@@ -711,10 +711,12 @@ export async function fetchRoute(
   mode: TravelMode = 'car',
   transitOptions?: TransitRoutingOptions,
   pedestrianOptions?: PedestrianRoutingOptions,
+  _degradationDiagnostics?: RouteFailureDiagnostic[],
+  _attemptedSources?: RouteAttemptSource[],
 ): Promise<RouteFetchResult> {
   const effectiveMode: TravelMode = mode === 'taxi' ? 'car' : mode;
-  const degradationDiagnostics: RouteFailureDiagnostic[] = [];
-  const attemptedSources: RouteAttemptSource[] = [];
+  const degradationDiagnostics: RouteFailureDiagnostic[] = _degradationDiagnostics ?? [];
+  const attemptedSources: RouteAttemptSource[] = _attemptedSources ?? [];
 
   // Pedestrian mode — use pedestrian graph + A*
   if (effectiveMode === 'pedestrian') {
@@ -733,6 +735,8 @@ export async function fetchRoute(
       const diagnostic = createRouteFailureDiagnostic('pedestrian', e);
       degradationDiagnostics.push(diagnostic);
       logger.warn('[Routing] Pedestrian route failed, falling back to car', { error: e, diagnostic });
+      // Рекурсивный переход на автомобильный режим, флаги пешеходного режима не переносятся
+      return fetchRoute(from, to, alternatives, 'car', undefined, undefined, degradationDiagnostics, attemptedSources);
     }
   }
 
@@ -772,6 +776,8 @@ export async function fetchRoute(
       const diagnostic = createRouteFailureDiagnostic('transit', e);
       degradationDiagnostics.push(diagnostic);
       logger.warn('[Routing] Transit route failed, falling back to car', { error: e, diagnostic });
+      // Рекурсивный переход на автомобильный режим, флаги транзитного режима не переносятся
+      return fetchRoute(from, to, alternatives, 'car', undefined, undefined, degradationDiagnostics, attemptedSources);
     }
   }
 

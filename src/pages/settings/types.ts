@@ -48,7 +48,8 @@ export type Screen =
   | "help"
   | "close_friends"
   | "accounts"
-  | "about";
+  | "about"
+  | "ai_styles";
 
 export type SettingsPostItem = {
   id: string;

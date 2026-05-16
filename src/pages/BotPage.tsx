@@ -3,7 +3,7 @@
  * SEO-friendly, адаптивная мобильная вёрстка, с чатом и отзывами.
  */
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Bot as BotIcon, Star, Clock, MessageCircle, Zap, Shield, ExternalLink, Send, Image as ImageIcon, FileText, Smile, ChevronUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -12,6 +12,39 @@ import { useBotSend } from '@/hooks/useBotSend';
 import { useRealtimeBotMessages } from '@/hooks/useRealtimeBotMessages';
 import { BotMessageContent } from '@/components/bots/BotMessageContent';
 import { supabase } from '@/integrations/supabase/client';
+import { Bot } from '@/lib/bots/types';
+
+interface Message {
+  id: string;
+  conversation_id: string;
+  sender_id: string;
+  sender_type: 'user' | 'bot';
+  content_type: string;
+  content: Record<string, unknown>;
+  created_at: string;
+  metadata: Record<string, unknown>;
+}
+
+interface Review {
+  author_name?: string;
+  created_at: string;
+  rating?: number;
+  comment?: string;
+}
+
+interface BotWithStats extends Bot {
+  category: string;
+  avg_rating: number | null;
+  total_reviews: number | null;
+  reviews?: Review[];
+  message_count: number | null;
+}
+
+interface BotWithStats extends Bot {
+  avg_rating?: number | null;
+  total_reviews?: number | null;
+  reviews?: Review[];
+}
 
 interface BotPageProps {}
 
@@ -37,15 +70,15 @@ const CATEGORY_COLORS: Record<string, string> = {
   ai: 'bg-indigo-500/20 text-indigo-400',
 };
 
-export function BotPage({}: BotPageProps) {
+export function BotPage(_: BotPageProps) {
   const { username } = useParams<{ username: string }>();
   const navigate = useNavigate();
 
-  const [bot, setBot] = useState<any>(null);
+   const [bot, setBot] = useState<BotWithStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<any[]>([]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   const [showScrollBtn, setShowScrollBtn] = useState(false);
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
@@ -61,9 +94,9 @@ export function BotPage({}: BotPageProps) {
     });
   });
 
-  useEffect(() => {
-    if (username) void loadBot();
-  }, [username]);
+   useEffect(() => {
+     if (username) void loadBot();
+   }, [username, loadBot]);
 
   useEffect(() => {
     if (!sending) {
@@ -82,62 +115,64 @@ export function BotPage({}: BotPageProps) {
     return () => { observer.disconnect(); el.removeEventListener('scroll', check); };
   }, [messages]);
 
-  async function loadBot() {
-    try {
-      setLoading(true);
-      const data = await botApi.getBotByUsername(username);
-      setBot(data);
+    const loadBot = useCallback(async () => {
+     try {
+       setLoading(true);
+       const data = await botApi.getBotByUsername(username);
+       setBot(data);
 
-      // Ищем или создаём conversation
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user?.id) {
-        const { data: conversations } = await supabase
-          .from('conversations')
-          .select('*')
-          .eq('is_bot_chat', true)
-          .eq('bot_id', data.id)
-          .limit(1);
+       // Ищем или создаём conversation
+       const { data: { user } } = await supabase.auth.getUser();
+       if (user?.id) {
+         const { data: conversations } = await supabase
+           .from('conversations')
+           .select('*')
+           .eq('is_bot_chat', true)
+           .eq('bot_id', data.id)
+           .limit(1);
 
-        if (conversations && conversations.length > 0) {
-          setConversationId(conversations[0].id);
-          await loadMessages(conversations[0].id);
-        } else {
-          const { data: conv } = await supabase
-            .from('conversations')
-            .insert({
-              is_bot_chat: true,
-              title: data.display_name,
-              bot_id: data.id,
-              type: 'private',
-            })
-            .select()
-            .single();
-          if (conv) {
-            setConversationId(conv.id);
-            await supabase.from('conversation_participants').insert({
-              conversation_id: conv.id,
-              user_id: user.id,
-            });
-          }
-        }
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Бот не найден');
-    } finally {
-      setLoading(false);
-    }
-  }
+         if (conversations && conversations.length > 0) {
+           setConversationId(conversations[0].id);
+           await loadMessages(conversations[0].id);
+         } else {
+           const { data: conv } = await supabase
+             .from('conversations')
+             .insert({
+               is_bot_chat: true,
+               title: data.display_name,
+               bot_id: data.id,
+               type: 'private',
+             })
+             .select()
+             .single();
+           if (conv) {
+             setConversationId(conv.id);
+             await supabase.from('conversation_participants').insert({
+               conversation_id: conv.id,
+               user_id: user.id,
+             });
+           }
+         }
+       }
+     } catch (err) {
+       setError(err instanceof Error ? err.message : 'Бот не найден');
+     } finally {
+       setLoading(false);
+     }
+   }, [username, setBot, setLoading, setError, setConversationId]);
 
-  async function loadMessages(convId: string) {
-    try {
-      const { data } = await supabase
-        .from('messages')
-        .select('*')
-        .eq('conversation_id', convId)
-        .order('created_at', { ascending: true });
-      if (data) setMessages(data);
-    } catch {}
-  }
+   async function loadMessages(convId: string) {
+     try {
+       const { data } = await supabase
+         .from('messages')
+         .select('*')
+         .eq('conversation_id', convId)
+         .order('created_at', { ascending: true });
+       if (data) setMessages(data);
+     } catch (err) {
+       console.error('Failed to load messages:', err);
+     }
+   }
 
   const handleSend = async () => {
     if (!inputText.trim() || !conversationId || !bot) return;
@@ -148,21 +183,21 @@ export function BotPage({}: BotPageProps) {
     const result = await sendMessage(text);
 
     // Add user message optimistically — sendMessage already invalidates queries
-    if (result?.id) {
-      setMessages((prev: any[]) => [
-        ...prev,
-        {
-          id: result.id,
-          conversation_id: conversationId,
-          sender_id: 'current-user',
-          sender_type: 'user',
-          content_type: 'text',
-          content: { text },
-          created_at: new Date().toISOString(),
-          metadata: {},
-        },
-      ]);
-    }
+     if (result?.id) {
+       setMessages((prev: Message[]) => [
+         ...prev,
+         {
+           id: result.id,
+           conversation_id: conversationId,
+           sender_id: 'current-user',
+           sender_type: 'user',
+           content_type: 'text',
+           content: { text },
+           created_at: new Date().toISOString(),
+           metadata: {},
+         },
+       ]);
+     }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -307,36 +342,36 @@ export function BotPage({}: BotPageProps) {
                 <p className="text-xs">Напишите что-нибудь боту...</p>
               </div>
             )}
-            {messages.map((msg: any) => {
-              const isBot = msg.sender_type === 'bot';
-              return (
-                <div
-                  key={msg.id}
-                  className={cn(
-                    "flex gap-2 max-w-[85%] sm:max-w-[80%] group animate-in fade-in slide-in-from-bottom-2",
-                    isBot ? "mr-auto flex-col" : "ml-auto flex-col items-end"
-                  )}
-                >
-                  <div
-                    className={cn(
-                      "px-3.5 py-2.5 rounded-2xl text-sm break-words max-w-full leading-relaxed",
-                      isBot
-                        ? "bg-secondary text-secondary-foreground rounded-bl-sm rounded-br-2xl"
-                        : "bg-primary text-primary-foreground rounded-br-sm rounded-bl-2xl"
-                    )}
-                  >
-                    <BotMessageContent
-                      content={msg.content || {}}
-                      contentType={msg.content_type || 'text'}
-                      metadata={msg.metadata}
-                    />
-                  </div>
-                  <span className="text-[10px] text-muted-foreground/60 px-1 select-none">
-                    {new Date(msg.created_at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
-                  </span>
-                </div>
-              );
-            })}
+            {messages.map((msg: Message) => {
+               const isBot = msg.sender_type === 'bot';
+               return (
+                 <div
+                   key={msg.id}
+                   className={cn(
+                     "flex gap-2 max-w-[85%] sm:max-w-[80%] group animate-in fade-in slide-in-from-bottom-2",
+                     isBot ? "mr-auto flex-col" : "ml-auto flex-col items-end"
+                   )}
+                 >
+                   <div
+                     className={cn(
+                       "px-3.5 py-2.5 rounded-2xl text-sm break-words max-w-full leading-relaxed",
+                       isBot
+                         ? "bg-secondary text-secondary-foreground rounded-bl-sm rounded-br-2xl"
+                         : "bg-primary text-primary-foreground rounded-br-sm rounded-bl-2xl"
+                     )}
+                   >
+                     <BotMessageContent
+                       content={msg.content || {}}
+                       contentType={msg.content_type || 'text'}
+                       metadata={msg.metadata}
+                     />
+                   </div>
+                   <span className="text-[10px] text-muted-foreground/60 px-1 select-none">
+                     {new Date(msg.created_at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+                   </span>
+                 </div>
+               );
+             })}
             <div ref={messagesEndRef} />
           </div>
 
@@ -398,32 +433,32 @@ export function BotPage({}: BotPageProps) {
               Отзывы ({bot.reviews.length})
             </h3>
             <div className="space-y-4">
-              {bot.reviews.map((review: any, idx: number) => (
-                <div key={idx} className="border-b pb-4 last:border-0 last:pb-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <div className="flex gap-0.5">
-                      {[1, 2, 3, 4, 5].map((i) => (
-                        <Star
-                          key={i}
-                          className={cn(
-                            "w-3.5 h-3.5",
-                            i <= Math.round(review.rating || 0)
-                              ? "fill-primary text-primary"
-                              : "text-muted"
-                          )}
-                        />
-                      ))}
-                    </div>
-                    <span className="text-sm font-medium">{review.author_name || 'Аноним'}</span>
-                    <span className="text-xs text-muted-foreground ml-auto">
-                      {new Date(review.created_at).toLocaleDateString('ru-RU')}
-                    </span>
-                  </div>
-                  {review.comment && (
-                    <p className="text-sm text-muted-foreground mt-1">{review.comment}</p>
-                  )}
-                </div>
-              ))}
+             {bot.reviews.map((review: Review, idx: number) => (
+               <div key={idx} className="border-b pb-4 last:border-0 last:pb-0">
+                 <div className="flex items-center gap-2 mb-1">
+                   <div className="flex gap-0.5">
+                     {[1, 2, 3, 4, 5].map((i) => (
+                       <Star
+                         key={i}
+                         className={cn(
+                           "w-3.5 h-3.5",
+                           i <= Math.round(review.rating || 0)
+                             ? "fill-primary text-primary"
+                             : "text-muted"
+                         )}
+                       />
+                     ))}
+                   </div>
+                   <span className="text-sm font-medium">{review.author_name || 'Аноним'}</span>
+                   <span className="text-xs text-muted-foreground ml-auto">
+                     {new Date(review.created_at).toLocaleDateString('ru-RU')}
+                   </span>
+                 </div>
+                 {review.comment && (
+                   <p className="text-sm text-muted-foreground mt-1">{review.comment}</p>
+                 )}
+               </div>
+             ))}
             </div>
           </div>
         )}

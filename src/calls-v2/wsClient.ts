@@ -31,6 +31,7 @@ import type {
 } from "./types";
 
 import { logger } from '@/lib/logger';
+import { z } from "zod";
 
 function nowMs() {
   return Date.now();
@@ -54,6 +55,35 @@ type WaitForOptions = {
   timeoutMs?: number;
   acceptRecent?: boolean;
 };
+
+const ACK_PENDING_LIMIT_DEFAULT = 2048;
+
+const wsAckSchema = z
+  .object({
+    ackOfMsgId: z.string().min(1),
+    ok: z.boolean().optional(),
+    error: z
+      .object({
+        message: z.string().optional(),
+      })
+      .passthrough()
+      .optional(),
+  })
+  .passthrough();
+
+const wsEnvelopeSchema = z
+  .object({
+    v: z.number().int(),
+    type: z.string().min(1),
+    msgId: z.string().optional(),
+    ts: z.number().optional(),
+    seq: z.number().finite().optional(),
+    payload: z.unknown().optional(),
+    ack: wsAckSchema.optional(),
+  })
+  .passthrough();
+
+type ParsedWsEnvelope = z.infer<typeof wsEnvelopeSchema>;
 
 export class CallsWsClient {
   private ws: WebSocket | null = null;
@@ -446,6 +476,39 @@ export class CallsWsClient {
     this.ws.send(JSON.stringify(frame));
   }
 
+  private parseIncomingMessage(raw: unknown): ParsedWsEnvelope | null {
+    let encoded: string;
+
+    if (typeof raw === "string") {
+      encoded = raw;
+    } else if (raw instanceof ArrayBuffer) {
+      encoded = new TextDecoder().decode(raw);
+    } else if (ArrayBuffer.isView(raw)) {
+      encoded = new TextDecoder().decode(raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength));
+    } else {
+      logger.warn("[CallsWsClient] unsupported incoming message type", { rawType: typeof raw });
+      return null;
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(encoded);
+    } catch {
+      logger.warn("[CallsWsClient] invalid JSON message dropped");
+      return null;
+    }
+
+    const result = wsEnvelopeSchema.safeParse(parsed);
+    if (!result.success) {
+      logger.warn("[CallsWsClient] invalid ws envelope dropped", {
+        issues: result.error.issues,
+      });
+      return null;
+    }
+
+    return result.data;
+  }
+
   private sendOrderedAcked(type: string, payload: object, timeoutMs = 5000): Promise<void> {
     const msgId = uuid();
     const seq = this.expectedSeq++;
@@ -463,27 +526,16 @@ export class CallsWsClient {
       const maxRetries = this.config.ackRetry?.maxRetries ?? this.config.ackMaxRetries ?? 1;
       const retryDelayMs = this.config.ackRetry?.retryDelayMs ?? this.config.ackRetryMs ?? 250;
 
-      const scheduleTimeout = () =>
-        window.setTimeout(() => {
-          const pending = this.pendingAcks.get(msgId);
-          if (!pending) return;
+      const configuredLimit = (this.config as CallsWsConfig & { pendingAcksMax?: number }).pendingAcksMax;
+      const pendingAcksLimit =
+        typeof configuredLimit === "number" && Number.isFinite(configuredLimit) && configuredLimit > 0
+          ? Math.floor(configuredLimit)
+          : ACK_PENDING_LIMIT_DEFAULT;
 
-          if (pending.retries < pending.maxRetries) {
-            pending.retries += 1;
-            try {
-              this.send(pending.frame);
-              window.clearTimeout(pending.timer);
-              pending.timer = window.setTimeout(onAckTimeout, pending.timeoutMs + retryDelayMs);
-            } catch {
-              this.pendingAcks.delete(msgId);
-              reject(new Error(`ACK retry send failed for ${type}`));
-            }
-            return;
-          }
-
-          this.pendingAcks.delete(msgId);
-          reject(new Error(`ACK timeout for ${type}`));
-        }, timeoutMs);
+      if (this.pendingAcks.size >= pendingAcksLimit) {
+        reject(new Error(`ACK queue overflow for ${type}`));
+        return;
+      }
 
       const onAckTimeout = () => {
         const pending = this.pendingAcks.get(msgId);
@@ -494,7 +546,7 @@ export class CallsWsClient {
           try {
             this.send(pending.frame);
             window.clearTimeout(pending.timer);
-            pending.timer = scheduleTimeout();
+            pending.timer = window.setTimeout(onAckTimeout, pending.timeoutMs + retryDelayMs);
           } catch {
             this.pendingAcks.delete(msgId);
             reject(new Error(`ACK retry send failed for ${type}`));
@@ -506,7 +558,7 @@ export class CallsWsClient {
         reject(new Error(`ACK timeout for ${type}`));
       };
 
-      const timer = scheduleTimeout();
+      const timer = window.setTimeout(onAckTimeout, timeoutMs);
 
       this.pendingAcks.set(msgId, {
         resolve,
@@ -517,28 +569,40 @@ export class CallsWsClient {
         retries: 0,
         maxRetries,
       });
-      this.send(frame);
+
+      try {
+        this.send(frame);
+      } catch {
+        const pending = this.pendingAcks.get(msgId);
+        if (pending) {
+          window.clearTimeout(pending.timer);
+        }
+        this.pendingAcks.delete(msgId);
+        reject(new Error(`ACK initial send failed for ${type}`));
+      }
     });
   }
 
   private onMessage(raw: unknown) {
-    let msg: WsEnvelopeV1 | null = null;
-    try {
-      msg = JSON.parse(typeof raw === "string" ? raw : new TextDecoder().decode(raw as ArrayBuffer));
-    } catch {
-      return;
-    }
-
+    const msg = this.parseIncomingMessage(raw);
     if (!msg) {
       return;
     }
 
+    if (msg.v !== 1) {
+      logger.warn("[CallsWsClient] unsupported envelope version", { version: msg.v });
+      return;
+    }
+
     this.lastServerActivityAt = nowMs();
-    this.awaitingHeartbeatAckMsgId = null;
-    this.lastHeartbeatSentAt = 0;
 
     // ACK frame
     if (msg.ack?.ackOfMsgId) {
+      if (this.awaitingHeartbeatAckMsgId && msg.ack.ackOfMsgId === this.awaitingHeartbeatAckMsgId) {
+        this.awaitingHeartbeatAckMsgId = null;
+        this.lastHeartbeatSentAt = 0;
+      }
+
       const pending = this.pendingAcks.get(msg.ack.ackOfMsgId);
       if (!pending) return;
       window.clearTimeout(pending.timer);
@@ -568,7 +632,33 @@ export class CallsWsClient {
       this.lastServerSeq = msg.seq;
     }
 
-    this.emit(msg.type as CallsWsEvent, msg);
+    this.emit(msg.type as CallsWsEvent, this.normalizeIncomingEnvelope(msg));
+  }
+
+  private normalizeIncomingEnvelope(msg: ParsedWsEnvelope): WsEnvelopeV1 {
+    const ackErrorMessage = msg.ack?.error?.message;
+    const ack = msg.ack
+      ? {
+          ackOfMsgId: msg.ack.ackOfMsgId,
+          ok: msg.ack.ok,
+          error: ackErrorMessage
+            ? {
+                code: "WS_ACK_ERROR",
+                message: ackErrorMessage,
+              }
+            : undefined,
+        }
+      : undefined;
+
+    return {
+      v: 1,
+      type: msg.type,
+      msgId: typeof msg.msgId === "string" && msg.msgId.length > 0 ? msg.msgId : uuid(),
+      ts: typeof msg.ts === "number" && Number.isFinite(msg.ts) ? msg.ts : nowMs(),
+      seq: typeof msg.seq === "number" && Number.isFinite(msg.seq) ? msg.seq : undefined,
+      ack,
+      payload: msg.payload ?? {},
+    };
   }
 
   private emit(event: CallsWsEvent, frame: WsEnvelopeV1) {

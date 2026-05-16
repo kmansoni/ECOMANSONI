@@ -1,6 +1,6 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { ThemeProvider } from "next-themes";
+import { ThemeProvider } from "@/contexts/ThemeContext";
 import App from "./App.tsx";
 import "./index.css";
 import { initIceCacheAutoInvalidation } from "@/lib/webrtc-config";
@@ -77,6 +77,12 @@ logger.info(
   `[build] ${window.__APP_BUILD__.name} v${window.__APP_BUILD__.version} commit=${window.__APP_BUILD__.commit} built=${window.__APP_BUILD__.buildTime} mode=${window.__APP_BUILD__.mode}`
 );
 
+// Synchronously apply saved theme before React hydrates to prevent resize flicker
+const savedTheme = localStorage.getItem("theme") || "dark";
+document.documentElement.classList.remove("light", "dark");
+document.documentElement.classList.add(savedTheme);
+document.documentElement.style.colorScheme = savedTheme;
+
 async function bootstrapApp(): Promise<void> {
   try {
     await Promise.all([initSessionStore(), initDeviceIdentity()]);
@@ -86,7 +92,7 @@ async function bootstrapApp(): Promise<void> {
 
   createRoot(document.getElementById("root")!).render(
     <StrictMode>
-      <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
+      <ThemeProvider>
         <App />
       </ThemeProvider>
     </StrictMode>

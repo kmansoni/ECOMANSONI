@@ -56,11 +56,12 @@ export function SocialLoginButtons({ tokens }: { tokens: ThemeTokens }) {
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5, delay: 0.3 }}
-      className="space-y-2"
     >
-      <p className={`text-center text-[11px] uppercase tracking-[0.15em] ${tokens.textMuted} mb-1`}>
-        или войти через
-      </p>
+      <div className="flex items-center gap-3 mb-3" aria-hidden="true">
+        <span className={`h-px flex-1 ${tokens.isDark ? "bg-white/[0.08]" : "bg-slate-300/70"}`} />
+        <span className={`text-[10px] uppercase tracking-[0.2em] ${tokens.textMuted}`}>или</span>
+        <span className={`h-px flex-1 ${tokens.isDark ? "bg-white/[0.08]" : "bg-slate-300/70"}`} />
+      </div>
 
       <div className="flex gap-3">
         {buttons.map((btn) => (
@@ -69,7 +70,11 @@ export function SocialLoginButtons({ tokens }: { tokens: ThemeTokens }) {
             type="button"
             onClick={btn.onClick}
             whileTap={{ scale: 0.96 }}
-            className="flex-1 flex items-center justify-center gap-2 h-12 rounded-xl backdrop-blur-xl transition-all duration-200 text-white/70 hover:text-white text-sm font-medium border border-white/[0.06] hover:border-white/[0.12] hover:bg-white/[0.05]"
+            className={`flex-1 flex items-center justify-center gap-2 h-12 rounded-xl backdrop-blur-xl transition-all duration-200 text-sm font-medium border ${
+              tokens.isDark
+                ? "text-white/70 hover:text-white border-white/[0.06] hover:border-white/[0.12] hover:bg-white/[0.05]"
+                : "text-slate-700 hover:text-slate-900 bg-white/70 border-slate-300 hover:border-slate-400 hover:bg-white"
+            }`}
           >
             {btn.icon}
             <span>{btn.label}</span>
