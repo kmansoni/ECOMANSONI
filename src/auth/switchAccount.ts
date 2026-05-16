@@ -3,6 +3,7 @@ import { getActiveAccount, loadSessions, setActiveAccount } from "@/auth/session
 
 type SwitchAccountResponse = {
   ok: boolean;
+  error?: string;
 };
 
 const AUTH_SERVICE_BASE = (import.meta.env.VITE_AUTH_SERVICE_BASE_URL as string | undefined)?.replace(/\/$/, "") || "";
@@ -30,23 +31,26 @@ export async function switchAccount(accountId: string): Promise<void> {
     }),
   });
 
+  let payload: SwitchAccountResponse;
+  try {
+    payload = (await res.json()) as SwitchAccountResponse;
+  } catch {
+    payload = { ok: false };
+  }
+
+  let reason: string;
+
   if (!res.ok) {
-    let reason = "SWITCH_FAILED";
-    try {
-      const body = (await res.json()) as { error?: string };
-      reason = body.error || reason;
-    } catch {
-      // ignore malformed body
-    }
-    throw new Error(reason);
+    reason = `HTTP ${res.status}`;
+    if (payload.error) reason = payload.error;
+  } else if (!payload.ok) {
+    reason = payload.error || "SWITCH_REJECTED";
+  } else {
+    setActiveAccount(accountId);
+    return;
   }
 
-  const payload = (await res.json()) as SwitchAccountResponse;
-  if (!payload.ok) {
-    throw new Error("SWITCH_REJECTED");
-  }
-
-  setActiveAccount(accountId);
+  throw new Error(reason);
 }
 
 export function getCurrentAccountSession() {

@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useMemo } from "react";
+import { useState, useRef, useCallback, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { ChatMessageList } from "./ChatMessageList";
 import { ChatConversationOverlays } from "./ChatConversationOverlays";
@@ -55,6 +55,7 @@ import { useUserPresenceStatus } from "@/hooks/useUserPresenceStatus";
 import { useAppearanceRuntime } from "@/contexts/AppearanceRuntimeContext";
 
 import { resolveChatMediaDownloadPrefs } from "@/lib/chat/mediaSettings";
+import { supabase } from "@/integrations/supabase/client";
 
 
 interface ChatConversationProps {
@@ -225,6 +226,7 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
 
   const [showMessageSearch, setShowMessageSearch] = useState(false);
   const [showCreatePoll, setShowCreatePoll] = useState(false);
+  const [showAIEditor, setShowAIEditor] = useState(false);
   
   // Context menu state
   const [contextMenuMessage, setContextMenuMessage] = useState<{
@@ -240,6 +242,23 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   // UI-6: jump-to-date picker
   const [showJumpToPicker, setShowJumpToPicker] = useState(false);
+  const [disableForwarding, setDisableForwarding] = useState(false);
+
+  // Load conversation settings including disable_forwarding
+  useEffect(() => {
+    if (!conversationId) return;
+    supabase
+      .from('conversations')
+      .select('disable_forwarding')
+      .eq('id', conversationId)
+      .single()
+      .then(({ data }) => {
+        if (data) {
+          const d = data as unknown as { disable_forwarding?: boolean | null };
+          setDisableForwarding(d.disable_forwarding ?? false);
+        }
+      });
+  }, [conversationId]);
 
   useChatLifecycle({
     conversationId, inputText, setInputText, setIsChatOpen,
@@ -535,6 +554,8 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
         onSetShowSendOptions={setShowSendOptions}
         onSetPendingScheduleContent={setPendingScheduleContent}
         onSetShowSchedulePicker={setShowSchedulePicker}
+        onSetShowAIEditor={setShowAIEditor}
+        onAIEditorApply={(text) => setInputText(text)}
         onCancelEdit={() => { setEditingMessage(null); setInputText(""); }}
         onCancelReply={() => { setReplyTo(null); setQuotedText(null); }}
         onScrollToReply={scrollToMessage}
@@ -557,23 +578,6 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
         onInlineBotDismiss={() => setInlineBotTrigger(null)}
         onEffect={sendWithEffect}
         onToggleRecordMode={() => setRecordMode(p => p === 'voice' ? 'video' : 'voice')}
-        onInsertSpoiler={() => {
-          const cursorPos = inputRef.current?.selectionStart ?? inputText.length;
-          const start = inputText.substring(0, cursorPos);
-          const end = inputText.substring(cursorPos);
-          const selection = inputRef.current?.selectionStart !== inputRef.current?.selectionEnd
-            ? inputText.substring(inputRef.current.selectionStart, inputRef.current.selectionEnd)
-            : '';
-          const wrapped = selection ? `||${selection}||` : '||';
-          setInputText(`${start}${wrapped}${end}`);
-          requestAnimationFrame(() => {
-            if (inputRef.current) {
-              const newPos = cursorPos + wrapped.length;
-              inputRef.current.focus();
-              inputRef.current.setSelectionRange(selection ? cursorPos + wrapped.length : cursorPos + 2, selection ? cursorPos + wrapped.length : cursorPos + 2);
-            }
-          });
-        }}
         handleStickerSend={handleStickerSend}
         handleGifSend={handleGifSend}
         conversationId={conversationId}
@@ -666,6 +670,9 @@ export function ChatConversation({ conversationId, chatName, chatAvatar, otherUs
         senderProfiles={senderProfiles}
         showCreatePoll={showCreatePoll}
         setShowCreatePoll={setShowCreatePoll}
+        showAIEditor={showAIEditor}
+        setShowAIEditor={setShowAIEditor}
+        disableForwarding={disableForwarding}
         showChatSettings={showChatSettings}
         setShowChatSettings={setShowChatSettings}
         showJumpToPicker={showJumpToPicker}
