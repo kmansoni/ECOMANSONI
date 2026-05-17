@@ -467,6 +467,126 @@ CREATE INDEX IF NOT EXISTS idx_marketplace_orders_analytics
 ON public.marketplace_orders(ordered_at, status, marketplace) 
 WHERE status IN ('delivered', 'shipped', 'confirmed', 'returned', 'cancelled');
 
-CREATE INDEX IF NOT EXISTS idx_marketplace_products_analytics 
+CREATE INDEX IF NOT EXISTS idx_marketplace_products_analytics
 ON public.marketplace_products(connection_id, status);
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- RETURNS / ОБРАТНЫЕ ЗАЯВКИ — возвраты покупателей
+-- ─────────────────────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS public.marketplace_returns (
+  id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id               UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  order_id              UUID NOT NULL REFERENCES public.marketplace_orders(id) ON DELETE CASCADE,
+  connection_id         UUID REFERENCES public.marketplace_connections(id) ON DELETE SET NULL,
+  marketplace_order_id  VARCHAR NOT NULL,
+  marketplace           VARCHAR NOT NULL,
+  product_ids           UUID[] NOT NULL DEFAULT '{}',
+  product_titles        TEXT[] NOT NULL DEFAULT '{}',
+  reason                VARCHAR NOT NULL
+                             CHECK (reason IN ('wrong_item','damaged','not_as_described','changed_mind','quality_issue','other')),
+  reason_detail         TEXT,
+  photos                TEXT[] NOT NULL DEFAULT '{}',
+  status                VARCHAR NOT NULL DEFAULT 'pending'
+                             CHECK (status IN ('pending','approved','rejected','shipped_to_warehouse','received','refunded','cancelled')),
+  refund_amount         NUMERIC,
+  refund_method         VARCHAR CHECK (refund_method IN ('card','e_wallet','original_payment','store_credit')),
+  admin_comment         TEXT,
+  created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Индексы для быстрого поиска по user и order
+CREATE INDEX IF NOT EXISTS idx_marketplace_returns_user
+  ON public.marketplace_returns(user_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_marketplace_returns_order
+  ON public.marketplace_returns(order_id);
+
+CREATE INDEX IF NOT EXISTS idx_marketplace_returns_connection
+  ON public.marketplace_returns(connection_id);
+
+CREATE INDEX IF NOT EXISTS idx_marketplace_returns_status
+  ON public.marketplace_returns(status);
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- MARKETPLACE_PRODUCTS — создание таблицы если не существует + shop_product_ids
+-- ─────────────────────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS public.marketplace_products (
+  id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  connection_id        UUID NOT NULL REFERENCES public.marketplace_connections(id) ON DELETE CASCADE,
+  marketplace_sku      VARCHAR NOT NULL,
+  title                TEXT NOT NULL,
+  description          TEXT,
+  price                NUMERIC NOT NULL,
+  old_price            NUMERIC,
+  currency             VARCHAR DEFAULT 'RUB',
+  barcode              VARCHAR,
+  images               TEXT[] NOT NULL DEFAULT '{}',
+  category_id          UUID,
+  attributes           JSONB DEFAULT '{}',
+  vat                  NUMERIC DEFAULT 20,
+  weight_kg            NUMERIC,
+  dimensions           JSONB,
+  status               VARCHAR NOT NULL DEFAULT 'draft'
+                            CHECK (status IN ('draft','active','inactive','blocked','deleted')),
+  stock_sync           BOOLEAN DEFAULT true,
+  price_sync           BOOLEAN DEFAULT true,
+  sync_status          VARCHAR NOT NULL DEFAULT 'idle'
+                            CHECK (sync_status IN ('idle','syncing','success','error')),
+  shop_product_ids     UUID[] NOT NULL DEFAULT '{}',
+  created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_marketplace_products_connection
+  ON public.marketplace_products(connection_id);
+
+CREATE INDEX IF NOT EXISTS idx_marketplace_products_sku
+  ON public.marketplace_products(marketplace_sku);
+
+CREATE INDEX IF NOT EXISTS idx_marketplace_products_shop
+  ON public.marketplace_products USING GIN(shop_product_ids);
+
+-- RLS
+ALTER TABLE public.marketplace_products ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Владелец подключения управляет товарами"
+  ON public.marketplace_products
+  FOR ALL USING (
+    auth.uid() IN (
+      SELECT user_id FROM public.marketplace_connections mc
+      WHERE mc.id = marketplace_products.connection_id
+    )
+  );
+
+CREATE POLICY "Все видят активные товары"
+  ON public.marketplace_products
+  FOR SELECT USING (status = 'active' OR auth.uid() IN (
+    SELECT user_id FROM public.marketplace_connections mc
+    WHERE mc.id = marketplace_products.connection_id
+  ));
+
+-- RLS для marketplace_returns
+
+CREATE POLICY "Покупатель видит свои возвраты"
+  ON public.marketplace_returns
+  FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "Покупатель создаёт возврат только для своих заказов"
+  ON public.marketplace_returns
+  FOR INSERT WITH CHECK (
+    auth.uid() = user_id
+    AND EXISTS (
+      SELECT 1 FROM public.shop_orders so
+      WHERE so.id = marketplace_returns.order_id
+        AND so.user_id = auth.uid()
+    )
+  );
+
+CREATE POLICY "Покупатель обновляет только свои возвраты"
+  ON public.marketplace_returns
+  FOR UPDATE USING (auth.uid() = user_id);
+
 

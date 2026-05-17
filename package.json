@@ -197,6 +197,7 @@
     "globals": "^15.15.0",
     "ioredis": "^5.10.0",
     "jsdom": "^28.1.0",
+    "pdq-wasm": "^0.3.9",
     "playwright": "^1.60.0",
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.17",

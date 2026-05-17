@@ -1,4 +1,4 @@
-import { supabase, dbLoose } from '@/integrations/supabase/client';
+import { supabase, dbLoose } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { logger } from '@/lib/logger';
 

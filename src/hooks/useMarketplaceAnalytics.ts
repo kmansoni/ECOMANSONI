@@ -150,17 +150,22 @@ export function useMarketplaceAnalytics() {
     }
   }, [user]);
 
-  // Load all analytics
-  const loadAllAnalytics = useCallback(async (filter: AnalyticsFilter) => {
-    await Promise.all([
-      fetchSalesReport(filter),
-      fetchProfitReport(filter),
-      fetchDailyMetrics(filter.startDate, filter.endDate),
-      fetchProductPerformance(filter),
-      fetchMarketplaceComparison(filter.startDate, filter.endDate),
-      fetchKPIMetrics('month'),
-    ]);
-  }, [fetchSalesReport, fetchProfitReport, fetchDailyMetrics, fetchProductPerformance, fetchMarketplaceComparison, fetchKPIMetrics]);
+// Load all analytics
+   const loadAllAnalytics = useCallback(async (filter: AnalyticsFilter) => {
+     await Promise.all([
+       fetchSalesReport(filter),
+       fetchProfitReport(filter),
+       fetchDailyMetrics(filter.startDate, filter.endDate),
+       fetchProductPerformance(filter),
+       fetchMarketplaceComparison(filter.startDate, filter.endDate),
+       fetchKPIMetrics('month'),
+     ]);
+   }, [fetchSalesReport, fetchProfitReport, fetchDailyMetrics, fetchProductPerformance, fetchMarketplaceComparison, fetchKPIMetrics]);
+
+   // Convenience aliases for page components
+   const loadDailyMetrics = fetchDailyMetrics;
+   const loadProductPerformance = fetchProductPerformance;
+   const loadMarketplaceComparison = fetchMarketplaceComparison;
 
   return {
     // Sales Report

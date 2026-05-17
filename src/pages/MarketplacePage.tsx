@@ -1,16 +1,17 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Store, ShoppingBag, Truck, MapPin, Tag, CreditCard, Search, Filter, ArrowLeft } from 'lucide-react';
+import { Store, ShoppingBag, Truck, MapPin, Tag, CreditCard, Search, Filter, ArrowLeft, Package, BarChart3, RotateCcw } from 'lucide-react';
 import { useMarketplace } from '@/hooks/useMarketplace';
+import { useCart } from '@/hooks/useCart';
 import { toast } from 'sonner';
 
 export default function MarketplacePage() {
   const navigate = useNavigate();
   const {
     connections,
-    products: marketplaceProducts,
-    orders: marketplaceOrders,
+    marketplaceProducts,
+    marketplaceOrders,
     stocks,
     pvzPoints,
     deliveryTariffs,
@@ -23,10 +24,14 @@ export default function MarketplacePage() {
     findNearestPVZ,
     calculateDelivery,
   } = useMarketplace();
+  const { addToCart } = useCart();
 
   const [activeSection, setActiveSection] = useState<'shop' | 'marketplaces' | 'cart' | 'orders' | 'pvz'>('shop');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedMarketplace, setSelectedMarketplace] = useState<string>('all');
+  const [priceRange, setPriceRange] = useState<[number, number]>([0, 100000]);
+  const [sortBy, setSortBy] = useState<'price_asc' | 'price_desc' | 'newest'>('newest');
+  const [showFiltersBar, setShowFiltersBar] = useState(false);
 
   useEffect(() => {
     loadConnections();
@@ -46,12 +51,23 @@ export default function MarketplacePage() {
   const activeConnections = connections.filter(c => c.is_active);
   const hasActiveConnections = activeConnections.length > 0;
 
-  const filteredProducts = marketplaceProducts.filter(product => {
-    const matchesSearch = !searchTerm || product.title.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesMarketplace = selectedMarketplace === 'all' || 
-      product.connection_id === selectedMarketplace;
-    return matchesSearch && matchesMarketplace && product.status === 'active';
-  });
+  const allPrices = marketplaceProducts.filter(p => p.status === 'active').map(p => p.price);
+  const minPrice = allPrices.length ? Math.min(...allPrices) : 0;
+  const maxPrice = allPrices.length ? Math.max(...allPrices) : 100000;
+
+  const filteredProducts = marketplaceProducts
+    .filter(product => {
+      const matchesSearch = !searchTerm || product.title.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesMarketplace = selectedMarketplace === 'all' ||
+        product.connection_id === selectedMarketplace;
+      const matchesPrice = product.price >= priceRange[0] && product.price <= priceRange[1];
+      return matchesSearch && matchesMarketplace && matchesPrice && product.status === 'active';
+    })
+    .sort((a, b) => {
+      if (sortBy === 'price_asc') return a.price - b.price;
+      if (sortBy === 'price_desc') return b.price - a.price;
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
 
   const renderShopSection = () => (
     <div className="space-y-6">
@@ -62,6 +78,52 @@ export default function MarketplacePage() {
         >
           <ArrowLeft className="w-4 h-4" />
           Назад в свой магазин
+        </button>
+      </div>
+
+      {/* Быстрые ссылки */}
+      <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
+        <button
+          onClick={() => navigate('/marketplace/products')}
+          className="bg-zinc-900 rounded-xl p-3 md:p-4 border border-zinc-800 hover:border-zinc-600 transition-colors text-center"
+        >
+          <Package className="w-6 h-6 md:w-8 md:h-8 text-blue-400 mx-auto mb-1 md:mb-2" />
+          <p className="text-xs md:text-sm font-medium">Товары</p>
+        </button>
+        <button
+          onClick={() => navigate('/marketplace/orders')}
+          className="bg-zinc-900 rounded-xl p-3 md:p-4 border border-zinc-800 hover:border-zinc-600 transition-colors text-center"
+        >
+          <Truck className="w-6 h-6 md:w-8 md:h-8 text-green-400 mx-auto mb-1 md:mb-2" />
+          <p className="text-xs md:text-sm font-medium">Заказы</p>
+        </button>
+        <button
+          onClick={() => navigate('/marketplace/analytics')}
+          className="bg-zinc-900 rounded-xl p-3 md:p-4 border border-zinc-800 hover:border-zinc-600 transition-colors text-center"
+        >
+          <BarChart3 className="w-6 h-6 md:w-8 md:h-8 text-purple-400 mx-auto mb-1 md:mb-2" />
+          <p className="text-xs md:text-sm font-medium">Аналитика</p>
+        </button>
+        <button
+          onClick={() => navigate('/admin/marketplace/connect')}
+          className="bg-zinc-900 rounded-xl p-3 md:p-4 border border-zinc-800 hover:border-zinc-600 transition-colors text-center"
+        >
+          <Store className="w-6 h-6 md:w-8 md:h-8 text-orange-400 mx-auto mb-1 md:mb-2" />
+          <p className="text-xs md:text-sm font-medium">Подключить</p>
+        </button>
+        <button
+          onClick={() => navigate('/shop/orders')}
+          className="bg-zinc-900 rounded-xl p-3 md:p-4 border border-zinc-800 hover:border-zinc-600 transition-colors text-center"
+        >
+          <Package className="w-6 h-6 md:w-8 md:h-8 text-yellow-400 mx-auto mb-1 md:mb-2" />
+          <p className="text-xs md:text-sm font-medium">Мои заказы</p>
+        </button>
+        <button
+          onClick={() => navigate('/marketplace/returns')}
+          className="bg-zinc-900 rounded-xl p-3 md:p-4 border border-zinc-800 hover:border-zinc-600 transition-colors text-center"
+        >
+          <RotateCcw className="w-6 h-6 md:w-8 md:h-8 text-red-400 mx-auto mb-1 md:mb-2" />
+          <p className="text-xs md:text-sm font-medium">Возвраты</p>
         </button>
       </div>
 
@@ -171,22 +233,110 @@ export default function MarketplacePage() {
         </select>
       </div>
 
-      {/* Поиск и фильтры */}
-      <div className="flex items-center gap-3">
-        <div className="relative flex-1">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Поиск товаров..."
-            className="w-full bg-zinc-800 text-white placeholder-zinc-500 rounded-xl pl-10 pr-4 py-3 text-sm outline-none focus:ring-2 focus:ring-blue-500"
-          />
+      {/* Поиск, фильтры, сортировка */}
+      <div className="space-y-3">
+        <div className="flex items-center gap-3">
+          <div className="relative flex-1">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Поиск товаров..."
+              className="w-full bg-zinc-800 text-white placeholder-zinc-500 rounded-xl pl-10 pr-4 py-3 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <button
+            onClick={() => setShowFiltersBar(v => !v)}
+            className={`flex items-center gap-2 px-4 py-3 rounded-xl transition-colors text-sm ${
+              showFiltersBar ? 'bg-blue-600 text-white' : 'bg-zinc-800 hover:bg-zinc-700 text-white'
+            }`}
+          >
+            <Filter className="w-4 h-4" />
+            Фильтры
+            {(selectedMarketplace !== 'all' || priceRange[0] > 0 || priceRange[1] < maxPrice) && (
+              <span className="w-2 h-2 bg-blue-300 rounded-full" />
+            )}
+          </button>
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+            className="bg-zinc-800 text-white rounded-xl px-3 py-3 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="newest">Сначала новые</option>
+            <option value="price_asc">Цена: дешевле</option>
+            <option value="price_desc">Цена: дороже</option>
+          </select>
         </div>
-        <button className="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-white px-4 py-3 rounded-xl transition-colors">
-          <Filter className="w-4 h-4" />
-          Фильтры
-        </button>
+
+        {/* Панель дополнительных фильтров */}
+        {showFiltersBar && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            className="bg-zinc-900 rounded-2xl border border-zinc-800 p-4 space-y-4"
+          >
+            {/* Маркетплейс */}
+            <div>
+              <label className="text-zinc-400 text-sm mb-1.5 block">Маркетплейс</label>
+              <select
+                value={selectedMarketplace}
+                onChange={(e) => setSelectedMarketplace(e.target.value)}
+                className="w-full bg-zinc-800 text-white rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="all">Все маркетплейсы</option>
+                {connections.map(conn => (
+                  <option key={conn.id} value={conn.id}>
+                    {conn.marketplace_type === 'ozon' && 'Ozon'}
+                    {conn.marketplace_type === 'wildberries' && 'Wildberries'}
+                    {conn.marketplace_type === 'amazon' && 'Amazon'}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Цена */}
+            <div>
+              <label className="text-zinc-400 text-sm mb-1.5 block">
+                Цена: от {priceRange[0].toLocaleString()} ₽ до {priceRange[1].toLocaleString()} ₽
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={minPrice}
+                  max={maxPrice}
+                  value={priceRange[0]}
+                  onChange={(e) => setPriceRange([+e.target.value, priceRange[1]])}
+                  placeholder="От"
+                  className="w-full bg-zinc-800 text-white rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <span className="text-zinc-500 shrink-0">—</span>
+                <input
+                  type="number"
+                  min={minPrice}
+                  max={maxPrice}
+                  value={priceRange[1]}
+                  onChange={(e) => setPriceRange([priceRange[0], +e.target.value])}
+                  placeholder="До"
+                  className="w-full bg-zinc-800 text-white rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+
+            {/* Сброс */}
+            <button
+              onClick={() => {
+                setSelectedMarketplace('all');
+                setPriceRange([minPrice, maxPrice]);
+                setSortBy('newest');
+                setSearchTerm('');
+              }}
+              className="text-zinc-400 hover:text-white text-sm transition-colors"
+            >
+              Сбросить фильтры
+            </button>
+          </motion.div>
+        )}
       </div>
 
       {/* Акции */}
@@ -204,15 +354,16 @@ export default function MarketplacePage() {
       )}
 
       {/* Товары */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-        {filteredProducts.map((product, i) => (
-          <motion.div
-            key={product.id}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.05 }}
-            className="bg-zinc-900 rounded-2xl overflow-hidden border border-zinc-800 hover:border-zinc-600 transition-colors"
-          >
+       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+         {filteredProducts.map((product, i) => (
+           <motion.div
+             key={product.id}
+             initial={{ opacity: 0, y: 20 }}
+             animate={{ opacity: 1, y: 0 }}
+             transition={{ delay: i * 0.05 }}
+             className="bg-zinc-900 rounded-2xl overflow-hidden border border-zinc-800 hover:border-zinc-600 transition-colors cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
+             onClick={() => navigate(`/marketplace/product/${product.id}`)}
+           >
             <div className="h-32 bg-zinc-800 flex items-center justify-center">
               {product.images[0] ? (
                 <img src={product.images[0]} alt={product.title} className="w-full h-full object-cover" />
@@ -229,7 +380,17 @@ export default function MarketplacePage() {
                   <span className="text-zinc-500 line-through text-xs">{product.old_price.toLocaleString()}</span>
                 )}
               </div>
-              <button className="w-full mt-2 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-xl text-sm transition-colors">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (!product.shop_product_id) {
+                    toast.error('Товар ещё не привязан к внутреннему каталогу. Сначала синхронизируйте товар.');
+                    return;
+                  }
+                  addToCart(product.shop_product_id);
+                }}
+                className="w-full mt-2 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-xl text-sm transition-colors"
+              >
                 В корзину
               </button>
             </div>

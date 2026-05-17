@@ -91,6 +91,8 @@ const AccessibilitySettingsPage = lazy(() =>
   import("@/components/accessibility/AccessibilitySettings").then(m => ({ default: m.AccessibilitySettings }))
 );
 const ShopPage = lazy(() => import("@/pages/ShopPage"));
+const ShopOrdersPage = lazy(() => import("@/pages/ShopOrdersPage"));
+const ShopReturnsPage = lazy(() => import("@/pages/ShopReturnsPage"));
 const CheckoutPage = lazy(() => import("@/pages/CheckoutPage"));
 const ShopDiscoveryPage = lazy(() => import("@/pages/ShopDiscoveryPage"));
 const ContentPreferencesPage = lazy(() => import("@/pages/ContentPreferencesPage"));
@@ -149,6 +151,14 @@ const TaxiHomePage = lazy(() => import("./pages/taxi/TaxiHomePage"));
 const TaxiHistoryPage = lazy(() => import("./pages/taxi/TaxiHistoryPage"));
 const TaxiSettingsPage = lazy(() => import("./pages/taxi/TaxiSettingsPage"));
 const TaxiDriverPage = lazy(() => import("./pages/taxi/TaxiDriverPage"));
+
+// Marketplace module (lazy)
+const MarketplaceConnectPage = lazy(() => import("./pages/marketplace/MarketplaceConnectPage"));
+const MarketplaceProductsPage = lazy(() => import("./pages/marketplace/MarketplaceProductsPage"));
+const MarketplaceOrdersPage = lazy(() => import("./pages/marketplace/MarketplaceOrdersPage"));
+const MarketplaceAnalyticsPage = lazy(() => import("./pages/marketplace/MarketplaceAnalyticsPage"));
+const MarketplaceProductDetailPage = lazy(() => import("./pages/marketplace/MarketplaceProductDetailPage"));
+const MarketplaceReturnsPage = lazy(() => import("./pages/marketplace/MarketplaceReturnsPage"));
 
 // Amap navigation module (lazy)
 const AmapPage = lazy(() => import("@/pages/amap/AmapPage"));
@@ -553,11 +563,21 @@ const App = () => {
                         <ShopPage />
                       </Suspense>
                     } />
-                    <Route path="/checkout" element={
-                      <Suspense fallback={<PageLoader />}>
-                        <CheckoutPage />
-                      </Suspense>
-                    } />
+                     <Route path="/checkout" element={
+                       <Suspense fallback={<PageLoader />}>
+                         <CheckoutPage />
+                       </Suspense>
+                     } />
+                     <Route path="/shop/orders" element={
+                       <Suspense fallback={<PageLoader />}>
+                         <ShopOrdersPage />
+                       </Suspense>
+                     } />
+                     <Route path="/shop/returns" element={
+                       <Suspense fallback={<PageLoader />}>
+                         <ShopReturnsPage />
+                       </Suspense>
+                     } />
                     <Route path="/shop/discover" element={
                       <Suspense fallback={<PageLoader />}>
                         <ShopDiscoveryPage />
@@ -841,11 +861,43 @@ const App = () => {
                        </Suspense>
                      } />
 
+{/* ─── Marketplace Module ─────────────────────── */}
+                     <Route path="/admin/marketplace/connect" element={
+                       <Suspense fallback={<PageLoader />}>
+                         <MarketplaceConnectPage />
+                       </Suspense>
+                     } />
+                     <Route path="/marketplace/products" element={
+                       <Suspense fallback={<PageLoader />}>
+                         <MarketplaceProductsPage />
+                       </Suspense>
+                     } />
+                     <Route path="/marketplace/orders" element={
+                       <Suspense fallback={<PageLoader />}>
+                         <MarketplaceOrdersPage />
+                       </Suspense>
+                     } />
+                      <Route path="/marketplace/analytics" element={
+                        <Suspense fallback={<PageLoader />}>
+                          <MarketplaceAnalyticsPage />
+                        </Suspense>
+                      } />
+                      <Route path="/marketplace/product/:id" element={
+                        <Suspense fallback={<PageLoader />}>
+                          <MarketplaceProductDetailPage />
+                        </Suspense>
+                      } />
+                      <Route path="/marketplace/returns" element={
+                        <Suspense fallback={<PageLoader />}>
+                          <MarketplaceReturnsPage />
+                        </Suspense>
+                      } />
+
                      <Route path="/email/settings" element={
-                      <Suspense fallback={<PageLoader />}>
-                        <EmailSettingsPage />
-                      </Suspense>
-                    } />
+                       <Suspense fallback={<PageLoader />}>
+                         <EmailSettingsPage />
+                       </Suspense>
+                     } />
                     <Route path="/email" element={
                       <ErrorBoundary section="Почта">
                         <Suspense fallback={<PageLoader />}>

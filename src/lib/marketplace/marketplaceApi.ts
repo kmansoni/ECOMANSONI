@@ -1,4 +1,4 @@
-import { supabase, dbLoose } from '@/integrations/supabase/client';
+import { supabase, dbLoose } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { logger } from '@/lib/logger';
 import { useAuth } from '@/hooks/useAuth';
@@ -223,7 +223,7 @@ export async function createMarketplaceProduct(input: CreateMarketplaceProductIn
 }
 
 export async function updateMarketplaceProduct(id: string, updates: Partial<MarketplaceProduct>) {
-  const { error } = await dbLoose
+  const { data, error } = await dbLoose
     .from('marketplace_products')
     .update(updates)
     .eq('id', id)
@@ -235,7 +235,23 @@ export async function updateMarketplaceProduct(id: string, updates: Partial<Mark
     toast.error('Ошибка обновления товара');
     return null;
   }
-  return error ? null : (await error) as any;
+  return data;
+}
+
+// Получить один товар по id
+export async function getMarketplaceProductById(id: string) {
+  const { data, error } = await dbLoose
+    .from('marketplace_products')
+    .select('*')
+    .eq('id', id)
+    .single();
+
+  if (error) {
+    logger.error('[Marketplace] Ошибка загрузки товара', { error });
+    toast.error('Товар не найден');
+    return null;
+  }
+  return data as MarketplaceProduct | null;
 }
 
 // =============================================================================
@@ -365,10 +381,11 @@ export async function getMarketplaceStocks(connectionId?: string) {
   const { data, error } = await query;
 
   if (error) {
-    logger.error('[Marketplace] Ошибка загрузки остатков', { error });
-    return [];
+    logger.error('[Marketplace] Ошибка загрузки товара', { error });
+    toast.error('Не удалось загрузить информацию о товаре');
+    return null;
   }
-  return data || [];
+  return data as MarketplaceProduct | null;
 }
 
 export async function updateMarketplaceStock(sku: string, updates: Partial<MarketplaceStock>) {

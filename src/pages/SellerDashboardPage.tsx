@@ -63,7 +63,7 @@ export default function SellerDashboardPage() {
             <QuickAction
               icon={Plus}
               label="Добавить товар"
-              onClick={() => navigate('/shop')}
+              onClick={() => navigate('/marketplace/products')}
             />
             <QuickAction
               icon={BarChart3}
