@@ -5,7 +5,10 @@
  * 2. Настроек пользователя (БД) — для админ-панели
  */
 
+import { logger } from "@/lib/logger";
 import { dbLoose } from "@/lib/supabase";
+
+type SoglasieEnvironment = "test" | "upload-test" | "production";
 
 /**
  * Тип конфигурации Согласие API
@@ -17,6 +20,7 @@ export interface SoglasieConfig {
   apiUrl: string;
   calcUrl: string;
   tokenUrl: string;
+  environment: SoglasieEnvironment;
   isTestMode: boolean;
 }
 
@@ -42,13 +46,26 @@ export function getSoglasieStatusAuthHeader(config: SoglasieConfig): string {
  * Дефолтная конфигурация из переменных окружения
  */
 export function getDefaultSoglasieConfig(): SoglasieConfig {
+  // Определяем среду на основе API URL
+  const apiUrl = import.meta.env.VITE_SOGLASIE_API_URL || "https://b2b.soglasie.ru/upload-test/online/api/eosago";
+  let environment: SoglasieEnvironment = "upload-test"; // Значение по умолчанию
+
+  if (apiUrl.includes("/daily/online/api")) {
+    environment = "test";
+  } else if (apiUrl.includes("/upload-test/online/api")) {
+    environment = "upload-test";
+  } else if (apiUrl.includes("/online/api")) {
+    environment = "production";
+  }
+
   return {
     login: import.meta.env.VITE_SOGLASIE_LOGIN || "",
     subUser: import.meta.env.VITE_SOGLASIE_SUBUSER || "",
     password: import.meta.env.VITE_SOGLASIE_PASSWORD || "",
-    apiUrl: import.meta.env.VITE_SOGLASIE_API_URL || "https://b2b.soglasie.ru/upload-test/online/api/eosago",
+    apiUrl: apiUrl,
     calcUrl: import.meta.env.VITE_SOGLASIE_CALC_URL || "https://b2b.soglasie.ru/upload-test/CCM/calcService",
     tokenUrl: import.meta.env.VITE_SOGLASIE_TOKEN_URL || "https://b2b.soglasie.ru/diasoft-schema/graphiql/",
+    environment,
     isTestMode: !import.meta.env.VITE_SOGLASIE_API_URL?.includes("/online/api"),
   };
 }
@@ -59,7 +76,7 @@ export function getDefaultSoglasieConfig(): SoglasieConfig {
  */
 export async function getSoglasieConfigFromDb(): Promise<SoglasieConfig> {
   const defaultConfig = getDefaultSoglasieConfig();
-  
+
   // Если есть хоть какие-то данные в .env — используем их
   if (defaultConfig.login && defaultConfig.password) {
     return defaultConfig;
@@ -85,9 +102,11 @@ export async function getSoglasieConfigFromDb(): Promise<SoglasieConfig> {
       apiUrl: dbConfig.apiUrl || defaultConfig.apiUrl,
       calcUrl: dbConfig.calcUrl || defaultConfig.calcUrl,
       tokenUrl: dbConfig.tokenUrl || defaultConfig.tokenUrl,
+      environment: dbConfig.environment || defaultConfig.environment,
       isTestMode: dbConfig.isTestMode ?? defaultConfig.isTestMode,
     };
-  } catch {
+  } catch (error) {
+    logger.warn("[SoglasieConfig] Не удалось загрузить настройки из БД", { error });
     return defaultConfig;
   }
 }

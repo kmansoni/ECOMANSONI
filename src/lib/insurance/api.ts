@@ -28,6 +28,10 @@ import type {
   PurchaseRequest,
   PurchaseResult,
 } from "@/types/insurance-providers";
+import { createSoglasieClient as createSoglasieEosagoClient, SoglasieError } from "@/integrations/soglasie-eosago/client";
+import type { KbmRequest } from "@/integrations/soglasie-eosago/types";
+import { KBM_TABLE } from "./constants";
+import { getDefaultSoglasieConfig } from "./soglasie-config";
 
 const db = dbLoose;
 
@@ -387,10 +391,48 @@ class InsuranceApiClient {
     return this.callFunction<PurchaseResult>('insurance-purchase', { ...request });
   }
 
-  // ===== КБМ =====
+   // ===== КБМ =====
 
   /**
-   * Проверяет КБМ (бонус-малус) водителя по базе АИС РСА
+   * Преобразует коэффициент КБМ в ближайший класс согласно таблице КБМ
+   */
+  private kbmCoefficientToClass(coefficient: number): number {
+    // Таблица КБМ из constants.ts
+    const KBM_TABLE: Record<number, number> = {
+      0: 2.45,
+      1: 2.3,
+      2: 1.55,
+      3: 1.0,
+      4: 0.95,
+      5: 0.9,
+      6: 0.85,
+      7: 0.8,
+      8: 0.75,
+      9: 0.7,
+      10: 0.65,
+      11: 0.6,
+      12: 0.55,
+      13: 0.5,
+    };
+
+    // Находим класс с ближайшим коэффициентом
+    let closestClass = 0;
+    let minDiff = Math.abs(coefficient - KBM_TABLE[0]);
+
+    for (let klass = 1; klass <= 13; klass++) {
+      const diff = Math.abs(coefficient - KBM_TABLE[klass]);
+      if (diff < minDiff) {
+        minDiff = diff;
+        closestClass = klass;
+      }
+    }
+
+    return closestClass;
+  }
+
+  /**
+   * Проверяет КБМ (бонус-малус) водителя через сервис СК Согласие (ЭТАП 1: Проверка КБМ 2.0)
+   * Использует bezpośrednie integrację z web-serwisami СК Согласие
    */
   async checkKbm(data: {
     last_name: string;
@@ -400,7 +442,72 @@ class InsuranceApiClient {
     driver_license_series: string;
     driver_license_number: string;
   }): Promise<{ kbm_class: number; kbm_value: number }> {
-    return this.callFunction("insurance-kbm-check", data);
+    try {
+      // Преобразуем входные данные в формат KbmRequest СК Согласие
+      const kbmRequest: KbmRequest = {
+        driverLimitIndicator: false, // По умолчанию нет ограничения ЛДУ
+        contractEffectiveDate: new Date().toISOString().split('T')[0], // Текущая дата
+        contractClosingDate: new Date().toISOString().split('T')[0], // Текущая дата
+        persons: [
+          {
+            driverLicense: {
+              countryCode: "643", // Россия по ОКСМ
+              docType: 2, // Водительское удостоверение (предположительно)
+              docSeries: data.driver_license_series,
+              docNumber: data.driver_license_number,
+              lastName: data.last_name,
+              firstName: data.first_name,
+              middleName: data.middle_name || "",
+              birthDate: data.birth_date
+            }
+          }
+        ]
+      };
+
+      // Вызываем проверку КБМ через интеграцию СК Согласие
+      const config = getDefaultSoglasieConfig();
+      const soglasieClient = createSoglasieEosagoClient({
+        login: config.login,
+        password: config.password,
+        subUser: config.subUser,
+        subUserPassword: config.password,
+        environment: config.environment,
+      });
+
+      const response = await soglasieClient.checkKbm(kbmRequest);
+
+      // Проверяем наличие ошибок в ответе
+      if (response.processingResult && response.processingResult.calculateKbmResponses &&
+          response.processingResult.calculateKbmResponses.length > 0) {
+
+        const kbmResult = response.processingResult.calculateKbmResponses[0];
+        const kbmCoefficient = kbmResult.kbm; // Это фактический коэффициент КБМ от СК Согласие
+
+        // Преобразуем коэффициент в ближайший класс для совместимости с существующим кодом
+        const kbmClass = this.kbmCoefficientToClass(kbmCoefficient);
+        const kbmValue = KBM_TABLE[kbmClass]; // Получаем точный коэффициент из таблицы
+
+        return { kbm_class: kbmClass, kbm_value: kbmValue };
+      } else {
+        // Если нет результатов бросаем ошибку
+        throw {
+          code: "KBM_NO_RESULT",
+          message: "Сервис КБМ СК Согласие не вернул результат расчёта"
+        } as InsuranceApiError;
+      }
+    } catch (error) {
+      // Преобразуем ошибки СК Согласие в наш формат
+      if (error instanceof SoglasieError) {
+        throw {
+          code: `SOGLASIE_KBM_ERROR_${error.statusCode}`,
+          message: error.message,
+          details: error.details,
+        } as InsuranceApiError;
+      }
+
+      // Пробрасываем другие ошибки как есть
+      throw error;
+    }
   }
 
   // ===== Регионы =====
