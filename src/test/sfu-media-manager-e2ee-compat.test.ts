@@ -1,24 +1,42 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const transportState = vi.hoisted(() => {
-  const makeProducer = () => ({
+  const makeTrack = (id: string, kind: "audio" | "video", readyState: MediaStreamTrackState = "live") => ({
+    id,
+    kind,
+    readyState,
+    enabled: true,
+    stop: vi.fn(),
+  });
+
+  const makeProducer = (overrides: Record<string, unknown> = {}) => ({
     id: "producer-1",
+    kind: "video",
+    track: makeTrack("local-video-1", "video"),
     closed: false,
     close: vi.fn(function(this: { closed: boolean }) {
       this.closed = true;
     }),
+    replaceTrack: vi.fn(async function(
+      this: { track: unknown },
+      { track }: { track: MediaStreamTrack },
+    ) {
+      this.track = track;
+    }),
     on: vi.fn(),
+    ...overrides,
   });
 
-  const makeConsumer = () => ({
+  const makeConsumer = (overrides: Record<string, unknown> = {}) => ({
     id: "consumer-1",
     closed: false,
     paused: false,
-    track: { id: "remote-track-1" },
+    track: makeTrack("remote-track-1", "audio"),
     close: vi.fn(function(this: { closed: boolean }) {
       this.closed = true;
     }),
     on: vi.fn(),
+    ...overrides,
   });
 
   return {
@@ -38,6 +56,7 @@ const transportState = vi.hoisted(() => {
     },
     makeProducer,
     makeConsumer,
+    makeTrack,
   };
 });
 
@@ -169,5 +188,102 @@ describe("SfuMediaManager E2EE compatibility", () => {
     expect(consumer.id).toBe("consumer-1");
     expect(manager.getProducerSender("producer-1")).toBe(sender);
     expect(manager.getConsumerReceiver("consumer-1")).toBe(receiver);
+  });
+
+  it("returns only live unpaused remote tracks", async () => {
+    const remoteConsumers = [
+      transportState.makeConsumer({ id: "live-audio", track: transportState.makeTrack("audio-live", "audio") }),
+      transportState.makeConsumer({ id: "ended-video", track: transportState.makeTrack("video-ended", "video", "ended") }),
+      transportState.makeConsumer({ id: "paused-audio", paused: true, track: transportState.makeTrack("audio-paused", "audio") }),
+      transportState.makeConsumer({ id: "closed-video", closed: true, track: transportState.makeTrack("video-closed", "video") }),
+    ];
+    transportState.recvTransport.consume.mockImplementation(async () => remoteConsumers.shift());
+
+    const { SfuMediaManager } = await import("@/calls-v2/sfuMediaManager");
+    const manager = new SfuMediaManager({ requireSenderReceiverAccessForE2ee: false });
+
+    await manager.loadDevice({ codecs: [{ mimeType: "audio/opus" }] } as never);
+    manager.createRecvTransport(
+      { id: "recv-1", iceParameters: {} as never, iceCandidates: [], dtlsParameters: {} as never },
+      async () => undefined,
+    );
+
+    for (const id of ["live-audio", "ended-video", "paused-audio", "closed-video"]) {
+      await manager.consume({
+        id,
+        producerId: "producer-1",
+        kind: "audio" as never,
+        rtpParameters: {} as never,
+      });
+    }
+
+    expect(manager.getAllRemoteTracks().map(track => track.id)).toEqual(["audio-live"]);
+  });
+
+  it("keeps source metadata for remote camera and screen tracks", async () => {
+    const cameraTrack = transportState.makeTrack("camera-remote", "video");
+    const screenTrack = transportState.makeTrack("screen-remote", "video");
+    const remoteConsumers = [
+      transportState.makeConsumer({ id: "camera-consumer", track: cameraTrack }),
+      transportState.makeConsumer({ id: "screen-consumer", track: screenTrack }),
+    ];
+    transportState.recvTransport.consume.mockImplementation(async () => remoteConsumers.shift());
+
+    const { SfuMediaManager } = await import("@/calls-v2/sfuMediaManager");
+    const manager = new SfuMediaManager({ requireSenderReceiverAccessForE2ee: false });
+
+    await manager.loadDevice({ codecs: [{ mimeType: "video/VP8" }] } as never);
+    manager.createRecvTransport(
+      { id: "recv-1", iceParameters: {} as never, iceCandidates: [], dtlsParameters: {} as never },
+      async () => undefined,
+    );
+
+    await manager.consume({
+      id: "camera-consumer",
+      producerId: "producer-camera",
+      kind: "video" as never,
+      rtpParameters: {} as never,
+      source: "camera",
+    });
+    await manager.consume({
+      id: "screen-consumer",
+      producerId: "producer-screen",
+      kind: "video" as never,
+      rtpParameters: {} as never,
+      source: "screen",
+    });
+
+    expect(manager.getRemoteTrackSource(cameraTrack as unknown as MediaStreamTrack)).toBe("camera");
+    expect(manager.getRemoteTrackSource(screenTrack as unknown as MediaStreamTrack)).toBe("screen");
+  });
+
+  it("rejects replaceProducerTrack for dead tracks and kind mismatches", async () => {
+    const producer = transportState.makeProducer({ id: "producer-video" });
+    transportState.sendTransport.produce.mockResolvedValueOnce(producer);
+
+    const { SfuMediaManager } = await import("@/calls-v2/sfuMediaManager");
+    const manager = new SfuMediaManager({ requireSenderReceiverAccessForE2ee: false });
+
+    await manager.loadDevice({ codecs: [{ mimeType: "video/VP8" }] } as never);
+    manager.createSendTransport(
+      { id: "send-1", iceParameters: {} as never, iceCandidates: [], dtlsParameters: {} as never },
+      async () => undefined,
+      async () => "producer-video",
+    );
+
+    await manager.produce(transportState.makeTrack("camera-1", "video") as unknown as MediaStreamTrack);
+
+    await expect(
+      manager.replaceProducerTrack("producer-video", transportState.makeTrack("camera-ended", "video", "ended") as unknown as MediaStreamTrack),
+    ).rejects.toThrow(/expected live/);
+    await expect(
+      manager.replaceProducerTrack("producer-video", transportState.makeTrack("mic-1", "audio") as unknown as MediaStreamTrack),
+    ).rejects.toThrow(/cannot replace video producer with audio track/);
+
+    const nextTrack = transportState.makeTrack("camera-2", "video") as unknown as MediaStreamTrack;
+    await manager.replaceProducerTrack("producer-video", nextTrack);
+
+    expect(producer.replaceTrack).toHaveBeenCalledTimes(1);
+    expect(producer.replaceTrack).toHaveBeenCalledWith({ track: nextTrack });
   });
 });

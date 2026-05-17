@@ -395,6 +395,7 @@ export interface TransportCreatedPayload {
 export interface ProducedPayload {
   roomId: string;
   producerId: string;
+  source?: 'camera' | 'microphone' | 'screen' | string;
 }
 
 export interface ConsumedPayload {
@@ -403,6 +404,7 @@ export interface ConsumedPayload {
   producerId: string;
   kind: 'audio' | 'video';
   rtpParameters: RtpParameters;
+  source?: 'camera' | 'microphone' | 'screen' | string;
   /** E2EE peer identifier (userId:deviceId) — set by new servers; absent on legacy servers */
   peerId?: string;
 }

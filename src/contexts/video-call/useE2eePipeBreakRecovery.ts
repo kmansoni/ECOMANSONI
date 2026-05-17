@@ -15,6 +15,7 @@ export function useE2eePipeBreakRecovery(
   callsWsRef: { current: CallsWsClient | null },
   callsWsMediaRoomRef: { current: string | null },
   consumerCreateParamsRef: { current: Map<string, ConsumedPayload> },
+  localProducerIdsRef: { current: { audio: string | null; video: string | null } },
   pipeBreakRetryAtRef: { current: Map<string, number> },
   pipeBreakRecoveryInFlightRef: { current: Set<string> },
   handleE2eePipeBreakRef: { current: ((info: PipeBreakInfo) => void) | null },
@@ -60,7 +61,7 @@ export function useE2eePipeBreakRecovery(
         const newProducer = await sfuManager.produce(track, { trackId: track.id });
 
         if (sfuManagerRef.current !== sfuManager || sfuManager.closed) {
-          logger.warn('[VideoCallContext] E2EE sender recovery aborted: stale SFU manager', {
+          logger.warn('[VideoCallContext] E2EE sender recovery aborted: stale or closed SFU manager', {
             oldProducerId: trackId,
             newProducerId: newProducer.id,
           });
@@ -70,6 +71,9 @@ export function useE2eePipeBreakRecovery(
 
         if (sfuManager.getProducerSender(newProducer.id)) {
           encryption.setupSenderTransform(sfuManager.getProducerSender(newProducer.id)!, newProducer.id);
+        }
+        if ((track.kind === 'audio' || track.kind === 'video') && localProducerIdsRef.current[track.kind] === trackId) {
+          localProducerIdsRef.current[track.kind] = newProducer.id;
         }
 
         logger.info('[VideoCallContext] E2EE sender pipe recovery: OK', {
@@ -95,10 +99,11 @@ export function useE2eePipeBreakRecovery(
           producerId: storedParams.producerId,
           kind: storedParams.kind as import('mediasoup-client').types.MediaKind,
           rtpParameters: storedParams.rtpParameters as import('mediasoup-client').types.RtpParameters,
+          source: storedParams.source,
         });
 
         if (sfuManagerRef.current !== sfuManager || sfuManager.closed) {
-          logger.warn('[VideoCallContext] E2EE receiver recovery aborted: stale SFU manager', {
+          logger.warn('[VideoCallContext] E2EE receiver recovery aborted: stale or closed SFU manager', {
             oldConsumerId: trackId,
             newConsumerId: newConsumer.id,
           });
@@ -141,6 +146,7 @@ export function useE2eePipeBreakRecovery(
     callsWsRef,
     callsWsMediaRoomRef,
     consumerCreateParamsRef,
+    localProducerIdsRef,
     pipeBreakRetryAtRef,
     pipeBreakRecoveryInFlightRef,
     rebuildRemoteStream,

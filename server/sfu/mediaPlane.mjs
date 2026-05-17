@@ -100,7 +100,7 @@ async function createFallbackController() {
       return { ok: true };
     },
 
-    async produce(roomId, peerDeviceId, transportId, kind, appData = {}) {
+    async produce(roomId, peerDeviceId, transportId, kind, _rtpParameters = {}, appData = {}) {
       const room = rooms.get(roomId);
       if (!room) throw new Error("ROOM_NOT_FOUND");
       if (!room.transports.has(transportId)) throw new Error("TRANSPORT_NOT_FOUND");
@@ -118,7 +118,7 @@ async function createFallbackController() {
       peerSet.add(producerId);
       room.peerToProducerIds.set(peerDeviceId, peerSet);
 
-      return { id: producerId, kind };
+      return { id: producerId, kind, source: appData.source };
     },
 
     async consume(roomId, peerDeviceId, producerId) {
@@ -135,7 +135,7 @@ async function createFallbackController() {
         kind: producer.kind,
       });
 
-      return { id: consumerId, kind: producer.kind, rtpParameters: {} };
+      return { id: consumerId, kind: producer.kind, rtpParameters: {}, source: producer.appData?.source };
     },
 
     async closeProducer(roomId, producerId) {
@@ -190,6 +190,7 @@ async function createFallbackController() {
         producerId: producer.id,
         peerDeviceId: producer.peerDeviceId,
         kind: producer.kind,
+        source: producer.appData?.source,
       }));
     },
 
@@ -375,6 +376,7 @@ async function createMediasoupController() {
       return {
         id: producer.id,
         kind: producer.kind,
+        source: producer.appData?.source,
         observer: producer.observer,
         enableTraceEvent:
           typeof producer.enableTraceEvent === "function"
@@ -438,7 +440,7 @@ async function createMediasoupController() {
       }
 
       if (!rtpCapabilities || !room.router.canConsume({ producerId, rtpCapabilities })) {
-        return { id: uuid("cs"), kind: producer.kind, rtpParameters: {} };
+        return { id: uuid("cs"), kind: producer.kind, rtpParameters: {}, source: producer.appData?.source };
       }
 
       const consumer = await recvTransport.consume({
@@ -453,6 +455,7 @@ async function createMediasoupController() {
         id: consumer.id,
         kind: consumer.kind,
         rtpParameters: consumer.rtpParameters,
+        source: producer.appData?.source,
       };
     },
 
@@ -491,7 +494,17 @@ async function createMediasoupController() {
         producerId: producer.id,
         peerDeviceId: producer.appData?.peerDeviceId,
         kind: producer.kind,
+        source: producer.appData?.source,
       }));
+    },
+
+    async restartIce(roomId, transportId) {
+      const room = rooms.get(roomId);
+      if (!room) throw new Error("ROOM_NOT_FOUND");
+      const transport = room.transports.get(transportId);
+      if (!transport) throw new Error("TRANSPORT_NOT_FOUND");
+      const iceParameters = await transport.restartIce();
+      return { iceParameters };
     },
 
     metrics() {

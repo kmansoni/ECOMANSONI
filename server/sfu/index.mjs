@@ -970,13 +970,20 @@ wss.on("connection", (ws, req) => {
           ack(ws, frame.msgId, false, wsError("VALIDATION_FAILED", "rtpParameters must be non-empty", {}, false));
           return;
         }
+        const rawAppData = frame.payload?.appData && typeof frame.payload.appData === "object"
+          ? frame.payload.appData
+          : {};
+        const trackId = typeof rawAppData.trackId === "string" ? rawAppData.trackId : undefined;
+        const source = rawAppData.source === "screen"
+          ? "screen"
+          : kind === "audio" ? "microphone" : "camera";
         const produced = await mediaPlane.produce(
           room.roomId,
           conn.deviceId,
           frame.payload?.transportId,
           kind,
           frame.payload?.rtpParameters ?? {},
-          { peerDeviceId: conn.deviceId, userId: conn.userId }
+          { peerDeviceId: conn.deviceId, userId: conn.userId, source, ...(trackId ? { trackId } : {}) }
         );
         const producerId = produced.id;
         const producer = {
@@ -984,6 +991,7 @@ wss.on("connection", (ws, req) => {
           peerDeviceId: conn.deviceId,
           userId: conn.userId,
           kind,
+          source,
           paused: false,
         };
         room.producers.set(producerId, producer);
@@ -1070,7 +1078,7 @@ wss.on("connection", (ws, req) => {
           msgId: uuid(),
           ts: nowMs(),
           seq: conn.expectedSeq++,
-          payload: { roomId: room.roomId, producerId, kind: producer.kind },
+          payload: { roomId: room.roomId, producerId, kind: producer.kind, source: producer.source },
         });
 
         broadcastRoom(
@@ -1080,7 +1088,7 @@ wss.on("connection", (ws, req) => {
             type: "PRODUCER_ADDED",
             msgId: uuid(),
             ts: nowMs(),
-            payload: { roomId: room.roomId, producerId, peerDeviceId: conn.deviceId, kind: producer.kind },
+            payload: { roomId: room.roomId, producerId, peerDeviceId: conn.deviceId, kind: producer.kind, source: producer.source },
           },
           conn.deviceId
         );
@@ -1132,6 +1140,7 @@ wss.on("connection", (ws, req) => {
             producerId,
             kind: consumed.kind ?? producer.kind,
             rtpParameters: consumed.rtpParameters ?? {},
+            source: consumed.source ?? producer.source,
             peerId: producerOwnerUserId && producerOwnerDeviceId
               ? `${producerOwnerUserId}:${producerOwnerDeviceId}`
               : producerOwnerUserId || undefined,

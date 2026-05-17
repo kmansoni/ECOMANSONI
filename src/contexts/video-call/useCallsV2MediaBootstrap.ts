@@ -36,6 +36,7 @@ interface UseCallsV2MediaBootstrapParams {
   e2eeEpochRef: MutableRefObject<number>;
   callKeyExchangeRef: MutableRefObject<CallKeyExchange | null>;
   callMediaEncryptionRef: MutableRefObject<CallMediaEncryption | null>;
+  localProducerIdsRef: MutableRefObject<{ audio: string | null; video: string | null }>;
   consumerAddedUnsubRef: MutableRefObject<(() => void) | null>;
   consumerCreateParamsRef: MutableRefObject<Map<string, import("@/calls-v2/types").ConsumedPayload>>;
   producerPeerKeyRef: MutableRefObject<Map<string, string>>;
@@ -73,6 +74,7 @@ export function useCallsV2MediaBootstrap({
   e2eeEpochRef,
   callKeyExchangeRef,
   callMediaEncryptionRef,
+  localProducerIdsRef,
   consumerAddedUnsubRef,
   consumerCreateParamsRef,
   producerPeerKeyRef,
@@ -114,8 +116,8 @@ export function useCallsV2MediaBootstrap({
       return;
     }
 
-    const primaryVideoTrack = videoTracks[0] ?? null;
-    const screenVideoTrack = videoTracks[1] ?? null;
+    const screenVideoTrack = videoTracks.find((track) => manager.getRemoteTrackSource(track) === "screen") ?? null;
+    const primaryVideoTrack = videoTracks.find((track) => track !== screenVideoTrack) ?? null;
     const primaryTracks = primaryVideoTrack ? [...audioTracks, primaryVideoTrack] : [...audioTracks];
 
     setRemoteMediaStream(primaryTracks.length > 0 ? new MediaStream(primaryTracks) : null);
@@ -164,11 +166,17 @@ export function useCallsV2MediaBootstrap({
     const producerIds: string[] = [];
     for (const track of tracks) {
       const producer = await manager.produce(track, { trackId: track.id, source: "screen" });
+      if (REQUIRE_SFRAME && CallMediaEncryption.isSupported()) {
+        const sender = manager.getProducerSender(producer.id);
+        if (sender) {
+          callMediaEncryptionRef.current?.setupSenderTransform(sender, producer.id);
+        }
+      }
       producerIds.push(producer.id);
     }
     screenShareProducerIdsRef.current = producerIds;
     logger.info("[VideoCallContext] calls-v2 screen-share producers ready", { roomId, count: producerIds.length });
-  }, [callsWsMediaRoomRef, isScreenSharing, screenStream, sfuManagerRef]);
+  }, [callMediaEncryptionRef, callsWsMediaRoomRef, isScreenSharing, screenStream, sfuManagerRef]);
 
   useEffect(() => {
     void syncScreenShareProducer();
@@ -488,6 +496,7 @@ export function useCallsV2MediaBootstrap({
           producerId: p.producerId,
           kind: p.kind as import("mediasoup-client").types.MediaKind,
           rtpParameters: p.rtpParameters as import("mediasoup-client").types.RtpParameters,
+          source: p.source,
         }).then((consumer) => {
           logger.info("[VideoCallContext] calls-v2 consumer:created", {
             roomId,
@@ -547,7 +556,11 @@ export function useCallsV2MediaBootstrap({
 
       const tracks = stream.getTracks().filter((track) => track.readyState === "live");
       for (const track of tracks) {
-        const producer = await sfuManager.produce(track, { trackId: track.id });
+        const source = track.kind === "audio" ? "microphone" : "camera";
+        const producer = await sfuManager.produce(track, { trackId: track.id, source });
+        if (track.kind === "audio" || track.kind === "video") {
+          localProducerIdsRef.current[track.kind] = producer.id;
+        }
         if (REQUIRE_SFRAME && CallMediaEncryption.isSupported()) {
           const sender = sfuManagerRef.current?.getProducerSender(producer.id);
           if (sender) {
@@ -588,6 +601,7 @@ export function useCallsV2MediaBootstrap({
     e2eeEpochRef,
     ensureCallsV2Connected,
     epochGuardRef,
+    localProducerIdsRef,
     markMediaBootstrapProgress,
     mediaBootstrapBlockedUntilRef,
     mediaBootstrapErrorLogAtRef,

@@ -221,8 +221,8 @@ export interface UseVideoCallSfuReturn {
   toggleMute: () => void;
   toggleVideo: () => void;
   /**
-   * No-op stub — P2P credential refresh concept does not apply in SFU mode.
-   * Preserved for interface compatibility; callers can safely await it.
+   * Retries SFU media bootstrap via provider callback.
+   * Has concurrency guard — parallel calls are no-op while previous is in flight.
    */
   retryWithFreshCredentials: () => Promise<void>;
   /**
@@ -260,9 +260,15 @@ export interface UseVideoCallSfuReturn {
 // Hook options
 // ---------------------------------------------------------------------------
 
+type LocalReplaceableTrackKind = "audio" | "video";
+
 export interface UseVideoCallSfuOptions {
   /** Called when the current call transitions to ended/failed state. */
   onCallEnded?: (call: VideoCall) => void;
+  /** Called when the caller wants SFU media bootstrap to be retried. */
+  onRetryMediaBootstrap?: (call: VideoCall, stream: MediaStream) => Promise<void>;
+  /** Called after local audio/video track is swapped and the active SFU producer must follow it. */
+  onLocalTrackReplaced?: (kind: LocalReplaceableTrackKind, track: MediaStreamTrack) => Promise<void>;
 }
 
 function normalizeRealtimeCallRow(value: unknown): VideoCall | null {
@@ -284,8 +290,12 @@ function normalizeRealtimeCallRow(value: unknown): VideoCall | null {
 export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoCallSfuReturn {
   const { user } = useAuth();
   const onCallEndedRef = useRef(options.onCallEnded);
+  const onRetryMediaBootstrapRef = useRef(options.onRetryMediaBootstrap);
+  const onLocalTrackReplacedRef = useRef(options.onLocalTrackReplaced);
   useEffect(() => {
     onCallEndedRef.current = options.onCallEnded;
+    onRetryMediaBootstrapRef.current = options.onRetryMediaBootstrap;
+    onLocalTrackReplacedRef.current = options.onLocalTrackReplaced;
   });
 
   const [status, setStatus] = useState<VideoCallStatus>("idle");
@@ -400,6 +410,27 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
   // ---------------------------------------------------------------------------
   // Internal helpers
   // ---------------------------------------------------------------------------
+
+  const replaceLocalTrack = useCallback(async (
+    stream: MediaStream,
+    currentTrack: MediaStreamTrack,
+    nextTrack: MediaStreamTrack,
+  ) => {
+    if (nextTrack.readyState !== "live") {
+      throw new Error(`Cannot replace ${nextTrack.kind} with ${nextTrack.readyState} track`);
+    }
+
+    stream.removeTrack(currentTrack);
+    stream.addTrack(nextTrack);
+
+    try {
+      await onLocalTrackReplacedRef.current?.(nextTrack.kind, nextTrack);
+    } catch (error) {
+      stream.removeTrack(nextTrack);
+      stream.addTrack(currentTrack);
+      throw error;
+    }
+  }, []);
 
   const releaseLocalMedia = useCallback(() => {
     const stream = localStreamRef.current;
@@ -787,16 +818,16 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
 
     try {
       if (noiseSuppressorRef.current) {
-        // Выключаем: вернуть оригинальный трек
-        noiseSuppressorRef.current.close();
-        noiseSuppressorRef.current = null;
-
+        const suppressor = noiseSuppressorRef.current;
         const originalTrack = originalAudioTrackRef.current;
         if (originalTrack && originalTrack.readyState === 'live') {
           const currentAudio = stream.getAudioTracks()[0];
-          if (currentAudio) stream.removeTrack(currentAudio);
-          stream.addTrack(originalTrack);
+          if (currentAudio) {
+            await replaceLocalTrack(stream, currentAudio, originalTrack);
+          }
         }
+        suppressor.close();
+        noiseSuppressorRef.current = null;
         originalAudioTrackRef.current = null;
         setNoiseSuppressionEnabled(false);
         logger.info('video_call_sfu.noise_suppression_disabled', {});
@@ -819,17 +850,19 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
         }
 
         const processedTrack = processedStream.getAudioTracks()[0];
-        if (processedTrack) {
-          stream.removeTrack(audioTrack);
-          stream.addTrack(processedTrack);
+        if (processedTrack?.readyState === 'live') {
+          await replaceLocalTrack(stream, audioTrack, processedTrack);
         }
         setNoiseSuppressionEnabled(true);
         logger.info('video_call_sfu.noise_suppression_enabled', {});
       }
     } catch (error) {
       logger.error('video_call_sfu.noise_suppression_toggle_failed', { error });
+      noiseSuppressorRef.current?.close();
+      noiseSuppressorRef.current = null;
+      originalAudioTrackRef.current = null;
     }
-  }, []);
+  }, [replaceLocalTrack]);
 
   const toggleBackgroundBlur = useCallback(async () => {
     const stream = localStreamRef.current;
@@ -837,16 +870,16 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
 
     try {
       if (blurProcessorRef.current) {
-        // Выключаем: вернуть оригинальный трек
-        blurProcessorRef.current.stop();
-        blurProcessorRef.current = null;
-
+        const processor = blurProcessorRef.current;
         const originalTrack = originalVideoTrackRef.current;
         if (originalTrack && originalTrack.readyState === 'live') {
           const currentVideo = stream.getVideoTracks()[0];
-          if (currentVideo) stream.removeTrack(currentVideo);
-          stream.addTrack(originalTrack);
+          if (currentVideo) {
+            await replaceLocalTrack(stream, currentVideo, originalTrack);
+          }
         }
+        processor.stop();
+        blurProcessorRef.current = null;
         originalVideoTrackRef.current = null;
         setBackgroundBlurEnabled(false);
         logger.info('video_call_sfu.background_blur_disabled', {});
@@ -860,8 +893,7 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
         blurProcessorRef.current = processor;
 
         const processedTrack = await processor.start(videoTrack);
-        stream.removeTrack(videoTrack);
-        stream.addTrack(processedTrack);
+        await replaceLocalTrack(stream, videoTrack, processedTrack);
         setBackgroundBlurEnabled(true);
         logger.info('video_call_sfu.background_blur_enabled', {});
       }
@@ -871,16 +903,38 @@ export function useVideoCallSfu(options: UseVideoCallSfuOptions = {}): UseVideoC
       blurProcessorRef.current = null;
       originalVideoTrackRef.current = null;
     }
-  }, []);
+  }, [replaceLocalTrack]);
 
   // ---------------------------------------------------------------------------
-  // retryWithFreshCredentials — no-op stub (P2P ICE concept, not applicable here)
+  // SFU retry delegates to the provider-owned bootstrap routine.
   // ---------------------------------------------------------------------------
+
+  const retryInFlightRef = useRef(false);
 
   const retryWithFreshCredentials = useCallback(async (): Promise<void> => {
-    logger.info("video_call_sfu.retry_noop", {
-      reason: "SFU mode — no ICE renegotiation needed; reconnect via WS",
-    });
+    if (retryInFlightRef.current) {
+      logger.info("video_call_sfu.retry_skipped", { reason: "already in flight" });
+      return;
+    }
+    const call = currentCallRef.current;
+    const stream = localStreamRef.current;
+    const retry = onRetryMediaBootstrapRef.current;
+    if (!retry || !call || !stream) {
+      logger.info("video_call_sfu.retry_noop", {
+        reason: "No retry callback registered by provider or no active call/media",
+      });
+      return;
+    }
+
+    retryInFlightRef.current = true;
+    try {
+      logger.info("video_call_sfu.retry_media_bootstrap", {
+        reason: "Retrying SFU media bootstrap via provider callback",
+      });
+      await retry(call, stream);
+    } finally {
+      retryInFlightRef.current = false;
+    }
   }, []);
 
   // ---------------------------------------------------------------------------

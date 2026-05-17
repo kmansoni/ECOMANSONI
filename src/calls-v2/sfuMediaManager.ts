@@ -32,7 +32,9 @@ export class SfuMediaManager {
   private recvTransport: mediasoupTypes.Transport | null = null;
   private producers: Map<string, mediasoupTypes.Producer> = new Map();
   private consumers: Map<string, mediasoupTypes.Consumer> = new Map();
+  private consumerSources: Map<string, string> = new Map();
   private readonly requireSenderReceiverAccessForE2ee: boolean;
+  private _closed = false;
   /** C-1 fix: callback for ICE restart signaling via wsClient */
   private onIceRestartNeeded: IceRestartCallback | null = null;
   /** C-1 fix: pending ICE restart timers keyed by transportId */
@@ -69,6 +71,10 @@ export class SfuMediaManager {
     // C-2 fix: default changed to TRUE — plaintext media is never acceptable
     this.requireSenderReceiverAccessForE2ee = options?.requireSenderReceiverAccessForE2ee ?? true;
     this.onIceRestartNeeded = options?.onIceRestartNeeded ?? null;
+  }
+
+  get closed(): boolean {
+    return this._closed;
   }
 
   /**
@@ -334,6 +340,45 @@ export class SfuMediaManager {
   }
 
   /**
+   * Replace track on an existing producer.
+   * Used when noise suppression/background blur toggles during an active call.
+   * Updates both the producer track and the cached RTCRtpSender for E2EE.
+   */
+  async replaceProducerTrack(
+    producerId: string,
+    newTrack: MediaStreamTrack
+  ): Promise<void> {
+    const producer = this.producers.get(producerId);
+    if (!producer) {
+      throw new Error(`Producer ${producerId} not found`);
+    }
+    if (producer.closed) {
+      throw new Error(`Producer ${producerId} is closed`);
+    }
+    if (newTrack.readyState !== 'live') {
+      throw new Error(`replaceProducerTrack: ${newTrack.kind} track is ${newTrack.readyState}, expected live`);
+    }
+    if (producer.kind && producer.kind !== newTrack.kind) {
+      throw new Error(`replaceProducerTrack: cannot replace ${producer.kind} producer with ${newTrack.kind} track`);
+    }
+
+    // mediasoup-client supports replaceTrack on the producer
+    await producer.replaceTrack({ track: newTrack });
+
+    // Update the cached sender for E2EE - the underlying RTCRtpSender stays the same,
+    // but we need to get the updated sender reference
+    const sender = this.producerSenders.get(producerId);
+    if (sender) {
+      // The sender reference remains valid, but we should verify it
+      logger.info('[SfuMediaManager] replaceProducerTrack: ok', {
+        producerId,
+        trackKind: newTrack.kind,
+        trackState: newTrack.readyState,
+      });
+    }
+  }
+
+  /**
    * Produce a track через sendTransport.
    * Вернёт producer, rtpParameters передаются через onProduce callback.
    */
@@ -341,6 +386,7 @@ export class SfuMediaManager {
     track: MediaStreamTrack,
     appData?: Record<string, unknown>
   ): Promise<mediasoupTypes.Producer> {
+    if (this._closed) throw new Error('SfuMediaManager is closed');
     if (!this.sendTransport) {
       throw new Error('sendTransport not created. Call createSendTransport first.');
     }
@@ -399,7 +445,9 @@ export class SfuMediaManager {
     producerId: string;
     kind: mediasoupTypes.MediaKind;
     rtpParameters: mediasoupTypes.RtpParameters;
+    source?: string;
   }): Promise<mediasoupTypes.Consumer> {
+    if (this._closed) throw new Error('SfuMediaManager is closed');
     if (!this.recvTransport) {
       throw new Error('recvTransport not created. Call createRecvTransport first.');
     }
@@ -417,6 +465,9 @@ export class SfuMediaManager {
     });
 
     this.consumers.set(consumer.id, consumer);
+    if (options.source) {
+      this.consumerSources.set(consumer.id, options.source);
+    }
 
     // C-3: Cache RTCRtpReceiver for Insertable Streams E2EE.
     // Uses public consumer.rtpReceiver API (mediasoup-client ≥3.6) instead of private _handler._pc.
@@ -446,6 +497,7 @@ export class SfuMediaManager {
     consumer.on('transportclose', () => {
       this.consumers.delete(consumer.id);
       this.consumerReceivers.delete(consumer.id);
+      this.consumerSources.delete(consumer.id);
     });
 
     return consumer;
@@ -459,22 +511,26 @@ export class SfuMediaManager {
 
   /** Получить все remote tracks */
   getAllRemoteTracks(): MediaStreamTrack[] {
-    const tracks = Array.from(this.consumers.values())
-      .filter((c) => !c.closed)
+    const consumers = Array.from(this.consumers.values());
+    const tracks = consumers
+      .filter((c) => !c.closed && !c.paused)
       .map((c) => c.track)
-      .filter((t): t is MediaStreamTrack => t != null && t.kind !== undefined);
+      .filter((t): t is MediaStreamTrack => t != null && t.kind !== undefined && t.readyState === 'live');
     
-    // Debug logging for audio tracks
     const audioTracks = tracks.filter(t => t.kind === 'audio');
     const videoTracks = tracks.filter(t => t.kind === 'video');
     logger.debug('[SfuMediaManager] getAllRemoteTracks', {
-      totalConsumers: this.consumers.size,
-      closedConsumers: Array.from(this.consumers.values()).filter(c => c.closed).length,
+      totalConsumers: consumers.length,
+      closedConsumers: consumers.filter(c => c.closed).length,
+      pausedConsumers: consumers.filter(c => !c.closed && c.paused).length,
+      deadTracks: consumers.filter(c => !c.closed && !c.paused && c.track && c.track.readyState !== 'live').length,
       liveTracks: tracks.length,
       audioTracks: audioTracks.length,
       videoTracks: videoTracks.length,
       trackKinds: tracks.map(t => t.kind).join(', '),
-      trackStates: tracks.map(t => `${t.kind}:${t.readyState}`).join(', '),
+      trackStates: consumers
+        .map(c => `${c.id}:${c.closed ? 'closed' : c.paused ? 'paused' : 'active'}:${c.track?.kind ?? 'null'}:${c.track?.readyState ?? 'no-track'}`)
+        .join(', '),
     });
     
     return tracks;
@@ -504,6 +560,15 @@ export class SfuMediaManager {
     return this.consumerReceivers.get(consumerId) ?? null;
   }
 
+  getRemoteTrackSource(track: MediaStreamTrack): string | null {
+    for (const [consumerId, consumer] of this.consumers.entries()) {
+      if (consumer.track === track) {
+        return this.consumerSources.get(consumerId) ?? null;
+      }
+    }
+    return null;
+  }
+
   /**
    * Закрыть конкретный producer и вернуть его MediaStreamTrack (для recovery).
    * Track можно использовать для повторного produce().
@@ -527,10 +592,12 @@ export class SfuMediaManager {
     if (!consumer.closed) consumer.close();
     this.consumers.delete(consumerId);
     this.consumerReceivers.delete(consumerId);
+    this.consumerSources.delete(consumerId);
   }
 
   /** Закрыть всё и освободить ресурсы. */
   close(): void {
+    this._closed = true;
     // C-1 fix: cancel all pending ICE restart timers before closing
     for (const transportId of this.iceRestartTimers.keys()) {
       this.clearIceRestartTimer(transportId);
@@ -548,6 +615,7 @@ export class SfuMediaManager {
     }
     this.consumers.clear();
     this.consumerReceivers.clear();
+    this.consumerSources.clear();
 
     if (this.sendTransport && !this.sendTransport.closed) {
       this.sendTransport.close();
