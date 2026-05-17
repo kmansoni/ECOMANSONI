@@ -376,9 +376,11 @@ async function createMediasoupController() {
         id: producer.id,
         kind: producer.kind,
         observer: producer.observer,
-        enableTrace:
-          typeof producer.enableTrace === "function"
-            ? producer.enableTrace.bind(producer)
+        enableTraceEvent:
+          typeof producer.enableTraceEvent === "function"
+            ? producer.enableTraceEvent.bind(producer)
+            : typeof producer.enableTrace === "function"
+              ? producer.enableTrace.bind(producer)
             : undefined,
       };
     },

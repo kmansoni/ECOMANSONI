@@ -422,6 +422,33 @@ function sendToDevice(room, deviceId, frame) {
   return true;
 }
 
+function relayCallSignalInRoom(room, sourceDeviceId, frame) {
+  const payload = frame.payload ?? {};
+  const toUser = typeof payload.to === "string" ? payload.to.trim() : "";
+  const toDevice = typeof payload.toDevice === "string" ? payload.toDevice.trim() : "";
+  const callId = typeof payload.callId === "string" ? payload.callId.trim() : "";
+
+  if (!toUser || !callId) {
+    return { ok: false, error: "to and callId are required" };
+  }
+  if (room.callId && room.callId !== callId) {
+    return { ok: false, error: "callId does not match room" };
+  }
+
+  const forwarded = { ...frame, ts: nowMs() };
+  let delivered = 0;
+  for (const [deviceId, peer] of room.peers.entries()) {
+    if (deviceId === sourceDeviceId) continue;
+    if (peer.userId !== toUser) continue;
+    if (toDevice && deviceId !== toDevice) continue;
+    if (!peer.ws || peer.ws.readyState !== WebSocket.OPEN) continue;
+    send(peer.ws, forwarded);
+    delivered += 1;
+  }
+
+  return { ok: true, delivered };
+}
+
 function isLikelyBase64(value, minLength = 16) {
   if (typeof value !== "string" || value.length < minLength) return false;
   return /^[A-Za-z0-9+/=]+$/.test(value);
@@ -968,7 +995,7 @@ wss.on("connection", (ws, req) => {
         // carry valid encrypted payloads and indicate a bypassed E2EE sender.
         if (requireSFrame) {
           const hasTraceObserver = produced.observer && typeof produced.observer.on === "function";
-          const canEnableTrace = typeof produced.enableTrace === "function";
+          const canEnableTrace = typeof produced.enableTraceEvent === "function";
 
           const closeSuspiciousProducer = async (reason) => {
             const wasClosed = await mediaPlane.closeProducer(room.roomId, producerId).catch((error) => {
@@ -998,7 +1025,7 @@ wss.on("connection", (ws, req) => {
             return;
           }
 
-          produced.enableTrace(["rtp"]);
+          await produced.enableTraceEvent(["rtp"]);
 
           let framesChecked = 0;
           let suspiciousFrames = 0;
@@ -1354,6 +1381,28 @@ wss.on("connection", (ws, req) => {
           seq: conn.expectedSeq++,
           payload: { roomId, routerRtpCapabilities: caps },
         });
+        ack(ws, frame.msgId, true);
+        return;
+      }
+
+      case "call.accept":
+      case "call.decline":
+      case "call.cancel":
+      case "call.hangup":
+      case "call.rekey": {
+        if (!ensureAuth()) return;
+        const room = rooms.get(frame.payload?.roomId ?? conn.roomId);
+        if (!room || !conn.deviceId || !room.peers.has(conn.deviceId)) {
+          ack(ws, frame.msgId, false, wsError("UNAUTHORIZED", "Not a room member", {}, false));
+          return;
+        }
+
+        const result = relayCallSignalInRoom(room, conn.deviceId, frame);
+        if (!result.ok) {
+          ack(ws, frame.msgId, false, wsError("VALIDATION_FAILED", result.error, {}, false));
+          return;
+        }
+
         ack(ws, frame.msgId, true);
         return;
       }
